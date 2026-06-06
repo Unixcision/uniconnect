@@ -166964,6 +166964,40 @@
         }
       }
     },
+    "workspaceGroup.error.allChildrenAreAnchors": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All requested children are ineligible because they are already group anchors; ungroup them first"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要求された子ワークスペースはすべて既にグループのアンカーのため対象外です。先にグループ解除してください"
+          }
+        }
+      }
+    },
+    "workspaceGroup.error.workspaceIsOtherGroupAnchor": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Workspace is the anchor of another group; ungroup it first"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このワークスペースは別のグループのアンカーです。先にグループ解除してください"
+          }
+        }
+      }
+    },
     "workspaceGroup.autoName.numbered": {
       "extractionState": "manual",
       "localizations": {
