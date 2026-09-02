@@ -19,7 +19,9 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/tuist/XcodeProj.git",
-            from: "9.0.0"
+            // UniConnect: 9.16 adds XCWorkspaceDataElement.fileSystemSynchronizedGroup and breaks
+            // XcodeProjectAdapter; keep the version upstream builds against.
+            exact: "9.12.0"
         ),
     ],
     targets: [
