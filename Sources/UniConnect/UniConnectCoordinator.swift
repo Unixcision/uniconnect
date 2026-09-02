@@ -16,7 +16,11 @@ final class UniConnectCoordinator: ObservableObject {
     private var probes: [UUID: UniConnectTmuxProbe] = [:]
 
     static var isEnabled: Bool {
-        ProcessInfo.processInfo.environment["UNICONNECT_DISABLE"] != "1"
+        let env = ProcessInfo.processInfo.environment
+        // Off under XCTest so the inherited cmux test-suite (shortcut routing, workspace
+        // creation, CLI) keeps exercising stock behaviour; off on demand for dogfooding.
+        if env["XCTestConfigurationFilePath"] != nil { return false }
+        return env["UNICONNECT_DISABLE"] != "1"
     }
 
     private init() {}

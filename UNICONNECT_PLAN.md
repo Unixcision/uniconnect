@@ -19,7 +19,7 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [x] 2.7 Updater oficial desactivado (SUEnableAutomaticChecks=false, SUFeedURL=about:blank; el resolver cae al appcast oficial si está vacío).
 - [x] 2.8 Carpeta local → `PROYECTOS/uniconnect` (tras validar build). — 2026-09-03; instalador renombrado a uniconnect-install-patched.sh
 - [x] 2.9 `gh repo rename` Unixcision/cmux → Unixcision/uniconnect; `origin` actualizado; upstream conservado; descripción/topics. — gh repo rename + set-url origin; upstream intacto; descripción y 9 topics
-- [~] 2.10 Verificación post-renombrado: git remotos, build, scripts. — git fetch OK; build post-renombrado en curso
+- [x] 2.10 Verificación post-renombrado: git fetch OK, build OK desde `uniconnect/` (pin XcodeProj 9.12.0), app restaura y reengancha tmux, CLI OK
 
 ## 3. Concepto de workspace (caja)
 - [x] 3.1 Selector Local/SSH al pulsar `+` (sheet `UniConnectNewWorkspaceView`).
