@@ -11,15 +11,15 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 
 ## 2. Renombrado completo a UniConnect
 - [x] 2.1 Nombre visible (CFBundleDisplayName) → UniConnect.
-- [ ] 2.2 PRODUCT_NAME / ejecutable / scheme → UniConnect (Debug "UniConnect DEV"), TEST_HOST actualizados.
-- [ ] 2.3 Menús, About, Quit, status bar, ayuda: textos "cmux" → "UniConnect" (defaultValue + catálogo es/en).
-- [ ] 2.4 Icono y recursos gráficos propios.
-- [ ] 2.5 Scripts (reload.sh, install script, sign) adaptados al nuevo nombre de producto.
-- [ ] 2.6 Bundle ID `com.cmuxterm.app` se CONSERVA (sesiones, Keychain, App Support, socket). Documentado con rollback.
+- [x] 2.2 PRODUCT_NAME / ejecutable / scheme → UniConnect (Debug "UniConnect DEV"), TEST_HOST actualizados. — módulo Swift se mantiene cmux/cmux_DEV; CLI sigue llamándose cmux
+- [x] 2.3 Menús, About, Quit, status bar, ayuda: textos "cmux" → "UniConnect" (defaultValue + catálogo es/en). — defaultValues + catálogos (1397 valores); textos CLI/`cmux.json` intencionadamente sin tocar
+- [x] 2.4 Icono y recursos gráficos propios. — icono generado desde docs/assets/logo.svg (appiconset + Icon Composer)
+- [x] 2.5 Scripts (reload.sh, install script, sign) adaptados al nuevo nombre de producto. — rename.py: reload/cli/cleanup/tests/smoke/sign/instalador + workflows
+- [x] 2.6 Bundle ID `com.cmuxterm.app` se CONSERVA (sesiones, Keychain, App Support, socket). Documentado con rollback.
 - [x] 2.7 Updater oficial desactivado (SUEnableAutomaticChecks=false, SUFeedURL=about:blank; el resolver cae al appcast oficial si está vacío).
-- [ ] 2.8 Carpeta local → `PROYECTOS/uniconnect` (tras validar build).
-- [ ] 2.9 `gh repo rename` Unixcision/cmux → Unixcision/uniconnect; `origin` actualizado; upstream conservado; descripción/topics.
-- [ ] 2.10 Verificación post-renombrado: git remotos, build, scripts.
+- [x] 2.8 Carpeta local → `PROYECTOS/uniconnect` (tras validar build). — 2026-09-03; instalador renombrado a uniconnect-install-patched.sh
+- [x] 2.9 `gh repo rename` Unixcision/cmux → Unixcision/uniconnect; `origin` actualizado; upstream conservado; descripción/topics. — gh repo rename + set-url origin; upstream intacto; descripción y 9 topics
+- [~] 2.10 Verificación post-renombrado: git remotos, build, scripts. — git fetch OK; build post-renombrado en curso
 
 ## 3. Concepto de workspace (caja)
 - [x] 3.1 Selector Local/SSH al pulsar `+` (sheet `UniConnectNewWorkspaceView`).
@@ -103,7 +103,7 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [ ] 13.4 GIF optimizado del flujo principal.
 - [x] 13.5 Diagrama Mermaid (UniConnect, persistencia, Claude resume, SSH, tmux, Keychain, backups).
 - [ ] 13.6 Badges reales; comprobación de enlaces, anchors e imágenes; sin datos privados.
-- [ ] 13.7 Descripción/topics del repo con `gh`.
+- [x] 13.7 Descripción/topics del repo con `gh`.
 
 ## 14. Pruebas
 - [x] 14.1 Tests unitarios: cripto (roundtrip, contraseña mala, manipulación, nonces/salts únicos), IDs tmux (válidos/inválidos/inyección), inyección de opciones ssh, documento (validación/versión), AgentResumeArgv con flag forzado. — 24/24 en cmux-unit

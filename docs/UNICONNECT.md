@@ -86,3 +86,22 @@ Política de autenticación: Touch ID si hay sensor; si no hay biometría, no es
 - Reconexiones escalonadas: no implementadas; con muchas cajas SSH se abren en paralelo.
 - Timeout de bloqueo por inactividad: pendiente.
 - Grupos al importar: se crean con `createWorkspaceGroup`, que añade una caja ancla.
+
+## 9. Registro de validación (build real, 2026-09-02/03)
+
+Build Debug etiquetada (`UniConnect DEV uniconnect.app`, bundle `com.cmuxterm.app.debug.uniconnect`), pantalla del Mac bloqueada durante toda la prueba, control por socket con `scripts/cmux-debug-cli.sh`.
+
+| Paso | Resultado |
+|---|---|
+| Semilla `UNICONNECT_IMPORT_SEED` (caja local `~` con 2 ventanas + caja SSH con 2 ventanas tmux) | Cajas creadas con nombre, color y descripción `Local · ~` / `SSH · root@… · tmux`; snapshot sin `sshpass` ni rutas `.pem` |
+| Ventanas SSH | `tmux ls` en el servidor muestra `uc-e2e-a` y `uc-e2e-b` con cliente enganchado; la pantalla muestra la barra de tmux |
+| Proceso dentro de cada tmux (`sleep 900`) + `kill -9` de la app | Sesiones vivas y desenganchadas (`attached=0`), `sleep` intacto |
+| Relanzar | Cajas, nombres, colores, IDs tmux restaurados; `attached=1`; scrollback con los marcadores `UC-MARK-*` visible |
+| Cerrar una pestaña SSH por socket | `uc-e2e-b` sigue viva (`attached=0`); el historial de Cerradas guarda la pestaña con `uniConnectTmuxSession=uc-e2e-b` y sin secretos |
+| ⌘Q (AppleEvent quit) + relanzar | Cierre limpio en 1 s; tmux vivos; solo la pestaña abierta se restaura |
+| Claude Code en la caja local (`claude --dangerously-skip-permissions`, un prompt) | Hook registra el session id; snapshot: `agent=05a0da08`, `wasAgentRunning=true`, política `auto` |
+| ⌘Q + relanzar | La app lanza sola `claude --resume 05a0da08-… --dangerously-skip-permissions` |
+| Tests | `UniConnectTests`: 25/25 (cripto, manipulación, IDs tmux, inyección de opciones ssh, contenedor de export, snapshot legado, lanzador) |
+| Renombrado real | `UniConnect DEV uniconnect.app` con `Contents/MacOS/UniConnect DEV`, `bin/cmux` presente; misma restauración; tests 25/25 |
+
+Pendiente de prueba con pantalla desbloqueada (requieren UI o Touch ID): página de bienvenida SSH e instalación de tmux con confirmación, reapertura desde **Cerradas**, **Persistir ahora**, exportar/importar cifrado desde el menú, **Bloquear**/Touch ID.
