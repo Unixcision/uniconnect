@@ -5995,6 +5995,15 @@ class TabManager: ObservableObject {
     func closePanelAfterChildExited(tabId: UUID, surfaceId: UUID) {
         guard let tab = tabs.first(where: { $0.id == tabId }) else { return }
         guard tab.panels[surfaceId] != nil else { return }
+        // UniConnect: a tmux-backed SSH window whose ssh client died (network drop, auth
+        // error, remote reboot) must stay visible with Ghostty's "[exited]" banner so the
+        // user can read the reason and reopen it; the tmux session itself is still alive.
+        if tab.uniConnectTmuxSessionsByPanelId[surfaceId] != nil {
+#if DEBUG
+            cmuxDebugLog("surface.close.childExited.keepUniConnectTmux tab=\(tabId.uuidString.prefix(5)) surface=\(surfaceId.uuidString.prefix(5))")
+#endif
+            return
+        }
         let keepsPersistentRemoteSurfaceOpen =
             tab.shouldKeepPersistentRemoteSurfaceOpenAfterChildExit(surfaceId)
         let handlesRemoteExitThroughWorkspace =

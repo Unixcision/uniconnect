@@ -20,7 +20,7 @@ Reglas de ID tmux: letras, dígitos, `-` y `_`, máximo 40 caracteres, sin `.` n
 - `session-com.cmuxterm.app.json` — snapshot de cmux (ya existía). UniConnect añade campos **opcionales**: `workspaces[].uniConnect` (`kind`, `credentialId`, `hostLabel`, `tmuxReady`) y `panels[].terminal.uniConnectTmuxSession`. Un snapshot antiguo sin estos campos se carga igual.
 - `uniconnect/vault.uc` — comandos de conexión, AES-256-GCM con la clave maestra. Permisos 0600.
 - `uniconnect/backup.uc` — último "Persistir ahora" (documento legible cifrado con la clave maestra). `uniconnect/history/` conserva las 30 últimas copias.
-- `uniconnect/launchers/` — scripts zsh de un solo uso que arrancan cada ventana SSH (`rm -f "$0"` antes del `exec`). Se purgan a la hora.
+- `$TMPDIR/uniconnect-launchers/` — scripts zsh de un solo uso (0700) que arrancan cada ventana SSH (`rm -f "$0"` antes del `exec`); se purgan a la hora. Viven en `$TMPDIR` porque Ghostty parte el comando por espacios y `Application Support` lleva uno. Mientras existen contienen el comando de conexión completo, igual que los lanzadores de resume de cmux.
 - `uniconnect/.master-key` — clave maestra, 32 bytes aleatorios, modo 0600 (copia principal).
 
 Clave maestra: la copia principal es el fichero 0600; además se **espeja** en el llavero de inicio de sesión (`kSecClassGenericPassword`, servicio `com.cmuxterm.app.uniconnect`, cuenta `master-key-v1`, `WhenUnlockedThisDeviceOnly`) sin permitir nunca diálogos interactivos. Motivo: la app va firmada ad-hoc (cada recompilación cambia de identidad) y el llavero clásico pediría la contraseña de la cuenta en cada instalación, o se colgaría si la pantalla está bloqueada. Las builds de desarrollo (bundle id distinto) usan `uniconnect-<sufijo>/` y no comparten bóveda con la app real.
@@ -60,7 +60,7 @@ Clave maestra: la copia principal es el fichero 0600; además se **espeja** en e
 
 1. Arranque → **Touch ID** (ventana de bloqueo a nivel `screenSaver` en todas las pantallas). cmux carga el snapshot por debajo; nada es visible hasta desbloquear.
 2. Cajas locales: cmux recrea pestañas y splits. Si la pestaña tenía Claude, lanza `claude --resume <id> … --dangerously-skip-permissions` (el flag se añade siempre en `AgentResumeArgv.claudeResumeArgv`).
-3. Cajas SSH: para cada pestaña con `uniConnectTmuxSession`, UniConnect genera un lanzador `ssh -t … '<tmux new-session -A -D -s ID>'` con el comando de la bóveda y lo pasa como comando inicial del terminal. `-A` engancha si existe, `-D` expulsa clientes muertos. No se reproduce scrollback local: lo aporta tmux.
+3. Cajas SSH: para cada pestaña con `uniConnectTmuxSession`, UniConnect genera un lanzador (que exporta `TERM=xterm-256color`, porque el `xterm-ghostty` de Ghostty no suele existir en los servidores y tmux se niega a engancharse) `ssh -t … '<tmux new-session -A -D -s ID>'` con el comando de la bóveda y lo pasa como comando inicial del terminal. `-A` engancha si existe, `-D` expulsa clientes muertos. No se reproduce scrollback local: lo aporta tmux.
 4. Tras desbloquear se fuerza un autosave.
 
 Cerrar una pestaña SSH solo mata el cliente `ssh`; tmux se desengancha y sigue vivo. La pestaña va a **Cerradas** (ClosedItemHistory de cmux, con el ID tmux dentro del snapshot) y se reabre con el mismo ID.

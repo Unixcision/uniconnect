@@ -189,8 +189,8 @@ First-run seeding: put a plain JSON seed (see the template) in a file and launch
     ├── vault.uc                         # connect commands, encrypted
     ├── .master-key                      # 0600
     ├── backup.uc                        # last "Persist now"
-    ├── history/backup-<timestamp>.uc    # 30 rotating copies
-    └── launchers/                       # one-shot zsh launchers, purged hourly
+    └── history/backup-<timestamp>.uc    # 30 rotating copies
+$TMPDIR/uniconnect-launchers/            # one-shot zsh launchers (0700), purged hourly
 ```
 
 Export writes a `.uniconnect` container:

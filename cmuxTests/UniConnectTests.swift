@@ -92,6 +92,19 @@ final class UniConnectTests: XCTestCase {
         XCTAssertFalse(label.contains("SuperSecret"))
     }
 
+    func testLauncherScriptPinsTermAndSelfDeletes() throws {
+        let path = try XCTUnwrap(UniConnectSSH.writeLauncherScript(commandLine: "echo launcher-test", label: "unit test"))
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        XCTAssertFalse(path.contains(" "), "Ghostty splits the command on whitespace")
+        let contents = try String(contentsOfFile: path, encoding: .utf8)
+        XCTAssertTrue(contents.hasPrefix("#!/bin/zsh\n"))
+        XCTAssertTrue(contents.contains("rm -f -- \"$0\""))
+        XCTAssertTrue(contents.contains("export TERM=xterm-256color"))
+        XCTAssertTrue(contents.contains("echo launcher-test"))
+        let perms = try FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? Int
+        XCTAssertEqual(perms, 0o700)
+    }
+
     func testTmuxProbeScriptNeverKillsSessions() {
         XCTAssertFalse(UniConnectTmuxProbe.remoteScript.contains("kill-session"))
         XCTAssertFalse(UniConnectTmuxProbe.remoteScript.contains("kill-server"))

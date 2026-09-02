@@ -85,7 +85,10 @@ enum UniConnectSSH {
     /// Writes a self-deleting launcher script (mirrors cmux's restore launchers) so the
     /// command runs through zsh with the user's exact quoting, and returns its path.
     static func writeLauncherScript(commandLine: String, label: String) -> String? {
-        let directory = UniConnectPaths.directory.appendingPathComponent("launchers", isDirectory: true)
+        // Ghostty splits `command` on whitespace, so the launcher must live on a path
+        // without spaces: $TMPDIR (per-user, 0700), never "Application Support".
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("uniconnect-launchers", isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
@@ -96,6 +99,10 @@ enum UniConnectSSH {
                 "#!/bin/zsh",
                 "rm -f -- \"$0\" 2>/dev/null || true",
                 "printf '\\033]0;UniConnect\\007'",
+                // Ghostty advertises TERM=xterm-ghostty; most servers lack that terminfo and
+                // tmux then refuses to attach ("missing or unsuitable terminal"). ssh forwards
+                // TERM, so pin a universally available one for the remote side.
+                "export TERM=xterm-256color",
                 commandLine,
                 ""
             ].joined(separator: "\n")

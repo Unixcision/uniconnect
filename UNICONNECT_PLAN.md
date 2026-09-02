@@ -7,10 +7,10 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [x] 1.2 Rama `uniconnect` creada desde `fix/sshpass-image-paste`; remotos `origin` (Unixcision/cmux) y `upstream` (manaflow-ai/cmux) intactos.
 - [x] 1.3 Inventario de sistemas reutilizables: SessionPersistence (snapshot JSON + autosave 8 s), RestorableAgentSession (hooks Claude → `--resume`), resumeBinding + aprobaciones, WorkspaceRemoteConfiguration/terminalStartupCommand, ClosedItemHistory, Keychain (HMAC resume).
 - [x] 1.4 Decisión: ampliar el sistema existente (campos nuevos en snapshot + módulo `Sources/UniConnect/`), no un sistema paralelo.
-- [ ] 1.5 Commits por fases, sin force push ni borrado de ramas.
+- [~] 1.5 Commits por fases, sin force push ni borrado de ramas.
 
 ## 2. Renombrado completo a UniConnect
-- [~] 2.1 Nombre visible (CFBundleDisplayName) → UniConnect.
+- [x] 2.1 Nombre visible (CFBundleDisplayName) → UniConnect.
 - [ ] 2.2 PRODUCT_NAME / ejecutable / scheme → UniConnect (Debug "UniConnect DEV"), TEST_HOST actualizados.
 - [ ] 2.3 Menús, About, Quit, status bar, ayuda: textos "cmux" → "UniConnect" (defaultValue + catálogo es/en).
 - [ ] 2.4 Icono y recursos gráficos propios.
@@ -32,24 +32,24 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [x] 4.1 Alta Local: nombre + carpeta (validada) + color.
 - [ ] 4.2 Carpeta desaparecida → error recuperable con selección de otra ruta.
 - [x] 4.3 Restauración Claude con `claude --resume <id> --dangerously-skip-permissions` forzado siempre (AgentResumeArgv).
-- [ ] 4.4 Sin diálogos repetitivos de confirmación (aprobación auto para agent-hook; investigar prompt "Bypass Permissions" de Claude).
+- [x] 4.4 Sin diálogos repetitivos de confirmación (aprobación auto para agent-hook; investigar prompt "Bypass Permissions" de Claude). — AgentResumeArgv fuerza el flag; wrapper inyecta skipDangerousModePermissionPrompt
 - [ ] 4.5 Sesión inexistente → conservar ventana e informar (comprobar comportamiento actual de cmux).
 
 ## 5. Workspaces SSH
 - [x] 5.1 Alta SSH: nombre + color + comando completo (ssh, sshpass, -i, -p, ProxyJump…).
 - [x] 5.2 Comando guardado cifrado en bóveda (AES-GCM, clave maestra en Keychain); snapshot solo guarda `credentialId`.
-- [~] 5.3 Inyección de opciones tras la palabra `ssh` (sin concatenación insegura del ID tmux: sanitizado + quoting).
+- [x] 5.3 Inyección de opciones tras la palabra `ssh` (sin concatenación insegura del ID tmux: sanitizado + quoting).
 - [ ] 5.4 Host keys: `StrictHostKeyChecking=accept-new` (acepta hosts nuevos, rechaza cambios). Errores de fingerprint legibles.
 - [x] 5.5 Pantalla de carga: conecta, comprueba tmux, detecta gestor, instala (apt/dnf/yum/apk/pacman/zypper/brew), verifica versión.
-- [ ] 5.6 Confirmación en UI antes de instalar tmux.
+- [x] 5.6 Confirmación en UI antes de instalar tmux. — fase check → botón Instalar
 - [x] 5.7 Fases reales + salida sanitizada (sin porcentaje inventado).
-- [~] 5.8 Errores humanizados: inaccesible, timeout, auth, sudo, gestor incompatible, sshpass ausente. Retry / Editar conexión / Cancelar.
+- [x] 5.8 Errores humanizados: inaccesible, timeout, auth, sudo, gestor incompatible, sshpass ausente. Retry / Editar conexión / Cancelar.
 
 ## 6. Pantalla vacía y creación de ventanas SSH
 - [x] 6.1 Caja SSH nace sin ventanas reales (placeholder oculto) y muestra página explicativa a pantalla completa.
 - [x] 6.2 CTA "Crear ventana" con nombre visible + ID tmux propuesto (`uc-<slug>-<4hex>`), editable.
 - [x] 6.3 Validación/sanitizado del ID (letras, dígitos, `_`, `-`, máx 40).
-- [ ] 6.4 Detección de ID duplicado dentro de la caja (pedir confirmación).
+- [x] 6.4 Detección de ID duplicado dentro de la caja (pedir confirmación).
 - [x] 6.5 Cada ventana ejecuta `tmux new-session -A -D -s <id>` vía ssh -t con lanzador auto-borrable.
 - [x] 6.6 Restauración: cada ventana reengancha al mismo ID (startup command prioritario en createPanel).
 - [ ] 6.7 Estados Connecting/Connected/Retrying/Failed por ventana y retry individual.
@@ -76,10 +76,10 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [ ] 9.5 Semilla real de Dani: localhost + SSH notbetting-prepro (`ssh -i …/notbetting-prepro-keys.pem root@15.217.153.205`) con ventanas tmux (pendiente lista de nombres).
 
 ## 10. Seguridad y gestión de secretos
-- [x] 10.1 Secretos nunca en snapshot/logs: comando SSH solo en bóveda cifrada; clave maestra en Keychain (fallback fichero 0600).
-- [ ] 10.2 Redacción en UI (`••••••••`) al mostrar comandos; revelar exige Touch ID.
+- [x] 10.1 Secretos nunca en snapshot/logs: comando SSH solo en bóveda cifrada; clave maestra en fichero 0600 + espejo en llavero sin diálogos (docs §2/§6).
+- [~] 10.2 Redacción en UI (`••••••••`) al mostrar comandos; revelar exige Touch ID. — revelar exige Touch ID; redacción visual pendiente
 - [x] 10.3 Cifrado autenticado con CryptoKit AES-GCM; AAD con nombre de formato; errores sin filtrar detalle.
-- [ ] 10.4 Modelo de amenaza y limitaciones documentados.
+- [x] 10.4 Modelo de amenaza y limitaciones documentados. — docs/UNICONNECT.md §6
 - [ ] 10.5 Migración de secretos heredados (cmux no guarda comandos ssh en claro; comprobar `resumeBinding` process-detected con sshpass).
 
 ## 11. Touch ID, apertura y bloqueo
@@ -88,7 +88,7 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [x] 11.3 Política sin Touch ID / no configurado / lockout: contraseña del Mac vía LAContext, avisada en pantalla, sin bypass silencioso.
 - [ ] 11.4 Timeout de bloqueo automático configurable por inactividad.
 - [ ] 11.5 Ocultar contenido en previews/capturas cuando sea viable.
-- [ ] 11.6 Antes de exportar/revelar: autenticación reciente.
+- [x] 11.6 Antes de exportar/revelar: autenticación reciente.
 
 ## 12. Interfaz y experiencia
 - [ ] 12.1 Badge Local/SSH y estado de conexión por caja.
@@ -97,17 +97,17 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [ ] 12.4 Textos de estados vacíos, loaders y errores cuidados.
 
 ## 13. README profesional
-- [ ] 13.1 README.md en inglés con las 25 secciones.
-- [ ] 13.2 Logo/wordmark + hero.
+- [~] 13.1 README.md en inglés con las 25 secciones. — borrador escrito, faltan capturas
+- [~] 13.2 Logo/wordmark + hero. — logo hecho, hero pendiente
 - [ ] 13.3 Capturas reales sanitizadas: selector Local/SSH, estado vacío SSH, ventanas tmux, bloqueo/exportación.
 - [ ] 13.4 GIF optimizado del flujo principal.
-- [ ] 13.5 Diagrama Mermaid (UniConnect, persistencia, Claude resume, SSH, tmux, Keychain, backups).
+- [x] 13.5 Diagrama Mermaid (UniConnect, persistencia, Claude resume, SSH, tmux, Keychain, backups).
 - [ ] 13.6 Badges reales; comprobación de enlaces, anchors e imágenes; sin datos privados.
 - [ ] 13.7 Descripción/topics del repo con `gh`.
 
 ## 14. Pruebas
-- [ ] 14.1 Tests unitarios: cripto (roundtrip, contraseña mala, manipulación, nonces/salts únicos), IDs tmux (válidos/inválidos/inyección), inyección de opciones ssh, documento (validación/versión), AgentResumeArgv con flag forzado.
-- [ ] 14.2 Tests de snapshot: campos uniConnect sobreviven a encode/decode y a snapshots antiguos.
+- [x] 14.1 Tests unitarios: cripto (roundtrip, contraseña mala, manipulación, nonces/salts únicos), IDs tmux (válidos/inválidos/inyección), inyección de opciones ssh, documento (validación/versión), AgentResumeArgv con flag forzado. — 24/24 en cmux-unit
+- [x] 14.2 Tests de snapshot: campos uniConnect sobreviven a encode/decode y a snapshots antiguos.
 - [ ] 14.3 Suite existente del repo sin regresiones.
 - [ ] 14.4 Comprobación manual Touch ID en hardware.
 
