@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import CryptoKit
 
 // MARK: - Coordinator
 //
@@ -87,6 +88,9 @@ final class UniConnectCoordinator: ObservableObject {
         )
         workspace.uniConnectProfile = .local
         workspace.setCustomColor(color)
+        if (workspace.customDescription ?? "").isEmpty {
+            workspace.setCustomDescription("Local · \((folder as NSString).abbreviatingWithTildeInPath)")
+        }
         requestSave()
         return workspace
     }
@@ -118,6 +122,9 @@ final class UniConnectCoordinator: ObservableObject {
         // welcome page; it gets replaced by the first tmux window.
         workspace.uniConnectPlaceholderPanelIds = Set(workspace.panels.keys)
         workspace.setCustomColor(color)
+        if (workspace.customDescription ?? "").isEmpty {
+            workspace.setCustomDescription("SSH · \(UniConnectSSH.hostLabel(from: connectCommand)) · tmux")
+        }
         requestSave()
         if probeImmediately {
             startProbe(for: workspace)
@@ -149,15 +156,29 @@ final class UniConnectCoordinator: ObservableObject {
         let state = setupState(for: workspace)
         state.phase = .connecting
         state.log = ["$ \(UniConnectSSH.hostLabel(from: connect)) — comprobando tmux…"]
+        runProbe(for: workspace, connect: connect, state: state, install: false)
+    }
+
+    /// Second step of the welcome flow: the user confirmed the tmux installation.
+    func installTmux(for workspace: Workspace) {
+        guard let profile = workspace.uniConnectProfile, profile.isSSH,
+              let credentialId = profile.credentialId,
+              let connect = UniConnectVault.shared.connectCommand(for: credentialId) else { return }
+        let state = setupState(for: workspace)
+        state.phase = .installing
+        state.log.append("⏳ instalando tmux…")
+        runProbe(for: workspace, connect: connect, state: state, install: true)
+    }
+
+    private func runProbe(for workspace: Workspace, connect: String, state: UniConnectSSHSetupState, install: Bool) {
+        probes[workspace.id]?.cancel()
         let workspaceId = workspace.id
         let probe = UniConnectTmuxProbe(
+            mode: install ? .install : .check,
             onLine: { [weak state] line in
                 guard let state else { return }
                 state.log.append(line)
                 if state.log.count > 400 { state.log.removeFirst(state.log.count - 400) }
-                if line.hasPrefix("⏳"), state.phase == .connecting {
-                    state.phase = .installing
-                }
             },
             onFinish: { [weak self, weak workspace, weak state] outcome in
                 guard let self else { return }
@@ -171,6 +192,8 @@ final class UniConnectCoordinator: ObservableObject {
                         workspace.uniConnectProfile = profile
                         self.requestSave()
                     }
+                case .needsInstall(let detail):
+                    state.phase = .needsInstall(detail)
                 case .failed(let message):
                     state.phase = .failed(Self.humanizeSSHFailure(message, log: state.log))
                 }
@@ -205,6 +228,13 @@ final class UniConnectCoordinator: ObservableObject {
 
     func editConnection(for workspace: Workspace) {
         guard let profile = workspace.uniConnectProfile, profile.isSSH else { return }
+        UniConnectAppLock.shared.authenticateForSensitiveAction(reason: "Mostrar el comando de conexión") { [weak self, weak workspace] ok in
+            guard ok, let self, let workspace else { return }
+            self.editConnectionAuthenticated(for: workspace, profile: profile)
+        }
+    }
+
+    private func editConnectionAuthenticated(for workspace: Workspace, profile: UniConnectWorkspaceProfile) {
         let current = profile.credentialId.flatMap { UniConnectVault.shared.connectCommand(for: $0) } ?? ""
         let alert = NSAlert()
         alert.messageText = "Editar conexión"
@@ -266,6 +296,16 @@ final class UniConnectCoordinator: ObservableObject {
             return nil
         }
         let session = UniConnectSSH.sanitizedTmuxName(rawSession)
+        if let duplicate = workspace.uniConnectTmuxSessionsByPanelId.first(where: { $0.value == session && workspace.panels[$0.key] != nil }) {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Ese código tmux ya está en uso"
+            let existingName = workspace.panelCustomTitles[duplicate.key] ?? workspace.panelTitles[duplicate.key] ?? "otra ventana"
+            alert.informativeText = "La ventana \"\(existingName)\" ya usa la sesión tmux \"\(session)\". Dos ventanas sobre la misma sesión se pisan (tmux desengancha a la otra). ¿Abrirla igualmente?"
+            alert.addButton(withTitle: "Abrir igualmente")
+            alert.addButton(withTitle: "Cancelar")
+            guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        }
         let commandLine = UniConnectSSH.attachCommandLine(connectCommand: connect, session: session, directory: directory)
         guard let launcher = UniConnectSSH.writeLauncherScript(commandLine: commandLine, label: session) else {
             presentError("No se pudo preparar el lanzador de la ventana.")
@@ -306,6 +346,39 @@ final class UniConnectCoordinator: ObservableObject {
         }
     }
 
+    // MARK: Startup seed (UNICONNECT_IMPORT_SEED=<path>)
+
+    /// Imports a plain JSON seed or an encrypted export at launch. Used for the very
+    /// first configuration and for automated end-to-end checks. Each file is applied
+    /// once: a marker with its SHA-256 is written next to the vault.
+    func applyStartupSeedIfNeeded() {
+        guard Self.isEnabled,
+              let path = ProcessInfo.processInfo.environment["UNICONNECT_IMPORT_SEED"], !path.isEmpty else { return }
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        guard let data = try? Data(contentsOf: url) else {
+            NSLog("[UniConnect] seed not readable: %@", url.path)
+            return
+        }
+        let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        let marker = UniConnectPaths.directory.appendingPathComponent("seed-\(digest.prefix(16)).applied")
+        if FileManager.default.fileExists(atPath: marker.path),
+           ProcessInfo.processInfo.environment["UNICONNECT_IMPORT_SEED_FORCE"] != "1" {
+            return
+        }
+        do {
+            switch try UniConnectBackup.inspect(data: data) {
+            case .plainSeed(let document):
+                applyImport(document.workspaces)
+                try? Data().write(to: marker)
+                NSLog("[UniConnect] seed applied: %d workspaces", document.workspaces.count)
+            case .encrypted:
+                NSLog("[UniConnect] seed is encrypted; use Importar configuración… from the menu")
+            }
+        } catch {
+            NSLog("[UniConnect] seed rejected: %@", error.localizedDescription)
+        }
+    }
+
     // MARK: Persist / export / import
 
     func allTabManagers() -> [TabManager] {
@@ -336,6 +409,13 @@ final class UniConnectCoordinator: ObservableObject {
     }
 
     func exportConfiguration() {
+        UniConnectAppLock.shared.authenticateForSensitiveAction(reason: "Exportar la configuración (incluye secretos cifrados)") { [weak self] ok in
+            guard ok, let self else { return }
+            self.exportConfigurationAuthenticated()
+        }
+    }
+
+    private func exportConfigurationAuthenticated() {
         let document = UniConnectBackup.buildDocument(tabManagers: allTabManagers())
         let window = hostWindow(for: nil)
         UniConnectSheet.present(on: window, size: CGSize(width: 420, height: 230)) { dismiss in
@@ -641,7 +721,8 @@ struct UniConnectSSHWelcomeHost: View {
                 UniConnectCoordinator.shared.createSSHWindow(in: workspace, name: name, tmuxSession: tmux)
             },
             onRetry: { UniConnectCoordinator.shared.startProbe(for: workspace) },
-            onEditConnection: { UniConnectCoordinator.shared.editConnection(for: workspace) }
+            onEditConnection: { UniConnectCoordinator.shared.editConnection(for: workspace) },
+            onInstallTmux: { UniConnectCoordinator.shared.installTmux(for: workspace) }
         )
         .onAppear {
             if state.phase == .idle {

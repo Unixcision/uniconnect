@@ -31,10 +31,20 @@ final class UniConnectAppLock: ObservableObject {
 
     /// Called at launch. Presents the lock and authenticates immediately.
     func presentLaunchGate() {
-        guard Self.isEnabled, !isLocked else { return }
+        guard Self.isEnabled, !isLocked else {
+            scheduleStartupSeed()
+            return
+        }
         isLaunchGate = true
         lock(reason: "arranque")
         authenticate()
+    }
+
+    /// The seed runs a few seconds after the session restore had a chance to finish.
+    private func scheduleStartupSeed() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            UniConnectCoordinator.shared.applyStartupSeedIfNeeded()
+        }
     }
 
     /// Manual "Bloquear" action.
@@ -113,8 +123,10 @@ final class UniConnectAppLock: ObservableObject {
     }
 
     private func unlock() {
+        let wasLaunchGate = isLaunchGate
         isLocked = false
         isLaunchGate = false
+        if wasLaunchGate { scheduleStartupSeed() }
         // Autosave right after unlocking so a crash seconds later loses nothing.
         AppDelegate.shared?.uniConnectRequestSessionSave()
         for window in lockWindows {

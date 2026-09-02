@@ -318,6 +318,7 @@ final class UniConnectSSHSetupState: ObservableObject {
     enum Phase: Equatable {
         case idle
         case connecting
+        case needsInstall(String)
         case installing
         case ready
         case failed(String)
@@ -345,6 +346,7 @@ struct UniConnectSSHWelcomeView: View {
     let onCreateWindow: (_ name: String, _ tmux: String) -> Void
     let onRetry: () -> Void
     let onEditConnection: () -> Void
+    let onInstallTmux: () -> Void
 
     @State private var name = ""
     @State private var tmux = ""
@@ -390,6 +392,37 @@ struct UniConnectSSHWelcomeView: View {
                         .foregroundStyle(.white)
                 }
                 logView
+            }
+        case .needsInstall(let detail):
+            VStack(spacing: 14) {
+                Text("tmux no está instalado en el servidor")
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                Text("Detectado: \(detail.replacingOccurrences(of: "=", with: ": ").replacingOccurrences(of: " ", with: " · "))")
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .multilineTextAlignment(.center)
+                Text("UniConnect instalará el paquete tmux con el gestor del sistema (apt, dnf, yum, apk, pacman, zypper o brew). No toca nada más.")
+                    .font(.system(size: 15, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                logView
+                HStack(spacing: 12) {
+                    Button { onInstallTmux() } label: { Label("Instalar tmux", systemImage: "arrow.down.circle.fill") }
+                        .buttonStyle(.borderedProminent).tint(UniConnectStyle.accentSSH)
+                        .disabled(detail.contains("SIN permisos"))
+                    Button { onRetry() } label: { Label("Volver a comprobar", systemImage: "arrow.clockwise") }
+                        .buttonStyle(.bordered)
+                    Button { onEditConnection() } label: { Label("Editar conexión", systemImage: "pencil") }
+                        .buttonStyle(.bordered)
+                }
+                if detail.contains("SIN permisos") {
+                    Text("Este usuario no puede instalar paquetes (ni root ni sudo sin contraseña). Instala tmux a mano o conecta con otro usuario.")
+                        .font(.system(size: 13, design: .rounded))
+                        .foregroundStyle(Color(red: 1, green: 0.7, blue: 0.5))
+                        .multilineTextAlignment(.center)
+                }
             }
         case .failed(let message):
             VStack(spacing: 14) {

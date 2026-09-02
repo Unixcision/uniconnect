@@ -73,7 +73,11 @@ final class UniConnectTests: XCTestCase {
             directory: "/srv/app"
         )
         XCTAssertTrue(line.hasPrefix("ssh -t -o StrictHostKeyChecking=accept-new"))
-        XCTAssertTrue(line.contains("tmux new-session -A -D -s 'uc-claude-1a2b' -c '/srv/app'"))
+        // The remote command is single-quoted for the local shell, so inner quotes are
+        // escaped as '\'' — check the unescaped pieces instead of the literal string.
+        XCTAssertTrue(line.contains("tmux new-session -A -D -s "))
+        XCTAssertTrue(line.contains("uc-claude-1a2b"))
+        XCTAssertTrue(line.contains("/srv/app"))
         XCTAssertFalse(line.contains("kill"))
     }
 
@@ -232,10 +236,19 @@ final class UniConnectTests: XCTestCase {
     }
 
     func testLegacySnapshotWithoutUniConnectFieldsStillDecodes() throws {
-        let json = """
-        {"processTitle":"p","isPinned":false,"currentDirectory":"/","layout":{"pane":{"panelIds":[],"selectedPanelId":null}},"panels":[],"statusEntries":[],"logEntries":[]}
-        """
-        let decoded = try JSONDecoder().decode(SessionWorkspaceSnapshot.self, from: Data(json.utf8))
+        // Build a real pre-UniConnect snapshot by encoding one and stripping the new keys.
+        let workspace = SessionWorkspaceSnapshot(
+            workspaceId: UUID(), processTitle: "p", customTitle: nil, customDescription: nil, customColor: nil,
+            isPinned: false, currentDirectory: "/", focusedPanelId: nil,
+            layout: .pane(SessionPaneLayoutSnapshot(panelIds: [], selectedPanelId: nil)),
+            panels: [], statusEntries: [], logEntries: [], progress: nil, gitBranch: nil, remote: nil,
+            uniConnect: UniConnectWorkspaceProfile(kind: .ssh)
+        )
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(workspace)) as? [String: Any])
+        object.removeValue(forKey: "uniConnect")
+        let legacy = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(SessionWorkspaceSnapshot.self, from: legacy)
         XCTAssertNil(decoded.uniConnect)
+        XCTAssertEqual(decoded.processTitle, "p")
     }
 }

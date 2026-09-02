@@ -9,7 +9,11 @@ enum UniConnectPaths {
     static var directory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        let dir = base.appendingPathComponent("cmux/uniconnect", isDirectory: true)
+        // Debug / tagged builds carry their own bundle id; keep their vault and backups apart
+        // from the production app so dogfooding never pollutes real data.
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.cmuxterm.app"
+        let suffix = bundleId == "com.cmuxterm.app" ? "" : "-" + bundleId.replacingOccurrences(of: "com.cmuxterm.app.", with: "")
+        let dir = base.appendingPathComponent("cmux/uniconnect\(suffix)", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         return dir
     }
@@ -132,7 +136,17 @@ enum UniConnectCrypto {
     }
 }
 
-// MARK: - Master key (Keychain, file fallback)
+// MARK: - Master key
+//
+// Storage policy (documented in docs/UNICONNECT.md §6):
+//  * Primary copy: `.master-key` (32 random bytes, mode 0600) inside the UniConnect
+//    directory. It is protected by the macOS account, FileVault and the app lock.
+//  * Mirror: the login Keychain, best effort and **never interactive**. Ad-hoc signed
+//    builds change identity on every rebuild, which would otherwise trigger the
+//    "wants to access the keychain" password prompt (a hard hang when the screen is
+//    locked) and would strand the vault behind an unreadable key.
+//  * Both copies are written; reads prefer the file so the vault stays readable across
+//    rebuilds and reinstalls. Deleting both copies makes every vault/backup unreadable.
 
 enum UniConnectMasterKey {
     private static let service = "com.cmuxterm.app.uniconnect"
@@ -141,26 +155,29 @@ enum UniConnectMasterKey {
 
     static func load() -> SymmetricKey {
         if let cached { return cached }
-        if let data = readKeychain(), data.count == 32 {
+        if let data = try? Data(contentsOf: UniConnectPaths.masterKeyFallbackFile), data.count == 32 {
             let key = SymmetricKey(data: data)
             cached = key
             return key
         }
-        if let data = try? Data(contentsOf: UniConnectPaths.masterKeyFallbackFile), data.count == 32 {
+        if let data = readKeychainNoUI(), data.count == 32 {
             let key = SymmetricKey(data: data)
+            writeFile(data)
             cached = key
-            // Opportunistically promote to Keychain.
-            _ = writeKeychain(data)
             return key
         }
         let key = SymmetricKey(size: .bits256)
         let data = key.withUnsafeBytes { Data($0) }
-        if !writeKeychain(data) {
-            try? data.write(to: UniConnectPaths.masterKeyFallbackFile, options: [.atomic])
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: UniConnectPaths.masterKeyFallbackFile.path)
-        }
+        writeFile(data)
+        _ = writeKeychainNoUI(data)
         cached = key
         return key
+    }
+
+    private static func writeFile(_ data: Data) {
+        let url = UniConnectPaths.masterKeyFallbackFile
+        try? data.write(to: url, options: [.atomic])
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
     private static func baseQuery() -> [String: Any] {
@@ -171,27 +188,41 @@ enum UniConnectMasterKey {
         ]
     }
 
-    private static func readKeychain() -> Data? {
-        var query = baseQuery()
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess else { return nil }
-        return result as? Data
+    /// Runs `body` with legacy-keychain user interaction disabled so a missing ACL
+    /// entry fails fast (errSecInteractionNotAllowed) instead of prompting.
+    private static func withoutKeychainUI<T>(_ body: () -> T) -> T {
+        var previous: DarwinBoolean = true
+        SecKeychainGetUserInteractionAllowed(&previous)
+        SecKeychainSetUserInteractionAllowed(false)
+        defer { SecKeychainSetUserInteractionAllowed(previous.boolValue) }
+        return body()
     }
 
-    private static func writeKeychain(_ data: Data) -> Bool {
-        var attributes = baseQuery()
-        attributes[kSecValueData as String] = data
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        attributes[kSecAttrLabel as String] = "UniConnect master key"
-        let status = SecItemAdd(attributes as CFDictionary, nil)
-        if status == errSecDuplicateItem {
-            let update: [String: Any] = [kSecValueData as String: data]
-            return SecItemUpdate(baseQuery() as CFDictionary, update as CFDictionary) == errSecSuccess
+    private static func readKeychainNoUI() -> Data? {
+        withoutKeychainUI {
+            var query = baseQuery()
+            query[kSecReturnData as String] = true
+            query[kSecMatchLimit as String] = kSecMatchLimitOne
+            var result: AnyObject?
+            let status = SecItemCopyMatching(query as CFDictionary, &result)
+            guard status == errSecSuccess else { return nil }
+            return result as? Data
         }
-        return status == errSecSuccess
+    }
+
+    private static func writeKeychainNoUI(_ data: Data) -> Bool {
+        withoutKeychainUI {
+            var attributes = baseQuery()
+            attributes[kSecValueData as String] = data
+            attributes[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            attributes[kSecAttrLabel as String] = "UniConnect master key"
+            let status = SecItemAdd(attributes as CFDictionary, nil)
+            if status == errSecDuplicateItem {
+                let update: [String: Any] = [kSecValueData as String: data]
+                return SecItemUpdate(baseQuery() as CFDictionary, update as CFDictionary) == errSecSuccess
+            }
+            return status == errSecSuccess
+        }
     }
 }
 

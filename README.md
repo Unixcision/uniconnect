@@ -1,365 +1,261 @@
-<h1 align="center">cmux</h1>
-<p align="center">A Ghostty-based macOS terminal with vertical tabs and notifications for AI coding agents</p>
+<div align="center">
 
-<p align="center">
-  <a href="https://github.com/manaflow-ai/cmux/releases/latest/download/cmux-macos.dmg">
-    <img src="./docs/assets/macos-badge.png" alt="Download cmux for macOS" width="180" />
-  </a>
-</p>
+<img src="docs/assets/logo.svg" alt="UniConnect logo: a rounded square with a link-and-terminal glyph" width="128" height="128">
 
-<p align="center">
-  English | <a href="README.ja.md">日本語</a> | <a href="README.vi.md">Tiếng Việt</a> | <a href="README.zh-CN.md">简体中文</a> | <a href="README.zh-TW.md">繁體中文</a> | <a href="README.ko.md">한국어</a> | <a href="README.de.md">Deutsch</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.it.md">Italiano</a> | <a href="README.da.md">Dansk</a> | <a href="README.pl.md">Polski</a> | <a href="README.ru.md">Русский</a> | <a href="README.bs.md">Bosanski</a> | <a href="README.ar.md">العربية</a> | <a href="README.no.md">Norsk</a> | <a href="README.pt-BR.md">Português (Brasil)</a> | <a href="README.th.md">ไทย</a> | <a href="README.tr.md">Türkçe</a> | <a href="README.km.md">ភាសាខ្មែរ</a> | <a href="README.uk.md">Українська</a>
-</p>
+# UniConnect
 
-<p align="center">
-  <a href="https://x.com/manaflowai"><img src="https://img.shields.io/badge/@manaflow-555?logo=x" alt="X / Twitter" /></a>
-  <a href="https://discord.gg/xsgFEVrWCZ"><img src="https://img.shields.io/badge/Discord-555?logo=discord" alt="Discord" /></a>
-  <a href="https://github.com/manaflow-ai/cmux"><img src="https://img.shields.io/github/stars/manaflow-ai/cmux?style=flat&logo=github&label=stars&color=4c71f2" alt="GitHub stars" /></a>
-</p>
+**A macOS terminal whose sessions survive quits, crashes and reboots.**<br>
+Local boxes resume Claude Code. SSH boxes live in tmux on the server. Everything is encrypted and behind Touch ID.
 
-<p align="center">
-  <img src="./docs/assets/main-first-image.png" alt="cmux screenshot" width="900" />
-</p>
+[![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)](https://www.swift.org)
+[![SwiftUI + AppKit](https://img.shields.io/badge/UI-SwiftUI%20%2B%20AppKit-0A84FF?logo=apple&logoColor=white)](#tech-stack)
+[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white)](#installation)
+[![tmux](https://img.shields.io/badge/remote-tmux-1BB91F?logo=tmux&logoColor=white)](#ssh--tmux-workspaces)
+[![SSH](https://img.shields.io/badge/transport-OpenSSH-4D4D4D?logo=openssh&logoColor=white)](#ssh--tmux-workspaces)
+[![CryptoKit AES-256-GCM](https://img.shields.io/badge/crypto-CryptoKit%20AES--256--GCM-7B61FF)](#security-model)
+[![Keychain](https://img.shields.io/badge/secrets-Keychain%20%2B%20vault-FFB000)](#security-model)
+[![License MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Upstream cmux](https://img.shields.io/badge/upstream-manaflow--ai%2Fcmux-8A2BE2?logo=github)](https://github.com/manaflow-ai/cmux)
 
-<p align="center">
-  <a href="https://www.youtube.com/watch?v=i-WxO5YUTOs">▶ Demo video</a> · <a href="https://cmux.com/blog/zen-of-cmux">The Zen of cmux</a>
-</p>
+<img src="docs/assets/hero.png" alt="UniConnect main window: sidebar with colored Local and SSH boxes, an SSH box showing several tmux-backed windows" width="900">
+
+</div>
+
+---
+
+## Table of contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [How it works](#how-it-works)
+- [Local workspaces](#local-workspaces)
+- [SSH + tmux workspaces](#ssh--tmux-workspaces)
+- [Session persistence](#session-persistence)
+- [Security model](#security-model)
+- [Installation](#installation)
+- [Build from source](#build-from-source)
+- [Usage](#usage)
+- [Backup and restore](#backup-and-restore)
+- [Tech stack](#tech-stack)
+- [Architecture](#architecture)
+- [Roadmap](#roadmap)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
+- [Credits and upstream](#credits-and-upstream)
+
+## Overview
+
+UniConnect is a fork of [cmux](https://github.com/manaflow-ai/cmux), the Ghostty-based terminal built for AI agent workflows. cmux already restores workspaces and resumes Claude Code sessions. UniConnect adds the missing half for people who live on remote servers:
+
+- Every workspace ("box") is explicitly **Local** or **SSH**.
+- Every window inside an SSH box is a **named tmux session on the server**. Quit the app, crash it, reboot the Mac: the process on the server keeps running, and the window re-attaches on the next launch.
+- Local windows that were running Claude Code come back with `claude --resume <session> --dangerously-skip-permissions`, with no per-window confirmation.
+- Connection commands (including `sshpass` wrappers) are stored in an **encrypted vault**, never in the session snapshot.
+- The app opens only after **Touch ID**, can be locked at any time, and exports an **authenticated, encrypted** backup you can import on another Mac.
 
 ## Features
 
-<table>
-<tr>
-<td width="40%" valign="middle">
-<h3>Notification rings</h3>
-Panes get a blue ring and tabs light up when coding agents need your attention
-</td>
-<td width="60%">
-<img src="./docs/assets/notification-rings.png" alt="Notification rings" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>Notification panel</h3>
-See all pending notifications in one place, jump to the most recent unread
-</td>
-<td width="60%">
-<img src="./docs/assets/sidebar-notification-badge.png" alt="Sidebar notification badge" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>In-app browser</h3>
-Split a browser alongside your terminal with a scriptable API ported from <a href="https://github.com/vercel-labs/agent-browser">agent-browser</a>
-</td>
-<td width="60%">
-<img src="./docs/assets/built-in-browser.png" alt="Built-in browser" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>Vertical + horizontal tabs</h3>
-Sidebar shows git branch, linked PR status/number, working directory, listening ports, and latest notification text. Split horizontally and vertically.
-</td>
-<td width="60%">
-<img src="./docs/assets/vertical-horizontal-tabs-and-splits.png" alt="Vertical tabs and split panes" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>SSH</h3>
-<code>cmux ssh user@remote</code> creates a workspace for a remote machine. Browser panes route through the remote network so localhost just works. Drag an image into a remote session to upload via scp.
-</td>
-<td width="60%">
-<img src="./docs/assets/ssh.png" alt="cmux SSH" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>Claude Code Teams</h3>
-<code>cmux claude-teams</code> runs Claude Code's teammate mode with one command. Teammates spawn as native splits with sidebar metadata and notifications. No tmux required.
-</td>
-<td width="60%">
-<img src="./docs/assets/claude-code-teams.png" alt="Claude Code Teams" width="100%" />
-</td>
-</tr>
-</table>
+| | |
+|---|---|
+| **Local / SSH chooser on `+`** | Name, folder and color for local boxes; name, color and full connect command for SSH boxes. |
+| **tmux-backed windows** | Each SSH window runs `tmux new-session -A -D -s <id>` over `ssh -t`. IDs are validated (`[A-Za-z0-9_-]`, max 40) and suggested automatically. |
+| **Server bootstrap** | On creation UniConnect connects, detects tmux, and offers to install it (apt, dnf, yum, apk, pacman, zypper, brew) with live output. |
+| **Empty-state onboarding** | A new SSH box opens full-screen with an explanation and a *Create window* call to action. |
+| **Claude Code resume** | Session ids captured by cmux's hooks; restore always carries `--dangerously-skip-permissions`. |
+| **Closed, not killed** | Closing a window or box never runs `tmux kill-*`. Items go to *Closed* and can be reopened; permanent deletion asks first. |
+| **Persist now** | `⌘⌥S` writes the session snapshot plus an encrypted, human-readable backup with 30 rotating copies. |
+| **Encrypted export / import** | Versioned JSON container, readable metadata, AES-256-GCM payload, PBKDF2-SHA256 key derivation, preview before import, duplicate detection. |
+| **Touch ID gate + Lock** | Required at every launch; `⌘⌃L` locks instantly without touching terminals or tmux. Explicit password fallback for Macs without Touch ID. |
+| **No upstream auto-updates** | Sparkle checks are off so an upstream release can never overwrite UniConnect. |
 
-- **Browser import** — Import cookies, history, and sessions from Chrome, Firefox, Arc, and 20+ browsers so browser panes start authenticated
-- **Custom commands** — Define project-specific actions in [`cmux.json`](https://cmux.com/docs/custom-commands) that launch from the command palette
-- **Scriptable** — CLI and socket API to create workspaces, split panes, send keystrokes, and automate the browser
-- **Native macOS app** — Built with Swift and AppKit, not Electron. Fast startup, low memory.
-- **Ghostty compatible** — Reads your existing `~/.config/ghostty/config` for themes, fonts, and colors
-- **GPU-accelerated** — Powered by libghostty for smooth rendering
+## How it works
 
-## Install
-
-### DMG (recommended)
-
-<a href="https://github.com/manaflow-ai/cmux/releases/latest/download/cmux-macos.dmg">
-  <img src="./docs/assets/macos-badge.png" alt="Download cmux for macOS" width="180" />
-</a>
-
-Open the `.dmg` and drag cmux to your Applications folder. cmux auto-updates via Sparkle, so you only need to download once.
-
-### Homebrew
-
-```bash
-brew tap manaflow-ai/cmux
-brew install --cask cmux
+```mermaid
+flowchart LR
+    subgraph mac[Mac]
+        UC[UniConnect]
+        SNAP[(Session snapshot<br/>no secrets)]
+        VAULT[(Vault<br/>AES-256-GCM)]
+        KEY[[Master key<br/>0600 file + Keychain mirror]]
+        HOOKS[Claude Code hooks<br/>session ids]
+        EXPORT[(Encrypted export<br/>PBKDF2 + AES-GCM)]
+    end
+    subgraph srv[Server]
+        TMUX1[tmux session uc-claude-1a2b]
+        TMUX2[tmux session uc-logs-9f01]
+    end
+    UC -- autosave every 8 s --> SNAP
+    UC -- connect commands --> VAULT
+    KEY -. decrypts .-> VAULT
+    HOOKS --> UC
+    UC -- "ssh -t … tmux new-session -A -D" --> TMUX1
+    UC -- "ssh -t … tmux new-session -A -D" --> TMUX2
+    UC -- passphrase --> EXPORT
 ```
 
-To update later:
+1. cmux's snapshot (`~/Library/Application Support/cmux/session-*.json`) gains two optional fields: a per-workspace profile (`local` or `ssh`, plus an opaque credential id) and a per-terminal tmux session name.
+2. The connect command behind that credential id lives in `uniconnect/vault.uc`, sealed with a 256-bit master key.
+3. On restore, every terminal that has a tmux name gets a one-shot launcher script that runs the connect command with `-t` and the tmux attach. Scrollback comes from tmux, not from the local replay.
+4. Local terminals follow cmux's own agent-resume path; UniConnect only forces the permissions flag.
+
+## Local workspaces
+
+<img src="docs/assets/new-box-local.png" alt="New box sheet with the Local tab selected: name, folder picker and a color grid" width="520">
+
+Pick a folder, a name and a color. Windows keep their working directory, custom title, splits and, when Claude Code ran inside them, the session id detected by the bundled `claude` wrapper. The restore command is built by cmux's `AgentResumeArgv`; UniConnect appends `--dangerously-skip-permissions` when it is missing and the injected settings carry `skipDangerousModePermissionPrompt`, so nothing stops on a Yes/No prompt.
+
+## SSH + tmux workspaces
+
+<img src="docs/assets/ssh-empty-state.png" alt="Full-screen empty state of a new SSH box: server label, tmux status log and the first-window form" width="900">
+
+1. Paste the full connect command: `ssh user@host`, `ssh -i key.pem -p 2222 user@host`, `sshpass -p '…' ssh user@host`, ProxyJump options, anything that ends in an ssh destination. Client options (`-t`, `StrictHostKeyChecking=accept-new`, keep-alives) are inserted right after the `ssh` word, so wrappers keep working.
+2. UniConnect connects with `sh -s` and checks tmux. If it is missing it reports OS, package manager and whether root or password-less sudo is available, and installs only after you confirm.
+3. Create windows. Each one asks for a visible name and an internal tmux id (`uc-<slug>-<4 hex>` by default). Duplicate ids inside a box are flagged.
+
+<img src="docs/assets/ssh-windows.png" alt="An SSH box with several tabs, each attached to its own tmux session" width="900">
+
+Closing a tab only ends the ssh client; the tmux session and whatever runs inside it stay alive. The tab moves to *Closed* with its tmux id, ready to be reopened.
+
+## Session persistence
+
+- Autosave every 8 seconds, atomic writes, unchanged snapshots skipped.
+- A save is forced right after unlocking and after every UniConnect change (new box, new window, color, connection edit, import).
+- *Persist now* (`⌘⌥S`) additionally writes `uniconnect/backup.uc` and a timestamped copy under `uniconnect/history/`.
+- Snapshot schema is versioned; the UniConnect fields are optional, so snapshots written by plain cmux still load.
+
+## Security model
+
+**Where secrets live**
+
+| Data | Location | Protection |
+|---|---|---|
+| Connect commands (may embed `sshpass` passwords) | `uniconnect/vault.uc` | AES-256-GCM, master key |
+| Master key | `uniconnect/.master-key` (0600) + login Keychain mirror | macOS account, FileVault, app lock |
+| Session snapshot | `session-*.json` | Contains no secrets: only a credential id and tmux names |
+| Portable export | `*.uniconnect` | AES-256-GCM, key from PBKDF2-HMAC-SHA256 (600 000 iterations), random 16-byte salt and 12-byte nonce, KDF parameters in the header, passphrase never stored |
+
+**Authentication.** Touch ID via `LocalAuthentication` at launch, after crash or reboot, on *Lock*, and before export, import or revealing a connect command. On Macs without Touch ID, with no enrolled fingers, or after biometric lockout, the same system dialog falls back to the account password and the lock screen says so. There is no silent bypass; the only way to disable the gate is the `UNICONNECT_DISABLE_LOCK=1` environment variable meant for automated tests.
+
+**Integrity.** GCM authentication covers the payload and the format name. Any modified, truncated or foreign file is rejected before anything is imported; wrong passphrase and tampering produce the same error on purpose.
+
+**What it does not defend against.** Malware running as your user while the session is unlocked (it can read the master key file), an attacker with root, screen capture of an unlocked window, a compromised server, and the fact that `sshpass` exposes the password in the local process list for the duration of the connection, exactly as it does when typed by hand. The full threat model and the reasons behind the file-based master key are in [`docs/UNICONNECT.md`](docs/UNICONNECT.md).
+
+## Installation
+
+UniConnect is distributed as source. Build it once with Xcode 26 and install the resulting bundle:
 
 ```bash
-brew upgrade --cask cmux
+git clone --recurse-submodules https://github.com/Unixcision/uniconnect.git
+cd uniconnect
+./scripts/setup.sh            # submodules, prebuilt GhosttyKit, git hooks
+bash ../uniconnect-install-patched.sh   # Release build, ad-hoc signature, /Applications
 ```
 
-On first launch, macOS may ask you to confirm opening an app from an identified developer. Click **Open** to proceed.
+The installer keeps the bundle id `com.cmuxterm.app` so existing cmux sessions, preferences and the `cmux` CLI keep working, backs up the previous app to the Desktop, and disables Sparkle update checks on the installed copy.
 
-## Why cmux?
-
-I run a lot of Claude Code and Codex sessions in parallel. I was using Ghostty with a bunch of split panes, and relying on native macOS notifications to know when an agent needed me. But Claude Code's notification body is always just "Claude is waiting for your input" with no context, and with enough tabs open I couldn't even read the titles anymore.
-
-I tried a few coding orchestrators but most of them were Electron/Tauri apps and the performance bugged me. I also just prefer the terminal since GUI orchestrators lock you into their workflow. So I built cmux as a native macOS app in Swift/AppKit. It uses libghostty for terminal rendering and reads your existing Ghostty config for themes, fonts, and colors.
-
-The main additions are the sidebar and notification system. The sidebar has vertical tabs that show git branch, linked PR status/number, working directory, listening ports, and the latest notification text for each workspace. The notification system picks up terminal sequences (OSC 9/99/777) and has a CLI (`cmux notify`) you can wire into agent hooks for Claude Code, OpenCode, etc. When an agent is waiting, its pane gets a blue ring and the tab lights up in the sidebar, so I can tell which one needs me across splits and tabs. Cmd+Shift+U jumps to the most recent unread.
-
-The in-app browser has a scriptable API ported from [agent-browser](https://github.com/vercel-labs/agent-browser). Agents can snapshot the accessibility tree, get element refs, click, fill forms, and evaluate JS. You can split a browser pane next to your terminal and have Claude Code interact with your dev server directly.
-
-Everything is scriptable through the CLI and socket API — create workspaces/tabs, split panes, send keystrokes, open URLs in the browser.
-
-## The Zen of cmux
-
-cmux is not prescriptive about how developers hold their tools. It's a terminal and browser with a CLI, and the rest is up to you.
-
-cmux is a primitive, not a solution. It gives you a terminal, a browser, notifications, workspaces, splits, tabs, and a CLI to control all of it. cmux doesn't force you into an opinionated way to use coding agents. What you build with the primitives is yours.
-
-The best developers have always built their own tools. Nobody has figured out the best way to work with agents yet, and the teams building closed products definitely haven't either. The developers closest to their own codebases will figure it out first.
-
-Give a million developers composable primitives and they'll collectively find the most efficient workflows faster than any product team could design top-down.
-
-## Documentation
-
-For more info on how to configure cmux, [head over to our docs](https://cmux.com/docs/getting-started?utm_source=readme).
-
-## Keyboard Shortcuts
-
-### Workspaces
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘ N | New workspace |
-| ⌘ 1–8 | Jump to workspace 1–8 |
-| ⌘ 9 | Jump to last workspace |
-| ⌃ ⌘ ] | Next workspace |
-| ⌃ ⌘ [ | Previous workspace |
-| ⌘ ⇧ W | Close workspace |
-| ⌘ ⇧ R | Rename workspace |
-| ⌥ ⌘ E | Edit workspace description |
-| ⌘ B | Toggle sidebar |
-| ⌥ ⌘ B | Toggle right sidebar |
-| ⌘ ⇧ E | Toggle right sidebar focus |
-
-### Surfaces
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘ T | New surface |
-| ⌘ ⇧ ] | Next surface |
-| ⌘ ⇧ [ | Previous surface |
-| ⌃ Tab | Next surface |
-| ⌃ ⇧ Tab | Previous surface |
-| ⌃ 1–8 | Jump to surface 1–8 |
-| ⌃ 9 | Jump to last surface |
-| ⌘ W | Close surface |
-
-### Split Panes
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘ D | Split right |
-| ⌘ ⇧ D | Split down |
-| ⌥ ⌘ ← → ↑ ↓ | Focus pane directionally |
-| ⌘ ⇧ H | Flash focused panel |
-
-### Browser
-
-Browser developer-tool shortcuts follow Safari defaults and are customizable in `Settings → Keyboard Shortcuts`.
-Command palette navigation shortcuts, including ⌃ P, are also customizable and can be cleared so the keypress reaches the active terminal.
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘ ⇧ L | Open browser in split |
-| ⌘ L | Focus address bar |
-| ⌘ [ | Back |
-| ⌘ ] | Forward |
-| ⌘ R | Reload page |
-| ⌥ ⌘ I | Toggle Developer Tools (Safari default) |
-| ⌥ ⌘ C | Show JavaScript Console (Safari default) |
-
-### Notifications
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘ I | Show notifications panel |
-| ⌘ ⇧ U | Jump to latest unread |
-| ⌥ ⌘ U | Toggle current item unread state |
-| ⌃ ⌘ U | Mark current item as oldest unread and jump to next latest unread |
-
-### Find
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘ F | Find |
-| ⌘ ⇧ F | Find in directory |
-| ⌘ G / ⌥ ⌘ G | Find next / previous |
-| ⌥ ⌘ ⇧ F | Hide find bar |
-| ⌘ E | Use selection for find |
-
-### Terminal
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘ K | Clear scrollback |
-| ⌘ C | Copy (with selection) |
-| ⌘ V | Paste |
-| ⌘ + / ⌘ - | Increase / decrease font size |
-| ⌘ 0 | Reset font size |
-
-### Window
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘ ⇧ N | New window |
-| ⌘ ⇧ O | Reopen previous session |
-| ⌘ , | Settings |
-| ⌘ ⇧ , | Reload configuration |
-| ⌘ Q | Quit |
-
-## Nightly Builds
-
-[Download cmux NIGHTLY](https://github.com/manaflow-ai/cmux/releases/download/nightly/cmux-nightly-macos.dmg)
-
-cmux NIGHTLY is a separate app with its own bundle ID, so it runs alongside the stable version. Built automatically from the latest `main` commit and auto-updates via its own Sparkle feed.
-
-Report nightly bugs on [GitHub Issues](https://github.com/manaflow-ai/cmux/issues) or in [#nightly-bugs on Discord](https://discord.gg/xsgFEVrWCZ).
-
-## Session restore
-
-Quitting cmux saves the current session. On relaunch, cmux restores app-owned
-state:
-- Window/workspace/pane layout
-- Working directories
-- Terminal scrollback (best effort)
-- Browser URL and navigation history
-
-cmux does not checkpoint arbitrary live process state. tmux, vim, shells, and
-unsupported terminal apps reopen as normal terminals.
-
-Supported agent sessions can resume when hooks have saved a native session ID.
-Install hooks after installing the agent CLI so its binary is on `PATH`:
+## Build from source
 
 ```bash
-cmux hooks setup
-cmux hooks setup codex
-cmux hooks setup --agent opencode
+./scripts/ensure-ghosttykit.sh                       # downloads the pinned GhosttyKit.xcframework
+CMUX_SKIP_ZIG_BUILD=1 ./scripts/reload.sh --tag dev  # Debug build: "cmux DEV dev.app"
+CMUX_SKIP_ZIG_BUILD=1 xcodebuild test -project cmux.xcodeproj -scheme cmux-unit \
+  -destination 'platform=macOS' -only-testing:cmuxTests/UniConnectTests
 ```
 
-`cmux hooks setup` installs supported agents it can find and prints a summary
-for skipped agents. Supported resume integrations include Claude Code, Codex,
-Grok, OpenCode, Pi, Amp, Cursor CLI, Gemini, Rovo Dev, Copilot, CodeBuddy,
-Factory, and Qoder. Claude Code is handled by the cmux Claude wrapper when Claude
-integration is enabled in Settings.
+Requirements: macOS 14+, Xcode 26, zig 0.15.2 only if you want to rebuild GhosttyKit yourself.
 
-Advanced users and integrations can attach a custom resume command to the
-current terminal surface. This is useful for tools with their own durable state,
-such as tmux sessions or custom agent CLIs:
+## Usage
 
-```bash
-cmux surface resume set --kind tmux --checkpoint work --shell "tmux attach -t work"
-cmux surface resume show --json
-cmux surface resume clear --checkpoint work
+| Action | Where |
+|---|---|
+| New box (Local or SSH) | `+` in the title bar, or **UniConnect ▸ Nueva caja…** |
+| New tmux window in an SSH box | `⌘T`, the tab-bar `+`, or **UniConnect ▸ Nueva ventana tmux…** |
+| Edit the connect command | **UniConnect ▸ Editar conexión SSH…** (Touch ID) |
+| Persist now | `⌘⌥S` |
+| Export / import configuration | **UniConnect ▸ Exportar… / Importar…** |
+| Seed template for a first configuration | **UniConnect ▸ Guardar plantilla inicial…** |
+| Reopen or permanently delete closed items | **UniConnect ▸ Cerradas…** |
+| Lock | `⌘⌃L` |
+
+First-run seeding: put a plain JSON seed (see the template) in a file and launch once with `UNICONNECT_IMPORT_SEED=/path/to/seed.json`. The file is applied a single time; afterwards use the encrypted export.
+
+## Backup and restore
+
+```text
+~/Library/Application Support/cmux/
+├── session-com.cmuxterm.app.json        # cmux snapshot + UniConnect fields (no secrets)
+└── uniconnect/
+    ├── vault.uc                         # connect commands, encrypted
+    ├── .master-key                      # 0600
+    ├── backup.uc                        # last "Persist now"
+    ├── history/backup-<timestamp>.uc    # 30 rotating copies
+    └── launchers/                       # one-shot zsh launchers, purged hourly
 ```
 
-The binding stays attached to the cmux surface. Public CLI or socket-created
-bindings are stored for inspection and manual restore unless you approve a
-signed command prefix for automatic restore. Approved prefixes are also bound to
-the working directory and exact environment values, when present. Review or edit
-approvals in **Settings > Terminal > Resume Commands**. cmux only auto-runs
-resume bindings it marks trusted, such as live process-detected tmux bindings or
-user-approved prefixes. Sensitive environment keys such as tokens, passwords,
-secrets, and API keys are dropped before a resume binding is stored.
-
-To keep restored agent terminals idle instead of automatically running their resume commands,
-turn off **Settings > Terminal > Resume Agent Sessions on Reopen** or set this in
-`~/.config/cmux/cmux.json`:
+Export writes a `.uniconnect` container:
 
 ```json
 {
-  "terminal": {
-    "autoResumeAgentSessions": false
-  }
+  "format": "uniconnect-export", "version": 1,
+  "meta": { "app": "UniConnect", "savedAt": "…", "workspaces": 12 },
+  "payload": { "format": "uniconnect-aesgcm", "kdf": "pbkdf2-sha256", "iterations": 600000,
+               "salt": "…", "nonce": "…", "ciphertext": "…", "tag": "…" }
 }
 ```
 
-This only disables automatic agent resume commands. cmux still restores the saved layout,
-working directories, scrollback, and browser history.
+Import authenticates you, validates the container, asks for the passphrase, shows a preview without secrets and lets you pick which boxes to create. Boxes whose name already exists are unchecked by default.
 
-If you need to reapply the last saved snapshot manually, use:
-- `File > Reopen Previous Session`
-- `⌘ ⇧ O`
-- `cmux restore-session`
+## Tech stack
 
-Under the hood, cmux writes a versioned snapshot under
-`~/Library/Application Support/cmux/` and agent hooks write session mappings
-under `~/.cmuxterm/`. On restore, cmux rebuilds the layout first, then runs the
-supported agent's native resume command when automatic agent resume is enabled.
+- **Swift 6**, **SwiftUI** for the UniConnect screens, **AppKit** for sheets, alerts and the lock window.
+- **Ghostty** (`GhosttyKit.xcframework`) as the terminal engine, inherited from cmux.
+- **OpenSSH** client and **tmux** on the server; no daemon to install.
+- **CryptoKit** (AES-GCM, SHA-256) and **CommonCrypto** (PBKDF2).
+- **Security.framework** Keychain and **LocalAuthentication**.
+- **XCTest** unit tests (`cmuxTests/UniConnectTests.swift`).
 
-Read the full guide at <https://cmux.com/docs/session-restore>.
+## Architecture
 
-## Star History
+```text
+Sources/UniConnect/
+├── UniConnectModels.swift       # profiles, readable document, errors
+├── UniConnectVault.swift        # AES-GCM envelope, PBKDF2, master key, vault
+├── UniConnectSSH.swift          # connect-command surgery, tmux command, launcher, probe/installer
+├── UniConnectBackup.swift       # document builder, persist now, export/import, seed template
+├── UniConnectAppLock.swift      # Touch ID gate, Lock, fallback policy
+├── UniConnectViews.swift        # new-box sheet, SSH empty state, new-window sheet, passphrase, preview
+└── UniConnectCoordinator.swift  # glue with TabManager/Workspace, menu actions, Closed items
+```
 
-<a href="https://star-history.com/#manaflow-ai/cmux&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=manaflow-ai/cmux&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=manaflow-ai/cmux&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=manaflow-ai/cmux&type=Date" width="600" />
- </picture>
-</a>
+Hooks into cmux are deliberately small: two optional snapshot fields, three stored properties on `Workspace`, a startup-command override in the panel restore path, an overlay on `WorkspaceContentView`, the `+` and `⌘T` intercepts, the UniConnect menu, and one line in `AgentResumeArgv`.
+
+## Roadmap
+
+- Per-window connection state (connecting / connected / failed) with individual retry.
+- Staggered reconnection when many SSH boxes restore at once.
+- Idle auto-lock timeout.
+- Local / SSH badge and last-saved indicator in the sidebar.
+- Explicit "terminate remote tmux session" action, separate from closing.
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| App hangs at launch on a fresh build | macOS is waiting to show a permission dialog (Desktop access, local network, Keychain). Unlock the screen and answer it. |
+| "tmux no está instalado" inside a window | The probe was skipped or the server changed; open **Editar conexión** and re-run the check, or install tmux manually. |
+| Window reconnects to an empty shell | The tmux session id changed on the server; compare with `tmux ls` and reopen the tab from *Closed* with the right id. |
+| Claude prompts "Bypass Permissions mode" on restore | Make sure `~/.claude/settings.json` has `"skipDangerousModePermissionPrompt": true`; the bundled wrapper also injects it. |
+| Vault unreadable after reinstall | `.master-key` and the Keychain mirror were both removed. Import your last encrypted export. |
 
 ## Contributing
 
-Ways to get involved:
-
-- Follow us on X for updates [@manaflowai](https://x.com/manaflowai), [@lawrencecchen](https://x.com/lawrencecchen), and [@austinywang](https://x.com/austinywang)
-- Join the conversation on [Discord](https://discord.gg/xsgFEVrWCZ)
-- Create and participate in [GitHub issues](https://github.com/manaflow-ai/cmux/issues) and [discussions](https://github.com/manaflow-ai/cmux/discussions)
-- Let us know what you're building with cmux
-
-## Community
-
-- [Discord](https://discord.gg/xsgFEVrWCZ)
-- [GitHub](https://github.com/manaflow-ai/cmux)
-- [X / Twitter](https://twitter.com/manaflowai)
-- [YouTube](https://www.youtube.com/channel/UCAa89_j-TWkrXfk9A3CbASw)
-- [LinkedIn](https://www.linkedin.com/company/manaflow-ai/)
-- [Reddit](https://www.reddit.com/r/cmux/)
-
-## Founder's Edition
-
-cmux is free, open source, and always will be. If you'd like to support development and get early access to what's coming next:
-
-**[Get Founder's Edition](https://buy.stripe.com/3cI00j2Ld0it5OU33r5EY0q)**
-
-- **Prioritized feature requests/bug fixes**
-- **Early access: cmux AI that gives you context on every workspace, tab and panel**
-- **Early access: iOS app with terminals synced between desktop and phone**
-- **Early access: Cloud VMs**
-- **Early access: Voice mode**
-- **My personal iMessage/WhatsApp**
+Issues and pull requests are welcome on [Unixcision/uniconnect](https://github.com/Unixcision/uniconnect). Keep `cmux.xcodeproj/project.pbxproj` normalized (`scripts/normalize-pbxproj.py`), wire new tests into the project, and never commit secrets, hostnames or screenshots with private data.
 
 ## License
 
-cmux is open source under [GPL-3.0-or-later](LICENSE).
+UniConnect is released under the [MIT License](LICENSE), the same license as cmux. Third-party notices are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
-If your organization cannot comply with GPL, a commercial license is available. Contact [founders@manaflow.com](mailto:founders@manaflow.com) for details.
+## Credits and upstream
+
+UniConnect is built on **[cmux](https://github.com/manaflow-ai/cmux)** by [Manaflow](https://github.com/manaflow-ai) and on **[Ghostty](https://github.com/ghostty-org/ghostty)** by Mitchell Hashimoto and contributors. The `upstream` remote points at `manaflow-ai/cmux` so improvements can be merged back in; the original README lives in that repository.

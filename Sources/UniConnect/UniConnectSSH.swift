@@ -135,21 +135,48 @@ enum UniConnectSSH {
 // MARK: - Server probe: verify / install tmux
 
 final class UniConnectTmuxProbe {
+    enum Mode { case check, install }
     enum Outcome {
         case ready(version: String)
+        case needsInstall(detail: String)
         case failed(String)
     }
 
     private var process: Process?
+    private let mode: Mode
     private let onLine: (String) -> Void
     private let onFinish: (Outcome) -> Void
     private var sawOK: String?
+    private var sawMissing: String?
     private var buffer = ""
 
-    init(onLine: @escaping (String) -> Void, onFinish: @escaping (Outcome) -> Void) {
+    init(mode: Mode = .check, onLine: @escaping (String) -> Void, onFinish: @escaping (Outcome) -> Void) {
+        self.mode = mode
         self.onLine = onLine
         self.onFinish = onFinish
     }
+
+    /// Check-only script: reports OS / package manager / sudo situation without touching anything.
+    static let checkScript = """
+    set -u
+    if command -v tmux >/dev/null 2>&1; then
+      echo "UC_TMUX_OK $(tmux -V 2>/dev/null)"
+      exit 0
+    fi
+    OS="$(uname -s 2>/dev/null)"
+    DISTRO=""
+    if [ -r /etc/os-release ]; then DISTRO="$(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-$ID}")"; fi
+    PM="desconocido"
+    for c in apt-get dnf yum apk pacman zypper brew; do
+      if command -v "$c" >/dev/null 2>&1; then PM="$c"; break; fi
+    done
+    PERM="root"
+    if [ "$(id -u)" != "0" ]; then
+      if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then PERM="sudo sin contraseña"; else PERM="SIN permisos de instalación"; fi
+    fi
+    echo "UC_TMUX_MISSING os=$OS distro=$DISTRO pm=$PM perm=$PERM"
+    exit 0
+    """
 
     static let remoteScript = """
     set -u
@@ -191,6 +218,7 @@ final class UniConnectTmuxProbe {
     """
 
     func start(connectCommand: String) {
+        let script = mode == .install ? Self.remoteScript : Self.checkScript
         let client = UniConnectSSH.injectingOptions(["-T"] + UniConnectSSH.baseClientOptions, into: connectCommand)
         let commandLine = client + " " + UniConnectSSH.shellQuote("sh -s")
 
@@ -221,6 +249,8 @@ final class UniConnectTmuxProbe {
                 self.flushBuffer()
                 if let version = self.sawOK {
                     self.onFinish(.ready(version: version))
+                } else if let detail = self.sawMissing {
+                    self.onFinish(.needsInstall(detail: detail))
                 } else {
                     self.onFinish(.failed("la conexión terminó con código \(proc.terminationStatus)"))
                 }
@@ -233,7 +263,7 @@ final class UniConnectTmuxProbe {
             onFinish(.failed(error.localizedDescription))
             return
         }
-        stdin.fileHandleForWriting.write(Data((Self.remoteScript + "\nexit\n").utf8))
+        stdin.fileHandleForWriting.write(Data((script + "\nexit\n").utf8))
         try? stdin.fileHandleForWriting.close()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 240) { [weak self] in
@@ -275,7 +305,10 @@ final class UniConnectTmuxProbe {
             return
         }
         if line.hasPrefix("UC_TMUX_MISSING") {
-            onLine("⏳ " + line.replacingOccurrences(of: "UC_TMUX_MISSING:", with: "").trimmingCharacters(in: .whitespaces))
+            let detail = line.replacingOccurrences(of: "UC_TMUX_MISSING:", with: "")
+                .replacingOccurrences(of: "UC_TMUX_MISSING", with: "").trimmingCharacters(in: .whitespaces)
+            if mode == .check { sawMissing = detail.isEmpty ? "tmux no está instalado" : detail }
+            onLine("⏳ tmux no está instalado" + (detail.isEmpty ? "" : " (\(detail))"))
             return
         }
         if !line.trimmingCharacters(in: .whitespaces).isEmpty {
