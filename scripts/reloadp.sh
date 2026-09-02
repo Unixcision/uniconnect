@@ -2,10 +2,10 @@
 set -euo pipefail
 
 xcodebuild -project cmux.xcodeproj -scheme cmux -configuration Release -destination 'platform=macOS' build
-pkill -x cmux || true
+pkill -x UniConnect || true
 sleep 0.2
 APP_PATH="$(
-  find "$HOME/Library/Developer/Xcode/DerivedData" -path "*/Build/Products/Release/cmux.app" -print0 \
+  find "$HOME/Library/Developer/Xcode/DerivedData" -path "*/Build/Products/Release/UniConnect.app" -print0 \
   | xargs -0 /usr/bin/stat -f "%m %N" 2>/dev/null \
   | sort -nr \
   | head -n 1 \
@@ -23,7 +23,7 @@ echo "  ${APP_PATH}"
 # Don't leak that into cmux, otherwise `git diff` won't page even with PAGER=less.
 env -u GIT_PAGER -u GH_PAGER open -g "$APP_PATH"
 
-APP_PROCESS_PATH="${APP_PATH}/Contents/MacOS/cmux"
+APP_PROCESS_PATH="${APP_PATH}/Contents/MacOS/UniConnect"
 ATTEMPT=0
 MAX_ATTEMPTS=20
 while [[ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]]; do

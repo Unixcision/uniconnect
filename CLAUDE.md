@@ -1,4 +1,14 @@
-# cmux agent notes
+# UniConnect agent notes
+
+UniConnect is a fork of cmux (upstream: manaflow-ai/cmux). The product, app bundle
+and executable are named **UniConnect** (`UniConnect.app`, Debug: `UniConnect DEV`),
+the bundle id stays `com.cmuxterm.app`, and the CLI keeps its `cmux` name. The
+UniConnect layer lives in `Sources/UniConnect/` and is documented in
+`docs/UNICONNECT.md`; the execution checklist is `UNICONNECT_PLAN.md`. Everything
+below is the inherited cmux workflow and still applies (replace `cmux DEV` with
+`UniConnect DEV` in app names).
+
+# cmux agent notes (inherited)
 
 ## Initial setup
 

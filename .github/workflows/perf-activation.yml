@@ -141,7 +141,7 @@ jobs:
       - name: Run Cmd-Tab activation benchmark
         run: |
           set -euo pipefail
-          APP_PATH="$HOME/Library/Developer/Xcode/DerivedData/cmux-$PERF_TAG/Build/Products/Debug/cmux DEV $PERF_TAG.app"
+          APP_PATH="$HOME/Library/Developer/Xcode/DerivedData/cmux-$PERF_TAG/Build/Products/Debug/UniConnect DEV $PERF_TAG.app"
           # The GitHub Actions runner process runs in launchd's system
           # bootstrap, not the console user's Aqua session, so windows
           # created by apps launched via NSWorkspace.openApplication do
@@ -217,5 +217,5 @@ jobs:
       - name: Cleanup tagged app
         if: always()
         run: |
-          pkill -f "cmux DEV ${PERF_TAG}.app/Contents/MacOS/cmux DEV" || true
+          pkill -f "UniConnect DEV ${PERF_TAG}.app/Contents/MacOS/UniConnect DEV" || true
           rm -f "/tmp/cmux-debug-${PERF_TAG}.sock"

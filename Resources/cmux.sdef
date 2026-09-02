@@ -2,7 +2,7 @@
 <!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
 
 <dictionary title="cmux Scripting Dictionary">
-  <suite name="cmux Suite" code="Cmux" description="cmux scripting support.">
+  <suite name="UniConnect Suite" code="Cmux" description="cmux scripting support.">
     <class name="application" code="capp" description="The cmux application.">
       <cocoa class="NSApplication"/>
       <property name="name" code="pnam" type="text" access="r" description="The name of the application."/>

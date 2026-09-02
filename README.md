@@ -158,7 +158,7 @@ The installer keeps the bundle id `com.cmuxterm.app` so existing cmux sessions, 
 
 ```bash
 ./scripts/ensure-ghosttykit.sh                       # downloads the pinned GhosttyKit.xcframework
-CMUX_SKIP_ZIG_BUILD=1 ./scripts/reload.sh --tag dev  # Debug build: "cmux DEV dev.app"
+CMUX_SKIP_ZIG_BUILD=1 ./scripts/reload.sh --tag dev  # Debug build: "UniConnect DEV dev.app"
 CMUX_SKIP_ZIG_BUILD=1 xcodebuild test -project cmux.xcodeproj -scheme cmux-unit \
   -destination 'platform=macOS' -only-testing:cmuxTests/UniConnectTests
 ```

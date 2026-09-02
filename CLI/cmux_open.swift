@@ -936,7 +936,7 @@ extension CMUXCLI {
             ?? NSHomeDirectory()
         let candidate = URL(fileURLWithPath: homePath, isDirectory: true)
             .appendingPathComponent("Library/Developer/Xcode/DerivedData/cmux-\(tag)", isDirectory: true)
-            .appendingPathComponent("Build/Products/Debug/cmux DEV \(tag).app", isDirectory: true)
+            .appendingPathComponent("Build/Products/Debug/UniConnect DEV \(tag).app", isDirectory: true)
             .appendingPathComponent("Contents/Resources/bin/cmux", isDirectory: false)
             .standardizedFileURL
 

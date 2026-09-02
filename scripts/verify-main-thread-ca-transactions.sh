@@ -22,14 +22,14 @@ if [ ! -d "$APP_PATH" ]; then
 fi
 
 APP_BASENAME="$(basename "$APP_PATH")"
-if [ "$APP_BASENAME" = "cmux DEV.app" ] && [ "${CMUX_ALLOW_UNTAGGED_CA_REGRESSION:-0}" != "1" ]; then
-  echo "ERROR: refusing to launch untagged cmux DEV.app without CMUX_ALLOW_UNTAGGED_CA_REGRESSION=1" >&2
+if [ "$APP_BASENAME" = "UniConnect DEV.app" ] && [ "${CMUX_ALLOW_UNTAGGED_CA_REGRESSION:-0}" != "1" ]; then
+  echo "ERROR: refusing to launch untagged UniConnect DEV.app without CMUX_ALLOW_UNTAGGED_CA_REGRESSION=1" >&2
   exit 2
 fi
 
-BINARY="$APP_PATH/Contents/MacOS/cmux DEV"
+BINARY="$APP_PATH/Contents/MacOS/UniConnect DEV"
 if [ ! -x "$BINARY" ]; then
-  BINARY="$APP_PATH/Contents/MacOS/cmux"
+  BINARY="$APP_PATH/Contents/MacOS/UniConnect"
 fi
 
 if [ ! -x "$BINARY" ]; then
