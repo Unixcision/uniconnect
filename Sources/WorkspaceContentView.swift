@@ -299,6 +299,11 @@ struct WorkspaceContentView: View {
         // cannot remain stacked above portal-hosted browser content.
         .id(splitZoomRenderIdentity)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay {
+            if workspace.uniConnectShowsWelcome {
+                UniConnectSSHWelcomeHost(workspace: workspace)
+            }
+        }
         .onAppear {
             updateAgentHibernationPresentationVisibility()
             syncBonsplitNotificationBadges()

@@ -1389,6 +1389,8 @@ struct SessionTerminalPanelSnapshot: Codable, Sendable {
     /// Whether the agent process was actively running when this snapshot was captured.
     /// Nil means unknown (legacy snapshots); treated as true for backwards compatibility.
     var wasAgentRunning: Bool?
+    /// UniConnect: tmux session name this terminal is bound to (SSH workspaces).
+    var uniConnectTmuxSession: String? = nil
 
     init(
         workingDirectory: String? = nil,
@@ -1400,8 +1402,10 @@ struct SessionTerminalPanelSnapshot: Codable, Sendable {
         textBoxDraft: SessionTextBoxInputDraftSnapshot? = nil,
         isRemoteTerminal: Bool? = nil,
         remotePTYSessionID: String? = nil,
-        wasAgentRunning: Bool? = nil
+        wasAgentRunning: Bool? = nil,
+        uniConnectTmuxSession: String? = nil
     ) {
+        self.uniConnectTmuxSession = uniConnectTmuxSession
         self.workingDirectory = workingDirectory
         self.scrollback = scrollback
         self.agent = agent
@@ -1809,6 +1813,8 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     var progress: SessionProgressSnapshot?
     var gitBranch: SessionGitBranchSnapshot?
     var remote: SessionRemoteWorkspaceSnapshot?
+    /// UniConnect: Local/SSH profile (no secrets; the connect command lives in the vault).
+    var uniConnect: UniConnectWorkspaceProfile? = nil
 }
 
 struct SessionWorkspaceGroupSnapshot: Codable, Sendable, Equatable {

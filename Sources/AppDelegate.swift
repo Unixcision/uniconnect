@@ -1921,6 +1921,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         installLifecycleSnapshotObserversIfNeeded()
         prepareStartupSessionSnapshotIfNeeded()
         startSessionAutosaveTimerIfNeeded()
+        UniConnectAppLock.shared.presentLaunchGate()
 #if DEBUG
         setupJumpUnreadUITestIfNeeded()
         setupTerminalCmdClickUITestIfNeeded()
@@ -3790,6 +3791,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @discardableResult
+    // MARK: - UniConnect bridges
+
+    func uniConnectAllTabManagers() -> [TabManager] {
+        sortedMainWindowContextsForSessionSnapshot().map(\.tabManager)
+    }
+
+    func uniConnectActiveTabManager() -> TabManager? {
+        tabManager ?? sortedMainWindowContextsForSessionSnapshot().first?.tabManager
+    }
+
+    func uniConnectPersistSessionNow() {
+        _ = saveSessionSnapshot(includeScrollback: true)
+    }
+
+    func uniConnectRequestSessionSave() {
+        _ = saveSessionSnapshot(includeScrollback: false)
+    }
+
     private func saveSessionSnapshot(
         includeScrollback: Bool,
         removeWhenEmpty: Bool = false,
@@ -6976,6 +6995,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         event: NSEvent? = nil,
         debugSource: String = "newWorkspace"
     ) -> Bool {
+        if UniConnectCoordinator.isEnabled,
+           let uniConnectTabManager = preferredTabManager ?? tabManager,
+           UniConnectCoordinator.shared.interceptNewWorkspace(tabManager: uniConnectTabManager) {
+            return true
+        }
         let preferredContext = preferredTabManager.flatMap { mainWindowContext(for: $0) }
         let livePreferredContext: MainWindowContext? = {
             guard let preferredContext else { return nil }

@@ -253,7 +253,8 @@ extension Workspace {
             logEntries: logSnapshots,
             progress: progressSnapshot,
             gitBranch: gitBranchSnapshot,
-            remote: remoteConfiguration?.sessionSnapshot()
+            remote: remoteConfiguration?.sessionSnapshot(),
+            uniConnect: uniConnectProfile
         )
     }
 
@@ -289,6 +290,7 @@ extension Workspace {
         } else {
             disconnectRemoteConnection(clearConfiguration: true)
         }
+        uniConnectProfile = snapshot.uniConnect
 
         let normalizedCurrentDirectory = snapshot.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
         if !normalizedCurrentDirectory.isEmpty {
@@ -611,7 +613,8 @@ extension Workspace {
                 textBoxDraft: terminalPanel.sessionTextBoxDraftSnapshot(),
                 isRemoteTerminal: activeRemoteTerminalSurfaceIds.contains(panelId),
                 remotePTYSessionID: remotePTYSessionIDForSnapshot(panelId: panelId),
-                wasAgentRunning: agentWasRunning
+                wasAgentRunning: agentWasRunning,
+                uniConnectTmuxSession: uniConnectTmuxSessionsByPanelId[panelId]
             )
             browserSnapshot = nil
             markdownSnapshot = nil
@@ -1711,12 +1714,14 @@ extension Workspace {
             let restoredRemotePTYAttachCommand = restoredRemotePTYSessionID.map {
                 remotePTYAttachStartupCommand(sessionID: $0)
             }
+            let uniConnectStartupCommand = uniConnectRestoredStartupCommand(panelSnapshot: snapshot)
             let restoredStartupCommand =
-                restoredRemotePTYAttachCommand
+                uniConnectStartupCommand
+                ?? restoredRemotePTYAttachCommand
                 ?? restoredTmuxStartupScript?.path
                 ?? restoredBindingLaunch?.initialCommand
                 ?? restoredAgentResumeLaunch?.initialCommand
-            let restoredStartupInput = restoredRemotePTYAttachCommand == nil
+            let restoredStartupInput = (restoredRemotePTYAttachCommand == nil && uniConnectStartupCommand == nil)
                 ? (restoredBindingLaunch?.initialInput ?? restoredAgentResumeLaunch?.initialInput)
                 : nil
             let startupHandlesWorkingDirectory =
@@ -1734,6 +1739,7 @@ extension Workspace {
                 remoteConfiguration != nil && snapshot.terminal?.isRemoteTerminal == true
             let localWorkingDirectory = effectiveRemoteStartupCommand == nil &&
                 restoredRemotePTYAttachCommand == nil &&
+                uniConnectStartupCommand == nil &&
                 !restoresRemoteWorkspaceTerminalSnapshot &&
                 !startupHandlesWorkingDirectory
                 ? (suppressWorkspaceRemoteStartupCommand ? savedWorkingDirectory : workingDirectory)
@@ -1768,7 +1774,8 @@ extension Workspace {
                 )
             }
 #endif
-            let shouldReplayLocalScrollback = restoredRemotePTYAttachCommand == nil && shouldReplayScrollback
+            let shouldReplayLocalScrollback = restoredRemotePTYAttachCommand == nil
+                && uniConnectStartupCommand == nil && shouldReplayScrollback
             let restoredScrollback = shouldReplayLocalScrollback ? snapshot.terminal?.scrollback : nil
             let replayEnvironment = SessionScrollbackReplayStore.replayEnvironment(for: restoredScrollback)
             guard let terminalPanel = newTerminalSurface(
@@ -1783,6 +1790,9 @@ extension Workspace {
                 suppressWorkspaceRemoteStartupCommand: suppressWorkspaceRemoteStartupCommand
             ) else {
                 return nil
+            }
+            if let uniConnectSession = snapshot.terminal?.uniConnectTmuxSession {
+                uniConnectTmuxSessionsByPanelId[terminalPanel.id] = UniConnectSSH.sanitizedTmuxName(uniConnectSession)
             }
             if let restoredRemotePTYSessionID {
                 registerRemoteRelayIDAliases(
@@ -2265,7 +2275,7 @@ extension Workspace {
         }
     }
 
-    private func sendInputWhenReady(
+    func sendInputWhenReady(
         _ text: String,
         to panel: TerminalPanel,
         reason: WorkspacePendingTerminalInputReason = .configurationCommand
@@ -10544,6 +10554,10 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var panelPullRequests: [UUID: SidebarPullRequestState] = [:]
     @Published var surfaceListeningPorts: [UUID: [Int]] = [:]
     var agentListeningPorts: [Int] = []
+    // UniConnect: Local/SSH profile and per-panel tmux binding.
+    @Published var uniConnectProfile: UniConnectWorkspaceProfile?
+    @Published var uniConnectTmuxSessionsByPanelId: [UUID: String] = [:]
+    var uniConnectPlaceholderPanelIds: Set<UUID> = []
     @Published var remoteConfiguration: WorkspaceRemoteConfiguration?
     @Published var remoteConnectionState: WorkspaceRemoteConnectionState = .disconnected
     @Published var remoteConnectionDetail: String?
@@ -16695,6 +16709,9 @@ final class Workspace: Identifiable, ObservableObject {
     /// Create a new terminal surface in the currently focused pane
     @discardableResult
     func newTerminalSurfaceInFocusedPane(focus: Bool? = nil, initialInput: String? = nil) -> TerminalPanel? {
+        if initialInput == nil, UniConnectCoordinator.shared.interceptNewSurface(in: self) {
+            return nil
+        }
         guard let focusedPaneId = bonsplitController.focusedPaneId else { return nil }
         return newTerminalSurface(inPane: focusedPaneId, focus: focus, initialInput: initialInput)
     }

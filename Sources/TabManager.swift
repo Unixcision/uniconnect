@@ -4661,7 +4661,7 @@ class TabManager: ObservableObject {
         }
     }
 
-    private func assignGroup(workspaceId: UUID, groupId: UUID?) {
+    func assignGroup(workspaceId: UUID, groupId: UUID?) {
         guard let tab = tabs.first(where: { $0.id == workspaceId }) else { return }
         guard tab.groupId != groupId else { return }
         tab.groupId = groupId

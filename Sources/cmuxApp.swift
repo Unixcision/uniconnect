@@ -844,6 +844,44 @@ struct cmuxApp: App {
 
     @CommandsBuilder
     private var windowAndViewCommands: some Commands {
+        CommandMenu("UniConnect") {
+            Button("Nueva caja (Local o SSH)…") {
+                _ = AppDelegate.shared?.performNewWorkspaceAction(tabManager: activeTabManager, debugSource: "menu.uniconnect.newWorkspace")
+            }
+            Button("Nueva ventana tmux…") {
+                guard let workspace = activeTabManager.selectedWorkspace else { return }
+                if !UniConnectCoordinator.shared.interceptNewSurface(in: workspace) {
+                    activeTabManager.newSurface()
+                }
+            }
+            Button("Editar conexión SSH de la caja…") {
+                guard let workspace = activeTabManager.selectedWorkspace else { return }
+                UniConnectCoordinator.shared.editConnection(for: workspace)
+            }
+            Divider()
+            Button("Persistir ahora") {
+                UniConnectCoordinator.shared.persistNow()
+            }
+            .keyboardShortcut("s", modifiers: [.command, .option])
+            Button("Exportar configuración…") {
+                UniConnectCoordinator.shared.exportConfiguration()
+            }
+            Button("Importar configuración…") {
+                UniConnectCoordinator.shared.importConfiguration()
+            }
+            Button("Guardar plantilla inicial…") {
+                UniConnectCoordinator.shared.saveSeedTemplate()
+            }
+            Divider()
+            Button("Cerradas…") {
+                UniConnectCoordinator.shared.showClosedItemsMenu(tabManager: activeTabManager)
+            }
+            Button("Bloquear") {
+                UniConnectAppLock.shared.lock()
+            }
+            .keyboardShortcut("l", modifiers: [.command, .control])
+        }
+
         CommandGroup(after: .windowArrangement) {
             Button(String(localized: "menu.window.taskManager", defaultValue: "Task Manager...")) {
                 TaskManagerWindowController.shared.show()
@@ -2831,7 +2869,7 @@ private struct AboutPanelView: View {
 
             VStack(alignment: .center, spacing: 32) {
                 VStack(alignment: .center, spacing: 8) {
-                    Text(String(localized: "about.appName", defaultValue: "cmux"))
+                    Text(String(localized: "about.appName", defaultValue: "UniConnect"))
                         .bold()
                         .font(.title)
                     Text(String(localized: "about.description", defaultValue: "A Ghostty-based terminal with vertical tabs\nand a notification panel for macOS."))

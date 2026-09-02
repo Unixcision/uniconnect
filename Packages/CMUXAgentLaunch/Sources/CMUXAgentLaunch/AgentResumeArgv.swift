@@ -167,7 +167,12 @@ public struct AgentResumeArgv: Sendable, Equatable {
         guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: "claude", args: parts.tail) else {
             return nil
         }
-        return ["claude", "--resume", sessionId] + preserved
+        // UniConnect: restored sessions must never stop on a permission prompt.
+        var argv = ["claude", "--resume", sessionId] + preserved
+        if !argv.contains("--dangerously-skip-permissions") {
+            argv.append("--dangerously-skip-permissions")
+        }
+        return argv
     }
 
     private func withOption(
