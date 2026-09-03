@@ -128,3 +128,19 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 
 ## 17. Entrega final
 - [x] Informe: `docs/UNICONNECT-ENTREGA.md` (+ resumen en el chat).
+
+## Ampliación 2026-09-03 (tras CONNECT.md)
+
+- [x] A.1 Identidad completamente separada de cmux: directorio oculto, ajustes, socket, CLI, esquema de URL, punto de extensión, llavero, notificaciones, temporales y logs.
+- [x] A.2 Telemetría desactivada y enlaces de documentación apuntando al repo propio.
+- [x] A.3 Estado vacío sin consola, con acciones Nueva caja / Importar / Migrar desde cmux.
+- [x] A.4 Migración explícita desde la sesión de cmux (solo lectura).
+- [x] A.5 Ventana de bloqueo por debajo del diálogo de Touch ID.
+- [x] A.6 Pegado remoto de imágenes según el tipo de caja, sin detección por TTY.
+- [x] A.7 Validación de comandos de conexión: solo `ssh` o `sshpass`.
+- [x] A.8 Orden de cajas y ventanas persistido al instante.
+- [x] A.9 Barra lateral flotante y modo compacto con iconos de color (⌘⌥B).
+- [x] A.10 Sesión de Claude ligada a cada ventana local y restaurada siempre.
+- [x] A.11 Probe de tmux sin falsos negativos (vacía la tubería antes de decidir).
+- [x] A.12 Semilla real de 16 cajas / 31 ventanas según CONNECT.md.
+

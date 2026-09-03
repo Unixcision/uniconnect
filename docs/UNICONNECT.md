@@ -147,3 +147,11 @@ Ya no se detecta el `ssh` husmeando el TTY: manda el tipo de caja. Una caja **lo
 ## Orden de ventanas y cajas
 
 Reordenar cajas en la barra lateral o mover/reordenar ventanas dentro de una caja guarda la sesión al instante, sin esperar al autoguardado de 8 s.
+
+## Aspecto
+
+Barra lateral flotante: va separada del borde de la ventana, con esquinas de 14, material translúcido y un tinte coral muy suave. Se compacta a un carril de 64 pt con un icono de color por caja (inicial + insignia `network`/`terminal`, anillo coral en la seleccionada) desde el menú UniConnect o con ⌘⌥B. El acento de toda la app es coral (`#FF5C6E` en oscuro, `#E84664` en claro) y las pestañas de panel son píldoras redondeadas.
+
+## Sesión ligada a la ventana
+
+Cada ventana local guarda su id de sesión de Claude en el snapshot (`panels[].terminal.uniConnectClaudeSession`), igual que las ventanas SSH guardan su tmux. Al restaurar, la ventana ejecuta `cd <carpeta> && claude --dangerously-skip-permissions --resume <id>` a través de un lanzador en `$TMPDIR`; si la carpeta ya no existe, cae a `$HOME` en vez de dejar un terminal muerto. Una ventana nunca vuelve a abrirse vacía.
