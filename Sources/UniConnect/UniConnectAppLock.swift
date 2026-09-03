@@ -8,9 +8,39 @@ import LocalAuthentication
 // Locking never touches the underlying workspaces: terminals, SSH and tmux keep
 // running; the lock is a full-screen borderless window above everything.
 
+/// Seam over `LAContext` so the lock flow can be exercised without biometric hardware.
+protocol UniConnectAuthenticating {
+    func canEvaluate(_ policy: LAPolicy) -> (Bool, LAError.Code?)
+    func evaluate(_ policy: LAPolicy, reason: String, completion: @escaping (Bool, Error?) -> Void)
+}
+
+/// Production authenticator: a fresh `LAContext` per evaluation.
+struct UniConnectLocalAuthenticator: UniConnectAuthenticating {
+    func canEvaluate(_ policy: LAPolicy) -> (Bool, LAError.Code?) {
+        let context = LAContext()
+        var error: NSError?
+        let ok = context.canEvaluatePolicy(policy, error: &error)
+        return (ok, error.map { LAError.Code(rawValue: $0.code) } ?? nil)
+    }
+    func evaluate(_ policy: LAPolicy, reason: String, completion: @escaping (Bool, Error?) -> Void) {
+        let context = LAContext()
+        context.localizedCancelTitle = "Cancelar"
+        context.localizedFallbackTitle = ""
+        context.evaluatePolicy(policy, localizedReason: reason, reply: completion)
+    }
+}
+
 @MainActor
 final class UniConnectAppLock: ObservableObject {
     static let shared = UniConnectAppLock()
+
+    /// Injected for tests; production uses `UniConnectLocalAuthenticator`.
+    var authenticator: any UniConnectAuthenticating = UniConnectLocalAuthenticator()
+    /// Tests can keep the lock logic without creating screen-level windows.
+    var presentsWindows = true
+    /// Tests can force the gate on/off regardless of environment.
+    var enabledOverride: Bool?
+    var effectiveIsEnabled: Bool { enabledOverride ?? Self.isEnabled }
 
     @Published private(set) var isLocked = false
     @Published var lastError: String?
@@ -29,7 +59,7 @@ final class UniConnectAppLock: ObservableObject {
 
     func startIdleWatch() {
         idleTimer?.invalidate()
-        guard Self.isEnabled else { return }
+        guard effectiveIsEnabled else { return }
         idleTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.checkIdle() }
         }
@@ -57,7 +87,7 @@ final class UniConnectAppLock: ObservableObject {
     /// Called at launch. Presents the lock and authenticates immediately.
     func presentLaunchGate() {
         startIdleWatch()
-        guard Self.isEnabled, !isLocked else {
+        guard effectiveIsEnabled, !isLocked else {
             scheduleStartupSeed()
             return
         }
@@ -82,6 +112,7 @@ final class UniConnectAppLock: ObservableObject {
         for window in NSApp.windows where !(window is UniConnectLockWindow) {
             window.sharingType = .none
         }
+        guard presentsWindows else { return }
         showLockWindows()
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -90,29 +121,24 @@ final class UniConnectAppLock: ObservableObject {
     /// or biometry is locked out after too many failures, we fall back to the macOS
     /// account password through the same system dialog. That fallback is announced
     /// on screen; there is never a silent bypass.
-    private static func policy() -> (LAPolicy, String?) {
-        let probe = LAContext()
-        var error: NSError?
-        let available = probe.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
-        return UniConnectAuthPolicy.resolve(biometricsAvailable: available, errorCode: error.map { LAError.Code(rawValue: $0.code) } ?? nil)
+    private func policy() -> (LAPolicy, String?) {
+        let (available, code) = authenticator.canEvaluate(.deviceOwnerAuthenticationWithBiometrics)
+        return UniConnectAuthPolicy.resolve(biometricsAvailable: available, errorCode: code)
     }
 
     func authenticate() {
         guard isLocked, !isAuthenticating else { return }
         isAuthenticating = true
         lastError = nil
-        let (policy, fallbackNotice) = Self.policy()
+        let (policy, fallbackNotice) = self.policy()
         if let fallbackNotice { lastError = fallbackNotice }
-        let context = LAContext()
-        context.localizedCancelTitle = "Cancelar"
-        context.localizedFallbackTitle = ""
-        var error: NSError?
-        guard context.canEvaluatePolicy(policy, error: &error) else {
+        let (canEvaluate, _) = authenticator.canEvaluate(policy)
+        guard canEvaluate else {
             isAuthenticating = false
-            lastError = "No hay ningún método de autenticación disponible: \(error?.localizedDescription ?? "")"
+            lastError = "No hay ningún método de autenticación disponible."
             return
         }
-        context.evaluatePolicy(policy, localizedReason: "Desbloquear UniConnect") { [weak self] success, evalError in
+        authenticator.evaluate(policy, reason: "Desbloquear UniConnect") { [weak self] success, evalError in
             Task { @MainActor in
                 guard let self else { return }
                 self.isAuthenticating = false
@@ -127,17 +153,13 @@ final class UniConnectAppLock: ObservableObject {
 
     /// One-off authentication for sensitive actions (import, revealing a command).
     func authenticateForSensitiveAction(reason: String, completion: @escaping (Bool) -> Void) {
-        guard Self.isEnabled else { completion(true); return }
-        let (policy, _) = Self.policy()
-        let context = LAContext()
-        context.localizedCancelTitle = "Cancelar"
-        context.localizedFallbackTitle = ""
-        var error: NSError?
-        guard context.canEvaluatePolicy(policy, error: &error) else {
+        guard effectiveIsEnabled else { completion(true); return }
+        let (policy, _) = self.policy()
+        guard authenticator.canEvaluate(policy).0 else {
             completion(false)
             return
         }
-        context.evaluatePolicy(policy, localizedReason: reason) { success, _ in
+        authenticator.evaluate(policy, reason: reason) { success, _ in
             Task { @MainActor in completion(success) }
         }
     }

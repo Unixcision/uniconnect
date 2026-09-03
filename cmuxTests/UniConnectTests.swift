@@ -145,6 +145,85 @@ final class UniConnectTests: XCTestCase {
         XCTAssertNotNil(reason)
     }
 
+    /// Mocked LAContext (THE_BIG_GOAL §14): drives the real lock flow without hardware.
+    private final class FakeAuthenticator: UniConnectAuthenticating {
+        var biometricsAvailable = true
+        var errorCode: LAError.Code?
+        var result = true
+        var evaluations = 0
+        func canEvaluate(_ policy: LAPolicy) -> (Bool, LAError.Code?) {
+            policy == .deviceOwnerAuthenticationWithBiometrics ? (biometricsAvailable, errorCode) : (true, nil)
+        }
+        func evaluate(_ policy: LAPolicy, reason: String, completion: @escaping (Bool, Error?) -> Void) {
+            evaluations += 1
+            completion(result, result ? nil : LAError(.authenticationFailed))
+        }
+    }
+
+    @MainActor
+    private func makeLock(_ auth: FakeAuthenticator) -> UniConnectAppLock {
+        let lock = UniConnectAppLock.shared
+        lock.authenticator = auth
+        lock.presentsWindows = false
+        lock.enabledOverride = true
+        return lock
+    }
+
+    @MainActor
+    func testLockThenSuccessfulTouchIDUnlocks() async throws {
+        let auth = FakeAuthenticator()
+        let lock = makeLock(auth)
+        lock.lock()
+        XCTAssertTrue(lock.isLocked)
+        lock.authenticate()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertFalse(lock.isLocked, "a successful biometric evaluation must unlock")
+        XCTAssertEqual(auth.evaluations, 1)
+        XCTAssertNil(lock.lastError)
+    }
+
+    @MainActor
+    func testLockThenFailedTouchIDStaysLockedWithMessage() async throws {
+        let auth = FakeAuthenticator(); auth.result = false
+        let lock = makeLock(auth)
+        lock.lock()
+        lock.authenticate()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(lock.isLocked, "a failed evaluation must keep the app locked")
+        XCTAssertNotNil(lock.lastError)
+        // Recover: a later successful attempt unlocks.
+        auth.result = true
+        lock.authenticate()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertFalse(lock.isLocked)
+    }
+
+    @MainActor
+    func testLockedOutBiometryFallsBackToPasswordPolicyExplicitly() async throws {
+        let auth = FakeAuthenticator(); auth.biometricsAvailable = false; auth.errorCode = .biometryLockout
+        let lock = makeLock(auth)
+        lock.lock()
+        lock.authenticate()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertFalse(lock.isLocked, "password policy still authenticates")
+        XCTAssertEqual(auth.evaluations, 1)
+    }
+
+    @MainActor
+    func testSensitiveActionRequiresAuthenticatorWhenGateEnabled() async throws {
+        let auth = FakeAuthenticator(); auth.result = false
+        let lock = makeLock(auth)
+        var outcome: Bool?
+        lock.authenticateForSensitiveAction(reason: "test") { outcome = $0 }
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(outcome, false)
+        lock.enabledOverride = false
+        outcome = nil
+        lock.authenticateForSensitiveAction(reason: "test") { outcome = $0 }
+        XCTAssertEqual(outcome, true, "gate disabled (automation) skips the prompt explicitly")
+        lock.enabledOverride = nil
+    }
+
     func testTmuxProbeScriptNeverKillsSessions() {
         XCTAssertFalse(UniConnectTmuxProbe.remoteScript.contains("kill-session"))
         XCTAssertFalse(UniConnectTmuxProbe.remoteScript.contains("kill-server"))

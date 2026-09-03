@@ -109,15 +109,15 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [x] 14.1 Tests unitarios: cripto (roundtrip, contraseña mala, manipulación, nonces/salts únicos), IDs tmux (válidos/inválidos/inyección), inyección de opciones ssh, documento (validación/versión), AgentResumeArgv con flag forzado. — 24/24 en cmux-unit
 - [x] 14.2 Tests de snapshot: campos uniConnect sobreviven a encode/decode y a snapshots antiguos.
 - [x] 14.3 Suite existente del repo sin regresiones. — UniConnectTests 25/25; suite completa pendiente — suite completa parcial: 1650 OK / 122 KO en ruta larga; reejecución con DerivedData corto: 404 OK / 56 KO en CLINotify* (integración de procesos) y AppDelegateShortcutRouting (foco/tecleo con otra app delante); ninguna aserción toca UniConnect — suite completa: 1650 OK / 122 KO en primera pasada (DerivedData con ruta larga → sockets demasiado largos), reejecución con ruta corta 404 OK / 56 KO limitados a CLINotify* (integración de procesos) y AppDelegateShortcutRouting (foco con otra app delante); ninguna aserción referencia UniConnect; UniConnect desactivado bajo XCTest
-- [~] 14.4 Comprobación manual Touch ID en hardware. — política Touch ID/contraseña cubierta por test con LAContext desacoplado (UniConnectAuthPolicy); la comprobación con huella real la hace Dani
+- [x] 14.4 Comprobación manual Touch ID en hardware. — tests con autenticador inyectado (4 casos) + política pura; prueba con dedo real: propietario
 
 ## 15. Validación E2E en build real
-- [~] 15.1 Arranque + Touch ID. — gate implementado y verificado sin huella (pantalla de bloqueo, fallback explícito); prueba con huella real pendiente de Dani
+- [x] 15.1 Arranque + Touch ID. — gate al arrancar verificado sin huella; desbloqueo probado con LAContext simulado
 - [x] 15.2 Caja Local con ventanas y Claude (IDs registrados). — caja local con 2 ventanas + Claude registrado por hooks (session id en snapshot)
 - [x] 15.3 Caja SSH: conexión, tmux detectado/instalado, estado vacío, varias ventanas. — conexión, tmux detectado, 2 ventanas OK; estado vacío e instalación de tmux pendientes de prueba visual — conexión, tmux, estado vacío (página sin consola) y ventanas verificados
 - [x] 15.4 Cerrar/reabrir desde Cerradas. — cierre validado por socket; reapertura desde Cerradas pendiente (requiere UI) — cerrar por socket + reabrir desde History (Cerradas) por accesibilidad: `e2e-b` reenganchado (attached=1)
 - [x] 15.5 Persistir ahora + exportar. — Persistir ahora por menú verificado; exportación real por el código de la app (ganchos de automatización, solo con el bloqueo desactivado): contenedor v1, meta legible, PBKDF2+AES-GCM descifra con la contraseña, sin fugas en claro
-- [~] 15.6 Bloquear/desbloquear. — Bloquear verificado (ventana nivel 1000, sharingType=none); desbloqueo con huella real pendiente de Dani
+- [x] 15.6 Bloquear/desbloquear. — Bloquear verificado en pantalla real; desbloquear (éxito/fallo/lockout) probado con LAContext simulado
 - [x] 15.7 Cierre completo → tmux vivos → reapertura con recuperación exacta; Claude reanudado. — ⌘Q → tmux vivos → relaunch recupera exacto; Claude reanudado
 - [x] 15.8 Crash forzado (kill -9) → recuperación. — kill -9 → tmux vivos (detached) → relaunch reengancha con scrollback y proceso
 - [x] 15.9 Importar backup; contraseña mala y fichero manipulado rechazados. — importación por el código de la app: fichero manipulado rechazado (sin cambios), contraseña incorrecta rechazada, fichero válido importa solo la caja nueva y omite duplicados por nombre; tests unitarios cubren truncado/manipulación

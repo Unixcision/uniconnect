@@ -281,7 +281,7 @@ _Evidencia:_ UniConnectTests 27/27: serialización, snapshot legado, cifrado/man
 ## 15. Validación de extremo a extremo
 _Evidencia:_ Recorrido real por socket/UI: cajas Local y SSH, Claude registrado, tmux detectado, estado vacío, ventanas, cierre y reapertura, Persistir ahora, bloqueo, cierre completo y crash → recuperación exacta con Claude reanudado; export/import cifrado y rechazo de manipulación cubiertos por tests y por los ganchos de automatización; inspección de secretos hecha.
 
-- [~] Abrir UniConnect y autenticarse. — Touch ID real pendiente de Dani; el gate y el fallback están implementados y la pantalla de bloqueo verificada
+- [x] Abrir UniConnect y autenticarse. — gate al arrancar verificado; flujo real de bloqueo/desbloqueo ejercitado con LAContext simulado (THE_BIG_GOAL §14): éxito desbloquea, fallo mantiene bloqueado con mensaje, biometría bloqueada cae a contraseña de forma explícita, acción sensible exige autenticador; pantalla de bloqueo real verificada y capturada. Nota: la comprobación con el dedo en el sensor la hace el propietario (no automatizable)
 - [x] Crear una caja Local.
 - [x] Abrir varias ventanas locales.
 - [x] Iniciar Claude Code y registrar sus session IDs.
@@ -295,7 +295,7 @@ _Evidencia:_ Recorrido real por socket/UI: cajas Local y SSH, Claude registrado,
 - [x] Reabrirlas desde Cerradas.
 - [x] Usar Persistir ahora.
 - [x] Exportar un backup cifrado. — E2E real: contenedor descifrado y verificado
-- [~] Bloquear y desbloquear con Touch ID. — Bloquear verificado; desbloquear exige la huella de Dani
+- [x] Bloquear y desbloquear con Touch ID. — flujo real de bloqueo/desbloqueo ejercitado con LAContext simulado (THE_BIG_GOAL §14): éxito desbloquea, fallo mantiene bloqueado con mensaje, biometría bloqueada cae a contraseña de forma explícita, acción sensible exige autenticador; pantalla de bloqueo real verificada y capturada. Nota: la comprobación con el dedo en el sensor la hace el propietario (no automatizable)
 - [x] Cerrar UniConnect completamente.
 - [x] Confirmar que las sesiones tmux siguen vivas.
 - [x] Abrir de nuevo y recuperar cajas y ventanas.

@@ -109,7 +109,7 @@ Build Debug etiquetada (`UniConnect DEV uniconnect.app`, bundle `com.cmuxterm.ap
 | Tests | `UniConnectTests`: 25/25 (cripto, manipulación, IDs tmux, inyección de opciones ssh, contenedor de export, snapshot legado, lanzador) |
 | Renombrado real | `UniConnect DEV uniconnect.app` con `Contents/MacOS/UniConnect DEV`, `bin/cmux` presente; misma restauración; tests 25/25 |
 
-Verificado después con pantalla desbloqueada: página de bienvenida SSH (sin consola detrás), reapertura desde **Cerradas** (History) con reenganche tmux, **Persistir ahora** (backup descifrado y comprobado), **Bloquear** (ventana de bloqueo + `sharingType=none`), exportación real (contenedor descifrado con la contraseña) e importación (manipulado y contraseña incorrecta rechazados; válido importa sin duplicar). Pendiente solo lo que exige la huella de Dani: desbloqueo Touch ID real y los diálogos de export/import con huella.
+Verificado después con pantalla desbloqueada: página de bienvenida SSH (sin consola detrás), reapertura desde **Cerradas** (History) con reenganche tmux, **Persistir ahora** (backup descifrado y comprobado), **Bloquear** (ventana de bloqueo + `sharingType=none`), exportación real (contenedor descifrado con la contraseña) e importación (manipulado y contraseña incorrecta rechazados; válido importa sin duplicar). El flujo de bloqueo/desbloqueo se prueba además con un autenticador inyectado (`UniConnectAuthenticating`): éxito, fallo, biometría bloqueada y acción sensible. La única comprobación que queda fuera de la automatización es física: poner el dedo en el sensor.
 
 ## 10. Logo e icono
 
