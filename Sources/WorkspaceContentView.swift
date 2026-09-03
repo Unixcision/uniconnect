@@ -299,11 +299,6 @@ struct WorkspaceContentView: View {
         // cannot remain stacked above portal-hosted browser content.
         .id(splitZoomRenderIdentity)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay {
-            if workspace.uniConnectShowsWelcome {
-                UniConnectSSHWelcomeHost(workspace: workspace)
-            }
-        }
         .onAppear {
             updateAgentHibernationPresentationVisibility()
             syncBonsplitNotificationBadges()
@@ -361,8 +356,17 @@ struct WorkspaceContentView: View {
             )
         }
 
-        bonsplitView
-            .ignoresSafeArea(.container, edges: (isMinimalMode && !isFullScreen) ? .top : [])
+        if workspace.uniConnectShowsWelcome {
+            // UniConnect: an SSH box without windows shows its onboarding page instead of
+            // any terminal. The stock placeholder panel stays in the model (cmux keeps at
+            // least one panel per workspace) but is never mounted, so no shell runs and no
+            // console can bleed through; the first tmux window replaces it.
+            UniConnectSSHWelcomeHost(workspace: workspace)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            bonsplitView
+                .ignoresSafeArea(.container, edges: (isMinimalMode && !isFullScreen) ? .top : [])
+        }
     }
 
     private func syncBonsplitNotificationBadges() {

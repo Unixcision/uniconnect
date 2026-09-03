@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/logo.svg" alt="UniConnect logo: a rounded square with a link-and-terminal glyph" width="128" height="128">
+<img src="docs/assets/logo-256.png" alt="UniConnect logo: a coral terminal chevron interlocked with a cyan chain link on a dark rounded tile" width="128" height="128">
 
 # UniConnect
 

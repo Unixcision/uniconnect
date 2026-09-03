@@ -19,6 +19,17 @@ enum UniConnectPaths {
     }
 
     static var vaultFile: URL { directory.appendingPathComponent("vault.uc") }
+    /// Tiny markdown document used as the (hidden) placeholder panel of an SSH box that has
+    /// no tmux window yet. A non-terminal panel keeps cmux's "one panel per workspace"
+    /// invariant without spawning a shell that would grab keyboard focus.
+    static var placeholderMarkdownFile: URL {
+        let url = directory.appendingPathComponent("caja-ssh-vacia.md")
+        if !FileManager.default.fileExists(atPath: url.path) {
+            let text = "# Caja SSH sin ventanas\n\nCrea la primera ventana desde la página de bienvenida de UniConnect (menú UniConnect ▸ Nueva ventana tmux…).\n"
+            try? text.write(to: url, atomically: true, encoding: .utf8)
+        }
+        return url
+    }
     static var backupFile: URL { directory.appendingPathComponent("backup.uc") }
     static var masterKeyFallbackFile: URL { directory.appendingPathComponent(".master-key") }
     static var backupHistoryDirectory: URL {

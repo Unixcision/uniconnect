@@ -105,3 +105,7 @@ Build Debug etiquetada (`UniConnect DEV uniconnect.app`, bundle `com.cmuxterm.ap
 | Renombrado real | `UniConnect DEV uniconnect.app` con `Contents/MacOS/UniConnect DEV`, `bin/cmux` presente; misma restauración; tests 25/25 |
 
 Pendiente de prueba con pantalla desbloqueada (requieren UI o Touch ID): página de bienvenida SSH e instalación de tmux con confirmación, reapertura desde **Cerradas**, **Persistir ahora**, exportar/importar cifrado desde el menú, **Bloquear**/Touch ID.
+
+## 10. Logo e icono
+
+El logo (`docs/assets/logo.png`, y de él todas las tallas de `Assets.xcassets/AppIcon.appiconset` y la capa de `AppIcon.icon`) se generó el 2026-09-03 con **Nano Banana Pro** (`gemini-3-pro-image`, Gemini API, endpoint `models/gemini-3-pro-image:generateContent` con `responseModalities: ["IMAGE"]`), el modelo que Google describe como su opción premium para precisión de marca; Nano Banana 2 (`gemini-3.1-flash-image`) es el lanzamiento más reciente y más rápido. Prompt: chevrón de terminal entrelazado con un eslabón (conexión persistente), estilo icono de app de Apple, fondo oscuro, gradientes coral y cian, sin texto. Post-proceso con ImageMagick: recorte, 1024×1024 y esquinas redondeadas transparentes. Fuentes: https://ai.google.dev/gemini-api/docs/image-generation · https://blog.google/innovation-and-ai/technology/ai/nano-banana-2/ . La clave de API no está en el repo.

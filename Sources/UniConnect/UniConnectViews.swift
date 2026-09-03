@@ -10,6 +10,16 @@ enum UniConnectStyle {
         WorkspaceTabColorSettings.palette().map(\.hex)
     }()
 
+    /// Terminal background from the user's Ghostty theme plus a matching foreground.
+    static var terminalBackground: Color { Color(nsColor: GhosttyApp.shared.defaultBackgroundColor) }
+    static var terminalBackgroundIsDark: Bool {
+        let c = GhosttyApp.shared.defaultBackgroundColor.usingColorSpace(.sRGB) ?? .black
+        let luminance = 0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
+        return luminance < 0.5
+    }
+    /// Foreground that stays legible on `terminalBackground` (white on dark themes, near-black on light ones).
+    static var onTerminal: Color { terminalBackgroundIsDark ? .white : Color(red: 0.10, green: 0.11, blue: 0.13) }
+
     static func color(hex: String) -> Color {
         var value = hex.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.hasPrefix("#") { value.removeFirst() }
@@ -358,7 +368,10 @@ struct UniConnectSSHWelcomeView: View {
 
     var body: some View {
         ZStack {
-            Color(nsColor: NSColor(calibratedRed: 0.07, green: 0.08, blue: 0.11, alpha: 1)).ignoresSafeArea()
+            // Follow the user's terminal theme (Ghostty background) so the page blends with
+            // the app instead of introducing its own palette.
+            UniConnectStyle.terminalBackground.ignoresSafeArea()
+            UniConnectStyle.accentSSH.opacity(0.06).ignoresSafeArea()
             VStack(spacing: 26) {
                 Spacer(minLength: 20)
                 VStack(spacing: 8) {
@@ -367,10 +380,10 @@ struct UniConnectSSHWelcomeView: View {
                         .foregroundStyle(UniConnectStyle.accentSSH)
                     Text(title)
                         .font(.system(size: 40, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(UniConnectStyle.onTerminal)
                     Text(host)
                         .font(.system(size: 18, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.6))
                 }
                 phaseView
                 Spacer(minLength: 20)
@@ -386,10 +399,10 @@ struct UniConnectSSHWelcomeView: View {
         case .idle, .connecting, .installing:
             VStack(spacing: 14) {
                 HStack(spacing: 12) {
-                    ProgressView().controlSize(.regular).tint(.white)
+                    ProgressView().controlSize(.regular).tint(UniConnectStyle.onTerminal)
                     Text(state.phase == .installing ? "Instalando tmux en el servidor…" : "Conectando y comprobando tmux…")
                         .font(.system(size: 22, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(UniConnectStyle.onTerminal)
                 }
                 logView
             }
@@ -397,14 +410,14 @@ struct UniConnectSSHWelcomeView: View {
             VStack(spacing: 14) {
                 Text("tmux no está instalado en el servidor")
                     .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(UniConnectStyle.onTerminal)
                 Text("Detectado: \(detail.replacingOccurrences(of: "=", with: ": ").replacingOccurrences(of: " ", with: " · "))")
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.7))
                     .multilineTextAlignment(.center)
                 Text("UniConnect instalará el paquete tmux con el gestor del sistema (apt, dnf, yum, apk, pacman, zypper o brew). No toca nada más.")
                     .font(.system(size: 15, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.85))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 logView
@@ -431,7 +444,7 @@ struct UniConnectSSHWelcomeView: View {
                     .foregroundStyle(Color(red: 1, green: 0.55, blue: 0.55))
                 Text(message)
                     .font(.system(size: 15, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.85))
                     .multilineTextAlignment(.center)
                 logView
                 HStack(spacing: 12) {
@@ -445,19 +458,19 @@ struct UniConnectSSHWelcomeView: View {
             VStack(spacing: 18) {
                 Text("Servidor listo. Crea tu primera ventana.")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(UniConnectStyle.onTerminal)
                 Text("Cada ventana es una sesión tmux con nombre en \(host). Si UniConnect se cierra o peta, la ventana sigue viva en el servidor y se reengancha sola al volver.")
                     .font(.system(size: 15, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.7))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Nombre de la ventana").font(.system(size: 13, weight: .semibold)).foregroundStyle(.white.opacity(0.7))
+                    Text("Nombre de la ventana").font(.system(size: 13, weight: .semibold)).foregroundStyle(UniConnectStyle.onTerminal.opacity(0.7))
                     TextField("claude, logs, deploy…", text: $name)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 18))
                         .onSubmit { submit() }
-                    Text("Código tmux (interno, editable)").font(.system(size: 13, weight: .semibold)).foregroundStyle(.white.opacity(0.7))
+                    Text("Código tmux (interno, editable)").font(.system(size: 13, weight: .semibold)).foregroundStyle(UniConnectStyle.onTerminal.opacity(0.7))
                     TextField("uc-…", text: $tmux)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 15, design: .monospaced))
@@ -476,7 +489,7 @@ struct UniConnectSSHWelcomeView: View {
                     }
                 }
                 .padding(20)
-                .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.06)))
+                .background(RoundedRectangle(cornerRadius: 14).fill(UniConnectStyle.onTerminal.opacity(0.06)))
                 .frame(maxWidth: 560)
                 .onChange(of: name) { _, newValue in
                     guard !tmuxEdited || tmux.isEmpty else { return }
@@ -494,7 +507,7 @@ struct UniConnectSSHWelcomeView: View {
                     ForEach(Array(state.log.enumerated()), id: \.offset) { index, line in
                         Text(line)
                             .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.75))
+                            .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.75))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .id(index)
                     }
@@ -502,7 +515,7 @@ struct UniConnectSSHWelcomeView: View {
                 .padding(12)
             }
             .frame(maxWidth: 680, minHeight: 80, maxHeight: 220)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.black.opacity(0.35)))
+            .background(RoundedRectangle(cornerRadius: 10).fill(UniConnectStyle.onTerminal.opacity(0.08)))
             .onChange(of: state.log.count) { _, count in
                 if count > 0 { proxy.scrollTo(count - 1, anchor: .bottom) }
             }

@@ -122,9 +122,10 @@ final class UniConnectCoordinator: ObservableObject {
             hostLabel: UniConnectSSH.hostLabel(from: connectCommand),
             tmuxReady: false
         )
-        // The stock initial terminal is only a placeholder hidden behind the
-        // welcome page; it gets replaced by the first tmux window.
-        workspace.uniConnectPlaceholderPanelIds = Set(workspace.panels.keys)
+        // cmux always keeps one panel per workspace. Swap the stock terminal for a
+        // markdown panel: no PTY, nothing that can steal keyboard focus from the welcome
+        // page, and it disappears with the first tmux window.
+        installPlaceholder(in: workspace)
         workspace.setCustomColor(color)
         if (workspace.customDescription ?? "").isEmpty {
             workspace.setCustomDescription("SSH · \(UniConnectSSH.hostLabel(from: connectCommand)) · tmux")
@@ -334,13 +335,30 @@ final class UniConnectCoordinator: ObservableObject {
         return panel
     }
 
+    private func installPlaceholder(in workspace: Workspace) {
+        let terminalIds = Set(workspace.panels.keys)
+        guard let pane = workspace.bonsplitController.focusedPaneId ?? workspace.bonsplitController.allPaneIds.first,
+              let markdown = workspace.newMarkdownSurface(
+                inPane: pane,
+                filePath: UniConnectPaths.placeholderMarkdownFile.path,
+                focus: false
+              ) else {
+            workspace.uniConnectPlaceholderPanelIds = terminalIds
+            return
+        }
+        workspace.uniConnectPlaceholderPanelIds = [markdown.id]
+        for panelId in terminalIds where workspace.panels[panelId] != nil {
+            _ = workspace.closePanel(panelId, force: true)
+        }
+    }
+
     private func removePlaceholders(from workspace: Workspace, keeping keep: UUID) {
         var placeholders = workspace.uniConnectPlaceholderPanelIds.subtracting([keep])
-        // If this is the first tmux window, any other terminal without a tmux binding is a
-        // stock placeholder (cmux always keeps at least one panel alive) → drop it too.
+        // First tmux window of the box: every other panel is a placeholder (the markdown
+        // stand-in, or a stock terminal restored from an older snapshot) → drop it too.
         let boundPanels = workspace.panels.keys.filter { workspace.uniConnectTmuxSessionsByPanelId[$0] != nil }
         if boundPanels == [keep] {
-            for panelId in workspace.panels.keys where panelId != keep && workspace.panels[panelId] is TerminalPanel {
+            for panelId in workspace.panels.keys where panelId != keep {
                 placeholders.insert(panelId)
             }
         }
