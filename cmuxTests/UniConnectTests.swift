@@ -84,7 +84,9 @@ final class UniConnectTests: XCTestCase {
 
     func testRemoteTmuxCommandEscapesDirectoryQuotes() {
         let cmd = UniConnectSSH.remoteTmuxCommand(session: "s1", directory: "/it's/here")
-        XCTAssertEqual(cmd, "tmux new-session -A -D -s 's1' -c '/it'\\''s/here'")
+        XCTAssertTrue(cmd.hasPrefix("tmux new-session -A -D -s 's1' -c '/it'\\''s/here'"))
+        XCTAssertTrue(cmd.contains("set-option -g mouse on"), "wheel scrolling inside tmux")
+        XCTAssertTrue(cmd.contains("history-limit 50000"))
     }
 
     func testHostLabelNeverContainsPassword() {

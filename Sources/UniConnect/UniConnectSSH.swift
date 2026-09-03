@@ -70,6 +70,9 @@ enum UniConnectSSH {
         if let directory = directory?.trimmingCharacters(in: .whitespacesAndNewlines), !directory.isEmpty {
             parts += ["-c", shellQuote(directory)]
         }
+        // Wheel scrolling inside tmux needs mouse mode; a generous history keeps the
+        // scrollback useful. Chained with `\;` so it applies on attach as well as create.
+        parts += ["\\;", "set-option", "-g", "mouse", "on", "\\;", "set-option", "-g", "history-limit", "50000"]
         return parts.joined(separator: " ")
     }
 
