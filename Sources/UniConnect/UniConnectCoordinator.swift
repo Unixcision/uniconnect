@@ -767,6 +767,10 @@ final class UniConnectCoordinator: ObservableObject {
             if let panelId, let name = window.name, !name.isEmpty {
                 workspace.setPanelCustomTitle(panelId: panelId, title: name)
             }
+            // Bind the window to its Claude session so a restart always resumes it.
+            if let panelId, let session = window.claudeSession, !session.isEmpty {
+                workspace.uniConnectClaudeSessionsByPanelId[panelId] = session
+            }
             if index == 0, let panelId, let session = window.claudeSession, let panel = workspace.panels[panelId] as? TerminalPanel {
                 // The first window reuses the box's initial terminal, which opened in the box
                 // folder. `claude --resume` only finds a session from the folder it was created
@@ -921,6 +925,17 @@ extension Workspace {
     /// Startup command for a restored terminal panel bound to a tmux session.
     /// Returns nil for anything that is not an SSH/tmux window.
     func uniConnectRestoredStartupCommand(panelSnapshot: SessionPanelSnapshot) -> String? {
+        // Local box: the window is bound to a Claude session and always comes back on it.
+        if let profile = uniConnectProfile, !profile.isSSH,
+           let claudeSession = panelSnapshot.terminal?.uniConnectClaudeSession, !claudeSession.isEmpty {
+            let directory = panelSnapshot.terminal?.workingDirectory ?? panelSnapshot.directory ?? currentDirectory
+            let label = "claude-" + claudeSession.prefix(8)
+            return UniConnectSSH.writeLauncherScript(
+                commandLine: UniConnectSSH.claudeResumeCommandLine(session: claudeSession, directory: directory),
+                label: String(label),
+                delay: 0
+            )
+        }
         guard let profile = uniConnectProfile, profile.isSSH,
               let session = panelSnapshot.terminal?.uniConnectTmuxSession,
               let credentialId = profile.credentialId,

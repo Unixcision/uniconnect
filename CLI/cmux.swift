@@ -31582,7 +31582,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         print()
         print(shortcuts)
         print()
-        print("  \(bold)Docs\(reset)\(subdued)                https://cmux.com/docs\(reset)")
+        print("  \(bold)Docs\(reset)\(subdued)                https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md)")
         print("  \(bold)Discord\(reset)\(subdued)             https://discord.gg/xsgFEVrWCZ\(reset)")
         print("  \(bold)GitHub\(reset)\(subdued)              https://github.com/manaflow-ai/cmux (please leave a star ⭐)\(reset)")
         print("  \(bold)Email\(reset)\(subdued)               founders@manaflow.com\(reset)")
@@ -31879,7 +31879,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
           --password takes precedence, then CMUX_SOCKET_PASSWORD env var, then password saved in Settings.
 
         Agent Help:
-          To change cmux settings, run `cmux docs settings` and `cmux settings path`; to add Dock controls, run `cmux docs dock`.
+          To change cmux settings, run `cmux docs settings` and `cmux settings path`; to add Dock controls, run `uniconnect docs dock`.
           Back up any existing uniconnect.json file to a timestamped .bak copy before editing.
           Use printed curl commands to fetch the latest docs/schema, and prefer Ghostty config for terminal behavior Ghostty already supports.
           Ghostty config lives at ~/.config/ghostty/config (controls terminal transparency, blur, font, theme, keybinds, etc.).

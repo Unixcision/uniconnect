@@ -1073,6 +1073,24 @@ struct ContentView: View {
     @AppStorage(MinimalModeTitlebarDebugSettings.trafficLightTabBarInsetKey) private var titlebarTrafficLightTabBarInset = MinimalModeTitlebarDebugSettings.defaultTrafficLightTabBarInset
     @AppStorage(MinimalModeTitlebarDebugSettings.trafficLightTitlebarLeadingInsetKey) private var titlebarTrafficLightTitlebarLeadingInset = MinimalModeTitlebarDebugSettings.defaultTrafficLightTitlebarLeadingInset
     @State private var sidebarWidth: CGFloat = CGFloat(SessionPersistencePolicy.defaultSidebarWidth)
+    /// UniConnect: compact "rail" sidebar (coloured tiles) instead of the full workspace list.
+    @AppStorage(UniConnectRailSidebar.compactDefaultsKey) private var sidebarCompact = false
+    /// UniConnect: gap between the floating sidebar card and the window edge / content.
+    static let sidebarFloatingInset: CGFloat = 8
+    static let sidebarCompactAnimation = Animation.spring(response: 0.32, dampingFraction: 0.86)
+    /// Width of the sidebar card actually shown (rail when compact, user width otherwise).
+    private var effectiveSidebarWidth: CGFloat {
+        sidebarCompact ? UniConnectRailSidebar.width : sidebarWidth
+    }
+    /// Horizontal space the floating sidebar reserves from the window's leading edge
+    /// (card width plus the inset on both sides).
+    private var sidebarSlotWidth: CGFloat {
+        effectiveSidebarWidth + Self.sidebarFloatingInset * 2
+    }
+    /// Window-x of the sidebar card's trailing edge, where the resizer lives.
+    private var sidebarDividerX: CGFloat {
+        Self.sidebarFloatingInset + effectiveSidebarWidth
+    }
     @State private var hoveredResizerHandles: Set<SidebarResizerHandle> = []
     @State private var isResizerDragging = false
     @State private var sidebarDragStartWidth: CGFloat?
@@ -1787,8 +1805,8 @@ struct ContentView: View {
 
     private func dividerBandContains(pointInContent point: NSPoint, contentBounds: NSRect) -> Bool {
         guard point.y >= contentBounds.minY, point.y <= contentBounds.maxY else { return false }
-        if sidebarState.isVisible,
-           SidebarResizeInteraction.Edge.leading.hitRange(dividerX: sidebarWidth).contains(point.x) {
+        if sidebarState.isVisible, !sidebarCompact,
+           SidebarResizeInteraction.Edge.leading.hitRange(dividerX: sidebarDividerX).contains(point.x) {
             return true
         }
 
@@ -1999,7 +2017,7 @@ struct ContentView: View {
             handle: .divider,
             edge: .leading,
             accessibilityIdentifier: "SidebarResizer",
-            dividerX: { totalWidth in min(max(sidebarWidth, 0), totalWidth) }
+            dividerX: { totalWidth in min(max(sidebarDividerX, 0), totalWidth) }
         )
     }
 
@@ -2012,26 +2030,69 @@ struct ContentView: View {
         )
     }
 
-    private var sidebarView: some View {
-        VerticalTabsSidebar(
-            updateViewModel: updateViewModel,
-            fileExplorerState: fileExplorerState,
-            windowId: windowId,
-            onSendFeedback: presentFeedbackComposer,
-            onToggleSidebar: { sidebarState.toggle() },
-            onNewTab: {
-                AppDelegate.shared?.performNewWorkspaceAction(
-                    tabManager: tabManager,
-                    debugSource: "titlebar.hiddenNewWorkspace"
-                )
-            },
-            observedWindow: observedWindow,
-            selection: $sidebarSelectionState.selection,
-            selectedTabIds: $selectedTabIds,
-            lastSidebarSelectionIndex: $lastSidebarSelectionIndex
+    private func performSidebarNewWorkspace() {
+        AppDelegate.shared?.performNewWorkspaceAction(
+            tabManager: tabManager,
+            debugSource: "titlebar.hiddenNewWorkspace"
         )
-        .frame(width: sidebarWidth)
+    }
+
+    private func setSidebarCompact(_ compact: Bool) {
+        guard sidebarCompact != compact else { return }
+        withAnimation(Self.sidebarCompactAnimation) {
+            sidebarCompact = compact
+        }
+    }
+
+    /// Small control at the foot of the expanded sidebar that collapses it to the rail.
+    private var sidebarCompactToggleButton: some View {
+        Button {
+            setSidebarCompact(true)
+        } label: {
+            Image(systemName: "sidebar.left")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .safeHelp("Compactar barra lateral (⌘⌥B)")
+        .accessibilityLabel("Compactar barra lateral")
+        .accessibilityIdentifier("SidebarCompactToggle")
+        .padding(.trailing, 10)
+        .padding(.bottom, 9)
+    }
+
+    private var sidebarView: some View {
+        ZStack(alignment: .topLeading) {
+            if sidebarCompact {
+                UniConnectRailSidebar(
+                    onNewTab: performSidebarNewWorkspace,
+                    onExpand: { setSidebarCompact(false) }
+                )
+                .transition(.opacity)
+            } else {
+                VerticalTabsSidebar(
+                    updateViewModel: updateViewModel,
+                    fileExplorerState: fileExplorerState,
+                    windowId: windowId,
+                    onSendFeedback: presentFeedbackComposer,
+                    onToggleSidebar: { sidebarState.toggle() },
+                    onNewTab: performSidebarNewWorkspace,
+                    observedWindow: observedWindow,
+                    selection: $sidebarSelectionState.selection,
+                    selectedTabIds: $selectedTabIds,
+                    lastSidebarSelectionIndex: $lastSidebarSelectionIndex
+                )
+                .overlay(alignment: .bottomTrailing) {
+                    sidebarCompactToggleButton
+                }
+                .transition(.opacity)
+            }
+        }
+        .frame(width: effectiveSidebarWidth)
         .frame(maxHeight: .infinity, alignment: .topLeading)
+        .clipShape(RoundedRectangle(cornerRadius: CGFloat(sidebarCornerRadius), style: .continuous))
     }
 
     /// Native titlebar inset reported by AppKit. Standard mode follows cmux's visual chrome;
@@ -2201,10 +2262,32 @@ struct ContentView: View {
         .frame(width: width)
     }
 
+    /// Soft drop shadow drawn *behind* the floating sidebar card. A blurred stroke rather
+    /// than `.shadow()` so the material-backed sidebar never gets rasterised.
+    private func floatingSidebarShadow(cornerRadius: CGFloat, isDark: Bool) -> some View {
+        RoundedRectangle(cornerRadius: cornerRadius + 1, style: .continuous)
+            .stroke(Color.black.opacity(isDark ? 0.42 : 0.16), lineWidth: 5)
+            .blur(radius: 6)
+            .offset(y: 2)
+            .allowsHitTesting(false)
+    }
+
     private func sidebarPanelWithBackdrop(appearance: WindowAppearanceSnapshot) -> some View {
-        sidebarPanelContainer(width: sidebarWidth, alignment: .leading, role: .leftSidebar, appearance: appearance) {
+        let cornerRadius = appearance.sidebarSettings.materialPolicy.cornerRadius
+        let isDark = appearance.sidebarContentColorScheme == .dark
+        return sidebarPanelContainer(width: effectiveSidebarWidth, alignment: .leading, role: .leftSidebar, appearance: appearance) {
             sidebarView
         }
+        .background {
+            floatingSidebarShadow(cornerRadius: cornerRadius, isDark: isDark)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(Color.primary.opacity(isDark ? 0.10 : 0.07), lineWidth: 1)
+                .allowsHitTesting(false)
+        }
+        .padding(.leading, Self.sidebarFloatingInset)
+        .padding(.vertical, Self.sidebarFloatingInset)
     }
 
     private func rightSidebarPanelWithBackdrop(appearance: WindowAppearanceSnapshot) -> some View {
@@ -2280,8 +2363,8 @@ struct ContentView: View {
     @AppStorage("sidebarTintHexDark") private var sidebarTintHexDark: String?
     @AppStorage("sidebarMaterial") private var sidebarMaterial = SidebarMaterialOption.sidebar.rawValue
     @AppStorage("sidebarState") private var sidebarStateSetting = SidebarStateOption.followWindow.rawValue
-    @AppStorage("sidebarCornerRadius") private var sidebarCornerRadius = 0.0
-    @AppStorage("sidebarBlurOpacity") private var sidebarBlurOpacity = 1.0
+    @AppStorage("sidebarCornerRadius") private var sidebarCornerRadius = SidebarPresetOption.uniConnect.cornerRadius
+    @AppStorage("sidebarBlurOpacity") private var sidebarBlurOpacity = SidebarPresetOption.uniConnect.blurOpacity
 
     // Background glass settings
     @AppStorage("bgGlassTintHex") private var bgGlassTintHex = "#000000"
@@ -2373,8 +2456,10 @@ struct ContentView: View {
         let leadingPadding = Self.customTitlebarLeadingPadding(
             isFullScreen: isFullScreen,
             isSidebarVisible: sidebarState.isVisible,
-            sidebarWidth: sidebarWidth,
-            minimumSidebarWidth: minimumSidebarWidth,
+            sidebarWidth: sidebarSlotWidth,
+            // The rail is narrower than any allowed expanded width; don't let the
+            // minimum-width clamp push the title past it.
+            minimumSidebarWidth: sidebarCompact ? 0 : minimumSidebarWidth,
             titlebarLeadingInset: titlebarLeadingInset
         )
         return ZStack {
@@ -2417,7 +2502,7 @@ struct ContentView: View {
         .background(TitlebarDoubleClickMonitorView())
         .overlay(alignment: .bottom) {
             WindowChromeBorder(orientation: .horizontal)
-                .padding(.leading, sidebarState.isVisible ? sidebarWidth : 0)
+                .padding(.leading, sidebarState.isVisible ? sidebarSlotWidth : 0)
         }
     }
 
@@ -2716,7 +2801,7 @@ struct ContentView: View {
                 ZStack(alignment: .leading) {
                     HStack(spacing: 0) {
                         terminalContentWithSidebarDropOverlay(appearance: appearance)
-                            .padding(.leading, sidebarState.isVisible ? sidebarWidth : 0)
+                            .padding(.leading, sidebarState.isVisible ? sidebarSlotWidth : 0)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .layoutPriority(1)
                         rightSidebarPanelWithBackdrop(appearance: appearance)
@@ -2740,8 +2825,9 @@ struct ContentView: View {
 
         return AnyView(
             layout
+                .animation(Self.sidebarCompactAnimation, value: sidebarCompact)
                 .overlay(alignment: .leading) {
-                    if sidebarState.isVisible {
+                    if sidebarState.isVisible && !sidebarCompact {
                         sidebarResizerOverlay
                             .zIndex(1000)
                     }
@@ -10754,7 +10840,7 @@ struct VerticalTabsSidebar: View {
     @AppStorage(MinimalModeTitlebarDebugSettings.leftControlsTopInsetKey)
     private var titlebarLeftControlsTopInset = MinimalModeTitlebarDebugSettings.defaultLeftControlsTopInset
 
-    let tabRowSpacing: CGFloat = 2
+    let tabRowSpacing: CGFloat = 4
     private static let extensionSidebarObservationCoalesceInterval: RunLoop.SchedulerTimeType.Stride = .milliseconds(40)
     private static let extensionSidebarDisclosureAnimation = Animation.easeInOut(duration: 0.18)
     private var sidebarTitlebarInteractionHeight: CGFloat {
@@ -12798,7 +12884,7 @@ enum DevBuildBannerDebugSettings {
 private enum FeedbackComposerSettings {
     static let storedEmailKey = "sidebarHelpFeedbackEmail"
     static let endpointEnvironmentKey = "CMUX_FEEDBACK_API_URL"
-    static let defaultEndpoint = "https://cmux.com/api/feedback"
+    static let defaultEndpoint = "https://github.com/Unixcision/uniconnect/issues"
     static let foundersEmail = "founders@manaflow.com"
     static let maxMessageLength = 4_000
     static let maxAttachmentCount = 10
@@ -14404,8 +14490,8 @@ enum FeedbackComposerBridge {
 }
 
 private struct SidebarHelpMenuButton: View {
-    private let docsURL = URL(string: "https://cmux.com/docs")
-    private let changelogURL = URL(string: "https://cmux.com/docs/changelog")
+    private let docsURL = URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")
+    private let changelogURL = URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")
     private let githubURL = URL(string: "https://github.com/manaflow-ai/cmux")
     private let githubIssuesURL = URL(string: "https://github.com/manaflow-ai/cmux/issues")
     private let discordURL = URL(string: "https://discord.gg/xsgFEVrWCZ")
@@ -15779,10 +15865,10 @@ struct TabItemView: View, Equatable {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(backgroundColor)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(activeBorderColor, lineWidth: activeBorderLineWidth)
                 }
                 .overlay(alignment: .leading) {
@@ -18836,11 +18922,13 @@ enum SidebarStateOption: String, CaseIterable, Identifiable {
 }
 
 enum SidebarTintDefaults {
-    static let hex = "#000000"
-    static let opacity = 0.18
+    static let hex = SidebarPresetOption.uniConnect.tintHex
+    static let opacity = SidebarPresetOption.uniConnect.tintOpacity
 }
 
 enum SidebarPresetOption: String, CaseIterable, Identifiable {
+    /// UniConnect default: floating translucent card with a whisper of coral.
+    case uniConnect
     case nativeSidebar
     case glassBehind
     case softBlur
@@ -18852,6 +18940,7 @@ enum SidebarPresetOption: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .uniConnect: return "UniConnect"
         case .nativeSidebar: return String(localized: "settings.preset.nativeSidebar", defaultValue: "Native Sidebar")
         case .glassBehind: return String(localized: "settings.preset.raycastGray", defaultValue: "Raycast Gray")
         case .softBlur: return String(localized: "settings.preset.softBlur", defaultValue: "Soft Blur")
@@ -18863,6 +18952,7 @@ enum SidebarPresetOption: String, CaseIterable, Identifiable {
 
     var material: SidebarMaterialOption {
         switch self {
+        case .uniConnect: return .sidebar
         case .nativeSidebar: return .sidebar
         case .glassBehind: return .sidebar
         case .softBlur: return .sidebar
@@ -18874,6 +18964,7 @@ enum SidebarPresetOption: String, CaseIterable, Identifiable {
 
     var blendMode: SidebarBlendModeOption {
         switch self {
+        case .uniConnect: return .withinWindow
         case .nativeSidebar: return .withinWindow
         case .glassBehind: return .behindWindow
         case .softBlur: return .behindWindow
@@ -18885,6 +18976,7 @@ enum SidebarPresetOption: String, CaseIterable, Identifiable {
 
     var state: SidebarStateOption {
         switch self {
+        case .uniConnect: return .followWindow
         case .nativeSidebar: return .followWindow
         case .glassBehind: return .active
         case .softBlur: return .active
@@ -18896,6 +18988,7 @@ enum SidebarPresetOption: String, CaseIterable, Identifiable {
 
     var tintHex: String {
         switch self {
+        case .uniConnect: return "#FF5C6E"
         case .nativeSidebar: return "#000000"
         case .glassBehind: return "#000000"
         case .softBlur: return "#000000"
@@ -18907,6 +19000,7 @@ enum SidebarPresetOption: String, CaseIterable, Identifiable {
 
     var tintOpacity: Double {
         switch self {
+        case .uniConnect: return 0.06
         case .nativeSidebar: return 0.18
         case .glassBehind: return 0.36
         case .softBlur: return 0.28
@@ -18918,6 +19012,7 @@ enum SidebarPresetOption: String, CaseIterable, Identifiable {
 
     var cornerRadius: Double {
         switch self {
+        case .uniConnect: return 14.0
         case .nativeSidebar: return 0.0
         case .glassBehind: return 0.0
         case .softBlur: return 0.0
@@ -18929,6 +19024,7 @@ enum SidebarPresetOption: String, CaseIterable, Identifiable {
 
     var blurOpacity: Double {
         switch self {
+        case .uniConnect: return 0.85
         case .nativeSidebar: return 1.0
         case .glassBehind: return 0.6
         case .softBlur: return 0.45

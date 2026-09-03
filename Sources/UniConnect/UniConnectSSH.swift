@@ -3,6 +3,18 @@ import Foundation
 // MARK: - Command construction
 
 enum UniConnectSSH {
+    /// `claude --resume` only finds a session from the folder it was created in, so the
+    /// window always cds first. The folder may be gone (renamed project): fall back to home
+    /// instead of leaving the user with a dead shell.
+    static func claudeResumeCommandLine(session: String, directory: String?) -> String {
+        var command = ""
+        if let directory, !directory.isEmpty {
+            command += "cd \(singleQuoted(directory)) 2>/dev/null || cd \"$HOME\"; "
+        }
+        command += "exec claude --dangerously-skip-permissions --resume \(singleQuoted(session))"
+        return command
+    }
+
     /// POSIX single-quoting for a path or argument embedded in a shell command.
     static func singleQuoted(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
@@ -178,6 +190,8 @@ final class UniConnectTmuxProbe {
     private var sawOK: String?
     private var sawMissing: String?
     private var buffer = ""
+    /// Everything the probe printed, used as a safety net when line parsing misses the marker.
+    private var rawOutput = ""
 
     init(mode: Mode = .check, onLine: @escaping (String) -> Void, onFinish: @escaping (Outcome) -> Void) {
         self.mode = mode
@@ -272,14 +286,23 @@ final class UniConnectTmuxProbe {
             DispatchQueue.main.async { self.consume(text) }
         }
         process.terminationHandler = { [weak self] proc in
+            // Drain whatever is still in the pipe BEFORE deciding: the marker often arrives
+            // in the very last chunk, after the process has already exited. Clearing the
+            // handler first stops it from competing for the same bytes.
             output.fileHandleForReading.readabilityHandler = nil
+            let remaining = output.fileHandleForReading.availableData
             DispatchQueue.main.async {
                 guard let self else { return }
+                if !remaining.isEmpty { self.consume(String(decoding: remaining, as: UTF8.self)) }
                 self.flushBuffer()
                 if let version = self.sawOK {
                     self.onFinish(.ready(version: version))
                 } else if let detail = self.sawMissing {
                     self.onFinish(.needsInstall(detail: detail))
+                } else if self.rawOutput.contains("UC_TMUX_OK") {
+                    self.onFinish(.ready(version: ""))
+                } else if self.rawOutput.contains("UC_TMUX_MISSING"), self.mode == .check {
+                    self.onFinish(.needsInstall(detail: "tmux no está instalado"))
                 } else {
                     self.onFinish(.failed("la conexión terminó con código \(proc.terminationStatus)"))
                 }
@@ -308,6 +331,8 @@ final class UniConnectTmuxProbe {
     }
 
     private func consume(_ text: String) {
+        rawOutput += text
+        if rawOutput.count > 200_000 { rawOutput = String(rawOutput.suffix(100_000)) }
         buffer += text
         while let range = buffer.range(of: "\n") {
             let line = String(buffer[..<range.lowerBound])

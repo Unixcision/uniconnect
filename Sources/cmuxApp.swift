@@ -50,6 +50,7 @@ struct cmuxApp: App {
     @StateObject private var notificationStore = TerminalNotificationStore.shared
     @StateObject var closedItemHistoryStore = ClosedItemHistoryStore.shared
     @StateObject private var sidebarState = SidebarState()
+    @AppStorage(UniConnectRailSidebar.compactDefaultsKey) private var uniConnectSidebarCompact = false
     @StateObject private var keyboardShortcutSettingsObserver = KeyboardShortcutSettingsObserver.shared
     @AppStorage(AppearanceSettings.appearanceModeKey) private var appearanceMode = AppearanceSettings.defaultMode.rawValue
     @AppStorage("titlebarControlsStyle") private var titlebarControlsStyle = TitlebarControlsStyle.classic.rawValue
@@ -322,6 +323,7 @@ struct cmuxApp: App {
     }
 
     private func migrateSidebarAppearanceDefaultsIfNeeded(defaults: UserDefaults) {
+        seedUniConnectSidebarPresetIfNeeded(defaults: defaults)
         let migrationKey = "sidebarAppearanceDefaultsVersion"
         let targetVersion = 1
         guard defaults.integer(forKey: migrationKey) < targetVersion else { return }
@@ -355,7 +357,7 @@ struct cmuxApp: App {
             approximatelyEqual(cornerRadius, 0.0)
 
         if usesLegacyDefaults {
-            let preset = SidebarPresetOption.nativeSidebar
+            let preset = SidebarPresetOption.uniConnect
             defaults.set(preset.rawValue, forKey: "sidebarPreset")
             defaults.set(preset.material.rawValue, forKey: "sidebarMaterial")
             defaults.set(preset.blendMode.rawValue, forKey: "sidebarBlendMode")
@@ -367,6 +369,25 @@ struct cmuxApp: App {
         }
 
         defaults.set(targetVersion, forKey: migrationKey)
+    }
+
+    /// UniConnect ships its own floating sidebar look. Applied once per profile so a
+    /// user who later picks another preset in Settings keeps their choice.
+    private func seedUniConnectSidebarPresetIfNeeded(defaults: UserDefaults) {
+        let seededKey = "uniconnect.sidebarPresetSeeded"
+        guard !defaults.bool(forKey: seededKey) else { return }
+        let preset = SidebarPresetOption.uniConnect
+        defaults.set(preset.rawValue, forKey: "sidebarPreset")
+        defaults.set(preset.material.rawValue, forKey: "sidebarMaterial")
+        defaults.set(preset.blendMode.rawValue, forKey: "sidebarBlendMode")
+        defaults.set(preset.state.rawValue, forKey: "sidebarState")
+        defaults.set(preset.tintHex, forKey: "sidebarTintHex")
+        defaults.set(preset.tintOpacity, forKey: "sidebarTintOpacity")
+        defaults.set(preset.blurOpacity, forKey: "sidebarBlurOpacity")
+        defaults.set(preset.cornerRadius, forKey: "sidebarCornerRadius")
+        defaults.removeObject(forKey: "sidebarTintHexLight")
+        defaults.removeObject(forKey: "sidebarTintHexDark")
+        defaults.set(true, forKey: seededKey)
     }
 
     var body: some Scene {
@@ -885,6 +906,8 @@ struct cmuxApp: App {
                 UniConnectCoordinator.shared.terminateRemoteTmuxSession(in: workspace)
             }
             Divider()
+            Toggle("Barra lateral compacta", isOn: $uniConnectSidebarCompact)
+                .keyboardShortcut("b", modifiers: [.command, .option])
             Button("Bloquear") {
                 UniConnectAppLock.shared.lock()
             }
@@ -1899,7 +1922,7 @@ private enum DebugWindowConfigSnapshot {
 
     static func combinedPayload(defaults: UserDefaults = .standard) -> String {
         let sidebarPayload = """
-        sidebarPreset=\(stringValue(defaults, key: "sidebarPreset", fallback: SidebarPresetOption.nativeSidebar.rawValue))
+        sidebarPreset=\(stringValue(defaults, key: "sidebarPreset", fallback: SidebarPresetOption.uniConnect.rawValue))
         sidebarMaterial=\(stringValue(defaults, key: "sidebarMaterial", fallback: SidebarMaterialOption.sidebar.rawValue))
         sidebarBlendMode=\(stringValue(defaults, key: "sidebarBlendMode", fallback: SidebarBlendModeOption.withinWindow.rawValue))
         sidebarState=\(stringValue(defaults, key: "sidebarState", fallback: SidebarStateOption.followWindow.rawValue))
@@ -2864,7 +2887,7 @@ private struct AboutPanelView: View {
     @Environment(\.openURL) private var openURL
 
     private let githubURL = URL(string: "https://github.com/manaflow-ai/cmux")
-    private let docsURL = URL(string: "https://cmux.com/docs")
+    private let docsURL = URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")
 
     private var version: String? { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String }
     private var build: String? { Bundle.main.infoDictionary?["CFBundleVersion"] as? String }
@@ -2951,7 +2974,7 @@ private struct AboutPanelView: View {
 
 private struct SidebarDebugView: View {
     @AppStorage("sidebarMatchTerminalBackground") private var matchTerminalBackground = false
-    @AppStorage("sidebarPreset") private var sidebarPreset = SidebarPresetOption.nativeSidebar.rawValue
+    @AppStorage("sidebarPreset") private var sidebarPreset = SidebarPresetOption.uniConnect.rawValue
     @AppStorage("sidebarTintOpacity") private var sidebarTintOpacity = SidebarTintDefaults.opacity
     @AppStorage("sidebarTintHex") private var sidebarTintHex = SidebarTintDefaults.hex
     @AppStorage("sidebarTintHexLight") private var sidebarTintHexLight: String?

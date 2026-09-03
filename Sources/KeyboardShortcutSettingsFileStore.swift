@@ -25,8 +25,8 @@ final class CmuxSettingsFileStore {
     static let shared = CmuxSettingsFileStore()
 
     static let currentSchemaVersion = 1
-    static let schemaURLString = "https://raw.githubusercontent.com/manaflow-ai/cmux/main/web/data/cmux.schema.json"
-    private static let legacySchemaURLString = "https://raw.githubusercontent.com/manaflow-ai/cmux/main/web/data/cmux-settings.schema.json"
+    static let schemaURLString = ""
+    private static let legacySchemaURLString = ""
     private static let releaseBundleIdentifier = "com.unixcision.uniconnect"
     private static let backupsDefaultsKey = "cmux.settingsFile.backups.v1"
     private static let importedManagedDefaultsDefaultsKey = "cmux.settingsFile.importedManagedDefaults.v1"
@@ -229,6 +229,7 @@ final class CmuxSettingsFileStore {
             guard let source = String(data: data, encoding: .utf8) else {
                 return data
             }
+            guard !Self.legacySchemaURLString.isEmpty, !Self.schemaURLString.isEmpty else { return data }
             let updated = source.replacingOccurrences(of: Self.legacySchemaURLString, with: Self.schemaURLString)
             return Data(updated.utf8)
         }

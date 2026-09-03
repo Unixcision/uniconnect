@@ -64,37 +64,37 @@ enum CmuxHelpResource {
     var url: URL {
         switch self {
         case .gettingStarted:
-            return URL(string: "https://cmux.com/docs/getting-started")!
+            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
         case .concepts:
-            return URL(string: "https://cmux.com/docs/concepts")!
+            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
         case .configuration:
-            return URL(string: "https://cmux.com/docs/configuration")!
+            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
         case .customCommands:
-            return URL(string: "https://cmux.com/docs/custom-commands")!
+            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
         case .dock:
-            return URL(string: "https://cmux.com/docs/dock")!
+            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
         case .keyboardShortcuts:
-            return URL(string: "https://cmux.com/docs/keyboard-shortcuts")!
+            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
         case .apiReference:
-            return URL(string: "https://cmux.com/docs/api")!
+            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
         case .browserAutomation:
-            return URL(string: "https://cmux.com/docs/browser-automation")!
+            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
         case .notifications:
-            return URL(string: "https://cmux.com/docs/notifications")!
+            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
         case .ssh:
-            return URL(string: "https://cmux.com/docs/ssh")!
+            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
         case .skills:
-            return URL(string: "https://cmux.com/docs/skills")!
+            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
         case .claudeCodeTeams:
-            return URL(string: "https://cmux.com/docs/agent-integrations/claude-code-teams")!
+            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
         case .ohMyOpenCode:
-            return URL(string: "https://cmux.com/docs/agent-integrations/oh-my-opencode")!
+            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
         case .ohMyCodex:
-            return URL(string: "https://cmux.com/docs/agent-integrations/oh-my-codex")!
+            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
         case .ohMyClaudeCode:
-            return URL(string: "https://cmux.com/docs/agent-integrations/oh-my-claudecode")!
+            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
         case .changelog:
-            return URL(string: "https://cmux.com/docs/changelog")!
+            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
         case .githubIssues:
             return URL(string: "https://github.com/manaflow-ai/cmux/issues")!
         case .discord:

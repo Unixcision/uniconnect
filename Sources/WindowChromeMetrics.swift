@@ -1,7 +1,7 @@
 import CoreGraphics
 
 enum WindowChromeMetrics {
-    static let sharedChromeBarHeight: CGFloat = 28
+    static let sharedChromeBarHeight: CGFloat = 32
     static let appTitlebarHeight: CGFloat = sharedChromeBarHeight
     static let bonsplitTabBarHeight: CGFloat = sharedChromeBarHeight
     static let secondaryTitlebarHeight: CGFloat = sharedChromeBarHeight
@@ -22,7 +22,7 @@ enum HeaderChromeControlMetrics {
     static let buttonSize: CGFloat = 20
     static let iconSize: CGFloat = 12
     static let iconFrameSize: CGFloat = 14
-    static let cornerRadius: CGFloat = 6
+    static let cornerRadius: CGFloat = 8
     static let titlebarControlsLeadingPadding: CGFloat = 4
 
     static func iconFrameSize(forIconSize iconSize: CGFloat) -> CGFloat {

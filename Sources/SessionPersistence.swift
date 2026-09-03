@@ -1151,7 +1151,6 @@ enum SurfaceResumeApprovalStore {
             switch rootLoadResult {
             case .missing:
                 let root: [String: Any] = [
-                    "$schema": CmuxSettingsFileStore.schemaURLString,
                     "schemaVersion": CmuxSettingsFileStore.currentSchemaVersion,
                     settingsTerminalSectionKey: [
                         settingsRecordsKey: recordsValue,
@@ -1391,6 +1390,8 @@ struct SessionTerminalPanelSnapshot: Codable, Sendable {
     var wasAgentRunning: Bool?
     /// UniConnect: tmux session name this terminal is bound to (SSH workspaces).
     var uniConnectTmuxSession: String? = nil
+    /// UniConnect: Claude Code session id this window always resumes (local workspaces).
+    var uniConnectClaudeSession: String? = nil
 
     init(
         workingDirectory: String? = nil,
@@ -1403,9 +1404,11 @@ struct SessionTerminalPanelSnapshot: Codable, Sendable {
         isRemoteTerminal: Bool? = nil,
         remotePTYSessionID: String? = nil,
         wasAgentRunning: Bool? = nil,
-        uniConnectTmuxSession: String? = nil
+        uniConnectTmuxSession: String? = nil,
+        uniConnectClaudeSession: String? = nil
     ) {
         self.uniConnectTmuxSession = uniConnectTmuxSession
+        self.uniConnectClaudeSession = uniConnectClaudeSession
         self.workingDirectory = workingDirectory
         self.scrollback = scrollback
         self.agent = agent

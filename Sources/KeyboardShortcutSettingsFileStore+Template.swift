@@ -5,13 +5,12 @@ extension CmuxSettingsFileStore {
     static func defaultTemplate() -> String {
         var lines: [String] = [
             "{",
-            "  \"$schema\": \"\(schemaURLString)\",",
             "  \"schemaVersion\": \(currentSchemaVersion),",
             "",
             "  // This file uses JSON with comments (JSONC).",
             "  // Uncomment and edit any setting to make it file-managed.",
             "  // Remove a setting to fall back to the value saved in Settings.",
-            "  // cmux creates this template on launch when ~/.config/uniconnect/uniconnect.json is missing.",
+            "  // UniConnect creates this template on launch when ~/.config/uniconnect/uniconnect.json is missing.",
             "  // Legacy settings.json files are read only as fallback for keys not present here.",
             "",
         ]

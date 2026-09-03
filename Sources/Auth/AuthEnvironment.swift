@@ -32,7 +32,7 @@ enum AuthEnvironment {
     static var websiteOrigin: URL {
         resolvedURL(
             environmentKey: "CMUX_WWW_ORIGIN",
-            fallback: "https://cmux.com"
+            fallback: "https://github.com/Unixcision/uniconnect"
         )
     }
 
@@ -123,7 +123,7 @@ enum AuthEnvironment {
         #if DEBUG
         return "http://localhost:\(cmuxPort)"
         #else
-        return "https://cmux.com"
+        return "https://github.com/Unixcision/uniconnect"
         #endif
     }
 
@@ -131,7 +131,7 @@ enum AuthEnvironment {
         #if DEBUG
         return "http://localhost:\(cmuxPort)"
         #else
-        return "https://cmux.com"
+        return "https://github.com/Unixcision/uniconnect"
         #endif
     }
 
@@ -144,7 +144,7 @@ enum AuthEnvironment {
         #if DEBUG
         return "http://localhost:\(cmuxPort)"
         #else
-        return "https://api.cmux.sh"
+        return "https://github.com/Unixcision/uniconnect"
         #endif
     }
 

@@ -614,7 +614,8 @@ extension Workspace {
                 isRemoteTerminal: activeRemoteTerminalSurfaceIds.contains(panelId),
                 remotePTYSessionID: remotePTYSessionIDForSnapshot(panelId: panelId),
                 wasAgentRunning: agentWasRunning,
-                uniConnectTmuxSession: uniConnectTmuxSessionsByPanelId[panelId]
+                uniConnectTmuxSession: uniConnectTmuxSessionsByPanelId[panelId],
+                uniConnectClaudeSession: uniConnectClaudeSessionsByPanelId[panelId]
             )
             browserSnapshot = nil
             markdownSnapshot = nil
@@ -1790,6 +1791,9 @@ extension Workspace {
                 suppressWorkspaceRemoteStartupCommand: suppressWorkspaceRemoteStartupCommand
             ) else {
                 return nil
+            }
+            if let claudeSession = snapshot.terminal?.uniConnectClaudeSession, !claudeSession.isEmpty {
+                uniConnectClaudeSessionsByPanelId[terminalPanel.id] = claudeSession
             }
             if let uniConnectSession = snapshot.terminal?.uniConnectTmuxSession {
                 uniConnectTmuxSessionsByPanelId[terminalPanel.id] = UniConnectSSH.sanitizedTmuxName(uniConnectSession)
@@ -10557,6 +10561,9 @@ final class Workspace: Identifiable, ObservableObject {
     // UniConnect: Local/SSH profile and per-panel tmux binding.
     @Published var uniConnectProfile: UniConnectWorkspaceProfile?
     @Published var uniConnectTmuxSessionsByPanelId: [UUID: String] = [:]
+    /// UniConnect: Claude Code session id bound to each local window, so every window
+    /// always comes back on the same session instead of a bare shell.
+    @Published var uniConnectClaudeSessionsByPanelId: [UUID: String] = [:]
     var uniConnectPlaceholderPanelIds: Set<UUID> = []
     /// UniConnect: the stock workspace the app boots with when there is nothing to restore.
     /// It shows the empty state instead of a shell and is never persisted.

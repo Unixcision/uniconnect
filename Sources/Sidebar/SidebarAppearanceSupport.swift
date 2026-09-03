@@ -57,20 +57,22 @@ func titlebarControlForegroundNSColor(
     )
 }
 
+/// UniConnect accent: coral (the warm end of the logo's coral→magenta ramp).
+/// Slightly deeper in light mode so it keeps contrast on white chrome.
 func cmuxAccentNSColor(for colorScheme: ColorScheme) -> NSColor {
     switch colorScheme {
     case .dark:
         return NSColor(
-            srgbRed: 0,
-            green: 145.0 / 255.0,
-            blue: 1.0,
+            srgbRed: 1.0,
+            green: 92.0 / 255.0,
+            blue: 110.0 / 255.0,
             alpha: 1.0
         )
     default:
         return NSColor(
-            srgbRed: 0,
-            green: 136.0 / 255.0,
-            blue: 1.0,
+            srgbRed: 232.0 / 255.0,
+            green: 70.0 / 255.0,
+            blue: 100.0 / 255.0,
             alpha: 1.0
         )
     }

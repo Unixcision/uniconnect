@@ -94,7 +94,7 @@ public struct KeyboardShortcutsSection: View {
             HStack(spacing: 8) {
                 Link(
                     String(localized: "settings.shortcuts.chords.docsButton", defaultValue: "Chord docs"),
-                    destination: URL(string: "https://cmux.com/docs/keyboard-shortcuts#shortcut-chords")!
+                    destination: URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
                 )
                 .font(.caption)
                 .accessibilityIdentifier("SettingsKeyboardShortcutsChordDocsLink")

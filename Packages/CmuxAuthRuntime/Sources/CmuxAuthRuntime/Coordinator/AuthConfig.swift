@@ -54,8 +54,8 @@ public struct AuthConfig: Equatable, Sendable {
             callbackURL = "http://localhost:3000/auth/callback"
             defaultAPIBaseURL = "http://localhost:3000"
         case .production:
-            callbackURL = "https://cmux.dev/auth/callback"
-            defaultAPIBaseURL = "https://cmux.dev"
+            callbackURL = "https://github.com/Unixcision/uniconnect/auth/callback"
+            defaultAPIBaseURL = "https://github.com/Unixcision/uniconnect"
         }
 
         let override = overrides["ApiBaseURL"]
