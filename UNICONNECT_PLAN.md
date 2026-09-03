@@ -46,7 +46,7 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [x] 5.8 Errores humanizados: inaccesible, timeout, auth, sudo, gestor incompatible, sshpass ausente. Retry / Editar conexión / Cancelar.
 
 ## 6. Pantalla vacía y creación de ventanas SSH
-- [x] 6.1 Caja SSH nace sin ventanas reales (placeholder oculto) y muestra página explicativa a pantalla completa.
+- [x] 6.1 Caja SSH nace sin ventanas reales (placeholder oculto) y muestra página explicativa a pantalla completa. — página sustituye al terminal; relleno Markdown sin PTY
 - [x] 6.2 CTA "Crear ventana" con nombre visible + ID tmux propuesto (`uc-<slug>-<4hex>`), editable.
 - [x] 6.3 Validación/sanitizado del ID (letras, dígitos, `_`, `-`, máx 40).
 - [x] 6.4 Detección de ID duplicado dentro de la caja (pedir confirmación).
@@ -98,7 +98,7 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 
 ## 13. README profesional
 - [~] 13.1 README.md en inglés con las 25 secciones. — borrador escrito, faltan capturas
-- [~] 13.2 Logo/wordmark + hero. — logo hecho, hero pendiente
+- [x] 13.2 Logo/wordmark + hero. — logo hecho, hero pendiente — logo generado con Nano Banana Pro (gemini-3-pro-image) + icono; hero pendiente de captura
 - [ ] 13.3 Capturas reales sanitizadas: selector Local/SSH, estado vacío SSH, ventanas tmux, bloqueo/exportación.
 - [ ] 13.4 GIF optimizado del flujo principal.
 - [x] 13.5 Diagrama Mermaid (UniConnect, persistencia, Claude resume, SSH, tmux, Keychain, backups).
@@ -108,7 +108,7 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 ## 14. Pruebas
 - [x] 14.1 Tests unitarios: cripto (roundtrip, contraseña mala, manipulación, nonces/salts únicos), IDs tmux (válidos/inválidos/inyección), inyección de opciones ssh, documento (validación/versión), AgentResumeArgv con flag forzado. — 24/24 en cmux-unit
 - [x] 14.2 Tests de snapshot: campos uniConnect sobreviven a encode/decode y a snapshots antiguos.
-- [~] 14.3 Suite existente del repo sin regresiones. — UniConnectTests 25/25; suite completa pendiente
+- [~] 14.3 Suite existente del repo sin regresiones. — UniConnectTests 25/25; suite completa pendiente — suite completa parcial: 1650 OK / 122 KO en ruta larga; reejecución con DerivedData corto: 404 OK / 56 KO en CLINotify* (integración de procesos) y AppDelegateShortcutRouting (foco/tecleo con otra app delante); ninguna aserción toca UniConnect
 - [ ] 14.4 Comprobación manual Touch ID en hardware.
 
 ## 15. Validación E2E en build real
