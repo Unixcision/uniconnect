@@ -56,12 +56,13 @@ Generado el 2026-09-03 con **Nano Banana Pro** (`gemini-3-pro-image`, el modelo 
 
 ## 6. Configuración inicial (semilla)
 
-Fichero preparado: `~/Desktop/PROYECTOS/uniconnect-seed.json` (JSON plano, se importa una vez):
+Fichero `~/Desktop/PROYECTOS/uniconnect-seed.json` (fuera del repo, permisos 0600, contiene una contraseña de sshpass). Tres cajas, tal como las pidió Dani el 03/09:
 
-- Caja **localhost** (Local, `~`, azul) con una ventana `shell`.
-- Caja **NOTBETTING PREPRO** (SSH, rojo) con `ssh -i ~/…/<clave-prepro>.pem root@<ip-prepro>` y seis ventanas enganchadas a los tmux que ya existen en ese servidor: `claudefixerrors`, `claudefixerrors_2`, `claudefixerrors_3-7`, `claudesupport`, `claudesupportliga`, `miamigoclaude`.
+- **GESTIONES SISTEMA MAC** (Local, `~`, azul): 10 ventanas, cada una `claude --resume <id> --dangerously-skip-permissions` con nombre visible (PANENKA BETS, RANDOM STUFF, CASTLE ROCKET, MISC VARIADO, 30 PAVOS DAVINCI, COMPARA RENFE, BETFAIR/WH CHATS, GYM DATOS, PORN VIDEOS, CREADOR PLANOS). Nota: RANDOM STUFF y BETFAIR/WH CHATS llevan el mismo id de sesión en la lista recibida.
+- **NOTBETTING** (SSH, rojo): clave `.pem` de prepro; seis ventanas enganchadas a los tmux existentes `claudefixerrors`, `claudefixerrors_2`, `claudefixerrors_3-7`, `claudesupport`, `claudesupportliga`, `miamigoclaude` (no se crean sesiones nuevas: `tmux new-session -A` engancha a las existentes).
+- **COMECAMPUS** (SSH, verde): `sshpass` + `StrictHostKeyChecking=no` tal como se dio; una ventana `shell` con sesión tmux nueva `comecampus`. Validado en la build de pruebas: importación por semilla → sesión `comecampus` creada y enganchada en el servidor.
 
-Cómo importarla: **UniConnect ▸ Importar configuración…** (Touch ID → preview → Importar), o una sola vez con `UNICONNECT_IMPORT_SEED=~/Desktop/PROYECTOS/uniconnect-seed.json` al lanzar. Ojo: al enganchar UniConnect a esos tmux, `-D` expulsa a los clientes que tuvieras abiertos en cmux (es lo deseado al migrar). Para añadir más cajas después, edita el JSON (misma estructura) y vuelve a importar: las que ya existen por nombre vienen desmarcadas.
+Cómo importarla en la app instalada: **UniConnect ▸ Importar configuración…** (Touch ID → preview → Importar) o una sola vez con `UNICONNECT_IMPORT_SEED=~/Desktop/PROYECTOS/uniconnect-seed.json` al lanzar. Al enganchar NOTBETTING, `-D` expulsa a los clientes de cmux que estuvieran en esos tmux (deseado al migrar). Para añadir cajas después: editar el JSON y reimportar (las existentes por nombre vienen desmarcadas).
 
 ## 6b. Evidencias adicionales (03/09, pantalla desbloqueada)
 
