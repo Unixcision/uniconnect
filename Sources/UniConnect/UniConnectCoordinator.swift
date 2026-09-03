@@ -379,9 +379,19 @@ final class UniConnectCoordinator: ObservableObject {
             exportConfiguration()
             return
         }
-        guard Self.isEnabled,
-              let path = ProcessInfo.processInfo.environment["UNICONNECT_IMPORT_SEED"], !path.isEmpty else { return }
-        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        guard Self.isEnabled else { return }
+        // Seed source: the environment variable, or a `seed.json` dropped into the UniConnect
+        // directory (first-run provisioning without touching the command line). Applied once.
+        let envPath = ProcessInfo.processInfo.environment["UNICONNECT_IMPORT_SEED"]
+        let dropIn = UniConnectPaths.directory.appendingPathComponent("seed.json")
+        let url: URL
+        if let envPath, !envPath.isEmpty {
+            url = URL(fileURLWithPath: (envPath as NSString).expandingTildeInPath)
+        } else if FileManager.default.fileExists(atPath: dropIn.path) {
+            url = dropIn
+        } else {
+            return
+        }
         guard let data = try? Data(contentsOf: url) else {
             NSLog("[UniConnect] seed not readable: %@", url.path)
             return

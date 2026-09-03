@@ -79,7 +79,7 @@ Política de autenticación: Touch ID si hay sensor; si no hay biometría, no es
 |---|---|
 | `UNICONNECT_DISABLE_LOCK=1` | Sin Touch ID (solo tests/automatización) |
 | `UNICONNECT_DISABLE=1` | Desactiva el selector Local/SSH y el resto de intercepciones (comportamiento cmux puro) |
-| `UNICONNECT_IMPORT_SEED=<ruta>` | Importa una semilla JSON (o un export cifrado si hay `UNICONNECT_TEST_PASSPHRASE`) una sola vez tras desbloquear |
+| `UNICONNECT_IMPORT_SEED=<ruta>` | Importa una semilla JSON (o un export cifrado si hay `UNICONNECT_TEST_PASSPHRASE`) una sola vez tras desbloquear. Sin variable, se usa `~/Library/Application Support/cmux/uniconnect/seed.json` si existe (aprovisionamiento del primer arranque) |
 | `UNICONNECT_TEST_PASSPHRASE`, `UNICONNECT_TEST_EXPORT_PATH` | Ganchos de automatización para exportar/importar sin diálogos; **solo se honran si el bloqueo está desactivado** (`UNICONNECT_DISABLE_LOCK=1`), nunca en uso normal |
 
 ## 8. Pendiente / limitaciones conocidas
