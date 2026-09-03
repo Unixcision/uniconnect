@@ -405,9 +405,11 @@ final class UniConnectCoordinator: ObservableObject {
         do {
             switch try UniConnectBackup.inspect(data: data) {
             case .plainSeed(let document):
-                applyImport(document.workspaces)
+                let existing = Set(allTabManagers().flatMap { $0.tabs.map { ($0.customTitle ?? $0.title).lowercased() } })
+                let fresh = document.workspaces.filter { !existing.contains($0.name.lowercased()) }
+                applyImport(fresh)
                 try? Data().write(to: marker)
-                NSLog("[UniConnect] seed applied: %d workspaces", document.workspaces.count)
+                NSLog("[UniConnect] seed applied: %d new of %d (existing names skipped)", fresh.count, document.workspaces.count)
             case .encrypted(let container):
                 guard let hooks = TestHooks.current, let passphrase = hooks.passphrase else {
                     NSLog("[UniConnect] seed is encrypted; use Importar configuración… from the menu")
