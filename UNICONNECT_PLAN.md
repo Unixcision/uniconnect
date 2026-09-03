@@ -7,7 +7,7 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [x] 1.2 Rama `uniconnect` creada desde `fix/sshpass-image-paste`; remotos `origin` (Unixcision/cmux) y `upstream` (manaflow-ai/cmux) intactos.
 - [x] 1.3 Inventario de sistemas reutilizables: SessionPersistence (snapshot JSON + autosave 8 s), RestorableAgentSession (hooks Claude → `--resume`), resumeBinding + aprobaciones, WorkspaceRemoteConfiguration/terminalStartupCommand, ClosedItemHistory, Keychain (HMAC resume).
 - [x] 1.4 Decisión: ampliar el sistema existente (campos nuevos en snapshot + módulo `Sources/UniConnect/`), no un sistema paralelo.
-- [~] 1.5 Commits por fases, sin force push ni borrado de ramas.
+- [x] 1.5 Commits por fases, sin force push ni borrado de ramas. — 14 commits en `uniconnect`, subidos a origin (autorizado por THE_BIG_GOAL §2); sin PR ni release
 
 ## 2. Renombrado completo a UniConnect
 - [x] 2.1 Nombre visible (CFBundleDisplayName) → UniConnect.
@@ -102,7 +102,7 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [~] 13.3 Capturas reales sanitizadas: selector Local/SSH, estado vacío SSH, ventanas tmux, bloqueo/exportación. — selector Local/SSH, estado vacío SSH y ventana tmux capturados y sanitizados; captura de bloqueo/exportación pendiente
 - [ ] 13.4 GIF optimizado del flujo principal.
 - [x] 13.5 Diagrama Mermaid (UniConnect, persistencia, Claude resume, SSH, tmux, Keychain, backups).
-- [ ] 13.6 Badges reales; comprobación de enlaces, anchors e imágenes; sin datos privados.
+- [x] 13.6 Badges reales; comprobación de enlaces, anchors e imágenes; sin datos privados. — 18 anclas OK, 6 imágenes y enlaces a LICENSE/THIRD_PARTY/docs responden 200 en raw.githubusercontent; sin IPs ni hostnames (difuminados)
 - [x] 13.7 Descripción/topics del repo con `gh`.
 
 ## 14. Pruebas
