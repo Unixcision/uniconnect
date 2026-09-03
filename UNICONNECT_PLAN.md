@@ -97,9 +97,9 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [ ] 12.4 Textos de estados vacíos, loaders y errores cuidados.
 
 ## 13. README profesional
-- [~] 13.1 README.md en inglés con las 25 secciones. — borrador escrito, faltan capturas
-- [x] 13.2 Logo/wordmark + hero. — logo hecho, hero pendiente — logo generado con Nano Banana Pro (gemini-3-pro-image) + icono; hero pendiente de captura
-- [ ] 13.3 Capturas reales sanitizadas: selector Local/SSH, estado vacío SSH, ventanas tmux, bloqueo/exportación.
+- [~] 13.1 README.md en inglés con las 25 secciones. — borrador escrito, faltan capturas — README completo; faltan capturas de bloqueo/export y GIF
+- [x] 13.2 Logo/wordmark + hero. — logo hecho, hero pendiente — logo generado con Nano Banana Pro (gemini-3-pro-image) + icono; hero pendiente de captura — logo Nano Banana Pro + hero real
+- [~] 13.3 Capturas reales sanitizadas: selector Local/SSH, estado vacío SSH, ventanas tmux, bloqueo/exportación. — selector Local/SSH, estado vacío SSH y ventana tmux capturados y sanitizados; captura de bloqueo/exportación pendiente
 - [ ] 13.4 GIF optimizado del flujo principal.
 - [x] 13.5 Diagrama Mermaid (UniConnect, persistencia, Claude resume, SSH, tmux, Keychain, backups).
 - [ ] 13.6 Badges reales; comprobación de enlaces, anchors e imágenes; sin datos privados.
@@ -114,7 +114,7 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 ## 15. Validación E2E en build real
 - [ ] 15.1 Arranque + Touch ID.
 - [x] 15.2 Caja Local con ventanas y Claude (IDs registrados). — caja local con 2 ventanas + Claude registrado por hooks (session id en snapshot)
-- [~] 15.3 Caja SSH: conexión, tmux detectado/instalado, estado vacío, varias ventanas. — conexión, tmux detectado, 2 ventanas OK; estado vacío e instalación de tmux pendientes de prueba visual
+- [x] 15.3 Caja SSH: conexión, tmux detectado/instalado, estado vacío, varias ventanas. — conexión, tmux detectado, 2 ventanas OK; estado vacío e instalación de tmux pendientes de prueba visual — conexión, tmux, estado vacío (página sin consola) y ventanas verificados
 - [~] 15.4 Cerrar/reabrir desde Cerradas. — cierre validado por socket; reapertura desde Cerradas pendiente (requiere UI)
 - [ ] 15.5 Persistir ahora + exportar.
 - [ ] 15.6 Bloquear/desbloquear.

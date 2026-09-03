@@ -17,7 +17,9 @@ Local boxes resume Claude Code. SSH boxes live in tmux on the server. Everything
 [![License MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Upstream cmux](https://img.shields.io/badge/upstream-manaflow--ai%2Fcmux-8A2BE2?logo=github)](https://github.com/manaflow-ai/cmux)
 
-<img src="docs/assets/hero.png" alt="UniConnect main window: sidebar with colored Local and SSH boxes, an SSH box showing several tmux-backed windows" width="900">
+<img src="docs/assets/hero.png" alt="UniConnect main window: sidebar with a Local box running Claude Code and an SSH box whose tab is attached to a tmux session" width="900">
+
+<sub>Screenshots come from a Debug build in the light system theme; hostnames and addresses are blurred.</sub>
 
 </div>
 
@@ -101,7 +103,7 @@ flowchart LR
 
 ## Local workspaces
 
-<img src="docs/assets/new-box-local.png" alt="New box sheet with the Local tab selected: name, folder picker and a color grid" width="520">
+<p align="center"><img src="docs/assets/new-box-local.png" alt="New box sheet with the Local tab selected: name, folder picker and a color grid" width="420"> <img src="docs/assets/new-box-ssh.png" alt="New box sheet with the SSH tab selected: name, full connect command and a color grid" width="420"></p>
 
 Pick a folder, a name and a color. Windows keep their working directory, custom title, splits and, when Claude Code ran inside them, the session id detected by the bundled `claude` wrapper. The restore command is built by cmux's `AgentResumeArgv`; UniConnect appends `--dangerously-skip-permissions` when it is missing and the injected settings carry `skipDangerousModePermissionPrompt`, so nothing stops on a Yes/No prompt.
 
@@ -113,7 +115,7 @@ Pick a folder, a name and a color. Windows keep their working directory, custom 
 2. UniConnect connects with `sh -s` and checks tmux. If it is missing it reports OS, package manager and whether root or password-less sudo is available, and installs only after you confirm.
 3. Create windows. Each one asks for a visible name and an internal tmux id (`uc-<slug>-<4 hex>` by default). Duplicate ids inside a box are flagged.
 
-<img src="docs/assets/ssh-windows.png" alt="An SSH box with several tabs, each attached to its own tmux session" width="900">
+<img src="docs/assets/ssh-windows.png" alt="An SSH box whose tab is attached to a tmux session on the server; the tmux status bar is visible at the bottom" width="900">
 
 Closing a tab only ends the ssh client; the tmux session and whatever runs inside it stay alive. The tab moves to *Closed* with its tmux id, ready to be reopened.
 
