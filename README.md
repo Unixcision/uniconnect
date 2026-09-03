@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/logo-256.png" alt="UniConnect logo: a coral terminal chevron interlocked with a cyan chain link on a dark rounded tile" width="128" height="128">
+<img src="docs/assets/logo-256.png" alt="UniConnect logo: two glowing braces, cyan and magenta, framing a terminal on the left and a server rack on the right, on a dark blue rounded tile" width="128" height="128">
 
 # UniConnect
 

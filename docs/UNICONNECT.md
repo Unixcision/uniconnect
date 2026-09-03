@@ -142,7 +142,14 @@ Cuando no hay nada abierto (primer arranque, o se cierran todas las cajas) no se
 
 ## Pegado remoto de imágenes
 
-Ya no se detecta el `ssh` husmeando el TTY: manda el tipo de caja. Una caja **local** pega siempre en local; una caja **SSH** usa el comando de conexión guardado en la bóveda, así que funciona también dentro de tmux o de una shell anidada. Al crear o editar una conexión solo se aceptan comandos que empiecen por `ssh` o `sshpass` (y con `sshpass`, que invoquen `ssh`).
+Ya no se detecta el `ssh` husmeando el TTY ni los procesos: **manda el tipo de caja**, y el código que miraba `ps` y los argumentos de los procesos se ha eliminado. Una caja **local** pega siempre en local; una caja **SSH** sube el fichero por `scp` con el comando de conexión guardado en la bóveda, así que funciona también dentro de tmux o de una shell anidada. Detalles del camino SSH:
+
+- Si la ventana está desconectada, o la caja no tiene comando de conexión utilizable, la app **no degrada a local** (pegaría una ruta del Mac en el servidor): rechaza el pegado y te dice por qué.
+- Los errores de `scp` se muestran con su mensaje real, en vez de un pitido.
+- Con `sshpass`, la contraseña viaja en la variable `SSHPASS` (`sshpass -e`), nunca en la línea de comandos donde `ps` o un informe de fallo la enseñarían. `sshpass` se busca en las rutas habituales y, si no, en el PATH de tu shell de login.
+- `~`, `$HOME` y las rutas relativas de `-i` del comando guardado se expanden antes de llamar a `scp`.
+
+Al crear, editar o importar una conexión solo se aceptan comandos que empiecen por `ssh` o `sshpass` (y con `sshpass`, que invoquen `ssh`).
 
 ## Orden de ventanas y cajas
 
@@ -150,7 +157,7 @@ Reordenar cajas en la barra lateral o mover/reordenar ventanas dentro de una caj
 
 ## Aspecto
 
-Barra lateral flotante: va separada del borde de la ventana, con esquinas de 14, material translúcido y un tinte coral muy suave. Se compacta a un carril de 64 pt con un icono de color por caja (inicial + insignia `network`/`terminal`, anillo coral en la seleccionada) desde el menú UniConnect o con ⌘⌥B. El acento de toda la app es coral (`#FF5C6E` en oscuro, `#E84664` en claro) y las pestañas de panel son píldoras redondeadas.
+Barra lateral flotante: una tarjeta separada del borde de la ventana que empieza por debajo de los botones de la ventana, con esquinas de 18, material translúcido, degradado suave y sombra. Se compacta a un carril de 64 pt con un icono de color por caja (inicial + insignia `network`/`terminal`, anillo coral en la seleccionada) desde el botón del pie de la propia barra (y el de expandir en el rail), desde el menú o con ⌘⌥B. La barra de título ya no lleva ni el botón de esconder la barra lateral ni las flechas de "foco atrás / adelante" de cmux: solo notificaciones y nueva caja. El acento de toda la app es coral (`#FF5C6E` en oscuro, `#E84664` en claro) y las pestañas de panel son píldoras redondeadas.
 
 ## Sesión ligada a la ventana
 

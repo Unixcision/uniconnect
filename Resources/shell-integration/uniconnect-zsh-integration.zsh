@@ -1,4 +1,4 @@
-# cmux shell integration for zsh
+# UniConnect shell integration for zsh
 # Injected automatically — do not source manually
 
 # Prefer zsh/net/unix for socket sends (no fork, ~0.2ms per send vs ~3ms
@@ -70,8 +70,8 @@ _cmux_socket_is_unix() {
 }
 
 _cmux_relay_cli_path() {
-    if [[ -n "${CMUX_BUNDLED_CLI_PATH:-}" && -x "${CMUX_BUNDLED_CLI_PATH}" ]]; then
-        print -r -- "${CMUX_BUNDLED_CLI_PATH}"
+    if [[ -n "${UNICONNECT_BUNDLED_CLI_PATH:-}" && -x "${UNICONNECT_BUNDLED_CLI_PATH}" ]]; then
+        print -r -- "${UNICONNECT_BUNDLED_CLI_PATH}"
         return 0
     fi
     command -v cmux 2>/dev/null
@@ -334,7 +334,7 @@ typeset -g _CMUX_TMUX_PUSH_SIGNATURE=""
 typeset -g _CMUX_TMUX_PULL_SIGNATURE=""
 typeset -g _CMUX_DELAY_TERM_RESTORE_UNTIL_FIRST_PROMPT=${_CMUX_DELAY_TERM_RESTORE_UNTIL_FIRST_PROMPT:-0}
 typeset -ga _CMUX_TMUX_SYNC_KEYS=(
-    CMUX_BUNDLED_CLI_PATH
+    UNICONNECT_BUNDLED_CLI_PATH
     CMUX_BUNDLE_ID
     CMUXD_UNIX_PATH
     CMUXTERM_REPO_ROOT

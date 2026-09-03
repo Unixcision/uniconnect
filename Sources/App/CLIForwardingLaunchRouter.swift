@@ -5,11 +5,11 @@ import os
 nonisolated private let cliForwardingLogger = Logger(subsystem: "com.unixcision.uniconnect", category: "CLIForwarding")
 
 enum CLIForwardingLaunchRouter {
-    private static let guardKey = "CMUX_CLI_FORWARDED"
+    private static let guardKey = "UNICONNECT_CLI_FORWARDED"
 
     /// If `argv` looks like a CLI invocation, exec the bundled CLI at
-    /// `Contents/Resources/bin/cmux` and never return. macOS-launch arguments
-    /// (`-psn_...`, other `-` flags) and `cmux://` URLs are left to the GUI.
+    /// `Contents/Resources/bin/uniconnect` and never return. macOS-launch arguments
+    /// (`-psn_...`, other `-` flags) and `uniconnect://` URLs are left to the GUI.
     static func forwardToBundledCLIIfNeeded(
         arguments argv: [String] = CommandLine.arguments,
         bundle: Bundle = .main,
@@ -20,7 +20,7 @@ enum CLIForwardingLaunchRouter {
 
         guard let cliURL = bundledCLIURL(bundle: bundle, fileManager: fileManager) else {
             #if DEBUG
-            let resourcePath = bundle.resourceURL?.appendingPathComponent("bin/cmux").path ?? "<missing>"
+            let resourcePath = bundle.resourceURL?.appendingPathComponent("bin/uniconnect").path ?? "<missing>"
             let executablePath = processExecutableURL()?.path ?? "<missing>"
             cliForwardingLogger.debug("bundled CLI not found for forwarding; bundleID=\(bundle.bundleIdentifier ?? "<missing>", privacy: .public) resourcePath=\(resourcePath, privacy: .public) executablePath=\(executablePath, privacy: .public)")
             #endif
@@ -72,7 +72,7 @@ enum CLIForwardingLaunchRouter {
         fileManager: FileManager = .default,
         executableURL: URL? = processExecutableURL()
     ) -> URL? {
-        let bundleCandidate = bundle.resourceURL?.appendingPathComponent("bin/cmux")
+        let bundleCandidate = bundle.resourceURL?.appendingPathComponent("bin/uniconnect")
         if let bundleCandidate, fileManager.isExecutableFile(atPath: bundleCandidate.path) {
             return bundleCandidate
         }
@@ -82,7 +82,7 @@ enum CLIForwardingLaunchRouter {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("Resources")
-        let executableCandidate = resourcesURL.appendingPathComponent("bin/cmux")
+        let executableCandidate = resourcesURL.appendingPathComponent("bin/uniconnect")
         if fileManager.isExecutableFile(atPath: executableCandidate.path) {
             return executableCandidate
         }
@@ -119,21 +119,21 @@ enum CLIForwardingLaunchRouter {
     private static func localizedMissingBundledCLIError() -> String {
         String(
             localized: "cli.forwarding.error.missingBundledCLI",
-            defaultValue: "cmux could not run this command from the app bundle. Reinstall cmux or run the command from a standard cmux CLI installation."
+            defaultValue: "UniConnect could not run this command from the app bundle. Reinstall UniConnect or run the command from a standard UniConnect CLI installation."
         )
     }
 
     private static func localizedArgumentAllocationError() -> String {
         String(
             localized: "cli.forwarding.error.allocateArguments",
-            defaultValue: "cmux could not start this command. Try again, or reinstall cmux if the problem continues."
+            defaultValue: "UniConnect could not start this command. Try again, or reinstall UniConnect if the problem continues."
         )
     }
 
     private static func localizedExecFailureError() -> String {
         String(
             localized: "cli.forwarding.error.execFailed",
-            defaultValue: "cmux could not start the command-line tool from the app bundle. Reinstall cmux or run the command from a standard cmux CLI installation."
+            defaultValue: "UniConnect could not start the command-line tool from the app bundle. Reinstall UniConnect or run the command from a standard UniConnect CLI installation."
         )
     }
 

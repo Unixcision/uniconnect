@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - UniConnect data model
 //
-// UniConnect layers a small "connection profile" on top of cmux workspaces:
+// UniConnect layers a connection profile on top of its workspace model:
 //
 // * A workspace ("caja") is either LOCAL (a folder on this Mac) or SSH (a server).
 // * An SSH workspace stores a *reference* to its connect command (the actual
@@ -10,7 +10,7 @@ import Foundation
 // * Every terminal tab ("ventana") inside an SSH workspace is bound to a named
 //   tmux session on the server. Killing the app only detaches; the tmux session
 //   keeps running and is re-attached on restore.
-// * Local tabs rely on cmux's own agent-session tracking (claude --resume).
+// * Local tabs persist their Claude session identity and restore with `claude --resume`.
 
 enum UniConnectWorkspaceKind: String, Codable, Sendable, Equatable {
     case local
@@ -71,6 +71,8 @@ struct UniConnectDocument: Codable, Equatable {
     }
 
     struct Workspace: Codable, Equatable {
+        /// Stable live workspace identity when exported by UniConnect; absent in Markdown maps.
+        var id: UUID? = nil
         var name: String
         var kind: UniConnectWorkspaceKind
         /// Hex color (e.g. "#FF8800") or nil.
@@ -101,17 +103,14 @@ struct UniConnectDocument: Codable, Equatable {
 
 // MARK: - Storage identity
 
-/// UniConnect keeps cmux's bundle id (permissions, Keychain, sockets) but must never read or
-/// overwrite cmux's own session history. Files that carry session state get this suffix
-/// when the running executable is UniConnect, so both apps' data can coexist untouched.
+/// Stable storage identity for UniConnect's application, sessions, and history.
+///
+/// The suffix remains part of the existing session filenames for compatibility with
+/// UniConnect releases already installed; it never redirects storage into another app.
 enum UniConnectIdentity {
-    static let isUniConnect: Bool = {
-        let exe = Bundle.main.executableURL?.lastPathComponent ?? ""
-        return exe.hasPrefix("UniConnect")
-    }()
-    static let storageSuffix: String = isUniConnect ? "-uniconnect" : ""
+    static let storageSuffix = "-uniconnect"
     /// Folder under Application Support that holds session/history files.
-    static let sessionFolder: String = isUniConnect ? "UniConnect" : "cmux"
+    static let sessionFolder = "UniConnect"
     static let releaseBundleIdentifier = "com.unixcision.uniconnect"
 }
 

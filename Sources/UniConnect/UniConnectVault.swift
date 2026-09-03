@@ -13,20 +13,11 @@ enum UniConnectPaths {
         // get a suffixed folder so dogfooding never pollutes real data.
         let release = UniConnectIdentity.releaseBundleIdentifier
         let bundleId = Bundle.main.bundleIdentifier ?? release
-        let suffix = bundleId == release ? "" : "-" + bundleId.replacingOccurrences(of: release + ".", with: "").replacingOccurrences(of: "com.cmuxterm.app", with: "cmux")
+        let suffix = bundleId == release
+            ? ""
+            : "-" + bundleId.replacingOccurrences(of: release + ".", with: "")
         let dir = base.appendingPathComponent("UniConnect\(suffix)", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        // One-time move from the pre-1.0 location (inside cmux's folder): merge file by file so
-        // it also works when the directory already exists (the session store creates it first).
-        let legacySuffix = bundleId == release ? "" : "-" + bundleId.replacingOccurrences(of: "com.cmuxterm.app.", with: "")
-        let legacy = base.appendingPathComponent("cmux/uniconnect\(legacySuffix)", isDirectory: true)
-        if !FileManager.default.fileExists(atPath: dir.appendingPathComponent("vault.uc").path),
-           let items = try? FileManager.default.contentsOfDirectory(atPath: legacy.path) {
-            for item in items where !FileManager.default.fileExists(atPath: dir.appendingPathComponent(item).path) {
-                try? FileManager.default.moveItem(at: legacy.appendingPathComponent(item), to: dir.appendingPathComponent(item))
-            }
-            try? FileManager.default.removeItem(at: legacy)
-        }
         return dir
     }
 

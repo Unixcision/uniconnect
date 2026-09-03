@@ -3021,7 +3021,11 @@ struct TextBoxInputContainer: View {
         case .fileURLs(let fileURLs):
             return attachFileURLs(fileURLs, into: textView)
         case .reject:
-            return false
+            TerminalImageTransferPlanner.executeRejection(plan: .reject) { error in
+                TerminalImageTransferErrorPresenter.present(error)
+            }
+            // Consume the paste so NSTextView cannot reinterpret the rejected payload.
+            return true
         }
     }
 
@@ -3031,9 +3035,10 @@ struct TextBoxInputContainer: View {
             .map(\.standardizedFileURL)
         guard !standardizedURLs.isEmpty else { return false }
 
+        let target = surface.resolvedImageTransferTarget()
         let plan = TerminalImageTransferPlanner.plan(
             fileURLs: standardizedURLs,
-            target: surface.resolvedImageTransferTarget(),
+            target: target,
             mode: .paste
         )
 
@@ -3054,8 +3059,14 @@ struct TextBoxInputContainer: View {
         case .uploadFiles(let uploadURLs, let remoteTarget):
             uploadFileAttachments(uploadURLs, remoteTarget: remoteTarget, focusing: textView)
             return true
-        case .reject:
-            return false
+        case .unavailable, .reject:
+            TerminalImageTransferPlanner.executeRejection(plan: plan) { error in
+                GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(standardizedURLs)
+                TerminalImageTransferErrorPresenter.present(error)
+            }
+            // Consume both paste and drop. Returning false lets NSTextView paste the original
+            // file URL, which would leak a Mac path into an unavailable remote session.
+            return true
         }
     }
 
@@ -3096,7 +3107,9 @@ struct TextBoxInputContainer: View {
                     guard !remotePaths.isEmpty else {
                         removePendingPlaceholder()
                         GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(fileURLs)
-                        NSSound.beep()
+                        TerminalImageTransferErrorPresenter.present(
+                            TerminalImageTransferExecutionError.emptyRemoteUploadResult
+                        )
                         return
                     }
                     let newAttachments = fileURLs.enumerated().compactMap { index, fileURL -> TextBoxAttachment? in
@@ -3111,7 +3124,9 @@ struct TextBoxInputContainer: View {
                     guard !newAttachments.isEmpty else {
                         removePendingPlaceholder()
                         GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(fileURLs)
-                        NSSound.beep()
+                        TerminalImageTransferErrorPresenter.present(
+                            TerminalImageTransferExecutionError.emptyRemoteUploadResult
+                        )
                         return
                     }
                     guard textViewReference.textView === textView,
@@ -3130,10 +3145,10 @@ struct TextBoxInputContainer: View {
                     }
                     attachments = textView.inlineAttachments()
                     text = textView.plainText()
-                case .failure:
+                case .failure(let error):
                     removePendingPlaceholder()
                     GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(fileURLs)
-                    NSSound.beep()
+                    TerminalImageTransferErrorPresenter.present(error)
                 }
             }
         }
@@ -3501,7 +3516,7 @@ struct TextBoxInputView: NSViewRepresentable {
     }
 }
 
-final class TextBoxInputTextView: NSTextView {
+final class TextBoxInputTextView: NSTextView, FileURLDropInsertingTextView {
     fileprivate private(set) var isHandlingDidChangeText = false
 
     var terminalTitle = ""
@@ -4235,9 +4250,17 @@ final class TextBoxInputTextView: NSTextView {
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let urls = fileURLs(from: sender.draggingPasteboard)
+        return insertDroppedFileURLs(urls, atWindowPoint: sender.draggingLocation)
+    }
+
+    func insertDroppedFileURLs(_ fileURLs: [URL], atWindowPoint windowPoint: NSPoint) -> Bool {
+        let urls = fileURLs
+            .filter(\.isFileURL)
+            .map(\.standardizedFileURL)
         guard !urls.isEmpty else { return false }
 
-        let point = convert(sender.draggingLocation, from: nil)
+        window?.makeFirstResponder(self)
+        let point = convert(windowPoint, from: nil)
         setSelectedRange(NSRange(location: insertionIndex(for: point), length: 0))
         return onInsertFileURLs(urls, self)
     }

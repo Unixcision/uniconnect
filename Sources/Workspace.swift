@@ -8672,12 +8672,12 @@ final class WorkspaceRemoteSessionController {
         return """
         mkdir -p "$HOME/.uniconnect/bin" "$HOME/.uniconnect/relay"
         ln -sf \(daemonPathExpression) "$HOME/.uniconnect/bin/cmuxd-remote-current"
-        wrapper_tmp="$HOME/.uniconnect/bin/.cmux-wrapper.tmp.$$"
+        wrapper_tmp="$HOME/.uniconnect/bin/.uniconnect-wrapper.tmp.$$"
         cat > "$wrapper_tmp" <<'CMUXWRAPPER'
         \(remoteCLIWrapperScript())
         CMUXWRAPPER
         chmod 755 "$wrapper_tmp"
-        mv -f "$wrapper_tmp" "$HOME/.uniconnect/bin/cmux"
+        mv -f "$wrapper_tmp" "$HOME/.uniconnect/bin/uniconnect"
         """
     }
 
@@ -8701,7 +8701,7 @@ final class WorkspaceRemoteSessionController {
         """
         return """
         umask 077
-        mkdir -p "$HOME/.cmux" "$HOME/.uniconnect/relay"
+        mkdir -p "$HOME/.uniconnect" "$HOME/.uniconnect/relay"
         chmod 700 "$HOME/.uniconnect/relay"
         \(remoteCLIWrapperInstallScript(daemonRemotePath: trimmedRemotePath))
         printf '%s' \(daemonPathExpression) > "$HOME/.uniconnect/relay/\(relayPort).daemon_path"
@@ -8797,7 +8797,7 @@ final class WorkspaceRemoteSessionController {
     }
 
     private static func remoteDaemonPath(version: String, goOS: String, goArch: String) -> String {
-        ".cmux/bin/cmuxd-remote/\(version)/\(goOS)-\(goArch)/cmuxd-remote"
+        ".uniconnect/bin/cmuxd-remote/\(version)/\(goOS)-\(goArch)/cmuxd-remote"
     }
 
     private static func remoteDaemonInstallLocation(
@@ -19082,11 +19082,21 @@ extension Workspace: BonsplitDelegate {
            // bonsplit reports programmatic selections (closing or moving a tab) exactly like
            // a click, so ignore anything that happens while a reconnect is already running.
            !UniConnectCoordinator.shared.isReconnecting {
-            // Never reconnect inside the selection call stack: opening the replacement
-            // re-asserts focus and would select a tab again.
-            DispatchQueue.main.async { [weak self] in
+            let eventType = NSApp.currentEvent?.type
+            let userInitiated = eventType == .leftMouseDown
+                || eventType == .leftMouseUp
+                || eventType == .keyDown
+                || eventType == .keyUp
+            // Never reconnect inside the selection call stack: respawning re-asserts
+            // selection synchronously. Yield once while retaining the interaction origin.
+            Task { @MainActor [weak self] in
+                await Task.yield()
                 guard let self else { return }
-                UniConnectCoordinator.shared.reconnectNow(panelId: panelId, in: self, userInitiated: false)
+                UniConnectCoordinator.shared.reconnectNow(
+                    panelId: panelId,
+                    in: self,
+                    userInitiated: userInitiated
+                )
             }
         }
     }

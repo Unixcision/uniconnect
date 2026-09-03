@@ -928,6 +928,8 @@ struct TitlebarControlsView: View {
         let hintLayoutItems = titlebarHintLayoutItems(config: config)
         let focusHistoryAvailability = focusHistoryNavigationAvailabilitySnapshot
         let content = HStack(spacing: config.spacing) {
+            // UniConnect: no sidebar toggle up here; the sidebar footer folds/unfolds it.
+            if !UniConnectCoordinator.isEnabled {
             TitlebarControlButton(
                 config: config,
                 foregroundColor: foregroundColor,
@@ -945,6 +947,7 @@ struct TitlebarControlsView: View {
                 sidebarIconLabel(config: config, iconGeometryKeyPrefix: "titlebarControl_toggleSidebarIcon")
             }
             .safeHelp(KeyboardShortcutSettings.Action.toggleSidebar.tooltip(String(localized: "titlebar.sidebar.tooltip", defaultValue: "Show or hide the sidebar")))
+            }
 
             TitlebarControlButton(
                 config: config,
@@ -998,6 +1001,8 @@ struct TitlebarControlsView: View {
             }
             .safeHelp(KeyboardShortcutSettings.Action.newTab.tooltip(String(localized: "titlebar.newWorkspace.tooltip", defaultValue: "New workspace")))
 
+            // UniConnect: no focus-history arrows in the sidebar header.
+            if !UniConnectCoordinator.isEnabled {
             TitlebarControlButton(
                 config: config,
                 foregroundColor: foregroundColor,
@@ -1027,6 +1032,7 @@ struct TitlebarControlsView: View {
                 iconLabel(systemName: "arrow.right", config: config, iconGeometryKeyPrefix: "titlebarControl_focusHistoryForwardIcon")
             }
             .safeHelp(KeyboardShortcutSettings.Action.focusHistoryForward.tooltip(String(localized: "menu.history.focusForward", defaultValue: "Focus Forward")))
+            }
 
         }
 

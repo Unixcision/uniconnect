@@ -13,7 +13,7 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [x] 2.1 Nombre visible (CFBundleDisplayName) → UniConnect.
 - [x] 2.2 PRODUCT_NAME / ejecutable / scheme → UniConnect (Debug "UniConnect DEV"), TEST_HOST actualizados. — módulo Swift se mantiene cmux/cmux_DEV; CLI sigue llamándose cmux
 - [x] 2.3 Menús, About, Quit, status bar, ayuda: textos "cmux" → "UniConnect" (defaultValue + catálogo es/en). — defaultValues + catálogos (1397 valores); textos CLI/`cmux.json` intencionadamente sin tocar
-- [x] 2.4 Icono y recursos gráficos propios. — icono generado desde docs/assets/logo.svg (appiconset + Icon Composer)
+- [x] 2.4 Icono y recursos gráficos propios. — icono generado desde docs/assets/logo.png (1024) y logo-256.png generados desde el diseño de Dani del 3/9/2026, aplicado a AppIcon, AppIcon-Debug, AppIcon-Nightly, AppIconLight/Dark y la capa de AppIcon.icon
 - [x] 2.5 Scripts (reload.sh, install script, sign) adaptados al nuevo nombre de producto. — rename.py: reload/cli/cleanup/tests/smoke/sign/instalador + workflows
 - [x] 2.6 Bundle ID propio `com.unixcision.uniconnect` (sesiones, Keychain, App Support y socket separados de cmux; migración única de ajustes). Documentado.
 - [x] 2.7 Updater oficial desactivado (SUEnableAutomaticChecks=false, SUFeedURL=about:blank; el resolver cae al appcast oficial si está vacío).

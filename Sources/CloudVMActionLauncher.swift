@@ -34,7 +34,7 @@ final class CloudVMActionLauncher {
         preferredWindow: NSWindow?,
         onCompletion: ((Completion) -> Void)? = nil
     ) -> Bool {
-        let cliURL = Bundle.main.resourceURL?.appendingPathComponent("bin/cmux")
+        let cliURL = Bundle.main.resourceURL?.appendingPathComponent("bin/uniconnect")
         guard let cliURL,
               FileManager.default.isExecutableFile(atPath: cliURL.path) else {
             presentStartFailure(
@@ -57,7 +57,7 @@ final class CloudVMActionLauncher {
         process.arguments = ["--socket", socketPath, "--id-format", "uuids", "vm", "new"]
         var environment = ProcessInfo.processInfo.environment
         environment["CMUX_SOCKET_PATH"] = socketPath
-        environment["CMUX_BUNDLED_CLI_PATH"] = cliURL.path
+        environment["UNICONNECT_BUNDLED_CLI_PATH"] = cliURL.path
         environment.removeValue(forKey: "CMUX_SOCKET")
         process.environment = environment
 

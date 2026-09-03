@@ -73,11 +73,13 @@ enum UniConnectMarkdown {
         }
         if let box = current?.build() { boxes.append(box) }
 
-        let deduped = dedupe(boxes)
-        guard !deduped.isEmpty else {
+        let recognised = boxes.filter { !$0.windows.isEmpty || $0.connect != nil }
+        guard !recognised.isEmpty else {
             throw UniConnectError.corruptFile("el Markdown no contiene ninguna caja reconocible")
         }
-        return UniConnectDocument(workspaces: deduped)
+        // Keep every declaration. The import planner must surface duplicates as explicit
+        // conflicts; silently dropping a repeated UUID, tmux target, or box loses evidence.
+        return UniConnectDocument(workspaces: recognised)
     }
 
     // MARK: Heading
@@ -102,18 +104,6 @@ enum UniConnectMarkdown {
                     "avisos y cosas a decidir", "avisos", "índice", "indice"]
         if skip.contains(where: { title.lowercased().contains($0) }) { return "" }
         return title
-    }
-
-    private static func dedupe(_ boxes: [UniConnectDocument.Workspace]) -> [UniConnectDocument.Workspace] {
-        var seen: Set<String> = []
-        var result: [UniConnectDocument.Workspace] = []
-        for box in boxes where !box.windows.isEmpty || box.connect != nil {
-            let key = box.name.lowercased()
-            guard !seen.contains(key) else { continue }
-            seen.insert(key)
-            result.append(box)
-        }
-        return result
     }
 
     // MARK: Accumulator
@@ -144,17 +134,13 @@ enum UniConnectMarkdown {
                 if let session = claudeSession(in: line) {
                     let directory = workingDirectory(in: line)
                     let label = comment(in: line)
-                    if !windows.contains(where: { $0.claudeSession == session }) {
-                        windows.append(UniConnectDocument.Window(
-                            name: label,
-                            tmux: nil,
-                            claudeSession: session,
-                            cwd: directory,
-                            isPinned: nil
-                        ))
-                    } else if let label, let index = windows.firstIndex(where: { $0.claudeSession == session && ($0.name ?? "").isEmpty }) {
-                        windows[index].name = label
-                    }
+                    windows.append(UniConnectDocument.Window(
+                        name: label,
+                        tmux: nil,
+                        claudeSession: session,
+                        cwd: directory,
+                        isPinned: nil
+                    ))
                 }
             }
         }
@@ -195,8 +181,6 @@ enum UniConnectMarkdown {
             }
             if name == nil, tmux != nil { name = tmux }
             if tmux == nil, session == nil { return }
-            if let tmux, windows.contains(where: { $0.tmux == tmux }) { return }
-            if let session, windows.contains(where: { $0.claudeSession == session }) { return }
             windows.append(UniConnectDocument.Window(
                 name: name,
                 tmux: tmux,
@@ -211,7 +195,7 @@ enum UniConnectMarkdown {
             let ticks = line.components(separatedBy: "`")
             guard ticks.count >= 3 else { return }
             let session = ticks[1].trimmingCharacters(in: .whitespaces)
-            guard !session.isEmpty, !session.contains(" "), !windows.contains(where: { $0.tmux == session }) else { return }
+            guard !session.isEmpty, !session.contains(" ") else { return }
             var name = session
             if let range = line.range(of: #"\*\*([A-Z0-9_\-]{2,})\*\*\s*$"#, options: .regularExpression) {
                 name = line[range].trimmingCharacters(in: CharacterSet(charactersIn: " *"))

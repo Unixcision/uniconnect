@@ -71,7 +71,6 @@ extension CmuxSettingsFileStore {
                     "openMarkdownInCmuxViewer": CmdClickMarkdownRouteSettings.defaultValue,
                     "reorderOnNotification": WorkspaceAutoReorderSettings.defaultValue,
                     "iMessageMode": IMessageModeSettings.defaultValue,
-                    "sendAnonymousTelemetry": TelemetrySettings.defaultSendAnonymousTelemetry,
                     "confirmQuit": QuitWarningSettings.defaultConfirmQuitMode.rawValue,
                     "warnBeforeClosingTab": CloseTabWarningSettings.defaultWarnBeforeClosingTab,
                     "warnBeforeClosingTabXButton": CloseTabWarningSettings.defaultWarnBeforeClosingTabXButton,

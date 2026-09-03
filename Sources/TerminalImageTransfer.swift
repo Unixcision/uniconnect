@@ -12,15 +12,52 @@ enum TerminalRemoteUploadTarget: Equatable {
     case detectedSSH(DetectedSSHSession)
 }
 
+enum TerminalImageTransferUnavailableReason: Equatable {
+    case disconnectedSSHWindow
+    case missingSSHConnectCommand
+    case unparseableSSHConnectCommand
+    case nonUploadableRemoteItems
+
+    var localizedDescription: String {
+        switch self {
+        case .disconnectedSSHWindow:
+            return String(
+                localized: "terminal.imageTransfer.error.disconnectedSSHWindow",
+                defaultValue: "This SSH window is disconnected. Reconnect it, then try attaching the file again."
+            )
+        case .missingSSHConnectCommand:
+            return String(
+                localized: "terminal.imageTransfer.error.missingSSHConnectCommand",
+                defaultValue: "This SSH box doesn't have a usable saved connection command. Edit the connection, then try again."
+            )
+        case .unparseableSSHConnectCommand:
+            return String(
+                localized: "terminal.imageTransfer.error.unparseableSSHConnectCommand",
+                defaultValue: "UniConnect couldn't interpret this box's SSH connection command for file transfer."
+            )
+        case .nonUploadableRemoteItems:
+            return String(
+                localized: "terminal.imageTransfer.error.nonUploadableRemoteItems",
+                defaultValue: "Only regular files can be attached to a remote session. Folders and mixed selections aren't supported."
+            )
+        }
+    }
+}
+
 enum TerminalImageTransferTarget: Equatable {
     case local
     case remote(TerminalRemoteUploadTarget)
+    /// The box is SSH but nothing can be uploaded right now (no usable connect command,
+    /// window disconnected). Never degrade to `.local`: pasting a Mac path into a remote
+    /// shell is worse than doing nothing, so the transfer is rejected and the user told.
+    case unavailable(TerminalImageTransferUnavailableReason)
 }
 
 enum TerminalImageTransferPlan: Equatable {
     case insertText(String)
     case insertTextSegments([String], interSegmentDelay: TimeInterval)
     case uploadFiles([URL], TerminalRemoteUploadTarget)
+    case unavailable(TerminalImageTransferUnavailableReason)
     case reject
 }
 
@@ -75,8 +112,32 @@ enum PasteboardFileURLReader {
     }
 }
 
-enum TerminalImageTransferExecutionError: Error {
+enum TerminalImageTransferExecutionError: Error, Equatable {
     case cancelled
+    case unavailable(TerminalImageTransferUnavailableReason)
+    case rejectedContent
+    case emptyRemoteUploadResult
+}
+
+extension TerminalImageTransferExecutionError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .cancelled:
+            return nil
+        case .unavailable(let reason):
+            return reason.localizedDescription
+        case .rejectedContent:
+            return String(
+                localized: "terminal.imageTransfer.error.rejectedContent",
+                defaultValue: "The clipboard or dropped item doesn't contain text or a supported file."
+            )
+        case .emptyRemoteUploadResult:
+            return String(
+                localized: "terminal.imageTransfer.error.emptyRemoteUploadResult",
+                defaultValue: "The file transfer finished without returning a remote file path."
+            )
+        }
+    }
 }
 
 final class TerminalImageTransferOperation: @unchecked Sendable {
@@ -218,6 +279,8 @@ enum TerminalImageTransferPlanner {
         guard !fileURLs.isEmpty else { return .reject }
 
         switch target {
+        case .unavailable(let reason):
+            return .unavailable(reason)
         case .local:
             if mode == .drop,
                fileURLs.count > 1,
@@ -230,7 +293,7 @@ enum TerminalImageTransferPlanner {
             return .insertText(insertedText(forFileURLs: fileURLs))
         case .remote(let remoteTarget):
             guard fileURLs.allSatisfy(isRemoteUploadableFileURL) else {
-                return .insertText(insertedText(forFileURLs: fileURLs))
+                return .unavailable(.nonUploadableRemoteItems)
             }
             return .uploadFiles(fileURLs, remoteTarget)
         }
@@ -303,9 +366,34 @@ enum TerminalImageTransferPlanner {
                 finishUpload(result: result, insertText: insertText, onFailure: onFailure)
             }
             return operation
+        case .unavailable, .reject:
+            return executeRejection(plan: plan, operation: operation, onFailure: onFailure)
+        }
+    }
+
+    /// Completes a rejected transfer and forwards its typed, localized error to the caller.
+    @discardableResult
+    static func executeRejection(
+        plan: TerminalImageTransferPlan,
+        operation: TerminalImageTransferOperation? = nil,
+        onFailure: (Error) -> Void
+    ) -> TerminalImageTransferOperation? {
+        let error: TerminalImageTransferExecutionError
+        switch plan {
+        case .unavailable(let reason):
+            error = .unavailable(reason)
         case .reject:
+            error = .rejectedContent
+        case .insertText, .insertTextSegments, .uploadFiles:
+            assertionFailure("executeRejection called with a non-rejected image transfer plan")
             return operation
         }
+
+        if let operation, !operation.finish() {
+            return operation
+        }
+        onFailure(error)
+        return operation
     }
 
     static func escapeForShell(_ value: String) -> String {
@@ -434,7 +522,7 @@ enum TerminalImageTransferPlanner {
                 .map(escapeForShell)
                 .joined(separator: " ")
             guard !content.isEmpty else {
-                onFailure(NSError(domain: "cmux.remote.drop", code: 5))
+                onFailure(TerminalImageTransferExecutionError.emptyRemoteUploadResult)
                 return
             }
             insertText(content)
@@ -482,31 +570,66 @@ enum TerminalImageTransferPlanner {
 }
 
 extension TerminalSurface {
+    /// Where a pasted or dropped image goes. The *kind of session* is the only source of
+    /// truth: a Local box pastes locally, an SSH box uploads with its stored connect command
+    /// (so it works inside tmux or a nested shell). There is no TTY or process sniffing
+    /// anywhere any more; a box without a UniConnect profile is only treated as remote when
+    /// cmux's own remote-workspace configuration says so.
     @MainActor
     func resolvedImageTransferTarget() -> TerminalImageTransferTarget {
         guard let workspace = owningWorkspace() else { return .local }
-        // UniConnect: the box kind decides. Local boxes never probe the TTY; SSH boxes use
-        // the stored connect command, so pasting works even inside tmux or a nested shell.
-        if UniConnectCoordinator.isEnabled, let profile = workspace.uniConnectProfile {
-            switch profile.kind {
-            case .local:
-                return .local
-            case .ssh:
-                if let credentialId = profile.credentialId,
-                   let connect = UniConnectVault.shared.connectCommand(for: credentialId),
-                   let session = UniConnectSSH.detectedSession(fromConnectCommand: connect) {
-                    return .remote(.detectedSSH(session))
-                }
-                return .local
+        switch workspace.uniConnectProfile?.kind {
+        case .local:
+            return .local
+        case .ssh:
+            if workspace.uniConnectDisconnectedPanelIds.contains(id) {
+                return .unavailable(.disconnectedSSHWindow)
             }
-        }
-        if workspace.isRemoteTerminalSurface(id) {
-            return .remote(.workspaceRemote)
-        }
-        if let ttyName = workspace.surfaceTTYNames[id],
-           let session = TerminalSSHSessionDetector.detect(forTTY: ttyName) {
+            guard let credentialId = workspace.uniConnectProfile?.credentialId,
+                  let connect = UniConnectVault.shared.connectCommand(for: credentialId) else {
+                return .unavailable(.missingSSHConnectCommand)
+            }
+            guard let session = UniConnectSSH.detectedSession(fromConnectCommand: connect) else {
+                return .unavailable(.unparseableSSHConnectCommand)
+            }
             return .remote(.detectedSSH(session))
+        case nil:
+            return workspace.isRemoteTerminalSurface(id) ? .remote(.workspaceRemote) : .local
         }
-        return .local
+    }
+}
+
+// MARK: - Telling the user what went wrong
+
+/// Presents actionable transfer failures without exposing connection commands or credentials.
+@MainActor
+enum TerminalImageTransferErrorPresenter {
+    private static func present(_ message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(
+            localized: "terminal.imageTransfer.error.title",
+            defaultValue: "Couldn't Attach File"
+        )
+        alert.informativeText = message
+        alert.addButton(
+            withTitle: String(
+                localized: "terminal.imageTransfer.error.dismiss",
+                defaultValue: "OK"
+            )
+        )
+        if let window = NSApp.keyWindow {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
+    }
+
+    static func present(_ error: Error) {
+        if let transferError = error as? TerminalImageTransferExecutionError,
+           transferError == .cancelled {
+            return
+        }
+        present(error.localizedDescription)
     }
 }

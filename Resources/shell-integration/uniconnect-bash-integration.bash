@@ -1,4 +1,4 @@
-# cmux shell integration for bash
+# UniConnect shell integration for bash
 
 # Cache which send tool is available to avoid repeated PATH lookups.
 _CMUX_SEND_TOOL=""
@@ -69,11 +69,11 @@ _cmux_socket_is_unix() {
 }
 
 _cmux_relay_cli_path() {
-    if [[ -n "${CMUX_BUNDLED_CLI_PATH:-}" && -x "${CMUX_BUNDLED_CLI_PATH}" ]]; then
-        printf '%s\n' "${CMUX_BUNDLED_CLI_PATH}"
+    if [[ -n "${UNICONNECT_BUNDLED_CLI_PATH:-}" && -x "${UNICONNECT_BUNDLED_CLI_PATH}" ]]; then
+        printf '%s\n' "${UNICONNECT_BUNDLED_CLI_PATH}"
         return 0
     fi
-    command -v cmux 2>/dev/null
+    command -v uniconnect 2>/dev/null
 }
 
 _cmux_socket_uses_remote_relay() {
@@ -113,7 +113,7 @@ _cmux_relay_rpc() {
     local relay_cli=""
     local response=""
     _cmux_socket_uses_remote_relay || return 1
-    # Relay `cmux rpc` exits nonzero on server error. The real remote CLI prints
+    # Relay `uniconnect rpc` exits nonzero on server error. The real remote CLI prints
     # only the JSON result payload on success, while some test stubs return the
     # full `{"ok":...}` envelope. Retry only on explicit `ok:false`.
     relay_cli="$(_cmux_relay_cli_path)" || return 1
@@ -308,7 +308,7 @@ _CMUX_TTY_REPORTED="${_CMUX_TTY_REPORTED:-0}"
 _CMUX_TMUX_PUSH_SIGNATURE="${_CMUX_TMUX_PUSH_SIGNATURE:-}"
 _CMUX_TMUX_PULL_SIGNATURE="${_CMUX_TMUX_PULL_SIGNATURE:-}"
 _CMUX_TMUX_SYNC_KEYS=(
-    CMUX_BUNDLED_CLI_PATH
+    UNICONNECT_BUNDLED_CLI_PATH
     CMUX_BUNDLE_ID
     CMUXD_UNIX_PATH
     CMUXTERM_REPO_ROOT
@@ -1614,7 +1614,7 @@ _cmux_install_prompt_command() {
 }
 
 # Ensure Resources/bin is at the front of PATH, and remove the app's
-# Contents/MacOS entry so the GUI cmux binary cannot shadow the CLI cmux.
+# Contents/MacOS entry so the UniConnect GUI binary cannot shadow its CLI.
 # Shell init (.bashrc/.bash_profile) may prepend other dirs after launch.
 _cmux_fix_path() {
     if [[ -n "${GHOSTTY_BIN_DIR:-}" ]]; then

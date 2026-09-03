@@ -673,7 +673,7 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
         XCTAssertEqual(urls, [fileURL])
     }
 
-    func testRemoteDirectoryPastePlanFallsBackToEscapedPathInsertion() throws {
+    func testRemoteDirectoryPastePlanRejectsLocalPathInsertion() throws {
         let directoryURL = FileManager.default.temporaryDirectory.appendingPathComponent(
             "clipboard-folder-\(UUID().uuidString)",
             isDirectory: true
@@ -691,11 +691,28 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
             target: .remote(.workspaceRemote)
         )
 
-        guard case .insertText(let text) = plan else {
-            return XCTFail("expected directory path insertion, got \(plan)")
-        }
+        XCTAssertEqual(plan, .unavailable(.nonUploadableRemoteItems))
+    }
 
-        XCTAssertEqual(text, TerminalImageTransferPlanner.escapeForShell(directoryURL.path))
+    func testRemoteMixedFileAndDirectoryPastePlanRejectsLocalPathInsertion() throws {
+        let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "clipboard-mixed-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let fileURL = rootURL.appendingPathComponent("image.png")
+        try make1x1PNG(color: .systemIndigo).write(to: fileURL)
+        let directoryURL = rootURL.appendingPathComponent("folder", isDirectory: true)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+
+        let plan = TerminalImageTransferPlanner.plan(
+            fileURLs: [fileURL, directoryURL],
+            target: .remote(.workspaceRemote)
+        )
+
+        XCTAssertEqual(plan, .unavailable(.nonUploadableRemoteItems))
     }
 
     func testLazyPastePlanSkipsTargetResolutionForPlainText() {
@@ -801,6 +818,40 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
         )
 
         XCTAssertEqual(completedText, "/tmp/uniconnect-drop-123.png")
+    }
+
+    func testUnavailableImageTransferFinishesOperationAndReportsTypedFailure() {
+        let operation = TerminalImageTransferOperation()
+        var reportedError: TerminalImageTransferExecutionError?
+
+        TerminalImageTransferPlanner.executeForTesting(
+            plan: .unavailable(.missingSSHConnectCommand),
+            operation: operation,
+            uploadWorkspaceRemote: { _, _, _ in XCTFail("unexpected workspace upload") },
+            uploadDetectedSSH: { _, _, _, _ in XCTFail("unexpected SSH upload") },
+            insertText: { _ in XCTFail("an unavailable transfer must not insert text") },
+            onFailure: { reportedError = $0 as? TerminalImageTransferExecutionError }
+        )
+
+        XCTAssertEqual(reportedError, .unavailable(.missingSSHConnectCommand))
+        XCTAssertFalse(operation.finish(), "the rejection path must leave the operation finished")
+    }
+
+    func testRejectedImageTransferFinishesOperationAndReportsTypedFailure() {
+        let operation = TerminalImageTransferOperation()
+        var reportedError: TerminalImageTransferExecutionError?
+
+        TerminalImageTransferPlanner.executeForTesting(
+            plan: .reject,
+            operation: operation,
+            uploadWorkspaceRemote: { _, _, _ in XCTFail("unexpected workspace upload") },
+            uploadDetectedSSH: { _, _, _, _ in XCTFail("unexpected SSH upload") },
+            insertText: { _ in XCTFail("a rejected transfer must not insert text") },
+            onFailure: { reportedError = $0 as? TerminalImageTransferExecutionError }
+        )
+
+        XCTAssertEqual(reportedError, .rejectedContent)
+        XCTAssertFalse(operation.finish(), "the rejection path must leave the operation finished")
     }
 
     func testCancelledRemoteImagePasteExecutionSuppressesCompletionHandlers() throws {

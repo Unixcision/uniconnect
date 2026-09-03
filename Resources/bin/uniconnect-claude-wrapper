@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# cmux claude wrapper - injects hooks and session tracking
+# UniConnect Claude wrapper - injects hooks and session tracking
 #
-# When running inside a cmux terminal (CMUX_SURFACE_ID is set), this wrapper
+# When running inside a UniConnect terminal (CMUX_SURFACE_ID is set), this wrapper
 # intercepts `claude` invocations to inject --session-id and --settings flags
-# so that Claude Code hooks fire back into cmux for notifications/status.
-# Outside cmux, it passes through to the real claude binary unchanged.
+# so that Claude Code hooks fire back into UniConnect for notifications/status.
+# Outside UniConnect, it passes through to the real claude binary unchanged.
 
 cmux_claude_wrapper_is_self_or_shim() {
     local candidate="$1"
@@ -30,7 +30,7 @@ cmux_claude_wrapper_is_self_or_shim() {
     return 1
 }
 
-# Find the real claude binary, skipping cmux's wrapper and temp shell shims.
+# Find the real claude binary, skipping UniConnect's wrapper and temp shell shims.
 find_real_claude() {
     # Honor custom path from Settings > Automation > Claude Code > Claude Binary Path.
     # Guard against self-reference (user pointing back to this wrapper).
@@ -56,15 +56,15 @@ find_real_claude() {
     return 1
 }
 
-# Return 0 only when CMUX_SOCKET_PATH points to a live cmux socket.
+# Return 0 only when CMUX_SOCKET_PATH points to a live UniConnect socket.
 cmux_socket_available() {
     local socket="${CMUX_SOCKET_PATH:-}"
     [[ -n "$socket" && -S "$socket" ]] || return 1
 
     local self_dir cmux_bin
     self_dir="$(cd "$(dirname "$0")" && pwd)"
-    cmux_bin="$self_dir/cmux"
-    [[ -x "$cmux_bin" ]] || cmux_bin="$(command -v cmux || true)"
+    cmux_bin="$self_dir/uniconnect"
+    [[ -x "$cmux_bin" ]] || cmux_bin="$(command -v uniconnect || true)"
     [[ -n "$cmux_bin" ]] || return 1
 
     # Keep stale/hung socket checks bounded so claude startup does not block
@@ -75,26 +75,26 @@ cmux_socket_available() {
 
 resolve_hook_cmux_bin() {
     local self_dir bundled_cli
-    bundled_cli="${CMUX_BUNDLED_CLI_PATH:-}"
+    bundled_cli="${UNICONNECT_BUNDLED_CLI_PATH:-}"
     if [[ -n "$bundled_cli" && -x "$bundled_cli" ]]; then
         printf '%s' "$bundled_cli"
         return 0
     fi
 
     self_dir="$(cd "$(dirname "$0")" && pwd)"
-    bundled_cli="$self_dir/cmux"
+    bundled_cli="$self_dir/uniconnect"
     if [[ -x "$bundled_cli" ]]; then
         printf '%s' "$bundled_cli"
         return 0
     fi
 
-    bundled_cli="$(command -v cmux || true)"
+    bundled_cli="$(command -v uniconnect || true)"
     if [[ -n "$bundled_cli" ]]; then
         printf '%s' "$bundled_cli"
         return 0
     fi
 
-    printf '%s' "cmux"
+    printf '%s' "uniconnect"
 }
 
 CLAUDE_AUTH_SELECTION_ENV_KEYS=(
@@ -207,6 +207,16 @@ if [[ -n "$CMUX_SURFACE_ID" ]]; then
     IN_CMUX=1
 fi
 
+# Session markers inherited from a parent Claude Code process make claude think it is a
+# nested child session and disable transcript saving. UniConnect windows are never
+# children: drop the markers and force persistence.
+clear_inherited_claude_session_markers() {
+    unset CLAUDECODE CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_SESSION_ID CLAUDE_CODE_ENTRYPOINT \
+          CLAUDE_CODE_EXECPATH CLAUDE_CODE_MESSAGING_SOCKET CLAUDE_CODE_MESSAGING_TOKEN \
+          CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS CLAUDE_CODE_SSE_PORT CLAUDE_PID CLAUDE_EFFORT
+    export CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1
+}
+
 exec_real_claude_passthrough() {
     if [[ "$IN_CMUX" == "1" ]]; then
         local cmux_key
@@ -224,6 +234,7 @@ if [[ "$CMUX_CLAUDE_HOOKS_DISABLED" == "1" ]]; then
         unset CLAUDECODE
     fi
     clear_inherited_claude_auth_selection_env
+    clear_inherited_claude_session_markers
     REAL_CLAUDE="$(find_real_claude)" || { echo "Error: claude not found in PATH" >&2; exit 127; }
     exec "$REAL_CLAUDE" "$@"
 fi
@@ -235,6 +246,7 @@ if [[ "$IN_CMUX" == "0" ]] || ! cmux_socket_available; then
         unset CLAUDECODE
     fi
     clear_inherited_claude_auth_selection_env
+    clear_inherited_claude_session_markers
     REAL_CLAUDE="$(find_real_claude)" || { echo "Error: claude not found in PATH" >&2; exit 127; }
     exec_real_claude_passthrough "$@"
 fi
@@ -449,6 +461,7 @@ should_inject_claude_hooks() {
 # pass through so Claude subcommands do not receive session/hook flags.
 if ! should_inject_claude_hooks "$@"; then
     clear_inherited_claude_auth_selection_env
+    clear_inherited_claude_session_markers
     exec_real_claude_passthrough "$@"
 fi
 

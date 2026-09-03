@@ -1078,6 +1078,11 @@ struct ContentView: View {
     /// UniConnect: gap between the floating sidebar card and the window edge / content.
     /// Gap between the sidebar card and the window edges (floating panel).
     static let sidebarFloatingInset: CGFloat = 10
+    /// The card starts below the traffic lights: at 10pt its rounded corner cut right
+    /// across the close button, which looked broken.
+    static var sidebarFloatingTopInset: CGFloat {
+        sidebarFloatingInset > 0 ? WindowChromeMetrics.appTitlebarHeight + 4 : 0
+    }
     static let sidebarCompactAnimation = Animation.spring(response: 0.32, dampingFraction: 0.86)
     /// Width of the sidebar card actually shown (rail when compact, user width otherwise).
     private var effectiveSidebarWidth: CGFloat {
@@ -2291,7 +2296,8 @@ struct ContentView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .padding(.leading, Self.sidebarFloatingInset)
-        .padding(.vertical, Self.sidebarFloatingInset)
+        .padding(.top, Self.sidebarFloatingTopInset)
+        .padding(.bottom, Self.sidebarFloatingInset)
     }
 
     private func rightSidebarPanelWithBackdrop(appearance: WindowAppearanceSnapshot) -> some View {
@@ -15621,20 +15627,6 @@ struct TabItemView: View, Equatable {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .layoutPriority(1)
 
-                // UniConnect: kind (Local/SSH) and window count as two small pills, in place
-                // of the folder paths that used to hang under the row.
-                if let profile = tab.uniConnectProfile {
-                    // Observes the workspace so the window count refreshes when a window is
-                    // opened or closed: TabItemView itself is Equatable and would not.
-                    UniConnectRowBadges(
-                        workspace: tab,
-                        isSSH: profile.isSSH,
-                        fontScale: fontScale,
-                        isActive: usesInvertedActiveForeground,
-                        activeForeground: activeSecondaryColor(0.95)
-                    )
-                    .layoutPriority(2)
-                }
 
                 // The close button is a sibling that always reserves its width
                 // when the workspace is closable, so the title wraps/truncates
@@ -15660,6 +15652,21 @@ struct TabItemView: View, Equatable {
                     .allowsHitTesting(showCloseButton)
                     .accessibilityHidden(!showCloseButton)
                 }
+            }
+
+            // UniConnect: kind (Local/SSH) and window count as two small pills on their own
+            // line under the name, so the name keeps the full width of the row.
+            if let profile = tab.uniConnectProfile {
+                // Observes the workspace so the window count refreshes when a window is
+                // opened or closed: TabItemView itself is Equatable and would not.
+                UniConnectRowBadges(
+                    workspace: tab,
+                    isSSH: profile.isSSH,
+                    fontScale: fontScale,
+                    isActive: usesInvertedActiveForeground,
+                    activeForeground: activeSecondaryColor(0.95)
+                )
+                .padding(.top, 3)
             }
 
             if let description = workspaceSnapshot.customDescription {

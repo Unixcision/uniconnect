@@ -16527,6 +16527,190 @@
         }
       }
     },
+    "terminal.imageTransfer.error.disconnectedSSHWindow": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This SSH window is disconnected. Reconnect it, then try attaching the file again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta ventana SSH está desconectada. Vuelve a conectarla e intenta adjuntar el archivo de nuevo."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このSSHウインドウは切断されています。再接続してから、もう一度ファイルを添付してください。"
+          }
+        }
+      }
+    },
+    "terminal.imageTransfer.error.dismiss": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aceptar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        }
+      }
+    },
+    "terminal.imageTransfer.error.emptyRemoteUploadResult": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file transfer finished without returning a remote file path."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La transferencia terminó sin devolver una ruta para el archivo remoto."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイル転送は完了しましたが、リモートファイルのパスが返されませんでした。"
+          }
+        }
+      }
+    },
+    "terminal.imageTransfer.error.missingSSHConnectCommand": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This SSH box doesn't have a usable saved connection command. Edit the connection, then try again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta caja SSH no tiene un comando de conexión guardado que se pueda usar. Edita la conexión e inténtalo de nuevo."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このSSHボックスには使用可能な接続コマンドが保存されていません。接続を編集してから、もう一度お試しください。"
+          }
+        }
+      }
+    },
+    "terminal.imageTransfer.error.nonUploadableRemoteItems": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only regular files can be attached to a remote session. Folders and mixed selections aren't supported."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo se pueden adjuntar archivos normales a una sesión remota. No se admiten carpetas ni selecciones mixtas."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リモートセッションに添付できるのは通常のファイルだけです。フォルダやファイルとフォルダの混在選択には対応していません。"
+          }
+        }
+      }
+    },
+    "terminal.imageTransfer.error.rejectedContent": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The clipboard or dropped item doesn't contain text or a supported file."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El portapapeles o el elemento soltado no contiene texto ni un archivo compatible."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリップボードまたはドロップされた項目に、テキストや対応ファイルが含まれていません。"
+          }
+        }
+      }
+    },
+    "terminal.imageTransfer.error.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't Attach File"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo adjuntar el archivo"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを添付できませんでした"
+          }
+        }
+      }
+    },
+    "terminal.imageTransfer.error.unparseableSSHConnectCommand": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UniConnect couldn't interpret this box's SSH connection command for file transfer."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UniConnect no pudo interpretar el comando de conexión SSH de esta caja para transferir archivos."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このボックスのSSH接続コマンドをファイル転送用に解釈できませんでした。"
+          }
+        }
+      }
+    },
     "fileDrop.holdShiftDropIntoEditor": {
       "localizations": {
         "ar": {
@@ -188767,6 +188951,124 @@
           "stringUnit": {
             "state": "translated",
             "value": "クリア (Control-L)"
+          }
+        }
+      }
+    },
+    "menu.file.newTabInWorkspace": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nueva pestaña"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
+          }
+        },
+        "bs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Tab"
           }
         }
       }

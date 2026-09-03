@@ -274,7 +274,7 @@ final class CmuxSSHURLProcessLauncher {
 
     @discardableResult
     func start(request: CmuxSSHURLRequest, preferredWindow: NSWindow?) -> Bool {
-        let cliURL = Bundle.main.resourceURL?.appendingPathComponent("bin/cmux")
+        let cliURL = Bundle.main.resourceURL?.appendingPathComponent("bin/uniconnect")
         guard let cliURL,
               FileManager.default.isExecutableFile(atPath: cliURL.path) else {
             presentLaunchFailure(
@@ -294,7 +294,7 @@ final class CmuxSSHURLProcessLauncher {
         process.arguments = ["--socket", socketPath] + request.cliArguments
         var environment = ProcessInfo.processInfo.environment
         environment["CMUX_SOCKET_PATH"] = socketPath
-        environment["CMUX_BUNDLED_CLI_PATH"] = cliURL.path
+        environment["UNICONNECT_BUNDLED_CLI_PATH"] = cliURL.path
         environment.removeValue(forKey: "CMUX_SOCKET")
         process.environment = environment
 

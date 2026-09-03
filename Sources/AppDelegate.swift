@@ -1310,47 +1310,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 #endif
 
-        if telemetryEnabled {
-            // Pre-warm locale before Sentry to avoid a startup data race.
-            // Locale initialization (os.locale.ensureLocale / NSLocale._preferredLanguages)
-            // on the main thread can race with Sentry's background init thread
-            // calling posix.getenv, causing a SIGSEGV ~134ms after launch.
-            // Forcing locale access here before SentrySDK.start eliminates the race.
-            // Related to: #836
-            _ = Locale.current
-            _ = NSLocale.preferredLanguages
-
-            StartupBreadcrumbLog.append("appDelegate.didFinish.sentry.begin")
-            SentrySDK.start { options in
-                options.dsn = "https://ecba1ec90ecaee02a102fba931b6d2b3@o4507547940749312.ingest.us.sentry.io/4510796264636416"
-                #if DEBUG
-                options.environment = "development"
-                options.debug = true
-                #else
-                options.environment = "production"
-                options.debug = false
-                #endif
-                options.sendDefaultPii = false
-
-                // Performance tracing (10% of transactions)
-                options.tracesSampleRate = 0.1
-                // Keep app-hang tracking enabled, but avoid reporting short main-thread stalls
-                // as hangs in normal user interaction flows.
-                options.appHangTimeoutInterval = 8.0
-                // Attach stack traces to all events
-                options.attachStacktrace = true
-                // Avoid recursively capturing failed requests from Sentry's own ingestion endpoint.
-                options.enableCaptureFailedRequests = false
-            }
-            StartupBreadcrumbLog.append("appDelegate.didFinish.sentry.complete")
-        }
-
-        if telemetryEnabled && !isRunningUnderXCTest {
-            StartupBreadcrumbLog.append("appDelegate.didFinish.posthog.begin")
-            PostHogAnalytics.shared.startIfNeeded()
-            StartupBreadcrumbLog.append("appDelegate.didFinish.posthog.complete")
-        }
-
         let forceDuplicateLaunchObserver = env["CMUX_UI_TEST_ENABLE_DUPLICATE_LAUNCH_OBSERVER"] == "1"
 
         // UI tests frequently time out waiting for the main window if we do heavyweight
@@ -5969,7 +5928,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     /// Opens the diff viewer for the focused workspace of `tabManager` by spawning the
-    /// bundled `cmux diff` CLI. This is the single shared diff-open path: both the
+    /// bundled `uniconnect diff` CLI. This is the single shared diff-open path: both the
     /// command-palette entry and the Open Diff Viewer keyboard shortcut funnel through
     /// here so neither duplicates diff-open logic. Returns `false` (caller beeps) when
     /// there is no focused workspace or the bundled CLI is missing.
@@ -5982,7 +5941,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 #endif
         guard let workspace = tabManager?.selectedWorkspace,
-              let cliURL = Bundle.main.resourceURL?.appendingPathComponent("bin/cmux"),
+              let cliURL = Bundle.main.resourceURL?.appendingPathComponent("bin/uniconnect"),
               FileManager.default.isExecutableFile(atPath: cliURL.path) else {
             return false
         }
@@ -6025,7 +5984,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
         var environment = ProcessInfo.processInfo.environment
         environment["CMUX_SOCKET_PATH"] = socketPath
-        environment["CMUX_BUNDLED_CLI_PATH"] = cliURL.path
+        environment["UNICONNECT_BUNDLED_CLI_PATH"] = cliURL.path
         environment["CMUX_WORKSPACE_ID"] = workspaceId.uuidString
         if let surfaceId {
             environment["CMUX_SURFACE_ID"] = surfaceId.uuidString
@@ -6341,6 +6300,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 return false
             }
             setActiveMainWindow(window)
+            if UniConnectCoordinator.isEnabled {
+                // UniConnect: the sidebar never disappears; the button folds it into the rail
+                // of coloured circles and unfolds it again. A hidden sidebar (older session)
+                // is brought back first so the button always does something visible.
+                if !context.sidebarState.isVisible {
+                    context.sidebarState.toggle()
+                } else {
+                    let key = UniConnectRailSidebar.compactDefaultsKey
+                    UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: key), forKey: key)
+                }
+                return true
+            }
             context.sidebarState.toggle()
             return true
         }
@@ -6870,6 +6841,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        // UniConnect: single window, so the Dock offers no "New Window".
+        if UniConnectCoordinator.isEnabled { return nil }
         let menu = NSMenu(title: "")
         let newWindowItem = NSMenuItem(
             title: String(localized: "menu.file.newWindow", defaultValue: "New Window"),
@@ -11480,7 +11453,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             "windowRouteFailure": "",
         ], at: path)
 
-        guard let cliURL = Bundle.main.resourceURL?.appendingPathComponent("bin/cmux"),
+        guard let cliURL = Bundle.main.resourceURL?.appendingPathComponent("bin/uniconnect"),
               FileManager.default.isExecutableFile(atPath: cliURL.path) else {
             writeMultiWindowNotificationTestData([
                 "windowRouteStatus": "0",
@@ -12997,6 +12970,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // after a browser panel has been shown, SwiftUI's menu dispatch can silently
         // consume the key equivalent without firing the action closure.
         if matchConfiguredShortcut(event: event, action: .newWindow) {
+            // UniConnect is a single-window app: ⇧⌘N does nothing on purpose.
+            if UniConnectCoordinator.isEnabled { return true }
             openNewMainWindow(preferredWindow: mainWindowForShortcutEvent(event))
             return true
         }
@@ -15512,7 +15487,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
         let embeddedCLIURL = Bundle.main.bundleURL
-            .appendingPathComponent("Contents/Resources/bin/cmux", isDirectory: false)
+            .appendingPathComponent("Contents/Resources/bin/uniconnect", isDirectory: false)
             .standardizedFileURL
             .resolvingSymlinksInPath()
         let currentPid = ProcessInfo.processInfo.processIdentifier

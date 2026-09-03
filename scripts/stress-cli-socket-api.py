@@ -1529,11 +1529,11 @@ def resolve_cli_path(raw: str | None, tag: str | None) -> str:
     candidates: list[str] = []
     if raw:
         candidates.append(os.path.expanduser(raw))
-    env_cli = os.environ.get("CMUXTERM_CLI") or os.environ.get("CMUX_BUNDLED_CLI_PATH")
+    env_cli = os.environ.get("UNICONNECT_CLI") or os.environ.get("UNICONNECT_BUNDLED_CLI_PATH")
     if env_cli:
         candidates.append(os.path.expanduser(env_cli))
     if tag:
-        candidates.append(os.path.expanduser(f"~/Library/Developer/Xcode/DerivedData/cmux-{tag}/Build/Products/Debug/cmux DEV {tag}.app/Contents/Resources/bin/cmux"))
+        candidates.append(os.path.expanduser(f"~/Library/Developer/Xcode/DerivedData/uniconnect-{tag}/Build/Products/Debug/UniConnect DEV {tag}.app/Contents/Resources/bin/uniconnect"))
         candidates.append(os.path.expanduser(f"~/Library/Developer/Xcode/DerivedData/cmux-{tag}/Build/Products/Debug/cmux"))
     last_cli = pathlib.Path("/tmp/cmux-last-cli-path")
     if last_cli.exists():
@@ -1576,7 +1576,7 @@ def main() -> int:
     parser.add_argument("--iterations", type=int, help="Stop after this many cycles. Useful for smoke runs.")
     parser.add_argument("--finish-cycle", action="store_true", help="Finish the current cycle when --duration expires.")
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS, help="Per-command timeout in seconds.")
-    parser.add_argument("--artifacts", help="Artifact directory. Default: /tmp/cmux-cli-socket-stress-<timestamp>.")
+    parser.add_argument("--artifacts", help="Artifact directory. Default: /tmp/uniconnect-cli-socket-stress-<timestamp>.")
     parser.add_argument("--app-pgrep", help="pgrep -f pattern used to locate the app process for diagnostics.")
     parser.add_argument("--heartbeat-interval", type=float, default=15.0, help="Socket heartbeat interval in seconds.")
     parser.add_argument("--burst-workers", type=int, default=DEFAULT_BURST_WORKERS, help="Parallel socket burst worker count.")
@@ -1585,7 +1585,7 @@ def main() -> int:
     args = parser.parse_args()
 
     tag = safe_name(args.tag) if args.tag else None
-    artifacts_dir = pathlib.Path(args.artifacts or f"/tmp/cmux-cli-socket-stress-{now_slug()}").expanduser()
+    artifacts_dir = pathlib.Path(args.artifacts or f"/tmp/uniconnect-cli-socket-stress-{now_slug()}").expanduser()
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     cli_path = resolve_cli_path(args.cli, tag)
     socket_path = resolve_socket_path(args.socket, tag)

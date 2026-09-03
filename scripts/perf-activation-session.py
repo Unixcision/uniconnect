@@ -52,7 +52,7 @@ class CmuxPerfRunner:
         self.stdout_path = pathlib.Path(f"/tmp/cmux-perf-{self.tag_slug}-stdout.log")
         self.app_path = pathlib.Path(args.app_path).expanduser() if args.app_path else self.default_app_path()
         self.binary_path = self.app_path / "Contents/MacOS/cmux DEV"
-        self.cli_path = self.app_path / "Contents/Resources/bin/cmux"
+        self.cli_path = self.app_path / "Contents/Resources/bin/uniconnect"
         self.fixture_root = self.make_fixture_root(args.fixture_root)
         self.proc: subprocess.Popen | None = None
         self.heavy_scrollback_surfaces: set[str] = set()

@@ -15,7 +15,9 @@ final class UniConnectCoordinator: ObservableObject {
     private var setupStates: [UUID: UniConnectSSHSetupState] = [:]
     private var probes: [UUID: UniConnectTmuxProbe] = [:]
 
-    static var isEnabled: Bool {
+    /// Only reads the environment, so it is safe from any actor (menu builders, hit-test
+    /// helpers and other nonisolated code ask for it).
+    nonisolated static var isEnabled: Bool {
         let env = ProcessInfo.processInfo.environment
         // Off under XCTest so the inherited cmux test-suite (shortcut routing, workspace
         // creation, CLI) keeps exercising stock behaviour; off on demand for dogfooding.
@@ -210,7 +212,9 @@ final class UniConnectCoordinator: ObservableObject {
         probe.start(connectCommand: connect)
     }
 
-    static func humanizeSSHFailure(_ message: String, log: [String]) -> String {
+    /// Pure string matching, no actor state: callable from background work (the remote
+    /// updater runs its ssh script off the main actor).
+    nonisolated static func humanizeSSHFailure(_ message: String, log: [String]) -> String {
         let joined = log.joined(separator: "\n").lowercased()
         if joined.contains("permission denied") || joined.contains("authentication fail") {
             return "Autenticación rechazada. Revisa usuario, contraseña o clave del comando de conexión."
@@ -312,10 +316,18 @@ final class UniConnectCoordinator: ObservableObject {
             alert.alertStyle = .warning
             alert.messageText = "Ese código tmux ya está en uso"
             let existingName = workspace.panelCustomTitles[duplicate.key] ?? workspace.panelTitles[duplicate.key] ?? "otra ventana"
-            alert.informativeText = "La ventana \"\(existingName)\" ya usa la sesión tmux \"\(session)\". Dos ventanas sobre la misma sesión se pisan (tmux desengancha a la otra). ¿Abrirla igualmente?"
-            alert.addButton(withTitle: "Abrir igualmente")
+            alert.informativeText = "La ventana \"\(existingName)\" ya usa la sesión tmux \"\(session)\". UniConnect reutilizará esa ventana para no abrir dos clientes sobre el mismo destino."
+            alert.addButton(withTitle: "Ir a la ventana")
             alert.addButton(withTitle: "Cancelar")
-            guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+            if alert.runModal() == .alertFirstButtonReturn {
+                if let pane = workspace.paneId(forPanelId: duplicate.key),
+                   let tabId = workspace.surfaceIdFromPanelId(duplicate.key) {
+                    workspace.bonsplitController.focusPane(pane)
+                    workspace.bonsplitController.selectTab(tabId)
+                    workspace.focusPanel(duplicate.key)
+                }
+            }
+            return nil
         }
         let commandLine = UniConnectSSH.attachCommandLine(connectCommand: connect, session: session, directory: directory)
         guard let launcher = UniConnectSSH.writeLauncherScript(commandLine: commandLine, label: session) else {
@@ -363,8 +375,18 @@ final class UniConnectCoordinator: ObservableObject {
 
     /// How many automatic attempts per window before leaving it to the user.
     private static let maxReconnectAttempts = 3
-    /// Attempts already spent, per panel id.
-    private var reconnectAttempts: [UUID: Int] = [:]
+    /// An outage budget follows the logical tmux target, not a disposable terminal
+    /// process. This prevents a failed respawn from receiving a fresh budget merely
+    /// because its surface was recreated.
+    private struct ReconnectKey: Hashable {
+        let workspaceId: UUID
+        let tmuxSession: String
+    }
+
+    private var reconnectAttempts: [ReconnectKey: Int] = [:]
+    private var reconnectTasks: [ReconnectKey: Task<Void, Never>] = [:]
+    private var reconnectStabilityTasks: [ReconnectKey: Task<Void, Never>] = [:]
+    private var reconnectAllTask: Task<Void, Never>?
     /// Re-entrancy guard: closing the dead panel and creating the replacement both select
     /// tabs, and bonsplit reports programmatic selections exactly like user clicks. Without
     /// this the app recursed until the stack blew up.
@@ -372,26 +394,41 @@ final class UniConnectCoordinator: ObservableObject {
     var isReconnecting: Bool { reconnectDepth > 0 }
 
     /// Re-attaches a tmux window whose ssh client died, with a growing delay. The dead
-    /// panel is replaced by a fresh one in the same pane, keeping name and tmux binding.
+    /// process is respawned behind the same surface identity, keeping name, pane, position,
+    /// pinning, notification state, and tmux binding.
     func scheduleReconnect(panelId: UUID, in workspace: Workspace) {
-        guard Self.isEnabled, !isReconnecting else { return }
-        let attempt = (reconnectAttempts[panelId] ?? 0) + 1
+        guard Self.isEnabled, !isReconnecting,
+              let tmuxSession = workspace.uniConnectTmuxSessionsByPanelId[panelId] else { return }
+        let key = ReconnectKey(workspaceId: workspace.id, tmuxSession: tmuxSession)
+        reconnectStabilityTasks.removeValue(forKey: key)?.cancel()
+        guard reconnectTasks[key] == nil else { return }
+        let attempt = (reconnectAttempts[key] ?? 0) + 1
         guard attempt <= Self.maxReconnectAttempts else { return }
-        reconnectAttempts[panelId] = attempt
+        reconnectAttempts[key] = attempt
         let delay = Double(attempt) * 4.0
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak workspace] in
-            guard let self, let workspace else { return }
-            self.reconnect(panelId: panelId, in: workspace, attempt: attempt)
+        reconnectTasks[key] = Task { @MainActor [weak self, weak workspace] in
+            do {
+                try await Task.sleep(for: .seconds(delay))
+            } catch {
+                return
+            }
+            guard let self else { return }
+            defer { self.reconnectTasks.removeValue(forKey: key) }
+            guard let workspace,
+                  workspace.panels[panelId] != nil,
+                  workspace.uniConnectTmuxSessionsByPanelId[panelId] == tmuxSession else {
+                self.reconnectAttempts.removeValue(forKey: key)
+                return
+            }
+            self.reconnect(panelId: panelId, in: workspace, attempt: attempt, key: key)
         }
     }
 
-    private func reconnect(panelId: UUID, in workspace: Workspace, attempt: Int) {
+    private func reconnect(panelId: UUID, in workspace: Workspace, attempt: Int, key: ReconnectKey) {
         guard !isReconnecting else { return }
         guard let session = workspace.uniConnectTmuxSessionsByPanelId[panelId],
+              session == key.tmuxSession,
               workspace.panels[panelId] != nil,
-              let pane = workspace.paneId(forPanelId: panelId)
-                ?? workspace.bonsplitController.focusedPaneId
-                ?? workspace.bonsplitController.allPaneIds.first,
               let profile = workspace.uniConnectProfile,
               let credentialId = profile.credentialId,
               let connect = UniConnectVault.shared.connectCommand(for: credentialId) else {
@@ -403,25 +440,38 @@ final class UniConnectCoordinator: ObservableObject {
         guard let launcher = UniConnectSSH.writeLauncherScript(commandLine: commandLine, label: session) else { return }
         reconnectDepth += 1
         defer { reconnectDepth -= 1 }
-        // Retire the dead window BEFORE opening the replacement: while it exists it is still
-        // selectable, and selecting it asks for another reconnect.
-        workspace.uniConnectTmuxSessionsByPanelId.removeValue(forKey: panelId)
+        guard workspace.respawnTerminalSurface(
+            panelId: panelId,
+            command: launcher,
+            tmuxStartCommand: launcher,
+            focus: false
+        ) != nil else { return }
         workspace.uniConnectDisconnectedPanelIds.remove(panelId)
-        reconnectAttempts.removeValue(forKey: panelId)
-        _ = workspace.closePanel(panelId, force: true)
-        guard let panel = workspace.newTerminalSurface(
-            inPane: pane,
-            focus: false,
-            initialCommand: launcher,
-            suppressWorkspaceRemoteStartupCommand: true
-        ) else { return }
-        workspace.uniConnectTmuxSessionsByPanelId[panel.id] = session
-        workspace.setPanelCustomTitle(panelId: panel.id, title: title)
-        // The budget belongs to the outage, not to the panel: a window that comes back and
-        // dies again hours later gets its three attempts afresh.
-        reconnectAttempts.removeValue(forKey: panel.id)
+        workspace.setPanelCustomTitle(panelId: panelId, title: title)
+        scheduleReconnectStabilityCheck(panelId: panelId, in: workspace, key: key)
         requestSave()
         NSLog("[UniConnect] reconectando %@ (intento %d)", session, attempt)
+    }
+
+    /// Clears an outage budget only after the replacement has remained alive long enough
+    /// for immediate SSH/auth/tmux failures to report their child exit. A failure during
+    /// this window marks the same panel disconnected and spends the next attempt.
+    private func scheduleReconnectStabilityCheck(panelId: UUID, in workspace: Workspace, key: ReconnectKey) {
+        reconnectStabilityTasks.removeValue(forKey: key)?.cancel()
+        reconnectStabilityTasks[key] = Task { @MainActor [weak self, weak workspace] in
+            do {
+                try await Task.sleep(for: .seconds(20))
+            } catch {
+                return
+            }
+            guard let self else { return }
+            defer { self.reconnectStabilityTasks.removeValue(forKey: key) }
+            guard let workspace,
+                  workspace.panels[panelId] != nil,
+                  workspace.uniConnectTmuxSessionsByPanelId[panelId] == key.tmuxSession,
+                  !workspace.uniConnectDisconnectedPanelIds.contains(panelId) else { return }
+            self.reconnectAttempts.removeValue(forKey: key)
+        }
     }
 
     /// Reconnect on demand. `userInitiated` (menu, explicit click) clears the attempt
@@ -430,46 +480,62 @@ final class UniConnectCoordinator: ObservableObject {
     func reconnectNow(panelId: UUID, in workspace: Workspace, userInitiated: Bool = true) {
         guard Self.isEnabled, !isReconnecting,
               workspace.uniConnectDisconnectedPanelIds.contains(panelId),
-              workspace.uniConnectTmuxSessionsByPanelId[panelId] != nil else { return }
+              let tmuxSession = workspace.uniConnectTmuxSessionsByPanelId[panelId] else { return }
+        let key = ReconnectKey(workspaceId: workspace.id, tmuxSession: tmuxSession)
         let attempt: Int
         if userInitiated {
-            reconnectAttempts.removeValue(forKey: panelId)
+            reconnectTasks.removeValue(forKey: key)?.cancel()
+            reconnectStabilityTasks.removeValue(forKey: key)?.cancel()
+            reconnectAttempts.removeValue(forKey: key)
             attempt = 1
+            reconnectAttempts[key] = attempt
         } else {
-            let spent = reconnectAttempts[panelId] ?? 0
+            let spent = reconnectAttempts[key] ?? 0
             guard spent < Self.maxReconnectAttempts else { return }
             attempt = spent + 1
-            reconnectAttempts[panelId] = attempt
+            reconnectAttempts[key] = attempt
         }
-        reconnect(panelId: panelId, in: workspace, attempt: attempt)
+        reconnect(panelId: panelId, in: workspace, attempt: attempt, key: key)
     }
 
     /// "Reconectar ventanas caídas": when the network is back, re-attach every dead window.
     func reconnectAllDisconnected() {
         guard Self.isEnabled else { return }
-        var total = 0
+        var targets: [(workspaceId: UUID, panelId: UUID)] = []
         for tabManager in allTabManagers() {
             for workspace in tabManager.tabs {
-                // Snapshot the ids: reconnecting mutates the set we would be iterating.
                 let dead = workspace.uniConnectDisconnectedPanelIds.filter { workspace.panels[$0] != nil }
                 for panelId in dead {
-                    // Stagger the ssh clients like the restore does, or a box with six
-                    // windows opens six connections at once and the server throttles them.
-                    let delay = Double(total) * 0.4
-                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak workspace] in
-                        guard let workspace else { return }
-                        UniConnectCoordinator.shared.reconnectNow(panelId: panelId, in: workspace, userInitiated: true)
-                    }
-                    total += 1
+                    targets.append((workspace.id, panelId))
                 }
             }
         }
-        if total == 0 {
+        if targets.isEmpty {
             let alert = NSAlert()
             alert.messageText = "Nada que reconectar"
             alert.informativeText = "Todas las ventanas tmux siguen enganchadas."
             alert.addButton(withTitle: "Vale")
             alert.runModal()
+            return
+        }
+        reconnectAllTask?.cancel()
+        reconnectAllTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.reconnectAllTask = nil }
+            for (index, target) in targets.enumerated() {
+                if index > 0 {
+                    do {
+                        try await Task.sleep(for: .milliseconds(400))
+                    } catch {
+                        return
+                    }
+                }
+                guard !Task.isCancelled,
+                      let workspace = self.allTabManagers()
+                        .flatMap(\.tabs)
+                        .first(where: { $0.id == target.workspaceId }) else { continue }
+                self.reconnectNow(panelId: target.panelId, in: workspace, userInitiated: true)
+            }
         }
     }
 
@@ -600,6 +666,7 @@ final class UniConnectCoordinator: ObservableObject {
                     )
                 }
                 workspaces.append(UniConnectDocument.Workspace(
+                    id: ws.workspaceId,
                     name: name.isEmpty ? "cmux" : name,
                     kind: .local,
                     color: ws.customColor,

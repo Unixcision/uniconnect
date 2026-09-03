@@ -29,6 +29,37 @@ extension TerminalSurface {
         protectedKeys.insert("TERM_PROGRAM")
     }
 
+    /// Claude Code marks the terminals it spawns with these variables and, when it finds
+    /// them again, treats itself as a nested "child session" and stops saving transcripts.
+    /// A UniConnect window is never a child of anything: if the app itself was launched from
+    /// a Claude Code session (installer, `open` from a terminal), the markers leak into
+    /// every shell and `--resume` would later find nothing to resume. Strip them and pin
+    /// persistence on for good measure.
+    static let inheritedClaudeSessionMarkerKeys: Set<String> = [
+        "CLAUDECODE",
+        "CLAUDE_CODE_CHILD_SESSION",
+        "CLAUDE_CODE_SESSION_ID",
+        "CLAUDE_CODE_ENTRYPOINT",
+        "CLAUDE_CODE_EXECPATH",
+        "CLAUDE_CODE_MESSAGING_SOCKET",
+        "CLAUDE_CODE_MESSAGING_TOKEN",
+        "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
+        "CLAUDE_CODE_SSE_PORT",
+        "CLAUDE_PID",
+        "CLAUDE_EFFORT"
+    ]
+
+    static func applyManagedClaudeSessionEnvironment(
+        to environment: inout [String: String],
+        protectedKeys: inout Set<String>
+    ) {
+        for key in inheritedClaudeSessionMarkerKeys {
+            environment.removeValue(forKey: key)
+        }
+        environment["CLAUDE_CODE_FORCE_SESSION_PERSISTENCE"] = "1"
+        protectedKeys.insert("CLAUDE_CODE_FORCE_SESSION_PERSISTENCE")
+    }
+
     static func applyManagedCmuxContextEnvironment(
         _ context: CmuxContextEnvironment,
         to environment: inout [String: String],

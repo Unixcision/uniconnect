@@ -33,7 +33,7 @@ exec env \
   CMUX_PORT_RANGE="$port_range" \
   CMUX_PORT_END="$port_end" \
   PORT="$port" \
-  CMUX_BUNDLED_CLI_PATH="$app/Contents/Resources/bin/cmux" \
+  UNICONNECT_BUNDLED_CLI_PATH="$app/Contents/Resources/bin/uniconnect" \
   CMUX_SHELL_INTEGRATION_DIR="$app/Contents/Resources/shell-integration" \
   CMUX_REMOTE_DAEMON_ALLOW_LOCAL_BUILD=1 \
   CMUXTERM_REPO_ROOT="$repo" \

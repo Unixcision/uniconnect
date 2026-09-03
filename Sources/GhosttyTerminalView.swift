@@ -1861,20 +1861,15 @@ class GhosttyApp {
 
             switch preparedContent {
             case .reject:
+                TerminalImageTransferPlanner.executeRejection(plan: .reject) { error in
+                    MainActor.assumeIsolated {
+                        TerminalImageTransferErrorPresenter.present(error)
+                    }
+                }
                 completeClipboardRequest(with: "")
             case .insertText(let text):
                 completeClipboardRequest(with: text)
             case .fileURLs(let fileURLs):
-                let operation = TerminalImageTransferOperation()
-                MainActor.assumeIsolated {
-                    callbackContext.terminalSurface?.hostedView.beginImageTransferIndicator(
-                        for: operation,
-                        onCancel: {
-                            completeClipboardRequest(with: "")
-                        }
-                    )
-                }
-
                 let target = MainActor.assumeIsolated {
                     callbackContext.terminalSurface?.resolvedImageTransferTarget() ?? .local
                 }
@@ -1882,6 +1877,21 @@ class GhosttyApp {
                     fileURLs: fileURLs,
                     target: target
                 )
+                let operation: TerminalImageTransferOperation?
+                if case .uploadFiles = plan {
+                    let uploadOperation = TerminalImageTransferOperation()
+                    operation = uploadOperation
+                    MainActor.assumeIsolated {
+                        callbackContext.terminalSurface?.hostedView.beginImageTransferIndicator(
+                            for: uploadOperation,
+                            onCancel: {
+                                completeClipboardRequest(with: "")
+                            }
+                        )
+                    }
+                } else {
+                    operation = nil
+                }
 
                 TerminalImageTransferPlanner.execute(
                     plan: plan,
@@ -1914,20 +1924,25 @@ class GhosttyApp {
                         )
                     },
                     insertText: { text in
-                        MainActor.assumeIsolated {
-                            callbackContext.terminalSurface?.hostedView.endImageTransferIndicator(
-                                for: operation
-                            )
+                        if let operation {
+                            MainActor.assumeIsolated {
+                                callbackContext.terminalSurface?.hostedView.endImageTransferIndicator(
+                                    for: operation
+                                )
+                            }
                         }
                         completeClipboardRequest(with: text)
                     },
-                    onFailure: { _ in
+                    onFailure: { error in
+                        GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(fileURLs)
                         MainActor.assumeIsolated {
-                            callbackContext.terminalSurface?.hostedView.endImageTransferIndicator(
-                                for: operation
-                            )
+                            if let operation {
+                                callbackContext.terminalSurface?.hostedView.endImageTransferIndicator(
+                                    for: operation
+                                )
+                            }
+                            TerminalImageTransferErrorPresenter.present(error)
                         }
-                        NSSound.beep()
 #if DEBUG
                         cmuxDebugLog("terminal.remotePasteUpload.failed surface=\(callbackContext.surfaceId.uuidString.prefix(5))")
 #endif
@@ -6507,6 +6522,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
         var protectedStartupEnvironmentKeys: Set<String> = []
         Self.applyManagedTerminalIdentityEnvironment(
+            to: &env,
+            protectedKeys: &protectedStartupEnvironmentKeys
+        )
+        Self.applyManagedClaudeSessionEnvironment(
             to: &env,
             protectedKeys: &protectedStartupEnvironmentKeys
         )
@@ -11910,6 +11929,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             return .insertText(segments.joined())
         case .uploadFiles(let fileURLs, _):
             return .uploadFiles(fileURLs)
+        case .unavailable:
+            return .reject
         case .reject:
             return .reject
         }
@@ -11951,7 +11972,13 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             mode: .drop,
             target: target
         )
-        guard plan != .reject else { return false }
+        let isRejected: Bool
+        switch plan {
+        case .unavailable, .reject:
+            isRejected = true
+        case .insertText, .insertTextSegments, .uploadFiles:
+            isRejected = false
+        }
 
         TerminalImageTransferPlanner.execute(
             plan: plan,
@@ -11967,15 +11994,22 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             insertText: sendText,
             onFailure: { _ in onFailure() }
         )
-        return true
+        return !isRejected
     }
 
     private func executeImageTransferPlan(
         _ plan: TerminalImageTransferPlan,
         operation: TerminalImageTransferOperation? = nil,
-        onCancel: @escaping () -> Void = {}
+        onCancel: @escaping () -> Void = {},
+        sourceFileURLs: [URL] = []
     ) -> Bool {
-        guard plan != .reject else { return false }
+        let isRejected: Bool
+        switch plan {
+        case .unavailable, .reject:
+            isRejected = true
+        case .insertText, .insertTextSegments, .uploadFiles:
+            isRejected = false
+        }
 
         let operation = operation ?? {
             if case .uploadFiles = plan {
@@ -12037,19 +12071,20 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                     DispatchQueue.main.async(execute: send)
                 }
             },
-            onFailure: { [weak self] _ in
+            onFailure: { [weak self] error in
+                GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(sourceFileURLs)
                 if let operation {
                     self?.terminalSurface?.hostedView.endImageTransferIndicator(for: operation)
                 }
                 DispatchQueue.main.async {
-                    NSSound.beep()
+                    TerminalImageTransferErrorPresenter.present(error)
 #if DEBUG
                     cmuxDebugLog("terminal.remoteDropUpload.failed surface=\(self?.terminalSurface?.id.uuidString.prefix(5) ?? "nil")")
 #endif
                 }
             }
         )
-        return true
+        return !isRejected
     }
 
     private func resolvedImageTransferTarget() -> TerminalImageTransferTarget {
@@ -12083,7 +12118,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     ) -> Bool {
         switch preparedContent {
         case .reject:
-            return false
+            return executeImageTransferPlan(.reject, onCancel: onCancel)
         case .insertText(let text):
             terminalSurface?.sendText(text)
             return true
@@ -12093,7 +12128,11 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                 target: resolvedImageTransferTarget(),
                 mode: .drop
             )
-            return executeImageTransferPlan(plan, onCancel: onCancel)
+            return executeImageTransferPlan(
+                plan,
+                onCancel: onCancel,
+                sourceFileURLs: fileURLs
+            )
         }
     }
 

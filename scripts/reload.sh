@@ -48,7 +48,7 @@ write_dev_cli_shim() {
   mkdir -p "$(dirname "$target")"
   cat > "$target" <<EOF
 #!/usr/bin/env bash
-# cmux dev shim (managed by scripts/reload.sh)
+# UniConnect dev shim (managed by scripts/reload.sh)
 set -euo pipefail
 
 CLI_PATH_FILE="/tmp/uniconnect-last-cli-path"
@@ -71,19 +71,19 @@ for arg in "\$@"; do
 done
 if [[ -n "\$SOCKET_ARG" ]]; then
   SOCKET_NAME="\$(basename "\$SOCKET_ARG")"
-  if [[ "\$SOCKET_NAME" == cmux-debug-*.sock ]]; then
-    TAG="\${SOCKET_NAME#cmux-debug-}"
+  if [[ "\$SOCKET_NAME" == uniconnect-debug-*.sock ]]; then
+    TAG="\${SOCKET_NAME#uniconnect-debug-}"
     TAG="\${TAG%.sock}"
     if [[ "\$TAG" =~ ^[A-Za-z0-9_-]+$ ]]; then
-      TAG_CLI="\$HOME/Library/Developer/Xcode/DerivedData/cmux-\$TAG/Build/Products/Debug/UniConnect DEV \$TAG.app/Contents/Resources/bin/cmux"
+      TAG_CLI="\$HOME/Library/Developer/Xcode/DerivedData/uniconnect-\$TAG/Build/Products/Debug/UniConnect DEV \$TAG.app/Contents/Resources/bin/uniconnect"
       if [[ -x "\$TAG_CLI" ]] && [[ "\$TAG_CLI" != "\$0" ]]; then
         exec "\$TAG_CLI" "\$@"
       fi
     fi
   fi
 fi
-if [[ -n "\${CMUX_BUNDLED_CLI_PATH:-}" ]] && [[ -f "\$CMUX_BUNDLED_CLI_PATH" ]] && [[ -x "\$CMUX_BUNDLED_CLI_PATH" ]] && [[ "\$CMUX_BUNDLED_CLI_PATH" != "\$0" ]]; then
-  exec "\$CMUX_BUNDLED_CLI_PATH" "\$@"
+if [[ -n "\${UNICONNECT_BUNDLED_CLI_PATH:-}" ]] && [[ -f "\$UNICONNECT_BUNDLED_CLI_PATH" ]] && [[ -x "\$UNICONNECT_BUNDLED_CLI_PATH" ]] && [[ "\$UNICONNECT_BUNDLED_CLI_PATH" != "\$0" ]]; then
+  exec "\$UNICONNECT_BUNDLED_CLI_PATH" "\$@"
 fi
 
 CLI_PATH_OWNER="\$(stat -f '%u' "\$CLI_PATH_FILE" 2>/dev/null || stat -c '%u' "\$CLI_PATH_FILE" 2>/dev/null || echo -1)"
@@ -98,15 +98,15 @@ if [[ -x "$fallback_bin" ]]; then
   exec "$fallback_bin" "\$@"
 fi
 
-echo "error: no reload-selected dev cmux CLI found. Run ./scripts/reload.sh --tag <name> first." >&2
+echo "error: no reload-selected UniConnect dev CLI found. Run ./scripts/reload.sh --tag <name> first." >&2
 exit 1
 EOF
   chmod +x "$target"
 }
 
 select_cmux_shim_target() {
-  local app_cli_dir="/Applications/cmux.app/Contents/Resources/bin"
-  local marker="cmux dev shim (managed by scripts/reload.sh)"
+  local app_cli_dir="/Applications/UniConnect.app/Contents/Resources/bin"
+  local marker="UniConnect dev shim (managed by scripts/reload.sh)"
   local target=""
   local path_entry=""
   local candidate=""
@@ -121,7 +121,7 @@ select_cmux_shim_target() {
       break
     fi
     [[ -d "$path_entry" && -w "$path_entry" ]] || continue
-    candidate="$path_entry/cmux"
+    candidate="$path_entry/uniconnect"
     if [[ ! -e "$candidate" ]]; then
       target="$candidate"
       break
@@ -140,7 +140,7 @@ select_cmux_shim_target() {
   # Fallback for PATH layouts where app CLI isn't listed or no earlier entries were writable.
   for path_entry in /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" "$HOME/bin"; do
     [[ -d "$path_entry" && -w "$path_entry" ]] || continue
-    candidate="$path_entry/cmux"
+    candidate="$path_entry/uniconnect"
     if [[ ! -e "$candidate" ]]; then
       echo "$candidate"
       return 0
@@ -321,7 +321,7 @@ set_plist_env() {
 
 tagged_derived_data_path() {
   local slug="$1"
-  echo "$HOME/Library/Developer/Xcode/DerivedData/cmux-${slug}"
+  echo "$HOME/Library/Developer/Xcode/DerivedData/uniconnect-${slug}"
 }
 
 remove_app_bundle_output() {
@@ -383,8 +383,8 @@ print_tag_cleanup_reminder() {
   while IFS= read -r -d '' path; do
     if [[ "$path" == /tmp/uniconnect-* ]]; then
       tag="${path#/tmp/uniconnect-}"
-    elif [[ "$path" == "$HOME/Library/Developer/Xcode/DerivedData/cmux-"* ]]; then
-      tag="${path#$HOME/Library/Developer/Xcode/DerivedData/cmux-}"
+    elif [[ "$path" == "$HOME/Library/Developer/Xcode/DerivedData/uniconnect-"* ]]; then
+      tag="${path#$HOME/Library/Developer/Xcode/DerivedData/uniconnect-}"
     else
       continue
     fi
@@ -401,8 +401,8 @@ print_tag_cleanup_reminder() {
     seen="${seen}${tag} "
     stale_tags+=("$tag")
   done < <(
-    find /tmp -maxdepth 1 -name 'cmux-*' -print0 2>/dev/null
-    find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 1 -type d -name 'cmux-*' -print0 2>/dev/null
+    find /tmp -maxdepth 1 -name 'uniconnect-*' -print0 2>/dev/null
+    find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 1 -type d -name 'uniconnect-*' -print0 2>/dev/null
   )
 
   echo
@@ -421,14 +421,14 @@ print_tag_cleanup_reminder() {
       echo "  pkill -f \"UniConnect DEV ${tag}.app/Contents/MacOS/UniConnect DEV\""
       echo "  rm -rf \"$(tagged_derived_data_path "$tag")\" \"/tmp/uniconnect-${tag}\" \"/tmp/uniconnect-debug-${tag}.sock\""
       echo "  rm -f \"/tmp/uniconnect-debug-${tag}.log\""
-      echo "  rm -f \"$HOME/Library/Application Support/cmux/cmuxd-dev-${tag}.sock\""
+      echo "  rm -f \"$HOME/Library/Application Support/UniConnect/cmuxd-dev-${tag}.sock\""
     done
   fi
   echo "After you verify current tag, cleanup command:"
   echo "  pkill -f \"UniConnect DEV ${current_slug}.app/Contents/MacOS/UniConnect DEV\""
   echo "  rm -rf \"$(tagged_derived_data_path "$current_slug")\" \"/tmp/uniconnect-${current_slug}\" \"/tmp/uniconnect-debug-${current_slug}.sock\""
   echo "  rm -f \"/tmp/uniconnect-debug-${current_slug}.log\""
-  echo "  rm -f \"$HOME/Library/Application Support/cmux/cmuxd-dev-${current_slug}.sock\""
+  echo "  rm -f \"$HOME/Library/Application Support/UniConnect/cmuxd-dev-${current_slug}.sock\""
 }
 
 while [[ $# -gt 0 ]]; do
@@ -589,11 +589,11 @@ reload_finalize() {
     echo "  $CLI_PATH"
     echo "CLI helpers:"
     echo "  /tmp/uniconnect-cli ..."
-    echo "  $HOME/.local/bin/cmux-dev ..."
+    echo "  $HOME/.local/bin/uniconnect-dev ..."
     if [[ -n "${CMUX_SHIM_TARGET:-}" ]]; then
       echo "  $CMUX_SHIM_TARGET ..."
     fi
-    echo "If your shell still resolves the old cmux, run: rehash"
+    echo "If your shell still resolves an older UniConnect CLI, run: rehash"
   fi
   if [[ "${SWIFT_FRONTEND_WORKAROUND_EFFECTIVE:-0}" -eq 1 ]]; then
     echo
@@ -667,7 +667,7 @@ if [[ -n "$BUILD_PRODUCTS_DEBUG_DIR" ]]; then
   XCODEBUILD_CLEANED_OUTPUTS=0
 fi
 
-XCODEBUILD_LOCK_DIR="${TMPDIR:-/tmp}/cmux-xcodebuild-$(id -u).locks"
+XCODEBUILD_LOCK_DIR="${TMPDIR:-/tmp}/uniconnect-xcodebuild-$(id -u).locks"
 XCODEBUILD_LOCK_CONCURRENCY="${CMUX_XCODEBUILD_LOCK_CONCURRENCY:-5}"
 if ! is_positive_integer "$XCODEBUILD_LOCK_CONCURRENCY"; then
   echo "error: xcodebuild lock concurrency must be a positive integer" >&2
@@ -895,7 +895,7 @@ if [[ -n "$TAG" && "$APP_NAME" != "$SEARCH_APP_NAME" ]]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$INFO_PLIST" 2>/dev/null \
       || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string $BUNDLE_ID" "$INFO_PLIST"
     if [[ -n "${TAG_SLUG:-}" ]]; then
-      APP_SUPPORT_DIR="$HOME/Library/Application Support/cmux"
+      APP_SUPPORT_DIR="$HOME/Library/Application Support/UniConnect"
       CMUXD_SOCKET="${APP_SUPPORT_DIR}/cmuxd-dev-${TAG_SLUG}.sock"
       CMUX_SOCKET_PATH_VALUE="/tmp/uniconnect-debug-${TAG_SLUG}.sock"
       CMUX_DEBUG_LOG="/tmp/uniconnect-debug-${TAG_SLUG}.log"
@@ -910,7 +910,7 @@ if [[ -n "$TAG" && "$APP_NAME" != "$SEARCH_APP_NAME" ]]; then
       set_plist_env "$INFO_PLIST" CMUX_SOCKET_MODE "allowAll"
       set_plist_env "$INFO_PLIST" CMUX_REMOTE_DAEMON_ALLOW_LOCAL_BUILD "1"
       set_plist_env "$INFO_PLIST" CMUXTERM_REPO_ROOT "$PWD"
-      set_plist_env "$INFO_PLIST" CMUX_BUNDLED_CLI_PATH "$TAG_APP_FINAL_PATH/Contents/Resources/bin/cmux"
+      set_plist_env "$INFO_PLIST" UNICONNECT_BUNDLED_CLI_PATH "$TAG_APP_FINAL_PATH/Contents/Resources/bin/uniconnect"
       set_plist_env "$INFO_PLIST" CMUX_SHELL_INTEGRATION_DIR "$TAG_APP_FINAL_PATH/Contents/Resources/shell-integration"
       set_plist_env "$INFO_PLIST" CMUX_PORT "$CMUX_DEV_PORT"
       set_plist_env "$INFO_PLIST" CMUX_PORT_END "$CMUX_DEV_PORT_END"
@@ -933,18 +933,18 @@ if [[ -n "$TAG" && "$APP_NAME" != "$SEARCH_APP_NAME" ]]; then
   APP_PATH="$TAG_APP_STAGING_PATH"
 fi
 
-CLI_PATH="$(dirname "$APP_PATH")/cmux"
+CLI_PATH="$(dirname "$APP_PATH")/uniconnect"
 if [[ -x "$CLI_PATH" ]]; then
   (umask 077; printf '%s\n' "$CLI_PATH" > /tmp/uniconnect-last-cli-path) || true
   ln -sfn "$CLI_PATH" /tmp/uniconnect-cli || true
 
   # Stable shim that always follows the last reload-selected dev CLI.
-  DEV_CLI_SHIM="$HOME/.local/bin/cmux-dev"
-  write_dev_cli_shim "$DEV_CLI_SHIM" "/Applications/cmux.app/Contents/Resources/bin/cmux"
+  DEV_CLI_SHIM="$HOME/.local/bin/uniconnect-dev"
+  write_dev_cli_shim "$DEV_CLI_SHIM" "/Applications/UniConnect.app/Contents/Resources/bin/uniconnect"
 
   CMUX_SHIM_TARGET="$(select_cmux_shim_target || true)"
   if [[ -n "${CMUX_SHIM_TARGET:-}" ]]; then
-    write_dev_cli_shim "$CMUX_SHIM_TARGET" "/Applications/cmux.app/Contents/Resources/bin/cmux"
+    write_dev_cli_shim "$CMUX_SHIM_TARGET" "/Applications/UniConnect.app/Contents/Resources/bin/uniconnect"
   fi
 fi
 
@@ -987,7 +987,7 @@ if [[ -n "${TAG_APP_FINAL_PATH:-}" && -n "${TAG_APP_STAGING_PATH:-}" ]]; then
   mv "$TAG_APP_STAGING_PATH" "$TAG_APP_FINAL_PATH"
   APP_PATH="$TAG_APP_FINAL_PATH"
 fi
-CLI_PATH="$APP_PATH/Contents/Resources/bin/cmux"
+CLI_PATH="$APP_PATH/Contents/Resources/bin/uniconnect"
 if [[ -x "$CLI_PATH" ]]; then
   echo "$CLI_PATH" > /tmp/uniconnect-last-cli-path || true
   ln -sfn "$CLI_PATH" /tmp/uniconnect-cli || true
@@ -1029,7 +1029,7 @@ if [[ "$LAUNCH" -eq 1 ]]; then
     -u CMUX_TAG
     -u CMUX_DEBUG_LOG
     -u CMUX_BUNDLE_ID
-    -u CMUX_BUNDLED_CLI_PATH
+    -u UNICONNECT_BUNDLED_CLI_PATH
     -u CMUX_SHELL_INTEGRATION
     -u CMUX_SHELL_INTEGRATION_DIR
     -u CMUX_LOAD_GHOSTTY_ZSH_INTEGRATION
@@ -1060,7 +1060,7 @@ if [[ "$LAUNCH" -eq 1 ]]; then
     CMUX_DEBUG_LOG="$CMUX_DEBUG_LOG"
     CMUX_REMOTE_DAEMON_ALLOW_LOCAL_BUILD=1
     CMUXTERM_REPO_ROOT="$PWD"
-    CMUX_BUNDLED_CLI_PATH="$CLI_PATH"
+    UNICONNECT_BUNDLED_CLI_PATH="$CLI_PATH"
     CMUX_SHELL_INTEGRATION_DIR="$APP_PATH/Contents/Resources/shell-integration"
     CMUX_PORT="$CMUX_DEV_PORT"
     CMUX_PORT_END="$CMUX_DEV_PORT_END"

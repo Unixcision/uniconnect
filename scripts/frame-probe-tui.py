@@ -124,10 +124,10 @@ def cmux_bin_from_args(value: str | None) -> str:
     env_value = os.environ.get("CMUX_FRAME_PROBE_CMUX")
     if env_value:
         return env_value
-    tmp_cli = "/tmp/cmux-cli"
+    tmp_cli = "/tmp/uniconnect-cli"
     if os.access(tmp_cli, os.X_OK):
         return tmp_cli
-    for candidate in ("cmux-dev", "cmux"):
+    for candidate in ("uniconnect-dev", "uniconnect"):
         resolved = shutil.which(candidate)
         if resolved:
             return resolved
@@ -465,7 +465,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--cmux-bin",
         default=None,
-        help="cmux binary path, defaults to CMUX_FRAME_PROBE_CMUX, /tmp/cmux-cli, cmux-dev, then cmux",
+        help="UniConnect binary path; defaults to UNICONNECT_FRAME_PROBE_CLI, /tmp/uniconnect-cli, uniconnect-dev, then uniconnect",
     )
     parser.add_argument(
         "--socket-path",

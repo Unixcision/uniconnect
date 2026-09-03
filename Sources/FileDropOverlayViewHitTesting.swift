@@ -3,6 +3,12 @@ import Bonsplit
 import Foundation
 import WebKit
 
+/// A text editor that handles file URLs through its own attachment/transfer pipeline.
+@MainActor
+protocol FileURLDropInsertingTextView: AnyObject {
+    func insertDroppedFileURLs(_ fileURLs: [URL], atWindowPoint windowPoint: NSPoint) -> Bool
+}
+
 extension FileDropOverlayView {
     func updateDragTarget(_ sender: any NSDraggingInfo, phase: String) -> NSDragOperation {
         let loc = sender.draggingLocation
@@ -171,6 +177,11 @@ extension FileDropOverlayView {
 
         let windowPoint = sender.draggingLocation
         if let textView = editableTextViewUnderPoint(windowPoint) {
+            if let fileURLDestination = textView as? any FileURLDropInsertingTextView {
+                // A false result is final. Falling through would insert Mac paths into an SSH
+                // TextBox precisely when its attachment/transfer pipeline rejected the drop.
+                return fileURLDestination.insertDroppedFileURLs(urls, atWindowPoint: windowPoint)
+            }
             let text = TerminalImageTransferPlanner.insertedText(forFileURLs: urls)
             guard !text.isEmpty else { return false }
             return insert(text, into: textView)

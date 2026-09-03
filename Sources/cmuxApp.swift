@@ -29,7 +29,9 @@ enum CmuxMain {
             runSidebarInterpreterWorker()
             exit(0)
         }
-        UniConnectMigration.runIfNeeded()
+        // Launched from a Claude Code session, the app inherits its child-session markers
+        // and every terminal would stop saving transcripts. Scrub them process-wide first.
+        for key in TerminalSurface.inheritedClaudeSessionMarkerKeys { unsetenv(key) }
         cmuxApp.main()
     }
 }
@@ -135,7 +137,7 @@ struct cmuxApp: App {
         )
 
         // If invoked with CLI-style arguments (e.g. `cmux hooks setup`), exec the
-        // bundled CLI at Contents/Resources/bin/cmux. The GUI binary and the CLI
+        // bundled CLI at Contents/Resources/bin/uniconnect. The GUI binary and the CLI
         // share the name `cmux`, so if the GUI's Contents/MacOS leaks onto $PATH
         // (which happens for any shell descended from this process), bare `cmux`
         // resolves here instead of the CLI. See
@@ -709,8 +711,13 @@ struct cmuxApp: App {
 
             // New tab commands
             CommandGroup(replacing: .newItem) {
-                splitCommandButton(title: String(localized: "menu.file.newWindow", defaultValue: "New Window"), shortcut: menuShortcut(for: .newWindow)) {
-                    appDelegate.openNewMainWindow(nil)
+                // UniConnect: one window. The File menu offers exactly two ways to create
+                // things — a new box (workspace) and a new tab inside the current box — so
+                // "New Window" and the folder-opening variants are cmux-only.
+                if !UniConnectCoordinator.isEnabled {
+                    splitCommandButton(title: String(localized: "menu.file.newWindow", defaultValue: "New Window"), shortcut: menuShortcut(for: .newWindow)) {
+                        appDelegate.openNewMainWindow(nil)
+                    }
                 }
 
                 splitCommandButton(title: String(localized: "menu.file.newWorkspace", defaultValue: "New Workspace"), shortcut: menuShortcut(for: .newTab)) {
@@ -724,19 +731,26 @@ struct cmuxApp: App {
                     }
                 }
 
-                splitCommandButton(title: String(localized: "menu.file.openFolder", defaultValue: "Open Folder…"), shortcut: menuShortcut(for: .openFolder)) {
-                    AppDelegate.shared?.showOpenFolderPanel()
-                }
+                if UniConnectCoordinator.isEnabled {
+                    // Same path as the "+" of the tab bar: SSH boxes get the tmux window sheet.
+                    splitCommandButton(title: String(localized: "menu.file.newTabInWorkspace", defaultValue: "New Tab"), shortcut: menuShortcut(for: .newSurface)) {
+                        activeTabManager.newSurface()
+                    }
+                } else {
+                    splitCommandButton(title: String(localized: "menu.file.openFolder", defaultValue: "Open Folder…"), shortcut: menuShortcut(for: .openFolder)) {
+                        AppDelegate.shared?.showOpenFolderPanel()
+                    }
 
-                Button(
-                    String(
-                        localized: "menu.file.openFolderInVSCodeInline",
-                        defaultValue: "Open Folder in VS Code (Inline)…"
-                    )
-                ) {
-                    AppDelegate.shared?.showOpenFolderInInlineVSCodePanel()
+                    Button(
+                        String(
+                            localized: "menu.file.openFolderInVSCodeInline",
+                            defaultValue: "Open Folder in VS Code (Inline)…"
+                        )
+                    ) {
+                        AppDelegate.shared?.showOpenFolderInInlineVSCodePanel()
+                    }
+                    .disabled(!TerminalDirectoryOpenTarget.vscodeInline.isAvailable())
                 }
-                .disabled(!TerminalDirectoryOpenTarget.vscodeInline.isAvailable())
             }
 
             // Close tab/workspace
@@ -912,6 +926,21 @@ struct cmuxApp: App {
             Button("Terminar sesión tmux remota de la ventana activa…") {
                 guard let workspace = activeTabManager.selectedWorkspace else { return }
                 UniConnectCoordinator.shared.terminateRemoteTmuxSession(in: workspace)
+            }
+            Menu("Actualizar Claude") {
+                Button("En esta ventana") {
+                    guard let workspace = activeTabManager.selectedWorkspace,
+                          let panelId = workspace.focusedPanelId else { return }
+                    UniConnectClaudeUpdater.run(.window(panelId, workspace))
+                }
+                .keyboardShortcut("u", modifiers: [.command, .control])
+                Button("En esta caja") {
+                    guard let workspace = activeTabManager.selectedWorkspace else { return }
+                    UniConnectClaudeUpdater.run(.box(workspace))
+                }
+                Button("En todas las cajas…") {
+                    UniConnectClaudeUpdater.run(.all)
+                }
             }
             Divider()
             Toggle("Barra lateral compacta", isOn: $uniConnectSidebarCompact)
@@ -5292,13 +5321,13 @@ enum WelcomeSettings {
 
 enum TelemetrySettings {
     static let sendAnonymousTelemetryKey = "sendAnonymousTelemetry"
-    static let defaultSendAnonymousTelemetry = true
+    // UniConnect does not have an approved telemetry service. Keep the inherited
+    // preference key readable for configuration compatibility, but never allow it
+    // to activate Sentry or PostHog in this product.
+    static let defaultSendAnonymousTelemetry = false
 
     static func isEnabled(defaults: UserDefaults = .standard) -> Bool {
-        if defaults.object(forKey: sendAnonymousTelemetryKey) == nil {
-            return defaultSendAnonymousTelemetry
-        }
-        return defaults.bool(forKey: sendAnonymousTelemetryKey)
+        false
     }
 
     // Freeze telemetry enablement once per launch. Settings changes apply on next restart.

@@ -810,6 +810,20 @@ enum MinimalModeSidebarControlActionSlot: Int, CaseIterable {
     case focusHistoryBack
     case focusHistoryForward
 
+    /// Slots actually shown, in visual order. UniConnect drops the sidebar toggle (the
+    /// sidebar's own footer already folds and unfolds it) and the focus-history arrows
+    /// (the sidebar is about boxes, not about hopping between panes). Hit regions are
+    /// resolved by position in this list, never by raw value.
+    static var activeCases: [MinimalModeSidebarControlActionSlot] {
+        UniConnectCoordinator.isEnabled ? [.showNotifications, .newTab] : allCases
+    }
+
+    /// Slot drawn at a given visual index, or nil past the end.
+    static func activeCase(at index: Int) -> MinimalModeSidebarControlActionSlot? {
+        let cases = activeCases
+        return cases.indices.contains(index) ? cases[index] : nil
+    }
+
     var accessibilityIdentifier: String {
         switch self {
         case .toggleSidebar:

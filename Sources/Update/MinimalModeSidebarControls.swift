@@ -28,7 +28,7 @@ struct MinimalModeSidebarControlActionProxyView: NSViewRepresentable {
 
 enum TitlebarControlsHitRegions {
     static let outerLeadingPadding: CGFloat = HeaderChromeControlMetrics.titlebarControlsLeadingPadding
-    static let buttonCount = MinimalModeSidebarControlActionSlot.allCases.count
+    static var buttonCount: Int { MinimalModeSidebarControlActionSlot.activeCases.count }
 
     static func buttonXRanges(config: TitlebarControlsStyleConfig) -> [ClosedRange<CGFloat>] {
         var ranges: [ClosedRange<CGFloat>] = []
@@ -49,7 +49,7 @@ enum TitlebarControlsHitRegions {
         config: TitlebarControlsStyleConfig
     ) -> MinimalModeSidebarControlActionSlot? {
         for (index, range) in buttonXRanges(config: config).enumerated() where range.contains(point.x) {
-            return MinimalModeSidebarControlActionSlot(rawValue: index)
+            return MinimalModeSidebarControlActionSlot.activeCase(at: index)
         }
         return nil
     }
@@ -79,7 +79,7 @@ final class MinimalModeSidebarControlActionView: NSView {
 
     override init(frame frameRect: NSRect) {
         var buttons: [MinimalModeSidebarControlActionSlot: MinimalModeSidebarControlButton] = [:]
-        for slot in MinimalModeSidebarControlActionSlot.allCases {
+        for slot in MinimalModeSidebarControlActionSlot.activeCases {
             buttons[slot] = Self.makeButton(for: slot)
         }
         self.buttons = buttons
@@ -97,7 +97,7 @@ final class MinimalModeSidebarControlActionView: NSView {
 
     required init?(coder: NSCoder) {
         var buttons: [MinimalModeSidebarControlActionSlot: MinimalModeSidebarControlButton] = [:]
-        for slot in MinimalModeSidebarControlActionSlot.allCases {
+        for slot in MinimalModeSidebarControlActionSlot.activeCases {
             buttons[slot] = Self.makeButton(for: slot)
         }
         self.buttons = buttons
@@ -139,7 +139,7 @@ final class MinimalModeSidebarControlActionView: NSView {
 
     override func accessibilityChildren() -> [Any]? {
         guard isRevealed || !requiresRevealedState else { return [] }
-        return MinimalModeSidebarControlActionSlot.allCases.compactMap { buttons[$0] }
+        return MinimalModeSidebarControlActionSlot.activeCases.compactMap { buttons[$0] }
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
@@ -211,7 +211,7 @@ final class MinimalModeSidebarControlActionView: NSView {
         super.layout()
         let ranges = TitlebarControlsHitRegions.buttonXRanges(config: config)
         for (index, range) in ranges.enumerated() {
-            guard let slot = MinimalModeSidebarControlActionSlot(rawValue: index),
+            guard let slot = MinimalModeSidebarControlActionSlot.activeCase(at: index),
                   let button = buttons[slot] else { continue }
             button.frame = NSRect(
                 x: range.lowerBound,

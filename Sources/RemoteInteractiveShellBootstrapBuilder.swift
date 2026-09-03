@@ -163,7 +163,7 @@ enum RemoteInteractiveShellBootstrapBuilder {
         lines.append(contentsOf: RemoteShellEnvironment.utf8LocaleSetupLines())
         lines.append(contentsOf: shellExportLines(shellFeatures: shellFeatures))
         lines.append("export PATH=\"$HOME/.uniconnect/bin:$PATH\"")
-        lines.append("export CMUX_BUNDLED_CLI_PATH=\"$HOME/.uniconnect/bin/cmux\"")
+        lines.append("export UNICONNECT_BUNDLED_CLI_PATH=\"$HOME/.uniconnect/bin/uniconnect\"")
         lines.append("export CMUX_SHELL_INTEGRATION_DIR=\"\(shellStateDir)\"")
         if let relaySocket {
             lines.append("export CMUX_SOCKET_PATH=\(relaySocket)")
@@ -235,8 +235,8 @@ enum RemoteInteractiveShellBootstrapBuilder {
             return []
         }
         return [
-            "cmux_relay_cli=\"${CMUX_BUNDLED_CLI_PATH:-$HOME/.uniconnect/bin/cmux}\"",
-            "if [ ! -x \"$cmux_relay_cli\" ]; then cmux_relay_cli=\"$(command -v cmux 2>/dev/null || true)\"; fi",
+            "cmux_relay_cli=\"${UNICONNECT_BUNDLED_CLI_PATH:-$HOME/.uniconnect/bin/uniconnect}\"",
+            "if [ ! -x \"$cmux_relay_cli\" ]; then cmux_relay_cli=\"$(command -v uniconnect 2>/dev/null || true)\"; fi",
             "cmux_relay_tty=\"${CMUX_BOOTSTRAP_TTY:-}\"",
             "if [ -z \"$cmux_relay_tty\" ]; then cmux_relay_tty=\"$(tty 2>/dev/null || true)\"; fi",
             "cmux_relay_tty=\"${cmux_relay_tty##*/}\"",

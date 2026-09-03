@@ -5,14 +5,14 @@ import PostHog
 final class PostHogAnalytics {
     static let shared = PostHogAnalytics()
 
-    // The PostHog project API key is intentionally embedded in the app (it's a public key).
-    private let apiKey = "phc_opOVu7oFzR9wD3I6ZahFGOV2h3mqGpl5EHyQvmHciDP"
+    // UniConnect has no approved telemetry destination. Keeping this empty makes the
+    // inherited analytics adapter inert even if a future caller bypasses launch gating.
+    private let apiKey = ""
 
-    // PostHog Cloud US default (matches other cmux properties).
     private let host = "https://us.i.posthog.com"
 
-    private let dailyActiveEvent = "cmux_daily_active"
-    private let hourlyActiveEvent = "cmux_hourly_active"
+    private let dailyActiveEvent = "uniconnect_daily_active"
+    private let hourlyActiveEvent = "uniconnect_hourly_active"
 
     private let lastActiveDayUTCKey = "posthog.lastActiveDayUTC"
     private let lastActiveHourUTCKey = "posthog.lastActiveHourUTC"
@@ -34,14 +34,7 @@ final class PostHogAnalytics {
 
     private var isEnabled: Bool {
         // UniConnect never sends telemetry anywhere.
-        return false
-        guard TelemetrySettings.enabledForCurrentLaunch else { return false }
-#if DEBUG
-        // Avoid polluting production analytics while iterating locally.
-        return ProcessInfo.processInfo.environment["CMUX_POSTHOG_ENABLE"] == "1"
-#else
-        return !apiKey.isEmpty && apiKey != "REPLACE_WITH_POSTHOG_PUBLIC_KEY"
-#endif
+        false
     }
 
     func startIfNeeded() {

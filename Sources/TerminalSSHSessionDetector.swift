@@ -102,22 +102,25 @@ struct DetectedSSHSession: Equatable {
                 }
 
                 let remotePath = WorkspaceRemoteSessionController.remoteDropPath(for: normalizedLocalURL)
-                let (scpExecutable, scpArgs) = wrappedCommand(
+                let (scpExecutable, scpArgs, scpEnvironment) = wrappedCommand(
                     executable: "/usr/bin/scp",
                     arguments: scpArguments(localPath: normalizedLocalURL.path, remotePath: remotePath)
                 )
                 let result = try Self.runProcess(
                     executable: scpExecutable,
                     arguments: scpArgs,
+                    environment: scpEnvironment,
                     timeout: 45,
                     operation: operation
                 )
                 guard result.status == 0 else {
+                    let detail = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let base = String(
+                        localized: "detectedSSH.fileDrop.error.uploadFailed",
+                        defaultValue: "Couldn't upload the file to the remote session. Check that the remote host is reachable, then try again."
+                    )
                     throw NSError(domain: "cmux.detected-ssh.drop", code: 2, userInfo: [
-                        NSLocalizedDescriptionKey: String(
-                            localized: "detectedSSH.fileDrop.error.uploadFailed",
-                            defaultValue: "Couldn't upload the file to the remote session. Check that the remote host is reachable, then try again."
-                        ),
+                        NSLocalizedDescriptionKey: detail.isEmpty ? base : base + "\n\nscp: " + detail,
                     ])
                 }
 
@@ -133,7 +136,6 @@ struct DetectedSSHSession: Equatable {
 
     private func scpArguments(localPath: String, remotePath: String) -> [String] {
         var args: [String] = [
-            "-q",
             "-o", "ConnectTimeout=6",
             "-o", "ServerAliveInterval=20",
             "-o", "ServerAliveCountMax=2",
@@ -233,30 +235,51 @@ struct DetectedSSHSession: Equatable {
         return args
     }
 
-    private func wrappedCommand(executable: String, arguments: [String]) -> (String, [String]) {
+    /// Wraps scp/ssh in sshpass when the session has a password. The password travels in
+    /// the `SSHPASS` environment variable (`sshpass -e`), never in argv, where `ps`, Activity
+    /// Monitor and crash reports would show it.
+    private func wrappedCommand(executable: String, arguments: [String]) -> (String, [String], [String: String]?) {
         guard let password, !password.isEmpty,
               let sshpass = Self.sshpassExecutablePath() else {
-            return (executable, arguments)
+            return (executable, arguments, nil)
         }
-        return (sshpass, ["-p", password, executable] + arguments)
+        var environment = ProcessInfo.processInfo.environment
+        environment["SSHPASS"] = password
+        return (sshpass, ["-e", executable] + arguments, environment)
     }
 
-    private static func sshpassExecutablePath() -> String? {
+    private static let sshpassLookup: String? = {
         let candidates = ["/opt/homebrew/bin/sshpass", "/usr/local/bin/sshpass", "/usr/bin/sshpass"]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
+        if let found = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) { return found }
+        // Not in the usual places: ask the user's login shell, which knows their PATH
+        // (Homebrew in a custom prefix, MacPorts, ~/.local/bin…).
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-lc", "command -v sshpass"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return nil }
+        process.waitUntilExit()
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return process.terminationStatus == 0 && !output.isEmpty ? output : nil
+    }()
+
+    private static func sshpassExecutablePath() -> String? { sshpassLookup }
 
     private func cleanupUploadedRemotePaths(_ remotePaths: [String]) {
         guard !remotePaths.isEmpty else { return }
         let cleanupScript = "rm -f -- " + remotePaths.map(Self.shellSingleQuoted).joined(separator: " ")
         let cleanupCommand = "sh -c \(Self.shellSingleQuoted(cleanupScript))"
-        let (sshExecutable, sshArgs) = wrappedCommand(
+        let (sshExecutable, sshArgs, sshEnvironment) = wrappedCommand(
             executable: "/usr/bin/ssh",
             arguments: sshArguments(command: cleanupCommand)
         )
         _ = try? Self.runProcess(
             executable: sshExecutable,
             arguments: sshArgs,
+            environment: sshEnvironment,
             timeout: 8
         )
     }
@@ -278,6 +301,7 @@ struct DetectedSSHSession: Equatable {
     private static func runProcess(
         executable: String,
         arguments: [String],
+        environment: [String: String]? = nil,
         timeout: TimeInterval,
         operation: TerminalImageTransferOperation? = nil
     ) throws -> CommandResult {
@@ -296,6 +320,7 @@ struct DetectedSSHSession: Equatable {
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
+        if let environment { process.environment = environment }
 
         try operation?.throwIfCancelled()
         try process.run()
@@ -418,26 +443,6 @@ enum TerminalSSHSessionDetector {
         let executableName: String
     }
 
-    static func detect(forTTY ttyName: String) -> DetectedSSHSession? {
-        let normalizedTTY = normalizeTTYName(ttyName)
-        guard !normalizedTTY.isEmpty else { return nil }
-        let processes = processSnapshots(forTTY: normalizedTTY)
-        guard !processes.isEmpty else { return nil }
-
-        var argumentsByPID: [Int32: [String]] = [:]
-        for process in processes where isForegroundRemoteShellProcess(process, ttyName: normalizedTTY) {
-            if let args = commandLineArguments(forPID: process.pid) {
-                argumentsByPID[process.pid] = args
-            }
-        }
-
-        return detectForTesting(
-            ttyName: normalizedTTY,
-            processes: processes,
-            argumentsByPID: argumentsByPID
-        )
-    }
-
     static func detectForTesting(
         ttyName: String,
         processes: [ProcessSnapshot],
@@ -510,7 +515,6 @@ enum TerminalSSHSessionDetector {
         return session
     }
 
-    private static let psPath = "/bin/ps"
     private static let noArgumentFlags = Set("46AaCfGgKkMNnqsTtVvXxYy")
     private static let valueArgumentFlags = Set("BbcDEeFIiJLlmOopQRSWw")
 
@@ -536,34 +540,6 @@ enum TerminalSSHSessionDetector {
         return RemoteShellSessionParsing.normalizedExecutableName(executableName) == "sshpass"
     }
 
-    private static func processSnapshots(forTTY ttyName: String) -> [ProcessSnapshot] {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: psPath)
-        process.arguments = ["-ww", "-t", ttyName, "-o", "pid=,pgid=,tpgid=,tty=,ucomm="]
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-
-        do {
-            try process.run()
-        } catch {
-            return []
-        }
-
-        let data = ProcessPipeReader.readDataToEndOfFileOrEmpty(from: pipe.fileHandleForReading)
-        process.waitUntilExit()
-
-        guard process.terminationStatus == 0,
-              let output = String(data: data, encoding: .utf8) else {
-            return []
-        }
-
-        return output
-            .split(separator: "\n")
-            .compactMap(parseProcessSnapshot)
-    }
-
     private static func parseProcessSnapshot(_ line: Substring) -> ProcessSnapshot? {
         let parts = line.split(maxSplits: 4, whereSeparator: \.isWhitespace)
         guard parts.count == 5,
@@ -580,22 +556,6 @@ enum TerminalSSHSessionDetector {
             tty: String(parts[3]),
             executableName: String(parts[4]).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         )
-    }
-
-    private static func commandLineArguments(forPID pid: Int32) -> [String]? {
-        var mib = [CTL_KERN, KERN_PROCARGS2, pid]
-        var size: size_t = 0
-        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 4 else {
-            return nil
-        }
-
-        var buffer = [UInt8](repeating: 0, count: size)
-        let success = buffer.withUnsafeMutableBytes { rawBuffer in
-            sysctl(&mib, u_int(mib.count), rawBuffer.baseAddress, &size, nil, 0) == 0
-        }
-        guard success else { return nil }
-
-        return parseKernProcArgs(Array(buffer.prefix(Int(size))))
     }
 
     private static func parseKernProcArgs(_ bytes: [UInt8]) -> [String]? {

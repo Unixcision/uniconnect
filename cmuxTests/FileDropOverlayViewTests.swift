@@ -330,4 +330,111 @@ final class FileDropOverlayViewTests: XCTestCase {
             "Rejected text drops should not be recorded as performed or receive a text-route conclude"
         )
     }
+
+    func testOverlayDelegatesTextBoxFileDropToAttachmentPipelineWithoutInsertingLocalPath() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 280),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.orderOut(nil) }
+
+        let contentView = NSView(frame: window.contentView?.bounds ?? .zero)
+        window.contentView = contentView
+        let textView = TextBoxInputTextView(frame: NSRect(x: 40, y: 40, width: 260, height: 100))
+        textView.isEditable = true
+        textView.string = "draft"
+        contentView.addSubview(textView)
+
+        let overlay = FileDropOverlayView(frame: contentView.bounds)
+        contentView.addSubview(overlay, positioned: .above, relativeTo: nil)
+        realizeWindowLayout(window)
+
+        let fileURL = URL(fileURLWithPath: "/tmp/uniconnect overlay image.png")
+        let pasteboard = NSPasteboard(name: .init("uniconnect.test.textbox-drop.\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.writeObjects([fileURL as NSURL]))
+
+        var receivedURLs: [URL] = []
+        textView.onInsertFileURLs = { urls, _ in
+            receivedURLs = urls
+            return true
+        }
+        let dropPoint = textView.convert(NSPoint(x: 20, y: 20), to: nil)
+        let dragInfo = MockDraggingInfo(window: window, location: dropPoint, pasteboard: pasteboard)
+
+        XCTAssertTrue(overlay.performFileDropAsText(dragInfo))
+        XCTAssertEqual(receivedURLs, [fileURL.standardizedFileURL])
+        XCTAssertEqual(textView.string, "draft")
+    }
+
+    func testOverlayDoesNotFallBackToLocalPathWhenTextBoxRejectsFileDrop() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 280),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.orderOut(nil) }
+
+        let contentView = NSView(frame: window.contentView?.bounds ?? .zero)
+        window.contentView = contentView
+        let textView = TextBoxInputTextView(frame: NSRect(x: 40, y: 40, width: 260, height: 100))
+        textView.isEditable = true
+        textView.string = "draft"
+        textView.onInsertFileURLs = { _, _ in false }
+        contentView.addSubview(textView)
+
+        let overlay = FileDropOverlayView(frame: contentView.bounds)
+        contentView.addSubview(overlay, positioned: .above, relativeTo: nil)
+        realizeWindowLayout(window)
+
+        let fileURL = URL(fileURLWithPath: "/tmp/uniconnect rejected image.png")
+        let pasteboard = NSPasteboard(name: .init("uniconnect.test.textbox-rejected-drop.\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.writeObjects([fileURL as NSURL]))
+
+        let dropPoint = textView.convert(NSPoint(x: 20, y: 20), to: nil)
+        let dragInfo = MockDraggingInfo(window: window, location: dropPoint, pasteboard: pasteboard)
+
+        XCTAssertFalse(overlay.performFileDropAsText(dragInfo))
+        XCTAssertEqual(textView.string, "draft")
+    }
+
+    func testOverlayKeepsPlainPathInsertionForGenericEditableTextView() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 280),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.orderOut(nil) }
+
+        let contentView = NSView(frame: window.contentView?.bounds ?? .zero)
+        window.contentView = contentView
+        let textView = NSTextView(frame: NSRect(x: 40, y: 40, width: 260, height: 100))
+        textView.isEditable = true
+        textView.string = "draft "
+        contentView.addSubview(textView)
+
+        let overlay = FileDropOverlayView(frame: contentView.bounds)
+        contentView.addSubview(overlay, positioned: .above, relativeTo: nil)
+        realizeWindowLayout(window)
+        textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
+
+        let fileURL = URL(fileURLWithPath: "/tmp/uniconnect generic image.png")
+        let pasteboard = NSPasteboard(name: .init("uniconnect.test.generic-text-drop.\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.writeObjects([fileURL as NSURL]))
+
+        let dropPoint = textView.convert(NSPoint(x: 20, y: 20), to: nil)
+        let dragInfo = MockDraggingInfo(window: window, location: dropPoint, pasteboard: pasteboard)
+
+        XCTAssertTrue(overlay.performFileDropAsText(dragInfo))
+        XCTAssertEqual(
+            textView.string,
+            "draft " + TerminalImageTransferPlanner.escapeForShell(fileURL.path)
+        )
+    }
 }

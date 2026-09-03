@@ -89,7 +89,9 @@ enum UniConnectSSH {
     /// it exists, `-D` kicks stale clients (a dead app leaves none, but a lingering one
     /// would otherwise shrink the pane), `-c` seeds the directory on first creation.
     static func remoteTmuxCommand(session: String, directory: String?) -> String {
-        var parts = ["tmux", "new-session", "-A", "-D", "-s", shellQuote(session)]
+        // `-A` reuses an existing session without creating a replacement. Do not pass
+        // `-D`: detaching another client would disrupt terminals outside UniConnect.
+        var parts = ["tmux", "new-session", "-A", "-s", shellQuote(session)]
         if let directory = directory?.trimmingCharacters(in: .whitespacesAndNewlines), !directory.isEmpty {
             parts += ["-c", shellQuote(directory)]
         }
@@ -397,9 +399,6 @@ final class UniConnectTmuxProbe {
 // MARK: - Connect command validation and parsing
 
 extension UniConnectSSH {
-    /// Only these executables may start a connect command.
-    static let allowedConnectExecutables: Set<String> = ["ssh", "sshpass"]
-
     /// Minimal shell-words split: single quotes, double quotes and backslash escapes.
     static func shellWords(_ command: String) -> [String] {
         var words: [String] = []
@@ -432,30 +431,41 @@ extension UniConnectSSH {
         return words
     }
 
-    /// Returns a user-facing error, or nil when the command is acceptable: it must start
-    /// with `ssh` or `sshpass` (optionally with a path), and `sshpass` must wrap an `ssh`.
+    /// Returns a user-facing error, or nil when the command is one safe SSH invocation.
     static func validateConnectCommand(_ command: String) -> String? {
-        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return "Pega el comando completo de conexión." }
-        if trimmed.contains("\n") { return "El comando no puede tener saltos de línea." }
-        let words = shellWords(trimmed)
-        guard let first = words.first else { return "Pega el comando completo de conexión." }
-        let exe = (first as NSString).lastPathComponent
-        guard allowedConnectExecutables.contains(exe) else {
+        switch UniConnectSSHConnectCommandValidator().validate(command) {
+        case nil:
+            return nil
+        case .empty:
+            return "Pega el comando completo de conexión."
+        case .lineBreak:
+            return "El comando no puede tener saltos de línea."
+        case .invalidSSHPasswordWrapper:
+            return "Con `sshpass` el comando tiene que invocar `ssh` después de las opciones."
+        case .missingDestination:
+            return "Falta el destino (usuario@host)."
+        case .malformedQuoting, .unsafeShellSyntax, .unsupportedExecutable,
+             .unsupportedSSHOption, .unsafeSSHOption, .invalidDestination, .remoteCommand:
             return "El comando tiene que empezar por `ssh` o `sshpass` (p. ej. `ssh -i clave.pem root@host` o `sshpass -p 'clave' ssh root@host`)."
         }
-        if exe == "sshpass" {
-            let hasSSH = words.dropFirst().contains { ($0 as NSString).lastPathComponent == "ssh" }
-            if !hasSSH { return "Con `sshpass` el comando tiene que invocar `ssh` después de las opciones." }
-        }
-        if words.count < 2 { return "Falta el destino (usuario@host)." }
-        return nil
     }
 
     /// Builds the SSH session used for remote image paste straight from the stored connect
     /// command (no TTY/process detection).
     static func detectedSession(fromConnectCommand command: String) -> DetectedSSHSession? {
-        let words = shellWords(command)
+        // The command was typed for a shell, which would expand `~` and `$HOME`; scp gets the
+        // words verbatim, so expand them here and make a relative key path absolute.
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        var words = shellWords(command).map { word -> String in
+            var w = word.replacingOccurrences(of: "$HOME", with: home).replacingOccurrences(of: "${HOME}", with: home)
+            if w.hasPrefix("~/") || w == "~" { w = (w as NSString).expandingTildeInPath }
+            if w.hasPrefix("-i~/") { w = "-i" + ((String(w.dropFirst(2))) as NSString).expandingTildeInPath }
+            return w
+        }
+        for index in words.indices where index > 0 && words[index - 1] == "-i" {
+            let key = words[index]
+            if !key.hasPrefix("/") { words[index] = (home as NSString).appendingPathComponent(key) }
+        }
         guard let first = words.first else { return nil }
         let exe = (first as NSString).lastPathComponent
         if exe == "sshpass" {

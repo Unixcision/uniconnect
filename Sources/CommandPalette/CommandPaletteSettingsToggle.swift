@@ -307,17 +307,6 @@ enum CommandPaletteSettingsToggleCommands {
                 defaultsKey: NotificationPaneFlashSettings.enabledKey
             ),
             CommandPaletteSettingToggleDescriptor(
-                commandId: commandIdPrefix + "sendAnonymousTelemetry",
-                settingsKey: "app.sendAnonymousTelemetry",
-                title: {
-                    String(localized: "settings.app.telemetry", defaultValue: "Send anonymous telemetry")
-                },
-                sectionTitle: app,
-                keywords: ["app.sendAnonymousTelemetry", "telemetry", "analytics", "crash", "reports", "privacy"],
-                defaultValue: TelemetrySettings.defaultSendAnonymousTelemetry,
-                defaultsKey: TelemetrySettings.sendAnonymousTelemetryKey
-            ),
-            CommandPaletteSettingToggleDescriptor(
                 commandId: commandIdPrefix + "warnBeforeQuit",
                 settingsKey: "app.confirmQuit",
                 title: {

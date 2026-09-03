@@ -65,6 +65,7 @@ enum UniConnectBackup {
             ))
         }
         return UniConnectDocument.Workspace(
+            id: workspace.id,
             name: workspace.customTitle ?? workspace.title,
             kind: profile.kind,
             color: workspace.customColor,
