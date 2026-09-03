@@ -20,6 +20,9 @@ public struct ClaudeSessionInspection: Sendable, Hashable, Codable {
     /// The stable executable or launcher path observed for the process.
     public let executablePath: String?
 
+    /// The version reported by the restored Claude process, when available.
+    public let version: ClaudeVersion?
+
     /// Creates a live session inspection.
     ///
     /// - Parameters:
@@ -29,13 +32,15 @@ public struct ClaudeSessionInspection: Sendable, Hashable, Codable {
     ///   - sessionID: The observed Claude conversation UUID, if available.
     ///   - workingDirectory: The normalized live working directory, if available.
     ///   - executablePath: The stable executable or launcher path, if available.
+    ///   - version: The version reported by the live process, if available.
     public init(
         isClaudeProcess: Bool,
         isIdle: Bool,
         processID: Int32?,
         sessionID: UUID?,
         workingDirectory: String?,
-        executablePath: String?
+        executablePath: String?,
+        version: ClaudeVersion?
     ) {
         self.isClaudeProcess = isClaudeProcess
         self.isIdle = isIdle
@@ -43,6 +48,7 @@ public struct ClaudeSessionInspection: Sendable, Hashable, Codable {
         self.sessionID = sessionID
         self.workingDirectory = workingDirectory
         self.executablePath = executablePath
+        self.version = version
     }
 
     /// Checks the observed process against all persisted restore invariants.

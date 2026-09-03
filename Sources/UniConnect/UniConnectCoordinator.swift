@@ -83,7 +83,9 @@ final class UniConnectCoordinator: ObservableObject {
         folder: String,
         color: String?,
         in tabManager: TabManager,
-        select: Bool = true
+        select: Bool = true,
+        finalizeCreation: Bool = true,
+        stableIdentity: UUID? = nil
     ) -> Workspace {
         let workspace = tabManager.addWorkspace(
             title: name,
@@ -92,13 +94,18 @@ final class UniConnectCoordinator: ObservableObject {
             select: select,
             autoWelcomeIfNeeded: false
         )
-        workspace.uniConnectProfile = .local
+        workspace.uniConnectProfile = UniConnectWorkspaceProfile(
+            kind: .local,
+            importIdentity: stableIdentity ?? UUID()
+        )
         workspace.setCustomColor(color)
         if (workspace.customDescription ?? "").isEmpty {
             workspace.setCustomDescription("Local · \((folder as NSString).abbreviatingWithTildeInPath)")
         }
-        closeUntouchedInitialWorkspaces()
-        requestSave()
+        if finalizeCreation {
+            closeUntouchedInitialWorkspaces()
+            requestSave()
+        }
         return workspace
     }
 
@@ -109,7 +116,9 @@ final class UniConnectCoordinator: ObservableObject {
         connectCommand: String,
         in tabManager: TabManager,
         select: Bool = true,
-        probeImmediately: Bool = true
+        probeImmediately: Bool = true,
+        finalizeCreation: Bool = true,
+        stableIdentity: UUID? = nil
     ) -> Workspace {
         let credentialId = UniConnectVault.shared.store(connectCommand: connectCommand)
         let workspace = tabManager.addWorkspace(
@@ -121,6 +130,7 @@ final class UniConnectCoordinator: ObservableObject {
         )
         workspace.uniConnectProfile = UniConnectWorkspaceProfile(
             kind: .ssh,
+            importIdentity: stableIdentity ?? UUID(),
             credentialId: credentialId,
             hostLabel: UniConnectSSH.hostLabel(from: connectCommand),
             tmuxReady: false
@@ -133,8 +143,10 @@ final class UniConnectCoordinator: ObservableObject {
         if (workspace.customDescription ?? "").isEmpty {
             workspace.setCustomDescription("SSH · \(UniConnectSSH.hostLabel(from: connectCommand)) · tmux")
         }
-        closeUntouchedInitialWorkspaces()
-        requestSave()
+        if finalizeCreation {
+            closeUntouchedInitialWorkspaces()
+            requestSave()
+        }
         if probeImmediately {
             startProbe(for: workspace)
         }
@@ -302,36 +314,40 @@ final class UniConnectCoordinator: ObservableObject {
         name: String,
         tmuxSession rawSession: String,
         directory: String? = nil,
-        focus: Bool = true
+        focus: Bool = true,
+        requestPersistence: Bool = true,
+        showErrors: Bool = true
     ) -> TerminalPanel? {
         guard let profile = workspace.uniConnectProfile, profile.isSSH,
               let credentialId = profile.credentialId,
               let connect = UniConnectVault.shared.connectCommand(for: credentialId) else {
-            presentError("Esta caja no tiene comando de conexión guardado.")
+            if showErrors { presentError("Esta caja no tiene comando de conexión guardado.") }
             return nil
         }
         let session = UniConnectSSH.sanitizedTmuxName(rawSession)
         if let duplicate = workspace.uniConnectTmuxSessionsByPanelId.first(where: { $0.value == session && workspace.panels[$0.key] != nil }) {
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = "Ese código tmux ya está en uso"
-            let existingName = workspace.panelCustomTitles[duplicate.key] ?? workspace.panelTitles[duplicate.key] ?? "otra ventana"
-            alert.informativeText = "La ventana \"\(existingName)\" ya usa la sesión tmux \"\(session)\". UniConnect reutilizará esa ventana para no abrir dos clientes sobre el mismo destino."
-            alert.addButton(withTitle: "Ir a la ventana")
-            alert.addButton(withTitle: "Cancelar")
-            if alert.runModal() == .alertFirstButtonReturn {
-                if let pane = workspace.paneId(forPanelId: duplicate.key),
-                   let tabId = workspace.surfaceIdFromPanelId(duplicate.key) {
-                    workspace.bonsplitController.focusPane(pane)
-                    workspace.bonsplitController.selectTab(tabId)
-                    workspace.focusPanel(duplicate.key)
+            if showErrors {
+                let alert = NSAlert()
+                alert.alertStyle = .warning
+                alert.messageText = "Ese código tmux ya está en uso"
+                let existingName = workspace.panelCustomTitles[duplicate.key] ?? workspace.panelTitles[duplicate.key] ?? "otra ventana"
+                alert.informativeText = "La ventana \"\(existingName)\" ya usa la sesión tmux \"\(session)\". UniConnect reutilizará esa ventana para no abrir dos clientes sobre el mismo destino."
+                alert.addButton(withTitle: "Ir a la ventana")
+                alert.addButton(withTitle: "Cancelar")
+                if alert.runModal() == .alertFirstButtonReturn {
+                    if let pane = workspace.paneId(forPanelId: duplicate.key),
+                       let tabId = workspace.surfaceIdFromPanelId(duplicate.key) {
+                        workspace.bonsplitController.focusPane(pane)
+                        workspace.bonsplitController.selectTab(tabId)
+                        workspace.focusPanel(duplicate.key)
+                    }
                 }
             }
             return nil
         }
         let commandLine = UniConnectSSH.attachCommandLine(connectCommand: connect, session: session, directory: directory)
         guard let launcher = UniConnectSSH.writeLauncherScript(commandLine: commandLine, label: session) else {
-            presentError("No se pudo preparar el lanzador de la ventana.")
+            if showErrors { presentError("No se pudo preparar el lanzador de la ventana.") }
             return nil
         }
         guard let pane = workspace.bonsplitController.focusedPaneId ?? workspace.bonsplitController.allPaneIds.first else {
@@ -343,14 +359,14 @@ final class UniConnectCoordinator: ObservableObject {
             initialCommand: launcher,
             suppressWorkspaceRemoteStartupCommand: true
         ) else {
-            presentError("No se pudo abrir la ventana.")
+            if showErrors { presentError("No se pudo abrir la ventana.") }
             return nil
         }
         workspace.uniConnectTmuxSessionsByPanelId[panel.id] = session
         workspace.setPanelCustomTitle(panelId: panel.id, title: name)
         removePlaceholders(from: workspace, keeping: panel.id)
         workspace.uniConnectProfile?.touch()
-        requestSave()
+        if requestPersistence { requestSave() }
         return panel
     }
 
@@ -591,12 +607,13 @@ final class UniConnectCoordinator: ObservableObject {
         do {
             switch try UniConnectBackup.inspect(data: data) {
             case .plainSeed(let document):
-                let existing = Set(allTabManagers().flatMap { $0.tabs.map { ($0.customTitle ?? $0.title).lowercased() } })
-                let fresh = document.workspaces.filter { !existing.contains($0.name.lowercased()) }
-                applyImport(fresh)
-                if !fresh.isEmpty { closeUntouchedInitialWorkspaces() }
+                let plan = makeImportPlan(for: document)
+                guard applyImport(plan, selectedRowIDs: Set(plan.createRows.map(\.id)), showErrors: false) else {
+                    NSLog("[UniConnect] seed plan blocked; no changes applied")
+                    return
+                }
                 try? Data().write(to: marker)
-                NSLog("[UniConnect] seed applied: %d new of %d (existing names skipped)", fresh.count, document.workspaces.count)
+                NSLog("[UniConnect] seed reconciled: %d new of %d", plan.createRows.count, document.workspaces.count)
             case .encrypted(let container):
                 guard let hooks = TestHooks.current, let passphrase = hooks.passphrase else {
                     NSLog("[UniConnect] seed is encrypted; use Importar configuración… from the menu")
@@ -604,11 +621,13 @@ final class UniConnectCoordinator: ObservableObject {
                 }
                 do {
                     let document = try UniConnectBackup.decrypt(container: container, passphrase: passphrase)
-                    let existing = Set(allTabManagers().flatMap { $0.tabs.map { ($0.customTitle ?? $0.title).lowercased() } })
-                    let fresh = document.workspaces.filter { !existing.contains($0.name.lowercased()) }
-                    applyImport(fresh)
+                    let plan = makeImportPlan(for: document)
+                    guard applyImport(plan, selectedRowIDs: Set(plan.createRows.map(\.id)), showErrors: false) else {
+                        NSLog("[UniConnect] test import plan blocked; no changes applied")
+                        return
+                    }
                     try? Data().write(to: marker)
-                    NSLog("[UniConnect] test import applied: %d new of %d (duplicates skipped)", fresh.count, document.workspaces.count)
+                    NSLog("[UniConnect] test import reconciled: %d new of %d", plan.createRows.count, document.workspaces.count)
                 } catch {
                     NSLog("[UniConnect] test import rejected: %@", error.localizedDescription)
                 }
@@ -851,53 +870,162 @@ final class UniConnectCoordinator: ObservableObject {
         }
     }
 
-    private func previewImport(_ document: UniConnectDocument) {
-        let existingNames = Set(allTabManagers().flatMap { $0.tabs.map { ($0.customTitle ?? $0.title).lowercased() } })
-        let rows = document.workspaces.map {
-            UniConnectImportPreviewView.Row(workspace: $0, existsAlready: existingNames.contains($0.name.lowercased()))
+    private func makeImportPlan(for document: UniConnectDocument) -> UniConnectImportPlan {
+        let tabManagers = allTabManagers()
+        var existingDocument = UniConnectBackup.buildDocument(tabManagers: tabManagers)
+        let liveWorkspaces = tabManagers.flatMap(\.tabs)
+        existingDocument.workspaces = zip(liveWorkspaces, existingDocument.workspaces).compactMap { pair in
+            pair.0.uniConnectShowsStarter ? nil : pair.1
         }
+        return UniConnectImportPlanner().plan(importing: document, against: existingDocument)
+    }
+
+    private func previewImport(_ document: UniConnectDocument) {
+        let plan = makeImportPlan(for: document)
         let window = hostWindow(for: nil)
         UniConnectSheet.present(on: window, size: CGSize(width: 560, height: 460)) { dismiss in
             UniConnectImportPreviewView(
-                rows: rows,
-                onImport: { [weak self] selected in
+                plan: plan,
+                onImport: { [weak self] selectedRowIDs in
                     dismiss()
-                    self?.applyImport(selected)
+                    _ = self?.applyImport(plan, selectedRowIDs: selectedRowIDs)
                 },
                 onCancel: { dismiss() }
             )
         }
     }
 
-    func applyImport(_ workspaces: [UniConnectDocument.Workspace]) {
-        guard let tabManager = AppDelegate.shared?.uniConnectActiveTabManager() ?? allTabManagers().first else {
-            presentError("No hay ventana principal donde importar.")
-            return
+    @discardableResult
+    private func applyImport(
+        _ plan: UniConnectImportPlan,
+        selectedRowIDs: Set<Int>,
+        showErrors: Bool = true
+    ) -> Bool {
+        let sourceDocument = UniConnectDocument(
+            workspaces: plan.rows.sorted { $0.sourceIndex < $1.sourceIndex }.map(\.workspace),
+            savedAt: Date(timeIntervalSince1970: 0)
+        )
+        guard makeImportPlan(for: sourceDocument) == plan else {
+            if showErrors {
+                presentError(String(
+                    localized: "uniconnect.import.error.stateChanged",
+                    defaultValue: "The current workspaces changed after this preview. Review the import again; no changes were made."
+                ))
+            }
+            return false
         }
-        // Safety net: snapshot + encrypted backup of the current state so an import can be undone.
+        guard !plan.hasBlockingIssues else {
+            if showErrors {
+                presentError(String(
+                    localized: "uniconnect.import.error.blocked",
+                    defaultValue: "Resolve every conflict or rejected row before importing. No changes were made."
+                ))
+            }
+            return false
+        }
+        guard !plan.requiresTransactionalUpdates else {
+            if showErrors {
+                presentError(String(
+                    localized: "uniconnect.import.error.transactionalUpdatesRequired",
+                    defaultValue: "This import contains updates. No changes were made because updates require transactional reconciliation."
+                ))
+            }
+            return false
+        }
+        let createRowIDs = Set(plan.createRows.map(\.id))
+        guard selectedRowIDs.isSubset(of: createRowIDs) else {
+            if showErrors {
+                presentError(String(
+                    localized: "uniconnect.import.error.invalidSelection",
+                    defaultValue: "The import selection is no longer valid. Review the import again; no changes were made."
+                ))
+            }
+            return false
+        }
+        let workspaces = plan.createRows
+            .filter { selectedRowIDs.contains($0.id) }
+            .map(\.workspace)
+        guard !workspaces.isEmpty else { return true }
+        guard let tabManager = AppDelegate.shared?.uniConnectActiveTabManager() ?? allTabManagers().first,
+              !tabManager.tabs.isEmpty else {
+            if showErrors {
+                presentError(String(
+                    localized: "uniconnect.import.error.noHostWorkspace",
+                    defaultValue: "There is no main workspace available for this import."
+                ))
+            }
+            return false
+        }
         AppDelegate.shared?.uniConnectPersistSessionNow()
-        _ = try? UniConnectBackup.persistNow(tabManagers: allTabManagers())
+        do {
+            _ = try UniConnectBackup.persistNow(tabManagers: allTabManagers())
+        } catch {
+            if showErrors {
+                presentError(String(
+                    localized: "uniconnect.import.error.backupFailed",
+                    defaultValue: "The pre-import recovery backup could not be created. No changes were made."
+                ))
+            }
+            return false
+        }
+        let didApply = applyCreateOnlyImport(workspaces, in: tabManager)
+        if !didApply, showErrors {
+            presentError(String(
+                localized: "uniconnect.import.error.creationRolledBack",
+                defaultValue: "A workspace could not be created. UniConnect rolled back the local import state."
+            ))
+        }
+        return didApply
+    }
+
+    @discardableResult
+    private func applyCreateOnlyImport(
+        _ workspaces: [UniConnectDocument.Workspace],
+        in tabManager: TabManager
+    ) -> Bool {
+        let originalSelection = tabManager.selectedWorkspace
         var created: [Workspace] = []
+        var probesAfterCommit: [Workspace] = []
         var groupMembers: [String: [UUID]] = [:]
         for (index, item) in workspaces.enumerated() {
             let isLast = index == workspaces.count - 1
             switch item.kind {
             case .local:
                 let folder = ((item.cwd ?? "~") as NSString).expandingTildeInPath
-                let workspace = createLocalWorkspace(name: item.name, folder: folder, color: item.color, in: tabManager, select: isLast)
-                seedLocalWindows(item.windows, in: workspace)
+                let workspace = createLocalWorkspace(
+                    name: item.name,
+                    folder: folder,
+                    color: item.color,
+                    in: tabManager,
+                    select: isLast,
+                    finalizeCreation: false,
+                    stableIdentity: item.id
+                )
                 created.append(workspace)
-                if let group = item.group { groupMembers[group, default: []].append(workspace.id) }
+                guard seedLocalWindows(item.windows, in: workspace) else {
+                    rollbackImportCreation(created, in: tabManager, originalSelection: originalSelection)
+                    return false
+                }
+                if item.isPinned == true { tabManager.setPinned(workspace, pinned: true) }
+                if let group = item.group?.trimmingCharacters(in: .whitespacesAndNewlines), !group.isEmpty {
+                    groupMembers[group, default: []].append(workspace.id)
+                }
             case .ssh:
-                guard let connect = item.connect else { continue }
+                guard let connect = item.connect else {
+                    rollbackImportCreation(created, in: tabManager, originalSelection: originalSelection)
+                    return false
+                }
                 let workspace = createSSHWorkspace(
                     name: item.name,
                     color: item.color,
                     connectCommand: connect,
                     in: tabManager,
                     select: isLast,
-                    probeImmediately: false
+                    probeImmediately: false,
+                    finalizeCreation: false,
+                    stableIdentity: item.id
                 )
+                created.append(workspace)
                 // Windows are recreated eagerly: tmux new-session -A creates or attaches,
                 // so importing on a fresh server just creates the sessions.
                 var profile = workspace.uniConnectProfile ?? UniConnectWorkspaceProfile(kind: .ssh)
@@ -906,14 +1034,30 @@ final class UniConnectCoordinator: ObservableObject {
                     workspace.uniConnectProfile = profile
                     for window in item.windows {
                         let name = window.name ?? window.tmux ?? "ventana"
-                        let session = window.tmux ?? UniConnectSSH.suggestedTmuxName(windowName: name)
-                        createSSHWindow(in: workspace, name: name, tmuxSession: session, directory: item.cwd, focus: false)
+                        guard let session = window.tmux,
+                              let panel = createSSHWindow(
+                                  in: workspace,
+                                  name: name,
+                                  tmuxSession: session,
+                                  directory: window.cwd ?? item.cwd,
+                                  focus: false,
+                                  requestPersistence: false,
+                                  showErrors: false
+                              ) else {
+                            rollbackImportCreation(created, in: tabManager, originalSelection: originalSelection)
+                            return false
+                        }
+                        if window.isPinned == true {
+                            workspace.setPanelPinned(panelId: panel.id, pinned: true)
+                        }
                     }
                 } else {
-                    startProbe(for: workspace)
+                    probesAfterCommit.append(workspace)
                 }
-                created.append(workspace)
-                if let group = item.group { groupMembers[group, default: []].append(workspace.id) }
+                if item.isPinned == true { tabManager.setPinned(workspace, pinned: true) }
+                if let group = item.group?.trimmingCharacters(in: .whitespacesAndNewlines), !group.isEmpty {
+                    groupMembers[group, default: []].append(workspace.id)
+                }
             }
         }
         for (name, ids) in groupMembers where !ids.isEmpty {
@@ -923,11 +1067,33 @@ final class UniConnectCoordinator: ObservableObject {
                 _ = tabManager.createWorkspaceGroup(name: name, childWorkspaceIds: ids, selectAnchor: false)
             }
         }
+        closeUntouchedInitialWorkspaces()
+        requestSave()
+        for workspace in probesAfterCommit { startProbe(for: workspace) }
+        return true
+    }
+
+    private func rollbackImportCreation(
+        _ workspaces: [Workspace],
+        in tabManager: TabManager,
+        originalSelection: Workspace?
+    ) {
+        for workspace in workspaces.reversed() {
+            probes.removeValue(forKey: workspace.id)?.cancel()
+            setupStates.removeValue(forKey: workspace.id)
+            if let credentialID = workspace.uniConnectProfile?.credentialId {
+                UniConnectVault.shared.remove(id: credentialID)
+            }
+            tabManager.closeWorkspace(workspace, recordHistory: false)
+        }
+        if let originalSelection, tabManager.tabs.contains(where: { $0.id == originalSelection.id }) {
+            tabManager.selectWorkspace(originalSelection)
+        }
         requestSave()
     }
 
-    private func seedLocalWindows(_ windows: [UniConnectDocument.Window], in workspace: Workspace) {
-        guard !windows.isEmpty else { return }
+    private func seedLocalWindows(_ windows: [UniConnectDocument.Window], in workspace: Workspace) -> Bool {
+        guard !windows.isEmpty else { return true }
         // The first window reuses the initial terminal; the rest are new tabs.
         var panelIds = workspace.uniConnectOrderedTerminalPanelIds()
         for (index, window) in windows.enumerated() {
@@ -946,14 +1112,18 @@ final class UniConnectCoordinator: ObservableObject {
             } else {
                 panelId = nil
             }
-            if let panelId, let name = window.name, !name.isEmpty {
+            guard let panelId else { return false }
+            if let name = window.name, !name.isEmpty {
                 workspace.setPanelCustomTitle(panelId: panelId, title: name)
             }
+            if window.isPinned == true {
+                workspace.setPanelPinned(panelId: panelId, pinned: true)
+            }
             // Bind the window to its Claude session so a restart always resumes it.
-            if let panelId, let session = window.claudeSession, !session.isEmpty {
+            if let session = window.claudeSession, !session.isEmpty {
                 workspace.uniConnectClaudeSessionsByPanelId[panelId] = session
             }
-            if index == 0, let panelId, let session = window.claudeSession, let panel = workspace.panels[panelId] as? TerminalPanel {
+            if index == 0, let session = window.claudeSession, let panel = workspace.panels[panelId] as? TerminalPanel {
                 // The first window reuses the box's initial terminal, which opened in the box
                 // folder. `claude --resume` only finds a session from the folder it was created
                 // in, so cd first when the window asks for a different one.
@@ -965,6 +1135,7 @@ final class UniConnectCoordinator: ObservableObject {
                 workspace.sendInputWhenReady(command, to: panel)
             }
         }
+        return true
     }
 
     func saveSeedTemplate() {

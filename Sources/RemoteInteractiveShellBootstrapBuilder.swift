@@ -3,14 +3,17 @@ import Foundation
 enum RemoteInteractiveShellBootstrapBuilder {
     static func script(
         remoteRelayPort: Int,
+        bridgeHostID: String? = nil,
         shellFeatures: String,
         terminfoSource: String? = nil,
         bundledZshIntegration: String? = nil,
-        bundledBashIntegration: String? = nil
+        bundledBashIntegration: String? = nil,
+        bundledClaudeWrapper: String? = nil
     ) -> String {
         let shellStateDir = shellStateDirForRemoteRelayPort(remoteRelayPort)
         let commonShellExportLines = commonShellLines(
             remoteRelayPort: remoteRelayPort,
+            bridgeHostID: bridgeHostID,
             shellStateDir: shellStateDir,
             shellFeatures: shellFeatures,
             terminfoSource: terminfoSource
@@ -43,6 +46,15 @@ enum RemoteInteractiveShellBootstrapBuilder {
                 "cat > \"$cmux_shell_dir/uniconnect-bash-integration.bash\" <<'CMUXCMUXBASH'",
                 bundledBashIntegration,
                 "CMUXCMUXBASH",
+            ]
+        }
+        if let bundledClaudeWrapper {
+            outerLines += [
+                "mkdir -p \"$cmux_shell_dir/bin\"",
+                "cat > \"$cmux_shell_dir/bin/uniconnect-claude-wrapper\" <<'UNICONNECTCLAUDEWRAPPER'",
+                bundledClaudeWrapper,
+                "UNICONNECTCLAUDEWRAPPER",
+                "chmod 700 \"$cmux_shell_dir/bin/uniconnect-claude-wrapper\"",
             ]
         }
         outerLines.append(contentsOf: commonShellExportLines)
@@ -140,9 +152,36 @@ enum RemoteInteractiveShellBootstrapBuilder {
         bundleResourceURL: URL? = Bundle.main.resourceURL,
         fileManager: FileManager = .default
     ) -> String? {
+        bundledScript(
+            named: fileName,
+            subdirectory: "shell-integration",
+            bundleResourceURL: bundleResourceURL,
+            fileManager: fileManager
+        )
+    }
+
+    static func bundledExecutableScript(
+        named fileName: String,
+        bundleResourceURL: URL? = Bundle.main.resourceURL,
+        fileManager: FileManager = .default
+    ) -> String? {
+        bundledScript(
+            named: fileName,
+            subdirectory: "bin",
+            bundleResourceURL: bundleResourceURL,
+            fileManager: fileManager
+        )
+    }
+
+    private static func bundledScript(
+        named fileName: String,
+        subdirectory: String,
+        bundleResourceURL: URL?,
+        fileManager: FileManager
+    ) -> String? {
         guard let bundleResourceURL else { return nil }
         let url = bundleResourceURL
-            .appendingPathComponent("shell-integration", isDirectory: true)
+            .appendingPathComponent(subdirectory, isDirectory: true)
             .appendingPathComponent(fileName, isDirectory: false)
         guard fileManager.fileExists(atPath: url.path),
               let data = try? Data(contentsOf: url),
@@ -154,6 +193,7 @@ enum RemoteInteractiveShellBootstrapBuilder {
 
     private static func commonShellLines(
         remoteRelayPort: Int,
+        bridgeHostID: String?,
         shellStateDir: String,
         shellFeatures: String,
         terminfoSource: String?
@@ -167,6 +207,10 @@ enum RemoteInteractiveShellBootstrapBuilder {
         lines.append("export CMUX_SHELL_INTEGRATION_DIR=\"\(shellStateDir)\"")
         if let relaySocket {
             lines.append("export CMUX_SOCKET_PATH=\(relaySocket)")
+        }
+        if let bridgeHostID = normalizedEnvValue(bridgeHostID),
+           bridgeHostID.range(of: "^[A-Za-z0-9._:@-]{1,160}$", options: .regularExpression) != nil {
+            lines.append("export UNICONNECT_BRIDGE_HOST_ID=\(shellQuote(bridgeHostID))")
         }
         // The assignment placeholders are replaced by `ssh-pty-attach` before
         // this script runs. Split the sentinel patterns so a missed replacement

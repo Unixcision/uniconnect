@@ -127,7 +127,7 @@ enum UniConnectMarkdown {
             for raw in lines {
                 let line = raw.trimmingCharacters(in: .whitespaces)
                 guard !line.isEmpty, !line.hasPrefix("#") else { continue }
-                if connect == nil, UniConnectSSH.validateConnectCommand(line) == nil {
+                if connect == nil, looksLikeSSHCommand(line) {
                     connect = line
                     continue
                 }
@@ -172,7 +172,9 @@ enum UniConnectMarkdown {
                 case "tmux":
                     tmux = cell
                 case "uuid", "sesión", "sesion":
-                    session = uuid(in: cell)
+                    // Preserve the declared value verbatim. The planner owns UUID validation,
+                    // so malformed identifiers become rejected rows instead of disappearing.
+                    session = cell
                 case "ruta", "cwd", "carpeta", "ruta de arranque":
                     directory = expand(cell)
                 default:
@@ -223,14 +225,23 @@ enum UniConnectMarkdown {
         }
 
         private func claudeSession(in line: String) -> String? {
-            guard line.contains("--resume") else { return nil }
-            return uuid(in: line)
+            let words = UniConnectSSH.shellWords(line)
+            for (index, word) in words.enumerated() {
+                if word == "--resume", words.indices.contains(index + 1) {
+                    return words[index + 1]
+                }
+                if word.hasPrefix("--resume=") {
+                    return String(word.dropFirst("--resume=".count))
+                }
+            }
+            return nil
         }
 
-        private func uuid(in text: String) -> String? {
-            let pattern = #"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"#
-            guard let range = text.range(of: pattern, options: .regularExpression) else { return nil }
-            return String(text[range])
+        private func looksLikeSSHCommand(_ line: String) -> Bool {
+            line.range(
+                of: #"^(?:\S*/)?(?:sshpass|ssh)(?:\s|$|[;&|<>()`$])"#,
+                options: [.regularExpression, .caseInsensitive]
+            ) != nil
         }
 
         private func workingDirectory(in line: String) -> String? {

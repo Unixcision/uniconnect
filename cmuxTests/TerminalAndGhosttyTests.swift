@@ -222,7 +222,10 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
             uploadDetectedSSH: { _, _, _, _ in
                 XCTFail("large text paste should not trigger SSH upload")
             },
-            insertText: { mockPTY.write($0) },
+            insertText: {
+                mockPTY.write($0)
+                return true
+            },
             onFailure: { error in
                 XCTFail("unexpected paste failure: \(error)")
             }
@@ -642,7 +645,7 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
             target: .remote(.workspaceRemote)
         )
 
-        guard case .uploadFiles(let urls, .workspaceRemote) = plan else {
+        guard case .uploadFiles(let urls, .workspaceRemote, nil) = plan else {
             return XCTFail("expected workspace upload plan, got \(plan)")
         }
         defer { urls.forEach { try? FileManager.default.removeItem(at: $0) } }
@@ -666,7 +669,7 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
             target: .remote(.workspaceRemote)
         )
 
-        guard case .uploadFiles(let urls, .workspaceRemote) = plan else {
+        guard case .uploadFiles(let urls, .workspaceRemote, nil) = plan else {
             return XCTFail("expected workspace upload plan, got \(plan)")
         }
 
@@ -771,7 +774,7 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
             }
         )
 
-        guard case .uploadFiles(let urls, .workspaceRemote) = plan else {
+        guard case .uploadFiles(let urls, .workspaceRemote, nil) = plan else {
             return XCTFail("expected workspace upload plan, got \(plan)")
         }
 
@@ -810,10 +813,13 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
         var completedText: String?
 
         TerminalImageTransferPlanner.executeForTesting(
-            plan: .uploadFiles([url], .workspaceRemote),
+            plan: .uploadFiles([url], .workspaceRemote, interSegmentDelay: nil),
             uploadWorkspaceRemote: { _, _, finish in finish(.success(["/tmp/uniconnect-drop-123.png"])) },
             uploadDetectedSSH: { _, _, _, finish in finish(.failure(NSError(domain: "unused", code: 0))) },
-            insertText: { completedText = $0 },
+            insertText: {
+                completedText = $0
+                return true
+            },
             onFailure: { _ in XCTFail("unexpected failure") }
         )
 
@@ -829,7 +835,10 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
             operation: operation,
             uploadWorkspaceRemote: { _, _, _ in XCTFail("unexpected workspace upload") },
             uploadDetectedSSH: { _, _, _, _ in XCTFail("unexpected SSH upload") },
-            insertText: { _ in XCTFail("an unavailable transfer must not insert text") },
+            insertText: { _ in
+                XCTFail("an unavailable transfer must not insert text")
+                return false
+            },
             onFailure: { reportedError = $0 as? TerminalImageTransferExecutionError }
         )
 
@@ -846,7 +855,10 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
             operation: operation,
             uploadWorkspaceRemote: { _, _, _ in XCTFail("unexpected workspace upload") },
             uploadDetectedSSH: { _, _, _, _ in XCTFail("unexpected SSH upload") },
-            insertText: { _ in XCTFail("a rejected transfer must not insert text") },
+            insertText: { _ in
+                XCTFail("a rejected transfer must not insert text")
+                return false
+            },
             onFailure: { reportedError = $0 as? TerminalImageTransferExecutionError }
         )
 
@@ -866,7 +878,7 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
         var failureCount = 0
 
         let returnedOperation = TerminalImageTransferPlanner.executeForTesting(
-            plan: .uploadFiles([url], .workspaceRemote),
+            plan: .uploadFiles([url], .workspaceRemote, interSegmentDelay: nil),
             operation: operation,
             uploadWorkspaceRemote: { _, operation, finish in
                 operation.installCancellationHandler {
@@ -877,7 +889,10 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
             uploadDetectedSSH: { _, _, _, finish in
                 finish(.failure(NSError(domain: "unused", code: 0)))
             },
-            insertText: { insertedTexts.append($0) },
+            insertText: {
+                insertedTexts.append($0)
+                return true
+            },
             onFailure: { _ in failureCount += 1 }
         )
 
@@ -906,7 +921,10 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
             uploadDetectedSSH: { _, _, _, finish in
                 finish(.failure(NSError(domain: "unused", code: 0)))
             },
-            insertText: { insertedTexts.append($0) },
+            insertText: {
+                insertedTexts.append($0)
+                return true
+            },
             onFailure: { _ in failureCount += 1 }
         )
 
@@ -933,10 +951,23 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
         var uploadedURLs: [URL] = []
         var sentText: [String] = []
         var failureCount = 0
+        let detectedSession = DetectedSSHSession(
+            destination: "example.test",
+            port: 2222,
+            identityFile: nil,
+            configFile: nil,
+            jumpHost: nil,
+            controlPath: nil,
+            useIPv4: false,
+            useIPv6: false,
+            forwardAgent: false,
+            compressionEnabled: false,
+            sshOptions: []
+        )
 
         let handled = GhosttyNSView.handleDropForTesting(
             pasteboard: pasteboard,
-            isRemoteTerminalSurface: true,
+            target: .remote(.detectedSSH(detectedSession)),
             uploadRemote: { urls, finish in
                 uploadedURLs = urls
                 finish(.success(["/tmp/uniconnect-drop-abc123.png"]))
@@ -1027,6 +1058,210 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
         XCTAssertTrue(handled)
         let url = try XCTUnwrap(uploadedURL)
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    }
+}
+
+@Suite("Terminal image transfer planning and delivery")
+struct TerminalImageTransferSwiftTests {
+    private func temporaryImageURLs() throws -> (directory: URL, files: [URL]) {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "uniconnect-image-transfer-tests-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let files = [
+            directory.appendingPathComponent("first image.png"),
+            directory.appendingPathComponent("second image.png"),
+        ]
+        for file in files {
+            try Data([0x89, 0x50, 0x4E, 0x47]).write(to: file)
+        }
+        return (directory, files)
+    }
+
+    @Test func remoteMultiImageDropCarriesDeterministicMeteringPolicy() throws {
+        let temporary = try temporaryImageURLs()
+        defer { try? FileManager.default.removeItem(at: temporary.directory) }
+
+        let plan = TerminalImageTransferPlanner.plan(
+            fileURLs: temporary.files,
+            target: .remote(.workspaceRemote),
+            mode: .drop
+        )
+
+        guard case .uploadFiles(let files, .workspaceRemote, let delay) = plan else {
+            Issue.record("Expected a metered remote upload plan, got \(plan)")
+            return
+        }
+        #expect(files == temporary.files)
+        #expect(delay == 2.0)
+    }
+
+    @Test func remoteMultiImageUploadDeliversInOrderBeforeFinishing() throws {
+        let temporary = try temporaryImageURLs()
+        defer { try? FileManager.default.removeItem(at: temporary.directory) }
+
+        let operation = TerminalImageTransferOperation()
+        var scheduled: [(delay: TimeInterval, work: () -> Void)] = []
+        var insertedTexts: [String] = []
+        var cleanupCount = 0
+        var successCount = 0
+        var failures: [TerminalImageTransferExecutionError] = []
+
+        TerminalImageTransferPlanner.executeForTesting(
+            plan: .uploadFiles(
+                temporary.files,
+                .workspaceRemote,
+                interSegmentDelay: 2.0
+            ),
+            operation: operation,
+            uploadWorkspaceRemote: { _, operation, finish in
+                operation.installCancellationCleanupHandler { cleanupCount += 1 }
+                finish(.success(["/tmp/remote first.png", "/tmp/remote second.png"]))
+            },
+            uploadDetectedSSH: { _, _, _, _ in
+                Issue.record("Unexpected detected-SSH upload")
+            },
+            insertText: {
+                insertedTexts.append($0)
+                return true
+            },
+            scheduleAfter: { delay, work in
+                scheduled.append((delay, work))
+            },
+            onSuccess: { successCount += 1 },
+            onFailure: {
+                if let error = $0 as? TerminalImageTransferExecutionError {
+                    failures.append(error)
+                }
+            }
+        )
+
+        #expect(insertedTexts == ["/tmp/remote\\ first.png"])
+        #expect(scheduled.map(\.delay) == [2.0])
+        #expect(successCount == 0)
+        #expect(cleanupCount == 0)
+
+        scheduled.removeFirst().work()
+
+        #expect(insertedTexts == ["/tmp/remote\\ first.png", " /tmp/remote\\ second.png"])
+        #expect(successCount == 1)
+        #expect(failures.isEmpty)
+        #expect(cleanupCount == 0)
+        #expect(operation.cancel() == false)
+    }
+
+    @Test func disconnectBetweenRemoteImageSegmentsCancelsAndCleansUp() throws {
+        let temporary = try temporaryImageURLs()
+        defer { try? FileManager.default.removeItem(at: temporary.directory) }
+
+        let operation = TerminalImageTransferOperation()
+        var scheduledWork: (() -> Void)?
+        var destinationAvailable = true
+        var insertedTexts: [String] = []
+        var cleanupCount = 0
+        var successCount = 0
+        var failures: [TerminalImageTransferExecutionError] = []
+
+        TerminalImageTransferPlanner.executeForTesting(
+            plan: .uploadFiles(
+                temporary.files,
+                .workspaceRemote,
+                interSegmentDelay: 2.0
+            ),
+            operation: operation,
+            uploadWorkspaceRemote: { _, operation, finish in
+                operation.installCancellationCleanupHandler { cleanupCount += 1 }
+                finish(.success(["/tmp/first.png", "/tmp/second.png"]))
+            },
+            uploadDetectedSSH: { _, _, _, _ in
+                Issue.record("Unexpected detected-SSH upload")
+            },
+            insertText: {
+                insertedTexts.append($0)
+                return true
+            },
+            scheduleAfter: { _, work in scheduledWork = work },
+            isDestinationAvailable: { destinationAvailable },
+            onSuccess: { successCount += 1 },
+            onFailure: {
+                if let error = $0 as? TerminalImageTransferExecutionError {
+                    failures.append(error)
+                }
+            }
+        )
+
+        #expect(insertedTexts == ["/tmp/first.png"])
+        destinationAvailable = false
+        scheduledWork?()
+
+        #expect(insertedTexts == ["/tmp/first.png"])
+        #expect(failures == [.unavailable(.disconnectedRemoteSession)])
+        #expect(cleanupCount == 1)
+        #expect(successCount == 0)
+        #expect(operation.cancel() == false)
+    }
+
+    @Test func failedTerminalDeliveryCancelsAndCleansRemoteUpload() throws {
+        let temporary = try temporaryImageURLs()
+        defer { try? FileManager.default.removeItem(at: temporary.directory) }
+
+        let operation = TerminalImageTransferOperation()
+        var cleanupCount = 0
+        var failures: [TerminalImageTransferExecutionError] = []
+
+        TerminalImageTransferPlanner.executeForTesting(
+            plan: .uploadFiles(
+                [temporary.files[0]],
+                .workspaceRemote,
+                interSegmentDelay: nil
+            ),
+            operation: operation,
+            uploadWorkspaceRemote: { _, operation, finish in
+                operation.installCancellationCleanupHandler { cleanupCount += 1 }
+                finish(.success(["/tmp/first.png"]))
+            },
+            uploadDetectedSSH: { _, _, _, _ in
+                Issue.record("Unexpected detected-SSH upload")
+            },
+            insertText: { _ in false },
+            onFailure: {
+                if let error = $0 as? TerminalImageTransferExecutionError {
+                    failures.append(error)
+                }
+            }
+        )
+
+        #expect(failures == [.textDeliveryFailed])
+        #expect(cleanupCount == 1)
+        #expect(operation.cancel() == false)
+    }
+
+    @Test func fileExplorerPathPlannerNeverInsertsLocalMacPathIntoRemoteTarget() throws {
+        let temporary = try temporaryImageURLs()
+        defer { try? FileManager.default.removeItem(at: temporary.directory) }
+
+        let plan = TerminalImageTransferPlanner.planPathInsertion(
+            paths: temporary.files.map(\.path),
+            origin: .localFileSystem(temporary.files),
+            target: .remote(.workspaceRemote)
+        )
+
+        guard case .uploadFiles(let files, .workspaceRemote, nil) = plan else {
+            Issue.record("Expected local File Explorer paths to upload, got \(plan)")
+            return
+        }
+        #expect(files == temporary.files)
+    }
+
+    @Test func fileExplorerPathPlannerRejectsRemotePathForLocalTarget() {
+        let plan = TerminalImageTransferPlanner.planPathInsertion(
+            paths: ["/srv/remote image.png"],
+            origin: .remoteSession,
+            target: .local
+        )
+
+        #expect(plan == .unavailable(.mismatchedFileExplorerSession))
     }
 }
 

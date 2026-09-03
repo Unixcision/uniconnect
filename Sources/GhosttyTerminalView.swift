@@ -1578,6 +1578,11 @@ private final class GhosttySurfaceCallbackContext {
     }
 }
 
+/// Ensures a Ghostty clipboard request completes once while later metered paths use text input.
+private final class TerminalClipboardRequestDeliveryState {
+    var didCompleteClipboardRequest = false
+}
+
 // The native pointer has been removed from all main-thread owner state before
 // this request is created; this wrapper only transports the one-shot free.
 private struct TerminalSurfaceRuntimeTeardownRequest: @unchecked Sendable {
@@ -1826,19 +1831,32 @@ class GhosttyApp {
               let requestSurface = callbackContext.runtimeSurface else { return false }
 
         DispatchQueue.main.async {
-            func completeClipboardRequest(with text: String) {
-                let finish = {
-                    guard callbackContext.runtimeSurface == requestSurface else { return }
-                    text.withCString { ptr in
-                        ghostty_surface_complete_clipboard_request(requestSurface, ptr, state, false)
+            let deliveryState = TerminalClipboardRequestDeliveryState()
+
+            @discardableResult
+            func completeClipboardRequest(with text: String) -> Bool {
+                guard !deliveryState.didCompleteClipboardRequest,
+                      callbackContext.runtimeSurface == requestSurface else {
+                    return false
+                }
+                deliveryState.didCompleteClipboardRequest = true
+                text.withCString { ptr in
+                    ghostty_surface_complete_clipboard_request(requestSurface, ptr, state, false)
+                }
+                callbackContext.terminalSurface?.noteClipboardReadCompleted()
+                return true
+            }
+
+            func deliverTransferText(_ text: String) -> Bool {
+                if deliveryState.didCompleteClipboardRequest {
+                    // Same MainActor.assumeIsolated bridge used by the sibling calls in this
+                    // DispatchQueue.main.async block: we are genuinely on the main thread at
+                    // runtime, but the closure itself carries no actor isolation.
+                    return MainActor.assumeIsolated {
+                        callbackContext.terminalSurface?.sendText(text) == true
                     }
-                    callbackContext.terminalSurface?.noteClipboardReadCompleted()
                 }
-                if Thread.isMainThread {
-                    finish()
-                } else {
-                    DispatchQueue.main.async(execute: finish)
-                }
+                return completeClipboardRequest(with: text)
             }
 
             guard let pasteboard = GhosttyPasteboardHelper.pasteboard(for: location) else {
@@ -1871,12 +1889,19 @@ class GhosttyApp {
                 completeClipboardRequest(with: text)
             case .fileURLs(let fileURLs):
                 let target = MainActor.assumeIsolated {
-                    callbackContext.terminalSurface?.resolvedImageTransferTarget() ?? .local
+                    callbackContext.terminalSurface?.resolvedImageTransferTarget()
+                        ?? .unavailable(.disconnectedRemoteSession)
                 }
                 let plan = TerminalImageTransferPlanner.plan(
                     fileURLs: fileURLs,
                     target: target
                 )
+                let destinationIsAvailable = {
+                    guard case .uploadFiles(_, let remoteTarget, _) = plan else { return true }
+                    return MainActor.assumeIsolated {
+                        callbackContext.terminalSurface?.canContinueImageTransfer(to: remoteTarget) == true
+                    }
+                }
                 let operation: TerminalImageTransferOperation?
                 if case .uploadFiles = plan {
                     let uploadOperation = TerminalImageTransferOperation()
@@ -1884,6 +1909,7 @@ class GhosttyApp {
                     MainActor.assumeIsolated {
                         callbackContext.terminalSurface?.hostedView.beginImageTransferIndicator(
                             for: uploadOperation,
+                            isDestinationAvailable: destinationIsAvailable,
                             onCancel: {
                                 completeClipboardRequest(with: "")
                             }
@@ -1923,7 +1949,9 @@ class GhosttyApp {
                             }
                         )
                     },
-                    insertText: { text in
+                    insertText: deliverTransferText,
+                    isDestinationAvailable: destinationIsAvailable,
+                    onSuccess: {
                         if let operation {
                             MainActor.assumeIsolated {
                                 callbackContext.terminalSurface?.hostedView.endImageTransferIndicator(
@@ -1931,7 +1959,6 @@ class GhosttyApp {
                                 )
                             }
                         }
-                        completeClipboardRequest(with: text)
                     },
                     onFailure: { error in
                         GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(fileURLs)
@@ -11915,9 +11942,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     static func dropPlanForTesting(
         pasteboard: NSPasteboard,
-        isRemoteTerminalSurface: Bool
+        target: TerminalImageTransferTarget
     ) -> DropPlan {
-        let target: TerminalImageTransferTarget = isRemoteTerminalSurface ? .remote(.workspaceRemote) : .local
         switch TerminalImageTransferPlanner.plan(
             pasteboard: pasteboard,
             mode: .drop,
@@ -11927,13 +11953,20 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             return .insertText(text)
         case .insertTextSegments(let segments, _):
             return .insertText(segments.joined())
-        case .uploadFiles(let fileURLs, _):
+        case .uploadFiles(let fileURLs, _, _):
             return .uploadFiles(fileURLs)
-        case .unavailable:
-            return .reject
-        case .reject:
+        case .unavailable, .reject:
             return .reject
         }
+    }
+
+    /// Compatibility projection for older regression tests; runtime routing never uses it.
+    static func dropPlanForTesting(
+        pasteboard: NSPasteboard,
+        isRemoteTerminalSurface: Bool
+    ) -> DropPlan {
+        let target: TerminalImageTransferTarget = isRemoteTerminalSurface ? .remote(.workspaceRemote) : .local
+        return dropPlanForTesting(pasteboard: pasteboard, target: target)
     }
 
     static func performRemoteDropUploadForTesting(
@@ -11961,12 +11994,11 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     @discardableResult
     static func handleDropForTesting(
         pasteboard: NSPasteboard,
-        isRemoteTerminalSurface: Bool,
+        target: TerminalImageTransferTarget,
         uploadRemote: ([URL], @escaping (Result<[String], Error>) -> Void) -> Void,
         sendText: @escaping (String) -> Void,
         onFailure: @escaping () -> Void
     ) -> Bool {
-        let target: TerminalImageTransferTarget = isRemoteTerminalSurface ? .remote(.workspaceRemote) : .local
         let plan = TerminalImageTransferPlanner.plan(
             pasteboard: pasteboard,
             mode: .drop,
@@ -11988,13 +12020,38 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                     GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(urls)
                 }
             },
-            uploadDetectedSSH: { _, _, _, finish in
-                finish(.failure(NSError(domain: "cmux.remote.drop", code: 4)))
+            uploadDetectedSSH: { _, urls, _, finish in
+                uploadRemote(urls) { result in
+                    finish(result)
+                    GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(urls)
+                }
             },
-            insertText: sendText,
+            insertText: { text in
+                sendText(text)
+                return true
+            },
             onFailure: { _ in onFailure() }
         )
         return !isRejected
+    }
+
+    /// Compatibility projection for older regression tests; runtime routing never uses it.
+    @discardableResult
+    static func handleDropForTesting(
+        pasteboard: NSPasteboard,
+        isRemoteTerminalSurface: Bool,
+        uploadRemote: ([URL], @escaping (Result<[String], Error>) -> Void) -> Void,
+        sendText: @escaping (String) -> Void,
+        onFailure: @escaping () -> Void
+    ) -> Bool {
+        let target: TerminalImageTransferTarget = isRemoteTerminalSurface ? .remote(.workspaceRemote) : .local
+        return handleDropForTesting(
+            pasteboard: pasteboard,
+            target: target,
+            uploadRemote: uploadRemote,
+            sendText: sendText,
+            onFailure: onFailure
+        )
     }
 
     private func executeImageTransferPlan(
@@ -12017,10 +12074,17 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             }
             return nil
         }()
+        let destinationIsAvailable = { [weak self] in
+            guard case .uploadFiles(_, let remoteTarget, _) = plan else { return true }
+            return MainActor.assumeIsolated {
+                self?.terminalSurface?.canContinueImageTransfer(to: remoteTarget) == true
+            }
+        }
 
         if let operation {
             terminalSurface?.hostedView.beginImageTransferIndicator(
                 for: operation,
+                isDestinationAvailable: destinationIsAvailable,
                 onCancel: onCancel
             )
         }
@@ -12056,19 +12120,21 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                 )
             },
             insertText: { [weak self] text in
-                let send = {
-                    if let operation {
-                        self?.terminalSurface?.hostedView.endImageTransferIndicator(for: operation)
-                    }
+                let send: () -> Bool = {
                     // Use the text/paste path (ghostty_surface_text) instead of the key event
                     // path (ghostty_surface_key) so bracketed paste mode is triggered and the
                     // insertion is instant, matching upstream Ghostty behaviour.
-                    self?.terminalSurface?.sendText(text)
+                    self?.terminalSurface?.sendText(text) == true
                 }
                 if Thread.isMainThread {
-                    send()
-                } else {
-                    DispatchQueue.main.async(execute: send)
+                    return send()
+                }
+                return DispatchQueue.main.sync(execute: send)
+            },
+            isDestinationAvailable: destinationIsAvailable,
+            onSuccess: { [weak self] in
+                if let operation {
+                    self?.terminalSurface?.hostedView.endImageTransferIndicator(for: operation)
                 }
             },
             onFailure: { [weak self] error in
@@ -12089,7 +12155,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     private func resolvedImageTransferTarget() -> TerminalImageTransferTarget {
         MainActor.assumeIsolated {
-            terminalSurface?.resolvedImageTransferTarget() ?? .local
+            terminalSurface?.resolvedImageTransferTarget()
+                ?? .unavailable(.disconnectedRemoteSession)
         }
     }
 
@@ -12424,6 +12491,7 @@ final class GhosttySurfaceScrollView: NSView {
     private var searchOverlayHostingView: NSHostingView<SurfaceSearchOverlay>?
     private var deferredSearchOverlayMutationWorkItem: DispatchWorkItem?
     private var imageTransferIndicatorShowWorkItem: DispatchWorkItem?
+    private var imageTransferAvailabilityTimer: Timer?
     private var activeImageTransferOperation: TerminalImageTransferOperation?
     private var activeImageTransferCancelHandler: (() -> Void)?
     private var lastSearchOverlayStateID: ObjectIdentifier?
@@ -12981,6 +13049,10 @@ final class GhosttySurfaceScrollView: NSView {
         windowObservers.forEach { NotificationCenter.default.removeObserver($0) }
         deferredSearchOverlayMutationWorkItem?.cancel()
         imageTransferIndicatorShowWorkItem?.cancel()
+        imageTransferAvailabilityTimer?.invalidate()
+        if activeImageTransferOperation?.cancel() == true {
+            activeImageTransferCancelHandler?()
+        }
         dropZoneOverlayView.removeFromSuperview()
         cancelFocusRequest()
     }
@@ -13472,25 +13544,60 @@ final class GhosttySurfaceScrollView: NSView {
     }
 
     @objc private func handleImageTransferCancel() {
-        guard let operation = activeImageTransferOperation else { return }
+        cancelActiveImageTransfer()
+    }
+
+    @discardableResult
+    func cancelActiveImageTransfer(
+        unavailableReason: TerminalImageTransferUnavailableReason? = nil
+    ) -> Bool {
+        guard let operation = activeImageTransferOperation else { return false }
         let onCancel = activeImageTransferCancelHandler
-        guard operation.cancel() else { return }
+        guard operation.cancel() else {
+            endImageTransferIndicator(for: operation)
+            return false
+        }
         endImageTransferIndicator(for: operation)
         onCancel?()
+        if let unavailableReason {
+            TerminalImageTransferErrorPresenter.present(
+                TerminalImageTransferExecutionError.unavailable(unavailableReason)
+            )
+        }
+        return true
     }
 
     func beginImageTransferIndicator(
         for operation: TerminalImageTransferOperation,
+        isDestinationAvailable: @escaping () -> Bool = { true },
         onCancel: @escaping () -> Void
     ) {
         if !Thread.isMainThread {
             DispatchQueue.main.async { [weak self] in
-                self?.beginImageTransferIndicator(for: operation, onCancel: onCancel)
+                self?.beginImageTransferIndicator(
+                    for: operation,
+                    isDestinationAvailable: isDestinationAvailable,
+                    onCancel: onCancel
+                )
             }
             return
         }
 
+        if activeImageTransferOperation !== operation {
+            cancelActiveImageTransfer()
+        }
         cancelImageTransferIndicatorShow()
+        imageTransferAvailabilityTimer?.invalidate()
+        imageTransferAvailabilityTimer = nil
+        guard isDestinationAvailable() else {
+            if operation.cancel() {
+                onCancel()
+                TerminalImageTransferErrorPresenter.present(
+                    TerminalImageTransferExecutionError.unavailable(.disconnectedRemoteSession)
+                )
+            }
+            return
+        }
         activeImageTransferOperation = operation
         activeImageTransferCancelHandler = onCancel
         imageTransferIndicatorSpinner.stopAnimation(nil)
@@ -13507,6 +13614,17 @@ final class GhosttySurfaceScrollView: NSView {
         }
         imageTransferIndicatorShowWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+
+        let availabilityTimer = Timer(timeInterval: 0.25, repeats: true) { [weak self, weak operation] _ in
+            guard let self, let operation,
+                  self.activeImageTransferOperation === operation else { return }
+            guard isDestinationAvailable() else {
+                self.cancelActiveImageTransfer(unavailableReason: .disconnectedRemoteSession)
+                return
+            }
+        }
+        imageTransferAvailabilityTimer = availabilityTimer
+        RunLoop.main.add(availabilityTimer, forMode: .common)
     }
 
     func endImageTransferIndicator(for operation: TerminalImageTransferOperation?) {
@@ -13523,6 +13641,8 @@ final class GhosttySurfaceScrollView: NSView {
         }
 
         cancelImageTransferIndicatorShow()
+        imageTransferAvailabilityTimer?.invalidate()
+        imageTransferAvailabilityTimer = nil
         activeImageTransferOperation = nil
         activeImageTransferCancelHandler = nil
         imageTransferIndicatorSpinner.stopAnimation(nil)

@@ -3056,7 +3056,7 @@ struct TextBoxInputContainer: View {
             attachments = textView.inlineAttachments()
             text = textView.plainText()
             return true
-        case .uploadFiles(let uploadURLs, let remoteTarget):
+        case .uploadFiles(let uploadURLs, let remoteTarget, _):
             uploadFileAttachments(uploadURLs, remoteTarget: remoteTarget, focusing: textView)
             return true
         case .unavailable, .reject:
@@ -3079,41 +3079,63 @@ struct TextBoxInputContainer: View {
         textView.insertPendingAttachmentUploadPlaceholder(id: placeholderID)
         let operation = TerminalImageTransferOperation()
         let uploadValidationToken = textView.pendingAttachmentUploadValidationToken()
+        @MainActor
+        func removePendingPlaceholder() {
+            guard textViewReference.textView === textView,
+                  textView.removePendingAttachmentUploadPlaceholder(id: placeholderID) else {
+                return
+            }
+            attachments = textView.inlineAttachments()
+            text = textView.plainText()
+        }
+        let destinationIsAvailable = { [weak surface] in
+            surface?.canContinueImageTransfer(to: remoteTarget) == true
+        }
         surface.hostedView.beginImageTransferIndicator(
             for: operation,
-            onCancel: { _ = operation.cancel() }
+            isDestinationAvailable: destinationIsAvailable,
+            onCancel: {
+                removePendingPlaceholder()
+                GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(fileURLs)
+            }
         )
 
         let finish: (Result<[String], Error>) -> Void = { [weak surface] result in
             DispatchQueue.main.async {
-                @MainActor func removePendingPlaceholder() {
-                    guard textViewReference.textView === textView,
-                          textView.removePendingAttachmentUploadPlaceholder(id: placeholderID) else {
-                        return
-                    }
-                    attachments = textView.inlineAttachments()
-                    text = textView.plainText()
-                }
-
-                surface?.hostedView.endImageTransferIndicator(for: operation)
-                guard operation.finish() else {
+                @MainActor func discardPendingUpload(
+                    error: TerminalImageTransferExecutionError? = nil
+                ) {
+                    _ = operation.cancel()
+                    surface?.hostedView.endImageTransferIndicator(for: operation)
                     removePendingPlaceholder()
                     GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(fileURLs)
-                    return
+                    if let error {
+                        TerminalImageTransferErrorPresenter.present(error)
+                    }
                 }
 
                 switch result {
                 case .success(let remotePaths):
-                    guard !remotePaths.isEmpty else {
+                    guard !operation.isCancelled else {
+                        surface?.hostedView.endImageTransferIndicator(for: operation)
                         removePendingPlaceholder()
                         GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(fileURLs)
-                        TerminalImageTransferErrorPresenter.present(
-                            TerminalImageTransferExecutionError.emptyRemoteUploadResult
-                        )
                         return
                     }
-                    let newAttachments = fileURLs.enumerated().compactMap { index, fileURL -> TextBoxAttachment? in
-                        guard remotePaths.indices.contains(index) else { return nil }
+                    guard destinationIsAvailable() else {
+                        discardPendingUpload(error: .unavailable(.disconnectedRemoteSession))
+                        return
+                    }
+                    guard !remotePaths.isEmpty else {
+                        discardPendingUpload(error: .emptyRemoteUploadResult)
+                        return
+                    }
+                    guard remotePaths.count == fileURLs.count,
+                          remotePaths.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+                        discardPendingUpload(error: .incompleteRemoteUploadResult)
+                        return
+                    }
+                    let newAttachments = fileURLs.enumerated().map { index, fileURL in
                         return TextBoxAttachment(
                             localURL: fileURL,
                             submissionText: TextBoxAttachment.submissionText(forPath: remotePaths[index]),
@@ -3121,31 +3143,32 @@ struct TextBoxInputContainer: View {
                             cleanupLocalURLWhenDisposed: true
                         )
                     }
-                    guard !newAttachments.isEmpty else {
-                        removePendingPlaceholder()
-                        GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(fileURLs)
-                        TerminalImageTransferErrorPresenter.present(
-                            TerminalImageTransferExecutionError.emptyRemoteUploadResult
-                        )
-                        return
-                    }
                     guard textViewReference.textView === textView,
                           textView.canAcceptPendingAttachmentUpload(validationToken: uploadValidationToken) else {
-                        removePendingPlaceholder()
-                        GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(fileURLs)
+                        discardPendingUpload()
                         return
                     }
                     guard textView.replacePendingAttachmentUploadPlaceholder(
                         id: placeholderID,
                         with: newAttachments
                     ) else {
+                        discardPendingUpload()
+                        return
+                    }
+                    guard operation.finish() else {
+                        GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(fileURLs)
+                        return
+                    }
+                    surface?.hostedView.endImageTransferIndicator(for: operation)
+                    attachments = textView.inlineAttachments()
+                    text = textView.plainText()
+                case .failure(let error):
+                    surface?.hostedView.endImageTransferIndicator(for: operation)
+                    guard operation.finish() else {
                         removePendingPlaceholder()
                         GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(fileURLs)
                         return
                     }
-                    attachments = textView.inlineAttachments()
-                    text = textView.plainText()
-                case .failure(let error):
                     removePendingPlaceholder()
                     GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(fileURLs)
                     TerminalImageTransferErrorPresenter.present(error)

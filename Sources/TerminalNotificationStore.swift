@@ -1038,13 +1038,19 @@ final class TerminalNotificationStore: ObservableObject {
             guard let self, authorized else { return }
 
             let content = UNMutableNotificationContent()
-            content.title = "cmux test notification"
-            content.body = "Desktop notifications are enabled."
+            content.title = String(
+                localized: "notification.settings.test.title",
+                defaultValue: "UniConnect test notification"
+            )
+            content.body = String(
+                localized: "notification.settings.test.body",
+                defaultValue: "Desktop notifications are enabled."
+            )
             content.sound = NotificationSoundSettings.sound()
             content.categoryIdentifier = Self.categoryIdentifier
 
             let request = UNNotificationRequest(
-                identifier: "cmux.settings.test.\(UUID().uuidString)",
+                identifier: "uniconnect.settings.test.\(UUID().uuidString)",
                 content: content,
                 trigger: nil
             )
@@ -1979,7 +1985,7 @@ final class TerminalNotificationStore: ObservableObject {
     private func resolvedNotificationTitle(for notification: TerminalNotification) -> String {
         let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
             ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
-            ?? "cmux"
+            ?? "UniConnect"
         return notification.title.isEmpty ? appName : notification.title
     }
 

@@ -5,13 +5,19 @@ import Testing
 struct ClaudeUpdateOutputParserTests {
     private let parser = ClaudeUpdateOutputParser()
 
-    @Test(arguments: [
-        ("1.2.3 (Claude Code)", ClaudeVersion(major: 1, minor: 2, patch: 3)),
-        ("claude v2.5", ClaudeVersion(major: 2, minor: 5, patch: 0)),
-        ("Claude Code 3.4.5-beta.1", ClaudeVersion(major: 3, minor: 4, patch: 5, prerelease: "beta.1")),
-    ])
-    func parsesSupportedVersionOutput(output: String, expected: ClaudeVersion) {
-        #expect(parser.parseVersion(output) == expected)
+    @Test func parsesSupportedVersionOutput() {
+        let cases = [
+            ("1.2.3 (Claude Code)", ClaudeVersion(major: 1, minor: 2, patch: 3)),
+            ("claude v2.5", ClaudeVersion(major: 2, minor: 5, patch: 0)),
+            (
+                "Claude Code 3.4.5-beta.1",
+                ClaudeVersion(major: 3, minor: 4, patch: 5, prerelease: "beta.1")
+            ),
+        ]
+
+        for (output, expected) in cases {
+            #expect(parser.parseVersion(output) == expected)
+        }
     }
 
     @Test func provesARealVersionIncrease() {

@@ -492,4 +492,76 @@ final class UniConnectTests: XCTestCase {
         XCTAssertEqual(label, "root@10.0.0.9")
         XCTAssertFalse(label.contains("S3cr3t"))
     }
+
+    // MARK: Remote Claude notification bridge
+
+    @MainActor
+    func testClaudeBridgeGateAcceptsFreshMinimalEventOnlyOnce() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let gate = UniConnectClaudeBridgeEventGate(now: { now })
+        let params = claudeBridgeEventParams(timestamp: now)
+
+        let accepted = try gate.accept(params: params).get()
+        XCTAssertEqual(accepted.kind, .stop)
+        XCTAssertEqual(accepted.cwd, "/srv/example project")
+        XCTAssertEqual(accepted.tmuxPane, "%7")
+
+        guard case .failure(.duplicate) = gate.accept(params: params) else {
+            return XCTFail("a repeated event must be rejected as a duplicate")
+        }
+    }
+
+    @MainActor
+    func testClaudeBridgeGateRejectsStaleAndFutureEvents() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let gate = UniConnectClaudeBridgeEventGate(now: { now })
+
+        guard case .failure(.stale) = gate.accept(
+            params: claudeBridgeEventParams(timestamp: now.addingTimeInterval(-301))
+        ) else {
+            return XCTFail("an old event must be rejected")
+        }
+        guard case .failure(.stale) = gate.accept(
+            params: claudeBridgeEventParams(
+                eventID: String(repeating: "b", count: 64),
+                timestamp: now.addingTimeInterval(31)
+            )
+        ) else {
+            return XCTFail("an event too far in the future must be rejected")
+        }
+    }
+
+    @MainActor
+    func testClaudeBridgeGateRejectsMalformedTargetAndPath() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let gate = UniConnectClaudeBridgeEventGate(now: { now })
+        var params = claudeBridgeEventParams(timestamp: now)
+        params["workspace_id"] = "not-a-uuid"
+        guard case .failure(.malformed) = gate.accept(params: params) else {
+            return XCTFail("an invalid workspace id must be rejected")
+        }
+
+        params = claudeBridgeEventParams(eventID: String(repeating: "c", count: 64), timestamp: now)
+        params["cwd"] = "relative/private"
+        guard case .failure(.malformed) = gate.accept(params: params) else {
+            return XCTFail("a relative cwd must be rejected")
+        }
+    }
+
+    private func claudeBridgeEventParams(
+        eventID: String = String(repeating: "a", count: 64),
+        timestamp: Date
+    ) -> [String: Any] {
+        [
+            "event_id": eventID,
+            "event_timestamp_ms": NSNumber(value: Int64(timestamp.timeIntervalSince1970 * 1_000)),
+            "event_type": "stop",
+            "workspace_id": "11111111-1111-4111-8111-111111111111",
+            "surface_id": "22222222-2222-4222-8222-222222222222",
+            "session_id": "33333333-3333-4333-8333-333333333333",
+            "cwd": "/srv/example project",
+            "host_id": "credential-7@example.test:22",
+            "tmux_pane": "%7",
+        ]
+    }
 }

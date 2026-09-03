@@ -56,18 +56,94 @@ enum FileExplorerTerminalPathInsertion {
 
     @MainActor
     @discardableResult
-    static func insert(paths: [String], relativeToRootPath rootPath: String? = nil, intoTerminalFor window: NSWindow?) -> Bool {
-        let text: String
+    static func insert(
+        paths: [String],
+        relativeToRootPath rootPath: String? = nil,
+        origin: TerminalImageTransferPlanner.PathOrigin? = nil,
+        intoTerminalFor window: NSWindow?
+    ) -> Bool {
+        let insertionPaths: [String]
         if let rootPath {
-            text = insertedText(forPaths: paths, relativeToRootPath: rootPath)
+            insertionPaths = paths.map { relativePath(for: $0, rootPath: rootPath) }
         } else {
-            text = insertedText(forPaths: paths)
+            insertionPaths = paths
         }
-        guard !text.isEmpty else { return false }
+        guard !insertionPaths.isEmpty else { return false }
 
         guard let terminalPanel = targetTerminalPanel(for: window) else { return false }
-        terminalPanel.sendText(text)
-        return true
+        let target = terminalPanel.surface.resolvedImageTransferTarget()
+        let resolvedOrigin = origin ?? .localFileSystem(
+            paths.map { URL(fileURLWithPath: $0).standardizedFileURL }
+        )
+        let plan = TerminalImageTransferPlanner.planPathInsertion(
+            paths: insertionPaths,
+            origin: resolvedOrigin,
+            target: target
+        )
+        let isRejected: Bool
+        switch plan {
+        case .unavailable, .reject:
+            isRejected = true
+        case .insertText, .insertTextSegments, .uploadFiles:
+            isRejected = false
+        }
+
+        let operation: TerminalImageTransferOperation?
+        let destinationIsAvailable: () -> Bool
+        if case .uploadFiles(_, let remoteTarget, _) = plan {
+            let uploadOperation = TerminalImageTransferOperation()
+            operation = uploadOperation
+            destinationIsAvailable = { [weak surface = terminalPanel.surface] in
+                surface?.canContinueImageTransfer(to: remoteTarget) == true
+            }
+            terminalPanel.hostedView.beginImageTransferIndicator(
+                for: uploadOperation,
+                isDestinationAvailable: destinationIsAvailable,
+                onCancel: {}
+            )
+        } else {
+            operation = nil
+            destinationIsAvailable = { true }
+        }
+
+        TerminalImageTransferPlanner.execute(
+            plan: plan,
+            operation: operation,
+            uploadWorkspaceRemote: { [weak surface = terminalPanel.surface] fileURLs, operation, finish in
+                guard let workspace = MainActor.assumeIsolated({ surface?.owningWorkspace() }) else {
+                    finish(.failure(TerminalImageTransferExecutionError.unavailable(.disconnectedRemoteSession)))
+                    return
+                }
+                workspace.uploadDroppedFilesForRemoteTerminal(
+                    fileURLs,
+                    operation: operation,
+                    completion: finish
+                )
+            },
+            uploadDetectedSSH: { session, fileURLs, operation, finish in
+                session.uploadDroppedFiles(
+                    fileURLs,
+                    operation: operation,
+                    completion: finish
+                )
+            },
+            insertText: { [weak terminalPanel] text in
+                terminalPanel?.sendText(text) == true
+            },
+            isDestinationAvailable: destinationIsAvailable,
+            onSuccess: { [weak terminalPanel] in
+                if let operation {
+                    terminalPanel?.hostedView.endImageTransferIndicator(for: operation)
+                }
+            },
+            onFailure: { [weak terminalPanel] error in
+                if let operation {
+                    terminalPanel?.hostedView.endImageTransferIndicator(for: operation)
+                }
+                TerminalImageTransferErrorPresenter.present(error)
+            }
+        )
+        return !isRejected
     }
 
     @MainActor
@@ -134,6 +210,7 @@ extension FileExplorerPanelView.Coordinator {
         guard let node = sender.representedObject as? FileExplorerNode else { return }
         FileExplorerTerminalPathInsertion.insert(
             paths: contextMenuNodes(clicked: node).map(\.path),
+            origin: store.provider is SSHFileExplorerProvider ? .remoteSession : nil,
             intoTerminalFor: outlineView?.window ?? containerView?.window
         )
     }
@@ -144,6 +221,7 @@ extension FileExplorerPanelView.Coordinator {
         FileExplorerTerminalPathInsertion.insert(
             paths: contextMenuNodes(clicked: node).map(\.path),
             relativeToRootPath: store.rootPath,
+            origin: store.provider is SSHFileExplorerProvider ? .remoteSession : nil,
             intoTerminalFor: outlineView?.window ?? containerView?.window
         )
     }
@@ -169,6 +247,7 @@ extension FileExplorerContainerView {
         guard let row = (sender.representedObject as? NSNumber)?.intValue else { return }
         FileExplorerTerminalPathInsertion.insert(
             paths: searchResultsForContextMenu(row: row).map(\.path),
+            origin: terminalPathInsertionOrigin,
             intoTerminalFor: window
         )
     }
@@ -177,7 +256,9 @@ extension FileExplorerContainerView {
     @objc func contextMenuInsertSearchResultRelativePath(_ sender: NSMenuItem) {
         guard let row = (sender.representedObject as? NSNumber)?.intValue else { return }
         FileExplorerTerminalPathInsertion.insert(
-            paths: searchResultsForContextMenu(row: row).map(\.relativePath),
+            paths: searchResultsForContextMenu(row: row).map(\.path),
+            relativeToRootPath: currentRootPath,
+            origin: terminalPathInsertionOrigin,
             intoTerminalFor: window
         )
     }

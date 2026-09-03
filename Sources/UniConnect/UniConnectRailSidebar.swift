@@ -4,30 +4,43 @@ import Foundation
 
 // MARK: - Compact "rail" sidebar
 //
-// UniConnect's collapsed presentation of the workspace sidebar: one coloured tile per
-// box, stacked vertically, with the selected one ringed in the coral accent. It is a
+// UniConnect's collapsed presentation of the workspace sidebar: one coloured circle per
+// box, stacked vertically, with a coral pill marking the selected one. It is a
 // deliberately small, read-mostly view: it only observes `TabManager` (order, groups,
 // selection) and each tile observes its own `Workspace` for name/colour changes.
 // Everything heavier (drag & drop, context menus, notifications preview) stays in
 // `VerticalTabsSidebar`; expanding the rail brings it all back.
-
+//
+// Shape language: a box is a `Circle()`; a rounded-square is reserved for a future
+// "group" chip, so the two never get confused at 34pt where colour alone would not
+// carry the distinction. The selection indicator is a single `Capsule` moved by
+// `matchedGeometryEffect` — exactly one view in the tree carries `isSource: true`, per
+// SwiftUI's own requirement for that modifier to animate predictably.
 struct UniConnectRailSidebar: View {
     /// UserDefaults key of the persisted compact/expanded choice.
     static let compactDefaultsKey = "uniconnect.sidebarCompact"
     /// Fixed width of the rail (the sidebar resizer is disabled while compact).
     static let width: CGFloat = 64
     static let tileSize: CGFloat = 34
-    static let tileCornerRadius: CGFloat = 11
-    static let tileSpacing: CGFloat = 8
+    static let tileSpacing: CGFloat = 12
 
     @EnvironmentObject private var tabManager: TabManager
     @EnvironmentObject private var notificationStore: TerminalNotificationStore
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Single source of truth for the selection pill's matched-geometry id, shared by
+    /// every tile in this rail instance.
+    @Namespace private var selectionNamespace
 
     /// Same action as the "+" of the expanded sidebar.
     let onNewTab: () -> Void
     /// Switches back to the full sidebar.
     let onExpand: () -> Void
+
+    private var selectionAnimation: Animation? {
+        reduceMotion ? nil : .interpolatingSpring(duration: 0.26, bounce: 0.18)
+    }
 
     private enum Row: Identifiable {
         case workspace(Workspace)
@@ -68,6 +81,7 @@ struct UniConnectRailSidebar: View {
                                 workspace: workspace,
                                 isSelected: workspace.id == selectedId,
                                 unreadCount: notificationStore.unreadCount(forTabId: workspace.id),
+                                selectionNamespace: selectionNamespace,
                                 onSelect: { tabManager.selectWorkspace(workspace) }
                             )
                         case .divider:
@@ -82,6 +96,7 @@ struct UniConnectRailSidebar: View {
                 .padding(.top, SidebarWorkspaceListMetrics.firstRowTopOffset)
                 .padding(.bottom, 12)
             }
+            .animation(selectionAnimation, value: selectedId)
 
             footer
         }
@@ -98,13 +113,13 @@ struct UniConnectRailSidebar: View {
                     .foregroundStyle(Color.secondary)
                     .frame(width: Self.tileSize, height: Self.tileSize)
                     .background(
-                        RoundedRectangle(cornerRadius: Self.tileCornerRadius, style: .continuous)
+                        Circle()
                             .strokeBorder(
                                 Color.primary.opacity(colorScheme == .dark ? 0.22 : 0.16),
                                 style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
                             )
                     )
-                    .contentShape(RoundedRectangle(cornerRadius: Self.tileCornerRadius, style: .continuous))
+                    .contentShape(Circle())
             }
             .buttonStyle(UniConnectRailButtonStyle())
             .safeHelp("Nueva caja")
@@ -135,10 +150,13 @@ private struct UniConnectRailTile: View {
     @ObservedObject var workspace: Workspace
     let isSelected: Bool
     let unreadCount: Int
+    let selectionNamespace: Namespace.ID
     let onSelect: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
+    @FocusState private var isFocused: Bool
 
     private var displayName: String {
         let custom = workspace.customTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -164,8 +182,14 @@ private struct UniConnectRailTile: View {
             : NSColor(srgbRed: 0.62, green: 0.64, blue: 0.68, alpha: 1)
     }
 
+    /// Contrast is computed against the tile's actual painted opacity (0.72–1.0), not the
+    /// fully-opaque swatch: at low opacity the terminal background shows through and can
+    /// tip a "dark enough for white text" colour back toward needing dark text.
     private var glyphColor: Color {
-        Color(nsColor: cmuxReadableForegroundNSColor(on: tileNSColor, opacity: 0.95))
+        let paintedAlpha = isSelected || isHovered ? 1.0 : 0.78
+        let backdrop = colorScheme == .dark ? NSColor.black : NSColor.white
+        let blended = tileNSColor.blended(withFraction: 1 - paintedAlpha, of: backdrop) ?? tileNSColor
+        return Color(nsColor: cmuxReadableForegroundNSColor(on: blended, opacity: 0.95))
     }
 
     private var kindSymbol: String? {
@@ -182,65 +206,84 @@ private struct UniConnectRailTile: View {
     }
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: UniConnectRailSidebar.tileCornerRadius, style: .continuous)
-        Button(action: onSelect) {
+        HStack(spacing: 0) {
+            // Selection pill: a single Capsule shared across every tile via
+            // matchedGeometryEffect. Only the selected tile hosts the `isSource: true`
+            // copy, so exactly one exists in the tree at any time — SwiftUI's own
+            // precondition for the transition to animate rather than snap or misbehave.
             ZStack {
-                shape
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(nsColor: tileNSColor).opacity(isSelected || isHovered ? 1 : 0.88),
-                                Color(nsColor: tileNSColor).opacity(isSelected || isHovered ? 0.86 : 0.72)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                shape
-                    .strokeBorder(Color.white.opacity(colorScheme == .dark ? 0.10 : 0.18), lineWidth: 1)
-                Text(initial)
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundStyle(glyphColor)
-                    .minimumScaleFactor(0.7)
-                    .lineLimit(1)
-            }
-            .frame(width: UniConnectRailSidebar.tileSize, height: UniConnectRailSidebar.tileSize)
-            .overlay(alignment: .bottomTrailing) {
-                if let kindSymbol {
-                    Image(systemName: kindSymbol)
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundStyle(Color.white)
-                        .frame(width: 14, height: 14)
-                        .background(Circle().fill(Color.black.opacity(0.62)))
-                        .offset(x: 4, y: 4)
-                }
-            }
-            .overlay(alignment: .topTrailing) {
-                if unreadCount > 0 {
-                    Circle()
-                        .fill(cmuxAccentColor())
-                        .frame(width: 9, height: 9)
-                        .overlay(Circle().strokeBorder(Color.white.opacity(0.9), lineWidth: 1.5))
-                        .offset(x: 3, y: -3)
-                }
-            }
-            .overlay {
                 if isSelected {
-                    RoundedRectangle(cornerRadius: UniConnectRailSidebar.tileCornerRadius + 3, style: .continuous)
-                        .strokeBorder(cmuxAccentColor(), lineWidth: 2)
-                        .padding(-4)
+                    Capsule()
+                        .fill(cmuxAccentColor())
+                        .frame(width: 3, height: UniConnectRailSidebar.tileSize - 8)
+                        .matchedGeometryEffect(id: "uniconnect.rail.selection", in: selectionNamespace)
                 }
             }
-            .scaleEffect(isHovered && !isSelected ? 1.06 : 1)
-            .animation(.easeOut(duration: 0.12), value: isHovered)
-            .animation(.easeOut(duration: 0.16), value: isSelected)
-            .contentShape(Rectangle())
+            .frame(width: 6)
+
+            Button(action: onSelect) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color(nsColor: tileNSColor).opacity(isSelected || isHovered ? 1 : 0.78),
+                                    Color(nsColor: tileNSColor).opacity(isSelected || isHovered ? 0.86 : 0.62)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    Circle()
+                        .strokeBorder(Color.white.opacity(colorScheme == .dark ? 0.10 : 0.18), lineWidth: 1)
+                    Text(initial)
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(glyphColor)
+                        .minimumScaleFactor(0.7)
+                        .lineLimit(1)
+                }
+                .frame(width: UniConnectRailSidebar.tileSize, height: UniConnectRailSidebar.tileSize)
+                .overlay(alignment: .bottomTrailing) {
+                    if let kindSymbol {
+                        Image(systemName: kindSymbol)
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(Color.white)
+                            .frame(width: 14, height: 14)
+                            .background(Circle().fill(Color.black.opacity(0.62)))
+                            .offset(x: 3, y: 3)
+                    }
+                }
+                .overlay(alignment: .topTrailing) {
+                    if unreadCount > 0 {
+                        Circle()
+                            .fill(cmuxAccentColor())
+                            .frame(width: 9, height: 9)
+                            .overlay(Circle().strokeBorder(Color.white.opacity(0.9), lineWidth: 1.5))
+                            .offset(x: 2, y: -2)
+                    }
+                }
+                .overlay {
+                    // Keyboard focus gets its own ring so it never reads as "selected":
+                    // the pill on the left already owns that meaning.
+                    if isFocused {
+                        Circle()
+                            .strokeBorder(cmuxAccentColor(), lineWidth: 2)
+                            .padding(-3)
+                    }
+                }
+                .scaleEffect(isHovered && !isSelected ? 1.08 : 1)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isHovered)
+                .contentShape(Circle())
+            }
+            .buttonStyle(UniConnectRailButtonStyle())
+            .focusable(true)
+            .focused($isFocused)
+            .onHover { isHovered = $0 }
         }
-        .buttonStyle(UniConnectRailButtonStyle())
-        .onHover { isHovered = $0 }
         .safeHelp(tooltip)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(tooltip)
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : [.isButton])
         .accessibilityIdentifier("UniConnectRailTile-\(workspace.id.uuidString)")
     }
 }

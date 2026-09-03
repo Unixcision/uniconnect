@@ -23,12 +23,15 @@ public struct ClaudeUpdateOutputParser: Sendable {
             let versionAndPrerelease = candidate.split(separator: "-", maxSplits: 1)
             let numericParts = versionAndPrerelease[0].split(separator: ".", omittingEmptySubsequences: false)
             guard numericParts.count == 2 || numericParts.count == 3 else { continue }
-            guard
-                let major = UInt(numericParts[0]),
-                let minor = UInt(numericParts[1]),
-                let patch = numericParts.count == 3 ? UInt(numericParts[2]) : 0
-            else {
+            guard let major = UInt(numericParts[0]), let minor = UInt(numericParts[1]) else {
                 continue
+            }
+            let patch: UInt
+            if numericParts.count == 3 {
+                guard let parsedPatch = UInt(numericParts[2]) else { continue }
+                patch = parsedPatch
+            } else {
+                patch = 0
             }
 
             let prerelease = versionAndPrerelease.count == 2

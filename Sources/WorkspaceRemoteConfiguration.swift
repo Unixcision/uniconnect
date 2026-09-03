@@ -156,15 +156,19 @@ nonisolated enum SSHPTYAttachStartupCommandBuilder {
         return "/bin/sh -c \(shellQuote(lines.joined(separator: "\n")))"
     }
 
-    static func restoredRemoteShellCommand(relayPort: Int) -> String {
+    static func restoredRemoteShellCommand(relayPort: Int, bridgeHostID: String?) -> String {
         RemoteInteractiveShellBootstrapBuilder.script(
             remoteRelayPort: relayPort,
+            bridgeHostID: bridgeHostID,
             shellFeatures: RemoteInteractiveShellBootstrapBuilder.shellFeatures(),
             bundledZshIntegration: RemoteInteractiveShellBootstrapBuilder.bundledShellIntegrationScript(
                 named: "uniconnect-zsh-integration.zsh"
             ),
             bundledBashIntegration: RemoteInteractiveShellBootstrapBuilder.bundledShellIntegrationScript(
                 named: "uniconnect-bash-integration.bash"
+            ),
+            bundledClaudeWrapper: RemoteInteractiveShellBootstrapBuilder.bundledExecutableScript(
+                named: "uniconnect-claude-wrapper"
             )
         )
     }
@@ -494,9 +498,15 @@ extension SessionRemoteWorkspaceSnapshot {
         let restoredRelayToken = preservePTYSession
             ? Self.restoreRelayTokenHex()
             : nil
-        let restoredRemoteShellCommand = preservePTYSession
-            ? normalizedRelayPort.map(SSHPTYAttachStartupCommandBuilder.restoredRemoteShellCommand(relayPort:))
-            : nil
+        let restoredRemoteShellCommand: String?
+        if preservePTYSession, let normalizedRelayPort {
+            restoredRemoteShellCommand = SSHPTYAttachStartupCommandBuilder.restoredRemoteShellCommand(
+                relayPort: normalizedRelayPort,
+                bridgeHostID: restoredRelayID
+            )
+        } else {
+            restoredRemoteShellCommand = nil
+        }
         return WorkspaceRemoteConfiguration(
             transport: transport,
             destination: normalizedDestination,

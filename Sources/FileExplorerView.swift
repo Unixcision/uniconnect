@@ -717,8 +717,17 @@ final class FileExplorerContainerView: NSView {
     private let searchController: any FileSearchControlling
     private var searchBarHeightConstraint: NSLayoutConstraint!
     private(set) var searchSnapshot = FileSearchSnapshot.empty
-    private var currentRootPath = ""
+    var currentRootPath = ""
     private var currentProviderIsLocal = false
+
+    /// Origin for `FileExplorerTerminalPathInsertion.insert`: paths shown here come from a
+    /// remote (SSH) file browser when the active provider isn't local. `nil` means "let the
+    /// call site fall back to `.localFileSystem`" — this view has no provider yet before the
+    /// first `updateHeader(store:)` call, at which point `currentProviderIsLocal` defaults to
+    /// `false`, so this stays explicit instead of guessing.
+    var terminalPathInsertionOrigin: TerminalImageTransferPlanner.PathOrigin? {
+        currentProviderIsLocal ? nil : .remoteSession
+    }
     private var currentContentRevision = 0
     private let searchDebounceSubject = PassthroughSubject<Int, Never>()
     private var searchDebounceCancellable: AnyCancellable?

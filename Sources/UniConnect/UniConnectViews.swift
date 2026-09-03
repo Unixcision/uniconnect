@@ -592,75 +592,244 @@ struct UniConnectPassphraseView: View {
 // MARK: - Import preview
 
 struct UniConnectImportPreviewView: View {
-    struct Row: Identifiable {
-        let id = UUID()
-        let workspace: UniConnectDocument.Workspace
-        let existsAlready: Bool
-    }
-
-    let rows: [Row]
-    let onImport: (_ selected: [UniConnectDocument.Workspace]) -> Void
+    let plan: UniConnectImportPlan
+    let onImport: (_ selectedRowIDs: Set<Int>) -> Void
     let onCancel: () -> Void
 
-    @State private var selected: Set<UUID> = []
+    @State private var selected: Set<Int>
 
-    init(rows: [Row], onImport: @escaping ([UniConnectDocument.Workspace]) -> Void, onCancel: @escaping () -> Void) {
-        self.rows = rows
+    init(
+        plan: UniConnectImportPlan,
+        onImport: @escaping (Set<Int>) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.plan = plan
         self.onImport = onImport
         self.onCancel = onCancel
-        _selected = State(initialValue: Set(rows.filter { !$0.existsAlready }.map(\.id)))
+        _selected = State(initialValue: plan.canUseCreateOnlyExecutor ? Set(plan.createRows.map(\.id)) : [])
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: "square.and.arrow.down.fill").foregroundStyle(UniConnectStyle.accent)
-                Text("Importar configuración").font(.system(size: 18, weight: .bold, design: .rounded))
+                Text(String(
+                    localized: "uniconnect.import.preview.title",
+                    defaultValue: "Import configuration"
+                ))
+                .font(.system(size: 18, weight: .bold, design: .rounded))
             }
-            Text("Marca las cajas que quieres crear. Las que ya existen con el mismo nombre vienen desmarcadas para no duplicarlas.")
+            Text(String(
+                localized: "uniconnect.import.preview.description",
+                defaultValue: "Review every workspace before importing. Stable identities are matched before names."
+            ))
                 .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            List(rows) { row in
+            if let blockingMessage {
+                Label(blockingMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            List(plan.rows) { row in
                 HStack(spacing: 10) {
-                    Toggle("", isOn: Binding(
+                    Toggle(isOn: Binding(
                         get: { selected.contains(row.id) },
                         set: { on in if on { selected.insert(row.id) } else { selected.remove(row.id) } }
-                    )).labelsHidden()
+                    )) { EmptyView() }
+                        .labelsHidden()
+                        .disabled(row.outcome != .create || !plan.canUseCreateOnlyExecutor)
                     Circle().fill(row.workspace.color.map { UniConnectStyle.color(hex: $0) } ?? .gray).frame(width: 10, height: 10)
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(row.workspace.name).font(.system(size: 13, weight: .semibold))
-                            Text(row.workspace.kind == .ssh ? "SSH" : "Local")
+                            Text(kindText(for: row.workspace.kind))
                                 .font(.system(size: 10, weight: .bold))
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background(Capsule().fill(row.workspace.kind == .ssh ? UniConnectStyle.accentSSH.opacity(0.25) : Color.secondary.opacity(0.2)))
-                            if row.existsAlready {
-                                Text("ya existe").font(.system(size: 10)).foregroundStyle(.orange)
-                            }
+                            Text(outcomeText(row.outcome))
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(outcomeColor(row.outcome))
                         }
-                        Text(row.workspace.kind == .ssh
-                             ? "\(UniConnectSSH.hostLabel(from: row.workspace.connect ?? "")) · \(row.workspace.windows.count) ventanas tmux"
-                             : "\(row.workspace.cwd ?? "~") · \(row.workspace.windows.count) ventanas")
+                        Text(summary(for: row.workspace))
                             .font(.system(size: 11)).foregroundStyle(.secondary)
+                        if !row.issues.isEmpty {
+                            Text(row.issues.map(issueText).joined(separator: "\n"))
+                                .font(.system(size: 10))
+                                .foregroundStyle(row.outcome == .rejected ? .red : .orange)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     Spacer()
                 }
                 .padding(.vertical, 2)
             }
             HStack {
-                Button("Todas") { selected = Set(rows.map(\.id)) }
-                Button("Ninguna") { selected = [] }
+                Button(String(localized: "uniconnect.import.button.all", defaultValue: "All")) {
+                    selected = Set(plan.createRows.map(\.id))
+                }
+                .disabled(!plan.canUseCreateOnlyExecutor || plan.createRows.isEmpty)
+                Button(String(localized: "uniconnect.import.button.none", defaultValue: "None")) {
+                    selected = []
+                }
+                .disabled(selected.isEmpty)
                 Spacer()
-                Button("Cancelar", action: onCancel).keyboardShortcut(.cancelAction)
-                Button("Importar \(selected.count)") {
-                    onImport(rows.filter { selected.contains($0.id) }.map(\.workspace))
+                Button(String(localized: "uniconnect.import.button.cancel", defaultValue: "Cancel"), action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                Button(importButtonText) {
+                    onImport(selected)
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .tint(UniConnectStyle.accent)
-                .disabled(selected.isEmpty)
+                .disabled(selected.isEmpty || !plan.canUseCreateOnlyExecutor)
             }
         }
         .padding(20)
+    }
+
+    private var blockingMessage: String? {
+        if plan.hasBlockingIssues {
+            return String(
+                localized: "uniconnect.import.error.blocked",
+                defaultValue: "Resolve every conflict or rejected row before importing. No changes were made."
+            )
+        }
+        if plan.requiresTransactionalUpdates {
+            return String(
+                localized: "uniconnect.import.error.transactionalUpdatesRequired",
+                defaultValue: "This import contains updates. No changes were made because updates require transactional reconciliation."
+            )
+        }
+        return nil
+    }
+
+    private var importButtonText: String {
+        String.localizedStringWithFormat(
+            String(localized: "uniconnect.import.button.importCount", defaultValue: "Import %lld"),
+            Int64(selected.count)
+        )
+    }
+
+    private func kindText(for kind: UniConnectWorkspaceKind) -> String {
+        switch kind {
+        case .local:
+            return String(localized: "uniconnect.import.kind.local", defaultValue: "Local")
+        case .ssh:
+            return String(localized: "uniconnect.import.kind.ssh", defaultValue: "SSH")
+        }
+    }
+
+    private func outcomeText(_ outcome: UniConnectImportPlan.Outcome) -> String {
+        switch outcome {
+        case .create:
+            return String(localized: "uniconnect.import.outcome.create", defaultValue: "Create")
+        case .update:
+            return String(localized: "uniconnect.import.outcome.update", defaultValue: "Update")
+        case .unchanged:
+            return String(localized: "uniconnect.import.outcome.unchanged", defaultValue: "No changes")
+        case .conflict:
+            return String(localized: "uniconnect.import.outcome.conflict", defaultValue: "Conflict")
+        case .rejected:
+            return String(localized: "uniconnect.import.outcome.rejected", defaultValue: "Rejected")
+        }
+    }
+
+    private func outcomeColor(_ outcome: UniConnectImportPlan.Outcome) -> Color {
+        switch outcome {
+        case .create: return UniConnectStyle.accent
+        case .update: return .blue
+        case .unchanged: return .secondary
+        case .conflict: return .orange
+        case .rejected: return .red
+        }
+    }
+
+    private func summary(for workspace: UniConnectDocument.Workspace) -> String {
+        switch workspace.kind {
+        case .local:
+            return String.localizedStringWithFormat(
+                String(localized: "uniconnect.import.summary.local", defaultValue: "%1$@ · %2$lld windows"),
+                workspace.cwd ?? "~",
+                Int64(workspace.windows.count)
+            )
+        case .ssh:
+            let host: String
+            if let connect = workspace.connect, UniConnectSSH.validateConnectCommand(connect) == nil {
+                host = UniConnectSSH.hostLabel(from: connect)
+            } else {
+                host = String(
+                    localized: "uniconnect.import.summary.unknownHost",
+                    defaultValue: "Unknown SSH host"
+                )
+            }
+            return String.localizedStringWithFormat(
+                String(localized: "uniconnect.import.summary.ssh", defaultValue: "%1$@ · %2$lld tmux windows"),
+                host,
+                Int64(workspace.windows.count)
+            )
+        }
+    }
+
+    private func issueText(_ issue: UniConnectImportPlan.Issue) -> String {
+        switch issue {
+        case .emptyWorkspaceName:
+            return String(localized: "uniconnect.import.issue.emptyWorkspaceName", defaultValue: "The workspace name is empty.")
+        case .missingSSHConnection:
+            return String(localized: "uniconnect.import.issue.missingSSHConnection", defaultValue: "The SSH connection command is missing.")
+        case .invalidSSHConnection:
+            return String(localized: "uniconnect.import.issue.invalidSSHConnection", defaultValue: "The SSH connection command is unsafe or unsupported.")
+        case .unexpectedSSHConnection:
+            return String(localized: "uniconnect.import.issue.unexpectedSSHConnection", defaultValue: "A local workspace cannot contain an SSH connection command.")
+        case .localWorkspaceMissingWindow:
+            return String(localized: "uniconnect.import.issue.localWorkspaceMissingWindow", defaultValue: "A local workspace needs at least one window.")
+        case .localWindowHasTmux:
+            return String(localized: "uniconnect.import.issue.localWindowHasTmux", defaultValue: "A local window cannot contain a tmux target.")
+        case .sshWindowMissingTmux:
+            return String(localized: "uniconnect.import.issue.sshWindowMissingTmux", defaultValue: "Every SSH window needs a tmux target.")
+        case .sshWindowHasClaudeSession:
+            return String(localized: "uniconnect.import.issue.sshWindowHasClaudeSession", defaultValue: "An SSH window cannot contain a local Claude session UUID.")
+        case .invalidClaudeSession:
+            return String(localized: "uniconnect.import.issue.invalidClaudeSession", defaultValue: "A Claude session UUID is invalid.")
+        case .invalidTmuxSession:
+            return String(localized: "uniconnect.import.issue.invalidTmuxSession", defaultValue: "A tmux target contains unsupported characters.")
+        case .emptyGroupName:
+            return String(localized: "uniconnect.import.issue.emptyGroupName", defaultValue: "The group name is empty.")
+        case .pinnedWorkspaceHasGroup:
+            return String(localized: "uniconnect.import.issue.pinnedWorkspaceHasGroup", defaultValue: "A pinned workspace cannot belong to a group.")
+        case .duplicateWorkspaceIdentifier(let id):
+            return String.localizedStringWithFormat(
+                String(
+                    localized: "uniconnect.import.issue.duplicateWorkspaceIdentifier",
+                    defaultValue: "Workspace UUID %@ appears more than once."
+                ),
+                id.uuidString
+            )
+        case .duplicateWorkspaceName:
+            return String(localized: "uniconnect.import.issue.duplicateWorkspaceName", defaultValue: "The normalized workspace name appears more than once.")
+        case .duplicateClaudeSession(let id):
+            return String.localizedStringWithFormat(
+                String(
+                    localized: "uniconnect.import.issue.duplicateClaudeSession",
+                    defaultValue: "Claude session UUID %@ appears more than once."
+                ),
+                id.uuidString
+            )
+        case .duplicateTmuxTarget(let host, let session):
+            return String.localizedStringWithFormat(
+                String(
+                    localized: "uniconnect.import.issue.duplicateTmuxTarget",
+                    defaultValue: "tmux target %1$@ / %2$@ appears more than once."
+                ),
+                host,
+                session
+            )
+        case .ambiguousStableIdentity:
+            return String(localized: "uniconnect.import.issue.ambiguousStableIdentity", defaultValue: "Stable identities match more than one existing workspace.")
+        case .ambiguousName:
+            return String(localized: "uniconnect.import.issue.ambiguousName", defaultValue: "The normalized name matches more than one workspace.")
+        case .workspaceKindMismatch:
+            return String(localized: "uniconnect.import.issue.workspaceKindMismatch", defaultValue: "The imported and existing workspace kinds differ.")
+        }
     }
 }
 

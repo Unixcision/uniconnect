@@ -55,17 +55,18 @@ enum UniConnectBackup {
             let tmux = workspace.uniConnectTmuxSessionsByPanelId[panelId]
             let claude = agentIndex.snapshot(workspaceId: workspace.id, panelId: panelId)
                 .flatMap { $0.kind == .claude ? $0.sessionId : nil }
+                ?? workspace.uniConnectClaudeSessionsByPanelId[panelId]
             let cwd = workspace.panelDirectories[panelId] ?? (workspace.panels[panelId] as? TerminalPanel)?.requestedWorkingDirectory
             windows.append(UniConnectDocument.Window(
                 name: name,
                 tmux: tmux,
                 claudeSession: claude,
                 cwd: profile.isSSH ? nil : cwd,
-                isPinned: nil
+                isPinned: workspace.isPanelPinned(panelId) ? true : nil
             ))
         }
         return UniConnectDocument.Workspace(
-            id: workspace.id,
+            id: profile.importIdentity,
             name: workspace.customTitle ?? workspace.title,
             kind: profile.kind,
             color: workspace.customColor,
@@ -153,13 +154,13 @@ enum UniConnectBackup {
             return .encrypted(container)
         }
         if let document = try? decoder.decode(UniConnectDocument.self, from: data) {
-            try validate(document)
+            try validateVersion(document)
             return .plainSeed(document)
         }
         // A hand-written Markdown map of boxes (CONNECT.md) is a first-class import format.
         if let text = String(data: data, encoding: .utf8), UniConnectMarkdown.looksLikeConnectionMap(text) {
             let document = try UniConnectMarkdown.parse(text)
-            try validate(document)
+            try validateVersion(document)
             return .plainSeed(document)
         }
         throw UniConnectError.corruptFile("no es un export de UniConnect, ni una semilla JSON, ni un mapa de conexiones en Markdown")
@@ -169,14 +170,12 @@ enum UniConnectBackup {
         let payloadData = try JSONEncoder().encode(container.payload)
         let plaintext = try UniConnectCrypto.openWithPassphrase(payloadData, passphrase: passphrase)
         let document = try JSONDecoder().decode(UniConnectDocument.self, from: plaintext)
-        try validate(document)
+        try validateVersion(document)
         return document
     }
 
     static func validate(_ document: UniConnectDocument) throws {
-        guard document.version >= 1, document.version <= UniConnectDocument.currentVersion else {
-            throw UniConnectError.corruptFile("versión de documento \(document.version) no soportada")
-        }
+        try validateVersion(document)
         for workspace in document.workspaces {
             let name = workspace.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { throw UniConnectError.corruptFile("caja sin nombre") }
@@ -198,6 +197,13 @@ enum UniConnectBackup {
                     throw UniConnectError.corruptFile("ID tmux inválido en \(name): \(tmux)")
                 }
             }
+        }
+    }
+
+    /// Structural validation happens before preview; row-level failures stay visible in the plan.
+    private static func validateVersion(_ document: UniConnectDocument) throws {
+        guard document.version >= 1, document.version <= UniConnectDocument.currentVersion else {
+            throw UniConnectError.corruptFile("versión de documento \(document.version) no soportada")
         }
     }
 

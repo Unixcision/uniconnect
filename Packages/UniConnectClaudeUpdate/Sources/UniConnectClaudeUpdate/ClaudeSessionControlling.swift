@@ -1,4 +1,7 @@
 /// Controls exact local or remote Claude sessions without exposing terminal implementation types.
+///
+/// Implementations must return only sanitized errors and must never expose SSH argv, environment,
+/// passwords, tokens, or credential-vault values.
 public protocol ClaudeSessionControlling: Sendable {
     /// Inspects the exact process currently owning a target.
     ///
@@ -17,6 +20,10 @@ public protocol ClaudeSessionControlling: Sendable {
     func waitUntilReadyForExit(_ target: ClaudeUpdateTarget) async throws -> ClaudeSessionInspection
 
     /// Sends Claude's clean `/exit` command to the exact validated target.
+    ///
+    /// The adapter must revalidate `expectedProcessID`, pane identity, UUID, cwd, and executable at
+    /// the send boundary, confirm the session is still safe to exit, and fail closed if any value
+    /// changed since preflight.
     ///
     /// - Parameters:
     ///   - target: The target previously validated and durably journaled.
@@ -43,7 +50,8 @@ public protocol ClaudeSessionControlling: Sendable {
     ///
     /// If the expected UUID is already live, the implementation must succeed without launching a
     /// duplicate. Restoration must not be abandoned merely because the update task was cancelled.
-    /// It must use the persisted cwd, executable, UUID, and required permission flag in ``ClaudeSessionBinding``.
+    /// It must use the persisted cwd, executable, and UUID from ``ClaudeSessionBinding`` and add
+    /// the required `--dangerously-skip-permissions` resume flag.
     ///
     /// - Parameter target: The durably journaled target to restore.
     /// - Throws: When the session cannot be safely resumed or reconciled.

@@ -20,7 +20,7 @@ actor TestUpdaterHarness:
     private let pauseAtShell: Bool
     private let fixedDate: Date
 
-    private var versionReadCount = 0
+    private var installedVersionValue: ClaudeVersion
     private var updateCount = 0
     private var restoredTargets: Set<ClaudeUpdateTargetID> = []
     private var events: [String] = []
@@ -54,6 +54,7 @@ actor TestUpdaterHarness:
         self.verificationShouldMismatch = verificationShouldMismatch
         self.pauseAtShell = pauseAtShell
         self.fixedDate = fixedDate
+        self.installedVersionValue = versionBefore
     }
 
     func targets(for scope: ClaudeUpdateScope) async throws -> [ClaudeUpdateTarget] {
@@ -71,7 +72,8 @@ actor TestUpdaterHarness:
             processID: wasRestored ? 9_001 : 42,
             sessionID: verificationShouldMismatch && wasRestored ? UUID() : binding.sessionID,
             workingDirectory: binding.workingDirectory,
-            executablePath: binding.executablePath
+            executablePath: binding.executablePath,
+            version: installedVersionValue
         )
     }
 
@@ -84,7 +86,8 @@ actor TestUpdaterHarness:
             processID: 42,
             sessionID: binding.sessionID,
             workingDirectory: binding.workingDirectory,
-            executablePath: binding.executablePath
+            executablePath: binding.executablePath,
+            version: installedVersionValue
         )
     }
 
@@ -119,8 +122,7 @@ actor TestUpdaterHarness:
         executablePath: String
     ) async throws -> ClaudeVersion {
         events.append("version:\(host.id):\(executablePath)")
-        versionReadCount += 1
-        return versionReadCount == 1 ? versionBefore : versionAfter
+        return installedVersionValue
     }
 
     func update(
@@ -130,6 +132,7 @@ actor TestUpdaterHarness:
         events.append("update:\(host.id):\(executablePath)")
         updateCount += 1
         if updateShouldFail { throw TestUpdaterError.updateFailed }
+        installedVersionValue = versionAfter
         return commandResult
     }
 

@@ -19,6 +19,8 @@ enum UniConnectWorkspaceKind: String, Codable, Sendable, Equatable {
 
 struct UniConnectWorkspaceProfile: Codable, Sendable, Equatable {
     var kind: UniConnectWorkspaceKind
+    /// Import/export identity that survives app session restoration.
+    var importIdentity: UUID?
     /// Vault key for the SSH connect command. Nil for local workspaces.
     var credentialId: UUID?
     /// Human readable, password-free label such as `root@1.2.3.4`.
@@ -32,6 +34,7 @@ struct UniConnectWorkspaceProfile: Codable, Sendable, Equatable {
 
     init(
         kind: UniConnectWorkspaceKind,
+        importIdentity: UUID? = nil,
         credentialId: UUID? = nil,
         hostLabel: String? = nil,
         tmuxReady: Bool = false,
@@ -39,6 +42,7 @@ struct UniConnectWorkspaceProfile: Codable, Sendable, Equatable {
         lastActivityAt: TimeInterval? = Date().timeIntervalSince1970
     ) {
         self.kind = kind
+        self.importIdentity = importIdentity
         self.credentialId = credentialId
         self.hostLabel = hostLabel
         self.tmuxReady = tmuxReady
@@ -71,7 +75,7 @@ struct UniConnectDocument: Codable, Equatable {
     }
 
     struct Workspace: Codable, Equatable {
-        /// Stable live workspace identity when exported by UniConnect; absent in Markdown maps.
+        /// Stable import/export identity; absent in hand-written Markdown maps.
         var id: UUID? = nil
         var name: String
         var kind: UniConnectWorkspaceKind

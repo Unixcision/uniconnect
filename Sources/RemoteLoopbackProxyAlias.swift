@@ -1,7 +1,7 @@
 import Foundation
 
 enum RemoteLoopbackProxyAlias {
-    static let aliasHost = "cmux-loopback.localtest.me"
+    static let aliasHost = "uniconnect-loopback.localtest.me"
 
     static let canonicalLoopbackHost = "localhost"
     static let exactLoopbackHosts: Set<String> = [

@@ -1,6 +1,9 @@
 import Foundation
 
 /// Persists the source of truth for session-restoration obligations.
+///
+/// Implementations must return sanitized errors and must never place credentials in journal data,
+/// paths surfaced to callers, or diagnostic text.
 public protocol ClaudeUpdateJournaling: Sendable {
     /// Inserts or replaces one recovery record durably.
     ///

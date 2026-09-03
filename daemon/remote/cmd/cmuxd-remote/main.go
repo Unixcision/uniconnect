@@ -339,7 +339,7 @@ func persistentDaemonPathsForSlot(rawSlot string) (persistentDaemonPaths, error)
 		if homeErr != nil || strings.TrimSpace(home) == "" {
 			return persistentDaemonPaths{}, errors.New("cannot resolve remote home directory")
 		}
-		rootBase = filepath.Join(home, ".cmux", "daemon")
+		rootBase = filepath.Join(home, ".uniconnect", "daemon")
 	}
 	root := filepath.Join(rootBase, persistentDaemonVersionComponent(), slot)
 	socketPath := persistentDaemonSocketPath(root, slot)

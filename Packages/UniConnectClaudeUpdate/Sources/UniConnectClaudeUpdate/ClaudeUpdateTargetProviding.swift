@@ -1,4 +1,7 @@
 /// Resolves an application selection into immutable, currently visible Claude targets.
+///
+/// Returned values and errors must contain stable credential identifiers only, never credential
+/// values or raw SSH connection commands.
 public protocol ClaudeUpdateTargetProviding: Sendable {
     /// Resolves targets without mutating terminals or remote sessions.
     ///

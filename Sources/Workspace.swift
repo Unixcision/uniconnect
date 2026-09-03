@@ -6750,19 +6750,15 @@ final class WorkspaceRemoteSessionController {
             do {
                 try operation.throwIfCancelled()
                 let remotePaths = try self.uploadDroppedFilesLocked(fileURLs, operation: operation)
+                operation.installCancellationCleanupHandler { [controller = self] in
+                    controller.queue.async {
+                        controller.cleanupUploadedRemotePaths(remotePaths)
+                    }
+                }
                 try operation.throwIfCancelled()
-                DispatchQueue.main.async { [weak self] in
+                DispatchQueue.main.async {
                     if operation.isCancelled {
-                        guard let self else {
-                            completion(.failure(TerminalImageTransferExecutionError.cancelled))
-                            return
-                        }
-                        self.queue.async { [weak self] in
-                            self?.cleanupUploadedRemotePaths(remotePaths)
-                            DispatchQueue.main.async {
-                                completion(.failure(TerminalImageTransferExecutionError.cancelled))
-                            }
-                        }
+                        completion(.failure(TerminalImageTransferExecutionError.cancelled))
                     } else {
                         completion(.success(remotePaths))
                     }

@@ -2,6 +2,972 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "uniconnect.import.button.all": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todas"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて"
+          }
+        }
+      }
+    },
+    "uniconnect.import.button.cancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancelar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャンセル"
+          }
+        }
+      }
+    },
+    "uniconnect.import.button.importCount": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import %lld"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importar %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld件をインポート"
+          }
+        }
+      }
+    },
+    "uniconnect.import.button.none": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "None"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ninguna"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "なし"
+          }
+        }
+      }
+    },
+    "uniconnect.import.error.backupFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The pre-import recovery backup could not be created. No changes were made."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo crear la copia de recuperación previa a la importación. No se realizó ningún cambio."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インポート前の復旧バックアップを作成できませんでした。変更は行われませんでした。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.error.creationRolledBack": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A workspace could not be created. UniConnect rolled back the local import state."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo crear un espacio de trabajo. UniConnect revirtió el estado local de la importación."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークスペースを作成できませんでした。UniConnectはローカルのインポート状態を元に戻しました。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.error.invalidSelection": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The import selection is no longer valid. Review the import again; no changes were made."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La selección de importación ya no es válida. Revisa de nuevo la importación; no se realizó ningún cambio."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インポートの選択内容が無効になりました。もう一度確認してください。変更は行われませんでした。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.error.noHostWorkspace": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "There is no main workspace available for this import."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay ningún espacio de trabajo principal disponible para esta importación."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このインポートに使用できるメインワークスペースがありません。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.error.stateChanged": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The current workspaces changed after this preview. Review the import again; no changes were made."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los espacios de trabajo actuales cambiaron después de esta vista previa. Revisa de nuevo la importación; no se realizó ningún cambio."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレビュー後に現在のワークスペースが変更されました。もう一度確認してください。変更は行われませんでした。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.error.blocked": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resolve every conflict or rejected row before importing. No changes were made."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resuelve todos los conflictos o filas rechazadas antes de importar. No se realizó ningún cambio."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "競合または拒否された行をすべて解決してからインポートしてください。変更は行われませんでした。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.error.transactionalUpdatesRequired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This import contains updates. No changes were made because updates require transactional reconciliation."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta importación contiene actualizaciones. No se realizó ningún cambio porque las actualizaciones requieren una reconciliación transaccional."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このインポートには更新が含まれています。更新にはトランザクション対応の照合が必要なため、変更は行われませんでした。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.ambiguousName": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The normalized name matches more than one workspace."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El nombre normalizado coincide con más de un espacio de trabajo."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正規化された名前が複数のワークスペースに一致します。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.ambiguousStableIdentity": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stable identities match more than one existing workspace."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las identidades estables coinciden con más de un espacio de trabajo existente."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安定した識別子が複数の既存ワークスペースに一致します。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.duplicateClaudeSession": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude session UUID %@ appears more than once."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El UUID de sesión de Claude %@ aparece más de una vez."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ClaudeセッションUUID %@ が複数回使われています。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.duplicateTmuxTarget": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux target %1$@ / %2$@ appears more than once."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El destino tmux %1$@ / %2$@ aparece más de una vez."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmuxターゲット %1$@ / %2$@ が複数回使われています。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.duplicateWorkspaceIdentifier": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Workspace UUID %@ appears more than once."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El UUID de espacio de trabajo %@ aparece más de una vez."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークスペースUUID %@ が複数回使われています。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.duplicateWorkspaceName": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The normalized workspace name appears more than once."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El nombre normalizado del espacio de trabajo aparece más de una vez."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正規化されたワークスペース名が複数回使われています。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.emptyGroupName": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The group name is empty."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El nombre del grupo está vacío."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グループ名が空です。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.emptyWorkspaceName": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The workspace name is empty."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El nombre del espacio de trabajo está vacío."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークスペース名が空です。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.invalidClaudeSession": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Claude session UUID is invalid."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un UUID de sesión de Claude no es válido."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ClaudeセッションUUIDが無効です。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.invalidSSHConnection": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The SSH connection command is unsafe or unsupported."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El comando de conexión SSH no es seguro o no es compatible."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH接続コマンドは安全でないか、サポートされていません。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.invalidTmuxSession": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A tmux target contains unsupported characters."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un destino tmux contiene caracteres no compatibles."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmuxターゲットにサポートされていない文字が含まれています。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.localWorkspaceMissingWindow": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A local workspace needs at least one window."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un espacio de trabajo local necesita al menos una ventana."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルワークスペースには1つ以上のウインドウが必要です。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.localWindowHasTmux": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A local window cannot contain a tmux target."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Una ventana local no puede contener un destino tmux."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルウインドウにtmuxターゲットは指定できません。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.missingSSHConnection": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The SSH connection command is missing."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falta el comando de conexión SSH."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH接続コマンドがありません。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.pinnedWorkspaceHasGroup": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A pinned workspace cannot belong to a group."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un espacio de trabajo fijado no puede pertenecer a un grupo."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "固定されたワークスペースはグループに所属できません。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.sshWindowHasClaudeSession": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An SSH window cannot contain a local Claude session UUID."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Una ventana SSH no puede contener un UUID de sesión local de Claude."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSHウインドウにローカルClaudeセッションUUIDは指定できません。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.sshWindowMissingTmux": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every SSH window needs a tmux target."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cada ventana SSH necesita un destino tmux."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのSSHウインドウにtmuxターゲットが必要です。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.unexpectedSSHConnection": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A local workspace cannot contain an SSH connection command."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un espacio de trabajo local no puede contener un comando de conexión SSH."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルワークスペースにSSH接続コマンドは指定できません。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.issue.workspaceKindMismatch": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The imported and existing workspace kinds differ."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los tipos del espacio de trabajo importado y existente son distintos."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インポート元と既存ワークスペースの種類が異なります。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.kind.local": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカル"
+          }
+        }
+      }
+    },
+    "uniconnect.import.kind.ssh": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH"
+          }
+        }
+      }
+    },
+    "uniconnect.import.outcome.conflict": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflict"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflicto"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "競合"
+          }
+        }
+      }
+    },
+    "uniconnect.import.outcome.create": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crear"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作成"
+          }
+        }
+      }
+    },
+    "uniconnect.import.outcome.rejected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rejected"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechazado"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒否"
+          }
+        }
+      }
+    },
+    "uniconnect.import.outcome.unchanged": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No changes"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin cambios"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更なし"
+          }
+        }
+      }
+    },
+    "uniconnect.import.outcome.update": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualizar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新"
+          }
+        }
+      }
+    },
+    "uniconnect.import.preview.description": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review every workspace before importing. Stable identities are matched before names."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revisa cada espacio de trabajo antes de importar. Las identidades estables se comparan antes que los nombres."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インポート前にすべてのワークスペースを確認してください。名前より先に安定した識別子で照合します。"
+          }
+        }
+      }
+    },
+    "uniconnect.import.preview.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import configuration"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importar configuración"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定をインポート"
+          }
+        }
+      }
+    },
+    "uniconnect.import.summary.local": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$lld windows"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$lld ventanas"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@・ウインドウ%2$lld個"
+          }
+        }
+      }
+    },
+    "uniconnect.import.summary.unknownHost": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unknown SSH host"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Host SSH desconocido"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不明なSSHホスト"
+          }
+        }
+      }
+    },
+    "uniconnect.import.summary.ssh": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$lld tmux windows"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$lld ventanas tmux"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@・tmuxウインドウ%2$lld個"
+          }
+        }
+      }
+    },
     "command.auth.signIn.title": {
       "extractionState": "manual",
       "localizations": {
@@ -16527,6 +17493,29 @@
         }
       }
     },
+    "terminal.imageTransfer.error.disconnectedRemoteSession": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The remote session disconnected before the file could be attached. Reconnect it, then try again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La sesión remota se desconectó antes de que se pudiera adjuntar el archivo. Vuelve a conectarla e inténtalo de nuevo."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを添付する前にリモートセッションが切断されました。再接続してから、もう一度お試しください。"
+          }
+        }
+      }
+    },
     "terminal.imageTransfer.error.disconnectedSSHWindow": {
       "extractionState": "manual",
       "localizations": {
@@ -16596,6 +17585,52 @@
         }
       }
     },
+    "terminal.imageTransfer.error.incompleteRemoteUploadResult": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file transfer didn't return a remote path for every selected file."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La transferencia no devolvió una ruta remota para cada archivo seleccionado."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択したすべてのファイルについてリモートパスが返されませんでした。"
+          }
+        }
+      }
+    },
+    "terminal.imageTransfer.error.mismatchedFileExplorerSession": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The selected File Explorer path belongs to a different session. Refresh File Explorer, then try again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La ruta seleccionada en el explorador de archivos pertenece a otra sesión. Actualiza el explorador de archivos e inténtalo de nuevo."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルエクスプローラで選択したパスは別のセッションに属しています。ファイルエクスプローラを更新してから、もう一度お試しください。"
+          }
+        }
+      }
+    },
     "terminal.imageTransfer.error.missingSSHConnectCommand": {
       "extractionState": "manual",
       "localizations": {
@@ -16661,6 +17696,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "クリップボードまたはドロップされた項目に、テキストや対応ファイルが含まれていません。"
+          }
+        }
+      }
+    },
+    "terminal.imageTransfer.error.textDeliveryFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The terminal couldn't accept the transferred file path. Try again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El terminal no pudo aceptar la ruta del archivo transferido. Inténtalo de nuevo."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "転送したファイルのパスをターミナルで受け取れませんでした。もう一度お試しください。"
           }
         }
       }

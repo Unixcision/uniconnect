@@ -63,7 +63,6 @@ type browserCommandSpec struct {
 var commands = []commandSpec{
 	// V1 text protocol commands
 	{name: "ping", proto: protoV1, v1Cmd: "ping", noParams: true},
-	{name: "new-window", proto: protoV1, v1Cmd: "new_window", noParams: true},
 	{name: "current-window", proto: protoV1, v1Cmd: "current_window", noParams: true},
 	{name: "close-window", proto: protoV1, v1Cmd: "close_window", flagKeys: []string{"window"}},
 	{name: "focus-window", proto: protoV1, v1Cmd: "focus_window", flagKeys: []string{"window"}},
@@ -86,7 +85,7 @@ var commands = []commandSpec{
 	{name: "close-surface", proto: protoV2, v2Method: "surface.close", flagKeys: []string{"surface"}},
 	{name: "send", proto: protoV2, v2Method: "surface.send_text", flagKeys: []string{"surface", "text"}},
 	{name: "send-key", proto: protoV2, v2Method: "surface.send_key", flagKeys: []string{"surface", "key"}},
-	{name: "notify", proto: protoV2, v2Method: "notification.create", flagKeys: []string{"title", "body", "workspace"}},
+	{name: "notify", proto: protoV2, v2Method: "notification.create", flagKeys: []string{"title", "subtitle", "body", "workspace", "surface"}},
 	{name: "refresh-surfaces", proto: protoV2, v2Method: "surface.refresh", noParams: true},
 }
 
@@ -140,7 +139,7 @@ func runCLI(args []string) int {
 		switch args[i] {
 		case "--socket":
 			if i+1 >= len(args) {
-				fmt.Fprintln(os.Stderr, "cmux: --socket requires a path")
+				fmt.Fprintln(os.Stderr, "uniconnect: --socket requires a path")
 				return 2
 			}
 			socketPath = args[i+1]
@@ -176,13 +175,21 @@ doneFlags:
 		refreshAddr = readSocketAddrFile
 	}
 	if socketPath == "" {
-		fmt.Fprintln(os.Stderr, "cmux: CMUX_SOCKET_PATH not set and --socket not provided")
+		if cmdName == "hooks" {
+			_, _ = io.Copy(io.Discard, io.LimitReader(os.Stdin, maximumClaudeHookPayloadBytes+1))
+			writeEmptyHookResponse()
+			return 0
+		}
+		fmt.Fprintln(os.Stderr, "uniconnect: CMUX_SOCKET_PATH not set and --socket not provided")
 		return 1
 	}
 
 	// Special case: "rpc" passthrough
 	if cmdName == "rpc" {
 		return runRPC(socketPath, cmdArgs, jsonOutput, refreshAddr)
+	}
+	if cmdName == "hooks" {
+		return runHooksRelay(socketPath, cmdArgs, refreshAddr)
 	}
 
 	// Browser subcommand delegation
@@ -211,7 +218,7 @@ doneFlags:
 
 	spec, ok := commandIndex[cmdName]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "cmux: unknown command %q\n", cmdName)
+		fmt.Fprintf(os.Stderr, "uniconnect: unknown command %q\n", cmdName)
 		return 2
 	}
 
@@ -221,7 +228,7 @@ doneFlags:
 	case protoV2:
 		return execV2(socketPath, spec, cmdArgs, jsonOutput, refreshAddr)
 	default:
-		fmt.Fprintf(os.Stderr, "cmux: internal error: unknown protocol for %q\n", cmdName)
+		fmt.Fprintf(os.Stderr, "uniconnect: internal error: unknown protocol for %q\n", cmdName)
 		return 1
 	}
 }
@@ -233,7 +240,7 @@ func execV1(socketPath string, spec *commandSpec, args []string, refreshAddr fun
 	if !spec.noParams {
 		parsed, err := parseFlags(args, spec.flagKeys)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "cmux: %v\n", err)
+			fmt.Fprintf(os.Stderr, "uniconnect: %v\n", err)
 			return 2
 		}
 		for _, key := range spec.flagKeys {
@@ -245,7 +252,7 @@ func execV1(socketPath string, spec *commandSpec, args []string, refreshAddr fun
 
 	resp, err := socketRoundTrip(socketPath, cmd, refreshAddr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cmux: %v\n", err)
+		fmt.Fprintf(os.Stderr, "uniconnect: %v\n", err)
 		return 1
 	}
 	fmt.Print(resp)
@@ -265,7 +272,7 @@ func execV2(socketPath string, spec *commandSpec, args []string, jsonOutput bool
 	if !spec.noParams {
 		parsed, err := parseFlags(args, spec.flagKeys)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "cmux: %v\n", err)
+			fmt.Fprintf(os.Stderr, "uniconnect: %v\n", err)
 			return 2
 		}
 		// Map flag keys to JSON param keys (e.g. "workspace" → "workspace_id" where appropriate)
@@ -290,7 +297,7 @@ func execV2(socketPath string, spec *commandSpec, args []string, jsonOutput bool
 
 	resp, err := socketRoundTripV2(socketPath, spec.v2Method, params, refreshAddr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cmux: %v\n", err)
+		fmt.Fprintf(os.Stderr, "uniconnect: %v\n", err)
 		return 1
 	}
 
@@ -319,7 +326,7 @@ func runRPC(socketPath string, args []string, jsonOutput bool, refreshAddr func(
 
 	resp, err := socketRoundTripV2(socketPath, method, params, refreshAddr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cmux: %v\n", err)
+		fmt.Fprintf(os.Stderr, "uniconnect: %v\n", err)
 		return 1
 	}
 	fmt.Println(resp)
@@ -391,7 +398,7 @@ func runBrowserRelay(socketPath string, args []string, jsonOutput bool, refreshA
 
 	resp, err := socketRoundTripV2(socketPath, spec.method, params, refreshAddr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cmux: %v\n", err)
+		fmt.Fprintf(os.Stderr, "uniconnect: %v\n", err)
 		return 1
 	}
 	if jsonOutput {
@@ -577,14 +584,14 @@ func parseFlags(args []string, keys []string) (parsedFlags, error) {
 	return result, nil
 }
 
-// readSocketAddrFile reads the socket address from ~/.cmux/socket_addr as a fallback
-// when CMUX_SOCKET_PATH is not set. Written by the cmux app after the relay establishes.
+// readSocketAddrFile reads the socket address from ~/.uniconnect/socket_addr as a fallback
+// when CMUX_SOCKET_PATH is not set. Written by UniConnect after the relay establishes.
 func readSocketAddrFile() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	data, err := os.ReadFile(filepath.Join(home, ".cmux", "socket_addr"))
+	data, err := os.ReadFile(filepath.Join(home, ".uniconnect", "socket_addr"))
 	if err != nil {
 		return ""
 	}
@@ -601,7 +608,7 @@ func readRelayAuthFile(socketPath string) *relayAuthState {
 		if err != nil {
 			return nil
 		}
-		data, err := os.ReadFile(filepath.Join(home, ".cmux", "relay", port+".auth"))
+		data, err := os.ReadFile(filepath.Join(home, ".uniconnect", "relay", port+".auth"))
 		if err != nil {
 			return nil
 		}
@@ -626,7 +633,7 @@ func currentRelayAuth(socketPath string) *relayAuthState {
 	return readRelayAuthFile(socketPath)
 }
 
-// dialSocket connects to the cmux socket. If addr contains a colon and doesn't
+// dialSocket connects to the UniConnect socket. If addr contains a colon and doesn't
 // start with '/', it's treated as a TCP address (host:port); otherwise Unix socket.
 // For TCP connections, refreshAddr is used only to recover from a stale socket_addr
 // rewrite, not to poll for relay readiness.
@@ -848,13 +855,12 @@ func randomHex(n int) string {
 }
 
 func cliUsage() {
-	fmt.Fprintln(os.Stderr, "Usage: cmux [--socket <path>] [--json] <command> [args...]")
+	fmt.Fprintln(os.Stderr, "Usage: uniconnect [--socket <path>] [--json] <command> [args...]")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Commands:")
 	fmt.Fprintln(os.Stderr, "  ping                     Check connectivity")
 	fmt.Fprintln(os.Stderr, "  capabilities              List server capabilities")
 	fmt.Fprintln(os.Stderr, "  list-workspaces           List all workspaces")
-	fmt.Fprintln(os.Stderr, "  new-window                Create a new window")
 	fmt.Fprintln(os.Stderr, "  new-workspace             Create a new workspace")
 	fmt.Fprintln(os.Stderr, "  new-surface               Create a new surface")
 	fmt.Fprintln(os.Stderr, "  new-split                 Split an existing surface")
@@ -864,10 +870,11 @@ func cliUsage() {
 	fmt.Fprintln(os.Stderr, "  send                      Send text to a surface")
 	fmt.Fprintln(os.Stderr, "  send-key                  Send a key to a surface")
 	fmt.Fprintln(os.Stderr, "  notify                    Create a notification")
-	fmt.Fprintln(os.Stderr, "  browser <sub>             Browser commands through the local cmux browser relay")
+	fmt.Fprintln(os.Stderr, "  browser <sub>             Browser commands through the local UniConnect browser relay")
 	fmt.Fprintln(os.Stderr, "  claude-teams [args...]     Launch Claude Code in teammate mode")
-	fmt.Fprintln(os.Stderr, "  omo [args...]              Launch OpenCode with cmux integration")
-	fmt.Fprintln(os.Stderr, "  omx [args...]              Launch Oh My Codex with cmux integration")
-	fmt.Fprintln(os.Stderr, "  omc [args...]              Launch Oh My Claude Code with cmux integration")
+	fmt.Fprintln(os.Stderr, "  omo [args...]              Launch OpenCode with UniConnect integration")
+	fmt.Fprintln(os.Stderr, "  omx [args...]              Launch Oh My Codex with UniConnect integration")
+	fmt.Fprintln(os.Stderr, "  omc [args...]              Launch Oh My Claude Code with UniConnect integration")
+	fmt.Fprintln(os.Stderr, "  hooks claude <event>       Forward a privacy-minimized Claude hook event")
 	fmt.Fprintln(os.Stderr, "  rpc <method> [json-params] Send arbitrary JSON-RPC")
 }

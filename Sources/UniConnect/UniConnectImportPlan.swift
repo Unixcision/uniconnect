@@ -20,18 +20,20 @@ struct UniConnectImportPlan: Equatable {
         case missingSSHConnection
         case invalidSSHConnection
         case unexpectedSSHConnection
+        case localWorkspaceMissingWindow
         case localWindowHasTmux
         case sshWindowMissingTmux
         case sshWindowHasClaudeSession
         case invalidClaudeSession
         case invalidTmuxSession
+        case emptyGroupName
+        case pinnedWorkspaceHasGroup
         case duplicateWorkspaceIdentifier(UUID)
         case duplicateWorkspaceName
         case duplicateClaudeSession(UUID)
         case duplicateTmuxTarget(host: String, session: String)
         case ambiguousStableIdentity
         case ambiguousName
-        case stableIdentityMismatch
         case workspaceKindMismatch
     }
 

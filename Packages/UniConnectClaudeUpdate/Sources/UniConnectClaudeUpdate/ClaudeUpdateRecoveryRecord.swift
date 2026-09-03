@@ -17,6 +17,9 @@ public struct ClaudeUpdateRecoveryRecord: Sendable, Hashable, Codable, Identifia
     /// The version captured before any exit request on this host.
     public let versionBefore: ClaudeVersion?
 
+    /// The version expected after an update attempt, when it was safely observable.
+    public let versionAfter: ClaudeVersion?
+
     /// The time at which this record was last written.
     public let updatedAt: Date
 
@@ -31,6 +34,7 @@ public struct ClaudeUpdateRecoveryRecord: Sendable, Hashable, Codable, Identifia
     ///   - stage: The latest durable stage.
     ///   - observedProcessID: The exact Claude PID observed before exit.
     ///   - versionBefore: The version captured before exit.
+    ///   - versionAfter: The version observed after the update attempt, when known.
     ///   - updatedAt: The timestamp supplied by the injected clock.
     public init(
         operationID: UUID,
@@ -38,6 +42,7 @@ public struct ClaudeUpdateRecoveryRecord: Sendable, Hashable, Codable, Identifia
         stage: ClaudeRecoveryStage,
         observedProcessID: Int32,
         versionBefore: ClaudeVersion?,
+        versionAfter: ClaudeVersion? = nil,
         updatedAt: Date
     ) {
         self.operationID = operationID
@@ -45,6 +50,7 @@ public struct ClaudeUpdateRecoveryRecord: Sendable, Hashable, Codable, Identifia
         self.stage = stage
         self.observedProcessID = observedProcessID
         self.versionBefore = versionBefore
+        self.versionAfter = versionAfter
         self.updatedAt = updatedAt
     }
 }

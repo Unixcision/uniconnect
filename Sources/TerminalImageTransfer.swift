@@ -14,9 +14,11 @@ enum TerminalRemoteUploadTarget: Equatable {
 
 enum TerminalImageTransferUnavailableReason: Equatable {
     case disconnectedSSHWindow
+    case disconnectedRemoteSession
     case missingSSHConnectCommand
     case unparseableSSHConnectCommand
     case nonUploadableRemoteItems
+    case mismatchedFileExplorerSession
 
     var localizedDescription: String {
         switch self {
@@ -24,6 +26,11 @@ enum TerminalImageTransferUnavailableReason: Equatable {
             return String(
                 localized: "terminal.imageTransfer.error.disconnectedSSHWindow",
                 defaultValue: "This SSH window is disconnected. Reconnect it, then try attaching the file again."
+            )
+        case .disconnectedRemoteSession:
+            return String(
+                localized: "terminal.imageTransfer.error.disconnectedRemoteSession",
+                defaultValue: "The remote session disconnected before the file could be attached. Reconnect it, then try again."
             )
         case .missingSSHConnectCommand:
             return String(
@@ -39,6 +46,11 @@ enum TerminalImageTransferUnavailableReason: Equatable {
             return String(
                 localized: "terminal.imageTransfer.error.nonUploadableRemoteItems",
                 defaultValue: "Only regular files can be attached to a remote session. Folders and mixed selections aren't supported."
+            )
+        case .mismatchedFileExplorerSession:
+            return String(
+                localized: "terminal.imageTransfer.error.mismatchedFileExplorerSession",
+                defaultValue: "The selected File Explorer path belongs to a different session. Refresh File Explorer, then try again."
             )
         }
     }
@@ -56,7 +68,11 @@ enum TerminalImageTransferTarget: Equatable {
 enum TerminalImageTransferPlan: Equatable {
     case insertText(String)
     case insertTextSegments([String], interSegmentDelay: TimeInterval)
-    case uploadFiles([URL], TerminalRemoteUploadTarget)
+    case uploadFiles(
+        [URL],
+        TerminalRemoteUploadTarget,
+        interSegmentDelay: TimeInterval?
+    )
     case unavailable(TerminalImageTransferUnavailableReason)
     case reject
 }
@@ -117,6 +133,8 @@ enum TerminalImageTransferExecutionError: Error, Equatable {
     case unavailable(TerminalImageTransferUnavailableReason)
     case rejectedContent
     case emptyRemoteUploadResult
+    case incompleteRemoteUploadResult
+    case textDeliveryFailed
 }
 
 extension TerminalImageTransferExecutionError: LocalizedError {
@@ -136,6 +154,16 @@ extension TerminalImageTransferExecutionError: LocalizedError {
                 localized: "terminal.imageTransfer.error.emptyRemoteUploadResult",
                 defaultValue: "The file transfer finished without returning a remote file path."
             )
+        case .incompleteRemoteUploadResult:
+            return String(
+                localized: "terminal.imageTransfer.error.incompleteRemoteUploadResult",
+                defaultValue: "The file transfer didn't return a remote path for every selected file."
+            )
+        case .textDeliveryFailed:
+            return String(
+                localized: "terminal.imageTransfer.error.textDeliveryFailed",
+                defaultValue: "The terminal couldn't accept the transferred file path. Try again."
+            )
         }
     }
 }
@@ -150,6 +178,7 @@ final class TerminalImageTransferOperation: @unchecked Sendable {
     private let lock = NSLock()
     private var state: State = .running
     private var cancellationHandler: (() -> Void)?
+    private var cancellationCleanupHandler: (() -> Void)?
 
     var isCancelled: Bool {
         lock.lock()
@@ -183,9 +212,36 @@ final class TerminalImageTransferOperation: @unchecked Sendable {
         lock.unlock()
     }
 
+    /// Installs cleanup for remote files that exist but have not all been delivered yet.
+    func installCancellationCleanupHandler(_ handler: @escaping () -> Void) {
+        var invokeImmediately = false
+        lock.lock()
+        switch state {
+        case .running:
+            if let existingHandler = cancellationCleanupHandler {
+                cancellationCleanupHandler = {
+                    existingHandler()
+                    handler()
+                }
+            } else {
+                cancellationCleanupHandler = handler
+            }
+        case .cancelled:
+            invokeImmediately = true
+        case .finished:
+            break
+        }
+        lock.unlock()
+
+        if invokeImmediately {
+            handler()
+        }
+    }
+
     @discardableResult
     func cancel() -> Bool {
         let handler: (() -> Void)?
+        let cleanupHandler: (() -> Void)?
         lock.lock()
         guard state == .running else {
             lock.unlock()
@@ -193,10 +249,13 @@ final class TerminalImageTransferOperation: @unchecked Sendable {
         }
         state = .cancelled
         handler = cancellationHandler
+        cleanupHandler = cancellationCleanupHandler
         cancellationHandler = nil
+        cancellationCleanupHandler = nil
         lock.unlock()
 
         handler?()
+        cleanupHandler?()
         return true
     }
 
@@ -207,6 +266,7 @@ final class TerminalImageTransferOperation: @unchecked Sendable {
         guard state == .running else { return false }
         state = .finished
         cancellationHandler = nil
+        cancellationCleanupHandler = nil
         return true
     }
 
@@ -218,6 +278,13 @@ final class TerminalImageTransferOperation: @unchecked Sendable {
 }
 
 enum TerminalImageTransferPlanner {
+    enum PathOrigin {
+        case localFileSystem([URL])
+        case remoteSession
+    }
+
+    private static let imageInterSegmentDelay: TimeInterval = 2.0
+
     static func plan(
         pasteboard: NSPasteboard,
         mode: TerminalImageTransferMode,
@@ -287,7 +354,7 @@ enum TerminalImageTransferPlanner {
                fileURLs.allSatisfy(isLocalImageFileURL) {
                 return .insertTextSegments(
                     insertedTextSegments(forFileURLs: fileURLs),
-                    interSegmentDelay: 2.0
+                    interSegmentDelay: imageInterSegmentDelay
                 )
             }
             return .insertText(insertedText(forFileURLs: fileURLs))
@@ -295,7 +362,42 @@ enum TerminalImageTransferPlanner {
             guard fileURLs.allSatisfy(isRemoteUploadableFileURL) else {
                 return .unavailable(.nonUploadableRemoteItems)
             }
-            return .uploadFiles(fileURLs, remoteTarget)
+            let interSegmentDelay = mode == .drop
+                && fileURLs.count > 1
+                && fileURLs.allSatisfy(isLocalImageFileURL)
+                ? imageInterSegmentDelay
+                : nil
+            return .uploadFiles(
+                fileURLs,
+                remoteTarget,
+                interSegmentDelay: interSegmentDelay
+            )
+        }
+    }
+
+    /// Plans File Explorer insertion without confusing local Mac paths with remote paths.
+    static func planPathInsertion(
+        paths: [String],
+        origin: PathOrigin,
+        target: TerminalImageTransferTarget
+    ) -> TerminalImageTransferPlan {
+        guard !paths.isEmpty else { return .reject }
+
+        if case .unavailable(let reason) = target {
+            return .unavailable(reason)
+        }
+
+        switch (origin, target) {
+        case (.localFileSystem, .local):
+            return .insertText(insertedText(forPathStrings: paths))
+        case (.localFileSystem(let fileURLs), .remote):
+            return plan(fileURLs: fileURLs, target: target, mode: .paste)
+        case (.remoteSession, .remote):
+            return .insertText(insertedText(forPathStrings: paths))
+        case (.remoteSession, .local):
+            return .unavailable(.mismatchedFileExplorerSession)
+        case (_, .unavailable):
+            preconditionFailure("unavailable targets are handled before path-origin planning")
         }
     }
 
@@ -305,10 +407,12 @@ enum TerminalImageTransferPlanner {
         operation: TerminalImageTransferOperation? = nil,
         uploadWorkspaceRemote: ([URL], TerminalImageTransferOperation, @escaping (Result<[String], Error>) -> Void) -> Void,
         uploadDetectedSSH: (DetectedSSHSession, [URL], TerminalImageTransferOperation, @escaping (Result<[String], Error>) -> Void) -> Void,
-        insertText: @escaping (String) -> Void,
+        insertText: @escaping (String) -> Bool,
         scheduleAfter: @escaping (TimeInterval, @escaping () -> Void) -> Void = { delay, work in
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
         },
+        isDestinationAvailable: @escaping () -> Bool = { true },
+        onSuccess: @escaping () -> Void = {},
         onFailure: @escaping (Error) -> Void
     ) -> TerminalImageTransferOperation? {
         execute(
@@ -318,6 +422,8 @@ enum TerminalImageTransferPlanner {
             uploadDetectedSSH: uploadDetectedSSH,
             insertText: insertText,
             scheduleAfter: scheduleAfter,
+            isDestinationAvailable: isDestinationAvailable,
+            onSuccess: onSuccess,
             onFailure: onFailure
         )
     }
@@ -328,18 +434,31 @@ enum TerminalImageTransferPlanner {
         operation: TerminalImageTransferOperation? = nil,
         uploadWorkspaceRemote: ([URL], TerminalImageTransferOperation, @escaping (Result<[String], Error>) -> Void) -> Void,
         uploadDetectedSSH: (DetectedSSHSession, [URL], TerminalImageTransferOperation, @escaping (Result<[String], Error>) -> Void) -> Void,
-        insertText: @escaping (String) -> Void,
+        insertText: @escaping (String) -> Bool,
         scheduleAfter: @escaping (TimeInterval, @escaping () -> Void) -> Void = { delay, work in
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
         },
+        isDestinationAvailable: @escaping () -> Bool = { true },
+        onSuccess: @escaping () -> Void = {},
         onFailure: @escaping (Error) -> Void
     ) -> TerminalImageTransferOperation? {
         switch plan {
         case .insertText(let text):
-            if let operation, !operation.finish() {
+            if let operation, operation.isCancelled {
                 return operation
             }
-            insertText(text)
+            guard insertText(text) else {
+                if let operation {
+                    if operation.cancel() {
+                        onFailure(TerminalImageTransferExecutionError.textDeliveryFailed)
+                    }
+                } else {
+                    onFailure(TerminalImageTransferExecutionError.textDeliveryFailed)
+                }
+                return operation
+            }
+            if let operation, !operation.finish() { return operation }
+            onSuccess()
             return operation
         case .insertTextSegments(let segments, let interSegmentDelay):
             let operation = operation ?? TerminalImageTransferOperation()
@@ -349,21 +468,44 @@ enum TerminalImageTransferPlanner {
                 interSegmentDelay: interSegmentDelay,
                 operation: operation,
                 insertText: insertText,
-                scheduleAfter: scheduleAfter
+                scheduleAfter: scheduleAfter,
+                shouldContinue: isDestinationAvailable,
+                onFailure: onFailure,
+                onSuccess: onSuccess
             )
             return operation
-        case .uploadFiles(let fileURLs, .workspaceRemote):
+        case .uploadFiles(let fileURLs, .workspaceRemote, let interSegmentDelay):
             let operation = operation ?? TerminalImageTransferOperation()
+            guard !operation.isCancelled else { return operation }
             uploadWorkspaceRemote(fileURLs, operation) { result in
-                guard operation.finish() else { return }
-                finishUpload(result: result, insertText: insertText, onFailure: onFailure)
+                finishUpload(
+                    result: result,
+                    sourceFileURLs: fileURLs,
+                    interSegmentDelay: interSegmentDelay,
+                    operation: operation,
+                    insertText: insertText,
+                    scheduleAfter: scheduleAfter,
+                    isDestinationAvailable: isDestinationAvailable,
+                    onSuccess: onSuccess,
+                    onFailure: onFailure
+                )
             }
             return operation
-        case .uploadFiles(let fileURLs, .detectedSSH(let session)):
+        case .uploadFiles(let fileURLs, .detectedSSH(let session), let interSegmentDelay):
             let operation = operation ?? TerminalImageTransferOperation()
+            guard !operation.isCancelled else { return operation }
             uploadDetectedSSH(session, fileURLs, operation) { result in
-                guard operation.finish() else { return }
-                finishUpload(result: result, insertText: insertText, onFailure: onFailure)
+                finishUpload(
+                    result: result,
+                    sourceFileURLs: fileURLs,
+                    interSegmentDelay: interSegmentDelay,
+                    operation: operation,
+                    insertText: insertText,
+                    scheduleAfter: scheduleAfter,
+                    isDestinationAvailable: isDestinationAvailable,
+                    onSuccess: onSuccess,
+                    onFailure: onFailure
+                )
             }
             return operation
         case .unavailable, .reject:
@@ -411,8 +553,11 @@ enum TerminalImageTransferPlanner {
     }
 
     private static func insertedTextSegments(forFileURLs fileURLs: [URL]) -> [String] {
-        fileURLs
-            .map(\.path)
+        insertedTextSegments(forPathStrings: fileURLs.map(\.path))
+    }
+
+    private static func insertedTextSegments(forPathStrings paths: [String]) -> [String] {
+        paths
             .map(escapeForShell)
             .enumerated()
             .map { index, text in
@@ -513,20 +658,66 @@ enum TerminalImageTransferPlanner {
 
     private static func finishUpload(
         result: Result<[String], Error>,
-        insertText: @escaping (String) -> Void,
+        sourceFileURLs: [URL],
+        interSegmentDelay: TimeInterval?,
+        operation: TerminalImageTransferOperation,
+        insertText: @escaping (String) -> Bool,
+        scheduleAfter: @escaping (TimeInterval, @escaping () -> Void) -> Void,
+        isDestinationAvailable: @escaping () -> Bool,
+        onSuccess: @escaping () -> Void,
         onFailure: @escaping (Error) -> Void
     ) {
         switch result {
         case .success(let remotePaths):
-            let content = remotePaths
-                .map(escapeForShell)
-                .joined(separator: " ")
-            guard !content.isEmpty else {
-                onFailure(TerminalImageTransferExecutionError.emptyRemoteUploadResult)
+            guard !operation.isCancelled else { return }
+            guard !remotePaths.isEmpty else {
+                if operation.cancel() {
+                    onFailure(TerminalImageTransferExecutionError.emptyRemoteUploadResult)
+                }
                 return
             }
-            insertText(content)
+            guard remotePaths.count == sourceFileURLs.count,
+                  remotePaths.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+                if operation.cancel() {
+                    onFailure(TerminalImageTransferExecutionError.incompleteRemoteUploadResult)
+                }
+                return
+            }
+            guard isDestinationAvailable() else {
+                if operation.cancel() {
+                    onFailure(
+                        TerminalImageTransferExecutionError.unavailable(.disconnectedRemoteSession)
+                    )
+                }
+                return
+            }
+
+            if let interSegmentDelay,
+               remotePaths.count > 1 {
+                sendTextSegments(
+                    insertedTextSegments(forPathStrings: remotePaths),
+                    index: 0,
+                    interSegmentDelay: interSegmentDelay,
+                    operation: operation,
+                    insertText: insertText,
+                    scheduleAfter: scheduleAfter,
+                    shouldContinue: isDestinationAvailable,
+                    onFailure: onFailure,
+                    onSuccess: onSuccess
+                )
+                return
+            }
+
+            guard insertText(remotePaths.map(escapeForShell).joined(separator: " ")) else {
+                if operation.cancel() {
+                    onFailure(TerminalImageTransferExecutionError.textDeliveryFailed)
+                }
+                return
+            }
+            guard operation.finish() else { return }
+            onSuccess()
         case .failure(let error):
+            guard operation.finish() else { return }
             onFailure(error)
         }
     }
@@ -536,23 +727,41 @@ enum TerminalImageTransferPlanner {
         index: Int,
         interSegmentDelay: TimeInterval,
         operation: TerminalImageTransferOperation,
-        insertText: @escaping (String) -> Void,
-        scheduleAfter: @escaping (TimeInterval, @escaping () -> Void) -> Void
+        insertText: @escaping (String) -> Bool,
+        scheduleAfter: @escaping (TimeInterval, @escaping () -> Void) -> Void,
+        shouldContinue: @escaping () -> Bool = { true },
+        onFailure: @escaping (Error) -> Void,
+        onSuccess: @escaping () -> Void = {}
     ) {
         guard !operation.isCancelled else { return }
+        guard shouldContinue() else {
+            if operation.cancel() {
+                onFailure(
+                    TerminalImageTransferExecutionError.unavailable(.disconnectedRemoteSession)
+                )
+            }
+            return
+        }
         guard index < segments.count else {
-            _ = operation.finish()
+            if operation.finish() {
+                onSuccess()
+            }
             return
         }
 
         let segment = segments[index]
-        if !segment.isEmpty {
-            insertText(segment)
+        if !segment.isEmpty, !insertText(segment) {
+            if operation.cancel() {
+                onFailure(TerminalImageTransferExecutionError.textDeliveryFailed)
+            }
+            return
         }
 
         let nextIndex = index + 1
         guard nextIndex < segments.count else {
-            _ = operation.finish()
+            if operation.finish() {
+                onSuccess()
+            }
             return
         }
 
@@ -563,7 +772,10 @@ enum TerminalImageTransferPlanner {
                 interSegmentDelay: interSegmentDelay,
                 operation: operation,
                 insertText: insertText,
-                scheduleAfter: scheduleAfter
+                scheduleAfter: scheduleAfter,
+                shouldContinue: shouldContinue,
+                onFailure: onFailure,
+                onSuccess: onSuccess
             )
         }
     }
@@ -594,8 +806,17 @@ extension TerminalSurface {
             }
             return .remote(.detectedSSH(session))
         case nil:
-            return workspace.isRemoteTerminalSurface(id) ? .remote(.workspaceRemote) : .local
+            guard workspace.isRemoteWorkspace else { return .local }
+            guard workspace.remoteConnectionState == .connected else {
+                return .unavailable(.disconnectedRemoteSession)
+            }
+            return .remote(.workspaceRemote)
         }
+    }
+
+    @MainActor
+    func canContinueImageTransfer(to expectedTarget: TerminalRemoteUploadTarget) -> Bool {
+        resolvedImageTransferTarget() == .remote(expectedTarget)
     }
 }
 

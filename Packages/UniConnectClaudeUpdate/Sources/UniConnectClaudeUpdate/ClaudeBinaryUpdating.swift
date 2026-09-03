@@ -1,4 +1,7 @@
 /// Reads and updates one local or remote Claude installation through a controlled process.
+///
+/// Implementations must return only sanitized errors; raw argv, environment, passwords, tokens,
+/// and credential-vault values must never cross this boundary.
 public protocol ClaudeBinaryUpdating: Sendable {
     /// Reads the version from the exact planned executable on a host.
     ///

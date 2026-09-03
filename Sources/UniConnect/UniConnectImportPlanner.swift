@@ -68,22 +68,22 @@ struct UniConnectImportPlanner {
         }
 
         for (id, indexes) in importedWorkspaceIDs where indexes.count > 1 {
-            for index in Set(indexes) {
+            for index in Set(indexes).sorted() {
                 append(.duplicateWorkspaceIdentifier(id), to: &issuesByImportedIndex[index])
             }
         }
         for indexes in importedNames.values where indexes.count > 1 {
-            for index in Set(indexes) {
+            for index in Set(indexes).sorted() {
                 append(.duplicateWorkspaceName, to: &issuesByImportedIndex[index])
             }
         }
         for (session, indexes) in importedClaudeSessions where indexes.count > 1 {
-            for index in Set(indexes) {
+            for index in Set(indexes).sorted() {
                 append(.duplicateClaudeSession(session), to: &issuesByImportedIndex[index])
             }
         }
         for (target, indexes) in importedTmuxTargets where indexes.count > 1 {
-            for index in Set(indexes) {
+            for index in Set(indexes).sorted() {
                 append(
                     .duplicateTmuxTarget(host: target.host, session: target.session),
                     to: &issuesByImportedIndex[index]
@@ -123,21 +123,21 @@ struct UniConnectImportPlanner {
             var stableIdentityIsAmbiguous = false
             if let id = item.workspace.id {
                 absorbStableMatches(
-                    existingWorkspaceIDs[id, default: []],
+                    existingWorkspaceIDs[id] ?? [],
                     into: &stableCandidates,
                     isAmbiguous: &stableIdentityIsAmbiguous
                 )
             }
             for session in item.claudeSessions {
                 absorbStableMatches(
-                    existingClaudeSessions[session, default: []],
+                    existingClaudeSessions[session] ?? [],
                     into: &stableCandidates,
                     isAmbiguous: &stableIdentityIsAmbiguous
                 )
             }
             for target in item.tmuxTargets {
                 absorbStableMatches(
-                    existingTmuxTargets[target, default: []],
+                    existingTmuxTargets[target] ?? [],
                     into: &stableCandidates,
                     isAmbiguous: &stableIdentityIsAmbiguous
                 )
@@ -148,7 +148,7 @@ struct UniConnectImportPlanner {
                 return row(for: item, existing: nil, outcome: .conflict, issues: issues)
             }
 
-            let nameMatches = existingNames[item.normalizedName, default: []]
+            let nameMatches = existingNames[item.normalizedName] ?? []
             let existingIndex: Int?
             if let stableMatch = stableCandidates.first {
                 if nameMatches.contains(where: { $0 != stableMatch }) {
@@ -168,12 +168,6 @@ struct UniConnectImportPlanner {
                 return row(for: item, existing: nil, outcome: .create, issues: issues)
             }
             let existingItem = existing[existingIndex]
-            if let importedID = item.workspace.id,
-               let existingID = existingItem.workspace.id,
-               importedID != existingID {
-                append(.stableIdentityMismatch, to: &issues)
-                return row(for: item, existing: existingItem, outcome: .conflict, issues: issues)
-            }
             guard item.workspace.kind == existingItem.workspace.kind else {
                 append(.workspaceKindMismatch, to: &issues)
                 return row(for: item, existing: existingItem, outcome: .conflict, issues: issues)
@@ -197,6 +191,13 @@ struct UniConnectImportPlanner {
         if validate, name.isEmpty {
             append(.emptyWorkspaceName, to: &issues)
         }
+        let group = normalizedOptional(workspace.group)
+        if validate, workspace.group != nil, group == nil {
+            append(.emptyGroupName, to: &issues)
+        }
+        if validate, workspace.isPinned == true, group != nil {
+            append(.pinnedWorkspaceHasGroup, to: &issues)
+        }
 
         let connect = normalizedOptional(workspace.connect)
         let hostIdentity: String?
@@ -205,6 +206,9 @@ struct UniConnectImportPlanner {
             hostIdentity = nil
             if validate, connect != nil {
                 append(.unexpectedSSHConnection, to: &issues)
+            }
+            if validate, workspace.windows.isEmpty {
+                append(.localWorkspaceMissingWindow, to: &issues)
             }
         case .ssh:
             if let connect {
@@ -240,7 +244,7 @@ struct UniConnectImportPlanner {
                     if validate { append(.sshWindowMissingTmux, to: &issues) }
                     continue
                 }
-                guard UniConnectSSH.sanitizedTmuxName(tmux) == tmux else {
+                guard isValidTmuxSession(tmux) else {
                     if validate { append(.invalidTmuxSession, to: &issues) }
                     continue
                 }
@@ -288,8 +292,32 @@ struct UniConnectImportPlanner {
             workspace: imported.workspace,
             existingWorkspaceID: existing?.workspace.id,
             outcome: outcome,
-            issues: issues
+            issues: issues.sorted { issueSortKey($0) < issueSortKey($1) }
         )
+    }
+
+    private func issueSortKey(_ issue: UniConnectImportPlan.Issue) -> String {
+        switch issue {
+        case .emptyWorkspaceName: return "00"
+        case .missingSSHConnection: return "01"
+        case .invalidSSHConnection: return "02"
+        case .unexpectedSSHConnection: return "03"
+        case .localWorkspaceMissingWindow: return "04"
+        case .localWindowHasTmux: return "05"
+        case .sshWindowMissingTmux: return "06"
+        case .sshWindowHasClaudeSession: return "07"
+        case .invalidClaudeSession: return "08"
+        case .invalidTmuxSession: return "09"
+        case .emptyGroupName: return "10"
+        case .pinnedWorkspaceHasGroup: return "11"
+        case .duplicateWorkspaceIdentifier(let id): return "12:\(id.uuidString)"
+        case .duplicateWorkspaceName: return "13"
+        case .duplicateClaudeSession(let id): return "14:\(id.uuidString)"
+        case .duplicateTmuxTarget(let host, let session): return "15:\(host):\(session)"
+        case .ambiguousStableIdentity: return "16"
+        case .ambiguousName: return "17"
+        case .workspaceKindMismatch: return "18"
+        }
     }
 
     private func append(
@@ -300,20 +328,23 @@ struct UniConnectImportPlanner {
     }
 
     private func canonical(_ workspace: UniConnectDocument.Workspace) -> CanonicalWorkspace {
-        CanonicalWorkspace(
+        let localCWD = workspace.kind == .local ? normalizedPath(workspace.cwd ?? "~") : nil
+        return CanonicalWorkspace(
             name: workspace.name.trimmingCharacters(in: .whitespacesAndNewlines),
             kind: workspace.kind,
             color: normalizedOptional(workspace.color)?.uppercased(),
             group: normalizedOptional(workspace.group),
             isPinned: workspace.isPinned ?? false,
-            cwd: normalizedPath(workspace.cwd),
+            cwd: localCWD,
             connect: normalizedOptional(workspace.connect),
             windows: workspace.windows.map { window in
                 CanonicalWindow(
                     name: normalizedOptional(window.name),
                     tmux: normalizedOptional(window.tmux),
                     claudeSession: normalizedOptional(window.claudeSession)?.lowercased(),
-                    cwd: normalizedPath(window.cwd),
+                    cwd: workspace.kind == .ssh
+                        ? nil
+                        : (normalizedPath(window.cwd) ?? localCWD),
                     isPinned: window.isPinned ?? false
                 )
             }
@@ -338,5 +369,10 @@ struct UniConnectImportPlanner {
     private func normalizedPath(_ value: String?) -> String? {
         guard let value = normalizedOptional(value) else { return nil }
         return ((value as NSString).expandingTildeInPath as NSString).standardizingPath
+    }
+
+    private func isValidTmuxSession(_ value: String) -> Bool {
+        let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+        return !value.isEmpty && value.count <= 40 && value.allSatisfy(allowed.contains)
     }
 }

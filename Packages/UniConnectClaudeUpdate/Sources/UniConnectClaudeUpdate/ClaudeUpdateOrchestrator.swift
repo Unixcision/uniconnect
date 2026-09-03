@@ -67,8 +67,8 @@ public actor ClaudeUpdateOrchestrator {
     ///   - scope: The selected target, box, or all-open scope.
     ///   - operationID: A caller-supplied identifier, defaulting to a fresh UUID.
     /// - Returns: A cancellable operation with progress and final result surfaces.
-    /// - Throws: ``ClaudeUpdateOrchestratorError/operationAlreadyRunning``, a discovery error, or
-    ///   ``ClaudeUpdatePlanError`` before mutation starts.
+    /// - Throws: ``ClaudeUpdateOrchestratorError`` when another operation or recovery obligation
+    ///   exists, a discovery error, or ``ClaudeUpdatePlanError`` before mutation starts.
     public func start(
         scope: ClaudeUpdateScope,
         operationID: UUID = UUID()
@@ -79,6 +79,12 @@ public actor ClaudeUpdateOrchestrator {
         activeOperationID = operationID
 
         do {
+            let pendingRecovery = try await journal.pendingRecords()
+            guard pendingRecovery.isEmpty else {
+                throw ClaudeUpdateOrchestratorError.recoveryRequired(
+                    recordCount: pendingRecovery.count
+                )
+            }
             let targets = try await targetProvider.targets(for: scope)
             try Task.checkCancellation()
             let plan = try ClaudeUpdatePlan(id: operationID, scope: scope, targets: targets)
@@ -136,8 +142,8 @@ public actor ClaudeUpdateOrchestrator {
 
     /// Restores durable obligations left by termination or a previous interrupted launch.
     ///
-    /// Every record is reconciled idempotently and verified against the expected UUID, cwd, and
-    /// executable. A record remains durable when either restoration, verification, or removal
+    /// Every record is reconciled idempotently and verified against the expected UUID, cwd,
+    /// executable, and version. A record remains durable when restoration, verification, or removal
     /// fails. Recovery intentionally ignores caller cancellation once records have been loaded.
     ///
     /// - Returns: One restoration or failure outcome per pending record.
@@ -170,7 +176,8 @@ public actor ClaudeUpdateOrchestrator {
                     host: target.host,
                     status: .failed,
                     issue: .restorationFailed,
-                    versionBefore: record.versionBefore
+                    versionBefore: record.versionBefore,
+                    versionAfter: record.versionAfter
                 )
                 outcomes.append(outcome)
                 await log(
@@ -187,13 +194,39 @@ public actor ClaudeUpdateOrchestrator {
             let inspection = await Task.detached(priority: .userInitiated) {
                 try? await sessions.inspect(target)
             }.value
-            guard let inspection, inspection.processID != nil, inspection.matches(target) else {
+            guard let expectedVersion = record.versionAfter ?? record.versionBefore else {
                 let outcome = ClaudeUpdateOutcome(
                     targetID: target.id,
                     host: target.host,
                     status: .failed,
                     issue: .restorationVerificationFailed,
-                    versionBefore: record.versionBefore
+                    versionBefore: record.versionBefore,
+                    versionAfter: record.versionAfter
+                )
+                outcomes.append(outcome)
+                await log(
+                    operationID: record.operationID,
+                    level: .error,
+                    phase: .verifyingSession,
+                    host: target.host,
+                    targetID: target.id,
+                    issue: .restorationVerificationFailed
+                )
+                continue
+            }
+            guard
+                let inspection,
+                inspection.processID != nil,
+                inspection.matches(target),
+                inspection.version == expectedVersion
+            else {
+                let outcome = ClaudeUpdateOutcome(
+                    targetID: target.id,
+                    host: target.host,
+                    status: .failed,
+                    issue: .restorationVerificationFailed,
+                    versionBefore: record.versionBefore,
+                    versionAfter: record.versionAfter
                 )
                 outcomes.append(outcome)
                 await log(
@@ -225,7 +258,8 @@ public actor ClaudeUpdateOrchestrator {
                     host: target.host,
                     status: .restored,
                     issue: didRemoveRecord ? nil : .journalUnavailable,
-                    versionBefore: record.versionBefore
+                    versionBefore: record.versionBefore,
+                    versionAfter: record.versionAfter
                 )
             )
         }
@@ -253,6 +287,11 @@ public actor ClaudeUpdateOrchestrator {
         }
         await recordUnfinishedTargets(
             in: plan.targets,
+            status: .skipped,
+            issue: wasCancelled ? .cancelled : .inspectionFailed
+        )
+        await recordUnfinishedHosts(
+            in: plan.hosts,
             status: .skipped,
             issue: wasCancelled ? .cancelled : .inspectionFailed
         )
@@ -628,6 +667,36 @@ public actor ClaudeUpdateOrchestrator {
             await markCancellation()
         }
 
+        if Task.isCancelled, operationIssue == nil {
+            operationIssue = .cancelled
+            await markCancellation()
+        }
+
+        if versionAfter == nil {
+            let updater = binaryUpdater
+            versionAfter = await Task.detached(priority: .userInitiated) {
+                try? await updater.installedVersion(
+                    on: hostPlan.host,
+                    executablePath: executablePath
+                )
+            }.value
+        }
+        if
+            operationIssue == .versionReadFailed,
+            !Task.isCancelled,
+            let command,
+            let versionAfter
+        {
+            assessment = outputParser.assess(
+                command: command,
+                before: versionBefore,
+                after: versionAfter
+            )
+            operationIssue = assessment?.status == .failed
+                ? (assessment?.issue ?? .updateUnverifiable)
+                : nil
+        }
+
         let desiredStatus: ClaudeUpdateOutcomeStatus?
         switch assessment?.status {
         case .updated:
@@ -704,6 +773,7 @@ public actor ClaudeUpdateOrchestrator {
                 stage: .restorationStarted,
                 observedProcessID: obligation.processID,
                 versionBefore: versionBefore,
+                versionAfter: versionAfter,
                 updatedAt: timestamp
             )
             let recoveryJournal = journal
@@ -745,7 +815,13 @@ public actor ClaudeUpdateOrchestrator {
             let inspection = await Task.detached(priority: .userInitiated) {
                 try? await sessions.inspect(target)
             }.value
-            guard let inspection, inspection.processID != nil, inspection.matches(target) else {
+            let expectedVersion = versionAfter ?? versionBefore
+            guard
+                let inspection,
+                inspection.processID != nil,
+                inspection.matches(target),
+                inspection.version == expectedVersion
+            else {
                 allSessionsVerified = false
                 await recordTargetOutcome(
                     ClaudeUpdateOutcome(
@@ -778,7 +854,9 @@ public actor ClaudeUpdateOrchestrator {
                     targetID: target.id,
                     host: target.host,
                     status: didRemoveRecord ? (desiredStatus ?? .restored) : .restored,
-                    issue: didRemoveRecord ? operationIssue : .journalUnavailable,
+                    issue: didRemoveRecord
+                        ? (desiredStatus == nil ? operationIssue : nil)
+                        : .journalUnavailable,
                     versionBefore: versionBefore,
                     versionAfter: versionAfter
                 ),
@@ -884,8 +962,26 @@ public actor ClaudeUpdateOrchestrator {
         }
     }
 
+    private func recordUnfinishedHosts(
+        in hostPlans: [ClaudeUpdateHostPlan],
+        status: ClaudeUpdateOutcomeStatus,
+        issue: ClaudeUpdateIssue
+    ) async {
+        guard let operationID = activeOperationID else { return }
+        for hostPlan in hostPlans where !hasHostOutcome(for: hostPlan.host) {
+            await recordHostOutcome(
+                ClaudeUpdateHostOutcome(host: hostPlan.host, status: status, issue: issue),
+                operationID: operationID
+            )
+        }
+    }
+
     private func hasOutcome(for targetID: ClaudeUpdateTargetID) -> Bool {
         executionContext?.outcomes.contains(where: { $0.targetID == targetID }) ?? false
+    }
+
+    private func hasHostOutcome(for host: ClaudeUpdateHostIdentity) -> Bool {
+        executionContext?.hostOutcomes.contains(where: { $0.host == host }) ?? false
     }
 
     private func hasUsableBinding(_ target: ClaudeUpdateTarget) -> Bool {

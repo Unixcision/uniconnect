@@ -25,11 +25,13 @@ struct DetectedSSHSession: Equatable {
             let result: Result<[String], Error>
             do {
                 let remotePaths = try session.uploadDroppedFilesSync(fileURLs, operation: operation)
+                operation.installCancellationCleanupHandler {
+                    session.cleanupUploadedRemotePathsAsync(remotePaths)
+                }
                 do {
                     try operation.throwIfCancelled()
                     result = .success(remotePaths)
                 } catch {
-                    session.cleanupUploadedRemotePathsAsync(remotePaths)
                     result = .failure(error)
                 }
             } catch {
@@ -37,9 +39,6 @@ struct DetectedSSHSession: Equatable {
             }
             DispatchQueue.main.async {
                 if operation.isCancelled {
-                    if case .success(let remotePaths) = result {
-                        session.cleanupUploadedRemotePathsAsync(remotePaths)
-                    }
                     completion(.failure(TerminalImageTransferExecutionError.cancelled))
                 } else {
                     completion(result)
@@ -102,6 +101,9 @@ struct DetectedSSHSession: Equatable {
                 }
 
                 let remotePath = WorkspaceRemoteSessionController.remoteDropPath(for: normalizedLocalURL)
+                // Track the attempted destination before scp starts. If cancellation races
+                // process exit, cleanup must also remove a partially written current file.
+                uploadedRemotePaths.append(remotePath)
                 let (scpExecutable, scpArgs, scpEnvironment) = wrappedCommand(
                     executable: "/usr/bin/scp",
                     arguments: scpArguments(localPath: normalizedLocalURL.path, remotePath: remotePath)
@@ -124,7 +126,6 @@ struct DetectedSSHSession: Equatable {
                     ])
                 }
 
-                uploadedRemotePaths.append(remotePath)
             }
 
             return uploadedRemotePaths

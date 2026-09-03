@@ -106,6 +106,7 @@ class TerminalController {
     nonisolated let socketServer: SocketControlServer
     // Per-surface dedupe for high-frequency report_* socket telemetry.
     private nonisolated let socketFastPathState = SocketFastPathState()
+    private let claudeBridgeEventGate: UniConnectClaudeBridgeEventGate
     private nonisolated let myPid = getpid()
     private nonisolated static let socketCommandFocusAllowanceStackKey = "uniconnect.socketCommandFocusAllowanceStack"
     private nonisolated static let socketListenerFailureCaptureCooldown: TimeInterval = 60
@@ -259,10 +260,12 @@ class TerminalController {
     private init(
         passwordStore: SocketControlPasswordStore = SocketControlPasswordStore(),
         transport: SocketTransport = SocketTransport(),
-        listenerPolicy: SocketListenerPolicy = SocketListenerPolicy()
+        listenerPolicy: SocketListenerPolicy = SocketListenerPolicy(),
+        claudeBridgeEventGate: UniConnectClaudeBridgeEventGate = UniConnectClaudeBridgeEventGate()
     ) {
         self.passwordStore = passwordStore
         self.transport = transport
+        self.claudeBridgeEventGate = claudeBridgeEventGate
         let serverEventTarget = ServerEventTarget()
         self.socketServer = SocketControlServer(
             transport: transport,
@@ -1979,6 +1982,8 @@ class TerminalController {
             return v2Result(id: id, self.v2NotificationCreateForSurface(params: params))
         case "notification.create_for_target":
             return v2Result(id: id, self.v2NotificationCreateForTarget(params: params))
+        case "notification.create_from_claude_bridge":
+            return v2Result(id: id, self.v2NotificationCreateFromClaudeBridge(params: params))
         case "notification.list":
             return v2Ok(id: id, result: self.v2NotificationList())
         case "notification.clear":
@@ -2410,6 +2415,7 @@ class TerminalController {
             "notification.create_for_caller",
             "notification.create_for_surface",
             "notification.create_for_target",
+            "notification.create_from_claude_bridge",
             "notification.list",
             "notification.clear",
             "notification.dismiss",
@@ -9856,6 +9862,99 @@ class TerminalController {
                 body: body
             )
             result = .ok(["workspace_id": ws.id.uuidString, "surface_id": v2OrNull(surfaceId?.uuidString)])
+        }
+        return result
+    }
+
+    private func v2NotificationCreateFromClaudeBridge(params: [String: Any]) -> V2CallResult {
+        let event: UniConnectClaudeBridgeEventGate.Event
+        switch claudeBridgeEventGate.accept(params: params) {
+        case .success(let acceptedEvent):
+            event = acceptedEvent
+        case .failure(.duplicate):
+            return .ok(["accepted": false, "duplicate": true])
+        case .failure(.stale):
+            return .err(
+                code: "stale_event",
+                message: String(
+                    localized: "bridge.notification.error.stale",
+                    defaultValue: "The remote Claude event is too old or has an invalid timestamp."
+                ),
+                data: nil
+            )
+        case .failure(.malformed):
+            return .err(
+                code: "invalid_params",
+                message: String(
+                    localized: "bridge.notification.error.malformed",
+                    defaultValue: "The remote Claude event is malformed."
+                ),
+                data: nil
+            )
+        }
+
+        guard let tabManager = v2ResolveTabManager(params: ["workspace_id": event.workspaceID.uuidString]) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+
+        var result: V2CallResult = .err(
+            code: "not_found",
+            message: String(
+                localized: "bridge.notification.error.targetUnavailable",
+                defaultValue: "The UniConnect window for this remote Claude event is no longer available."
+            ),
+            data: nil
+        )
+        v2MainSync {
+            guard let workspace = tabManager.tabs.first(where: { $0.id == event.workspaceID }),
+                  workspace.panels[event.surfaceID] != nil else {
+                return
+            }
+
+            let workspaceTitle = workspace.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let surfaceTitle = (workspace.panelTitle(panelId: event.surfaceID) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let location: String
+            if !workspaceTitle.isEmpty, !surfaceTitle.isEmpty {
+                location = String.localizedStringWithFormat(
+                    String(
+                        localized: "bridge.notification.location.workspaceAndWindow",
+                        defaultValue: "%@ · %@"
+                    ),
+                    workspaceTitle,
+                    surfaceTitle
+                )
+            } else if !workspaceTitle.isEmpty {
+                location = workspaceTitle
+            } else {
+                location = surfaceTitle
+            }
+            let body: String
+            switch event.kind {
+            case .stop:
+                body = String(
+                    localized: "bridge.notification.completed.body",
+                    defaultValue: "Claude finished its response in this remote window."
+                )
+            case .idlePrompt:
+                body = String(
+                    localized: "bridge.notification.idle.body",
+                    defaultValue: "Claude is waiting for input in this remote window."
+                )
+            }
+            deliverNotificationSynchronously(
+                tabId: event.workspaceID,
+                surfaceId: event.surfaceID,
+                title: String(localized: "bridge.notification.title", defaultValue: "Claude Code"),
+                subtitle: location,
+                body: body
+            )
+            result = .ok([
+                "accepted": true,
+                "event_id": event.id,
+                "workspace_id": event.workspaceID.uuidString,
+                "surface_id": event.surfaceID.uuidString,
+            ])
         }
         return result
     }
