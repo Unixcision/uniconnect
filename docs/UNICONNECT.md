@@ -79,6 +79,8 @@ Política de autenticación: Touch ID si hay sensor; si no hay biometría, no es
 |---|---|
 | `UNICONNECT_DISABLE_LOCK=1` | Sin Touch ID (solo tests/automatización) |
 | `UNICONNECT_DISABLE=1` | Desactiva el selector Local/SSH y el resto de intercepciones (comportamiento cmux puro) |
+| `UNICONNECT_IMPORT_SEED=<ruta>` | Importa una semilla JSON (o un export cifrado si hay `UNICONNECT_TEST_PASSPHRASE`) una sola vez tras desbloquear |
+| `UNICONNECT_TEST_PASSPHRASE`, `UNICONNECT_TEST_EXPORT_PATH` | Ganchos de automatización para exportar/importar sin diálogos; **solo se honran si el bloqueo está desactivado** (`UNICONNECT_DISABLE_LOCK=1`), nunca en uso normal |
 
 ## 8. Pendiente / limitaciones conocidas
 
@@ -107,7 +109,7 @@ Build Debug etiquetada (`UniConnect DEV uniconnect.app`, bundle `com.cmuxterm.ap
 | Tests | `UniConnectTests`: 25/25 (cripto, manipulación, IDs tmux, inyección de opciones ssh, contenedor de export, snapshot legado, lanzador) |
 | Renombrado real | `UniConnect DEV uniconnect.app` con `Contents/MacOS/UniConnect DEV`, `bin/cmux` presente; misma restauración; tests 25/25 |
 
-Pendiente de prueba con pantalla desbloqueada (requieren UI o Touch ID): página de bienvenida SSH e instalación de tmux con confirmación, reapertura desde **Cerradas**, **Persistir ahora**, exportar/importar cifrado desde el menú, **Bloquear**/Touch ID.
+Verificado después con pantalla desbloqueada: página de bienvenida SSH (sin consola detrás), reapertura desde **Cerradas** (History) con reenganche tmux, **Persistir ahora** (backup descifrado y comprobado), **Bloquear** (ventana de bloqueo + `sharingType=none`), exportación real (contenedor descifrado con la contraseña) e importación (manipulado y contraseña incorrecta rechazados; válido importa sin duplicar). Pendiente solo lo que exige la huella de Dani: desbloqueo Touch ID real y los diálogos de export/import con huella.
 
 ## 10. Logo e icono
 

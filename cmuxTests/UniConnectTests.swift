@@ -1,6 +1,7 @@
 import XCTest
 import Foundation
 import CryptoKit
+import LocalAuthentication
 
 #if canImport(cmux_DEV)
 @testable import cmux_DEV
@@ -128,6 +129,20 @@ final class UniConnectTests: XCTestCase {
         // Older snapshots without dates still decode.
         let legacy = try JSONDecoder().decode(UniConnectWorkspaceProfile.self, from: Data(#"{"kind":"local","tmuxReady":false}"#.utf8))
         XCTAssertNil(legacy.createdAt)
+    }
+
+    func testAuthPolicyPrefersBiometricsAndFallsBackExplicitly() {
+        XCTAssertEqual(UniConnectAuthPolicy.resolve(biometricsAvailable: true, errorCode: nil).0, .deviceOwnerAuthenticationWithBiometrics)
+        XCTAssertNil(UniConnectAuthPolicy.resolve(biometricsAvailable: true, errorCode: nil).1)
+        for code in [LAError.Code.biometryLockout, .biometryNotEnrolled, .biometryNotAvailable] {
+            let (policy, reason) = UniConnectAuthPolicy.resolve(biometricsAvailable: false, errorCode: code)
+            XCTAssertEqual(policy, .deviceOwnerAuthentication, "no silent bypass: password path must be explicit")
+            XCTAssertNotNil(reason)
+            XCTAssertTrue(reason!.contains("contraseña del Mac"))
+        }
+        let (policy, reason) = UniConnectAuthPolicy.resolve(biometricsAvailable: false, errorCode: nil)
+        XCTAssertEqual(policy, .deviceOwnerAuthentication)
+        XCTAssertNotNil(reason)
     }
 
     func testTmuxProbeScriptNeverKillsSessions() {

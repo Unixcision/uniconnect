@@ -93,18 +93,8 @@ final class UniConnectAppLock: ObservableObject {
     private static func policy() -> (LAPolicy, String?) {
         let probe = LAContext()
         var error: NSError?
-        if probe.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) {
-            return (.deviceOwnerAuthenticationWithBiometrics, nil)
-        }
-        let code = LAError.Code(rawValue: error?.code ?? 0)
-        let reason: String
-        switch code {
-        case .biometryLockout: reason = "Touch ID bloqueado por demasiados intentos: se pide la contraseña del Mac."
-        case .biometryNotEnrolled: reason = "No hay huellas registradas: se pide la contraseña del Mac."
-        case .biometryNotAvailable: reason = "Este Mac no tiene Touch ID: se pide la contraseña del Mac."
-        default: reason = "Touch ID no disponible: se pide la contraseña del Mac."
-        }
-        return (.deviceOwnerAuthentication, reason)
+        let available = probe.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
+        return UniConnectAuthPolicy.resolve(biometricsAvailable: available, errorCode: error.map { LAError.Code(rawValue: $0.code) } ?? nil)
     }
 
     func authenticate() {
@@ -258,5 +248,22 @@ struct UniConnectLockView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .onTapGesture { lock.authenticate() }
+    }
+}
+
+
+/// Pure decision behind the lock screen: which `LAPolicy` to evaluate and what to tell the
+/// user. Kept free of `LAContext` so tests can exercise every branch without hardware.
+enum UniConnectAuthPolicy {
+    static func resolve(biometricsAvailable: Bool, errorCode: LAError.Code?) -> (LAPolicy, String?) {
+        if biometricsAvailable { return (.deviceOwnerAuthenticationWithBiometrics, nil) }
+        let reason: String
+        switch errorCode {
+        case .biometryLockout?: reason = "Touch ID bloqueado por demasiados intentos: se pide la contraseña del Mac."
+        case .biometryNotEnrolled?: reason = "No hay huellas registradas: se pide la contraseña del Mac."
+        case .biometryNotAvailable?: reason = "Este Mac no tiene Touch ID: se pide la contraseña del Mac."
+        default: reason = "Touch ID no disponible: se pide la contraseña del Mac."
+        }
+        return (.deviceOwnerAuthentication, reason)
     }
 }

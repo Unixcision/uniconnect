@@ -375,6 +375,10 @@ final class UniConnectCoordinator: ObservableObject {
     /// first configuration and for automated end-to-end checks. Each file is applied
     /// once: a marker with its SHA-256 is written next to the vault.
     func applyStartupSeedIfNeeded() {
+        if let hooks = TestHooks.current, hooks.exportPath != nil, ProcessInfo.processInfo.environment["UNICONNECT_IMPORT_SEED"] == nil {
+            exportConfiguration()
+            return
+        }
         guard Self.isEnabled,
               let path = ProcessInfo.processInfo.environment["UNICONNECT_IMPORT_SEED"], !path.isEmpty else { return }
         let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
@@ -394,8 +398,21 @@ final class UniConnectCoordinator: ObservableObject {
                 applyImport(document.workspaces)
                 try? Data().write(to: marker)
                 NSLog("[UniConnect] seed applied: %d workspaces", document.workspaces.count)
-            case .encrypted:
-                NSLog("[UniConnect] seed is encrypted; use Importar configuración… from the menu")
+            case .encrypted(let container):
+                guard let hooks = TestHooks.current, let passphrase = hooks.passphrase else {
+                    NSLog("[UniConnect] seed is encrypted; use Importar configuración… from the menu")
+                    return
+                }
+                do {
+                    let document = try UniConnectBackup.decrypt(container: container, passphrase: passphrase)
+                    let existing = Set(allTabManagers().flatMap { $0.tabs.map { ($0.customTitle ?? $0.title).lowercased() } })
+                    let fresh = document.workspaces.filter { !existing.contains($0.name.lowercased()) }
+                    applyImport(fresh)
+                    try? Data().write(to: marker)
+                    NSLog("[UniConnect] test import applied: %d new of %d (duplicates skipped)", fresh.count, document.workspaces.count)
+                } catch {
+                    NSLog("[UniConnect] test import rejected: %@", error.localizedDescription)
+                }
             }
         } catch {
             NSLog("[UniConnect] seed rejected: %@", error.localizedDescription)
@@ -431,7 +448,32 @@ final class UniConnectCoordinator: ObservableObject {
         }
     }
 
+    /// Automation hooks. They exist only for the headless end-to-end run and are ignored
+    /// unless the Touch ID gate itself is disabled (`UNICONNECT_DISABLE_LOCK=1`).
+    @MainActor private struct TestHooks {
+        let passphrase: String?
+        let exportPath: String?
+        let autoImport: Bool
+        static var current: TestHooks? {
+            guard !UniConnectAppLock.isEnabled else { return nil }
+            let env = ProcessInfo.processInfo.environment
+            guard env["UNICONNECT_TEST_PASSPHRASE"] != nil || env["UNICONNECT_TEST_EXPORT_PATH"] != nil else { return nil }
+            return TestHooks(passphrase: env["UNICONNECT_TEST_PASSPHRASE"], exportPath: env["UNICONNECT_TEST_EXPORT_PATH"], autoImport: env["UNICONNECT_TEST_AUTOIMPORT"] == "1")
+        }
+    }
+
     func exportConfiguration() {
+        if let hooks = TestHooks.current, let path = hooks.exportPath, let passphrase = hooks.passphrase {
+            let document = UniConnectBackup.buildDocument(tabManagers: allTabManagers())
+            do {
+                let data = try UniConnectBackup.exportData(document: document, passphrase: passphrase)
+                try data.write(to: URL(fileURLWithPath: (path as NSString).expandingTildeInPath), options: [.atomic])
+                NSLog("[UniConnect] test export written: %@", path)
+            } catch {
+                NSLog("[UniConnect] test export failed: %@", error.localizedDescription)
+            }
+            return
+        }
         UniConnectAppLock.shared.authenticateForSensitiveAction(reason: "Exportar la configuración (incluye secretos cifrados)") { [weak self] ok in
             guard ok, let self else { return }
             self.exportConfigurationAuthenticated()
