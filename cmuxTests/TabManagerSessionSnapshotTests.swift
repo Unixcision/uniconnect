@@ -21,7 +21,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
 
     private func reserveRemoteRestoreSocket() -> String {
         TerminalController.shared.stop()
-        let requestedPath = "/tmp/cmux-restore-\(UUID().uuidString).sock"
+        let requestedPath = "/tmp/uniconnect-restore-\(UUID().uuidString).sock"
         let reservedPath = TerminalController.shared.reserveStartupSocketPath(requestedPath)
         XCTAssertEqual(TerminalController.shared.currentSocketPathForRemoteRestore(), reservedPath)
         return reservedPath
@@ -1810,7 +1810,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             relayPort: 64001,
             relayID: "relay-test",
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-test.sock",
+            localSocketPath: "/tmp/uniconnect-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
         remoteWorkspace.configureRemoteConnection(configuration, autoConnect: false)
@@ -1937,7 +1937,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             relayPort: 64001,
             relayID: "relay-test",
             relayToken: String(repeating: "c", count: 64),
-            localSocketPath: "/tmp/cmux-test.sock",
+            localSocketPath: "/tmp/uniconnect-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
         workspace.configureRemoteConnection(configuration, autoConnect: false)
@@ -1956,8 +1956,8 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
         remoteWorkspace.setCustomTitle("Remote Mac mini")
         let identityFile = "~/.ssh/id_ed25519"
         let expandedIdentityFile = (identityFile as NSString).expandingTildeInPath
-        let originalAgentSocketPath = "/tmp/cmux-original-restore-agent.sock"
-        let restoredAgentSocketPath = "/tmp/cmux-current-restore-agent-\(UUID().uuidString).sock"
+        let originalAgentSocketPath = "/tmp/uniconnect-original-restore-agent.sock"
+        let restoredAgentSocketPath = "/tmp/uniconnect-current-restore-agent-\(UUID().uuidString).sock"
         XCTAssertTrue(FileManager.default.createFile(atPath: restoredAgentSocketPath, contents: Data()))
         defer { try? FileManager.default.removeItem(atPath: restoredAgentSocketPath) }
         let previousAgentSocketPath = getenv("SSH_AUTH_SOCK").map { String(cString: $0) }
@@ -1974,7 +1974,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             port: 2222,
             identityFile: identityFile,
             sshOptions: [
-                "ControlPath=/tmp/cmux-ssh-%C",
+                "ControlPath=/tmp/uniconnect-ssh-%C",
                 "ControlMaster=auto",
                 "ControlPersist=60s",
                 "StrictHostKeyChecking=accept-new",
@@ -1984,7 +1984,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             relayPort: 64002,
             relayID: "relay-restore-test",
             relayToken: String(repeating: "d", count: 64),
-            localSocketPath: "/tmp/cmux-restore-test.sock",
+            localSocketPath: "/tmp/uniconnect-restore-test.sock",
             terminalStartupCommand: "ssh dev@example.com",
             agentSocketPath: originalAgentSocketPath
         )
@@ -2047,7 +2047,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
         let manager = TabManager()
         let remoteWorkspace = manager.addWorkspace(select: true)
         remoteWorkspace.setCustomTitle("Remote Without Agent")
-        let originalAgentSocketPath = "/tmp/cmux-original-missing-agent.sock"
+        let originalAgentSocketPath = "/tmp/uniconnect-original-missing-agent.sock"
         let previousAgentSocketPath = getenv("SSH_AUTH_SOCK").map { String(cString: $0) }
         defer {
             if let previousAgentSocketPath {
@@ -2067,7 +2067,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             relayPort: 64002,
             relayID: "relay-missing-agent-test",
             relayToken: String(repeating: "f", count: 64),
-            localSocketPath: "/tmp/cmux-missing-agent-test.sock",
+            localSocketPath: "/tmp/uniconnect-missing-agent-test.sock",
             terminalStartupCommand: "ssh dev@example.com",
             agentSocketPath: originalAgentSocketPath
         )
@@ -2111,7 +2111,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             relayPort: 64003,
             relayID: "relay-persist-test",
             relayToken: String(repeating: "e", count: 64),
-            localSocketPath: "/tmp/cmux-persist-test.sock",
+            localSocketPath: "/tmp/uniconnect-persist-test.sock",
             terminalStartupCommand: SSHPTYAttachStartupCommandBuilder.command(),
             preserveAfterTerminalExit: true,
             persistentDaemonSlot: persistentDaemonSlot
@@ -2172,7 +2172,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
         XCTAssertEqual(restoredWorkspace.remoteConfiguration?.persistentDaemonSlot, persistentDaemonSlot)
         XCTAssertEqual(restoredWorkspace.remoteConfiguration?.localSocketPath, reservedSocketPath)
         XCTAssertTrue(
-            restoredWorkspace.remoteConfiguration?.sshOptions.contains("ControlPath=/tmp/cmux-ssh-\(getuid())-64003-%C") == true
+            restoredWorkspace.remoteConfiguration?.sshOptions.contains("ControlPath=/tmp/uniconnect-ssh-\(getuid())-64003-%C") == true
         )
         XCTAssertNotEqual(restoredWorkspace.remoteConfiguration?.relayID, "relay-persist-test")
         XCTAssertNotEqual(restoredWorkspace.remoteConfiguration?.relayToken, String(repeating: "e", count: 64))
@@ -2201,7 +2201,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             restoredDefaultRemoteCommand
         )
         XCTAssertTrue(
-            restoredDefaultRemoteCommand.contains("export PATH=\"$HOME/.cmux/bin:$PATH\""),
+            restoredDefaultRemoteCommand.contains("export PATH=\"$HOME/.uniconnect/bin:$PATH\""),
             restoredDefaultRemoteCommand
         )
         XCTAssertTrue(restoredDefaultRemoteCommand.contains("CMUX_SHELL_INTEGRATION_DIR"), restoredDefaultRemoteCommand)
@@ -2290,7 +2290,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             relayPort: 64008,
             relayID: "relay-persist-split",
             relayToken: String(repeating: "c", count: 64),
-            localSocketPath: "/tmp/cmux-persist-split.sock",
+            localSocketPath: "/tmp/uniconnect-persist-split.sock",
             terminalStartupCommand: SSHPTYAttachStartupCommandBuilder.command(),
             preserveAfterTerminalExit: true,
             persistentDaemonSlot: persistentDaemonSlot
@@ -2358,7 +2358,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             relayPort: 64006,
             relayID: "relay-alias-test",
             relayToken: String(repeating: "a", count: 64),
-            localSocketPath: "/tmp/cmux-relay-alias.sock",
+            localSocketPath: "/tmp/uniconnect-relay-alias.sock",
             terminalStartupCommand: SSHPTYAttachStartupCommandBuilder.command(),
             preserveAfterTerminalExit: true,
             persistentDaemonSlot: persistentDaemonSlot
@@ -2463,14 +2463,14 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             sshOptions: [
                 "ControlMaster=auto",
                 "ControlPersist=600",
-                "ControlPath=/tmp/cmux-ssh-\(getuid())-64006-%C",
+                "ControlPath=/tmp/uniconnect-ssh-\(getuid())-64006-%C",
                 "StrictHostKeyChecking=accept-new",
             ],
             localProxyPort: nil,
             relayPort: 64006,
             relayID: "relay-alias-test-refreshed",
             relayToken: String(repeating: "c", count: 64),
-            localSocketPath: "/tmp/cmux-relay-alias-refreshed.sock",
+            localSocketPath: "/tmp/uniconnect-relay-alias-refreshed.sock",
             terminalStartupCommand: SSHPTYAttachStartupCommandBuilder.command(),
             foregroundAuthToken: "foreground-auth-refreshed",
             preserveAfterTerminalExit: true,
@@ -2573,7 +2573,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             relayPort: 64008,
             relayID: "relay-moved-alias-test",
             relayToken: String(repeating: "d", count: 64),
-            localSocketPath: "/tmp/cmux-relay-moved-alias.sock",
+            localSocketPath: "/tmp/uniconnect-relay-moved-alias.sock",
             terminalStartupCommand: SSHPTYAttachStartupCommandBuilder.command(),
             preserveAfterTerminalExit: true,
             persistentDaemonSlot: persistentDaemonSlot
@@ -2672,7 +2672,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             relayPort: 64007,
             relayID: "relay-reattach-alias-test",
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-relay-reattach-alias.sock",
+            localSocketPath: "/tmp/uniconnect-relay-reattach-alias.sock",
             terminalStartupCommand: SSHPTYAttachStartupCommandBuilder.command(),
             preserveAfterTerminalExit: true,
             persistentDaemonSlot: persistentDaemonSlot
@@ -2772,7 +2772,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             relayPort: 64004,
             relayID: "relay-legacy-persist",
             relayToken: String(repeating: "f", count: 64),
-            localSocketPath: "/tmp/cmux-legacy-persist.sock",
+            localSocketPath: "/tmp/uniconnect-legacy-persist.sock",
             terminalStartupCommand: SSHPTYAttachStartupCommandBuilder.command(),
             preserveAfterTerminalExit: true,
             persistentDaemonSlot: persistentDaemonSlot
@@ -2834,7 +2834,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             relayPort: 64019,
             relayID: "relay-ended-persist",
             relayToken: String(repeating: "a", count: 64),
-            localSocketPath: "/tmp/cmux-ended-persist.sock",
+            localSocketPath: "/tmp/uniconnect-ended-persist.sock",
             terminalStartupCommand: SSHPTYAttachStartupCommandBuilder.command(),
             preserveAfterTerminalExit: true,
             persistentDaemonSlot: "ssh-ended-persist"
@@ -2895,14 +2895,14 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             relayPort: 64020,
             relayID: "relay-local-terminal",
             relayToken: String(repeating: "a", count: 64),
-            localSocketPath: "/tmp/cmux-local-terminal.sock",
+            localSocketPath: "/tmp/uniconnect-local-terminal.sock",
             terminalStartupCommand: SSHPTYAttachStartupCommandBuilder.command(),
             preserveAfterTerminalExit: true,
             persistentDaemonSlot: "ssh-local-terminal"
         )
         remoteWorkspace.configureRemoteConnection(configuration, autoConnect: false)
         let paneId = try XCTUnwrap(remoteWorkspace.bonsplitController.allPaneIds.first)
-        let localDirectory = "/tmp/cmux-local-terminal"
+        let localDirectory = "/tmp/uniconnect-local-terminal"
         let localPanel = try XCTUnwrap(
             remoteWorkspace.newTerminalSurface(
                 inPane: paneId,
@@ -2956,7 +2956,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
                 relayPort: 64018,
                 relayID: "relay-no-socket",
                 relayToken: String(repeating: "f", count: 64),
-                localSocketPath: "/tmp/cmux-no-socket.sock",
+                localSocketPath: "/tmp/uniconnect-no-socket.sock",
                 terminalStartupCommand: SSHPTYAttachStartupCommandBuilder.command(),
                 preserveAfterTerminalExit: true,
                 persistentDaemonSlot: "ssh-no-socket"
@@ -2995,7 +2995,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             relayPort: 64003,
             relayID: "relay-persist-test",
             relayToken: String(repeating: "e", count: 64),
-            localSocketPath: "/tmp/cmux-persist-test.sock",
+            localSocketPath: "/tmp/uniconnect-persist-test.sock",
             terminalStartupCommand: SSHPTYAttachStartupCommandBuilder.command(),
             preserveAfterTerminalExit: true,
             skipDaemonBootstrap: true
@@ -3066,7 +3066,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             persistentDaemonSlot: nil
         )
 
-        let configuration = try XCTUnwrap(snapshot.workspaceConfiguration(localSocketPath: "/tmp/cmux-restore.sock"))
+        let configuration = try XCTUnwrap(snapshot.workspaceConfiguration(localSocketPath: "/tmp/uniconnect-restore.sock"))
 
         XCTAssertEqual(configuration.preserveAfterTerminalExit, false)
         XCTAssertNil(configuration.foregroundAuthToken)
@@ -3095,7 +3095,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             persistentDaemonSlot: "ssh-restore-slot"
         )
 
-        let configuration = try XCTUnwrap(snapshot.workspaceConfiguration(localSocketPath: "/tmp/cmux-restore.sock"))
+        let configuration = try XCTUnwrap(snapshot.workspaceConfiguration(localSocketPath: "/tmp/uniconnect-restore.sock"))
 
         XCTAssertEqual(configuration.preserveAfterTerminalExit, false)
         XCTAssertNil(configuration.foregroundAuthToken)
@@ -3144,7 +3144,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
                 "StrictHostKeyChecking=accept-new",
                 "ControlMaster=auto",
                 "ControlPersist=600",
-                "ControlPath=/tmp/cmux-ssh-501-64003-%C",
+                "ControlPath=/tmp/uniconnect-ssh-501-64003-%C",
             ],
             preserveAfterTerminalExit: true,
             skipDaemonBootstrap: nil,
@@ -3181,7 +3181,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             persistentDaemonSlot: "../bad"
         )
 
-        let configuration = try XCTUnwrap(snapshot.workspaceConfiguration(localSocketPath: "/tmp/cmux-restore.sock"))
+        let configuration = try XCTUnwrap(snapshot.workspaceConfiguration(localSocketPath: "/tmp/uniconnect-restore.sock"))
 
         XCTAssertEqual(configuration.preserveAfterTerminalExit, false)
         XCTAssertNil(configuration.foregroundAuthToken)

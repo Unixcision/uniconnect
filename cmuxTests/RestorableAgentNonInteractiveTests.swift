@@ -10,10 +10,10 @@ final class RestorableAgentNonInteractiveTests: XCTestCase {
     func testHookStoreDirectoryCanBeOverriddenForTests() {
         let url = RestorableAgentKind.codex.hookStoreFileURL(
             homeDirectory: "/Users/example",
-            environment: ["CMUX_AGENT_HOOK_STATE_DIR": "/tmp/cmux hook state"]
+            environment: ["CMUX_AGENT_HOOK_STATE_DIR": "/tmp/uniconnect hook state"]
         )
 
-        XCTAssertEqual(url.path, "/tmp/cmux hook state/codex-hook-sessions.json")
+        XCTAssertEqual(url.path, "/tmp/uniconnect hook state/codex-hook-sessions.json")
     }
 
     func testNonInteractiveAgentLaunchesAreNotAutoRestored() {

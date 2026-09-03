@@ -5,7 +5,7 @@ extension CMUXCLI {
     static let cmuxThemeOverrideBundleIdentifier = CmuxGhosttyConfigPathResolver.releaseBundleIdentifier
     static let cmuxThemesBlockStart = "# cmux themes start"
     static let cmuxThemesBlockEnd = "# cmux themes end"
-    static let cmuxThemesReloadNotificationName = "com.cmuxterm.themes.reload-config"
+    static let cmuxThemesReloadNotificationName = "com.unixcision.uniconnect.themes.reload-config"
 
     struct ThemeSelection {
         let rawValue: String?

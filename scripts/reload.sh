@@ -16,7 +16,7 @@ CMUX_DEV_PORT_END=""
 CMUX_DEV_PORT_RANGE=""
 CMUX_DEV_ORIGIN=""
 CLI_PATH=""
-# Matches CmuxStateDirectory (non-TCC ~/.local/state/cmux) where the app/CLI now
+# Matches CmuxStateDirectory (non-TCC ~/.local/state/uniconnect) where the app/CLI now
 # read the last-socket-path markers (https://github.com/manaflow-ai/cmux/issues/5146).
 # Resolve the real account home via getpwuid (the same syscall
 # homeDirectoryForCurrentUser uses) rather than $HOME, which a shell can override.
@@ -25,7 +25,7 @@ CLI_PATH=""
 # a second line. `|| true` keeps the lookup from aborting the script under
 # `set -euo pipefail`; an empty result falls back to $HOME.
 _cmux_account_home="$(perl -e 'print((getpwuid($<))[7])' 2>/dev/null || true)"
-LAST_SOCKET_PATH_DIR="${_cmux_account_home:-$HOME}/.local/state/cmux"
+LAST_SOCKET_PATH_DIR="${_cmux_account_home:-$HOME}/.local/state/uniconnect"
 AUTO_SKIP_ZIG_BUILD_REASON=""
 SWIFT_FRONTEND_WORKAROUND=0
 XCODEBUILD_STARTED=0
@@ -51,7 +51,7 @@ write_dev_cli_shim() {
 # cmux dev shim (managed by scripts/reload.sh)
 set -euo pipefail
 
-CLI_PATH_FILE="/tmp/cmux-last-cli-path"
+CLI_PATH_FILE="/tmp/uniconnect-last-cli-path"
 SOCKET_ARG=""
 EXPECT_SOCKET_VALUE=0
 for arg in "\$@"; do
@@ -157,60 +157,60 @@ select_cmux_shim_target() {
 write_last_socket_path() {
   local socket_path="$1"
   local marker_name="dev-last-socket-path"
-  local tmp_marker="/tmp/cmux-dev-last-socket-path"
+  local tmp_marker="/tmp/uniconnect-dev-last-socket-path"
   local bundle_id="${BUNDLE_ID:-}"
   local slug=""
 
   case "$bundle_id" in
     com.unixcision.uniconnect)
       marker_name="last-socket-path"
-      tmp_marker="/tmp/cmux-last-socket-path"
+      tmp_marker="/tmp/uniconnect-last-socket-path"
       ;;
     com.unixcision.uniconnect.nightly)
       marker_name="nightly-last-socket-path"
-      tmp_marker="/tmp/cmux-nightly-last-socket-path"
+      tmp_marker="/tmp/uniconnect-nightly-last-socket-path"
       ;;
     com.unixcision.uniconnect.nightly.*)
       slug="$(sanitize_path "${bundle_id#com.unixcision.uniconnect.nightly.}")"
       if [[ -n "$slug" ]]; then
         marker_name="nightly-${slug}-last-socket-path"
-        tmp_marker="/tmp/cmux-nightly-${slug}-last-socket-path"
+        tmp_marker="/tmp/uniconnect-nightly-${slug}-last-socket-path"
       else
         marker_name="nightly-last-socket-path"
-        tmp_marker="/tmp/cmux-nightly-last-socket-path"
+        tmp_marker="/tmp/uniconnect-nightly-last-socket-path"
       fi
       ;;
     com.unixcision.uniconnect.staging)
       marker_name="staging-last-socket-path"
-      tmp_marker="/tmp/cmux-staging-last-socket-path"
+      tmp_marker="/tmp/uniconnect-staging-last-socket-path"
       ;;
     com.unixcision.uniconnect.staging.*)
       slug="$(sanitize_path "${bundle_id#com.unixcision.uniconnect.staging.}")"
       if [[ -n "$slug" ]]; then
         marker_name="staging-${slug}-last-socket-path"
-        tmp_marker="/tmp/cmux-staging-${slug}-last-socket-path"
+        tmp_marker="/tmp/uniconnect-staging-${slug}-last-socket-path"
       else
         marker_name="staging-last-socket-path"
-        tmp_marker="/tmp/cmux-staging-last-socket-path"
+        tmp_marker="/tmp/uniconnect-staging-last-socket-path"
       fi
       ;;
     com.unixcision.uniconnect.debug)
       slug="${TAG_SLUG:-}"
       if [[ -n "$slug" ]]; then
         marker_name="dev-${slug}-last-socket-path"
-        tmp_marker="/tmp/cmux-dev-${slug}-last-socket-path"
+        tmp_marker="/tmp/uniconnect-dev-${slug}-last-socket-path"
       fi
       ;;
     com.unixcision.uniconnect.debug.*)
       slug="$(sanitize_path "${bundle_id#com.unixcision.uniconnect.debug.}")"
       if [[ -n "$slug" ]]; then
         marker_name="dev-${slug}-last-socket-path"
-        tmp_marker="/tmp/cmux-dev-${slug}-last-socket-path"
+        tmp_marker="/tmp/uniconnect-dev-${slug}-last-socket-path"
       fi
       ;;
     *)
       marker_name="last-socket-path"
-      tmp_marker="/tmp/cmux-last-socket-path"
+      tmp_marker="/tmp/uniconnect-last-socket-path"
       ;;
   esac
 
@@ -381,8 +381,8 @@ print_tag_cleanup_reminder() {
   local -a stale_tags=()
 
   while IFS= read -r -d '' path; do
-    if [[ "$path" == /tmp/cmux-* ]]; then
-      tag="${path#/tmp/cmux-}"
+    if [[ "$path" == /tmp/uniconnect-* ]]; then
+      tag="${path#/tmp/uniconnect-}"
     elif [[ "$path" == "$HOME/Library/Developer/Xcode/DerivedData/cmux-"* ]]; then
       tag="${path#$HOME/Library/Developer/Xcode/DerivedData/cmux-}"
     else
@@ -419,15 +419,15 @@ print_tag_cleanup_reminder() {
     echo "Cleanup stale tags only:"
     for tag in "${stale_tags[@]}"; do
       echo "  pkill -f \"UniConnect DEV ${tag}.app/Contents/MacOS/UniConnect DEV\""
-      echo "  rm -rf \"$(tagged_derived_data_path "$tag")\" \"/tmp/cmux-${tag}\" \"/tmp/cmux-debug-${tag}.sock\""
-      echo "  rm -f \"/tmp/cmux-debug-${tag}.log\""
+      echo "  rm -rf \"$(tagged_derived_data_path "$tag")\" \"/tmp/uniconnect-${tag}\" \"/tmp/uniconnect-debug-${tag}.sock\""
+      echo "  rm -f \"/tmp/uniconnect-debug-${tag}.log\""
       echo "  rm -f \"$HOME/Library/Application Support/cmux/cmuxd-dev-${tag}.sock\""
     done
   fi
   echo "After you verify current tag, cleanup command:"
   echo "  pkill -f \"UniConnect DEV ${current_slug}.app/Contents/MacOS/UniConnect DEV\""
-  echo "  rm -rf \"$(tagged_derived_data_path "$current_slug")\" \"/tmp/cmux-${current_slug}\" \"/tmp/cmux-debug-${current_slug}.sock\""
-  echo "  rm -f \"/tmp/cmux-debug-${current_slug}.log\""
+  echo "  rm -rf \"$(tagged_derived_data_path "$current_slug")\" \"/tmp/uniconnect-${current_slug}\" \"/tmp/uniconnect-debug-${current_slug}.sock\""
+  echo "  rm -f \"/tmp/uniconnect-debug-${current_slug}.log\""
   echo "  rm -f \"$HOME/Library/Application Support/cmux/cmuxd-dev-${current_slug}.sock\""
 }
 
@@ -524,7 +524,7 @@ CMUX_DEV_ORIGIN="http://localhost:${CMUX_DEV_PORT}"
 # Quiet logging: capture all noisy build output (xcodebuild, zig, codesign,
 # plistbuddy, etc.) to a single log file. On success we print only a one-line
 # summary plus the App/CLI paths. On failure we dump the log.
-RELOAD_LOG="/tmp/cmux-reload-${TAG_SLUG}.log"
+RELOAD_LOG="/tmp/uniconnect-reload-${TAG_SLUG}.log"
 RELOAD_START_TIME="$(date +%s)"
 : > "$RELOAD_LOG"
 
@@ -588,7 +588,7 @@ reload_finalize() {
     echo "CLI path:"
     echo "  $CLI_PATH"
     echo "CLI helpers:"
-    echo "  /tmp/cmux-cli ..."
+    echo "  /tmp/uniconnect-cli ..."
     echo "  $HOME/.local/bin/cmux-dev ..."
     if [[ -n "${CMUX_SHIM_TARGET:-}" ]]; then
       echo "  $CMUX_SHIM_TARGET ..."
@@ -873,7 +873,7 @@ validate_app_bundle "$APP_PATH" "$APP_EXECUTABLE_NAME"
 XCODEBUILD_OUTPUT_VALID=1
 
 if [[ -n "${TAG_SLUG:-}" ]]; then
-  TMP_COMPAT_DERIVED_LINK="/tmp/cmux-${TAG_SLUG}"
+  TMP_COMPAT_DERIVED_LINK="/tmp/uniconnect-${TAG_SLUG}"
   if [[ "$DERIVED_DATA" != "$TMP_COMPAT_DERIVED_LINK" ]]; then
     ABS_DERIVED_DATA="$(cd "$DERIVED_DATA" && pwd)"
     rm -rf "$TMP_COMPAT_DERIVED_LINK"
@@ -897,10 +897,10 @@ if [[ -n "$TAG" && "$APP_NAME" != "$SEARCH_APP_NAME" ]]; then
     if [[ -n "${TAG_SLUG:-}" ]]; then
       APP_SUPPORT_DIR="$HOME/Library/Application Support/cmux"
       CMUXD_SOCKET="${APP_SUPPORT_DIR}/cmuxd-dev-${TAG_SLUG}.sock"
-      CMUX_SOCKET_PATH_VALUE="/tmp/cmux-debug-${TAG_SLUG}.sock"
-      CMUX_DEBUG_LOG="/tmp/cmux-debug-${TAG_SLUG}.log"
+      CMUX_SOCKET_PATH_VALUE="/tmp/uniconnect-debug-${TAG_SLUG}.sock"
+      CMUX_DEBUG_LOG="/tmp/uniconnect-debug-${TAG_SLUG}.log"
       write_last_socket_path "$CMUX_SOCKET_PATH_VALUE"
-      echo "$CMUX_DEBUG_LOG" > /tmp/cmux-last-debug-log-path || true
+      echo "$CMUX_DEBUG_LOG" > /tmp/uniconnect-last-debug-log-path || true
       /usr/libexec/PlistBuddy -c "Add :LSEnvironment dict" "$INFO_PLIST" 2>/dev/null || true
       set_plist_env "$INFO_PLIST" CMUX_BUNDLE_ID "$BUNDLE_ID"
       set_plist_env "$INFO_PLIST" CMUXD_UNIX_PATH "$CMUXD_SOCKET"
@@ -935,8 +935,8 @@ fi
 
 CLI_PATH="$(dirname "$APP_PATH")/cmux"
 if [[ -x "$CLI_PATH" ]]; then
-  (umask 077; printf '%s\n' "$CLI_PATH" > /tmp/cmux-last-cli-path) || true
-  ln -sfn "$CLI_PATH" /tmp/cmux-cli || true
+  (umask 077; printf '%s\n' "$CLI_PATH" > /tmp/uniconnect-last-cli-path) || true
+  ln -sfn "$CLI_PATH" /tmp/uniconnect-cli || true
 
   # Stable shim that always follows the last reload-selected dev CLI.
   DEV_CLI_SHIM="$HOME/.local/bin/cmux-dev"
@@ -989,8 +989,8 @@ if [[ -n "${TAG_APP_FINAL_PATH:-}" && -n "${TAG_APP_STAGING_PATH:-}" ]]; then
 fi
 CLI_PATH="$APP_PATH/Contents/Resources/bin/cmux"
 if [[ -x "$CLI_PATH" ]]; then
-  echo "$CLI_PATH" > /tmp/cmux-last-cli-path || true
-  ln -sfn "$CLI_PATH" /tmp/cmux-cli || true
+  echo "$CLI_PATH" > /tmp/uniconnect-last-cli-path || true
+  ln -sfn "$CLI_PATH" /tmp/uniconnect-cli || true
 fi
 
 # Tag mode: always terminate the existing same-tag instance after a successful build,
@@ -1081,15 +1081,15 @@ if [[ "$LAUNCH" -eq 1 ]]; then
       echo "error: tagged app executable not found: $APP_EXECUTABLE" >&2
       exit 1
     fi
-    TAG_LAUNCH_LOG="/tmp/cmux-launch-${TAG_SLUG}.out"
+    TAG_LAUNCH_LOG="/tmp/uniconnect-launch-${TAG_SLUG}.out"
     if [[ -n "${CMUX_SOCKET_PATH_VALUE:-}" ]]; then
       nohup "${OPEN_CLEAN_ENV[@]}" "${TAG_LAUNCH_ENV[@]}" CMUX_SOCKET_PATH="$CMUX_SOCKET_PATH_VALUE" CMUXD_UNIX_PATH="$CMUXD_SOCKET" "$APP_EXECUTABLE" >"$TAG_LAUNCH_LOG" 2>&1 &
     else
       nohup "${OPEN_CLEAN_ENV[@]}" "${TAG_LAUNCH_ENV[@]}" "$APP_EXECUTABLE" >"$TAG_LAUNCH_LOG" 2>&1 &
     fi
   else
-    echo "/tmp/cmux-debug.sock" > /tmp/cmux-last-socket-path || true
-    echo "/tmp/cmux-debug.log" > /tmp/cmux-last-debug-log-path || true
+    echo "/tmp/uniconnect-debug.sock" > /tmp/uniconnect-last-socket-path || true
+    echo "/tmp/uniconnect-debug.log" > /tmp/uniconnect-last-debug-log-path || true
     if [[ -n "${CMUX_SOCKET_PATH_VALUE:-}" ]]; then
       # Ensure explicit socket paths win even if the caller has CMUX_* overrides.
       LAUNCH_CMD=("${OPEN_CLEAN_ENV[@]}" "${TAG_LAUNCH_ENV[@]}" CMUX_SOCKET_PATH="$CMUX_SOCKET_PATH_VALUE" CMUXD_UNIX_PATH="$CMUXD_SOCKET" open -g "$APP_PATH")

@@ -55,7 +55,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
     func testBundledCLIInTaggedDebugAppPrefersItsOwnSocketWithoutEnvironmentOverride() throws {
         let cliPath = try bundledCLIPath()
         let tagSlug = "cli-socket-\(UUID().uuidString.lowercased())"
-        let taggedSocketPath = "/tmp/cmux-debug-\(tagSlug).sock"
+        let taggedSocketPath = "/tmp/uniconnect-debug-\(tagSlug).sock"
         let home = try makeTemporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let stableSocketURL = try stableSocketURL(home: home)
@@ -97,7 +97,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
     func testBundledCLIInTaggedDebugAppTreatsCaseVariantStableEnvSocketAsImplicitDefault() throws {
         let cliPath = try bundledCLIPath()
         let tagSlug = "cli-case-\(UUID().uuidString.lowercased())"
-        let taggedSocketPath = "/tmp/cmux-debug-\(tagSlug).sock"
+        let taggedSocketPath = "/tmp/uniconnect-debug-\(tagSlug).sock"
         let home = try makeTemporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let stableSocketURL = try stableSocketURL(home: home)
@@ -149,14 +149,14 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         let fixedHomeURL = URL(fileURLWithPath: "/tmp/cmxh-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: fixedHomeURL) }
         let stableSocketURL = fixedHomeURL
-            .appendingPathComponent(".local/state/cmux", isDirectory: true)
-            .appendingPathComponent("cmux.sock", isDirectory: false)
+            .appendingPathComponent(".local/state/uniconnect", isDirectory: true)
+            .appendingPathComponent("uniconnect.sock", isDirectory: false)
         try FileManager.default.createDirectory(
             at: stableSocketURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
         let tagSlug = "cli-missing-\(UUID().uuidString.lowercased())"
-        let taggedSocketPath = "/tmp/cmux-debug-\(tagSlug).sock"
+        let taggedSocketPath = "/tmp/uniconnect-debug-\(tagSlug).sock"
         try? FileManager.default.removeItem(atPath: taggedSocketPath)
         defer { try? FileManager.default.removeItem(atPath: taggedSocketPath) }
 
@@ -192,10 +192,10 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
 
     func testBundledCLIInTaggedDebugAppTreatsUserScopedStableEnvSocketAsImplicitDefault() throws {
         let cliPath = try bundledCLIPath()
-        let fixedHomeURL = URL(fileURLWithPath: "/tmp/cmux-cli-home-\(UUID().uuidString)", isDirectory: true)
+        let fixedHomeURL = URL(fileURLWithPath: "/tmp/uniconnect-cli-home-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: fixedHomeURL) }
         let stableSocketURL = fixedHomeURL
-            .appendingPathComponent(".local/state/cmux", isDirectory: true)
+            .appendingPathComponent(".local/state/uniconnect", isDirectory: true)
             .appendingPathComponent("cmux-\(getuid()).sock", isDirectory: false)
         let stableSocketPath = stableSocketURL.path
         try FileManager.default.createDirectory(
@@ -217,7 +217,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         for alias in aliases {
             try autoreleasepool {
                 let tagSlug = "cli-user-\(UUID().uuidString.lowercased())"
-                let taggedSocketPath = "/tmp/cmux-debug-\(tagSlug).sock"
+                let taggedSocketPath = "/tmp/uniconnect-debug-\(tagSlug).sock"
                 let stableResponder = try UnixSocketResponder(path: stableSocketPath, response: "OK STABLE")
                 defer { stableResponder.stop() }
                 let taggedResponder = try UnixSocketResponder(path: taggedSocketPath, response: "PONG")
@@ -260,13 +260,13 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         let fixedHomeURL = URL(fileURLWithPath: "/tmp/cmxh-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: fixedHomeURL) }
         let socketDirectoryURL = fixedHomeURL
-            .appendingPathComponent(".local/state/cmux", isDirectory: true)
+            .appendingPathComponent(".local/state/uniconnect", isDirectory: true)
         try FileManager.default.createDirectory(
             at: socketDirectoryURL,
             withIntermediateDirectories: true
         )
         let defaultStableSocketPath = socketDirectoryURL
-            .appendingPathComponent("cmux.sock", isDirectory: false)
+            .appendingPathComponent("uniconnect.sock", isDirectory: false)
             .path
         let userScopedStableSocketPath = socketDirectoryURL
             .appendingPathComponent("cmux-\(getuid()).sock", isDirectory: false)
@@ -278,7 +278,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         let fakeStableCLIPath = try fakeTaggedBundledCLIPath(
             sourceCLIPath: cliPath,
             tagSlug: "stable-\(UUID().uuidString.lowercased())",
-            bundleIdentifier: "com.cmuxterm.app",
+            bundleIdentifier: "com.unixcision.uniconnect",
             bundleName: "cmux"
         )
         let defaultResponder = try UnixSocketResponder(path: defaultStableSocketPath, response: "OK DEFAULT")
@@ -326,13 +326,13 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         let fixedHomeURL = URL(fileURLWithPath: "/tmp/cmxh-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: fixedHomeURL) }
         let socketDirectoryURL = fixedHomeURL
-            .appendingPathComponent(".local/state/cmux", isDirectory: true)
+            .appendingPathComponent(".local/state/uniconnect", isDirectory: true)
         try FileManager.default.createDirectory(
             at: socketDirectoryURL,
             withIntermediateDirectories: true
         )
         let defaultStableSocketPath = socketDirectoryURL
-            .appendingPathComponent("cmux.sock", isDirectory: false)
+            .appendingPathComponent("uniconnect.sock", isDirectory: false)
             .path
         let userScopedStableSocketPath = socketDirectoryURL
             .appendingPathComponent("cmux-\(getuid()).sock", isDirectory: false)
@@ -344,7 +344,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         let fakeStableCLIPath = try fakeTaggedBundledCLIPath(
             sourceCLIPath: cliPath,
             tagSlug: "stable-\(UUID().uuidString.lowercased())",
-            bundleIdentifier: "com.cmuxterm.app",
+            bundleIdentifier: "com.unixcision.uniconnect",
             bundleName: "cmux"
         )
         let defaultResponder = try UnixSocketResponder(path: defaultStableSocketPath, response: "OK DEFAULT")
@@ -389,16 +389,16 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         let fixedHomeURL = URL(fileURLWithPath: "/tmp/cmxh-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: fixedHomeURL) }
         let socketDirectoryURL = fixedHomeURL
-            .appendingPathComponent(".local/state/cmux", isDirectory: true)
+            .appendingPathComponent(".local/state/uniconnect", isDirectory: true)
         try FileManager.default.createDirectory(
             at: socketDirectoryURL,
             withIntermediateDirectories: true
         )
         let defaultStableSocketPath = socketDirectoryURL
-            .appendingPathComponent("cmux.sock", isDirectory: false)
+            .appendingPathComponent("uniconnect.sock", isDirectory: false)
             .path
-        let legacyStableSocketPath = "/tmp/cmux.sock"
-        let symlinkTargetSocketPath = "/tmp/cmux-symlink-target-\(UUID().uuidString).sock"
+        let legacyStableSocketPath = "/tmp/uniconnect.sock"
+        let symlinkTargetSocketPath = "/tmp/uniconnect-symlink-target-\(UUID().uuidString).sock"
         if lstatPathExists(legacyStableSocketPath) {
             throw XCTSkip("Legacy stable cmux socket already exists at \(legacyStableSocketPath)")
         }
@@ -406,7 +406,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         let fakeStableCLIPath = try fakeTaggedBundledCLIPath(
             sourceCLIPath: cliPath,
             tagSlug: "stable-\(UUID().uuidString.lowercased())",
-            bundleIdentifier: "com.cmuxterm.app",
+            bundleIdentifier: "com.unixcision.uniconnect",
             bundleName: "cmux"
         )
         let defaultResponder = try UnixSocketResponder(path: defaultStableSocketPath, response: "OK DEFAULT")
@@ -456,15 +456,15 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         let fixedHomeURL = URL(fileURLWithPath: "/tmp/cmxh-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: fixedHomeURL) }
         let socketDirectoryURL = fixedHomeURL
-            .appendingPathComponent(".local/state/cmux", isDirectory: true)
+            .appendingPathComponent(".local/state/uniconnect", isDirectory: true)
         try FileManager.default.createDirectory(
             at: socketDirectoryURL,
             withIntermediateDirectories: true
         )
         let defaultStableSocketPath = socketDirectoryURL
-            .appendingPathComponent("cmux.sock", isDirectory: false)
+            .appendingPathComponent("uniconnect.sock", isDirectory: false)
             .path
-        let legacyStableSocketPath = "/tmp/cmux.sock"
+        let legacyStableSocketPath = "/tmp/uniconnect.sock"
         if FileManager.default.fileExists(atPath: legacyStableSocketPath) {
             throw XCTSkip("Legacy stable cmux socket already exists at \(legacyStableSocketPath)")
         }
@@ -472,7 +472,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         let fakeStableCLIPath = try fakeTaggedBundledCLIPath(
             sourceCLIPath: cliPath,
             tagSlug: "stable-\(UUID().uuidString.lowercased())",
-            bundleIdentifier: "com.cmuxterm.app",
+            bundleIdentifier: "com.unixcision.uniconnect",
             bundleName: "cmux"
         )
         let defaultResponder = try UnixSocketResponder(path: defaultStableSocketPath, response: "OK DEFAULT")
@@ -518,7 +518,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
     func testBundledCLISkipsIdentifierlessNestedAppWhenResolvingTaggedSocket() throws {
         let cliPath = try bundledCLIPath()
         let tagSlug = "cli-nested-\(UUID().uuidString.lowercased())"
-        let taggedSocketPath = "/tmp/cmux-debug-\(tagSlug).sock"
+        let taggedSocketPath = "/tmp/uniconnect-debug-\(tagSlug).sock"
         let home = try makeTemporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let stableSocketURL = try stableSocketURL(home: home)
@@ -572,10 +572,10 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         try writeTheme(named: "Theme B", background: "#f8f8f8", to: themesURL)
         try writeTheme(named: "Theme C", background: "#003b49", to: themesURL)
 
-        let socketPath = "/tmp/cmux-theme-\(UUID().uuidString.prefix(8)).sock"
+        let socketPath = "/tmp/uniconnect-theme-\(UUID().uuidString.prefix(8)).sock"
         let responder = try UnixSocketResponder(path: socketPath, response: "OK")
         defer { responder.stop() }
-        let bundleIdentifier = "com.cmuxterm.app.debug.issue-4355-test"
+        let bundleIdentifier = "com.unixcision.uniconnect.debug.issue-4355-test"
         let reloadExpectation = expectation(description: "cmux themes set posts final reload notifications")
         reloadExpectation.expectedFulfillmentCount = 3
         let notificationQueue = OperationQueue()
@@ -583,7 +583,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         let notificationLock = NSLock()
         var observedReloads: [(bundleIdentifier: String?, phase: String?)] = []
         let observer = DistributedNotificationCenter.default().addObserver(
-            forName: Notification.Name("com.cmuxterm.themes.reload-config"),
+            forName: Notification.Name("com.unixcision.uniconnect.themes.reload-config"),
             object: nil,
             queue: notificationQueue
         ) { notification in
@@ -657,16 +657,16 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         try fileManager.createDirectory(at: themesURL, withIntermediateDirectories: true)
         try writeTheme(named: "Theme A", background: "#101010", to: themesURL)
 
-        let socketPath = "/tmp/cmux-debug-active-theme.sock"
-        let staleBundleIdentifier = "com.cmuxterm.app.debug.stale.theme"
-        let targetBundleIdentifier = "com.cmuxterm.app.debug.active.theme"
+        let socketPath = "/tmp/uniconnect-debug-active-theme.sock"
+        let staleBundleIdentifier = "com.unixcision.uniconnect.debug.stale.theme"
+        let targetBundleIdentifier = "com.unixcision.uniconnect.debug.active.theme"
         let reloadExpectation = expectation(description: "cmux themes set targets the resolved socket bundle")
         let notificationQueue = OperationQueue()
         notificationQueue.maxConcurrentOperationCount = 1
         let notificationLock = NSLock()
         var observedReloads: [(bundleIdentifier: String?, phase: String?, socketPath: String?)] = []
         let observer = DistributedNotificationCenter.default().addObserver(
-            forName: Notification.Name("com.cmuxterm.themes.reload-config"),
+            forName: Notification.Name("com.unixcision.uniconnect.themes.reload-config"),
             object: nil,
             queue: notificationQueue
         ) { notification in
@@ -732,7 +732,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         try fileManager.createDirectory(at: themesURL, withIntermediateDirectories: true)
         try writeTheme(named: "Theme A", background: "#101010", to: themesURL)
 
-        let bundleIdentifier = "com.cmuxterm.app.nightly"
+        let bundleIdentifier = "com.unixcision.uniconnect.nightly"
         var environment = ProcessInfo.processInfo.environment
         for key in Array(environment.keys) where key.hasPrefix("CMUX_") {
             environment.removeValue(forKey: key)
@@ -740,7 +740,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         environment["CFFIXED_USER_HOME"] = root.path
         environment["HOME"] = root.path
         environment["GHOSTTY_RESOURCES_DIR"] = resourcesURL.path
-        environment["CMUX_SOCKET_PATH"] = "/tmp/cmux-nightly.sock"
+        environment["CMUX_SOCKET_PATH"] = "/tmp/uniconnect-nightly.sock"
         environment["CMUX_BUNDLE_ID"] = bundleIdentifier
         environment["CMUX_CLI_SENTRY_DISABLED"] = "1"
 
@@ -816,17 +816,17 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
             ofItemAtPath: fakeGhosttyHelperURL.path
         )
 
-        let socketPath = "/tmp/cmux-theme-picker-\(UUID().uuidString.prefix(8)).sock"
+        let socketPath = "/tmp/uniconnect-theme-picker-\(UUID().uuidString.prefix(8)).sock"
         let responder = try UnixSocketResponder(path: socketPath, response: "OK")
         defer { responder.stop() }
-        let bundleIdentifier = "com.cmuxterm.app.debug.theme-picker.\(UUID().uuidString.lowercased())"
+        let bundleIdentifier = "com.unixcision.uniconnect.debug.theme-picker.\(UUID().uuidString.lowercased())"
         let reloadExpectation = expectation(description: "bare cmux themes posts final reload notification")
         let notificationQueue = OperationQueue()
         notificationQueue.maxConcurrentOperationCount = 1
         let notificationLock = NSLock()
         var observedReloads: [(bundleIdentifier: String?, phase: String?)] = []
         let observer = DistributedNotificationCenter.default().addObserver(
-            forName: Notification.Name("com.cmuxterm.themes.reload-config"),
+            forName: Notification.Name("com.unixcision.uniconnect.themes.reload-config"),
             object: nil,
             queue: notificationQueue
         ) { notification in
@@ -905,7 +905,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
             ofItemAtPath: fakeGhosttyHelperURL.path
         )
 
-        let socketPath = "/tmp/cmux-theme-picker-cancel-\(UUID().uuidString.prefix(8)).sock"
+        let socketPath = "/tmp/uniconnect-theme-picker-cancel-\(UUID().uuidString.prefix(8)).sock"
         let responder = try UnixSocketResponder(path: socketPath, response: "OK")
         defer { responder.stop() }
 
@@ -933,7 +933,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
 
     func testBrowserDownloadWaitUsesRequestedTimeoutForSocketResponse() throws {
         let cliPath = try bundledCLIPath()
-        let socketPath = "/tmp/cmux-dw-\(UUID().uuidString.prefix(8)).sock"
+        let socketPath = "/tmp/uniconnect-dw-\(UUID().uuidString.prefix(8)).sock"
         let response = #"{"ok":true,"result":{"downloaded":true}}"#
         let responder = try UnixSocketResponder(path: socketPath, response: response, responseDelay: 0.4)
         defer { responder.stop() }
@@ -967,7 +967,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
 
     func testBrowserDownloadWaitDefaultTimeoutMatchesServerDefaultWindow() throws {
         let cliPath = try bundledCLIPath()
-        let socketPath = "/tmp/cmux-dw-\(UUID().uuidString.prefix(8)).sock"
+        let socketPath = "/tmp/uniconnect-dw-\(UUID().uuidString.prefix(8)).sock"
         let response = #"{"ok":true,"result":{"downloaded":true}}"#
         let responder = try UnixSocketResponder(path: socketPath, response: response, responseDelay: 10.5)
         defer { responder.stop() }
@@ -1011,7 +1011,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         try fakeOpenScript().write(to: fakeOpenURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeOpenURL.path)
 
-        let socketPath = "/tmp/cmux-external-open-\(UUID().uuidString.prefix(8)).sock"
+        let socketPath = "/tmp/uniconnect-external-open-\(UUID().uuidString.prefix(8)).sock"
         let responder = try UnixSocketResponder(
             path: socketPath,
             response: "ERROR: Access denied — only processes started inside cmux can connect"
@@ -1023,7 +1023,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
             environment.removeValue(forKey: key)
         }
         environment["CMUX_SOCKET_PATH"] = socketPath
-        environment["CMUX_SOCKET"] = "/tmp/cmux-stale-\(UUID().uuidString.prefix(8)).sock"
+        environment["CMUX_SOCKET"] = "/tmp/uniconnect-stale-\(UUID().uuidString.prefix(8)).sock"
         environment["CMUX_SOCKET_PASSWORD"] = "stale-password"
         environment["CMUX_SOCKET_ENABLE"] = "0"
         environment["CMUX_SOCKET_MODE"] = "off"
@@ -1090,7 +1090,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         try fakeOpenScript().write(to: fakeOpenURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeOpenURL.path)
 
-        let socketPath = "/tmp/cmux-bare-open-\(UUID().uuidString.prefix(8)).sock"
+        let socketPath = "/tmp/uniconnect-bare-open-\(UUID().uuidString.prefix(8)).sock"
         let responder = try UnixSocketResponder(
             path: socketPath,
             response: "ERROR: Access denied — only processes started inside cmux can connect"
@@ -1138,7 +1138,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         try fakeOpenScript().write(to: fakeOpenURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeOpenURL.path)
 
-        let socketPath = "/tmp/cmux-command-path-\(UUID().uuidString.prefix(8)).sock"
+        let socketPath = "/tmp/uniconnect-command-path-\(UUID().uuidString.prefix(8)).sock"
         let responder = try UnixSocketResponder(path: socketPath, response: "PONG")
         defer { responder.stop() }
 
@@ -1179,7 +1179,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         try fakeOpenScript().write(to: fakeOpenURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeOpenURL.path)
 
-        let socketPath = "/tmp/cmux-case-open-\(UUID().uuidString.prefix(8)).sock"
+        let socketPath = "/tmp/uniconnect-case-open-\(UUID().uuidString.prefix(8)).sock"
         let responder = try UnixSocketResponder(
             path: socketPath,
             response: "ERROR: Access denied — only processes started inside cmux can connect"
@@ -1225,7 +1225,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         try fakeOpenScript().write(to: fakeOpenURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeOpenURL.path)
 
-        let socketPath = "/tmp/cmux-explicit-open-\(UUID().uuidString.prefix(8)).sock"
+        let socketPath = "/tmp/uniconnect-explicit-open-\(UUID().uuidString.prefix(8)).sock"
         let responder = try UnixSocketResponder(
             path: socketPath,
             response: #"{"ok":true,"result":{"workspace_ref":"workspace:explicit"}}"#
@@ -1291,7 +1291,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
     /// which honors `CFFIXED_USER_HOME`. Tests build the socket path from this home
     /// via the canonical ``CmuxStateDirectory`` and pass the same home to the
     /// spawned CLI via `CFFIXED_USER_HOME`, so they never touch (or bind over) the
-    /// developer's real `~/.local/state/cmux` (issue #5146).
+    /// developer's real `~/.local/state/uniconnect` (issue #5146).
     private func makeTemporaryHome() throws -> URL {
         let home = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-cli-home-\(UUID().uuidString)", isDirectory: true)
@@ -1304,7 +1304,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
     private func stableSocketURL(home: URL) throws -> URL {
         let directory = CmuxStateDirectory.url(homeDirectory: home)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory.appendingPathComponent("cmux.sock", isDirectory: false)
+        return directory.appendingPathComponent("uniconnect.sock", isDirectory: false)
     }
 
     private func writeTheme(named name: String, background: String, to directory: URL) throws {
@@ -1372,7 +1372,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         try FileManager.default.createDirectory(at: binURL, withIntermediateDirectories: true)
 
         let info: [String: Any] = [
-            "CFBundleIdentifier": bundleIdentifier ?? "com.cmuxterm.app.debug.\(tagSlug.replacingOccurrences(of: "-", with: "."))",
+            "CFBundleIdentifier": bundleIdentifier ?? "com.unixcision.uniconnect.debug.\(tagSlug.replacingOccurrences(of: "-", with: "."))",
             "CFBundleName": bundleName ?? "cmux DEV \(tagSlug)",
             "CFBundlePackageType": "APPL"
         ]
@@ -1522,7 +1522,7 @@ private final class UnixSocketResponder {
     let path: String
     private let response: String
     private let responseDelay: TimeInterval
-    private let queue = DispatchQueue(label: "com.cmux.tests.unix-socket-responder")
+    private let queue = DispatchQueue(label: "com.unixcision.uniconnect.tests.unix-socket-responder")
     private let lock = NSLock()
     private var stopped = false
     private var requests: [String] = []

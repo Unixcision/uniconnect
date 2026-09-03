@@ -207,11 +207,11 @@ final class CMUXOpenCommandTests: XCTestCase {
         let cmuxConfigURL = homeURL
             .appendingPathComponent(".config", isDirectory: true)
             .appendingPathComponent("cmux", isDirectory: true)
-            .appendingPathComponent("cmux.json", isDirectory: false)
+            .appendingPathComponent("uniconnect.json", isDirectory: false)
         let cmuxAppSupportConfigURL = homeURL
             .appendingPathComponent("Library", isDirectory: true)
             .appendingPathComponent("Application Support", isDirectory: true)
-            .appendingPathComponent("com.cmuxterm.app", isDirectory: true)
+            .appendingPathComponent("com.unixcision.uniconnect", isDirectory: true)
             .appendingPathComponent("config.ghostty", isDirectory: false)
         let ghosttyResourcesURL = rootURL.appendingPathComponent("ghostty-resources", isDirectory: true)
         let ghosttyThemesURL = ghosttyResourcesURL.appendingPathComponent("themes", isDirectory: true)
@@ -1223,7 +1223,7 @@ final class CMUXOpenCommandTests: XCTestCase {
         XCTAssertTrue(refLastTurn.html.contains("Last turn diff"), refLastTurn.html)
 
         let homeURL = rootURL.appendingPathComponent("custom-home", isDirectory: true)
-        let homeStateURL = homeURL.appendingPathComponent(".cmuxterm", isDirectory: true)
+        let homeStateURL = homeURL.appendingPathComponent(".uniconnect", isDirectory: true)
         try FileManager.default.createDirectory(at: homeStateURL, withIntermediateDirectories: true)
         try writeDiffBaselineStore(
             stateDirectoryURL: homeStateURL,

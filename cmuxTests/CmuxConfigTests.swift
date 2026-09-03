@@ -344,8 +344,8 @@ final class CmuxConfigDecodingTests: XCTestCase {
         try FileManager.default.createDirectory(at: localDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let globalConfigURL = globalDirectory.appendingPathComponent("cmux.json")
-        let localConfigURL = localDirectory.appendingPathComponent("cmux.json")
+        let globalConfigURL = globalDirectory.appendingPathComponent("uniconnect.json")
+        let localConfigURL = localDirectory.appendingPathComponent("uniconnect.json")
         let globalJSON = """
         {
           "actions": {
@@ -433,7 +433,7 @@ final class CmuxConfigDecodingTests: XCTestCase {
         try FileManager.default.createDirectory(at: iconsDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let configPath = root.appendingPathComponent("cmux.json").path
+        let configPath = root.appendingPathComponent("uniconnect.json").path
         let iconPath = iconsDirectory.appendingPathComponent("codex.svg")
         let svg = """
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
@@ -471,8 +471,8 @@ final class CmuxConfigDecodingTests: XCTestCase {
         try FileManager.default.createDirectory(at: iconsDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let globalConfigPath = globalDirectory.appendingPathComponent("cmux.json").path
-        let projectConfigPath = projectDirectory.appendingPathComponent("cmux.json").path
+        let globalConfigPath = globalDirectory.appendingPathComponent("uniconnect.json").path
+        let projectConfigPath = projectDirectory.appendingPathComponent("uniconnect.json").path
         let iconPath = iconsDirectory.appendingPathComponent("bad.svg")
         let svg = """
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
@@ -503,8 +503,8 @@ final class CmuxConfigDecodingTests: XCTestCase {
         try FileManager.default.createDirectory(at: iconsDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let globalConfigPath = globalDirectory.appendingPathComponent("cmux.json").path
-        let projectConfigPath = projectDirectory.appendingPathComponent("cmux.json").path
+        let globalConfigPath = globalDirectory.appendingPathComponent("uniconnect.json").path
+        let projectConfigPath = projectDirectory.appendingPathComponent("uniconnect.json").path
         let iconPath = iconsDirectory.appendingPathComponent("safe.svg")
         let svg = """
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
@@ -537,8 +537,8 @@ final class CmuxConfigDecodingTests: XCTestCase {
         try FileManager.default.createDirectory(at: iconsDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let globalConfigPath = globalDirectory.appendingPathComponent("cmux.json").path
-        let projectConfigPath = projectDirectory.appendingPathComponent("cmux.json").path
+        let globalConfigPath = globalDirectory.appendingPathComponent("uniconnect.json").path
+        let projectConfigPath = projectDirectory.appendingPathComponent("uniconnect.json").path
         let iconPath = iconsDirectory.appendingPathComponent("safe.svg")
         let svg = """
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
@@ -628,7 +628,7 @@ final class CmuxConfigDecodingTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let configURL = root.appendingPathComponent("cmux.json")
+        let configURL = root.appendingPathComponent("uniconnect.json")
         let invalidJSON = """
         {
           "actions": {
@@ -682,7 +682,7 @@ final class CmuxConfigDecodingTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let configURL = root.appendingPathComponent("cmux.json")
+        let configURL = root.appendingPathComponent("uniconnect.json")
         try """
         {
           "actions": {
@@ -696,7 +696,7 @@ final class CmuxConfigDecodingTests: XCTestCase {
         XCTAssertNotNil(store.resolvedAction(id: "first"))
         XCTAssertNil(store.resolvedAction(id: "second"))
 
-        let didAutoReload = expectation(description: "cmux.json should not hot reload")
+        let didAutoReload = expectation(description: "uniconnect.json should not hot reload")
         didAutoReload.isInverted = true
         var cancellable: AnyCancellable?
         cancellable = store.$loadedActions.dropFirst().sink { actions in
@@ -732,10 +732,10 @@ final class CmuxConfigDecodingTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let configURL = root.appendingPathComponent("cmux.json")
+        let configURL = root.appendingPathComponent("uniconnect.json")
         let data = """
         {
-          // cmux-owned app settings share the global cmux.json file.
+          // cmux-owned app settings share the global uniconnect.json file.
           "app": {
             "appearance": "dark",
           },
@@ -769,7 +769,7 @@ final class CmuxConfigDecodingTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let configURL = root.appendingPathComponent("cmux.json")
+        let configURL = root.appendingPathComponent("uniconnect.json")
         try "{\n/* missing close\n\"actions\": {}\n}".write(to: configURL, atomically: true, encoding: .utf8)
 
         let store = CmuxConfigStore(globalConfigPath: configURL.path, startFileWatchers: false)
@@ -790,8 +790,8 @@ final class CmuxConfigDecodingTests: XCTestCase {
         try FileManager.default.createDirectory(at: projectDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let configDirectory = projectDirectory.appendingPathComponent(".cmux", isDirectory: true)
-        let configURL = configDirectory.appendingPathComponent("cmux.json", isDirectory: false)
+        let configDirectory = projectDirectory.appendingPathComponent(".uniconnect", isDirectory: true)
+        let configURL = configDirectory.appendingPathComponent("uniconnect.json", isDirectory: false)
         let store = CmuxConfigStore(
             globalConfigPath: root.appendingPathComponent("missing-global.json").path,
             localConfigPath: configURL.path,
@@ -829,12 +829,12 @@ final class CmuxConfigDecodingTests: XCTestCase {
             isDirectory: true
         )
         let projectDirectory = root.appendingPathComponent("project", isDirectory: true)
-        let configDirectory = projectDirectory.appendingPathComponent(".cmux", isDirectory: true)
+        let configDirectory = projectDirectory.appendingPathComponent(".uniconnect", isDirectory: true)
         try FileManager.default.createDirectory(at: configDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let canonicalConfigURL = configDirectory.appendingPathComponent("cmux.json", isDirectory: false)
-        let legacyConfigURL = projectDirectory.appendingPathComponent("cmux.json", isDirectory: false)
+        let canonicalConfigURL = configDirectory.appendingPathComponent("uniconnect.json", isDirectory: false)
+        let legacyConfigURL = projectDirectory.appendingPathComponent("uniconnect.json", isDirectory: false)
         let store = CmuxConfigStore(
             globalConfigPath: root.appendingPathComponent("missing-global.json").path,
             localConfigPath: canonicalConfigURL.path,
@@ -873,7 +873,7 @@ final class CmuxConfigDecodingTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let configURL = root.appendingPathComponent("cmux.json")
+        let configURL = root.appendingPathComponent("uniconnect.json")
         let json = """
         {
           "newWorkspaceCommand": "Dev Environment",
@@ -906,8 +906,8 @@ final class CmuxConfigDecodingTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let globalConfigURL = root.appendingPathComponent("global-cmux.json")
-        let localConfigURL = root.appendingPathComponent("local-cmux.json")
+        let globalConfigURL = root.appendingPathComponent("global-uniconnect.json")
+        let localConfigURL = root.appendingPathComponent("local-uniconnect.json")
         try """
         {
           "actions": {
@@ -955,17 +955,17 @@ final class CmuxConfigDecodingTests: XCTestCase {
         )
         let globalDirectory = root.appendingPathComponent("global", isDirectory: true)
         let projectDirectory = root.appendingPathComponent("project", isDirectory: true)
-        let parentConfigDirectory = projectDirectory.appendingPathComponent(".cmux", isDirectory: true)
+        let parentConfigDirectory = projectDirectory.appendingPathComponent(".uniconnect", isDirectory: true)
         let childDirectory = projectDirectory.appendingPathComponent("child", isDirectory: true)
-        let childConfigDirectory = childDirectory.appendingPathComponent(".cmux", isDirectory: true)
+        let childConfigDirectory = childDirectory.appendingPathComponent(".uniconnect", isDirectory: true)
         try FileManager.default.createDirectory(at: globalDirectory, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: parentConfigDirectory, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: childConfigDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let globalConfigURL = globalDirectory.appendingPathComponent("cmux.json")
-        let parentConfigURL = parentConfigDirectory.appendingPathComponent("cmux.json")
-        let childConfigURL = childConfigDirectory.appendingPathComponent("cmux.json")
+        let globalConfigURL = globalDirectory.appendingPathComponent("uniconnect.json")
+        let parentConfigURL = parentConfigDirectory.appendingPathComponent("uniconnect.json")
+        let childConfigURL = childConfigDirectory.appendingPathComponent("uniconnect.json")
         try """
         {
           "notifications": {
@@ -1018,8 +1018,8 @@ final class CmuxConfigDecodingTests: XCTestCase {
         try FileManager.default.createDirectory(at: explicitDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let globalConfigURL = globalDirectory.appendingPathComponent("cmux.json")
-        let explicitConfigURL = explicitDirectory.appendingPathComponent("custom-cmux.json")
+        let globalConfigURL = globalDirectory.appendingPathComponent("uniconnect.json")
+        let explicitConfigURL = explicitDirectory.appendingPathComponent("custom-uniconnect.json")
         try """
         {
           "notifications": {
@@ -1056,13 +1056,13 @@ final class CmuxConfigDecodingTests: XCTestCase {
         let projectDirectory = root.appendingPathComponent("project", isDirectory: true)
         let childConfigDirectory = projectDirectory
             .appendingPathComponent("child", isDirectory: true)
-            .appendingPathComponent(".cmux", isDirectory: true)
+            .appendingPathComponent(".uniconnect", isDirectory: true)
         try FileManager.default.createDirectory(at: globalDirectory, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: childConfigDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let globalConfigURL = globalDirectory.appendingPathComponent("cmux.json")
-        let childConfigURL = childConfigDirectory.appendingPathComponent("cmux.json")
+        let globalConfigURL = globalDirectory.appendingPathComponent("uniconnect.json")
+        let childConfigURL = childConfigDirectory.appendingPathComponent("uniconnect.json")
         try """
         {
           "notifications": {
@@ -1098,13 +1098,13 @@ final class CmuxConfigDecodingTests: XCTestCase {
         let globalDirectory = root.appendingPathComponent("global", isDirectory: true)
         let projectDirectory = root.appendingPathComponent("project", isDirectory: true)
         let childDirectory = projectDirectory.appendingPathComponent("child", isDirectory: true)
-        let childConfigDirectory = childDirectory.appendingPathComponent(".cmux", isDirectory: true)
+        let childConfigDirectory = childDirectory.appendingPathComponent(".uniconnect", isDirectory: true)
         try FileManager.default.createDirectory(at: globalDirectory, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: childConfigDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let globalConfigURL = globalDirectory.appendingPathComponent("cmux.json")
-        let childConfigURL = childConfigDirectory.appendingPathComponent("cmux.json")
+        let globalConfigURL = globalDirectory.appendingPathComponent("uniconnect.json")
+        let childConfigURL = childConfigDirectory.appendingPathComponent("uniconnect.json")
         try """
         {
           "notifications": {
@@ -1140,7 +1140,7 @@ final class CmuxConfigDecodingTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let configURL = root.appendingPathComponent("cmux.json")
+        let configURL = root.appendingPathComponent("uniconnect.json")
         let json = """
         {
           "newWorkspaceCommand": "Missing",
@@ -1173,7 +1173,7 @@ final class CmuxConfigDecodingTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let configURL = root.appendingPathComponent("cmux.json")
+        let configURL = root.appendingPathComponent("uniconnect.json")
         let json = """
         {
           "newWorkspaceCommand": "Run Tests",
@@ -1207,7 +1207,7 @@ final class CmuxConfigDecodingTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let configURL = root.appendingPathComponent("cmux.json")
+        let configURL = root.appendingPathComponent("uniconnect.json")
         let json = """
         {
           "actions": {
@@ -1287,7 +1287,7 @@ final class CmuxConfigDecodingTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let configURL = root.appendingPathComponent("cmux.json")
+        let configURL = root.appendingPathComponent("uniconnect.json")
         let json = """
         {
           "ui": {
@@ -1882,7 +1882,7 @@ final class CmuxConfigWorkspaceCommandExecutionTests: XCTestCase {
             tabManager: manager,
             baseCwd: NSTemporaryDirectory(),
             configSourcePath: nil,
-            globalConfigPath: "/tmp/cmux-test-global-config.json"
+            globalConfigPath: "/tmp/uniconnect-test-global-config.json"
         ))
 
         XCTAssertEqual(manager.tabs.count, 2)
@@ -1907,7 +1907,7 @@ final class CmuxConfigWorkspaceCommandExecutionTests: XCTestCase {
             tabManager: manager,
             baseCwd: NSTemporaryDirectory(),
             configSourcePath: nil,
-            globalConfigPath: "/tmp/cmux-test-global-config.json"
+            globalConfigPath: "/tmp/uniconnect-test-global-config.json"
         ))
 
         XCTAssertEqual(manager.tabs.count, 2)
@@ -1932,7 +1932,7 @@ final class CmuxConfigWorkspaceCommandExecutionTests: XCTestCase {
             tabManager: manager,
             baseCwd: NSTemporaryDirectory(),
             configSourcePath: nil,
-            globalConfigPath: "/tmp/cmux-test-global-config.json"
+            globalConfigPath: "/tmp/uniconnect-test-global-config.json"
         ))
 
         XCTAssertEqual(manager.tabs.map(\.id), [existingWorkspace.id])
@@ -1955,7 +1955,7 @@ final class CmuxConfigWorkspaceCommandExecutionTests: XCTestCase {
             tabManager: manager,
             baseCwd: NSTemporaryDirectory(),
             configSourcePath: nil,
-            globalConfigPath: "/tmp/cmux-test-global-config.json"
+            globalConfigPath: "/tmp/uniconnect-test-global-config.json"
         ))
 
         XCTAssertEqual(manager.tabs.count, 1)

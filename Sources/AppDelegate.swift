@@ -165,7 +165,7 @@ final class CmuxApplicationAccessibilityHierarchyCache {
 }
 
 private enum CmuxThemeNotifications {
-    static let reloadConfig = Notification.Name("com.cmuxterm.themes.reload-config")
+    static let reloadConfig = Notification.Name("com.unixcision.uniconnect.themes.reload-config")
 }
 
 private struct WorkspaceGroupNewWorkspaceTarget {
@@ -671,7 +671,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     nonisolated(unsafe) static var shared: AppDelegate?
     /// Stateless control-socket syscall layer (CmuxControlSocket); composition-root owned.
     nonisolated let socketTransport = SocketTransport()
-    private static let reloadConfigurationMenuItemIdentifier = NSUserInterfaceItemIdentifier("com.cmux.reloadConfiguration")
+    private static let reloadConfigurationMenuItemIdentifier = NSUserInterfaceItemIdentifier("com.unixcision.uniconnect.reloadConfiguration")
 
     private static let cachedIsRunningUnderXCTest = detectRunningUnderXCTest(ProcessInfo.processInfo.environment)
     private var isRunningUnderXCTestCached: Bool {
@@ -1059,11 +1059,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var sessionAutosaveDeferredRetryPending = false
     private var processDetectedSessionSaveGeneration: UInt64 = 0
     private let sessionPersistenceQueue = DispatchQueue(
-        label: "com.cmuxterm.app.sessionPersistence",
+        label: "com.unixcision.uniconnect.sessionPersistence",
         qos: .utility
     )
     private nonisolated static let launchServicesRegistrationQueue = DispatchQueue(
-        label: "com.cmuxterm.app.launchServicesRegistration",
+        label: "com.unixcision.uniconnect.launchServicesRegistration",
         qos: .utility
     )
     private nonisolated static func enqueueLaunchServicesRegistrationWork(_ work: @escaping @Sendable () -> Void) {
@@ -12129,7 +12129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         KeyboardShortcutSettings.Action.allCases.filter { action in
             // System-wide hotkeys are dispatched via Carbon RegisterEventHotKey
             // and never routed through AppKit's local key handler. If a managed
-            // cmux.json entry somehow stores one as a chord, arming the prefix
+            // uniconnect.json entry somehow stores one as a chord, arming the prefix
             // here would swallow the first stroke and leave the second one
             // orphaned, breaking that keystroke for the focused terminal/browser
             // input.

@@ -74,7 +74,7 @@ final class CmuxConfigNamedColorTests: XCTestCase {
             }
         }
 
-        let configURL = root.appendingPathComponent("cmux.json")
+        let configURL = root.appendingPathComponent("uniconnect.json")
         let json = """
         {
           "commands": [{

@@ -16,7 +16,7 @@
 # How: strip everything up to and including the marker at the end of this script
 # (the marker is the last occurrence, so the greedy ## match lands on it), which
 # leaves exactly the user's appended tail. Then trim the leading separator and
-# let cmux-bash-integration.bash's PROMPT_COMMAND merge prepend _cmux_prompt_command.
+# let uniconnect-bash-integration.bash's PROMPT_COMMAND merge prepend _cmux_prompt_command.
 #
 # This file is the single source of truth. Sources/GhosttyTerminalView.swift
 # reads it (stripping these comments) and exports it as PROMPT_COMMAND, and
@@ -34,7 +34,7 @@ if [[ "${CMUX_LOAD_GHOSTTY_BASH_INTEGRATION:-0}" == "1" && -n "${GHOSTTY_RESOURC
     [[ -r "$_cmux_ghostty_bash" ]] && source "$_cmux_ghostty_bash"
 fi
 if [[ "${CMUX_SHELL_INTEGRATION:-1}" != "0" && -n "${CMUX_SHELL_INTEGRATION_DIR:-}" ]]; then
-    _cmux_bash_integration="$CMUX_SHELL_INTEGRATION_DIR/cmux-bash-integration.bash"
+    _cmux_bash_integration="$CMUX_SHELL_INTEGRATION_DIR/uniconnect-bash-integration.bash"
     [[ -r "$_cmux_bash_integration" ]] && source "$_cmux_bash_integration"
 fi
 unset _cmux_ghostty_bash _cmux_bash_integration

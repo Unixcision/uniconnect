@@ -44,7 +44,7 @@ struct ClaudeResumeHookSettingsTests {
                     "--model",
                     "opus",
                     "--settings",
-                    "/tmp/cmux-claude-hook-x/settings.json"
+                    "/tmp/uniconnect-claude-hook-x/settings.json"
                 ]
             )
         )

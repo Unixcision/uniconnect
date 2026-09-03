@@ -74,7 +74,7 @@ private func waitForWorkspaceSplitView(
 
     let lastRatioDescription = lastRenderedDividerPosition.map { String(describing: $0) } ?? "nil"
     XCTFail(
-        "Timed out waiting for rendered cmux.json split ratio \(expectedDividerPosition); last ratio: \(lastRatioDescription)",
+        "Timed out waiting for rendered uniconnect.json split ratio \(expectedDividerPosition); last ratio: \(lastRatioDescription)",
         file: file,
         line: line
     )
@@ -111,7 +111,7 @@ final class WorkspaceSplitStartupCommandTests: XCTestCase {
             modelSplitBeforeRender.dividerPosition,
             expectedDividerPosition,
             accuracy: 0.000_1,
-            "cmux.json split ratio should be applied to the Bonsplit model before rendering"
+            "uniconnect.json split ratio should be applied to the Bonsplit model before rendering"
         )
 
         let hostingView = NSHostingView(
@@ -148,7 +148,7 @@ final class WorkspaceSplitStartupCommandTests: XCTestCase {
             modelSplitAfterRender.dividerPosition,
             expectedDividerPosition,
             accuracy: 0.000_1,
-            "Bonsplit initial view layout should not rewrite the cmux.json split ratio back to 0.5"
+            "Bonsplit initial view layout should not rewrite the uniconnect.json split ratio back to 0.5"
         )
     }
 
@@ -160,8 +160,8 @@ final class WorkspaceSplitStartupCommandTests: XCTestCase {
             return
         }
 
-        let requestedDirectory = "/tmp/cmux-split-startup-\(UUID().uuidString)"
-        let startupCommand = "/tmp/cmux-tmux-command-\(UUID().uuidString).sh"
+        let requestedDirectory = "/tmp/uniconnect-split-startup-\(UUID().uuidString)"
+        let startupCommand = "/tmp/uniconnect-tmux-command-\(UUID().uuidString).sh"
         let tmuxStartCommand = "node /opt/oh-my-codex/dist/omx.js hud --watch"
         let initialDividerPosition = 0.875
         guard let splitPanelId = manager.newSplit(
@@ -213,8 +213,8 @@ final class WorkspaceSplitStartupCommandTests: XCTestCase {
             return
         }
 
-        let requestedDirectory = "/tmp/cmux-surface-startup-\(UUID().uuidString)"
-        let startupCommand = "/tmp/cmux-surface-command-\(UUID().uuidString).sh"
+        let requestedDirectory = "/tmp/uniconnect-surface-startup-\(UUID().uuidString)"
+        let startupCommand = "/tmp/uniconnect-surface-command-\(UUID().uuidString).sh"
         let tmuxStartCommand = "node /opt/oh-my-codex/dist/omx.js hud --watch"
         guard let surface = workspace.newTerminalSurface(
             inPane: paneId,
@@ -237,7 +237,7 @@ final class WorkspaceSplitStartupCommandTests: XCTestCase {
         let sourcePanelId = try XCTUnwrap(workspace.focusedPanelId)
         let placeholderCommand = "/bin/sh -c 'printf placeholder; while :; do sleep 86400; done'"
         let attachCommand = "/bin/sh -c 'opencode attach http://127.0.0.1:4096 --session subagent --dir /tmp/omo'"
-        let requestedDirectory = "/tmp/cmux-respawn-\(UUID().uuidString)"
+        let requestedDirectory = "/tmp/uniconnect-respawn-\(UUID().uuidString)"
         let startupEnvironment = [
             "CMUX_OMO_SUBAGENT": "1",
             "OMO_SUBAGENT_DESC": "test"
@@ -291,8 +291,8 @@ final class WorkspaceSplitStartupCommandTests: XCTestCase {
     func testSessionRestoreRelaunchesOMXHudTmuxStartCommand() throws {
         let workspace = Workspace()
         let sourcePanelId = try XCTUnwrap(workspace.focusedPanelId)
-        let requestedDirectory = "/tmp/cmux-hud-restore-\(UUID().uuidString)"
-        let originalStartupScript = "/tmp/cmux-tmux-command-\(UUID().uuidString).sh"
+        let requestedDirectory = "/tmp/uniconnect-hud-restore-\(UUID().uuidString)"
+        let originalStartupScript = "/tmp/uniconnect-tmux-command-\(UUID().uuidString).sh"
         let tmuxStartCommand = "env OMX_SESSION_ID=omx-test node '/opt/oh-my-codex/dist/cli/omx.js' hud --watch"
         let hudPanel = try XCTUnwrap(workspace.newTerminalSplit(
             from: sourcePanelId,
@@ -334,7 +334,7 @@ final class WorkspaceSplitStartupCommandTests: XCTestCase {
         let panel = try XCTUnwrap(workspace.newTerminalSurface(
             inPane: paneId,
             focus: false,
-            initialCommand: "/tmp/cmux-command-\(UUID().uuidString).sh",
+            initialCommand: "/tmp/uniconnect-command-\(UUID().uuidString).sh",
             tmuxStartCommand: genericCommand
         ))
 

@@ -17,7 +17,7 @@ final class FilePreviewReviewFeedbackTests: XCTestCase {
         let exported = Set(declarations.compactMap { $0["UTTypeIdentifier"] as? String })
 
         XCTAssertTrue(
-            exported.contains("com.cmux.filepreview.transfer"),
+            exported.contains("com.unixcision.uniconnect.filepreview.transfer"),
             "Expected app bundle to export file-preview transfer type, got \(exported)"
         )
     }

@@ -14,7 +14,7 @@ extension CMUXCLI {
         let configDirEnvOverrideSubpath: String? // e.g. "GROK_HOME" + "hooks"
         let createConfigDirIfMissing: Bool // for agents whose hook dir is created lazily
         let configDirResolver: (@Sendable () -> String)?
-        let sessionStoreSuffix: String // e.g. "cursor" -> ~/.cmuxterm/cursor-hook-sessions.json
+        let sessionStoreSuffix: String // e.g. "cursor" -> ~/.uniconnect/cursor-hook-sessions.json
         let disableEnvVar: String   // e.g. "CMUX_CURSOR_HOOKS_DISABLED"
         let hookMarker: String      // Marker in commands: "cmux hooks cursor"
         let binaryName: String
@@ -244,7 +244,7 @@ extension CMUXCLI {
         ),
         AgentHookDef(
             name: "kiro", displayName: "Kiro", statusKey: "kiro",
-            configDir: ".kiro/agents", configFile: "cmux.json",
+            configDir: ".kiro/agents", configFile: "uniconnect.json",
             configDirEnvOverride: "KIRO_HOME", configDirEnvOverrideSubpath: "agents",
             createConfigDirIfMissing: true, binaryName: "kiro-cli",
             sessionStoreSuffix: "kiro", disableEnvVar: "CMUX_KIRO_HOOKS_DISABLED",
@@ -508,7 +508,7 @@ extension CMUXCLI {
             .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
         guard !slug.isEmpty else { return nil }
-        return "/tmp/cmux-debug-\(slug).sock"
+        return "/tmp/uniconnect-debug-\(slug).sock"
     }
 
     private static func pinnedHookShellTraceCommand(
@@ -532,7 +532,7 @@ extension CMUXCLI {
 
     private static func pinnedHookShellTraceLogPath(socketPath: String?) -> String {
         guard let socketPath else {
-            return "/tmp/cmux-debug.log"
+            return "/tmp/uniconnect-debug.log"
         }
         let socketName = URL(fileURLWithPath: socketPath).lastPathComponent
         if socketName.hasPrefix("cmux-debug-"), socketName.hasSuffix(".sock") {
@@ -540,7 +540,7 @@ extension CMUXCLI {
                 .appendingPathComponent(String(socketName.dropLast(".sock".count)) + ".log")
                 .path
         }
-        return "/tmp/cmux-debug.log"
+        return "/tmp/uniconnect-debug.log"
     }
 
     private static func normalizedHookInstallValue(_ value: String?) -> String? {

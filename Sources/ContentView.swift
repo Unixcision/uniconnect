@@ -6975,8 +6975,8 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.openCmuxSettingsFile",
-                title: constant(String(localized: "settings.settingsJSON.openFile", defaultValue: "Open cmux.json")),
-                subtitle: constant(String(localized: "command.cmuxConfig.subtitle", defaultValue: "cmux.json")),
+                title: constant(String(localized: "settings.settingsJSON.openFile", defaultValue: "Open uniconnect.json")),
+                subtitle: constant(String(localized: "command.cmuxConfig.subtitle", defaultValue: "uniconnect.json")),
                 keywords: ["open", "cmux", "json", "config", "configuration", "settings", "file", "editor", "dotfile"]
             )
         )
@@ -7818,7 +7818,7 @@ struct ContentView: View {
             )
         )
 
-        let cmuxConfigDefaultSubtitle = String(localized: "command.cmuxConfig.subtitle", defaultValue: "cmux.json")
+        let cmuxConfigDefaultSubtitle = String(localized: "command.cmuxConfig.subtitle", defaultValue: "uniconnect.json")
         for issue in cmuxConfigStore.configurationIssues {
             contributions.append(
                 CommandPaletteCommandContribution(
@@ -7891,12 +7891,12 @@ struct ContentView: View {
         case .schemaError:
             return String(
                 localized: "command.cmuxConfig.issue.schemaError.title",
-                defaultValue: "cmux.json Schema Error"
+                defaultValue: "uniconnect.json Schema Error"
             )
         default:
             return String(
                 localized: "command.cmuxConfig.issue.warning.title",
-                defaultValue: "cmux.json Configuration Warning"
+                defaultValue: "uniconnect.json Configuration Warning"
             )
         }
     }
@@ -7924,7 +7924,7 @@ struct ContentView: View {
             )
             let fallback = String(
                 localized: "command.cmuxConfig.issue.schemaError.fallback",
-                defaultValue: "Invalid cmux.json"
+                defaultValue: "Invalid uniconnect.json"
             )
             return String(format: format, issue.message ?? fallback)
         case .newWorkspaceActionNotFound:
@@ -10099,7 +10099,7 @@ enum CmuxExtensionSidebarSelection {
     /// Directory custom sidebars are authored into.
     static var customSidebarsDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/cmux/sidebars", isDirectory: true)
+            .appendingPathComponent(".config/uniconnect/sidebars", isDirectory: true)
     }
 
     /// One provider descriptor per `<name>.swift`/`<name>.json` file in the
@@ -17464,7 +17464,7 @@ final class SidebarDragAutoScrollController: ObservableObject {
 /// deletes) — the row's snapshot-boundary rule forbids reading
 /// `tabManager.workspaceGroups` from inside the contextMenu builder.
 enum SidebarTabDragPayload {
-    static let typeIdentifier = "com.cmux.sidebar-tab-reorder"
+    static let typeIdentifier = "com.unixcision.uniconnect.sidebar-tab-reorder"
     static let dropContentType = UTType(exportedAs: typeIdentifier)
     static let dropContentTypes: [UTType] = [dropContentType]
     static let prefix = "cmux.sidebar-tab."

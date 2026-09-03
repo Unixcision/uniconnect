@@ -87,11 +87,11 @@ enum CLISocketPathResolver {
         case inaccessible(errnoCode: Int32)
     }
 
-    private static let stableSocketFileName = "cmux.sock"
-    static let legacyDefaultSocketPath = "/tmp/cmux.sock"
-    private static let fallbackSocketPath = "/tmp/cmux-debug.sock"
-    private static let nightlySocketPath = "/tmp/cmux-nightly.sock"
-    private static let stagingSocketPath = "/tmp/cmux-staging.sock"
+    private static let stableSocketFileName = "uniconnect.sock"
+    static let legacyDefaultSocketPath = "/tmp/uniconnect.sock"
+    private static let fallbackSocketPath = "/tmp/uniconnect-debug.sock"
+    private static let nightlySocketPath = "/tmp/uniconnect-nightly.sock"
+    private static let stagingSocketPath = "/tmp/uniconnect-staging.sock"
 
     static func defaultSocketPath(
         bundleIdentifier: String?,
@@ -117,12 +117,12 @@ enum CLISocketPathResolver {
 
     private static func userScopedStableSocketPath(currentUserID: uid_t = getuid()) -> String {
         stableSocketDirectoryURL()?
-            .appendingPathComponent("cmux-\(currentUserID).sock", isDirectory: false)
+            .appendingPathComponent("uniconnect-\(currentUserID).sock", isDirectory: false)
             .path ?? legacyUserScopedStableSocketPath(currentUserID: currentUserID)
     }
 
     private static func legacyUserScopedStableSocketPath(currentUserID: uid_t = getuid()) -> String {
-        "/tmp/cmux-\(currentUserID).sock"
+        "/tmp/uniconnect-\(currentUserID).sock"
     }
 
     static func isImplicitDefaultPath(
@@ -496,7 +496,7 @@ enum CLISocketPathResolver {
 
     /// The directory holding the control socket and its marker files.
     ///
-    /// Resolves to ``CmuxStateDirectory`` (`~/.local/state/cmux`), matching the
+    /// Resolves to ``CmuxStateDirectory`` (`~/.local/state/uniconnect`), matching the
     /// app's `SocketControlSettings.stableSocketDirectoryURL()`. This keeps the
     /// CLI off the app's TCC-protected Application Support data on the agent hook
     /// path (https://github.com/manaflow-ai/cmux/issues/5146). The CLI is a

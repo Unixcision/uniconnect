@@ -3,50 +3,50 @@ import Testing
 
 @Test func markerFilesAreVariantAware() {
     #expect(SocketPathMarkerFiles.variant(
-        bundleIdentifier: "com.cmuxterm.app",
+        bundleIdentifier: "com.unixcision.uniconnect",
         environment: [:]
     ) == .stable)
     #expect(SocketPathMarkerFiles.variant(
-        bundleIdentifier: "com.cmuxterm.app.nightly",
+        bundleIdentifier: "com.unixcision.uniconnect.nightly",
         environment: [:]
     ) == .nightly(slug: nil))
     #expect(SocketPathMarkerFiles.variant(
-        bundleIdentifier: "com.cmuxterm.app.debug.agent",
+        bundleIdentifier: "com.unixcision.uniconnect.debug.agent",
         environment: [:]
     ) == .dev(slug: "agent"))
     #expect(SocketPathMarkerFiles.variant(
-        bundleIdentifier: "com.cmuxterm.app.debug",
+        bundleIdentifier: "com.unixcision.uniconnect.debug",
         environment: ["CMUX_TAG": "Issue 3542"]
     ) == .dev(slug: "issue-3542"))
     #expect(SocketPathMarkerFiles.variant(
-        bundleIdentifier: "com.cmuxterm.app.debug",
+        bundleIdentifier: "com.unixcision.uniconnect.debug",
         environment: ["CMUX_TAG": "café"]
     ) == .dev(slug: "caf"))
 }
 
 @Test func defaultSocketPathsStayVariantScoped() {
     #expect(SocketPathMarkerFiles.defaultSocketPath(
-        bundleIdentifier: "com.cmuxterm.app",
+        bundleIdentifier: "com.unixcision.uniconnect",
         environment: [:],
         isDebugBuild: false,
-        stableSocketPath: "/stable/cmux.sock"
-    ) == "/stable/cmux.sock")
+        stableSocketPath: "/stable/uniconnect.sock"
+    ) == "/stable/uniconnect.sock")
     #expect(SocketPathMarkerFiles.defaultSocketPath(
-        bundleIdentifier: "com.cmuxterm.app.nightly",
+        bundleIdentifier: "com.unixcision.uniconnect.nightly",
         environment: [:],
         isDebugBuild: false,
-        stableSocketPath: "/stable/cmux.sock"
-    ) == "/tmp/cmux-nightly.sock")
+        stableSocketPath: "/stable/uniconnect.sock"
+    ) == "/tmp/uniconnect-nightly.sock")
     #expect(SocketPathMarkerFiles.defaultSocketPath(
-        bundleIdentifier: "com.cmuxterm.app.staging.my-feature",
+        bundleIdentifier: "com.unixcision.uniconnect.staging.my-feature",
         environment: [:],
         isDebugBuild: false,
-        stableSocketPath: "/stable/cmux.sock"
-    ) == "/tmp/cmux-staging-my-feature.sock")
+        stableSocketPath: "/stable/uniconnect.sock"
+    ) == "/tmp/uniconnect-staging-my-feature.sock")
     #expect(SocketPathMarkerFiles.defaultSocketPath(
-        bundleIdentifier: "com.cmuxterm.app.debug",
+        bundleIdentifier: "com.unixcision.uniconnect.debug",
         environment: ["CMUX_TAG": "Issue 3542"],
         isDebugBuild: false,
-        stableSocketPath: "/stable/cmux.sock"
-    ) == "/tmp/cmux-debug-issue-3542.sock")
+        stableSocketPath: "/stable/uniconnect.sock"
+    ) == "/tmp/uniconnect-debug-issue-3542.sock")
 }

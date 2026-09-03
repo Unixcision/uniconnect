@@ -161,10 +161,10 @@ nonisolated enum SSHPTYAttachStartupCommandBuilder {
             remoteRelayPort: relayPort,
             shellFeatures: RemoteInteractiveShellBootstrapBuilder.shellFeatures(),
             bundledZshIntegration: RemoteInteractiveShellBootstrapBuilder.bundledShellIntegrationScript(
-                named: "cmux-zsh-integration.zsh"
+                named: "uniconnect-zsh-integration.zsh"
             ),
             bundledBashIntegration: RemoteInteractiveShellBootstrapBuilder.bundledShellIntegrationScript(
-                named: "cmux-bash-integration.bash"
+                named: "uniconnect-bash-integration.bash"
             )
         )
     }
@@ -247,9 +247,9 @@ nonisolated enum SSHPTYAttachStartupCommandBuilder {
 
     private static func restoreControlPathTemplate(relayPort: Int?) -> String {
         if let relayPort, relayPort > 0 {
-            return "/tmp/cmux-ssh-\(getuid())-\(relayPort)-%C"
+            return "/tmp/uniconnect-ssh-\(getuid())-\(relayPort)-%C"
         }
-        return "/tmp/cmux-ssh-\(getuid())-%C"
+        return "/tmp/uniconnect-ssh-\(getuid())-%C"
     }
 
     static func sshOptionsSupportReusableForegroundAuth(_ options: [String]) -> Bool {

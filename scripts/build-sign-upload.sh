@@ -47,7 +47,7 @@ fi
 
 TAG="$1"
 SIGN_HASH="A050CC7E193C8221BDBA204E731B046CDCCC1B30"
-ENTITLEMENTS="cmux.entitlements"
+ENTITLEMENTS="UniConnect.entitlements"
 APP_PATH="build/Build/Products/Release/UniConnect.app"
 GHOSTTYKIT_CRASH_REPORT_SUBDIR="cmux/crash"
 
@@ -195,7 +195,7 @@ cask "cmux" do
   zap trash: [
     "~/Library/Application Support/cmux",
     "~/Library/Caches/cmux",
-    "~/Library/Preferences/ai.manaflow.cmuxterm.plist",
+    "~/Library/Preferences/ai.manaflow.uniconnect.plist",
   ]
 end
 CASKEOF

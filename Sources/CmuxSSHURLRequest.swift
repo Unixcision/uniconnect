@@ -21,7 +21,7 @@ enum CmuxSSHURLParseError: Error, Equatable {
 struct CmuxSSHURLRequest: Equatable {
     static let maxDestinationLength = 256
     static let maxTitleLength = 160
-    static let supportedSchemes: Set<String> = ["cmux", "cmux-nightly", "cmux-dev"]
+    static let supportedSchemes: Set<String> = ["uniconnect", "uniconnect-nightly", "uniconnect-dev"]
     static var activeSupportedSchemes: Set<String> {
         [AuthEnvironment.callbackScheme.lowercased()]
     }
@@ -56,7 +56,7 @@ struct CmuxSSHURLRequest: Equatable {
     }
 
     func cliPreview(socketPath: String?) -> String {
-        var parts = ["cmux"]
+        var parts = ["uniconnect"]
         if let socketPath, !socketPath.isEmpty {
             parts += ["--socket", socketPath]
         }

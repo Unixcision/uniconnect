@@ -26,13 +26,15 @@ final class PostHogAnalytics {
     private var activeCheckTimer: Timer?
 
     private init() {
-        workQueue = DispatchQueue(label: "com.cmux.posthog.analytics", qos: .utility)
+        workQueue = DispatchQueue(label: "com.unixcision.uniconnect.posthog.analytics", qos: .utility)
         utcHourFormatter = Self.makeUTCFormatter("yyyy-MM-dd'T'HH")
         utcDayFormatter = Self.makeUTCFormatter("yyyy-MM-dd")
         workQueue.setSpecific(key: workQueueSpecificKey, value: ())
     }
 
     private var isEnabled: Bool {
+        // UniConnect never sends telemetry anywhere.
+        return false
         guard TelemetrySettings.enabledForCurrentLaunch else { return false }
 #if DEBUG
         // Avoid polluting production analytics while iterating locally.

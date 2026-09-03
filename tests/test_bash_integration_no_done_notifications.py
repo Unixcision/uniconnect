@@ -113,7 +113,7 @@ class InteractiveBash:
 
 def test_bash_integration_does_not_emit_done_notifications() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    integration_script = repo_root / "Resources/shell-integration/cmux-bash-integration.bash"
+    integration_script = repo_root / "Resources/shell-integration/uniconnect-bash-integration.bash"
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)

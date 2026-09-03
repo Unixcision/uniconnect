@@ -32,7 +32,7 @@ fi
        && -z "${ZSH_EXECUTION_STRING:-}" \
        && "${CMUX_SHELL_INTEGRATION:-1}" != "0" \
        && -n "${CMUX_SHELL_INTEGRATION_DIR:-}" \
-       && -r "${CMUX_SHELL_INTEGRATION_DIR}/cmux-zsh-integration.zsh" \
+       && -r "${CMUX_SHELL_INTEGRATION_DIR}/uniconnect-zsh-integration.zsh" \
        && "${TERM:-}" == "xterm-256color" \
        && -z "${CMUX_ZSH_RESTORE_TERM:-}" ]]; then
         # Keep startup TERM-compatible prompt/theme selection during shell init,
@@ -61,7 +61,7 @@ fi
 
         # Load cmux integration (unless disabled)
         if [[ "${CMUX_SHELL_INTEGRATION:-1}" != "0" && -n "${CMUX_SHELL_INTEGRATION_DIR:-}" ]]; then
-            builtin typeset _cmux_integ="$CMUX_SHELL_INTEGRATION_DIR/cmux-zsh-integration.zsh"
+            builtin typeset _cmux_integ="$CMUX_SHELL_INTEGRATION_DIR/uniconnect-zsh-integration.zsh"
             [[ -r "$_cmux_integ" ]] && builtin source -- "$_cmux_integ"
         fi
     fi

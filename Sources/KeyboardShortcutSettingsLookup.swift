@@ -50,7 +50,7 @@ extension KeyboardShortcutSettings {
 
     static func settingsFileManagedSubtitle(for action: Action) -> String? {
         guard isManagedBySettingsFile(action) else { return nil }
-        return String(localized: "settings.shortcuts.managedByFile", defaultValue: "Managed in cmux.json")
+        return String(localized: "settings.shortcuts.managedByFile", defaultValue: "Managed in uniconnect.json")
     }
 
 }

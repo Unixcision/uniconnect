@@ -61,3 +61,7 @@ tmp-*/
 
 # Local dogfood scratch (screenshots, recordings) — never commit
 artifacts/
+
+# build local ad-hoc
+Resources/UniConnect.adhoc.entitlements
+Resources/UniConnect.entitlements.orig

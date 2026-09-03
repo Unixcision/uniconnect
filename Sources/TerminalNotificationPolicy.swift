@@ -422,11 +422,11 @@ private final class NotificationHookProcessRun: @unchecked Sendable {
     private let inputData: Data
     private let maxOutputBytes: Int
     private let queue = DispatchQueue(
-        label: "com.cmuxterm.notification-hook.process.\(UUID().uuidString)",
+        label: "com.unixcision.uniconnect.notification-hook.process.\(UUID().uuidString)",
         qos: .utility
     )
     private let stdinWriteQueue = DispatchQueue(
-        label: "com.cmuxterm.notification-hook.stdin.\(UUID().uuidString)",
+        label: "com.unixcision.uniconnect.notification-hook.stdin.\(UUID().uuidString)",
         qos: .utility
     )
     private let outputBuffer = NotificationHookPipeBuffer()

@@ -189,7 +189,7 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
                 relayPort: 4444,
                 relayID: "relay-id",
                 relayToken: "relay-token",
-                localSocketPath: "/tmp/cmux-test.sock",
+                localSocketPath: "/tmp/uniconnect-test.sock",
                 terminalStartupCommand: "ssh example.com"
             ),
             autoConnect: false
@@ -1513,7 +1513,7 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
             relayPort: 64011,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: nil,
             preserveAfterTerminalExit: true
         )

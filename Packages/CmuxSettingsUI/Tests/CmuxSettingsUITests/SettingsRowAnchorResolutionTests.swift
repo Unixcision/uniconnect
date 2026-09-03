@@ -4,7 +4,7 @@ import Testing
 
 /// Guards the search-result highlight bridge in both directions:
 ///
-/// - **Forward** — every cmux.json path a `SettingsCardRow` declares via
+/// - **Forward** — every uniconnect.json path a `SettingsCardRow` declares via
 ///   `configurationReview` resolves to a real indexed entry, so the row
 ///   carries the same `.id` its search hit posts.
 /// - **Inverse** — every curated search result (the things that appear
@@ -14,11 +14,11 @@ import Testing
 /// `rowConfigPaths` mirrors the `.json(...)` annotations across
 /// `Sections/*.swift`. `explicitlyAnchoredEntryIDs` lists the searchable
 /// rows that carry an explicit `settingsSearchAnchors([...])` instead of
-/// a cmux.json path (pickers and action buttons that don't write a
+/// a uniconnect.json path (pickers and action buttons that don't write a
 /// single key). Together they must cover every curated setting entry.
 @Suite("SettingsRowAnchorResolution")
 struct SettingsRowAnchorResolutionTests {
-    /// Every singular cmux.json path declared by an *unconditionally
+    /// Every singular uniconnect.json path declared by an *unconditionally
     /// rendered* settings row. Excludes rows that aren't standalone search
     /// results: `workspaceColors.colors` (repeated per-palette rows) and
     /// the conditional sub-fields that are hidden in the default state —
@@ -116,7 +116,7 @@ struct SettingsRowAnchorResolutionTests {
     ]
 
     /// Searchable rows anchored with an explicit `settingsSearchAnchors`
-    /// (no single cmux.json path): pickers and action buttons. Each must
+    /// (no single uniconnect.json path): pickers and action buttons. Each must
     /// match the corresponding curated entry id verbatim.
     static let explicitlyAnchoredEntryIDs: Set<String> = [
         "setting:app:appearance",

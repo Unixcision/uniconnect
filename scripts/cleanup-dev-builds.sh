@@ -3,16 +3,16 @@
 #
 # Each `./scripts/reload.sh --tag <tag>` produces:
 #   ~/Library/Developer/Xcode/DerivedData/cmux-<tag>/      (multi-GB)
-#   /tmp/cmux-<tag>/                                       (build scratch)
-#   /tmp/cmux-debug-<tag>.sock                             (control socket)
-#   /tmp/cmux-debug-<tag>.log                              (debug log)
-#   /tmp/cmux-reload-<tag>.log                             (build log)
+#   /tmp/uniconnect-<tag>/                                       (build scratch)
+#   /tmp/uniconnect-debug-<tag>.sock                             (control socket)
+#   /tmp/uniconnect-debug-<tag>.log                              (debug log)
+#   /tmp/uniconnect-reload-<tag>.log                             (build log)
 #   ~/Library/Application Support/cmux/cmuxd-dev-<tag>.sock (cmuxd socket)
 #
 # This script removes those artifacts for tags that are safe to clean.
 # Safety rules (always on):
 #   - Skip any tag whose `UniConnect DEV <tag>` app is currently running.
-#   - Skip the tag pointed at by /tmp/cmux-last-cli-path (most recent reload).
+#   - Skip the tag pointed at by /tmp/uniconnect-last-cli-path (most recent reload).
 # A worktree merely existing on the same name is not treated as a
 # protection. Use --keep TAG when you want to preserve a build whose
 # worktree you still have around, or --older-than DAYS to skip anything
@@ -35,7 +35,7 @@ set -euo pipefail
 
 DERIVED_DATA_ROOT="$HOME/Library/Developer/Xcode/DerivedData"
 APP_SUPPORT_DIR="$HOME/Library/Application Support/cmux"
-LAST_CLI_PATH_FILE="/tmp/cmux-last-cli-path"
+LAST_CLI_PATH_FILE="/tmp/uniconnect-last-cli-path"
 
 apply=0
 older_than_days=0
@@ -82,11 +82,11 @@ artifact_paths_for_tag() {
     local tag="$1"
     printf '%s\n' \
         "$DERIVED_DATA_ROOT/cmux-${tag}" \
-        "/tmp/cmux-${tag}" \
-        "/tmp/cmux-${tag}.tar" \
-        "/tmp/cmux-debug-${tag}.sock" \
-        "/tmp/cmux-debug-${tag}.log" \
-        "/tmp/cmux-reload-${tag}.log" \
+        "/tmp/uniconnect-${tag}" \
+        "/tmp/uniconnect-${tag}.tar" \
+        "/tmp/uniconnect-debug-${tag}.sock" \
+        "/tmp/uniconnect-debug-${tag}.log" \
+        "/tmp/uniconnect-reload-${tag}.log" \
         "$APP_SUPPORT_DIR/cmuxd-dev-${tag}.sock"
 }
 

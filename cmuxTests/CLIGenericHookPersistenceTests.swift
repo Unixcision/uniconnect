@@ -164,9 +164,9 @@ extension CLINotifyProcessIntegrationRegressionTests {
                 agent: "copilot",
                 subcommand: "session-start",
                 sessionId: "copilot-session-123",
-                executable: "/tmp/cmux-agent-upstreams/copilot-install/bin/copilot",
+                executable: "/tmp/uniconnect-agent-upstreams/copilot-install/bin/copilot",
                 launchArguments: [
-                    "/tmp/cmux-agent-upstreams/copilot-install/bin/copilot",
+                    "/tmp/uniconnect-agent-upstreams/copilot-install/bin/copilot",
                     "--model",
                     "gpt-5.4",
                     "--resume=old-session",
@@ -180,7 +180,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
                     "COPILOT_GITHUB_TOKEN": "secret"
                 ],
                 expectedArguments: [
-                    "/tmp/cmux-agent-upstreams/copilot-install/bin/copilot",
+                    "/tmp/uniconnect-agent-upstreams/copilot-install/bin/copilot",
                     "--model",
                     "gpt-5.4",
                     "--allow-all-tools"
@@ -976,7 +976,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
 
         let hookURL = root
             .appendingPathComponent("agents", isDirectory: true)
-            .appendingPathComponent("cmux.json", isDirectory: false)
+            .appendingPathComponent("uniconnect.json", isDirectory: false)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: hookURL)) as? [String: Any])
         XCTAssertEqual(json["name"] as? String, "cmux")
         XCTAssertNil(json["version"], "Kiro agent configs should not receive Cursor's hooks version field")
@@ -2785,7 +2785,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
         let legacyHookURL = root
             .appendingPathComponent(".grok", isDirectory: true)
             .appendingPathComponent("hooks", isDirectory: true)
-            .appendingPathComponent("cmux.json", isDirectory: false)
+            .appendingPathComponent("uniconnect.json", isDirectory: false)
         try FileManager.default.createDirectory(at: legacyHookURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         let legacyHookJSON: [String: Any] = [
             "hooks": [
@@ -2892,7 +2892,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
         try "#!/bin/sh\nexit 0\n".write(to: pinnedCLI, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: pinnedCLI.path)
 
-        let socketPath = "/tmp/cmux-debug-grok-pin.sock"
+        let socketPath = "/tmp/uniconnect-debug-grok-pin.sock"
         let result = runProcess(
             executablePath: cliPath,
             arguments: ["hooks", "grok", "install", "--yes"],
@@ -2951,7 +2951,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
         let legacyHookURL = root
             .appendingPathComponent(".grok", isDirectory: true)
             .appendingPathComponent("hooks", isDirectory: true)
-            .appendingPathComponent("cmux.json", isDirectory: false)
+            .appendingPathComponent("uniconnect.json", isDirectory: false)
         try FileManager.default.createDirectory(at: legacyHookURL.deletingLastPathComponent(), withIntermediateDirectories: true)
 
         let preservedCommand = "bash -lc 'cmux hooks grok notification && ~/bin/after-grok'"
@@ -3017,7 +3017,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
         let legacyHookURL = root
             .appendingPathComponent(".grok", isDirectory: true)
             .appendingPathComponent("hooks", isDirectory: true)
-            .appendingPathComponent("cmux.json", isDirectory: false)
+            .appendingPathComponent("uniconnect.json", isDirectory: false)
         try FileManager.default.createDirectory(at: legacyHookURL.deletingLastPathComponent(), withIntermediateDirectories: true)
 
         let legacyHookJSON: [String: Any] = [

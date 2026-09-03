@@ -56,13 +56,13 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
 
         let captured = GhosttyPasteboardHelper.captureNextStandardClipboardWrite {
             GhosttyPasteboardHelper.writeString(
-                "/tmp/cmux-screen.txt",
+                "/tmp/uniconnect-screen.txt",
                 to: GHOSTTY_CLIPBOARD_STANDARD
             )
             return true
         }
 
-        XCTAssertEqual(captured, "/tmp/cmux-screen.txt")
+        XCTAssertEqual(captured, "/tmp/uniconnect-screen.txt")
         XCTAssertEqual(pasteboard.string(forType: .string), "existing clipboard text")
         XCTAssertEqual(pasteboard.changeCount, initialChangeCount)
     }
@@ -74,7 +74,7 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
 
         _ = GhosttyPasteboardHelper.captureNextStandardClipboardWrite {
             GhosttyPasteboardHelper.writeString(
-                "/tmp/cmux-screen.txt",
+                "/tmp/uniconnect-screen.txt",
                 to: GHOSTTY_CLIPBOARD_STANDARD
             )
             return true
@@ -794,13 +794,13 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
 
         TerminalImageTransferPlanner.executeForTesting(
             plan: .uploadFiles([url], .workspaceRemote),
-            uploadWorkspaceRemote: { _, _, finish in finish(.success(["/tmp/cmux-drop-123.png"])) },
+            uploadWorkspaceRemote: { _, _, finish in finish(.success(["/tmp/uniconnect-drop-123.png"])) },
             uploadDetectedSSH: { _, _, _, finish in finish(.failure(NSError(domain: "unused", code: 0))) },
             insertText: { completedText = $0 },
             onFailure: { _ in XCTFail("unexpected failure") }
         )
 
-        XCTAssertEqual(completedText, "/tmp/cmux-drop-123.png")
+        XCTAssertEqual(completedText, "/tmp/uniconnect-drop-123.png")
     }
 
     func testCancelledRemoteImagePasteExecutionSuppressesCompletionHandlers() throws {
@@ -832,7 +832,7 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
 
         XCTAssertTrue(returnedOperation === operation)
         XCTAssertTrue(operation.cancel())
-        completion?(.success(["/tmp/cmux-drop-cancelled.png"]))
+        completion?(.success(["/tmp/uniconnect-drop-cancelled.png"]))
 
         XCTAssertEqual(cancellationHandlerCalls, 1)
         XCTAssertTrue(insertedTexts.isEmpty)
@@ -847,7 +847,7 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
         XCTAssertTrue(operation.cancel())
 
         let returnedOperation = TerminalImageTransferPlanner.executeForTesting(
-            plan: .insertText("/tmp/cmux-drop-local.png"),
+            plan: .insertText("/tmp/uniconnect-drop-local.png"),
             operation: operation,
             uploadWorkspaceRemote: { _, _, finish in
                 finish(.failure(NSError(domain: "unused", code: 0)))
@@ -888,7 +888,7 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
             isRemoteTerminalSurface: true,
             uploadRemote: { urls, finish in
                 uploadedURLs = urls
-                finish(.success(["/tmp/cmux-drop-abc123.png"]))
+                finish(.success(["/tmp/uniconnect-drop-abc123.png"]))
             },
             sendText: { sentText.append($0) },
             onFailure: { failureCount += 1 }
@@ -897,7 +897,7 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
 
         XCTAssertTrue(handled)
         XCTAssertEqual(uploadedURLs.count, 1)
-        XCTAssertEqual(sentText, ["/tmp/cmux-drop-abc123.png"])
+        XCTAssertEqual(sentText, ["/tmp/uniconnect-drop-abc123.png"])
         XCTAssertEqual(failureCount, 0)
     }
 
@@ -915,7 +915,7 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
                 uploadedURL = urls.first
                 XCTAssertEqual(urls.count, 1)
                 XCTAssertTrue(FileManager.default.fileExists(atPath: urls[0].path))
-                finish(.success(["/tmp/cmux-drop-abc123.png"]))
+                finish(.success(["/tmp/uniconnect-drop-abc123.png"]))
             },
             sendText: { _ in },
             onFailure: {}
@@ -1125,7 +1125,7 @@ final class TerminalOffscreenStartupTests: XCTestCase {
 
         panel.surface.releaseSurfaceForTesting()
         XCTAssertNil(panel.surface.surface)
-        panel.surface.sendInput("touch /tmp/cmux-cold-send\n")
+        panel.surface.sendInput("touch /tmp/uniconnect-cold-send\n")
 
         let pending = panel.surface.debugPendingSocketInputForTesting()
         XCTAssertGreaterThan(
@@ -1331,7 +1331,7 @@ final class TerminalOffscreenStartupTests: XCTestCase {
         XCTAssertNil(panel.surface.surface)
 
         let response = TerminalController.shared.handleSocketLine(
-            "send_workspace \(workspace.id.uuidString) touch /tmp/cmux-daemon-cold-send\\n"
+            "send_workspace \(workspace.id.uuidString) touch /tmp/uniconnect-daemon-cold-send\\n"
         )
         XCTAssertEqual(response, "OK")
         TerminalMutationBus.shared.drainForTesting()
@@ -5620,22 +5620,22 @@ final class TerminalOpenURLTargetResolutionTests: XCTestCase {
     }
 
     func testResolvesFileSchemeAsExternal() throws {
-        let target = try XCTUnwrap(resolveTerminalOpenURLTarget("file:///tmp/cmux.txt"))
+        let target = try XCTUnwrap(resolveTerminalOpenURLTarget("file:///tmp/uniconnect.txt"))
         switch target {
         case let .external(url):
             XCTAssertTrue(url.isFileURL)
-            XCTAssertEqual(url.path, "/tmp/cmux.txt")
+            XCTAssertEqual(url.path, "/tmp/uniconnect.txt")
         default:
             XCTFail("Expected file URL to open externally")
         }
     }
 
     func testResolvesAbsolutePathAsExternalFileURL() throws {
-        let target = try XCTUnwrap(resolveTerminalOpenURLTarget("/tmp/cmux-path.txt"))
+        let target = try XCTUnwrap(resolveTerminalOpenURLTarget("/tmp/uniconnect-path.txt"))
         switch target {
         case let .external(url):
             XCTAssertTrue(url.isFileURL)
-            XCTAssertEqual(url.path, "/tmp/cmux-path.txt")
+            XCTAssertEqual(url.path, "/tmp/uniconnect-path.txt")
         default:
             XCTFail("Expected absolute file path to open externally")
         }
@@ -5652,12 +5652,12 @@ final class TerminalOpenURLTargetResolutionTests: XCTestCase {
     }
 
     func testResolvesHostlessHTTPSAsExternal() throws {
-        let target = try XCTUnwrap(resolveTerminalOpenURLTarget("https:///tmp/cmux.txt"))
+        let target = try XCTUnwrap(resolveTerminalOpenURLTarget("https:///tmp/uniconnect.txt"))
         switch target {
         case let .external(url):
             XCTAssertEqual(url.scheme, "https")
             XCTAssertNil(url.host)
-            XCTAssertEqual(url.path, "/tmp/cmux.txt")
+            XCTAssertEqual(url.path, "/tmp/uniconnect.txt")
         default:
             XCTFail("Expected hostless HTTPS URL to open externally")
         }
@@ -5720,7 +5720,7 @@ final class TerminalCmdClickPathPunctuationTrimmingTests: XCTestCase {
     }
 
     func testResolveQuicklookFallsBackToStrippedPathWhenLiteralPathIsMissing() {
-        let strippedPath = "/tmp/cmux-cmdclick-path.md"
+        let strippedPath = "/tmp/uniconnect-cmdclick-path.md"
 
         XCTAssertEqual(
             cmuxResolveQuicklookPathForTesting(
@@ -5733,8 +5733,8 @@ final class TerminalCmdClickPathPunctuationTrimmingTests: XCTestCase {
     }
 
     func testResolveQuicklookPrefersLiteralPathThatReallyEndsWithDot() {
-        let literalPath = "/tmp/cmux-cmdclick-literal-dot.md."
-        let strippedPath = "/tmp/cmux-cmdclick-literal-dot.md"
+        let literalPath = "/tmp/uniconnect-cmdclick-literal-dot.md."
+        let strippedPath = "/tmp/uniconnect-cmdclick-literal-dot.md"
 
         XCTAssertEqual(
             cmuxResolveQuicklookPathForTesting(
@@ -5747,8 +5747,8 @@ final class TerminalCmdClickPathPunctuationTrimmingTests: XCTestCase {
     }
 
     func testResolveQuicklookPrefersLiteralPathThatReallyEndsWithParen() {
-        let literalPath = "/tmp/cmux-cmdclick-literal-paren)"
-        let strippedPath = "/tmp/cmux-cmdclick-literal-paren"
+        let literalPath = "/tmp/uniconnect-cmdclick-literal-paren)"
+        let strippedPath = "/tmp/uniconnect-cmdclick-literal-paren"
 
         XCTAssertEqual(
             cmuxResolveQuicklookPathForTesting(
@@ -6038,7 +6038,7 @@ final class TerminalControllerSocketListenerHealthTests: XCTestCase {
         TerminalController.shared.stop()
         defer { TerminalController.shared.stop() }
 
-        let path = "/tmp/cmux-debug-reclaim-\(UUID().uuidString.lowercased()).sock"
+        let path = "/tmp/uniconnect-debug-reclaim-\(UUID().uuidString.lowercased()).sock"
         let listenerFD = try bindUnixSocket(at: path)
         Darwin.close(listenerFD)
         defer {
@@ -6121,7 +6121,7 @@ final class TerminalControllerSocketListenerHealthTests: XCTestCase {
         TerminalController.shared.stop()
         defer { TerminalController.shared.stop() }
 
-        let reservedPath = "/tmp/cmux-reserved-startup-\(UUID().uuidString).sock"
+        let reservedPath = "/tmp/uniconnect-reserved-startup-\(UUID().uuidString).sock"
         defer {
             unlink(reservedPath)
             unlink(reservedPath + ".lock")
@@ -6129,14 +6129,14 @@ final class TerminalControllerSocketListenerHealthTests: XCTestCase {
         XCTAssertEqual(TerminalController.shared.reserveStartupSocketPath(reservedPath), reservedPath)
 
         XCTAssertEqual(
-            TerminalController.shared.activeSocketPath(preferredPath: "/tmp/cmux-preferred.sock"),
+            TerminalController.shared.activeSocketPath(preferredPath: "/tmp/uniconnect-preferred.sock"),
             reservedPath
         )
         XCTAssertTrue(FileManager.default.fileExists(atPath: reservedPath + ".lock"))
 
         TerminalController.shared.start(
             tabManager: TabManager(),
-            socketPath: TerminalController.shared.activeSocketPath(preferredPath: "/tmp/cmux-preferred.sock"),
+            socketPath: TerminalController.shared.activeSocketPath(preferredPath: "/tmp/uniconnect-preferred.sock"),
             accessMode: .allowAll
         )
 
@@ -6204,7 +6204,7 @@ final class TerminalControllerSocketListenerHealthTests: XCTestCase {
     }
 
     private func makeTempSocketPath() -> String {
-        "/tmp/cmux-socket-health-\(UUID().uuidString).sock"
+        "/tmp/uniconnect-socket-health-\(UUID().uuidString).sock"
     }
 
     private func bindUnixSocket(at path: String) throws -> Int32 {

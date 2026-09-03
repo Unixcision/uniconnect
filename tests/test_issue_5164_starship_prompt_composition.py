@@ -252,7 +252,7 @@ def test_plain_bash_bootstrap_installs_cmux_prompt_command() -> None:
         pc = fields.get(f"PC_{i}", "")
         # Assert the observable contract (hook installed, bootstrap removed, no
         # phantom hook) rather than the exact integration-internal string, so this
-        # stays green if cmux-bash-integration.bash ever tweaks PROMPT_COMMAND.
+        # stays green if uniconnect-bash-integration.bash ever tweaks PROMPT_COMMAND.
         assert "_cmux_prompt_command" in pc, (
             f"plain-bash bootstrap did not install _cmux_prompt_command at prompt {i}: <{pc}>"
             + debug

@@ -176,7 +176,7 @@ final class TerminalNotificationPolicyEngineTests: XCTestCase {
             id: "partial-notification",
             command: #"printf '{"notification":{"title":"Retitled"},"context":{"appFocused":true}}'"#,
             timeoutSeconds: 5,
-            sourcePath: "/tmp/cmux.json",
+            sourcePath: "/tmp/uniconnect.json",
             cwd: FileManager.default.temporaryDirectory.path
         )
 
@@ -187,7 +187,7 @@ final class TerminalNotificationPolicyEngineTests: XCTestCase {
         XCTAssertEqual(patched.notification.title, "Retitled")
         XCTAssertEqual(patched.notification.subtitle, "Subtitle")
         XCTAssertEqual(patched.notification.body, "Body")
-        XCTAssertEqual(patched.context.configPath, "/tmp/cmux.json")
+        XCTAssertEqual(patched.context.configPath, "/tmp/uniconnect.json")
         XCTAssertEqual(patched.context.hookId, "partial-notification")
         XCTAssertTrue(patched.context.appFocused)
         XCTAssertFalse(patched.context.focusedPanel)
@@ -208,7 +208,7 @@ final class TerminalNotificationPolicyEngineTests: XCTestCase {
             id: "bad",
             command: "printf nope",
             timeoutSeconds: 5,
-            sourcePath: "/tmp/cmux.json",
+            sourcePath: "/tmp/uniconnect.json",
             cwd: FileManager.default.temporaryDirectory.path
         )
 
@@ -237,7 +237,7 @@ final class TerminalNotificationPolicyEngineTests: XCTestCase {
             id: "slow",
             command: "sleep 2; cat",
             timeoutSeconds: 0.1,
-            sourcePath: "/tmp/cmux.json",
+            sourcePath: "/tmp/uniconnect.json",
             cwd: FileManager.default.temporaryDirectory.path
         )
 
@@ -266,7 +266,7 @@ final class TerminalNotificationPolicyEngineTests: XCTestCase {
             id: "background-stdout",
             command: "sleep 3 & cat",
             timeoutSeconds: 5,
-            sourcePath: "/tmp/cmux.json",
+            sourcePath: "/tmp/uniconnect.json",
             cwd: FileManager.default.temporaryDirectory.path
         )
 
@@ -457,7 +457,7 @@ final class GhosttyCrashBreadcrumbTests: XCTestCase {
         )
         _ = try writeCrashEnvelope(
             named: "foreign.ghosttycrash",
-            executablePath: "/private/tmp/cmux-tbinput-unit/Build/Products/Debug/cmux DEV.app/Contents/MacOS/cmux DEV",
+            executablePath: "/private/tmp/uniconnect-tbinput-unit/Build/Products/Debug/cmux DEV.app/Contents/MacOS/cmux DEV",
             modifiedAt: foreignCrashDate
         )
 
@@ -481,7 +481,7 @@ final class GhosttyCrashBreadcrumbTests: XCTestCase {
         )
         _ = try writeCrashEnvelope(
             named: "foreign-leading-item.ghosttycrash",
-            executablePath: "/private/tmp/cmux-tbinput-unit/Build/Products/Debug/cmux DEV.app/Contents/MacOS/cmux DEV",
+            executablePath: "/private/tmp/uniconnect-tbinput-unit/Build/Products/Debug/cmux DEV.app/Contents/MacOS/cmux DEV",
             modifiedAt: foreignCrashDate,
             leadingItems: [
                 (type: "attachment", payload: Data(#"{"filename":"metadata.txt"}"#.utf8)),
@@ -500,7 +500,7 @@ final class GhosttyCrashBreadcrumbTests: XCTestCase {
     func testPendingCrashReturnsNilForOnlyDifferentExecutableCrash() throws {
         _ = try writeCrashEnvelope(
             named: "foreign-only.ghosttycrash",
-            executablePath: "/private/tmp/cmux-tbinput-unit/Build/Products/Debug/cmux DEV.app/Contents/MacOS/cmux DEV",
+            executablePath: "/private/tmp/uniconnect-tbinput-unit/Build/Products/Debug/cmux DEV.app/Contents/MacOS/cmux DEV",
             modifiedAt: Date(timeIntervalSince1970: 300)
         )
 
@@ -512,7 +512,7 @@ final class GhosttyCrashBreadcrumbTests: XCTestCase {
 
     func testDefaultCrashDirectoryUsesCmuxStatePath() throws {
         XCTAssertTrue(
-            GhosttyCrashBreadcrumb.defaultCrashDirectoryURL.path.hasSuffix("/.local/state/cmux/crash"),
+            GhosttyCrashBreadcrumb.defaultCrashDirectoryURL.path.hasSuffix("/.local/state/uniconnect/crash"),
             GhosttyCrashBreadcrumb.defaultCrashDirectoryURL.path
         )
     }
@@ -615,7 +615,7 @@ final class NotificationDockBadgeTests: XCTestCase {
 
     func testNotificationClickActionRoundTripsAndIsStored() {
         let store = TerminalNotificationStore.shared
-        let path = "/tmp/cmux-crash-\(UUID().uuidString).ghosttycrash"
+        let path = "/tmp/uniconnect-crash-\(UUID().uuidString).ghosttycrash"
         let action = TerminalNotificationClickAction.revealInFinder(path: path)
         let userInfo = Dictionary(uniqueKeysWithValues: action.userInfo.map { (AnyHashable($0.key), $0.value as Any) })
         var delivered: TerminalNotification?
@@ -657,7 +657,7 @@ final class NotificationDockBadgeTests: XCTestCase {
             body: "Diagnostic file saved",
             createdAt: Date(),
             isRead: false,
-            clickAction: .revealInFinder(path: "/tmp/cmux-missing-\(UUID().uuidString)/missing.ghosttycrash")
+            clickAction: .revealInFinder(path: "/tmp/uniconnect-missing-\(UUID().uuidString)/missing.ghosttycrash")
         )
 
         store.replaceNotificationsForTesting([notification])
@@ -681,7 +681,7 @@ final class NotificationDockBadgeTests: XCTestCase {
             body: "Diagnostic file saved",
             createdAt: Date(),
             isRead: false,
-            clickAction: .revealInFinder(path: "/tmp/cmux-crash.ghosttycrash")
+            clickAction: .revealInFinder(path: "/tmp/uniconnect-crash.ghosttycrash")
         )
         let terminalNotification = TerminalNotification(
             id: UUID(),

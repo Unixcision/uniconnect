@@ -391,8 +391,8 @@ final class FinderFileDropRegressionTests: XCTestCase {
 
     func testFileExplorerPathInsertionEscapesMultiplePathsLikeTerminalDrop() {
         let paths = [
-            "/tmp/cmux path/one file.txt",
-            "/tmp/cmux path/quote's file.txt"
+            "/tmp/uniconnect path/one file.txt",
+            "/tmp/uniconnect path/quote's file.txt"
         ]
 
         let text = FileExplorerTerminalPathInsertion.insertedText(forPaths: paths)
@@ -407,10 +407,10 @@ final class FinderFileDropRegressionTests: XCTestCase {
 
     func testFileURLTextInsertionIsExtensionAgnostic() {
         let urls = [
-            URL(fileURLWithPath: "/tmp/cmux drop/image.png"),
-            URL(fileURLWithPath: "/tmp/cmux drop/report.pdf"),
-            URL(fileURLWithPath: "/tmp/cmux drop/movie.mov"),
-            URL(fileURLWithPath: "/tmp/cmux drop/archive.zip")
+            URL(fileURLWithPath: "/tmp/uniconnect drop/image.png"),
+            URL(fileURLWithPath: "/tmp/uniconnect drop/report.pdf"),
+            URL(fileURLWithPath: "/tmp/uniconnect drop/movie.mov"),
+            URL(fileURLWithPath: "/tmp/uniconnect drop/archive.zip")
         ]
 
         let text = TerminalImageTransferPlanner.insertedText(forFileURLs: urls)
@@ -496,7 +496,7 @@ final class FinderFileDropRegressionTests: XCTestCase {
     }
 
     func testFilePreviewTransferRoutesToTextEvenWhenTargetPasteboardOmitsFileURLType() throws {
-        let filePath = "/tmp/cmux drop/from image pane.png"
+        let filePath = "/tmp/uniconnect drop/from image pane.png"
         let dragId = UUID()
         _ = FilePreviewDragRegistry.shared.register(
             FilePreviewDragEntry(filePath: filePath, displayTitle: "from image pane.png"),
@@ -587,8 +587,8 @@ final class FinderFileDropRegressionTests: XCTestCase {
     func testFileExplorerRelativePathInsertionStandardizesMacOSSymlinkedRoots() {
         XCTAssertEqual(
             FileExplorerTerminalPathInsertion.relativePath(
-                for: "/private/tmp/cmux-project/Sources/App.swift",
-                rootPath: "/tmp/cmux-project"
+                for: "/private/tmp/uniconnect-project/Sources/App.swift",
+                rootPath: "/tmp/uniconnect-project"
             ),
             "Sources/App.swift"
         )

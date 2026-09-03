@@ -88,7 +88,7 @@ final class WorkspaceSSHFishShellTests: XCTestCase {
                 "--name", "SSH Workspace",
                 "--port", "2222",
                 "--identity", "/Users/test/.ssh/id_ed25519",
-                "--ssh-option", "ControlPath=/tmp/cmux-ssh-%C",
+                "--ssh-option", "ControlPath=/tmp/uniconnect-ssh-%C",
                 "--ssh-option", "StrictHostKeyChecking=accept-new",
                 "cmux-macmini",
             ],

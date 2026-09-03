@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WRAPPER = ROOT / "Resources" / "bin" / "cmux-claude-wrapper"
+WRAPPER = ROOT / "Resources" / "bin" / "uniconnect-claude-wrapper"
 SHELL_INTEGRATION_DIR = ROOT / "Resources" / "shell-integration"
 
 
@@ -29,7 +29,7 @@ def run_wrapper(argv: list[str], env: dict[str, str]) -> subprocess.CompletedPro
 
 
 def test_wrapper_skips_cmux_shims_and_bundled_claude(failures: list[str]) -> None:
-    with tempfile.TemporaryDirectory(prefix="cmux-claude-wrapper-resolution-") as td:
+    with tempfile.TemporaryDirectory(prefix="uniconnect-claude-wrapper-resolution-") as td:
         root = Path(td)
         bundle_bin = root / "cmux.app" / "Contents" / "Resources" / "bin"
         shim_bin = root / "shim-bin"
@@ -37,7 +37,7 @@ def test_wrapper_skips_cmux_shims_and_bundled_claude(failures: list[str]) -> Non
         for directory in (bundle_bin, shim_bin, real_bin):
             directory.mkdir(parents=True, exist_ok=True)
 
-        wrapper = bundle_bin / "cmux-claude-wrapper"
+        wrapper = bundle_bin / "uniconnect-claude-wrapper"
         wrapper.write_bytes(WRAPPER.read_bytes())
         wrapper.chmod(0o755)
 
@@ -103,13 +103,13 @@ echo real-grok "$@"
                 "--noprofile",
                 "--norc",
                 "-c",
-                'source "$CMUX_SHELL_INTEGRATION_DIR/cmux-bash-integration.bash"; grok --version',
+                'source "$CMUX_SHELL_INTEGRATION_DIR/uniconnect-bash-integration.bash"; grok --version',
             ],
             [
                 "/bin/zsh",
                 "-f",
                 "-c",
-                'source "$CMUX_SHELL_INTEGRATION_DIR/cmux-zsh-integration.zsh"; grok --version',
+                'source "$CMUX_SHELL_INTEGRATION_DIR/uniconnect-zsh-integration.zsh"; grok --version',
             ],
         ]
         for argv in shell_commands:
@@ -149,13 +149,13 @@ def test_shell_integration_preserves_empty_path_components(failures: list[str]) 
                 "--noprofile",
                 "--norc",
                 "-c",
-                'source "$CMUX_SHELL_INTEGRATION_DIR/cmux-bash-integration.bash"; printf "%s\\n" "$PATH"',
+                'source "$CMUX_SHELL_INTEGRATION_DIR/uniconnect-bash-integration.bash"; printf "%s\\n" "$PATH"',
             ],
             [
                 "/bin/zsh",
                 "-f",
                 "-c",
-                'source "$CMUX_SHELL_INTEGRATION_DIR/cmux-zsh-integration.zsh"; printf "%s\\n" "$PATH"',
+                'source "$CMUX_SHELL_INTEGRATION_DIR/uniconnect-zsh-integration.zsh"; printf "%s\\n" "$PATH"',
             ],
         ]
         for argv in shell_commands:

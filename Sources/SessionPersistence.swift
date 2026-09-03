@@ -703,7 +703,7 @@ enum SurfaceResumeApprovalStore {
     private static let secretFileName = ".surface-resume-approval-secret"
     private static let settingsTerminalSectionKey = "terminal"
     private static let settingsRecordsKey = "resumeCommands"
-    private static let keychainService = "com.cmuxterm.app.surface-resume-approvals"
+    private static let keychainService = "com.unixcision.uniconnect.surface-resume-approvals"
     private static let keychainAccount = "hmac-secret-v1"
 
     struct StoredFile: Codable {
@@ -1083,7 +1083,7 @@ enum SurfaceResumeApprovalStore {
     }
 
     private static func storesRecordsInCmuxSettings(_ fileURL: URL) -> Bool {
-        fileURL.lastPathComponent == "cmux.json"
+        fileURL.lastPathComponent == "uniconnect.json"
     }
 
     private static func legacyURL(forCmuxSettingsURL fileURL: URL) -> URL {
@@ -1968,7 +1968,7 @@ enum SessionPersistenceStore {
         }
         let bundleId = (bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
             ? bundleIdentifier!
-            : "com.cmuxterm.app"
+            : "com.unixcision.uniconnect"
         let safeBundleId = bundleId.replacingOccurrences(
             of: "[^A-Za-z0-9._-]",
             with: "_",
@@ -1982,7 +1982,7 @@ enum SessionPersistenceStore {
 
 enum SessionScrollbackReplayStore {
     static let environmentKey = "CMUX_RESTORE_SCROLLBACK_FILE"
-    private static let directoryName = "cmux-session-scrollback"
+    private static let directoryName = "uniconnect-session-scrollback"
     private static let ansiEscape = "\u{001B}"
     private static let ansiReset = "\u{001B}[0m"
 

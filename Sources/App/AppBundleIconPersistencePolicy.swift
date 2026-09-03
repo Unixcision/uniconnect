@@ -1,7 +1,7 @@
 import Foundation
 
 enum AppBundleIconPersistencePolicy {
-    private static let stableReleaseBundleIdentifier = "com.cmuxterm.app"
+    private static let stableReleaseBundleIdentifier = "com.unixcision.uniconnect"
     private static let stableReleaseAppBundleName = "UniConnect.app"
     static let disablePersistenceArgument = "--cmux-disable-bundle-icon-persistence"
     static let disablePersistenceDefaultsKey = "cmuxDisableBundleIconPersistence"

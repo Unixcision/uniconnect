@@ -271,8 +271,8 @@ def _run_case(base: Path, *, shell: str, shell_args: list[str], script: Path, sc
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
     cases = [
-        ("zsh", ["-f", "-c"], root / "Resources" / "shell-integration" / "cmux-zsh-integration.zsh"),
-        ("bash", ["--noprofile", "--norc", "-c"], root / "Resources" / "shell-integration" / "cmux-bash-integration.bash"),
+        ("zsh", ["-f", "-c"], root / "Resources" / "shell-integration" / "uniconnect-zsh-integration.zsh"),
+        ("bash", ["--noprofile", "--norc", "-c"], root / "Resources" / "shell-integration" / "uniconnect-bash-integration.bash"),
     ]
     scenarios = [
         "prompt_does_not_call_gh",

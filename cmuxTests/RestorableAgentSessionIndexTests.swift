@@ -920,7 +920,7 @@ final class RestorableAgentSessionIndexTests: XCTestCase {
         storeFilename: String,
         sessions: [String: [String: Any]]
     ) throws {
-        let stateDir = root.appendingPathComponent(".cmuxterm", isDirectory: true)
+        let stateDir = root.appendingPathComponent(".uniconnect", isDirectory: true)
         try FileManager.default.createDirectory(at: stateDir, withIntermediateDirectories: true)
         let data = try JSONSerialization.data(
             withJSONObject: [

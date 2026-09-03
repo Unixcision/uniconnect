@@ -5,7 +5,7 @@ import Foundation
 @MainActor
 final class MenuBarExtraController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
-    private let menu = NSMenu(title: "cmux")
+    private let menu = NSMenu(title: "UniConnect")
     private let notificationStore: TerminalNotificationStore
     private let onShowGlobalSearch: (NSStatusBarButton, (() -> Void)?) -> Void
     private let onShowMainWindow: () -> Void
@@ -67,7 +67,7 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
             button.imagePosition = .imageOnly
             button.imageScaling = .scaleProportionallyDown
             button.image = MenuBarIconRenderer.makeImage(unreadCount: 0)
-            button.toolTip = "cmux"
+            button.toolTip = "UniConnect"
         }
 
         notificationMenuSnapshotCancellable = notificationStore.$notificationMenuSnapshot
@@ -187,7 +187,7 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         if let button = statusItem.button {
             button.image = MenuBarIconRenderer.makeImage(unreadCount: displayedUnreadCount)
             button.toolTip = displayedUnreadCount == 0
-                ? "cmux"
+                ? "UniConnect"
                 : displayedUnreadCount == 1
                     ? "cmux: " + String(localized: "statusMenu.tooltip.unread.one", defaultValue: "1 unread notification")
                     : "cmux: " + String(localized: "statusMenu.tooltip.unread.other", defaultValue: "\(displayedUnreadCount) unread notifications")

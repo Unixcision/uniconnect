@@ -15,14 +15,14 @@ import Security
 /// is set) the legacy keychain entry.
 public struct SocketControlPasswordStore: Sendable {
     /// Posted after the password file is written or cleared, so observers can re-read it.
-    public static let didChangeNotification = Notification.Name("cmux.socketControlPasswordDidChange")
+    public static let didChangeNotification = Notification.Name("uniconnect.socketControlPasswordDidChange")
 
     /// Default password file name.
     public static let fileName = "socket-control-password"
 
     private static let keychainMigrationDefaultsKey = "socketControlPasswordMigrationVersion"
     private static let keychainMigrationVersion = 1
-    private static let legacyKeychainService = "com.cmuxterm.app.socket-control"
+    private static let legacyKeychainService = "com.unixcision.uniconnect.socket-control"
     private static let legacyKeychainAccount = "local-socket-password"
 
     private let environment: [String: String]
@@ -220,7 +220,7 @@ public struct SocketControlPasswordStore: Sendable {
     /// The default password file URL within the cmux state directory.
     ///
     /// Resolves to `<directory>/socket-control-password`, where `directory`
-    /// defaults to ``CmuxStateDirectory`` (`~/.local/state/cmux`). The file lives
+    /// defaults to ``CmuxStateDirectory`` (`~/.local/state/uniconnect`). The file lives
     /// outside Application Support so the separately-signed `cmux` CLI can read it
     /// on the agent hook path without triggering the macOS Sequoia "access data
     /// from other apps" prompt (https://github.com/manaflow-ai/cmux/issues/5146).
@@ -327,7 +327,7 @@ public struct SocketControlPasswordStore: Sendable {
 #if canImport(Security)
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
-            kSecAttrService: "com.cmuxterm.app.socket-control",
+            kSecAttrService: "com.unixcision.uniconnect.socket-control",
             kSecAttrAccount: "local-socket-password",
             kSecReturnData: true,
             kSecMatchLimit: kSecMatchLimitOne,
@@ -348,7 +348,7 @@ public struct SocketControlPasswordStore: Sendable {
 #if canImport(Security)
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
-            kSecAttrService: "com.cmuxterm.app.socket-control",
+            kSecAttrService: "com.unixcision.uniconnect.socket-control",
             kSecAttrAccount: "local-socket-password",
         ]
         let status = SecItemDelete(query as CFDictionary)

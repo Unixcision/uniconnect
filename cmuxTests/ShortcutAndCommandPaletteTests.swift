@@ -1150,7 +1150,7 @@ final class RightSidebarModeShortcutHintTests: XCTestCase {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         temporaryDirectoryURL = directoryURL
         KeyboardShortcutSettings.settingsFileStore = KeyboardShortcutSettingsFileStore(
-            primaryPath: directoryURL.appendingPathComponent("cmux.json", isDirectory: false).path,
+            primaryPath: directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false).path,
             fallbackPath: nil,
             startWatching: false
         )
@@ -1228,7 +1228,7 @@ final class RightSidebarModeShortcutHintTests: XCTestCase {
 
     func testModeShortcutUsesSettingsFileBindings() throws {
         let settingsFileURL = try XCTUnwrap(temporaryDirectoryURL)
-            .appendingPathComponent("cmux.json", isDirectory: false)
+            .appendingPathComponent("uniconnect.json", isDirectory: false)
         try """
         {
           "shortcuts": {
@@ -1746,28 +1746,28 @@ final class QuitWarningSettingsTests: XCTestCase {
 final class BuildFlavorTests: XCTestCase {
     func testDetectsDevFromBundleName() {
         XCTAssertEqual(
-            BuildFlavor.detect(bundleName: "cmux DEV noqdlg", bundleIdentifier: "com.cmuxterm.app"),
+            BuildFlavor.detect(bundleName: "cmux DEV noqdlg", bundleIdentifier: "com.unixcision.uniconnect"),
             .dev
         )
     }
 
     func testDetectsDevBeforeTagTextCanLookNightly() {
         XCTAssertEqual(
-            BuildFlavor.detect(bundleName: "cmux DEV nightly", bundleIdentifier: "com.cmuxterm.app"),
+            BuildFlavor.detect(bundleName: "cmux DEV nightly", bundleIdentifier: "com.unixcision.uniconnect"),
             .dev
         )
     }
 
     func testDetectsNightlyFromBundleIdentifier() {
         XCTAssertEqual(
-            BuildFlavor.detect(bundleName: "cmux", bundleIdentifier: "com.cmuxterm.app.nightly"),
+            BuildFlavor.detect(bundleName: "cmux", bundleIdentifier: "com.unixcision.uniconnect.nightly"),
             .nightly
         )
     }
 
     func testDetectsStableByDefault() {
         XCTAssertEqual(
-            BuildFlavor.detect(bundleName: "cmux", bundleIdentifier: "com.cmuxterm.app"),
+            BuildFlavor.detect(bundleName: "cmux", bundleIdentifier: "com.unixcision.uniconnect"),
             .stable
         )
     }

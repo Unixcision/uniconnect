@@ -129,8 +129,8 @@ def _run_case(
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
     cases = [
-        ("zsh", ["-f", "-c"], root / "Resources/shell-integration/cmux-zsh-integration.zsh"),
-        ("bash", ["--noprofile", "--norc", "-c"], root / "Resources/shell-integration/cmux-bash-integration.bash"),
+        ("zsh", ["-f", "-c"], root / "Resources/shell-integration/uniconnect-zsh-integration.zsh"),
+        ("bash", ["--noprofile", "--norc", "-c"], root / "Resources/shell-integration/uniconnect-bash-integration.bash"),
     ]
 
     base = Path("/tmp") / f"cmux_shell_git_config_remote_url_{os.getpid()}"

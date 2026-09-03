@@ -33,7 +33,7 @@ struct SettingsSearchIndexTests {
     }
 
     /// The search-result highlight depends on a row being able to map
-    /// the dotted cmux.json path it declares (e.g. the "Show Branch +
+    /// the dotted uniconnect.json path it declares (e.g. the "Show Branch +
     /// Directory in Sidebar" row's `sidebar.showBranchDirectory`) to the
     /// same anchor id the sidebar search hit carries. This is the bridge
     /// that lets `scrollTo` + the pulse find the row.

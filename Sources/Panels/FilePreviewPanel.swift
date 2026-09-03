@@ -92,7 +92,7 @@ struct FileExternalOpenApplicationResolver: Sendable {
             return false
         }
         return !bundleIdentifier.hasPrefix("dev.cmux.")
-            && !bundleIdentifier.hasPrefix("com.cmuxterm.")
+            && !bundleIdentifier.hasPrefix("com.unixcision.uniconnect.")
     }
 }
 
@@ -2446,7 +2446,7 @@ final class FilePreviewPDFContainerView: NSView, NSSplitViewDelegate, NSOutlineV
     private var drawsPreviewBackground = true
     private var lastAppliedPDFScrollBackgroundAppearance: PDFScrollBackgroundAppearance?
     private static let documentLoadQueue = DispatchQueue(
-        label: "com.cmux.file-preview.pdf-document-load",
+        label: "com.unixcision.uniconnect.file-preview.pdf-document-load",
         qos: .userInitiated
     )
 
@@ -3688,7 +3688,7 @@ final class FilePreviewImageContainerView: NSView {
     private var previewBackgroundColor = NSColor.textBackgroundColor
     private var drawsPreviewBackground = true
     private static let imageLoadQueue = DispatchQueue(
-        label: "com.cmux.file-preview.image-load",
+        label: "com.unixcision.uniconnect.file-preview.image-load",
         qos: .userInitiated
     )
 

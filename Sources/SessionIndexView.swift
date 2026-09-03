@@ -2680,7 +2680,7 @@ struct SectionPopoverHost: NSViewRepresentable {
             // open SwiftUI layout settles over multiple passes and
             // preferredContentSize briefly reports a partial height —
             // NSPopover latches onto that and renders squished (evidence:
-            // /tmp/cmux-debug-spin-fix.log, refreshContent logged
+            // /tmp/uniconnect-debug-spin-fix.log, refreshContent logged
             // fitting=360x486 at present, but visible popover was ~280).
             // Instead we drive popover.contentSize manually from
             // fittingSize on every updateNSView / present call.

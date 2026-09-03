@@ -127,7 +127,7 @@ public struct SettingsWindowRoot: View {
         }
         .navigationSplitViewStyle(.balanced)
         // Inject the built search index so each SettingsCardRow can map
-        // its declared cmux.json paths to scroll/highlight anchor ids,
+        // its declared uniconnect.json paths to scroll/highlight anchor ids,
         // and publish the active highlight so the matching row pulses.
         .environment(\.settingsSearchIndex, searchIndex)
         .environment(\.settingsSearchHighlightState, searchHighlight)
@@ -430,7 +430,7 @@ public struct SettingsWindowRoot: View {
         // Order matches the legacy in-app SettingsView scroll order:
         // Account, App, Terminal, TextBox, Mobile, Sidebar, Beta Features,
         // Automation, Browser (with embedded Import), Global Hotkey,
-        // Keyboard Shortcuts, Workspace Colors, cmux.json, Reset.
+        // Keyboard Shortcuts, Workspace Colors, uniconnect.json, Reset.
         AccountSection(
             defaultsStore: defaultsStore,
             catalog: catalog,

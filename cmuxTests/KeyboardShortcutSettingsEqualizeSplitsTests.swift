@@ -11,7 +11,7 @@ final class KeyboardShortcutSettingsEqualizeSplitsTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -39,7 +39,7 @@ final class KeyboardShortcutSettingsEqualizeSplitsTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {

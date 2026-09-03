@@ -9,7 +9,7 @@ import Testing
 
     @Test func pathIdentityOnlyAcceptsUnixSocketFiles() throws {
         let directory = URL(
-            fileURLWithPath: "/tmp/cmux-ctlsock-id-\(UUID().uuidString.lowercased().prefix(8))",
+            fileURLWithPath: "/tmp/uniconnect-ctlsock-id-\(UUID().uuidString.lowercased().prefix(8))",
             isDirectory: true
         )
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -236,7 +236,7 @@ import Testing
     }
 
     @Test func taggedDebugSocketFilenamesMayReplaceUnmarkedRefusedSockets() throws {
-        let path = "/tmp/cmux-debug-reclaim-\(UUID().uuidString.lowercased()).sock"
+        let path = "/tmp/uniconnect-debug-reclaim-\(UUID().uuidString.lowercased()).sock"
         defer {
             unlink(path)
             unlink(path + ".lock")

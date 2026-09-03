@@ -95,6 +95,7 @@ final class UniConnectCoordinator: ObservableObject {
         if (workspace.customDescription ?? "").isEmpty {
             workspace.setCustomDescription("Local · \((folder as NSString).abbreviatingWithTildeInPath)")
         }
+        closeUntouchedInitialWorkspaces()
         requestSave()
         return workspace
     }
@@ -130,6 +131,7 @@ final class UniConnectCoordinator: ObservableObject {
         if (workspace.customDescription ?? "").isEmpty {
             workspace.setCustomDescription("SSH · \(UniConnectSSH.hostLabel(from: connectCommand)) · tmux")
         }
+        closeUntouchedInitialWorkspaces()
         requestSave()
         if probeImmediately {
             startProbe(for: workspace)
@@ -254,6 +256,10 @@ final class UniConnectCoordinator: ObservableObject {
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         let command = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !command.isEmpty, !command.contains("\n") else { return }
+        if let message = UniConnectSSH.validateConnectCommand(command) {
+            presentError(message, title: "Comando de conexión")
+            return
+        }
         var updated = profile
         let id = profile.credentialId ?? UUID()
         UniConnectVault.shared.store(connectCommand: command, id: id)
@@ -432,18 +438,87 @@ final class UniConnectCoordinator: ObservableObject {
         }
     }
 
-    /// After a first-run seed, drop the stock empty "~" workspace the app booted with.
-    private func closeUntouchedInitialWorkspaces() {
+    /// Drops the stock empty workspace the app booted with (the empty-state box, or the
+    /// legacy untouched "~" box) once a real box exists in that window.
+    func closeUntouchedInitialWorkspaces() {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         for tabManager in allTabManagers() {
-            for workspace in tabManager.tabs where workspace.uniConnectProfile == nil
-                && workspace.customTitle == nil
-                && workspace.panels.count == 1
-                && workspace.panels.values.first is TerminalPanel
-                && workspace.currentDirectory == home
-                && tabManager.tabs.count > 1 {
-                tabManager.closeWorkspace(workspace, recordHistory: false)
+            for workspace in tabManager.tabs where tabManager.tabs.count > 1 {
+                let isStarter = workspace.uniConnectShowsStarter
+                let isLegacyBlank = workspace.uniConnectProfile == nil
+                    && workspace.customTitle == nil
+                    && workspace.panels.count == 1
+                    && workspace.panels.values.first is TerminalPanel
+                    && workspace.currentDirectory == home
+                if isStarter || isLegacyBlank {
+                    tabManager.closeWorkspace(workspace, recordHistory: false)
+                }
             }
+        }
+    }
+
+    // MARK: Migration from cmux (explicit, on demand)
+
+    /// cmux's session file, read-only. UniConnect never writes there.
+    static var cmuxSessionFileURL: URL? {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        return base?.appendingPathComponent("cmux/session-com.cmuxterm.app.json")
+    }
+
+    /// Turns cmux's own session snapshot into a UniConnect document: every workspace becomes
+    /// a local box (name, colour, group, folder) and every terminal keeps its folder and,
+    /// when cmux recorded one, its Claude session id for `--resume`.
+    static func documentFromCmuxSnapshot(_ snapshot: AppSessionSnapshot) -> UniConnectDocument {
+        var workspaces: [UniConnectDocument.Workspace] = []
+        for window in snapshot.windows {
+            let groups = window.tabManager.workspaceGroups ?? []
+            for ws in window.tabManager.workspaces {
+                let name = (ws.customTitle?.isEmpty == false ? ws.customTitle : nil) ?? ws.processTitle
+                let windows: [UniConnectDocument.Window] = ws.panels.compactMap { panel in
+                    guard panel.type == .terminal else { return nil }
+                    let title = (panel.customTitle?.isEmpty == false ? panel.customTitle : nil) ?? panel.title
+                    return UniConnectDocument.Window(
+                        name: title,
+                        tmux: nil,
+                        claudeSession: panel.terminal?.agent.flatMap { $0.kind == .claude ? $0.sessionId : nil },
+                        cwd: panel.terminal?.workingDirectory ?? panel.directory ?? ws.currentDirectory,
+                        isPinned: panel.isPinned ? true : nil
+                    )
+                }
+                workspaces.append(UniConnectDocument.Workspace(
+                    name: name.isEmpty ? "cmux" : name,
+                    kind: .local,
+                    color: ws.customColor,
+                    group: ws.groupId.flatMap { id in groups.first(where: { $0.id == id })?.name },
+                    isPinned: ws.isPinned ? true : nil,
+                    cwd: ws.currentDirectory,
+                    connect: nil,
+                    windows: windows
+                ))
+            }
+        }
+        return UniConnectDocument(workspaces: workspaces, savedAt: Date(timeIntervalSince1970: snapshot.createdAt))
+    }
+
+    /// "Migrar cajas desde cmux…": reads cmux's session (never modifies it), shows the
+    /// usual import preview and creates the boxes here. cmux keeps everything as it was.
+    func migrateFromCmux() {
+        guard let url = Self.cmuxSessionFileURL, FileManager.default.fileExists(atPath: url.path) else {
+            presentError("No hay ninguna sesión de cmux en este Mac (Application Support/cmux/session-com.cmuxterm.app.json).", title: "Nada que migrar")
+            return
+        }
+        guard let snapshot = SessionPersistenceStore.load(fileURL: url) else {
+            presentError("La sesión de cmux no se pudo leer. cmux no se ha tocado.", title: "Migración")
+            return
+        }
+        let document = Self.documentFromCmuxSnapshot(snapshot)
+        guard !document.workspaces.isEmpty else {
+            presentError("La sesión de cmux no tiene cajas.", title: "Nada que migrar")
+            return
+        }
+        UniConnectAppLock.shared.authenticateForSensitiveAction(reason: "Migrar cajas desde cmux") { [weak self] ok in
+            guard ok, let self else { return }
+            self.previewImport(document)
         }
     }
 
@@ -693,7 +768,15 @@ final class UniConnectCoordinator: ObservableObject {
                 workspace.setPanelCustomTitle(panelId: panelId, title: name)
             }
             if index == 0, let panelId, let session = window.claudeSession, let panel = workspace.panels[panelId] as? TerminalPanel {
-                workspace.sendInputWhenReady("claude --dangerously-skip-permissions --resume \(session)\n", to: panel)
+                // The first window reuses the box's initial terminal, which opened in the box
+                // folder. `claude --resume` only finds a session from the folder it was created
+                // in, so cd first when the window asks for a different one.
+                var command = ""
+                if let cwd = window.cwd, !cwd.isEmpty, cwd != workspace.currentDirectory {
+                    command += "cd \(UniConnectSSH.singleQuoted(cwd)) && "
+                }
+                command += "claude --dangerously-skip-permissions --resume \(session)\n"
+                workspace.sendInputWhenReady(command, to: panel)
             }
         }
     }
@@ -712,10 +795,10 @@ final class UniConnectCoordinator: ObservableObject {
 
     /// "Último guardado" for the menu: modification time of the session snapshot cmux writes.
     static func lastSavedMenuLabel() -> String {
-        let bundleId = Bundle.main.bundleIdentifier ?? "com.cmuxterm.app"
+        let bundleId = Bundle.main.bundleIdentifier ?? UniConnectIdentity.releaseBundleIdentifier
         let safe = bundleId.replacingOccurrences(of: "[^A-Za-z0-9._-]", with: "-", options: .regularExpression)
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-        let snapshot = base?.appendingPathComponent("cmux/session-\(safe)\(UniConnectIdentity.storageSuffix).json")
+        let snapshot = base?.appendingPathComponent("UniConnect/session-\(safe)\(UniConnectIdentity.storageSuffix).json")
         guard let snapshot, let date = (try? FileManager.default.attributesOfItem(atPath: snapshot.path))?[.modificationDate] as? Date else {
             return "Último guardado: todavía no"
         }
@@ -814,6 +897,9 @@ final class UniConnectCoordinator: ObservableObject {
 extension Workspace {
     var uniConnectIsSSH: Bool { uniConnectProfile?.isSSH == true }
 
+    /// True for the stock workspace created when there is nothing to show → empty state.
+    var uniConnectShowsStarter: Bool { uniConnectIsStarter && uniConnectProfile == nil }
+
     /// True while an SSH workspace has no tmux-bound window yet → show the welcome page.
     var uniConnectShowsWelcome: Bool {
         guard uniConnectIsSSH else { return false }
@@ -884,5 +970,24 @@ struct UniConnectSSHWelcomeHost: View {
                 UniConnectCoordinator.shared.startProbe(for: workspace)
             }
         }
+    }
+}
+
+
+/// Empty state shown when the app has nothing open (first run, or every box closed).
+struct UniConnectStarterHost: View {
+    @ObservedObject var workspace: Workspace
+
+    var body: some View {
+        UniConnectStarterView(
+            hasCmuxSession: UniConnectCoordinator.cmuxSessionFileURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? false,
+            onNewBox: {
+                if let tabManager = workspace.owningTabManager {
+                    _ = UniConnectCoordinator.shared.interceptNewWorkspace(tabManager: tabManager)
+                }
+            },
+            onImport: { UniConnectCoordinator.shared.importConfiguration() },
+            onMigrate: { UniConnectCoordinator.shared.migrateFromCmux() }
+        )
     }
 }

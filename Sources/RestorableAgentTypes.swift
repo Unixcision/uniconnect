@@ -171,7 +171,7 @@ enum RestorableAgentKind: Codable, Hashable, Sendable {
             directory = URL(fileURLWithPath: NSString(string: override).expandingTildeInPath, isDirectory: true)
         } else {
             directory = URL(fileURLWithPath: homeDirectory, isDirectory: true)
-                .appendingPathComponent(".cmuxterm", isDirectory: true)
+                .appendingPathComponent(".uniconnect", isDirectory: true)
         }
         return directory.appendingPathComponent(hookStoreFilename, isDirectory: false)
     }

@@ -1738,7 +1738,7 @@ class GhosttyApp {
     }
 
     static let shared = GhosttyApp()
-    private static let releaseBundleIdentifier = "com.cmuxterm.app"
+    private static let releaseBundleIdentifier = "com.unixcision.uniconnect"
     private static let fallbackAppearanceConfig = GhosttyConfig()
     private static let initializationLogger = Logger(
         subsystem: releaseBundleIdentifier,
@@ -1799,7 +1799,7 @@ class GhosttyApp {
             return baseURL.deletingLastPathComponent().appendingPathComponent(bgName)
         }
 
-        return URL(fileURLWithPath: "/tmp/cmux-bg.log")
+        return URL(fileURLWithPath: "/tmp/uniconnect-bg.log")
     }
 
 #if DEBUG
@@ -2048,7 +2048,7 @@ class GhosttyApp {
     }
 
     #if DEBUG
-    private static let initLogPath = "/tmp/cmux-ghostty-init.log"
+    private static let initLogPath = "/tmp/uniconnect-ghostty-init.log"
 
     private static func initLog(_ message: String) {
         let timestamp = ISO8601DateFormatter().string(from: Date())
@@ -2389,7 +2389,7 @@ class GhosttyApp {
         let trimmed = contents.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        let syntheticPath = "/__cmux_inline__/\(prefix).conf"
+        let syntheticPath = "/__uniconnect_inline__/\(prefix).conf"
         trimmed.withCString { contents in
             syntheticPath.withCString { path in
                 ghostty_config_load_string(
@@ -6220,8 +6220,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
 #if DEBUG
-    private static let surfaceLogPath = "/tmp/cmux-ghostty-surface.log"
-    private static let sizeLogPath = "/tmp/cmux-ghostty-size.log"
+    private static let surfaceLogPath = "/tmp/uniconnect-ghostty-surface.log"
+    private static let sizeLogPath = "/tmp/uniconnect-ghostty-size.log"
 
     func debugCurrentPixelSize() -> (width: UInt32, height: UInt32) {
         (lastPixelWidth, lastPixelHeight)
@@ -6398,7 +6398,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     @MainActor
     private func claudeCommandShimStateForSurface(view: GhosttyNSView) -> (isReady: Bool, shim: ClaudeCommandShim?) {
-        guard let wrapperURL = Bundle.main.resourceURL?.appendingPathComponent("bin/cmux-claude-wrapper") else {
+        guard let wrapperURL = Bundle.main.resourceURL?.appendingPathComponent("bin/uniconnect-claude-wrapper") else {
             claudeCommandShimInstallCompleted = true
             return (true, nil)
         }
@@ -6672,12 +6672,12 @@ final class TerminalSurface: Identifiable, ObservableObject {
                     }
                 } catch {
                     // The bootstrap ships in the app bundle alongside
-                    // cmux-bash-integration.bash, so a read failure means a
+                    // uniconnect-bash-integration.bash, so a read failure means a
                     // corrupt/partial bundle. Surface it (with the underlying
                     // error) in unified logging rather than silently leaving bash
                     // without cmux integration. The path is logged privately so
                     // user-specific install paths are not exposed in the log.
-                    Logger(subsystem: "com.cmuxterm.app", category: "ghostty.initialization")
+                    Logger(subsystem: "com.unixcision.uniconnect", category: "ghostty.initialization")
                         .error("cmux bash bootstrap unreadable at \(bashBootstrapPath, privacy: .private): \(error.localizedDescription, privacy: .public); bash shell integration will not load")
                 }
             }
@@ -8227,7 +8227,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         NSPasteboard.PasteboardType(UTType.heif.identifier)
     ])
     private static let tabTransferPasteboardType = NSPasteboard.PasteboardType("com.splittabbar.tabtransfer")
-    private static let sidebarTabReorderPasteboardType = NSPasteboard.PasteboardType("com.cmux.sidebar-tab-reorder")
+    private static let sidebarTabReorderPasteboardType = NSPasteboard.PasteboardType("com.unixcision.uniconnect.sidebar-tab-reorder")
 
     private enum WordPathResolutionSource: String {
         case quicklook
@@ -12425,7 +12425,7 @@ final class GhosttySurfaceScrollView: NSView {
     private var lastDragGeometryLogSignature: String?
     private var dragLayoutLogSequence: UInt64 = 0
     private static let tabTransferPasteboardType = NSPasteboard.PasteboardType("com.splittabbar.tabtransfer")
-    private static let sidebarTabReorderPasteboardType = NSPasteboard.PasteboardType("com.cmux.sidebar-tab-reorder")
+    private static let sidebarTabReorderPasteboardType = NSPasteboard.PasteboardType("com.unixcision.uniconnect.sidebar-tab-reorder")
     private static var flashCounts: [UUID: Int] = [:]
     private static var drawCounts: [UUID: Int] = [:]
     private static var lastDrawTimes: [UUID: CFTimeInterval] = [:]

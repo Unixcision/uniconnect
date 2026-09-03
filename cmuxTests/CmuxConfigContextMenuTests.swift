@@ -39,7 +39,7 @@ final class CmuxConfigContextMenuTests: XCTestCase {
             try? FileManager.default.removeItem(at: root)
         }
 
-        let localConfigURL = root.appendingPathComponent("cmux.json")
+        let localConfigURL = root.appendingPathComponent("uniconnect.json")
         if let localJSON {
             try localJSON.write(to: localConfigURL, atomically: true, encoding: .utf8)
         }
@@ -212,7 +212,7 @@ final class CmuxConfigContextMenuTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let configURL = root.appendingPathComponent("cmux.json")
+        let configURL = root.appendingPathComponent("uniconnect.json")
         let json = """
         {
           "actions": {
@@ -290,7 +290,7 @@ final class CmuxConfigContextMenuTests: XCTestCase {
         try FileManager.default.createDirectory(at: iconsDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let configURL = root.appendingPathComponent("cmux.json")
+        let configURL = root.appendingPathComponent("uniconnect.json")
         let iconURL = iconsDirectory.appendingPathComponent("menu.png")
         try makePNGData().write(to: iconURL)
 
@@ -389,7 +389,7 @@ final class CmuxConfigContextMenuTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let configURL = root.appendingPathComponent("cmux.json")
+        let configURL = root.appendingPathComponent("uniconnect.json")
         let json = """
         {
           "actions": {
@@ -435,7 +435,7 @@ final class CmuxConfigContextMenuTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let configURL = root.appendingPathComponent("cmux.json")
+        let configURL = root.appendingPathComponent("uniconnect.json")
         let json = """
         {
           "actions": {
@@ -495,7 +495,7 @@ final class CmuxConfigContextMenuTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let configURL = root.appendingPathComponent("cmux.json")
+        let configURL = root.appendingPathComponent("uniconnect.json")
         let json = """
         {
           "actions": {

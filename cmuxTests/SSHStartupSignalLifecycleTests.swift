@@ -38,7 +38,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
             var environment = ProcessInfo.processInfo.environment
             environment["PATH"] = "\(root.path):\(environment["PATH"] ?? "/usr/bin:/bin")"
             environment["CMUX_BUNDLED_CLI_PATH"] = fakeCLI.path
-            environment["CMUX_SOCKET_PATH"] = "/tmp/cmux-debug-test.sock"
+            environment["CMUX_SOCKET_PATH"] = "/tmp/uniconnect-debug-test.sock"
             environment["CMUX_WORKSPACE_ID"] = "11111111-1111-1111-1111-111111111111"
             environment["CMUX_SURFACE_ID"] = "22222222-2222-2222-2222-222222222222"
             environment["CMUX_TEST_SESSION_END_LOG"] = logFile.path
@@ -108,7 +108,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
             var environment = ProcessInfo.processInfo.environment
             environment["PATH"] = "\(root.path):\(environment["PATH"] ?? "/usr/bin:/bin")"
             environment["CMUX_BUNDLED_CLI_PATH"] = fakeCLI.path
-            environment["CMUX_SOCKET_PATH"] = "/tmp/cmux-debug-test.sock"
+            environment["CMUX_SOCKET_PATH"] = "/tmp/uniconnect-debug-test.sock"
             environment["CMUX_WORKSPACE_ID"] = "11111111-1111-1111-1111-111111111111"
             environment["CMUX_SURFACE_ID"] = "22222222-2222-2222-2222-222222222222"
             environment["CMUX_TEST_SESSION_END_LOG"] = logFile.path
@@ -182,7 +182,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "\(root.path):\(environment["PATH"] ?? "/usr/bin:/bin")"
         environment["CMUX_BUNDLED_CLI_PATH"] = fakeCLI.path
-        environment["CMUX_SOCKET_PATH"] = "/tmp/cmux-debug-test.sock"
+        environment["CMUX_SOCKET_PATH"] = "/tmp/uniconnect-debug-test.sock"
         environment["CMUX_WORKSPACE_ID"] = "11111111-1111-1111-1111-111111111111"
         environment["CMUX_SURFACE_ID"] = "22222222-2222-2222-2222-222222222222"
         environment["CMUX_TEST_SESSION_END_LOG"] = logFile.path
@@ -267,7 +267,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "\(root.path):\(environment["PATH"] ?? "/usr/bin:/bin")"
         environment["CMUX_BUNDLED_CLI_PATH"] = fakeCLI.path
-        environment["CMUX_SOCKET_PATH"] = "/tmp/cmux-debug-test.sock"
+        environment["CMUX_SOCKET_PATH"] = "/tmp/uniconnect-debug-test.sock"
         environment["CMUX_WORKSPACE_ID"] = "11111111-1111-1111-1111-111111111111"
         environment["CMUX_SURFACE_ID"] = "22222222-2222-2222-2222-222222222222"
         environment["CMUX_TEST_CONTROL_PATH"] = staleControlPath.path
@@ -322,7 +322,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "\(root.path):\(environment["PATH"] ?? "/usr/bin:/bin")"
         environment["CMUX_BUNDLED_CLI_PATH"] = fakeCLI.path
-        environment["CMUX_SOCKET_PATH"] = "/tmp/cmux-debug-test.sock"
+        environment["CMUX_SOCKET_PATH"] = "/tmp/uniconnect-debug-test.sock"
         environment["CMUX_WORKSPACE_ID"] = "11111111-1111-1111-1111-111111111111"
         environment["CMUX_SURFACE_ID"] = "22222222-2222-2222-2222-222222222222"
         environment["CMUX_TEST_SESSION_END_LOG"] = logFile.path
@@ -378,7 +378,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "\(root.path):\(environment["PATH"] ?? "/usr/bin:/bin")"
         environment["CMUX_BUNDLED_CLI_PATH"] = fakeCLI.path
-        environment["CMUX_SOCKET_PATH"] = "/tmp/cmux-debug-test.sock"
+        environment["CMUX_SOCKET_PATH"] = "/tmp/uniconnect-debug-test.sock"
         environment["CMUX_WORKSPACE_ID"] = "11111111-1111-1111-1111-111111111111"
         environment["CMUX_SURFACE_ID"] = "22222222-2222-2222-2222-222222222222"
         environment["CMUX_TEST_SESSION_END_LOG"] = logFile.path
@@ -428,7 +428,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "\(root.path):\(environment["PATH"] ?? "/usr/bin:/bin")"
         environment["CMUX_BUNDLED_CLI_PATH"] = fakeCLI.path
-        environment["CMUX_SOCKET_PATH"] = "/tmp/cmux-debug-test.sock"
+        environment["CMUX_SOCKET_PATH"] = "/tmp/uniconnect-debug-test.sock"
         environment["CMUX_WORKSPACE_ID"] = "11111111-1111-1111-1111-111111111111"
         environment["CMUX_SURFACE_ID"] = "22222222-2222-2222-2222-222222222222"
         environment["CMUX_TEST_SESSION_END_LOG"] = logFile.path
@@ -485,7 +485,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "\(root.path):\(environment["PATH"] ?? "/usr/bin:/bin")"
         environment["CMUX_BUNDLED_CLI_PATH"] = fakeCLI.path
-        environment["CMUX_SOCKET_PATH"] = "/tmp/cmux-debug-test.sock"
+        environment["CMUX_SOCKET_PATH"] = "/tmp/uniconnect-debug-test.sock"
         environment["CMUX_WORKSPACE_ID"] = "11111111-1111-1111-1111-111111111111"
         environment["CMUX_SURFACE_ID"] = "22222222-2222-2222-2222-222222222222"
         environment["CMUX_TEST_SESSION_END_LOG"] = logFile.path
@@ -536,7 +536,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "\(root.path):\(environment["PATH"] ?? "/usr/bin:/bin")"
         environment["CMUX_BUNDLED_CLI_PATH"] = fakeCLI.path
-        environment["CMUX_SOCKET_PATH"] = "/tmp/cmux-debug-test.sock"
+        environment["CMUX_SOCKET_PATH"] = "/tmp/uniconnect-debug-test.sock"
         environment["CMUX_WORKSPACE_ID"] = "11111111-1111-1111-1111-111111111111"
         environment["CMUX_SURFACE_ID"] = "22222222-2222-2222-2222-222222222222"
         environment["CMUX_TEST_SESSION_END_LOG"] = logFile.path
@@ -593,7 +593,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "\(root.path):\(environment["PATH"] ?? "/usr/bin:/bin")"
         environment["CMUX_BUNDLED_CLI_PATH"] = fakeCLI.path
-        environment["CMUX_SOCKET_PATH"] = "/tmp/cmux-debug-test.sock"
+        environment["CMUX_SOCKET_PATH"] = "/tmp/uniconnect-debug-test.sock"
         environment["CMUX_WORKSPACE_ID"] = "11111111-1111-1111-1111-111111111111"
         environment["CMUX_SURFACE_ID"] = "22222222-2222-2222-2222-222222222222"
         environment["CMUX_TEST_SESSION_END_LOG"] = sessionEndLog.path
@@ -622,7 +622,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
     private func generatedSSHStartupCommand(
         sshOptions: [String] = [
             "ControlMaster no",
-            "ControlPath /tmp/cmux-ssh-%C",
+            "ControlPath /tmp/uniconnect-ssh-%C",
         ]
     ) throws -> String {
         let cliPath = try bundledCLIPath()

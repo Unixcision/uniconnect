@@ -3,7 +3,7 @@ public import Foundation
 import SQLite3
 import os
 
-private let pairedMacStoreLog = Logger(subsystem: "com.cmuxterm.app", category: "PairedMacStore")
+private let pairedMacStoreLog = Logger(subsystem: "com.unixcision.uniconnect", category: "PairedMacStore")
 
 /// SQLite-backed store of paired Macs. Schema migrations gated on
 /// `PRAGMA user_version`.
@@ -33,7 +33,7 @@ public actor MobilePairedMacStore: MobilePairedMacStoring {
             appropriateFor: nil,
             create: true
         )
-        let dir = appSupport.appendingPathComponent("cmux", isDirectory: true)
+        let dir = appSupport.appendingPathComponent("UniConnect", isDirectory: true)
         if !fileManager.fileExists(atPath: dir.path) {
             try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
         }

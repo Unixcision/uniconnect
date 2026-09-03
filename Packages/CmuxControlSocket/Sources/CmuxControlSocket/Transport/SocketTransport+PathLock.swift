@@ -109,9 +109,9 @@ extension SocketTransport {
             .lastPathComponent
             .lowercased()
         let recoverablePrefixes = ["cmux-debug-", "cmux-nightly-", "cmux-staging-"]
-        return filename == "cmux-debug.sock" ||
-            filename == "cmux-nightly.sock" ||
-            filename == "cmux-staging.sock" ||
+        return filename == "uniconnect-debug.sock" ||
+            filename == "uniconnect-nightly.sock" ||
+            filename == "uniconnect-staging.sock" ||
             recoverablePrefixes.contains { prefix in
                 filename.hasPrefix(prefix) && filename.hasSuffix(".sock")
             }

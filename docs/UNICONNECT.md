@@ -114,3 +114,36 @@ Verificado después con pantalla desbloqueada: página de bienvenida SSH (sin co
 ## 10. Logo e icono
 
 El logo (`docs/assets/logo.png`, y de él todas las tallas de `Assets.xcassets/AppIcon.appiconset` y la capa de `AppIcon.icon`) se generó el 2026-09-03 con **Nano Banana Pro** (`gemini-3-pro-image`, Gemini API, endpoint `models/gemini-3-pro-image:generateContent` con `responseModalities: ["IMAGE"]`), el modelo que Google describe como su opción premium para precisión de marca; Nano Banana 2 (`gemini-3.1-flash-image`) es el lanzamiento más reciente y más rápido. Prompt: chevrón de terminal entrelazado con un eslabón (conexión persistente), estilo icono de app de Apple, fondo oscuro, gradientes coral y cian, sin texto. Post-proceso con ImageMagick: recorte, 1024×1024 y esquinas redondeadas transparentes. Fuentes: https://ai.google.dev/gemini-api/docs/image-generation · https://blog.google/innovation-and-ai/technology/ai/nano-banana-2/ . La clave de API no está en el repo.
+
+## Independencia total de cmux
+
+UniConnect no comparte **nada** con cmux en disco ni en el sistema:
+
+| Recurso | cmux | UniConnect |
+|---|---|---|
+| Bundle id | `com.cmuxterm.app` | `com.unixcision.uniconnect` |
+| Sesión e historial | `Application Support/cmux/` | `Application Support/UniConnect/` |
+| Ajustes de usuario | `~/.config/cmux/cmux.json` | `~/.config/uniconnect/uniconnect.json` |
+| Estado de hooks de agentes | `~/.cmuxterm/` | `~/.uniconnect/` |
+| Socket de control | `~/.local/state/cmux/cmux.sock` | `~/.local/state/uniconnect/uniconnect.sock` |
+| CLI | `/usr/local/bin/cmux` | `/usr/local/bin/uniconnect` |
+| Esquema de URL | `cmux://` | `uniconnect://` |
+| Punto de extensión | `com.cmuxterm.app.cmux.sidebar` | `com.unixcision.uniconnect.sidebar` |
+| Llavero | `com.cmuxterm.app.*` | `com.unixcision.uniconnect.*` |
+| Notificaciones distribuidas | `com.cmuxterm.*` | `com.unixcision.uniconnect.*` |
+| Temporales y logs | `/tmp/cmux-*` | `/tmp/uniconnect-*` |
+| Telemetría | PostHog | desactivada siempre |
+
+La única lectura de cmux es voluntaria y de una sola dirección: **UniConnect → Migrar cajas desde cmux…**, que lee `Application Support/cmux/session-com.cmuxterm.app.json` y crea aquí las cajas. cmux nunca se modifica.
+
+## Estado vacío
+
+Cuando no hay nada abierto (primer arranque, o se cierran todas las cajas) no se lanza ninguna consola: la ventana muestra una portada con tres acciones (Nueva caja, Importar configuración, Migrar desde cmux si hay sesión de cmux). Esa caja "de arranque" no se persiste y desaparece sola en cuanto creas o importas una real.
+
+## Pegado remoto de imágenes
+
+Ya no se detecta el `ssh` husmeando el TTY: manda el tipo de caja. Una caja **local** pega siempre en local; una caja **SSH** usa el comando de conexión guardado en la bóveda, así que funciona también dentro de tmux o de una shell anidada. Al crear o editar una conexión solo se aceptan comandos que empiecen por `ssh` o `sshpass` (y con `sshpass`, que invoquen `ssh`).
+
+## Orden de ventanas y cajas
+
+Reordenar cajas en la barra lateral o mover/reordenar ventanas dentro de una caja guarda la sesión al instante, sin esperar al autoguardado de 8 s.

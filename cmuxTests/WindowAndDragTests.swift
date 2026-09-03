@@ -489,7 +489,7 @@ final class AppDelegateLaunchServicesRegistrationTests: XCTestCase {
         var registerCallCount = 0
 
         app.scheduleLaunchServicesBundleRegistrationForTesting(
-            bundleURL: URL(fileURLWithPath: "/tmp/../tmp/cmux-launch-services-test.app"),
+            bundleURL: URL(fileURLWithPath: "/tmp/../tmp/uniconnect-launch-services-test.app"),
             scheduler: { work in
                 scheduledWork = work
             },
@@ -511,12 +511,12 @@ final class AppDelegateLaunchServicesRegistrationTests: XCTestCase {
 final class TerminalDefaultFileOpenRequestTests: XCTestCase {
     func testBuildsQuotedLaunchInputForTerminalCommandFile() throws {
         let contentType = DefaultTerminalRegistration.contentType(forIdentifier: "com.apple.terminal.shell-script")
-        let url = URL(fileURLWithPath: "/tmp/cmux default's/Run Me.command")
+        let url = URL(fileURLWithPath: "/tmp/uniconnect default's/Run Me.command")
 
         let request = try XCTUnwrap(TerminalDefaultFileOpenRequest(fileURL: url, contentType: contentType))
 
-        XCTAssertEqual(request.workingDirectory, "/tmp/cmux default's")
-        XCTAssertEqual(request.initialInput, "'/tmp/cmux default'\\''s/Run Me.command'\n")
+        XCTAssertEqual(request.workingDirectory, "/tmp/uniconnect default's")
+        XCTAssertEqual(request.initialInput, "'/tmp/uniconnect default'\\''s/Run Me.command'\n")
     }
 
     func testIgnoresPlainTextFiles() {
@@ -678,7 +678,7 @@ final class InternalTabDragBundleDeclarationTests: XCTestCase {
             "Expected app bundle to export bonsplit tab-transfer type, got \(exported)"
         )
         XCTAssertTrue(
-            exported.contains("com.cmux.sidebar-tab-reorder"),
+            exported.contains("com.unixcision.uniconnect.sidebar-tab-reorder"),
             "Expected app bundle to export sidebar tab-reorder type, got \(exported)"
         )
     }
@@ -3266,7 +3266,7 @@ final class FilePreviewPanelTextSavingTests: XCTestCase {
     }
 
     func testExternalOpenApplicationResolverOrdersDefaultAppFirstAndDeduplicates() {
-        let fileURL = URL(fileURLWithPath: "/tmp/cmux-sample.mov")
+        let fileURL = URL(fileURLWithPath: "/tmp/uniconnect-sample.mov")
         let quickTimeURL = URL(fileURLWithPath: "/Applications/QuickTime Player.app")
         let vlcURL = URL(fileURLWithPath: "/Applications/VLC.app")
         let names = [
@@ -3287,7 +3287,7 @@ final class FilePreviewPanelTextSavingTests: XCTestCase {
     }
 
     func testExternalOpenApplicationResolverFallsBackWhenDefaultAppIsFiltered() {
-        let fileURL = URL(fileURLWithPath: "/tmp/cmux-sample.pdf")
+        let fileURL = URL(fileURLWithPath: "/tmp/uniconnect-sample.pdf")
         let cmuxURL = URL(fileURLWithPath: "/Applications/cmux.app")
         let previewURL = URL(fileURLWithPath: "/System/Applications/Preview.app")
         let resolver = FileExternalOpenApplicationResolver(
@@ -3304,7 +3304,7 @@ final class FilePreviewPanelTextSavingTests: XCTestCase {
     }
 
     func testExternalOpenMenuKeepsFinderTopLevelAndOpenWithItemsSearchableByAppName() throws {
-        let fileURL = URL(fileURLWithPath: "/tmp/cmux-sample.png")
+        let fileURL = URL(fileURLWithPath: "/tmp/uniconnect-sample.png")
         let previewURL = URL(fileURLWithPath: "/System/Applications/Preview.app")
         let pixelmatorURL = URL(fileURLWithPath: "/Applications/Pixelmator Pro.app")
         let primaryApplication = FileExternalOpenApplication(
@@ -3337,7 +3337,7 @@ final class FilePreviewPanelTextSavingTests: XCTestCase {
     }
 
     func testExternalOpenMenuKeepsFinderTopLevelWithoutResolvedApplications() {
-        let fileURL = URL(fileURLWithPath: "/tmp/cmux-sample.bin")
+        let fileURL = URL(fileURLWithPath: "/tmp/uniconnect-sample.bin")
 
         let menu = FileExternalOpenMenuFactory.makeMenu(
             fileURL: fileURL,

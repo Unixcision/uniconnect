@@ -75,7 +75,7 @@ final class AgentHibernationController {
         let stableSince: TimeInterval
     }
 
-    private let timerQueue = DispatchQueue(label: "com.cmux.agent-hibernation", qos: .utility)
+    private let timerQueue = DispatchQueue(label: "com.unixcision.uniconnect.agent-hibernation", qos: .utility)
     private var timer: DispatchSourceTimer?
     private var settingsObserver: NSObjectProtocol?
     private var activityByPanel: [AgentHibernationPanelKey: TimeInterval] = [:]

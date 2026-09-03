@@ -9,7 +9,7 @@ Usage:
 Environment:
   IPHONE_SIM_ID   Required if no booted iPhone simulator can be auto-detected.
   IPAD_SIM_ID     Required if no booted iPad simulator can be auto-detected.
-  SOAK_ROOT       Output directory. Defaults to /tmp/cmux-mobile-soak-<tag>-<profile>.
+  SOAK_ROOT       Output directory. Defaults to /tmp/uniconnect-mobile-soak-<tag>-<profile>.
   CMUX_MOBILE_DEV_STACK_AUTH_TOKEN
                  DEBUG-only token used by simulator apps and the tagged Mac host.
 
@@ -117,7 +117,7 @@ EOF
   exit 1
 fi
 
-root="${SOAK_ROOT:-/tmp/cmux-mobile-soak-${tag}-${profile}}"
+root="${SOAK_ROOT:-/tmp/uniconnect-mobile-soak-${tag}-${profile}}"
 mkdir -p "$root"
 
 session_prefix="cmux-${tag}-${profile}"
@@ -178,7 +178,7 @@ for pid in $(pgrep -f "cmux-${tag}/Build/Products/Debug/UniConnect DEV ${tag}.ap
   kill "$pid" >/dev/null 2>&1 || true
 done
 
-rm -f "/tmp/cmux-debug-${tag}.sock" "/tmp/cmux-debug-${tag}.log"
+rm -f "/tmp/uniconnect-debug-${tag}.sock" "/tmp/uniconnect-debug-${tag}.log"
 rm -f \
   "$root/mobile-iphone.log" "$root/mobile-iphone.status" "$root/mobile-iphone.console.log" \
   "$root/mobile-ipad.log" "$root/mobile-ipad.status" "$root/mobile-ipad.console.log" \
@@ -191,14 +191,14 @@ CMUX_TAG="$tag" CMUX_REPO="$repo_root" SOAK_ROOT="$root" \
   screen -dmS "${session_prefix}-mac" "$helper_dir/launch-tagged-mac.sh"
 
 for _ in $(seq 1 60); do
-  if [[ -S "/tmp/cmux-debug-${tag}.sock" ]]; then
+  if [[ -S "/tmp/uniconnect-debug-${tag}.sock" ]]; then
     break
   fi
   sleep 1
 done
 
-if [[ ! -S "/tmp/cmux-debug-${tag}.sock" ]]; then
-  echo "tagged socket did not appear: /tmp/cmux-debug-${tag}.sock" >&2
+if [[ ! -S "/tmp/uniconnect-debug-${tag}.sock" ]]; then
+  echo "tagged socket did not appear: /tmp/uniconnect-debug-${tag}.sock" >&2
   exit 1
 fi
 
@@ -259,7 +259,7 @@ screen -dmS "${session_prefix}-iphone" bash -lc "
   export COLOR_FAILURE_IS_FATAL='$color_fatal' COLOR_MIN_PIXELS=2000
   export MOBILE_INPUT_INTERVAL='$mobile_input_interval' MOBILE_INPUT_BURST_COMMANDS='$mobile_input_burst' MOBILE_SCREENSHOT_INTERVAL=30
   export MOBILE_REATTACH_MODE='$mobile_reattach_mode'
-  export MOBILE_FAILURE_LIMIT=1 SOAK_DIAGNOSTICS_DIR='$root/diagnostics' CMUX_DEBUG_LOG='/tmp/cmux-debug-${tag}.log'
+  export MOBILE_FAILURE_LIMIT=1 SOAK_DIAGNOSTICS_DIR='$root/diagnostics' CMUX_DEBUG_LOG='/tmp/uniconnect-debug-${tag}.log'
   export MOBILE_MAX_SCROLLBACK_ROWS=220 SOCKET_TIMEOUT_SECONDS='$socket_timeout' ATTACH_SETTLE_SECONDS=1.5 COLOR_SETTLE_SECONDS='$color_settle'
   export TERMINAL_OUTPUT_ATTEMPTS=20 TERMINAL_OUTPUT_RETRY_SECONDS=1
   export LOOP_SLEEP_SECONDS='$mobile_loop_sleep' FAILURE_SLEEP_SECONDS='$mobile_loop_sleep'
@@ -275,7 +275,7 @@ screen -dmS "${session_prefix}-ipad" bash -lc "
   export COLOR_FAILURE_IS_FATAL='$color_fatal' COLOR_MIN_PIXELS=2000
   export MOBILE_INPUT_INTERVAL='$mobile_input_interval' MOBILE_INPUT_BURST_COMMANDS='$mobile_input_burst' MOBILE_SCREENSHOT_INTERVAL=30
   export MOBILE_REATTACH_MODE='$mobile_reattach_mode'
-  export MOBILE_FAILURE_LIMIT=1 SOAK_DIAGNOSTICS_DIR='$root/diagnostics' CMUX_DEBUG_LOG='/tmp/cmux-debug-${tag}.log'
+  export MOBILE_FAILURE_LIMIT=1 SOAK_DIAGNOSTICS_DIR='$root/diagnostics' CMUX_DEBUG_LOG='/tmp/uniconnect-debug-${tag}.log'
   export MOBILE_MAX_SCROLLBACK_ROWS=220 SOCKET_TIMEOUT_SECONDS='$socket_timeout' ATTACH_SETTLE_SECONDS=1.5 COLOR_SETTLE_SECONDS='$color_settle'
   export TERMINAL_OUTPUT_ATTEMPTS=20 TERMINAL_OUTPUT_RETRY_SECONDS=1
   export LOOP_SLEEP_SECONDS='$mobile_loop_sleep' FAILURE_SLEEP_SECONDS='$mobile_loop_sleep'

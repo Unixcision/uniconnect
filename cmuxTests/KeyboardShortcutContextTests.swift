@@ -45,7 +45,7 @@ final class KeyboardShortcutContextTests: XCTestCase {
             try? FileManager.default.removeItem(at: directoryURL)
         }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile("{}", to: settingsFileURL)
         KeyboardShortcutSettings.settingsFileStore = KeyboardShortcutSettingsFileStore(
             primaryPath: settingsFileURL.path,
@@ -84,7 +84,7 @@ final class KeyboardShortcutContextTests: XCTestCase {
             try? FileManager.default.removeItem(at: directoryURL)
         }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile("{}", to: settingsFileURL)
         KeyboardShortcutSettings.settingsFileStore = KeyboardShortcutSettingsFileStore(
             primaryPath: settingsFileURL.path,
@@ -304,7 +304,7 @@ final class KeyboardShortcutContextTests: XCTestCase {
             try? FileManager.default.removeItem(at: directoryURL)
         }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile("{}", to: settingsFileURL)
         KeyboardShortcutSettings.settingsFileStore = KeyboardShortcutSettingsFileStore(
             primaryPath: settingsFileURL.path,
@@ -340,7 +340,7 @@ final class KeyboardShortcutContextTests: XCTestCase {
             try? FileManager.default.removeItem(at: directoryURL)
         }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile("{}", to: settingsFileURL)
         KeyboardShortcutSettings.settingsFileStore = KeyboardShortcutSettingsFileStore(
             primaryPath: settingsFileURL.path,
@@ -379,7 +379,7 @@ final class KeyboardShortcutContextTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -407,7 +407,7 @@ final class KeyboardShortcutContextTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {

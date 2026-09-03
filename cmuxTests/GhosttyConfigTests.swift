@@ -39,10 +39,10 @@ final class SidebarPathFormatterTests: XCTestCase {
     func testShortenedPathLeavesExternalPathUnchanged() {
         XCTAssertEqual(
             SidebarPathFormatter.shortenedPath(
-                "/tmp/cmux",
+                "/tmp/uniconnect",
                 homeDirectoryPath: "/Users/example"
             ),
-            "/tmp/cmux"
+            "/tmp/uniconnect"
         )
     }
 }
@@ -184,8 +184,8 @@ final class GhosttyConfigTests: XCTestCase {
     }
 
     func testThemeSearchPathsIncludeXDGDataDirsThemes() {
-        let pathA = "/tmp/cmux-theme-a"
-        let pathB = "/tmp/cmux-theme-b"
+        let pathA = "/tmp/uniconnect-theme-a"
+        let pathB = "/tmp/uniconnect-theme-b"
         let paths = GhosttyConfig.themeSearchPaths(
             forThemeName: "Solarized Light",
             environment: ["XDG_DATA_DIRS": "\(pathA):\(pathB)"],
@@ -205,13 +205,13 @@ final class GhosttyConfigTests: XCTestCase {
 
         XCTAssertTrue(
             paths.contains(
-                "\(NSHomeDirectory())/Library/Application Support/com.cmuxterm.app/themes/Zag Light"
+                "\(NSHomeDirectory())/Library/Application Support/com.unixcision.uniconnect/themes/Zag Light"
             )
         )
     }
 
     func testThemeSearchPathsIncludeCmuxUserThemesDirectoryFromFixedHome() {
-        let fixedHome = "/tmp/cmux-fixed-home-\(UUID().uuidString)"
+        let fixedHome = "/tmp/uniconnect-fixed-home-\(UUID().uuidString)"
         let paths = GhosttyConfig.themeSearchPaths(
             forThemeName: "Zag Light",
             environment: ["CFFIXED_USER_HOME": fixedHome],
@@ -220,7 +220,7 @@ final class GhosttyConfigTests: XCTestCase {
 
         XCTAssertTrue(
             paths.contains(
-                "\(fixedHome)/Library/Application Support/com.cmuxterm.app/themes/Zag Light"
+                "\(fixedHome)/Library/Application Support/com.unixcision.uniconnect/themes/Zag Light"
             )
         )
     }
@@ -233,7 +233,7 @@ final class GhosttyConfigTests: XCTestCase {
         defer { try? fileManager.removeItem(at: root) }
 
         let themesDirectory = root
-            .appendingPathComponent("Library/Application Support/com.cmuxterm.app/themes", isDirectory: true)
+            .appendingPathComponent("Library/Application Support/com.unixcision.uniconnect/themes", isDirectory: true)
         try fileManager.createDirectory(at: themesDirectory, withIntermediateDirectories: true)
         try "background = #ffffff\nforeground = #1f2328\n".write(
             to: themesDirectory.appendingPathComponent("Zag Light", isDirectory: false),
@@ -1715,7 +1715,7 @@ final class WorkspaceRemoteDaemonManifestTests: XCTestCase {
             goArch: "arm64"
         )
 
-        XCTAssertTrue(url.path.contains("/.local/state/cmux/remote-daemons/0.62.0/linux-arm64/"))
+        XCTAssertTrue(url.path.contains("/.local/state/uniconnect/remote-daemons/0.62.0/linux-arm64/"))
         XCTAssertEqual(url.lastPathComponent, "cmuxd-remote")
     }
 }
@@ -2541,7 +2541,7 @@ final class BrowserPanelRemoteStoreTests: XCTestCase {
                 relayPort: 64001,
                 relayID: "relay-store-dest",
                 relayToken: String(repeating: "a", count: 64),
-                localSocketPath: "/tmp/cmux-store-dest.sock",
+                localSocketPath: "/tmp/uniconnect-store-dest.sock",
                 terminalStartupCommand: "ssh cmux-macmini"
             ),
             autoConnect: false
@@ -2573,7 +2573,7 @@ final class BrowserPanelRemoteStoreTests: XCTestCase {
                 relayPort: 64002,
                 relayID: "relay-store-source",
                 relayToken: String(repeating: "b", count: 64),
-                localSocketPath: "/tmp/cmux-store-source.sock",
+                localSocketPath: "/tmp/uniconnect-store-source.sock",
                 terminalStartupCommand: "ssh cmux-macmini"
             ),
             autoConnect: false
@@ -2610,7 +2610,7 @@ final class BrowserPanelRemoteStoreTests: XCTestCase {
             relayPort: 64000,
             relayID: "relay-test",
             relayToken: String(repeating: "a", count: 64),
-            localSocketPath: "/tmp/cmux-test.sock",
+            localSocketPath: "/tmp/uniconnect-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
 
@@ -2638,13 +2638,13 @@ final class WorkspaceRemoteConfigurationTransportKeyTests: XCTestCase {
             sshOptions: [
                 "Compression=yes",
                 "ControlMaster=auto",
-                "ControlPath=/tmp/cmux-ssh-501-64000-%C",
+                "ControlPath=/tmp/uniconnect-ssh-501-64000-%C",
             ],
             localProxyPort: 9000,
             relayPort: 64000,
             relayID: "relay-a",
             relayToken: "token-a",
-            localSocketPath: "/tmp/cmux-a.sock",
+            localSocketPath: "/tmp/uniconnect-a.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
         let second = WorkspaceRemoteConfiguration(
@@ -2654,13 +2654,13 @@ final class WorkspaceRemoteConfigurationTransportKeyTests: XCTestCase {
             sshOptions: [
                 "Compression=yes",
                 "ControlMaster=auto",
-                "ControlPath=/tmp/cmux-ssh-501-64001-%C",
+                "ControlPath=/tmp/uniconnect-ssh-501-64001-%C",
             ],
             localProxyPort: 9000,
             relayPort: 64001,
             relayID: "relay-b",
             relayToken: "token-b",
-            localSocketPath: "/tmp/cmux-b.sock",
+            localSocketPath: "/tmp/uniconnect-b.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
 
@@ -2680,9 +2680,9 @@ final class WorkspaceRemoteConfigurationTransportKeyTests: XCTestCase {
             relayPort: 64000,
             relayID: "relay-a",
             relayToken: "token-a",
-            localSocketPath: "/tmp/cmux-a.sock",
+            localSocketPath: "/tmp/uniconnect-a.sock",
             terminalStartupCommand: "ssh cmux-macmini",
-            agentSocketPath: "/tmp/cmux-agent-a.sock"
+            agentSocketPath: "/tmp/uniconnect-agent-a.sock"
         )
         let second = WorkspaceRemoteConfiguration(
             destination: "cmux-macmini",
@@ -2696,9 +2696,9 @@ final class WorkspaceRemoteConfigurationTransportKeyTests: XCTestCase {
             relayPort: 64000,
             relayID: "relay-b",
             relayToken: "token-b",
-            localSocketPath: "/tmp/cmux-b.sock",
+            localSocketPath: "/tmp/uniconnect-b.sock",
             terminalStartupCommand: "ssh cmux-macmini",
-            agentSocketPath: "/tmp/cmux-agent-b.sock"
+            agentSocketPath: "/tmp/uniconnect-agent-b.sock"
         )
 
         XCTAssertEqual(first.proxyBrokerTransportKey, second.proxyBrokerTransportKey)
@@ -2712,13 +2712,13 @@ final class WorkspaceRemoteConfigurationTransportKeyTests: XCTestCase {
             sshOptions: [
                 "Compression=yes",
                 "ControlMaster=auto",
-                "ControlPath=/tmp/cmux-ssh-501-64000-%C",
+                "ControlPath=/tmp/uniconnect-ssh-501-64000-%C",
             ],
             localProxyPort: nil,
             relayPort: 64000,
             relayID: "relay-a",
             relayToken: "token-a",
-            localSocketPath: "/tmp/cmux-a.sock",
+            localSocketPath: "/tmp/uniconnect-a.sock",
             terminalStartupCommand: "ssh cmux-macmini",
             preserveAfterTerminalExit: true,
             persistentDaemonSlot: "ssh-test-slot"
@@ -2730,13 +2730,13 @@ final class WorkspaceRemoteConfigurationTransportKeyTests: XCTestCase {
             sshOptions: [
                 "Compression=yes",
                 "ControlMaster=auto",
-                "ControlPath=/tmp/cmux-ssh-501-64001-%C",
+                "ControlPath=/tmp/uniconnect-ssh-501-64001-%C",
             ],
             localProxyPort: nil,
             relayPort: 64001,
             relayID: "relay-b",
             relayToken: "token-b",
-            localSocketPath: "/tmp/cmux-b.sock",
+            localSocketPath: "/tmp/uniconnect-b.sock",
             terminalStartupCommand: "ssh cmux-macmini",
             preserveAfterTerminalExit: true,
             persistentDaemonSlot: "ssh-test-slot"
@@ -2759,9 +2759,9 @@ final class WorkspaceRemoteConfigurationTransportKeyTests: XCTestCase {
             relayPort: 64000,
             relayID: "relay-a",
             relayToken: "token-a",
-            localSocketPath: "/tmp/cmux-a.sock",
+            localSocketPath: "/tmp/uniconnect-a.sock",
             terminalStartupCommand: "ssh cmux-macmini",
-            agentSocketPath: "/tmp/cmux-agent-a.sock",
+            agentSocketPath: "/tmp/uniconnect-agent-a.sock",
             preserveAfterTerminalExit: true,
             persistentDaemonSlot: "ssh-test-slot"
         )
@@ -2777,9 +2777,9 @@ final class WorkspaceRemoteConfigurationTransportKeyTests: XCTestCase {
             relayPort: 64000,
             relayID: "relay-b",
             relayToken: "token-b",
-            localSocketPath: "/tmp/cmux-b.sock",
+            localSocketPath: "/tmp/uniconnect-b.sock",
             terminalStartupCommand: "ssh cmux-macmini",
-            agentSocketPath: "/tmp/cmux-agent-b.sock",
+            agentSocketPath: "/tmp/uniconnect-agent-b.sock",
             preserveAfterTerminalExit: true,
             persistentDaemonSlot: "ssh-test-slot"
         )
@@ -2792,7 +2792,7 @@ final class WorkspaceRemoteConfigurationTransportKeyTests: XCTestCase {
 final class WorkspaceRemoteSSHCleanupTests: XCTestCase {
     func testOrphanedCMUXRemoteSSHPIDsMatchesOnlyParentOneRelayAndDaemonTransports() {
         let psOutput = """
-          101 1 /usr/bin/ssh -N -T -S none -o ControlPath=/tmp/cmux-ssh-501-56080-%C -R 127.0.0.1:56080:127.0.0.1:64048 cmux-macmini
+          101 1 /usr/bin/ssh -N -T -S none -o ControlPath=/tmp/uniconnect-ssh-501-56080-%C -R 127.0.0.1:56080:127.0.0.1:64048 cmux-macmini
           102 1 /usr/bin/ssh -T -S none -o RequestTTY=no cmux-macmini sh -c 'exec .cmux/bin/cmuxd-remote/0.63.1/darwin-arm64/cmuxd-remote serve --stdio'
           107 1 /usr/bin/ssh -T -S none -o RequestTTY=no cmux-macmini sh -c 'exec .cmux/bin/cmuxd-remote/0.63.1/darwin-arm64/cmuxd-remote 'serve' '--stdio' '--persistent' '--slot' 'ssh-test''
           103 999 /usr/bin/ssh -N -T -S none -R 127.0.0.1:56081:127.0.0.1:64049 cmux-macmini
@@ -3242,9 +3242,9 @@ final class SocketControlSettingsTests: XCTestCase {
         let path = SocketControlSettings.socketPath(
             environment: [
                 "CMUX_TAG": "stray-tag",
-                "CMUX_SOCKET_PATH": "/tmp/cmux-debug-issue-153-tmux-compat.sock",
+                "CMUX_SOCKET_PATH": "/tmp/uniconnect-debug-issue-153-tmux-compat.sock",
             ],
-            bundleIdentifier: "com.cmuxterm.app",
+            bundleIdentifier: "com.unixcision.uniconnect",
             isDebugBuild: false,
             probeStableDefaultPathEntry: { _ in .missing }
         )
@@ -3257,89 +3257,89 @@ final class SocketControlSettingsTests: XCTestCase {
             environment: [
                 "CMUX_TAG": "my-tag",
             ],
-            bundleIdentifier: "com.cmuxterm.app.debug",
+            bundleIdentifier: "com.unixcision.uniconnect.debug",
             isDebugBuild: true
         )
 
-        XCTAssertEqual(path, "/tmp/cmux-debug-my-tag.sock")
+        XCTAssertEqual(path, "/tmp/uniconnect-debug-my-tag.sock")
     }
 
     func testTaggedDebugLaunchStillHonorsSocketOverride() {
         let path = SocketControlSettings.socketPath(
             environment: [
                 "CMUX_TAG": "my-tag",
-                "CMUX_SOCKET_PATH": "/tmp/cmux-debug-forced.sock",
+                "CMUX_SOCKET_PATH": "/tmp/uniconnect-debug-forced.sock",
             ],
-            bundleIdentifier: "com.cmuxterm.app.debug",
+            bundleIdentifier: "com.unixcision.uniconnect.debug",
             isDebugBuild: true
         )
 
-        XCTAssertEqual(path, "/tmp/cmux-debug-forced.sock")
+        XCTAssertEqual(path, "/tmp/uniconnect-debug-forced.sock")
     }
 
     func testNightlyReleaseUsesDedicatedDefaultAndIgnoresAmbientSocketOverride() {
         let path = SocketControlSettings.socketPath(
             environment: [
-                "CMUX_SOCKET_PATH": "/tmp/cmux-debug-issue-153-tmux-compat.sock",
+                "CMUX_SOCKET_PATH": "/tmp/uniconnect-debug-issue-153-tmux-compat.sock",
             ],
-            bundleIdentifier: "com.cmuxterm.app.nightly",
+            bundleIdentifier: "com.unixcision.uniconnect.nightly",
             isDebugBuild: false,
             probeStableDefaultPathEntry: { _ in .missing }
         )
 
-        XCTAssertEqual(path, "/tmp/cmux-nightly.sock")
+        XCTAssertEqual(path, "/tmp/uniconnect-nightly.sock")
     }
 
     func testTaggedDebugBundleKeepsMatchingSocketOverrideWithoutOptInFlag() {
         let path = SocketControlSettings.socketPath(
             environment: [
-                "CMUX_SOCKET_PATH": "/tmp/cmux-debug-my-tag.sock",
+                "CMUX_SOCKET_PATH": "/tmp/uniconnect-debug-my-tag.sock",
             ],
-            bundleIdentifier: "com.cmuxterm.app.debug.my-tag",
+            bundleIdentifier: "com.unixcision.uniconnect.debug.my-tag",
             isDebugBuild: false
         )
 
-        XCTAssertEqual(path, "/tmp/cmux-debug-my-tag.sock")
+        XCTAssertEqual(path, "/tmp/uniconnect-debug-my-tag.sock")
     }
 
     func testTaggedDebugBundleIgnoresSocketOverrideInheritedFromDifferentCmuxBundle() {
         let path = SocketControlSettings.socketPath(
             environment: [
-                "CMUX_BUNDLE_ID": "com.cmuxterm.app.nightly",
-                "CMUX_SOCKET_PATH": "/tmp/cmux-nightly.sock",
+                "CMUX_BUNDLE_ID": "com.unixcision.uniconnect.nightly",
+                "CMUX_SOCKET_PATH": "/tmp/uniconnect-nightly.sock",
             ],
-            bundleIdentifier: "com.cmuxterm.app.debug.issue.4355.cmux.themes.set.state.dependent",
+            bundleIdentifier: "com.unixcision.uniconnect.debug.issue.4355.cmux.themes.set.state.dependent",
             isDebugBuild: true
         )
 
-        XCTAssertEqual(path, "/tmp/cmux-debug-issue-4355-cmux-themes-set-state-dependent.sock")
+        XCTAssertEqual(path, "/tmp/uniconnect-debug-issue-4355-cmux-themes-set-state-dependent.sock")
     }
 
     func testTaggedDebugBundleIgnoresMismatchedInheritedSocketOverride() {
         let path = SocketControlSettings.socketPath(
             environment: [
-                "CMUX_SOCKET_PATH": "/tmp/cmux-nightly.sock",
-                "CMUX_BUNDLE_ID": "com.cmuxterm.app.nightly",
+                "CMUX_SOCKET_PATH": "/tmp/uniconnect-nightly.sock",
+                "CMUX_BUNDLE_ID": "com.unixcision.uniconnect.nightly",
             ],
-            bundleIdentifier: "com.cmuxterm.app.debug.fix-grok-notifications",
+            bundleIdentifier: "com.unixcision.uniconnect.debug.fix-grok-notifications",
             isDebugBuild: false
         )
 
-        XCTAssertEqual(path, "/tmp/cmux-debug-fix-grok-notifications.sock")
+        XCTAssertEqual(path, "/tmp/uniconnect-debug-fix-grok-notifications.sock")
     }
 
     func testTaggedDebugBundleCanOptInToMismatchedSocketOverride() {
         let path = SocketControlSettings.socketPath(
             environment: [
-                "CMUX_SOCKET_PATH": "/tmp/cmux-nightly.sock",
-                "CMUX_BUNDLE_ID": "com.cmuxterm.app.nightly",
+                "CMUX_SOCKET_PATH": "/tmp/uniconnect-nightly.sock",
+                "CMUX_BUNDLE_ID": "com.unixcision.uniconnect.nightly",
                 "CMUX_ALLOW_SOCKET_OVERRIDE": "1",
             ],
-            bundleIdentifier: "com.cmuxterm.app.debug.fix-grok-notifications",
+            bundleIdentifier: "com.unixcision.uniconnect.debug.fix-grok-notifications",
             isDebugBuild: false
         )
 
-        XCTAssertEqual(path, "/tmp/cmux-nightly.sock")
+        XCTAssertEqual(path, "/tmp/uniconnect-nightly.sock")
     }
 
     func testTaggedDebugBundleRefusesStableSocketOverrideEvenWithOptInFlag() {
@@ -3348,18 +3348,18 @@ final class SocketControlSettingsTests: XCTestCase {
                 "CMUX_SOCKET_PATH": SocketControlSettings.stableDefaultSocketPath,
                 "CMUX_ALLOW_SOCKET_OVERRIDE": "1",
             ],
-            bundleIdentifier: "com.cmuxterm.app.debug.sockguard",
+            bundleIdentifier: "com.unixcision.uniconnect.debug.sockguard",
             isDebugBuild: false
         )
 
-        XCTAssertEqual(path, "/tmp/cmux-debug-sockguard.sock")
+        XCTAssertEqual(path, "/tmp/uniconnect-debug-sockguard.sock")
     }
 
     func testTaggedDebugBundleRefusesUserScopedStableSocketOverrideEvenWithOptInFlag() {
         let aliases = [
             SocketControlSettings.userScopedStableSocketPath(currentUserID: 501),
             SocketControlSettings.legacyUserScopedStableSocketPath(currentUserID: 501),
-            "/private/tmp/cmux-501.sock",
+            "/private/tmp/uniconnect-501.sock",
         ]
 
         for alias in aliases {
@@ -3368,33 +3368,33 @@ final class SocketControlSettingsTests: XCTestCase {
                     "CMUX_SOCKET_PATH": alias,
                     "CMUX_ALLOW_SOCKET_OVERRIDE": "1",
                 ],
-                bundleIdentifier: "com.cmuxterm.app.debug.sockguard",
+                bundleIdentifier: "com.unixcision.uniconnect.debug.sockguard",
                 isDebugBuild: false,
                 currentUserID: 501
             )
 
-            XCTAssertEqual(path, "/tmp/cmux-debug-sockguard.sock", alias)
+            XCTAssertEqual(path, "/tmp/uniconnect-debug-sockguard.sock", alias)
         }
     }
 
     func testTaggedDebugBundleRefusesCanonicalLegacyStableSocketAliasEvenWithOptInFlag() {
         let path = SocketControlSettings.socketPath(
             environment: [
-                "CMUX_SOCKET_PATH": "/private/tmp/cmux.sock",
+                "CMUX_SOCKET_PATH": "/private/tmp/uniconnect.sock",
                 "CMUX_ALLOW_SOCKET_OVERRIDE": "1",
             ],
-            bundleIdentifier: "com.cmuxterm.app.debug.sockguard",
+            bundleIdentifier: "com.unixcision.uniconnect.debug.sockguard",
             isDebugBuild: false
         )
 
-        XCTAssertEqual(path, "/tmp/cmux-debug-sockguard.sock")
+        XCTAssertEqual(path, "/tmp/uniconnect-debug-sockguard.sock")
     }
 
     func testSocketPathMatchingTreatsPrivateTmpLegacyStableAliasAsSamePath() {
         XCTAssertTrue(
             SocketControlSettings.pathsMatch(
                 SocketControlSettings.legacyStableDefaultSocketPath,
-                "/private/tmp/cmux.sock"
+                "/private/tmp/uniconnect.sock"
             )
         )
     }
@@ -3415,17 +3415,17 @@ final class SocketControlSettingsTests: XCTestCase {
                     "CMUX_SOCKET_PATH": alias,
                     "CMUX_ALLOW_SOCKET_OVERRIDE": "1",
                 ],
-                bundleIdentifier: "com.cmuxterm.app.debug.sockguard",
+                bundleIdentifier: "com.unixcision.uniconnect.debug.sockguard",
                 isDebugBuild: false,
                 currentUserID: 501
             )
 
-            XCTAssertEqual(path, "/tmp/cmux-debug-sockguard.sock", alias)
+            XCTAssertEqual(path, "/tmp/uniconnect-debug-sockguard.sock", alias)
         }
     }
 
     func testTaggedDebugBundleRefusesLeafSymlinkToStableSocketEvenWithOptInFlag() throws {
-        let alias = "/tmp/cmux-stable-alias-\(UUID().uuidString).sock"
+        let alias = "/tmp/uniconnect-stable-alias-\(UUID().uuidString).sock"
         try? FileManager.default.removeItem(atPath: alias)
         try FileManager.default.createSymbolicLink(
             atPath: alias,
@@ -3438,15 +3438,15 @@ final class SocketControlSettingsTests: XCTestCase {
                 "CMUX_SOCKET_PATH": alias,
                 "CMUX_ALLOW_SOCKET_OVERRIDE": "1",
             ],
-            bundleIdentifier: "com.cmuxterm.app.debug.sockguard",
+            bundleIdentifier: "com.unixcision.uniconnect.debug.sockguard",
             isDebugBuild: false
         )
 
-        XCTAssertEqual(path, "/tmp/cmux-debug-sockguard.sock")
+        XCTAssertEqual(path, "/tmp/uniconnect-debug-sockguard.sock")
     }
 
     func testTaggedDebugBundleRefusesExcessiveSymlinkChainEvenWithOptInFlag() throws {
-        let root = "/tmp/cmux-stable-chain-\(UUID().uuidString)"
+        let root = "/tmp/uniconnect-stable-chain-\(UUID().uuidString)"
         let aliases = (0...64).map { "\(root)-\($0).sock" }
         for alias in aliases {
             try? FileManager.default.removeItem(atPath: alias)
@@ -3473,43 +3473,43 @@ final class SocketControlSettingsTests: XCTestCase {
                 "CMUX_SOCKET_PATH": aliases[0],
                 "CMUX_ALLOW_SOCKET_OVERRIDE": "1",
             ],
-            bundleIdentifier: "com.cmuxterm.app.debug.sockguard",
+            bundleIdentifier: "com.unixcision.uniconnect.debug.sockguard",
             isDebugBuild: false
         )
 
-        XCTAssertEqual(path, "/tmp/cmux-debug-sockguard.sock")
+        XCTAssertEqual(path, "/tmp/uniconnect-debug-sockguard.sock")
     }
 
     func testStagingBundleHonorsSocketOverrideWithoutOptInFlag() {
         let path = SocketControlSettings.socketPath(
             environment: [
-                "CMUX_SOCKET_PATH": "/tmp/cmux-staging-my-tag.sock",
+                "CMUX_SOCKET_PATH": "/tmp/uniconnect-staging-my-tag.sock",
             ],
-            bundleIdentifier: "com.cmuxterm.app.staging.my-tag",
+            bundleIdentifier: "com.unixcision.uniconnect.staging.my-tag",
             isDebugBuild: false
         )
 
-        XCTAssertEqual(path, "/tmp/cmux-staging-my-tag.sock")
+        XCTAssertEqual(path, "/tmp/uniconnect-staging-my-tag.sock")
     }
 
     func testStableReleaseCanOptInToSocketOverride() {
         let path = SocketControlSettings.socketPath(
             environment: [
-                "CMUX_SOCKET_PATH": "/tmp/cmux-debug-forced.sock",
+                "CMUX_SOCKET_PATH": "/tmp/uniconnect-debug-forced.sock",
                 "CMUX_ALLOW_SOCKET_OVERRIDE": "1",
             ],
-            bundleIdentifier: "com.cmuxterm.app",
+            bundleIdentifier: "com.unixcision.uniconnect",
             isDebugBuild: false,
             probeStableDefaultPathEntry: { _ in .missing }
         )
 
-        XCTAssertEqual(path, "/tmp/cmux-debug-forced.sock")
+        XCTAssertEqual(path, "/tmp/uniconnect-debug-forced.sock")
     }
 
     func testDefaultSocketPathByChannel() {
         XCTAssertEqual(
             SocketControlSettings.defaultSocketPath(
-                bundleIdentifier: "com.cmuxterm.app",
+                bundleIdentifier: "com.unixcision.uniconnect",
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),
@@ -3517,41 +3517,41 @@ final class SocketControlSettingsTests: XCTestCase {
         )
         XCTAssertEqual(
             SocketControlSettings.defaultSocketPath(
-                bundleIdentifier: "com.cmuxterm.app.nightly",
+                bundleIdentifier: "com.unixcision.uniconnect.nightly",
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),
-            "/tmp/cmux-nightly.sock"
+            "/tmp/uniconnect-nightly.sock"
         )
         XCTAssertEqual(
             SocketControlSettings.defaultSocketPath(
-                bundleIdentifier: "com.cmuxterm.app.nightly.tag",
+                bundleIdentifier: "com.unixcision.uniconnect.nightly.tag",
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),
-            "/tmp/cmux-nightly-tag.sock"
+            "/tmp/uniconnect-nightly-tag.sock"
         )
         XCTAssertEqual(
             SocketControlSettings.defaultSocketPath(
-                bundleIdentifier: "com.cmuxterm.app.debug.tag",
+                bundleIdentifier: "com.unixcision.uniconnect.debug.tag",
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),
-            "/tmp/cmux-debug-tag.sock"
+            "/tmp/uniconnect-debug-tag.sock"
         )
         XCTAssertEqual(
             SocketControlSettings.defaultSocketPath(
-                bundleIdentifier: "com.cmuxterm.app.staging.tag",
+                bundleIdentifier: "com.unixcision.uniconnect.staging.tag",
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),
-            "/tmp/cmux-staging-tag.sock"
+            "/tmp/uniconnect-staging-tag.sock"
         )
     }
 
     func testStableReleaseFallsBackToUserScopedSocketWhenStablePathOwnedByDifferentUser() {
         let path = SocketControlSettings.defaultSocketPath(
-            bundleIdentifier: "com.cmuxterm.app",
+            bundleIdentifier: "com.unixcision.uniconnect",
             isDebugBuild: false,
             currentUserID: 501,
             probeStableDefaultPathEntry: { _ in .socket(ownerUserID: 0) }
@@ -3563,7 +3563,7 @@ final class SocketControlSettingsTests: XCTestCase {
     func testInitialStableLaunchFallsBackToUserScopedSocketWhenSameUserStablePathExists() {
         let path = SocketControlSettings.initialSocketPathBeforeListenerStart(
             preferredPath: SocketControlSettings.stableDefaultSocketPath,
-            bundleIdentifier: "com.cmuxterm.app",
+            bundleIdentifier: "com.unixcision.uniconnect",
             isDebugBuild: false,
             currentUserID: 501,
             probeStableDefaultPathEntry: { _ in .socket(ownerUserID: 501) }
@@ -3574,12 +3574,12 @@ final class SocketControlSettingsTests: XCTestCase {
 
     func testInitialStableLaunchTreatsPrivateTmpLegacyStableAliasAsStablePath() {
         let path = SocketControlSettings.initialSocketPathBeforeListenerStart(
-            preferredPath: "/private/tmp/cmux.sock",
-            bundleIdentifier: "com.cmuxterm.app",
+            preferredPath: "/private/tmp/uniconnect.sock",
+            bundleIdentifier: "com.unixcision.uniconnect",
             isDebugBuild: false,
             currentUserID: 501,
             probeStableDefaultPathEntry: { socketPath in
-                XCTAssertEqual(socketPath, "/private/tmp/cmux.sock")
+                XCTAssertEqual(socketPath, "/private/tmp/uniconnect.sock")
                 return .socket(ownerUserID: 501)
             }
         )
@@ -3590,7 +3590,7 @@ final class SocketControlSettingsTests: XCTestCase {
     func testInitialStableLaunchDoesNotProbeSameUserStableSocketLiveness() {
         let path = SocketControlSettings.initialSocketPathBeforeListenerStart(
             preferredPath: SocketControlSettings.stableDefaultSocketPath,
-            bundleIdentifier: "com.cmuxterm.app",
+            bundleIdentifier: "com.unixcision.uniconnect",
             isDebugBuild: false,
             currentUserID: 501,
             probeStableDefaultPathEntry: { _ in .socket(ownerUserID: 501) },
@@ -3606,7 +3606,7 @@ final class SocketControlSettingsTests: XCTestCase {
     func testInitialStableLaunchDoesNotProbeSameUserStableSocketReclaimability() {
         let path = SocketControlSettings.initialSocketPathBeforeListenerStart(
             preferredPath: SocketControlSettings.stableDefaultSocketPath,
-            bundleIdentifier: "com.cmuxterm.app",
+            bundleIdentifier: "com.unixcision.uniconnect",
             isDebugBuild: false,
             currentUserID: 501,
             probeStableDefaultPathEntry: { _ in .socket(ownerUserID: 501) },
@@ -3623,7 +3623,7 @@ final class SocketControlSettingsTests: XCTestCase {
         let userScopedPath = SocketControlSettings.userScopedStableSocketPath(currentUserID: 501)
         let path = SocketControlSettings.initialSocketPathBeforeListenerStart(
             preferredPath: userScopedPath,
-            bundleIdentifier: "com.cmuxterm.app",
+            bundleIdentifier: "com.unixcision.uniconnect",
             isDebugBuild: false,
             currentUserID: 501,
             probeStableDefaultPathEntry: { socketPath in
@@ -3642,7 +3642,7 @@ final class SocketControlSettingsTests: XCTestCase {
     func testInitialStableLaunchFallsBackToUserScopedSocketWhenMissingStablePathCannotBeReserved() {
         let path = SocketControlSettings.initialSocketPathBeforeListenerStart(
             preferredPath: SocketControlSettings.stableDefaultSocketPath,
-            bundleIdentifier: "com.cmuxterm.app",
+            bundleIdentifier: "com.unixcision.uniconnect",
             isDebugBuild: false,
             currentUserID: 501,
             probeStableDefaultPathEntry: { _ in .missing },
@@ -3656,10 +3656,10 @@ final class SocketControlSettingsTests: XCTestCase {
     }
 
     func testInitialSocketPathDoesNotProbeForTaggedDebugBuild() {
-        let debugPath = "/tmp/cmux-debug-tag.sock"
+        let debugPath = "/tmp/uniconnect-debug-tag.sock"
         let path = SocketControlSettings.initialSocketPathBeforeListenerStart(
             preferredPath: debugPath,
-            bundleIdentifier: "com.cmuxterm.app.debug.tag",
+            bundleIdentifier: "com.unixcision.uniconnect.debug.tag",
             isDebugBuild: false,
             currentUserID: 501,
             probeStableDefaultPathEntry: { _ in
@@ -3673,7 +3673,7 @@ final class SocketControlSettingsTests: XCTestCase {
 
     func testStableReleaseFallsBackToUserScopedSocketWhenStablePathIsBlockedByNonSocketEntry() {
         let path = SocketControlSettings.defaultSocketPath(
-            bundleIdentifier: "com.cmuxterm.app",
+            bundleIdentifier: "com.unixcision.uniconnect",
             isDebugBuild: false,
             currentUserID: 501,
             probeStableDefaultPathEntry: { _ in .other(ownerUserID: 501) }
@@ -3686,7 +3686,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertTrue(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: [:],
-                bundleIdentifier: "com.cmuxterm.app.debug",
+                bundleIdentifier: "com.unixcision.uniconnect.debug",
                 isDebugBuild: true
             )
         )
@@ -3696,7 +3696,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: ["CMUX_TAG": "tests-v1"],
-                bundleIdentifier: "com.cmuxterm.app.debug",
+                bundleIdentifier: "com.unixcision.uniconnect.debug",
                 isDebugBuild: true
             )
         )
@@ -3706,7 +3706,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: [:],
-                bundleIdentifier: "com.cmuxterm.app.debug.tests-v1",
+                bundleIdentifier: "com.unixcision.uniconnect.debug.tests-v1",
                 isDebugBuild: true
             )
         )
@@ -3716,7 +3716,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: [:],
-                bundleIdentifier: "com.cmuxterm.app.debug",
+                bundleIdentifier: "com.unixcision.uniconnect.debug",
                 isDebugBuild: false
             )
         )
@@ -3726,7 +3726,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: ["XCTestConfigurationFilePath": "/tmp/fake.xctestconfiguration"],
-                bundleIdentifier: "com.cmuxterm.app.debug",
+                bundleIdentifier: "com.unixcision.uniconnect.debug",
                 isDebugBuild: true
             )
         )
@@ -3736,7 +3736,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: ["XCInjectBundle": "/tmp/fake.xctest"],
-                bundleIdentifier: "com.cmuxterm.app.debug",
+                bundleIdentifier: "com.unixcision.uniconnect.debug",
                 isDebugBuild: true
             )
         )
@@ -3746,7 +3746,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: ["DYLD_INSERT_LIBRARIES": "/usr/lib/libXCTestBundleInject.dylib"],
-                bundleIdentifier: "com.cmuxterm.app.debug",
+                bundleIdentifier: "com.unixcision.uniconnect.debug",
                 isDebugBuild: true
             )
         )
@@ -3758,7 +3758,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: ["CMUX_UI_TEST_MODE": "1"],
-                bundleIdentifier: "com.cmuxterm.app.debug",
+                bundleIdentifier: "com.unixcision.uniconnect.debug",
                 isDebugBuild: true
             )
         )
@@ -3769,9 +3769,9 @@ final class UITestLaunchManifestTests: XCTestCase {
     func testManifestPathReadsArgumentValue() {
         XCTAssertEqual(
             UITestLaunchManifest.manifestPath(
-                from: ["cmux", "-cmuxUITestLaunchManifest", "/tmp/cmux-ui-test-launch.json"]
+                from: ["cmux", "-cmuxUITestLaunchManifest", "/tmp/uniconnect-ui-test-launch.json"]
             ),
-            "/tmp/cmux-ui-test-launch.json"
+            "/tmp/uniconnect-ui-test-launch.json"
         )
     }
 
@@ -3785,12 +3785,12 @@ final class UITestLaunchManifestTests: XCTestCase {
 
     func testApplyIfPresentDecodesEnvironmentPayload() {
         let payload = """
-        {"environment":{"CMUX_TAG":"ui-tests-display","CMUX_SOCKET_PATH":"/tmp/cmux-ui-tests.sock"}}
+        {"environment":{"CMUX_TAG":"ui-tests-display","CMUX_SOCKET_PATH":"/tmp/uniconnect-ui-tests.sock"}}
         """.data(using: .utf8)!
         var applied: [String: String] = [:]
 
         UITestLaunchManifest.applyIfPresent(
-            arguments: ["cmux", UITestLaunchManifest.argumentName, "/tmp/cmux-ui-test-launch.json"],
+            arguments: ["cmux", UITestLaunchManifest.argumentName, "/tmp/uniconnect-ui-test-launch.json"],
             loadData: { _ in payload },
             applyEnvironment: { key, value in
                 applied[key] = value
@@ -3798,7 +3798,7 @@ final class UITestLaunchManifestTests: XCTestCase {
         )
 
         XCTAssertEqual(applied["CMUX_TAG"], "ui-tests-display")
-        XCTAssertEqual(applied["CMUX_SOCKET_PATH"], "/tmp/cmux-ui-tests.sock")
+        XCTAssertEqual(applied["CMUX_SOCKET_PATH"], "/tmp/uniconnect-ui-tests.sock")
     }
 }
 
@@ -5173,7 +5173,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
             command: "_cmux_preexec tmux; print -r -- READY",
             extraEnvironment: [
                 "PATH": "\(binDir.path):/usr/bin:/bin:/usr/sbin:/sbin",
-                "CMUX_SOCKET_PATH": "/tmp/cmux-current.sock",
+                "CMUX_SOCKET_PATH": "/tmp/uniconnect-current.sock",
                 "CMUX_TAG": "feat-tmux-notification-attention-state",
                 "CMUX_WORKSPACE_ID": "11111111-1111-1111-1111-111111111111",
                 "CMUX_SURFACE_ID": "22222222-2222-2222-2222-222222222222",
@@ -5184,7 +5184,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
 
         let log = (try? String(contentsOf: logPath, encoding: .utf8)) ?? ""
         XCTAssertTrue(log.contains("set-environment -g CMUX_TAG feat-tmux-notification-attention-state"), log)
-        XCTAssertTrue(log.contains("set-environment -g CMUX_SOCKET_PATH /tmp/cmux-current.sock"), log)
+        XCTAssertTrue(log.contains("set-environment -g CMUX_SOCKET_PATH /tmp/uniconnect-current.sock"), log)
         XCTAssertTrue(log.contains("set-environment -g CMUX_WORKSPACE_ID 11111111-1111-1111-1111-111111111111"), log)
         XCTAssertFalse(log.contains("set-environment -g CMUX_SURFACE_ID"), log)
         XCTAssertFalse(log.contains("set-environment -g CMUX_PANEL_ID"), log)
@@ -5220,7 +5220,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
             command: "_cmux_preexec tmux; print -r -- READY",
             extraEnvironment: [
                 "PATH": "\(binDir.path):/usr/bin:/bin:/usr/sbin:/sbin",
-                "CMUX_SOCKET_PATH": "/tmp/cmux-current.sock",
+                "CMUX_SOCKET_PATH": "/tmp/uniconnect-current.sock",
                 "CMUX_TAG": "feat-tmux-notification-attention-state",
                 "CMUX_WORKSPACE_ID": "11111111-1111-1111-1111-111111111111",
                 "CMUX_SURFACE_ID": "22222222-2222-2222-2222-222222222222",
@@ -5248,7 +5248,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
             contents: """
             #!/bin/sh
             if [ "$1" = "show-environment" ] && [ "$2" = "-g" ]; then
-              printf '%s\\n' 'CMUX_SOCKET_PATH=/tmp/cmux-current.sock'
+              printf '%s\\n' 'CMUX_SOCKET_PATH=/tmp/uniconnect-current.sock'
               printf '%s\\n' 'CMUX_TAG=feat-tmux-notification-attention-state'
               printf '%s\\n' 'CMUX_WORKSPACE_ID=11111111-1111-1111-1111-111111111111'
               printf '%s\\n' 'CMUX_SURFACE_ID=99999999-9999-9999-9999-999999999999'
@@ -5267,7 +5267,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
             extraEnvironment: [
                 "PATH": "\(binDir.path):/usr/bin:/bin:/usr/sbin:/sbin",
                 "TMUX": "/tmp/tmux-stale,123,0",
-                "CMUX_SOCKET_PATH": "/tmp/cmux-stale.sock",
+                "CMUX_SOCKET_PATH": "/tmp/uniconnect-stale.sock",
                 "CMUX_TAG": "feat-tmux-integration-experiments",
                 "CMUX_WORKSPACE_ID": "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
                 "CMUX_SURFACE_ID": "22222222-2222-2222-2222-222222222222",
@@ -5278,7 +5278,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
 
         XCTAssertEqual(
             output,
-            "feat-tmux-notification-attention-state|/tmp/cmux-current.sock|11111111-1111-1111-1111-111111111111|22222222-2222-2222-2222-222222222222|22222222-2222-2222-2222-222222222222"
+            "feat-tmux-notification-attention-state|/tmp/uniconnect-current.sock|11111111-1111-1111-1111-111111111111|22222222-2222-2222-2222-222222222222|22222222-2222-2222-2222-222222222222"
         )
     }
 
@@ -6135,7 +6135,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let integrationPath = repoRoot.appendingPathComponent("Resources/shell-integration/cmux-bash-integration.bash")
+        let integrationPath = repoRoot.appendingPathComponent("Resources/shell-integration/uniconnect-bash-integration.bash")
         let rcfilePath = root.appendingPathComponent(".bashrc")
         let rcfileContents: String = {
             guard cmuxLoadShellIntegration else { return ":\n" }

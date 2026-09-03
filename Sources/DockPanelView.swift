@@ -472,7 +472,7 @@ final class DockControlsStore: ObservableObject {
         let homePath = FileManager.default.homeDirectoryForCurrentUser.path
         while true {
             let configURL = candidate
-                .appendingPathComponent(".cmux", isDirectory: true)
+                .appendingPathComponent(".uniconnect", isDirectory: true)
                 .appendingPathComponent("dock.json", isDirectory: false)
             if FileManager.default.fileExists(atPath: configURL.path) {
                 return configURL
@@ -498,13 +498,13 @@ final class DockControlsStore: ObservableObject {
             return URL(fileURLWithPath: testPath)
         }
         return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/cmux/dock.json", isDirectory: false)
+            .appendingPathComponent(".config/uniconnect/dock.json", isDirectory: false)
     }
 
     private static func preferredEditableConfigURL(rootDirectory: String?) throws -> URL {
         if let rootDirectory = rootDirectory.flatMap(existingDirectory) {
             return URL(fileURLWithPath: rootDirectory, isDirectory: true)
-                .appendingPathComponent(".cmux", isDirectory: true)
+                .appendingPathComponent(".uniconnect", isDirectory: true)
                 .appendingPathComponent("dock.json", isDirectory: false)
         }
         return globalConfigURL()

@@ -60,7 +60,7 @@ final class SessionPersistenceTests: XCTestCase {
             relayPort: 64001,
             relayID: "relay-test",
             relayToken: String(repeating: "c", count: 64),
-            localSocketPath: "/tmp/cmux-test.sock",
+            localSocketPath: "/tmp/uniconnect-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
 
@@ -597,12 +597,12 @@ final class SessionPersistenceTests: XCTestCase {
 
     func testNormalizedExportedScreenPathAcceptsAbsoluteAndFileURL() {
         XCTAssertEqual(
-            TerminalController.normalizedExportedScreenPath("/tmp/cmux-screen.txt"),
-            "/tmp/cmux-screen.txt"
+            TerminalController.normalizedExportedScreenPath("/tmp/uniconnect-screen.txt"),
+            "/tmp/uniconnect-screen.txt"
         )
         XCTAssertEqual(
-            TerminalController.normalizedExportedScreenPath(" file:///tmp/cmux-screen.txt "),
-            "/tmp/cmux-screen.txt"
+            TerminalController.normalizedExportedScreenPath(" file:///tmp/uniconnect-screen.txt "),
+            "/tmp/uniconnect-screen.txt"
         )
     }
 
@@ -1788,7 +1788,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
         let snapshot = SessionRestorableAgentSnapshot(
             kind: .claude,
             sessionId: "claude-session-123",
-            workingDirectory: "/tmp/cmux project",
+            workingDirectory: "/tmp/uniconnect project",
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "claude",
                 executablePath: "/opt/Claude Code/bin/claude",
@@ -1799,7 +1799,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
                     "--permission-mode",
                     "auto"
                 ],
-                workingDirectory: "/tmp/cmux project",
+                workingDirectory: "/tmp/uniconnect project",
                 environment: ["CLAUDE_CONFIG_DIR": "/tmp/claude config"],
                 capturedAt: 123,
                 source: "environment"
@@ -1808,7 +1808,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
 
         XCTAssertEqual(
             snapshot.resumeCommand,
-            "{ cd -- '/tmp/cmux project' 2>/dev/null || [ ! -d '/tmp/cmux project' ]; } && 'env' 'CLAUDE_CONFIG_DIR=/tmp/claude config' 'CMUX_PRESERVE_CLAUDE_AUTH_SELECTION_ENV=1' 'CMUX_PRESERVE_CLAUDE_AUTH_SELECTION_ENV_KEYS=CLAUDE_CONFIG_DIR' 'claude' '--resume' 'claude-session-123' '--model' 'sonnet' '--permission-mode' 'auto'"
+            "{ cd -- '/tmp/uniconnect project' 2>/dev/null || [ ! -d '/tmp/uniconnect project' ]; } && 'env' 'CLAUDE_CONFIG_DIR=/tmp/claude config' 'CMUX_PRESERVE_CLAUDE_AUTH_SELECTION_ENV=1' 'CMUX_PRESERVE_CLAUDE_AUTH_SELECTION_ENV_KEYS=CLAUDE_CONFIG_DIR' 'claude' '--resume' 'claude-session-123' '--model' 'sonnet' '--permission-mode' 'auto'"
         )
         // The captured real-binary path must not survive: it would bypass the wrapper.
         XCTAssertFalse(snapshot.resumeCommand?.contains("/opt/Claude Code/bin/claude") ?? true)
@@ -1818,7 +1818,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
         let snapshot = SessionRestorableAgentSnapshot(
             kind: .claude,
             sessionId: "claude-session-123",
-            workingDirectory: "/tmp/cmux project",
+            workingDirectory: "/tmp/uniconnect project",
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "claude",
                 executablePath: "/opt/Claude Code/bin/claude",
@@ -1831,7 +1831,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
                     "--session-id",
                     "old-session"
                 ],
-                workingDirectory: "/tmp/cmux project",
+                workingDirectory: "/tmp/uniconnect project",
                 environment: ["CLAUDE_CONFIG_DIR": "/tmp/claude config"],
                 capturedAt: 123,
                 source: "environment"
@@ -1999,7 +1999,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
         let snapshot = SessionRestorableAgentSnapshot(
             kind: .claude,
             sessionId: "claude-session-123",
-            workingDirectory: "/tmp/cmux project",
+            workingDirectory: "/tmp/uniconnect project",
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "claude",
                 executablePath: "/opt/Claude Code/bin/claude",
@@ -2008,7 +2008,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
                     "--model",
                     "sonnet"
                 ],
-                workingDirectory: "/tmp/cmux project",
+                workingDirectory: "/tmp/uniconnect project",
                 environment: nil,
                 capturedAt: 123,
                 source: "environment"
@@ -2202,9 +2202,9 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
             workingDirectory: "/Users/example/repo",
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "codexTeams",
-                executablePath: "/usr/local/bin/cmux",
+                executablePath: "/usr/local/bin/uniconnect",
                 arguments: [
-                    "/usr/local/bin/cmux",
+                    "/usr/local/bin/uniconnect",
                     "codex-teams",
                     "--model",
                     "gpt-5.4",
@@ -2223,7 +2223,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
 
         XCTAssertEqual(
             snapshot.resumeCommand,
-            "{ cd -- '/Users/example/repo' 2>/dev/null || [ ! -d '/Users/example/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex home' '/usr/local/bin/cmux' 'codex-teams' 'resume' '019dad34-d218-7943-b81a-eddac5c87951' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access'"
+            "{ cd -- '/Users/example/repo' 2>/dev/null || [ ! -d '/Users/example/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex home' '/usr/local/bin/uniconnect' 'codex-teams' 'resume' '019dad34-d218-7943-b81a-eddac5c87951' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access'"
         )
     }
 
@@ -2234,9 +2234,9 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
             workingDirectory: "/Users/example/repo",
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "codexTeams",
-                executablePath: "/usr/local/bin/cmux",
+                executablePath: "/usr/local/bin/uniconnect",
                 arguments: [
-                    "/usr/local/bin/cmux",
+                    "/usr/local/bin/uniconnect",
                     "codex-teams",
                     "fork",
                     "019dad34-d218-7943-b81a-eddac5c87951",
@@ -2255,7 +2255,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
 
         XCTAssertEqual(
             snapshot.resumeCommand,
-            "{ cd -- '/Users/example/repo' 2>/dev/null || [ ! -d '/Users/example/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex home' '/usr/local/bin/cmux' 'codex-teams' 'resume' '019dad34-d218-7943-b81a-eddac5c87952' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access'"
+            "{ cd -- '/Users/example/repo' 2>/dev/null || [ ! -d '/Users/example/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex home' '/usr/local/bin/uniconnect' 'codex-teams' 'resume' '019dad34-d218-7943-b81a-eddac5c87952' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access'"
         )
     }
 
@@ -2384,9 +2384,9 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
             workingDirectory: "/Users/example/repo",
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "codexTeams",
-                executablePath: "/usr/local/bin/cmux",
+                executablePath: "/usr/local/bin/uniconnect",
                 arguments: [
-                    "/usr/local/bin/cmux",
+                    "/usr/local/bin/uniconnect",
                     "codex-teams",
                     "--model",
                     "gpt-5.4",
@@ -2458,9 +2458,9 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
             workingDirectory: "/tmp/opencode repo",
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "omo",
-                executablePath: "/usr/local/bin/cmux",
+                executablePath: "/usr/local/bin/uniconnect",
                 arguments: [
-                    "/usr/local/bin/cmux",
+                    "/usr/local/bin/uniconnect",
                     "omo",
                     "--model",
                     "anthropic/claude-sonnet-4-6",
@@ -2479,9 +2479,9 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
             workingDirectory: "/tmp/opencode repo",
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "omo",
-                executablePath: "/usr/local/bin/cmux",
+                executablePath: "/usr/local/bin/uniconnect",
                 arguments: [
-                    "/usr/local/bin/cmux",
+                    "/usr/local/bin/uniconnect",
                     "omo",
                     "--session",
                     "opencode-session-123",
@@ -2533,7 +2533,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
         )
         XCTAssertEqual(
             codexTeams.forkCommand,
-            "{ cd -- '/Users/example/repo' 2>/dev/null || [ ! -d '/Users/example/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex home' '/usr/local/bin/cmux' 'codex-teams' 'fork' 'codex-teams-session' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access'"
+            "{ cd -- '/Users/example/repo' 2>/dev/null || [ ! -d '/Users/example/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex home' '/usr/local/bin/uniconnect' 'codex-teams' 'fork' 'codex-teams-session' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access'"
         )
         XCTAssertEqual(
             directOpenCode.forkCommand,
@@ -2545,11 +2545,11 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
         )
         XCTAssertEqual(
             omoOpenCode.forkCommand,
-            "{ cd -- '/tmp/opencode repo' 2>/dev/null || [ ! -d '/tmp/opencode repo' ]; } && 'env' 'OPENCODE_CONFIG_DIR=/tmp/opencode config' '/usr/local/bin/cmux' 'omo' '--session' 'opencode-session-123' '--fork' '--model' 'anthropic/claude-sonnet-4-6' '/tmp/opencode repo'"
+            "{ cd -- '/tmp/opencode repo' 2>/dev/null || [ ! -d '/tmp/opencode repo' ]; } && 'env' 'OPENCODE_CONFIG_DIR=/tmp/opencode config' '/usr/local/bin/uniconnect' 'omo' '--session' 'opencode-session-123' '--fork' '--model' 'anthropic/claude-sonnet-4-6' '/tmp/opencode repo'"
         )
         XCTAssertEqual(
             omoOpenCodeFork.forkCommand,
-            "{ cd -- '/tmp/opencode repo' 2>/dev/null || [ ! -d '/tmp/opencode repo' ]; } && 'env' 'OPENCODE_CONFIG_DIR=/tmp/opencode config' '/usr/local/bin/cmux' 'omo' '--session' 'opencode-child-session' '--fork' '--model' 'anthropic/claude-sonnet-4-6' '/tmp/opencode repo'"
+            "{ cd -- '/tmp/opencode repo' 2>/dev/null || [ ! -d '/tmp/opencode repo' ]; } && 'env' 'OPENCODE_CONFIG_DIR=/tmp/opencode config' '/usr/local/bin/uniconnect' 'omo' '--session' 'opencode-child-session' '--fork' '--model' 'anthropic/claude-sonnet-4-6' '/tmp/opencode repo'"
         )
         XCTAssertNil(unsupported.forkCommand)
     }
@@ -3224,7 +3224,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
                 arguments: ["claude", "--model", "sonnet"],
                 workingDirectory: nil,
                 environment: [
-                    "NODE_OPTIONS": "--require=/tmp/cmux-claude-node-options/restore-node-options.cjs --max-old-space-size=4096 --trace-warnings"
+                    "NODE_OPTIONS": "--require=/tmp/uniconnect-claude-node-options/restore-node-options.cjs --max-old-space-size=4096 --trace-warnings"
                 ],
                 capturedAt: nil,
                 source: nil
@@ -3248,7 +3248,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
                 arguments: ["claude", "--model", "sonnet"],
                 workingDirectory: nil,
                 environment: [
-                    "NODE_OPTIONS": "--require /tmp/cmux-claude-node-options/restore-node-options.cjs --max-old-space-size 4096"
+                    "NODE_OPTIONS": "--require /tmp/uniconnect-claude-node-options/restore-node-options.cjs --max-old-space-size 4096"
                 ],
                 capturedAt: nil,
                 source: nil
@@ -3294,9 +3294,9 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
             workingDirectory: "/tmp/opencode repo",
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "omo",
-                executablePath: "/usr/local/bin/cmux",
+                executablePath: "/usr/local/bin/uniconnect",
                 arguments: [
-                    "/usr/local/bin/cmux",
+                    "/usr/local/bin/uniconnect",
                     "omo",
                     "--model",
                     "anthropic/claude-sonnet-4-6",
@@ -3335,8 +3335,8 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
             workingDirectory: nil,
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "omx",
-                executablePath: "/usr/local/bin/cmux",
-                arguments: ["/usr/local/bin/cmux", "omx", "team"],
+                executablePath: "/usr/local/bin/uniconnect",
+                arguments: ["/usr/local/bin/uniconnect", "omx", "team"],
                 workingDirectory: nil,
                 environment: nil,
                 capturedAt: nil,
@@ -3349,8 +3349,8 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
             workingDirectory: nil,
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "omc",
-                executablePath: "/usr/local/bin/cmux",
-                arguments: ["/usr/local/bin/cmux", "omc", "team"],
+                executablePath: "/usr/local/bin/uniconnect",
+                arguments: ["/usr/local/bin/uniconnect", "omc", "team"],
                 workingDirectory: nil,
                 environment: nil,
                 capturedAt: nil,
@@ -3364,7 +3364,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
         )
         XCTAssertEqual(
             omo.resumeCommand,
-            "{ cd -- '/tmp/opencode repo' 2>/dev/null || [ ! -d '/tmp/opencode repo' ]; } && 'env' 'OPENCODE_CONFIG_DIR=/tmp/opencode config' '/usr/local/bin/cmux' 'omo' '--session' 'opencode-session-123' '--model' 'anthropic/claude-sonnet-4-6' '/tmp/opencode repo'"
+            "{ cd -- '/tmp/opencode repo' 2>/dev/null || [ ! -d '/tmp/opencode repo' ]; } && 'env' 'OPENCODE_CONFIG_DIR=/tmp/opencode config' '/usr/local/bin/uniconnect' 'omo' '--session' 'opencode-session-123' '--model' 'anthropic/claude-sonnet-4-6' '/tmp/opencode repo'"
         )
         XCTAssertEqual(
             staleBunWorker.resumeCommand,
@@ -3377,7 +3377,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
     func testRestorableAgentIndexLoadsLaunchCommandFromHookStore() throws {
         let home = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-agent-hook-store-\(UUID().uuidString)", isDirectory: true)
-        let storeDir = home.appendingPathComponent(".cmuxterm", isDirectory: true)
+        let storeDir = home.appendingPathComponent(".uniconnect", isDirectory: true)
         try FileManager.default.createDirectory(at: storeDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: home) }
 
@@ -3431,7 +3431,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
         let fileManager = FileManager.default
         let home = fileManager.temporaryDirectory
             .appendingPathComponent("cmux-agent-hook-store-\(UUID().uuidString)", isDirectory: true)
-        let storeDir = home.appendingPathComponent(".cmuxterm", isDirectory: true)
+        let storeDir = home.appendingPathComponent(".uniconnect", isDirectory: true)
         try fileManager.createDirectory(at: storeDir, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: home) }
 
@@ -3450,9 +3450,9 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
               "updatedAt": 10,
               "launchCommand": {
                 "launcher": "omo",
-                "executablePath": "/usr/local/bin/cmux",
+                "executablePath": "/usr/local/bin/uniconnect",
                 "arguments": [
-                  "/usr/local/bin/cmux",
+                  "/usr/local/bin/uniconnect",
                   "omo",
                   "--model",
                   "anthropic/claude-sonnet-4-6",
@@ -3509,7 +3509,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
         let fileManager = FileManager.default
         let home = fileManager.temporaryDirectory
             .appendingPathComponent("cmux-agent-hook-store-\(UUID().uuidString)", isDirectory: true)
-        let storeDir = home.appendingPathComponent(".cmuxterm", isDirectory: true)
+        let storeDir = home.appendingPathComponent(".uniconnect", isDirectory: true)
         try fileManager.createDirectory(at: storeDir, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: home) }
 
@@ -4377,7 +4377,7 @@ extension SessionPersistenceTests {
 
         let effectiveBinding = SurfaceResumeApprovalStore.applyingStoredApproval(
             to: binding,
-            fileURL: URL(fileURLWithPath: "/tmp/cmux-missing-\(UUID().uuidString).json"),
+            fileURL: URL(fileURLWithPath: "/tmp/uniconnect-missing-\(UUID().uuidString).json"),
             signingSecret: Data("approval-secret".utf8)
         )
         XCTAssertEqual(effectiveBinding.approvalPolicy, .manual)
@@ -4732,7 +4732,7 @@ extension SessionPersistenceTests {
 
         let effectiveBinding = SurfaceResumeApprovalStore.applyingStoredApproval(
             to: binding,
-            fileURL: URL(fileURLWithPath: "/tmp/cmux-missing-\(UUID().uuidString).json"),
+            fileURL: URL(fileURLWithPath: "/tmp/uniconnect-missing-\(UUID().uuidString).json"),
             signingSecret: Data("approval-secret".utf8)
         )
         XCTAssertEqual(effectiveBinding.approvalPolicy, .auto)
@@ -4749,7 +4749,7 @@ extension SessionPersistenceTests {
 
         let effectiveBinding = SurfaceResumeApprovalStore.applyingStoredApproval(
             to: binding,
-            fileURL: URL(fileURLWithPath: "/tmp/cmux-missing-\(UUID().uuidString).json"),
+            fileURL: URL(fileURLWithPath: "/tmp/uniconnect-missing-\(UUID().uuidString).json"),
             signingSecret: Data("approval-secret".utf8)
         )
         XCTAssertEqual(effectiveBinding.approvalPolicy, .auto)
@@ -4925,7 +4925,7 @@ extension SessionPersistenceTests {
         addTeardownBlock {
             try? FileManager.default.removeItem(at: root)
         }
-        return root.appendingPathComponent("cmux.json", isDirectory: false)
+        return root.appendingPathComponent("uniconnect.json", isDirectory: false)
     }
 
     private func jsonObject(at url: URL) throws -> [String: Any] {

@@ -7,7 +7,7 @@ working directory from the source terminal.
 
 Requires:
   - cmux running with allowAll socket mode
-  - bash shell integration sourced (cmux-bash-integration.bash)
+  - bash shell integration sourced (uniconnect-bash-integration.bash)
 
 Run with a tagged instance:
   CMUX_TAG=<tag> python3 tests/test_split_cwd_inheritance.py

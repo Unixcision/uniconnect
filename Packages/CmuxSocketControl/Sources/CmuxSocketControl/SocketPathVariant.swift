@@ -44,19 +44,19 @@ public enum SocketPathVariant: Equatable, Sendable {
             return SocketPathMarkerFiles.stableTmpPath
         case .nightly(let slug):
             if let slug = Self.sanitizedSlug(slug) {
-                return "/tmp/cmux-nightly-\(slug)-last-socket-path"
+                return "/tmp/uniconnect-nightly-\(slug)-last-socket-path"
             }
-            return "/tmp/cmux-nightly-last-socket-path"
+            return "/tmp/uniconnect-nightly-last-socket-path"
         case .staging(let slug):
             if let slug = Self.sanitizedSlug(slug) {
-                return "/tmp/cmux-staging-\(slug)-last-socket-path"
+                return "/tmp/uniconnect-staging-\(slug)-last-socket-path"
             }
-            return "/tmp/cmux-staging-last-socket-path"
+            return "/tmp/uniconnect-staging-last-socket-path"
         case .dev(let slug):
             if let slug = Self.sanitizedSlug(slug) {
-                return "/tmp/cmux-dev-\(slug)-last-socket-path"
+                return "/tmp/uniconnect-dev-\(slug)-last-socket-path"
             }
-            return "/tmp/cmux-dev-last-socket-path"
+            return "/tmp/uniconnect-dev-last-socket-path"
         }
     }
 

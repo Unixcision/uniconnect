@@ -40,7 +40,7 @@ public struct SettingsSearchIndex: Sendable {
 
     public let entries: [Entry]
 
-    /// Maps a dotted cmux.json path (e.g. `sidebar.showBranchDirectory`)
+    /// Maps a dotted uniconnect.json path (e.g. `sidebar.showBranchDirectory`)
     /// to the stable anchor id of the entry that owns it. Lets a
     /// ``SettingsCardRow`` resolve the config path it already declares
     /// via ``SettingsConfigurationReview`` into the scroll/highlight
@@ -98,7 +98,7 @@ public struct SettingsSearchIndex: Sendable {
         self.entries = built
 
         // Curated synonym strings lead with the setting's dotted
-        // cmux.json path (e.g. "sidebar.showBranchDirectory git …"),
+        // uniconnect.json path (e.g. "sidebar.showBranchDirectory git …"),
         // which is exactly what a row declares via its
         // configurationReview. Index every dotted token to the curated
         // entry's anchor id so a row can map its path to a scroll target.
@@ -114,7 +114,7 @@ public struct SettingsSearchIndex: Sendable {
         self.pathAnchorIDs = pathAnchors
     }
 
-    /// Resolves a dotted cmux.json path to the curated entry id the
+    /// Resolves a dotted uniconnect.json path to the curated entry id the
     /// sidebar/search navigation scrolls to and highlights, so a row can
     /// tag itself with the exact id its search hit posts.
     ///
@@ -123,7 +123,7 @@ public struct SettingsSearchIndex: Sendable {
     /// hit scrolls and pulses nothing — `SettingsRowAnchorResolutionTests`
     /// enforces that across all rows.
     ///
-    /// - Parameter path: A dotted cmux.json path, e.g. `terminal.copyOnSelect`.
+    /// - Parameter path: A dotted uniconnect.json path, e.g. `terminal.copyOnSelect`.
     /// - Returns: The curated entry id to use as a `scrollTo` / highlight
     ///   anchor, or `nil` when no curated entry owns `path`.
     public func anchorID(forSettingsPath path: String) -> String? {

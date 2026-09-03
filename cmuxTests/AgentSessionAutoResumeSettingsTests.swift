@@ -219,7 +219,7 @@ final class AgentSessionAutoResumeSettingsTests: XCTestCase {
                     relayPort: 64000,
                     relayID: "relay-auto-resume-remote",
                     relayToken: String(repeating: "a", count: 64),
-                    localSocketPath: "/tmp/cmux-auto-resume-remote.sock",
+                    localSocketPath: "/tmp/uniconnect-auto-resume-remote.sock",
                     terminalStartupCommand: remoteCommand
                 ),
                 autoConnect: false
@@ -274,7 +274,7 @@ final class AgentSessionAutoResumeSettingsTests: XCTestCase {
                     relayPort: 64000,
                     relayID: "relay-auto-resume-long-remote",
                     relayToken: String(repeating: "b", count: 64),
-                    localSocketPath: "/tmp/cmux-auto-resume-long-remote.sock",
+                    localSocketPath: "/tmp/uniconnect-auto-resume-long-remote.sock",
                     terminalStartupCommand: remoteCommand
                 ),
                 autoConnect: false

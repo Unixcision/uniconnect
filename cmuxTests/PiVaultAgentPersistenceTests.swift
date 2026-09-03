@@ -783,7 +783,7 @@ final class PiVaultAgentPersistenceTests: XCTestCase {
 
         let homeDirectory = tempDir.appendingPathComponent("home", isDirectory: true)
         let hookStore = homeDirectory
-            .appendingPathComponent(".cmuxterm", isDirectory: true)
+            .appendingPathComponent(".uniconnect", isDirectory: true)
             .appendingPathComponent("grok-hook-sessions.json", isDirectory: false)
         try FileManager.default.createDirectory(at: hookStore.deletingLastPathComponent(), withIntermediateDirectories: true)
 

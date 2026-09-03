@@ -21,9 +21,9 @@ public struct SocketControlSettings {
     public static let launchTagEnvKey = "CMUX_TAG"
     /// Base bundle identifier shared by all debug builds.
     public static let baseDebugBundleIdentifier = "com.unixcision.uniconnect.debug"
-    private static let stableSocketFileName = "cmux.sock"
+    private static let stableSocketFileName = "uniconnect.sock"
     /// Legacy stable socket path used before the Application Support location.
-    public static let legacyStableDefaultSocketPath = "/tmp/cmux.sock"
+    public static let legacyStableDefaultSocketPath = "/tmp/uniconnect.sock"
 
     /// The stable build's default socket path (within ``CmuxStateDirectory``, falling back to `/tmp`).
     public static var stableDefaultSocketPath: String {
@@ -213,7 +213,7 @@ public struct SocketControlSettings {
         stableDefaultSocketCanBeReclaimed: (String) -> Bool = { _ in true }
     ) -> String {
         guard !isDebugBuild,
-              ["com.cmuxterm.app", "com.unixcision.uniconnect"].contains(normalizedBundleIdentifier(bundleIdentifier)),
+              ["com.unixcision.uniconnect", "com.unixcision.uniconnect"].contains(normalizedBundleIdentifier(bundleIdentifier)),
               isStableReleaseSocketPath(preferredPath, currentUserID: currentUserID) else {
             return preferredPath
         }
@@ -325,7 +325,7 @@ public struct SocketControlSettings {
 
     private static func shouldReserveStableSocketPath(bundleIdentifier: String?, isDebugBuild: Bool) -> Bool {
         if isDebugBuild { return true }
-        return normalizedBundleIdentifier(bundleIdentifier) != "com.cmuxterm.app"
+        return normalizedBundleIdentifier(bundleIdentifier) != "com.unixcision.uniconnect"
     }
 
     private static func isStableReleaseSocketPath(_ path: String, currentUserID: uid_t) -> Bool {
@@ -367,13 +367,13 @@ public struct SocketControlSettings {
     /// The per-user stable socket path (`cmux-<uid>.sock` in ``CmuxStateDirectory``, `/tmp` fallback).
     public static func userScopedStableSocketPath(currentUserID: uid_t = getuid()) -> String {
         stableSocketDirectoryURL()?
-            .appendingPathComponent("cmux-\(currentUserID).sock", isDirectory: false)
-            .path ?? "/tmp/cmux-\(currentUserID).sock"
+            .appendingPathComponent("uniconnect-\(currentUserID).sock", isDirectory: false)
+            .path ?? "/tmp/uniconnect-\(currentUserID).sock"
     }
 
     /// The legacy `/tmp` per-user stable socket path.
     public static func legacyUserScopedStableSocketPath(currentUserID: uid_t = getuid()) -> String {
-        "/tmp/cmux-\(currentUserID).sock"
+        "/tmp/uniconnect-\(currentUserID).sock"
     }
 
     /// The stable default socket path, falling back to the per-user path when the shared one is taken.
@@ -429,11 +429,11 @@ public struct SocketControlSettings {
     /// Whether the bundle identifier is a debug build identifier.
     public static func isDebugLikeBundleIdentifier(_ bundleIdentifier: String?) -> Bool {
         guard let bundleIdentifier else { return false }
-        return bundleIdentifier == "com.cmuxterm.app.debug"
-            || bundleIdentifier.hasPrefix("com.cmuxterm.app.debug.")
+        return bundleIdentifier == "com.unixcision.uniconnect.debug"
+            || bundleIdentifier.hasPrefix("com.unixcision.uniconnect.debug.")
     }
 
-    /// Whether the bundle identifier is a tagged DEV build (`com.cmuxterm.app.debug.<tag>`).
+    /// Whether the bundle identifier is a tagged DEV build (`com.unixcision.uniconnect.debug.<tag>`).
     public static func isTaggedDevBuild(bundleIdentifier: String? = Bundle.main.bundleIdentifier) -> Bool {
         guard let bundleIdentifier else { return false }
         return bundleIdentifier.hasPrefix("\(baseDebugBundleIdentifier).")
@@ -442,13 +442,13 @@ public struct SocketControlSettings {
     /// Whether the bundle identifier is a staging build identifier.
     public static func isStagingBundleIdentifier(_ bundleIdentifier: String?) -> Bool {
         guard let bundleIdentifier else { return false }
-        return bundleIdentifier == "com.cmuxterm.app.staging"
-            || bundleIdentifier.hasPrefix("com.cmuxterm.app.staging.")
+        return bundleIdentifier == "com.unixcision.uniconnect.staging"
+            || bundleIdentifier.hasPrefix("com.unixcision.uniconnect.staging.")
     }
 
     /// The directory holding the control socket and its marker files.
     ///
-    /// Resolves to ``CmuxStateDirectory`` (`~/.local/state/cmux`) rather than
+    /// Resolves to ``CmuxStateDirectory`` (`~/.local/state/uniconnect`) rather than
     /// Application Support: the separately-signed `cmux` CLI connects to this
     /// socket on every agent hook, and a different-identity process reaching into
     /// the app's Application Support data triggers the macOS Sequoia "access data

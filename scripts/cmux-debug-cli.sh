@@ -47,7 +47,7 @@ sanitize_path() {
 tag_slug="$(sanitize_path "$CMUX_TAG")"
 tag_bundle_id="$(sanitize_bundle "$CMUX_TAG")"
 
-socket_path="/tmp/cmux-debug-${tag_slug}.sock"
+socket_path="/tmp/uniconnect-debug-${tag_slug}.sock"
 if [[ ! -S "$socket_path" ]]; then
   cat >&2 <<EOF
 Tagged cmux socket not found:

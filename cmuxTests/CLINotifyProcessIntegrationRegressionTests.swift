@@ -2432,7 +2432,7 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
 
     func testRightSidebarInvalidCommandValidatesBeforeTargetResolution() throws {
         let cliPath = try bundledCLIPath()
-        let missingSocketPath = "/tmp/cmux-test-missing-\(UUID().uuidString).sock"
+        let missingSocketPath = "/tmp/uniconnect-test-missing-\(UUID().uuidString).sock"
         var environment = ProcessInfo.processInfo.environment
         environment["CMUX_SOCKET_PATH"] = missingSocketPath
         environment["CMUX_CLI_SENTRY_DISABLED"] = "1"
@@ -2453,7 +2453,7 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
 
     func testRightSidebarInvalidSetModeValidatesBeforeTargetResolution() throws {
         let cliPath = try bundledCLIPath()
-        let missingSocketPath = "/tmp/cmux-test-missing-\(UUID().uuidString).sock"
+        let missingSocketPath = "/tmp/uniconnect-test-missing-\(UUID().uuidString).sock"
         var environment = ProcessInfo.processInfo.environment
         environment["CMUX_SOCKET_PATH"] = missingSocketPath
         environment["CMUX_CLI_SENTRY_DISABLED"] = "1"
@@ -2545,7 +2545,7 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
                 "--ssh-option", "ForwardAgent=no",
             ],
             environmentOverrides: [
-                "SSH_AUTH_SOCK": "/tmp/cmux-test-agent-\(UUID().uuidString).sock",
+                "SSH_AUTH_SOCK": "/tmp/uniconnect-test-agent-\(UUID().uuidString).sock",
             ]
         )
         let createParams = try XCTUnwrap(params(for: "workspace.create", in: run.requests))
@@ -2617,7 +2617,7 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
         let run = try runMockedSSH(
             arguments: ["--ssh-option", "ForwardAgent=ask"],
             environmentOverrides: [
-                "SSH_AUTH_SOCK": "/tmp/cmux-test-agent-\(UUID().uuidString).sock",
+                "SSH_AUTH_SOCK": "/tmp/uniconnect-test-agent-\(UUID().uuidString).sock",
             ]
         )
         let createParams = try XCTUnwrap(params(for: "workspace.create", in: run.requests))
@@ -6793,9 +6793,9 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
                     "updatedAt": now,
                     "launchCommand": [
                         "launcher": "codexTeams",
-                        "executablePath": "/usr/local/bin/cmux",
+                        "executablePath": "/usr/local/bin/uniconnect",
                         "arguments": [
-                            "/usr/local/bin/cmux",
+                            "/usr/local/bin/uniconnect",
                             "codex-teams",
                             "fork",
                             parentSessionId,
@@ -6855,10 +6855,10 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
         environment["CMUX_AGENT_HOOK_STATE_DIR"] = root.path
         environment["CMUX_CLI_SENTRY_DISABLED"] = "1"
         environment["CMUX_AGENT_LAUNCH_KIND"] = "codexTeams"
-        environment["CMUX_AGENT_LAUNCH_EXECUTABLE"] = "/usr/local/bin/cmux"
+        environment["CMUX_AGENT_LAUNCH_EXECUTABLE"] = "/usr/local/bin/uniconnect"
         environment["CMUX_AGENT_LAUNCH_CWD"] = root.path
         environment["CMUX_AGENT_LAUNCH_ARGV_B64"] = base64NULSeparated([
-            "/usr/local/bin/cmux",
+            "/usr/local/bin/uniconnect",
             "codex-teams",
             "fork",
             parentSessionId,
@@ -6896,7 +6896,7 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
         XCTAssertEqual(request["auto_resume"] as? Bool, true)
         XCTAssertEqual(
             request["command"] as? String,
-            "{ cd -- '\(root.path)' 2>/dev/null || [ ! -d '\(root.path)' ]; } && '/usr/local/bin/cmux' 'codex-teams' 'resume' '\(sessionId)' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access'"
+            "{ cd -- '\(root.path)' 2>/dev/null || [ ! -d '\(root.path)' ]; } && '/usr/local/bin/uniconnect' 'codex-teams' 'resume' '\(sessionId)' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access'"
         )
     }
 
@@ -6931,8 +6931,8 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
                     "updatedAt": now,
                     "launchCommand": [
                         "launcher": "omx",
-                        "executablePath": "/usr/local/bin/cmux",
-                        "arguments": ["/usr/local/bin/cmux", "omx", "hud"],
+                        "executablePath": "/usr/local/bin/uniconnect",
+                        "arguments": ["/usr/local/bin/uniconnect", "omx", "hud"],
                         "workingDirectory": root.path,
                         "capturedAt": now,
                         "source": "test",
@@ -7330,7 +7330,7 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
 
     func testSurfaceResumeSetCLIRejectsTrailingShellTokens() throws {
         let cliPath = try bundledCLIPath()
-        let missingSocketPath = "/tmp/cmux-test-missing-\(UUID().uuidString).sock"
+        let missingSocketPath = "/tmp/uniconnect-test-missing-\(UUID().uuidString).sock"
 
         var environment = ProcessInfo.processInfo.environment
         environment["CMUX_SOCKET_PATH"] = missingSocketPath
@@ -7359,7 +7359,7 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
 
     func testSurfaceResumeSetCLIRejectsPreTerminatorCommandTokens() throws {
         let cliPath = try bundledCLIPath()
-        let missingSocketPath = "/tmp/cmux-test-missing-\(UUID().uuidString).sock"
+        let missingSocketPath = "/tmp/uniconnect-test-missing-\(UUID().uuidString).sock"
         var environment = ProcessInfo.processInfo.environment
         environment["CMUX_SOCKET_PATH"] = missingSocketPath
         environment["CMUX_CLI_SENTRY_DISABLED"] = "1"
@@ -7388,7 +7388,7 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
         let cliPath = try bundledCLIPath()
         let workspaceId = "11111111-1111-1111-1111-111111111111"
         let surfaceId = "22222222-2222-2222-2222-222222222222"
-        let missingSocketPath = "/tmp/cmux-test-missing-\(UUID().uuidString).sock"
+        let missingSocketPath = "/tmp/uniconnect-test-missing-\(UUID().uuidString).sock"
         var environment = ProcessInfo.processInfo.environment
         environment["CMUX_SOCKET_PATH"] = missingSocketPath
         environment["CMUX_CLI_SENTRY_DISABLED"] = "1"
@@ -7440,7 +7440,7 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
 
     func testSurfaceResumeClearCLIRejectsMalformedGuardsBeforeClearing() throws {
         let cliPath = try bundledCLIPath()
-        let missingSocketPath = "/tmp/cmux-test-missing-\(UUID().uuidString).sock"
+        let missingSocketPath = "/tmp/uniconnect-test-missing-\(UUID().uuidString).sock"
 
         var environment = ProcessInfo.processInfo.environment
         environment["CMUX_SOCKET_PATH"] = missingSocketPath

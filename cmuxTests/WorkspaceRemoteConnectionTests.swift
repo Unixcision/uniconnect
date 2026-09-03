@@ -738,7 +738,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             port: 2222,
             identityFile: "/Users/test/.ssh/id_ed25519",
             sshOptions: [
-                "ControlPath /tmp/cmux-ssh-%C",
+                "ControlPath /tmp/uniconnect-ssh-%C",
                 "StrictHostKeyChecking=accept-new",
             ],
             localProxyPort: nil,
@@ -770,24 +770,24 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             destination: "cmux-macmini",
             port: 2222,
             identityFile: "/Users/test/.ssh/id_ed25519",
-            sshOptions: ["ControlPath /tmp/cmux-ssh-%C"],
+            sshOptions: ["ControlPath /tmp/uniconnect-ssh-%C"],
             localProxyPort: nil,
             relayPort: 64099,
             relayID: "relay-a",
             relayToken: String(repeating: "a", count: 64),
-            localSocketPath: "/tmp/cmux.sock",
+            localSocketPath: "/tmp/uniconnect.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
         let vmSSH = WorkspaceRemoteConfiguration(
             destination: "cmux-macmini",
             port: 2222,
             identityFile: "/Users/test/.ssh/id_ed25519",
-            sshOptions: ["ControlPath /tmp/cmux-ssh-%C"],
+            sshOptions: ["ControlPath /tmp/uniconnect-ssh-%C"],
             localProxyPort: nil,
             relayPort: 64099,
             relayID: "relay-a",
             relayToken: String(repeating: "a", count: 64),
-            localSocketPath: "/tmp/cmux.sock",
+            localSocketPath: "/tmp/uniconnect.sock",
             terminalStartupCommand: "ssh cmux-macmini",
             skipDaemonBootstrap: true
         )
@@ -795,12 +795,12 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             destination: "cmux-macmini",
             port: 2222,
             identityFile: "/Users/test/.ssh/id_ed25519",
-            sshOptions: ["ControlPath /tmp/cmux-ssh-%C"],
+            sshOptions: ["ControlPath /tmp/uniconnect-ssh-%C"],
             localProxyPort: nil,
             relayPort: 64099,
             relayID: "relay-a",
             relayToken: String(repeating: "a", count: 64),
-            localSocketPath: "/tmp/cmux.sock",
+            localSocketPath: "/tmp/uniconnect.sock",
             terminalStartupCommand: "ssh-pty-attach",
             preserveAfterTerminalExit: true
         )
@@ -1047,7 +1047,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             relayPort: 64007,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
 
@@ -1072,7 +1072,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             relayPort: 64029,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini",
             foregroundAuthToken: "token-a"
         )
@@ -1096,7 +1096,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             relayPort: 64030,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini",
             foregroundAuthToken: "token-a"
         )
@@ -1122,7 +1122,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             relayPort: 64031,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini",
             foregroundAuthToken: "token-b"
         )
@@ -1145,7 +1145,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             relayPort: 64033,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
 
@@ -1172,7 +1172,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             relayPort: 64032,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini",
             foregroundAuthToken: "token-a"
         )
@@ -1193,14 +1193,14 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             sshOptions: [
                 "ControlMaster=auto",
                 "ControlPersist=600",
-                "ControlPath=/tmp/cmux-ssh-%C",
+                "ControlPath=/tmp/uniconnect-ssh-%C",
                 "StrictHostKeyChecking=accept-new",
             ],
             localProxyPort: nil,
             relayPort: 64012,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
         let cleanupRequested = expectation(description: "control master cleanup requested")
@@ -1228,7 +1228,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
                 "-o", "ControlMaster=no",
                 "-p", "2222",
                 "-i", "/Users/test/.ssh/id_ed25519",
-                "-o", "ControlPath=/tmp/cmux-ssh-%C",
+                "-o", "ControlPath=/tmp/uniconnect-ssh-%C",
                 "-o", "StrictHostKeyChecking=accept-new",
                 "-O", "exit",
                 "cmux-macmini",
@@ -1246,14 +1246,14 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             sshOptions: [
                 "ControlMaster=auto",
                 "ControlPersist=600",
-                "ControlPath=/tmp/cmux-ssh-%C",
+                "ControlPath=/tmp/uniconnect-ssh-%C",
                 "StrictHostKeyChecking=accept-new",
             ],
             localProxyPort: nil,
             relayPort: 64012,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini",
             preserveAfterTerminalExit: true,
             persistentDaemonSlot: "ssh-persist-end"
@@ -1300,13 +1300,13 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             sshOptions: [
                 "ControlMaster=auto",
                 "ControlPersist=600",
-                "ControlPath=/tmp/cmux-ssh-%C",
+                "ControlPath=/tmp/uniconnect-ssh-%C",
             ],
             localProxyPort: nil,
             relayPort: 64014,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
         let cleanupRequested = expectation(description: "control master cleanup requested")
@@ -1335,7 +1335,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             [
                 "-o", "BatchMode=yes",
                 "-o", "ControlMaster=no",
-                "-o", "ControlPath=/tmp/cmux-ssh-%C",
+                "-o", "ControlPath=/tmp/uniconnect-ssh-%C",
                 "-O", "exit",
                 "cmux-macmini",
             ]
@@ -1354,7 +1354,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             relayPort: 64015,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
         let cleanupRequested = expectation(description: "control master cleanup requested")
@@ -1401,14 +1401,14 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             sshOptions: [
                 "ControlMaster=auto",
                 "ControlPersist=600",
-                "ControlPath=/tmp/cmux-ssh-%C",
+                "ControlPath=/tmp/uniconnect-ssh-%C",
                 "StrictHostKeyChecking=accept-new",
             ],
             localProxyPort: nil,
             relayPort: 64018,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
         let cleanupRequested = expectation(description: "control master cleanup requested")
@@ -1437,7 +1437,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
                 "-o", "ControlMaster=no",
                 "-p", "2222",
                 "-i", "/Users/test/.ssh/id_ed25519",
-                "-o", "ControlPath=/tmp/cmux-ssh-%C",
+                "-o", "ControlPath=/tmp/uniconnect-ssh-%C",
                 "-o", "StrictHostKeyChecking=accept-new",
                 "-O", "exit",
                 "cmux-macmini",
@@ -1455,13 +1455,13 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             sshOptions: [
                 "ControlMaster=auto",
                 "ControlPersist=600",
-                "ControlPath=/tmp/cmux-ssh-%C",
+                "ControlPath=/tmp/uniconnect-ssh-%C",
             ],
             localProxyPort: nil,
             relayPort: 64016,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
         let cleanupRequested = expectation(description: "control master cleanup requested")
@@ -1504,13 +1504,13 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             sshOptions: [
                 "ControlMaster=auto",
                 "ControlPersist=600",
-                "ControlPath=/tmp/cmux-ssh-%C",
+                "ControlPath=/tmp/uniconnect-ssh-%C",
             ],
             localProxyPort: nil,
             relayPort: 64017,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
         let cleanupRequested = expectation(description: "control master cleanup requested")
@@ -1558,13 +1558,13 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             sshOptions: [
                 "ControlMaster=auto",
                 "ControlPersist=600",
-                "ControlPath=/tmp/cmux-ssh-%C",
+                "ControlPath=/tmp/uniconnect-ssh-%C",
             ],
             localProxyPort: nil,
             relayPort: 64018,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
         let cleanupRequested = expectation(description: "control master cleanup requested")
@@ -1612,13 +1612,13 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             sshOptions: [
                 "ControlMaster=auto",
                 "ControlPersist=600",
-                "ControlPath=/tmp/cmux-ssh-%C",
+                "ControlPath=/tmp/uniconnect-ssh-%C",
             ],
             localProxyPort: nil,
             relayPort: 64019,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
         let cleanupRequested = expectation(description: "control master cleanup requested")
@@ -1667,13 +1667,13 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             sshOptions: [
                 "ControlMaster=auto",
                 "ControlPersist=600",
-                "ControlPath=/tmp/cmux-ssh-%C",
+                "ControlPath=/tmp/uniconnect-ssh-%C",
             ],
             localProxyPort: nil,
             relayPort: 64013,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
         let cleanupRequested = expectation(description: "control master cleanup requested")
@@ -1706,13 +1706,13 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             sshOptions: [
                 "ControlMaster=auto",
                 "ControlPersist=600",
-                "ControlPath=/tmp/cmux-ssh-%C",
+                "ControlPath=/tmp/uniconnect-ssh-%C",
             ],
             localProxyPort: nil,
             relayPort: 64020,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
         var cleanupArguments: [[String]] = []
@@ -1752,7 +1752,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
 
         let remotePath = WorkspaceRemoteSessionController.remoteDropPath(for: fileURL, uuid: uuid)
 
-        XCTAssertEqual(remotePath, "/tmp/cmux-drop-12345678-1234-1234-1234-1234567890ab.png")
+        XCTAssertEqual(remotePath, "/tmp/uniconnect-drop-12345678-1234-1234-1234-1234567890ab.png")
     }
 
     @MainActor
@@ -2015,14 +2015,14 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             sshOptions: [
                 "ControlMaster=auto",
                 "ControlPersist=600",
-                "ControlPath=/tmp/cmux-ssh-\(getuid())-64044-%C",
+                "ControlPath=/tmp/uniconnect-ssh-\(getuid())-64044-%C",
                 "StrictHostKeyChecking=accept-new",
             ],
             localProxyPort: nil,
             relayPort: 64044,
             relayID: "relay-stale-forward",
             relayToken: String(repeating: "c", count: 64),
-            localSocketPath: "/tmp/cmux-stale-forward-test.sock",
+            localSocketPath: "/tmp/uniconnect-stale-forward-test.sock",
             terminalStartupCommand: "ssh-pty-attach",
             preserveAfterTerminalExit: true,
             persistentDaemonSlot: "ssh-stale-forward-test"
@@ -2129,14 +2129,14 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             sshOptions: [
                 "ControlMaster=auto",
                 "ControlPersist=600",
-                "ControlPath=/tmp/cmux-ssh-\(getuid())-64045-%C",
+                "ControlPath=/tmp/uniconnect-ssh-\(getuid())-64045-%C",
                 "StrictHostKeyChecking=accept-new",
             ],
             localProxyPort: nil,
             relayPort: 64045,
             relayID: "relay-stale-forward-retry",
             relayToken: String(repeating: "d", count: 64),
-            localSocketPath: "/tmp/cmux-stale-forward-retry.sock",
+            localSocketPath: "/tmp/uniconnect-stale-forward-retry.sock",
             terminalStartupCommand: "ssh-pty-attach",
             preserveAfterTerminalExit: true,
             persistentDaemonSlot: "ssh-stale-forward-retry"
@@ -2179,7 +2179,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             relayPort: 64007,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
 
@@ -2221,7 +2221,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             relayPort: 64008,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh-pty-attach",
             preserveAfterTerminalExit: true
         )
@@ -2338,7 +2338,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             relayPort: 64009,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: nil,
             preserveAfterTerminalExit: true
         )
@@ -2382,7 +2382,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             relayPort: 64011,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: nil,
             preserveAfterTerminalExit: true
         )
@@ -2413,7 +2413,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             relayPort: 64012,
             relayID: String(repeating: "c", count: 16),
             relayToken: String(repeating: "d", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh-pty-attach",
             preserveAfterTerminalExit: true
         )
@@ -2438,7 +2438,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             relayPort: 64013,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: nil,
             preserveAfterTerminalExit: true
         )
@@ -2464,7 +2464,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             relayPort: 64014,
             relayID: String(repeating: "c", count: 16),
             relayToken: String(repeating: "d", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh-pty-attach",
             preserveAfterTerminalExit: true
         )
@@ -2486,7 +2486,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             relayPort: 64010,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: nil,
             preserveAfterTerminalExit: true
         )
@@ -2524,7 +2524,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             relayPort: 64015,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh-pty-attach",
             preserveAfterTerminalExit: true,
             persistentDaemonSlot: "ssh-seeded-default"
@@ -2642,7 +2642,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
                 2145: [
                     "ssh",
                     "-o", "ControlMaster=auto",
-                    "-o", "ControlPath=/tmp/cmux-ssh-%C",
+                    "-o", "ControlPath=/tmp/uniconnect-ssh-%C",
                     "-o", "StrictHostKeyChecking=accept-new",
                     "-p", "2200",
                     "-i", "/Users/test/.ssh/id_ed25519",
@@ -2659,7 +2659,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
                 identityFile: "/Users/test/.ssh/id_ed25519",
                 configFile: nil,
                 jumpHost: nil,
-                controlPath: "/tmp/cmux-ssh-%C",
+                controlPath: "/tmp/uniconnect-ssh-%C",
                 useIPv4: false,
                 useIPv6: false,
                 forwardAgent: false,
@@ -2680,19 +2680,19 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             argumentsByPID: [
                 2145: [
                     "ssh",
-                    "-S", "/tmp/cmux-ssh-%C",
+                    "-S", "/tmp/uniconnect-ssh-%C",
                     "-p", "2200",
                     "lawrence@example.com",
                 ],
             ]
         )
 
-        XCTAssertEqual(session?.controlPath, "/tmp/cmux-ssh-%C")
+        XCTAssertEqual(session?.controlPath, "/tmp/uniconnect-ssh-%C")
         let scpArgs = session?.scpArgumentsForTesting(
             localPath: "/tmp/local.png",
-            remotePath: "/tmp/cmux-drop-123.png"
+            remotePath: "/tmp/uniconnect-drop-123.png"
         ) ?? []
-        XCTAssertTrue(scpArgs.contains("ControlPath=/tmp/cmux-ssh-%C"))
+        XCTAssertTrue(scpArgs.contains("ControlPath=/tmp/uniconnect-ssh-%C"))
         XCTAssertFalse(scpArgs.contains("-S"))
     }
 
@@ -2750,10 +2750,10 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
 
         let scpArgs = session?.scpArgumentsForTesting(
             localPath: "/tmp/local.png",
-            remotePath: "/tmp/cmux-drop-123.png"
+            remotePath: "/tmp/uniconnect-drop-123.png"
         ) ?? []
         XCTAssertFalse(scpArgs.contains("-P"))
-        XCTAssertEqual(scpArgs.last, "lawrence@example.com:/tmp/cmux-drop-123.png")
+        XCTAssertEqual(scpArgs.last, "lawrence@example.com:/tmp/uniconnect-drop-123.png")
     }
 
     func testDetectsEternalTerminalSessionWithBracketedIPv6ServerPortForSCP() {
@@ -2775,11 +2775,11 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
 
         let scpArgs = session?.scpArgumentsForTesting(
             localPath: "/tmp/local.png",
-            remotePath: "/tmp/cmux-drop-123.png"
+            remotePath: "/tmp/uniconnect-drop-123.png"
         ) ?? []
         XCTAssertNil(session?.port)
         XCTAssertFalse(scpArgs.contains("-P"))
-        XCTAssertEqual(scpArgs.last, "lawrence@[2001:db8::1]:/tmp/cmux-drop-123.png")
+        XCTAssertEqual(scpArgs.last, "lawrence@[2001:db8::1]:/tmp/uniconnect-drop-123.png")
     }
 
     func testDetectsEternalTerminalSessionWithFullIPv6ServerPortForSCP() {
@@ -2801,11 +2801,11 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
 
         let scpArgs = session?.scpArgumentsForTesting(
             localPath: "/tmp/local.png",
-            remotePath: "/tmp/cmux-drop-123.png"
+            remotePath: "/tmp/uniconnect-drop-123.png"
         ) ?? []
         XCTAssertNil(session?.port)
         XCTAssertFalse(scpArgs.contains("-P"))
-        XCTAssertEqual(scpArgs.last, "lawrence@[2001:db8:0:0:0:0:0:1]:/tmp/cmux-drop-123.png")
+        XCTAssertEqual(scpArgs.last, "lawrence@[2001:db8:0:0:0:0:0:1]:/tmp/uniconnect-drop-123.png")
     }
 
     func testDetectsEternalTerminalSessionPreservesAmbiguousCompressedIPv6LiteralForSCP() {
@@ -2827,11 +2827,11 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
 
         let scpArgs = session?.scpArgumentsForTesting(
             localPath: "/tmp/local.png",
-            remotePath: "/tmp/cmux-drop-123.png"
+            remotePath: "/tmp/uniconnect-drop-123.png"
         ) ?? []
         XCTAssertNil(session?.port)
         XCTAssertFalse(scpArgs.contains("-P"))
-        XCTAssertEqual(scpArgs.last, "lawrence@[2001:db8::1:2022]:/tmp/cmux-drop-123.png")
+        XCTAssertEqual(scpArgs.last, "lawrence@[2001:db8::1:2022]:/tmp/uniconnect-drop-123.png")
     }
 
     func testDetectsEternalTerminalSessionIgnoresOptionsAfterDestination() {
@@ -2854,10 +2854,10 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
 
         let scpArgs = session?.scpArgumentsForTesting(
             localPath: "/tmp/local.png",
-            remotePath: "/tmp/cmux-drop-123.png"
+            remotePath: "/tmp/uniconnect-drop-123.png"
         ) ?? []
         XCTAssertFalse(scpArgs.contains("-P"))
-        XCTAssertEqual(scpArgs.last, "lawrence@example.com:/tmp/cmux-drop-123.png")
+        XCTAssertEqual(scpArgs.last, "lawrence@example.com:/tmp/uniconnect-drop-123.png")
     }
 
     func testDetectsEternalTerminalSessionStripsNativeJumpHostServerPortForSCP() {
@@ -2879,14 +2879,14 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
 
         let scpArgs = session?.scpArgumentsForTesting(
             localPath: "/tmp/local.png",
-            remotePath: "/tmp/cmux-drop-123.png"
+            remotePath: "/tmp/uniconnect-drop-123.png"
         ) ?? []
         XCTAssertNil(session?.port)
         XCTAssertFalse(scpArgs.contains("-P"))
         XCTAssertTrue(scpArgs.contains("-J"))
         XCTAssertTrue(scpArgs.contains("relay@bastion.example.com"))
         XCTAssertFalse(scpArgs.contains("relay@bastion.example.com:2022"))
-        XCTAssertEqual(scpArgs.last, "lawrence@example.com:/tmp/cmux-drop-123.png")
+        XCTAssertEqual(scpArgs.last, "lawrence@example.com:/tmp/uniconnect-drop-123.png")
     }
 
     func testDetectsEternalTerminalSessionSSHOptionsForSCP() {
@@ -2900,7 +2900,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
                     "et",
                     "--ssh-option", "Port=2200",
                     "--ssh-option=IdentityFile=/Users/test/.ssh/id_ed25519",
-                    "--ssh-option", "ControlPath=/tmp/cmux-ssh-%C",
+                    "--ssh-option", "ControlPath=/tmp/uniconnect-ssh-%C",
                     "--ssh-option", "StrictHostKeyChecking=accept-new",
                     "--jumphost", "bastion.example.com",
                     "--command", "uptime",
@@ -2918,7 +2918,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
                 identityFile: "/Users/test/.ssh/id_ed25519",
                 configFile: nil,
                 jumpHost: "bastion.example.com",
-                controlPath: "/tmp/cmux-ssh-%C",
+                controlPath: "/tmp/uniconnect-ssh-%C",
                 useIPv4: false,
                 useIPv6: false,
                 forwardAgent: false,
@@ -2938,7 +2938,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             sshOptions: [
                 "ControlMaster=auto",
                 "ControlPersist=600",
-                "ControlPath=/tmp/cmux-ssh-%C",
+                "ControlPath=/tmp/uniconnect-ssh-%C",
                 "StrictHostKeyChecking=accept-new",
             ],
             localProxyPort: nil,
@@ -2956,7 +2956,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
 
         XCTAssertFalse(arguments.contains("-S"))
         XCTAssertTrue(arguments.contains("ControlMaster=no"))
-        XCTAssertTrue(arguments.contains(where: { $0 == "ControlPath /tmp/cmux-ssh-%C" || $0 == "ControlPath=/tmp/cmux-ssh-%C" }))
+        XCTAssertTrue(arguments.contains(where: { $0 == "ControlPath /tmp/uniconnect-ssh-%C" || $0 == "ControlPath=/tmp/uniconnect-ssh-%C" }))
         XCTAssertTrue(arguments.contains("cmux-macmini"))
         XCTAssertTrue(arguments.last?.contains("/remote/cmuxd-remote") ?? false)
     }
@@ -2969,7 +2969,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             sshOptions: [
                 "ControlMaster auto",
                 "ControlPersist 600",
-                "ControlPath /tmp/cmux-ssh-%C",
+                "ControlPath /tmp/uniconnect-ssh-%C",
                 "StrictHostKeyChecking accept-new",
             ],
             localProxyPort: nil,
@@ -2987,7 +2987,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
 
         XCTAssertFalse(arguments.contains("-S"))
         XCTAssertTrue(arguments.contains("ControlMaster=no"))
-        XCTAssertTrue(arguments.contains(where: { $0 == "ControlPath /tmp/cmux-ssh-%C" || $0 == "ControlPath=/tmp/cmux-ssh-%C" }))
+        XCTAssertTrue(arguments.contains(where: { $0 == "ControlPath /tmp/uniconnect-ssh-%C" || $0 == "ControlPath=/tmp/uniconnect-ssh-%C" }))
     }
 
     func testReverseRelayControlMasterArgumentsReuseConfiguredControlSocket() throws {
@@ -2998,7 +2998,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             sshOptions: [
                 "ControlMaster=auto",
                 "ControlPersist=600",
-                "ControlPath=/tmp/cmux-ssh-%C",
+                "ControlPath=/tmp/uniconnect-ssh-%C",
                 "StrictHostKeyChecking=accept-new",
             ],
             localProxyPort: nil,
@@ -3019,7 +3019,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
 
         XCTAssertFalse(arguments.contains("-S"))
         XCTAssertTrue(arguments.contains("ControlMaster=no"))
-        XCTAssertTrue(arguments.contains("ControlPath=/tmp/cmux-ssh-%C"))
+        XCTAssertTrue(arguments.contains("ControlPath=/tmp/uniconnect-ssh-%C"))
         XCTAssertTrue(arguments.contains("-O"))
         XCTAssertTrue(arguments.contains("forward"))
         XCTAssertTrue(arguments.contains("-R"))
@@ -3035,7 +3035,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             sshOptions: [
                 "ControlMaster=auto",
                 "ControlPersist=600",
-                "ControlPath=/tmp/cmux-ssh-%C",
+                "ControlPath=/tmp/uniconnect-ssh-%C",
                 "StrictHostKeyChecking=accept-new",
             ],
             localProxyPort: nil,
@@ -3055,7 +3055,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
 
         XCTAssertFalse(arguments.contains("-S"))
         XCTAssertTrue(arguments.contains("ControlMaster=no"))
-        XCTAssertTrue(arguments.contains("ControlPath=/tmp/cmux-ssh-%C"))
+        XCTAssertTrue(arguments.contains("ControlPath=/tmp/uniconnect-ssh-%C"))
         XCTAssertTrue(arguments.contains("-O"))
         XCTAssertTrue(arguments.contains("cancel"))
         XCTAssertTrue(arguments.contains("-R"))
@@ -3072,7 +3072,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             sshOptions: [
                 "ControlMaster auto",
                 "ControlPersist 600",
-                "ControlPath /tmp/cmux-ssh-%C",
+                "ControlPath /tmp/uniconnect-ssh-%C",
                 "StrictHostKeyChecking accept-new",
             ],
             localProxyPort: nil,
@@ -3093,7 +3093,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
 
         XCTAssertFalse(arguments.contains("-S"))
         XCTAssertTrue(arguments.contains("ControlMaster=no"))
-        XCTAssertTrue(arguments.contains(where: { $0 == "ControlPath /tmp/cmux-ssh-%C" || $0 == "ControlPath=/tmp/cmux-ssh-%C" }))
+        XCTAssertTrue(arguments.contains(where: { $0 == "ControlPath /tmp/uniconnect-ssh-%C" || $0 == "ControlPath=/tmp/uniconnect-ssh-%C" }))
         XCTAssertTrue(arguments.contains("-O"))
         XCTAssertTrue(arguments.contains("forward"))
     }
@@ -3115,10 +3115,10 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
 
         let scpArgs = session.scpArgumentsForTesting(
             localPath: "/tmp/local.png",
-            remotePath: "/tmp/cmux-drop-123.png"
+            remotePath: "/tmp/uniconnect-drop-123.png"
         )
 
-        XCTAssertEqual(scpArgs.last, "lawrence@[2001:db8::1]:/tmp/cmux-drop-123.png")
+        XCTAssertEqual(scpArgs.last, "lawrence@[2001:db8::1]:/tmp/uniconnect-drop-123.png")
     }
 
     func testDetectsForegroundSSHSessionWithLowercaseAgentFlag() {
@@ -3184,7 +3184,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
             relayPort: 64007,
             relayID: String(repeating: "a", count: 16),
             relayToken: String(repeating: "b", count: 64),
-            localSocketPath: "/tmp/cmux-debug-test.sock",
+            localSocketPath: "/tmp/uniconnect-debug-test.sock",
             terminalStartupCommand: "ssh cmux-macmini"
         )
 
@@ -6220,7 +6220,7 @@ final class CLINotifyProcessIntegrationTests: XCTestCase {
                 "--name", "SSH Workspace",
                 "--port", "2222",
                 "--identity", "/Users/test/.ssh/id_ed25519",
-                "--ssh-option", "ControlPath /tmp/cmux-ssh-%C",
+                "--ssh-option", "ControlPath /tmp/uniconnect-ssh-%C",
                 "--ssh-option", "StrictHostKeyChecking=accept-new",
                 "--window", windowID,
                 "cmux-macmini",
@@ -6274,7 +6274,7 @@ final class CLINotifyProcessIntegrationTests: XCTestCase {
         let sshOptions = try XCTUnwrap(configureParams["ssh_options"] as? [String])
         XCTAssertTrue(sshOptions.contains("ControlMaster=auto"))
         XCTAssertTrue(sshOptions.contains("ControlPersist=600"))
-        XCTAssertTrue(sshOptions.contains("ControlPath /tmp/cmux-ssh-%C"))
+        XCTAssertTrue(sshOptions.contains("ControlPath /tmp/uniconnect-ssh-%C"))
         XCTAssertTrue(sshOptions.contains("StrictHostKeyChecking=accept-new"))
 
         // `cmux ssh` should land the user in the new SSH workspace immediately.
@@ -6352,7 +6352,7 @@ final class CLINotifyProcessIntegrationTests: XCTestCase {
                 "--no-focus",
                 "--port", "2222",
                 "--ssh-option", "ControlMaster no",
-                "--ssh-option", "ControlPath /tmp/cmux-ssh-%C",
+                "--ssh-option", "ControlPath /tmp/uniconnect-ssh-%C",
                 "cmux-macmini",
             ],
             environment: environment,
@@ -6380,7 +6380,7 @@ final class CLINotifyProcessIntegrationTests: XCTestCase {
         XCTAssertNil(configureParams["foreground_auth_token"])
         let sshOptions = try XCTUnwrap(configureParams["ssh_options"] as? [String])
         XCTAssertTrue(sshOptions.contains("ControlMaster no"))
-        XCTAssertTrue(sshOptions.contains("ControlPath /tmp/cmux-ssh-%C"))
+        XCTAssertTrue(sshOptions.contains("ControlPath /tmp/uniconnect-ssh-%C"))
     }
 
     @MainActor

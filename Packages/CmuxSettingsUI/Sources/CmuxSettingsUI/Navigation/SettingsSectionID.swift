@@ -45,7 +45,7 @@ public enum SettingsSectionID: String, CaseIterable, Identifiable, Sendable, Has
         case .globalHotkey: return "Global Hotkey"
         case .keyboardShortcuts: return "Keyboard Shortcuts"
         case .workspaceColors: return "Workspace Colors"
-        case .settingsJSON: return "cmux.json"
+        case .settingsJSON: return "uniconnect.json"
         case .reset: return "Reset"
         }
     }

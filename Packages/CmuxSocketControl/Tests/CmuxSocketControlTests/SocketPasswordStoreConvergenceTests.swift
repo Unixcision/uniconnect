@@ -13,7 +13,7 @@ import Testing
 /// another" regression this convergence exists to remove.
 ///
 /// All collaborators are pointed at a temp directory, so these run hermetically
-/// without touching the real Application Support, keychain, or `cmux.json`.
+/// without touching the real Application Support, keychain, or `uniconnect.json`.
 @Suite struct SocketPasswordStoreConvergenceTests {
     private let secretKey = SettingCatalog().automation.socketPassword
 

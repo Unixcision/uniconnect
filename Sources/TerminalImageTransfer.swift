@@ -485,6 +485,21 @@ extension TerminalSurface {
     @MainActor
     func resolvedImageTransferTarget() -> TerminalImageTransferTarget {
         guard let workspace = owningWorkspace() else { return .local }
+        // UniConnect: the box kind decides. Local boxes never probe the TTY; SSH boxes use
+        // the stored connect command, so pasting works even inside tmux or a nested shell.
+        if UniConnectCoordinator.isEnabled, let profile = workspace.uniConnectProfile {
+            switch profile.kind {
+            case .local:
+                return .local
+            case .ssh:
+                if let credentialId = profile.credentialId,
+                   let connect = UniConnectVault.shared.connectCommand(for: credentialId),
+                   let session = UniConnectSSH.detectedSession(fromConnectCommand: connect) {
+                    return .remote(.detectedSSH(session))
+                }
+                return .local
+            }
+        }
         if workspace.isRemoteTerminalSurface(id) {
             return .remote(.workspaceRemote)
         }

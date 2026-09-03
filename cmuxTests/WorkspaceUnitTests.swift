@@ -825,7 +825,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -882,7 +882,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -942,7 +942,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -996,7 +996,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -1047,7 +1047,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -1072,7 +1072,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -1146,7 +1146,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -1199,7 +1199,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -1247,7 +1247,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -1293,7 +1293,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -1370,7 +1370,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -1432,7 +1432,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -1505,7 +1505,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -1540,7 +1540,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -1588,7 +1588,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -1643,7 +1643,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         XCTAssertEqual(originalReloadItem.action, selector)
         XCTAssertEqual(
             originalReloadItem.identifier,
-            NSUserInterfaceItemIdentifier("com.cmux.reloadConfiguration")
+            NSUserInterfaceItemIdentifier("com.unixcision.uniconnect.reloadConfiguration")
         )
 
         let rebuiltReloadItem = NSMenuItem(
@@ -1692,7 +1692,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         let missingSettingsFileURL = directoryURL.appendingPathComponent("missing.json", isDirectory: false)
         let editedShortcut = StoredShortcut(key: "n", command: true, shift: false, option: false, control: false)
         let managedShortcut = StoredShortcut(key: "b", command: false, shift: false, option: false, control: true, chordKey: "c")
@@ -1741,7 +1741,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -1809,8 +1809,8 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
         let settingsFileURL = directoryURL
-            .appendingPathComponent(".config/cmux", isDirectory: true)
-            .appendingPathComponent("cmux.json", isDirectory: false)
+            .appendingPathComponent(".config/uniconnect", isDirectory: true)
+            .appendingPathComponent("uniconnect.json", isDirectory: false)
 
         let store = KeyboardShortcutSettingsFileStore(
             primaryPath: settingsFileURL.path,
@@ -1835,8 +1835,8 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let primaryURL = directoryURL.appendingPathComponent("primary/cmux.json", isDirectory: false)
-        let fallbackURL = directoryURL.appendingPathComponent("fallback/cmux.json", isDirectory: false)
+        let primaryURL = directoryURL.appendingPathComponent("primary/uniconnect.json", isDirectory: false)
+        let fallbackURL = directoryURL.appendingPathComponent("fallback/uniconnect.json", isDirectory: false)
         try FileManager.default.createDirectory(
             at: primaryURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
@@ -1871,7 +1871,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -1907,7 +1907,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -2018,7 +2018,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -2137,7 +2137,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -2199,7 +2199,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -2258,7 +2258,7 @@ final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -2932,7 +2932,7 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
 
     func testNewWorkspaceInheritsSourceWorkingDirectoryByDefault() throws {
         try withWorkspaceWorkingDirectoryInheritanceSetting(nil) {
-            let sourceCwd = "/tmp/cmux-source-\(UUID().uuidString)"
+            let sourceCwd = "/tmp/uniconnect-source-\(UUID().uuidString)"
             let manager = TabManager(
                 initialWorkingDirectory: sourceCwd,
                 autoWelcomeIfNeeded: false
@@ -2947,7 +2947,7 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
 
     func testDisabledInheritanceLeavesNewWorkspaceCwdUnsetForGhosttyConfigFallback() throws {
         try withWorkspaceWorkingDirectoryInheritanceSetting(false) {
-            let sourceCwd = "/tmp/cmux-source-\(UUID().uuidString)"
+            let sourceCwd = "/tmp/uniconnect-source-\(UUID().uuidString)"
             let manager = TabManager(
                 initialWorkingDirectory: sourceCwd,
                 autoWelcomeIfNeeded: false
@@ -2962,7 +2962,7 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
 
     func testExplicitNoInheritanceLeavesNewWorkspaceCwdUnsetWhenGlobalInheritanceEnabled() throws {
         try withWorkspaceWorkingDirectoryInheritanceSetting(nil) {
-            let sourceCwd = "/tmp/cmux-source-\(UUID().uuidString)"
+            let sourceCwd = "/tmp/uniconnect-source-\(UUID().uuidString)"
             let manager = TabManager(
                 initialWorkingDirectory: sourceCwd,
                 autoWelcomeIfNeeded: false
@@ -2980,8 +2980,8 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
 
     func testExplicitWorkspaceWorkingDirectoryWinsWhenInheritanceIsDisabled() throws {
         try withWorkspaceWorkingDirectoryInheritanceSetting(false) {
-            let sourceCwd = "/tmp/cmux-source-\(UUID().uuidString)"
-            let explicitCwd = "/tmp/cmux-explicit-\(UUID().uuidString)"
+            let sourceCwd = "/tmp/uniconnect-source-\(UUID().uuidString)"
+            let explicitCwd = "/tmp/uniconnect-explicit-\(UUID().uuidString)"
             let manager = TabManager(
                 initialWorkingDirectory: sourceCwd,
                 autoWelcomeIfNeeded: false
@@ -2999,7 +2999,7 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
 
     func testDetachedWorkspaceInheritsSourceWorkingDirectoryByDefaultWhenTransferHasNoDirectory() throws {
         try withWorkspaceWorkingDirectoryInheritanceSetting(nil) {
-            let sourceCwd = "/tmp/cmux-source-\(UUID().uuidString)"
+            let sourceCwd = "/tmp/uniconnect-source-\(UUID().uuidString)"
             let manager = TabManager(
                 initialWorkingDirectory: sourceCwd,
                 autoWelcomeIfNeeded: false
@@ -3019,7 +3019,7 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
 
     func testDisabledInheritanceLeavesDetachedWorkspaceFallbackCwdUnsetWhenTransferHasNoDirectory() throws {
         try withWorkspaceWorkingDirectoryInheritanceSetting(false) {
-            let sourceCwd = "/tmp/cmux-source-\(UUID().uuidString)"
+            let sourceCwd = "/tmp/uniconnect-source-\(UUID().uuidString)"
             let fallbackCwd = FileManager.default.homeDirectoryForCurrentUser.path
             let manager = TabManager(
                 initialWorkingDirectory: sourceCwd,
@@ -3040,8 +3040,8 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
 
     func testDetachedWorkspaceTransferDirectoryWinsWhenInheritanceIsDisabled() throws {
         try withWorkspaceWorkingDirectoryInheritanceSetting(false) {
-            let sourceCwd = "/tmp/cmux-source-\(UUID().uuidString)"
-            let transferCwd = "/tmp/cmux-detached-\(UUID().uuidString)"
+            let sourceCwd = "/tmp/uniconnect-source-\(UUID().uuidString)"
+            let transferCwd = "/tmp/uniconnect-detached-\(UUID().uuidString)"
             let manager = TabManager(
                 initialWorkingDirectory: sourceCwd,
                 autoWelcomeIfNeeded: false
@@ -3064,7 +3064,7 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
 
     func testDetachedWorkspaceDoesNotPersistProcessDetectedResumeBinding() throws {
         let manager = TabManager(
-            initialWorkingDirectory: "/tmp/cmux-source-\(UUID().uuidString)",
+            initialWorkingDirectory: "/tmp/uniconnect-source-\(UUID().uuidString)",
             autoWelcomeIfNeeded: false
         )
         let source = try XCTUnwrap(manager.selectedWorkspace)
@@ -3072,7 +3072,7 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
             name: "tmux work",
             kind: "tmux",
             command: "tmux attach -t work",
-            cwd: "/tmp/cmux-source",
+            cwd: "/tmp/uniconnect-source",
             checkpointId: "work",
             source: "process-detected",
             updatedAt: 1_777_777_777
@@ -3446,7 +3446,7 @@ final class WorkspaceCreationConfigSanitizationTests: XCTestCase {
         func installInjectedConfig(fontSize: Float) {
             var config = CmuxSurfaceConfigTemplate()
             config.fontSize = fontSize
-            config.workingDirectory = "/tmp/cmux-workspace-snapshot"
+            config.workingDirectory = "/tmp/uniconnect-workspace-snapshot"
             config.command = "echo snapshot"
             config.environmentVariables = ["CMUX_INHERITED_ENV": "1"]
             injectedConfig = config
@@ -4390,7 +4390,7 @@ final class WorkspaceSplitWorkingDirectoryTests: XCTestCase {
         }
 
         let staleCurrentDirectory = workspace.currentDirectory
-        let requestedDirectory = "/tmp/cmux-requested-split-cwd-\(UUID().uuidString)"
+        let requestedDirectory = "/tmp/uniconnect-requested-split-cwd-\(UUID().uuidString)"
         guard let sourcePanel = workspace.newTerminalSurface(
             inPane: sourcePaneId,
             focus: false,
@@ -5738,7 +5738,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
                 relayPort: 64000,
                 relayID: "relay-fork",
                 relayToken: String(repeating: "a", count: 64),
-                localSocketPath: "/tmp/cmux-fork-remote.sock",
+                localSocketPath: "/tmp/uniconnect-fork-remote.sock",
                 terminalStartupCommand: "ssh cmux-macmini"
             ),
             autoConnect: false
@@ -5788,7 +5788,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
                 relayPort: 64000,
                 relayID: "relay-fork-fallback",
                 relayToken: String(repeating: "a", count: 64),
-                localSocketPath: "/tmp/cmux-fork-fallback-remote.sock",
+                localSocketPath: "/tmp/uniconnect-fork-fallback-remote.sock",
                 terminalStartupCommand: "ssh cmux-macmini"
             ),
             autoConnect: false
@@ -5854,7 +5854,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
                 relayPort: 64000,
                 relayID: "relay-session-drop",
                 relayToken: String(repeating: "b", count: 64),
-                localSocketPath: "/tmp/cmux-session-drop-remote.sock",
+                localSocketPath: "/tmp/uniconnect-session-drop-remote.sock",
                 terminalStartupCommand: "ssh cmux-macmini"
             ),
             autoConnect: false
@@ -5881,7 +5881,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
 
     func testForkAgentWorkspaceLaunchInRemoteWorkspacePreservesRemoteContext() throws {
         let workspace = Workspace()
-        let agentSocketPath = "/tmp/cmux-fork-agent.sock"
+        let agentSocketPath = "/tmp/uniconnect-fork-agent.sock"
         workspace.configureRemoteConnection(
             WorkspaceRemoteConfiguration(
                 destination: "cmux-macmini",
@@ -5892,7 +5892,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
                 relayPort: 64000,
                 relayID: "relay-fork",
                 relayToken: String(repeating: "a", count: 64),
-                localSocketPath: "/tmp/cmux-fork-remote.sock",
+                localSocketPath: "/tmp/uniconnect-fork-remote.sock",
                 terminalStartupCommand: "ssh -p 2222 -i /Users/example/.ssh/cmux -o ServerAliveInterval=30 -o ForwardAgent=yes -tt cmux-macmini",
                 agentSocketPath: agentSocketPath
             ),
@@ -5953,7 +5953,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
                 relayPort: 64017,
                 relayID: "relay-fork-persistent",
                 relayToken: String(repeating: "c", count: 64),
-                localSocketPath: "/tmp/cmux-fork-persistent.sock",
+                localSocketPath: "/tmp/uniconnect-fork-persistent.sock",
                 terminalStartupCommand: SSHPTYAttachStartupCommandBuilder.command(),
                 preserveAfterTerminalExit: true,
                 persistentDaemonSlot: "ssh-parent-slot"
@@ -6012,7 +6012,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
                 relayPort: 64000,
                 relayID: "relay-workspace-fallback",
                 relayToken: String(repeating: "a", count: 64),
-                localSocketPath: "/tmp/cmux-workspace-fallback-remote.sock",
+                localSocketPath: "/tmp/uniconnect-workspace-fallback-remote.sock",
                 terminalStartupCommand: "ssh cmux-macmini"
             ),
             autoConnect: false
@@ -6168,7 +6168,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
                 relayPort: 64000,
                 relayID: "relay-fork-local",
                 relayToken: String(repeating: "a", count: 64),
-                localSocketPath: "/tmp/cmux-fork-local-remote.sock",
+                localSocketPath: "/tmp/uniconnect-fork-local-remote.sock",
                 terminalStartupCommand: "ssh cmux-macmini"
             ),
             autoConnect: false
@@ -6243,7 +6243,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
                 relayPort: 64000,
                 relayID: "relay-fork",
                 relayToken: String(repeating: "a", count: 64),
-                localSocketPath: "/tmp/cmux-fork-remote.sock",
+                localSocketPath: "/tmp/uniconnect-fork-remote.sock",
                 terminalStartupCommand: "ssh cmux-macmini"
             ),
             autoConnect: false
@@ -6568,7 +6568,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
                 relayPort: 64007,
                 relayID: String(repeating: "a", count: 16),
                 relayToken: String(repeating: "b", count: 64),
-                localSocketPath: "/tmp/cmux-debug-test.sock",
+                localSocketPath: "/tmp/uniconnect-debug-test.sock",
                 terminalStartupCommand: "ssh cmux-macmini"
             ),
             autoConnect: false

@@ -4,7 +4,7 @@ import CmuxSocketControl
 import Foundation
 import os
 
-nonisolated private let cmuxSettingsFileStoreLogger = Logger(subsystem: "com.cmuxterm.app", category: "SettingsStore")
+nonisolated private let cmuxSettingsFileStoreLogger = Logger(subsystem: "com.unixcision.uniconnect", category: "SettingsStore")
 
 @MainActor
 final class KeyboardShortcutSettingsObserver: ObservableObject {
@@ -27,19 +27,19 @@ final class CmuxSettingsFileStore {
     static let currentSchemaVersion = 1
     static let schemaURLString = "https://raw.githubusercontent.com/manaflow-ai/cmux/main/web/data/cmux.schema.json"
     private static let legacySchemaURLString = "https://raw.githubusercontent.com/manaflow-ai/cmux/main/web/data/cmux-settings.schema.json"
-    private static let releaseBundleIdentifier = "com.cmuxterm.app"
+    private static let releaseBundleIdentifier = "com.unixcision.uniconnect"
     private static let backupsDefaultsKey = "cmux.settingsFile.backups.v1"
     private static let importedManagedDefaultsDefaultsKey = "cmux.settingsFile.importedManagedDefaults.v1"
     fileprivate static let socketPasswordBackupIdentifier = "automation.socketPassword"
 
     static var defaultPrimaryPath: String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return (home as NSString).appendingPathComponent(".config/cmux/cmux.json")
+        return (home as NSString).appendingPathComponent(".config/uniconnect/uniconnect.json")
     }
 
     static var defaultFallbackPath: String? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return (home as NSString).appendingPathComponent(".config/cmux/settings.json")
+        return (home as NSString).appendingPathComponent(".config/uniconnect/settings.json")
     }
 
     static var defaultApplicationSupportFallbackPath: String? {
@@ -97,7 +97,7 @@ final class CmuxSettingsFileStore {
         importedManagedDefaults = Self.loadImportedManagedDefaults()
 
         bootstrapPrimaryTemplateIfNeeded()
-        // The app init path loads cmux.json before applying language/appearance
+        // The app init path loads uniconnect.json before applying language/appearance
         // itself. Running live default side effects here can initialize UI/runtime
         // singletons while this store singleton is still in its dispatch_once.
         reload(
@@ -1520,7 +1520,7 @@ final class CmuxSettingsFileStore {
     ) -> Bool {
         guard !forceApply else { return true }
         guard let importedDefault else { return true }
-        // Precedence: user explicit choice (UserDefaults) > cmux.json imported default > built-in default.
+        // Precedence: user explicit choice (UserDefaults) > uniconnect.json imported default > built-in default.
         guard let current = currentManagedUserDefaultsValue(
             for: defaultsKey,
             matching: value,

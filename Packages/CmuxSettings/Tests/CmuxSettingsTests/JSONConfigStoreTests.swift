@@ -8,7 +8,7 @@ struct JSONConfigStoreTests {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-settings-tests-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        let fileURL = tempDir.appendingPathComponent("cmux.json", isDirectory: false)
+        let fileURL = tempDir.appendingPathComponent("uniconnect.json", isDirectory: false)
         return (JSONConfigStore(fileURL: fileURL), fileURL, SettingCatalog())
     }
 

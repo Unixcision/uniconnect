@@ -35,7 +35,7 @@ def prepare_bundle(tmp: Path) -> tuple[Path, Path]:
     shell_dir.mkdir(parents=True, exist_ok=True)
     bin_dir.mkdir(parents=True, exist_ok=True)
 
-    for name in (".zshenv", ".zprofile", ".zshrc", "cmux-zsh-integration.zsh", "cmux-bash-integration.bash"):
+    for name in (".zshenv", ".zprofile", ".zshrc", "uniconnect-zsh-integration.zsh", "uniconnect-bash-integration.bash"):
         shutil.copy2(SOURCE_SHELL_DIR / name, shell_dir / name)
 
     return shell_dir, bin_dir
@@ -86,7 +86,7 @@ def run_zsh_with_alias(shell_dir: Path, real_bin: Path, log_path: Path) -> tuple
         [
             "zsh",
             "-fic",
-            f'alias claude="echo alias"; source "{shell_dir / "cmux-zsh-integration.zsh"}"; '
+            f'alias claude="echo alias"; source "{shell_dir / "uniconnect-zsh-integration.zsh"}"; '
             'PATH="$CMUX_TEST_REAL_BIN:$PATH"; claude zsh-alias-case',
         ],
         env=env,
@@ -113,7 +113,7 @@ def run_bash(shell_dir: Path, real_bin: Path, log_path: Path) -> tuple[int, str,
             "--noprofile",
             "--norc",
             "-c",
-            f'source "{shell_dir / "cmux-bash-integration.bash"}"; PATH="$CMUX_TEST_REAL_BIN:$PATH"; claude bash-case',
+            f'source "{shell_dir / "uniconnect-bash-integration.bash"}"; PATH="$CMUX_TEST_REAL_BIN:$PATH"; claude bash-case',
         ],
         env=env,
         capture_output=True,
@@ -140,7 +140,7 @@ def run_bash_with_alias(shell_dir: Path, real_bin: Path, log_path: Path) -> tupl
             "--norc",
             "-ic",
             f'alias claude="$CMUX_TEST_REAL_BIN/user-claude"\n'
-            f'source "{shell_dir / "cmux-bash-integration.bash"}"\n'
+            f'source "{shell_dir / "uniconnect-bash-integration.bash"}"\n'
             'PATH="$CMUX_TEST_REAL_BIN:$PATH"; claude bash-alias-case',
         ],
         env=env,
@@ -168,7 +168,7 @@ def run_bash_with_function(shell_dir: Path, real_bin: Path, log_path: Path) -> t
             "--norc",
             "-ic",
             f'claude() {{ "$CMUX_TEST_REAL_BIN/user-claude-function" "$@"; }}; '
-            f'source "{shell_dir / "cmux-bash-integration.bash"}"; '
+            f'source "{shell_dir / "uniconnect-bash-integration.bash"}"; '
             'PATH="$CMUX_TEST_REAL_BIN:$PATH"; claude bash-function-case',
         ],
         env=env,
@@ -191,7 +191,7 @@ def main() -> int:
         real_bin.mkdir(parents=True, exist_ok=True)
 
         write_executable(
-            bundle_bin / "cmux-claude-wrapper",
+            bundle_bin / "uniconnect-claude-wrapper",
             """#!/bin/sh
 set -eu
 printf 'wrapper:%s\n' "$*" >> "$CMUX_TEST_LOG"

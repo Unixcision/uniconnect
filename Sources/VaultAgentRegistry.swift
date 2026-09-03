@@ -397,7 +397,7 @@ struct CmuxVaultAgentRegistry: Sendable {
         fileManager: FileManager
     ) -> [String] {
         let home = (homeDirectory as NSString).standardizingPath
-        var paths = [(home as NSString).appendingPathComponent(".config/cmux/cmux.json")]
+        var paths = [(home as NSString).appendingPathComponent(".config/uniconnect/uniconnect.json")]
         let startingDirectory = workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines)
             ?? environment["PWD"]?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let startingDirectory, !startingDirectory.isEmpty,
@@ -416,8 +416,8 @@ struct CmuxVaultAgentRegistry: Sendable {
         var current = (start as NSString).standardizingPath
         while true {
             let candidates = [
-                ((current as NSString).appendingPathComponent(".cmux") as NSString).appendingPathComponent("cmux.json"),
-                (current as NSString).appendingPathComponent("cmux.json"),
+                ((current as NSString).appendingPathComponent(".uniconnect") as NSString).appendingPathComponent("uniconnect.json"),
+                (current as NSString).appendingPathComponent("uniconnect.json"),
             ]
             for candidate in candidates where fileManager.fileExists(atPath: candidate) {
                 return candidate

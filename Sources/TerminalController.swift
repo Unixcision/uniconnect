@@ -12,7 +12,7 @@ import Bonsplit
 import WebKit
 
 extension Notification.Name {
-    static let socketListenerDidStart = Notification.Name("cmux.socketListenerDidStart")
+    static let socketListenerDidStart = Notification.Name("uniconnect.socketListenerDidStart")
     static let terminalSurfaceDidBecomeReady = Notification.Name("cmux.terminalSurfaceDidBecomeReady")
     static let terminalSurfaceHostedViewDidMoveToWindow = Notification.Name("cmux.terminalSurfaceHostedViewDidMoveToWindow")
     static let mainWindowContextsDidChange = Notification.Name("cmux.mainWindowContextsDidChange")
@@ -107,7 +107,7 @@ class TerminalController {
     // Per-surface dedupe for high-frequency report_* socket telemetry.
     private nonisolated let socketFastPathState = SocketFastPathState()
     private nonisolated let myPid = getpid()
-    private nonisolated static let socketCommandFocusAllowanceStackKey = "cmux.socketCommandFocusAllowanceStack"
+    private nonisolated static let socketCommandFocusAllowanceStackKey = "uniconnect.socketCommandFocusAllowanceStack"
     private nonisolated static let socketListenerFailureCaptureCooldown: TimeInterval = 60
     private nonisolated static let v2BrowserDownloadWaitDefaultTimeoutMs = 10_000
     private nonisolated static let v2BrowserDownloadWaitMaxTimeoutMs = 120_000
@@ -4213,7 +4213,7 @@ class TerminalController {
         let title = (requestedTitle?.isEmpty == false) ? requestedTitle : nil
         let description = v2RawString(params, "description")
 
-        // Decode optional layout param (same JSON schema as cmux.json layout field).
+        // Decode optional layout param (same JSON schema as uniconnect.json layout field).
         // Validate before creating the workspace so malformed layouts fail fast.
         var layoutNode: CmuxLayoutNode?
         if let rawLayout = params["layout"] {
@@ -5085,7 +5085,7 @@ class TerminalController {
         // afterward.
         //
         // Placement resolution: explicit `placement` param wins, then the
-        // group's per-cwd `newWorkspacePlacement` from cmux.json, then the
+        // group's per-cwd `newWorkspacePlacement` from uniconnect.json, then the
         // global default. The CLI exposes this as
         // `cmux workspace-group new-workspace <group> --placement <afterCurrent|top|end>`.
         let placementRaw = v2String(params, "placement")
@@ -13790,7 +13790,7 @@ class TerminalController {
             semaphore.signal()
         }
 
-        let watcherQueue = DispatchQueue(label: "com.cmux.browser.download.wait.file")
+        let watcherQueue = DispatchQueue(label: "com.unixcision.uniconnect.browser.download.wait.file")
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
             eventMask: [.write, .extend, .attrib, .link, .rename],
@@ -16552,7 +16552,7 @@ class TerminalController {
         case "tabtransfer", "tab-transfer", "com.splittabbar.tabtransfer":
             return DragOverlayRoutingPolicy.bonsplitTabTransferType
         case "sidebarreorder", "sidebar-reorder", "sidebar_tab_reorder",
-            "com.cmux.sidebar-tab-reorder":
+            "com.unixcision.uniconnect.sidebar-tab-reorder":
             return DragOverlayRoutingPolicy.sidebarTabReorderType
         default:
             // Allow explicit UTI strings for ad-hoc debug probes.
@@ -20718,7 +20718,7 @@ class TerminalController {
     ///
     /// Decodes `{ text, terminal_text, build_stamp, diagnostic_blob_base64 }`,
     /// writes a self-contained bundle directory under
-    /// `~/.cache/cmux-dogfood-feedback/<ISO8601>_<shortid>/` (a `bundle.json`
+    /// `~/.cache/uniconnect-dogfood-feedback/<ISO8601>_<shortid>/` (a `bundle.json`
     /// manifest plus the decoded `diagnostic.log`), and returns the bundle path.
     /// Gated behind `#if DEBUG` and the same-account Stack-auth authorization the
     /// rest of the mobile data plane enforces, so it never exists in a release
@@ -20798,7 +20798,7 @@ class TerminalController {
         let fileManager = FileManager.default
         let root = fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent(".cache", isDirectory: true)
-            .appendingPathComponent("cmux-dogfood-feedback", isDirectory: true)
+            .appendingPathComponent("uniconnect-dogfood-feedback", isDirectory: true)
 
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]

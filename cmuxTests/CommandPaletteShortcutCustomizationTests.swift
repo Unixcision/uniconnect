@@ -27,7 +27,7 @@ final class CommandPaletteShortcutCustomizationTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: settingsDirectoryURL, withIntermediateDirectories: true)
         KeyboardShortcutSettings.settingsFileStore = KeyboardShortcutSettingsFileStore(
-            primaryPath: settingsDirectoryURL.appendingPathComponent("cmux.json").path,
+            primaryPath: settingsDirectoryURL.appendingPathComponent("uniconnect.json").path,
             fallbackPath: nil,
             startWatching: false
         )

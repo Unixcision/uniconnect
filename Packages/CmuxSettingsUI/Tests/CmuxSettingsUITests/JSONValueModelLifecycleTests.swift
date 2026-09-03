@@ -22,7 +22,7 @@ import Testing
             .appendingPathComponent("issue-5302-json-value-model-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let store = JSONConfigStore(fileURL: tempDir.appendingPathComponent("cmux.json"))
+        let store = JSONConfigStore(fileURL: tempDir.appendingPathComponent("uniconnect.json"))
         let key = JSONKey<String>(id: "automation.socketPassword", defaultValue: "")
         let errorLog = SettingsErrorLog()
 

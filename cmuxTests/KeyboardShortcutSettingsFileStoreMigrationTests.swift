@@ -19,7 +19,7 @@ final class KeyboardShortcutSettingsFileStoreMigrationTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let primaryURL = directoryURL.appendingPathComponent("primary/cmux.json", isDirectory: false)
+        let primaryURL = directoryURL.appendingPathComponent("primary/uniconnect.json", isDirectory: false)
         let fallbackURL = directoryURL.appendingPathComponent("fallback/settings.json", isDirectory: false)
         try FileManager.default.createDirectory(
             at: fallbackURL.deletingLastPathComponent(),
@@ -59,7 +59,7 @@ final class KeyboardShortcutSettingsFileStoreMigrationTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let primaryURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let primaryURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         let fallbackURL = directoryURL.appendingPathComponent("settings.json", isDirectory: false)
         try writeSettingsFile(
             """
@@ -118,7 +118,7 @@ final class KeyboardShortcutSettingsFileStoreMigrationTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let liveSettingsFileURL = directoryURL.appendingPathComponent("live-cmux.json", isDirectory: false)
+        let liveSettingsFileURL = directoryURL.appendingPathComponent("live-uniconnect.json", isDirectory: false)
         try writeSettingsFile(
             """
             {
@@ -140,7 +140,7 @@ final class KeyboardShortcutSettingsFileStoreMigrationTests: XCTestCase {
             lookupRecorder.actions.append(action.rawValue)
         }
 
-        let primaryURL = directoryURL.appendingPathComponent("primary/cmux.json", isDirectory: false)
+        let primaryURL = directoryURL.appendingPathComponent("primary/uniconnect.json", isDirectory: false)
         let legacySettingsURL = directoryURL.appendingPathComponent("fallback/settings.json", isDirectory: false)
         let parsingNotificationCenter = NotificationCenter()
         let defaultNotificationCounter = ShortcutSettingsNotificationCounter()
@@ -196,7 +196,7 @@ final class KeyboardShortcutSettingsFileStoreMigrationTests: XCTestCase {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let primaryURL = directoryURL.appendingPathComponent("primary/cmux.json", isDirectory: false)
+        let primaryURL = directoryURL.appendingPathComponent("primary/uniconnect.json", isDirectory: false)
         let fallbackURL = directoryURL.appendingPathComponent("fallback/settings.json", isDirectory: false)
         try FileManager.default.createDirectory(
             at: fallbackURL.deletingLastPathComponent(),

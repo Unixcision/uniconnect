@@ -101,13 +101,13 @@ fi
             (
                 "zsh",
                 ["-f", "-c"],
-                SHELL_DIR / "cmux-zsh-integration.zsh",
+                SHELL_DIR / "uniconnect-zsh-integration.zsh",
                 "ttys777",
             ),
             (
                 "bash",
                 ["--noprofile", "--norc", "-c"],
-                SHELL_DIR / "cmux-bash-integration.bash",
+                SHELL_DIR / "uniconnect-bash-integration.bash",
                 "ttys888",
             ),
         ]

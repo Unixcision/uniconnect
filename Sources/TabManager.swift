@@ -15,7 +15,7 @@ import OSLog
 // The old Tab class is replaced by Workspace
 typealias Tab = Workspace
 
-private let tabManagerLogger = Logger(subsystem: "com.cmuxterm.app", category: "TabManager")
+private let tabManagerLogger = Logger(subsystem: "com.unixcision.uniconnect", category: "TabManager")
 
 protocol WorkspaceGitMetadataReading: Sendable {
     func workspaceMetadata(for directory: String) async -> GitWorkspaceMetadata
@@ -971,7 +971,7 @@ enum WorkspaceGroupNewPlacement: String, Sendable, CaseIterable, Identifiable {
 }
 
 /// UserDefaults-backed global default for the per-group `+` placement.
-/// Used when neither the per-cwd `cmux.json` entry nor an explicit call-site
+/// Used when neither the per-cwd `uniconnect.json` entry nor an explicit call-site
 /// override pins a placement.
 enum WorkspaceGroupNewWorkspacePlacementSettings {
     static let key = "workspaceGroup.newWorkspacePlacement"
@@ -1013,7 +1013,7 @@ struct WorkspaceGroup: Identifiable, Equatable, Sendable {
     /// whose `groupId == self.id`. Closing this workspace dissolves the group.
     var anchorWorkspaceId: UUID
     /// Group-level color override (hex string). When nil, falls back to the
-    /// cwd-config color resolved from `cmux.json` for the anchor's cwd, then
+    /// cwd-config color resolved from `uniconnect.json` for the anchor's cwd, then
     /// to no tint.
     var customColor: String?
     /// SF symbol name for the header icon. When nil, defaults to `folder.fill`.
@@ -1314,12 +1314,16 @@ class TabManager: ObservableObject {
 #else
         self.pullRequestProbeService = PullRequestProbeService(commandRunner: commandRunner)
 #endif
-        addWorkspace(
+        let initialWorkspace = addWorkspace(
             title: initialWorkspaceTitle,
             workingDirectory: initialWorkingDirectory,
             initialTerminalInput: initialTerminalInput,
             autoWelcomeIfNeeded: autoWelcomeIfNeeded
         )
+        if UniConnectCoordinator.isEnabled,
+           initialWorkspaceTitle == nil, initialWorkingDirectory == nil, initialTerminalInput == nil {
+            initialWorkspace.uniConnectIsStarter = true
+        }
         observers.append(NotificationCenter.default.addObserver(
             forName: .ghosttyDidSetTitle,
             object: nil,
@@ -3853,6 +3857,8 @@ class TabManager: ObservableObject {
 
     private func postWorkspaceOrderDidChange(movedWorkspaceIds: [UUID]) {
         guard !movedWorkspaceIds.isEmpty else { return }
+        // UniConnect: persist a new box order right away instead of waiting for the autosave.
+        if UniConnectCoordinator.isEnabled { UniConnectCoordinator.shared.requestSave() }
         NotificationCenter.default.post(
             name: .workspaceOrderDidChange,
             object: self,
@@ -5300,7 +5306,8 @@ class TabManager: ObservableObject {
 
         if tabs.isEmpty {
             // The UI assumes each window always has at least one workspace.
-            _ = addWorkspace()
+            let starter = addWorkspace()
+            starter.uniConnectIsStarter = UniConnectCoordinator.isEnabled
             return removed
         }
 

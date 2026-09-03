@@ -7,8 +7,8 @@ public import Foundation
 /// ## Why not Application Support
 ///
 /// These files are read and written by **two separately code-signed binaries** —
-/// the cmux app (bundle id `com.cmuxterm.app`) and the standalone `cmux` CLI
-/// installed at `/usr/local/bin/cmux`. On macOS Sequoia, a non-sandboxed process
+/// the cmux app (bundle id `com.unixcision.uniconnect`) and the standalone `cmux` CLI
+/// installed at `/usr/local/bin/uniconnect`. On macOS Sequoia, a non-sandboxed process
 /// that reaches into another app's data under `~/Library/Application Support`,
 /// `~/Library/Containers`, or `~/Library/Group Containers` triggers the
 /// "<app> would like to access data from other apps" TCC ("App Data") prompt.
@@ -17,15 +17,15 @@ public import Foundation
 /// Support made the prompt fire constantly
 /// (https://github.com/manaflow-ai/cmux/issues/5146).
 ///
-/// This directory therefore resolves to `~/.local/state/cmux`, a plain dotfolder
+/// This directory therefore resolves to `~/.local/state/uniconnect`, a plain dotfolder
 /// macOS does **not** treat as protected app data. It is the sibling of the
-/// existing `~/.local/state/cmux/crash` breadcrumb directory.
+/// existing `~/.local/state/uniconnect/crash` breadcrumb directory.
 ///
 /// ```swift
 /// // The stable control socket; app and CLI agree on the same path by passing
 /// // the real account home (`FileManager.default.homeDirectoryForCurrentUser`):
 /// let home = FileManager.default.homeDirectoryForCurrentUser
-/// let socket = CmuxStateDirectory.url(homeDirectory: home).appendingPathComponent("cmux.sock")
+/// let socket = CmuxStateDirectory.url(homeDirectory: home).appendingPathComponent("uniconnect.sock")
 /// ```
 public enum CmuxStateDirectory {
     /// The directory name segment under `~/.local/state` (and the legacy name
@@ -37,7 +37,7 @@ public enum CmuxStateDirectory {
         return (argv0.contains("UniConnect") || bundlePath.contains("UniConnect")) ? "uniconnect" : "cmux"
     }
 
-    /// The cmux state directory: `<home>/.local/state/cmux`.
+    /// The cmux state directory: `<home>/.local/state/uniconnect`.
     ///
     /// The home directory is injected (no ambient `FileManager.default` default)
     /// so this stays a pure, testable function with no hidden global state.

@@ -356,7 +356,11 @@ struct WorkspaceContentView: View {
             )
         }
 
-        if workspace.uniConnectShowsWelcome {
+        if workspace.uniConnectShowsStarter {
+            // UniConnect: nothing open yet → empty state, no shell is spawned.
+            UniConnectStarterHost(workspace: workspace)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if workspace.uniConnectShowsWelcome {
             // UniConnect: an SSH box without windows shows its onboarding page instead of
             // any terminal. The stock placeholder panel stays in the model (cmux keeps at
             // least one panel per workspace) but is never mounted, so no shell runs and no
@@ -745,7 +749,7 @@ extension WorkspaceContentView {
         if !found {
             let ts = ISO8601DateFormatter().string(from: Date())
             let line = "[\(ts)] PANEL NOT FOUND for tabId=\(tab.id) ws=\(workspace.id) panelCount=\(workspace.panels.count)\n"
-            let logPath = "/tmp/cmux-panel-debug.log"
+            let logPath = "/tmp/uniconnect-panel-debug.log"
             if let handle = FileHandle(forWritingAtPath: logPath) {
                 defer { try? handle.close() }
                 guard (try? handle.seekToEnd()) != nil else { return }

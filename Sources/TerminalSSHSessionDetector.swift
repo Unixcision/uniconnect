@@ -634,7 +634,7 @@ enum TerminalSSHSessionDetector {
         return arguments.count == argc ? arguments : nil
     }
 
-    private static func parseCommandLine(
+    static func parseCommandLine(
         _ arguments: [String],
         for transport: RemoteShellTransport
     ) -> DetectedSSHSession? {

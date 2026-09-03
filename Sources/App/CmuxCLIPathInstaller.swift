@@ -51,7 +51,7 @@ struct CmuxCLIPathInstaller {
 
     init(
         fileManager: FileManager = .default,
-        destinationURL: URL = URL(fileURLWithPath: "/usr/local/bin/cmux"),
+        destinationURL: URL = URL(fileURLWithPath: "/usr/local/bin/uniconnect"),
         bundledCLIURLProvider: @escaping () -> URL? = {
             CmuxCLIPathInstaller.defaultBundledCLIURL()
         },

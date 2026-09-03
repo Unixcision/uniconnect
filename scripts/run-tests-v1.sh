@@ -36,7 +36,7 @@ fi
 cleanup() {
   pkill -x "UniConnect DEV" || true
   pkill -x "cmux" || true
-  rm -f /tmp/cmux*.sock || true
+  rm -f /tmp/uniconnect*.sock || true
 }
 
 launch_and_wait() {
@@ -56,7 +56,7 @@ launch_and_wait() {
 
   SOCK=""
   for _ in {1..120}; do
-    SOCK=$(ls -t /tmp/cmux-debug*.sock /tmp/cmux*.sock 2>/dev/null | head -1 || true)
+    SOCK=$(ls -t /tmp/uniconnect-debug*.sock /tmp/uniconnect*.sock 2>/dev/null | head -1 || true)
     if [ -n "$SOCK" ] && [ -S "$SOCK" ]; then
       break
     fi
@@ -64,7 +64,7 @@ launch_and_wait() {
   done
 
   if [ -z "$SOCK" ] || [ ! -S "$SOCK" ]; then
-    echo "ERROR: Socket not ready (looked for /tmp/cmux*.sock)" >&2
+    echo "ERROR: Socket not ready (looked for /tmp/uniconnect*.sock)" >&2
     exit 1
   fi
   export CMUX_SOCKET_PATH="$SOCK"

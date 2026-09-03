@@ -2050,7 +2050,7 @@ extension Workspace {
     }
 }
 
-// MARK: - cmux.json custom layout
+// MARK: - uniconnect.json custom layout
 
 extension Workspace {
 
@@ -2387,7 +2387,7 @@ final class WorkspaceRemoteDaemonPendingCallRegistry {
         case timedOut
     }
 
-    private let queue = DispatchQueue(label: "com.cmux.remote-ssh.daemon-rpc.pending.\(UUID().uuidString)")
+    private let queue = DispatchQueue(label: "com.unixcision.uniconnect.remote-ssh.daemon-rpc.pending.\(UUID().uuidString)")
     private var nextRequestID = 1
     private var pendingCalls: [Int: PendingCall] = [:]
 
@@ -2584,8 +2584,8 @@ private final class WorkspaceRemoteDaemonRPCClient {
     private let configuration: WorkspaceRemoteConfiguration
     private let remotePath: String
     private let onUnexpectedTermination: (String) -> Void
-    private let writeQueue = DispatchQueue(label: "com.cmux.remote-ssh.daemon-rpc.write.\(UUID().uuidString)")
-    private let stateQueue = DispatchQueue(label: "com.cmux.remote-ssh.daemon-rpc.state.\(UUID().uuidString)")
+    private let writeQueue = DispatchQueue(label: "com.unixcision.uniconnect.remote-ssh.daemon-rpc.write.\(UUID().uuidString)")
+    private let stateQueue = DispatchQueue(label: "com.unixcision.uniconnect.remote-ssh.daemon-rpc.state.\(UUID().uuidString)")
     private let pendingCalls = WorkspaceRemoteDaemonPendingCallRegistry()
 
     private var process: Process?
@@ -4477,7 +4477,7 @@ private final class WorkspaceRemoteDaemonProxyTunnel {
     private let remotePath: String
     private let localPort: Int
     private let onFatalError: (String) -> Void
-    private let queue = DispatchQueue(label: "com.cmux.remote-ssh.daemon-tunnel.\(UUID().uuidString)", qos: .utility)
+    private let queue = DispatchQueue(label: "com.unixcision.uniconnect.remote-ssh.daemon-tunnel.\(UUID().uuidString)", qos: .utility)
 
     private var listener: NWListener?
     private var rpcClient: WorkspaceRemoteDaemonRPCClient?
@@ -4752,7 +4752,7 @@ private final class WorkspaceRemoteProxyBroker {
 
     static let shared = WorkspaceRemoteProxyBroker()
 
-    private let queue = DispatchQueue(label: "com.cmux.remote-ssh.proxy-broker", qos: .utility)
+    private let queue = DispatchQueue(label: "com.unixcision.uniconnect.remote-ssh.proxy-broker", qos: .utility)
     private var entries: [String: Entry] = [:]
 
     func acquire(
@@ -5378,7 +5378,7 @@ private final class WorkspaceRemoteCLIRelayServer {
     private let localSocketPath: String
     private let relayID: String
     private let relayToken: Data
-    private let queue = DispatchQueue(label: "com.cmux.remote-ssh.cli-relay.\(UUID().uuidString)", qos: .utility)
+    private let queue = DispatchQueue(label: "com.unixcision.uniconnect.remote-ssh.cli-relay.\(UUID().uuidString)", qos: .utility)
 
     private var listener: NWListener?
     private var sessions: [UUID: Session] = [:]
@@ -5569,7 +5569,7 @@ final class WorkspaceRemotePTYBridgeServer {
         private let requireExisting: Bool
         private let token: String
         private let queue: DispatchQueue
-        private let rpcQueue = DispatchQueue(label: "com.cmux.remote-ssh.pty-bridge.rpc.\(UUID().uuidString)", qos: .userInitiated)
+        private let rpcQueue = DispatchQueue(label: "com.unixcision.uniconnect.remote-ssh.pty-bridge.rpc.\(UUID().uuidString)", qos: .userInitiated)
         private let onClose: () -> Void
 
         private var isClosed = false
@@ -6082,7 +6082,7 @@ final class WorkspaceRemotePTYBridgeServer {
     private let command: String?
     private let requireExisting: Bool
     private let token = UUID().uuidString.lowercased()
-    private let queue = DispatchQueue(label: "com.cmux.remote-ssh.pty-bridge.\(UUID().uuidString)", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.unixcision.uniconnect.remote-ssh.pty-bridge.\(UUID().uuidString)", qos: .userInitiated)
     private let onStop: () -> Void
 
     private var listener: NWListener?
@@ -6324,11 +6324,11 @@ final class WorkspaceRemoteSessionController {
                 "proxy.stream",
                 "proxy.stream.push",
             ],
-            remotePath: "/usr/local/bin/cmuxd-remote"
+            remotePath: "/usr/local/bin/uniconnectd-remote"
         )
     }
 
-    private let queue = DispatchQueue(label: "com.cmux.remote-ssh.\(UUID().uuidString)", qos: .utility)
+    private let queue = DispatchQueue(label: "com.unixcision.uniconnect.remote-ssh.\(UUID().uuidString)", qos: .utility)
     private let queueKey = DispatchSpecificKey<Void>()
     private weak var workspace: Workspace?
     private let configuration: WorkspaceRemoteConfiguration
@@ -7338,7 +7338,7 @@ final class WorkspaceRemoteSessionController {
         bootstrapRemoteTTYFetchInFlight = true
         defer { bootstrapRemoteTTYFetchInFlight = false }
 
-        let command = "sh -c \(Self.shellSingleQuoted("tty_path=\"$HOME/.cmux/relay/\(relayPort).tty\"; if [ -r \"$tty_path\" ]; then cat \"$tty_path\"; fi"))"
+        let command = "sh -c \(Self.shellSingleQuoted("tty_path=\"$HOME/.uniconnect/relay/\(relayPort).tty\"; if [ -r \"$tty_path\" ]; then cat \"$tty_path\"; fi"))"
         do {
             let result = try sshExec(
                 arguments: sshCommonArguments(batchMode: true) + [configuration.destination, command],
@@ -7964,11 +7964,11 @@ final class WorkspaceRemoteSessionController {
     static func remoteRelayMetadataCleanupScript(relayPort: Int) -> String {
         """
         relay_socket='127.0.0.1:\(relayPort)'
-        socket_addr_file="$HOME/.cmux/socket_addr"
+        socket_addr_file="$HOME/.uniconnect/socket_addr"
         if [ -r "$socket_addr_file" ] && [ "$(tr -d '\\r\\n' < "$socket_addr_file")" = "$relay_socket" ]; then
           rm -f "$socket_addr_file"
         fi
-        rm -f "$HOME/.cmux/relay/\(relayPort).auth" "$HOME/.cmux/relay/\(relayPort).daemon_path" "$HOME/.cmux/relay/\(relayPort).slot" "$HOME/.cmux/relay/\(relayPort).tty"
+        rm -f "$HOME/.uniconnect/relay/\(relayPort).auth" "$HOME/.uniconnect/relay/\(relayPort).daemon_path" "$HOME/.uniconnect/relay/\(relayPort).slot" "$HOME/.uniconnect/relay/\(relayPort).tty"
         """
     }
 
@@ -8059,15 +8059,15 @@ final class WorkspaceRemoteSessionController {
           if [ -z "$cmux_child_pids" ]; then
             cmux_cleanup_reason=metadata
             cmux_metadata_ok=0
-            cmux_slot_file="$HOME/.cmux/relay/${cmux_relay_port}.slot"
+            cmux_slot_file="$HOME/.uniconnect/relay/${cmux_relay_port}.slot"
             cmux_metadata_slot_ok=0
             if [ -r "$cmux_slot_file" ]; then
               cmux_stored_slot="$(tr -d '\\r\\n' < "$cmux_slot_file")"
               [ "$cmux_stored_slot" = "$cmux_persistent_slot" ] && cmux_metadata_slot_ok=1
             fi
             if [ "$cmux_metadata_slot_ok" -eq 1 ]; then
-              cmux_daemon_map="$HOME/.cmux/relay/${cmux_relay_port}.daemon_path"
-              cmux_auth_file="$HOME/.cmux/relay/${cmux_relay_port}.auth"
+              cmux_daemon_map="$HOME/.uniconnect/relay/${cmux_relay_port}.daemon_path"
+              cmux_auth_file="$HOME/.uniconnect/relay/${cmux_relay_port}.auth"
               if [ -r "$cmux_daemon_map" ]; then
                 cmux_daemon_path="$(tr -d '\\r\\n' < "$cmux_daemon_map")"
                 case "$cmux_daemon_path" in
@@ -8123,7 +8123,7 @@ final class WorkspaceRemoteSessionController {
           armv7l) cmux_go_arch=arm ;;
           *) exit 71 ;;
         esac
-        cmux_remote_path="$HOME/.cmux/bin/cmuxd-remote/\(version)/${cmux_go_os}-${cmux_go_arch}/cmuxd-remote"
+        cmux_remote_path="$HOME/.uniconnect/bin/cmuxd-remote/\(version)/${cmux_go_os}-${cmux_go_arch}/cmuxd-remote"
         if [ -x "$cmux_remote_path" ]; then
           printf '%syes\\n' '\(Self.remotePlatformProbeExistsMarker)'
         else
@@ -8243,7 +8243,7 @@ final class WorkspaceRemoteSessionController {
         guard let manifestURL = URL(string: "\(releaseURL)/cmuxd-remote-manifest.json") else { return nil }
         let request = NSMutableURLRequest(url: manifestURL)
         request.timeoutInterval = 15
-        request.setValue("cmux/\(version)", forHTTPHeaderField: "User-Agent")
+        request.setValue("UniConnect/\(version)", forHTTPHeaderField: "User-Agent")
         let session = URLSession(configuration: .ephemeral)
         let semaphore = DispatchSemaphore(value: 0)
         var resultData: Data?
@@ -8273,7 +8273,7 @@ final class WorkspaceRemoteSessionController {
 
         let request = NSMutableURLRequest(url: url)
         request.timeoutInterval = 60
-        request.setValue("cmux/\(version)", forHTTPHeaderField: "User-Agent")
+        request.setValue("UniConnect/\(version)", forHTTPHeaderField: "User-Agent")
         let session = URLSession(configuration: .ephemeral)
 
         let semaphore = DispatchSemaphore(value: 0)
@@ -8522,7 +8522,7 @@ final class WorkspaceRemoteSessionController {
     static func remoteDropPath(for fileURL: URL, uuid: UUID = UUID()) -> String {
         let extensionSuffix = fileURL.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines)
         let lowercasedSuffix = extensionSuffix.isEmpty ? "" : ".\(extensionSuffix.lowercased())"
-        return "/tmp/cmux-drop-\(uuid.uuidString.lowercased())\(lowercasedSuffix)"
+        return "/tmp/uniconnect-drop-\(uuid.uuidString.lowercased())\(lowercasedSuffix)"
     }
 
     private func cleanupUploadedRemotePaths(_ remotePaths: [String]) {
@@ -8641,15 +8641,15 @@ final class WorkspaceRemoteSessionController {
         #!/bin/sh
         set -eu
 
-        daemon="$HOME/.cmux/bin/cmuxd-remote-current"
+        daemon="$HOME/.uniconnect/bin/cmuxd-remote-current"
         socket_path="${CMUX_SOCKET_PATH:-}"
-        if [ -z "$socket_path" ] && [ -r "$HOME/.cmux/socket_addr" ]; then
-          socket_path="$(tr -d '\\r\\n' < "$HOME/.cmux/socket_addr")"
+        if [ -z "$socket_path" ] && [ -r "$HOME/.uniconnect/socket_addr" ]; then
+          socket_path="$(tr -d '\\r\\n' < "$HOME/.uniconnect/socket_addr")"
         fi
 
         if [ -n "$socket_path" ] && [ "${socket_path#/}" = "$socket_path" ] && [ "${socket_path#*:}" != "$socket_path" ]; then
           relay_port="${socket_path##*:}"
-          relay_map="$HOME/.cmux/relay/${relay_port}.daemon_path"
+          relay_map="$HOME/.uniconnect/relay/${relay_port}.daemon_path"
           if [ -r "$relay_map" ]; then
             mapped_daemon="$(tr -d '\\r\\n' < "$relay_map")"
             if [ -n "$mapped_daemon" ] && [ -x "$mapped_daemon" ]; then
@@ -8666,14 +8666,14 @@ final class WorkspaceRemoteSessionController {
         let trimmedRemotePath = daemonRemotePath.trimmingCharacters(in: .whitespacesAndNewlines)
         let daemonPathExpression = remoteDaemonPathShellExpression(trimmedRemotePath)
         return """
-        mkdir -p "$HOME/.cmux/bin" "$HOME/.cmux/relay"
-        ln -sf \(daemonPathExpression) "$HOME/.cmux/bin/cmuxd-remote-current"
-        wrapper_tmp="$HOME/.cmux/bin/.cmux-wrapper.tmp.$$"
+        mkdir -p "$HOME/.uniconnect/bin" "$HOME/.uniconnect/relay"
+        ln -sf \(daemonPathExpression) "$HOME/.uniconnect/bin/cmuxd-remote-current"
+        wrapper_tmp="$HOME/.uniconnect/bin/.cmux-wrapper.tmp.$$"
         cat > "$wrapper_tmp" <<'CMUXWRAPPER'
         \(remoteCLIWrapperScript())
         CMUXWRAPPER
         chmod 755 "$wrapper_tmp"
-        mv -f "$wrapper_tmp" "$HOME/.cmux/bin/cmux"
+        mv -f "$wrapper_tmp" "$HOME/.uniconnect/bin/cmux"
         """
     }
 
@@ -8688,25 +8688,25 @@ final class WorkspaceRemoteSessionController {
         let daemonPathExpression = remoteDaemonPathShellExpression(trimmedRemotePath)
         let slotMetadataLine: String
         if let slot = normalizedPersistentDaemonSlotForRemoteCleanup(persistentDaemonSlot) {
-            slotMetadataLine = "printf '%s' \(shellSingleQuoted(slot)) > \"$HOME/.cmux/relay/\(relayPort).slot\"\nchmod 600 \"$HOME/.cmux/relay/\(relayPort).slot\""
+            slotMetadataLine = "printf '%s' \(shellSingleQuoted(slot)) > \"$HOME/.uniconnect/relay/\(relayPort).slot\"\nchmod 600 \"$HOME/.uniconnect/relay/\(relayPort).slot\""
         } else {
-            slotMetadataLine = "rm -f \"$HOME/.cmux/relay/\(relayPort).slot\""
+            slotMetadataLine = "rm -f \"$HOME/.uniconnect/relay/\(relayPort).slot\""
         }
         let authPayload = """
         {"relay_id":"\(relayID)","relay_token":"\(relayToken)"}
         """
         return """
         umask 077
-        mkdir -p "$HOME/.cmux" "$HOME/.cmux/relay"
-        chmod 700 "$HOME/.cmux/relay"
+        mkdir -p "$HOME/.cmux" "$HOME/.uniconnect/relay"
+        chmod 700 "$HOME/.uniconnect/relay"
         \(remoteCLIWrapperInstallScript(daemonRemotePath: trimmedRemotePath))
-        printf '%s' \(daemonPathExpression) > "$HOME/.cmux/relay/\(relayPort).daemon_path"
+        printf '%s' \(daemonPathExpression) > "$HOME/.uniconnect/relay/\(relayPort).daemon_path"
         \(slotMetadataLine)
-        cat > "$HOME/.cmux/relay/\(relayPort).auth" <<'CMUXRELAYAUTH'
+        cat > "$HOME/.uniconnect/relay/\(relayPort).auth" <<'CMUXRELAYAUTH'
         \(authPayload)
         CMUXRELAYAUTH
-        chmod 600 "$HOME/.cmux/relay/\(relayPort).auth"
-        printf '%s' '127.0.0.1:\(relayPort)' > "$HOME/.cmux/socket_addr"
+        chmod 600 "$HOME/.uniconnect/relay/\(relayPort).auth"
+        printf '%s' '127.0.0.1:\(relayPort)' > "$HOME/.uniconnect/socket_addr"
         """
     }
 
@@ -10558,6 +10558,9 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var uniConnectProfile: UniConnectWorkspaceProfile?
     @Published var uniConnectTmuxSessionsByPanelId: [UUID: String] = [:]
     var uniConnectPlaceholderPanelIds: Set<UUID> = []
+    /// UniConnect: the stock workspace the app boots with when there is nothing to restore.
+    /// It shows the empty state instead of a shell and is never persisted.
+    @Published var uniConnectIsStarter: Bool = false
     @Published var remoteConfiguration: WorkspaceRemoteConfiguration?
     @Published var remoteConnectionState: WorkspaceRemoteConnectionState = .disconnected
     @Published var remoteConnectionDetail: String?
@@ -10595,7 +10598,7 @@ final class Workspace: Identifiable, ObservableObject {
     private static let remotePortConflictStatusKey = "remote.port_conflicts"
     private static let remoteNotificationCooldown: TimeInterval = 5 * 60
     private static let sshControlMasterCleanupQueue = DispatchQueue(
-        label: "com.cmux.remote-ssh.control-master-cleanup",
+        label: "com.unixcision.uniconnect.remote-ssh.control-master-cleanup",
         qos: .utility
     )
     private static let remoteHeartbeatDateFormatter: ISO8601DateFormatter = {
@@ -13088,6 +13091,7 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     var isRestorableInSessionSnapshot: Bool {
+        if uniConnectIsStarter { return false }
         guard let remoteConfiguration else { return true }
         return remoteConfiguration.sessionSnapshot() != nil
     }
@@ -19115,6 +19119,8 @@ extension Workspace: BonsplitDelegate {
         if !isDetachingCloseTransaction {
             scheduleFocusReconcile()
         }
+        // UniConnect: a moved/reordered window is saved immediately, not on the next autosave.
+        if UniConnectCoordinator.isEnabled { UniConnectCoordinator.shared.requestSave() }
     }
 
     func splitTabBar(_ controller: BonsplitController, didFocusPane pane: PaneID) {

@@ -395,12 +395,12 @@ private func agentHookDebugLogPath(socketPath: String?, env: [String: String]) -
         }
     }
 
-    if let lastPath = try? String(contentsOfFile: "/tmp/cmux-last-debug-log-path", encoding: .utf8),
+    if let lastPath = try? String(contentsOfFile: "/tmp/uniconnect-last-debug-log-path", encoding: .utf8),
        let normalized = agentHookDebugNonEmpty(lastPath) {
         return NSString(string: normalized).expandingTildeInPath
     }
 
-    return "/tmp/cmux-debug.log"
+    return "/tmp/uniconnect-debug.log"
 }
 
 private func agentHookDebugNonEmpty(_ value: String?) -> String? {
@@ -499,7 +499,7 @@ private struct ClaudeHookSessionStoreFile: Codable {
 }
 
 private final class ClaudeHookSessionStore {
-    private static let defaultStatePath = "~/.cmuxterm/claude-hook-sessions.json"
+    private static let defaultStatePath = "~/.uniconnect/claude-hook-sessions.json"
     private static let maxStateAgeSeconds: TimeInterval = 60 * 60 * 24 * 7
     private static let maxRememberedTerminalPromptTurnIds = 32
 
@@ -1418,7 +1418,7 @@ private enum TopTextFormat: Equatable {
 }
 
 enum SocketPasswordResolver {
-    private static let service = "com.cmuxterm.app.socket-control"
+    private static let service = "com.unixcision.uniconnect.socket-control"
     private static let account = "local-socket-password"
 
     static func resolve(explicit: String?, socketPath: String) -> String? {
@@ -2275,7 +2275,7 @@ final class SocketClient {
             throw CLIError(message: "cmux app did not start in time (socket not found at \(path))")
         }
 
-        let queue = DispatchQueue(label: "com.cmux.cli.socket-watch.\(UUID().uuidString)")
+        let queue = DispatchQueue(label: "com.unixcision.uniconnect.cli.socket-watch.\(UUID().uuidString)")
         let semaphore = DispatchSemaphore(value: 0)
         var connected = false
         let source = DispatchSource.makeFileSystemObjectSource(
@@ -2326,7 +2326,7 @@ final class SocketClient {
             throw CLIError(message: "Timed out waiting for \(path)")
         }
 
-        let queue = DispatchQueue(label: "com.cmux.cli.path-watch.\(UUID().uuidString)")
+        let queue = DispatchQueue(label: "com.unixcision.uniconnect.cli.path-watch.\(UUID().uuidString)")
         let semaphore = DispatchSemaphore(value: 0)
         var found = false
         let source = DispatchSource.makeFileSystemObjectSource(
@@ -2692,7 +2692,7 @@ struct CMUXCLI {
 
     private static func vmCreateIdempotencyStoreURL() -> URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".cmuxterm", isDirectory: true)
+            .appendingPathComponent(".uniconnect", isDirectory: true)
             .appendingPathComponent("vm-create-idempotency.json", isDirectory: false)
     }
 
@@ -2743,7 +2743,7 @@ struct CMUXCLI {
     }
 
     private static let browserDisabledDefaultsKey = "browserDisabledOverride"
-    private static let defaultBrowserSettingsDomain = "com.cmuxterm.app"
+    private static let defaultBrowserSettingsDomain = "com.unixcision.uniconnect"
 
     private static func containingAppBundleIdentifier() -> String? {
         normalizedEnvValue(CLIExecutableLocator.enclosingAppBundle()?.bundleIdentifier)
@@ -8195,7 +8195,7 @@ struct CMUXCLI {
         remoteRelayPort: Int
     ) -> String {
         var lines = remoteBootstrapTTYCaptureLines(remoteRelayPort: remoteRelayPort, includeRelayRPC: true)
-        lines.append("/bin/sh \"$HOME/.cmux/relay/\(remoteRelayPort).bootstrap.sh\"")
+        lines.append("/bin/sh \"$HOME/.uniconnect/relay/\(remoteRelayPort).bootstrap.sh\"")
         return lines.joined(separator: "\n")
     }
 
@@ -8203,8 +8203,8 @@ struct CMUXCLI {
         [
             "set -eu",
             "umask 077",
-            "cmux_bootstrap_path=\"$HOME/.cmux/relay/\(remoteRelayPort).bootstrap.sh\"",
-            "mkdir -p \"$HOME/.cmux/relay\"",
+            "cmux_bootstrap_path=\"$HOME/.uniconnect/relay/\(remoteRelayPort).bootstrap.sh\"",
+            "mkdir -p \"$HOME/.uniconnect/relay\"",
             "cat > \"$cmux_bootstrap_path\"",
             "chmod 700 \"$cmux_bootstrap_path\" >/dev/null 2>&1 || true",
         ].joined(separator: "\n")
@@ -8237,14 +8237,14 @@ struct CMUXCLI {
             "cmux_bootstrap_tty=\"$(tty 2>/dev/null || true)\"",
             "cmux_bootstrap_tty=\"${cmux_bootstrap_tty##*/}\"",
             "if [ -n \"$cmux_bootstrap_tty\" ] && [ \"$cmux_bootstrap_tty\" != \"not a tty\" ]; then",
-            "  mkdir -p \"$HOME/.cmux/relay\" >/dev/null 2>&1 || true",
-            "  printf '%s' \"$cmux_bootstrap_tty\" > \"$HOME/.cmux/relay/\(remoteRelayPort).tty\" 2>/dev/null || true",
+            "  mkdir -p \"$HOME/.uniconnect/relay\" >/dev/null 2>&1 || true",
+            "  printf '%s' \"$cmux_bootstrap_tty\" > \"$HOME/.uniconnect/relay/\(remoteRelayPort).tty\" 2>/dev/null || true",
             "  export CMUX_BOOTSTRAP_TTY=\"$cmux_bootstrap_tty\"",
         ]
 
         if includeRelayRPC {
             lines += [
-                "  cmux_relay_cli=\"$HOME/.cmux/bin/cmux\"",
+                "  cmux_relay_cli=\"$HOME/.uniconnect/bin/cmux\"",
                 "  if [ ! -x \"$cmux_relay_cli\" ]; then cmux_relay_cli=\"$(command -v cmux 2>/dev/null || true)\"; fi",
                 "  if [ -n \"$cmux_relay_cli\" ]; then",
                 "    cmux_relay_report_tty='{\"workspace_id\":\"__CMUX_WORKSPACE_ID__\",\"tty_name\":\"'$cmux_bootstrap_tty'\"}'",
@@ -8294,7 +8294,7 @@ struct CMUXCLI {
             "cmux_ssh_preflight_control_path() {",
             #"  cmux_ssh_control_path="$(command \#(sshPrefix) -G \#(destination) 2>/dev/null | awk 'tolower($1) == "controlpath" { $1 = ""; sub(/^[[:space:]]+/, ""); print; exit }')" "#,
             "  case \"${cmux_ssh_control_path:-}\" in",
-            "    /tmp/cmux-ssh-*|\"$HOME\"/.cmux/control/*)",
+            "    /tmp/uniconnect-ssh-*|\"$HOME\"/.cmux/control/*)",
             "      if ! command \(sshPrefix) -S \"$cmux_ssh_control_path\" -O check \(destination) >/dev/null 2>&1; then",
             "        rm -f -- \"$cmux_ssh_control_path\" 2>/dev/null || true",
             "      fi",
@@ -8323,8 +8323,8 @@ struct CMUXCLI {
         var commonShellExportLines = remoteTerminalLines
         commonShellExportLines.append(contentsOf: remoteLocaleLines)
         commonShellExportLines.append(contentsOf: remoteEnvExportLines)
-        commonShellExportLines.append("export PATH=\"$HOME/.cmux/bin:$PATH\"")
-        commonShellExportLines.append("export CMUX_BUNDLED_CLI_PATH=\"$HOME/.cmux/bin/cmux\"")
+        commonShellExportLines.append("export PATH=\"$HOME/.uniconnect/bin:$PATH\"")
+        commonShellExportLines.append("export CMUX_BUNDLED_CLI_PATH=\"$HOME/.uniconnect/bin/cmux\"")
         commonShellExportLines.append("export CMUX_SHELL_INTEGRATION_DIR=\"\(shellStateDir)\"")
         if let relaySocket {
             commonShellExportLines.append("export CMUX_SOCKET_PATH=\(relaySocket)")
@@ -8336,19 +8336,19 @@ struct CMUXCLI {
         ])
         var zshShellLines = commonShellExportLines
         zshShellLines.append(
-            #"if [ "${CMUX_SHELL_INTEGRATION:-1}" != "0" ] && [ -r "${CMUX_SHELL_INTEGRATION_DIR}/cmux-zsh-integration.zsh" ]; then . "${CMUX_SHELL_INTEGRATION_DIR}/cmux-zsh-integration.zsh"; fi"#
+            #"if [ "${CMUX_SHELL_INTEGRATION:-1}" != "0" ] && [ -r "${CMUX_SHELL_INTEGRATION_DIR}/uniconnect-zsh-integration.zsh" ]; then . "${CMUX_SHELL_INTEGRATION_DIR}/uniconnect-zsh-integration.zsh"; fi"#
         )
         var bashShellLines = commonShellExportLines
         bashShellLines.append(
-            #"if [ "${CMUX_SHELL_INTEGRATION:-1}" != "0" ] && [ -r "${CMUX_SHELL_INTEGRATION_DIR}/cmux-bash-integration.bash" ]; then . "${CMUX_SHELL_INTEGRATION_DIR}/cmux-bash-integration.bash"; fi"#
+            #"if [ "${CMUX_SHELL_INTEGRATION:-1}" != "0" ] && [ -r "${CMUX_SHELL_INTEGRATION_DIR}/uniconnect-bash-integration.bash" ]; then . "${CMUX_SHELL_INTEGRATION_DIR}/uniconnect-bash-integration.bash"; fi"#
         )
         let zshBootstrap = RemoteRelayZshBootstrap(shellStateDir: shellStateDir)
         let zshEnvLines = zshBootstrap.zshEnvLines
         let zshProfileLines = zshBootstrap.zshProfileLines
         let zshRCLines = zshBootstrap.zshRCLines(commonShellLines: zshShellLines)
         let zshLoginLines = zshBootstrap.zshLoginLines
-        let bundledZshIntegration = bundledShellIntegrationScript(named: "cmux-zsh-integration.zsh")
-        let bundledBashIntegration = bundledShellIntegrationScript(named: "cmux-bash-integration.bash")
+        let bundledZshIntegration = bundledShellIntegrationScript(named: "uniconnect-zsh-integration.zsh")
+        let bundledBashIntegration = bundledShellIntegrationScript(named: "uniconnect-bash-integration.bash")
         let bashRCLines = [
             "if [ -f \"$HOME/.bash_profile\" ]; then . \"$HOME/.bash_profile\"; elif [ -f \"$HOME/.bash_login\" ]; then . \"$HOME/.bash_login\"; elif [ -f \"$HOME/.profile\" ]; then . \"$HOME/.profile\"; fi",
             "[ -f \"$HOME/.bashrc\" ] && . \"$HOME/.bashrc\"",
@@ -8356,20 +8356,20 @@ struct CMUXCLI {
         let relayWarmupLines = interactiveRemoteRelayWarmupLines(remoteRelayPort: remoteRelayPort)
 
         var outerLines: [String] = [
-            "mkdir -p \"$HOME/.cmux/relay\"",
+            "mkdir -p \"$HOME/.uniconnect/relay\"",
             "cmux_shell_dir=\"\(shellStateDir)\"",
             "mkdir -p \"$cmux_shell_dir\"",
         ]
         if let bundledZshIntegration {
             outerLines += [
-                "cat > \"$cmux_shell_dir/cmux-zsh-integration.zsh\" <<'CMUXCMUXZSH'",
+                "cat > \"$cmux_shell_dir/uniconnect-zsh-integration.zsh\" <<'CMUXCMUXZSH'",
                 bundledZshIntegration,
                 "CMUXCMUXZSH",
             ]
         }
         if let bundledBashIntegration {
             outerLines += [
-                "cat > \"$cmux_shell_dir/cmux-bash-integration.bash\" <<'CMUXCMUXBASH'",
+                "cat > \"$cmux_shell_dir/uniconnect-bash-integration.bash\" <<'CMUXCMUXBASH'",
                 bundledBashIntegration,
                 "CMUXCMUXBASH",
             ]
@@ -8433,7 +8433,7 @@ struct CMUXCLI {
     }
 
     private func shellStateDirForRemoteRelayPort(_ remoteRelayPort: Int) -> String {
-        "$HOME/.cmux/relay/\(max(remoteRelayPort, 0)).shell"
+        "$HOME/.uniconnect/relay/\(max(remoteRelayPort, 0)).shell"
     }
 
     private func bundledShellIntegrationScript(named fileName: String) -> String? {
@@ -8555,14 +8555,14 @@ struct CMUXCLI {
             return []
         }
         return [
-            "cmux_relay_cli=\"${CMUX_BUNDLED_CLI_PATH:-$HOME/.cmux/bin/cmux}\"",
+            "cmux_relay_cli=\"${CMUX_BUNDLED_CLI_PATH:-$HOME/.uniconnect/bin/cmux}\"",
             "if [ ! -x \"$cmux_relay_cli\" ]; then cmux_relay_cli=\"$(command -v cmux 2>/dev/null || true)\"; fi",
             "cmux_relay_tty=\"${CMUX_BOOTSTRAP_TTY:-}\"",
             "if [ -z \"$cmux_relay_tty\" ]; then cmux_relay_tty=\"$(tty 2>/dev/null || true)\"; fi",
             "cmux_relay_tty=\"${cmux_relay_tty##*/}\"",
             "if [ -n \"$cmux_relay_tty\" ] && [ \"$cmux_relay_tty\" != \"not a tty\" ]; then",
-            "  mkdir -p \"$HOME/.cmux/relay\" >/dev/null 2>&1 || true",
-            "  printf '%s' \"$cmux_relay_tty\" > \"$HOME/.cmux/relay/\(remoteRelayPort).tty\" 2>/dev/null || true",
+            "  mkdir -p \"$HOME/.uniconnect/relay\" >/dev/null 2>&1 || true",
+            "  printf '%s' \"$cmux_relay_tty\" > \"$HOME/.uniconnect/relay/\(remoteRelayPort).tty\" 2>/dev/null || true",
             "fi",
             "if [ -n \"$cmux_relay_cli\" ] && [ -n \"$CMUX_WORKSPACE_ID\" ] && [ -n \"$cmux_relay_tty\" ] && [ \"$cmux_relay_tty\" != \"not a tty\" ]; then",
             "  cmux_relay_report_tty=\"{\\\"workspace_id\\\":\\\"$CMUX_WORKSPACE_ID\\\",\\\"tty_name\\\":\\\"$cmux_relay_tty\\\"}\"",
@@ -9379,7 +9379,7 @@ struct CMUXCLI {
         )
         let data = try JSONEncoder().encode(config)
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cmux-vm-pty-\(UUID().uuidString.lowercased()).json")
+            .appendingPathComponent("uniconnect-vm-pty-\(UUID().uuidString.lowercased()).json")
         try data.write(to: url, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         return url
@@ -9490,7 +9490,7 @@ struct CMUXCLI {
     private final class VMPtyWebSocketBridge {
         private let config: VMPtyWebSocketConfig
         private let debugEvent: ((String) -> Void)?
-        private let sendQueue = DispatchQueue(label: "com.cmux.vm-pty.websocket.send")
+        private let sendQueue = DispatchQueue(label: "com.unixcision.uniconnect.vm-pty.websocket.send")
         private let stopLock = NSLock()
         private var stopped = false
         private var task: URLSessionWebSocketTask?
@@ -9567,7 +9567,7 @@ struct CMUXCLI {
             signal(SIGWINCH, SIG_IGN)
             let source = DispatchSource.makeSignalSource(
                 signal: SIGWINCH,
-                queue: DispatchQueue(label: "com.cmux.vm-pty.resize")
+                queue: DispatchQueue(label: "com.unixcision.uniconnect.vm-pty.resize")
             )
             source.setEventHandler { [weak self] in
                 guard let self else { return }
@@ -10509,7 +10509,7 @@ struct CMUXCLI {
         signal(SIGWINCH, SIG_IGN)
         let source = DispatchSource.makeSignalSource(
             signal: SIGWINCH,
-            queue: DispatchQueue(label: "com.cmux.ssh-pty.resize")
+            queue: DispatchQueue(label: "com.unixcision.uniconnect.ssh-pty.resize")
         )
         source.setEventHandler {
             let size = self.currentCLITerminalSize()
@@ -10805,7 +10805,7 @@ struct CMUXCLI {
             .replacingOccurrences(of: "\"", with: "\\\"")
         return [
             "cmux_ssh_log_path=\"\";",
-            "if [ -r /tmp/cmux-last-debug-log-path ]; then cmux_ssh_log_path=\"$(tr -d '\\r\\n' < /tmp/cmux-last-debug-log-path 2>/dev/null || true)\"; fi;",
+            "if [ -r /tmp/uniconnect-last-debug-log-path ]; then cmux_ssh_log_path=\"$(tr -d '\\r\\n' < /tmp/uniconnect-last-debug-log-path 2>/dev/null || true)\"; fi;",
             "if [ -n \"$cmux_ssh_log_path\" ]; then",
             "cmux_ssh_ts=\"$(python3 -c 'from datetime import datetime, timezone; print(datetime.now(timezone.utc).isoformat(timespec=\"milliseconds\").replace(\"+00:00\", \"Z\"))' 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)\";",
             "printf '%s [cmux-cli] cli.ssh.handshake target=\(escapedTarget) relayPort=\(relayPort) stage=ssh.connected workspace=%s surface=%s\\n' \"$cmux_ssh_ts\" \"${CMUX_WORKSPACE_ID:-nil}\" \"${CMUX_SURFACE_ID:-nil}\" >> \"$cmux_ssh_log_path\";",
@@ -10852,9 +10852,9 @@ struct CMUXCLI {
 
     private func defaultSSHControlPathTemplate(remoteRelayPort: Int? = nil) -> String {
         if let remoteRelayPort, remoteRelayPort > 0 {
-            return "/tmp/cmux-ssh-\(getuid())-\(remoteRelayPort)-%C"
+            return "/tmp/uniconnect-ssh-\(getuid())-\(remoteRelayPort)-%C"
         }
-        return "/tmp/cmux-ssh-\(getuid())-%C"
+        return "/tmp/uniconnect-ssh-\(getuid())-%C"
     }
 
     private func normalizedSSHIdentityPath(_ rawPath: String?) -> String? {
@@ -10911,7 +10911,7 @@ struct CMUXCLI {
             if let trimmedExplicit, !trimmedExplicit.isEmpty {
                 return trimmedExplicit
             }
-            guard let marker = try? String(contentsOfFile: "/tmp/cmux-last-debug-log-path", encoding: .utf8) else {
+            guard let marker = try? String(contentsOfFile: "/tmp/uniconnect-last-debug-log-path", encoding: .utf8) else {
                 return nil
             }
             let trimmedMarker = marker.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -12823,7 +12823,7 @@ struct CMUXCLI {
 
             Examples:
               cmux events --category notification
-              cmux events --cursor-file ~/.cache/cmux/events.seq --reconnect
+              cmux events --cursor-file ~/.cache/uniconnect/events.seq --reconnect
               cmux events --after 42 --name feed.item.received
             """
         case "auth":
@@ -12918,7 +12918,7 @@ struct CMUXCLI {
             Usage: cmux disable-browser [--json]
 
             Disable cmux browser creation and link interception. This overrides
-            browser settings from cmux.json until re-enabled.
+            browser settings from uniconnect.json until re-enabled.
             """
         case "enable-browser":
             return """
@@ -13006,7 +13006,7 @@ struct CMUXCLI {
               ~/.pi/agent/extensions/cmux-session.ts
               ~/.omp/agent/extensions/cmux-omp-session.ts
               ~/.config/amp/plugins/cmux-session.ts
-              ~/.kiro/agents/cmux.json
+              ~/.kiro/agents/uniconnect.json
               See docs/agent-hooks.md for the full integration matrix.
 
             Examples:
@@ -13445,7 +13445,7 @@ struct CMUXCLI {
               --cwd <path>         Set the working directory for the new workspace
               --command <text>     Send text+Enter to the new workspace after creation
               --layout <json>      Create workspace with a predefined split layout (inline JSON).
-                                   Uses the same schema as cmux.json layout definitions.
+                                   Uses the same schema as uniconnect.json layout definitions.
                                    When provided, --command is ignored (layout surfaces define their own commands).
               --window <id|ref|index>
                                    Target window (default: caller's window from $CMUX_WORKSPACE_ID/$CMUX_SURFACE_ID)
@@ -13522,7 +13522,7 @@ struct CMUXCLI {
               new-workspace <group> [--placement afterCurrent|top|end]
                                         Create a new workspace in the group.
                                         Placement resolves first from per-cwd
-                                        cmux.json `newWorkspacePlacement`, then
+                                        uniconnect.json `newWorkspacePlacement`, then
                                         from the global default. The default is
                                         afterCurrent; without an active
                                         in-group reference it behaves like top.
@@ -13867,7 +13867,7 @@ struct CMUXCLI {
             Usage: cmux reload-config
 
             Run the same configuration reload as the Reload Configuration shortcut.
-            This reloads Ghostty config, re-reads ~/.config/cmux/cmux.json, and refreshes terminals.
+            This reloads Ghostty config, re-reads ~/.config/uniconnect/uniconnect.json, and refreshes terminals.
 
             Example:
               cmux reload-config
@@ -14535,7 +14535,7 @@ struct CMUXCLI {
             return String(localized: "cli.sidebar.usage", defaultValue: """
             Usage: cmux sidebar <validate|reload|select> [name|--all] [--json]
 
-            Validate, reload, or select custom left sidebars from ~/.config/cmux/sidebars.
+            Validate, reload, or select custom left sidebars from ~/.config/uniconnect/sidebars.
             Swift files win over JSON files with the same base name.
 
             Commands:
@@ -17848,7 +17848,7 @@ struct CMUXCLI {
     ) throws -> URL {
         let homePath = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
         let root = URL(fileURLWithPath: homePath, isDirectory: true)
-            .appendingPathComponent(".cmuxterm", isDirectory: true)
+            .appendingPathComponent(".uniconnect", isDirectory: true)
             .appendingPathComponent(directoryName, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: nil)
         let tmuxURL = root.appendingPathComponent("tmux", isDirectory: false)
@@ -19232,7 +19232,7 @@ struct CMUXCLI {
     private func omoShadowConfigDir() -> URL {
         let homePath = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
         return URL(fileURLWithPath: homePath, isDirectory: true)
-            .appendingPathComponent(".cmuxterm", isDirectory: true)
+            .appendingPathComponent(".uniconnect", isDirectory: true)
             .appendingPathComponent("omo-config", isDirectory: true)
     }
 
@@ -20582,7 +20582,7 @@ struct CMUXCLI {
         let homePath = ProcessInfo.processInfo.environment["HOME"]
             ?? NSString(string: "~").expandingTildeInPath
         return URL(fileURLWithPath: homePath)
-            .appendingPathComponent(".cmuxterm")
+            .appendingPathComponent(".uniconnect")
             .appendingPathComponent("tmux-compat-store.json")
     }
 
@@ -20756,7 +20756,7 @@ struct CMUXCLI {
     private func tmuxWaitForSignalURL(name: String) -> URL {
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
         let sanitized = name.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
-        return URL(fileURLWithPath: "/tmp/cmux-wait-for-\(String(sanitized)).sig")
+        return URL(fileURLWithPath: "/tmp/uniconnect-wait-for-\(String(sanitized)).sig")
     }
 
     private func runTmuxCompatCommand(
@@ -25182,7 +25182,7 @@ struct CMUXCLI {
     private func agentHookStatePath(sessionStoreSuffix: String, env: [String: String]) -> String {
         let filename = "\(sessionStoreSuffix)-hook-sessions.json"
         guard let overrideDirectory = normalizedHookValue(env["CMUX_AGENT_HOOK_STATE_DIR"]) else {
-            return "~/.cmuxterm/\(filename)"
+            return "~/.uniconnect/\(filename)"
         }
         return URL(fileURLWithPath: NSString(string: overrideDirectory).expandingTildeInPath, isDirectory: true)
             .appendingPathComponent(filename, isDirectory: false)
@@ -26493,7 +26493,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
     ) throws {
         guard def.name == "grok" else { return }
         let legacyURL = URL(fileURLWithPath: configDir, isDirectory: true)
-            .appendingPathComponent("cmux.json", isDirectory: false)
+            .appendingPathComponent("uniconnect.json", isDirectory: false)
         guard legacyURL.path != primaryFilePath,
               FileManager.default.fileExists(atPath: legacyURL.path),
               let data = FileManager.default.contents(atPath: legacyURL.path),
@@ -29638,7 +29638,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         let fileManager = FileManager.default
         let homePath = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
         let appDirectory = URL(fileURLWithPath: homePath, isDirectory: true)
-            .appendingPathComponent(".cmuxterm", isDirectory: true)
+            .appendingPathComponent(".uniconnect", isDirectory: true)
             .appendingPathComponent("feed-tui-opentui", isDirectory: true)
         try fileManager.createDirectory(at: appDirectory, withIntermediateDirectories: true)
 
@@ -30449,7 +30449,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
     private func runFeedClear() throws {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let path = home
-            .appendingPathComponent(".cmuxterm", isDirectory: true)
+            .appendingPathComponent(".uniconnect", isDirectory: true)
             .appendingPathComponent("workstream.jsonl", isDirectory: false)
         let fm = FileManager.default
         guard fm.fileExists(atPath: path.path) else {
@@ -31880,10 +31880,10 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
 
         Agent Help:
           To change cmux settings, run `cmux docs settings` and `cmux settings path`; to add Dock controls, run `cmux docs dock`.
-          Back up any existing cmux.json file to a timestamped .bak copy before editing.
+          Back up any existing uniconnect.json file to a timestamped .bak copy before editing.
           Use printed curl commands to fetch the latest docs/schema, and prefer Ghostty config for terminal behavior Ghostty already supports.
           Ghostty config lives at ~/.config/ghostty/config (controls terminal transparency, blur, font, theme, keybinds, etc.).
-          `cmux reload-config` reloads BOTH Ghostty config and ~/.config/cmux/cmux.json and refreshes terminals in place. No app restart needed.
+          `cmux reload-config` reloads BOTH Ghostty config and ~/.config/uniconnect/uniconnect.json and refreshes terminals in place. No app restart needed.
 
         Commands:
           welcome
@@ -32058,7 +32058,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
           CMUX_TAB_ID         Optional alias used by `tab-action`/`rename-tab` as default --tab.
           CMUX_SURFACE_ID     Auto-set in cmux terminals. Used as default --surface.
           CMUX_SOCKET_PATH    Override the Unix socket path. Without this, the CLI defaults
-                              to ~/.local/state/cmux/cmux.sock and auto-discovers tagged/debug sockets.
+                              to ~/.local/state/uniconnect/uniconnect.sock and auto-discovers tagged/debug sockets.
         """
     }
 

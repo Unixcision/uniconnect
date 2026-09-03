@@ -215,7 +215,7 @@ _cmux_path_prepend_unique_directory() {
 _cmux_install_cli_command_shim() {
     local command_name="$1"
     local wrapper_path="$2"
-    local shim_root="${TMPDIR:-/tmp}/cmux-cli-shims/${CMUX_SURFACE_ID:-$$}"
+    local shim_root="${TMPDIR:-/tmp}/uniconnect-cli-shims/${CMUX_SURFACE_ID:-$$}"
     local shim_path="$shim_root/$command_name"
     local escaped_wrapper="$wrapper_path"
 
@@ -272,7 +272,7 @@ _cmux_install_cli_wrapper() {
     unalias "$command_name" >/dev/null 2>&1 || true
     eval "$command_name() { \"\${$wrapper_variable}\" \"\$@\"; }"
 }
-_cmux_install_cli_wrapper claude _CMUX_CLAUDE_WRAPPER cmux-claude-wrapper
+_cmux_install_cli_wrapper claude _CMUX_CLAUDE_WRAPPER uniconnect-claude-wrapper
 _cmux_install_cli_wrapper grok _CMUX_GROK_WRAPPER
 _cmux_now() {
     printf '%s\n' "${EPOCHSECONDS:-$SECONDS}"
@@ -1002,12 +1002,12 @@ _cmux_github_repo_slug_for_path() {
 
 _cmux_pr_cache_prefix() {
     [[ -n "$CMUX_PANEL_ID" ]] || return 1
-    printf '%s\n' "/tmp/cmux-pr-cache-${CMUX_PANEL_ID}"
+    printf '%s\n' "/tmp/uniconnect-pr-cache-${CMUX_PANEL_ID}"
 }
 
 _cmux_pr_force_signal_path() {
     [[ -n "$CMUX_PANEL_ID" ]] || return 1
-    printf '%s\n' "/tmp/cmux-pr-force-${CMUX_PANEL_ID}"
+    printf '%s\n' "/tmp/uniconnect-pr-force-${CMUX_PANEL_ID}"
 }
 
 _cmux_pr_debug_log() {
@@ -1017,7 +1017,7 @@ _cmux_pr_debug_log() {
     local event="$2"
     local now
     now="$(_cmux_now)"
-    printf '%s\tbranch=%s\tevent=%s\n' "$now" "$branch" "$event" >> /tmp/cmux-pr-debug.log
+    printf '%s\tbranch=%s\tevent=%s\n' "$now" "$branch" "$event" >> /tmp/uniconnect-pr-debug.log
 }
 
 _cmux_pr_cache_clear() {

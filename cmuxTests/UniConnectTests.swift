@@ -385,4 +385,34 @@ final class UniConnectTests: XCTestCase {
         XCTAssertNil(decoded.uniConnect)
         XCTAssertEqual(decoded.processTitle, "p")
     }
+
+    // MARK: Connect command validation / remote paste session
+
+    func testConnectCommandMustStartWithSSHOrSshpass() {
+        XCTAssertNil(UniConnectSSH.validateConnectCommand("ssh -i /k.pem root@1.2.3.4"))
+        XCTAssertNil(UniConnectSSH.validateConnectCommand("sshpass -p 'x y' ssh root@1.2.3.4"))
+        XCTAssertNil(UniConnectSSH.validateConnectCommand("/usr/bin/ssh root@host"))
+        XCTAssertNotNil(UniConnectSSH.validateConnectCommand("mosh root@host"))
+        XCTAssertNotNil(UniConnectSSH.validateConnectCommand("bash -c 'ssh root@host'"))
+        XCTAssertNotNil(UniConnectSSH.validateConnectCommand("sshpass -p x"))
+        XCTAssertNotNil(UniConnectSSH.validateConnectCommand("ssh"))
+        XCTAssertNotNil(UniConnectSSH.validateConnectCommand(""))
+    }
+
+    func testShellWordsHandlesQuotesAndEscapes() {
+        XCTAssertEqual(UniConnectSSH.shellWords("sshpass -p'a b' ssh  root@h"), ["sshpass", "-pa b", "ssh", "root@h"])
+        XCTAssertEqual(UniConnectSSH.shellWords("ssh -o \"ProxyJump=j\" x\\ y@h"), ["ssh", "-o", "ProxyJump=j", "x y@h"])
+    }
+
+    func testDetectedSessionFromConnectCommand() throws {
+        let plain = try XCTUnwrap(UniConnectSSH.detectedSession(fromConnectCommand: "ssh -i /tmp/k.pem -p 2222 ec2-user@54.1.2.3"))
+        XCTAssertEqual(plain.destination, "ec2-user@54.1.2.3")
+        XCTAssertEqual(plain.port, 2222)
+        XCTAssertEqual(plain.identityFile, "/tmp/k.pem")
+        XCTAssertNil(plain.password)
+        let withPass = try XCTUnwrap(UniConnectSSH.detectedSession(fromConnectCommand: "sshpass -p 'se cret' ssh root@10.0.0.9"))
+        XCTAssertEqual(withPass.destination, "root@10.0.0.9")
+        XCTAssertEqual(withPass.password, "se cret")
+        XCTAssertNil(UniConnectSSH.detectedSession(fromConnectCommand: "mosh root@h"))
+    }
 }

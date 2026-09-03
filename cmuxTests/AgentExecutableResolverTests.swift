@@ -464,10 +464,10 @@ struct AgentExecutableResolverTests {
         )
 
         let environment = plan.environment(
-            overridingWorkingDirectory: "/tmp/cmux-agent-session/../cmux-agent-session")
+            overridingWorkingDirectory: "/tmp/uniconnect-agent-session/../cmux-agent-session")
 
         expectEqual(environment["PATH"], "/bin")
-        expectEqual(environment["PWD"], "/tmp/cmux-agent-session")
+        expectEqual(environment["PWD"], "/tmp/uniconnect-agent-session")
     }
 
     @Test

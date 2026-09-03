@@ -9,7 +9,7 @@ NAME_SET=0
 BUNDLE_SET=0
 DERIVED_SET=0
 TAG=""
-# Matches CmuxStateDirectory (non-TCC ~/.local/state/cmux) where the app/CLI now
+# Matches CmuxStateDirectory (non-TCC ~/.local/state/uniconnect) where the app/CLI now
 # read the last-socket-path markers (https://github.com/manaflow-ai/cmux/issues/5146).
 # Resolve the real account home via getpwuid (the same syscall
 # homeDirectoryForCurrentUser uses) rather than $HOME, which a shell can override.
@@ -18,15 +18,15 @@ TAG=""
 # a second line. `|| true` keeps the lookup from aborting the script under
 # `set -euo pipefail`; an empty result falls back to $HOME.
 _cmux_account_home="$(perl -e 'print((getpwuid($<))[7])' 2>/dev/null || true)"
-LAST_SOCKET_PATH_DIR="${_cmux_account_home:-$HOME}/.local/state/cmux"
+LAST_SOCKET_PATH_DIR="${_cmux_account_home:-$HOME}/.local/state/uniconnect"
 
 write_last_socket_path() {
   local socket_path="$1"
   local marker_name="staging-last-socket-path"
-  local tmp_marker="/tmp/cmux-staging-last-socket-path"
+  local tmp_marker="/tmp/uniconnect-staging-last-socket-path"
   if [[ -n "${STAGING_SLUG:-}" ]]; then
     marker_name="staging-${STAGING_SLUG}-last-socket-path"
-    tmp_marker="/tmp/cmux-staging-${STAGING_SLUG}-last-socket-path"
+    tmp_marker="/tmp/uniconnect-staging-${STAGING_SLUG}-last-socket-path"
   fi
   mkdir -p "$LAST_SOCKET_PATH_DIR"
   echo "$socket_path" > "${LAST_SOCKET_PATH_DIR}/${marker_name}" || true
@@ -139,7 +139,7 @@ if [[ -n "$TAG" ]]; then
     BUNDLE_ID="com.unixcision.uniconnect.staging.${TAG_ID}"
   fi
   if [[ "$DERIVED_SET" -eq 0 ]]; then
-    DERIVED_DATA="/tmp/cmux-staging-${TAG_SLUG}"
+    DERIVED_DATA="/tmp/uniconnect-staging-${TAG_SLUG}"
   fi
 fi
 
@@ -224,10 +224,10 @@ if [[ -f "$INFO_PLIST" ]]; then
   APP_SUPPORT_DIR="$HOME/Library/Application Support/cmux"
   if [[ -n "$STAGING_SLUG" ]]; then
     CMUXD_SOCKET="${APP_SUPPORT_DIR}/cmuxd-${STAGING_SLUG}.sock"
-    CMUX_SOCKET_PATH_VALUE="/tmp/cmux-staging-${STAGING_SLUG}.sock"
+    CMUX_SOCKET_PATH_VALUE="/tmp/uniconnect-staging-${STAGING_SLUG}.sock"
   else
     CMUXD_SOCKET="${APP_SUPPORT_DIR}/cmuxd-staging.sock"
-    CMUX_SOCKET_PATH_VALUE="/tmp/cmux-staging.sock"
+    CMUX_SOCKET_PATH_VALUE="/tmp/uniconnect-staging.sock"
   fi
   write_last_socket_path "$CMUX_SOCKET_PATH_VALUE"
   /usr/libexec/PlistBuddy -c "Add :LSEnvironment dict" "$INFO_PLIST" 2>/dev/null || true

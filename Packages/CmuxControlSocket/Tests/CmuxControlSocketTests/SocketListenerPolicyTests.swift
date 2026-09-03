@@ -188,7 +188,7 @@ import Testing
     @Test func nonStableSocketBindFailureDoesNotFallback() {
         #expect(
             policy.fallbackSocketPathAfterBindFailure(
-                requestedPath: "/tmp/cmux-debug.sock",
+                requestedPath: "/tmp/uniconnect-debug.sock",
                 stage: "bind",
                 errnoCode: EACCES,
                 currentUserID: 501

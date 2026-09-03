@@ -429,7 +429,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try """
         {
           "shortcuts": {
@@ -481,7 +481,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 #endif
 
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-        XCTAssertEqual(manager.tabs.count, initialCount + 1, "cmux.json chord should dispatch the configured shortcut")
+        XCTAssertEqual(manager.tabs.count, initialCount + 1, "uniconnect.json chord should dispatch the configured shortcut")
     }
 
     func testConfiguredChordPrefixIsClearedWhenAppResignsActive() {
@@ -7543,7 +7543,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
     func testTextBoxSubmitUsesLocalPreviewPathForClaudeRemoteImage() throws {
         let previewURL = try makeTemporaryPNGFile(named: "moon.png")
-        let remotePath = "/tmp/cmux-upload/moon.png"
+        let remotePath = "/tmp/uniconnect-upload/moon.png"
         let attachment = TextBoxAttachment(
             localURL: previewURL,
             submissionText: TextBoxAttachment.submissionText(forPath: remotePath),
@@ -8220,7 +8220,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
     func testTextBoxSessionDraftPreservesRemoteSubmissionPathWhenCopyingPreviewImage() throws {
         let temporaryURL = try makeTemporaryPNGFile(named: "moon.png")
         GhosttyPasteboardHelper.debugRegisterOwnedTemporaryImageFile(temporaryURL)
-        let remotePath = "/tmp/cmux-upload/moon.png"
+        let remotePath = "/tmp/uniconnect-upload/moon.png"
         let attachment = TextBoxAttachment(
             localURL: temporaryURL,
             submissionText: TextBoxAttachment.submissionText(forPath: remotePath),
@@ -8807,7 +8807,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
     func testTextBoxSubmitCleanupDisposesSynchronousRemoteAttachmentAfterEditorClears() throws {
         let temporaryURL = try makeTemporaryPNGFile(named: "moon.png")
         GhosttyPasteboardHelper.debugRegisterOwnedTemporaryImageFile(temporaryURL)
-        let remotePath = "/tmp/cmux-upload/moon.png"
+        let remotePath = "/tmp/uniconnect-upload/moon.png"
         let attachment = TextBoxAttachment(
             localURL: temporaryURL,
             submissionText: TextBoxAttachment.submissionText(forPath: remotePath),
@@ -8835,7 +8835,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
     func testTextBoxSubmitCleanupCanDisposeRemotePreviewImage() throws {
         let temporaryURL = try makeTemporaryPNGFile(named: "moon.png")
-        let remotePath = "/tmp/cmux-upload/moon.png"
+        let remotePath = "/tmp/uniconnect-upload/moon.png"
         let attachment = TextBoxAttachment(
             localURL: temporaryURL,
             submissionText: TextBoxAttachment.submissionText(forPath: remotePath),

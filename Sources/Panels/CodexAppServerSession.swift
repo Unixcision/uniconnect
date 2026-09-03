@@ -50,8 +50,8 @@ final class CodexAppServerSession {
             method: "initialize",
             params: [
                 "clientInfo": [
-                    "name": "cmux",
-                    "title": "cmux",
+                    "name": "UniConnect",
+                    "title": "UniConnect",
                     "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
                 ],
                 "capabilities": [

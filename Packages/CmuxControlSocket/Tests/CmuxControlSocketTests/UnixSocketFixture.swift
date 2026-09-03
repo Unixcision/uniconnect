@@ -4,7 +4,7 @@ import Foundation
 /// Test helpers for creating real Unix-domain sockets under temporary paths.
 enum UnixSocketFixture {
     static func makeTempSocketPath() -> String {
-        "/tmp/cmux-ctlsock-tests-\(UUID().uuidString.lowercased()).sock"
+        "/tmp/uniconnect-ctlsock-tests-\(UUID().uuidString.lowercased()).sock"
     }
 
     /// Binds and listens on a Unix socket at `path`, returning the listener fd.

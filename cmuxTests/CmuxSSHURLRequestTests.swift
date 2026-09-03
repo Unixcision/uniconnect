@@ -133,8 +133,8 @@ final class CmuxSSHURLRequestTests: XCTestCase {
         switch CmuxSSHURLRequest.parse(url) {
         case .success(.some(let request)):
             XCTAssertEqual(
-                request.cliPreview(socketPath: "/tmp/cmux-urlcmd.sock"),
-                "cmux --socket /tmp/cmux-urlcmd.sock ssh --name \"Dev SSH\" dev.example.com"
+                request.cliPreview(socketPath: "/tmp/uniconnect-urlcmd.sock"),
+                "cmux --socket /tmp/uniconnect-urlcmd.sock ssh --name \"Dev SSH\" dev.example.com"
             )
         case .success(nil):
             XCTFail("Expected SSH URL request")

@@ -174,9 +174,9 @@ extension SocketListenerAcceptPolicyTests {
             workingDirectory: "/tmp/copilot repo",
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "copilot",
-                executablePath: "/tmp/cmux-agent-upstreams/copilot-install/bin/copilot",
+                executablePath: "/tmp/uniconnect-agent-upstreams/copilot-install/bin/copilot",
                 arguments: [
-                    "/tmp/cmux-agent-upstreams/copilot-install/bin/copilot",
+                    "/tmp/uniconnect-agent-upstreams/copilot-install/bin/copilot",
                     "--model",
                     "gpt-5.4",
                     "--resume=old-session",
@@ -370,7 +370,7 @@ extension SocketListenerAcceptPolicyTests {
         )
         XCTAssertEqual(
             copilot.resumeCommand,
-            "{ cd -- '/tmp/copilot repo' 2>/dev/null || [ ! -d '/tmp/copilot repo' ]; } && 'env' 'COPILOT_HOME=/tmp/copilot home' '/tmp/cmux-agent-upstreams/copilot-install/bin/copilot' '--resume' 'copilot-session-123' '--model' 'gpt-5.4' '--allow-all-tools'"
+            "{ cd -- '/tmp/copilot repo' 2>/dev/null || [ ! -d '/tmp/copilot repo' ]; } && 'env' 'COPILOT_HOME=/tmp/copilot home' '/tmp/uniconnect-agent-upstreams/copilot-install/bin/copilot' '--resume' 'copilot-session-123' '--model' 'gpt-5.4' '--allow-all-tools'"
         )
         XCTAssertEqual(
             codeBuddy.resumeCommand,
@@ -533,7 +533,7 @@ extension SocketListenerAcceptPolicyTests {
         XCTAssertEqual(
             AgentLaunchSanitizer.sanitizedLaunchArguments(
                 [
-                    "/tmp/cmux-agent-upstreams/copilot-install/bin/copilot",
+                    "/tmp/uniconnect-agent-upstreams/copilot-install/bin/copilot",
                     "--model",
                     "gpt-5.4",
                     "--resume=old-session",
@@ -546,7 +546,7 @@ extension SocketListenerAcceptPolicyTests {
                 fallbackKind: "copilot"
             ),
             [
-                "/tmp/cmux-agent-upstreams/copilot-install/bin/copilot",
+                "/tmp/uniconnect-agent-upstreams/copilot-install/bin/copilot",
                 "--model",
                 "gpt-5.4",
                 "--allow-all-tools"
@@ -555,7 +555,7 @@ extension SocketListenerAcceptPolicyTests {
         XCTAssertEqual(
             AgentLaunchSanitizer.sanitizedLaunchArguments(
                 [
-                    "/tmp/cmux-agent-upstreams/copilot-install/bin/copilot",
+                    "/tmp/uniconnect-agent-upstreams/copilot-install/bin/copilot",
                     "--model",
                     "gpt-5.4",
                     "--allow-tool",
@@ -565,7 +565,7 @@ extension SocketListenerAcceptPolicyTests {
                 fallbackKind: "copilot"
             ),
             [
-                "/tmp/cmux-agent-upstreams/copilot-install/bin/copilot",
+                "/tmp/uniconnect-agent-upstreams/copilot-install/bin/copilot",
                 "--model",
                 "gpt-5.4",
                 "--allow-tool",

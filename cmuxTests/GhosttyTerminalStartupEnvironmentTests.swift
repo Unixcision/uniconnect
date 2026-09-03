@@ -192,7 +192,7 @@ struct GhosttyTerminalStartupEnvironmentTests {
         try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let wrapperURL = bundleBin.appendingPathComponent("cmux-claude-wrapper", isDirectory: false)
+        let wrapperURL = bundleBin.appendingPathComponent("uniconnect-claude-wrapper", isDirectory: false)
         try """
         #!/usr/bin/env bash
         set -euo pipefail
@@ -215,7 +215,7 @@ struct GhosttyTerminalStartupEnvironmentTests {
         expectEqual(
             shim.directoryPath,
             tempRoot
-                .appendingPathComponent("cmux-cli-shims", isDirectory: true)
+                .appendingPathComponent("uniconnect-cli-shims", isDirectory: true)
                 .appendingPathComponent(surfaceId.uuidString, isDirectory: true)
                 .standardizedFileURL
                 .path
@@ -243,7 +243,7 @@ struct GhosttyTerminalStartupEnvironmentTests {
 
     @Test
     func testMergedStartupEnvironmentAllowsSessionReplayAndInitialEnvCMUXKeys() {
-        let replayPath = "/tmp/cmux-replay-\(UUID().uuidString)"
+        let replayPath = "/tmp/uniconnect-replay-\(UUID().uuidString)"
         let merged = TerminalSurface.mergedStartupEnvironment(
             base: [
                 "PATH": "/usr/bin",

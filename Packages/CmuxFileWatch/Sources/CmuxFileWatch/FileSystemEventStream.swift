@@ -29,7 +29,7 @@ import Foundation
 final class FileSystemEventStream: @unchecked Sendable {
     private static let queueSpecificKey = DispatchSpecificKey<UInt8>()
     private static let queue: DispatchQueue = {
-        let queue = DispatchQueue(label: "com.cmux.recursive-path-watcher", qos: .utility)
+        let queue = DispatchQueue(label: "com.unixcision.uniconnect.recursive-path-watcher", qos: .utility)
         queue.setSpecific(key: queueSpecificKey, value: 1)
         return queue
     }()

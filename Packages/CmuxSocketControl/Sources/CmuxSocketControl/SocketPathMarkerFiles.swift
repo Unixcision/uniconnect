@@ -2,13 +2,13 @@ public import Foundation
 
 public enum SocketPathMarkerFiles {
     public static let stableMarkerFileName = "last-socket-path"
-    public static let stableTmpPath = "/tmp/cmux-last-socket-path"
-    public static let nightlyBundleIdentifier = "com.cmuxterm.app.nightly"
-    public static let stagingBundleIdentifier = "com.cmuxterm.app.staging"
-    public static let defaultBaseDebugBundleIdentifier = "com.cmuxterm.app.debug"
-    public static let defaultDebugSocketPath = "/tmp/cmux-debug.sock"
-    public static let defaultNightlySocketPath = "/tmp/cmux-nightly.sock"
-    public static let defaultStagingSocketPath = "/tmp/cmux-staging.sock"
+    public static let stableTmpPath = "/tmp/uniconnect-last-socket-path"
+    public static let nightlyBundleIdentifier = "com.unixcision.uniconnect.nightly"
+    public static let stagingBundleIdentifier = "com.unixcision.uniconnect.staging"
+    public static let defaultBaseDebugBundleIdentifier = "com.unixcision.uniconnect.debug"
+    public static let defaultDebugSocketPath = "/tmp/uniconnect-debug.sock"
+    public static let defaultNightlySocketPath = "/tmp/uniconnect-nightly.sock"
+    public static let defaultStagingSocketPath = "/tmp/uniconnect-staging.sock"
 
     public static func markerFileURL(
         fileName: String = stableMarkerFileName,
@@ -91,17 +91,17 @@ public enum SocketPathMarkerFiles {
             return isDebugBuild ? debugSocketPath : stableSocketPath
         case .nightly(let slug):
             if let slug {
-                return "/tmp/cmux-nightly-\(slug).sock"
+                return "/tmp/uniconnect-nightly-\(slug).sock"
             }
             return nightlySocketPath
         case .staging(let slug):
             if let slug {
-                return "/tmp/cmux-staging-\(slug).sock"
+                return "/tmp/uniconnect-staging-\(slug).sock"
             }
             return stagingSocketPath
         case .dev(let slug):
             if let slug {
-                return "/tmp/cmux-debug-\(slug).sock"
+                return "/tmp/uniconnect-debug-\(slug).sock"
             }
             return debugSocketPath
         }

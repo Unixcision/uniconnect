@@ -318,7 +318,7 @@ final class SessionIndexViewTests: XCTestCase {
         let rolloutURL = sessionsRoot.appendingPathComponent("rollout-codex-transcript-match.jsonl")
         let transcript = """
         {"timestamp":"2026-05-01T09:00:00.000Z","type":"session_meta","payload":{"id":"codex-transcript-match","cwd":"/tmp/project"}}
-        {"timestamp":"2026-05-01T09:01:00.000Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\\"cmd\\":\\"tail -n 80 /tmp/cmux-debug-task-activation-performance-harness.log\\"}","call_id":"call_1"}}
+        {"timestamp":"2026-05-01T09:01:00.000Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\\"cmd\\":\\"tail -n 80 /tmp/uniconnect-debug-task-activation-performance-harness.log\\"}","call_id":"call_1"}}
         """
         try transcript.write(to: rolloutURL, atomically: true, encoding: .utf8)
 
@@ -331,7 +331,7 @@ final class SessionIndexViewTests: XCTestCase {
 
         let outcome = await SessionIndexStore.loadCodexEntriesForTesting(
             stateDBPath: stateDB.path,
-            needle: "/tmp/cmux-debug-task-activation-performance-harness.log",
+            needle: "/tmp/uniconnect-debug-task-activation-performance-harness.log",
             offset: 0,
             limit: 10,
             sessionsRoot: sessionsRoot.path

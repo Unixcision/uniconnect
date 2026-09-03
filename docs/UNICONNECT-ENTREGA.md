@@ -28,7 +28,7 @@ Fecha: 2026-09-03 · Rama: `uniconnect` · Ruta: `~/Desktop/PROYECTOS/uniconnect
 | `6796a51` | Fechas de actividad, `· desconectada`, reconexión escalonada, "Terminar sesión tmux remota…", snapshot pre-import, bloqueo por inactividad, sharingType=none al bloquear, "Último guardado" |
 | (este) | Sanitización de un fragmento de contraseña de ejemplo e IP en test/plan/informe |
 
-Ficheros principales: `Sources/UniConnect/*`, `Sources/SessionPersistence.swift`, `Sources/Workspace.swift`, `Sources/TabManager.swift`, `Sources/WorkspaceContentView.swift`, `Sources/AppDelegate.swift`, `Sources/cmuxApp.swift`, `Packages/CMUXAgentLaunch/…/AgentResumeArgv.swift`, `Resources/bin/cmux-claude-wrapper`, `Resources/Info.plist`, catálogos `.xcstrings`, `cmux.xcodeproj/project.pbxproj`, `scripts/*`, `.github/workflows/*`, `cmuxTests/UniConnectTests.swift`, `README.md`, `docs/UNICONNECT.md`, `UNICONNECT_PLAN.md`.
+Ficheros principales: `Sources/UniConnect/*`, `Sources/SessionPersistence.swift`, `Sources/Workspace.swift`, `Sources/TabManager.swift`, `Sources/WorkspaceContentView.swift`, `Sources/AppDelegate.swift`, `Sources/cmuxApp.swift`, `Packages/CMUXAgentLaunch/…/AgentResumeArgv.swift`, `Resources/bin/uniconnect-claude-wrapper`, `Resources/Info.plist`, catálogos `.xcstrings`, `cmux.xcodeproj/project.pbxproj`, `scripts/*`, `.github/workflows/*`, `cmuxTests/UniConnectTests.swift`, `README.md`, `docs/UNICONNECT.md`, `UNICONNECT_PLAN.md`.
 
 ## 3. Migraciones
 

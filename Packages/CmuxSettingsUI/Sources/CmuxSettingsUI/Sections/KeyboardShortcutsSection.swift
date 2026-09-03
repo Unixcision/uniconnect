@@ -89,7 +89,7 @@ public struct KeyboardShortcutsSection: View {
             configurationReview: .action,
             searchAnchorID: "setting:keyboardShortcuts:shortcut-chords",
             String(localized: "settings.shortcuts.chords", defaultValue: "Shortcut Chords"),
-            subtitle: String(localized: "settings.shortcuts.chords.subtitle", defaultValue: "Add tmux-style multi-step shortcuts in cmux.json, for example [\"ctrl+b\", \"c\"].")
+            subtitle: String(localized: "settings.shortcuts.chords.subtitle", defaultValue: "Add tmux-style multi-step shortcuts in uniconnect.json, for example [\"ctrl+b\", \"c\"].")
         ) {
             HStack(spacing: 8) {
                 Link(
@@ -99,7 +99,7 @@ public struct KeyboardShortcutsSection: View {
                 .font(.caption)
                 .accessibilityIdentifier("SettingsKeyboardShortcutsChordDocsLink")
 
-                Button(String(localized: "settings.app.settingsFile.openButton", defaultValue: "Open cmux.json")) {
+                Button(String(localized: "settings.app.settingsFile.openButton", defaultValue: "Open uniconnect.json")) {
                     hostActions.openConfigInExternalEditor()
                 }
                 .buttonStyle(.bordered)
@@ -384,14 +384,14 @@ public struct KeyboardShortcutsSection: View {
                 bindings = dictionary
                 // Mirror legacy `KeyboardShortcutRecorder.onChange(of:
                 // shortcut)`: when an action's effective shortcut becomes
-                // non-unbound (e.g. the user edited cmux.json directly to
+                // non-unbound (e.g. the user edited uniconnect.json directly to
                 // restore a previously-cleared binding), drop the cached
                 // restore stroke so the X/restore button flips back to
                 // "Unbind" instead of stale "Restore previous shortcut".
                 pruneRestoreShortcuts()
                 // Mirror legacy `ShortcutRecorderSettingsControl.onChange(of: shortcut)`
                 // which clears `rejectedAttempt = nil` whenever the
-                // shortcut changes. Externally-edited cmux.json should
+                // shortcut changes. Externally-edited uniconnect.json should
                 // dismiss a stale rejection banner for that action.
                 pruneConflictRejections()
             }
@@ -405,7 +405,7 @@ public struct KeyboardShortcutsSection: View {
         // Drop banners for actions whose binding now resolves cleanly.
         // Legacy `ShortcutRecorderSettingsControl` clears `rejectedAttempt`
         // on `.onChange(of: shortcut)`, so an externally-edited binding
-        // (cmux.json reload) dismisses the validation banner too.
+        // (uniconnect.json reload) dismisses the validation banner too.
         for key in Array(conflictRejections.keys) {
             guard let action = ShortcutAction(rawValue: key) else {
                 conflictRejections.removeValue(forKey: key)

@@ -48,10 +48,10 @@ extension CMUXCLI {
         let shimRoots: [String?] = [
             environment["CMUX_CLAUDE_WRAPPER_SHIM_ROOT"],
             URL(fileURLWithPath: environment["TMPDIR"] ?? NSTemporaryDirectory(), isDirectory: true)
-                .appendingPathComponent("cmux-cli-shims", isDirectory: true)
+                .appendingPathComponent("uniconnect-cli-shims", isDirectory: true)
                 .standardizedFileURL
                 .path,
-            "/tmp/cmux-cli-shims",
+            "/tmp/uniconnect-cli-shims",
         ]
         for shimRoot in shimRoots {
             guard let shimRoot else { continue }

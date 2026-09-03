@@ -20,12 +20,12 @@ if [[ ! -x "$bin" ]]; then
 fi
 
 exec env \
-  CMUX_BUNDLE_ID="com.cmuxterm.app.debug.${tag_bundle_id}" \
+  CMUX_BUNDLE_ID="com.unixcision.uniconnect.debug.${tag_bundle_id}" \
   CMUX_SOCKET_ENABLE=1 \
   CMUX_SOCKET_MODE=allowAll \
-  CMUX_SOCKET_PATH="/tmp/cmux-debug-${tag}.sock" \
+  CMUX_SOCKET_PATH="/tmp/uniconnect-debug-${tag}.sock" \
   CMUXD_UNIX_PATH="$HOME/Library/Application Support/cmux/cmuxd-dev-${tag}.sock" \
-  CMUX_DEBUG_LOG="/tmp/cmux-debug-${tag}.log" \
+  CMUX_DEBUG_LOG="/tmp/uniconnect-debug-${tag}.log" \
   CMUX_API_BASE_URL="$dev_origin" \
   CMUX_AUTH_WWW_ORIGIN="$dev_origin" \
   CMUX_VM_API_BASE_URL="$dev_origin" \

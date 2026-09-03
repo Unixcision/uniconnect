@@ -26,8 +26,8 @@ import Testing
 
         #expect(opened.count == 1)
         let url = try #require(opened.first)
-        #expect(url.lastPathComponent == "cmux.json")
-        // Resolved beneath the injected home, under .config/cmux.
+        #expect(url.lastPathComponent == "uniconnect.json")
+        // Resolved beneath the injected home, under .config/uniconnect.
         #expect(url.path.hasPrefix(home.path))
         #expect(url.deletingLastPathComponent().lastPathComponent == "cmux")
 

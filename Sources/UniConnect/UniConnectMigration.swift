@@ -27,5 +27,19 @@ enum UniConnectMigration {
         if !fm.fileExists(atPath: mine.path), fm.fileExists(atPath: theirs.path) {
             try? fm.copyItem(at: theirs, to: mine)
         }
+        // One-time, read-only copies of cmux's per-user files into UniConnect's own paths.
+        let home = fm.homeDirectoryForCurrentUser
+        let copies: [(URL, URL)] = [
+            (home.appendingPathComponent(".cmuxterm/claude-hook-sessions.json"),
+             home.appendingPathComponent(".uniconnect/claude-hook-sessions.json")),
+            (home.appendingPathComponent(".config/cmux/cmux.json"),
+             home.appendingPathComponent(".config/uniconnect/uniconnect.json")),
+            (home.appendingPathComponent(".config/cmux/dock.json"),
+             home.appendingPathComponent(".config/uniconnect/dock.json")),
+        ]
+        for (source, destination) in copies where !fm.fileExists(atPath: destination.path) && fm.fileExists(atPath: source.path) {
+            try? fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try? fm.copyItem(at: source, to: destination)
+        }
     }
 }

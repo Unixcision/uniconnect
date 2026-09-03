@@ -60,14 +60,14 @@ struct AgentSessionSocketSurfaceTests {
                 inPane: paneId,
                 providerID: .codex,
                 rendererKind: .react,
-                workingDirectory: "/tmp/cmux-agent-session-cwd",
+                workingDirectory: "/tmp/uniconnect-agent-session-cwd",
                 focus: true
             )
         )
 
         let snapshot = workspace.sessionSnapshot(includeScrollback: false)
         let panelSnapshot = try #require(snapshot.panels.first { $0.id == panel.id })
-        expectEqual(panelSnapshot.directory, "/tmp/cmux-agent-session-cwd")
-        expectEqual(panelSnapshot.agentSession?.workingDirectory, "/tmp/cmux-agent-session-cwd")
+        expectEqual(panelSnapshot.directory, "/tmp/uniconnect-agent-session-cwd")
+        expectEqual(panelSnapshot.agentSession?.workingDirectory, "/tmp/uniconnect-agent-session-cwd")
     }
 }

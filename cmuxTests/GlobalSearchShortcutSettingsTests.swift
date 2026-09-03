@@ -73,7 +73,7 @@ final class GlobalSearchShortcutSettingsTests: XCTestCase {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try """
         {
           "shortcuts": {
@@ -97,7 +97,7 @@ final class GlobalSearchShortcutSettingsTests: XCTestCase {
     func testSettingsFileStoreParsesPackageObjectFormGlobalSearchShortcut() throws {
         // Regression for https://github.com/manaflow-ai/cmux/issues/5137.
         // The in-app Settings UI (CmuxSettings package) persists every
-        // shortcut rebinding to cmux.json under `shortcuts.bindings.<action>`
+        // shortcut rebinding to uniconnect.json under `shortcuts.bindings.<action>`
         // as a nested StoredShortcut object ({"first": {key, command, ...}}),
         // not the legacy human-editable "cmd+opt+f" string. The file store
         // that feeds KeyboardShortcutSettings — and therefore the system-wide
@@ -109,7 +109,7 @@ final class GlobalSearchShortcutSettingsTests: XCTestCase {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try """
         {
           "shortcuts": {
@@ -143,7 +143,7 @@ final class GlobalSearchShortcutSettingsTests: XCTestCase {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try """
         {
           "shortcuts": {
@@ -189,7 +189,7 @@ final class GlobalSearchShortcutSettingsTests: XCTestCase {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try """
         {
           "shortcuts": {
@@ -218,7 +218,7 @@ final class GlobalSearchShortcutSettingsTests: XCTestCase {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try """
         {
           "shortcuts": {
@@ -249,7 +249,7 @@ final class GlobalSearchShortcutSettingsTests: XCTestCase {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try """
         {
           "shortcuts": {
@@ -275,7 +275,7 @@ final class GlobalSearchShortcutSettingsTests: XCTestCase {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         try """
         {
           "shortcuts": {

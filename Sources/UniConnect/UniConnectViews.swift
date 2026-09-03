@@ -244,8 +244,8 @@ struct UniConnectNewWorkspaceView: View {
             onLocal(LocalResult(name: resolvedName, folder: expanded, color: color))
         case .ssh:
             let trimmedConnect = connect.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedConnect.isEmpty, trimmedConnect.contains("ssh") else {
-                error = "Pega el comando completo de conexión (tiene que invocar ssh)."
+            if let message = UniConnectSSH.validateConnectCommand(trimmedConnect) {
+                error = message
                 return
             }
             guard !trimmedConnect.contains("\n") else {
@@ -661,5 +661,131 @@ struct UniConnectImportPreviewView: View {
             }
         }
         .padding(20)
+    }
+}
+
+// MARK: - Empty state (nothing open)
+
+/// Full-window empty state: shown instead of a terminal when the app has nothing to
+/// restore. No shell runs behind it.
+struct UniConnectStarterView: View {
+    let hasCmuxSession: Bool
+    let onNewBox: () -> Void
+    let onImport: () -> Void
+    let onMigrate: () -> Void
+
+    var body: some View {
+        ZStack {
+            UniConnectStyle.terminalBackground.ignoresSafeArea()
+            LinearGradient(
+                colors: [UniConnectStyle.accent.opacity(0.10), .clear, UniConnectStyle.accentSSH.opacity(0.06)],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+            VStack(spacing: 30) {
+                Spacer(minLength: 24)
+                VStack(spacing: 12) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: 112, height: 112)
+                        .shadow(color: .black.opacity(0.35), radius: 18, y: 10)
+                    Text("UniConnect")
+                        .font(.system(size: 40, weight: .bold, design: .rounded))
+                        .foregroundStyle(UniConnectStyle.onTerminal)
+                    Text("No hay ninguna caja abierta.")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.7))
+                }
+                HStack(alignment: .top, spacing: 16) {
+                    UniConnectStarterCard(
+                        icon: "plus.square.on.square",
+                        tint: UniConnectStyle.accent,
+                        title: "Nueva caja",
+                        detail: "Local con Claude, o SSH con ventanas tmux que sobreviven a todo.",
+                        shortcut: "⌘T",
+                        action: onNewBox
+                    )
+                    UniConnectStarterCard(
+                        icon: "lock.doc",
+                        tint: UniConnectStyle.accentSSH,
+                        title: "Importar configuración",
+                        detail: "Un export cifrado de UniConnect o una semilla JSON.",
+                        shortcut: nil,
+                        action: onImport
+                    )
+                    if hasCmuxSession {
+                        UniConnectStarterCard(
+                            icon: "arrow.down.doc",
+                            tint: Color(red: 0.62, green: 0.55, blue: 0.95),
+                            title: "Migrar desde cmux",
+                            detail: "Copia las cajas de cmux como cajas locales. cmux no se toca.",
+                            shortcut: nil,
+                            action: onMigrate
+                        )
+                    }
+                }
+                .frame(maxWidth: 820)
+                .padding(.horizontal, 32)
+                Text("También puedes usar el + de la barra lateral.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.45))
+                Spacer(minLength: 24)
+            }
+        }
+    }
+}
+
+private struct UniConnectStarterCard: View {
+    let icon: String
+    let tint: Color
+    let title: String
+    let detail: String
+    let shortcut: String?
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: icon)
+                        .font(.system(size: 24, weight: .medium))
+                        .foregroundStyle(tint)
+                    Spacer()
+                    if let shortcut {
+                        Text(shortcut)
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.55))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(UniConnectStyle.onTerminal.opacity(0.08), in: Capsule())
+                    }
+                }
+                Text(title)
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundStyle(UniConnectStyle.onTerminal)
+                Text(detail)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.65))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(UniConnectStyle.onTerminal.opacity(hovering ? 0.10 : 0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(hovering ? tint.opacity(0.6) : UniConnectStyle.onTerminal.opacity(0.12), lineWidth: 1)
+            )
+            .scaleEffect(hovering ? 1.015 : 1)
+            .animation(.easeOut(duration: 0.15), value: hovering)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }

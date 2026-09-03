@@ -41,7 +41,7 @@ private final class CommandRunnerInvocationCounter: @unchecked Sendable {
 
 private final class IndexLockObserver: @unchecked Sendable {
     private let path: String
-    private let queue = DispatchQueue(label: "com.cmux.tests.index-lock-observer", qos: .utility)
+    private let queue = DispatchQueue(label: "com.unixcision.uniconnect.tests.index-lock-observer", qos: .utility)
     private let lock = NSLock()
     private var timer: DispatchSourceTimer?
     private var storedObservationCount = 0
@@ -550,7 +550,7 @@ final class WorkspacePullRequestSidebarTests: XCTestCase {
             let panelId = try XCTUnwrap(workspace.focusedPanelId)
             workspace.updatePanelDirectory(
                 panelId: panelId,
-                directory: "/tmp/cmux-pr-refresh-main-thread-\(index)"
+                directory: "/tmp/uniconnect-pr-refresh-main-thread-\(index)"
             )
             workspace.updatePanelGitBranch(
                 panelId: panelId,

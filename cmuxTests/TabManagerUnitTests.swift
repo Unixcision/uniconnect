@@ -283,7 +283,7 @@ final class TabManagerChildExitCloseTests: XCTestCase {
                 relayPort: 64015,
                 relayID: String(repeating: "a", count: 16),
                 relayToken: String(repeating: "b", count: 64),
-                localSocketPath: "/tmp/cmux-debug-test.sock",
+                localSocketPath: "/tmp/uniconnect-debug-test.sock",
                 terminalStartupCommand: "ssh cmux-macmini"
             ),
             autoConnect: false
@@ -324,7 +324,7 @@ final class TabManagerChildExitCloseTests: XCTestCase {
                 relayPort: 64017,
                 relayID: String(repeating: "a", count: 16),
                 relayToken: String(repeating: "b", count: 64),
-                localSocketPath: "/tmp/cmux-debug-test.sock",
+                localSocketPath: "/tmp/uniconnect-debug-test.sock",
                 terminalStartupCommand: SSHPTYAttachStartupCommandBuilder.command(),
                 preserveAfterTerminalExit: true,
                 persistentDaemonSlot: "ssh-child-exit-test"
@@ -372,7 +372,7 @@ final class TabManagerChildExitCloseTests: XCTestCase {
                 relayPort: 64020,
                 relayID: String(repeating: "a", count: 16),
                 relayToken: String(repeating: "b", count: 64),
-                localSocketPath: "/tmp/cmux-debug-attach-end-test.sock",
+                localSocketPath: "/tmp/uniconnect-debug-attach-end-test.sock",
                 terminalStartupCommand: SSHPTYAttachStartupCommandBuilder.command(),
                 preserveAfterTerminalExit: true,
                 persistentDaemonSlot: "ssh-child-exit-after-attach-end"
@@ -422,7 +422,7 @@ final class TabManagerChildExitCloseTests: XCTestCase {
                 relayPort: 64018,
                 relayID: String(repeating: "a", count: 16),
                 relayToken: String(repeating: "b", count: 64),
-                localSocketPath: "/tmp/cmux-debug-split-test.sock",
+                localSocketPath: "/tmp/uniconnect-debug-split-test.sock",
                 terminalStartupCommand: SSHPTYAttachStartupCommandBuilder.command(),
                 preserveAfterTerminalExit: true,
                 persistentDaemonSlot: "ssh-child-exit-split-test"
@@ -478,7 +478,7 @@ final class TabManagerChildExitCloseTests: XCTestCase {
                 relayPort: 64016,
                 relayID: String(repeating: "a", count: 16),
                 relayToken: String(repeating: "b", count: 64),
-                localSocketPath: "/tmp/cmux-debug-test.sock",
+                localSocketPath: "/tmp/uniconnect-debug-test.sock",
                 terminalStartupCommand: "ssh cmux-macmini"
             ),
             autoConnect: false
@@ -1013,7 +1013,7 @@ final class TabManagerPullRequestProbeTests: XCTestCase {
                 relayPort: 64017,
                 relayID: String(repeating: "a", count: 16),
                 relayToken: String(repeating: "b", count: 64),
-                localSocketPath: "/tmp/cmux-debug-test.sock",
+                localSocketPath: "/tmp/uniconnect-debug-test.sock",
                 terminalStartupCommand: "ssh cmux-macmini"
             ),
             autoConnect: false
@@ -2003,7 +2003,7 @@ final class TabManagerCloseCurrentPanelTests: XCTestCase {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let settingsFileURL = directoryURL.appendingPathComponent("cmux.json", isDirectory: false)
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json", isDirectory: false)
         let settingLines = [
             warnBeforeClosingTab.map { #"    "warnBeforeClosingTab": \#($0)"# },
             warnBeforeClosingTabXButton.map { #"    "warnBeforeClosingTabXButton": \#($0)"# },
@@ -2402,7 +2402,7 @@ final class TabManagerSurfaceCreationTests: XCTestCase {
               let sourcePanelId = workspace.focusedPanelId,
               let rightPanel = workspace.newTerminalSplit(from: sourcePanelId, orientation: .horizontal),
               let rightPaneId = workspace.paneId(forPanelId: rightPanel.id),
-              let url = URL(string: "file:///tmp/cmux-diff.html") else {
+              let url = URL(string: "file:///tmp/uniconnect-diff.html") else {
             XCTFail("Expected split setup to succeed")
             return
         }

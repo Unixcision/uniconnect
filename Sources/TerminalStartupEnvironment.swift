@@ -95,7 +95,7 @@ extension TerminalSurface {
         }
 
         let shimDirectory = temporaryDirectory
-            .appendingPathComponent("cmux-cli-shims", isDirectory: true)
+            .appendingPathComponent("uniconnect-cli-shims", isDirectory: true)
             .appendingPathComponent(surfaceId.uuidString, isDirectory: true)
             .standardizedFileURL
         let shimURL = shimDirectory.appendingPathComponent("claude", isDirectory: false)

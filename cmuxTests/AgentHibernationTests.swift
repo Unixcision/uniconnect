@@ -33,7 +33,7 @@ final class AgentHibernationTests: XCTestCase {
     func testSocketLifecycleAcceptsRegisteredCustomAgentKey() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-custom-lifecycle-\(UUID().uuidString)", isDirectory: true)
-        let configDirectory = root.appendingPathComponent(".cmux", isDirectory: true)
+        let configDirectory = root.appendingPathComponent(".uniconnect", isDirectory: true)
         try FileManager.default.createDirectory(at: configDirectory, withIntermediateDirectories: true)
         try """
         {
@@ -50,7 +50,7 @@ final class AgentHibernationTests: XCTestCase {
             ]
           }
         }
-        """.write(to: configDirectory.appendingPathComponent("cmux.json"), atomically: true, encoding: .utf8)
+        """.write(to: configDirectory.appendingPathComponent("uniconnect.json"), atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: root) }
 
         let previousManager = TerminalController.shared.activeTabManagerForCallerNotification()
@@ -717,7 +717,7 @@ final class AgentHibernationTests: XCTestCase {
     }
 
     func testSupportedAgentSnapshotsHaveResumeCommandsForHibernation() {
-        let cwd = "/tmp/cmux-agent-hibernation"
+        let cwd = "/tmp/uniconnect-agent-hibernation"
         let sessionId = "session-123"
         let launchCommands: [(RestorableAgentKind, AgentLaunchCommandSnapshot)] = [
             (.claude, launch("claude", "/usr/local/bin/claude", cwd: cwd)),
@@ -780,8 +780,8 @@ final class AgentHibernationTests: XCTestCase {
         let snapshot = SessionRestorableAgentSnapshot(
             kind: .codex,
             sessionId: "codex-invalidated-index",
-            workingDirectory: "/tmp/cmux-agent-hibernation",
-            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/cmux-agent-hibernation")
+            workingDirectory: "/tmp/uniconnect-agent-hibernation",
+            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/uniconnect-agent-hibernation")
         )
         let key = RestorableAgentSessionIndex.PanelKey(workspaceId: workspace.id, panelId: panelId)
         let index = RestorableAgentSessionIndex.load(
@@ -805,8 +805,8 @@ final class AgentHibernationTests: XCTestCase {
         let snapshot = SessionRestorableAgentSnapshot(
             kind: .codex,
             sessionId: "codex-auto-resume-on-visit",
-            workingDirectory: "/tmp/cmux-agent-hibernation",
-            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/cmux-agent-hibernation")
+            workingDirectory: "/tmp/uniconnect-agent-hibernation",
+            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/uniconnect-agent-hibernation")
         )
 
         workspace.enterAgentHibernation(
@@ -830,8 +830,8 @@ final class AgentHibernationTests: XCTestCase {
         let snapshot = SessionRestorableAgentSnapshot(
             kind: .codex,
             sessionId: "codex-visible-resume",
-            workingDirectory: "/tmp/cmux-agent-hibernation",
-            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/cmux-agent-hibernation")
+            workingDirectory: "/tmp/uniconnect-agent-hibernation",
+            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/uniconnect-agent-hibernation")
         )
 
         workspace.enterAgentHibernation(
@@ -855,8 +855,8 @@ final class AgentHibernationTests: XCTestCase {
         let snapshot = SessionRestorableAgentSnapshot(
             kind: .codex,
             sessionId: "codex-hidden-mounted-resume",
-            workingDirectory: "/tmp/cmux-agent-hibernation",
-            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/cmux-agent-hibernation")
+            workingDirectory: "/tmp/uniconnect-agent-hibernation",
+            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/uniconnect-agent-hibernation")
         )
 
         workspace.enterAgentHibernation(
@@ -887,8 +887,8 @@ final class AgentHibernationTests: XCTestCase {
         let snapshot = SessionRestorableAgentSnapshot(
             kind: .codex,
             sessionId: "codex-autosave-hibernation",
-            workingDirectory: "/tmp/cmux-agent-hibernation",
-            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/cmux-agent-hibernation")
+            workingDirectory: "/tmp/uniconnect-agent-hibernation",
+            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/uniconnect-agent-hibernation")
         )
 
         let liveFingerprint = manager.sessionAutosaveFingerprint()
@@ -911,8 +911,8 @@ final class AgentHibernationTests: XCTestCase {
         let snapshot = SessionRestorableAgentSnapshot(
             kind: .codex,
             sessionId: "codex-clear-lifecycle-on-resume",
-            workingDirectory: "/tmp/cmux-agent-hibernation",
-            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/cmux-agent-hibernation")
+            workingDirectory: "/tmp/uniconnect-agent-hibernation",
+            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/uniconnect-agent-hibernation")
         )
 
         workspace.setAgentLifecycle(key: "codex", panelId: panelId, lifecycle: .idle)
@@ -934,8 +934,8 @@ final class AgentHibernationTests: XCTestCase {
         let snapshot = SessionRestorableAgentSnapshot(
             kind: .codex,
             sessionId: "codex-direct-focus-resume",
-            workingDirectory: "/tmp/cmux-agent-hibernation",
-            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/cmux-agent-hibernation")
+            workingDirectory: "/tmp/uniconnect-agent-hibernation",
+            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/uniconnect-agent-hibernation")
         )
 
         workspace.enterAgentHibernation(
@@ -959,8 +959,8 @@ final class AgentHibernationTests: XCTestCase {
         let snapshot = SessionRestorableAgentSnapshot(
             kind: .codex,
             sessionId: "codex-explicit-input-resume",
-            workingDirectory: "/tmp/cmux-agent-hibernation",
-            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/cmux-agent-hibernation")
+            workingDirectory: "/tmp/uniconnect-agent-hibernation",
+            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/uniconnect-agent-hibernation")
         )
 
         workspace.enterAgentHibernation(
@@ -995,8 +995,8 @@ final class AgentHibernationTests: XCTestCase {
         let snapshot = SessionRestorableAgentSnapshot(
             kind: .codex,
             sessionId: "codex-moved-explicit-input-resume",
-            workingDirectory: "/tmp/cmux-agent-hibernation",
-            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/cmux-agent-hibernation")
+            workingDirectory: "/tmp/uniconnect-agent-hibernation",
+            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/uniconnect-agent-hibernation")
         )
         destination.enterAgentHibernation(
             panelId: panelId,
@@ -1021,8 +1021,8 @@ final class AgentHibernationTests: XCTestCase {
         let snapshot = SessionRestorableAgentSnapshot(
             kind: .codex,
             sessionId: "codex-explicit-key-resume",
-            workingDirectory: "/tmp/cmux-agent-hibernation",
-            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/cmux-agent-hibernation")
+            workingDirectory: "/tmp/uniconnect-agent-hibernation",
+            launchCommand: launch("codex", "/usr/local/bin/codex", cwd: "/tmp/uniconnect-agent-hibernation")
         )
 
         workspace.enterAgentHibernation(
@@ -1048,7 +1048,7 @@ final class AgentHibernationTests: XCTestCase {
         let snapshot = SessionRestorableAgentSnapshot(
             kind: .custom("manual-agent"),
             sessionId: "manual-agent-session",
-            workingDirectory: "/tmp/cmux-agent-hibernation",
+            workingDirectory: "/tmp/uniconnect-agent-hibernation",
             launchCommand: nil
         )
 

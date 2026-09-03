@@ -346,13 +346,13 @@ extension CMUXCLI {
     private func bundleIdentifierForThemeReloadSocketPath(_ socketPath: String) -> String? {
         let name = URL(fileURLWithPath: socketPath).lastPathComponent
         switch name {
-        case "cmux.sock":
+        case "uniconnect.sock":
             return Self.cmuxThemeOverrideBundleIdentifier
-        case "cmux-debug.sock":
+        case "uniconnect-debug.sock":
             return "com.unixcision.uniconnect.debug"
-        case "cmux-nightly.sock":
+        case "uniconnect-nightly.sock":
             return "com.unixcision.uniconnect.nightly"
-        case "cmux-staging.sock":
+        case "uniconnect-staging.sock":
             return "com.unixcision.uniconnect.staging"
         default:
             break

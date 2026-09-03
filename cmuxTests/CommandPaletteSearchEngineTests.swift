@@ -668,8 +668,8 @@ final class CommandPaletteSearchEngineTests: XCTestCase {
             workingDirectory: "/tmp/opencode repo",
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "omo",
-                executablePath: "/usr/local/bin/cmux",
-                arguments: ["/usr/local/bin/cmux", "omo"],
+                executablePath: "/usr/local/bin/uniconnect",
+                arguments: ["/usr/local/bin/uniconnect", "omo"],
                 workingDirectory: "/tmp/opencode repo",
                 environment: nil,
                 capturedAt: 123,

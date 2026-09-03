@@ -71,7 +71,7 @@ public final class SocketControlServer: Sendable {
     /// Serial queue for listener event delivery: the accept read source, the
     /// path-monitor source, and the delayed accept-source resume. Event
     /// delivery only — state is guarded by `listenerState`, never this queue.
-    let socketListenerQueue = DispatchQueue(label: "com.cmux.socket.listener")
+    let socketListenerQueue = DispatchQueue(label: "com.uniconnect.socket.listener")
 
     /// Stateless syscall surface (bind, locks, probes, client config).
     public let transport: SocketTransport

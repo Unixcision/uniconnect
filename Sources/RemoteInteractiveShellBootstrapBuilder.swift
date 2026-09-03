@@ -17,30 +17,30 @@ enum RemoteInteractiveShellBootstrapBuilder {
         )
         var zshShellLines = commonShellExportLines
         zshShellLines.append(
-            #"if [ "${CMUX_SHELL_INTEGRATION:-1}" != "0" ] && [ -r "${CMUX_SHELL_INTEGRATION_DIR}/cmux-zsh-integration.zsh" ]; then . "${CMUX_SHELL_INTEGRATION_DIR}/cmux-zsh-integration.zsh"; fi"#
+            #"if [ "${CMUX_SHELL_INTEGRATION:-1}" != "0" ] && [ -r "${CMUX_SHELL_INTEGRATION_DIR}/uniconnect-zsh-integration.zsh" ]; then . "${CMUX_SHELL_INTEGRATION_DIR}/uniconnect-zsh-integration.zsh"; fi"#
         )
         var bashShellLines = commonShellExportLines
         bashShellLines.append(
-            #"if [ "${CMUX_SHELL_INTEGRATION:-1}" != "0" ] && [ -r "${CMUX_SHELL_INTEGRATION_DIR}/cmux-bash-integration.bash" ]; then . "${CMUX_SHELL_INTEGRATION_DIR}/cmux-bash-integration.bash"; fi"#
+            #"if [ "${CMUX_SHELL_INTEGRATION:-1}" != "0" ] && [ -r "${CMUX_SHELL_INTEGRATION_DIR}/uniconnect-bash-integration.bash" ]; then . "${CMUX_SHELL_INTEGRATION_DIR}/uniconnect-bash-integration.bash"; fi"#
         )
         let zshBootstrap = RemoteRelayZshBootstrap(shellStateDir: shellStateDir)
         let relayWarmupLines = relayWarmupLines(remoteRelayPort: remoteRelayPort)
 
         var outerLines: [String] = [
-            "mkdir -p \"$HOME/.cmux/relay\"",
+            "mkdir -p \"$HOME/.uniconnect/relay\"",
             "cmux_shell_dir=\"\(shellStateDir)\"",
             "mkdir -p \"$cmux_shell_dir\"",
         ]
         if let bundledZshIntegration {
             outerLines += [
-                "cat > \"$cmux_shell_dir/cmux-zsh-integration.zsh\" <<'CMUXCMUXZSH'",
+                "cat > \"$cmux_shell_dir/uniconnect-zsh-integration.zsh\" <<'CMUXCMUXZSH'",
                 bundledZshIntegration,
                 "CMUXCMUXZSH",
             ]
         }
         if let bundledBashIntegration {
             outerLines += [
-                "cat > \"$cmux_shell_dir/cmux-bash-integration.bash\" <<'CMUXCMUXBASH'",
+                "cat > \"$cmux_shell_dir/uniconnect-bash-integration.bash\" <<'CMUXCMUXBASH'",
                 bundledBashIntegration,
                 "CMUXCMUXBASH",
             ]
@@ -162,8 +162,8 @@ enum RemoteInteractiveShellBootstrapBuilder {
         var lines = terminalSetupLines(terminfoSource: terminfoSource)
         lines.append(contentsOf: RemoteShellEnvironment.utf8LocaleSetupLines())
         lines.append(contentsOf: shellExportLines(shellFeatures: shellFeatures))
-        lines.append("export PATH=\"$HOME/.cmux/bin:$PATH\"")
-        lines.append("export CMUX_BUNDLED_CLI_PATH=\"$HOME/.cmux/bin/cmux\"")
+        lines.append("export PATH=\"$HOME/.uniconnect/bin:$PATH\"")
+        lines.append("export CMUX_BUNDLED_CLI_PATH=\"$HOME/.uniconnect/bin/cmux\"")
         lines.append("export CMUX_SHELL_INTEGRATION_DIR=\"\(shellStateDir)\"")
         if let relaySocket {
             lines.append("export CMUX_SOCKET_PATH=\(relaySocket)")
@@ -235,14 +235,14 @@ enum RemoteInteractiveShellBootstrapBuilder {
             return []
         }
         return [
-            "cmux_relay_cli=\"${CMUX_BUNDLED_CLI_PATH:-$HOME/.cmux/bin/cmux}\"",
+            "cmux_relay_cli=\"${CMUX_BUNDLED_CLI_PATH:-$HOME/.uniconnect/bin/cmux}\"",
             "if [ ! -x \"$cmux_relay_cli\" ]; then cmux_relay_cli=\"$(command -v cmux 2>/dev/null || true)\"; fi",
             "cmux_relay_tty=\"${CMUX_BOOTSTRAP_TTY:-}\"",
             "if [ -z \"$cmux_relay_tty\" ]; then cmux_relay_tty=\"$(tty 2>/dev/null || true)\"; fi",
             "cmux_relay_tty=\"${cmux_relay_tty##*/}\"",
             "if [ -n \"$cmux_relay_tty\" ] && [ \"$cmux_relay_tty\" != \"not a tty\" ]; then",
-            "  mkdir -p \"$HOME/.cmux/relay\" >/dev/null 2>&1 || true",
-            "  printf '%s' \"$cmux_relay_tty\" > \"$HOME/.cmux/relay/\(remoteRelayPort).tty\" 2>/dev/null || true",
+            "  mkdir -p \"$HOME/.uniconnect/relay\" >/dev/null 2>&1 || true",
+            "  printf '%s' \"$cmux_relay_tty\" > \"$HOME/.uniconnect/relay/\(remoteRelayPort).tty\" 2>/dev/null || true",
             "fi",
             "if [ -n \"$cmux_relay_cli\" ] && [ -n \"$CMUX_WORKSPACE_ID\" ] && [ -n \"$cmux_relay_tty\" ] && [ \"$cmux_relay_tty\" != \"not a tty\" ]; then",
             "  cmux_relay_report_tty=\"{\\\"workspace_id\\\":\\\"$CMUX_WORKSPACE_ID\\\",\\\"tty_name\\\":\\\"$cmux_relay_tty\\\"}\"",
@@ -259,7 +259,7 @@ enum RemoteInteractiveShellBootstrapBuilder {
     }
 
     private static func shellStateDirForRemoteRelayPort(_ remoteRelayPort: Int) -> String {
-        "$HOME/.cmux/relay/\(max(remoteRelayPort, 0)).shell"
+        "$HOME/.uniconnect/relay/\(max(remoteRelayPort, 0)).shell"
     }
 
     private static func normalizedEnvValue(_ value: String?) -> String? {

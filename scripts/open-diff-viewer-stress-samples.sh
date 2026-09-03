@@ -27,7 +27,7 @@ EOF
 
 SAMPLE="bun-rust"
 CLI="cmux"
-ROOT="${CMUX_DIFF_STRESS_ROOT:-/tmp/cmux-diff-viewer-stress}"
+ROOT="${CMUX_DIFF_STRESS_ROOT:-/tmp/uniconnect-diff-viewer-stress}"
 
 if [ $# -gt 0 ]; then
   case "$1" in

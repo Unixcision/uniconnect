@@ -107,13 +107,13 @@ extension CMUXCLI {
         return """
         Usage: cmux config <doctor|check|validate|path|paths|docs|documentation|reload|get|set|sidebar-font-size|surface-tab-bar-font-size>
 
-        Inspect cmux.json, print configuration references, update selected Ghostty config keys, or reload the running app.
+        Inspect uniconnect.json, print configuration references, update selected Ghostty config keys, or reload the running app.
 
         Subcommands:
           doctor|check|validate [--path <path>]   Validate JSONC syntax for cmux config files.
-          path|paths                              Print cmux.json paths, docs URL, and schema URL.
+          path|paths                              Print uniconnect.json paths, docs URL, and schema URL.
           docs|documentation                      Print the same output as `cmux docs settings`.
-          reload                                  Reload Ghostty config + cmux.json and refresh terminals (alias for `cmux reload-config`).
+          reload                                  Reload Ghostty config + uniconnect.json and refresh terminals (alias for `cmux reload-config`).
           get <key>                               Print sidebar-font-size or surface-tab-bar-font-size.
           set <key> <points>                      Set sidebar-font-size (10-20 pt) or surface-tab-bar-font-size (8-24 pt), then reload if cmux is running.
           sidebar-font-size [points]              Get or set the left sidebar text size.
@@ -129,7 +129,7 @@ extension CMUXCLI {
 
         Examples:
           cmux config doctor
-          cmux config doctor --path .cmux/cmux.json
+          cmux config doctor --path .cmux/uniconnect.json
           cmux config set sidebar-font-size 14
           cmux config sidebar-font-size 12.5
           cmux config set surface-tab-bar-font-size 13
@@ -150,8 +150,8 @@ extension CMUXCLI {
             "docs_url": Self.settingsDocsURL,
             "schema_url": Self.settingsSchemaURL,
             "reload_command": "cmux reload-config",
-            "reload_scope": "Reloads Ghostty config + cmux.json and refreshes terminals in place. No app restart needed.",
-            "backup": "Back up any existing cmux.json file to a timestamped .bak copy before editing so the user can revert.",
+            "reload_scope": "Reloads Ghostty config + uniconnect.json and refreshes terminals in place. No app restart needed.",
+            "backup": "Back up any existing uniconnect.json file to a timestamped .bak copy before editing so the user can revert.",
         ]
 
         if jsonOutput {
@@ -173,10 +173,10 @@ extension CMUXCLI {
         print("Schema:")
         print("  \(Self.settingsSchemaURL)")
         print()
-        print("Before editing cmux.json:")
-        print("  Back up any existing cmux.json file to a timestamped .bak copy so the user can revert.")
+        print("Before editing uniconnect.json:")
+        print("  Back up any existing uniconnect.json file to a timestamped .bak copy so the user can revert.")
         print()
-        print("Reload after editing (covers BOTH cmux.json and Ghostty config; no app restart needed):")
+        print("Reload after editing (covers BOTH uniconnect.json and Ghostty config; no app restart needed):")
         print("  cmux reload-config")
     }
 
@@ -535,9 +535,9 @@ extension CMUXCLI {
                 return nil
             }
             let candidates = [
-                ((current as NSString).appendingPathComponent(".cmux") as NSString)
-                    .appendingPathComponent("cmux.json"),
-                (current as NSString).appendingPathComponent("cmux.json"),
+                ((current as NSString).appendingPathComponent(".uniconnect") as NSString)
+                    .appendingPathComponent("uniconnect.json"),
+                (current as NSString).appendingPathComponent("uniconnect.json"),
             ]
             for candidate in candidates {
                 var isDirectory = ObjCBool(false)

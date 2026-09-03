@@ -722,7 +722,7 @@ struct CodexAppServerSessionTests {
     func testEncodesPromptAsJSONRPCInsteadOfRawStdin() async throws {
         var sentLines: [String] = []
         let session = CodexAppServerSession(
-            workingDirectory: "/tmp/cmux-agent-session-test",
+            workingDirectory: "/tmp/uniconnect-agent-session-test",
             writeData: { data in
                 sentLines.append(String(decoding: data, as: UTF8.self).trimmingCharacters(in: .newlines))
             },
@@ -741,7 +741,7 @@ struct CodexAppServerSessionTests {
         let threadStart = jsonLine(sentLines[2])
         expectEqual(threadStart["method"] as? String, "thread/start")
         let threadParams = try #require(threadStart["params"] as? [String: Any])
-        expectEqual(threadParams["cwd"] as? String, "/tmp/cmux-agent-session-test")
+        expectEqual(threadParams["cwd"] as? String, "/tmp/uniconnect-agent-session-test")
 
         let submitTask = Task { try await session.submit("hello codex", permissionMode: .fullAccess) }
         expectEqual(sentLines.count, 3, "Prompt should queue until thread/start returns a thread id.")
@@ -1157,7 +1157,7 @@ struct CodexAppServerSessionTests {
         var sentLines: [String] = []
         var failures: [String?] = []
         let session = CodexAppServerSession(
-            workingDirectory: "/tmp/cmux-missing-cwd",
+            workingDirectory: "/tmp/uniconnect-missing-cwd",
             writeData: { data in
                 sentLines.append(String(decoding: data, as: UTF8.self).trimmingCharacters(in: .newlines))
             },

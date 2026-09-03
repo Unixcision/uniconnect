@@ -8,7 +8,7 @@ import os
 import SQLite3
 
 nonisolated private let sessionIndexLogger = Logger(
-    subsystem: Bundle.main.bundleIdentifier ?? "com.cmuxterm.app",
+    subsystem: Bundle.main.bundleIdentifier ?? "com.unixcision.uniconnect",
     category: "SessionIndexStore"
 )
 

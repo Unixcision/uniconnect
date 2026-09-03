@@ -16,7 +16,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_WRAPPER = ROOT / "Resources" / "bin" / "cmux-claude-wrapper"
+SOURCE_WRAPPER = ROOT / "Resources" / "bin" / "uniconnect-claude-wrapper"
 
 
 def make_executable(path: Path, content: str) -> None:
@@ -47,7 +47,7 @@ def run_wrapper(
     tmpdir: str | None = None,
     hooks_disabled: bool = False,
 ) -> tuple[int, list[str], list[str], str, str, str, str, str, str, str]:
-    with tempfile.TemporaryDirectory(prefix="cmux-claude-wrapper-test-") as td:
+    with tempfile.TemporaryDirectory(prefix="uniconnect-claude-wrapper-test-") as td:
         tmp = Path(td)
         wrapper_dir = tmp / "wrapper-bin"
         real_dir = tmp / "real-bin"
@@ -56,7 +56,7 @@ def run_wrapper(
         real_dir.mkdir(parents=True, exist_ok=True)
         bundled_dir.mkdir(parents=True, exist_ok=True)
 
-        wrapper = wrapper_dir / "cmux-claude-wrapper"
+        wrapper = wrapper_dir / "uniconnect-claude-wrapper"
         shutil.copy2(SOURCE_WRAPPER, wrapper)
         wrapper.chmod(0o755)
 
@@ -233,14 +233,14 @@ def run_wrapper_terminal_env_probe(
     *,
     hooks_disabled: bool = False,
 ) -> tuple[int, dict[str, str], list[str], str, set[str]]:
-    with tempfile.TemporaryDirectory(prefix="cmux-claude-wrapper-env-probe-") as td:
+    with tempfile.TemporaryDirectory(prefix="uniconnect-claude-wrapper-env-probe-") as td:
         tmp = Path(td)
         wrapper_dir = tmp / "wrapper-bin"
         real_dir = tmp / "real-bin"
         wrapper_dir.mkdir(parents=True, exist_ok=True)
         real_dir.mkdir(parents=True, exist_ok=True)
 
-        wrapper = wrapper_dir / "cmux-claude-wrapper"
+        wrapper = wrapper_dir / "uniconnect-claude-wrapper"
         shutil.copy2(SOURCE_WRAPPER, wrapper)
         wrapper.chmod(0o755)
 
@@ -348,14 +348,14 @@ def run_wrapper_auth_env(
     hooks_disabled: bool = False,
     setup_env=None,
 ) -> tuple[int, dict[str, str], list[str], str]:
-    with tempfile.TemporaryDirectory(prefix="cmux-claude-wrapper-auth-env-") as td:
+    with tempfile.TemporaryDirectory(prefix="uniconnect-claude-wrapper-auth-env-") as td:
         tmp = Path(td)
         wrapper_dir = tmp / "wrapper-bin"
         real_dir = tmp / "real-bin"
         wrapper_dir.mkdir(parents=True, exist_ok=True)
         real_dir.mkdir(parents=True, exist_ok=True)
 
-        wrapper = wrapper_dir / "cmux-claude-wrapper"
+        wrapper = wrapper_dir / "uniconnect-claude-wrapper"
         shutil.copy2(SOURCE_WRAPPER, wrapper)
         wrapper.chmod(0o755)
 
@@ -1043,7 +1043,7 @@ def test_live_socket_enforces_heap_cap_for_space_separated_flag(failures: list[s
 
 
 def test_live_socket_tmpdir_failure_skips_node_options_injection(failures: list[str]) -> None:
-    with tempfile.TemporaryDirectory(prefix="cmux-claude-wrapper-bad-tmp-") as td:
+    with tempfile.TemporaryDirectory(prefix="uniconnect-claude-wrapper-bad-tmp-") as td:
         bad_tmpdir = Path(td) / "not-a-directory"
         bad_tmpdir.write_text("occupied", encoding="utf-8")
         code, real_argv, cmux_log, stderr, claudecode, node_options, runtime_node_options, child_node_options, _, _ = run_wrapper(
@@ -1083,7 +1083,7 @@ def test_live_socket_preserves_explicit_bypass_availability_flag(failures: list[
 
 
 def test_live_socket_stale_mktemp_literal_does_not_warn(failures: list[str]) -> None:
-    with tempfile.TemporaryDirectory(prefix="cmux-claude-wrapper-tmp-") as td:
+    with tempfile.TemporaryDirectory(prefix="uniconnect-claude-wrapper-tmp-") as td:
         tmpdir = Path(td)
         guard_dir = tmpdir / "cmux-claude-node-options"
         guard_dir.mkdir(parents=True, exist_ok=True)

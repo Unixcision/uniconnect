@@ -3,6 +3,11 @@ import Foundation
 // MARK: - Command construction
 
 enum UniConnectSSH {
+    /// POSIX single-quoting for a path or argument embedded in a shell command.
+    static func singleQuoted(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
     /// Options injected right after the `ssh` word so they apply to the client
     /// regardless of whatever wrapper (sshpass, env, etc.) precedes it.
     static let baseClientOptions = [
@@ -338,5 +343,78 @@ final class UniConnectTmuxProbe {
         if !line.trimmingCharacters(in: .whitespaces).isEmpty {
             onLine(line)
         }
+    }
+}
+
+
+// MARK: - Connect command validation and parsing
+
+extension UniConnectSSH {
+    /// Only these executables may start a connect command.
+    static let allowedConnectExecutables: Set<String> = ["ssh", "sshpass"]
+
+    /// Minimal shell-words split: single quotes, double quotes and backslash escapes.
+    static func shellWords(_ command: String) -> [String] {
+        var words: [String] = []
+        var current = ""
+        var hasToken = false
+        var quote: Character? = nil
+        var escaping = false
+        for ch in command {
+            if escaping {
+                current.append(ch); escaping = false; hasToken = true; continue
+            }
+            if let q = quote {
+                if ch == q { quote = nil }
+                else if ch == "\\" && q == "\"" { escaping = true }
+                else { current.append(ch) }
+                continue
+            }
+            switch ch {
+            case "'", "\"":
+                quote = ch; hasToken = true
+            case "\\":
+                escaping = true; hasToken = true
+            case " ", "\t", "\n":
+                if hasToken { words.append(current); current = ""; hasToken = false }
+            default:
+                current.append(ch); hasToken = true
+            }
+        }
+        if hasToken { words.append(current) }
+        return words
+    }
+
+    /// Returns a user-facing error, or nil when the command is acceptable: it must start
+    /// with `ssh` or `sshpass` (optionally with a path), and `sshpass` must wrap an `ssh`.
+    static func validateConnectCommand(_ command: String) -> String? {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "Pega el comando completo de conexión." }
+        if trimmed.contains("\n") { return "El comando no puede tener saltos de línea." }
+        let words = shellWords(trimmed)
+        guard let first = words.first else { return "Pega el comando completo de conexión." }
+        let exe = (first as NSString).lastPathComponent
+        guard allowedConnectExecutables.contains(exe) else {
+            return "El comando tiene que empezar por `ssh` o `sshpass` (p. ej. `ssh -i clave.pem root@host` o `sshpass -p 'clave' ssh root@host`)."
+        }
+        if exe == "sshpass" {
+            let hasSSH = words.dropFirst().contains { ($0 as NSString).lastPathComponent == "ssh" }
+            if !hasSSH { return "Con `sshpass` el comando tiene que invocar `ssh` después de las opciones." }
+        }
+        if words.count < 2 { return "Falta el destino (usuario@host)." }
+        return nil
+    }
+
+    /// Builds the SSH session used for remote image paste straight from the stored connect
+    /// command (no TTY/process detection).
+    static func detectedSession(fromConnectCommand command: String) -> DetectedSSHSession? {
+        let words = shellWords(command)
+        guard let first = words.first else { return nil }
+        let exe = (first as NSString).lastPathComponent
+        if exe == "sshpass" {
+            return TerminalSSHSessionDetector.parseSshpassCommandLine(words)
+        }
+        guard let transport = RemoteShellTransport(executableName: exe) else { return nil }
+        return TerminalSSHSessionDetector.parseCommandLine(words, for: transport)
     }
 }

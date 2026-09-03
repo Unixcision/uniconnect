@@ -92,7 +92,7 @@ struct cmuxApp: App {
             ?? CmuxStateDirectory.url(homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
         let secretStore = SecretFileStore(baseDirectory: secretBaseDirectory)
 
-        // Lift any plaintext socket-control password out of `cmux.json` into the
+        // Lift any plaintext socket-control password out of `uniconnect.json` into the
         // secure store, then scrub it from the config. This runs here, in the App
         // initializer, on purpose: it completes before the managed-config layer
         // (`CmuxSettingsFileStore`, loaded later during app launch) reads the
@@ -406,7 +406,7 @@ struct cmuxApp: App {
                 splitCommandButton(title: String(localized: "menu.app.settings", defaultValue: "Settings…"), shortcut: menuShortcut(for: .openSettings)) {
                     appDelegate.openPreferencesWindow(debugSource: "menu.cmdComma")
                 }
-                Button(String(localized: "menu.app.openCmuxSettingsFile", defaultValue: "Open cmux.json")) {
+                Button(String(localized: "menu.app.openCmuxSettingsFile", defaultValue: "Open uniconnect.json")) {
                     openCmuxSettingsFileInEditor()
                 }
                 Button(String(localized: "menu.app.ghosttySettings", defaultValue: "Ghostty Settings…")) {
@@ -869,6 +869,9 @@ struct cmuxApp: App {
             }
             Button("Importar configuración…") {
                 UniConnectCoordinator.shared.importConfiguration()
+            }
+            Button("Migrar cajas desde cmux…") {
+                UniConnectCoordinator.shared.migrateFromCmux()
             }
             Button("Guardar plantilla inicial…") {
                 UniConnectCoordinator.shared.saveSeedTemplate()
@@ -4694,7 +4697,7 @@ enum AppIconLaunchState {
 enum AppIconSettings {
     static let modeKey = "appIconMode"
     static let defaultMode: AppIconMode = .automatic
-    private static let dockTileIconDidChangeNotification = Notification.Name("com.cmuxterm.appIconDidChange")
+    private static let dockTileIconDidChangeNotification = Notification.Name("com.unixcision.uniconnectIconDidChange")
     private static var liveEnvironmentProvider: () -> Environment = { .live() }
 
     private static func isRunningUnderXCTest(_ env: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
@@ -5015,8 +5018,8 @@ nonisolated enum BuildFlavor: String, Sendable {
         if SocketControlSettings.isDebugLikeBundleIdentifier(normalizedBundleIdentifier) {
             return .dev
         }
-        if normalizedBundleIdentifier == "com.cmuxterm.app.nightly"
-            || normalizedBundleIdentifier?.hasPrefix("com.cmuxterm.app.nightly.") == true {
+        if normalizedBundleIdentifier == "com.unixcision.uniconnect.nightly"
+            || normalizedBundleIdentifier?.hasPrefix("com.unixcision.uniconnect.nightly.") == true {
             return .nightly
         }
         if bundleNames.contains(where: containsNightlyToken) {

@@ -55,7 +55,7 @@ TMP_ROOT = os.environ.get("TMPDIR", "/tmp").rstrip("/") or "/tmp"
 # FIXED `/tmp` path (not TMPDIR-derived): the reload script and this server run
 # in different shells/sessions whose per-session `TMPDIR` differ, so the
 # rendezvous file must live at a machine-shared location both can find.
-TAG_MARKER_PATH = "/tmp/cmux-mobile-attach-qr-tags.json"
+TAG_MARKER_PATH = "/tmp/uniconnect-mobile-attach-qr-tags.json"
 
 # Live tags + their derived paths. `refresh_tags` keeps these in sync with the
 # marker; everything downstream reads these globals, never the INITIAL_* ones.

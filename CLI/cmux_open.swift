@@ -33,7 +33,7 @@ enum CMUXAgentTurnDiffBaselineFile {
                 .appendingPathComponent("agent-turn-diff-baselines.json", isDirectory: false)
                 .path
         }
-        return homeExpandedPath("~/.cmuxterm/agent-turn-diff-baselines.json", env: env)
+        return homeExpandedPath("~/.uniconnect/agent-turn-diff-baselines.json", env: env)
     }
 
     private static func normalized(_ value: String?) -> String? {
@@ -6074,7 +6074,7 @@ extension CMUXCLI {
           --focus <true|false>         Focus the diff browser split (default: false)
           --no-focus                   Do not focus the opened diff browser split
           --title <text>               Set the diff viewer title to the provided text
-          --layout <split|unified>     Diff layout (default: unified; configurable via diffViewer.defaultLayout in cmux.json)
+          --layout <split|unified>     Diff layout (default: unified; configurable via diffViewer.defaultLayout in uniconnect.json)
           --font-size <points>         Set diff font size (default: 10)
 
         Examples:

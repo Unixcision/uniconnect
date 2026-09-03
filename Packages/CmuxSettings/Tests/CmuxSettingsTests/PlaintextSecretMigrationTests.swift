@@ -7,12 +7,12 @@ import Testing
 struct PlaintextSecretMigrationTests {
     private let keyPath = ["automation", "socketPassword"]
 
-    /// A throwaway directory holding a `cmux.json` for one test.
+    /// A throwaway directory holding a `uniconnect.json` for one test.
     private func makeConfig(_ contents: String?) -> URL {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-secret-migration-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let url = dir.appendingPathComponent("cmux.json", isDirectory: false)
+        let url = dir.appendingPathComponent("uniconnect.json", isDirectory: false)
         if let contents { try? Data(contents.utf8).write(to: url) }
         return url
     }
