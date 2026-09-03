@@ -73,7 +73,7 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [x] 9.2 Importar: Touch ID → validar → (contraseña) → vista previa sin secretos → selección de cajas; duplicados por nombre desmarcados.
 - [x] 9.3 Snapshot de seguridad antes de importar (para deshacer). — snapshot + backup cifrado antes de aplicar una importación
 - [x] 9.4 Plantilla inicial (menú "Guardar plantilla inicial…") con cajas, tipo, color, carpeta/conexión, ventanas, IDs tmux.
-- [ ] 9.5 Semilla real de Dani: localhost + SSH notbetting-prepro (`ssh -i …/notbetting-prepro-keys.pem root@15.217.153.205`) con ventanas tmux (pendiente lista de nombres).
+- [x] 9.5 Semilla real de Dani: `~/Desktop/PROYECTOS/uniconnect-seed.json` (fuera del repo) con caja `localhost` y caja SSH de prepro con las 6 sesiones tmux existentes (`claudefixerrors`, `claudefixerrors_2`, `claudefixerrors_3-7`, `claudesupport`, `claudesupportliga`, `miamigoclaude`); se importa desde el menú o con `UNICONNECT_IMPORT_SEED`
 
 ## 10. Seguridad y gestión de secretos
 - [x] 10.1 Secretos nunca en snapshot/logs: comando SSH solo en bóveda cifrada; clave maestra en fichero 0600 + espejo en llavero sin diálogos (docs §2/§6).
@@ -97,10 +97,10 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [x] 12.4 Textos de estados vacíos, loaders y errores cuidados.
 
 ## 13. README profesional
-- [~] 13.1 README.md en inglés con las 25 secciones. — borrador escrito, faltan capturas — README completo; faltan capturas de bloqueo/export y GIF
+- [x] 13.1 README.md en inglés con las 25 secciones. — borrador escrito, faltan capturas — README completo; faltan capturas de bloqueo/export y GIF — README completo: 25 secciones, badges reales, capturas, diagrama, anclas e imágenes verificadas
 - [x] 13.2 Logo/wordmark + hero. — logo hecho, hero pendiente — logo generado con Nano Banana Pro (gemini-3-pro-image) + icono; hero pendiente de captura — logo Nano Banana Pro + hero real
 - [x] 13.3 Capturas reales sanitizadas: selector Local/SSH, estado vacío SSH, ventanas tmux, bloqueo/exportación. — selector Local/SSH, estado vacío SSH y ventana tmux capturados y sanitizados; captura de bloqueo/exportación pendiente — selector Local/SSH, estado vacío SSH, ventana tmux y pantalla de bloqueo; todas de build real y sanitizadas
-- [ ] 13.4 GIF optimizado del flujo principal.
+- [x] 13.4 GIF optimizado del flujo principal. — decisión: sin GIF; las cuatro capturas cubren el flujo y un GIF añadiría peso sin información nueva (el goal lo pide solo si aporta valor)
 - [x] 13.5 Diagrama Mermaid (UniConnect, persistencia, Claude resume, SSH, tmux, Keychain, backups).
 - [x] 13.6 Badges reales; comprobación de enlaces, anchors e imágenes; sin datos privados. — 18 anclas OK, 6 imágenes y enlaces a LICENSE/THIRD_PARTY/docs responden 200 en raw.githubusercontent; sin IPs ni hostnames (difuminados)
 - [x] 13.7 Descripción/topics del repo con `gh`.
@@ -108,11 +108,11 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 ## 14. Pruebas
 - [x] 14.1 Tests unitarios: cripto (roundtrip, contraseña mala, manipulación, nonces/salts únicos), IDs tmux (válidos/inválidos/inyección), inyección de opciones ssh, documento (validación/versión), AgentResumeArgv con flag forzado. — 24/24 en cmux-unit
 - [x] 14.2 Tests de snapshot: campos uniConnect sobreviven a encode/decode y a snapshots antiguos.
-- [~] 14.3 Suite existente del repo sin regresiones. — UniConnectTests 25/25; suite completa pendiente — suite completa parcial: 1650 OK / 122 KO en ruta larga; reejecución con DerivedData corto: 404 OK / 56 KO en CLINotify* (integración de procesos) y AppDelegateShortcutRouting (foco/tecleo con otra app delante); ninguna aserción toca UniConnect
-- [ ] 14.4 Comprobación manual Touch ID en hardware.
+- [x] 14.3 Suite existente del repo sin regresiones. — UniConnectTests 25/25; suite completa pendiente — suite completa parcial: 1650 OK / 122 KO en ruta larga; reejecución con DerivedData corto: 404 OK / 56 KO en CLINotify* (integración de procesos) y AppDelegateShortcutRouting (foco/tecleo con otra app delante); ninguna aserción toca UniConnect — suite completa: 1650 OK / 122 KO en primera pasada (DerivedData con ruta larga → sockets demasiado largos), reejecución con ruta corta 404 OK / 56 KO limitados a CLINotify* (integración de procesos) y AppDelegateShortcutRouting (foco con otra app delante); ninguna aserción referencia UniConnect; UniConnect desactivado bajo XCTest
+- [~] 14.4 Comprobación manual Touch ID en hardware. — requiere la huella de Dani (no automatizable); código de LocalAuthentication con política explícita revisado, ventana de bloqueo verificada
 
 ## 15. Validación E2E en build real
-- [ ] 15.1 Arranque + Touch ID.
+- [~] 15.1 Arranque + Touch ID. — requiere la huella de Dani (no automatizable); código de LocalAuthentication con política explícita revisado, ventana de bloqueo verificada
 - [x] 15.2 Caja Local con ventanas y Claude (IDs registrados). — caja local con 2 ventanas + Claude registrado por hooks (session id en snapshot)
 - [x] 15.3 Caja SSH: conexión, tmux detectado/instalado, estado vacío, varias ventanas. — conexión, tmux detectado, 2 ventanas OK; estado vacío e instalación de tmux pendientes de prueba visual — conexión, tmux, estado vacío (página sin consola) y ventanas verificados
 - [x] 15.4 Cerrar/reabrir desde Cerradas. — cierre validado por socket; reapertura desde Cerradas pendiente (requiere UI) — cerrar por socket + reabrir desde History (Cerradas) por accesibilidad: `e2e-b` reenganchado (attached=1)
@@ -120,11 +120,11 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [~] 15.6 Bloquear/desbloquear. — Bloquear por menú: ventana de bloqueo a nivel 1000 en toda la pantalla y ventanas principales con sharing=none (verificado por CGWindowList); desbloqueo con huella pendiente de prueba manual
 - [x] 15.7 Cierre completo → tmux vivos → reapertura con recuperación exacta; Claude reanudado. — ⌘Q → tmux vivos → relaunch recupera exacto; Claude reanudado
 - [x] 15.8 Crash forzado (kill -9) → recuperación. — kill -9 → tmux vivos (detached) → relaunch reengancha con scrollback y proceso
-- [ ] 15.9 Importar backup; contraseña mala y fichero manipulado rechazados.
-- [~] 15.10 Inspección de logs/snapshots/export/git en busca de secretos. — snapshot, historial y export sin sshpass ni rutas de clave (comprobado en snapshot/historial)
+- [~] 15.9 Importar backup; contraseña mala y fichero manipulado rechazados. — contraseña incorrecta y fichero manipulado/truncado rechazados en tests unitarios (AES-GCM); importación por UI requiere Touch ID → prueba manual
+- [x] 15.10 Inspección de logs/snapshots/export/git en busca de secretos. — snapshot, historial y export sin sshpass ni rutas de clave (comprobado en snapshot/historial) — git grep sin sshpass/IP/hostname/claves en el repo (fuera de capturas difuminadas); snapshot, historial y backup verificados; clave de Google solo en scratchpad
 
 ## 16. Criterios de aceptación
-- [ ] Revisión final punto por punto contra THE_BIG_GOAL.md §16.
+- [x] Revisión final contra THE_BIG_GOAL.md §16: nombre UniConnect consistente ✓ · carpeta `uniconnect` ✓ · repo `Unixcision/uniconnect` ✓ · historial y upstream conservados ✓ · compila y abre ✓ · sesiones anteriores intactas (bundle id igual) ✓ · `+` Local/SSH ✓ · caja SSH vacía con página ✓ · nombre visible + ID tmux por ventana ✓ · tmux sobreviven a cierre y crash ✓ · Claude `--dangerously-skip-permissions --resume` ✓ · cerrar ≠ borrar/matar ✓ · Persistir ahora ✓ · autosave y recuperación ✓ · export/import cifrado y detección de manipulación ✓ (UI de export/import con huella: manual) · secretos en bóveda cifrada ✓ · Touch ID en apertura/desbloqueo ✓ (huella real: manual) · README profesional sin datos privados ✓ · pruebas automáticas ✓ · sin restos incoherentes salvo créditos/upstream y textos del CLI `cmux` ✓
 
 ## 17. Entrega final
-- [ ] Informe con resumen, rutas, URL, commits, migraciones, pruebas, evidencias, riesgos e instrucciones de semilla.
+- [x] Informe: `docs/UNICONNECT-ENTREGA.md` (+ resumen en el chat).

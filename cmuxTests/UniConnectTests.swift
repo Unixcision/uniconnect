@@ -51,9 +51,9 @@ final class UniConnectTests: XCTestCase {
     // MARK: - SSH command construction
 
     func testInjectsOptionsAfterSshInsideSshpassWrapper() {
-        let connect = "sshpass -p 'boirow23-$2237' ssh root@185.237.234.47"
+        let connect = "sshpass -p 'p4ss-w0rd-$42' ssh root@203.0.113.7"
         let result = UniConnectSSH.injectingOptions(["-t", "-o", "X=y"], into: connect)
-        XCTAssertEqual(result, "sshpass -p 'boirow23-$2237' ssh -t -o X=y root@185.237.234.47")
+        XCTAssertEqual(result, "sshpass -p 'p4ss-w0rd-$42' ssh -t -o X=y root@203.0.113.7")
     }
 
     func testInjectsOptionsAfterPlainSshWithIdentity() {
@@ -158,7 +158,7 @@ final class UniConnectTests: XCTestCase {
     }
 
     func testCiphertextDoesNotLeakPlaintext() throws {
-        let secret = "boirow23-sglkb233-lkg82"
+        let secret = "s3cr3t-fragment-for-test"
         let sealed = try UniConnectCrypto.sealWithPassphrase(Data(secret.utf8), passphrase: "pw-123456")
         XCTAssertFalse(String(decoding: sealed, as: UTF8.self).contains(secret))
     }

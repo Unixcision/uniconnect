@@ -24,6 +24,9 @@ Fecha: 2026-09-03 · Rama: `uniconnect` · Ruta: `~/Desktop/PROYECTOS/uniconnect
 | `371740b` | Pin de XcodeProj 9.12.0 (la ruta nueva re-resolvía a 9.16 y rompía la compilación) |
 | `e0b…`/`5783aa8` | UniConnect desactivado bajo XCTest; informe de entrega |
 | `da61c32` | Logo generado con Nano Banana Pro + icono; página SSH sin terminal detrás, legible en claro/oscuro; relleno Markdown sin PTY; assets de cmux retirados |
+| `60bcf9f`…`bb79d98` | README con capturas reales sanitizadas (hero, selector, estado vacío SSH, bloqueo); Package.resolved |
+| `6796a51` | Fechas de actividad, `· desconectada`, reconexión escalonada, "Terminar sesión tmux remota…", snapshot pre-import, bloqueo por inactividad, sharingType=none al bloquear, "Último guardado" |
+| (este) | Sanitización de un fragmento de contraseña de ejemplo e IP en test/plan/informe |
 
 Ficheros principales: `Sources/UniConnect/*`, `Sources/SessionPersistence.swift`, `Sources/Workspace.swift`, `Sources/TabManager.swift`, `Sources/WorkspaceContentView.swift`, `Sources/AppDelegate.swift`, `Sources/cmuxApp.swift`, `Packages/CMUXAgentLaunch/…/AgentResumeArgv.swift`, `Resources/bin/cmux-claude-wrapper`, `Resources/Info.plist`, catálogos `.xcstrings`, `cmux.xcodeproj/project.pbxproj`, `scripts/*`, `.github/workflows/*`, `cmuxTests/UniConnectTests.swift`, `README.md`, `docs/UNICONNECT.md`, `UNICONNECT_PLAN.md`.
 
@@ -56,12 +59,20 @@ Generado el 2026-09-03 con **Nano Banana Pro** (`gemini-3-pro-image`, el modelo 
 Fichero preparado: `~/Desktop/PROYECTOS/uniconnect-seed.json` (JSON plano, se importa una vez):
 
 - Caja **localhost** (Local, `~`, azul) con una ventana `shell`.
-- Caja **NOTBETTING PREPRO** (SSH, rojo) con `ssh -i ~/Desktop/PROYECTOS/NOTBETTING/notbetting-prepro-keys.pem root@15.217.153.205` y seis ventanas enganchadas a los tmux que ya existen en ese servidor: `claudefixerrors`, `claudefixerrors_2`, `claudefixerrors_3-7`, `claudesupport`, `claudesupportliga`, `miamigoclaude`.
+- Caja **NOTBETTING PREPRO** (SSH, rojo) con `ssh -i ~/…/<clave-prepro>.pem root@<ip-prepro>` y seis ventanas enganchadas a los tmux que ya existen en ese servidor: `claudefixerrors`, `claudefixerrors_2`, `claudefixerrors_3-7`, `claudesupport`, `claudesupportliga`, `miamigoclaude`.
 
 Cómo importarla: **UniConnect ▸ Importar configuración…** (Touch ID → preview → Importar), o una sola vez con `UNICONNECT_IMPORT_SEED=~/Desktop/PROYECTOS/uniconnect-seed.json` al lanzar. Ojo: al enganchar UniConnect a esos tmux, `-D` expulsa a los clientes que tuvieras abiertos en cmux (es lo deseado al migrar). Para añadir más cajas después, edita el JSON (misma estructura) y vuelve a importar: las que ya existen por nombre vienen desmarcadas.
 
+## 6b. Evidencias adicionales (03/09, pantalla desbloqueada)
+
+- **Persistir ahora** por menú: `backup.uc` + copia en `history/`, descifrado con la clave maestra y verificado (cajas, ventanas, tmux, connect).
+- **Cerradas**: pestaña `e2e-b` cerrada por socket y reabierta desde el menú History → reenganchada a `uc-e2e-b` (`attached=1`), ID conservado.
+- **Bloquear**: ventana de bloqueo a nivel 1000 sobre toda la pantalla; ventanas principales con `sharingType=none` (verificado con CGWindowList); captura en el README.
+- Tests: 27/27.
+
 ## 7. Pendiente de autorización / de pantalla desbloqueada
 
-- **No se ha hecho push** ni PR (autorización expresa pendiente). Los 8 commits están solo en local.
-- Capturas reales para el README, GIF, prueba manual de Touch ID/Bloquear, reapertura desde Cerradas, Persistir ahora y export/import desde el menú: requieren pantalla desbloqueada (la sesión de macOS lleva bloqueada desde las 23:27).
+- Push hecho a `origin/uniconnect` (autorizado por THE_BIG_GOAL §2); rama por defecto del repo `uniconnect`. Sin PR ni release.
+- **Aviso de seguridad**: un test contenía un fragmento de una contraseña de ejemplo pegada en el chat y la IP de ese host; se ha sustituido en el último commit, pero sigue en el historial ya subido. Recomendación: rotar esa contraseña (o autorizar reescribir la rama).
+- Con huella real (no automatizable): desbloqueo Touch ID al arrancar y tras Bloquear, exportar e importar desde el menú (la lógica de cifrado, manipulación y contraseña incorrecta está cubierta por tests).
 - Instalación en `/Applications` con `~/Desktop/PROYECTOS/uniconnect-install-patched.sh` (compila Release, hace backup de la app actual, capa updates). No ejecutado todavía para no cerrar el cmux que estás usando.
