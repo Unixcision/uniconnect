@@ -18,6 +18,31 @@ final class UniConnectAppLock: ObservableObject {
 
     private var lockWindows: [NSWindow] = []
     private var isLaunchGate = false
+    private var idleTimer: Timer?
+
+    /// Minutes of user inactivity (no keyboard/mouse events anywhere) before UniConnect locks
+    /// itself. 0 disables the timer. Stored in UserDefaults `uniconnect.autoLockMinutes`.
+    static var autoLockMinutes: Int {
+        get { UserDefaults.standard.object(forKey: "uniconnect.autoLockMinutes") as? Int ?? 0 }
+        set { UserDefaults.standard.set(newValue, forKey: "uniconnect.autoLockMinutes") }
+    }
+
+    func startIdleWatch() {
+        idleTimer?.invalidate()
+        guard Self.isEnabled else { return }
+        idleTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.checkIdle() }
+        }
+    }
+
+    private func checkIdle() {
+        let minutes = Self.autoLockMinutes
+        guard minutes > 0, !isLocked else { return }
+        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .init(rawValue: ~0)!)
+        if idle >= Double(minutes) * 60 {
+            lock(reason: "inactividad")
+        }
+    }
 
     static var isEnabled: Bool {
         // Escape hatch for tests / debugging.
@@ -31,6 +56,7 @@ final class UniConnectAppLock: ObservableObject {
 
     /// Called at launch. Presents the lock and authenticates immediately.
     func presentLaunchGate() {
+        startIdleWatch()
         guard Self.isEnabled, !isLocked else {
             scheduleStartupSeed()
             return
@@ -52,6 +78,10 @@ final class UniConnectAppLock: ObservableObject {
         guard !isLocked else { return }
         isLocked = true
         lastError = nil
+        // Keep terminal content out of screen recordings / captures while locked.
+        for window in NSApp.windows where !(window is UniConnectLockWindow) {
+            window.sharingType = .none
+        }
         showLockWindows()
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -133,6 +163,9 @@ final class UniConnectAppLock: ObservableObject {
             window.orderOut(nil)
         }
         lockWindows.removeAll()
+        for window in NSApp.windows where !(window is UniConnectLockWindow) {
+            window.sharingType = .readOnly
+        }
         // Give focus back to the main window.
         (NSApp.windows.first(where: { $0 is NSPanel == false && $0.isVisible && $0.canBecomeMain }))?.makeKeyAndOrderFront(nil)
     }

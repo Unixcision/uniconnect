@@ -25,18 +25,28 @@ struct UniConnectWorkspaceProfile: Codable, Sendable, Equatable {
     var hostLabel: String?
     /// Whether tmux has been verified (and installed if needed) on the server.
     var tmuxReady: Bool
+    /// When the box was created (seconds since 1970). Optional for older snapshots.
+    var createdAt: TimeInterval?
+    /// Last time UniConnect touched the box (window created/closed, reconnect, edit).
+    var lastActivityAt: TimeInterval?
 
     init(
         kind: UniConnectWorkspaceKind,
         credentialId: UUID? = nil,
         hostLabel: String? = nil,
-        tmuxReady: Bool = false
+        tmuxReady: Bool = false,
+        createdAt: TimeInterval? = Date().timeIntervalSince1970,
+        lastActivityAt: TimeInterval? = Date().timeIntervalSince1970
     ) {
         self.kind = kind
         self.credentialId = credentialId
         self.hostLabel = hostLabel
         self.tmuxReady = tmuxReady
+        self.createdAt = createdAt
+        self.lastActivityAt = lastActivityAt
     }
+
+    mutating func touch() { lastActivityAt = Date().timeIntervalSince1970 }
 
     static let local = UniConnectWorkspaceProfile(kind: .local)
 

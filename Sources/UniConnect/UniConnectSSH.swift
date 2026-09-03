@@ -84,7 +84,20 @@ enum UniConnectSSH {
 
     /// Writes a self-deleting launcher script (mirrors cmux's restore launchers) so the
     /// command runs through zsh with the user's exact quoting, and returns its path.
-    static func writeLauncherScript(commandLine: String, label: String) -> String? {
+    /// Restore-time launchers are spaced out so opening many SSH boxes at once does not
+    /// fire dozens of connections in the same instant: each launcher created within a
+    /// short window waits a little longer than the previous one (0, 0.4, 0.8… seconds).
+    private static var staggerLastAt: TimeInterval = 0
+    private static var staggerIndex = 0
+    static func nextStaggerDelay() -> Double {
+        let now = Date().timeIntervalSince1970
+        if now - staggerLastAt > 5 { staggerIndex = 0 }
+        staggerLastAt = now
+        defer { staggerIndex += 1 }
+        return min(Double(staggerIndex) * 0.4, 6)
+    }
+
+    static func writeLauncherScript(commandLine: String, label: String, delay: Double = 0) -> String? {
         // Ghostty splits `command` on whitespace, so the launcher must live on a path
         // without spaces: $TMPDIR (per-user, 0700), never "Application Support".
         let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
@@ -103,6 +116,7 @@ enum UniConnectSSH {
                 // tmux then refuses to attach ("missing or unsuitable terminal"). ssh forwards
                 // TERM, so pin a universally available one for the remote side.
                 "export TERM=xterm-256color",
+                delay > 0 ? String(format: "sleep %.1f", delay) : ":",
                 commandLine,
                 ""
             ].joined(separator: "\n")

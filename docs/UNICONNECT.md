@@ -82,10 +82,13 @@ Política de autenticación: Touch ID si hay sensor; si no hay biometría, no es
 
 ## 8. Pendiente / limitaciones conocidas
 
-- Estado por ventana (Connecting/Connected/Failed) y retry por ventana: hoy el estado se ve en el propio terminal (mensaje de ssh); reabrir la pestaña desde Cerradas vuelve a conectar.
-- Reconexiones escalonadas: no implementadas; con muchas cajas SSH se abren en paralelo.
-- Timeout de bloqueo por inactividad: pendiente.
+- Estado por ventana: cuando el cliente ssh muere, la pestaña se conserva con el `[exited]` de Ghostty y su título pasa a `nombre · desconectada`; la reconexión es reabrir la pestaña (Cerradas) o crear una ventana con el mismo ID tmux. No hay un botón "Reconectar" dentro de la pestaña.
+- Reconexión escalonada: los lanzadores generados en la misma ráfaga (≤5 s) esperan 0, 0.4, 0.8… s (máx. 6 s) antes de conectar.
+- Bloqueo automático por inactividad: menú **UniConnect ▸ Bloqueo automático por inactividad** (5/15/30/60 min, desactivado por defecto); usa la inactividad global del sistema. Al bloquear, las ventanas pasan a `sharingType = .none` (no aparecen en grabaciones ni capturas) hasta desbloquear.
+- **Terminar sesión tmux remota de la ventana activa…**: única acción que ejecuta `tmux kill-session`, siempre con confirmación explícita; cerrar una pestaña nunca lo hace.
+- Antes de importar se fuerza un snapshot completo y un backup cifrado (`uniconnect/history/`) para poder deshacer.
 - Grupos al importar: se crean con `createWorkspaceGroup`, que añade una caja ancla.
+- Firma ad-hoc: ver §2/§6 sobre la clave maestra.
 
 ## 9. Registro de validación (build real, 2026-09-02/03)
 

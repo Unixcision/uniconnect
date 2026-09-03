@@ -105,6 +105,31 @@ final class UniConnectTests: XCTestCase {
         XCTAssertEqual(perms, 0o700)
     }
 
+    func testLauncherStaggerDelayGrowsWithinBurstAndIsBounded() throws {
+        let d0 = UniConnectSSH.nextStaggerDelay()
+        let d1 = UniConnectSSH.nextStaggerDelay()
+        let d2 = UniConnectSSH.nextStaggerDelay()
+        XCTAssertLessThanOrEqual(d0, d1)
+        XCTAssertLessThan(d1, d2)
+        XCTAssertLessThanOrEqual(d2, 6)
+        let path = try XCTUnwrap(UniConnectSSH.writeLauncherScript(commandLine: "true", label: "stagger", delay: 1.2))
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        XCTAssertTrue(try String(contentsOfFile: path, encoding: .utf8).contains("sleep 1.2"))
+    }
+
+    func testProfileDatesRoundTripAndTouch() throws {
+        var profile = UniConnectWorkspaceProfile(kind: .ssh, credentialId: UUID(), hostLabel: "root@h")
+        let created = try XCTUnwrap(profile.createdAt)
+        let before = try XCTUnwrap(profile.lastActivityAt)
+        profile.touch()
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(profile.lastActivityAt), before)
+        let decoded = try JSONDecoder().decode(UniConnectWorkspaceProfile.self, from: JSONEncoder().encode(profile))
+        XCTAssertEqual(decoded.createdAt, created)
+        // Older snapshots without dates still decode.
+        let legacy = try JSONDecoder().decode(UniConnectWorkspaceProfile.self, from: Data(#"{"kind":"local","tmuxReady":false}"#.utf8))
+        XCTAssertNil(legacy.createdAt)
+    }
+
     func testTmuxProbeScriptNeverKillsSessions() {
         XCTAssertFalse(UniConnectTmuxProbe.remoteScript.contains("kill-session"))
         XCTAssertFalse(UniConnectTmuxProbe.remoteScript.contains("kill-server"))

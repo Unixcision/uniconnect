@@ -6002,6 +6002,7 @@ class TabManager: ObservableObject {
 #if DEBUG
             cmuxDebugLog("surface.close.childExited.keepUniConnectTmux tab=\(tabId.uuidString.prefix(5)) surface=\(surfaceId.uuidString.prefix(5))")
 #endif
+            tab.uniConnectMarkDisconnected(panelId: surfaceId)
             return
         }
         let keepsPersistentRemoteSurfaceOpen =

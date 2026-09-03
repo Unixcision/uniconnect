@@ -122,7 +122,8 @@ Closing a tab only ends the ssh client; the tmux session and whatever runs insid
 ## Session persistence
 
 - Autosave every 8 seconds, atomic writes, unchanged snapshots skipped.
-- A save is forced right after unlocking and after every UniConnect change (new box, new window, color, connection edit, import).
+- A save is forced right after unlocking and after every UniConnect change (new box, new window, color, connection edit, import). An import is preceded by a full snapshot plus an encrypted backup so it can be undone.
+- Restore staggers SSH reconnections (0.4 s apart, capped at 6 s) so many boxes do not hammer the servers at once.
 - *Persist now* (`⌘⌥S`) additionally writes `uniconnect/backup.uc` and a timestamped copy under `uniconnect/history/`.
 - Snapshot schema is versioned; the UniConnect fields are optional, so snapshots written by plain cmux still load.
 
@@ -178,7 +179,10 @@ Requirements: macOS 14+, Xcode 26, zig 0.15.2 only if you want to rebuild Ghostt
 | Export / import configuration | **UniConnect ▸ Exportar… / Importar…** |
 | Seed template for a first configuration | **UniConnect ▸ Guardar plantilla inicial…** |
 | Reopen or permanently delete closed items | **UniConnect ▸ Cerradas…** |
+| Kill the tmux session behind the active window (asks first) | **UniConnect ▸ Terminar sesión tmux remota…** |
 | Lock | `⌘⌃L` |
+| Auto-lock after idle time | **UniConnect ▸ Bloqueo automático por inactividad** (off by default) |
+| Last save time | shown at the bottom of the **UniConnect** menu |
 
 First-run seeding: put a plain JSON seed (see the template) in a file and launch once with `UNICONNECT_IMPORT_SEED=/path/to/seed.json`. The file is applied a single time; afterwards use the encrypted export.
 
@@ -234,11 +238,10 @@ Hooks into cmux are deliberately small: two optional snapshot fields, three stor
 
 ## Roadmap
 
-- Per-window connection state (connecting / connected / failed) with individual retry.
-- Staggered reconnection when many SSH boxes restore at once.
-- Idle auto-lock timeout.
-- Local / SSH badge and last-saved indicator in the sidebar.
-- Explicit "terminate remote tmux session" action, separate from closing.
+- In-tab "Reconnect" button for a window whose ssh client died (today the tab is kept with Ghostty's `[exited]` banner and a `· desconectada` suffix; reopen it from *Closed*).
+- Local / SSH badge in the sidebar row itself (today it is the box description).
+- Optional Data Protection Keychain master key for builds signed with a stable identity.
+- Localized UI strings for the UniConnect screens (currently Spanish).
 
 ## Troubleshooting
 

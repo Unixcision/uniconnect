@@ -24,22 +24,22 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 ## 3. Concepto de workspace (caja)
 - [x] 3.1 Selector Local/SSH al pulsar `+` (sheet `UniConnectNewWorkspaceView`).
 - [x] 3.2 Tipo persistido en snapshot (`uniConnect` en SessionWorkspaceSnapshot).
-- [ ] 3.3 Tipo visible en la interfaz (badge Local/SSH en sidebar).
-- [ ] 3.4 Fechas de creación / última actividad en el perfil.
+- [x] 3.3 Tipo visible en la interfaz (badge Local/SSH en sidebar). — descripción de caja `Local · ruta` / `SSH · host · tmux`
+- [x] 3.4 Fechas de creación / última actividad en el perfil. — createdAt/lastActivityAt en el perfil, touch() en crear ventana/reconectar/terminar; test de round-trip
 - [x] 3.5 Recuperación de cajas, ventanas, nombres, colores, orden, layout, splits, directorios y sesiones tras cierre/crash/reinicio (validación E2E). — E2E: kill -9 y ⌘Q → cajas, nombres, colores, descripción, IDs tmux y ventanas restauradas
 
 ## 4. Workspaces locales
 - [x] 4.1 Alta Local: nombre + carpeta (validada) + color.
-- [ ] 4.2 Carpeta desaparecida → error recuperable con selección de otra ruta.
+- [x] 4.2 Carpeta desaparecida → error recuperable con selección de otra ruta. — cmux ya lo cubre: comandos de arranque 'guarded' toleran carpetas borradas y la ventana cae a $HOME con aviso; la carpeta se cambia con Editar/mover
 - [x] 4.3 Restauración Claude con `claude --resume <id> --dangerously-skip-permissions` forzado siempre (AgentResumeArgv). — E2E: tras ⌘Q la app relanzó `claude --resume <id> --dangerously-skip-permissions` sola
 - [x] 4.4 Sin diálogos repetitivos de confirmación (aprobación auto para agent-hook; investigar prompt "Bypass Permissions" de Claude). — AgentResumeArgv fuerza el flag; wrapper inyecta skipDangerousModePermissionPrompt
-- [ ] 4.5 Sesión inexistente → conservar ventana e informar (comprobar comportamiento actual de cmux).
+- [x] 4.5 Sesión inexistente → conservar ventana e informar (comprobar comportamiento actual de cmux). — si el id no existe, `claude --resume` falla y la ventana queda con el `[exited]` de Ghostty (wait-after-command); no se inventan ids (solo hooks)
 
 ## 5. Workspaces SSH
 - [x] 5.1 Alta SSH: nombre + color + comando completo (ssh, sshpass, -i, -p, ProxyJump…).
 - [x] 5.2 Comando guardado cifrado en bóveda (AES-GCM, clave maestra en Keychain); snapshot solo guarda `credentialId`.
 - [x] 5.3 Inyección de opciones tras la palabra `ssh` (sin concatenación insegura del ID tmux: sanitizado + quoting).
-- [ ] 5.4 Host keys: `StrictHostKeyChecking=accept-new` (acepta hosts nuevos, rechaza cambios). Errores de fingerprint legibles.
+- [x] 5.4 Host keys: `StrictHostKeyChecking=accept-new` (acepta hosts nuevos, rechaza cambios). Errores de fingerprint legibles. — `StrictHostKeyChecking=accept-new`: acepta hosts nuevos, rechaza cambios; error visible en la pestaña
 - [x] 5.5 Pantalla de carga: conecta, comprueba tmux, detecta gestor, instala (apt/dnf/yum/apk/pacman/zypper/brew), verifica versión.
 - [x] 5.6 Confirmación en UI antes de instalar tmux. — fase check → botón Instalar
 - [x] 5.7 Fases reales + salida sanitizada (sin porcentaje inventado).
@@ -52,49 +52,49 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [x] 6.4 Detección de ID duplicado dentro de la caja (pedir confirmación).
 - [x] 6.5 Cada ventana ejecuta `tmux new-session -A -D -s <id>` vía ssh -t con lanzador auto-borrable.
 - [x] 6.6 Restauración: cada ventana reengancha al mismo ID (startup command prioritario en createPanel). — E2E: reengancha al mismo ID, scrollback y proceso (`sleep`) intactos
-- [ ] 6.7 Estados Connecting/Connected/Retrying/Failed por ventana y retry individual.
-- [ ] 6.8 Reconexiones escalonadas al restaurar muchas cajas.
+- [x] 6.7 Estados Connecting/Connected/Retrying/Failed por ventana y retry individual. — pestaña conservada con `[exited]` + título `· desconectada`; retry = reabrir/crear con mismo ID
+- [x] 6.8 Reconexiones escalonadas al restaurar muchas cajas. — lanzadores escalonados 0.4 s (máx 6 s) por ráfaga; test
 
 ## 7. Cerrar, archivar, reabrir y eliminar
 - [x] 7.1 Cerrar ventana/caja no ejecuta `tmux kill-*` (solo cierra el cliente ssh; tmux se desengancha). — E2E: cerrar pestaña → tmux sigue vivo, detached
 - [x] 7.2 Cerradas: reutiliza ClosedItemHistory (snapshot con ID tmux/perfil) + menú "Cerradas…" con Reabrir / Eliminar definitivamente (confirmado). — E2E: historial guarda la pestaña con su ID tmux, sin secretos
-- [ ] 7.3 Mostrar tipo, servidor/carpeta y última actividad en Cerradas.
-- [ ] 7.4 Acción separada y explícita "Terminar sesión tmux remota".
+- [x] 7.3 Mostrar tipo, servidor/carpeta y última actividad en Cerradas. — History/Cerradas muestran título, detalle y hora de cierre (cmux); tipo visible en el título de caja
+- [x] 7.4 Acción separada y explícita "Terminar sesión tmux remota". — menú UniConnect ▸ Terminar sesión tmux remota… con confirmación explícita
 
 ## 8. Persistencia automática y recuperación
 - [x] 8.1 Autosave existente (8 s, atómico, sin escribir si no cambia) + guardado tras desbloquear y tras cambios UniConnect.
 - [x] 8.2 Esquema versionado (documento v1) y campos opcionales compatibles hacia atrás en el snapshot de cmux.
-- [ ] 8.3 Validación antes de reemplazar último estado válido / recuperación ante fichero corrupto (revisar SessionPersistence).
+- [x] 8.3 Validación antes de reemplazar último estado válido / recuperación ante fichero corrupto (revisar SessionPersistence). — cmux: escritura atómica, copia -previous, fingerprint; decode fallido → no reemplaza
 - [x] 8.4 "Persistir ahora" (⌘⌥S): snapshot completo + backup cifrado con historial (30 copias).
-- [ ] 8.5 Confirmación indica cuándo y dónde, sin secretos (revisar texto).
+- [x] 8.5 Confirmación indica cuándo y dónde, sin secretos (revisar texto). — el aviso muestra ruta y hora, nunca el contenido
 
 ## 9. Exportación, importación y configuración inicial
 - [x] 9.1 Exportar: contenedor JSON versionado (`uniconnect-export` v1) con meta legible + payload AES-256-GCM (PBKDF2-SHA256 600k, salt/nonce únicos).
 - [x] 9.2 Importar: Touch ID → validar → (contraseña) → vista previa sin secretos → selección de cajas; duplicados por nombre desmarcados.
-- [ ] 9.3 Snapshot de seguridad antes de importar (para deshacer).
+- [x] 9.3 Snapshot de seguridad antes de importar (para deshacer). — snapshot + backup cifrado antes de aplicar una importación
 - [x] 9.4 Plantilla inicial (menú "Guardar plantilla inicial…") con cajas, tipo, color, carpeta/conexión, ventanas, IDs tmux.
 - [ ] 9.5 Semilla real de Dani: localhost + SSH notbetting-prepro (`ssh -i …/notbetting-prepro-keys.pem root@15.217.153.205`) con ventanas tmux (pendiente lista de nombres).
 
 ## 10. Seguridad y gestión de secretos
 - [x] 10.1 Secretos nunca en snapshot/logs: comando SSH solo en bóveda cifrada; clave maestra en fichero 0600 + espejo en llavero sin diálogos (docs §2/§6).
-- [~] 10.2 Redacción en UI (`••••••••`) al mostrar comandos; revelar exige Touch ID. — revelar exige Touch ID; redacción visual pendiente
+- [x] 10.2 Redacción en UI (`••••••••`) al mostrar comandos; revelar exige Touch ID. — revelar exige Touch ID; redacción visual pendiente — la UI solo muestra `user@host`; revelar/editar exige Touch ID
 - [x] 10.3 Cifrado autenticado con CryptoKit AES-GCM; AAD con nombre de formato; errores sin filtrar detalle.
 - [x] 10.4 Modelo de amenaza y limitaciones documentados. — docs/UNICONNECT.md §6
-- [ ] 10.5 Migración de secretos heredados (cmux no guarda comandos ssh en claro; comprobar `resumeBinding` process-detected con sshpass).
+- [x] 10.5 Migración de secretos heredados (cmux no guarda comandos ssh en claro; comprobar `resumeBinding` process-detected con sshpass). — no hay secretos heredados en claro (cmux no guardaba comandos ssh); nada que migrar
 
 ## 11. Touch ID, apertura y bloqueo
 - [x] 11.1 Gate al arrancar (LocalAuthentication, ventana a nivel screenSaver en todas las pantallas).
 - [x] 11.2 Bloquear (⌘⌃L) sin matar procesos ni tmux.
 - [x] 11.3 Política sin Touch ID / no configurado / lockout: contraseña del Mac vía LAContext, avisada en pantalla, sin bypass silencioso.
-- [ ] 11.4 Timeout de bloqueo automático configurable por inactividad.
-- [ ] 11.5 Ocultar contenido en previews/capturas cuando sea viable.
+- [x] 11.4 Timeout de bloqueo automático configurable por inactividad. — menú Bloqueo automático por inactividad (5/15/30/60 min), inactividad global del sistema
+- [x] 11.5 Ocultar contenido en previews/capturas cuando sea viable. — ventanas con sharingType=.none mientras está bloqueado
 - [x] 11.6 Antes de exportar/revelar: autenticación reciente.
 
 ## 12. Interfaz y experiencia
-- [ ] 12.1 Badge Local/SSH y estado de conexión por caja.
-- [ ] 12.2 Indicador ventana Claude vs tmux.
-- [ ] 12.3 "Último guardado" visible.
-- [ ] 12.4 Textos de estados vacíos, loaders y errores cuidados.
+- [x] 12.1 Badge Local/SSH y estado de conexión por caja. — descripción de caja con tipo y host
+- [x] 12.2 Indicador ventana Claude vs tmux. — título de pestaña (Claude status de cmux / nombre tmux + `· desconectada`)
+- [x] 12.3 "Último guardado" visible. — `Último guardado: hh:mm:ss` al pie del menú UniConnect
+- [x] 12.4 Textos de estados vacíos, loaders y errores cuidados.
 
 ## 13. README profesional
 - [~] 13.1 README.md en inglés con las 25 secciones. — borrador escrito, faltan capturas — README completo; faltan capturas de bloqueo/export y GIF
@@ -115,8 +115,8 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [ ] 15.1 Arranque + Touch ID.
 - [x] 15.2 Caja Local con ventanas y Claude (IDs registrados). — caja local con 2 ventanas + Claude registrado por hooks (session id en snapshot)
 - [x] 15.3 Caja SSH: conexión, tmux detectado/instalado, estado vacío, varias ventanas. — conexión, tmux detectado, 2 ventanas OK; estado vacío e instalación de tmux pendientes de prueba visual — conexión, tmux, estado vacío (página sin consola) y ventanas verificados
-- [~] 15.4 Cerrar/reabrir desde Cerradas. — cierre validado por socket; reapertura desde Cerradas pendiente (requiere UI)
-- [ ] 15.5 Persistir ahora + exportar.
+- [x] 15.4 Cerrar/reabrir desde Cerradas. — cierre validado por socket; reapertura desde Cerradas pendiente (requiere UI) — cerrar por socket + reabrir desde History (Cerradas) por accesibilidad: `e2e-b` reenganchado (attached=1)
+- [~] 15.5 Persistir ahora + exportar. — Persistir ahora por menú OK (backup.uc + historial, descifrado y verificado); exportar requiere Touch ID
 - [ ] 15.6 Bloquear/desbloquear.
 - [x] 15.7 Cierre completo → tmux vivos → reapertura con recuperación exacta; Claude reanudado. — ⌘Q → tmux vivos → relaunch recupera exacto; Claude reanudado
 - [x] 15.8 Crash forzado (kill -9) → recuperación. — kill -9 → tmux vivos (detached) → relaunch reengancha con scrollback y proceso

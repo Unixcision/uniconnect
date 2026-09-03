@@ -331,6 +331,7 @@ final class UniConnectCoordinator: ObservableObject {
         workspace.uniConnectTmuxSessionsByPanelId[panel.id] = session
         workspace.setPanelCustomTitle(panelId: panel.id, title: name)
         removePlaceholders(from: workspace, keeping: panel.id)
+        workspace.uniConnectProfile?.touch()
         requestSave()
         return panel
     }
@@ -546,6 +547,9 @@ final class UniConnectCoordinator: ObservableObject {
             presentError("No hay ventana principal donde importar.")
             return
         }
+        // Safety net: snapshot + encrypted backup of the current state so an import can be undone.
+        AppDelegate.shared?.uniConnectPersistSessionNow()
+        _ = try? UniConnectBackup.persistNow(tabManagers: allTabManagers())
         var created: [Workspace] = []
         var groupMembers: [String: [UUID]] = [:]
         for (index, item) in workspaces.enumerated() {
@@ -636,6 +640,42 @@ final class UniConnectCoordinator: ObservableObject {
         }
     }
 
+    // MARK: Explicit remote termination (never a side effect of closing)
+
+    /// Kills the tmux session behind the focused window on the server, after a confirmation
+    /// that spells out exactly what dies, then closes the tab. This is the only place
+    /// UniConnect ever runs `tmux kill-session`.
+    func terminateRemoteTmuxSession(in workspace: Workspace) {
+        guard let profile = workspace.uniConnectProfile, profile.isSSH,
+              let panelId = workspace.focusedPanelId,
+              let session = workspace.uniConnectTmuxSessionsByPanelId[panelId],
+              let credentialId = profile.credentialId,
+              let connect = UniConnectVault.shared.connectCommand(for: credentialId) else {
+            presentError("La ventana activa no es una ventana tmux de una caja SSH.")
+            return
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "¿Terminar la sesión tmux \"\(session)\" en \(profile.hostLabel ?? "el servidor")?"
+        alert.informativeText = "Se ejecutará `tmux kill-session -t \(session)` en el servidor: el proceso que corra dentro (Claude, logs, lo que sea) muere y no se puede recuperar. Cerrar la pestaña normalmente NO hace esto."
+        alert.addButton(withTitle: "Terminar sesión remota")
+        alert.addButton(withTitle: "Cancelar")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let client = UniConnectSSH.injectingOptions(["-T"] + UniConnectSSH.baseClientOptions, into: connect)
+        let commandLine = client + " " + UniConnectSSH.shellQuote("tmux kill-session -t \(UniConnectSSH.shellQuote(session))")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-lc", commandLine]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
+        process.waitUntilExit()
+        workspace.uniConnectTmuxSessionsByPanelId.removeValue(forKey: panelId)
+        _ = workspace.closePanel(panelId, force: true)
+        workspace.uniConnectProfile?.touch()
+        requestSave()
+    }
+
     // MARK: Closed items ("Cerradas")
 
     func showClosedItemsMenu(tabManager: TabManager?) {
@@ -720,7 +760,17 @@ extension Workspace {
         }
         let safe = UniConnectSSH.sanitizedTmuxName(session)
         let commandLine = UniConnectSSH.attachCommandLine(connectCommand: connect, session: safe, directory: nil)
-        return UniConnectSSH.writeLauncherScript(commandLine: commandLine, label: safe)
+        return UniConnectSSH.writeLauncherScript(commandLine: commandLine, label: safe, delay: UniConnectSSH.nextStaggerDelay())
+    }
+
+    /// Marks a tmux-bound window whose ssh client died so the tab itself says so.
+    func uniConnectMarkDisconnected(panelId: UUID) {
+        guard uniConnectTmuxSessionsByPanelId[panelId] != nil else { return }
+        let base = panelCustomTitles[panelId] ?? panelTitles[panelId] ?? "ventana"
+        if !base.hasSuffix(" · desconectada") {
+            setPanelCustomTitle(panelId: panelId, title: base + " · desconectada")
+        }
+        uniConnectProfile?.touch()
     }
 }
 
