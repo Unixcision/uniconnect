@@ -658,7 +658,7 @@ final class ClosedItemHistoryStore: ObservableObject {
         )
         return resolvedAppSupport
             .appendingPathComponent("cmux", isDirectory: true)
-            .appendingPathComponent("closed-item-history-\(safeBundleId).json", isDirectory: false)
+            .appendingPathComponent("closed-item-history-\(safeBundleId)\(UniConnectIdentity.storageSuffix).json", isDirectory: false)
     }
 
     private static func menuItem(for record: ClosedItemHistoryRecord) -> ClosedItemHistoryMenuItem {

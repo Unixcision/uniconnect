@@ -1976,7 +1976,7 @@ enum SessionPersistenceStore {
         )
         return resolvedAppSupport
             .appendingPathComponent("cmux", isDirectory: true)
-            .appendingPathComponent("session-\(safeBundleId)\(suffix).json", isDirectory: false)
+            .appendingPathComponent("session-\(safeBundleId)\(UniConnectIdentity.storageSuffix)\(suffix).json", isDirectory: false)
     }
 }
 

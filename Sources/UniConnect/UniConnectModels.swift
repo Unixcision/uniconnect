@@ -99,6 +99,18 @@ struct UniConnectDocument: Codable, Equatable {
     }
 }
 
+// MARK: - Storage identity
+
+/// UniConnect keeps cmux's bundle id (permissions, Keychain, sockets) but must never read or
+/// overwrite cmux's own session history. Files that carry session state get this suffix
+/// when the running executable is UniConnect, so both apps' data can coexist untouched.
+enum UniConnectIdentity {
+    static let storageSuffix: String = {
+        let exe = Bundle.main.executableURL?.lastPathComponent ?? ""
+        return exe.hasPrefix("UniConnect") ? "-uniconnect" : ""
+    }()
+}
+
 // MARK: - Errors
 
 enum UniConnectError: LocalizedError {
