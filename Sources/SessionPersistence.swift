@@ -1975,7 +1975,7 @@ enum SessionPersistenceStore {
             options: .regularExpression
         )
         return resolvedAppSupport
-            .appendingPathComponent("cmux", isDirectory: true)
+            .appendingPathComponent(UniConnectIdentity.sessionFolder, isDirectory: true)
             .appendingPathComponent("session-\(safeBundleId)\(UniConnectIdentity.storageSuffix)\(suffix).json", isDirectory: false)
     }
 }

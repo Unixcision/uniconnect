@@ -644,6 +644,7 @@
 		C0FFEE0400000000000000B1 /* UniConnectAppLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE0400000000000000A1 /* UniConnectAppLock.swift */; };
 		C0FFEE0300000000000000B1 /* UniConnectBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE0300000000000000A1 /* UniConnectBackup.swift */; };
 		C0FFEE0600000000000000B1 /* UniConnectCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE0600000000000000A1 /* UniConnectCoordinator.swift */; };
+		C0FFEE0800000000000000B1 /* UniConnectMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE0800000000000000A1 /* UniConnectMigration.swift */; };
 		C0FFEE0000000000000000B1 /* UniConnectModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE0000000000000000A1 /* UniConnectModels.swift */; };
 		C0FFEE0200000000000000B1 /* UniConnectSSH.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE0200000000000000A1 /* UniConnectSSH.swift */; };
 		C0FFEE7700000000000000B1 /* UniConnectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE7700000000000000A1 /* UniConnectTests.swift */; };
@@ -1369,6 +1370,7 @@
 		C0FFEE0400000000000000A1 /* UniConnectAppLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectAppLock.swift; sourceTree = "<group>"; };
 		C0FFEE0300000000000000A1 /* UniConnectBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectBackup.swift; sourceTree = "<group>"; };
 		C0FFEE0600000000000000A1 /* UniConnectCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectCoordinator.swift; sourceTree = "<group>"; };
+		C0FFEE0800000000000000A1 /* UniConnectMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectMigration.swift; sourceTree = "<group>"; };
 		C0FFEE0000000000000000A1 /* UniConnectModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectModels.swift; sourceTree = "<group>"; };
 		C0FFEE0200000000000000A1 /* UniConnectSSH.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSH.swift; sourceTree = "<group>"; };
 		C0FFEE7700000000000000A1 /* UniConnectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectTests.swift; sourceTree = "<group>"; };
@@ -1527,6 +1529,7 @@
 				C0FFEE0400000000000000A1 /* UniConnectAppLock.swift */,
 				C0FFEE0500000000000000A1 /* UniConnectViews.swift */,
 				C0FFEE0600000000000000A1 /* UniConnectCoordinator.swift */,
+				C0FFEE0800000000000000A1 /* UniConnectMigration.swift */,
 			);
 			path = UniConnect;
 			sourceTree = "<group>";
@@ -3024,6 +3027,7 @@
 				C0FFEE0400000000000000B1 /* UniConnectAppLock.swift in Sources */,
 				C0FFEE0300000000000000B1 /* UniConnectBackup.swift in Sources */,
 				C0FFEE0600000000000000B1 /* UniConnectCoordinator.swift in Sources */,
+				C0FFEE0800000000000000B1 /* UniConnectMigration.swift in Sources */,
 				C0FFEE0000000000000000B1 /* UniConnectModels.swift in Sources */,
 				C0FFEE0200000000000000B1 /* UniConnectSSH.swift in Sources */,
 				C0FFEE0100000000000000B1 /* UniConnectVault.swift in Sources */,
@@ -3462,7 +3466,7 @@
 					"-framework",
 					Carbon,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.cmuxterm.app.debug;
+				PRODUCT_BUNDLE_IDENTIFIER = com.unixcision.uniconnect.debug;
 				PRODUCT_MODULE_NAME = cmux_DEV;
 				PRODUCT_NAME = "UniConnect DEV";
 				OTHER_SWIFT_FLAGS = (
@@ -3510,7 +3514,7 @@
 					"-framework",
 					Carbon,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.cmuxterm.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.unixcision.uniconnect;
 				PRODUCT_MODULE_NAME = cmux;
 				PRODUCT_NAME = UniConnect;
 				SPARKLE_PUBLIC_KEY = "avjcgKibf1FTvhIjLBxhd+0HSpsXU4D0IGlVk8cgqRc=";
@@ -3591,7 +3595,7 @@
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Bundles";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.64.14;
-				PRODUCT_BUNDLE_IDENTIFIER = com.cmuxterm.app.docktileplugin.debug;
+				PRODUCT_BUNDLE_IDENTIFIER = com.unixcision.uniconnect.docktileplugin.debug;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
@@ -3616,7 +3620,7 @@
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Bundles";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.64.14;
-				PRODUCT_BUNDLE_IDENTIFIER = com.cmuxterm.app.docktileplugin;
+				PRODUCT_BUNDLE_IDENTIFIER = com.unixcision.uniconnect.docktileplugin;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;

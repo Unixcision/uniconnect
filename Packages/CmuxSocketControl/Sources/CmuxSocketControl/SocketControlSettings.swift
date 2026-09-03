@@ -20,7 +20,7 @@ public struct SocketControlSettings {
     /// Environment key carrying the dev build's launch tag.
     public static let launchTagEnvKey = "CMUX_TAG"
     /// Base bundle identifier shared by all debug builds.
-    public static let baseDebugBundleIdentifier = "com.cmuxterm.app.debug"
+    public static let baseDebugBundleIdentifier = "com.unixcision.uniconnect.debug"
     private static let stableSocketFileName = "cmux.sock"
     /// Legacy stable socket path used before the Application Support location.
     public static let legacyStableDefaultSocketPath = "/tmp/cmux.sock"
@@ -213,7 +213,7 @@ public struct SocketControlSettings {
         stableDefaultSocketCanBeReclaimed: (String) -> Bool = { _ in true }
     ) -> String {
         guard !isDebugBuild,
-              normalizedBundleIdentifier(bundleIdentifier) == "com.cmuxterm.app",
+              ["com.cmuxterm.app", "com.unixcision.uniconnect"].contains(normalizedBundleIdentifier(bundleIdentifier)),
               isStableReleaseSocketPath(preferredPath, currentUserID: currentUserID) else {
             return preferredPath
         }

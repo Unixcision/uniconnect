@@ -9,11 +9,20 @@ enum UniConnectPaths {
     static var directory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        // Debug / tagged builds carry their own bundle id; keep their vault and backups apart
-        // from the production app so dogfooding never pollutes real data.
-        let bundleId = Bundle.main.bundleIdentifier ?? "com.cmuxterm.app"
-        let suffix = bundleId == "com.cmuxterm.app" ? "" : "-" + bundleId.replacingOccurrences(of: "com.cmuxterm.app.", with: "")
-        let dir = base.appendingPathComponent("cmux/uniconnect\(suffix)", isDirectory: true)
+        // UniConnect owns its directory. Debug / tagged builds carry their own bundle id and
+        // get a suffixed folder so dogfooding never pollutes real data.
+        let release = UniConnectIdentity.releaseBundleIdentifier
+        let bundleId = Bundle.main.bundleIdentifier ?? release
+        let suffix = bundleId == release ? "" : "-" + bundleId.replacingOccurrences(of: release + ".", with: "").replacingOccurrences(of: "com.cmuxterm.app", with: "cmux")
+        let dir = base.appendingPathComponent("UniConnect\(suffix)", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            // One-time move from the pre-1.0 location (shared with cmux's folder).
+            let legacySuffix = bundleId == release ? "" : "-" + bundleId.replacingOccurrences(of: "com.cmuxterm.app.", with: "")
+            let legacy = base.appendingPathComponent("cmux/uniconnect\(legacySuffix)", isDirectory: true)
+            if FileManager.default.fileExists(atPath: legacy.path) {
+                try? FileManager.default.moveItem(at: legacy, to: dir)
+            }
+        }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         return dir
     }
@@ -160,7 +169,7 @@ enum UniConnectCrypto {
 //    rebuilds and reinstalls. Deleting both copies makes every vault/backup unreadable.
 
 enum UniConnectMasterKey {
-    private static let service = "com.cmuxterm.app.uniconnect"
+    private static let service = "com.unixcision.uniconnect.master-key"
     private static let account = "master-key-v1"
     private static var cached: SymmetricKey?
 

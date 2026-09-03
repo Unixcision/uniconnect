@@ -105,10 +105,14 @@ struct UniConnectDocument: Codable, Equatable {
 /// overwrite cmux's own session history. Files that carry session state get this suffix
 /// when the running executable is UniConnect, so both apps' data can coexist untouched.
 enum UniConnectIdentity {
-    static let storageSuffix: String = {
+    static let isUniConnect: Bool = {
         let exe = Bundle.main.executableURL?.lastPathComponent ?? ""
-        return exe.hasPrefix("UniConnect") ? "-uniconnect" : ""
+        return exe.hasPrefix("UniConnect")
     }()
+    static let storageSuffix: String = isUniConnect ? "-uniconnect" : ""
+    /// Folder under Application Support that holds session/history files.
+    static let sessionFolder: String = isUniConnect ? "UniConnect" : "cmux"
+    static let releaseBundleIdentifier = "com.unixcision.uniconnect"
 }
 
 // MARK: - Errors

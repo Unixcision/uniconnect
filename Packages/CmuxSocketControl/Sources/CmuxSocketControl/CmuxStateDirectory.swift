@@ -30,7 +30,12 @@ public import Foundation
 public enum CmuxStateDirectory {
     /// The directory name segment under `~/.local/state` (and the legacy name
     /// under `~/Library/Application Support`).
-    public static let directoryName = "cmux"
+    public static var directoryName: String {
+        // UniConnect (app and its bundled CLI) keeps its sockets and markers apart from cmux.
+        let argv0 = URL(fileURLWithPath: CommandLine.arguments.first ?? "").resolvingSymlinksInPath().path
+        let bundlePath = Bundle.main.bundleURL.path
+        return (argv0.contains("UniConnect") || bundlePath.contains("UniConnect")) ? "uniconnect" : "cmux"
+    }
 
     /// The cmux state directory: `<home>/.local/state/cmux`.
     ///

@@ -657,7 +657,7 @@ final class ClosedItemHistoryStore: ObservableObject {
             options: .regularExpression
         )
         return resolvedAppSupport
-            .appendingPathComponent("cmux", isDirectory: true)
+            .appendingPathComponent(UniConnectIdentity.sessionFolder, isDirectory: true)
             .appendingPathComponent("closed-item-history-\(safeBundleId)\(UniConnectIdentity.storageSuffix).json", isDirectory: false)
     }
 

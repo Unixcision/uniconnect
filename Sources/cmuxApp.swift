@@ -29,6 +29,7 @@ enum CmuxMain {
             runSidebarInterpreterWorker()
             exit(0)
         }
+        UniConnectMigration.runIfNeeded()
         cmuxApp.main()
     }
 }
