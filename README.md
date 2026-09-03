@@ -96,7 +96,7 @@ flowchart LR
     UC -- passphrase --> EXPORT
 ```
 
-1. cmux's snapshot (`~/Library/Application Support/cmux/session-*.json`) gains two optional fields: a per-workspace profile (`local` or `ssh`, plus an opaque credential id) and a per-terminal tmux session name.
+1. UniConnect's own snapshot (`~/Library/Application Support/UniConnect/session-*.json`, same format as cmux's) gains two optional fields: a per-workspace profile (`local` or `ssh`, plus an opaque credential id) and a per-terminal tmux session name.
 2. The connect command behind that credential id lives in `uniconnect/vault.uc`, sealed with a 256-bit master key.
 3. On restore, every terminal that has a tmux name gets a one-shot launcher script that runs the connect command with `-t` and the tmux attach. Scrollback comes from tmux, not from the local replay.
 4. Local terminals follow cmux's own agent-resume path; UniConnect only forces the permissions flag.
@@ -157,7 +157,7 @@ cd uniconnect
 bash ../uniconnect-install-patched.sh   # Release build, ad-hoc signature, /Applications
 ```
 
-The installer keeps the bundle id `com.cmuxterm.app` so existing cmux sessions, preferences and the `cmux` CLI keep working, backs up the previous app to the Desktop, and disables Sparkle update checks on the installed copy.
+UniConnect ships with its own bundle id (`com.unixcision.uniconnect`), its own Application Support folder and its own socket directory, so it can live next to cmux without touching cmux's sessions or history. On first launch it copies cmux's preferences once (never the sessions). The installer backs up the previous app to the Desktop and disables Sparkle update checks on the installed copy.
 
 ## Build from source
 
@@ -191,13 +191,12 @@ First-run seeding: put a plain JSON seed (see the template) in a file and launch
 ## Backup and restore
 
 ```text
-~/Library/Application Support/cmux/
-├── session-com.cmuxterm.app.json        # cmux snapshot + UniConnect fields (no secrets)
-└── uniconnect/
-    ├── vault.uc                         # connect commands, encrypted
-    ├── .master-key                      # 0600
-    ├── backup.uc                        # last "Persist now"
-    └── history/backup-<timestamp>.uc    # 30 rotating copies
+~/Library/Application Support/UniConnect/
+├── session-com.unixcision.uniconnect-uniconnect.json  # snapshot + UniConnect fields (no secrets)
+├── vault.uc                         # connect commands, encrypted
+├── .master-key                      # 0600
+├── backup.uc                        # last "Persist now"
+└── history/backup-<timestamp>.uc    # 30 rotating copies
 $TMPDIR/uniconnect-launchers/            # one-shot zsh launchers (0700), purged hourly
 ```
 

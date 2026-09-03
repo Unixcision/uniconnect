@@ -166,7 +166,7 @@ _Evidencia:_ Sin secretos en snapshot/logs/README/tests/git (grep); bóveda AES-
 - [x] Autenticación de metadatos relevantes.
 - [x] Comparaciones y errores que no filtren información innecesaria.
 ## 11. Touch ID, apertura y bloqueo
-_Evidencia:_ LocalAuthentication al arrancar/cierre/crash/reinicio y en Bloquear/export/revelar; nada visible antes de autenticar; Bloquear oculta con ventana a nivel screenSaver, mantiene procesos y tmux, sharingType=none; política explícita sin Touch ID (contraseña del sistema avisada), sin bypass; timeout de inactividad configurable.
+_Evidencia:_ LocalAuthentication al arrancar/cierre/crash/reinicio y en Bloquear/export/revelar; nada visible antes de autenticar; Bloquear oculta con ventana flotante (por debajo del diálogo de Touch ID), mantiene procesos y tmux, sharingType=none; política explícita sin Touch ID (contraseña del sistema avisada), sin bypass; timeout de inactividad configurable.
 
 - [x] Al arrancar desde cero.
 - [x] Después de cerrar y volver a abrir.

@@ -192,7 +192,9 @@ final class UniConnectAppLock: ObservableObject {
                 backing: .buffered,
                 defer: false
             )
-            window.level = .screenSaver
+            // Above the app's own windows, but below the system Touch ID dialog (a screen-saver
+            // level window would hide the sensor prompt in full screen).
+            window.level = .floating
             window.isOpaque = true
             window.backgroundColor = NSColor(calibratedRed: 0.06, green: 0.06, blue: 0.08, alpha: 1)
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]

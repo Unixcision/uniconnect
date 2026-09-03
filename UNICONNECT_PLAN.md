@@ -15,7 +15,7 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [x] 2.3 Menús, About, Quit, status bar, ayuda: textos "cmux" → "UniConnect" (defaultValue + catálogo es/en). — defaultValues + catálogos (1397 valores); textos CLI/`cmux.json` intencionadamente sin tocar
 - [x] 2.4 Icono y recursos gráficos propios. — icono generado desde docs/assets/logo.svg (appiconset + Icon Composer)
 - [x] 2.5 Scripts (reload.sh, install script, sign) adaptados al nuevo nombre de producto. — rename.py: reload/cli/cleanup/tests/smoke/sign/instalador + workflows
-- [x] 2.6 Bundle ID `com.cmuxterm.app` se CONSERVA (sesiones, Keychain, App Support, socket). Documentado con rollback.
+- [x] 2.6 Bundle ID propio `com.unixcision.uniconnect` (sesiones, Keychain, App Support y socket separados de cmux; migración única de ajustes). Documentado.
 - [x] 2.7 Updater oficial desactivado (SUEnableAutomaticChecks=false, SUFeedURL=about:blank; el resolver cae al appcast oficial si está vacío).
 - [x] 2.8 Carpeta local → `PROYECTOS/uniconnect` (tras validar build). — 2026-09-03; instalador renombrado a uniconnect-install-patched.sh
 - [x] 2.9 `gh repo rename` Unixcision/cmux → Unixcision/uniconnect; `origin` actualizado; upstream conservado; descripción/topics. — gh repo rename + set-url origin; upstream intacto; descripción y 9 topics
@@ -83,7 +83,7 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [x] 10.5 Migración de secretos heredados (cmux no guarda comandos ssh en claro; comprobar `resumeBinding` process-detected con sshpass). — no hay secretos heredados en claro (cmux no guardaba comandos ssh); nada que migrar
 
 ## 11. Touch ID, apertura y bloqueo
-- [x] 11.1 Gate al arrancar (LocalAuthentication, ventana a nivel screenSaver en todas las pantallas).
+- [x] 11.1 Gate al arrancar (LocalAuthentication, ventana flotante en todas las pantallas, por debajo del diálogo de Touch ID).
 - [x] 11.2 Bloquear (⌘⌃L) sin matar procesos ni tmux.
 - [x] 11.3 Política sin Touch ID / no configurado / lockout: contraseña del Mac vía LAContext, avisada en pantalla, sin bypass silencioso.
 - [x] 11.4 Timeout de bloqueo automático configurable por inactividad. — menú Bloqueo automático por inactividad (5/15/30/60 min), inactividad global del sistema

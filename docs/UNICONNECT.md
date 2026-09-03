@@ -15,15 +15,15 @@ Reglas de ID tmux: letras, dígitos, `-` y `_`, máximo 40 caracteres, sin `.` n
 
 ## 2. Ficheros en disco
 
-`~/Library/Application Support/cmux/`
+`~/Library/Application Support/UniConnect/` (identidad propia: bundle `com.unixcision.uniconnect`, socket en `~/.local/state/uniconnect`; cmux conserva su carpeta y su historial intactos)
 
-- `session-com.cmuxterm.app.json` — snapshot de cmux (ya existía). UniConnect añade campos **opcionales**: `workspaces[].uniConnect` (`kind`, `credentialId`, `hostLabel`, `tmuxReady`) y `panels[].terminal.uniConnectTmuxSession`. Un snapshot antiguo sin estos campos se carga igual.
-- `uniconnect/vault.uc` — comandos de conexión, AES-256-GCM con la clave maestra. Permisos 0600.
-- `uniconnect/backup.uc` — último "Persistir ahora" (documento legible cifrado con la clave maestra). `uniconnect/history/` conserva las 30 últimas copias.
+- `session-com.unixcision.uniconnect-uniconnect.json` — snapshot con el formato de cmux. UniConnect añade campos **opcionales**: `workspaces[].uniConnect` (`kind`, `credentialId`, `hostLabel`, `tmuxReady`) y `panels[].terminal.uniConnectTmuxSession`. Un snapshot antiguo sin estos campos se carga igual.
+- `vault.uc` — comandos de conexión, AES-256-GCM con la clave maestra. Permisos 0600.
+- `backup.uc` — último "Persistir ahora" (documento legible cifrado con la clave maestra). `history/` conserva las 30 últimas copias.
 - `$TMPDIR/uniconnect-launchers/` — scripts zsh de un solo uso (0700) que arrancan cada ventana SSH (`rm -f "$0"` antes del `exec`); se purgan a la hora. Viven en `$TMPDIR` porque Ghostty parte el comando por espacios y `Application Support` lleva uno. Mientras existen contienen el comando de conexión completo, igual que los lanzadores de resume de cmux.
-- `uniconnect/.master-key` — clave maestra, 32 bytes aleatorios, modo 0600 (copia principal).
+- `.master-key` — clave maestra, 32 bytes aleatorios, modo 0600 (copia principal).
 
-Clave maestra: la copia principal es el fichero 0600; además se **espeja** en el llavero de inicio de sesión (`kSecClassGenericPassword`, servicio `com.cmuxterm.app.uniconnect`, cuenta `master-key-v1`, `WhenUnlockedThisDeviceOnly`) sin permitir nunca diálogos interactivos. Motivo: la app va firmada ad-hoc (cada recompilación cambia de identidad) y el llavero clásico pediría la contraseña de la cuenta en cada instalación, o se colgaría si la pantalla está bloqueada. Las builds de desarrollo (bundle id distinto) usan `uniconnect-<sufijo>/` y no comparten bóveda con la app real.
+Clave maestra: la copia principal es el fichero 0600; además se **espeja** en el llavero de inicio de sesión (`kSecClassGenericPassword`, servicio `com.unixcision.uniconnect.master-key`, cuenta `master-key-v1`, `WhenUnlockedThisDeviceOnly`) sin permitir nunca diálogos interactivos. Motivo: la app va firmada ad-hoc (cada recompilación cambia de identidad) y el llavero clásico pediría la contraseña de la cuenta en cada instalación, o se colgaría si la pantalla está bloqueada. Las builds de desarrollo (bundle id distinto) usan `UniConnect-<sufijo>/` y no comparten bóveda con la app real. La primera vez que arranca la app con identidad propia mueve fichero a fichero lo que hubiera en la ubicación antigua (`cmux/uniconnect/`) y copia una sola vez los ajustes (UserDefaults) de cmux.
 
 ## 3. Documento legible (lo que se exporta / importa)
 
@@ -58,7 +58,7 @@ Clave maestra: la copia principal es el fichero 0600; además se **espeja** en e
 
 ## 5. Restauración
 
-1. Arranque → **Touch ID** (ventana de bloqueo a nivel `screenSaver` en todas las pantallas). cmux carga el snapshot por debajo; nada es visible hasta desbloquear.
+1. Arranque → **Touch ID** (ventana de bloqueo a nivel `floating` en todas las pantallas: tapa la app pero no el diálogo de Touch ID del sistema). cmux carga el snapshot por debajo; nada es visible hasta desbloquear.
 2. Cajas locales: cmux recrea pestañas y splits. Si la pestaña tenía Claude, lanza `claude --resume <id> … --dangerously-skip-permissions` (el flag se añade siempre en `AgentResumeArgv.claudeResumeArgv`).
 3. Cajas SSH: para cada pestaña con `uniConnectTmuxSession`, UniConnect genera un lanzador (que exporta `TERM=xterm-256color`, porque el `xterm-ghostty` de Ghostty no suele existir en los servidores y tmux se niega a engancharse) `ssh -t … '<tmux new-session -A -D -s ID>'` con el comando de la bóveda y lo pasa como comando inicial del terminal. `-A` engancha si existe, `-D` expulsa clientes muertos. No se reproduce scrollback local: lo aporta tmux.
 4. Tras desbloquear se fuerza un autosave.
@@ -79,7 +79,7 @@ Política de autenticación: Touch ID si hay sensor; si no hay biometría, no es
 |---|---|
 | `UNICONNECT_DISABLE_LOCK=1` | Sin Touch ID (solo tests/automatización) |
 | `UNICONNECT_DISABLE=1` | Desactiva el selector Local/SSH y el resto de intercepciones (comportamiento cmux puro) |
-| `UNICONNECT_IMPORT_SEED=<ruta>` | Importa una semilla JSON (o un export cifrado si hay `UNICONNECT_TEST_PASSPHRASE`) una sola vez tras desbloquear. Sin variable, se usa `~/Library/Application Support/cmux/uniconnect/seed.json` si existe (aprovisionamiento del primer arranque) |
+| `UNICONNECT_IMPORT_SEED=<ruta>` | Importa una semilla JSON (o un export cifrado si hay `UNICONNECT_TEST_PASSPHRASE`) una sola vez tras desbloquear. Sin variable, se usa `~/Library/Application Support/UniConnect/seed.json` si existe (aprovisionamiento del primer arranque) |
 | `UNICONNECT_TEST_PASSPHRASE`, `UNICONNECT_TEST_EXPORT_PATH` | Ganchos de automatización para exportar/importar sin diálogos; **solo se honran si el bloqueo está desactivado** (`UNICONNECT_DISABLE_LOCK=1`), nunca en uso normal |
 
 ## 8. Pendiente / limitaciones conocidas
@@ -88,13 +88,13 @@ Política de autenticación: Touch ID si hay sensor; si no hay biometría, no es
 - Reconexión escalonada: los lanzadores generados en la misma ráfaga (≤5 s) esperan 0, 0.4, 0.8… s (máx. 6 s) antes de conectar.
 - Bloqueo automático por inactividad: menú **UniConnect ▸ Bloqueo automático por inactividad** (5/15/30/60 min, desactivado por defecto); usa la inactividad global del sistema. Al bloquear, las ventanas pasan a `sharingType = .none` (no aparecen en grabaciones ni capturas) hasta desbloquear.
 - **Terminar sesión tmux remota de la ventana activa…**: única acción que ejecuta `tmux kill-session`, siempre con confirmación explícita; cerrar una pestaña nunca lo hace.
-- Antes de importar se fuerza un snapshot completo y un backup cifrado (`uniconnect/history/`) para poder deshacer.
+- Antes de importar se fuerza un snapshot completo y un backup cifrado (`history/`) para poder deshacer.
 - Grupos al importar: se crean con `createWorkspaceGroup`, que añade una caja ancla.
 - Firma ad-hoc: ver §2/§6 sobre la clave maestra.
 
 ## 9. Registro de validación (build real, 2026-09-02/03)
 
-Build Debug etiquetada (`UniConnect DEV uniconnect.app`, bundle `com.cmuxterm.app.debug.uniconnect`), pantalla del Mac bloqueada durante toda la prueba, control por socket con `scripts/cmux-debug-cli.sh`.
+Build Debug etiquetada (`UniConnect DEV uniconnect.app`, bundle `com.unixcision.uniconnect.debug.uniconnect`), pantalla del Mac bloqueada durante toda la prueba, control por socket con `scripts/cmux-debug-cli.sh`.
 
 | Paso | Resultado |
 |---|---|
