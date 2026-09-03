@@ -140,6 +140,8 @@ Closing a tab only ends the ssh client; the tmux session and whatever runs insid
 
 **Authentication.** Touch ID via `LocalAuthentication` at launch, after crash or reboot, on *Lock*, and before export, import or revealing a connect command. On Macs without Touch ID, with no enrolled fingers, or after biometric lockout, the same system dialog falls back to the account password and the lock screen says so. There is no silent bypass; the only way to disable the gate is the `UNICONNECT_DISABLE_LOCK=1` environment variable meant for automated tests.
 
+<img src="docs/assets/lock-screen.png" alt="UniConnect lock screen: Touch ID icon, app name and Unlock / Quit buttons over a dark full-screen cover" width="900">
+
 **Integrity.** GCM authentication covers the payload and the format name. Any modified, truncated or foreign file is rejected before anything is imported; wrong passphrase and tampering produce the same error on purpose.
 
 **What it does not defend against.** Malware running as your user while the session is unlocked (it can read the master key file), an attacker with root, screen capture of an unlocked window, a compromised server, and the fact that `sshpass` exposes the password in the local process list for the duration of the connection, exactly as it does when typed by hand. The full threat model and the reasons behind the file-based master key are in [`docs/UNICONNECT.md`](docs/UNICONNECT.md).

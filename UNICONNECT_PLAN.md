@@ -99,7 +99,7 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 ## 13. README profesional
 - [~] 13.1 README.md en inglés con las 25 secciones. — borrador escrito, faltan capturas — README completo; faltan capturas de bloqueo/export y GIF
 - [x] 13.2 Logo/wordmark + hero. — logo hecho, hero pendiente — logo generado con Nano Banana Pro (gemini-3-pro-image) + icono; hero pendiente de captura — logo Nano Banana Pro + hero real
-- [~] 13.3 Capturas reales sanitizadas: selector Local/SSH, estado vacío SSH, ventanas tmux, bloqueo/exportación. — selector Local/SSH, estado vacío SSH y ventana tmux capturados y sanitizados; captura de bloqueo/exportación pendiente
+- [x] 13.3 Capturas reales sanitizadas: selector Local/SSH, estado vacío SSH, ventanas tmux, bloqueo/exportación. — selector Local/SSH, estado vacío SSH y ventana tmux capturados y sanitizados; captura de bloqueo/exportación pendiente — selector Local/SSH, estado vacío SSH, ventana tmux y pantalla de bloqueo; todas de build real y sanitizadas
 - [ ] 13.4 GIF optimizado del flujo principal.
 - [x] 13.5 Diagrama Mermaid (UniConnect, persistencia, Claude resume, SSH, tmux, Keychain, backups).
 - [x] 13.6 Badges reales; comprobación de enlaces, anchors e imágenes; sin datos privados. — 18 anclas OK, 6 imágenes y enlaces a LICENSE/THIRD_PARTY/docs responden 200 en raw.githubusercontent; sin IPs ni hostnames (difuminados)
@@ -117,7 +117,7 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [x] 15.3 Caja SSH: conexión, tmux detectado/instalado, estado vacío, varias ventanas. — conexión, tmux detectado, 2 ventanas OK; estado vacío e instalación de tmux pendientes de prueba visual — conexión, tmux, estado vacío (página sin consola) y ventanas verificados
 - [x] 15.4 Cerrar/reabrir desde Cerradas. — cierre validado por socket; reapertura desde Cerradas pendiente (requiere UI) — cerrar por socket + reabrir desde History (Cerradas) por accesibilidad: `e2e-b` reenganchado (attached=1)
 - [~] 15.5 Persistir ahora + exportar. — Persistir ahora por menú OK (backup.uc + historial, descifrado y verificado); exportar requiere Touch ID
-- [ ] 15.6 Bloquear/desbloquear.
+- [~] 15.6 Bloquear/desbloquear. — Bloquear por menú: ventana de bloqueo a nivel 1000 en toda la pantalla y ventanas principales con sharing=none (verificado por CGWindowList); desbloqueo con huella pendiente de prueba manual
 - [x] 15.7 Cierre completo → tmux vivos → reapertura con recuperación exacta; Claude reanudado. — ⌘Q → tmux vivos → relaunch recupera exacto; Claude reanudado
 - [x] 15.8 Crash forzado (kill -9) → recuperación. — kill -9 → tmux vivos (detached) → relaunch reengancha con scrollback y proceso
 - [ ] 15.9 Importar backup; contraseña mala y fichero manipulado rechazados.
