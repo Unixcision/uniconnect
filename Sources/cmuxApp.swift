@@ -876,10 +876,24 @@ struct cmuxApp: App {
             Button("Cerradas…") {
                 UniConnectCoordinator.shared.showClosedItemsMenu(tabManager: activeTabManager)
             }
+            Button("Terminar sesión tmux remota de la ventana activa…") {
+                guard let workspace = activeTabManager.selectedWorkspace else { return }
+                UniConnectCoordinator.shared.terminateRemoteTmuxSession(in: workspace)
+            }
+            Divider()
             Button("Bloquear") {
                 UniConnectAppLock.shared.lock()
             }
             .keyboardShortcut("l", modifiers: [.command, .control])
+            Menu("Bloqueo automático por inactividad") {
+                ForEach([0, 5, 15, 30, 60], id: \.self) { minutes in
+                    Button((minutes == 0 ? "Desactivado" : "\(minutes) min") + (UniConnectAppLock.autoLockMinutes == minutes ? "  ✓" : "")) {
+                        UniConnectAppLock.autoLockMinutes = minutes
+                    }
+                }
+            }
+            Divider()
+            Text(UniConnectCoordinator.lastSavedMenuLabel())
         }
 
         CommandGroup(after: .windowArrangement) {

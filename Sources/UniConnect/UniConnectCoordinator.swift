@@ -408,6 +408,7 @@ final class UniConnectCoordinator: ObservableObject {
                 let existing = Set(allTabManagers().flatMap { $0.tabs.map { ($0.customTitle ?? $0.title).lowercased() } })
                 let fresh = document.workspaces.filter { !existing.contains($0.name.lowercased()) }
                 applyImport(fresh)
+                if !fresh.isEmpty { closeUntouchedInitialWorkspaces() }
                 try? Data().write(to: marker)
                 NSLog("[UniConnect] seed applied: %d new of %d (existing names skipped)", fresh.count, document.workspaces.count)
             case .encrypted(let container):
@@ -428,6 +429,21 @@ final class UniConnectCoordinator: ObservableObject {
             }
         } catch {
             NSLog("[UniConnect] seed rejected: %@", error.localizedDescription)
+        }
+    }
+
+    /// After a first-run seed, drop the stock empty "~" workspace the app booted with.
+    private func closeUntouchedInitialWorkspaces() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        for tabManager in allTabManagers() {
+            for workspace in tabManager.tabs where workspace.uniConnectProfile == nil
+                && workspace.customTitle == nil
+                && workspace.panels.count == 1
+                && workspace.panels.values.first is TerminalPanel
+                && workspace.currentDirectory == home
+                && tabManager.tabs.count > 1 {
+                tabManager.closeWorkspace(workspace, recordHistory: false)
+            }
         }
     }
 
@@ -692,6 +708,19 @@ final class UniConnectCoordinator: ObservableObject {
         } catch {
             presentError("No se pudo guardar la plantilla: \(error.localizedDescription)")
         }
+    }
+
+    /// "Último guardado" for the menu: modification time of the session snapshot cmux writes.
+    static func lastSavedMenuLabel() -> String {
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.cmuxterm.app"
+        let safe = bundleId.replacingOccurrences(of: "[^A-Za-z0-9._-]", with: "-", options: .regularExpression)
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        let snapshot = base?.appendingPathComponent("cmux/session-\(safe)\(UniConnectIdentity.storageSuffix).json")
+        guard let snapshot, let date = (try? FileManager.default.attributesOfItem(atPath: snapshot.path))?[.modificationDate] as? Date else {
+            return "Último guardado: todavía no"
+        }
+        let f = DateFormatter(); f.dateStyle = .none; f.timeStyle = .medium
+        return "Último guardado: \(f.string(from: date))"
     }
 
     // MARK: Explicit remote termination (never a side effect of closing)
