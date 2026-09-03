@@ -143,4 +143,6 @@ Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto 
 - [x] A.10 Sesión de Claude ligada a cada ventana local y restaurada siempre.
 - [x] A.11 Probe de tmux sin falsos negativos (vacía la tubería antes de decidir).
 - [x] A.12 Semilla real de 16 cajas / 31 ventanas según CONNECT.md.
+- [x] A.13 Reconexión de ventanas tmux caídas: automática (3 intentos), al pulsar la pestaña, y todas de golpe con ⌘⌃R.
+- [x] A.14 Barra lateral: márgenes internos, badges de tipo y número de ventanas, sin rutas bajo cada caja.
 

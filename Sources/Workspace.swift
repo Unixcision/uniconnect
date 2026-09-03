@@ -10565,6 +10565,9 @@ final class Workspace: Identifiable, ObservableObject {
     /// always comes back on the same session instead of a bare shell.
     @Published var uniConnectClaudeSessionsByPanelId: [UUID: String] = [:]
     var uniConnectPlaceholderPanelIds: Set<UUID> = []
+    /// UniConnect: tmux windows whose ssh client died. They keep their tmux binding and
+    /// can be re-attached (automatically, on click, or from the menu).
+    @Published var uniConnectDisconnectedPanelIds: Set<UUID> = []
     /// UniConnect: the stock workspace the app boots with when there is nothing to restore.
     /// It shows the empty state instead of a shell and is never persisted.
     @Published var uniConnectIsStarter: Bool = false
@@ -19072,6 +19075,11 @@ extension Workspace: BonsplitDelegate {
 
     func splitTabBar(_ controller: BonsplitController, didSelectTab tab: Bonsplit.Tab, inPane pane: PaneID) {
         applyTabSelection(tabId: tab.id, inPane: pane)
+        // Clicking a window that lost its ssh client is the most natural way to ask for a
+        // reconnect, so treat it as one instead of showing a dead terminal.
+        if let panelId = panelIdFromSurfaceId(tab.id), uniConnectDisconnectedPanelIds.contains(panelId) {
+            UniConnectCoordinator.shared.reconnectNow(panelId: panelId, in: self)
+        }
     }
 
     func splitTabBar(_ controller: BonsplitController, didMoveTab tab: Bonsplit.Tab, fromPane source: PaneID, toPane destination: PaneID) {

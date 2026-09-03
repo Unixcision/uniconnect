@@ -14,7 +14,7 @@ enum SessionSnapshotSchema {
 
 enum SessionPersistencePolicy {
     static let sidebarMinimumWidthKey = "sidebarMinimumWidth"
-    static let defaultSidebarWidth: Double = 220
+    static let defaultSidebarWidth: Double = 248
     static let defaultMinimumSidebarWidth: Double = 216
     static let minimumSidebarWidth: Double = 216
     static let sidebarMinimumWidthRange: ClosedRange<Double> = 120...260

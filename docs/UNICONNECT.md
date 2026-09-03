@@ -155,3 +155,13 @@ Barra lateral flotante: va separada del borde de la ventana, con esquinas de 14,
 ## Sesión ligada a la ventana
 
 Cada ventana local guarda su id de sesión de Claude en el snapshot (`panels[].terminal.uniConnectClaudeSession`), igual que las ventanas SSH guardan su tmux. Al restaurar, la ventana ejecuta `cd <carpeta> && claude --dangerously-skip-permissions --resume <id>` a través de un lanzador en `$TMPDIR`; si la carpeta ya no existe, cae a `$HOME` en vez de dejar un terminal muerto. Una ventana nunca vuelve a abrirse vacía.
+
+## Cuando se cae la conexión
+
+Si el cliente `ssh` de una ventana muere (red caída, servidor saturado, reinicio remoto) la sesión tmux del servidor sigue viva. UniConnect:
+
+1. Reintenta engancharse solo, hasta tres veces, con espera creciente (4, 8 y 12 s). La pestaña conserva su nombre y su sesión tmux.
+2. Si sigue caída, basta con **pulsar su pestaña**: eso cuenta como petición de reconexión y no gasta intentos.
+3. **UniConnect → Reconectar ventanas caídas (⌘⌃R)** vuelve a enganchar todas las ventanas muertas de todas las cajas, que es lo cómodo cuando se cae internet y se llevan por delante todas a la vez.
+
+La reconexión recrea la pestaña en el mismo panel con el mismo nombre y el mismo `tmux new-session -A`, así que se recupera lo que estuviera corriendo.

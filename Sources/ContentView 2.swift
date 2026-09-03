@@ -1073,25 +1073,6 @@ struct ContentView: View {
     @AppStorage(MinimalModeTitlebarDebugSettings.trafficLightTabBarInsetKey) private var titlebarTrafficLightTabBarInset = MinimalModeTitlebarDebugSettings.defaultTrafficLightTabBarInset
     @AppStorage(MinimalModeTitlebarDebugSettings.trafficLightTitlebarLeadingInsetKey) private var titlebarTrafficLightTitlebarLeadingInset = MinimalModeTitlebarDebugSettings.defaultTrafficLightTitlebarLeadingInset
     @State private var sidebarWidth: CGFloat = CGFloat(SessionPersistencePolicy.defaultSidebarWidth)
-    /// UniConnect: compact "rail" sidebar (coloured tiles) instead of the full workspace list.
-    @AppStorage(UniConnectRailSidebar.compactDefaultsKey) private var sidebarCompact = false
-    /// UniConnect: gap between the floating sidebar card and the window edge / content.
-    /// Gap between the sidebar card and the window edges (floating panel).
-    static let sidebarFloatingInset: CGFloat = 10
-    static let sidebarCompactAnimation = Animation.spring(response: 0.32, dampingFraction: 0.86)
-    /// Width of the sidebar card actually shown (rail when compact, user width otherwise).
-    private var effectiveSidebarWidth: CGFloat {
-        sidebarCompact ? UniConnectRailSidebar.width : sidebarWidth
-    }
-    /// Horizontal space the floating sidebar reserves from the window's leading edge
-    /// (card width plus the inset on both sides).
-    private var sidebarSlotWidth: CGFloat {
-        effectiveSidebarWidth + Self.sidebarFloatingInset * 2
-    }
-    /// Window-x of the sidebar card's trailing edge, where the resizer lives.
-    private var sidebarDividerX: CGFloat {
-        Self.sidebarFloatingInset + effectiveSidebarWidth
-    }
     @State private var hoveredResizerHandles: Set<SidebarResizerHandle> = []
     @State private var isResizerDragging = false
     @State private var sidebarDragStartWidth: CGFloat?
@@ -1806,8 +1787,8 @@ struct ContentView: View {
 
     private func dividerBandContains(pointInContent point: NSPoint, contentBounds: NSRect) -> Bool {
         guard point.y >= contentBounds.minY, point.y <= contentBounds.maxY else { return false }
-        if sidebarState.isVisible, !sidebarCompact,
-           SidebarResizeInteraction.Edge.leading.hitRange(dividerX: sidebarDividerX).contains(point.x) {
+        if sidebarState.isVisible,
+           SidebarResizeInteraction.Edge.leading.hitRange(dividerX: sidebarWidth).contains(point.x) {
             return true
         }
 
@@ -2018,7 +1999,7 @@ struct ContentView: View {
             handle: .divider,
             edge: .leading,
             accessibilityIdentifier: "SidebarResizer",
-            dividerX: { totalWidth in min(max(sidebarDividerX, 0), totalWidth) }
+            dividerX: { totalWidth in min(max(sidebarWidth, 0), totalWidth) }
         )
     }
 
@@ -2031,69 +2012,26 @@ struct ContentView: View {
         )
     }
 
-    private func performSidebarNewWorkspace() {
-        AppDelegate.shared?.performNewWorkspaceAction(
-            tabManager: tabManager,
-            debugSource: "titlebar.hiddenNewWorkspace"
-        )
-    }
-
-    private func setSidebarCompact(_ compact: Bool) {
-        guard sidebarCompact != compact else { return }
-        withAnimation(Self.sidebarCompactAnimation) {
-            sidebarCompact = compact
-        }
-    }
-
-    /// Small control at the foot of the expanded sidebar that collapses it to the rail.
-    private var sidebarCompactToggleButton: some View {
-        Button {
-            setSidebarCompact(true)
-        } label: {
-            Image(systemName: "sidebar.left")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .safeHelp("Compactar barra lateral (⌘⌥B)")
-        .accessibilityLabel("Compactar barra lateral")
-        .accessibilityIdentifier("SidebarCompactToggle")
-        .padding(.trailing, 10)
-        .padding(.bottom, 9)
-    }
-
     private var sidebarView: some View {
-        ZStack(alignment: .topLeading) {
-            if sidebarCompact {
-                UniConnectRailSidebar(
-                    onNewTab: performSidebarNewWorkspace,
-                    onExpand: { setSidebarCompact(false) }
+        VerticalTabsSidebar(
+            updateViewModel: updateViewModel,
+            fileExplorerState: fileExplorerState,
+            windowId: windowId,
+            onSendFeedback: presentFeedbackComposer,
+            onToggleSidebar: { sidebarState.toggle() },
+            onNewTab: {
+                AppDelegate.shared?.performNewWorkspaceAction(
+                    tabManager: tabManager,
+                    debugSource: "titlebar.hiddenNewWorkspace"
                 )
-                .transition(.opacity)
-            } else {
-                VerticalTabsSidebar(
-                    updateViewModel: updateViewModel,
-                    fileExplorerState: fileExplorerState,
-                    windowId: windowId,
-                    onSendFeedback: presentFeedbackComposer,
-                    onToggleSidebar: { sidebarState.toggle() },
-                    onNewTab: performSidebarNewWorkspace,
-                    observedWindow: observedWindow,
-                    selection: $sidebarSelectionState.selection,
-                    selectedTabIds: $selectedTabIds,
-                    lastSidebarSelectionIndex: $lastSidebarSelectionIndex
-                )
-                .overlay(alignment: .bottomTrailing) {
-                    sidebarCompactToggleButton
-                }
-                .transition(.opacity)
-            }
-        }
-        .frame(width: effectiveSidebarWidth)
+            },
+            observedWindow: observedWindow,
+            selection: $sidebarSelectionState.selection,
+            selectedTabIds: $selectedTabIds,
+            lastSidebarSelectionIndex: $lastSidebarSelectionIndex
+        )
+        .frame(width: sidebarWidth)
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .clipShape(RoundedRectangle(cornerRadius: CGFloat(sidebarCornerRadius), style: .continuous))
     }
 
     /// Native titlebar inset reported by AppKit. Standard mode follows cmux's visual chrome;
@@ -2263,55 +2201,10 @@ struct ContentView: View {
         .frame(width: width)
     }
 
-    /// Soft drop shadow drawn *behind* the floating sidebar card. A blurred stroke rather
-    /// than `.shadow()` so the material-backed sidebar never gets rasterised.
-    private func floatingSidebarShadow(cornerRadius: CGFloat, isDark: Bool) -> some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(Color.black.opacity(isDark ? 0.55 : 0.20))
-            .blur(radius: 14)
-            .offset(y: 4)
-            .allowsHitTesting(false)
-    }
-
     private func sidebarPanelWithBackdrop(appearance: WindowAppearanceSnapshot) -> some View {
-        let cornerRadius = appearance.sidebarSettings.materialPolicy.cornerRadius
-        let isDark = appearance.sidebarContentColorScheme == .dark
-        return sidebarPanelContainer(width: effectiveSidebarWidth, alignment: .leading, role: .leftSidebar, appearance: appearance) {
+        sidebarPanelContainer(width: sidebarWidth, alignment: .leading, role: .leftSidebar, appearance: appearance) {
             sidebarView
         }
-        .background {
-            if Self.sidebarFloatingInset > 0 {
-                floatingSidebarShadow(cornerRadius: cornerRadius, isDark: isDark)
-            }
-        }
-        .overlay {
-            if Self.sidebarFloatingInset > 0 {
-                // The card has to read as *lifted*: a touch brighter than the window at the
-                // top, a hairline edge, and a brighter inner top edge like a glass panel.
-                ZStack {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: isDark
-                                    ? [Color.white.opacity(0.055), Color.white.opacity(0.012)]
-                                    : [Color.white.opacity(0.55), Color.white.opacity(0.14)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .blendMode(.plusLighter)
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.white.opacity(isDark ? 0.14 : 0.55), lineWidth: 1)
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.black.opacity(isDark ? 0.35 : 0.10), lineWidth: 1)
-                        .padding(-1)
-                }
-                .allowsHitTesting(false)
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .padding(.leading, Self.sidebarFloatingInset)
-        .padding(.vertical, Self.sidebarFloatingInset)
     }
 
     private func rightSidebarPanelWithBackdrop(appearance: WindowAppearanceSnapshot) -> some View {
@@ -2387,8 +2280,8 @@ struct ContentView: View {
     @AppStorage("sidebarTintHexDark") private var sidebarTintHexDark: String?
     @AppStorage("sidebarMaterial") private var sidebarMaterial = SidebarMaterialOption.sidebar.rawValue
     @AppStorage("sidebarState") private var sidebarStateSetting = SidebarStateOption.followWindow.rawValue
-    @AppStorage("sidebarCornerRadius") private var sidebarCornerRadius = SidebarPresetOption.uniConnect.cornerRadius
-    @AppStorage("sidebarBlurOpacity") private var sidebarBlurOpacity = SidebarPresetOption.uniConnect.blurOpacity
+    @AppStorage("sidebarCornerRadius") private var sidebarCornerRadius = 0.0
+    @AppStorage("sidebarBlurOpacity") private var sidebarBlurOpacity = 1.0
 
     // Background glass settings
     @AppStorage("bgGlassTintHex") private var bgGlassTintHex = "#000000"
@@ -2480,10 +2373,8 @@ struct ContentView: View {
         let leadingPadding = Self.customTitlebarLeadingPadding(
             isFullScreen: isFullScreen,
             isSidebarVisible: sidebarState.isVisible,
-            sidebarWidth: sidebarSlotWidth,
-            // The rail is narrower than any allowed expanded width; don't let the
-            // minimum-width clamp push the title past it.
-            minimumSidebarWidth: sidebarCompact ? 0 : minimumSidebarWidth,
+            sidebarWidth: sidebarWidth,
+            minimumSidebarWidth: minimumSidebarWidth,
             titlebarLeadingInset: titlebarLeadingInset
         )
         return ZStack {
@@ -2526,7 +2417,7 @@ struct ContentView: View {
         .background(TitlebarDoubleClickMonitorView())
         .overlay(alignment: .bottom) {
             WindowChromeBorder(orientation: .horizontal)
-                .padding(.leading, sidebarState.isVisible ? sidebarSlotWidth : 0)
+                .padding(.leading, sidebarState.isVisible ? sidebarWidth : 0)
         }
     }
 
@@ -2825,7 +2716,7 @@ struct ContentView: View {
                 ZStack(alignment: .leading) {
                     HStack(spacing: 0) {
                         terminalContentWithSidebarDropOverlay(appearance: appearance)
-                            .padding(.leading, sidebarState.isVisible ? sidebarSlotWidth : 0)
+                            .padding(.leading, sidebarState.isVisible ? sidebarWidth : 0)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .layoutPriority(1)
                         rightSidebarPanelWithBackdrop(appearance: appearance)
@@ -2849,9 +2740,8 @@ struct ContentView: View {
 
         return AnyView(
             layout
-                .animation(Self.sidebarCompactAnimation, value: sidebarCompact)
                 .overlay(alignment: .leading) {
-                    if sidebarState.isVisible && !sidebarCompact {
+                    if sidebarState.isVisible {
                         sidebarResizerOverlay
                             .zIndex(1000)
                     }
@@ -7085,8 +6975,8 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.openCmuxSettingsFile",
-                title: constant(String(localized: "settings.settingsJSON.openFile", defaultValue: "Open uniconnect.json")),
-                subtitle: constant(String(localized: "command.cmuxConfig.subtitle", defaultValue: "uniconnect.json")),
+                title: constant(String(localized: "settings.settingsJSON.openFile", defaultValue: "Open cmux.json")),
+                subtitle: constant(String(localized: "command.cmuxConfig.subtitle", defaultValue: "cmux.json")),
                 keywords: ["open", "cmux", "json", "config", "configuration", "settings", "file", "editor", "dotfile"]
             )
         )
@@ -7928,7 +7818,7 @@ struct ContentView: View {
             )
         )
 
-        let cmuxConfigDefaultSubtitle = String(localized: "command.cmuxConfig.subtitle", defaultValue: "uniconnect.json")
+        let cmuxConfigDefaultSubtitle = String(localized: "command.cmuxConfig.subtitle", defaultValue: "cmux.json")
         for issue in cmuxConfigStore.configurationIssues {
             contributions.append(
                 CommandPaletteCommandContribution(
@@ -8001,12 +7891,12 @@ struct ContentView: View {
         case .schemaError:
             return String(
                 localized: "command.cmuxConfig.issue.schemaError.title",
-                defaultValue: "uniconnect.json Schema Error"
+                defaultValue: "cmux.json Schema Error"
             )
         default:
             return String(
                 localized: "command.cmuxConfig.issue.warning.title",
-                defaultValue: "uniconnect.json Configuration Warning"
+                defaultValue: "cmux.json Configuration Warning"
             )
         }
     }
@@ -8034,7 +7924,7 @@ struct ContentView: View {
             )
             let fallback = String(
                 localized: "command.cmuxConfig.issue.schemaError.fallback",
-                defaultValue: "Invalid uniconnect.json"
+                defaultValue: "Invalid cmux.json"
             )
             return String(format: format, issue.message ?? fallback)
         case .newWorkspaceActionNotFound:
@@ -10209,7 +10099,7 @@ enum CmuxExtensionSidebarSelection {
     /// Directory custom sidebars are authored into.
     static var customSidebarsDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/uniconnect/sidebars", isDirectory: true)
+            .appendingPathComponent(".config/cmux/sidebars", isDirectory: true)
     }
 
     /// One provider descriptor per `<name>.swift`/`<name>.json` file in the
@@ -10864,7 +10754,7 @@ struct VerticalTabsSidebar: View {
     @AppStorage(MinimalModeTitlebarDebugSettings.leftControlsTopInsetKey)
     private var titlebarLeftControlsTopInset = MinimalModeTitlebarDebugSettings.defaultLeftControlsTopInset
 
-    let tabRowSpacing: CGFloat = 4
+    let tabRowSpacing: CGFloat = 2
     private static let extensionSidebarObservationCoalesceInterval: RunLoop.SchedulerTimeType.Stride = .milliseconds(40)
     private static let extensionSidebarDisclosureAnimation = Animation.easeInOut(duration: 0.18)
     private var sidebarTitlebarInteractionHeight: CGFloat {
@@ -12908,7 +12798,7 @@ enum DevBuildBannerDebugSettings {
 private enum FeedbackComposerSettings {
     static let storedEmailKey = "sidebarHelpFeedbackEmail"
     static let endpointEnvironmentKey = "CMUX_FEEDBACK_API_URL"
-    static let defaultEndpoint = "https://github.com/Unixcision/uniconnect/issues"
+    static let defaultEndpoint = "https://cmux.com/api/feedback"
     static let foundersEmail = "founders@manaflow.com"
     static let maxMessageLength = 4_000
     static let maxAttachmentCount = 10
@@ -14514,8 +14404,8 @@ enum FeedbackComposerBridge {
 }
 
 private struct SidebarHelpMenuButton: View {
-    private let docsURL = URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")
-    private let changelogURL = URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")
+    private let docsURL = URL(string: "https://cmux.com/docs")
+    private let changelogURL = URL(string: "https://cmux.com/docs/changelog")
     private let githubURL = URL(string: "https://github.com/manaflow-ai/cmux")
     private let githubIssuesURL = URL(string: "https://github.com/manaflow-ai/cmux/issues")
     private let discordURL = URL(string: "https://discord.gg/xsgFEVrWCZ")
@@ -15621,19 +15511,6 @@ struct TabItemView: View, Equatable {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .layoutPriority(1)
 
-                // UniConnect: kind (Local/SSH) and window count as two small pills, in place
-                // of the folder paths that used to hang under the row.
-                if let profile = tab.uniConnectProfile {
-                    UniConnectRowBadges(
-                        isSSH: profile.isSSH,
-                        windowCount: tab.uniConnectOrderedTerminalPanelIds().count,
-                        fontScale: fontScale,
-                        isActive: usesInvertedActiveForeground,
-                        activeForeground: activeSecondaryColor(0.95)
-                    )
-                    .layoutPriority(2)
-                }
-
                 // The close button is a sibling that always reserves its width
                 // when the workspace is closable, so the title wraps/truncates
                 // before this corner instead of flowing under the hover x. Its
@@ -15902,10 +15779,10 @@ struct TabItemView: View, Equatable {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 6)
                 .fill(backgroundColor)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: 6)
                         .strokeBorder(activeBorderColor, lineWidth: activeBorderLineWidth)
                 }
                 .overlay(alignment: .leading) {
@@ -15927,7 +15804,7 @@ struct TabItemView: View, Equatable {
             fontSize: scaledFontSize(10)
         )
         .shortcutHintVisibilityAnimation(value: showsWorkspaceShortcutHint)
-        .padding(.horizontal, ContentView.sidebarFloatingInset > 0 ? 10 : 6)
+        .padding(.horizontal, 6)
         .background { rowHeightProbe }
         .contentShape(Rectangle())
         .opacity(isBeingDragged ? 0.6 : 1)
@@ -17587,7 +17464,7 @@ final class SidebarDragAutoScrollController: ObservableObject {
 /// deletes) — the row's snapshot-boundary rule forbids reading
 /// `tabManager.workspaceGroups` from inside the contextMenu builder.
 enum SidebarTabDragPayload {
-    static let typeIdentifier = "com.unixcision.uniconnect.sidebar-tab-reorder"
+    static let typeIdentifier = "com.cmux.sidebar-tab-reorder"
     static let dropContentType = UTType(exportedAs: typeIdentifier)
     static let dropContentTypes: [UTType] = [dropContentType]
     static let prefix = "cmux.sidebar-tab."
@@ -18959,13 +18836,11 @@ enum SidebarStateOption: String, CaseIterable, Identifiable {
 }
 
 enum SidebarTintDefaults {
-    static let hex = SidebarPresetOption.uniConnect.tintHex
-    static let opacity = SidebarPresetOption.uniConnect.tintOpacity
+    static let hex = "#000000"
+    static let opacity = 0.18
 }
 
 enum SidebarPresetOption: String, CaseIterable, Identifiable {
-    /// UniConnect default: floating translucent card with a whisper of coral.
-    case uniConnect
     case nativeSidebar
     case glassBehind
     case softBlur
@@ -18977,7 +18852,6 @@ enum SidebarPresetOption: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .uniConnect: return "UniConnect"
         case .nativeSidebar: return String(localized: "settings.preset.nativeSidebar", defaultValue: "Native Sidebar")
         case .glassBehind: return String(localized: "settings.preset.raycastGray", defaultValue: "Raycast Gray")
         case .softBlur: return String(localized: "settings.preset.softBlur", defaultValue: "Soft Blur")
@@ -18989,7 +18863,6 @@ enum SidebarPresetOption: String, CaseIterable, Identifiable {
 
     var material: SidebarMaterialOption {
         switch self {
-        case .uniConnect: return .sidebar
         case .nativeSidebar: return .sidebar
         case .glassBehind: return .sidebar
         case .softBlur: return .sidebar
@@ -19001,7 +18874,6 @@ enum SidebarPresetOption: String, CaseIterable, Identifiable {
 
     var blendMode: SidebarBlendModeOption {
         switch self {
-        case .uniConnect: return .withinWindow
         case .nativeSidebar: return .withinWindow
         case .glassBehind: return .behindWindow
         case .softBlur: return .behindWindow
@@ -19013,7 +18885,6 @@ enum SidebarPresetOption: String, CaseIterable, Identifiable {
 
     var state: SidebarStateOption {
         switch self {
-        case .uniConnect: return .followWindow
         case .nativeSidebar: return .followWindow
         case .glassBehind: return .active
         case .softBlur: return .active
@@ -19025,7 +18896,6 @@ enum SidebarPresetOption: String, CaseIterable, Identifiable {
 
     var tintHex: String {
         switch self {
-        case .uniConnect: return "#FF5C6E"
         case .nativeSidebar: return "#000000"
         case .glassBehind: return "#000000"
         case .softBlur: return "#000000"
@@ -19037,7 +18907,6 @@ enum SidebarPresetOption: String, CaseIterable, Identifiable {
 
     var tintOpacity: Double {
         switch self {
-        case .uniConnect: return 0.06
         case .nativeSidebar: return 0.18
         case .glassBehind: return 0.36
         case .softBlur: return 0.28
@@ -19049,7 +18918,6 @@ enum SidebarPresetOption: String, CaseIterable, Identifiable {
 
     var cornerRadius: Double {
         switch self {
-        case .uniConnect: return 18.0
         case .nativeSidebar: return 0.0
         case .glassBehind: return 0.0
         case .softBlur: return 0.0
@@ -19061,7 +18929,6 @@ enum SidebarPresetOption: String, CaseIterable, Identifiable {
 
     var blurOpacity: Double {
         switch self {
-        case .uniConnect: return 0.85
         case .nativeSidebar: return 1.0
         case .glassBehind: return 0.6
         case .softBlur: return 0.45
@@ -19088,47 +18955,5 @@ extension NSColor {
             return String(format: "#%02X%02X%02X%02X", redByte, greenByte, blueByte, alphaByte)
         }
         return String(format: "#%02X%02X%02X", redByte, greenByte, blueByte)
-    }
-}
-
-
-// MARK: - UniConnect row badges
-
-/// Two pills on a workspace row: the kind of box and how many windows it has.
-private struct UniConnectRowBadges: View {
-    let isSSH: Bool
-    let windowCount: Int
-    let fontScale: CGFloat
-    let isActive: Bool
-    let activeForeground: Color
-
-    @Environment(\.colorScheme) private var colorScheme
-
-    private var size: CGFloat { max(7.5, 8.5 * fontScale) }
-
-    private var kindTint: Color {
-        isSSH ? Color(red: 0.25, green: 0.72, blue: 0.95) : Color(red: 0.42, green: 0.80, blue: 0.55)
-    }
-
-    var body: some View {
-        HStack(spacing: 3) {
-            pill(text: isSSH ? "SSH" : "LOCAL", tint: isActive ? activeForeground : kindTint)
-            if windowCount > 0 {
-                pill(text: "\(windowCount)", tint: isActive ? activeForeground : Color.secondary)
-            }
-        }
-        .fixedSize()
-    }
-
-    private func pill(text: String, tint: Color) -> some View {
-        Text(text)
-            .font(.system(size: size, weight: .bold, design: .rounded))
-            .foregroundStyle(tint)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 1)
-            .background(
-                Capsule().fill(tint.opacity(isActive ? 0.22 : (colorScheme == .dark ? 0.16 : 0.12)))
-            )
-            .overlay(Capsule().strokeBorder(tint.opacity(isActive ? 0.35 : 0.22), lineWidth: 0.5))
     }
 }

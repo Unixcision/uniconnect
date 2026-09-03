@@ -359,6 +359,87 @@ final class UniConnectCoordinator: ObservableObject {
         }
     }
 
+    // MARK: Reconnecting a dropped tmux window
+
+    /// How many automatic attempts per window before leaving it to the user.
+    private static let maxReconnectAttempts = 3
+    /// Attempts already spent, per panel id.
+    private var reconnectAttempts: [UUID: Int] = [:]
+
+    /// Re-attaches a tmux window whose ssh client died, with a growing delay. The dead
+    /// panel is replaced by a fresh one in the same pane, keeping name and tmux binding.
+    func scheduleReconnect(panelId: UUID, in workspace: Workspace) {
+        guard Self.isEnabled else { return }
+        let attempt = (reconnectAttempts[panelId] ?? 0) + 1
+        guard attempt <= Self.maxReconnectAttempts else { return }
+        reconnectAttempts[panelId] = attempt
+        let delay = Double(attempt) * 4.0
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak workspace] in
+            guard let self, let workspace else { return }
+            self.reconnect(panelId: panelId, in: workspace, attempt: attempt)
+        }
+    }
+
+    private func reconnect(panelId: UUID, in workspace: Workspace, attempt: Int) {
+        guard let session = workspace.uniConnectTmuxSessionsByPanelId[panelId],
+              workspace.panels[panelId] != nil,
+              let pane = workspace.paneId(forPanelId: panelId)
+                ?? workspace.bonsplitController.focusedPaneId
+                ?? workspace.bonsplitController.allPaneIds.first,
+              let profile = workspace.uniConnectProfile,
+              let credentialId = profile.credentialId,
+              let connect = UniConnectVault.shared.connectCommand(for: credentialId) else {
+            return
+        }
+        let title = (workspace.panelCustomTitles[panelId] ?? workspace.panelTitles[panelId] ?? session)
+            .replacingOccurrences(of: " · desconectada", with: "")
+        let commandLine = UniConnectSSH.attachCommandLine(connectCommand: connect, session: session, directory: nil)
+        guard let launcher = UniConnectSSH.writeLauncherScript(commandLine: commandLine, label: session) else { return }
+        guard let panel = workspace.newTerminalSurface(
+            inPane: pane,
+            focus: false,
+            initialCommand: launcher,
+            suppressWorkspaceRemoteStartupCommand: true
+        ) else { return }
+        workspace.uniConnectTmuxSessionsByPanelId[panel.id] = session
+        workspace.setPanelCustomTitle(panelId: panel.id, title: title)
+        reconnectAttempts[panel.id] = attempt
+        workspace.uniConnectTmuxSessionsByPanelId.removeValue(forKey: panelId)
+        workspace.uniConnectDisconnectedPanelIds.remove(panelId)
+        _ = workspace.closePanel(panelId, force: true)
+        reconnectAttempts.removeValue(forKey: panelId)
+        requestSave()
+        NSLog("[UniConnect] reconectando %@ (intento %d)", session, attempt)
+    }
+
+    /// Manual reconnect: clears the attempt budget so the user can always insist.
+    func reconnectNow(panelId: UUID, in workspace: Workspace) {
+        guard Self.isEnabled, workspace.uniConnectTmuxSessionsByPanelId[panelId] != nil else { return }
+        reconnectAttempts.removeValue(forKey: panelId)
+        reconnect(panelId: panelId, in: workspace, attempt: 1)
+    }
+
+    /// "Reconectar ventanas caídas": when the network is back, re-attach every dead window.
+    func reconnectAllDisconnected() {
+        guard Self.isEnabled else { return }
+        var total = 0
+        for tabManager in allTabManagers() {
+            for workspace in tabManager.tabs {
+                for panelId in workspace.uniConnectDisconnectedPanelIds where workspace.panels[panelId] != nil {
+                    reconnectNow(panelId: panelId, in: workspace)
+                    total += 1
+                }
+            }
+        }
+        if total == 0 {
+            let alert = NSAlert()
+            alert.messageText = "Nada que reconectar"
+            alert.informativeText = "Todas las ventanas tmux siguen enganchadas."
+            alert.addButton(withTitle: "Vale")
+            alert.runModal()
+        }
+    }
+
     private func removePlaceholders(from workspace: Workspace, keeping keep: UUID) {
         var placeholders = workspace.uniConnectPlaceholderPanelIds.subtracting([keep])
         // First tmux window of the box: every other panel is a placeholder (the markdown
@@ -955,6 +1036,10 @@ extension Workspace {
             setPanelCustomTitle(panelId: panelId, title: base + " · desconectada")
         }
         uniConnectProfile?.touch()
+        uniConnectDisconnectedPanelIds.insert(panelId)
+        // The tmux session on the server is alive; only the ssh client died (slow host,
+        // network drop). Try to re-attach on our own before making the user do it.
+        UniConnectCoordinator.shared.scheduleReconnect(panelId: panelId, in: self)
     }
 }
 

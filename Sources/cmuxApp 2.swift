@@ -50,7 +50,6 @@ struct cmuxApp: App {
     @StateObject private var notificationStore = TerminalNotificationStore.shared
     @StateObject var closedItemHistoryStore = ClosedItemHistoryStore.shared
     @StateObject private var sidebarState = SidebarState()
-    @AppStorage(UniConnectRailSidebar.compactDefaultsKey) private var uniConnectSidebarCompact = false
     @StateObject private var keyboardShortcutSettingsObserver = KeyboardShortcutSettingsObserver.shared
     @AppStorage(AppearanceSettings.appearanceModeKey) private var appearanceMode = AppearanceSettings.defaultMode.rawValue
     @AppStorage("titlebarControlsStyle") private var titlebarControlsStyle = TitlebarControlsStyle.classic.rawValue
@@ -93,7 +92,7 @@ struct cmuxApp: App {
             ?? CmuxStateDirectory.url(homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
         let secretStore = SecretFileStore(baseDirectory: secretBaseDirectory)
 
-        // Lift any plaintext socket-control password out of `uniconnect.json` into the
+        // Lift any plaintext socket-control password out of `cmux.json` into the
         // secure store, then scrub it from the config. This runs here, in the App
         // initializer, on purpose: it completes before the managed-config layer
         // (`CmuxSettingsFileStore`, loaded later during app launch) reads the
@@ -323,7 +322,6 @@ struct cmuxApp: App {
     }
 
     private func migrateSidebarAppearanceDefaultsIfNeeded(defaults: UserDefaults) {
-        seedUniConnectSidebarPresetIfNeeded(defaults: defaults)
         let migrationKey = "sidebarAppearanceDefaultsVersion"
         let targetVersion = 1
         guard defaults.integer(forKey: migrationKey) < targetVersion else { return }
@@ -357,7 +355,7 @@ struct cmuxApp: App {
             approximatelyEqual(cornerRadius, 0.0)
 
         if usesLegacyDefaults {
-            let preset = SidebarPresetOption.uniConnect
+            let preset = SidebarPresetOption.nativeSidebar
             defaults.set(preset.rawValue, forKey: "sidebarPreset")
             defaults.set(preset.material.rawValue, forKey: "sidebarMaterial")
             defaults.set(preset.blendMode.rawValue, forKey: "sidebarBlendMode")
@@ -369,28 +367,6 @@ struct cmuxApp: App {
         }
 
         defaults.set(targetVersion, forKey: migrationKey)
-    }
-
-    /// UniConnect ships its own floating sidebar look. Applied once per profile so a
-    /// user who later picks another preset in Settings keeps their choice.
-    private func seedUniConnectSidebarPresetIfNeeded(defaults: UserDefaults) {
-        let seededKey = "uniconnect.sidebarPresetSeeded2"
-        guard !defaults.bool(forKey: seededKey) else { return }
-        let preset = SidebarPresetOption.uniConnect
-        defaults.set(preset.rawValue, forKey: "sidebarPreset")
-        defaults.set(preset.material.rawValue, forKey: "sidebarMaterial")
-        defaults.set(preset.blendMode.rawValue, forKey: "sidebarBlendMode")
-        defaults.set(preset.state.rawValue, forKey: "sidebarState")
-        defaults.set(preset.tintHex, forKey: "sidebarTintHex")
-        defaults.set(preset.tintOpacity, forKey: "sidebarTintOpacity")
-        defaults.set(preset.blurOpacity, forKey: "sidebarBlurOpacity")
-        defaults.set(preset.cornerRadius, forKey: "sidebarCornerRadius")
-        defaults.removeObject(forKey: "sidebarTintHexLight")
-        defaults.removeObject(forKey: "sidebarTintHexDark")
-        // A UniConnect row is name + badges: no folder paths, no branch lines under it.
-        defaults.set(false, forKey: "sidebarShowWorkspaceDescription")
-        defaults.set(false, forKey: "sidebarShowBranchDirectory")
-        defaults.set(true, forKey: seededKey)
     }
 
     var body: some Scene {
@@ -430,7 +406,7 @@ struct cmuxApp: App {
                 splitCommandButton(title: String(localized: "menu.app.settings", defaultValue: "Settings…"), shortcut: menuShortcut(for: .openSettings)) {
                     appDelegate.openPreferencesWindow(debugSource: "menu.cmdComma")
                 }
-                Button(String(localized: "menu.app.openCmuxSettingsFile", defaultValue: "Open uniconnect.json")) {
+                Button(String(localized: "menu.app.openCmuxSettingsFile", defaultValue: "Open cmux.json")) {
                     openCmuxSettingsFileInEditor()
                 }
                 Button(String(localized: "menu.app.ghosttySettings", defaultValue: "Ghostty Settings…")) {
@@ -904,18 +880,11 @@ struct cmuxApp: App {
             Button("Cerradas…") {
                 UniConnectCoordinator.shared.showClosedItemsMenu(tabManager: activeTabManager)
             }
-            Button("Reconectar ventanas caídas") {
-                UniConnectCoordinator.shared.reconnectAllDisconnected()
-            }
-            // ⌘⌃R: la familia ⌘R / ⌘⇧R / ⌘⌥R se deja libre para renombrar.
-            .keyboardShortcut("r", modifiers: [.command, .control])
             Button("Terminar sesión tmux remota de la ventana activa…") {
                 guard let workspace = activeTabManager.selectedWorkspace else { return }
                 UniConnectCoordinator.shared.terminateRemoteTmuxSession(in: workspace)
             }
             Divider()
-            Toggle("Barra lateral compacta", isOn: $uniConnectSidebarCompact)
-                .keyboardShortcut("b", modifiers: [.command, .option])
             Button("Bloquear") {
                 UniConnectAppLock.shared.lock()
             }
@@ -1930,7 +1899,7 @@ private enum DebugWindowConfigSnapshot {
 
     static func combinedPayload(defaults: UserDefaults = .standard) -> String {
         let sidebarPayload = """
-        sidebarPreset=\(stringValue(defaults, key: "sidebarPreset", fallback: SidebarPresetOption.uniConnect.rawValue))
+        sidebarPreset=\(stringValue(defaults, key: "sidebarPreset", fallback: SidebarPresetOption.nativeSidebar.rawValue))
         sidebarMaterial=\(stringValue(defaults, key: "sidebarMaterial", fallback: SidebarMaterialOption.sidebar.rawValue))
         sidebarBlendMode=\(stringValue(defaults, key: "sidebarBlendMode", fallback: SidebarBlendModeOption.withinWindow.rawValue))
         sidebarState=\(stringValue(defaults, key: "sidebarState", fallback: SidebarStateOption.followWindow.rawValue))
@@ -2895,7 +2864,7 @@ private struct AboutPanelView: View {
     @Environment(\.openURL) private var openURL
 
     private let githubURL = URL(string: "https://github.com/manaflow-ai/cmux")
-    private let docsURL = URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")
+    private let docsURL = URL(string: "https://cmux.com/docs")
 
     private var version: String? { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String }
     private var build: String? { Bundle.main.infoDictionary?["CFBundleVersion"] as? String }
@@ -2982,7 +2951,7 @@ private struct AboutPanelView: View {
 
 private struct SidebarDebugView: View {
     @AppStorage("sidebarMatchTerminalBackground") private var matchTerminalBackground = false
-    @AppStorage("sidebarPreset") private var sidebarPreset = SidebarPresetOption.uniConnect.rawValue
+    @AppStorage("sidebarPreset") private var sidebarPreset = SidebarPresetOption.nativeSidebar.rawValue
     @AppStorage("sidebarTintOpacity") private var sidebarTintOpacity = SidebarTintDefaults.opacity
     @AppStorage("sidebarTintHex") private var sidebarTintHex = SidebarTintDefaults.hex
     @AppStorage("sidebarTintHexLight") private var sidebarTintHexLight: String?
@@ -4728,7 +4697,7 @@ enum AppIconLaunchState {
 enum AppIconSettings {
     static let modeKey = "appIconMode"
     static let defaultMode: AppIconMode = .automatic
-    private static let dockTileIconDidChangeNotification = Notification.Name("com.unixcision.uniconnectIconDidChange")
+    private static let dockTileIconDidChangeNotification = Notification.Name("com.cmuxterm.appIconDidChange")
     private static var liveEnvironmentProvider: () -> Environment = { .live() }
 
     private static func isRunningUnderXCTest(_ env: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
@@ -5049,8 +5018,8 @@ nonisolated enum BuildFlavor: String, Sendable {
         if SocketControlSettings.isDebugLikeBundleIdentifier(normalizedBundleIdentifier) {
             return .dev
         }
-        if normalizedBundleIdentifier == "com.unixcision.uniconnect.nightly"
-            || normalizedBundleIdentifier?.hasPrefix("com.unixcision.uniconnect.nightly.") == true {
+        if normalizedBundleIdentifier == "com.cmuxterm.app.nightly"
+            || normalizedBundleIdentifier?.hasPrefix("com.cmuxterm.app.nightly.") == true {
             return .nightly
         }
         if bundleNames.contains(where: containsNightlyToken) {
