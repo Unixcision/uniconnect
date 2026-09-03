@@ -22,7 +22,8 @@ Fecha: 2026-09-03 · Rama: `uniconnect` · Ruta: `~/Desktop/PROYECTOS/uniconnect
 | `b2ea716` / `a1c98eb` | Plan y registro de validación |
 | `e51175b` | Renombrado real del producto + icono + limpieza de READMEs de cmux |
 | `371740b` | Pin de XcodeProj 9.12.0 (la ruta nueva re-resolvía a 9.16 y rompía la compilación) |
-| (siguiente) | UniConnect desactivado bajo XCTest |
+| `e0b…`/`5783aa8` | UniConnect desactivado bajo XCTest; informe de entrega |
+| `da61c32` | Logo generado con Nano Banana Pro + icono; página SSH sin terminal detrás, legible en claro/oscuro; relleno Markdown sin PTY; assets de cmux retirados |
 
 Ficheros principales: `Sources/UniConnect/*`, `Sources/SessionPersistence.swift`, `Sources/Workspace.swift`, `Sources/TabManager.swift`, `Sources/WorkspaceContentView.swift`, `Sources/AppDelegate.swift`, `Sources/cmuxApp.swift`, `Packages/CMUXAgentLaunch/…/AgentResumeArgv.swift`, `Resources/bin/cmux-claude-wrapper`, `Resources/Info.plist`, catálogos `.xcstrings`, `cmux.xcodeproj/project.pbxproj`, `scripts/*`, `.github/workflows/*`, `cmuxTests/UniConnectTests.swift`, `README.md`, `docs/UNICONNECT.md`, `UNICONNECT_PLAN.md`.
 
@@ -36,6 +37,10 @@ Ficheros principales: `Sources/UniConnect/*`, `Sources/SessionPersistence.swift`
 - `xcodebuild test -scheme cmux-unit -only-testing:cmuxTests/UniConnectTests` → **25/25** (antes y después del renombrado).
 - Suite completa `cmux-unit` (parcial, interrumpida por tiempo, pantalla bloqueada, DerivedData en ruta larga): 1650 OK / 122 fallos en clases de teclado-foco, WebKit, integración de notify y "Unix socket path is too long"; reejecución con DerivedData corto en `docs/UNICONNECT.md §9` (se actualiza al terminar).
 - E2E real por socket con `scripts/cmux-debug-cli.sh` (ver registro en `docs/UNICONNECT.md §9`): semilla → tmux en servidor → `kill -9` → recuperación; ⌘Q → recuperación; cierre de pestaña sin matar tmux; Claude reanudado con `--resume` + flag.
+
+## 4b. Logo
+
+Generado el 2026-09-03 con **Nano Banana Pro** (`gemini-3-pro-image`, el modelo "premium" de imagen de la Gemini API; Nano Banana 2 `gemini-3.1-flash-image` es el más nuevo/rápido). Dos variantes, elegida la de chevrón + eslabón; post-proceso con ImageMagick (recorte 1024², esquinas redondeadas). La clave de API vive solo en el scratchpad de la sesión, no en el repo. Detalle y fuentes en `docs/UNICONNECT.md §10`.
 
 ## 5. Riesgos y limitaciones
 
