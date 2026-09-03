@@ -192,7 +192,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
 
     func testBundledCLIInTaggedDebugAppTreatsUserScopedStableEnvSocketAsImplicitDefault() throws {
         let cliPath = try bundledCLIPath()
-        let fixedHomeURL = URL(fileURLWithPath: "/tmp/uniconnect-cli-home-\(UUID().uuidString)", isDirectory: true)
+        let fixedHomeURL = URL(fileURLWithPath: "/tmp/cmux-cli-home-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: fixedHomeURL) }
         let stableSocketURL = fixedHomeURL
             .appendingPathComponent(".local/state/uniconnect", isDirectory: true)
@@ -1394,6 +1394,91 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
 
     private func shellSingleQuote(_ value: String) -> String {
         "'\(value.replacingOccurrences(of: "'", with: "'\"'\"'"))'"
+    }
+
+    func testCLIPathInstallerNeverOverwritesForeignCommand() throws {
+        let fixture = try makeCLIPathInstallerFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        try Data("foreign-command".utf8).write(to: fixture.destination)
+
+        let installer = CmuxCLIPathInstaller(
+            destinationURL: fixture.destination,
+            bundledCLIURLProvider: { fixture.source },
+            expectedBundledCLIPath: fixture.source.path
+        )
+
+        XCTAssertThrowsError(try installer.install())
+        XCTAssertEqual(try Data(contentsOf: fixture.destination), Data("foreign-command".utf8))
+    }
+
+    func testCLIPathInstallerNeverUninstallsForeignSymlink() throws {
+        let fixture = try makeCLIPathInstallerFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let foreign = fixture.root.appendingPathComponent("foreign-cmux")
+        try Data("foreign-command".utf8).write(to: foreign)
+        try FileManager.default.createSymbolicLink(
+            at: fixture.destination,
+            withDestinationURL: foreign
+        )
+
+        let installer = CmuxCLIPathInstaller(
+            destinationURL: fixture.destination,
+            bundledCLIURLProvider: { fixture.source },
+            expectedBundledCLIPath: fixture.source.path
+        )
+
+        XCTAssertThrowsError(try installer.uninstall())
+        XCTAssertEqual(
+            try FileManager.default.destinationOfSymbolicLink(atPath: fixture.destination.path),
+            foreign.path
+        )
+    }
+
+    func testCLIPathInstallerRemovesOnlyItsOwnInstalledSymlink() throws {
+        let fixture = try makeCLIPathInstallerFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let installer = CmuxCLIPathInstaller(
+            destinationURL: fixture.destination,
+            bundledCLIURLProvider: { fixture.source },
+            expectedBundledCLIPath: fixture.source.path
+        )
+
+        _ = try installer.install()
+        XCTAssertTrue(installer.isInstalled())
+        let outcome = try installer.uninstall()
+
+        XCTAssertTrue(outcome.removedExistingEntry)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.destination.path))
+        XCTAssertThrowsError(
+            try FileManager.default.destinationOfSymbolicLink(atPath: fixture.destination.path)
+        )
+    }
+
+    private func makeCLIPathInstallerFixture() throws -> (
+        root: URL,
+        source: URL,
+        destination: URL
+    ) {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-cli-installer-\(UUID().uuidString)", isDirectory: true)
+        let sourceDirectory = root
+            .appendingPathComponent("UniConnect.app/Contents/Resources/bin", isDirectory: true)
+        let destinationDirectory = root.appendingPathComponent("usr-local-bin", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: sourceDirectory,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: destinationDirectory,
+            withIntermediateDirectories: true
+        )
+        let source = sourceDirectory.appendingPathComponent("cmux")
+        try Data("uniconnect-command".utf8).write(to: source)
+        return (
+            root,
+            source,
+            destinationDirectory.appendingPathComponent("cmux")
+        )
     }
 
     private func lstatPathExists(_ path: String) -> Bool {
