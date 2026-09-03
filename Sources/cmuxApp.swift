@@ -374,7 +374,7 @@ struct cmuxApp: App {
     /// UniConnect ships its own floating sidebar look. Applied once per profile so a
     /// user who later picks another preset in Settings keeps their choice.
     private func seedUniConnectSidebarPresetIfNeeded(defaults: UserDefaults) {
-        let seededKey = "uniconnect.sidebarPresetSeeded"
+        let seededKey = "uniconnect.sidebarPresetSeeded2"
         guard !defaults.bool(forKey: seededKey) else { return }
         let preset = SidebarPresetOption.uniConnect
         defaults.set(preset.rawValue, forKey: "sidebarPreset")
@@ -387,6 +387,9 @@ struct cmuxApp: App {
         defaults.set(preset.cornerRadius, forKey: "sidebarCornerRadius")
         defaults.removeObject(forKey: "sidebarTintHexLight")
         defaults.removeObject(forKey: "sidebarTintHexDark")
+        // A UniConnect row is name + badges: no folder paths, no branch lines under it.
+        defaults.set(false, forKey: "sidebarShowWorkspaceDescription")
+        defaults.set(false, forKey: "sidebarShowBranchDirectory")
         defaults.set(true, forKey: seededKey)
     }
 

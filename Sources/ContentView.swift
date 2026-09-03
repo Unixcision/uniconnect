@@ -1076,7 +1076,8 @@ struct ContentView: View {
     /// UniConnect: compact "rail" sidebar (coloured tiles) instead of the full workspace list.
     @AppStorage(UniConnectRailSidebar.compactDefaultsKey) private var sidebarCompact = false
     /// UniConnect: gap between the floating sidebar card and the window edge / content.
-    static let sidebarFloatingInset: CGFloat = 8
+    /// Gap between the sidebar card and the window edges (floating panel).
+    static let sidebarFloatingInset: CGFloat = 10
     static let sidebarCompactAnimation = Animation.spring(response: 0.32, dampingFraction: 0.86)
     /// Width of the sidebar card actually shown (rail when compact, user width otherwise).
     private var effectiveSidebarWidth: CGFloat {
@@ -2265,10 +2266,10 @@ struct ContentView: View {
     /// Soft drop shadow drawn *behind* the floating sidebar card. A blurred stroke rather
     /// than `.shadow()` so the material-backed sidebar never gets rasterised.
     private func floatingSidebarShadow(cornerRadius: CGFloat, isDark: Bool) -> some View {
-        RoundedRectangle(cornerRadius: cornerRadius + 1, style: .continuous)
-            .stroke(Color.black.opacity(isDark ? 0.42 : 0.16), lineWidth: 5)
-            .blur(radius: 6)
-            .offset(y: 2)
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(Color.black.opacity(isDark ? 0.55 : 0.20))
+            .blur(radius: 14)
+            .offset(y: 4)
             .allowsHitTesting(false)
     }
 
@@ -2279,13 +2280,36 @@ struct ContentView: View {
             sidebarView
         }
         .background {
-            floatingSidebarShadow(cornerRadius: cornerRadius, isDark: isDark)
+            if Self.sidebarFloatingInset > 0 {
+                floatingSidebarShadow(cornerRadius: cornerRadius, isDark: isDark)
+            }
         }
         .overlay {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(Color.primary.opacity(isDark ? 0.10 : 0.07), lineWidth: 1)
+            if Self.sidebarFloatingInset > 0 {
+                // The card has to read as *lifted*: a touch brighter than the window at the
+                // top, a hairline edge, and a brighter inner top edge like a glass panel.
+                ZStack {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: isDark
+                                    ? [Color.white.opacity(0.055), Color.white.opacity(0.012)]
+                                    : [Color.white.opacity(0.55), Color.white.opacity(0.14)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .blendMode(.plusLighter)
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Color.white.opacity(isDark ? 0.14 : 0.55), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Color.black.opacity(isDark ? 0.35 : 0.10), lineWidth: 1)
+                        .padding(-1)
+                }
                 .allowsHitTesting(false)
+            }
         }
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .padding(.leading, Self.sidebarFloatingInset)
         .padding(.vertical, Self.sidebarFloatingInset)
     }
@@ -15597,6 +15621,19 @@ struct TabItemView: View, Equatable {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .layoutPriority(1)
 
+                // UniConnect: kind (Local/SSH) and window count as two small pills, in place
+                // of the folder paths that used to hang under the row.
+                if let profile = tab.uniConnectProfile {
+                    UniConnectRowBadges(
+                        isSSH: profile.isSSH,
+                        windowCount: tab.uniConnectOrderedTerminalPanelIds().count,
+                        fontScale: fontScale,
+                        isActive: usesInvertedActiveForeground,
+                        activeForeground: activeSecondaryColor(0.95)
+                    )
+                    .layoutPriority(2)
+                }
+
                 // The close button is a sibling that always reserves its width
                 // when the workspace is closable, so the title wraps/truncates
                 // before this corner instead of flowing under the hover x. Its
@@ -19012,7 +19049,7 @@ enum SidebarPresetOption: String, CaseIterable, Identifiable {
 
     var cornerRadius: Double {
         switch self {
-        case .uniConnect: return 14.0
+        case .uniConnect: return 18.0
         case .nativeSidebar: return 0.0
         case .glassBehind: return 0.0
         case .softBlur: return 0.0
@@ -19051,5 +19088,47 @@ extension NSColor {
             return String(format: "#%02X%02X%02X%02X", redByte, greenByte, blueByte, alphaByte)
         }
         return String(format: "#%02X%02X%02X", redByte, greenByte, blueByte)
+    }
+}
+
+
+// MARK: - UniConnect row badges
+
+/// Two pills on a workspace row: the kind of box and how many windows it has.
+private struct UniConnectRowBadges: View {
+    let isSSH: Bool
+    let windowCount: Int
+    let fontScale: CGFloat
+    let isActive: Bool
+    let activeForeground: Color
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var size: CGFloat { max(8, 9.5 * fontScale) }
+
+    private var kindTint: Color {
+        isSSH ? Color(red: 0.25, green: 0.72, blue: 0.95) : Color(red: 0.42, green: 0.80, blue: 0.55)
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            pill(text: isSSH ? "SSH" : "LOCAL", tint: isActive ? activeForeground : kindTint)
+            if windowCount > 0 {
+                pill(text: "\(windowCount)", tint: isActive ? activeForeground : Color.secondary)
+            }
+        }
+        .fixedSize()
+    }
+
+    private func pill(text: String, tint: Color) -> some View {
+        Text(text)
+            .font(.system(size: size, weight: .bold, design: .rounded))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .background(
+                Capsule().fill(tint.opacity(isActive ? 0.22 : (colorScheme == .dark ? 0.16 : 0.12)))
+            )
+            .overlay(Capsule().strokeBorder(tint.opacity(isActive ? 0.35 : 0.22), lineWidth: 0.5))
     }
 }
