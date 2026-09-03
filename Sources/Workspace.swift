@@ -19077,8 +19077,17 @@ extension Workspace: BonsplitDelegate {
         applyTabSelection(tabId: tab.id, inPane: pane)
         // Clicking a window that lost its ssh client is the most natural way to ask for a
         // reconnect, so treat it as one instead of showing a dead terminal.
-        if let panelId = panelIdFromSurfaceId(tab.id), uniConnectDisconnectedPanelIds.contains(panelId) {
-            UniConnectCoordinator.shared.reconnectNow(panelId: panelId, in: self)
+        if let panelId = panelIdFromSurfaceId(tab.id),
+           uniConnectDisconnectedPanelIds.contains(panelId),
+           // bonsplit reports programmatic selections (closing or moving a tab) exactly like
+           // a click, so ignore anything that happens while a reconnect is already running.
+           !UniConnectCoordinator.shared.isReconnecting {
+            // Never reconnect inside the selection call stack: opening the replacement
+            // re-asserts focus and would select a tab again.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                UniConnectCoordinator.shared.reconnectNow(panelId: panelId, in: self, userInitiated: false)
+            }
         }
     }
 

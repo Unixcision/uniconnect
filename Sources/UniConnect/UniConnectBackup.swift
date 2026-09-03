@@ -155,7 +155,13 @@ enum UniConnectBackup {
             try validate(document)
             return .plainSeed(document)
         }
-        throw UniConnectError.corruptFile("no es ni un export de UniConnect ni una semilla JSON")
+        // A hand-written Markdown map of boxes (CONNECT.md) is a first-class import format.
+        if let text = String(data: data, encoding: .utf8), UniConnectMarkdown.looksLikeConnectionMap(text) {
+            let document = try UniConnectMarkdown.parse(text)
+            try validate(document)
+            return .plainSeed(document)
+        }
+        throw UniConnectError.corruptFile("no es un export de UniConnect, ni una semilla JSON, ni un mapa de conexiones en Markdown")
     }
 
     static func decrypt(container: UniConnectExportContainer, passphrase: String) throws -> UniConnectDocument {
@@ -179,6 +185,11 @@ enum UniConnectBackup {
                 }
                 guard !connect.contains("\n") else {
                     throw UniConnectError.corruptFile("el comando de conexión de \(name) tiene saltos de línea")
+                }
+                // An imported file must not be able to run arbitrary commands: the same rule
+                // as the "Nueva caja" form applies here (only ssh / sshpass).
+                if let message = UniConnectSSH.validateConnectCommand(connect) {
+                    throw UniConnectError.corruptFile("la caja \(name) no es aceptable: \(message)")
                 }
             }
             for window in workspace.windows {

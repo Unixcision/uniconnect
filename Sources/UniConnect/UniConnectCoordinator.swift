@@ -365,11 +365,16 @@ final class UniConnectCoordinator: ObservableObject {
     private static let maxReconnectAttempts = 3
     /// Attempts already spent, per panel id.
     private var reconnectAttempts: [UUID: Int] = [:]
+    /// Re-entrancy guard: closing the dead panel and creating the replacement both select
+    /// tabs, and bonsplit reports programmatic selections exactly like user clicks. Without
+    /// this the app recursed until the stack blew up.
+    private var reconnectDepth = 0
+    var isReconnecting: Bool { reconnectDepth > 0 }
 
     /// Re-attaches a tmux window whose ssh client died, with a growing delay. The dead
     /// panel is replaced by a fresh one in the same pane, keeping name and tmux binding.
     func scheduleReconnect(panelId: UUID, in workspace: Workspace) {
-        guard Self.isEnabled else { return }
+        guard Self.isEnabled, !isReconnecting else { return }
         let attempt = (reconnectAttempts[panelId] ?? 0) + 1
         guard attempt <= Self.maxReconnectAttempts else { return }
         reconnectAttempts[panelId] = attempt
@@ -381,6 +386,7 @@ final class UniConnectCoordinator: ObservableObject {
     }
 
     private func reconnect(panelId: UUID, in workspace: Workspace, attempt: Int) {
+        guard !isReconnecting else { return }
         guard let session = workspace.uniConnectTmuxSessionsByPanelId[panelId],
               workspace.panels[panelId] != nil,
               let pane = workspace.paneId(forPanelId: panelId)
@@ -395,6 +401,14 @@ final class UniConnectCoordinator: ObservableObject {
             .replacingOccurrences(of: " · desconectada", with: "")
         let commandLine = UniConnectSSH.attachCommandLine(connectCommand: connect, session: session, directory: nil)
         guard let launcher = UniConnectSSH.writeLauncherScript(commandLine: commandLine, label: session) else { return }
+        reconnectDepth += 1
+        defer { reconnectDepth -= 1 }
+        // Retire the dead window BEFORE opening the replacement: while it exists it is still
+        // selectable, and selecting it asks for another reconnect.
+        workspace.uniConnectTmuxSessionsByPanelId.removeValue(forKey: panelId)
+        workspace.uniConnectDisconnectedPanelIds.remove(panelId)
+        reconnectAttempts.removeValue(forKey: panelId)
+        _ = workspace.closePanel(panelId, force: true)
         guard let panel = workspace.newTerminalSurface(
             inPane: pane,
             focus: false,
@@ -403,20 +417,31 @@ final class UniConnectCoordinator: ObservableObject {
         ) else { return }
         workspace.uniConnectTmuxSessionsByPanelId[panel.id] = session
         workspace.setPanelCustomTitle(panelId: panel.id, title: title)
-        reconnectAttempts[panel.id] = attempt
-        workspace.uniConnectTmuxSessionsByPanelId.removeValue(forKey: panelId)
-        workspace.uniConnectDisconnectedPanelIds.remove(panelId)
-        _ = workspace.closePanel(panelId, force: true)
-        reconnectAttempts.removeValue(forKey: panelId)
+        // The budget belongs to the outage, not to the panel: a window that comes back and
+        // dies again hours later gets its three attempts afresh.
+        reconnectAttempts.removeValue(forKey: panel.id)
         requestSave()
         NSLog("[UniConnect] reconectando %@ (intento %d)", session, attempt)
     }
 
-    /// Manual reconnect: clears the attempt budget so the user can always insist.
-    func reconnectNow(panelId: UUID, in workspace: Workspace) {
-        guard Self.isEnabled, workspace.uniConnectTmuxSessionsByPanelId[panelId] != nil else { return }
-        reconnectAttempts.removeValue(forKey: panelId)
-        reconnect(panelId: panelId, in: workspace, attempt: 1)
+    /// Reconnect on demand. `userInitiated` (menu, explicit click) clears the attempt
+    /// budget so the user can always insist; anything automatic has to spend it, or a
+    /// dead server keeps the app opening ssh clients forever.
+    func reconnectNow(panelId: UUID, in workspace: Workspace, userInitiated: Bool = true) {
+        guard Self.isEnabled, !isReconnecting,
+              workspace.uniConnectDisconnectedPanelIds.contains(panelId),
+              workspace.uniConnectTmuxSessionsByPanelId[panelId] != nil else { return }
+        let attempt: Int
+        if userInitiated {
+            reconnectAttempts.removeValue(forKey: panelId)
+            attempt = 1
+        } else {
+            let spent = reconnectAttempts[panelId] ?? 0
+            guard spent < Self.maxReconnectAttempts else { return }
+            attempt = spent + 1
+            reconnectAttempts[panelId] = attempt
+        }
+        reconnect(panelId: panelId, in: workspace, attempt: attempt)
     }
 
     /// "Reconectar ventanas caídas": when the network is back, re-attach every dead window.
@@ -425,8 +450,16 @@ final class UniConnectCoordinator: ObservableObject {
         var total = 0
         for tabManager in allTabManagers() {
             for workspace in tabManager.tabs {
-                for panelId in workspace.uniConnectDisconnectedPanelIds where workspace.panels[panelId] != nil {
-                    reconnectNow(panelId: panelId, in: workspace)
+                // Snapshot the ids: reconnecting mutates the set we would be iterating.
+                let dead = workspace.uniConnectDisconnectedPanelIds.filter { workspace.panels[$0] != nil }
+                for panelId in dead {
+                    // Stagger the ssh clients like the restore does, or a box with six
+                    // windows opens six connections at once and the server throttles them.
+                    let delay = Double(total) * 0.4
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak workspace] in
+                        guard let workspace else { return }
+                        UniConnectCoordinator.shared.reconnectNow(panelId: panelId, in: workspace, userInitiated: true)
+                    }
                     total += 1
                 }
             }
@@ -702,6 +735,7 @@ final class UniConnectCoordinator: ObservableObject {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.prompt = "Importar"
+        panel.message = "Export cifrado (.uc), semilla JSON o mapa de conexiones en Markdown"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         importConfiguration(from: url)
     }

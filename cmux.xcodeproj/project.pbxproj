@@ -645,6 +645,7 @@
 		C0FFEE0300000000000000B1 /* UniConnectBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE0300000000000000A1 /* UniConnectBackup.swift */; };
 		C0FFEE0600000000000000B1 /* UniConnectCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE0600000000000000A1 /* UniConnectCoordinator.swift */; };
 		C0FFEE0800000000000000B1 /* UniConnectMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE0800000000000000A1 /* UniConnectMigration.swift */; };
+		C0FFEE1000000000000000B1 /* UniConnectMarkdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE1000000000000000A1 /* UniConnectMarkdown.swift */; };
 		C0FFEE0000000000000000B1 /* UniConnectModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE0000000000000000A1 /* UniConnectModels.swift */; };
 		C0FFEE0200000000000000B1 /* UniConnectSSH.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE0200000000000000A1 /* UniConnectSSH.swift */; };
 		C0FFEE7700000000000000B1 /* UniConnectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE7700000000000000A1 /* UniConnectTests.swift */; };
@@ -1372,6 +1373,7 @@
 		C0FFEE0300000000000000A1 /* UniConnectBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectBackup.swift; sourceTree = "<group>"; };
 		C0FFEE0600000000000000A1 /* UniConnectCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectCoordinator.swift; sourceTree = "<group>"; };
 		C0FFEE0800000000000000A1 /* UniConnectMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectMigration.swift; sourceTree = "<group>"; };
+		C0FFEE1000000000000000A1 /* UniConnectMarkdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectMarkdown.swift; sourceTree = "<group>"; };
 		C0FFEE0000000000000000A1 /* UniConnectModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectModels.swift; sourceTree = "<group>"; };
 		C0FFEE0200000000000000A1 /* UniConnectSSH.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSH.swift; sourceTree = "<group>"; };
 		C0FFEE7700000000000000A1 /* UniConnectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectTests.swift; sourceTree = "<group>"; };
@@ -1533,6 +1535,7 @@
 				C0FFEE0900000000000000A1 /* UniConnectRailSidebar.swift */,
 				C0FFEE0600000000000000A1 /* UniConnectCoordinator.swift */,
 				C0FFEE0800000000000000A1 /* UniConnectMigration.swift */,
+				C0FFEE1000000000000000A1 /* UniConnectMarkdown.swift */,
 			);
 			path = UniConnect;
 			sourceTree = "<group>";
@@ -3031,6 +3034,7 @@
 				C0FFEE0300000000000000B1 /* UniConnectBackup.swift in Sources */,
 				C0FFEE0600000000000000B1 /* UniConnectCoordinator.swift in Sources */,
 				C0FFEE0800000000000000B1 /* UniConnectMigration.swift in Sources */,
+				C0FFEE1000000000000000B1 /* UniConnectMarkdown.swift in Sources */,
 				C0FFEE0000000000000000B1 /* UniConnectModels.swift in Sources */,
 				C0FFEE0200000000000000B1 /* UniConnectSSH.swift in Sources */,
 				C0FFEE0100000000000000B1 /* UniConnectVault.swift in Sources */,

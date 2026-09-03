@@ -2046,23 +2046,6 @@ struct ContentView: View {
     }
 
     /// Small control at the foot of the expanded sidebar that collapses it to the rail.
-    private var sidebarCompactToggleButton: some View {
-        Button {
-            setSidebarCompact(true)
-        } label: {
-            Image(systemName: "sidebar.left")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .safeHelp("Compactar barra lateral (⌘⌥B)")
-        .accessibilityLabel("Compactar barra lateral")
-        .accessibilityIdentifier("SidebarCompactToggle")
-        .padding(.trailing, 10)
-        .padding(.bottom, 9)
-    }
 
     private var sidebarView: some View {
         ZStack(alignment: .topLeading) {
@@ -2085,9 +2068,6 @@ struct ContentView: View {
                     selectedTabIds: $selectedTabIds,
                     lastSidebarSelectionIndex: $lastSidebarSelectionIndex
                 )
-                .overlay(alignment: .bottomTrailing) {
-                    sidebarCompactToggleButton
-                }
                 .transition(.opacity)
             }
         }
@@ -2294,7 +2274,7 @@ struct ContentView: View {
                             LinearGradient(
                                 colors: isDark
                                     ? [Color.white.opacity(0.055), Color.white.opacity(0.012)]
-                                    : [Color.white.opacity(0.55), Color.white.opacity(0.14)],
+                                    : [Color.white.opacity(0.20), Color.white.opacity(0.05)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
@@ -13728,12 +13708,32 @@ private struct SidebarFooterButtons: View {
     var updateViewModel: UpdateStateModel
     @ObservedObject var fileExplorerState: FileExplorerState
     let onSendFeedback: () -> Void
+    /// UniConnect: collapse the sidebar to the icon rail. Lives in the footer, with the
+    /// other sidebar controls, instead of floating over the content. Written straight to
+    /// the shared default so it needs no plumbing through the sidebar hierarchy.
+    @AppStorage(UniConnectRailSidebar.compactDefaultsKey) private var sidebarCompact = false
     @State private var extensionBrowserAnchorView: NSView?
     @LiveSetting(\.betaFeatures.extensions) private var extensionsExperimentalEnabled
 
     var body: some View {
         HStack(spacing: 4) {
             SidebarHelpMenuButton(onSendFeedback: onSendFeedback)
+            if UniConnectCoordinator.isEnabled {
+                Button {
+                    withAnimation(ContentView.sidebarCompactAnimation) { sidebarCompact = true }
+                } label: {
+                    Image(systemName: "sidebar.squares.left")
+                        .symbolRenderingMode(.monochrome)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                        .frame(width: 22, height: 22, alignment: .center)
+                }
+                .buttonStyle(SidebarFooterIconButtonStyle())
+                .frame(width: 22, height: 22, alignment: .center)
+                .safeHelp("Compactar barra lateral (⌘⌥B)")
+                .accessibilityLabel("Compactar barra lateral")
+                .accessibilityIdentifier("SidebarCompactToggle")
+            }
             // The puzzle button opens the extensions browser; it only shows
             // while the experimental Extensions feature is enabled.
             if extensionsExperimentalEnabled {
@@ -15624,9 +15624,11 @@ struct TabItemView: View, Equatable {
                 // UniConnect: kind (Local/SSH) and window count as two small pills, in place
                 // of the folder paths that used to hang under the row.
                 if let profile = tab.uniConnectProfile {
+                    // Observes the workspace so the window count refreshes when a window is
+                    // opened or closed: TabItemView itself is Equatable and would not.
                     UniConnectRowBadges(
+                        workspace: tab,
                         isSSH: profile.isSSH,
-                        windowCount: tab.uniConnectOrderedTerminalPanelIds().count,
                         fontScale: fontScale,
                         isActive: usesInvertedActiveForeground,
                         activeForeground: activeSecondaryColor(0.95)
@@ -19096,25 +19098,31 @@ extension NSColor {
 
 /// Two pills on a workspace row: the kind of box and how many windows it has.
 private struct UniConnectRowBadges: View {
+    @ObservedObject var workspace: Workspace
     let isSSH: Bool
-    let windowCount: Int
     let fontScale: CGFloat
     let isActive: Bool
     let activeForeground: Color
 
     @Environment(\.colorScheme) private var colorScheme
 
+    private var windowCount: Int { workspace.uniConnectOrderedTerminalPanelIds().count }
+
     private var size: CGFloat { max(7.5, 8.5 * fontScale) }
 
+    /// Darker inks in light mode: the pastel pair was around 1.7:1 against the sidebar.
     private var kindTint: Color {
-        isSSH ? Color(red: 0.25, green: 0.72, blue: 0.95) : Color(red: 0.42, green: 0.80, blue: 0.55)
+        if colorScheme == .dark {
+            return isSSH ? Color(red: 0.25, green: 0.72, blue: 0.95) : Color(red: 0.42, green: 0.80, blue: 0.55)
+        }
+        return isSSH ? Color(red: 0.06, green: 0.36, blue: 0.60) : Color(red: 0.10, green: 0.40, blue: 0.22)
     }
 
     var body: some View {
         HStack(spacing: 3) {
             pill(text: isSSH ? "SSH" : "LOCAL", tint: isActive ? activeForeground : kindTint)
             if windowCount > 0 {
-                pill(text: "\(windowCount)", tint: isActive ? activeForeground : Color.secondary)
+                pill(text: "\(windowCount)", tint: isActive ? activeForeground : (colorScheme == .dark ? Color.secondary : Color(white: 0.28)))
             }
         }
         .fixedSize()

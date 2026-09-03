@@ -7,9 +7,15 @@ enum UniConnectSSH {
     /// window always cds first. The folder may be gone (renamed project): fall back to home
     /// instead of leaving the user with a dead shell.
     static func claudeResumeCommandLine(session: String, directory: String?) -> String {
+        // `claude --resume` only finds the session from the folder it was created in, so a
+        // missing folder must stop the command, not silently resume from $HOME (which fails
+        // with a confusing error). The window is left in a usable login shell instead.
         var command = ""
         if let directory, !directory.isEmpty {
-            command += "cd \(singleQuoted(directory)) 2>/dev/null || cd \"$HOME\"; "
+            let quoted = singleQuoted(directory)
+            command += "if ! cd \(quoted) 2>/dev/null; then "
+            command += "echo \"[UniConnect] la carpeta \(quoted) ya no existe; la sesión no se puede reanudar desde aquí\"; "
+            command += "exec \"$SHELL\" -l; fi; "
         }
         command += "exec claude --dangerously-skip-permissions --resume \(singleQuoted(session))"
         return command
@@ -129,7 +135,9 @@ enum UniConnectSSH {
             let safeLabel = sanitizedTmuxName(label)
             let url = directory.appendingPathComponent("\(safeLabel)-\(UUID().uuidString).zsh")
             let contents = [
-                "#!/bin/zsh",
+                // Login shell: launched from Finder the app inherits a bare PATH, so a plain
+                // `#!/bin/zsh` cannot find `claude` (Homebrew, mise, nvm…).
+                "#!/bin/zsh -l",
                 "rm -f -- \"$0\" 2>/dev/null || true",
                 "printf '\\033]0;UniConnect\\007'",
                 // Ghostty advertises TERM=xterm-ghostty; most servers lack that terminfo and
@@ -161,7 +169,21 @@ enum UniConnectSSH {
     /// Password-free label for display, e.g. `root@1.2.3.4`.
     static func hostLabel(from connectCommand: String) -> String {
         let pattern = #"([A-Za-z0-9._-]+@)?([A-Za-z0-9.-]+|\[[0-9a-fA-F:]+\])(?=\s|$)"#
-        let tokens = connectCommand.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+        // Shell-aware split, and drop the value of every option that carries a secret or a
+        // path: `sshpass -p 'clave'` used to end up in the label, which is persisted in the
+        // session snapshot and shown in the sidebar.
+        var tokens: [String] = []
+        var skipNext = false
+        for token in shellWords(connectCommand) {
+            if skipNext { skipNext = false; continue }
+            if token == "-p" || token == "-i" || token == "-o" || token == "-F" || token == "-P" || token == "-f" {
+                skipNext = true
+                continue
+            }
+            // `-p'clave'` / `-i/ruta/clave.pem` glued together.
+            if token.hasPrefix("-p") || token.hasPrefix("-i") { continue }
+            tokens.append(token)
+        }
         // Prefer the token containing '@'; fall back to the last non-option token.
         if let at = tokens.first(where: { $0.contains("@") && !$0.hasPrefix("-") }) { return at }
         if let regex = try? NSRegularExpression(pattern: pattern),

@@ -6012,6 +6012,15 @@ class TabManager: ObservableObject {
             tab.uniConnectMarkDisconnected(panelId: surfaceId)
             return
         }
+        // A local window bound to a Claude session must survive its command dying (a failed
+        // `claude --resume`, an exit typed by mistake): the window is the user's, not the
+        // process's, and closing the last one would take the whole box with it.
+        if tab.uniConnectClaudeSessionsByPanelId[surfaceId] != nil {
+#if DEBUG
+            cmuxDebugLog("surface.close.childExited.keepUniConnectLocal tab=\(tabId.uuidString.prefix(5)) surface=\(surfaceId.uuidString.prefix(5))")
+#endif
+            return
+        }
         let keepsPersistentRemoteSurfaceOpen =
             tab.shouldKeepPersistentRemoteSurfaceOpenAfterChildExit(surfaceId)
         let handlesRemoteExitThroughWorkspace =
