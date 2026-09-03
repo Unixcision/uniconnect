@@ -17,6 +17,8 @@ struct CmuxCLIPathInstaller {
         case bundledCLIMissing(expectedPath: String)
         case destinationParentNotDirectory(path: String)
         case destinationIsDirectory(path: String)
+        case destinationBelongsToAnotherTool(path: String)
+        case destinationIsNotOwned(path: String)
         case installVerificationFailed(path: String)
         case uninstallVerificationFailed(path: String)
         case privilegedCommandFailed(message: String)
@@ -24,23 +26,51 @@ struct CmuxCLIPathInstaller {
         var errorDescription: String? {
             switch self {
             case .bundledCLIMissing(let expectedPath):
-                return "Bundled UniConnect CLI was not found at \(expectedPath)."
+                return String(
+                    localized: "cli.path.error.bundledMissing",
+                    defaultValue: "Bundled cmux CLI was not found at \(expectedPath)."
+                )
             case .destinationParentNotDirectory(let path):
-                return "Expected \(path) to be a directory."
+                return String(
+                    localized: "cli.path.error.parentNotDirectory",
+                    defaultValue: "Expected \(path) to be a directory."
+                )
             case .destinationIsDirectory(let path):
-                return "\(path) is a directory. Remove or rename it and try again."
+                return String(
+                    localized: "cli.path.error.destinationIsDirectory",
+                    defaultValue: "\(path) is a directory. Remove or rename it and try again."
+                )
+            case .destinationBelongsToAnotherTool(let path):
+                return String(
+                    localized: "cli.path.error.destinationOccupied",
+                    defaultValue: "UniConnect will not replace \(path) because it belongs to another installation or tool."
+                )
+            case .destinationIsNotOwned(let path):
+                return String(
+                    localized: "cli.path.error.destinationNotOwned",
+                    defaultValue: "UniConnect will not remove \(path) because it does not point to this app's bundled cmux CLI."
+                )
             case .installVerificationFailed(let path):
-                return "Installed symlink at \(path) did not point to the bundled UniConnect CLI."
+                return String(
+                    localized: "cli.path.error.installVerification",
+                    defaultValue: "Installed symlink at \(path) did not point to the bundled cmux CLI."
+                )
             case .uninstallVerificationFailed(let path):
-                return "Failed to remove \(path)."
+                return String(
+                    localized: "cli.path.error.uninstallVerification",
+                    defaultValue: "Failed to remove \(path)."
+                )
             case .privilegedCommandFailed(let message):
-                return "Administrator action failed: \(message)"
+                return String(
+                    localized: "cli.path.error.privilegedCommand",
+                    defaultValue: "Administrator action failed: \(message)"
+                )
             }
         }
     }
 
     typealias PrivilegedInstallHandler = (_ sourceURL: URL, _ destinationURL: URL) throws -> Void
-    typealias PrivilegedUninstallHandler = (_ destinationURL: URL) throws -> Void
+    typealias PrivilegedUninstallHandler = (_ sourceURL: URL, _ destinationURL: URL) throws -> Void
 
     let fileManager: FileManager
     let destinationURL: URL
@@ -51,7 +81,7 @@ struct CmuxCLIPathInstaller {
 
     init(
         fileManager: FileManager = .default,
-        destinationURL: URL = URL(fileURLWithPath: "/usr/local/bin/uniconnect"),
+        destinationURL: URL = URL(fileURLWithPath: "/usr/local/bin/cmux"),
         bundledCLIURLProvider: @escaping () -> URL? = {
             CmuxCLIPathInstaller.defaultBundledCLIURL()
         },
@@ -64,7 +94,7 @@ struct CmuxCLIPathInstaller {
         self.bundledCLIURLProvider = bundledCLIURLProvider
         self.expectedBundledCLIPath = expectedBundledCLIPath
         self.privilegedInstaller = privilegedInstaller ?? Self.installWithAdministratorPrivileges(sourceURL:destinationURL:)
-        self.privilegedUninstaller = privilegedUninstaller ?? Self.uninstallWithAdministratorPrivileges(destinationURL:)
+        self.privilegedUninstaller = privilegedUninstaller ?? Self.uninstallWithAdministratorPrivileges(sourceURL:destinationURL:)
     }
 
     var destinationPath: String {
@@ -94,8 +124,9 @@ struct CmuxCLIPathInstaller {
     }
 
     func uninstall() throws -> UninstallOutcome {
+        let sourceURL = try resolveBundledCLIURL()
         do {
-            let removedExistingEntry = try uninstallWithoutAdministratorPrivileges()
+            let removedExistingEntry = try uninstallWithoutAdministratorPrivileges(sourceURL: sourceURL)
             return UninstallOutcome(
                 usedAdministratorPrivileges: false,
                 destinationURL: destinationURL,
@@ -105,7 +136,10 @@ struct CmuxCLIPathInstaller {
             guard Self.isPermissionDenied(error) else { throw error }
             try ensureDestinationIsNotDirectory()
             let removedExistingEntry = destinationEntryExists()
-            try privilegedUninstaller(destinationURL)
+            if removedExistingEntry {
+                try ensureDestinationIsOwned(by: sourceURL)
+            }
+            try privilegedUninstaller(sourceURL, destinationURL)
             if destinationEntryExists() {
                 throw InstallerError.uninstallVerificationFailed(path: destinationURL.path)
             }
@@ -139,6 +173,7 @@ struct CmuxCLIPathInstaller {
         try ensureDestinationParentDirectoryExists()
         try ensureDestinationIsNotDirectory()
         if destinationEntryExists() {
+            try ensureDestinationIsOwned(by: sourceURL, installing: true)
             try fileManager.removeItem(at: destinationURL)
         }
         try fileManager.createSymbolicLink(at: destinationURL, withDestinationURL: sourceURL)
@@ -146,10 +181,11 @@ struct CmuxCLIPathInstaller {
     }
 
     @discardableResult
-    private func uninstallWithoutAdministratorPrivileges() throws -> Bool {
+    private func uninstallWithoutAdministratorPrivileges(sourceURL: URL) throws -> Bool {
         try ensureDestinationIsNotDirectory()
         let existed = destinationEntryExists()
         if existed {
+            try ensureDestinationIsOwned(by: sourceURL)
             try fileManager.removeItem(at: destinationURL)
         }
         if destinationEntryExists() {
@@ -161,7 +197,8 @@ struct CmuxCLIPathInstaller {
     /// Check if the destination path has any filesystem entry (including dangling symlinks).
     /// `FileManager.fileExists` follows symlinks, so a dangling symlink returns false.
     private func destinationEntryExists() -> Bool {
-        (try? fileManager.attributesOfItem(atPath: destinationURL.path)) != nil
+        (try? fileManager.destinationOfSymbolicLink(atPath: destinationURL.path)) != nil
+            || fileManager.fileExists(atPath: destinationURL.path)
     }
 
     private func verifyInstalledSymlinkTarget(sourceURL: URL) throws {
@@ -172,7 +209,6 @@ struct CmuxCLIPathInstaller {
     }
 
     private func symlinkDestinationURL() -> URL? {
-        guard fileManager.fileExists(atPath: destinationURL.path) else { return nil }
         guard let destinationPath = try? fileManager.destinationOfSymbolicLink(atPath: destinationURL.path) else {
             return nil
         }
@@ -180,6 +216,18 @@ struct CmuxCLIPathInstaller {
             fileURLWithPath: destinationPath,
             relativeTo: destinationURL.deletingLastPathComponent()
         ).standardizedFileURL
+    }
+
+    private func ensureDestinationIsOwned(
+        by sourceURL: URL,
+        installing: Bool = false
+    ) throws {
+        guard symlinkDestinationURL() == sourceURL.standardizedFileURL else {
+            if installing {
+                throw InstallerError.destinationBelongsToAnotherTool(path: destinationURL.path)
+            }
+            throw InstallerError.destinationIsNotOwned(path: destinationURL.path)
+        }
     }
 
     private func ensureDestinationParentDirectoryExists() throws {
@@ -227,26 +275,34 @@ struct CmuxCLIPathInstaller {
     }
 
     private static func defaultBundledCLIURL(bundle: Bundle = .main) -> URL? {
-        bundle.resourceURL?.appendingPathComponent("bin/uniconnect", isDirectory: false)
+        bundle.resourceURL?.appendingPathComponent("bin/cmux", isDirectory: false)
     }
 
     private static func defaultBundledCLIExpectedPath(bundle: Bundle = .main) -> String {
         bundle.bundleURL
-            .appendingPathComponent("Contents/Resources/bin/uniconnect", isDirectory: false)
+            .appendingPathComponent("Contents/Resources/bin/cmux", isDirectory: false)
             .path
     }
 
     private static func installWithAdministratorPrivileges(sourceURL: URL, destinationURL: URL) throws {
         let destinationPath = destinationURL.path
         let parentPath = destinationURL.deletingLastPathComponent().path
+        let sourcePath = sourceURL.path
         let command = "/bin/mkdir -p \(shellQuoted(parentPath)) && " +
-            "/bin/rm -f \(shellQuoted(destinationPath)) && " +
+            "if [ -e \(shellQuoted(destinationPath)) ] || [ -L \(shellQuoted(destinationPath)) ]; then " +
+            "[ -L \(shellQuoted(destinationPath)) ] && " +
+            "[ \"$(/usr/bin/readlink \(shellQuoted(destinationPath)))\" = \(shellQuoted(sourcePath)) ] || exit 73; " +
+            "fi && /bin/rm -f \(shellQuoted(destinationPath)) && " +
             "/bin/ln -s \(shellQuoted(sourceURL.path)) \(shellQuoted(destinationPath))"
         try runPrivilegedShellCommand(command)
     }
 
-    private static func uninstallWithAdministratorPrivileges(destinationURL: URL) throws {
-        let command = "/bin/rm -f \(shellQuoted(destinationURL.path))"
+    private static func uninstallWithAdministratorPrivileges(sourceURL: URL, destinationURL: URL) throws {
+        let destinationPath = destinationURL.path
+        let command = "if [ -e \(shellQuoted(destinationPath)) ] || [ -L \(shellQuoted(destinationPath)) ]; then " +
+            "[ -L \(shellQuoted(destinationPath)) ] && " +
+            "[ \"$(/usr/bin/readlink \(shellQuoted(destinationPath)))\" = \(shellQuoted(sourceURL.path)) ] || exit 73; " +
+            "/bin/rm -f \(shellQuoted(destinationPath)); fi"
         try runPrivilegedShellCommand(command)
     }
 
