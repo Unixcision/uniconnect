@@ -142,6 +142,8 @@ struct UniConnectSSHConnectCommandValidatorTests {
         #expect(validator.validate("ssh -oLocalForward=8080:localhost:80 root@host") == .unsafeSSHOption)
         #expect(validator.validate("ssh -oRequestTTY=force root@host") == .unsafeSSHOption)
         #expect(validator.validate("ssh -oSetEnv=TOKEN=secret root@host") == .unsafeSSHOption)
+        #expect(validator.validate("ssh -oStreamLocalBindMask=0000 root@host") == .unsafeSSHOption)
+        #expect(validator.validate("ssh -oStreamLocalBindUnlink=no root@host") == .unsafeSSHOption)
         #expect(validator.validate("ssh 'root@host;touch'") == .invalidDestination)
         #expect(validator.validate("ssh -J 'jump;touch' root@host") == .invalidDestination)
         #expect(validator.validate("ssh -o 'ProxyJump=jump;touch' root@host") == .invalidDestination)
@@ -198,7 +200,7 @@ struct UniConnectSSHConnectCommandValidatorTests {
         let invocation = try #require(parsed.invocation(
             injecting: ["-T", "-o", "ConnectTimeout=15"]
         ))
-        #expect(invocation.arguments.suffix(5) == ["-o", "ConnectTimeout=15", "--", "root@example.test"])
+        #expect(invocation.arguments.suffix(5) == ["-T", "-o", "ConnectTimeout=15", "--", "root@example.test"])
         #expect(parsed.invocation(injecting: ["--", "-oProxyCommand=touch /tmp/pwn"]) == nil)
         #expect(parsed.invocation(injecting: ["-o", "ProxyCommand=touch /tmp/pwn"]) == nil)
         #expect(parsed.invocation(injecting: ["-R", "-oProxyCommand=bad"]) == nil)

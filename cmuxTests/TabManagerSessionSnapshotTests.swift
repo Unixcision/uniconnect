@@ -594,6 +594,103 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
         XCTAssertEqual(manager.selectedTabId, secondWorkspace.id)
     }
 
+    func testUniConnectTmuxBindingPersistsAsRemoteTerminalWhenRuntimeMarkerWasLost() throws {
+        let manager = TabManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let panelID = try XCTUnwrap(workspace.focusedPanelId)
+        workspace.uniConnectProfile = UniConnectWorkspaceProfile(
+            kind: .ssh,
+            credentialId: UUID(),
+            hostLabel: "deploy@example.test",
+            tmuxReady: true
+        )
+        workspace.uniConnectTmuxSessionsByPanelId[panelID] = "iberiavochatbot"
+
+        let snapshot = workspace.sessionSnapshot(includeScrollback: false)
+        let terminal = try XCTUnwrap(
+            snapshot.panels.first(where: { $0.id == panelID })?.terminal
+        )
+
+        XCTAssertEqual(terminal.uniConnectTmuxSession, "iberiavochatbot")
+        XCTAssertEqual(terminal.isRemoteTerminal, true)
+    }
+
+    func testDetachedUniConnectTmuxBindingRecoversRemoteClassificationWithoutInventingRelay() throws {
+        let manager = TabManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let panelID = try XCTUnwrap(workspace.focusedPanelId)
+        workspace.uniConnectProfile = UniConnectWorkspaceProfile(
+            kind: .ssh,
+            credentialId: UUID(),
+            hostLabel: "deploy@example.test",
+            tmuxReady: true
+        )
+        workspace.uniConnectTmuxSessionsByPanelId[panelID] = "iberiavochatbot"
+
+        XCTAssertFalse(workspace.isRemoteTerminalSurface(panelID))
+        let detached = try XCTUnwrap(workspace.detachSurface(panelId: panelID))
+
+        XCTAssertTrue(detached.isRemoteTerminal)
+        XCTAssertNil(detached.remoteRelayPort)
+    }
+
+    func testDetachedLiveTmuxCarriesExistingRelayWhenRuntimeMarkerWasLost() throws {
+        let manager = TabManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let panelID = try XCTUnwrap(workspace.focusedPanelId)
+        let remoteConfiguration = WorkspaceRemoteConfiguration(
+            destination: "deploy@example.test",
+            port: 22,
+            identityFile: nil,
+            sshOptions: [],
+            localProxyPort: nil,
+            relayPort: 64_222,
+            relayID: "relay-id",
+            relayToken: "relay-token",
+            localSocketPath: "/tmp/uniconnect-marker-test.sock",
+            terminalStartupCommand: nil
+        )
+        workspace.configureRemoteConnection(remoteConfiguration, autoConnect: false)
+        workspace.uniConnectProfile = UniConnectWorkspaceProfile(
+            kind: .ssh,
+            credentialId: UUID(),
+            hostLabel: "deploy@example.test",
+            tmuxReady: true
+        )
+        workspace.uniConnectTmuxSessionsByPanelId[panelID] = "iberiavochatbot"
+
+        XCTAssertFalse(workspace.isRemoteTerminalSurface(panelID))
+        let detached = try XCTUnwrap(workspace.detachSurface(panelId: panelID))
+
+        XCTAssertTrue(detached.isRemoteTerminal)
+        XCTAssertEqual(detached.remoteRelayPort, remoteConfiguration.relayPort)
+        XCTAssertEqual(detached.remoteCleanupConfiguration, remoteConfiguration)
+    }
+
+    func testDisconnectedUniConnectTmuxBindingIsNotPersistedOrDetachedAsActiveRemote() throws {
+        let manager = TabManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let panelID = try XCTUnwrap(workspace.focusedPanelId)
+        workspace.uniConnectProfile = UniConnectWorkspaceProfile(
+            kind: .ssh,
+            credentialId: UUID(),
+            hostLabel: "deploy@example.test",
+            tmuxReady: true
+        )
+        workspace.uniConnectTmuxSessionsByPanelId[panelID] = "iberiavochatbot"
+        workspace.uniConnectDisconnectedPanelIds.insert(panelID)
+
+        let snapshot = workspace.sessionSnapshot(includeScrollback: false)
+        let terminal = try XCTUnwrap(
+            snapshot.panels.first(where: { $0.id == panelID })?.terminal
+        )
+        XCTAssertEqual(terminal.isRemoteTerminal, false)
+
+        let detached = try XCTUnwrap(workspace.detachSurface(panelId: panelID))
+        XCTAssertFalse(detached.isRemoteTerminal)
+        XCTAssertNil(detached.remoteRelayPort)
+    }
+
     func testReopenClosedSSHPanelAcrossCredentialRevisionsUsesIsolatedHistoricalWorkspace() throws {
         let originalAppDelegate = AppDelegate.shared
         AppDelegate.shared = nil
@@ -602,7 +699,12 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
         let manager = TabManager()
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
         let revisionA = try UniConnectVault.shared.createImmutableRevision(
-            connectCommand: "ssh ops@old.example.test"
+            connectCommand: "ssh ops@old.example.test",
+            effectiveTarget: try XCTUnwrap(UniConnectSSHEffectiveTarget(
+                user: "ops",
+                host: "old.example.test",
+                port: 22
+            ))
         )
         let revisionB = UUID(uuidString: "B1000000-0000-0000-0000-000000000001")!
         defer { UniConnectVault.shared.remove(id: revisionA) }
@@ -756,7 +858,12 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
         let manager = TabManager()
         let fixtureWorkspace = try XCTUnwrap(manager.selectedWorkspace)
         let historicalCredentialID = try UniConnectVault.shared.createImmutableRevision(
-            connectCommand: "ssh archive@history.example.test"
+            connectCommand: "ssh archive@history.example.test",
+            effectiveTarget: try XCTUnwrap(UniConnectSSHEffectiveTarget(
+                user: "archive",
+                host: "history.example.test",
+                port: 22
+            ))
         )
         defer { UniConnectVault.shared.remove(id: historicalCredentialID) }
         var snapshot = try XCTUnwrap(
