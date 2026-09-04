@@ -130,8 +130,9 @@ Legend:
   guides are present and being reconciled with the final code.
 - [~] Desktop phase 2 has a read-only exact-inventory generator and guarded rollback plan;
   no move is authorised or performed.
-- [ ] Finish private Desktop inventory and record its path/checksum without publishing
-  sensitive contents.
+- [x] Finish private Desktop inventory and record its path/checksum without publishing
+  sensitive contents. Evidence is recorded in `docs/UNICONNECT-ENTREGA.md`; the plan is
+  private and `dryRun` only.
 - [ ] Finalise this checklist, goal breakdown and delivery report with real evidence only.
 
 ## 13. Final validation and delivery
@@ -141,8 +142,8 @@ Legend:
 - [ ] Run focused app tests, then the complete applicable test suite without concurrency.
 - [ ] Build stable signed Release and dry-run signature/install guards.
 - [ ] Perform final adversarial review for concurrency, secrets and data loss.
-- [ ] Publish `vendor/bonsplit` commit to its remote `main`, verify ancestry, then commit its
-  parent pointer.
+- [x] Verify `vendor/bonsplit` is clean on `main`, its current commit is already on
+  `origin/main`, and the parent pointer is unchanged.
 - [ ] Create structured parent commits and push branch `uniconnect`.
 - [ ] Ask for installation permission, back up once, cleanly quit, install and visually
   validate Touch ID, state, sessions, tmux, rail, badges, notifications, logo and menus.

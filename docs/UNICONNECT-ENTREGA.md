@@ -84,6 +84,15 @@ hacer un backup recuperable, instalar la Release y ejecutar la comprobación vis
 
 ## Validación final
 
+Inventario privado de la fase 2 del Escritorio completado en modo estrictamente
+`dryRun`, sin mover, renombrar, editar ni borrar archivos:
+
+- ruta privada: `/Users/danielgomezmartin/.uniconnect/backups/desktop-phase2-20260904T064133Z`;
+- manifiesto SHA-256: `c811a36ac36ea74bd87f3a3eb289209fb2e2c3d43e7aa6cf7119aaf5310c096e`;
+- seis operaciones propuestas, cero entradas ilegibles y permisos `0700`/`0600`;
+- `IMPUESTOS` y el traslado opcional de `PongFrenetico` siguen pendientes de una
+  decisión separada; el script de rollback no se ha ejecutado.
+
 Pendiente de completar en este candidato:
 
 - build Debug aislada y build Release firmada;
@@ -92,7 +101,6 @@ Pendiente de completar en este candidato:
 - comprobaciones SSH/tmux exclusivamente de lectura sobre destinos reales;
 - E2E con sesiones sacrificables para updater y bridge;
 - auditorías finales de localización, independencia de cmux y secretos;
-- commit del submódulo `vendor/bonsplit` publicado antes de actualizar su puntero;
 - commits del repositorio principal y push de la rama;
 - instalación y validación visual, únicamente después de la autorización del usuario.
 
