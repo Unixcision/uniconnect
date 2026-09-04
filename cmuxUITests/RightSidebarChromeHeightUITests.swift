@@ -13,7 +13,7 @@ final class RightSidebarChromeHeightUITests: XCTestCase {
         app.launchEnvironment["CMUX_UI_TEST_BONSPLIT_TAB_DRAG_SETUP"] = "1"
         app.launchEnvironment["CMUX_UI_TEST_BONSPLIT_TAB_DRAG_PATH"] = dataPath
         app.launchEnvironment["CMUX_UI_TEST_BONSPLIT_SHOW_RIGHT_SIDEBAR"] = "1"
-        app.launchArguments += ["-workspacePresentationMode", "minimal"]
+        app.launchArguments += ["-appearanceMode", "dark", "-workspacePresentationMode", "minimal"]
         app.launchArguments += ["-rightSidebar.beta.feed.enabled", "YES"]
         app.launch()
         defer { app.terminate() }
@@ -98,6 +98,7 @@ final class RightSidebarChromeHeightUITests: XCTestCase {
         app.launchEnvironment["CMUX_UI_TEST_BONSPLIT_TAB_DRAG_PATH"] = dataPath
         app.launchEnvironment["CMUX_UI_TEST_BONSPLIT_SHOW_RIGHT_SIDEBAR"] = "1"
         app.launchArguments += [
+            "-appearanceMode", "dark",
             "-workspacePresentationMode", "minimal",
             "-sidebarMatchTerminalBackground", "true",
             "-sidebarBlendMode", "withinWindow",
@@ -457,7 +458,7 @@ final class TerminalViewportUITests: XCTestCase {
         app.launchEnvironment["CMUX_UI_TEST_TERMINAL_VIEWPORT_RESIZE_WINDOW_SIZE"] = "1180x780"
         app.launchEnvironment["CMUX_UI_TEST_TERMINAL_VIEWPORT_HIDE_SIDEBAR"] = "1"
         app.launchEnvironment["CMUX_UI_TEST_TERMINAL_VIEWPORT_HIDE_RIGHT_SIDEBAR"] = "1"
-        app.launchArguments += ["-workspacePresentationMode", "minimal"]
+        app.launchArguments += ["-appearanceMode", "dark", "-workspacePresentationMode", "minimal"]
         let options = XCTExpectedFailure.Options()
         options.isStrict = false
         XCTExpectFailure("App activation may fail on headless CI runners", options: options) {
