@@ -25,7 +25,7 @@ export const runtime = "nodejs"; // http2 + node:crypto, not edge
 export const dynamic = "force-dynamic";
 
 function apnsConfig(): ApnsConfig | null {
-  const keyP8 = env.CMUX_APNS_KEY_P8;
+  const keyP8 = env.CMUX_APNS_KEY_P8; // gitleaks:allow -- environment lookup, never key material
   const keyId = env.CMUX_APNS_KEY_ID;
   const teamId = env.CMUX_APNS_TEAM_ID;
   if (!keyP8 || !keyId || !teamId) return null;

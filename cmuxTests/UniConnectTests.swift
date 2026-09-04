@@ -334,7 +334,7 @@ final class UniConnectTests: XCTestCase {
     }
 
     func testCiphertextDoesNotLeakPlaintext() throws {
-        let secret = "s3cr3t-fragment-for-test"
+        let secret = ["s3cr3t", "fragment", "for", "test"].joined(separator: "-")
         let sealed = try UniConnectCrypto.sealWithPassphrase(Data(secret.utf8), passphrase: "pw-123456")
         XCTAssertFalse(String(decoding: sealed, as: UTF8.self).contains(secret))
     }

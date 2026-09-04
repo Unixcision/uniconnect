@@ -7,7 +7,7 @@ import (
 )
 
 func FuzzConsumeWebSocketLease(f *testing.F) {
-	f.Add(`{"version":1,"token_sha256":"2bb80d537b1da3e38bd30361aa855686bde0ba2cf9c27ffb6b3874b764d66e16","expires_at_unix":4102444800,"session_id":"sess","single_use":false}`, "secret", "sess")
+	f.Add(`{"version":1,"token_sha256":"2bb80d537b1da3e38bd30361aa855686bde0ba2cf9c27ffb6b3874b764d66e16","expires_at_unix":4102444800,"session_id":"sess","single_use":false}`, "secret", "sess") // gitleaks:allow -- public fuzz fixture
 	f.Add(`{"version":1,"token_sha256":"bad","expires_at_unix":0,"single_use":true}`, "secret", "")
 	f.Add(`not-json`, "secret", "sess")
 

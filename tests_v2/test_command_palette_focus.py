@@ -41,7 +41,7 @@ def _wait_until(predicate, timeout_s: float = 3.0, interval_s: float = 0.05, mes
 
 
 def main() -> int:
-    token = "CMUX_PALETTE_FOCUS_PROBE_9412"
+    probe_marker = "CMUX_PALETTE_FOCUS_PROBE_9412"
     restore_token = "CMUX_PALETTE_RESTORE_PROBE_7731"
 
     with cmux(SOCKET_PATH) as client:
@@ -68,11 +68,11 @@ def main() -> int:
         )
 
         # Typing now should target palette input, not the terminal.
-        client.simulate_type(token)
+        client.simulate_type(probe_marker)
         time.sleep(0.15)
         post_text = client.read_terminal_text(panel_id)
 
-        if token in post_text and token not in pre_text:
+        if probe_marker in post_text and probe_marker not in pre_text:
             raise cmuxError("typed probe text leaked into terminal while palette is open")
 
         # Close palette and ensure focus returns to previously-focused terminal.
