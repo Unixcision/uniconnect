@@ -601,12 +601,10 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
 
         let manager = TabManager()
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
-        let revisionA = UUID(uuidString: "A1000000-0000-0000-0000-000000000001")!
-        let revisionB = UUID(uuidString: "B1000000-0000-0000-0000-000000000001")!
-        try UniConnectVault.shared.storeOrThrow(
-            connectCommand: "ssh ops@old.example.test",
-            id: revisionA
+        let revisionA = try UniConnectVault.shared.createImmutableRevision(
+            connectCommand: "ssh ops@old.example.test"
         )
+        let revisionB = UUID(uuidString: "B1000000-0000-0000-0000-000000000001")!
         defer { UniConnectVault.shared.remove(id: revisionA) }
         workspace.uniConnectProfile = UniConnectWorkspaceProfile(
             kind: .ssh,
@@ -721,10 +719,8 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
     }
 
     func testWorkspaceRestoreNeverFallsBackToLocalShellWhenSSHTmuxBindingIsMissing() throws {
-        let credentialID = UUID()
-        try UniConnectVault.shared.storeOrThrow(
-            connectCommand: "ssh valid@history.example.test",
-            id: credentialID
+        let credentialID = try UniConnectVault.shared.createImmutableRevision(
+            connectCommand: "ssh valid@history.example.test"
         )
         defer { UniConnectVault.shared.remove(id: credentialID) }
         let workspace = Workspace()
@@ -759,10 +755,8 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
 
         let manager = TabManager()
         let fixtureWorkspace = try XCTUnwrap(manager.selectedWorkspace)
-        let historicalCredentialID = UUID()
-        try UniConnectVault.shared.storeOrThrow(
-            connectCommand: "ssh archive@history.example.test",
-            id: historicalCredentialID
+        let historicalCredentialID = try UniConnectVault.shared.createImmutableRevision(
+            connectCommand: "ssh archive@history.example.test"
         )
         defer { UniConnectVault.shared.remove(id: historicalCredentialID) }
         var snapshot = try XCTUnwrap(

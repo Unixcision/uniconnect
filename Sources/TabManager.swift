@@ -7841,27 +7841,108 @@ class TabManager: ObservableObject {
 
     @discardableResult
     func restoreClosedPanel(_ entry: ClosedPanelHistoryEntry) -> Bool {
-        guard let workspace = tabs.first(where: { $0.id == entry.workspaceId }) else {
-            return false
-        }
+        let workspace = tabs.first(where: { $0.id == entry.workspaceId })
         let historicalProfile = entry.uniConnectProfile
         let isSSHHistory = historicalProfile?.isSSH == true
             || entry.snapshot.terminal?.uniConnectTmuxSession != nil
-        if isSSHHistory,
-           (historicalProfile?.isSSH != true
-               || historicalProfile?.credentialId == nil
-               || workspace.uniConnectProfile?.isSSH != true
-               || workspace.uniConnectProfile?.credentialId != historicalProfile?.credentialId) {
-            // Credentials are immutable revisions. Replaying an A-bound history item
-            // through a live workspace already migrated to B—or replaying a legacy
-            // item whose revision is unknown—could connect the saved tmux name to the
-            // wrong machine. Fail closed; the caller keeps the history record intact.
+        if isSSHHistory {
+            guard let historicalProfile,
+                  historicalProfile.isSSH,
+                  let historicalCredentialID = historicalProfile.credentialId,
+                  UniConnectVault.shared.connectCommand(for: historicalCredentialID) != nil else {
+                // A legacy or damaged history item without a resolvable immutable
+                // credential must never fall through to a local login shell.
+                tabManagerLogger.error(
+                    "history.restore.panel.reject reason=sshCredentialUnavailable workspace=\(entry.workspaceId.uuidString, privacy: .public) panel=\(entry.snapshot.id.uuidString, privacy: .public)"
+                )
+                return false
+            }
+            if workspace?.uniConnectProfile?.isSSH != true
+                || workspace?.uniConnectProfile?.credentialId != historicalCredentialID {
+                return restoreClosedSSHPanelInHistoricalWorkspace(
+                    entry,
+                    historicalProfile: historicalProfile,
+                    sourceWorkspace: workspace
+                )
+            }
+        }
+        guard let workspace else { return false }
+
+        return restoreClosedPanel(entry, in: workspace)
+    }
+
+    /// Reopens an A-bound SSH history item without ever routing it through a box now on B.
+    private func restoreClosedSSHPanelInHistoricalWorkspace(
+        _ entry: ClosedPanelHistoryEntry,
+        historicalProfile: UniConnectWorkspaceProfile,
+        sourceWorkspace: Workspace?
+    ) -> Bool {
+        let preRestoreFocus = currentFocusHistoryEntry
+        let recoveredTitle = sourceWorkspace?.customTitle
+            ?? historicalProfile.hostLabel
+            ?? entry.snapshot.customTitle
+            ?? entry.snapshot.title
+            ?? String(localized: "uniconnect.import.kind.ssh", defaultValue: "SSH")
+        let existingWorkspaceIDs = Set(tabs.map(\.id))
+        let recoveredWorkspace = addWorkspace(
+            title: recoveredTitle,
+            workingDirectory: nil,
+            inheritWorkingDirectory: false,
+            select: false,
+            autoWelcomeIfNeeded: false,
+            autoRefreshMetadata: false
+        )
+        guard !existingWorkspaceIDs.contains(recoveredWorkspace.id),
+              tabs.contains(where: { $0 === recoveredWorkspace }) else {
+            return false
+        }
+        let bootstrapPanelIDs = Set(recoveredWorkspace.panels.keys)
+        var recoveredProfile = historicalProfile
+        recoveredProfile.importIdentity = UUID()
+        recoveredProfile.createdAt = Date().timeIntervalSince1970
+        recoveredProfile.touch()
+        recoveredWorkspace.uniConnectProfile = recoveredProfile
+        recoveredWorkspace.setCustomColor(sourceWorkspace?.customColor)
+
+        let panelID = withFocusHistoryRecordingSuppressed {
+            recoveredWorkspace.restoreClosedPanel(entry)
+        }
+        guard let panelID else {
+            closeWorkspace(recoveredWorkspace, recordHistory: false)
             tabManagerLogger.error(
-                "history.restore.panel.reject reason=sshCredentialRevisionMismatch workspace=\(entry.workspaceId.uuidString, privacy: .public) panel=\(entry.snapshot.id.uuidString, privacy: .public)"
+                "history.restore.panel.reject reason=historicalWorkspaceRestoreFailed workspace=\(entry.workspaceId.uuidString, privacy: .public) panel=\(entry.snapshot.id.uuidString, privacy: .public)"
             )
             return false
         }
 
+        recoveredWorkspace.withClosedPanelHistorySuppressed {
+            for bootstrapPanelID in bootstrapPanelIDs where bootstrapPanelID != panelID {
+                _ = recoveredWorkspace.closePanel(bootstrapPanelID, force: true)
+            }
+        }
+        guard Set(recoveredWorkspace.panels.keys) == Set([panelID]) else {
+            closeWorkspace(recoveredWorkspace, recordHistory: false)
+            tabManagerLogger.error(
+                "history.restore.panel.reject reason=historicalWorkspaceBootstrapCleanupFailed workspace=\(entry.workspaceId.uuidString, privacy: .public) panel=\(entry.snapshot.id.uuidString, privacy: .public)"
+            )
+            return false
+        }
+        ClosedItemHistoryStore.shared.remapPanelAnchorIds(from: entry.snapshot.id, to: panelID)
+        withFocusHistoryRecordingSuppressed {
+            selectedTabId = recoveredWorkspace.id
+        }
+        recordFocusInHistory(preRestoreFocus, preservingForwardBranch: true)
+        rememberFocusedSurface(tabId: recoveredWorkspace.id, surfaceId: panelID)
+        recordFocusInHistory(
+            workspaceId: recoveredWorkspace.id,
+            panelId: panelID,
+            preservingForwardBranch: true
+        )
+        UniConnectCoordinator.shared.requestSave()
+        return true
+    }
+
+    private func restoreClosedPanel(_ entry: ClosedPanelHistoryEntry, in workspace: Workspace) -> Bool {
         let preRestoreFocus = currentFocusHistoryEntry
         let panelId = withFocusHistoryRecordingSuppressed {
             workspace.restoreClosedPanel(entry)
