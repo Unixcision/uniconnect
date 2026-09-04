@@ -28,9 +28,10 @@ Primary references:
 - The rail is 64 points wide and uses 36-point continuous-corner squircles.
 - Every box has a stable two-character monogram and deterministic fallback
   colour. A configured group SF Symbol takes precedence over the monogram.
-- Selection is communicated through shape, opacity, border, and scale. Coral is
-  reserved for unread activity; disconnected boxes desaturate and connection
-  state stays in the small lower badge.
+- Selection is communicated through shape, opacity, border, and scale. The
+  identity glyph and status badges keep their contrast while only the coloured
+  tile desaturates. A WCAG-small-text-safe coral is reserved for unread activity;
+  disconnected boxes desaturate and connection state stays in the lower badge.
 - Collapsed groups use a quiet stacked-card silhouette. The rail has one footer
   action for creating a box and one for expanding the sidebar.
 
@@ -52,7 +53,10 @@ The card is horizontal and contains:
   `tabManager.focusTab(workspaceID, surfaceId: panelID)`.
 
 The card is clamped to the content bounds with a 12-point margin and flips to
-the leading side when the trailing side has insufficient space. The overlay's
+the leading side when the trailing side has insufficient space. Its height is
+derived from the complete rounded-font name rather than a fixed two-line cap;
+when the window is constrained, the window list scrolls before the name is
+truncated. The overlay's
 root `NSView.hitTest` returns `nil` outside the resolved card and pointer
 corridor, preserving interaction with portals underneath.
 
@@ -73,9 +77,10 @@ corridor, preserving interaction with portals underneath.
   individually named buttons.
 
 Reduce Motion disables scale/movement/fade animation. Reduce Transparency uses
-an opaque window-background surface. On macOS 26 the card uses system glass;
-macOS 14 and 15 use a single regular-material card fallback. Badges do not each
-create their own glass layer.
+an opaque window-background surface. Increased Contrast strengthens borders
+and preserves readable glyphs in both appearances. On macOS 26 the card applies
+system glass to the complete content surface; macOS 14 and 15 use a single
+regular-material card fallback. Badges do not each create their own glass layer.
 
 ## Snapshot boundary
 
@@ -99,7 +104,7 @@ closure:
 
 1. Rename box; edit SSH connection when applicable; expand/collapse a group.
 2. Pin or unpin.
-3. New tab; reconnect dropped tabs; update Claude in the box.
+3. New window; reconnect eligible SSH windows; update Claude in the box.
 4. Mark read or unread.
 5. Close box, last and destructive.
 
@@ -108,6 +113,7 @@ All labels and accessibility text use `Resources/Localizable.xcstrings`.
 ## Regression coverage
 
 `cmuxTests/UniConnectRailTests.swift` covers monogram and colour stability,
+small-text contrast, full-name expansion,
 snapshot equality, hover/focus/corridor reducer transitions, exact delay values,
 card clamping/flipping/hit-testing, exact workspace-and-panel action routing,
 and preservation of the first responder during overlay installation.

@@ -5,7 +5,7 @@
 # UniConnect
 
 **A macOS terminal whose sessions survive quits, crashes and reboots.**<br>
-Local boxes resume Claude Code. SSH boxes live in tmux on the server. Everything is encrypted and behind Touch ID.
+Local boxes resume terminals and Claude, Codex, Agy, Grok, or custom CLI conversations. SSH boxes live in tmux on the server. Work-state JSON stays readable and local; only SSH connection material is encrypted, and sensitive controls are behind Touch ID.
 
 [![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)](https://www.swift.org)
 [![SwiftUI + AppKit](https://img.shields.io/badge/UI-SwiftUI%20%2B%20AppKit-0A84FF?logo=apple&logoColor=white)](#tech-stack)
@@ -183,9 +183,9 @@ Requirements: macOS 14+, Xcode 26, zig 0.15.2 only if you want to rebuild Ghostt
 | Action | Where |
 |---|---|
 | New box (Local or SSH) | `+` in the title bar, or **UniConnect ▸ Nueva caja…** |
-| New tmux window in an SSH box | `⌘T`, the tab-bar `+`, or **UniConnect ▸ Nueva ventana tmux…** |
+| New window in the current box | `⌘T` or the tab-bar `+`; Local shows the terminal/agent picker and SSH creates a named tmux window |
 | Reconnect the focused SSH/tmux window now | `⌘R` or **Reconnect Now** |
-| Reconnect all eligible SSH/tmux windows now | `⌃⌘R` or **Reconnect SSH Windows Now** |
+| Reconnect all eligible SSH/tmux windows now | `⌃⌘R` or **Reconnect All SSH Windows** |
 | Edit the connect command | **UniConnect ▸ Editar conexión SSH…** (Touch ID) |
 | Persist now | `⌘S` |
 | Export / import configuration | **UniConnect ▸ Exportar… / Importar…** |

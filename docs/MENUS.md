@@ -7,7 +7,7 @@ Este documento describe la superficie de menús implementada por UniConnect. Es 
 - **Caja** es una sesión de trabajo Local o SSH. En el código heredado sigue apareciendo como `Workspace`.
 - **Ventana** es una terminal o sesión tmux dentro de una caja. En el código heredado también aparece como tab, surface o panel ID.
 - **Panel** es una división visual que puede contener ventanas.
-- **Nueva pestaña** es la excepción deliberada al vocabulario: se conserva como la etiqueta estándar de macOS para `⌘T`. El resto de la interfaz llama **ventana** al objeto creado.
+- **Nueva ventana** crea una terminal o sesión tmux dentro de la caja actual; no crea otra ventana principal de macOS. El código heredado todavía denomina `tab` o `surface` a este objeto.
 - La barra sigue el orden de macOS: **UniConnect · Archivo · Edición · Visualización · Caja · Ventana · Ayuda**. No existe un menú Herramientas: sus acciones se reparten por función para no duplicarlas.
 - Todos los iconos de menú son símbolos del sistema. Los separadores agrupan acciones por intención y las acciones destructivas quedan al final de cada menú contextual.
 - Un atajo configurable siempre procede de `KeyboardShortcutSettings`; la barra, los contextuales y la paleta no mantienen copias independientes.
@@ -37,7 +37,7 @@ No se ofrece *Hacer terminal por omisión* ni ninguna acción de cmux en este me
 | Ítem | Atajo | Estado y ruta compartida |
 |---|---:|---|
 | Nueva caja… | `⌘N` | `AppDelegate.performNewWorkspaceAction`; muestra el flujo Local/SSH. |
-| Nueva pestaña | `⌘T` | `TabManager.newSurface`; en SSH pasa por el flujo de nombre y sesión tmux. Deshabilitada sin caja activa. |
+| Nueva ventana | `⌘T` | `TabManager.newSurface`; en Local abre el selector Terminal/Claude/Codex/Agy/Grok/comando personalizado y en SSH pasa por el flujo de nombre y sesión tmux. Deshabilitada sin caja activa. |
 | Reabrir la última cerrada | `⇧⌘T` | `AppDelegate.reopenMostRecentlyClosedItem`. Deshabilitada con historial vacío. |
 | Cerradas recientemente ▸ | — | Hasta 40 entradas. Cada entrada permite **Reabrir** o **Eliminar definitivamente…**; al final aparece **Vaciar lista…**. |
 | Cerrar ventana | `⌘W` | Ruta normal de cierre con confirmación e historial. |
@@ -165,7 +165,7 @@ Ambos tienen icono del sistema. No existe *Nueva ventana*.
 `TabItemView.workspaceContextMenu` admite selección simple y múltiple:
 
 - Renombrar (solo selección simple), editar conexión SSH (solo caja SSH), color, fijar/desfijar y grupo.
-- Nueva pestaña y actualizar Claude (solo selección simple); reconectar actúa sobre todas las ventanas caídas del conjunto y se deshabilita si no hay ninguna.
+- Nueva ventana y actualizar Claude (solo selección simple); reconectar actúa sobre las ventanas SSH elegibles del conjunto y se deshabilita si no hay ninguna.
 - Mover arriba/abajo/al inicio con enablement posicional.
 - Marcar como leída/no leída según el estado real.
 - Mostrar en Finder solo aparece para una caja Local.
@@ -195,7 +195,7 @@ Se omiten mover a otra caja/ventana principal, terminal o navegador a la derecha
 
 ### Contenido de terminal
 
-`GhosttyNSView.menu(for:)` ofrece Copiar, Pegar, Nueva pestaña (`⌘T`), Renombrar ventana, dividir a derecha/abajo, reiniciar terminal, actualizar Claude si existe una sesión conocida, forzar la reconexión de cualquier ventana SSH/tmux (también si está colgada pero aún no marcada como caída), cerrar ventana (`⌘W`) y, al final, terminar tmux remoto cuando procede. Copy/Paste y las acciones dependientes de contexto se deshabilitan correctamente.
+`GhosttyNSView.menu(for:)` ofrece Copiar, Pegar, Nueva ventana (`⌘T`), Renombrar ventana, dividir a derecha/abajo, reiniciar terminal, actualizar Claude si existe una sesión conocida, forzar la reconexión de cualquier ventana SSH/tmux (también si está colgada pero aún no marcada como caída), cerrar ventana (`⌘W`) y, al final, terminar tmux remoto cuando procede. Copy/Paste y las acciones dependientes de contexto se deshabilitan correctamente.
 
 ### Notificación
 
@@ -208,7 +208,7 @@ Los contextuales de Files, navegador, Vault/Sessions, Task Manager, extensiones 
 | Atajo | Acción |
 |---:|---|
 | `⌘N` | Nueva caja… |
-| `⌘T` | Nueva pestaña |
+| `⌘T` | Nueva ventana dentro de la caja actual |
 | `⇧⌘T` | Reabrir la última cerrada |
 | `⌘W` / `⇧⌘W` | Cerrar ventana / caja |
 | `⌥⌘T` | Cerrar otras ventanas del panel |
