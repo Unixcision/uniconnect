@@ -156,6 +156,8 @@ struct UniConnectLocalWindowActionPolicyTests {
         #expect(!menu.runtimeTitle.isEmpty)
         #expect(menu.agentActions.allSatisfy { !$0.isEnabled })
         #expect(menu.recoveryActions.filter { $0.action != .reassignBoxRoot }.allSatisfy { !$0.isEnabled })
+        #expect(menu.enabledRecoveryActions.map(\.action) == [.reassignBoxRoot])
+        #expect(menu.hasEnabledActions)
         #expect(record.conversations.count == 1)
         #expect(
             !UniConnectLocalBoxRootPolicy.allowsAutomaticResume(
@@ -325,6 +327,7 @@ struct UniConnectLocalWindowActionPolicyTests {
         #expect(menu.recoveryActions.isEmpty)
         #expect(menu.agentActions.allSatisfy { !$0.isEnabled })
         #expect(menu.forgetActions.allSatisfy { !$0.isEnabled })
+        #expect(!menu.hasEnabledActions)
         #expect(
             UniConnectLocalWindowAction.startAgent(.agy)
                 .terminalLaunchPlan(record: record, registry: emptyRegistry) == nil
@@ -1032,6 +1035,63 @@ struct UniConnectLocalWindowActionPolicyTests {
         #expect(!didCreateCredential)
         let checkedSessions = await executor.checkedTmuxSessions()
         #expect(checkedSessions.isEmpty)
+    }
+
+    @Test("SSH credential edit rejects a stale window snapshot after async preflight")
+    @MainActor
+    func credentialEditRejectsWindowAddedDuringPreflight() {
+        let workspaceID = UUID()
+        let originalPanelID = UUID()
+        let addedPanelID = UUID()
+        let expected = [
+            UniConnectSSHCredentialEditTransaction.Window(
+                workspaceID: workspaceID,
+                panelID: originalPanelID,
+                tmuxSession: "original"
+            ),
+        ]
+
+        #expect(UniConnectCoordinator.sshCredentialEditWindowSetMatches(
+            expected: expected,
+            workspaceID: workspaceID,
+            liveTmuxSessions: [originalPanelID: "original"],
+            livePanelIDs: [originalPanelID]
+        ))
+        #expect(!UniConnectCoordinator.sshCredentialEditWindowSetMatches(
+            expected: expected,
+            workspaceID: workspaceID,
+            liveTmuxSessions: [
+                originalPanelID: "original",
+                addedPanelID: "created-during-preflight",
+            ],
+            livePanelIDs: [originalPanelID, addedPanelID]
+        ))
+        #expect(!UniConnectCoordinator.sshCredentialEditWindowSetMatches(
+            expected: expected,
+            workspaceID: workspaceID,
+            liveTmuxSessions: [originalPanelID: "rebound"],
+            livePanelIDs: [originalPanelID]
+        ))
+    }
+
+    @Test("SSH credential edit rejects a workspace removed or replaced during preflight")
+    @MainActor
+    func credentialEditRejectsStaleWorkspaceIdentityAfterPreflight() {
+        let expected = Workspace()
+        let replacement = Workspace(id: expected.id)
+
+        #expect(UniConnectCoordinator.sshCredentialEditWorkspaceIsCurrent(
+            expected: expected,
+            liveWorkspace: expected
+        ))
+        #expect(!UniConnectCoordinator.sshCredentialEditWorkspaceIsCurrent(
+            expected: expected,
+            liveWorkspace: nil
+        ))
+        #expect(!UniConnectCoordinator.sshCredentialEditWorkspaceIsCurrent(
+            expected: expected,
+            liveWorkspace: replacement
+        ))
     }
 
     @Test("Restore grants one global owner when two workspaces reference the same active session")
