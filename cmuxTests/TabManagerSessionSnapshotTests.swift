@@ -594,7 +594,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
         XCTAssertEqual(manager.selectedTabId, secondWorkspace.id)
     }
 
-    func testReopenClosedSSHPanelFailsClosedAcrossCredentialRevisionsAndKeepsHistory() throws {
+    func testReopenClosedSSHPanelAcrossCredentialRevisionsUsesIsolatedHistoricalWorkspace() throws {
         let originalAppDelegate = AppDelegate.shared
         AppDelegate.shared = nil
         defer { AppDelegate.shared = originalAppDelegate }
@@ -603,6 +603,11 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
         let revisionA = UUID(uuidString: "A1000000-0000-0000-0000-000000000001")!
         let revisionB = UUID(uuidString: "B1000000-0000-0000-0000-000000000001")!
+        try UniConnectVault.shared.storeOrThrow(
+            connectCommand: "ssh ops@old.example.test",
+            id: revisionA
+        )
+        defer { UniConnectVault.shared.remove(id: revisionA) }
         workspace.uniConnectProfile = UniConnectWorkspaceProfile(
             kind: .ssh,
             credentialId: revisionB,
@@ -634,17 +639,19 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
             entry: .panel(entry)
         ))
         let originalPanelIDs = Set(workspace.panels.keys)
+        let originalWorkspaceCount = manager.tabs.count
 
-        XCTAssertFalse(manager.reopenClosedHistoryItem(id: recordID))
+        XCTAssertTrue(manager.reopenClosedHistoryItem(id: recordID))
 
         XCTAssertEqual(Set(workspace.panels.keys), originalPanelIDs)
         XCTAssertEqual(workspace.uniConnectProfile?.credentialId, revisionB)
-        let retained = try XCTUnwrap(ClosedItemHistoryStore.shared.record(id: recordID))
-        guard case .panel(let retainedEntry) = retained.entry else {
-            return XCTFail("Expected the rejected SSH history record to remain recoverable")
-        }
-        XCTAssertEqual(retainedEntry.uniConnectProfile?.credentialId, revisionA)
-        XCTAssertEqual(retainedEntry.snapshot.terminal?.uniConnectTmuxSession, "worker_1")
+        XCTAssertEqual(manager.tabs.count, originalWorkspaceCount + 1)
+        let recoveredWorkspace = try XCTUnwrap(manager.selectedWorkspace)
+        XCTAssertNotEqual(recoveredWorkspace.id, workspace.id)
+        XCTAssertEqual(recoveredWorkspace.uniConnectProfile?.credentialId, revisionA)
+        XCTAssertEqual(recoveredWorkspace.uniConnectProfile?.hostLabel, "ops@old.example.test")
+        XCTAssertEqual(Set(recoveredWorkspace.uniConnectTmuxSessionsByPanelId.values), ["worker_1"])
+        XCTAssertNil(ClosedItemHistoryStore.shared.record(id: recordID))
     }
 
     func testReopenLegacyClosedSSHPanelWithoutCredentialRevisionFailsClosed() throws {
