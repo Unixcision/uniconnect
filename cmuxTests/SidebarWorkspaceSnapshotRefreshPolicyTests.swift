@@ -9,6 +9,67 @@ import XCTest
 #endif
 
 final class SidebarWorkspaceSnapshotRefreshPolicyTests: XCTestCase {
+    func testExpandedSidebarRowKeepsLazyListSnapshotBoundary() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let contentViewURL = repositoryRoot.appendingPathComponent("Sources/ContentView.swift")
+        let source = try String(contentsOf: contentViewURL, encoding: .utf8)
+
+        guard let rowStart = source.range(of: "struct TabItemView: View, Equatable {")?.lowerBound,
+              let rowEnd = source.range(
+                of: "private struct SidebarWorkspaceDescriptionText: View",
+                range: rowStart..<source.endIndex
+              )?.lowerBound else {
+            return XCTFail("Could not locate the expanded-sidebar row source boundary")
+        }
+        let rowSource = String(source[rowStart..<rowEnd])
+
+        XCTAssertTrue(
+            rowSource.contains("let snapshot: SidebarTabItemSnapshot"),
+            "Rows below LazyVStack must receive one immutable value snapshot"
+        )
+        XCTAssertTrue(
+            rowSource.contains("let actions: SidebarTabItemActions"),
+            "Rows below LazyVStack must receive behavior only through a closure action bundle"
+        )
+
+        let forbiddenRowDependencies = [
+            "TabManager",
+            "TerminalNotificationStore",
+            "let tab: Tab",
+            "let tab: Workspace",
+            "@ObservedObject",
+            "@EnvironmentObject",
+            "@StateObject",
+            "@Binding",
+            ".onReceive(",
+        ]
+        for dependency in forbiddenRowDependencies {
+            XCTAssertFalse(
+                rowSource.contains(dependency),
+                "TabItemView crosses the LazyVStack snapshot boundary with forbidden dependency: \(dependency)"
+            )
+        }
+
+        guard let equalityStart = rowSource.range(of: "nonisolated static func ==")?.lowerBound,
+              let equalityEnd = rowSource.range(
+                of: "let snapshot: SidebarTabItemSnapshot",
+                range: equalityStart..<rowSource.endIndex
+              )?.lowerBound else {
+            return XCTFail("Could not locate TabItemView equality implementation")
+        }
+        let equalitySource = String(rowSource[equalityStart..<equalityEnd])
+        XCTAssertTrue(
+            equalitySource.contains("lhs.snapshot == rhs.snapshot"),
+            "Equatable rows must compare their immutable snapshot"
+        )
+        XCTAssertFalse(
+            equalitySource.contains("lhs.actions") || equalitySource.contains("rhs.actions"),
+            "Closure identity must not invalidate otherwise identical lazy rows"
+        )
+    }
+
     func testContextMenuPinChangeUpdatesDisplayedFieldsAndDefersNoisyFields() {
         let current = Self.snapshot(
             title: "lmao",
