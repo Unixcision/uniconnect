@@ -691,6 +691,33 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
         XCTAssertNotNil(ClosedItemHistoryStore.shared.record(id: recordID))
     }
 
+    func testWorkspaceRestoreNeverFallsBackToLocalShellWhenSSHCredentialIsUnavailable() throws {
+        let workspace = Workspace()
+        workspace.uniConnectProfile = UniConnectWorkspaceProfile(
+            kind: .ssh,
+            credentialId: UUID(),
+            hostLabel: "missing@example.test",
+            tmuxReady: true
+        )
+        var snapshot = try XCTUnwrap(
+            workspace.sessionSnapshot(includeScrollback: false).panels.first
+        )
+        snapshot.id = UUID()
+        snapshot.terminal?.uniConnectTmuxSession = "must_not_open_locally"
+        let entry = ClosedPanelHistoryEntry(
+            workspaceId: workspace.id,
+            paneId: UUID(),
+            tabIndex: 0,
+            snapshot: snapshot,
+            uniConnectProfile: workspace.uniConnectProfile
+        )
+        let originalPanelIDs = Set(workspace.panels.keys)
+
+        XCTAssertNil(workspace.restoreClosedPanel(entry))
+        XCTAssertEqual(Set(workspace.panels.keys), originalPanelIDs)
+        XCTAssertFalse(workspace.uniConnectTmuxSessionsByPanelId.values.contains("must_not_open_locally"))
+    }
+
     func testReopenClosedSSHPanelRecreatesDeletedOriginalWorkspaceFromHistoricalRevision() throws {
         let originalAppDelegate = AppDelegate.shared
         AppDelegate.shared = nil
