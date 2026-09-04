@@ -12,6 +12,16 @@ enum UniConnectAtomicFileWriter {
         case removeFailed(Int32)
         case directoryOpenFailed(Int32)
         case directorySyncFailed(Int32)
+
+        /// The final destination is already visible after rename for these failures.
+        var destinationWasCommitted: Bool {
+            switch self {
+            case .directoryOpenFailed, .directorySyncFailed:
+                return true
+            default:
+                return false
+            }
+        }
     }
 
     enum ReadError: Error {

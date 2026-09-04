@@ -1,7 +1,18 @@
+import Darwin
 import Foundation
 
 /// Owns the rolling, crash-safe session recovery archive under `~/.uniconnect`.
 actor UniConnectRecoveryBackupRepository {
+    typealias FileWriter = @Sendable (Data, URL, FileManager) throws -> Void
+
+    private enum DirectorySecurityError: Error {
+        case openFailed(path: String, errno: Int32)
+        case metadataFailed(path: String, errno: Int32)
+        case notDirectory(path: String)
+        case unexpectedOwner(path: String)
+        case permissionsFailed(path: String, errno: Int32)
+    }
+
     enum Reason: String, Sendable, CaseIterable {
         case scheduled
         case beforeRestore = "before-restore"
@@ -19,15 +30,24 @@ actor UniConnectRecoveryBackupRepository {
     private let rootDirectory: URL
     private let policy: UniConnectRecoveryBackupPolicy
     private let fileManager: FileManager
+    private let fileWriter: FileWriter
 
     init(
         rootDirectory: URL = UniConnectRecoveryBackupRepository.defaultRootDirectory(),
         policy: UniConnectRecoveryBackupPolicy = .standard,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        fileWriter: @escaping FileWriter = { data, destination, fileManager in
+            try UniConnectAtomicFileWriter.write(
+                data,
+                to: destination,
+                fileManager: fileManager
+            )
+        }
     ) {
         self.rootDirectory = rootDirectory.standardizedFileURL
         self.policy = policy
         self.fileManager = fileManager
+        self.fileWriter = fileWriter
     }
 
     static func defaultRootDirectory(
@@ -96,15 +116,17 @@ actor UniConnectRecoveryBackupRepository {
 
         var copiedVaultURL: URL?
         if let encryptedVault {
-            try UniConnectAtomicFileWriter.write(encryptedVault, to: vaultURL, fileManager: fileManager)
+            try fileWriter(encryptedVault, vaultURL, fileManager)
             copiedVaultURL = vaultURL
         }
 
         do {
             let data = try SessionPersistenceStore.encodedSnapshotDataForPersistence(snapshot)
-            try UniConnectAtomicFileWriter.write(data, to: snapshotURL, fileManager: fileManager)
+            try fileWriter(data, snapshotURL, fileManager)
         } catch {
-            if copiedVaultURL != nil {
+            let destinationWasCommitted = (error as? UniConnectAtomicFileWriter.WriteError)?
+                .destinationWasCommitted == true
+            if copiedVaultURL != nil, !destinationWasCommitted {
                 try? fileManager.removeItem(at: vaultURL)
             }
             throw error
@@ -167,14 +189,54 @@ actor UniConnectRecoveryBackupRepository {
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: NSNumber(value: Int16(0o700))]
         )
-        try? fileManager.setAttributes(
-            [.posixPermissions: NSNumber(value: Int16(0o700))],
-            ofItemAtPath: rootDirectory.path
-        )
+        for directory in managedPrivateDirectoryChain() {
+            try secureDirectory(directory)
+        }
+    }
+
+    /// Returns only the repository-owned path segment, never broad ancestors such as home or `/tmp`.
+    private func managedPrivateDirectoryChain() -> [URL] {
+        var chain = [rootDirectory]
+        var cursor = rootDirectory
+
+        while cursor.lastPathComponent != ".uniconnect" {
+            let parent = cursor.deletingLastPathComponent().standardizedFileURL
+            guard parent.path != cursor.path else { return [rootDirectory] }
+            cursor = parent
+            chain.append(cursor)
+        }
+
+        return Array(chain.reversed())
+    }
+
+    /// Applies private permissions through a no-follow descriptor and verifies ownership first.
+    private func secureDirectory(_ directory: URL) throws {
+        let descriptor = open(directory.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
+        guard descriptor >= 0 else {
+            throw DirectorySecurityError.openFailed(path: directory.path, errno: errno)
+        }
+        defer { _ = close(descriptor) }
+
+        var metadata = stat()
+        guard fstat(descriptor, &metadata) == 0 else {
+            throw DirectorySecurityError.metadataFailed(path: directory.path, errno: errno)
+        }
+        guard metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) else {
+            throw DirectorySecurityError.notDirectory(path: directory.path)
+        }
+        guard metadata.st_uid == geteuid() else {
+            throw DirectorySecurityError.unexpectedOwner(path: directory.path)
+        }
+        guard fchmod(descriptor, 0o700) == 0 else {
+            throw DirectorySecurityError.permissionsFailed(path: directory.path, errno: errno)
+        }
     }
 
     private func discoveredEntries() throws -> [Entry] {
         guard fileManager.fileExists(atPath: rootDirectory.path) else { return [] }
+        for directory in managedPrivateDirectoryChain() {
+            try secureDirectory(directory)
+        }
         let urls = try fileManager.contentsOfDirectory(
             at: rootDirectory,
             includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
