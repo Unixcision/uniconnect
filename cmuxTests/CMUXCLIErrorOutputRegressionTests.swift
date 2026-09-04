@@ -156,6 +156,38 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         XCTAssertEqual(foreignCmuxResponder.receivedRequests, [])
     }
 
+    func testSocketNamespaceParsersDoNotRecognizeForeignCmuxSocketPrefixes() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let auditedPaths = [
+            "CLI/CLISocketPathResolver.swift",
+            "CLI/cmux.swift",
+            "CLI/CMUXCLI+ThemeSupport.swift",
+            "Packages/CMUXDebugLog/Sources/CMUXDebugLog/DebugEventLog.swift",
+        ]
+        let foreignSocketTokens = [
+            "\"cmux-debug-\"",
+            "\"cmux-nightly-\"",
+            "\"cmux-staging-\"",
+            "\"cmux-\"",
+            "^cmux-",
+        ]
+
+        for relativePath in auditedPaths {
+            let source = try String(
+                contentsOf: repositoryRoot.appendingPathComponent(relativePath),
+                encoding: .utf8
+            )
+            for token in foreignSocketTokens {
+                XCTAssertFalse(
+                    source.contains(token),
+                    "\(relativePath) still recognizes foreign socket token \(token)"
+                )
+            }
+        }
+    }
+
     func testBundledCLIInTaggedDebugAppTreatsCaseVariantStableEnvSocketAsImplicitDefault() throws {
         let cliPath = try bundledCLIPath()
         let tagSlug = "cli-case-\(UUID().uuidString.lowercased())"
@@ -779,6 +811,48 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         XCTAssertEqual(reloads.map { $0.socketPath }, [socketPath])
         XCTAssertFalse(result.stdout.contains(staleBundleIdentifier), result.stdout)
         XCTAssertTrue(result.stdout.contains(targetBundleIdentifier), result.stdout)
+    }
+
+    func testThemesSetDoesNotDeriveBundleIdentityFromForeignCmuxSocket() throws {
+        let cliPath = try bundledCLIPath()
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("uniconnect-themes-foreign-socket-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let resourcesURL = root.appendingPathComponent("resources", isDirectory: true)
+        let themesURL = resourcesURL.appendingPathComponent("themes", isDirectory: true)
+        try fileManager.createDirectory(at: themesURL, withIntermediateDirectories: true)
+        try writeTheme(named: "Theme A", background: "#101010", to: themesURL)
+
+        let nonce = UUID().uuidString.lowercased()
+        let expectedBundleIdentifier = "com.unixcision.uniconnect.debug.expected.\(nonce)"
+        var environment = ProcessInfo.processInfo.environment
+        for key in Array(environment.keys) where key.hasPrefix("CMUX_") {
+            environment.removeValue(forKey: key)
+        }
+        environment["CFFIXED_USER_HOME"] = root.path
+        environment["HOME"] = root.path
+        environment["GHOSTTY_RESOURCES_DIR"] = resourcesURL.path
+        environment["CMUX_SOCKET_PATH"] = "/tmp/cmux-debug-foreign-theme-\(nonce).sock"
+        environment["CMUX_BUNDLE_ID"] = expectedBundleIdentifier
+        environment["CMUX_CLI_SENTRY_DISABLED"] = "1"
+
+        let result = runProcess(
+            executablePath: cliPath,
+            arguments: ["--json", "themes", "set", "Theme A"],
+            environment: environment,
+            timeout: 5
+        )
+
+        XCTAssertFalse(result.timedOut, result.stdout)
+        XCTAssertEqual(result.status, 0, result.stdout)
+        let payload = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any],
+            result.stdout
+        )
+        XCTAssertEqual(payload["reload_target_bundle_id"] as? String, expectedBundleIdentifier)
     }
 
     func testThemesSetNightlyOverridePathIsReadableByNightlyAppConfigResolution() throws {
