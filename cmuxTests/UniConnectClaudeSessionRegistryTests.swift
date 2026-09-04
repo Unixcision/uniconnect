@@ -93,4 +93,19 @@ struct UniConnectClaudeSessionRegistryTests {
         await registry.stop()
         local.continuation.finish()
     }
+
+    @Test("Ignores a delayed close signal after the same panel ID respawns")
+    @MainActor
+    func stalePanelCloseDoesNotCancelReplacementOwner() {
+        #expect(
+            !UniConnectCoordinator.shouldCancelLocalAgentLaunchForPanelClosedSignal(
+                hasCurrentPanel: true
+            )
+        )
+        #expect(
+            UniConnectCoordinator.shouldCancelLocalAgentLaunchForPanelClosedSignal(
+                hasCurrentPanel: false
+            )
+        )
+    }
 }
