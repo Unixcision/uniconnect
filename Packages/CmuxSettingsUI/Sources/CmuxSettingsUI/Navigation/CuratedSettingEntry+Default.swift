@@ -13,8 +13,9 @@ extension Array where Element == CuratedSettingEntry {
     /// not present here still fall back to a dotted-id index entry in
     /// ``SettingsSearchIndex``.
     ///
-    /// Strings are English-only until the package ships an
-    /// `xcstrings` catalog. Tests and hosts that want a different set
+    /// Most titles remain English-only until the package ships an
+    /// `xcstrings` catalog. UniConnect-branded and mobile-pairing titles
+    /// reuse the app's catalog. Tests and hosts that want a different set
     /// of entries pass their own array via
     /// ``SettingsSearchIndex/init(catalog:curatedEntries:)``.
     public static var cmuxDefault: [CuratedSettingEntry] {
@@ -39,8 +40,8 @@ extension Array where Element == CuratedSettingEntry {
             .init(section: .app, id: "focus-pane-first-click", title: "Focus Pane on First Click", synonyms: "app.focusPaneOnFirstClick click to focus focus follows mouse first click mouse activation"),
             .init(section: .app, id: "file-drops", title: "File Drops", synonyms: "drag drop files finder path text terminal editor split preview shift"),
             .init(section: .app, id: "preferred-editor", title: "Open Files With", synonyms: "app.preferredEditor editor open file code vscode visual studio zed sublime subl cursor"),
-            .init(section: .app, id: "supported-file-previews", title: "Open Supported Files in cmux", synonyms: "app.openSupportedFilesInCmux cmd click file preview pdf image video audio quicklook quick look editor external"),
-            .init(section: .app, id: "markdown-viewer", title: "Open Markdown in cmux Viewer", synonyms: "app.openMarkdownInCmuxViewer md markdown mdx viewer preview readme"),
+            .init(section: .app, id: "supported-file-previews", title: String(localized: "settings.app.openSupportedFilesInCmux", defaultValue: "Open Supported Files in UniConnect"), synonyms: "app.openSupportedFilesInCmux cmd click file preview pdf image video audio quicklook quick look editor external"),
+            .init(section: .app, id: "markdown-viewer", title: String(localized: "settings.app.openMarkdownInCmuxViewer", defaultValue: "Open Markdown in UniConnect Viewer"), synonyms: "app.openMarkdownInCmuxViewer md markdown mdx viewer preview readme"),
             .init(section: .app, id: "file-editor-word-wrap", title: "File Editor Word Wrap", synonyms: "fileEditor.wordWrap file editor word wrap soft wrap reflow lines text horizontal scroll preview"),
             .init(section: .app, id: "terminal-config", title: "Terminal Config", synonyms: "ghostty config merged generated preview terminal configuration window open config"),
             .init(section: .app, id: "imessage-mode", title: "iMessage Mode", synonyms: "app.iMessageMode imessage message messages chat prompt prompts submitted texting reorder move workspace top agent send"),
@@ -87,8 +88,8 @@ extension Array where Element == CuratedSettingEntry {
             .init(section: .sidebarAppearance, id: "show-pull-requests", title: "Show Pull Requests in Sidebar", synonyms: "sidebar.showPullRequests pr mr review github gitlab bitbucket pull request merge request"),
             .init(section: .sidebarAppearance, id: "watch-git-status", title: "Watch Git Status in Sidebar", synonyms: "sidebar.watchGitStatus git status branch watcher index lock"),
             .init(section: .sidebarAppearance, id: "make-pr-clickable", title: "Make Sidebar PR Clickable", synonyms: "sidebar.makePullRequestsClickable clickable pull requests pr mr reviews links select workspace row"),
-            .init(section: .sidebarAppearance, id: "open-pr-links", title: "Open Sidebar PR Links in cmux Browser", synonyms: "sidebar.openPullRequestLinksInCmuxBrowser pr links github browser default external embedded"),
-            .init(section: .sidebarAppearance, id: "open-port-links", title: "Open Sidebar Port Links in cmux Browser", synonyms: "sidebar.openPortLinksInCmuxBrowser ports localhost links browser default external embedded"),
+            .init(section: .sidebarAppearance, id: "open-pr-links", title: String(localized: "settings.app.openSidebarPRLinks", defaultValue: "Open Sidebar PR Links in UniConnect Browser"), synonyms: "sidebar.openPullRequestLinksInCmuxBrowser pr links github browser default external embedded"),
+            .init(section: .sidebarAppearance, id: "open-port-links", title: String(localized: "settings.app.openSidebarPortLinks", defaultValue: "Open Sidebar Port Links in UniConnect Browser"), synonyms: "sidebar.openPortLinksInCmuxBrowser ports localhost links browser default external embedded"),
             .init(section: .sidebarAppearance, id: "show-ssh", title: "Show SSH in Sidebar", synonyms: "sidebar.showSSH remote host target ssh server"),
             .init(section: .sidebarAppearance, id: "show-ports", title: "Show Listening Ports in Sidebar", synonyms: "sidebar.showPorts localhost port listener dev server url"),
             .init(section: .sidebarAppearance, id: "show-log", title: "Show Latest Log in Sidebar", synonyms: "sidebar.showLog log status latest message imperative"),
@@ -112,13 +113,13 @@ extension Array where Element == CuratedSettingEntry {
             .init(section: .automation, id: "port-range", title: "Port Range Size", synonyms: "automation.portRange cmux_port_end range size count env ports"),
 
             // Browser
-            .init(section: .browser, id: "enable-browser", title: "Enable cmux Browser", synonyms: "browser.disabled enable disable webview embedded browser tabs links"),
+            .init(section: .browser, id: "enable-browser", title: String(localized: "settings.browser.enabled", defaultValue: "Enable UniConnect Browser"), synonyms: "browser.disabled enable disable webview embedded browser tabs links"),
             .init(section: .browser, id: "search-engine", title: "Default Search Engine", synonyms: "browser.defaultSearchEngine omnibar address bar google duckduckgo bing kagi brave startpage perplexity exa yahoo ecosia qwant mojeek wikipedia github baidu yandex custom search provider engine name url template"),
             .init(section: .browser, id: "search-suggestions", title: "Show Search Suggestions", synonyms: "browser.showSearchSuggestions suggest autocomplete address bar search suggestions"),
             .init(section: .browser, id: "theme", title: "Browser Theme", synonyms: "browser.theme web page theme color scheme light dark system"),
             .init(section: .browser, id: "hidden-webview-discard", title: "Browser Memory Saver", synonyms: "browser.discardHiddenWebViews memory hidden tabs webview discard unload reclaim"),
             .init(section: .browser, id: "hidden-webview-discard-delay", title: "Memory Saver Delay", synonyms: "browser.hiddenWebViewDiscardDelaySeconds memory hidden tabs delay seconds discard unload"),
-            .init(section: .browser, id: "terminal-links", title: "Open Terminal Links in cmux Browser", synonyms: "browser.openTerminalLinksInCmuxBrowser click url terminal links open in browser href"),
+            .init(section: .browser, id: "terminal-links", title: String(localized: "settings.browser.openTerminalLinks", defaultValue: "Open Terminal Links in UniConnect Browser"), synonyms: "browser.openTerminalLinksInCmuxBrowser click url terminal links open in browser href"),
             .init(section: .browser, id: "intercept-open", title: "Intercept open http(s) in Terminal", synonyms: "browser.interceptTerminalOpenCommandInCmuxBrowser open command http https url terminal intercept"),
             .init(section: .browser, id: "host-whitelist", title: "Hosts to Open in Embedded Browser", synonyms: "browser.hostsToOpenInEmbeddedBrowser allowlist whitelist host wildcard domain embedded browser"),
             .init(section: .browser, id: "external-patterns", title: "URLs to Always Open Externally", synonyms: "browser.urlsToAlwaysOpenExternally denylist blocklist regex rules external default browser"),
