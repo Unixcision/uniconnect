@@ -81,6 +81,59 @@ final class UniConnectRailTests: XCTestCase {
         XCTAssertEqual(policy.reduce(.escape), .hideNow)
     }
 
+    func testExplicitPresentationSurvivesHoverExitUntilOutsideClick() {
+        let id = UUID()
+        var policy = UniConnectSidebarFlyoutPolicy()
+
+        XCTAssertEqual(policy.reduce(.presentPersistently(id)), .showNow(id))
+        XCTAssertEqual(policy.persistentSourceID, id)
+        XCTAssertEqual(policy.reduce(.pointerExited(id)), .none)
+        XCTAssertEqual(policy.reduce(.closeDelayElapsed), .none)
+        XCTAssertEqual(policy.visibleSourceID, id)
+
+        XCTAssertEqual(policy.reduce(.outsideClick), .hideNow)
+        XCTAssertNil(policy.visibleSourceID)
+        XCTAssertNil(policy.persistentSourceID)
+    }
+
+    func testPromotingVisibleHoverCardToPersistentDoesNotRemountIt() {
+        let id = UUID()
+        var policy = UniConnectSidebarFlyoutPolicy()
+
+        _ = policy.reduce(.pointerEntered(id))
+        XCTAssertEqual(policy.reduce(.showDelayElapsed(id)), .showNow(id))
+        XCTAssertEqual(policy.reduce(.presentPersistently(id)), .cancelScheduledHide)
+        XCTAssertEqual(policy.visibleSourceID, id)
+        XCTAssertEqual(policy.persistentSourceID, id)
+    }
+
+    func testExplicitPresentationIsNotReplacedByIncidentalHover() {
+        let selected = UUID()
+        let hovered = UUID()
+        var policy = UniConnectSidebarFlyoutPolicy()
+
+        _ = policy.reduce(.presentPersistently(selected))
+
+        XCTAssertEqual(policy.reduce(.pointerEntered(hovered)), .none)
+        XCTAssertEqual(policy.visibleSourceID, selected)
+        XCTAssertEqual(policy.persistentSourceID, selected)
+        XCTAssertEqual(policy.reduce(.presentPersistently(hovered)), .showNow(hovered))
+        XCTAssertEqual(policy.visibleSourceID, hovered)
+        XCTAssertEqual(policy.persistentSourceID, hovered)
+    }
+
+    func testKeyboardFocusMovesPersistentPresentationToFocusedChip() {
+        let first = UUID()
+        let second = UUID()
+        var policy = UniConnectSidebarFlyoutPolicy()
+
+        _ = policy.reduce(.presentPersistently(first))
+
+        XCTAssertEqual(policy.reduce(.focusChanged(second, isFocused: true)), .showNow(second))
+        XCTAssertEqual(policy.visibleSourceID, second)
+        XCTAssertEqual(policy.persistentSourceID, second)
+    }
+
     func testPointerCorridorCancelsThenRestartsDeferredClose() {
         let id = UUID()
         var policy = UniConnectSidebarFlyoutPolicy()
@@ -245,6 +298,7 @@ final class UniConnectRailTests: XCTestCase {
     ) -> UniConnectChipActions {
         UniConnectChipActions(
             selectBox: {},
+            presentWindowList: {},
             selectWindow: selectWindow,
             performLocalWindowAction: { _, _, _ in },
             reconnectSSHWindowNow: { _, _ in },
