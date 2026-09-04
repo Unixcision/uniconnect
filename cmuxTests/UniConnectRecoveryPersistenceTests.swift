@@ -564,6 +564,43 @@ final class UniConnectRecoveryPersistenceTests: XCTestCase {
         XCTAssertEqual(backups.count, 2)
     }
 
+    func testRecoveryRepositorySecuresEntireManagedDirectoryChain() async throws {
+        let fixture = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-recovery-permissions-\(UUID().uuidString)", isDirectory: true)
+        let managedRoot = fixture.appendingPathComponent(".uniconnect", isDirectory: true)
+        let backups = managedRoot.appendingPathComponent("backups", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: fixture) }
+
+        try FileManager.default.createDirectory(at: backups, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o755)],
+            ofItemAtPath: managedRoot.path
+        )
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o755)],
+            ofItemAtPath: backups.path
+        )
+
+        let repository = UniConnectRecoveryBackupRepository(rootDirectory: backups)
+        let entry = try await repository.archive(
+            snapshot: makeSnapshot(),
+            encryptedVault: nil,
+            reason: .scheduled,
+            now: Date(timeIntervalSince1970: 2_000_000)
+        )
+
+        for directory in [managedRoot, backups] {
+            let mode = try XCTUnwrap(
+                FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? NSNumber
+            ).intValue
+            XCTAssertEqual(mode & 0o777, 0o700, "Expected private directory: \(directory.path)")
+        }
+        let snapshotMode = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: entry.snapshotURL.path)[.posixPermissions] as? NSNumber
+        ).intValue
+        XCTAssertEqual(snapshotMode & 0o777, 0o600)
+    }
+
     func testFutureDatedBackupDoesNotSuppressCurrentCadence() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("uniconnect-clock-rollback-\(UUID().uuidString)", isDirectory: true)
