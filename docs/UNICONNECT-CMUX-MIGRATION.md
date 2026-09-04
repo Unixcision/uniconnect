@@ -68,12 +68,30 @@ immediately persists the change.
 
 For a non-destructive migration check:
 
-1. Record the source snapshot's size, modification time and SHA-256.
+1. Create a private directory and capture cmux's complete on-disk fingerprint:
+
+   ```bash
+   UC_CMUX_AUDIT_DIR="$(mktemp -d "${TMPDIR%/}/uniconnect-cmux-audit.XXXXXX")"
+   chmod 700 "$UC_CMUX_AUDIT_DIR"
+   ./scripts/fingerprint-cmux-state.sh capture "$UC_CMUX_AUDIT_DIR/before"
+   ```
+
+   The fingerprint contains paths encoded as Base64, metadata, and SHA-256
+   values; it never copies file contents or prints the inventory to the
+   terminal.
 2. Open **Migrate Boxes from cmux…** and inspect the preview.
 3. Cancel once and confirm that no UniConnect box changed.
 4. Run the migration with a small selected subset.
-5. Recompute the source size, modification time and SHA-256; all three must be
-   identical.
+5. Capture and compare the complete fingerprint:
+
+   ```bash
+   ./scripts/fingerprint-cmux-state.sh capture "$UC_CMUX_AUDIT_DIR/after"
+   ./scripts/fingerprint-cmux-state.sh compare \
+     "$UC_CMUX_AUDIT_DIR/before" \
+     "$UC_CMUX_AUDIT_DIR/after"
+   ```
+
+   The comparison must report `PASS`.
 6. Reopen the preview. Successfully reconciled rows must be unchanged rather
    than duplicated.
 7. Verify that cmux is still running with its original workspaces and that its
