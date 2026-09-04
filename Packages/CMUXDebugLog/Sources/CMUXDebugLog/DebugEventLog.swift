@@ -369,7 +369,7 @@ public final class DebugEventLog: @unchecked Sendable {
         if let socketPath = env["CMUX_SOCKET_PATH"]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !socketPath.isEmpty {
             let socketBase = URL(fileURLWithPath: socketPath).deletingPathExtension().lastPathComponent
-            if socketBase.hasPrefix("cmux-debug-") {
+            if socketBase.hasPrefix("uniconnect-debug-") {
                 return "/tmp/\(socketBase).log"
             }
         }

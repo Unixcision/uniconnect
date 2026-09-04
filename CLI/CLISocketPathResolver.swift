@@ -275,7 +275,7 @@ enum CLISocketPathResolver {
                 continue
             }
             discovered.reserveCapacity(min(limit, discovered.count + entries.count))
-            for name in entries where name.hasPrefix("cmux-debug-") && name.hasSuffix(".sock") {
+            for name in entries where name.hasPrefix("uniconnect-debug-") && name.hasSuffix(".sock") {
                 let path = URL(fileURLWithPath: directory)
                     .appendingPathComponent(name, isDirectory: false)
                     .path

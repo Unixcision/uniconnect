@@ -358,17 +358,17 @@ extension CMUXCLI {
             break
         }
 
-        if name.range(of: #"^cmux-\d+\.sock$"#, options: .regularExpression) != nil {
+        if name.range(of: #"^uniconnect-\d+\.sock$"#, options: .regularExpression) != nil {
             return Self.cmuxThemeOverrideBundleIdentifier
         }
 
-        if let slug = themeReloadSocketSlug(name, prefix: "cmux-debug-", suffix: ".sock") {
+        if let slug = themeReloadSocketSlug(name, prefix: "uniconnect-debug-", suffix: ".sock") {
             return "com.unixcision.uniconnect.debug.\(slug)"
         }
-        if let slug = themeReloadSocketSlug(name, prefix: "cmux-nightly-", suffix: ".sock") {
+        if let slug = themeReloadSocketSlug(name, prefix: "uniconnect-nightly-", suffix: ".sock") {
             return "com.unixcision.uniconnect.nightly.\(slug)"
         }
-        if let slug = themeReloadSocketSlug(name, prefix: "cmux-staging-", suffix: ".sock") {
+        if let slug = themeReloadSocketSlug(name, prefix: "uniconnect-staging-", suffix: ".sock") {
             return "com.unixcision.uniconnect.staging.\(slug)"
         }
         return nil

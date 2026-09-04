@@ -387,7 +387,7 @@ private func agentHookDebugLogPath(socketPath: String?, env: [String: String]) -
 
     if let socketPath {
         let socketName = URL(fileURLWithPath: socketPath).lastPathComponent
-        if socketName.hasPrefix("cmux-debug-"), socketName.hasSuffix(".sock") {
+        if socketName.hasPrefix("uniconnect-debug-"), socketName.hasSuffix(".sock") {
             let logName = String(socketName.dropLast(".sock".count)) + ".log"
             return URL(fileURLWithPath: "/tmp", isDirectory: true)
                 .appendingPathComponent(logName, isDirectory: false)
@@ -1479,7 +1479,7 @@ enum SocketPasswordResolver {
         }
 
         let candidate = URL(fileURLWithPath: socketPath).lastPathComponent
-        let prefixes = ["cmux-debug-", "cmux-"]
+        let prefixes = ["uniconnect-debug-", "uniconnect-"]
         for prefix in prefixes {
             guard candidate.hasPrefix(prefix), candidate.hasSuffix(".sock") else { continue }
             let start = candidate.index(candidate.startIndex, offsetBy: prefix.count)

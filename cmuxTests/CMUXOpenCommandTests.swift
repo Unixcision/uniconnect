@@ -463,7 +463,7 @@ final class CMUXOpenCommandTests: XCTestCase {
         let cliPath = try bundledCLIPath()
         let tag = "asset\(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(6).lowercased())"
         let socketPath = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("cmux-debug-\(tag).sock", isDirectory: false)
+            .appendingPathComponent("uniconnect-debug-\(tag).sock", isDirectory: false)
             .path
         unlink(socketPath)
         let listenerFD = try bindUnixSocket(at: socketPath)
@@ -471,8 +471,8 @@ final class CMUXOpenCommandTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let homeURL = rootURL.appendingPathComponent("home", isDirectory: true)
         let targetCLIURL = homeURL
-            .appendingPathComponent("Library/Developer/Xcode/DerivedData/cmux-\(tag)", isDirectory: true)
-            .appendingPathComponent("Build/Products/Debug/cmux DEV \(tag).app", isDirectory: true)
+            .appendingPathComponent("Library/Developer/Xcode/DerivedData/uniconnect-\(tag)", isDirectory: true)
+            .appendingPathComponent("Build/Products/Debug/UniConnect DEV \(tag).app", isDirectory: true)
             .appendingPathComponent("Contents/Resources/bin/cmux", isDirectory: false)
         let targetResourcesURL = targetCLIURL
             .deletingLastPathComponent()
@@ -545,7 +545,7 @@ final class CMUXOpenCommandTests: XCTestCase {
         XCTAssertTrue(appMain.contains("cmuxTaggedSocketAssetMarker = 'target-\(tag)'"), appMain)
 
         let stateURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            .appendingPathComponent("cmux-diff-viewer-\(Darwin.getuid())", isDirectory: true)
+            .appendingPathComponent("uniconnect-diff-viewer-\(Darwin.getuid())", isDirectory: true)
             .appendingPathComponent(".server-state", isDirectory: false)
         let serverState = try JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any]
         XCTAssertEqual(serverState?["executablePath"] as? String, targetCLIURL.path)
@@ -2313,7 +2313,7 @@ final class CMUXOpenCommandTests: XCTestCase {
         }
         let manifestRequestPath = "/" + pathParts.dropFirst().joined(separator: "/")
         let manifestURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
-            .appendingPathComponent("cmux-diff-viewer-\(Darwin.getuid())", isDirectory: true)
+            .appendingPathComponent("uniconnect-diff-viewer-\(Darwin.getuid())", isDirectory: true)
             .appendingPathComponent(".manifest-\(token).json", isDirectory: false)
         guard let data = try? Data(contentsOf: manifestURL),
               let manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -2358,7 +2358,7 @@ final class CMUXOpenCommandTests: XCTestCase {
         if viewerURL.scheme == "http" {
             let token = try diffViewerHTTPToken(for: viewerURL)
             let manifestURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
-                .appendingPathComponent("cmux-diff-viewer-\(Darwin.getuid())", isDirectory: true)
+                .appendingPathComponent("uniconnect-diff-viewer-\(Darwin.getuid())", isDirectory: true)
                 .appendingPathComponent(".manifest-\(token).json", isDirectory: false)
             let manifest = try XCTUnwrap(
                 JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any]
