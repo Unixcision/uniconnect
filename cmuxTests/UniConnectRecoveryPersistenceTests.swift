@@ -757,6 +757,51 @@ final class UniConnectRecoveryPersistenceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
     }
 
+    func testPostRenameSnapshotSyncFailureKeepsItsEncryptedVaultCompanion() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-recovery-post-rename-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repository = UniConnectRecoveryBackupRepository(
+            rootDirectory: directory,
+            fileWriter: { data, destination, fileManager in
+                try UniConnectAtomicFileWriter.write(
+                    data,
+                    to: destination,
+                    fileManager: fileManager
+                )
+                if destination.pathExtension == "json" {
+                    throw UniConnectAtomicFileWriter.WriteError.directorySyncFailed(5)
+                }
+            }
+        )
+        let snapshot = makeSnapshot(profile: UniConnectWorkspaceProfile(
+            kind: .ssh,
+            credentialId: UUID(),
+            hostLabel: "root@example.test",
+            tmuxReady: true
+        ))
+
+        do {
+            _ = try await repository.archive(
+                snapshot: snapshot,
+                encryptedVault: Data("encrypted-vault".utf8),
+                reason: .scheduled
+            )
+            XCTFail("Expected the injected post-rename directory sync failure")
+        } catch UniConnectAtomicFileWriter.WriteError.directorySyncFailed(_) {
+            // The destination is visible even though its final durability sync was uncertain.
+        }
+
+        let backups = try await repository.availableBackups()
+        let recovered = try XCTUnwrap(backups.first)
+        XCTAssertEqual(backups.count, 1)
+        XCTAssertNotNil(recovered.encryptedVaultURL)
+        XCTAssertEqual(
+            try await repository.loadEncryptedVault(for: recovered.snapshotURL),
+            Data("encrypted-vault".utf8)
+        )
+    }
+
     func testRecoveryRepositoryWritesTheAlreadyCapturedVaultRevision() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("uniconnect-recovery-captured-vault-\(UUID().uuidString)", isDirectory: true)
