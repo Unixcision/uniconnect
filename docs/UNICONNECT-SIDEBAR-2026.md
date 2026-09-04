@@ -19,7 +19,10 @@ Primary references:
 - [Build an AppKit app with the new design](https://developer.apple.com/videos/play/wwdc2025/310/)
 - [Build a SwiftUI app with the new design](https://developer.apple.com/videos/play/wwdc2025/323/)
 - [Applying Liquid Glass to custom views](https://developer.apple.com/documentation/SwiftUI/Applying-Liquid-Glass-to-custom-views)
+- [NSGlassEffectView](https://developer.apple.com/documentation/appkit/nsglasseffectview)
+- [Sidebars](https://developer.apple.com/design/human-interface-guidelines/sidebars)
 - [Menus](https://developer.apple.com/design/human-interface-guidelines/menus)
+- [Context menus](https://developer.apple.com/design/human-interface-guidelines/context-menus)
 - [Popovers](https://developer.apple.com/design/human-interface-guidelines/popovers)
 - [Testing system accessibility features](https://developer.apple.com/documentation/accessibility/testing-system-accessibility-features-in-your-app)
 
