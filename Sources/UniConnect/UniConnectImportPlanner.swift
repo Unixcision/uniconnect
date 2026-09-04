@@ -935,9 +935,15 @@ struct UniConnectImportPlanner {
         kind: RestorableAgentKind,
         sessionID: String
     ) -> AgentTarget {
-        AgentTarget(
+        guard let claim = UniConnectLocalAgentRestoreClaimPolicy.claim(
             kind: kind,
-            sessionID: kind == .claude ? sessionID.lowercased() : sessionID
+            sessionID: sessionID
+        ) else {
+            return AgentTarget(kind: kind, sessionID: sessionID)
+        }
+        return AgentTarget(
+            kind: claim.kind,
+            sessionID: claim.sessionID
         )
     }
 
@@ -1053,17 +1059,23 @@ struct UniConnectImportPlanner {
         let localConversations = workspace.kind == .local
             ? (window.localWindow?.conversations ?? [])
             : []
-        let legacyClaudeKey = normalizedOptional(window.claudeSession).map {
-            RestorableAgentKind.claude.rawValue + "\u{0}" + $0.lowercased()
+        let legacyClaudeKey = normalizedOptional(window.claudeSession).flatMap {
+            UniConnectLocalAgentRestoreClaimPolicy.canonicalKey(kind: .claude, sessionID: $0)
         }
-        var localConversationKeys = localConversations.map {
-            $0.kind.rawValue + "\u{0}" + ($0.kind == .claude ? $0.sessionID.lowercased() : $0.sessionID)
+        var localConversationKeys = localConversations.compactMap {
+            UniConnectLocalAgentRestoreClaimPolicy.canonicalKey(
+                kind: $0.kind,
+                sessionID: $0.sessionID
+            )
         }
         if localConversationKeys.isEmpty, let legacyClaudeKey {
             localConversationKeys = [legacyClaudeKey]
         }
-        let latestLocalConversationKey = window.localWindow?.latestConversation.map {
-            $0.kind.rawValue + "\u{0}" + ($0.kind == .claude ? $0.sessionID.lowercased() : $0.sessionID)
+        let latestLocalConversationKey = window.localWindow?.latestConversation.flatMap {
+            UniConnectLocalAgentRestoreClaimPolicy.canonicalKey(
+                kind: $0.kind,
+                sessionID: $0.sessionID
+            )
         } ?? legacyClaudeKey
         return CanonicalWindow(
             name: normalizedOptional(window.name),

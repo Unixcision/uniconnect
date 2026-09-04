@@ -129,16 +129,20 @@ struct UniConnectDocumentReconciler {
     private func localAgentKeys(_ window: UniConnectDocument.Window) -> [String] {
         var keys: [String] = []
         if let session = normalizedOptional(window.claudeSession) {
-            keys.append(RestorableAgentKind.claude.rawValue + "\u{0}" + session.lowercased())
+            if let key = UniConnectLocalAgentRestoreClaimPolicy.canonicalKey(
+                kind: .claude,
+                sessionID: session
+            ) {
+                keys.append(key)
+            }
         }
         for conversation in window.localWindow?.conversations ?? [] {
-            keys.append(
-                conversation.kind.rawValue
-                    + "\u{0}"
-                    + (conversation.kind == .claude
-                        ? conversation.sessionID.lowercased()
-                        : conversation.sessionID)
-            )
+            if let key = UniConnectLocalAgentRestoreClaimPolicy.canonicalKey(
+                kind: conversation.kind,
+                sessionID: conversation.sessionID
+            ) {
+                keys.append(key)
+            }
         }
         return keys
     }

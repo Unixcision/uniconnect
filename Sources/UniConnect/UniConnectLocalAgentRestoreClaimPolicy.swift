@@ -33,6 +33,15 @@ enum UniConnectLocalAgentRestoreClaimPolicy {
         return Claim(kind: normalizedKind, sessionID: normalizedSessionID)
     }
 
+    /// Stable persisted/import identity shared by every local agent provider.
+    static func canonicalKey(
+        kind: RestorableAgentKind,
+        sessionID: String
+    ) -> String? {
+        guard let claim = claim(kind: kind, sessionID: sessionID) else { return nil }
+        return claim.kind.rawValue + "\u{0}" + claim.sessionID
+    }
+
     static func claim(for conversation: UniConnectLocalAgentConversation) -> Claim {
         claim(kind: conversation.kind, sessionID: conversation.sessionID)!
     }
