@@ -536,7 +536,9 @@ enum UniConnectMarkdown {
                 kind = .name
             } else if self.text.contains("tmux") {
                 kind = .tmux
-            } else if self.text.contains("uuid")
+            } else if self.text == "uuid"
+                || self.text.hasPrefix("uuid ")
+                || self.text.hasSuffix(" uuid")
                 || self.text.contains("sesion")
                 || self.text.contains("session") {
                 kind = .session
