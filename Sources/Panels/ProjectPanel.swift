@@ -56,7 +56,7 @@ public enum ProjectPanelLoadState: Sendable, Equatable {
 /// re-render without dealing with reload events.
 @MainActor
 public final class ProjectPanel: NSObject, Panel, ObservableObject {
-    public let id = UUID()
+    public let id: UUID
     public let panelType: PanelType = .project
 
     @Published public private(set) var projectURL: URL
@@ -79,7 +79,13 @@ public final class ProjectPanel: NSObject, Panel, ObservableObject {
 
     public var displayIcon: String? { "hammer" }
 
-    public init(projectURL: URL) {
+    /// Creates a project panel with an optionally restored stable identity.
+    ///
+    /// - Parameters:
+    ///   - projectURL: The Xcode project or workspace to display.
+    ///   - id: The stable panel identity; callers normally use the generated default.
+    public init(projectURL: URL, id: UUID = UUID()) {
+        self.id = id
         self.projectURL = projectURL
         super.init()
     }

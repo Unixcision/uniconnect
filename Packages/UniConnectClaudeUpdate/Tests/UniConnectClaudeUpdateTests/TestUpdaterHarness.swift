@@ -17,17 +17,26 @@ actor TestUpdaterHarness:
     private let updateShouldFail: Bool
     private let restoreShouldFail: Bool
     private let verificationShouldMismatch: Bool
+    private let verificationShouldKeepOldProcessID: Bool
     private let pauseAtShell: Bool
+    private let pauseAtExitRequestedJournalSave: Bool
     private let fixedDate: Date
 
     private var installedVersionValue: ClaudeVersion
+    private var discoveryCount = 0
     private var updateCount = 0
     private var restoredTargets: Set<ClaudeUpdateTargetID> = []
     private var events: [String] = []
     private var records: [String: ClaudeUpdateRecoveryRecord] = [:]
+    private var savedRecordHistory: [ClaudeUpdateRecoveryRecord] = []
     private var logEntries: [ClaudeUpdateLogEntry] = []
     private var shellContinuation: CheckedContinuation<Void, Never>?
     private var shellReleaseRequested = false
+    private var exitJournalSaveContinuation: CheckedContinuation<Void, Never>?
+    private var exitJournalSaveReachedContinuation: CheckedContinuation<Void, Never>?
+    private var exitJournalSaveReached = false
+    private var exitJournalSaveReleaseRequested = false
+    private var replacingProcessIDs: [ClaudeUpdateTargetID: Int32?] = [:]
 
     init(
         targets: [ClaudeUpdateTarget],
@@ -42,7 +51,10 @@ actor TestUpdaterHarness:
         updateShouldFail: Bool = false,
         restoreShouldFail: Bool = false,
         verificationShouldMismatch: Bool = false,
+        verificationShouldKeepOldProcessID: Bool = false,
         pauseAtShell: Bool = false,
+        pauseAtExitRequestedJournalSave: Bool = false,
+        initialInstalledVersion: ClaudeVersion? = nil,
         fixedDate: Date = Date(timeIntervalSince1970: 1_800_000_000)
     ) {
         self.providedTargets = targets
@@ -52,13 +64,16 @@ actor TestUpdaterHarness:
         self.updateShouldFail = updateShouldFail
         self.restoreShouldFail = restoreShouldFail
         self.verificationShouldMismatch = verificationShouldMismatch
+        self.verificationShouldKeepOldProcessID = verificationShouldKeepOldProcessID
         self.pauseAtShell = pauseAtShell
+        self.pauseAtExitRequestedJournalSave = pauseAtExitRequestedJournalSave
         self.fixedDate = fixedDate
-        self.installedVersionValue = versionBefore
+        self.installedVersionValue = initialInstalledVersion ?? versionBefore
     }
 
     func targets(for scope: ClaudeUpdateScope) async throws -> [ClaudeUpdateTarget] {
         events.append("targets")
+        discoveryCount += 1
         return providedTargets
     }
 
@@ -69,7 +84,7 @@ actor TestUpdaterHarness:
         return ClaudeSessionInspection(
             isClaudeProcess: true,
             isIdle: true,
-            processID: wasRestored ? 9_001 : 42,
+            processID: wasRestored && !verificationShouldKeepOldProcessID ? 9_001 : 42,
             sessionID: verificationShouldMismatch && wasRestored ? UUID() : binding.sessionID,
             workingDirectory: binding.workingDirectory,
             executablePath: binding.executablePath,
@@ -111,8 +126,12 @@ actor TestUpdaterHarness:
         }
     }
 
-    func restore(_ target: ClaudeUpdateTarget) async throws {
+    func restore(
+        _ target: ClaudeUpdateTarget,
+        replacingProcessID: Int32?
+    ) async throws {
         events.append("restore:\(target.id.rawValue)")
+        replacingProcessIDs[target.id] = replacingProcessID
         if restoreShouldFail { throw TestUpdaterError.restoreFailed }
         restoredTargets.insert(target.id)
     }
@@ -139,6 +158,18 @@ actor TestUpdaterHarness:
     func save(_ record: ClaudeUpdateRecoveryRecord) async throws {
         events.append("journal:\(record.stage.rawValue):\(record.target.id.rawValue)")
         records[record.id] = record
+        savedRecordHistory.append(record)
+        guard
+            pauseAtExitRequestedJournalSave,
+            record.stage == .exitRequested,
+            !exitJournalSaveReleaseRequested
+        else { return }
+        exitJournalSaveReached = true
+        exitJournalSaveReachedContinuation?.resume()
+        exitJournalSaveReachedContinuation = nil
+        await withCheckedContinuation { continuation in
+            exitJournalSaveContinuation = continuation
+        }
     }
 
     func remove(operationID: UUID, targetID: ClaudeUpdateTargetID) async throws {
@@ -162,9 +193,36 @@ actor TestUpdaterHarness:
         shellContinuation = nil
     }
 
+    func waitUntilExitRequestedJournalSave() async {
+        guard !exitJournalSaveReached else { return }
+        await withCheckedContinuation { continuation in
+            exitJournalSaveReachedContinuation = continuation
+        }
+    }
+
+    func releaseExitRequestedJournalSave() {
+        exitJournalSaveReleaseRequested = true
+        exitJournalSaveContinuation?.resume()
+        exitJournalSaveContinuation = nil
+    }
+
     func recordedEvents() -> [String] { events }
 
     func updateCallCount() -> Int { updateCount }
 
     func pendingRecordCount() -> Int { records.count }
+
+    func pendingRecordsSnapshot() -> [ClaudeUpdateRecoveryRecord] {
+        records.values.sorted { $0.id < $1.id }
+    }
+
+    func savedRecords() -> [ClaudeUpdateRecoveryRecord] { savedRecordHistory }
+
+    func targetDiscoveryCount() -> Int { discoveryCount }
+
+    func replacingProcessID(for targetID: ClaudeUpdateTargetID) -> Int32? {
+        replacingProcessIDs[targetID] ?? nil
+    }
+
+    func restoreCallCount() -> Int { replacingProcessIDs.count }
 }

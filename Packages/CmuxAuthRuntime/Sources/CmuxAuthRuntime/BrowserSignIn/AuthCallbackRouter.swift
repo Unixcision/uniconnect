@@ -1,14 +1,14 @@
 public import Foundation
 
-/// Recognizes and parses cmux auth callback URLs.
+/// Recognizes and parses UniConnect auth callback URLs.
 ///
-/// Accepts the built-in cmux callback schemes (`cmux`, `cmux-nightly`,
-/// `cmux-dev`) plus an optional runtime override (e.g. a per-tag Debug build's
+/// Accepts the built-in UniConnect callback schemes (`uniconnect`,
+/// `uniconnect-nightly`, `uniconnect-dev`) plus an optional runtime override (e.g. a per-tag Debug build's
 /// unique scheme), injected at construction so the type never reads the
 /// process environment itself. A pure value; construct it once at the
 /// composition root and inject it.
 public struct AuthCallbackRouter: Sendable {
-    private static let builtInSchemes: Set<String> = ["cmux", "cmux-nightly", "cmux-dev"]
+    private static let builtInSchemes: Set<String> = ["uniconnect", "uniconnect-nightly", "uniconnect-dev"]
     private let extraAllowedScheme: String?
 
     /// Creates a router.
@@ -19,7 +19,7 @@ public struct AuthCallbackRouter: Sendable {
         self.extraAllowedScheme = extraAllowedScheme?.lowercased()
     }
 
-    /// Whether `url` is a cmux auth callback (`<scheme>://auth-callback`).
+    /// Whether `url` is a UniConnect auth callback (`<scheme>://auth-callback`).
     public func isAuthCallbackURL(_ url: URL) -> Bool {
         guard isAllowedScheme(url.scheme) else { return false }
         return Self.callbackTarget(for: url) == "auth-callback"

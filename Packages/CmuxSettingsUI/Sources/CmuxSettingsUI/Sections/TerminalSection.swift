@@ -133,7 +133,7 @@ public struct TerminalSection: View {
                 configurationReview: .json("terminal.showScrollBar"),
                 String(localized: "settings.terminal.scrollBar", defaultValue: "Show Terminal Scroll Bar"),
                 subtitle: scrollBar.current
-                    ? String(localized: "settings.terminal.scrollBar.subtitleOn", defaultValue: "Shows the right-edge terminal scroll bar in shell scrollback. cmux hides it automatically for alternate-screen style TUI surfaces.")
+                    ? String(localized: "settings.terminal.scrollBar.subtitleOn", defaultValue: "Shows the right-edge terminal scroll bar in shell scrollback. UniConnect hides it automatically for alternate-screen style TUI surfaces.")
                     : String(localized: "settings.terminal.scrollBar.subtitleOff", defaultValue: "Hides the right-edge terminal scroll bar everywhere. Changes apply immediately and persist across relaunches.")
             ) {
                 Toggle("", isOn: Binding(get: { scrollBar.current }, set: { scrollBar.set($0) }))
@@ -159,8 +159,8 @@ public struct TerminalSection: View {
                 configurationReview: .json("terminal.autoResumeAgentSessions"),
                 String(localized: "settings.terminal.agentAutoResume", defaultValue: "Resume Agent Sessions on Reopen"),
                 subtitle: autoResume.current
-                    ? String(localized: "settings.terminal.agentAutoResume.subtitleOn", defaultValue: "When cmux reopens after quit, restored agent terminals automatically run their resume command.")
-                    : String(localized: "settings.terminal.agentAutoResume.subtitleOff", defaultValue: "When cmux reopens after quit, restored agent terminals stay idle until you resume them manually.")
+                    ? String(localized: "settings.terminal.agentAutoResume.subtitleOn", defaultValue: "When UniConnect reopens after quit, restored agent terminals automatically run their resume command.")
+                    : String(localized: "settings.terminal.agentAutoResume.subtitleOff", defaultValue: "When UniConnect reopens after quit, restored agent terminals stay idle until you resume them manually.")
             ) {
                 Toggle("", isOn: Binding(get: { autoResume.current }, set: { autoResume.set($0) }))
                     .labelsHidden()
@@ -173,7 +173,7 @@ public struct TerminalSection: View {
                 String(localized: "settings.terminal.agentHibernation", defaultValue: "Agent Hibernation"),
                 subtitle: hibernation.current
                     ? String(localized: "settings.terminal.agentHibernation.subtitleOn", defaultValue: "Idle background agent terminals can be suspended when the live-terminal limit is exceeded.")
-                    : String(localized: "settings.terminal.agentHibernation.subtitleOff", defaultValue: "Agent terminals stay live until you close them or quit cmux.")
+                    : String(localized: "settings.terminal.agentHibernation.subtitleOff", defaultValue: "Agent terminals stay live until you close them or quit UniConnect.")
             ) {
                 Toggle("", isOn: Binding(get: { hibernation.current }, set: { hibernation.set($0) }))
                     .labelsHidden()

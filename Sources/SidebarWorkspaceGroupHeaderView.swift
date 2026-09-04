@@ -169,44 +169,28 @@ struct SidebarWorkspaceGroupHeaderView: View, Equatable {
             .accessibilityHidden(!plusVisible)
             .accessibilityLabel(Text(String(
                 localized: "workspaceGroup.newWorkspaceInGroup.a11y",
-                defaultValue: "New workspace in group"
+                defaultValue: "New box in group"
             )))
             .contextMenu {
-                Button(
-                    String(
-                        localized: "workspaceGroup.plus.contextMenu.newWorkspace",
-                        defaultValue: "New Workspace in Group"
-                    ),
-                    action: onTapPlus
-                )
-                if !cwdContextMenuItems.isEmpty {
-                    Divider()
-                    ForEach(cwdContextMenuItems) { item in
-                        switch item {
-                        case .separator:
-                            Divider()
-                        case .action(let action):
-                            Button(action.title) {
-                                onRunResolvedItem(action)
-                            }
-                        }
-                    }
+                Button(action: onTapPlus) {
+                    Label(
+                        String(
+                            localized: "workspaceGroup.plus.contextMenu.newWorkspace",
+                            defaultValue: "New Box in Group"
+                        ),
+                        systemImage: "shippingbox"
+                    )
                 }
                 Divider()
-                Button(
-                    String(
-                        localized: "workspaceGroup.plus.contextMenu.editConfig",
-                        defaultValue: "Edit Group Config..."
-                    ),
-                    action: onEditConfig
-                )
-                Button(
-                    String(
-                        localized: "workspaceGroup.plus.contextMenu.openDocs",
-                        defaultValue: "Open Workspace Groups Docs"
-                    ),
-                    action: onOpenDocs
-                )
+                Button(action: onEditConfig) {
+                    Label(
+                        String(
+                            localized: "workspaceGroup.plus.contextMenu.editConfig",
+                            defaultValue: "Edit Group Configuration…"
+                        ),
+                        systemImage: "gearshape"
+                    )
+                }
             }
         }
         .padding(.vertical, 5)
@@ -241,57 +225,58 @@ struct SidebarWorkspaceGroupHeaderView: View, Equatable {
             isHovered = hovering
         }
         .contextMenu {
-            Button(
-                String(
-                    localized: "workspaceGroup.contextMenu.rename",
-                    defaultValue: "Rename Group..."
-                ),
-                action: onRename
-            )
-            Button(
-                isPinned
-                    ? String(
-                        localized: "workspaceGroup.contextMenu.unpin",
-                        defaultValue: "Unpin Group"
-                    )
-                    : String(
-                        localized: "workspaceGroup.contextMenu.pin",
-                        defaultValue: "Pin Group"
+            Button(action: onRename) {
+                Label(
+                    String(localized: "workspaceGroup.contextMenu.rename", defaultValue: "Rename Group…"),
+                    systemImage: "pencil"
+                )
+            }
+            Button(action: onToggleCollapsed) {
+                Label(
+                    isCollapsed
+                        ? String(localized: "workspaceGroup.expand.a11y", defaultValue: "Expand Group")
+                        : String(localized: "workspaceGroup.collapse.a11y", defaultValue: "Collapse Group"),
+                    systemImage: isCollapsed ? "chevron.down" : "chevron.right"
+                )
+            }
+            Button(action: onTogglePinned) {
+                Label(
+                    isPinned
+                        ? String(localized: "workspaceGroup.contextMenu.unpin", defaultValue: "Unpin Group")
+                        : String(localized: "workspaceGroup.contextMenu.pin", defaultValue: "Pin Group"),
+                    systemImage: isPinned ? "pin.slash" : "pin"
+                )
+            }
+            Divider()
+            Button(action: onEditConfig) {
+                Label(
+                    String(
+                        localized: "workspaceGroup.contextMenu.editConfig",
+                        defaultValue: "Edit Group Configuration…"
                     ),
-                action: onTogglePinned
-            )
+                    systemImage: "gearshape"
+                )
+            }
             Divider()
-            Button(
-                String(
-                    localized: "workspaceGroup.contextMenu.editConfig",
-                    defaultValue: "Edit Group Config..."
-                ),
-                action: onEditConfig
-            )
-            Button(
-                String(
-                    localized: "workspaceGroup.contextMenu.openDocs",
-                    defaultValue: "Open Workspace Groups Docs"
-                ),
-                action: onOpenDocs
-            )
-            Divider()
-            Button(
-                String(
-                    localized: "workspaceGroup.contextMenu.ungroup",
-                    defaultValue: "Ungroup (Keep Workspaces)"
-                ),
-                action: onUngroup
-            )
+            Button(action: onUngroup) {
+                Label(
+                    String(
+                        localized: "workspaceGroup.contextMenu.ungroup",
+                        defaultValue: "Ungroup (Keep Boxes)"
+                    ),
+                    systemImage: "rectangle.3.group"
+                )
+            }
             Button(
                 role: .destructive,
                 action: onDelete
             ) {
-                Text(
+                Label(
                     String(
                         localized: "workspaceGroup.contextMenu.delete",
-                        defaultValue: "Delete Group (Close Workspaces)"
-                    )
+                        defaultValue: "Delete Group (Close Boxes)"
+                    ),
+                    systemImage: "trash"
                 )
             }
         }

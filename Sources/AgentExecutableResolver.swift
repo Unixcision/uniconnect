@@ -247,7 +247,7 @@ struct AgentExecutableResolver {
               let prefix = String(data: data.prefix(512), encoding: .utf8) else {
             return false
         }
-        return prefix.contains("cmux claude wrapper - injects hooks and session tracking")
+        return prefix.contains("UniConnect Claude wrapper - injects hooks and session tracking")
     }
 
     private static func isCmuxAppBundleResourceBinDirectory(_ path: String) -> Bool {

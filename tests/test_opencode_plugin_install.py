@@ -38,6 +38,14 @@ def main() -> int:
         config_dir = root / "opencode"
         config_dir.mkdir(parents=True, exist_ok=True)
         config_json = config_dir / "opencode.json"
+        plugins_dir = config_dir / "plugins"
+        plugins_dir.mkdir(parents=True, exist_ok=True)
+        upstream_session_path = plugins_dir / "cmux-session.js"
+        upstream_feed_path = plugins_dir / "cmux-feed.js"
+        upstream_session_source = "// cmux-opencode-session-plugin-marker v1\nexport default async () => ({});\n"
+        upstream_feed_source = "// cmux-feed-plugin-marker v1\nexport const CMUXFeed = async () => ({});\n"
+        upstream_session_path.write_text(upstream_session_source, encoding="utf-8")
+        upstream_feed_path.write_text(upstream_feed_source, encoding="utf-8")
         config_json.write_text(
             json.dumps(
                 {
@@ -69,16 +77,29 @@ def main() -> int:
             print(f"stderr={install.stderr.strip()}")
             return 1
 
-        plugin_path = config_dir / "plugins" / "cmux-session.js"
+        plugin_path = plugins_dir / "uniconnect-session.js"
         if not plugin_path.exists():
             print(f"FAIL: expected plugin at {plugin_path}")
             return 1
-        feed_plugin_path = config_dir / "plugins" / "cmux-feed.js"
+        feed_plugin_path = plugins_dir / "uniconnect-feed.js"
         if not feed_plugin_path.exists():
             print(f"FAIL: expected feed plugin at {feed_plugin_path}")
             return 1
-        if "cmux-feed-plugin-marker" not in feed_plugin_path.read_text(encoding="utf-8"):
-            print(f"FAIL: expected cmux feed marker in {feed_plugin_path}")
+        if "uniconnect-feed-plugin-marker" not in feed_plugin_path.read_text(encoding="utf-8"):
+            print(f"FAIL: expected UniConnect feed marker in {feed_plugin_path}")
+            return 1
+        feed_source = feed_plugin_path.read_text(encoding="utf-8")
+        if "/.local/state/uniconnect/uniconnect.sock" not in feed_source:
+            print("FAIL: UniConnect feed plugin does not use the real default state socket")
+            return 1
+        if "/.config/uniconnect/uniconnect.sock" in feed_source:
+            print("FAIL: UniConnect feed plugin still contains the obsolete config socket")
+            return 1
+        if upstream_session_path.read_text(encoding="utf-8") != upstream_session_source:
+            print("FAIL: install modified the upstream cmux OpenCode session plugin")
+            return 1
+        if upstream_feed_path.read_text(encoding="utf-8") != upstream_feed_source:
+            print("FAIL: install modified the upstream cmux OpenCode Feed plugin")
             return 1
 
         try:
@@ -90,17 +111,11 @@ def main() -> int:
         if not isinstance(plugins, list):
             print(f"FAIL: expected plugin list in opencode.json, got {plugins!r}")
             return 1
-        stale = [
-            entry
-            for entry in plugins
-            if (entry if isinstance(entry, str) else entry[0] if isinstance(entry, list) and entry else "")
-            == "cmux-session"
-        ]
-        if stale:
-            print(f"FAIL: expected stale cmux plugin registrations removed, got {plugins!r}")
+        if "cmux-session" not in plugins or "./plugins/cmux-session.js" not in plugins:
+            print(f"FAIL: installer removed upstream cmux plugin registrations: {plugins!r}")
             return 1
-        if "./plugins/cmux-session.js" not in plugins:
-            print(f"FAIL: expected local cmux session plugin registration, got {plugins!r}")
+        if "./plugins/uniconnect-session.js" not in plugins:
+            print(f"FAIL: expected local UniConnect session plugin registration, got {plugins!r}")
             return 1
         if "oh-my-opencode" not in plugins or ["existing-plugin", {"enabled": True}] not in plugins:
             print(f"FAIL: installer did not preserve existing plugin entries: {plugins!r}")
@@ -122,12 +137,12 @@ def main() -> int:
                 print(f"exit={debug.returncode}")
                 print(debug_output[-4000:])
                 return 1
-            if "path=cmux-session loading plugin" in debug_output:
-                print("FAIL: opencode tried to resolve cmux-session as a package")
+            if "path=uniconnect-session loading plugin" in debug_output:
+                print("FAIL: opencode tried to resolve uniconnect-session as a package")
                 print(debug_output[-4000:])
                 return 1
             if f"file://{plugin_path}" not in debug_output:
-                print("FAIL: opencode did not auto-load cmux session plugin file")
+                print("FAIL: opencode did not auto-load the UniConnect session plugin file")
                 print(debug_output[-4000:])
                 return 1
 
@@ -135,7 +150,7 @@ def main() -> int:
         fake_args_log = root / "fake-cmux-args.log"
         fake_stdin_log = root / "fake-cmux-stdin.log"
         fake_env_log = root / "fake-cmux-env.log"
-        plugin_copy_path = config_dir / "plugins" / "cmux-session-copy.js"
+        plugin_copy_path = config_dir / "plugins" / "uniconnect-session-copy.js"
         shutil.copyfile(plugin_path, plugin_copy_path)
         make_executable(
             fake_cmux,
@@ -165,8 +180,8 @@ const pluginPath = process.env.CMUX_TEST_OPENCODE_PLUGIN_PATH;
 const pluginCopyPath = process.env.CMUX_TEST_OPENCODE_PLUGIN_COPY_PATH;
 const mod = await import(pluginPath);
 const duplicateMod = await import(pluginCopyPath);
-if (typeof mod.CMUXSessionRestore !== "function") {
-  throw new Error("missing CMUXSessionRestore export");
+if (typeof mod.UniConnectSessionRestore !== "function") {
+  throw new Error("missing UniConnectSessionRestore export");
 }
 if (typeof mod.default !== "function") {
   throw new Error("missing default export");
@@ -253,7 +268,39 @@ await hooks.event({
             )
             return 1
 
-    print("PASS: generated OpenCode plugin installs and imports as ESM")
+        uninstall = subprocess.run(
+            [cli_path, "hooks", "opencode", "uninstall", "--yes"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            timeout=20,
+        )
+        if uninstall.returncode != 0:
+            print("FAIL: opencode plugin uninstall failed")
+            print(f"exit={uninstall.returncode}")
+            print(f"stdout={uninstall.stdout.strip()}")
+            print(f"stderr={uninstall.stderr.strip()}")
+            return 1
+        if plugin_path.exists() or feed_plugin_path.exists():
+            print("FAIL: uninstall left UniConnect OpenCode plugin files behind")
+            return 1
+        if upstream_session_path.read_text(encoding="utf-8") != upstream_session_source:
+            print("FAIL: uninstall modified the upstream cmux OpenCode session plugin")
+            return 1
+        if upstream_feed_path.read_text(encoding="utf-8") != upstream_feed_source:
+            print("FAIL: uninstall modified the upstream cmux OpenCode Feed plugin")
+            return 1
+        uninstalled_config = json.loads(config_json.read_text(encoding="utf-8"))
+        uninstalled_plugins = uninstalled_config.get("plugin")
+        if "./plugins/uniconnect-session.js" in uninstalled_plugins:
+            print(f"FAIL: uninstall left the UniConnect plugin registration behind: {uninstalled_plugins!r}")
+            return 1
+        if "cmux-session" not in uninstalled_plugins or "./plugins/cmux-session.js" not in uninstalled_plugins:
+            print(f"FAIL: uninstall removed upstream cmux plugin registrations: {uninstalled_plugins!r}")
+            return 1
+
+    print("PASS: generated OpenCode UniConnect plugins coexist with upstream cmux and import as ESM")
     return 0
 
 

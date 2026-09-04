@@ -10,7 +10,8 @@ import Foundation
 // * Every terminal tab ("ventana") inside an SSH workspace is bound to a named
 //   tmux session on the server. Killing the app only detaches; the tmux session
 //   keeps running and is re-attached on restore.
-// * Local tabs persist their Claude session identity and restore with `claude --resume`.
+// * Local tabs are durable window containers. They keep a non-destructive history of
+//   every resumable agent used there, independently from the process currently running.
 
 enum UniConnectWorkspaceKind: String, Codable, Sendable, Equatable {
     case local
@@ -27,6 +28,8 @@ struct UniConnectWorkspaceProfile: Codable, Sendable, Equatable {
     var hostLabel: String?
     /// Whether tmux has been verified (and installed if needed) on the server.
     var tmuxReady: Bool
+    /// Authoritative folder trusted by every local window in this box. Nil for SSH.
+    var localRoot: String?
     /// When the box was created (seconds since 1970). Optional for older snapshots.
     var createdAt: TimeInterval?
     /// Last time UniConnect touched the box (window created/closed, reconnect, edit).
@@ -38,6 +41,7 @@ struct UniConnectWorkspaceProfile: Codable, Sendable, Equatable {
         credentialId: UUID? = nil,
         hostLabel: String? = nil,
         tmuxReady: Bool = false,
+        localRoot: String? = nil,
         createdAt: TimeInterval? = Date().timeIntervalSince1970,
         lastActivityAt: TimeInterval? = Date().timeIntervalSince1970
     ) {
@@ -46,6 +50,7 @@ struct UniConnectWorkspaceProfile: Codable, Sendable, Equatable {
         self.credentialId = credentialId
         self.hostLabel = hostLabel
         self.tmuxReady = tmuxReady
+        self.localRoot = localRoot
         self.createdAt = createdAt
         self.lastActivityAt = lastActivityAt
     }
@@ -59,9 +64,11 @@ struct UniConnectWorkspaceProfile: Codable, Sendable, Equatable {
 
 // MARK: - Readable backup / seed document
 //
-// This is the *human readable* document UniConnect writes on "Persistir ahora",
-// exports (encrypted) and imports. Passwords only ever appear inside the
-// `connect` field, which is why the file is always encrypted at rest.
+// This is the document UniConnect uses for readable local backups, portable
+// encrypted exports, and imports. A local backup clears every `connect` value and
+// keeps only `credentialId`; its encrypted companion vault owns the connection
+// command. Portable exports may carry `connect` because their whole payload is
+// encrypted with the user's passphrase.
 
 struct UniConnectDocument: Codable, Equatable {
     struct Window: Codable, Equatable {
@@ -70,8 +77,11 @@ struct UniConnectDocument: Codable, Equatable {
         var tmux: String?
         /// Claude Code session id (local workspaces) for `claude --resume`.
         var claudeSession: String?
+        /// Per-window local cwd. It must remain inside the workspace's trusted `cwd` root.
         var cwd: String?
         var isPinned: Bool?
+        /// Durable local-window state. Nil for SSH and version-1 documents.
+        var localWindow: UniConnectLocalWindowRecord? = nil
     }
 
     struct Workspace: Codable, Equatable {
@@ -83,10 +93,12 @@ struct UniConnectDocument: Codable, Equatable {
         var color: String?
         var group: String?
         var isPinned: Bool?
-        /// Local: working directory. SSH: initial remote directory (optional).
+        /// Local: immutable trusted box root. SSH: initial remote directory (optional).
         var cwd: String?
         /// SSH connect command, e.g. `sshpass -p 'x' ssh root@1.2.3.4`.
         var connect: String?
+        /// Opaque immutable vault revision used by readable local backups. Nil for local boxes.
+        var credentialId: UUID? = nil
         var windows: [Window]
     }
 
@@ -95,7 +107,7 @@ struct UniConnectDocument: Codable, Equatable {
     var savedAt: String
     var workspaces: [Workspace]
 
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     init(workspaces: [Workspace], savedAt: Date = Date()) {
         self.version = Self.currentVersion
@@ -131,17 +143,41 @@ enum UniConnectError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .vaultLocked:
-            return "La bóveda de UniConnect está bloqueada."
+            return String(
+                localized: "uniconnect.error.vaultLocked",
+                defaultValue: "The UniConnect vault is locked."
+            )
         case .missingCredential:
-            return "No se encuentra el comando de conexión de esta caja."
+            return String(
+                localized: "uniconnect.error.missingCredential",
+                defaultValue: "The connection command for this box could not be found."
+            )
         case .badPassphrase:
-            return "Contraseña incorrecta o fichero manipulado."
+            return String(
+                localized: "uniconnect.error.badPassphrase",
+                defaultValue: "The password is incorrect or the file has been tampered with."
+            )
         case .corruptFile(let detail):
-            return "Fichero de configuración inválido: \(detail)"
+            return String(
+                format: String(
+                    localized: "uniconnect.error.corruptFile",
+                    defaultValue: "Invalid configuration file: %@"
+                ),
+                detail
+            )
         case .sshFailed(let detail):
-            return "Fallo SSH: \(detail)"
+            return String(
+                format: String(
+                    localized: "uniconnect.error.sshFailed",
+                    defaultValue: "SSH failed: %@"
+                ),
+                detail
+            )
         case .cancelled:
-            return "Cancelado."
+            return String(
+                localized: "uniconnect.error.cancelled",
+                defaultValue: "Cancelled."
+            )
         }
     }
 }

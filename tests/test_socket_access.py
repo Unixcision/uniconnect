@@ -208,7 +208,7 @@ def _wait_for_socket(socket_path: str, timeout: float = 10.0) -> bool:
 
 def _kill_cmux(app_path: str = None):
     if app_path:
-        exe = os.path.join(app_path, "Contents/MacOS/cmux DEV")
+        exe = os.path.join(app_path, "Contents/MacOS/UniConnect DEV")
         subprocess.run(["pkill", "-f", exe], capture_output=True)
     else:
         subprocess.run(["pkill", "-x", "cmux DEV"], capture_output=True)

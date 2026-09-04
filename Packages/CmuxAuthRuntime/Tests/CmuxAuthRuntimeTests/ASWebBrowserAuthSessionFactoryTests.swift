@@ -12,7 +12,7 @@ import Testing
 @Suite struct ASWebBrowserAuthSessionFactoryTests {
     @Test func bridgeDeliveredOffMainCompletesOnMainActor() async {
         let factory = ASWebBrowserAuthSessionFactory(anchor: FakeAnchor())
-        let url = URL(string: "cmux-dev://auth-callback?stack_refresh=r&stack_access=a")!
+        let url = URL(string: "uniconnect-dev://auth-callback?stack_refresh=r&stack_access=a")!
         let received: URL? = await withCheckedContinuation { continuation in
             let bridge = factory.sessionCompletionBridge { callbackURL in
                 // @MainActor closure: reaching here off-main would trap.

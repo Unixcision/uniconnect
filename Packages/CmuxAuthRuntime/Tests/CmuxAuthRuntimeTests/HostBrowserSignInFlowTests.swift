@@ -36,13 +36,13 @@ import Testing
             sessionFactory: factory,
             callbackRouter: AuthCallbackRouter(),
             makeSignInURL: { URL(string: "https://example.test/handler/sign-in")! },
-            callbackScheme: { "cmux-dev" }
+            callbackScheme: { "uniconnect-dev" }
         )
         return Harness(flow: flow, coordinator: coordinator, client: client, tokenStore: tokenStore, factory: factory)
     }
 
     private var callbackURL: URL {
-        URL(string: "cmux-dev://auth-callback?stack_refresh=refresh-1&stack_access=access-1")!
+        URL(string: "uniconnect-dev://auth-callback?stack_refresh=refresh-1&stack_access=access-1")!
     }
 
     private func waitForSession(_ factory: FakeBrowserAuthSessionFactory, count: Int = 1) async {
@@ -74,7 +74,7 @@ import Testing
 
         let attempt = Task { await harness.flow.signIn(timeout: 60) }
         await waitForSession(harness.factory)
-        harness.factory.sessions[0].deliver(URL(string: "cmux-dev://auth-callback?other=1")!)
+        harness.factory.sessions[0].deliver(URL(string: "uniconnect-dev://auth-callback?other=1")!)
 
         #expect(await attempt.value == false)
         #expect(harness.coordinator.isAuthenticated == false)

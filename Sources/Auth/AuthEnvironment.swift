@@ -1,10 +1,127 @@
 import Foundation
 
 enum AuthEnvironment {
-    private static let developmentStackProjectID = "454ecd03-1db2-4050-845e-4ce5b0cd9895"
-    private static let developmentStackPublishableClientKey = "pck_xb63160bwe9699vtxfzfj6emmxpafg5mkjrtp6ehzxv5g"
-    private static let productionStackProjectID = "9790718f-14cd-4f7e-824d-eaf527a82b82"
-    private static let productionStackPublishableClientKey = "pck_kzj80gx4mh2jrzn1cx6y5e8jk0kwa01vkevh2p9zd4twr"
+    // Keep unconfigured builds structurally valid without ever falling back to
+    // cmux's Stack Auth tenants. Real deployments inject their own values.
+    private static let unconfiguredStackProjectID = "00000000-0000-4000-8000-000000000000"
+    private static let unconfiguredStackPublishableClientKey = "unconfigured-uniconnect-publishable-key"
+
+    /// A complete, explicitly enabled configuration for UniConnect-hosted services.
+    ///
+    /// Keeping this as a single value prevents auth, Cloud VM, push, and mobile
+    /// pairing from independently guessing whether a partial deployment is usable.
+    /// The app constructs those services only when this value resolves.
+    struct HostedServicesConfiguration: Equatable, Sendable {
+        let stackProjectID: String
+        let stackPublishableClientKey: String
+        let stackBaseURL: URL
+        let authWebsiteOrigin: URL
+        let apiBaseURL: URL
+        let vmAPIBaseURL: URL
+    }
+
+    /// The hosted-services configuration for this process, or `nil` when the
+    /// feature is disabled or any required endpoint/credential is missing.
+    static var hostedServices: HostedServicesConfiguration? {
+        hostedServicesConfiguration(
+            environment: ProcessInfo.processInfo.environment,
+            infoDictionary: Bundle.main.infoDictionary ?? [:],
+            allowsInsecureLoopback: allowsInsecureLoopbackHostedServices
+        )
+    }
+
+    /// Resolves the all-or-nothing hosted-services policy from explicit inputs.
+    ///
+    /// `UNICONNECT_HOSTED_SERVICES_ENABLED=1` (or the matching Info.plist flag)
+    /// is mandatory. Release builds additionally require HTTPS. Debug builds may
+    /// opt into loopback HTTP for local UI tests, but never accept arbitrary
+    /// plaintext remote endpoints. Partial configuration always fails closed.
+    static func hostedServicesConfiguration(
+        environment: [String: String],
+        infoDictionary: [String: Any],
+        allowsInsecureLoopback: Bool
+    ) -> HostedServicesConfiguration? {
+        guard explicitlyEnabled(
+            environment["UNICONNECT_HOSTED_SERVICES_ENABLED"]
+                ?? stringValue(infoDictionary["UniConnectHostedServicesEnabled"])
+        ) else {
+            return nil
+        }
+
+        guard let projectID = configuredString(
+            environment: environment,
+            environmentKey: "CMUX_STACK_PROJECT_ID",
+            infoDictionary: infoDictionary,
+            infoKey: "UniConnectStackProjectID"
+        ), UUID(uuidString: projectID) != nil,
+              projectID.lowercased() != unconfiguredStackProjectID,
+              let clientKey = configuredString(
+                  environment: environment,
+                  environmentKey: "CMUX_STACK_PUBLISHABLE_CLIENT_KEY",
+                  infoDictionary: infoDictionary,
+                  infoKey: "UniConnectStackPublishableClientKey"
+              ), clientKey != unconfiguredStackPublishableClientKey,
+              !clientKey.lowercased().contains("unconfigured"),
+              let authWebsiteOrigin = configuredHostedURL(
+                  environment: environment,
+                  environmentKey: "CMUX_AUTH_WWW_ORIGIN",
+                  infoDictionary: infoDictionary,
+                  infoKey: "UniConnectAuthWebsiteOrigin",
+                  allowsInsecureLoopback: allowsInsecureLoopback
+              ),
+              let apiBaseURL = configuredHostedURL(
+                  environment: environment,
+                  environmentKey: "CMUX_API_BASE_URL",
+                  infoDictionary: infoDictionary,
+                  infoKey: "UniConnectAPIBaseURL",
+                  allowsInsecureLoopback: allowsInsecureLoopback
+              ),
+              let vmAPIBaseURL = configuredHostedURL(
+                  environment: environment,
+                  environmentKey: "CMUX_VM_API_BASE_URL",
+                  infoDictionary: infoDictionary,
+                  infoKey: "UniConnectVMAPIBaseURL",
+                  allowsInsecureLoopback: allowsInsecureLoopback
+              ) else {
+            return nil
+        }
+
+        let stackBaseURL: URL
+        if let configuredStackURL = configuredString(
+            environment: environment,
+            environmentKey: "CMUX_STACK_BASE_URL",
+            infoDictionary: infoDictionary,
+            infoKey: "UniConnectStackBaseURL"
+        ) {
+            guard let resolved = validatedServiceURL(
+                configuredStackURL,
+                allowsInsecureLoopback: allowsInsecureLoopback,
+                rejectsNonOwnedProductHosts: false
+            ) else {
+                return nil
+            }
+            stackBaseURL = resolved
+        } else {
+            stackBaseURL = URL(string: "https://api.stack-auth.com")!
+        }
+
+        return HostedServicesConfiguration(
+            stackProjectID: projectID,
+            stackPublishableClientKey: clientKey,
+            stackBaseURL: stackBaseURL,
+            authWebsiteOrigin: authWebsiteOrigin,
+            apiBaseURL: apiBaseURL,
+            vmAPIBaseURL: vmAPIBaseURL
+        )
+    }
+
+    private static var allowsInsecureLoopbackHostedServices: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
+    }
 
     static var callbackScheme: String {
         let environment = ProcessInfo.processInfo.environment
@@ -14,14 +131,14 @@ enum AuthEnvironment {
             return overridden
         }
         #if DEBUG
-        // Debug and tagged dev builds register cmux-dev:// so they can coexist
+        // Debug and tagged dev builds register uniconnect-dev:// so they can coexist
         // with the installed stable app.
-        return "cmux-dev"
+        return "uniconnect-dev"
         #else
         if Bundle.main.bundleIdentifier == "com.unixcision.uniconnect.nightly" {
-            return "cmux-nightly"
+            return "uniconnect-nightly"
         }
-        return "cmux"
+        return "uniconnect"
         #endif
     }
 
@@ -29,172 +146,10 @@ enum AuthEnvironment {
         URL(string: "\(callbackScheme)://auth-callback")!
     }
 
-    static var websiteOrigin: URL {
-        resolvedURL(
-            environmentKey: "CMUX_WWW_ORIGIN",
-            fallback: "https://github.com/Unixcision/uniconnect"
-        )
-    }
-
-    static var signInWebsiteOrigin: URL {
-        canonicalizedLoopbackURL(
-            resolvedURL(
-                environmentKey: "CMUX_AUTH_WWW_ORIGIN",
-                fallback: defaultWebOrigin
-            )
-        )
-    }
-
-    static var apiBaseURL: URL {
-        canonicalizedLoopbackURL(
-            resolvedURL(
-                environmentKey: "CMUX_API_BASE_URL",
-                fallback: defaultAPIBaseURL
-            )
-        )
-    }
-
-    /// Base URL for the cmux-owned cloud VM backend (`/api/vm`).
-    ///
-    /// Resolution order (first hit wins):
-    ///   1. process env `CMUX_VM_API_BASE_URL` — works when the app is launched from a shell.
-    ///   2. `~/.cmux-dev.env` file `CMUX_VM_API_BASE_URL=...` line — works regardless of how
-    ///      the app was launched (click-through, Dock, `open`, etc.). Only honored in DEBUG.
-    ///   3. VM backend dev origin (`http://localhost:$CMUX_PORT` in Debug, cmux.com in Release).
-    static var vmAPIBaseURL: URL {
-        if let overridden = ProcessInfo.processInfo.environment["CMUX_VM_API_BASE_URL"]?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !overridden.isEmpty,
-           let url = URL(string: overridden) {
-            return canonicalizedLoopbackURL(url)
-        }
-        if let override = devOverride(key: "CMUX_VM_API_BASE_URL"),
-           let url = URL(string: override) {
-            return canonicalizedLoopbackURL(url)
-        }
-        return canonicalizedLoopbackURL(URL(string: defaultVMAPIOrigin)!)
-    }
-
-    /// Look up `key=value` in `~/.cmux-dev.env` for the DEBUG build. Returns nil in Release.
-    /// Kept tiny on purpose — this is a "drop a file, restart the app, it picks up" override,
-    /// not a real config system.
-    private static func devOverride(key: String) -> String? {
-        #if DEBUG
-        guard let home = ProcessInfo.processInfo.environment["HOME"] else { return nil }
-        let path = (home as NSString).appendingPathComponent(".cmux-dev.env")
-        guard let data = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
-        for raw in data.split(separator: "\n") {
-            let line = raw.trimmingCharacters(in: .whitespaces)
-            guard !line.hasPrefix("#"), let eq = line.firstIndex(of: "=") else { continue }
-            let k = String(line[..<eq]).trimmingCharacters(in: .whitespaces)
-            guard k == key else { continue }
-            var v = String(line[line.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
-            if v.hasPrefix("\"") && v.hasSuffix("\"") { v = String(v.dropFirst().dropLast()) }
-            if v.hasPrefix("'") && v.hasSuffix("'") { v = String(v.dropFirst().dropLast()) }
-            return v.isEmpty ? nil : v
-        }
-        return nil
-        #else
-        return nil
-        #endif
-    }
-
-    private static var cmuxPort: String {
-        environmentPort("CMUX_PORT") ?? environmentPort("PORT") ?? "3777"
-    }
-
-    private static func environmentPort(_ key: String) -> String? {
-        guard let port = ProcessInfo.processInfo.environment[key]?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-            let value = UInt16(port),
-            value > 0
-        else {
-            return nil
-        }
-        return port
-    }
-
-    private static var defaultWebOrigin: String {
-        if let origin = ProcessInfo.processInfo.environment["CMUX_WWW_ORIGIN"]?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !origin.isEmpty {
-            return origin
-        }
-        #if DEBUG
-        return "http://localhost:\(cmuxPort)"
-        #else
-        return "https://github.com/Unixcision/uniconnect"
-        #endif
-    }
-
-    private static var defaultVMAPIOrigin: String {
-        #if DEBUG
-        return "http://localhost:\(cmuxPort)"
-        #else
-        return "https://github.com/Unixcision/uniconnect"
-        #endif
-    }
-
-    private static var defaultAPIBaseURL: String {
-        if let url = ProcessInfo.processInfo.environment["CMUX_API_BASE_URL"]?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !url.isEmpty {
-            return url
-        }
-        #if DEBUG
-        return "http://localhost:\(cmuxPort)"
-        #else
-        return "https://github.com/Unixcision/uniconnect"
-        #endif
-    }
-
-    static var stackBaseURL: URL {
-        resolvedURL(
-            environmentKey: "CMUX_STACK_BASE_URL",
-            fallback: "https://api.stack-auth.com"
-        )
-    }
-
-    static var stackProjectID: String {
-        let environment = ProcessInfo.processInfo.environment
-        if let projectID = environment["CMUX_STACK_PROJECT_ID"]?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !projectID.isEmpty {
-            return projectID
-        }
-        #if DEBUG
-        return developmentStackProjectID
-        #else
-        return productionStackProjectID
-        #endif
-    }
-
-    static var stackPublishableClientKey: String {
-        let environment = ProcessInfo.processInfo.environment
-        if let clientKey = environment["CMUX_STACK_PUBLISHABLE_CLIENT_KEY"]?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !clientKey.isEmpty {
-            return clientKey
-        }
-        #if DEBUG
-        return developmentStackPublishableClientKey
-        #else
-        return productionStackPublishableClientKey
-        #endif
-    }
-
-    /// The website origin used for the after-sign-in handler.
-    static var afterSignInOrigin: URL {
-        resolvedURL(
-            environmentKey: "CMUX_AUTH_WWW_ORIGIN",
-            fallback: defaultWebOrigin
-        )
-    }
-
-    static func signInURL() -> URL {
+    static func signInURL(afterSignInOrigin: URL) -> URL {
         // Build the after-sign-in callback URL that includes the native app return scheme.
         // The after-sign-in handler extracts tokens from the Stack Auth session
-        // and redirects to the native app via the cmux:// callback scheme.
+        // and redirects to the native app via the uniconnect:// callback scheme.
         var afterSignInComponents = URLComponents(
             url: afterSignInOrigin.appendingPathComponent("handler/after-sign-in", isDirectory: false),
             resolvingAgainstBaseURL: false
@@ -221,15 +176,112 @@ enum AuthEnvironment {
         return components.url!
     }
 
-    private static func resolvedURL(environmentKey: String, fallback: String) -> URL {
-        let environment = ProcessInfo.processInfo.environment
-        if let overridden = environment[environmentKey]?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !overridden.isEmpty,
-           let url = URL(string: overridden) {
-            return url
+    private static func configuredString(
+        environment: [String: String],
+        environmentKey: String,
+        infoDictionary: [String: Any],
+        infoKey: String
+    ) -> String? {
+        let raw = environment[environmentKey] ?? stringValue(infoDictionary[infoKey])
+        guard let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            return nil
         }
-        return URL(string: fallback)!
+        return value
+    }
+
+    private static func configuredHostedURL(
+        environment: [String: String],
+        environmentKey: String,
+        infoDictionary: [String: Any],
+        infoKey: String,
+        allowsInsecureLoopback: Bool
+    ) -> URL? {
+        guard let raw = configuredString(
+            environment: environment,
+            environmentKey: environmentKey,
+            infoDictionary: infoDictionary,
+            infoKey: infoKey
+        ) else {
+            return nil
+        }
+        return validatedServiceURL(
+            raw,
+            allowsInsecureLoopback: allowsInsecureLoopback,
+            rejectsNonOwnedProductHosts: true
+        )
+    }
+
+    private static func validatedServiceURL(
+        _ raw: String,
+        allowsInsecureLoopback: Bool,
+        rejectsNonOwnedProductHosts: Bool
+    ) -> URL? {
+        guard let url = URL(string: raw),
+              let scheme = url.scheme?.lowercased(),
+              let host = url.host?.lowercased(),
+              url.user == nil,
+              url.password == nil,
+              url.query == nil,
+              url.path.isEmpty || url.path == "/",
+              url.fragment == nil else {
+            return nil
+        }
+        let loopbackHosts = Set(["localhost", "127.0.0.1", "::1", "[::1]"])
+        let transportIsAllowed = scheme == "https"
+            || (allowsInsecureLoopback && scheme == "http" && loopbackHosts.contains(host))
+        guard transportIsAllowed else { return nil }
+
+        if rejectsNonOwnedProductHosts {
+            let rejectedHosts = Set([
+                "github.com",
+                "www.github.com",
+                "github.io",
+                "cmux.com",
+                "www.cmux.com",
+                "cmux.dev",
+                "www.cmux.dev",
+                "manaflow.com",
+                "www.manaflow.com",
+                "manaflow.ai",
+                "www.manaflow.ai",
+                "uniconnect.invalid",
+            ])
+            let rejectedSuffixes = [
+                ".github.com",
+                ".github.io",
+                ".cmux.com",
+                ".cmux.dev",
+                ".manaflow.com",
+                ".manaflow.ai",
+                ".invalid",
+            ]
+            guard !rejectedHosts.contains(host),
+                  !rejectedSuffixes.contains(where: host.hasSuffix) else {
+                return nil
+            }
+        }
+        return canonicalizedLoopbackURL(url)
+    }
+
+    private static func explicitlyEnabled(_ raw: String?) -> Bool {
+        switch raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "1", "true", "yes", "on": true
+        default: false
+        }
+    }
+
+    private static func stringValue(_ value: Any?) -> String? {
+        switch value {
+        case let value as String:
+            return value
+        case let value as Bool:
+            return value ? "true" : "false"
+        case let value as NSNumber:
+            return value.boolValue ? "true" : "false"
+        default:
+            return nil
+        }
     }
 
     private static func canonicalizedLoopbackURL(_ url: URL) -> URL {

@@ -294,7 +294,7 @@ extension Workspace {
 }
 
 extension Notification.Name {
-    static let commandPaletteVisibilityDidChange = Notification.Name("cmux.commandPaletteVisibilityDidChange")
+    static let commandPaletteVisibilityDidChange = Notification.Name("uniconnect.commandPaletteVisibilityDidChange")
 }
 
 func postCommandPaletteVisibilityDidChangeIfNeeded(

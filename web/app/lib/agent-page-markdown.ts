@@ -233,7 +233,7 @@ function cleanPlainTextBlock(text: string): string {
 
 function cleanDocumentTitle(text: string): string {
   return cleanPlainText(text)
-    .replace(/\s+(?:\||-|\u2013|\u2014)\s+cmux$/i, "")
+    .replace(/\s+(?:\||-|\u2013|\u2014)\s+(?:UniConnect|cmux)$/i, "")
     .trim();
 }
 

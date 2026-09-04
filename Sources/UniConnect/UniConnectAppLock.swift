@@ -24,7 +24,7 @@ struct UniConnectLocalAuthenticator: UniConnectAuthenticating {
     }
     func evaluate(_ policy: LAPolicy, reason: String, completion: @escaping (Bool, Error?) -> Void) {
         let context = LAContext()
-        context.localizedCancelTitle = "Cancelar"
+        context.localizedCancelTitle = String(localized: "common.cancel", defaultValue: "Cancel")
         context.localizedFallbackTitle = ""
         context.evaluatePolicy(policy, localizedReason: reason, reply: completion)
     }
@@ -135,17 +135,26 @@ final class UniConnectAppLock: ObservableObject {
         let (canEvaluate, _) = authenticator.canEvaluate(policy)
         guard canEvaluate else {
             isAuthenticating = false
-            lastError = "No hay ningún método de autenticación disponible."
+            lastError = String(
+                localized: "uniconnect.lock.error.authenticationUnavailable",
+                defaultValue: "No authentication method is available."
+            )
             return
         }
-        authenticator.evaluate(policy, reason: "Desbloquear UniConnect") { [weak self] success, evalError in
+        authenticator.evaluate(
+            policy,
+            reason: String(localized: "uniconnect.lock.reason.unlock", defaultValue: "Unlock UniConnect")
+        ) { [weak self] success, evalError in
             Task { @MainActor in
                 guard let self else { return }
                 self.isAuthenticating = false
                 if success {
                     self.unlock()
                 } else {
-                    self.lastError = evalError?.localizedDescription ?? "Huella no reconocida"
+                    self.lastError = evalError?.localizedDescription ?? String(
+                        localized: "uniconnect.lock.error.fingerprintNotRecognized",
+                        defaultValue: "Fingerprint not recognized"
+                    )
                 }
             }
         }
@@ -229,7 +238,11 @@ struct UniConnectLockView: View {
             Text("UniConnect")
                 .font(.system(size: 44, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
-            Text(lock.isAuthenticating ? "Pon el dedo en el sensor…" : "Bloqueado. Toca para desbloquear con Touch ID.")
+            Text(
+                lock.isAuthenticating
+                    ? String(localized: "uniconnect.lock.authenticating", defaultValue: "Place your finger on the sensor…")
+                    : String(localized: "uniconnect.lock.locked", defaultValue: "Locked. Tap to unlock with Touch ID.")
+            )
                 .font(.system(size: 20, weight: .medium, design: .rounded))
                 .foregroundStyle(.white.opacity(0.75))
             if let error = lock.lastError {
@@ -243,7 +256,10 @@ struct UniConnectLockView: View {
                 Button {
                     lock.authenticate()
                 } label: {
-                    Label("Desbloquear", systemImage: "touchid")
+                    Label(
+                        String(localized: "uniconnect.lock.action.unlock", defaultValue: "Unlock"),
+                        systemImage: "touchid"
+                    )
                         .font(.system(size: 17, weight: .semibold, design: .rounded))
                         .padding(.horizontal, 22)
                         .padding(.vertical, 10)
@@ -256,7 +272,7 @@ struct UniConnectLockView: View {
                 Button {
                     NSApp.terminate(nil)
                 } label: {
-                    Text("Salir")
+                    Text(String(localized: "uniconnect.lock.action.quit", defaultValue: "Quit"))
                         .font(.system(size: 17, weight: .medium, design: .rounded))
                         .padding(.horizontal, 18)
                         .padding(.vertical, 10)
@@ -264,7 +280,10 @@ struct UniConnectLockView: View {
                 .buttonStyle(.bordered)
             }
             Spacer()
-            Text("Las cajas SSH y sus tmux siguen vivos mientras la app está bloqueada.")
+            Text(String(
+                localized: "uniconnect.lock.sessionsKeepRunning",
+                defaultValue: "SSH boxes and their tmux sessions keep running while the app is locked."
+            ))
                 .font(.system(size: 13, design: .rounded))
                 .foregroundStyle(.white.opacity(0.4))
                 .padding(.bottom, 40)
@@ -283,10 +302,26 @@ enum UniConnectAuthPolicy {
         if biometricsAvailable { return (.deviceOwnerAuthenticationWithBiometrics, nil) }
         let reason: String
         switch errorCode {
-        case .biometryLockout?: reason = "Touch ID bloqueado por demasiados intentos: se pide la contraseña del Mac."
-        case .biometryNotEnrolled?: reason = "No hay huellas registradas: se pide la contraseña del Mac."
-        case .biometryNotAvailable?: reason = "Este Mac no tiene Touch ID: se pide la contraseña del Mac."
-        default: reason = "Touch ID no disponible: se pide la contraseña del Mac."
+        case .biometryLockout?:
+            reason = String(
+                localized: "uniconnect.lock.fallback.lockout",
+                defaultValue: "Touch ID is locked after too many attempts. Enter your Mac password."
+            )
+        case .biometryNotEnrolled?:
+            reason = String(
+                localized: "uniconnect.lock.fallback.notEnrolled",
+                defaultValue: "No fingerprints are enrolled. Enter your Mac password."
+            )
+        case .biometryNotAvailable?:
+            reason = String(
+                localized: "uniconnect.lock.fallback.notAvailable",
+                defaultValue: "This Mac does not have Touch ID. Enter your Mac password."
+            )
+        default:
+            reason = String(
+                localized: "uniconnect.lock.fallback.unavailable",
+                defaultValue: "Touch ID is unavailable. Enter your Mac password."
+            )
         }
         return (.deviceOwnerAuthentication, reason)
     }

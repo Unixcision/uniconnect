@@ -234,7 +234,7 @@ final class TerminalOutputCollector {
     let store = CMUXMobileShellStore.preview()
 
     store.signIn()
-    store.pairingCode = "cmux-ios://attach?v=1&payload=invalid"
+    store.pairingCode = "uniconnect://attach?v=1&payload=invalid"
     store.connectPreviewHost()
     await Task.yield()
 
@@ -256,7 +256,7 @@ final class TerminalOutputCollector {
       "transport": "debug_loopback"
     }
     """
-    let url = try #require(URL(string: "cmux-ios://pair?v=1&payload=\(base64URLEncode(Data(json.utf8)))"))
+    let url = try #require(URL(string: "uniconnect://pair?v=1&payload=\(base64URLEncode(Data(json.utf8)))"))
     let store = CMUXMobileShellStore.preview()
 
     store.signIn()
@@ -1900,7 +1900,7 @@ private func attachURL(for ticket: CmxAttachTicket) throws -> URL {
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
     let payload = base64URLEncode(try encoder.encode(ticket))
-    return try #require(URL(string: "cmux-ios://attach?v=\(ticket.version)&payload=\(payload)"))
+    return try #require(URL(string: "uniconnect://attach?v=\(ticket.version)&payload=\(payload)"))
 }
 
 private func base64URLEncode(_ data: Data) -> String {

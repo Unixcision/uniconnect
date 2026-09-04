@@ -1,12 +1,12 @@
 public import CMUXMobileCore
 import Foundation
 
-/// Decodes a scanned or pasted `cmux-ios://` pairing/attach URL into a
+/// Decodes a scanned or pasted `uniconnect://` pairing/attach URL into a
 /// validated ``CmxAttachTicket``.
 public struct CmxAttachTicketInput {
     private init() {}
 
-    /// Decode and validate a `cmux-ios://pair` or `cmux-ios://attach` URL.
+    /// Decode and validate a `uniconnect://pair` or `uniconnect://attach` URL.
     /// - Parameter rawValue: The scanned/pasted URL string.
     /// - Returns: A validated attach ticket.
     /// - Throws: `MobileSyncPairingPayloadError.invalidURL` or any ticket
@@ -15,10 +15,10 @@ public struct CmxAttachTicketInput {
         guard let url = URL(string: rawValue) else {
             throw MobileSyncPairingPayloadError.invalidURL
         }
-        if url.scheme == "cmux-ios", url.host == "pair" {
+        if url.scheme == "uniconnect", url.host == "pair" {
             return try ticket(from: MobileSyncPairingPayload.decodeURL(url))
         }
-        guard url.scheme == "cmux-ios",
+        guard url.scheme == "uniconnect",
               url.host == "attach",
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let encodedPayload = components.queryItems?.first(where: { $0.name == "payload" })?.value,

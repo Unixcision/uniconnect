@@ -1,56 +1,93 @@
 import Foundation
 
-/// Resolves which Sparkle appcast feed URL the updater should use, given the URL baked
-/// into the app's `Info.plist` at build time.
+/// Validates the Sparkle appcast URL embedded in the host application's `Info.plist`.
 ///
-/// Stable releases ship with the stable appcast URL and `cmux NIGHTLY` has the nightly
-/// appcast URL injected by CI. When the `Info.plist` value is missing or empty the resolver
-/// falls back to the latest-release appcast so the updater still has a feed to query.
+/// UniConnect source and local-development builds intentionally ship without an active feed.
+/// Only the exact Unixcision stable and nightly HTTPS appcasts are accepted by default, so a
+/// missing, placeholder, malformed, or inherited upstream value leaves Sparkle disabled.
 ///
 /// ```swift
-/// let resolver = UpdateFeedResolver()
-/// let resolution = resolver.resolve(infoFeedURL: Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String)
-/// updater.setFeedURL(resolution.url)
+/// let resolution = UpdateFeedResolver().resolve(
+///     infoFeedURL: Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
+/// )
+/// if let feedURL = resolution.url {
+///     // The signed release may start Sparkle with this validated URL.
+/// }
 /// ```
 public struct UpdateFeedResolver: Sendable {
-    /// The outcome of resolving a feed URL: the URL to use plus how it was classified.
+    /// The result of validating a build-time appcast setting.
     public struct Resolution: Equatable, Sendable {
-        /// The feed URL the updater should query.
-        public let url: String
-        /// Whether `url` points at the nightly channel (its path contains `/nightly/`).
+        /// The validated feed URL, or `nil` when software updates must remain disabled.
+        public let url: String?
+        /// Whether ``url`` is the Unixcision nightly appcast.
         public let isNightly: Bool
-        /// Whether `url` came from ``UpdateFeedResolver/fallbackFeedURL`` because the
-        /// `Info.plist` feed URL was missing or empty.
-        public let usedFallback: Bool
+        /// Whether a non-placeholder URL was present but rejected by the allowlist.
+        public let rejectedConfiguredURL: Bool
 
-        /// Creates a resolution result.
-        public init(url: String, isNightly: Bool, usedFallback: Bool) {
+        /// Whether this resolution authorizes Sparkle to start.
+        public var isEnabled: Bool { url != nil }
+
+        /// Creates a feed resolution.
+        ///
+        /// - Parameters:
+        ///   - url: A validated appcast URL, or `nil` to disable updates.
+        ///   - isNightly: Whether the URL belongs to the nightly channel.
+        ///   - rejectedConfiguredURL: Whether an explicitly configured URL failed validation.
+        public init(url: String?, isNightly: Bool, rejectedConfiguredURL: Bool) {
             self.url = url
             self.isNightly = isNightly
-            self.usedFallback = usedFallback
+            self.rejectedConfiguredURL = rejectedConfiguredURL
         }
     }
 
-    /// The appcast URL used when the `Info.plist` feed URL is missing or empty.
-    public let fallbackFeedURL: String
+    /// The stable appcast injected into signed UniConnect releases.
+    public static let stableFeedURL =
+        "https://github.com/Unixcision/uniconnect/releases/latest/download/appcast.xml"
 
-    /// Creates a resolver.
+    /// The appcast injected into signed UniConnect nightly builds.
+    public static let nightlyFeedURL =
+        "https://github.com/Unixcision/uniconnect/releases/download/nightly/appcast.xml"
+
+    /// Exact feed URLs accepted by this resolver.
+    public let allowedFeedURLs: Set<String>
+
+    /// Creates a resolver with an explicit URL allowlist.
     ///
-    /// - Parameter fallbackFeedURL: The appcast URL to fall back to when the build-time
-    ///   feed URL is absent. Defaults to the project's latest-release appcast.
-    public init(fallbackFeedURL: String = "https://github.com/manaflow-ai/cmux/releases/latest/download/appcast.xml") {
-        self.fallbackFeedURL = fallbackFeedURL
+    /// - Parameter allowedFeedURLs: Exact HTTPS appcast URLs that may enable Sparkle. Defaults
+    ///   to the Unixcision stable and nightly release feeds.
+    public init(allowedFeedURLs: Set<String> = [Self.stableFeedURL, Self.nightlyFeedURL]) {
+        self.allowedFeedURLs = allowedFeedURLs
     }
 
-    /// Resolves the feed URL to use.
+    /// Validates the appcast value embedded in the application bundle.
     ///
-    /// - Parameter infoFeedURL: The `SUFeedURL` value from the app's `Info.plist`, if any.
-    /// - Returns: The resolved URL plus whether it is the nightly channel and whether the
-    ///   fallback was used.
+    /// Empty values and the source-build `about:blank` placeholder intentionally resolve to a
+    /// disabled updater. Every other value must exactly match the allowlist.
+    ///
+    /// - Parameter infoFeedURL: The build's `SUFeedURL` value, if present.
+    /// - Returns: A resolution containing a URL only when Sparkle may safely start.
     public func resolve(infoFeedURL: String?) -> Resolution {
-        guard let infoFeedURL, !infoFeedURL.isEmpty else {
-            return Resolution(url: fallbackFeedURL, isNightly: false, usedFallback: true)
+        let candidate = infoFeedURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !candidate.isEmpty, candidate.lowercased() != "about:blank" else {
+            return Resolution(url: nil, isNightly: false, rejectedConfiguredURL: false)
         }
-        return Resolution(url: infoFeedURL, isNightly: infoFeedURL.contains("/nightly/"), usedFallback: false)
+
+        guard allowedFeedURLs.contains(candidate),
+              let components = URLComponents(string: candidate),
+              components.scheme?.lowercased() == "https",
+              components.host?.lowercased() == "github.com",
+              components.user == nil,
+              components.password == nil,
+              components.port == nil,
+              components.query == nil,
+              components.fragment == nil else {
+            return Resolution(url: nil, isNightly: false, rejectedConfiguredURL: true)
+        }
+
+        return Resolution(
+            url: candidate,
+            isNightly: candidate == Self.nightlyFeedURL,
+            rejectedConfiguredURL: false
+        )
     }
 }

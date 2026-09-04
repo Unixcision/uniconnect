@@ -1,4 +1,4 @@
-/// A stable, credential-free identity used to group targets that share one Claude installation.
+/// A stable, credential-free identity for one local machine or remote endpoint.
 public struct ClaudeUpdateHostIdentity: Sendable, Codable {
     /// The host location.
     public let kind: ClaudeUpdateHostKind
@@ -12,7 +12,8 @@ public struct ClaudeUpdateHostIdentity: Sendable, Codable {
     /// Creates a host identity.
     ///
     /// Remote identifiers must incorporate both the normalized endpoint and credential-record ID,
-    /// but never a username password, token, raw SSH command, or environment value.
+    /// but never a username, password, token, raw SSH command, or environment value. Installation
+    /// identity is modeled separately by ``ClaudeUpdateHostPlanID``.
     ///
     /// - Parameters:
     ///   - kind: Whether this is the local Mac or a remote host.

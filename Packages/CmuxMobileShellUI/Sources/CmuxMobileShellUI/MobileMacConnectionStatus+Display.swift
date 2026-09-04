@@ -23,7 +23,7 @@ extension MobileMacConnectionStatus {
         case .reconnecting:
             return L10n.string("mobile.connection.reconnectingDescription", defaultValue: "Trying to reach the Mac app.")
         case .unavailable:
-            return L10n.string("mobile.connection.unavailableDescription", defaultValue: "Open cmux on the Mac or wake the computer.")
+            return L10n.string("mobile.connection.unavailableDescription", defaultValue: "Open UniConnect on the Mac or wake the computer.")
         }
     }
 

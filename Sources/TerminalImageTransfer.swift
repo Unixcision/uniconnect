@@ -13,6 +13,7 @@ enum TerminalRemoteUploadTarget: Equatable {
 }
 
 enum TerminalImageTransferUnavailableReason: Equatable {
+    case detachedWindow
     case disconnectedSSHWindow
     case disconnectedRemoteSession
     case missingSSHConnectCommand
@@ -22,6 +23,11 @@ enum TerminalImageTransferUnavailableReason: Equatable {
 
     var localizedDescription: String {
         switch self {
+        case .detachedWindow:
+            return String(
+                localized: "terminal.imageTransfer.error.detachedWindow",
+                defaultValue: "This window is no longer attached to a box. Open or restore the window, then try again."
+            )
         case .disconnectedSSHWindow:
             return String(
                 localized: "terminal.imageTransfer.error.disconnectedSSHWindow",
@@ -73,13 +79,40 @@ enum TerminalImageTransferPlan: Equatable {
         TerminalRemoteUploadTarget,
         interSegmentDelay: TimeInterval?
     )
+    case uploadFilesWithLeadingText(
+        String,
+        [URL],
+        TerminalRemoteUploadTarget,
+        interSegmentDelay: TimeInterval?
+    )
     case unavailable(TerminalImageTransferUnavailableReason)
     case reject
+
+    var remoteUploadTarget: TerminalRemoteUploadTarget? {
+        switch self {
+        case .uploadFiles(_, let target, _),
+             .uploadFilesWithLeadingText(_, _, let target, _):
+            return target
+        case .insertText, .insertTextSegments, .unavailable, .reject:
+            return nil
+        }
+    }
+
+    var uploadedFileURLs: [URL]? {
+        switch self {
+        case .uploadFiles(let URLs, _, _),
+             .uploadFilesWithLeadingText(_, let URLs, _, _):
+            return URLs
+        case .insertText, .insertTextSegments, .unavailable, .reject:
+            return nil
+        }
+    }
 }
 
 enum TerminalImageTransferPreparedContent: Equatable {
     case insertText(String)
     case fileURLs([URL])
+    case textAndFileURLs(String, [URL])
     case reject
 }
 
@@ -169,6 +202,23 @@ extension TerminalImageTransferExecutionError: LocalizedError {
 }
 
 final class TerminalImageTransferOperation: @unchecked Sendable {
+    struct ProgressSnapshot: Equatable, Sendable {
+        enum Phase: Equatable, Sendable {
+            case preparing
+            case uploading
+            case finalizing
+        }
+
+        let phase: Phase
+        let completedBytes: Int64
+        let totalBytes: Int64
+
+        var fractionCompleted: Double? {
+            guard phase == .uploading, totalBytes > 0 else { return nil }
+            return min(1, max(0, Double(completedBytes) / Double(totalBytes)))
+        }
+    }
+
     private enum State {
         case running
         case cancelled
@@ -179,6 +229,14 @@ final class TerminalImageTransferOperation: @unchecked Sendable {
     private var state: State = .running
     private var cancellationHandler: (() -> Void)?
     private var cancellationCleanupHandler: (() -> Void)?
+    private var progressSnapshot = ProgressSnapshot(
+        phase: .preparing,
+        completedBytes: 0,
+        totalBytes: 0
+    )
+    private var progressHandler: ((ProgressSnapshot) -> Void)?
+    private var progressHandlerGeneration: UInt64 = 0
+    private var progressRevision: UInt64 = 0
 
     var isCancelled: Bool {
         lock.lock()
@@ -210,6 +268,100 @@ final class TerminalImageTransferOperation: @unchecked Sendable {
             cancellationHandler = nil
         }
         lock.unlock()
+    }
+
+    /// Starts byte-accurate upload reporting for the complete transfer batch.
+    func beginUpload(totalBytes: Int64) {
+        updateProgress(
+            ProgressSnapshot(
+                phase: .uploading,
+                completedBytes: 0,
+                totalBytes: max(0, totalBytes)
+            )
+        )
+    }
+
+    /// Reports aggregate bytes delivered to the SSH transport across all files.
+    func reportUploadedBytes(_ completedBytes: Int64, totalBytes: Int64) {
+        let safeTotal = max(0, totalBytes)
+        updateProgress(
+            ProgressSnapshot(
+                phase: .uploading,
+                completedBytes: min(safeTotal, max(0, completedBytes)),
+                totalBytes: safeTotal
+            )
+        )
+    }
+
+    /// Marks the interval after all local bytes have been written while the remote
+    /// transport is still acknowledging and committing the file.
+    func beginFinalizing() {
+        let snapshot: ProgressSnapshot
+        lock.lock()
+        snapshot = ProgressSnapshot(
+            phase: .finalizing,
+            completedBytes: progressSnapshot.completedBytes,
+            totalBytes: progressSnapshot.totalBytes
+        )
+        lock.unlock()
+        updateProgress(snapshot)
+    }
+
+    /// Installs the single presentation observer and immediately supplies current state.
+    func installProgressHandler(_ handler: @escaping (ProgressSnapshot) -> Void) {
+        let snapshot: ProgressSnapshot
+        let generation: UInt64
+        let revision: UInt64
+        lock.lock()
+        progressHandlerGeneration &+= 1
+        progressHandler = handler
+        snapshot = progressSnapshot
+        generation = progressHandlerGeneration
+        revision = progressRevision
+        lock.unlock()
+        deliverProgress(snapshot, generation: generation, revision: revision)
+    }
+
+    func clearProgressHandler() {
+        lock.lock()
+        progressHandlerGeneration &+= 1
+        progressHandler = nil
+        lock.unlock()
+    }
+
+    private func updateProgress(_ snapshot: ProgressSnapshot) {
+        let generation: UInt64
+        let revision: UInt64
+        lock.lock()
+        guard state == .running else {
+            lock.unlock()
+            return
+        }
+        progressSnapshot = snapshot
+        progressRevision &+= 1
+        generation = progressHandlerGeneration
+        revision = progressRevision
+        lock.unlock()
+        deliverProgress(snapshot, generation: generation, revision: revision)
+    }
+
+    /// Drops stale callbacks when installation races a newer progress update.
+    private func deliverProgress(
+        _ snapshot: ProgressSnapshot,
+        generation: UInt64,
+        revision: UInt64
+    ) {
+        let handler: ((ProgressSnapshot) -> Void)?
+        lock.lock()
+        guard state == .running,
+              progressHandlerGeneration == generation,
+              progressRevision == revision else {
+            lock.unlock()
+            return
+        }
+        handler = progressHandler
+        lock.unlock()
+        handler?(snapshot)
     }
 
     /// Installs cleanup for remote files that exist but have not all been delivered yet.
@@ -252,6 +404,8 @@ final class TerminalImageTransferOperation: @unchecked Sendable {
         cleanupHandler = cancellationCleanupHandler
         cancellationHandler = nil
         cancellationCleanupHandler = nil
+        progressHandlerGeneration &+= 1
+        progressHandler = nil
         lock.unlock()
 
         handler?()
@@ -267,6 +421,8 @@ final class TerminalImageTransferOperation: @unchecked Sendable {
         state = .finished
         cancellationHandler = nil
         cancellationCleanupHandler = nil
+        progressHandlerGeneration &+= 1
+        progressHandler = nil
         return true
     }
 
@@ -280,7 +436,7 @@ final class TerminalImageTransferOperation: @unchecked Sendable {
 enum TerminalImageTransferPlanner {
     enum PathOrigin {
         case localFileSystem([URL])
-        case remoteSession
+        case remoteSession(workspaceID: UUID)
     }
 
     private static let imageInterSegmentDelay: TimeInterval = 2.0
@@ -306,7 +462,7 @@ enum TerminalImageTransferPlanner {
         switch preparedContent {
         case .insertText, .reject:
             return plan(preparedContent: preparedContent, target: .local, mode: mode)
-        case .fileURLs:
+        case .fileURLs, .textAndFileURLs:
             return plan(preparedContent: preparedContent, target: resolveTarget(), mode: mode)
         }
     }
@@ -333,6 +489,27 @@ enum TerminalImageTransferPlanner {
             return .insertText(text)
         case .fileURLs(let fileURLs):
             return plan(fileURLs: fileURLs, target: target, mode: mode)
+        case .textAndFileURLs(let text, let fileURLs):
+            let filePlan = plan(fileURLs: fileURLs, target: target, mode: mode)
+            switch filePlan {
+            case .insertText(let paths):
+                return .insertText(join(text: text, paths: paths))
+            case .insertTextSegments(let segments, _):
+                return .insertText(join(text: text, paths: segments.joined()))
+            case .uploadFiles(let URLs, let remoteTarget, let delay):
+                return .uploadFilesWithLeadingText(
+                    text,
+                    URLs,
+                    remoteTarget,
+                    interSegmentDelay: delay
+                )
+            case .unavailable(let reason):
+                return .unavailable(reason)
+            case .reject:
+                return .reject
+            case .uploadFilesWithLeadingText:
+                preconditionFailure("nested mixed image transfer plan")
+            }
         case .reject:
             return .reject
         }
@@ -379,7 +556,8 @@ enum TerminalImageTransferPlanner {
     static func planPathInsertion(
         paths: [String],
         origin: PathOrigin,
-        target: TerminalImageTransferTarget
+        target: TerminalImageTransferTarget,
+        targetWorkspaceID: UUID? = nil
     ) -> TerminalImageTransferPlan {
         guard !paths.isEmpty else { return .reject }
 
@@ -392,9 +570,10 @@ enum TerminalImageTransferPlanner {
             return .insertText(insertedText(forPathStrings: paths))
         case (.localFileSystem(let fileURLs), .remote):
             return plan(fileURLs: fileURLs, target: target, mode: .paste)
-        case (.remoteSession, .remote):
+        case (.remoteSession(let sourceWorkspaceID), .remote)
+            where sourceWorkspaceID == targetWorkspaceID:
             return .insertText(insertedText(forPathStrings: paths))
-        case (.remoteSession, .local):
+        case (.remoteSession, .remote), (.remoteSession, .local):
             return .unavailable(.mismatchedFileExplorerSession)
         case (_, .unavailable):
             preconditionFailure("unavailable targets are handled before path-origin planning")
@@ -481,6 +660,7 @@ enum TerminalImageTransferPlanner {
                 finishUpload(
                     result: result,
                     sourceFileURLs: fileURLs,
+                    leadingText: nil,
                     interSegmentDelay: interSegmentDelay,
                     operation: operation,
                     insertText: insertText,
@@ -498,6 +678,53 @@ enum TerminalImageTransferPlanner {
                 finishUpload(
                     result: result,
                     sourceFileURLs: fileURLs,
+                    leadingText: nil,
+                    interSegmentDelay: interSegmentDelay,
+                    operation: operation,
+                    insertText: insertText,
+                    scheduleAfter: scheduleAfter,
+                    isDestinationAvailable: isDestinationAvailable,
+                    onSuccess: onSuccess,
+                    onFailure: onFailure
+                )
+            }
+            return operation
+        case .uploadFilesWithLeadingText(
+            let leadingText,
+            let fileURLs,
+            .workspaceRemote,
+            let interSegmentDelay
+        ):
+            let operation = operation ?? TerminalImageTransferOperation()
+            guard !operation.isCancelled else { return operation }
+            uploadWorkspaceRemote(fileURLs, operation) { result in
+                finishUpload(
+                    result: result,
+                    sourceFileURLs: fileURLs,
+                    leadingText: leadingText,
+                    interSegmentDelay: interSegmentDelay,
+                    operation: operation,
+                    insertText: insertText,
+                    scheduleAfter: scheduleAfter,
+                    isDestinationAvailable: isDestinationAvailable,
+                    onSuccess: onSuccess,
+                    onFailure: onFailure
+                )
+            }
+            return operation
+        case .uploadFilesWithLeadingText(
+            let leadingText,
+            let fileURLs,
+            .detectedSSH(let session),
+            let interSegmentDelay
+        ):
+            let operation = operation ?? TerminalImageTransferOperation()
+            guard !operation.isCancelled else { return operation }
+            uploadDetectedSSH(session, fileURLs, operation) { result in
+                finishUpload(
+                    result: result,
+                    sourceFileURLs: fileURLs,
+                    leadingText: leadingText,
                     interSegmentDelay: interSegmentDelay,
                     operation: operation,
                     insertText: insertText,
@@ -526,7 +753,7 @@ enum TerminalImageTransferPlanner {
             error = .unavailable(reason)
         case .reject:
             error = .rejectedContent
-        case .insertText, .insertTextSegments, .uploadFiles:
+        case .insertText, .insertTextSegments, .uploadFiles, .uploadFilesWithLeadingText:
             assertionFailure("executeRejection called with a non-rejected image transfer plan")
             return operation
         }
@@ -550,6 +777,12 @@ enum TerminalImageTransferPlanner {
 
     static func insertedText(forFileURLs fileURLs: [URL]) -> String {
         insertedText(forPathStrings: fileURLs.map(\.path))
+    }
+
+    private static func join(text: String, paths: String) -> String {
+        guard !text.isEmpty else { return paths }
+        guard !paths.isEmpty else { return text }
+        return text.last?.isWhitespace == true ? text + paths : text + " " + paths
     }
 
     private static func insertedTextSegments(forFileURLs fileURLs: [URL]) -> [String] {
@@ -601,12 +834,17 @@ enum TerminalImageTransferPlanner {
         }
 
         if let string = GhosttyPasteboardHelper.stringContents(from: pasteboard), !string.isEmpty {
+            if case .saved(let imageURLs) = GhosttyPasteboardHelper.materializeImageFileURLsIfNeeded(
+                from: pasteboard
+            ), !imageURLs.isEmpty {
+                return .textAndFileURLs(string, imageURLs)
+            }
             return .insertText(string)
         }
 
-        switch GhosttyPasteboardHelper.materializeImageFileURLIfNeeded(from: pasteboard) {
-        case .saved(let imageURL):
-            return .fileURLs([imageURL])
+        switch GhosttyPasteboardHelper.materializeImageFileURLsIfNeeded(from: pasteboard) {
+        case .saved(let imageURLs):
+            return .fileURLs(imageURLs)
         case .rejectedImagePayload:
             return .reject
         case .noDecodableImagePayload:
@@ -628,9 +866,21 @@ enum TerminalImageTransferPlanner {
     private static func prepareDrop(
         pasteboard: NSPasteboard
     ) -> TerminalImageTransferPreparedContent {
-        let fileURLs = materializedFileURLs(from: pasteboard)
-        if !fileURLs.isEmpty {
-            return .fileURLs(fileURLs)
+        let directFileURLs = fileURLs(from: pasteboard)
+        if !directFileURLs.isEmpty {
+            return .fileURLs(directFileURLs)
+        }
+
+        let imageFileURLs = GhosttyPasteboardHelper.saveImageFileURLsIfNeeded(
+            from: pasteboard,
+            assumeNoText: true
+        )
+        if !imageFileURLs.isEmpty {
+            if let text = GhosttyPasteboardHelper.stringContents(from: pasteboard),
+               !text.isEmpty {
+                return .textAndFileURLs(text, imageFileURLs)
+            }
+            return .fileURLs(imageFileURLs)
         }
 
         if let rawURL = pasteboard.string(forType: .URL), !rawURL.isEmpty {
@@ -644,14 +894,6 @@ enum TerminalImageTransferPlanner {
         return .reject
     }
 
-    private static func materializedFileURLs(from pasteboard: NSPasteboard) -> [URL] {
-        let urls = fileURLs(from: pasteboard)
-        if !urls.isEmpty {
-            return urls
-        }
-        return GhosttyPasteboardHelper.saveImageFileURLsIfNeeded(from: pasteboard, assumeNoText: true)
-    }
-
     private static func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
         PasteboardFileURLReader.fileURLs(from: pasteboard)
     }
@@ -659,6 +901,7 @@ enum TerminalImageTransferPlanner {
     private static func finishUpload(
         result: Result<[String], Error>,
         sourceFileURLs: [URL],
+        leadingText: String?,
         interSegmentDelay: TimeInterval?,
         operation: TerminalImageTransferOperation,
         insertText: @escaping (String) -> Bool,
@@ -694,8 +937,12 @@ enum TerminalImageTransferPlanner {
 
             if let interSegmentDelay,
                remotePaths.count > 1 {
+                var segments = insertedTextSegments(forPathStrings: remotePaths)
+                if let leadingText, !leadingText.isEmpty, let first = segments.first {
+                    segments[0] = join(text: leadingText, paths: first)
+                }
                 sendTextSegments(
-                    insertedTextSegments(forPathStrings: remotePaths),
+                    segments,
                     index: 0,
                     interSegmentDelay: interSegmentDelay,
                     operation: operation,
@@ -708,7 +955,9 @@ enum TerminalImageTransferPlanner {
                 return
             }
 
-            guard insertText(remotePaths.map(escapeForShell).joined(separator: " ")) else {
+            let pathText = remotePaths.map(escapeForShell).joined(separator: " ")
+            let insertion = leadingText.map { join(text: $0, paths: pathText) } ?? pathText
+            guard insertText(insertion) else {
                 if operation.cancel() {
                     onFailure(TerminalImageTransferExecutionError.textDeliveryFailed)
                 }
@@ -789,7 +1038,15 @@ extension TerminalSurface {
     /// cmux's own remote-workspace configuration says so.
     @MainActor
     func resolvedImageTransferTarget() -> TerminalImageTransferTarget {
-        guard let workspace = owningWorkspace() else { return .local }
+        guard let workspace = owningWorkspace() else {
+            return .unavailable(.detachedWindow)
+        }
+        // UniConnect never guesses a connection kind. A starter/detached window with no
+        // persisted box profile must fail closed instead of inheriting cmux's legacy remote
+        // workspace classification and accidentally uploading (or exposing) a local path.
+        if UniConnectCoordinator.isEnabled, workspace.uniConnectProfile == nil {
+            return .unavailable(.detachedWindow)
+        }
         switch workspace.uniConnectProfile?.kind {
         case .local:
             return .local

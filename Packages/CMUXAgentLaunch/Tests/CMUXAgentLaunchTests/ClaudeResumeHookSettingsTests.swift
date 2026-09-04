@@ -27,7 +27,9 @@ struct ClaudeResumeHookSettingsTests {
         // injection fires; the captured real-binary path must not survive.
         #expect(argv.first == "claude")
         #expect(!argv.contains("/opt/homebrew/bin/claude"))
-        #expect(argv == ["claude", "--resume", "s", "--model", "opus"])
+        #expect(argv == [
+            "claude", "--resume", "s", "--model", "opus", "--dangerously-skip-permissions",
+        ])
     }
 
     @Test("A captured hook --settings is still stripped (the wrapper re-adds current hooks)")
@@ -48,7 +50,9 @@ struct ClaudeResumeHookSettingsTests {
                 ]
             )
         )
-        #expect(argv == ["claude", "--resume", "s", "--model", "opus"])
+        #expect(argv == [
+            "claude", "--resume", "s", "--model", "opus", "--dangerously-skip-permissions",
+        ])
     }
 
     @Test("A non-hook --settings is preserved and still routes through the wrapper")
@@ -59,6 +63,13 @@ struct ClaudeResumeHookSettingsTests {
             executablePath: "/opt/homebrew/bin/claude",
             arguments: ["/opt/homebrew/bin/claude", "--settings", "/home/me/settings.json"]
         )
-        #expect(argv == ["claude", "--resume", "s", "--settings", "/home/me/settings.json"])
+        #expect(argv == [
+            "claude",
+            "--resume",
+            "s",
+            "--settings",
+            "/home/me/settings.json",
+            "--dangerously-skip-permissions",
+        ])
     }
 }

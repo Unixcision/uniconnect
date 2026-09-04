@@ -1,8 +1,8 @@
 # Agent hook integrations
 
-cmux uses agent hooks to show running state, Feed approvals, notifications, and to restore agent sessions after a normal app relaunch.
+UniConnect uses agent hooks to show running state, Feed approvals, notifications, and to restore agent sessions after a normal app relaunch.
 
-Claude Code is handled by the cmux Claude wrapper when Claude Code integration is enabled in Settings. Other agents are installed with:
+Claude Code is handled by the UniConnect Claude wrapper when Claude Code integration is enabled in Settings. Other agents are installed with:
 
 ```bash
 cmux hooks setup
@@ -11,7 +11,9 @@ cmux hooks setup --agent <agent>
 cmux hooks uninstall <agent>
 ```
 
-Supported agent names are `codex`, `grok`, `opencode`, `pi`, `omp`, `amp`, `cursor`, `gemini`, `kiro`, `rovodev` (or `rovo`), `copilot`, `codebuddy`, `factory`, and `qoder`. `cmux hooks setup` skips agents whose binary is not on `PATH` and prints a summary.
+Supported agent names are `codex`, `grok`, `opencode`, `pi`, `omp`, `amp`, `cursor`, `gemini`, `kiro`, `antigravity` (or `agy`), `rovodev` (or `rovo`), `hermes-agent`, `copilot`, `codebuddy`, `factory`, and `qoder`. `cmux hooks setup` skips agents whose binary is not on `PATH` and prints a summary.
+
+UniConnect uses its own filenames, config groups, and embedded ownership markers. Installation and uninstallation leave upstream cmux hook commands, files, plugin registrations, and Codex TOML blocks untouched, so both applications can be configured at the same time.
 
 ## Integrations
 
@@ -19,15 +21,17 @@ Supported agent names are `codex`, `grok`, `opencode`, `pi`, `omp`, `amp`, `curs
 | --- | --- | --- | --- | --- |
 | Claude Code | `claude` through wrapper | wrapper-injected settings | `claude --resume <id>` | PermissionRequest |
 | Codex | `codex` | `~/.codex/hooks.json`, `~/.codex/config.toml` | `codex resume <id>` | PreToolUse, PermissionRequest |
-| Grok | `grok` | `~/.grok/hooks/cmux-session.json` | `grok -r <id>` | PreToolUse |
-| OpenCode | `opencode` | `~/.config/opencode/plugins/cmux-session.js`, `~/.config/opencode/plugins/cmux-feed.js` | `opencode --session <id>` | plugin event bus |
-| Pi | `pi` | `~/.pi/agent/extensions/cmux-session.ts` | `pi --session <id>` | none |
-| OMP | `omp` | `~/.omp/agent/extensions/cmux-omp-session.ts` or `$PI_CODING_AGENT_DIR/extensions/cmux-omp-session.ts` | `omp --session <id>` | none |
-| Amp | `amp` | `~/.config/amp/plugins/cmux-session.ts` | `amp threads continue <id>` | none |
+| Grok | `grok` | `~/.grok/hooks/uniconnect-session.json` | `grok -r <id>` | PreToolUse |
+| OpenCode | `opencode` | `~/.config/opencode/plugins/uniconnect-session.js`, `~/.config/opencode/plugins/uniconnect-feed.js` | `opencode --session <id>` | plugin event bus |
+| Pi | `pi` | `~/.pi/agent/extensions/uniconnect-session.ts` | `pi --session <id>` | none |
+| OMP | `omp` | `~/.omp/agent/extensions/uniconnect-omp-session.ts` or `$PI_CODING_AGENT_DIR/extensions/uniconnect-omp-session.ts` | `omp --session <id>` | none |
+| Amp | `amp` | `~/.config/amp/plugins/uniconnect-session.ts` | `amp threads continue <id>` | none |
 | Cursor CLI | `cursor-agent` | `~/.cursor/hooks.json` | `cursor-agent --resume <id>` | beforeShellExecution |
 | Gemini | `gemini` | `~/.gemini/settings.json` | `gemini --resume <id>` | PreToolUse |
-| Kiro CLI | `kiro-cli` | `~/.kiro/agents/cmux.json` or `$KIRO_HOME/agents/cmux.json` | `kiro-cli chat --resume-id <id>` | preToolUse, postToolUse |
+| Kiro CLI | `kiro-cli` | `~/.kiro/agents/uniconnect.json` or `$KIRO_HOME/agents/uniconnect.json` | `kiro-cli chat --resume-id <id>` | preToolUse, postToolUse |
+| Antigravity | `agy` | `~/.gemini/config/hooks.json` (`uniconnect` group) | native session resume | PreToolUse, PostToolUse |
 | Rovo Dev | `acli` | `~/.rovodev/config.yml` | `acli rovodev run --restore <id>` | none |
+| Hermes Agent | `hermes` | `~/.hermes/config.yaml`, `~/.hermes/shell-hooks-allowlist.json` | native session resume | pre_tool_call, post_tool_call |
 | Copilot | `copilot` | `~/.copilot/config.json` | `copilot --resume <id>` | PreToolUse |
 | CodeBuddy | `codebuddy` | `~/.codebuddy/settings.json` | `codebuddy --resume <id>` | PreToolUse |
 | Factory | `droid` | `~/.factory/settings.json` | `droid --resume <id>` | PreToolUse |
@@ -39,19 +43,19 @@ OpenCode also supports project-local Feed installation:
 cmux hooks opencode install --project
 ```
 
-That writes `.opencode/plugins/cmux-feed.js` in the current directory.
+That writes `.opencode/plugins/uniconnect-feed.js` in the current directory.
 
 ## What the hooks record
 
-Session hooks write `~/.cmuxterm/<agent>-hook-sessions.json`. Each entry stores the agent session ID, cmux workspace ID, surface ID, cwd, process ID when available, current lifecycle (`running`, `idle`, `needsInput`, or `unknown`), and a sanitized launch command. On app relaunch, cmux rebuilds each workspace and runs the agent's native resume command with the saved session ID.
+Session hooks write `~/.uniconnect/<agent>-hook-sessions.json`. Each entry stores the agent session ID, UniConnect workspace ID, surface ID, cwd, process ID when available, current lifecycle (`running`, `idle`, `needsInput`, or `unknown`), and a sanitized launch command. On app relaunch, UniConnect rebuilds each workspace and runs the agent's native resume command with the saved session ID.
 
 The sanitizer preserves model, sandbox, config, and cwd-related flags. It drops prompts, credentials, old session selectors, and noninteractive commands so relaunch resumes the session instead of starting a new task or leaking secrets.
 
-Grok uses its `Notification` hook for user-facing completion messages. cmux records `Stop` as idle state, but leaves the visible notification text to the `Notification` payload so repeated turns keep Grok's own message instead of a generic completion fallback.
+Grok uses its `Notification` hook for user-facing completion messages. UniConnect records `Stop` as idle state, but leaves the visible notification text to the `Notification` payload so repeated turns keep Grok's own message instead of a generic completion fallback.
 
 ## Agent Hibernation
 
-Agent Hibernation kills idle background agent processes to free their RAM and CPU, then resumes each one with its saved session when you return to its tab. It is opt-in and off by default. cmux knows which process belongs to which terminal because the agent hooks associate each session ID with its surface (see the session-restore section above), so it can terminate the right process and bring back the right session.
+Agent Hibernation kills idle background agent processes to free their RAM and CPU, then resumes each one with its saved session when you return to its tab. It is opt-in and off by default. UniConnect knows which process belongs to which terminal because the agent hooks associate each session ID with its surface (see the session-restore section above), so it can terminate the right process and bring back the right session.
 
 ### When a terminal hibernates
 
@@ -63,15 +67,15 @@ A live terminal is only ever a candidate when all of these hold:
 - you have more live restorable agent terminals than the live-terminal limit (`maxLiveTerminals`, default `12`)
 - the terminal has had no output, input, or lifecycle change for at least the idle window (`idleSeconds`, default `5`)
 
-The live-terminal limit is the first gate. Under the limit, nothing hibernates no matter how long it sits idle. Once you are over the limit, cmux frees only the oldest-idle background terminals, just enough to get back under the limit. Visible terminals are never touched.
+The live-terminal limit is the first gate. Under the limit, nothing hibernates no matter how long it sits idle. Once you are over the limit, UniConnect frees only the oldest-idle background terminals, just enough to get back under the limit. Visible terminals are never touched.
 
-Before killing, cmux watches the terminal tail. It samples the last lines of output and a fingerprint of the process, and waits a short confirmation window (`confirmationSeconds`, ~60s) during which the output and process must stay unchanged. Any new output, input, lifecycle change, or PID change cancels the pending hibernation. This is why a small `idleSeconds` is safe: a freshly idle agent that resumes work on its own is never killed mid-task.
+Before killing, UniConnect watches the terminal tail. It samples the last lines of output and a fingerprint of the process, and waits a short confirmation window (`confirmationSeconds`, ~60s) during which the output and process must stay unchanged. Any new output, input, lifecycle change, or PID change cancels the pending hibernation. This is why a small `idleSeconds` is safe: a freshly idle agent that resumes work on its own is never killed mid-task.
 
 So with the defaults, hibernation only affects power users running more than 12 agents at once, and even then only ~1 minute after an agent has gone quiet off-screen.
 
 ### What gets killed and how it comes back
 
-cmux sends `SIGTERM` to the agent's process group (scoped to that workspace and surface), then swaps the live terminal for a lightweight placeholder, releasing the terminal's memory and CPU. When you visit the tab again, cmux runs the agent's native resume command with the saved session ID, so the session continues where it left off. The placeholder also shows a Resume button as a manual fallback.
+UniConnect sends `SIGTERM` to the agent's process group (scoped to that workspace and surface), then swaps the live terminal for a lightweight placeholder, releasing the terminal's memory and CPU. When you visit the tab again, UniConnect runs the agent's native resume command with the saved session ID, so the session continues where it left off. The placeholder also shows a Resume button as a manual fallback.
 
 ### Enable and configure
 
@@ -82,7 +86,7 @@ cmux agent-hibernation on
 cmux agent-hibernation off
 ```
 
-Tune the idle window and live-terminal limit from Settings, or set them in `~/.config/cmux/cmux.json`:
+Tune the idle window and live-terminal limit from Settings, or set them in `~/.config/uniconnect/uniconnect.json`:
 
 ```json
 {
@@ -97,20 +101,20 @@ Tune the idle window and live-terminal limit from Settings, or set them in `~/.c
 ```
 
 - `idleSeconds` (default `5`, range `5`-`604800`): how long a background idle agent terminal must be quiet before it can hibernate. Raise it to keep agents alive longer; lower it to reclaim resources sooner. The `confirmationSeconds` settle window still applies on top of this.
-- `maxLiveTerminals` (default `12`, range `1`-`256`): how many live restorable agent terminals to keep before cmux hibernates the oldest idle background ones. Lower it to hibernate more aggressively; raise it to keep more agents live.
+- `maxLiveTerminals` (default `12`, range `1`-`256`): how many live restorable agent terminals to keep before UniConnect hibernates the oldest idle background ones. Lower it to hibernate more aggressively; raise it to keep more agents live.
 
 ## Custom surface resume commands
 
 Use `cmux surface resume set --shell <command>` to attach a resume command to the current terminal surface. Public CLI and socket-created commands are kept for inspection and manual restore by default. To auto-run one on restore, approve the prompt or change its signed command prefix in **Settings > Terminal > Resume Commands**.
 
-Approvals are prefix-based and signed by cmux. They also bind the working directory and exact environment values when present. A process can propose a command, but it cannot make that command sticky without the user choosing Auto-Restore or Ask Each Time in cmux.
+Approvals are prefix-based and signed by UniConnect. They also bind the working directory and exact environment values when present. A process can propose a command, but it cannot make that command sticky without the user choosing Auto-Restore or Ask Each Time in UniConnect.
 
 ## Disable automatic resume
 
 To restore panes without automatically restarting saved agent sessions, turn off
 **Settings > Terminal > Resume Agent Sessions on Reopen**.
 
-You can also set the same preference in `~/.config/cmux/cmux.json`:
+You can also set the same preference in `~/.config/uniconnect/uniconnect.json`:
 
 ```json
 {
@@ -120,12 +124,12 @@ You can also set the same preference in `~/.config/cmux/cmux.json`:
 }
 ```
 
-When this is off, cmux still restores the saved window, workspace, pane, scrollback,
+When this is off, UniConnect still restores the saved window, workspace, pane, scrollback,
 and browser state. Restored agent terminals stay idle until you resume them manually.
 
 ## Environment overrides
 
-| Agent | Config directory override | Disable cmux hooks for one process |
+| Agent | Config directory override | Disable UniConnect hooks for one process |
 | --- | --- | --- |
 | Codex | `CODEX_HOME` | `CMUX_CODEX_HOOKS_DISABLED=1` |
 | Grok | `GROK_HOME` | `CMUX_GROK_HOOKS_DISABLED=1` |
@@ -144,11 +148,11 @@ and browser state. Restored agent terminals stay idle until you resume them manu
 
 Pi uses Pi's extension system, not the legacy Pi hooks API. The installed extension is auto-discovered from `~/.pi/agent/extensions/` or `$PI_CODING_AGENT_DIR/extensions/`.
 
-OMP uses OMP's native extension system. OMP native extension discovery scans `${PI_CODING_AGENT_DIR:-~/${PI_CONFIG_DIR:-.omp}/agent}/extensions/`, so cmux installs OMP's extension with a distinct `cmux-omp-session.ts` filename and does not reuse Pi's `cmux-session.ts`.
+OMP uses OMP's native extension system. OMP native extension discovery scans `${PI_CODING_AGENT_DIR:-~/${PI_CONFIG_DIR:-.omp}/agent}/extensions/`, so UniConnect installs OMP's extension as `uniconnect-omp-session.ts`, separate from Pi's `uniconnect-session.ts` and all upstream cmux files.
 
-Kiro stores hooks inside agent configuration files. The cmux installer creates or updates a `cmux` agent config with lifecycle, tool, and completion hooks; merge the generated `hooks` block into another Kiro agent config if you want the same cmux notifications on that agent.
+Kiro stores hooks inside agent configuration files. The UniConnect installer creates or updates an `uniconnect` agent config with lifecycle, tool, and completion hooks; merge the generated `hooks` block into another Kiro agent config if you want the same UniConnect notifications on that agent.
 
-Kiro Feed verbosity follows **Settings > Automation > Kiro Notification Level** or `automation.kiroNotificationLevel` in `cmux.json`. `minimal` keeps actionable approval cards only, `standard` also keeps mutating tool events, and `verbose` keeps every Kiro tool event.
+Kiro Feed verbosity follows **Settings > Automation > Kiro Notification Level** or `automation.kiroNotificationLevel` in `uniconnect.json`. `minimal` keeps actionable approval cards only, `standard` also keeps mutating tool events, and `verbose` keeps every Kiro tool event.
 
 ## Troubleshooting
 
@@ -156,4 +160,4 @@ Run `cmux hooks <agent> install --yes` to reinstall one integration. Run `cmux h
 
 If Feed shows nothing, confirm the terminal has `CMUX_SURFACE_ID` and the hook file contains a `cmux hooks feed --source <agent>` command or OpenCode feed plugin. Pi, OMP, and Rovo Dev currently provide lifecycle and restore hooks only, so they do not create Feed approval cards. Amp's bundled plugin reports live tab-status updates (idle / thinking / running / reading / done / error / interrupted) and lifecycle restore but does not create Feed approval cards.
 
-If relaunch does not resume an agent, check `~/.cmuxterm/<agent>-hook-sessions.json` for the saved session and verify the agent's resume command still works outside cmux.
+If relaunch does not resume an agent, check `~/.uniconnect/<agent>-hook-sessions.json` for the saved session and verify the agent's resume command still works outside UniConnect.

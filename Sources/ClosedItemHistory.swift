@@ -21,6 +21,8 @@ struct ClosedPanelHistoryEntry: Codable {
     let restoreInOriginalPane: Bool
     let tabIndex: Int
     let snapshot: SessionPanelSnapshot
+    /// Connection classification needed to sanitize an isolated panel before writing history.
+    let uniConnectProfile: UniConnectWorkspaceProfile?
     let fallbackSplitPlacement: ClosedPanelSplitPlacement?
 
     init(
@@ -30,6 +32,7 @@ struct ClosedPanelHistoryEntry: Codable {
         restoreInOriginalPane: Bool = true,
         tabIndex: Int,
         snapshot: SessionPanelSnapshot,
+        uniConnectProfile: UniConnectWorkspaceProfile? = nil,
         fallbackSplitPlacement: ClosedPanelSplitPlacement? = nil
     ) {
         self.workspaceId = workspaceId
@@ -38,6 +41,7 @@ struct ClosedPanelHistoryEntry: Codable {
         self.restoreInOriginalPane = restoreInOriginalPane
         self.tabIndex = tabIndex
         self.snapshot = snapshot
+        self.uniConnectProfile = uniConnectProfile
         self.fallbackSplitPlacement = fallbackSplitPlacement
     }
 }
@@ -176,6 +180,10 @@ final class ClosedItemHistoryStore: ObservableObject {
 
     var canReopen: Bool {
         !records.isEmpty
+    }
+
+    func record(id: UUID) -> ClosedItemHistoryRecord? {
+        records.first { $0.id == id }
     }
 
     func push(_ entry: ClosedItemHistoryEntry) {
@@ -494,6 +502,7 @@ final class ClosedItemHistoryStore: ObservableObject {
                 restoreInOriginalPane: false,
                 tabIndex: panelEntry.tabIndex,
                 snapshot: panelEntry.snapshot,
+                uniConnectProfile: panelEntry.uniConnectProfile,
                 fallbackSplitPlacement: fallbackSplitPlacement
             )))
         }
@@ -532,6 +541,7 @@ final class ClosedItemHistoryStore: ObservableObject {
                 restoreInOriginalPane: panelEntry.restoreInOriginalPane,
                 tabIndex: panelEntry.tabIndex,
                 snapshot: panelEntry.snapshot,
+                uniConnectProfile: panelEntry.uniConnectProfile,
                 fallbackSplitPlacement: fallbackSplitPlacement
             )))
         }
@@ -588,11 +598,20 @@ final class ClosedItemHistoryStore: ObservableObject {
     nonisolated fileprivate static func loadRecords(fileURL: URL) -> [ClosedItemHistoryRecord] {
         guard let data = try? Data(contentsOf: fileURL) else { return [] }
         let decoder = JSONDecoder()
+        let loaded: [ClosedItemHistoryRecord]
         if let snapshot = try? decoder.decode(ClosedItemHistoryPersistenceSnapshot.self, from: data),
            snapshot.version == ClosedItemHistoryPersistenceSnapshot.currentVersion {
-            return snapshot.records
+            loaded = snapshot.records
+        } else if let legacy = try? decoder.decode([ClosedItemHistoryRecord].self, from: data) {
+            loaded = legacy
+        } else {
+            return []
         }
-        return (try? decoder.decode([ClosedItemHistoryRecord].self, from: data)) ?? []
+        let sanitized = sanitizedRecordsForPersistence(loaded)
+        // Rewrite legacy history on first read so connection material left by older
+        // versions does not remain on disk while waiting for a future mutation.
+        saveRecords(sanitized, fileURL: fileURL)
+        return sanitized
     }
 
     nonisolated fileprivate static func saveRecords(_ records: [ClosedItemHistoryRecord], fileURL: URL) {
@@ -615,7 +634,9 @@ final class ClosedItemHistoryStore: ObservableObject {
                 withIntermediateDirectories: true,
                 attributes: nil
             )
-            let snapshot = ClosedItemHistoryPersistenceSnapshot(records: records)
+            let snapshot = ClosedItemHistoryPersistenceSnapshot(
+                records: sanitizedRecordsForPersistence(records)
+            )
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
             let data = try encoder.encode(snapshot)
@@ -629,6 +650,90 @@ final class ClosedItemHistoryStore: ObservableObject {
             )
             return
         }
+    }
+
+    /// Applies the live-session persistence boundary before recently-closed records reach disk.
+    nonisolated fileprivate static func sanitizedRecordsForPersistence(
+        _ records: [ClosedItemHistoryRecord]
+    ) -> [ClosedItemHistoryRecord] {
+        records.map { record in
+            let timestamp = record.closedAt.timeIntervalSince1970
+            let entry: ClosedItemHistoryEntry
+            switch record.entry {
+            case .panel(let panelEntry):
+                guard let unsafeProfile = panelEntry.uniConnectProfile
+                    ?? inferredUniConnectProfile(for: panelEntry.snapshot) else {
+                    return record
+                }
+                let rootCandidate = panelEntry.snapshot.terminal?.uniConnectLocalWindow?.boxRoot
+                    ?? panelEntry.snapshot.terminal?.workingDirectory
+                    ?? panelEntry.snapshot.directory
+                let profile = SessionPersistenceStore.sanitizedProfileForPersistence(
+                    unsafeProfile,
+                    localRootCandidate: rootCandidate
+                )
+                let sanitizedPanel = SessionPersistenceStore.sanitizedPanelForPersistence(
+                    panelEntry.snapshot,
+                    profile: profile,
+                    authoritativeLocalRoot: profile.isSSH ? nil : profile.localRoot,
+                    fallbackCreatedAt: timestamp
+                )
+                entry = .panel(ClosedPanelHistoryEntry(
+                    workspaceId: panelEntry.workspaceId,
+                    paneId: panelEntry.paneId,
+                    paneAnchorPanelId: panelEntry.paneAnchorPanelId,
+                    restoreInOriginalPane: panelEntry.restoreInOriginalPane,
+                    tabIndex: panelEntry.tabIndex,
+                    snapshot: sanitizedPanel,
+                    uniConnectProfile: profile,
+                    fallbackSplitPlacement: panelEntry.fallbackSplitPlacement
+                ))
+            case .workspace(let workspaceEntry):
+                entry = .workspace(ClosedWorkspaceHistoryEntry(
+                    workspaceId: workspaceEntry.workspaceId,
+                    windowId: workspaceEntry.windowId,
+                    workspaceIndex: workspaceEntry.workspaceIndex,
+                    snapshot: SessionPersistenceStore.sanitizedWorkspaceForPersistence(
+                        workspaceEntry.snapshot,
+                        fallbackCreatedAt: timestamp
+                    )
+                ))
+            case .window(let windowEntry):
+                var snapshot = windowEntry.snapshot
+                snapshot.tabManager.workspaces = snapshot.tabManager.workspaces.map {
+                    SessionPersistenceStore.sanitizedWorkspaceForPersistence(
+                        $0,
+                        fallbackCreatedAt: timestamp
+                    )
+                }
+                entry = .window(ClosedWindowHistoryEntry(
+                    windowId: windowEntry.windowId,
+                    snapshot: snapshot,
+                    workspaceIds: windowEntry.workspaceIds
+                ))
+            }
+            return ClosedItemHistoryRecord(id: record.id, closedAt: record.closedAt, entry: entry)
+        }
+    }
+
+    /// Recovers the UniConnect transport marker used by history written before the panel entry carried it.
+    nonisolated private static func inferredUniConnectProfile(
+        for panel: SessionPanelSnapshot
+    ) -> UniConnectWorkspaceProfile? {
+        guard let terminal = panel.terminal else { return nil }
+        if terminal.uniConnectTmuxSession != nil {
+            return UniConnectWorkspaceProfile(kind: .ssh)
+        }
+        if let localWindow = terminal.uniConnectLocalWindow {
+            return UniConnectWorkspaceProfile(kind: .local, localRoot: localWindow.boxRoot)
+        }
+        if terminal.uniConnectClaudeSession != nil {
+            return UniConnectWorkspaceProfile(
+                kind: .local,
+                localRoot: terminal.workingDirectory ?? panel.directory
+            )
+        }
+        return nil
     }
 
     nonisolated private static func defaultHistoryFileURL(

@@ -13,6 +13,18 @@ import UserNotifications
 @testable import cmux
 #endif
 
+@MainActor
+final class PhonePushClientTests: XCTestCase {
+    func testHiddenNotificationUsesLocalizedUniConnectIdentityWithoutLegacyCopy() {
+        let content = PhonePushClient.hiddenNotificationContent()
+
+        XCTAssertEqual(content.title, "UniConnect")
+        XCTAssertFalse(content.body.isEmpty)
+        XCTAssertNotEqual(content.body, "New terminal activity")
+        XCTAssertNotEqual(content.title.lowercased(), "cmux")
+    }
+}
+
 final class TerminalNotificationPolicyEngineTests: XCTestCase {
     private func evaluate(
         request: TerminalNotificationPolicyRequest,
@@ -280,6 +292,40 @@ final class TerminalNotificationPolicyEngineTests: XCTestCase {
 
 @MainActor
 final class AppIconSettingsTests: XCTestCase {
+    func testIconComposerResetsLegacyRuntimeIconAndStopsAppearanceOverrides() {
+        var runtimeIconSetCount = 0
+        var dockTileNotificationCount = 0
+        var stopObservationCallCount = 0
+
+        let environment = AppIconSettings.Environment(
+            isApplicationFinishedLaunching: { true },
+            usesBundleIcon: { true },
+            imageForMode: { mode in
+                XCTFail("Icon Composer should not request the legacy image for \(mode.rawValue)")
+                return nil
+            },
+            setApplicationIconImage: { icon in
+                XCTAssertNil(icon)
+                runtimeIconSetCount += 1
+            },
+            startAppearanceObservation: {
+                XCTFail("Icon Composer should not start the legacy appearance observer")
+            },
+            stopAppearanceObservation: {
+                stopObservationCallCount += 1
+            },
+            notifyDockTilePlugin: {
+                dockTileNotificationCount += 1
+            }
+        )
+
+        AppIconSettings.applyIcon(.dark, environment: environment)
+
+        XCTAssertEqual(runtimeIconSetCount, 1)
+        XCTAssertEqual(stopObservationCallCount, 1)
+        XCTAssertEqual(dockTileNotificationCount, 1)
+    }
+
     func testApplyDarkSetsRuntimeIconAndNotifiesDockTilePlugin() {
         let expectedIcon = NSImage(size: NSSize(width: 16, height: 16))
         var receivedRuntimeIcon: NSImage?
@@ -946,7 +992,7 @@ final class NotificationDockBadgeTests: XCTestCase {
         }
 
         let sourceURL = soundsDirectory.appendingPathComponent(
-            "cmux-custom-notification-sound.source-\(UUID().uuidString).wav",
+            "uniconnect-custom-notification-sound.source-\(UUID().uuidString).wav",
             isDirectory: false
         )
         defer {
@@ -976,7 +1022,7 @@ final class NotificationDockBadgeTests: XCTestCase {
 
         XCTAssertTrue(fileManager.fileExists(atPath: sourceURL.path))
         XCTAssertTrue(fileManager.fileExists(atPath: stagedURL.path))
-        XCTAssertTrue(stagedName.hasPrefix("cmux-custom-notification-sound-"))
+        XCTAssertTrue(stagedName.hasPrefix("uniconnect-custom-notification-sound-"))
         XCTAssertTrue(stagedName.hasSuffix(".wav"))
     }
 
@@ -1009,7 +1055,7 @@ final class NotificationDockBadgeTests: XCTestCase {
             destinationExtension: "caf"
         )
         XCTAssertNotEqual(stagedA, stagedB)
-        XCTAssertTrue(stagedA.hasPrefix("cmux-custom-notification-sound-"))
+        XCTAssertTrue(stagedA.hasPrefix("uniconnect-custom-notification-sound-"))
         XCTAssertTrue(stagedA.hasSuffix(".caf"))
     }
 
@@ -1035,7 +1081,7 @@ final class NotificationDockBadgeTests: XCTestCase {
         }
 
         let sourceURL = soundsDirectory.appendingPathComponent(
-            "cmux-custom-notification-sound.metadata-\(UUID().uuidString).wav",
+            "uniconnect-custom-notification-sound.metadata-\(UUID().uuidString).wav",
             isDirectory: false
         )
         do {
@@ -1089,7 +1135,7 @@ final class NotificationDockBadgeTests: XCTestCase {
             let stagedURL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
                 .appendingPathComponent("Library", isDirectory: true)
                 .appendingPathComponent("Sounds", isDirectory: true)
-                .appendingPathComponent("cmux-custom-notification-sound.caf", isDirectory: false)
+                .appendingPathComponent("uniconnect-custom-notification-sound.caf", isDirectory: false)
             try? FileManager.default.removeItem(at: stagedURL)
         }
 
@@ -1207,7 +1253,7 @@ final class NotificationDockBadgeTests: XCTestCase {
         AppFocusState.overrideIsFocused = true
         defaults.set("none", forKey: NotificationSoundSettings.key)
         defaults.set(
-            "printf '%s\\n%s\\n%s' \"$CMUX_NOTIFICATION_TITLE\" \"$CMUX_NOTIFICATION_SUBTITLE\" \"$CMUX_NOTIFICATION_BODY\" > '\(commandOutputURL.path)'",
+            "printf '%s\\n%s\\n%s' \"$UNICONNECT_NOTIFICATION_TITLE\" \"$UNICONNECT_NOTIFICATION_SUBTITLE\" \"$UNICONNECT_NOTIFICATION_BODY\" > '\(commandOutputURL.path)'",
             forKey: NotificationSoundSettings.customCommandKey
         )
 

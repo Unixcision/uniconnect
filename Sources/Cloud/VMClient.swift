@@ -2,6 +2,7 @@ import CmuxAuthRuntime
 import Foundation
 
 enum VMClientError: Error, CustomStringConvertible {
+    case serviceUnavailable
     case notSignedIn
     case backendUnreachable(url: String, detail: String)
     case httpStatus(Int, String)
@@ -9,9 +10,14 @@ enum VMClientError: Error, CustomStringConvertible {
 
     var description: String {
         switch self {
+        case .serviceUnavailable:
+            return String(
+                localized: "settings.account.unavailable.subtitle",
+                defaultValue: "Sign-in and cloud sync stay off until UniConnect's own service is configured."
+            )
         case .notSignedIn:
             return """
-                You are not signed in to cmux.
+                You are not signed in to UniConnect.
 
                 What to do:
                   cmux auth login
@@ -19,11 +25,11 @@ enum VMClientError: Error, CustomStringConvertible {
                 """
         case .backendUnreachable(let url, let detail):
             return """
-                Cannot reach the cmux Cloud VM service at \(url).
+                Cannot reach the UniConnect Cloud VM service at \(url).
 
                 What to do:
-                  Start the cmux web server, then retry.
-                  If you are using a local development build, check its Cloud VM service URL before launching cmux.
+                  Start the UniConnect web server, then retry.
+                  If you are using a local development build, check its Cloud VM service URL before launching UniConnect.
 
                 Details:
                   \(detail)
@@ -32,10 +38,10 @@ enum VMClientError: Error, CustomStringConvertible {
             return formattedCloudVMHTTPError(status: code, body: body)
         case .malformedResponse(let message):
             return """
-                The cmux Cloud VM backend returned a response this client could not read.
+                The UniConnect Cloud VM backend returned a response this client could not read.
 
                 What to do:
-                  Update cmux to the latest build and retry.
+                  Update UniConnect to the latest build and retry.
                   If this keeps happening, copy the details below and contact support.
 
                 Details:
@@ -90,7 +96,7 @@ private func defaultCloudVMMessage(status: Int) -> String {
     case 400:
         return "The Cloud VM request was not valid."
     case 401:
-        return "cmux could not authenticate this Cloud VM request."
+        return "UniConnect could not authenticate this Cloud VM request."
     case 402:
         return "This team cannot create another Cloud VM with the current billing state."
     case 403:
@@ -113,7 +119,7 @@ private func defaultCloudVMAction(status: Int, errorCode: String) -> String {
     case "vm_not_found":
         return "Run `cmux vm ls` to see available Cloud VMs. If the VM was paused or destroyed, start a fresh one with `cmux vm new`."
     case "vm_billing_team_required":
-        return "Select a team in cmux, then retry. You can also run `cmux auth status` to check the signed-in account."
+        return "Select a team in UniConnect, then retry. You can also run `cmux auth status` to check the signed-in account."
     case "vm_create_credits_insufficient":
         return "Ask a team admin to upgrade the plan or grant more Cloud VM create credits, then retry."
     default:
@@ -263,21 +269,28 @@ enum VMAttachEndpoint {
     case websocket(VMWebSocketPtyEndpoint)
 }
 
-/// Talks to the manaflow cloud VM backend at `/api/vm/*`. Stack Auth tokens come from
-/// the injected `AuthCoordinator`; the HTTP base URL from `AuthEnvironment.vmAPIBaseURL`.
+/// Talks to the configured UniConnect cloud VM backend at `/api/vm/*`. Stack Auth tokens come from
+/// the injected `AuthCoordinator`; the validated HTTP base URL is injected at startup.
 ///
 /// All methods are `async throws` and run off the main actor.
 actor VMClient {
     /// Set once by `bootstrap(auth:)` during app startup (AppDelegate
     /// `configure`), before any socket/CLI path can reach the cloud VM client.
     /// Main-actor isolated so every read goes through a compiler-checked hop.
-    @MainActor private(set) static var shared: VMClient!
+    @MainActor private(set) static var shared: VMClient?
 
     /// Build the shared client with its injected auth dependency. Call once at
     /// the composition root.
     @MainActor
-    static func bootstrap(auth: AuthCoordinator, session: URLSession = .shared) {
-        shared = VMClient(session: session, auth: auth)
+    static func bootstrap(auth: AuthCoordinator, baseURL: URL, session: URLSession = .shared) {
+        shared = VMClient(session: session, auth: auth, baseURL: baseURL)
+    }
+
+    /// Returns the configured client or a stable fail-closed error for CLI callers.
+    @MainActor
+    static func configuredClient() throws -> VMClient {
+        guard let shared else { throw VMClientError.serviceUnavailable }
+        return shared
     }
 
     private static let createTimeoutSeconds: TimeInterval = 16 * 60
@@ -285,10 +298,12 @@ actor VMClient {
 
     private let session: URLSession
     private let auth: AuthCoordinator
+    private let baseURL: URL
 
-    init(session: URLSession = .shared, auth: AuthCoordinator) {
+    init(session: URLSession = .shared, auth: AuthCoordinator, baseURL: URL) {
         self.session = session
         self.auth = auth
+        self.baseURL = baseURL
     }
 
     func list() async throws -> [VMSummary] {
@@ -438,7 +453,7 @@ actor VMClient {
         }
         let teamID = await auth.resolvedTeamID
 
-        guard var url = URLComponents(url: AuthEnvironment.vmAPIBaseURL, resolvingAgainstBaseURL: false) else {
+        guard var url = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
             throw VMClientError.malformedResponse("bad vmAPIBaseURL")
         }
         url.path = (url.path.hasSuffix("/") ? String(url.path.dropLast()) : url.path) + path
@@ -473,8 +488,8 @@ actor VMClient {
             // instead of the verbose NSURLErrorDomain payload.
             switch error.code {
             case .cannotConnectToHost, .cannotFindHost, .timedOut, .networkConnectionLost, .notConnectedToInternet:
-                let base = "\(AuthEnvironment.vmAPIBaseURL.scheme ?? "http")://\(AuthEnvironment.vmAPIBaseURL.host ?? "?"):\(AuthEnvironment.vmAPIBaseURL.port ?? -1)"
-                throw VMClientError.backendUnreachable(url: base, detail: error.localizedDescription)
+                let endpoint = "\(baseURL.scheme ?? "http")://\(baseURL.host ?? "?"):\(baseURL.port ?? -1)"
+                throw VMClientError.backendUnreachable(url: endpoint, detail: error.localizedDescription)
             default:
                 throw error
             }

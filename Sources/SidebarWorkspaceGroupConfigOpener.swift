@@ -3,7 +3,7 @@ import Foundation
 
 /// Opens workspace-group configuration and documentation surfaces.
 enum SidebarWorkspaceGroupConfigOpener {
-    /// Opens the cmux config file (`~/.config/uniconnect/uniconnect.json`) in the user's
+    /// Opens the UniConnect config file (`~/.config/uniconnect/uniconnect.json`) in the user's
     /// configured editor, materializing an empty config first if none exists.
     static func openCmuxConfigInEditor() {
         openCmuxConfigInEditor(
@@ -12,7 +12,7 @@ enum SidebarWorkspaceGroupConfigOpener {
         )
     }
 
-    /// Testable seam: resolves the cmux config path under `home`, materializes
+    /// Testable seam: resolves the UniConnect config path under `home`, materializes
     /// an empty config if absent, then hands the file to `open`.
     ///
     /// The public ``openCmuxConfigInEditor()`` entry point passes
@@ -37,7 +37,7 @@ enum SidebarWorkspaceGroupConfigOpener {
 
     static func openWorkspaceGroupsDocs() {
         guard let url = URL(
-            string: "https://github.com/manaflow-ai/cmux/blob/main/docs/workspace-groups.md"
+            string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/workspace-groups.md"
         ) else { return }
         NSWorkspace.shared.open(url)
     }

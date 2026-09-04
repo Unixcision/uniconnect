@@ -59,8 +59,8 @@ cmux omc --watch`}</CodeBlock>
           </tr>
         </thead>
         <tbody>
-          <tr><td><code>~/.cmuxterm/omc-bin/</code></td><td>{t("dirShim")}</td></tr>
-          <tr><td><code>~/.cmuxterm/tmux-compat-store.json</code></td><td>{t("dirStore")}</td></tr>
+          <tr><td><code>~/.uniconnect/omc-bin/</code></td><td>{t("dirShim")}</td></tr>
+          <tr><td><code>~/.uniconnect/tmux-compat-store.json</code></td><td>{t("dirStore")}</td></tr>
         </tbody>
       </table>
 

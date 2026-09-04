@@ -552,9 +552,9 @@ private final class NotificationHookProcessRun: @unchecked Sendable {
 
     private func environmentStrings() -> [String] {
         var env = ProcessInfo.processInfo.environment
-        env["CMUX_NOTIFICATION_TITLE"] = envelope.notification.title
-        env["CMUX_NOTIFICATION_SUBTITLE"] = envelope.notification.subtitle
-        env["CMUX_NOTIFICATION_BODY"] = envelope.notification.body
+        env["UNICONNECT_NOTIFICATION_TITLE"] = envelope.notification.title
+        env["UNICONNECT_NOTIFICATION_SUBTITLE"] = envelope.notification.subtitle
+        env["UNICONNECT_NOTIFICATION_BODY"] = envelope.notification.body
         env["CMUX_NOTIFICATION_WORKSPACE_ID"] = envelope.notification.workspaceId
         env["CMUX_NOTIFICATION_SURFACE_ID"] = envelope.notification.surfaceId ?? ""
         env["CMUX_NOTIFICATION_POLICY_JSON"] = String(data: inputData, encoding: .utf8) ?? ""

@@ -15,6 +15,7 @@ import { SiteFooter } from "./components/site-footer";
 import { ThemeBootstrapScript } from "./theme-bootstrap-script";
 import { darkThemeColor, lightThemeColor } from "./theme-colors";
 import { DOWNLOAD_URL } from "../lib/download";
+import { SITE_URL } from "@/lib/site";
 import "../globals.css";
 
 const geistSans = Geist({
@@ -58,7 +59,7 @@ export async function generateMetadata({
       title: t("title"),
       description: t("ogDescription"),
       url: alternates.canonical,
-      siteName: "cmux",
+      siteName: "UniConnect",
       type: "website",
     },
     twitter: {
@@ -67,7 +68,7 @@ export async function generateMetadata({
       description: t("ogDescription"),
     },
     alternates,
-    metadataBase: new URL("https://cmux.com"),
+    metadataBase: new URL(SITE_URL),
   };
 }
 
@@ -97,10 +98,10 @@ export default async function LocaleLayout({
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    name: "cmux",
+    name: "UniConnect",
     operatingSystem: "macOS",
     applicationCategory: "DeveloperApplication",
-    url: "https://cmux.com",
+    url: SITE_URL,
     downloadUrl: DOWNLOAD_URL,
     description:
       "Native macOS terminal built on Ghostty. Works with Claude Code, Codex, OpenCode, Gemini CLI, Kiro, Aider, and any CLI tool. Vertical tabs, notification rings, split panes, and a socket API.",

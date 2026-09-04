@@ -663,7 +663,7 @@ jobs:
           SOCK="/tmp/cmux-debug-${TAG}.sock"
           BUNDLE_ID="$(
             /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist" 2>/dev/null \
-              || echo 'com.cmuxterm.app.debug'
+              || echo 'com.unixcision.uniconnect.debug'
           )"
 
           pkill -x "UniConnect DEV" || true
@@ -834,7 +834,7 @@ jobs:
       - name: Validate Release artifact slices
         run: |
           set -euo pipefail
-          APP_BINARY="build-universal/Build/Products/Release/UniConnect.app/Contents/MacOS/cmux"
+          APP_BINARY="build-universal/Build/Products/Release/UniConnect.app/Contents/MacOS/UniConnect"
           CLI_BINARY="build-universal/Build/Products/Release/UniConnect.app/Contents/Resources/bin/cmux"
           HELPER_BINARY="build-universal/Build/Products/Release/UniConnect.app/Contents/Resources/bin/ghostty"
           test -x "$APP_BINARY"

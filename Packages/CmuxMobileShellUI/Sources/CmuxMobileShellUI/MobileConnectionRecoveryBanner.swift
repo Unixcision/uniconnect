@@ -19,7 +19,7 @@ struct MobileConnectionRecoveryBanner: View {
                 authBanner(
                     text: store.connectionError ?? L10n.string(
                         "mobile.recovery.accountMismatch",
-                        defaultValue: "This Mac is signed in to a different cmux account. Sign out and sign back in with that account."
+                        defaultValue: "This Mac is signed in to a different UniConnect account. Sign out and sign back in with that account."
                     )
                 )
             } else if store.connectionRecoveryFailed {

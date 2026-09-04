@@ -162,7 +162,7 @@ cleanup_tagged_soak_processes
 sleep 1
 cleanup_tagged_soak_processes
 
-app="$HOME/Library/Developer/Xcode/DerivedData/cmux-${tag}/Build/Products/Debug/UniConnect DEV ${tag}.app"
+app="$HOME/Library/Developer/Xcode/DerivedData/uniconnect-${tag}/Build/Products/Debug/UniConnect DEV ${tag}.app"
 if [[ ! -x "$app/Contents/MacOS/UniConnect DEV" ]]; then
   cat >&2 <<EOF
 Tagged macOS app is missing:

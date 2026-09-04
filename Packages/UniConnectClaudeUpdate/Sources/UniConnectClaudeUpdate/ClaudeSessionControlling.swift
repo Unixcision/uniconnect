@@ -48,12 +48,20 @@ public protocol ClaudeSessionControlling: Sendable {
 
     /// Idempotently restores or reconciles the exact bound Claude session.
     ///
-    /// If the expected UUID is already live, the implementation must succeed without launching a
-    /// duplicate. Restoration must not be abandoned merely because the update task was cancelled.
-    /// It must use the persisted cwd, executable, and UUID from ``ClaudeSessionBinding`` and add
-    /// the required `--dangerously-skip-permissions` resume flag.
+    /// If the expected UUID is already live under a PID different from `replacingProcessID`, the
+    /// implementation must succeed without launching a duplicate. The old PID itself is not proof
+    /// of restoration: when it is still live, the implementation must first await its exit and the
+    /// owning shell before resuming the session. Restoration must not be abandoned merely because
+    /// the update task was cancelled. It must use the persisted cwd, executable, and UUID from
+    /// ``ClaudeSessionBinding`` and add the required `--dangerously-skip-permissions` resume flag.
     ///
-    /// - Parameter target: The durably journaled target to restore.
+    /// - Parameters:
+    ///   - target: The durably journaled target to restore.
+    ///   - replacingProcessID: The old Claude PID that must be gone before a live matching session
+    ///     can satisfy restoration, or `nil` when no prior PID was durably observed.
     /// - Throws: When the session cannot be safely resumed or reconciled.
-    func restore(_ target: ClaudeUpdateTarget) async throws
+    func restore(
+        _ target: ClaudeUpdateTarget,
+        replacingProcessID: Int32?
+    ) async throws
 }

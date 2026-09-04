@@ -1940,7 +1940,7 @@ final class SocketClient {
         }
 
         let authURL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-            .appendingPathComponent(".cmux/relay/\(endpoint.port).auth", isDirectory: false)
+            .appendingPathComponent(".uniconnect/relay/\(endpoint.port).auth", isDirectory: false)
         guard let authData = try? Data(contentsOf: authURL),
               let authObject = try? JSONSerialization.jsonObject(with: authData) as? [String: Any],
               let relayID = trimmedEnvValue(authObject["relay_id"] as? String),
@@ -2268,11 +2268,11 @@ final class SocketClient {
         }
 
         guard let watchDirectory = existingWatchDirectory(forPath: path) else {
-            throw CLIError(message: "cmux app did not start in time (socket not found at \(path))")
+            throw CLIError(message: "UniConnect did not start in time (socket not found at \(path))")
         }
         let watchFD = open(watchDirectory, O_EVTONLY)
         guard watchFD >= 0 else {
-            throw CLIError(message: "cmux app did not start in time (socket not found at \(path))")
+            throw CLIError(message: "UniConnect did not start in time (socket not found at \(path))")
         }
 
         let queue = DispatchQueue(label: "com.unixcision.uniconnect.cli.socket-watch.\(UUID().uuidString)")
@@ -2306,7 +2306,7 @@ final class SocketClient {
         guard semaphore.wait(timeout: .now() + timeout) == .success else {
             source.cancel()
             client.close()
-            throw CLIError(message: "cmux app did not start in time (socket not found at \(path))")
+            throw CLIError(message: "UniConnect did not start in time (socket not found at \(path))")
         }
 
         source.cancel()
@@ -2874,7 +2874,7 @@ struct CMUXCLI {
         } else if action == "status" || action == "browser-status" {
             print(disabled ? "disabled" : "enabled")
         } else {
-            print(disabled ? "cmux browser disabled" : "cmux browser enabled")
+            print(disabled ? "UniConnect Browser disabled" : "UniConnect Browser enabled")
         }
     }
 
@@ -3370,7 +3370,7 @@ struct CMUXCLI {
                     print("Already signed in\(email.map { " as \($0)" } ?? ""). Use `cmux auth logout` to sign out first.")
                     break
                 }
-                print("Opening sign-in popup on the cmux web app.")
+                print("Opening sign-in popup on the UniConnect web app.")
                 // auth.begin_sign_in blocks on the server side until the
                 // popup completes (or 5min timeout). The response is the
                 // callback — no polling.
@@ -5180,7 +5180,7 @@ struct CMUXCLI {
     private func openDirectoryWithLaunchServices(_ directory: String) throws {
         try runOpenTool(
             arguments: ["-a", appLaunchTarget(), directory],
-            failureMessage: localizedFormat("cli.pathOpen.error.openFailed", defaultValue: "Failed to open %@ in cmux", directory),
+            failureMessage: localizedFormat("cli.pathOpen.error.openFailed", defaultValue: "Failed to open %@ in UniConnect", directory),
             environment: launchServicesPathOpenEnvironment()
         )
     }
@@ -5461,14 +5461,14 @@ struct CMUXCLI {
     private func launchApp() throws {
         try runOpenTool(
             arguments: ["-a", appLaunchTarget()],
-            failureMessage: String(localized: "cli.pathOpen.error.launchFailed", defaultValue: "Failed to launch cmux")
+            failureMessage: String(localized: "cli.pathOpen.error.launchFailed", defaultValue: "Failed to launch UniConnect")
         )
     }
 
     private func activateApp() throws {
         try runOpenTool(
             arguments: ["-a", appLaunchTarget()],
-            failureMessage: String(localized: "cli.pathOpen.error.activateFailed", defaultValue: "Failed to activate cmux")
+            failureMessage: String(localized: "cli.pathOpen.error.activateFailed", defaultValue: "Failed to activate UniConnect")
         )
     }
 
@@ -7766,7 +7766,7 @@ struct CMUXCLI {
                     FileHandle.standardError.write(Data(warning.utf8))
                 }
                 throw CLIError(
-                    message: "cmux could not resolve the initial terminal surface for persistent SSH PTY startup"
+                    message: "UniConnect could not resolve the initial terminal surface for persistent SSH PTY startup"
                 )
             }
         }
@@ -8216,7 +8216,7 @@ struct CMUXCLI {
     ) -> String {
         var lines = remoteBootstrapTTYCaptureLines(remoteRelayPort: remoteRelayPort, includeRelayRPC: false)
         lines += [
-            "cmux_tmp=$(mktemp \"${TMPDIR:-/tmp}/cmux-ssh-bootstrap.XXXXXX\") || exit 1",
+            "cmux_tmp=$(mktemp \"${TMPDIR:-/tmp}/uniconnect-ssh-bootstrap.XXXXXX\") || exit 1",
             "(printf %s '\(base64Placeholder)' | base64 -d 2>/dev/null || printf %s '\(base64Placeholder)' | base64 -D 2>/dev/null) > \"$cmux_tmp\" || { rm -f \"$cmux_tmp\"; exit 1; }",
             "chmod 700 \"$cmux_tmp\" >/dev/null 2>&1 || true",
             "/bin/sh \"$cmux_tmp\"",
@@ -8294,7 +8294,7 @@ struct CMUXCLI {
             "cmux_ssh_preflight_control_path() {",
             #"  cmux_ssh_control_path="$(command \#(sshPrefix) -G \#(destination) 2>/dev/null | awk 'tolower($1) == "controlpath" { $1 = ""; sub(/^[[:space:]]+/, ""); print; exit }')" "#,
             "  case \"${cmux_ssh_control_path:-}\" in",
-            "    /tmp/uniconnect-ssh-*|\"$HOME\"/.cmux/control/*)",
+            "    /tmp/uniconnect-ssh-*|\"$HOME\"/.uniconnect/control/*)",
             "      if ! command \(sshPrefix) -S \"$cmux_ssh_control_path\" -O check \(destination) >/dev/null 2>&1; then",
             "        rm -f -- \"$cmux_ssh_control_path\" 2>/dev/null || true",
             "      fi",
@@ -8683,7 +8683,7 @@ struct CMUXCLI {
         let encodedLiteral = shellQuote(encodedScript)
         var lines = remoteBootstrapTTYCaptureLines(remoteRelayPort: remoteRelayPort, includeRelayRPC: false)
         lines += [
-            "cmux_tmp=$(mktemp \"${TMPDIR:-/tmp}/cmux-ssh-bootstrap.XXXXXX\") || exit 1",
+            "cmux_tmp=$(mktemp \"${TMPDIR:-/tmp}/uniconnect-ssh-bootstrap.XXXXXX\") || exit 1",
             "(printf %s \(encodedLiteral) | base64 -d 2>/dev/null || printf %s \(encodedLiteral) | base64 -D 2>/dev/null) > \"$cmux_tmp\" || { rm -f \"$cmux_tmp\"; exit 1; }",
             "chmod 700 \"$cmux_tmp\" >/dev/null 2>&1 || true",
             "/bin/sh \"$cmux_tmp\"",
@@ -9000,10 +9000,10 @@ struct CMUXCLI {
             guard endpoint.daemon != nil else {
                 throw CLIError(
                     message: """
-                        This Cloud VM image does not support interactive attach in this cmux build.
+                        This Cloud VM image does not support interactive attach in this UniConnect build.
 
                         What to do:
-                          Update cmux, then create a fresh VM with `cmux vm new`.
+                          Update UniConnect, then create a fresh VM with `cmux vm new`.
                           If this keeps happening, contact support with the VM id.
 
                         Details:
@@ -9057,7 +9057,7 @@ struct CMUXCLI {
               let kind = cred["kind"] as? String
         else {
             throw CLIError(message: """
-                cmux could not read the attach information for this Cloud VM.
+                UniConnect could not read the attach information for this Cloud VM.
 
                 What to do:
                   Retry `cmux vm ssh <id>`.
@@ -9071,10 +9071,10 @@ struct CMUXCLI {
             if kind == "authorizedKey" {
                 throw CLIError(
                     message: """
-                        This Cloud VM does not support interactive SSH attach in this cmux build.
+                        This Cloud VM does not support interactive SSH attach in this UniConnect build.
 
                         What to do:
-                          Update cmux and retry.
+                          Update UniConnect and retry.
                           If this keeps happening, contact support with the VM id.
 
                         Details:
@@ -9083,7 +9083,7 @@ struct CMUXCLI {
                 )
             }
             throw CLIError(message: """
-                cmux could not use the attach information for this Cloud VM.
+                UniConnect could not use the attach information for this Cloud VM.
 
                 What to do:
                   Retry `cmux vm ssh <id>`.
@@ -9096,7 +9096,7 @@ struct CMUXCLI {
         guard let token = cred["value"] as? String,
               !token.isEmpty else {
             throw CLIError(message: """
-                cmux could not open an interactive SSH session for this Cloud VM.
+                UniConnect could not open an interactive SSH session for this Cloud VM.
 
                 What to do:
                   Retry `cmux vm ssh <id>`.
@@ -9161,10 +9161,10 @@ struct CMUXCLI {
             print("  username:  \(username)")
             print("  password:  \(credValue)")
         } else {
-            print("This Cloud VM does not support `cmux \(command) ssh-info` in this cmux build.")
+            print("This Cloud VM does not support `cmux \(command) ssh-info` in this UniConnect build.")
             print("")
             print("What to do:")
-            print("  Update cmux and retry.")
+            print("  Update UniConnect and retry.")
             print("  If this keeps happening, contact support with the VM id.")
         }
     }
@@ -9194,7 +9194,7 @@ struct CMUXCLI {
         )
         let sshArguments = buildSSHCommandArguments(options)
         guard let launchPath = sshArguments.first else {
-            throw CLIError(message: "vm ssh-attach could not construct an ssh command. Retry `cmux vm ssh <id>` from a normal cmux shell.")
+            throw CLIError(message: "vm ssh-attach could not construct an ssh command. Retry `cmux vm ssh <id>` from a UniConnect terminal.")
         }
         client.close()
         try execInteractiveProgram(
@@ -9216,7 +9216,7 @@ struct CMUXCLI {
               let token = response["token"] as? String,
               let sessionId = response["session_id"] as? String else {
             throw CLIError(message: """
-                cmux could not read the attach information for this Cloud VM.
+                UniConnect could not read the attach information for this Cloud VM.
 
                 What to do:
                   Retry `cmux vm ssh <id>`.
@@ -10421,7 +10421,7 @@ struct CMUXCLI {
         if lowered.contains("missing required capability") ||
             lowered.contains("pty.session") ||
             lowered.contains("method_not_found") {
-            return "remote daemon does not support persistent SSH PTY sessions; reconnect the remote workspace to update cmux"
+            return "remote daemon does not support persistent SSH PTY sessions; reconnect the remote workspace to update UniConnect"
         }
         if lowered.contains("pty_session_not_found") ||
             (lowered.contains("persistent ssh pty session") && lowered.contains("not running")) ||
@@ -10628,13 +10628,13 @@ struct CMUXCLI {
         let downloadURL = entry?.downloadURL ?? "unknown"
         let checksumsAssetName = manifest?.checksumsAssetName ?? "unknown"
         let checksumsURL = manifest?.checksumsURL ?? "unknown"
-        let downloadCommand = "gh release download \(releaseTag) --repo manaflow-ai/cmux --pattern \(assetName)"
-        let downloadChecksumsCommand = "gh release download \(releaseTag) --repo manaflow-ai/cmux --pattern \(checksumsAssetName)"
+        let downloadCommand = "gh release download \(releaseTag) --repo Unixcision/uniconnect --pattern \(assetName)"
+        let downloadChecksumsCommand = "gh release download \(releaseTag) --repo Unixcision/uniconnect --pattern \(checksumsAssetName)"
         let checksumVerifyCommand = "shasum -a 256 -c \(checksumsAssetName) --ignore-missing"
         let signerWorkflow = releaseTag == "nightly"
-            ? "manaflow-ai/cmux/.github/workflows/nightly.yml"
-            : "manaflow-ai/cmux/.github/workflows/release.yml"
-        let verifyCommand = "gh attestation verify ./\(assetName) --repo manaflow-ai/cmux --signer-workflow \(signerWorkflow)"
+            ? "Unixcision/uniconnect/.github/workflows/nightly.yml"
+            : "Unixcision/uniconnect/.github/workflows/release.yml"
+        let verifyCommand = "gh attestation verify ./\(assetName) --repo Unixcision/uniconnect --signer-workflow \(signerWorkflow)"
 
         let payload: [String: Any] = [
             "app_version": remoteDaemonVersionString(from: info),
@@ -11877,7 +11877,7 @@ struct CMUXCLI {
                 syncScreenshotLocationFields()
                 if !hasText(screenshotPath) && !hasText(screenshotURL) {
                     let outputDir = FileManager.default.temporaryDirectory
-                        .appendingPathComponent("cmux-browser-screenshots-cli", isDirectory: true)
+            .appendingPathComponent("uniconnect-browser-screenshots-cli", isDirectory: true)
                     if (try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)) != nil {
                         bestEffortPruneTemporaryFiles(in: outputDir)
                         let timestampMs = Int(Date().timeIntervalSince1970 * 1000)
@@ -12797,7 +12797,7 @@ struct CMUXCLI {
             return """
             Usage: cmux ping
 
-            Check connectivity to the cmux socket server.
+            Check connectivity to the UniConnect socket server.
             """
         case "capabilities":
             return """
@@ -12809,7 +12809,7 @@ struct CMUXCLI {
             return """
             Usage: cmux events [options]
 
-            Stream cmux events as newline-delimited JSON.
+            Stream UniConnect events as newline-delimited JSON.
 
             Options:
               --after <seq>          Replay retained events after this sequence
@@ -12831,7 +12831,7 @@ struct CMUXCLI {
             Usage: cmux auth <status|login|logout>
 
             status   Print whether the user is signed in (add `cmux --json` for JSON).
-            login    Open the sign-in popup on the cmux web app and wait for it to finish.
+            login    Open the sign-in popup on the UniConnect web app and wait for it to finish.
             logout   Clear the current session.
             """
         case "login":
@@ -12862,7 +12862,7 @@ struct CMUXCLI {
                                         Drop into an interactive shell on an existing VM.
                                         Alias: `attach <id>`.
               ssh <id> [--window <id|ref|index>]
-                                        Drop into a cmux-managed SSH workspace for an existing
+                                        Drop into a UniConnect-managed SSH workspace for an existing
                                         VM, using the same session path as `cmux ssh`.
               ssh-info <id>             Print SSH connection details when the Cloud VM
                                         exposes SSH.
@@ -12870,7 +12870,7 @@ struct CMUXCLI {
               exec <id> -- <command...> Run a shell command inside the VM and print stdout.
 
             Env:
-              CMUX_VM_API_BASE_URL       Override the backend origin (default: the cmux website).
+              CMUX_VM_API_BASE_URL       Override the backend origin (default: the UniConnect website).
                                          `bun run dev` derives this from CMUX_PORT/PORT for
                                          local testing from the web worktree.
 
@@ -12892,7 +12892,7 @@ struct CMUXCLI {
             Usage: cmux help
 
             Show top-level CLI usage and command list.
-            Also works without a running cmux app or socket.
+            Also works without a running UniConnect app or socket.
             """
         case "docs":
             return docsUsage()
@@ -12904,7 +12904,7 @@ struct CMUXCLI {
             return """
             Usage: cmux welcome
 
-            Show a welcome screen with the cmux logo and useful shortcuts.
+            Show a welcome screen with the UniConnect logo and useful shortcuts.
             Auto-runs once on first launch.
             """
         case "shortcuts":
@@ -12917,20 +12917,20 @@ struct CMUXCLI {
             return """
             Usage: cmux disable-browser [--json]
 
-            Disable cmux browser creation and link interception. This overrides
+            Disable UniConnect Browser creation and link interception. This overrides
             browser settings from uniconnect.json until re-enabled.
             """
         case "enable-browser":
             return """
             Usage: cmux enable-browser [--json]
 
-            Re-enable cmux browser creation and link interception.
+            Re-enable UniConnect Browser creation and link interception.
             """
         case "browser-status":
             return """
             Usage: cmux browser-status [--json]
 
-            Print whether cmux browser creation and link interception are enabled.
+            Print whether UniConnect Browser creation and link interception are enabled.
             """
         case "agent-hibernation":
             return """
@@ -12943,10 +12943,10 @@ struct CMUXCLI {
             return """
             Usage: cmux restore-session
 
-            Reopen the previous saved cmux session.
+            Reopen the previous saved UniConnect session.
 
             If the app is already running, this restores the last saved session into the current app.
-            If the app is not running, this launches cmux and lets startup restore reopen the saved session.
+            If the app is not running, this launches UniConnect and lets startup restore reopen the saved session.
             """
         case "feedback":
             return """
@@ -12978,7 +12978,7 @@ struct CMUXCLI {
               --legacy         Force the older built-in Swift TUI
             """
         case "hooks":
-            return """
+            return String(localized: "cli.hooks.usage", defaultValue: """
             Usage: cmux hooks setup [agent] [--agent <name>] [--yes|-y]
                    cmux hooks uninstall [agent] [--agent <name>] [--yes|-y]
                    cmux hooks <agent> install [--yes|-y] (opencode supports --project)
@@ -12986,8 +12986,8 @@ struct CMUXCLI {
                    cmux hooks <agent> <event> [flags]
                    cmux hooks feed --source <agent> [--event <event>]
 
-            Manage and run cmux agent hooks without adding one top-level command per
-            agent. Claude Code hooks are injected automatically by the cmux Claude wrapper.
+            Manage and run UniConnect agent hooks without adding one top-level command per
+            agent. Claude Code hooks are injected automatically by the UniConnect Claude wrapper.
 
             Agents:
               codex, grok, opencode, pi, omp, amp, cursor, gemini, kiro, antigravity (alias: agy), rovodev (alias: rovo), hermes-agent, copilot, codebuddy, factory, qoder
@@ -13001,11 +13001,11 @@ struct CMUXCLI {
               feed               Internal Feed decision bridge
 
             Generated files:
-              ~/.config/opencode/plugins/cmux-session.js
-              ~/.config/opencode/plugins/cmux-feed.js
-              ~/.pi/agent/extensions/cmux-session.ts
-              ~/.omp/agent/extensions/cmux-omp-session.ts
-              ~/.config/amp/plugins/cmux-session.ts
+              ~/.config/opencode/plugins/uniconnect-session.js
+              ~/.config/opencode/plugins/uniconnect-feed.js
+              ~/.pi/agent/extensions/uniconnect-session.ts
+              ~/.omp/agent/extensions/uniconnect-omp-session.ts
+              ~/.config/amp/plugins/uniconnect-session.ts
               ~/.kiro/agents/uniconnect.json
               See docs/agent-hooks.md for the full integration matrix.
 
@@ -13018,7 +13018,7 @@ struct CMUXCLI {
               cmux hooks codex install
               cmux hooks opencode install --project
               cmux hooks uninstall
-            """
+            """)
         case "themes":
             return """
             Usage: cmux themes
@@ -13031,7 +13031,7 @@ struct CMUXCLI {
             When run in a TTY, `cmux themes` opens an interactive theme picker with
             live app preview. Use `cmux themes list` for a plain listing.
 
-            The picker previews the selected theme across the running cmux app and
+            The picker previews the selected theme across the running UniConnect app and
             lets you apply it to the light theme, dark theme, or both defaults.
 
             Commands:
@@ -13039,7 +13039,7 @@ struct CMUXCLI {
               set <theme>               Set the same theme for both light and dark appearance
               set --light <theme>       Set the light appearance theme
               set --dark <theme>        Set the dark appearance theme
-              clear                     Remove the cmux theme override and fall back to other config
+              clear                     Remove the UniConnect theme override and fall back to other config
 
             Examples:
               cmux themes
@@ -13056,13 +13056,13 @@ struct CMUXCLI {
 
             This command:
               - defaults Claude teammate mode to auto
-              - sets a tmux-like environment so Claude auto mode uses cmux splits
+              - sets a tmux-like environment so Claude auto mode uses UniConnect splits
               - sets CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
               - prepends a private tmux shim to PATH
               - forwards all remaining arguments to claude
 
-            The tmux shim translates supported tmux window/pane commands into cmux
-            workspace and split operations in the current cmux session.
+            The tmux shim translates supported tmux window/pane commands into UniConnect
+            workspace and split operations in the current UniConnect session.
 
             Examples:
               cmux claude-teams
@@ -13073,13 +13073,13 @@ struct CMUXCLI {
             return String(localized: "cli.codex-teams.usage", defaultValue: """
             Usage: cmux codex-teams [codex-args...]
 
-            Launch Codex with cmux-managed subagent panes.
+            Launch Codex with UniConnect-managed subagent panes.
 
             This command:
               - starts a private Codex app-server on localhost
               - launches the root Codex TUI against that app-server
               - watches live Codex thread-spawn subagents
-              - opens subagents up to depth 2 as native cmux splits
+              - opens subagents up to depth 2 as native UniConnect splits
               - forwards all remaining arguments to codex
 
             Examples:
@@ -13091,19 +13091,19 @@ struct CMUXCLI {
             return String(localized: "cli.omo.usage", defaultValue: """
             Usage: cmux omo [opencode-args...]
 
-            Launch OpenCode with oh-my-openagent in a cmux-aware environment.
+            Launch OpenCode with oh-my-openagent in a UniConnect-aware environment.
 
             oh-my-openagent orchestrates multiple AI models as specialized agents in
             parallel. This command sets up a tmux shim so agent panes become native
-            cmux splits with sidebar metadata and notifications.
+            UniConnect splits with sidebar metadata and notifications.
 
             This command:
-              - sets a tmux-like environment so oh-my-openagent uses cmux splits
+              - sets a tmux-like environment so oh-my-openagent uses UniConnect splits
               - prepends a private tmux shim to PATH
               - forwards all remaining arguments to opencode
 
-            The tmux shim translates tmux window/pane commands into cmux workspace
-            and split operations in the current cmux session.
+            The tmux shim translates tmux window/pane commands into UniConnect workspace
+            and split operations in the current UniConnect session.
 
             Examples:
               cmux omo
@@ -13114,14 +13114,14 @@ struct CMUXCLI {
             return String(localized: "cli.omx.usage", defaultValue: """
             Usage: cmux omx [omx-args...]
 
-            Launch Oh My Codex (OMX) with native cmux pane integration.
+            Launch Oh My Codex (OMX) with native UniConnect pane integration.
 
             OMX is a multi-agent orchestration layer for OpenAI Codex CLI. This
             command sets up a tmux shim so OMX team mode, HUD, and agent panes
-            become native cmux splits.
+            become native UniConnect splits.
 
             This command:
-              - sets a tmux-like environment so OMX uses cmux splits
+              - sets a tmux-like environment so OMX uses UniConnect splits
               - prepends a private tmux shim to PATH
               - forwards all remaining arguments to omx
 
@@ -13136,15 +13136,15 @@ struct CMUXCLI {
             return String(localized: "cli.omc.usage", defaultValue: """
             Usage: cmux omc [omc-args...]
 
-            Launch Oh My Claude Code (OMC) with native cmux pane integration.
+            Launch Oh My Claude Code (OMC) with native UniConnect pane integration.
 
             OMC is a multi-agent orchestration system for Claude Code with
             specialized agents, smart model routing, and team pipelines. This
             command sets up a tmux shim so OMC team mode and agent panes become
-            native cmux splits.
+            native UniConnect splits.
 
             This command:
-              - sets a tmux-like environment so OMC uses cmux splits
+              - sets a tmux-like environment so OMC uses UniConnect splits
               - prepends a private tmux shim to PATH
               - injects NODE_OPTIONS restore module for Claude compatibility
               - forwards all remaining arguments to omc
@@ -13731,7 +13731,7 @@ struct CMUXCLI {
             return String(localized: "cli.help.memory", defaultValue: """
             Usage: cmux memory [flags]
 
-            Diagnose cmux app memory separately from recursive terminal child-process RSS.
+            Diagnose UniConnect app memory separately from recursive terminal child-process RSS.
 
             Flags:
               --all                         Include all windows (default: current window only)
@@ -13740,8 +13740,8 @@ struct CMUXCLI {
               --json                        Structured JSON output
 
             Output:
-              App footprint is the direct cmux process physical footprint from macOS process accounting.
-              Child RSS is recursive resident memory for descendants of the cmux app process,
+              App footprint is the direct UniConnect process physical footprint from macOS process accounting.
+              Child RSS is recursive resident memory for descendants of the UniConnect app process,
               grouped by command name and attributed back to workspace, pane, and surface when known.
 
             Example:
@@ -14588,15 +14588,15 @@ struct CMUXCLI {
               echo '{}' | cmux claude-hook stop
             """
         case "codex":
-            return """
+            return String(localized: "cli.hooks.codexLegacyUsage", defaultValue: """
             Usage: cmux codex <install-hooks|uninstall-hooks>
 
-            Manage Codex CLI hooks integration.
+            Manage the UniConnect integration for Codex CLI hooks.
 
             Subcommands:
-              install-hooks     Install cmux hooks into ~/.codex/hooks.json
-              uninstall-hooks   Remove cmux hooks from ~/.codex/hooks.json
-            """
+              install-hooks     Install UniConnect hooks into ~/.codex/hooks.json
+              uninstall-hooks   Remove UniConnect hooks from ~/.codex/hooks.json
+            """)
         case "browser":
             return """
             Usage: cmux browser [--surface <id|ref|index> | <surface>] <subcommand> [args]
@@ -15579,7 +15579,7 @@ struct CMUXCLI {
         do {
             return try client.sendV2(method: "system.top", params: params, responseTimeout: responseTimeout)
         } catch let error as CLIError where error.message.hasPrefix("method_not_found:") {
-            throw CLIError(message: String(localized: "cli.top.error.processDiagnosticsUnsupported", defaultValue: "cmux top requires a running cmux build that supports process diagnostics"))
+            throw CLIError(message: String(localized: "cli.top.error.processDiagnosticsUnsupported", defaultValue: "cmux top requires a running UniConnect build that supports process diagnostics"))
         }
     }
 
@@ -17764,7 +17764,7 @@ struct CMUXCLI {
             explicitPassword: explicitPassword
         )
         let shimDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cmux-debug-tmux-shim-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("uniconnect-debug-tmux-shim-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: shimDirectory, withIntermediateDirectories: true)
         // This is the one-shot debug dump (it never spawns a long-lived agent that would need the
         // shims on PATH), so remove the shim dir on exit instead of leaking a /tmp dir per invocation.
@@ -17878,7 +17878,7 @@ struct CMUXCLI {
             temporaryDirectory = NSTemporaryDirectory()
         }
         let root = URL(fileURLWithPath: temporaryDirectory, isDirectory: true)
-            .appendingPathComponent("cmux-claude-node-options", isDirectory: true)
+            .appendingPathComponent("uniconnect-claude-node-options", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: nil)
         let restoreModuleURL = root.appendingPathComponent("restore-node-options.cjs", isDirectory: false)
         try writeShimIfChanged(Self.claudeNodeOptionsRestoreModule, to: restoreModuleURL)
@@ -18592,7 +18592,7 @@ struct CMUXCLI {
 
     private static func codexTeamsStartupScript(commandText: String, cwd: String?) -> String? {
         let scriptURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cmux-codex-teams-\(UUID().uuidString.lowercased()).sh")
+            .appendingPathComponent("uniconnect-codex-teams-\(UUID().uuidString.lowercased()).sh")
         var lines = [
             "#!/bin/sh",
             "rm -f -- \"$0\" 2>/dev/null || true"
@@ -18650,7 +18650,7 @@ struct CMUXCLI {
             processEnvironment: launcherEnvironment,
             explicitPassword: explicitPassword
         ) else {
-            throw CLIError(message: "cmux codex-teams must be started from a cmux terminal surface")
+            throw CLIError(message: "cmux codex-teams must be started from a UniConnect terminal surface")
         }
         // The codex-teams root identity is the LAUNCH surface (this process's own env), not the
         // operator's focused pane, so the watcher records the surface codex actually runs in (#4920).
@@ -18661,7 +18661,7 @@ struct CMUXCLI {
             focusedSurfaceId: focusedContext.surfaceId
         )
         guard let rootSurfaceId = rootIdentity.surfaceId, !rootSurfaceId.isEmpty else {
-            throw CLIError(message: "cmux codex-teams must be started from a cmux terminal surface")
+            throw CLIError(message: "cmux codex-teams must be started from a UniConnect terminal surface")
         }
         let rootWorkspaceId = rootIdentity.workspaceId ?? focusedContext.workspaceId
 
@@ -18971,7 +18971,7 @@ struct CMUXCLI {
 
     private func codexTeamsLogURL(port: UInt16, name: String) -> URL {
         FileManager.default.temporaryDirectory
-            .appendingPathComponent("cmux-codex-teams-\(port)-\(name).log")
+            .appendingPathComponent("uniconnect-codex-teams-\(port)-\(name).log")
     }
 
     private func waitForCodexTeamsAppServer(appServerURL: String) throws {
@@ -19205,7 +19205,7 @@ struct CMUXCLI {
 
     private static let omoPluginName = "oh-my-openagent"
     private static let legacyOmoPluginName = "oh-my-opencode"
-    private static let openCodeSessionPluginConfigSpec = "./plugins/cmux-session.js"
+    private static let openCodeSessionPluginConfigSpec = "./plugins/uniconnect-session.js"
 
     private func resolveExecutableInPath(_ name: String, searchPath: String? = nil) -> String? {
         let entries = (searchPath ?? ProcessInfo.processInfo.environment["PATH"])?
@@ -25321,19 +25321,19 @@ struct CMUXCLI {
         }
     }
 
-    private static let openCodeSessionPluginMarker = "cmux-opencode-session-plugin-marker"
-    private static let openCodeSessionPluginFilename = "cmux-session.js"
+    private static let openCodeSessionPluginMarker = "uniconnect-opencode-session-plugin-marker"
+    private static let openCodeSessionPluginFilename = "uniconnect-session.js"
     private static let openCodeSessionPluginSource = #"""
-// cmux-opencode-session-plugin-marker v1
-// Bridges OpenCode session lifecycle events into cmux's restorable session store.
+// uniconnect-opencode-session-plugin-marker v2
+// Bridges OpenCode session lifecycle events into UniConnect's restorable session store.
 // Installed by `cmux hooks opencode install` or `cmux hooks setup`.
-// DO NOT EDIT MANUALLY. cmux upgrades this file in place.
+// DO NOT EDIT MANUALLY. UniConnect upgrades this file in place.
 
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-const CMUX_PLUGIN_INSTALLED_KEY = Symbol.for("cmux.session.restore.plugin.installed");
+const UNICONNECT_PLUGIN_INSTALLED_KEY = Symbol.for("uniconnect.session.restore.plugin.installed");
 
 function firstString(...values) {
   for (const value of values) {
@@ -25469,9 +25469,9 @@ function sendHook(subcommand, ctx, event, extra = {}) {
   } catch (_) {}
 }
 
-const CMUXSessionRestore = async (ctx) => {
-  if (globalThis[CMUX_PLUGIN_INSTALLED_KEY]) return {};
-  globalThis[CMUX_PLUGIN_INSTALLED_KEY] = true;
+const UniConnectSessionRestore = async (ctx) => {
+  if (globalThis[UNICONNECT_PLUGIN_INSTALLED_KEY]) return {};
+  globalThis[UNICONNECT_PLUGIN_INSTALLED_KEY] = true;
   return {
     event: async ({ event }) => {
       const props = eventProperties(event);
@@ -25504,9 +25504,25 @@ const CMUXSessionRestore = async (ctx) => {
   };
 };
 
-export { CMUXSessionRestore };
-export default CMUXSessionRestore;
+export { UniConnectSessionRestore };
+export default UniConnectSessionRestore;
 """#
+
+    private func existingGeneratedHookContents(at url: URL) throws -> String {
+        guard FileManager.default.fileExists(atPath: url.path) else { return "" }
+        do {
+            return try String(contentsOf: url, encoding: .utf8)
+        } catch {
+            let message = String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.error.readFailed",
+                    defaultValue: "Failed to read %@"
+                ),
+                url.path
+            )
+            throw CLIError(message: "\(message): \(String(describing: error))")
+        }
+    }
 
     private func openCodeSessionPluginURL(for def: AgentHookDef) -> URL {
         URL(fileURLWithPath: def.resolvedConfigDir(), isDirectory: true)
@@ -25540,11 +25556,6 @@ export default CMUXSessionRestore;
             guard let value else { return false }
             if value == spec { return true }
             if allowVersionSuffix, value.hasPrefix("\(spec)@") { return true }
-            if spec == Self.openCodeSessionPluginConfigSpec {
-                return value == "./plugins/\(Self.openCodeSessionPluginFilename)"
-                    || value.hasSuffix("/plugins/\(Self.openCodeSessionPluginFilename)")
-                    || value.hasSuffix("/\(Self.openCodeSessionPluginFilename)")
-            }
             return false
         }
     }
@@ -25652,23 +25663,35 @@ export default CMUXSessionRestore;
                 return true
             }
             return value != Self.openCodeSessionPluginConfigSpec
-                && value != "cmux-session"
-                && value != "./plugins/\(Self.openCodeSessionPluginFilename)"
-                && !value.hasSuffix("/plugins/\(Self.openCodeSessionPluginFilename)")
-                && !value.hasSuffix("/\(Self.openCodeSessionPluginFilename)")
         }
     }
 
     private func updateOpenCodePluginRegistration(configDir: URL, shouldInstall: Bool) throws -> Bool {
         let configURL = configDir.appendingPathComponent("opencode.json", isDirectory: false); let existingData = try? Data(contentsOf: configURL)
+        if !shouldInstall, existingData == nil {
+            return false
+        }
         var config: [String: Any]
         if let data = existingData {
-            guard let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw CLIError(message: "Failed to parse \(configURL.path). Fix the JSON syntax and retry.") }
+            guard let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw CLIError(message: String.localizedStringWithFormat(
+                    String(
+                        localized: "cli.hooks.error.parseJSON",
+                        defaultValue: "Failed to parse %@. Fix the JSON syntax and retry."
+                    ),
+                    configURL.path
+                ))
+            }
             config = decoded
         } else {
             config = [:]
         }
-        var plugins = Self.openCodePluginListRemovingSessionPlugin((config["plugin"] as? [Any]) ?? [])
+        let existingPlugins = (config["plugin"] as? [Any]) ?? []
+        if !shouldInstall,
+           !Self.openCodePluginListContains(existingPlugins, spec: Self.openCodeSessionPluginConfigSpec) {
+            return false
+        }
+        var plugins = Self.openCodePluginListRemovingSessionPlugin(existingPlugins)
         if shouldInstall, !Self.openCodePluginListContains(plugins, spec: Self.openCodeSessionPluginConfigSpec) { plugins.append(Self.openCodeSessionPluginConfigSpec) }
         config["plugin"] = plugins
         let output = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
@@ -25680,55 +25703,100 @@ export default CMUXSessionRestore;
 
     private func installOpenCodePluginHooks(_ def: AgentHookDef) throws {
         let pluginURL = openCodeSessionPluginURL(for: def)
+        let pluginExists = FileManager.default.fileExists(atPath: pluginURL.path)
         let skipConfirm = ProcessInfo.processInfo.arguments.contains("--yes") || ProcessInfo.processInfo.arguments.contains("-y")
-        let existing = (try? String(contentsOf: pluginURL, encoding: .utf8)) ?? ""
+        let existing = try existingGeneratedHookContents(at: pluginURL)
         let configDir = URL(fileURLWithPath: def.resolvedConfigDir(), isDirectory: true)
         if existing == Self.openCodeSessionPluginSource {
-            print(try updateOpenCodePluginRegistration(configDir: configDir, shouldInstall: true) ? "OpenCode hooks installed at \(pluginURL.path)" : "OpenCode hooks already up to date at \(pluginURL.path)")
+            let registrationChanged = try updateOpenCodePluginRegistration(configDir: configDir, shouldInstall: true)
+            let key = registrationChanged
+                ? String(localized: "cli.hooks.opencode.session.installed", defaultValue: "OpenCode UniConnect hooks installed at %@")
+                : String(localized: "cli.hooks.opencode.session.alreadyUpToDate", defaultValue: "OpenCode UniConnect hooks already up to date at %@")
+            print(String.localizedStringWithFormat(key, pluginURL.path))
             return
         }
-        if !existing.isEmpty, !existing.contains(Self.openCodeSessionPluginMarker) { throw CLIError(message: "\(pluginURL.path) exists and is not a cmux plugin; leaving it alone") }
+        if pluginExists, !existing.contains(Self.openCodeSessionPluginMarker) {
+            throw CLIError(message: String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.opencode.session.error.notUniConnectPlugin",
+                    defaultValue: "%@ exists and is not a UniConnect plugin; leaving it alone"
+                ),
+                pluginURL.path
+            ))
+        }
         if !skipConfirm {
-            print("Will write OpenCode cmux plugin to \(pluginURL.path):")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.opencode.session.preview",
+                    defaultValue: "Will write the OpenCode UniConnect plugin to %@:"
+                ),
+                pluginURL.path
+            ))
             print(Self.openCodeSessionPluginSource)
-            print("\nProceed? [y/N] ", terminator: "")
+            print(String(localized: "cli.hooks.confirmProceed", defaultValue: "\nProceed? [y/N] "), terminator: "")
             guard readLine()?.lowercased().hasPrefix("y") == true else {
-                print("Aborted.")
+                print(String(localized: "cli.hooks.aborted", defaultValue: "Aborted."))
                 return
             }
         }
         try writeOpenCodeSessionPlugin(in: configDir)
         _ = try updateOpenCodePluginRegistration(configDir: configDir, shouldInstall: true)
-        print("OpenCode hooks installed at \(pluginURL.path)")
+        print(String.localizedStringWithFormat(
+            String(
+                localized: "cli.hooks.opencode.session.installed",
+                defaultValue: "OpenCode UniConnect hooks installed at %@"
+            ),
+            pluginURL.path
+        ))
     }
 
     private func uninstallOpenCodePluginHooks(_ def: AgentHookDef) throws {
         let fm = FileManager.default
         let pluginURL = openCodeSessionPluginURL(for: def)
-        guard fm.fileExists(atPath: pluginURL.path) else {
-            print("No OpenCode cmux plugin found at \(pluginURL.path)")
-            return
+        let configDir = URL(fileURLWithPath: def.resolvedConfigDir(), isDirectory: true)
+        var removedFile = false
+        if fm.fileExists(atPath: pluginURL.path) {
+            let existing = try existingGeneratedHookContents(at: pluginURL)
+            guard existing.contains(Self.openCodeSessionPluginMarker) else {
+                print(String.localizedStringWithFormat(
+                    String(
+                        localized: "cli.hooks.opencode.session.refuseRemoveMissingMarker",
+                        defaultValue: "Refusing to remove %@: missing UniConnect marker"
+                    ),
+                    pluginURL.path
+                ))
+                return
+            }
+            try fm.removeItem(at: pluginURL)
+            removedFile = true
         }
-        let existing = (try? String(contentsOf: pluginURL, encoding: .utf8)) ?? ""
-        guard existing.contains(Self.openCodeSessionPluginMarker) else {
-            print("Refusing to remove \(pluginURL.path): missing cmux marker")
-            return
+        let registrationChanged = try updateOpenCodePluginRegistration(configDir: configDir, shouldInstall: false)
+        if removedFile || registrationChanged {
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.opencode.session.removed",
+                    defaultValue: "Removed the OpenCode UniConnect plugin from %@"
+                ),
+                pluginURL.path
+            ))
+        } else {
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.opencode.session.noneFound",
+                    defaultValue: "No OpenCode UniConnect plugin found at %@"
+                ),
+                pluginURL.path
+            ))
         }
-        try fm.removeItem(at: pluginURL)
-        _ = try updateOpenCodePluginRegistration(
-            configDir: URL(fileURLWithPath: def.resolvedConfigDir(), isDirectory: true),
-            shouldInstall: false
-        )
-        print("Removed OpenCode cmux plugin from \(pluginURL.path)")
     }
 
-    private static let piExtensionMarker = "cmux-pi-session-extension-marker"
-    private static let piExtensionFilename = "cmux-session.ts"
+    private static let piExtensionMarker = "uniconnect-pi-session-extension-marker"
+    private static let piExtensionFilename = "uniconnect-session.ts"
     private static let piExtensionSource = #"""
-// cmux-pi-session-extension-marker v1
-// Bridges Pi session lifecycle events into cmux's restorable session store.
+// uniconnect-pi-session-extension-marker v2
+// Bridges Pi session lifecycle events into UniConnect's restorable session store.
 // Installed by `cmux hooks pi install` or `cmux hooks setup`.
-// DO NOT EDIT MANUALLY. cmux upgrades this file in place.
+// DO NOT EDIT MANUALLY. UniConnect upgrades this file in place.
 
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -25867,7 +25935,7 @@ function sendHook(subcommand: string, ctx: ExtensionContext, extra: Record<strin
   } catch (_) {}
 }
 
-export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
+export default function uniconnectPiSessionExtension(pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     sendHook("session-start", ctx);
   });
@@ -25890,15 +25958,28 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
 
     private func installPiExtensionHooks(_ def: AgentHookDef) throws {
         let extensionURL = piExtensionURL(for: def)
+        let extensionExists = FileManager.default.fileExists(atPath: extensionURL.path)
         let skipConfirm = ProcessInfo.processInfo.arguments.contains("--yes")
             || ProcessInfo.processInfo.arguments.contains("-y")
-        let existing = (try? String(contentsOf: extensionURL, encoding: .utf8)) ?? ""
+        let existing = try existingGeneratedHookContents(at: extensionURL)
         if existing == Self.piExtensionSource {
-            print("Pi hooks already up to date at \(extensionURL.path)")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.pi.alreadyUpToDate",
+                    defaultValue: "Pi UniConnect hooks already up to date at %@"
+                ),
+                extensionURL.path
+            ))
             return
         }
-        if !existing.isEmpty, !existing.contains(Self.piExtensionMarker) {
-            throw CLIError(message: "\(extensionURL.path) exists and is not a cmux extension; leaving it alone")
+        if extensionExists, !existing.contains(Self.piExtensionMarker) {
+            throw CLIError(message: String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.pi.error.notUniConnectExtension",
+                    defaultValue: "%@ exists and is not a UniConnect extension; leaving it alone"
+                ),
+                extensionURL.path
+            ))
         }
         if !skipConfirm {
             Self.printInstallPreview(
@@ -25907,9 +25988,9 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 newContent: Self.piExtensionSource,
                 fallbackContent: Self.piExtensionSource
             )
-            print("\nProceed? [y/N] ", terminator: "")
+            print(String(localized: "cli.hooks.confirmProceed", defaultValue: "\nProceed? [y/N] "), terminator: "")
             guard readLine()?.lowercased().hasPrefix("y") == true else {
-                print("Aborted.")
+                print(String(localized: "cli.hooks.aborted", defaultValue: "Aborted."))
                 return
             }
         }
@@ -25918,23 +25999,44 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             withIntermediateDirectories: true
         )
         try Self.piExtensionSource.write(to: extensionURL, atomically: true, encoding: .utf8)
-        print("Pi hooks installed at \(extensionURL.path)")
+        print(String.localizedStringWithFormat(
+            String(localized: "cli.hooks.pi.installed", defaultValue: "Pi UniConnect hooks installed at %@"),
+            extensionURL.path
+        ))
     }
 
     private func uninstallPiExtensionHooks(_ def: AgentHookDef) throws {
         let extensionURL = piExtensionURL(for: def)
         let fm = FileManager.default
         guard fm.fileExists(atPath: extensionURL.path) else {
-            print("No Pi cmux extension found at \(extensionURL.path)")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.pi.noneFound",
+                    defaultValue: "No Pi UniConnect extension found at %@"
+                ),
+                extensionURL.path
+            ))
             return
         }
-        let existing = (try? String(contentsOf: extensionURL, encoding: .utf8)) ?? ""
+        let existing = try existingGeneratedHookContents(at: extensionURL)
         guard existing.contains(Self.piExtensionMarker) else {
-            print("Refusing to remove \(extensionURL.path): missing cmux marker")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.pi.refuseRemoveMissingMarker",
+                    defaultValue: "Refusing to remove %@: missing UniConnect marker"
+                ),
+                extensionURL.path
+            ))
             return
         }
         try fm.removeItem(at: extensionURL)
-        print("Removed Pi cmux extension from \(extensionURL.path)")
+        print(String.localizedStringWithFormat(
+            String(
+                localized: "cli.hooks.pi.removed",
+                defaultValue: "Removed the Pi UniConnect extension from %@"
+            ),
+            extensionURL.path
+        ))
     }
 
     private func installRovoDevHooks(_ def: AgentHookDef) throws {
@@ -25948,13 +26050,27 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         if !fm.fileExists(atPath: configDir, isDirectory: &isDirectory) {
             try fm.createDirectory(atPath: configDir, withIntermediateDirectories: true)
         } else if !isDirectory.boolValue {
-            throw CLIError(message: "\(configDir) exists but is not a directory. Move it aside before installing \(def.displayName) hooks.")
+            throw CLIError(message: String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.error.configDirNotDirectory",
+                    defaultValue: "%@ exists but is not a directory. Move it aside before installing %@ UniConnect hooks."
+                ),
+                configDir,
+                def.displayName
+            ))
         }
 
         let oldString = try readAgentHookConfig(filePath: filePath, displayName: def.displayName)
         let newString = try rovoDevHooksContent(existing: oldString, def: def, shouldInstall: true)
         if oldString == newString {
-            print("\(def.displayName) hooks already up to date at \(filePath)")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.agent.alreadyUpToDate",
+                    defaultValue: "%@ UniConnect hooks already up to date at %@"
+                ),
+                def.displayName,
+                filePath
+            ))
             return
         }
 
@@ -25965,14 +26081,21 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 newContent: newString,
                 fallbackContent: newString
             )
-            print("\nProceed? [y/N] ", terminator: "")
+            print(String(localized: "cli.hooks.confirmProceed", defaultValue: "\nProceed? [y/N] "), terminator: "")
             guard readLine()?.lowercased().hasPrefix("y") == true else {
-                print("Aborted.")
+                print(String(localized: "cli.hooks.aborted", defaultValue: "Aborted."))
                 return
             }
         }
         try newString.write(toFile: filePath, atomically: true, encoding: .utf8)
-        print("\(def.displayName) hooks installed at \(filePath)")
+        print(String.localizedStringWithFormat(
+            String(
+                localized: "cli.hooks.agent.installed",
+                defaultValue: "%@ UniConnect hooks installed at %@"
+            ),
+            def.displayName,
+            filePath
+        ))
     }
 
     private func uninstallRovoDevHooks(_ def: AgentHookDef) throws {
@@ -25980,17 +26103,33 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         let configDir = def.resolvedConfigDir()
         let filePath = "\(configDir)/\(def.configFile)"
         guard fm.fileExists(atPath: filePath) else {
-            print("No \(def.configFile) found at \(filePath)")
+            print(String.localizedStringWithFormat(
+                String(localized: "cli.hooks.agent.noneFound", defaultValue: "No %@ found at %@"),
+                def.configFile,
+                filePath
+            ))
             return
         }
         let oldString = try readAgentHookConfig(filePath: filePath, displayName: def.displayName)
         let newString = try rovoDevHooksContent(existing: oldString, def: def, shouldInstall: false)
         guard oldString != newString else {
-            print("Removed 0 cmux hook(s) from \(filePath)")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.agent.removedZero",
+                    defaultValue: "Removed 0 UniConnect hook(s) from %@"
+                ),
+                filePath
+            ))
             return
         }
         try newString.write(toFile: filePath, atomically: true, encoding: .utf8)
-        print("Removed Rovo Dev cmux hooks from \(filePath)")
+        print(String.localizedStringWithFormat(
+            String(
+                localized: "cli.hooks.rovodev.removed",
+                defaultValue: "Removed Rovo Dev UniConnect hooks from %@"
+            ),
+            filePath
+        ))
     }
 
     func readAgentHookConfig(filePath: String, displayName: String) throws -> String {
@@ -25999,7 +26138,14 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         do {
             return try String(contentsOfFile: filePath, encoding: .utf8)
         } catch {
-            throw CLIError(message: "\(filePath) exists but could not be read. Fix permissions or remove it before installing \(displayName) hooks.")
+            throw CLIError(message: String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.error.configUnreadable",
+                    defaultValue: "%@ exists but could not be read. Fix permissions or remove it before installing %@ UniConnect hooks."
+                ),
+                filePath,
+                displayName
+            ))
         }
     }
 
@@ -26020,7 +26166,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         return RovoDevHookConfig.uninstalling(from: existing)
     }
 
-    private static let antigravityHookGroupName = "cmux"
+    private static let antigravityHookGroupName = "uniconnect"
 
     private func installAntigravityHooks(_ def: AgentHookDef) throws {
         let fm = FileManager.default
@@ -26032,7 +26178,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         let configDirectoryFileError = String.localizedStringWithFormat(
             String(
                 localized: "cli.hooks.error.configDirectoryIsFile",
-                defaultValue: "cmux could not create the hooks directory: a file exists at %@; remove or rename the conflicting file and re-run `cmux hooks setup`"
+                defaultValue: "UniConnect could not create the hooks directory: a file exists at %@; remove or rename the conflicting file and re-run `cmux hooks setup`"
             ),
             configDir
         )
@@ -26055,7 +26201,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 throw CLIError(message: String.localizedStringWithFormat(
                     String(
                         localized: "cli.hooks.antigravity.error.invalidJSON",
-                        defaultValue: "%@ exists but is not valid JSON. Fix or remove it before installing hooks."
+                        defaultValue: "%@ exists but is not valid JSON. Fix or remove it before installing UniConnect hooks."
                     ),
                     filePath
                 ))
@@ -26064,6 +26210,16 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         }
 
         let newGroup = buildHooksDict(for: def)
+        if let currentGroup = existing[Self.antigravityHookGroupName],
+           !Self.jsonHookValueContainsUniConnectOwnedCommand(currentGroup, for: def) {
+            throw CLIError(message: String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.antigravity.error.notUniConnectGroup",
+                    defaultValue: "The uniconnect hook group in %@ is not owned by UniConnect; leaving it alone."
+                ),
+                filePath
+            ))
+        }
         existing[Self.antigravityHookGroupName] = newGroup
 
         let newData = try JSONSerialization.data(withJSONObject: existing, options: [.prettyPrinted, .sortedKeys])
@@ -26082,7 +26238,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             print(String.localizedStringWithFormat(
                 String(
                     localized: "cli.hooks.antigravity.alreadyUpToDate",
-                    defaultValue: "%@ hooks already up to date at %@"
+                    defaultValue: "%@ UniConnect hooks already up to date at %@"
                 ),
                 def.displayName,
                 filePath
@@ -26112,7 +26268,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         print(String.localizedStringWithFormat(
             String(
                 localized: "cli.hooks.antigravity.installed",
-                defaultValue: "%@ hooks installed at %@"
+                defaultValue: "%@ UniConnect hooks installed at %@"
             ),
             def.displayName,
             filePath
@@ -26142,7 +26298,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             print(String.localizedStringWithFormat(
                 String(
                     localized: "cli.hooks.antigravity.malformedJSON",
-                    defaultValue: "Malformed %@ at %@. Fix or remove it before uninstalling hooks."
+                    defaultValue: "Malformed %@ at %@. Fix or remove it before uninstalling UniConnect hooks."
                 ),
                 def.configFile,
                 filePath
@@ -26153,12 +26309,12 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         var json = jsonObject as? [String: Any] ?? [:]
 
         guard let group = json[Self.antigravityHookGroupName],
-              Self.jsonHookValueContainsCmuxOwnedCommand(group, for: def) else {
+              Self.jsonHookValueContainsUniConnectOwnedCommand(group, for: def) else {
             if !malformedJSON {
                 print(String.localizedStringWithFormat(
                     String(
                         localized: "cli.hooks.antigravity.removedZero",
-                        defaultValue: "Removed 0 cmux hook(s) from %@"
+                        defaultValue: "Removed 0 UniConnect hook(s) from %@"
                     ),
                     filePath
                 ))
@@ -26172,25 +26328,25 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         print(String.localizedStringWithFormat(
             String(
                 localized: "cli.hooks.antigravity.removed",
-                defaultValue: "Removed Antigravity cmux hooks from %@"
+                defaultValue: "Removed Antigravity UniConnect hooks from %@"
             ),
             filePath
         ))
     }
 
-    private static func jsonHookValueContainsCmuxOwnedCommand(_ value: Any, for def: AgentHookDef) -> Bool {
+    private static func jsonHookValueContainsUniConnectOwnedCommand(_ value: Any, for def: AgentHookDef) -> Bool {
         if let command = value as? String {
-            return isCmuxOwnedHookCommand(command, for: def)
+            return isUniConnectOwnedHookCommand(command, for: def)
         }
         if let array = value as? [Any] {
-            return array.contains { jsonHookValueContainsCmuxOwnedCommand($0, for: def) }
+            return array.contains { jsonHookValueContainsUniConnectOwnedCommand($0, for: def) }
         }
         if let object = value as? [String: Any] {
             if let command = object["command"] as? String,
-               isCmuxOwnedHookCommand(command, for: def) {
+               isUniConnectOwnedHookCommand(command, for: def) {
                 return true
             }
-            return object.values.contains { jsonHookValueContainsCmuxOwnedCommand($0, for: def) }
+            return object.values.contains { jsonHookValueContainsUniConnectOwnedCommand($0, for: def) }
         }
         return false
     }
@@ -26234,7 +26390,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         let configDirectoryFileError = String.localizedStringWithFormat(
             String(
                 localized: "cli.hooks.error.configDirectoryIsFile",
-                defaultValue: "cmux could not create the hooks directory: a file exists at %@; remove or rename the conflicting file and re-run `cmux hooks setup`"
+                defaultValue: "UniConnect could not create the hooks directory: a file exists at %@; remove or rename the conflicting file and re-run `cmux hooks setup`"
             ),
             configDir
         )
@@ -26244,7 +26400,10 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             if def.createConfigDirIfMissing {
                 throw CLIError(message: configDirectoryFileError)
             }
-            print("Required agent configuration is missing. Run `cmux hooks setup` after installing your agent CLI.")
+            print(String(
+                localized: "cli.hooks.agentConfigMissing",
+                defaultValue: "Required agent configuration is missing. Run `cmux hooks setup` after installing your agent CLI."
+            ))
             return
         }
         if !configPathExists {
@@ -26255,7 +26414,10 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                     throw CLIError(message: configDirectoryFileError)
                 }
             } else {
-                print("Required agent configuration is missing. Run `cmux hooks setup` after installing your agent CLI.")
+                print(String(
+                    localized: "cli.hooks.agentConfigMissing",
+                    defaultValue: "Required agent configuration is missing. Run `cmux hooks setup` after installing your agent CLI."
+                ))
                 return
             }
         }
@@ -26263,7 +26425,13 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         var existing: [String: Any] = [:]
         if let data = fm.contents(atPath: filePath) {
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                throw CLIError(message: "\(filePath) exists but is not valid JSON. Fix or remove it before installing hooks.")
+                throw CLIError(message: String.localizedStringWithFormat(
+                    String(
+                        localized: "cli.hooks.error.invalidJSON",
+                        defaultValue: "%@ exists but is not valid JSON. Fix or remove it before installing UniConnect hooks."
+                    ),
+                    filePath
+                ))
             }
             existing = json
         }
@@ -26271,26 +26439,26 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         var hooks = existing["hooks"] as? [String: Any] ?? [:]
         let newHooks = buildHooksDict(for: def)
 
-        // Remove existing cmux-owned entries (both the per-agent hook
-        // dispatcher and the Feed bridge). Non-cmux entries are
+        // Remove existing UniConnect-owned entries (both the per-agent hook
+        // dispatcher and the Feed bridge). Non-UniConnect entries are
         // always preserved, even when the user mixed them into the
-        // same group as a cmux hook, we only prune our own entries
+        // same group as a UniConnect hook; we only prune our own entries
         // within that group so the user's stays put.
-        let isCmuxOwnedCommand: (String) -> Bool = { cmd in
-            Self.isCmuxOwnedHookCommand(cmd, for: def)
+        let isUniConnectOwnedCommand: (String) -> Bool = { cmd in
+            Self.isUniConnectOwnedHookCommand(cmd, for: def)
         }
-        var cmuxInsertionIndexes: [String: [Int]] = [:]
+        var uniconnectInsertionIndexes: [String: [Int]] = [:]
         for (event, value) in hooks {
             switch def.format {
             case .flat, .kiroAgentJSON:
                 guard let entries = value as? [[String: Any]] else { continue }
                 var rewrittenEntries: [[String: Any]] = []
                 for entry in entries {
-                    if isCmuxOwnedCommand(entry["command"] as? String ?? "") {
-                        Self.appendCmuxHookInsertionIndex(
+                    if isUniConnectOwnedCommand(entry["command"] as? String ?? "") {
+                        Self.appendUniConnectHookInsertionIndex(
                             rewrittenEntries.count,
                             for: event,
-                            to: &cmuxInsertionIndexes
+                            to: &uniconnectInsertionIndexes
                         )
                         continue
                     }
@@ -26311,16 +26479,16 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                         rewrittenGroups.append(group)
                         continue
                     }
-                    if hookList.contains(where: { isCmuxOwnedCommand($0["command"] as? String ?? "") }) {
-                        Self.appendCmuxHookInsertionIndex(
+                    if hookList.contains(where: { isUniConnectOwnedCommand($0["command"] as? String ?? "") }) {
+                        Self.appendUniConnectHookInsertionIndex(
                             rewrittenGroups.count,
                             for: event,
-                            to: &cmuxInsertionIndexes
+                            to: &uniconnectInsertionIndexes
                         )
                     }
-                    hookList.removeAll { isCmuxOwnedCommand($0["command"] as? String ?? "") }
+                    hookList.removeAll { isUniConnectOwnedCommand($0["command"] as? String ?? "") }
                     if hookList.isEmpty {
-                        // Fully cmux-owned group, drop it entirely.
+                        // Fully UniConnect-owned group, drop it entirely.
                         continue
                     }
                     group["hooks"] = hookList
@@ -26342,8 +26510,8 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             case .flat, .kiroAgentJSON:
                 var entries = hooks[event] as? [[String: Any]] ?? []
                 if let newEntries = value as? [[String: Any]] {
-                    if let insertionIndexes = cmuxInsertionIndexes[event], !insertionIndexes.isEmpty {
-                        Self.insertCmuxHookValues(newEntries, into: &entries, atOriginalIndexes: insertionIndexes)
+                    if let insertionIndexes = uniconnectInsertionIndexes[event], !insertionIndexes.isEmpty {
+                        Self.insertUniConnectHookValues(newEntries, into: &entries, atOriginalIndexes: insertionIndexes)
                     } else {
                         entries.append(contentsOf: newEntries)
                     }
@@ -26352,8 +26520,8 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             case .nested:
                 var groups = hooks[event] as? [[String: Any]] ?? []
                 if let newGroups = value as? [[String: Any]] {
-                    if let insertionIndexes = cmuxInsertionIndexes[event], !insertionIndexes.isEmpty {
-                        Self.insertCmuxHookValues(newGroups, into: &groups, atOriginalIndexes: insertionIndexes)
+                    if let insertionIndexes = uniconnectInsertionIndexes[event], !insertionIndexes.isEmpty {
+                        Self.insertUniConnectHookValues(newGroups, into: &groups, atOriginalIndexes: insertionIndexes)
                     } else {
                         groups.append(contentsOf: newGroups)
                     }
@@ -26365,16 +26533,19 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         }
 
         existing["hooks"] = hooks
-        if case .flat = def.format { existing["version"] = 1 }
+        if case .flat = def.format, existing["version"] == nil { existing["version"] = 1 }
         if case .kiroAgentJSON = def.format {
             if existing["name"] == nil {
-                existing["name"] = "cmux"
+                existing["name"] = "uniconnect"
             }
             if existing["description"] == nil {
-                existing["description"] = "CMUX notification and Feed bridge hooks for Kiro CLI."
+                existing["description"] = String(
+                    localized: "cli.hooks.kiro.description",
+                    defaultValue: "UniConnect notification and Feed bridge hooks for Kiro CLI."
+                )
             }
             if existing["tools"] == nil {
-                // Grant the full tool set so `kiro-cli chat --agent cmux` is
+                // Grant the full tool set so `kiro-cli chat --agent uniconnect` is
                 // actually usable. A Kiro custom agent with no `tools` field is
                 // restricted to no tools, so the model can't run anything and the
                 // preToolUse/postToolUse Feed-approval hooks would never fire
@@ -26392,8 +26563,6 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             hooksFilePath: filePath,
             def: def
         )
-        let codexLegacyHookTrustHashes = Self.codexLegacyHookTrustHashes(def: def)
-
         let newData = try JSONSerialization.data(withJSONObject: existing, options: [.prettyPrinted, .sortedKeys])
         let newString = String(data: newData, encoding: .utf8) ?? "{}"
         let oldString: String = {
@@ -26411,7 +26580,14 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
 
         if oldString == newString {
             // No-op install; skip the write and the prompt entirely.
-            print("\(def.displayName) hooks already up to date at \(filePath)")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.agent.alreadyUpToDate",
+                    defaultValue: "%@ UniConnect hooks already up to date at %@"
+                ),
+                def.displayName,
+                filePath
+            ))
         } else {
             if !skipConfirm {
                 Self.printInstallPreview(
@@ -26420,21 +26596,26 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                     newContent: newString,
                     fallbackContent: newString
                 )
-                print("\nProceed? [y/N] ", terminator: "")
+                print(String(localized: "cli.hooks.confirmProceed", defaultValue: "\nProceed? [y/N] "), terminator: "")
                 guard readLine()?.lowercased().hasPrefix("y") == true else {
-                    print("Aborted.")
+                    print(String(localized: "cli.hooks.aborted", defaultValue: "Aborted."))
                     return
                 }
             }
             try newData.write(to: URL(fileURLWithPath: filePath), options: .atomic)
-            print("\(def.displayName) hooks installed at \(filePath)")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.agent.installed",
+                    defaultValue: "%@ UniConnect hooks installed at %@"
+                ),
+                def.displayName,
+                filePath
+            ))
         }
 
         if let note = def.postInstallNote {
             print(note)
         }
-
-        try pruneLegacyGrokHookFileIfNeeded(def: def, configDir: configDir, primaryFilePath: filePath)
 
         // Post-install actions
         if let action = def.postInstallAction {
@@ -26450,15 +26631,13 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 let trustClean = Self.codexConfigTomlRemovingHookTrust(
                     in: existingContent,
                     entries: codexHookTrustEntries,
-                    removingEscapedKeyPrefixes: codexHookTrustEscapedKeyPrefixes,
-                    removingTrustedHashes: codexLegacyHookTrustHashes
+                    removingEscapedKeyPrefixes: codexHookTrustEscapedKeyPrefixes
                 )
                 let featureContent = Self.codexConfigTomlInstallingHooksFeature(in: trustClean)
                 let trustInstall = Self.codexConfigTomlInstallingHookTrust(
                     in: featureContent,
                     entries: codexHookTrustEntries,
-                    removingEscapedKeyPrefixes: codexHookTrustEscapedKeyPrefixes,
-                    removingTrustedHashes: codexLegacyHookTrustHashes
+                    removingEscapedKeyPrefixes: codexHookTrustEscapedKeyPrefixes
                 )
                 let newContent = trustInstall.content
                 if newContent != existingContent {
@@ -26469,91 +26648,36 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                             newContent: newContent,
                             fallbackContent: newContent
                         )
-                        print("\nProceed? [y/N] ", terminator: "")
+                        print(String(localized: "cli.hooks.confirmProceed", defaultValue: "\nProceed? [y/N] "), terminator: "")
                         guard readLine()?.lowercased().hasPrefix("y") == true else {
-                            print("Aborted (\(configPath) unchanged).")
+                            print(String.localizedStringWithFormat(
+                                String(
+                                    localized: "cli.hooks.abortedConfigUnchanged",
+                                    defaultValue: "Aborted (%@ unchanged)."
+                                ),
+                                configPath
+                            ))
                             return
                         }
                     }
                     try newContent.write(toFile: configPath, atomically: true, encoding: .utf8)
                     if def.name == "codex", !codexHookTrustEntries.isEmpty, trustInstall.installedTrust {
-                        print("Enabled hooks and approved cmux hooks in \(configPath)")
+                        print(String.localizedStringWithFormat(
+                            String(
+                                localized: "cli.hooks.codex.enabledAndApproved",
+                                defaultValue: "Enabled UniConnect hooks and approved them in %@"
+                            ),
+                            configPath
+                        ))
                     } else {
-                        print("Enabled hooks in \(configPath)")
+                        print(String.localizedStringWithFormat(
+                            String(localized: "cli.hooks.codex.enabled", defaultValue: "Enabled UniConnect hooks in %@"),
+                            configPath
+                        ))
                     }
                 }
             }
         }
-    }
-
-    private func pruneLegacyGrokHookFileIfNeeded(
-        def: AgentHookDef,
-        configDir: String,
-        primaryFilePath: String
-    ) throws {
-        guard def.name == "grok" else { return }
-        let legacyURL = URL(fileURLWithPath: configDir, isDirectory: true)
-            .appendingPathComponent("uniconnect.json", isDirectory: false)
-        guard legacyURL.path != primaryFilePath,
-              FileManager.default.fileExists(atPath: legacyURL.path),
-              let data = FileManager.default.contents(atPath: legacyURL.path),
-              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              var hooks = json["hooks"] as? [String: Any] else {
-            return
-        }
-
-        let isCmuxOwnedCommand: (String) -> Bool = { cmd in
-            Self.isCmuxOwnedHookCommand(cmd, for: def)
-        }
-        var removed = 0
-        for (event, value) in hooks {
-            guard var entries = value as? [[String: Any]] else { continue }
-            let containsNestedGroups = entries.contains { $0["hooks"] is [[String: Any]] }
-            if !containsNestedGroups {
-                let before = entries.count
-                entries.removeAll { isCmuxOwnedCommand($0["command"] as? String ?? "") }
-                removed += before - entries.count
-                if entries.isEmpty {
-                    hooks.removeValue(forKey: event)
-                } else {
-                    hooks[event] = entries
-                }
-                continue
-            }
-            var rewrittenGroups: [[String: Any]] = []
-            for var group in entries {
-                guard var hookList = group["hooks"] as? [[String: Any]] else {
-                    rewrittenGroups.append(group)
-                    continue
-                }
-                let before = hookList.count
-                hookList.removeAll { isCmuxOwnedCommand($0["command"] as? String ?? "") }
-                removed += before - hookList.count
-                guard !hookList.isEmpty else { continue }
-                group["hooks"] = hookList
-                rewrittenGroups.append(group)
-            }
-            if rewrittenGroups.isEmpty {
-                hooks.removeValue(forKey: event)
-            } else {
-                hooks[event] = rewrittenGroups
-            }
-        }
-
-        guard removed > 0 else { return }
-        if hooks.isEmpty {
-            json.removeValue(forKey: "hooks")
-            if json.isEmpty {
-                try FileManager.default.removeItem(at: legacyURL)
-                print("Removed legacy \(def.displayName) hooks at \(legacyURL.path)")
-                return
-            }
-        } else {
-            json["hooks"] = hooks
-        }
-        let newData = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
-        try newData.write(to: legacyURL, options: .atomic)
-        print("Removed \(removed) legacy \(def.displayName) cmux hook(s) from \(legacyURL.path)")
     }
 
     private func uninstallAgentHooks(_ def: AgentHookDef) throws {
@@ -26590,39 +26714,56 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         let configDir = def.resolvedConfigDir()
         let filePath = "\(configDir)/\(def.configFile)"
 
-        guard let data = fm.contents(atPath: filePath),
-              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            print("No \(def.configFile) found at \(filePath)")
+        let hookConfigExists = fm.fileExists(atPath: filePath)
+        var json: [String: Any]
+        if let data = fm.contents(atPath: filePath),
+           let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            json = decoded
+        } else if hookConfigExists {
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.error.invalidJSONUninstall",
+                    defaultValue: "%@ exists but is not valid JSON. Fix or remove it before uninstalling UniConnect hooks."
+                ),
+                filePath
+            ))
             return
+        } else {
+            print(String.localizedStringWithFormat(
+                String(localized: "cli.hooks.agent.noneFound", defaultValue: "No %@ found at %@"),
+                def.configFile,
+                filePath
+            ))
+            guard def.name == "codex" else { return }
+            json = [:]
         }
 
         var hooks = json["hooks"] as? [String: Any] ?? [:]
         let codexHookTrustEntriesToRemove = Self.codexHookTrustEntries(
             hooks: hooks,
             hooksFilePath: filePath,
-            def: def,
-            includeLegacyOwnedCommands: true
+            def: def
         )
         let codexStaleHookTrustHashesToRemove = Set(Self.codexHookTrustEntries(
             hooks: buildHooksDict(for: def),
             hooksFilePath: filePath,
             def: def
-        ).map(\.trustedHash)).union(Self.codexLegacyHookTrustHashes(def: def))
+        ).map(\.trustedHash))
         let codexHookTrustEscapedKeyPrefixesToRemove = Self.codexHookTrustEscapedKeyPrefixes(
             hooksFilePath: filePath,
             def: def
         )
         var removed = 0
 
-        let isCmuxOwnedCommand: (String) -> Bool = { cmd in
-            Self.isCmuxOwnedHookCommand(cmd, for: def)
+        let isUniConnectOwnedCommand: (String) -> Bool = { cmd in
+            Self.isUniConnectOwnedHookCommand(cmd, for: def)
         }
         for (event, value) in hooks {
             switch def.format {
             case .flat, .kiroAgentJSON:
                 guard var entries = value as? [[String: Any]] else { continue }
                 let before = entries.count
-                entries.removeAll { isCmuxOwnedCommand($0["command"] as? String ?? "") }
+                entries.removeAll { isUniConnectOwnedCommand($0["command"] as? String ?? "") }
                 removed += before - entries.count
                 if entries.isEmpty {
                     hooks.removeValue(forKey: event)
@@ -26638,7 +26779,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                         continue
                     }
                     let before = hookList.count
-                    hookList.removeAll { isCmuxOwnedCommand($0["command"] as? String ?? "") }
+                    hookList.removeAll { isUniConnectOwnedCommand($0["command"] as? String ?? "") }
                     removed += before - hookList.count
                     if hookList.isEmpty { continue }
                     group["hooks"] = hookList
@@ -26654,10 +26795,21 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             }
         }
 
-        json["hooks"] = hooks
-        let newData = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
-        try newData.write(to: URL(fileURLWithPath: filePath), options: .atomic)
-        print("Removed \(removed) cmux hook(s) from \(filePath)")
+        if removed > 0 {
+            json["hooks"] = hooks
+            let newData = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
+            try newData.write(to: URL(fileURLWithPath: filePath), options: .atomic)
+        }
+        if hookConfigExists {
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.agent.removedCount",
+                    defaultValue: "Removed %lld UniConnect hook(s) from %@"
+                ),
+                Int64(removed),
+                filePath
+            ))
+        }
 
         // Post-uninstall actions
         if let action = def.postInstallAction {
@@ -26669,7 +26821,15 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 do {
                     content = try String(contentsOfFile: configPath, encoding: .utf8)
                 } catch {
-                    throw CLIError(message: "\(configPath) exists but could not be read. Fix permissions or remove it before uninstalling \(def.displayName) hooks. \(String(describing: error))")
+                    throw CLIError(message: String.localizedStringWithFormat(
+                        String(
+                            localized: "cli.hooks.error.configUninstallUnreadable",
+                            defaultValue: "%@ exists but could not be read. Fix permissions or remove it before uninstalling %@ UniConnect hooks. %@"
+                        ),
+                        configPath,
+                        def.displayName,
+                        String(describing: error)
+                    ))
                 }
                 let newContent = Self.codexConfigTomlUninstallingHooksFeature(
                     from: content,
@@ -26679,13 +26839,19 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 )
                 if newContent != content {
                     try newContent.write(toFile: configPath, atomically: true, encoding: .utf8)
-                    print("Removed Codex hooks feature from \(configPath)")
+                    print(String.localizedStringWithFormat(
+                        String(
+                            localized: "cli.hooks.codex.removedFeature",
+                            defaultValue: "Removed the UniConnect Codex hooks feature from %@"
+                        ),
+                        configPath
+                    ))
                 }
             }
         }
     }
 
-    private static func appendCmuxHookInsertionIndex(
+    private static func appendUniConnectHookInsertionIndex(
         _ index: Int,
         for event: String,
         to indexes: inout [String: [Int]]
@@ -26694,7 +26860,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         indexes[event, default: []].append(index)
     }
 
-    private static func insertCmuxHookValues<T>(_ values: [T], into target: inout [T], atOriginalIndexes indexes: [Int]) {
+    private static func insertUniConnectHookValues<T>(_ values: [T], into target: inout [T], atOriginalIndexes indexes: [Int]) {
         var insertedCount = 0
         for originalIndex in indexes {
             let insertionIndex = min(max(originalIndex + insertedCount, 0), target.count)
@@ -26703,20 +26869,18 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         }
     }
 
-    private static let cmuxCodexHooksFeatureBegin =
-        "# cmux-codex-hooks-feature-78f1e4ba-66df-4d35-93c1-67fdf1cbb7df begin"
-    private static let cmuxCodexHooksFeatureEnd =
-        "# cmux-codex-hooks-feature-78f1e4ba-66df-4d35-93c1-67fdf1cbb7df end"
-    private static let cmuxCodexHooksFeaturePreviousLinePrefix =
-        "# cmux-codex-hooks-feature-78f1e4ba-66df-4d35-93c1-67fdf1cbb7df previous line: "
-    private static let legacyCmuxCodexHooksFeatureBegin = "# cmux hooks codex feature begin"
-    private static let legacyCmuxCodexHooksFeatureEnd = "# cmux hooks codex feature end"
-    private static let legacyCmuxCodexHooksFeaturePreviousLinePrefix =
-        "# cmux hooks codex feature previous line: "
-    private static let cmuxCodexHookTrustBegin =
-        "# cmux-codex-hook-trust-f5cc24da-7a09-4b20-a756-89e7786f6738 begin"
-    private static let cmuxCodexHookTrustEnd =
-        "# cmux-codex-hook-trust-f5cc24da-7a09-4b20-a756-89e7786f6738 end"
+    private static let uniconnectCodexHooksFeatureBegin =
+        "# uniconnect-codex-hooks-feature-78f1e4ba-66df-4d35-93c1-67fdf1cbb7df begin"
+    private static let uniconnectCodexHooksFeatureEnd =
+        "# uniconnect-codex-hooks-feature-78f1e4ba-66df-4d35-93c1-67fdf1cbb7df end"
+    private static let uniconnectCodexHooksFeaturePreviousLinePrefix =
+        "# uniconnect-codex-hooks-feature-78f1e4ba-66df-4d35-93c1-67fdf1cbb7df previous line: "
+    private static let uniconnectCodexHooksFeaturesTableMarker =
+        "# uniconnect-codex-hooks-feature-78f1e4ba-66df-4d35-93c1-67fdf1cbb7df created features table"
+    private static let uniconnectCodexHookTrustBegin =
+        "# uniconnect-codex-hook-trust-f5cc24da-7a09-4b20-a756-89e7786f6738 begin"
+    private static let uniconnectCodexHookTrustEnd =
+        "# uniconnect-codex-hook-trust-f5cc24da-7a09-4b20-a756-89e7786f6738 end"
     private static let codexHookTrustTableHeaderRegex = try! NSRegularExpression(
         pattern: #"^\s*\[\s*hooks\s*\.\s*state\s*\.\s*"((?:[^"\\\n]|\\.)*)"\s*\]\s*(#.*)?$"#
     )
@@ -26739,19 +26903,17 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
 
     static func codexConfigTomlInstallingHooksFeature(in existingContent: String) -> String {
         var lines = tomlLines(from: existingContent)
-        removeCmuxCodexHooksFeatureBlock(from: &lines)
-        lines.removeAll { tomlLineDefinesKey("codex_hooks", line: $0) }
-        lines.removeAll { tomlLineDefinesDottedFeaturesKey("codex_hooks", line: $0) }
+        removeUniConnectCodexHooksFeatureBlock(from: &lines)
 
         let insertedLines = [
-            cmuxCodexHooksFeatureBegin,
+            uniconnectCodexHooksFeatureBegin,
             "hooks = true",
-            cmuxCodexHooksFeatureEnd,
+            uniconnectCodexHooksFeatureEnd,
         ]
         let insertedDottedLines = [
-            cmuxCodexHooksFeatureBegin,
+            uniconnectCodexHooksFeatureBegin,
             "features.hooks = true",
-            cmuxCodexHooksFeatureEnd,
+            uniconnectCodexHooksFeatureEnd,
         ]
 
         if let featuresStart = lines.firstIndex(where: { tomlLineIsTable("features", line: $0) }) {
@@ -26784,6 +26946,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             if !lines.isEmpty, lines.last?.isEmpty == false {
                 lines.append("")
             }
+            lines.append(uniconnectCodexHooksFeaturesTableMarker)
             lines.append("[features]")
             lines.append(contentsOf: insertedLines)
         }
@@ -26792,12 +26955,12 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
     }
 
     private static func codexHooksFeatureLines(settingLine: String, previousLine: String? = nil) -> [String] {
-        var lines = [cmuxCodexHooksFeatureBegin]
+        var lines = [uniconnectCodexHooksFeatureBegin]
         if let previousLine {
-            lines.append(cmuxCodexHooksFeaturePreviousLinePrefix + previousLine)
+            lines.append(uniconnectCodexHooksFeaturePreviousLinePrefix + previousLine)
         }
         lines.append(settingLine)
-        lines.append(cmuxCodexHooksFeatureEnd)
+        lines.append(uniconnectCodexHooksFeatureEnd)
         return lines
     }
 
@@ -26810,19 +26973,16 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         var lines = tomlLines(from: existingContent)
         let escapedKeys = Set(entries.map { tomlBasicStringContent($0.key) })
         let trustedHashes = Set(entries.map(\.trustedHash)).union(additionalTrustedHashes)
-        removeCmuxCodexHooksFeatureBlock(from: &lines)
-        if removeCmuxCodexHookTrustBlock(
+        removeUniConnectCodexHooksFeatureBlock(from: &lines)
+        if removeUniConnectCodexHookTrustBlock(
             from: &lines,
             removingEscapedKeys: escapedKeys,
             removingEscapedKeyPrefixes: escapedKeyPrefixes,
             removingTrustedHashes: trustedHashes
         ) == .malformed {
-            stripMalformedCmuxCodexHookTrustMarker(from: &lines)
+            stripMalformedUniConnectCodexHookTrustMarker(from: &lines)
         }
-        removeCodexHookTrustTables(withEscapedKeys: escapedKeys, from: &lines)
-        lines.removeAll { tomlLineDefinesKey("codex_hooks", line: $0) }
-        lines.removeAll { tomlLineDefinesDottedFeaturesKey("codex_hooks", line: $0) }
-        removeEmptyFeaturesTable(from: &lines)
+        removeUniConnectCreatedEmptyFeaturesTable(from: &lines)
         return tomlContent(from: lines)
     }
 
@@ -26835,16 +26995,15 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         var lines = tomlLines(from: existingContent)
         let escapedKeys = Set(entries.map { tomlBasicStringContent($0.key) })
         let trustedHashes = Set(entries.map(\.trustedHash)).union(additionalTrustedHashes)
-        let removalResult = removeCmuxCodexHookTrustBlock(
+        let removalResult = removeUniConnectCodexHookTrustBlock(
             from: &lines,
             removingEscapedKeys: escapedKeys,
             removingEscapedKeyPrefixes: escapedKeyPrefixes,
             removingTrustedHashes: trustedHashes
         )
         if removalResult == .malformed {
-            stripMalformedCmuxCodexHookTrustMarker(from: &lines)
+            stripMalformedUniConnectCodexHookTrustMarker(from: &lines)
         }
-        removeCodexHookTrustTables(withEscapedKeys: escapedKeys, from: &lines)
         return tomlContent(from: lines)
     }
 
@@ -26857,41 +27016,46 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         var lines = tomlLines(from: existingContent)
         let escapedKeys = Set(entries.map { tomlBasicStringContent($0.key) })
         let trustedHashes = Set(entries.map(\.trustedHash)).union(additionalTrustedHashes)
-        let removalResult = removeCmuxCodexHookTrustBlock(
+        let removalResult = removeUniConnectCodexHookTrustBlock(
             from: &lines,
             removingEscapedKeys: escapedKeys,
             removingEscapedKeyPrefixes: escapedKeyPrefixes,
             removingTrustedHashes: trustedHashes
         )
         if removalResult == .malformed {
-            stripMalformedCmuxCodexHookTrustMarker(from: &lines)
+            stripMalformedUniConnectCodexHookTrustMarker(from: &lines)
         }
         guard !entries.isEmpty else {
             return CodexHookTrustInstallResult(content: tomlContent(from: lines), installedTrust: false)
         }
-        removeCodexHookTrustTables(withEscapedKeys: escapedKeys, from: &lines)
+        let existingEscapedKeys = Set(lines.compactMap { codexHookTrustTableEscapedKey(from: $0) })
+        let installableEntries = entries.filter {
+            !existingEscapedKeys.contains(tomlBasicStringContent($0.key))
+        }
+        guard !installableEntries.isEmpty else {
+            return CodexHookTrustInstallResult(content: tomlContent(from: lines), installedTrust: false)
+        }
 
         if !lines.isEmpty, lines.last?.isEmpty == false {
             lines.append("")
         }
-        lines.append(cmuxCodexHookTrustBegin)
-        for entry in entries {
+        lines.append(uniconnectCodexHookTrustBegin)
+        for entry in installableEntries {
             lines.append("[hooks.state.\"\(tomlBasicStringContent(entry.key))\"]")
             lines.append("trusted_hash = \"\(tomlBasicStringContent(entry.trustedHash))\"")
         }
-        lines.append(cmuxCodexHookTrustEnd)
+        lines.append(uniconnectCodexHookTrustEnd)
         return CodexHookTrustInstallResult(content: tomlContent(from: lines), installedTrust: true)
     }
 
     static func codexHookTrustEntries(
         hooks: [String: Any],
         hooksFilePath: String,
-        def: AgentHookDef,
-        includeLegacyOwnedCommands: Bool = false
+        def: AgentHookDef
     ) -> [CodexHookTrustEntry] {
         guard def.name == "codex" else { return [] }
         let isOwnedCommand: (String) -> Bool = { command in
-            isCmuxOwnedHookCommand(command, for: def, includeLegacy: includeLegacyOwnedCommands)
+            isUniConnectOwnedHookCommand(command, for: def)
         }
         var entries: [CodexHookTrustEntry] = []
         let keySource = codexNormalizedHookSourcePath(hooksFilePath)
@@ -26933,54 +27097,6 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
     ) -> Set<String> {
         guard def.name == "codex" else { return [] }
         return [tomlBasicStringContent("\(codexNormalizedHookSourcePath(hooksFilePath)):")]
-    }
-
-    private static func codexLegacyHookTrustHashes(def: AgentHookDef) -> Set<String> {
-        guard def.name == "codex" else { return [] }
-        let hookTimeoutMs: Int
-        if case .nested(let timeoutMs) = def.format {
-            hookTimeoutMs = timeoutMs
-        } else {
-            hookTimeoutMs = 600
-        }
-
-        var hashes = Set<String>()
-        func insertHashes(eventLabel: String, command: String, timeouts: [Int]) {
-            let commands = [
-                command,
-                "[ -n \"$CMUX_SURFACE_ID\" ] && [ \"$\(def.disableEnvVar)\" != \"1\" ] && command -v cmux >/dev/null 2>&1 && \(command) || echo '{}'",
-            ]
-            for command in commands {
-                for timeout in timeouts {
-                    hashes.insert(codexCommandHookHash(
-                        eventLabel: eventLabel,
-                        matcher: nil,
-                        command: command,
-                        timeoutMs: timeout,
-                        statusMessage: nil
-                    ))
-                }
-            }
-        }
-
-        for event in def.events {
-            guard let eventLabel = codexHookEventLabel(event.agentEvent) else { continue }
-            insertHashes(
-                eventLabel: eventLabel,
-                command: "cmux codex-hook \(event.cmuxSubcommand)",
-                timeouts: [hookTimeoutMs, 600]
-            )
-        }
-
-        for agentEvent in def.feedHookEvents {
-            guard let eventLabel = codexHookEventLabel(agentEvent) else { continue }
-            insertHashes(
-                eventLabel: eventLabel,
-                command: "cmux feed-hook --source \(def.name) --event \(agentEvent)",
-                timeouts: [120_000, 600]
-            )
-        }
-        return hashes
     }
 
     private static func codexNormalizedHookSourcePath(_ path: String) -> String {
@@ -27212,7 +27328,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         return lines.count
     }
 
-    private static func removeCmuxCodexHooksFeatureBlock(from lines: inout [String]) {
+    private static func removeUniConnectCodexHooksFeatureBlock(from lines: inout [String]) {
         var index = 0
         while index < lines.count {
             guard tomlLineIsCodexHooksFeatureBegin(lines[index]) else {
@@ -27245,7 +27361,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
     }
 
     @discardableResult
-    private static func removeCmuxCodexHookTrustBlock(
+    private static func removeUniConnectCodexHookTrustBlock(
         from lines: inout [String],
         removingEscapedKeys escapedKeys: Set<String> = [],
         removingEscapedKeyPrefixes escapedKeyPrefixes: Set<String> = [],
@@ -27254,12 +27370,12 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         var replacements: [(range: ClosedRange<Int>, lines: [String])] = []
         var index = 0
         while index < lines.count {
-            guard lines[index] == cmuxCodexHookTrustBegin else {
+            guard lines[index] == uniconnectCodexHookTrustBegin else {
                 index += 1
                 continue
             }
 
-            guard let endIndex = lines[index...].firstIndex(of: cmuxCodexHookTrustEnd) else {
+            guard let endIndex = lines[index...].firstIndex(of: uniconnectCodexHookTrustEnd) else {
                 return .malformed
             }
             let preservedLines = codexHookTrustBlockUnownedLines(
@@ -27306,7 +27422,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             }
 
             guard tomlLineIsAnyTableHeader(lines[index]) else {
-                // Marker drift can capture user config lines; only cmux-owned
+                // Marker drift can capture user config lines; only UniConnect-owned
                 // hook trust tables are safe to discard.
                 preserved.append(lines[index])
                 index += 1
@@ -27352,33 +27468,8 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         return nil
     }
 
-    private static func stripMalformedCmuxCodexHookTrustMarker(from lines: inout [String]) {
-        lines.removeAll { $0 == cmuxCodexHookTrustBegin }
-    }
-
-    private static func removeCodexHookTrustTables(withEscapedKeys keys: Set<String>, from lines: inout [String]) {
-        guard !keys.isEmpty else { return }
-        var index = 0
-        while index < lines.count {
-            guard let escapedKey = codexHookTrustTableEscapedKey(from: lines[index]),
-                  keys.contains(escapedKey) else {
-                index += 1
-                continue
-            }
-            let endIndex = codexHookTrustTableEndIndex(in: lines, after: index)
-            lines.removeSubrange(index..<endIndex)
-        }
-    }
-
-    private static func codexHookTrustTableEndIndex(in lines: [String], after tableStart: Int) -> Int {
-        var index = tableStart + 1
-        while index < lines.count {
-            if tomlLineIsCodexHookTrustBlockTableBoundary(lines[index]) {
-                return index
-            }
-            index += 1
-        }
-        return lines.count
+    private static func stripMalformedUniConnectCodexHookTrustMarker(from lines: inout [String]) {
+        lines.removeAll { $0 == uniconnectCodexHookTrustBegin }
     }
 
     private static func codexHookTrustTableEscapedKey(from line: String) -> String? {
@@ -27395,19 +27486,16 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
     }
 
     private static func tomlLineIsCodexHooksFeatureBegin(_ line: String) -> Bool {
-        line == cmuxCodexHooksFeatureBegin || line == legacyCmuxCodexHooksFeatureBegin
+        line == uniconnectCodexHooksFeatureBegin
     }
 
     private static func tomlLineIsCodexHooksFeatureEnd(_ line: String) -> Bool {
-        line == cmuxCodexHooksFeatureEnd || line == legacyCmuxCodexHooksFeatureEnd
+        line == uniconnectCodexHooksFeatureEnd
     }
 
     private static func tomlCodexHooksFeaturePreviousLine(from line: String) -> String? {
-        if line.hasPrefix(cmuxCodexHooksFeaturePreviousLinePrefix) {
-            return String(line.dropFirst(cmuxCodexHooksFeaturePreviousLinePrefix.count))
-        }
-        if line.hasPrefix(legacyCmuxCodexHooksFeaturePreviousLinePrefix) {
-            return String(line.dropFirst(legacyCmuxCodexHooksFeaturePreviousLinePrefix.count))
+        if line.hasPrefix(uniconnectCodexHooksFeaturePreviousLinePrefix) {
+            return String(line.dropFirst(uniconnectCodexHooksFeaturePreviousLinePrefix.count))
         }
         return nil
     }
@@ -27417,29 +27505,29 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             || tomlLineDefinesDottedFeaturesTrueKey("hooks", line: line)
     }
 
-    private static func removeEmptyFeaturesTable(from lines: inout [String]) {
-        guard let featuresStart = lines.firstIndex(where: { tomlLineIsTable("features", line: $0) }) else {
+    private static func removeUniConnectCreatedEmptyFeaturesTable(from lines: inout [String]) {
+        guard let markerIndex = lines.firstIndex(of: uniconnectCodexHooksFeaturesTableMarker) else {
             return
         }
-        let featuresEnd = tomlTableEndIndex(in: lines, after: featuresStart)
-        let bodyRange = featuresStart + 1..<featuresEnd
-        let hasContent = bodyRange.contains { index in
-            let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
-            return !trimmed.isEmpty && !trimmed.hasPrefix("#")
+        let featuresIndex = markerIndex + 1
+        guard lines.indices.contains(featuresIndex),
+              tomlLineIsTable("features", line: lines[featuresIndex]) else {
+            lines.remove(at: markerIndex)
+            return
         }
-        if !hasContent {
-            lines.removeSubrange(featuresStart..<featuresEnd)
-            if featuresStart == lines.count, featuresStart > 0,
-               lines[featuresStart - 1].trimmingCharacters(in: .whitespaces).isEmpty
-            {
-                lines.remove(at: featuresStart - 1)
-            } else if featuresStart > 0, featuresStart < lines.count,
-                      lines[featuresStart - 1].trimmingCharacters(in: .whitespaces).isEmpty,
-                      lines[featuresStart].trimmingCharacters(in: .whitespaces).isEmpty
-            {
-                lines.remove(at: featuresStart)
-            }
+        let featuresEnd = tomlTableEndIndex(in: lines, after: featuresIndex)
+        let hasNonEmptyLine = (featuresIndex + 1..<featuresEnd).contains { index in
+            !lines[index].trimmingCharacters(in: .whitespaces).isEmpty
         }
+        if hasNonEmptyLine {
+            lines.remove(at: markerIndex)
+            return
+        }
+        let removalStart = markerIndex > 0
+            && lines[markerIndex - 1].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? markerIndex - 1
+            : markerIndex
+        lines.removeSubrange(removalStart..<featuresEnd)
     }
 
     // MARK: Generic hook handler
@@ -30471,12 +30559,12 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
 
     // MARK: - OpenCode plugin install
 
-    /// Marker matching the `// cmux-feed-plugin-marker` line emitted at
+    /// Marker matching the `// uniconnect-feed-plugin-marker` line emitted at
     /// the top of the generated plugin JS. Lets us detect our own
     /// plugin file and upgrade/uninstall without touching user plugins.
-    private static let openCodePluginMarker = "cmux-feed-plugin-marker"
+    private static let openCodePluginMarker = "uniconnect-feed-plugin-marker"
 
-    private static let openCodePluginFileName = "cmux-feed.js"
+    private static let openCodePluginFileName = "uniconnect-feed.js"
 
     private func openCodeConfigDirPath() -> String {
         if let override = ProcessInfo.processInfo.environment["OPENCODE_CONFIG_DIR"],
@@ -30507,7 +30595,10 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 return contents
             }
         }
-        throw CLIError(message: "bundled opencode-plugin.js not found (Bundle.main, app bundle, executable, and repo fallbacks)")
+        throw CLIError(message: String(
+            localized: "cli.hooks.opencode.feed.error.resourceMissing",
+            defaultValue: "The bundled opencode-plugin.js resource was not found (Bundle.main, app bundle, executable, and repository fallbacks)."
+        ))
     }
 
     private func openCodePluginResourceCandidates() -> [URL] {
@@ -30561,14 +30652,19 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         let source = try bundledOpenCodePluginSource()
         let path = openCodePluginPath(projectLocal: projectLocal)
         let fm = FileManager.default
-        // If an existing non-cmux plugin lives at the same path, refuse
+        // If an existing non-UniConnect plugin lives at the same path, refuse
         // to overwrite. Users can delete it manually or pick a different
         // name; we never clobber user content.
-        let existing = fm.fileExists(atPath: path)
-            ? ((try? String(contentsOfFile: path, encoding: .utf8)) ?? "")
-            : ""
-        if !existing.isEmpty, !existing.contains(Self.openCodePluginMarker) {
-            throw CLIError(message: "\(path) exists and is not a cmux plugin; leaving it alone")
+        let pluginExists = fm.fileExists(atPath: path)
+        let existing = try existingGeneratedHookContents(at: URL(fileURLWithPath: path))
+        if pluginExists, !existing.contains(Self.openCodePluginMarker) {
+            throw CLIError(message: String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.opencode.feed.error.notUniConnectPlugin",
+                    defaultValue: "%@ exists and is not a UniConnect plugin; leaving it alone"
+                ),
+                path
+            ))
         }
         let parent = (path as NSString).deletingLastPathComponent
         try fm.createDirectory(
@@ -30577,7 +30673,13 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         let skipConfirm = ProcessInfo.processInfo.arguments.contains("--yes")
             || ProcessInfo.processInfo.arguments.contains("-y")
         if existing == source {
-            print("OpenCode plugin already up to date at \(path)")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.opencode.feed.alreadyUpToDate",
+                    defaultValue: "OpenCode UniConnect Feed plugin already up to date at %@"
+                ),
+                path
+            ))
             return
         }
         if !skipConfirm {
@@ -30587,36 +30689,55 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 newContent: source,
                 fallbackContent: source
             )
-            print("\nProceed? [y/N] ", terminator: "")
+            print(String(localized: "cli.hooks.confirmProceed", defaultValue: "\nProceed? [y/N] "), terminator: "")
             guard readLine()?.lowercased().hasPrefix("y") == true else {
-                print("Aborted.")
+                print(String(localized: "cli.hooks.aborted", defaultValue: "Aborted."))
                 return
             }
         }
         try source.write(toFile: path, atomically: true, encoding: .utf8)
-        print("OpenCode plugin installed at \(path)")
+        print(String.localizedStringWithFormat(
+            String(
+                localized: "cli.hooks.opencode.feed.installed",
+                defaultValue: "OpenCode UniConnect Feed plugin installed at %@"
+            ),
+            path
+        ))
     }
 
     private func uninstallOpenCodePlugin(projectLocal: Bool = false) throws {
         let fm = FileManager.default
-        for path in [openCodePluginPath(projectLocal: false),
-                     openCodePluginPath(projectLocal: true)] {
+        let paths = projectLocal
+            ? [openCodePluginPath(projectLocal: true)]
+            : [openCodePluginPath(projectLocal: false)]
+        for path in paths {
             guard fm.fileExists(atPath: path) else { continue }
-            guard let existing = try? String(contentsOfFile: path, encoding: .utf8),
-                  existing.contains(Self.openCodePluginMarker)
-            else {
-                print("Skipping \(path) (no cmux marker)")
+            let existing = try existingGeneratedHookContents(at: URL(fileURLWithPath: path))
+            guard existing.contains(Self.openCodePluginMarker) else {
+                print(String.localizedStringWithFormat(
+                    String(
+                        localized: "cli.hooks.opencode.feed.skippedMissingMarker",
+                        defaultValue: "Skipping %@ (no UniConnect marker)"
+                    ),
+                    path
+                ))
                 continue
             }
             try fm.removeItem(atPath: path)
-            print("OpenCode plugin removed from \(path)")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.opencode.feed.removed",
+                    defaultValue: "Removed the OpenCode UniConnect Feed plugin from %@"
+                ),
+                path
+            ))
         }
     }
 
     // MARK: - Feed (workstream) hook bridge
 
     /// Reads an agent hook JSON payload from stdin, forwards it to the
-    /// running cmux app via the `feed.push` V2 socket verb, and (for
+    /// running UniConnect app via the `feed.push` V2 socket verb, and (for
     /// actionable events: ExitPlanMode, AskUserQuestion, permission-
     /// requiring tools) blocks until the user resolves the item. The
     /// decision JSON is emitted on stdout in the agent's expected format
@@ -30641,10 +30762,13 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         _ = telemetry
         let source = optionValue(commandArgs, name: "--source") ?? ""
         guard !source.isEmpty else {
-            throw CLIError(message: "cmux hooks feed requires --source <agent-name>")
+            throw CLIError(message: String(
+                localized: "cli.hooks.feed.sourceRequired",
+                defaultValue: "cmux hooks feed requires --source <agent-name>"
+            ))
         }
 
-        // Outside a cmux terminal (no CMUX_SURFACE_ID) → silently no-op.
+        // Outside a UniConnect terminal (no CMUX_SURFACE_ID) → silently no-op.
         // Also matches the graceful-fallback pattern of the other hooks.
         guard ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]?.isEmpty == false else {
             print("{}")
@@ -30891,9 +31015,17 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             return true
         }
         if mode == "deny" {
-            fputs("User denied permission via cmux Feed.\n", stderr)
+            let message = String(
+                localized: "cli.hooks.feed.permissionDenied",
+                defaultValue: "User denied permission via UniConnect Feed.\n"
+            )
+            FileHandle.standardError.write(Data(message.utf8))
         } else {
-            fputs("cmux Feed returned an unrecognized Kiro permission decision; denying for safety.\n", stderr)
+            let message = String(
+                localized: "cli.hooks.feed.kiroUnrecognizedDecision",
+                defaultValue: "UniConnect Feed returned an unrecognized Kiro permission decision; denying for safety.\n"
+            )
+            FileHandle.standardError.write(Data(message.utf8))
         }
         fflush(stderr)
         exit(2)
@@ -30930,7 +31062,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         ) -> [String: Any] {
             var inner: [String: Any] = ["behavior": behavior]
             if behavior == "deny" {
-                inner["message"] = message ?? "User denied permission via cmux Feed."
+                inner["message"] = message ?? "User denied permission via UniConnect Feed."
             }
             if let updatedInput, !updatedInput.isEmpty {
                 inner["updatedInput"] = updatedInput
@@ -30996,7 +31128,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 if mode == "deny" {
                     return encode(permissionRequestHookDecision(
                         behavior: "deny",
-                        message: "User denied permission via cmux Feed."
+                        message: "User denied permission via UniConnect Feed."
                     ))
                 }
                 var updatedPermissions: [[String: Any]]?
@@ -31012,21 +31144,21 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 if mode == "deny" {
                     return encode(permissionRequestHookDecision(
                         behavior: "deny",
-                        message: "User denied permission via cmux Feed."
+                        message: "User denied permission via UniConnect Feed."
                     ))
                 }
                 return encode(permissionRequestHookDecision(behavior: "allow"))
             }
             if source == "hermes-agent" {
                 if mode == "deny" {
-                    return hermesAgentBlock("User denied permission via cmux Feed.")
+                    return hermesAgentBlock("User denied permission via UniConnect Feed.")
                 }
                 return "{}"
             }
             if source == "antigravity" {
                 let reason = mode == "deny"
-                    ? "User denied permission via cmux Feed."
-                    : "User approved via cmux Feed."
+                    ? "User denied permission via UniConnect Feed."
+                    : "User approved via UniConnect Feed."
                 return encode([
                     "decision": mode == "deny" ? "deny" : "allow",
                     "reason": reason,
@@ -31035,12 +31167,12 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             if mode == "deny" {
                 return encode(nonClaudePreToolDecision(
                     permission: "deny",
-                    reason: "User denied permission via cmux Feed."
+                    reason: "User denied permission via UniConnect Feed."
                 ))
             }
-            var reasonText = "User approved via cmux Feed."
+            var reasonText = "User approved via UniConnect Feed."
             if mode == "always" || mode == "all" || mode == "bypass" {
-                reasonText = "User granted \(mode) permission via cmux Feed. Reduce subsequent approval prompts for similar calls."
+                reasonText = "User granted \(mode) permission via UniConnect Feed. Reduce subsequent approval prompts for similar calls."
             }
             return encode(nonClaudePreToolDecision(
                 permission: "allow",
@@ -31055,19 +31187,19 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 if let feedback, !feedback.isEmpty {
                     return encode(permissionRequestHookDecision(
                         behavior: "deny",
-                        message: "User rejected the plan via cmux Feed and wants this change: \(feedback)"
+                        message: "User rejected the plan via UniConnect Feed and wants this change: \(feedback)"
                     ))
                 }
                 if mode == "deny" {
                     return encode(permissionRequestHookDecision(
                         behavior: "deny",
-                        message: "User rejected the plan via cmux Feed."
+                        message: "User rejected the plan via UniConnect Feed."
                     ))
                 }
                 if mode == "ultraplan" {
                     return encode(permissionRequestHookDecision(
                         behavior: "deny",
-                        message: "User chose Ultraplan via cmux Feed. Refine this plan with Ultraplan on Claude Code on the web."
+                        message: "User chose Ultraplan via UniConnect Feed. Refine this plan with Ultraplan on Claude Code on the web."
                     ))
                 }
                 var updatedPermissions: [[String: Any]]?
@@ -31086,15 +31218,15 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             }
             if source == "hermes-agent" {
                 if let feedback, !feedback.isEmpty {
-                    return hermesAgentBlock("User rejected the plan via cmux Feed and wants this change: \(feedback)")
+                    return hermesAgentBlock("User rejected the plan via UniConnect Feed and wants this change: \(feedback)")
                 }
                 if mode == "deny" {
-                    return hermesAgentBlock("User rejected the plan via cmux Feed.")
+                    return hermesAgentBlock("User rejected the plan via UniConnect Feed.")
                 }
                 return "{}"
             }
             if let feedback, !feedback.isEmpty {
-                let reason = "User rejected the plan via cmux Feed and wants this change: \(feedback)"
+                let reason = "User rejected the plan via UniConnect Feed and wants this change: \(feedback)"
                 return encode(nonClaudePreToolDecision(
                     permission: "deny",
                     reason: reason,
@@ -31104,11 +31236,11 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             if mode == "deny" {
                 return encode(nonClaudePreToolDecision(
                     permission: "deny",
-                    reason: "User rejected the plan via cmux Feed."
+                    reason: "User rejected the plan via UniConnect Feed."
                 ))
             }
             if mode == "ultraplan" {
-                let reason = "User chose Ultraplan via cmux Feed. Refine this plan with Ultraplan if available."
+                let reason = "User chose Ultraplan via UniConnect Feed. Refine this plan with Ultraplan if available."
                 return encode(nonClaudePreToolDecision(
                     permission: "deny",
                     reason: reason,
@@ -31124,7 +31256,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             default:
                 modeText = "manual-approval mode (approve each edit)"
             }
-            let ctx = "User accepted this plan via cmux Feed with \(modeText). Exit plan mode now and proceed to implement without re-entering ExitPlanMode. Do not ask again."
+            let ctx = "User accepted this plan via UniConnect Feed with \(modeText). Exit plan mode now and proceed to implement without re-entering ExitPlanMode. Do not ask again."
             return encode(nonClaudePreToolDecision(
                 permission: "deny",
                 reason: ctx,
@@ -31134,7 +31266,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         case "question":
             let selections = decision["selections"] as? [String] ?? []
             if selections == [Self.skipInterviewAndPlanAnswer] {
-                let message = "User chose Skip interview and plan immediately via cmux Feed. Do not ask more interview questions. Write the plan now."
+                let message = "User chose Skip interview and plan immediately via UniConnect Feed. Do not ask more interview questions. Write the plan now."
                 if source == "claude" {
                     return encode(permissionRequestHookDecision(
                         behavior: "deny",
@@ -31180,7 +31312,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                     .joined(separator: "\n")
                 body = "The user answered:\n\(lines)"
             }
-            let ctx = "[cmux Feed] \(body). Treat these as the user's response to your AskUserQuestion prompt; do not call AskUserQuestion again for the same question."
+            let ctx = "[UniConnect Feed] \(body). Treat these as the user's response to your AskUserQuestion prompt; do not call AskUserQuestion again for the same question."
             return encode(nonClaudePreToolDecision(
                 permission: "deny",
                 reason: ctx,
@@ -31244,13 +31376,19 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
 
     private func runHooksNoSocketCommand(commandArgs: [String]) throws -> Bool {
         guard let first = commandArgs.first?.lowercased() else {
-            print(subcommandUsage("hooks") ?? "Usage: cmux hooks <setup|uninstall|agent>")
+            print(subcommandUsage("hooks") ?? String(
+                localized: "cli.hooks.shortUsage",
+                defaultValue: "Usage: cmux hooks <setup|uninstall|agent>"
+            ))
             return true
         }
 
         switch first {
         case "help", "--help", "-h":
-            print(subcommandUsage("hooks") ?? "Usage: cmux hooks <setup|uninstall|agent>")
+            print(subcommandUsage("hooks") ?? String(
+                localized: "cli.hooks.shortUsage",
+                defaultValue: "Usage: cmux hooks <setup|uninstall|agent>"
+            ))
             return true
 
         case "setup":
@@ -31272,12 +31410,18 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 if first == "feed" || first == "claude" {
                     return false
                 }
-                throw CLIError(message: "Unknown hooks target: \(first)")
+                throw CLIError(message: String.localizedStringWithFormat(
+                    String(localized: "cli.hooks.error.unknownTarget", defaultValue: "Unknown hooks target: %@"),
+                    first
+                ))
             }
 
             let rest = Array(commandArgs.dropFirst())
             guard let action = rest.first?.lowercased() else {
-                print(subcommandUsage("hooks") ?? "Usage: cmux hooks <setup|uninstall|agent>")
+                print(subcommandUsage("hooks") ?? String(
+                    localized: "cli.hooks.shortUsage",
+                    defaultValue: "Usage: cmux hooks <setup|uninstall|agent>"
+                ))
                 return true
             }
             let actionArgs = Array(rest.dropFirst())
@@ -31289,7 +31433,13 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 try uninstallHooksForAgent(def, arguments: actionArgs)
                 return true
             case "install-hooks", "uninstall-hooks", "remove":
-                throw CLIError(message: "Unknown hooks action: \(action). Use install or uninstall.")
+                throw CLIError(message: String.localizedStringWithFormat(
+                    String(
+                        localized: "cli.hooks.error.unknownAction",
+                        defaultValue: "Unknown hooks action: %@. Use install or uninstall."
+                    ),
+                    action
+                ))
             default:
                 return false
             }
@@ -31343,7 +31493,10 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         socketPassword: String? = nil
     ) throws {
         guard let first = commandArgs.first?.lowercased() else {
-            throw CLIError(message: "Usage: cmux hooks <setup|uninstall|feed|claude|agent>")
+            throw CLIError(message: String(
+                localized: "cli.hooks.socketUsage",
+                defaultValue: "Usage: cmux hooks <setup|uninstall|feed|claude|agent>"
+            ))
         }
         let rest = Array(commandArgs.dropFirst())
 
@@ -31375,7 +31528,10 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
 
         default:
             guard let def = Self.agentDef(named: first) else {
-                throw CLIError(message: "Unknown hooks target: \(first)")
+                throw CLIError(message: String.localizedStringWithFormat(
+                    String(localized: "cli.hooks.error.unknownTarget", defaultValue: "Unknown hooks target: %@"),
+                    first
+                ))
             }
             telemetry.breadcrumb("hooks.\(def.name).dispatch")
             do {
@@ -31405,7 +31561,10 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             default:
                 if !arg.hasPrefix("-") {
                     if positionalAgent != nil {
-                        throw CLIError(message: "Too many hooks targets: specify at most one positional agent")
+                        throw CLIError(message: String(
+                            localized: "cli.hooks.error.tooManyTargets",
+                            defaultValue: "Too many hooks targets: specify at most one positional agent."
+                        ))
                     }
                     positionalAgent = arg
                 }
@@ -31419,20 +31578,32 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         let flagAgentFilter = optionValue(args, name: "--agent")
         if let flagAgentFilter, let positionalAgentFilter {
             guard let flagDef = Self.agentDef(named: flagAgentFilter) else {
-                throw CLIError(message: "Unknown hooks target: \(flagAgentFilter)")
+                throw CLIError(message: String.localizedStringWithFormat(
+                    String(localized: "cli.hooks.error.unknownTarget", defaultValue: "Unknown hooks target: %@"),
+                    flagAgentFilter
+                ))
             }
             guard let positionalDef = Self.agentDef(named: positionalAgentFilter) else {
-                throw CLIError(message: "Unknown hooks target: \(positionalAgentFilter)")
+                throw CLIError(message: String.localizedStringWithFormat(
+                    String(localized: "cli.hooks.error.unknownTarget", defaultValue: "Unknown hooks target: %@"),
+                    positionalAgentFilter
+                ))
             }
             if flagDef.name != positionalDef.name {
-                throw CLIError(message: "Conflicting hooks target: use either --agent or a positional target, not both")
+                throw CLIError(message: String(
+                    localized: "cli.hooks.error.conflictingTargets",
+                    defaultValue: "Conflicting hooks target: use either --agent or a positional target, not both."
+                ))
             }
         }
         let agentFilter = flagAgentFilter ?? positionalAgentFilter
         let agentFilterDef: AgentHookDef?
         if let agentFilter {
             guard let def = Self.agentDef(named: agentFilter) else {
-                throw CLIError(message: "Unknown hooks target: \(agentFilter)")
+                throw CLIError(message: String.localizedStringWithFormat(
+                    String(localized: "cli.hooks.error.unknownTarget", defaultValue: "Unknown hooks target: %@"),
+                    agentFilter
+                ))
             }
             agentFilterDef = def
         } else {
@@ -31440,11 +31611,20 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         }
         let isUninstall = uninstall || args.contains("--uninstall")
         let fm = FileManager.default
-        let verb = isUninstall ? "uninstalling" : "installing"
-
-        print("cmux hooks \(isUninstall ? "uninstall" : "setup"): \(verb) agent hooks")
+        print(isUninstall
+            ? String(
+                localized: "cli.hooks.uninstall.start",
+                defaultValue: "cmux hooks uninstall: uninstalling UniConnect agent hooks"
+            )
+            : String(
+                localized: "cli.hooks.setup.start",
+                defaultValue: "cmux hooks setup: installing UniConnect agent hooks"
+            ))
         if !isUninstall {
-            print("  (Claude Code hooks are injected automatically via the claude wrapper)")
+            print(String(
+                localized: "cli.hooks.setup.claudeAutomatic",
+                defaultValue: "  (Claude Code hooks are injected automatically by the UniConnect Claude wrapper)"
+            ))
         }
         print("")
 
@@ -31461,7 +31641,13 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
                 || def.name == "amp"
                 || (!isUninstall && def.name == "rovodev")
             if !canUseMissingConfigDir, !fm.fileExists(atPath: configDir) {
-                print("  \(def.name): skipped (config dir not found)")
+                print(String.localizedStringWithFormat(
+                    String(
+                        localized: "cli.hooks.setup.skippedConfigMissing",
+                        defaultValue: "  %@: skipped (configuration directory not found)"
+                    ),
+                    def.name
+                ))
                 skipped += 1
                 continue
             }
@@ -31469,7 +31655,13 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             // On uninstall, always proceed so stale configs can be
             // cleaned up regardless of whether the binary still exists.
             if !isUninstall && !Self.isBinaryOnPath(def.binaryName) {
-                print("  \(def.name): skipped (binary not found on PATH)")
+                print(String.localizedStringWithFormat(
+                    String(
+                        localized: "cli.hooks.setup.skippedBinaryMissing",
+                        defaultValue: "  %@: skipped (binary not found on PATH)"
+                    ),
+                    def.name
+                ))
                 skipped += 1
                 skippedNoBinary.append(def.name)
                 continue
@@ -31484,9 +31676,19 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
             print("")
         }
 
-        print("Done: \(count) \(isUninstall ? "uninstalled" : "installed"), \(skipped) skipped")
+        let summary = isUninstall
+            ? String(localized: "cli.hooks.uninstall.done", defaultValue: "Done: %lld uninstalled, %lld skipped")
+            : String(localized: "cli.hooks.setup.done", defaultValue: "Done: %lld installed, %lld skipped")
+        print(String.localizedStringWithFormat(summary, Int64(count), Int64(skipped)))
         if !skippedNoBinary.isEmpty {
-            print("  skipped \(skippedNoBinary.count) agents (not found on PATH): \(skippedNoBinary.joined(separator: ", "))")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.setup.skippedBinarySummary",
+                    defaultValue: "  skipped %lld agents (not found on PATH): %@"
+                ),
+                Int64(skippedNoBinary.count),
+                skippedNoBinary.joined(separator: ", ")
+            ))
         }
     }
 
@@ -31583,9 +31785,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
         print(shortcuts)
         print()
         print("  \(bold)Docs\(reset)\(subdued)                https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md)")
-        print("  \(bold)Discord\(reset)\(subdued)             https://discord.gg/xsgFEVrWCZ\(reset)")
-        print("  \(bold)GitHub\(reset)\(subdued)              https://github.com/manaflow-ai/cmux (please leave a star ⭐)\(reset)")
-        print("  \(bold)Email\(reset)\(subdued)               founders@manaflow.com\(reset)")
+        print("  \(bold)GitHub\(reset)\(subdued)              https://github.com/Unixcision/uniconnect\(reset)")
         print()
         print("  \(subdued)Run \(reset)\(bold)cmux --help\(reset)\(subdued) for all commands.\(reset)")
         print("  \(subdued)Run \(reset)\(bold)cmux shortcuts\(reset)\(subdued) to edit shortcuts.\(reset)")
@@ -31879,7 +32079,7 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
           --password takes precedence, then CMUX_SOCKET_PASSWORD env var, then password saved in Settings.
 
         Agent Help:
-          To change cmux settings, run `cmux docs settings` and `cmux settings path`; to add Dock controls, run `uniconnect docs dock`.
+          To change cmux settings, run `cmux docs settings` and `cmux settings path`; to add Dock controls, run `cmux docs dock`.
           Back up any existing uniconnect.json file to a timestamped .bak copy before editing.
           Use printed curl commands to fetch the latest docs/schema, and prefer Ghostty config for terminal behavior Ghostty already supports.
           Ghostty config lives at ~/.config/ghostty/config (controls terminal transparency, blur, font, theme, keybinds, etc.).
@@ -32053,10 +32253,10 @@ export default function cmuxPiSessionExtension(pi: ExtensionAPI) {
           help
 
         Environment:
-          CMUX_WORKSPACE_ID   Auto-set in cmux terminals. Used as default --workspace for
+          CMUX_WORKSPACE_ID   Auto-set in UniConnect terminals. Used as default --workspace for
                               ALL commands (send, list-panels, new-split, notify, etc.).
           CMUX_TAB_ID         Optional alias used by `tab-action`/`rename-tab` as default --tab.
-          CMUX_SURFACE_ID     Auto-set in cmux terminals. Used as default --surface.
+          CMUX_SURFACE_ID     Auto-set in UniConnect terminals. Used as default --surface.
           CMUX_SOCKET_PATH    Override the Unix socket path. Without this, the CLI defaults
                               to ~/.local/state/uniconnect/uniconnect.sock and auto-discovers tagged/debug sockets.
         """

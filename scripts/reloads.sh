@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="cmux STAGING"
+APP_NAME="UniConnect STAGING"
 BUNDLE_ID="com.unixcision.uniconnect.staging"
-BASE_APP_NAME="cmux"
+BASE_APP_NAME="UniConnect"
 DERIVED_DATA=""
 NAME_SET=0
 BUNDLE_SET=0
@@ -46,8 +46,8 @@ usage() {
   cat <<'EOF'
 Usage: ./scripts/reloads.sh [options]
 
-Release build with isolated "cmux STAGING" identity. Runs side-by-side with
-the production cmux app.
+Release build with isolated "UniConnect STAGING" identity. Runs side-by-side
+with the production UniConnect app.
 
 Options:
   --tag <name>           Short tag for parallel builds (e.g., feature-xyz-lol).
@@ -133,7 +133,7 @@ if [[ -n "$TAG" ]]; then
     exit 1
   fi
   if [[ "$NAME_SET" -eq 0 ]]; then
-    APP_NAME="cmux STAGING ${TAG}"
+    APP_NAME="UniConnect STAGING ${TAG}"
   fi
   if [[ "$BUNDLE_SET" -eq 0 ]]; then
     BUNDLE_ID="com.unixcision.uniconnect.staging.${TAG_ID}"
@@ -205,7 +205,7 @@ fi
 
 # Staging always copies the built app and patches the plist to set an isolated
 # socket path, bundle id, and display name. This prevents conflicts with the
-# production cmux app.
+# production UniConnect app.
 STAGING_APP_PATH="$(dirname "$APP_PATH")/${APP_NAME}.app"
 rm -rf "$STAGING_APP_PATH"
 cp -R "$APP_PATH" "$STAGING_APP_PATH"
@@ -221,7 +221,7 @@ if [[ -f "$INFO_PLIST" ]]; then
   # Inject staging socket paths via LSEnvironment so the Release binary
   # (which defaults to the per-user stable socket) uses isolated sockets instead.
   STAGING_SLUG="$(staging_slug_from_bundle_id "$BUNDLE_ID")"
-  APP_SUPPORT_DIR="$HOME/Library/Application Support/cmux"
+  APP_SUPPORT_DIR="$HOME/Library/Application Support/UniConnect"
   if [[ -n "$STAGING_SLUG" ]]; then
     CMUXD_SOCKET="${APP_SUPPORT_DIR}/cmuxd-${STAGING_SLUG}.sock"
     CMUX_SOCKET_PATH_VALUE="/tmp/uniconnect-staging-${STAGING_SLUG}.sock"

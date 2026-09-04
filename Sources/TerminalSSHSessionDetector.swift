@@ -1,7 +1,7 @@
 import Foundation
 import Darwin
 
-struct DetectedSSHSession: Equatable {
+struct DetectedSSHSession: Equatable, Sendable {
     let destination: String
     let port: Int?
     let identityFile: String?
@@ -86,27 +86,45 @@ struct DetectedSSHSession: Equatable {
     ) throws -> [String] {
         guard !fileURLs.isEmpty else { return [] }
 
-        var uploadedRemotePaths: [String] = []
-        do {
-            for localURL in fileURLs {
-                try operation.throwIfCancelled()
-                let normalizedLocalURL = localURL.standardizedFileURL
-                guard normalizedLocalURL.isFileURL else {
-                    throw NSError(domain: "cmux.detected-ssh.drop", code: 1, userInfo: [
-                        NSLocalizedDescriptionKey: String(
-                            localized: "detectedSSH.fileDrop.error.notFileURL",
-                            defaultValue: "Couldn't upload the dropped item because it isn't a local file. Drop a file from Finder, then try again."
-                        ),
-                    ])
-                }
+        let normalizedFilesAndSizes: [(url: URL, size: Int64)] = try fileURLs.map { localURL in
+            let normalizedURL = localURL.standardizedFileURL
+            guard normalizedURL.isFileURL,
+                  let values = try? normalizedURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+                  values.isRegularFile == true else {
+                throw NSError(domain: "cmux.detected-ssh.drop", code: 1, userInfo: [
+                    NSLocalizedDescriptionKey: String(
+                        localized: "detectedSSH.fileDrop.error.notFileURL",
+                        defaultValue: "Couldn't upload the dropped item because it isn't a local file. Drop a file from Finder, then try again."
+                    ),
+                ])
+            }
+            return (normalizedURL, Int64(max(0, values.fileSize ?? 0)))
+        }
+        let totalBytes = normalizedFilesAndSizes.reduce(Int64(0)) { partial, file in
+            partial + file.size
+        }
+        operation.beginUpload(totalBytes: totalBytes)
 
-                let remotePath = WorkspaceRemoteSessionController.remoteDropPath(for: normalizedLocalURL)
+        var uploadedRemotePaths: [String] = []
+        var completedBytes: Int64 = 0
+        do {
+            for file in normalizedFilesAndSizes {
+                try operation.throwIfCancelled()
+                let remotePath = WorkspaceRemoteSessionController.remoteDropPath(for: file.url)
                 // Track the attempted destination before scp starts. If cancellation races
                 // process exit, cleanup must also remove a partially written current file.
                 uploadedRemotePaths.append(remotePath)
-                let (scpExecutable, scpArgs, scpEnvironment) = wrappedCommand(
+
+#if DEBUG
+                let usesTestProcessOverride = Self.runProcessOverrideForTesting != nil
+#else
+                let usesTestProcessOverride = false
+#endif
+                if usesTestProcessOverride {
+#if DEBUG
+                let (scpExecutable, scpArgs, scpEnvironment) = try wrappedCommand(
                     executable: "/usr/bin/scp",
-                    arguments: scpArguments(localPath: normalizedLocalURL.path, remotePath: remotePath)
+                        arguments: scpArguments(localPath: file.url.path, remotePath: remotePath)
                 )
                 let result = try Self.runProcess(
                     executable: scpExecutable,
@@ -125,6 +143,42 @@ struct DetectedSSHSession: Equatable {
                         NSLocalizedDescriptionKey: detail.isEmpty ? base : base + "\n\nscp: " + detail,
                     ])
                 }
+#endif
+                } else {
+                    let uploadCommand = WorkspaceRemoteSessionController.remoteDropSCPCommand(
+                        for: remotePath
+                    )
+                    let (sshExecutable, sshArgs, sshEnvironment) = try wrappedCommand(
+                        executable: "/usr/bin/ssh",
+                        arguments: sshArguments(command: uploadCommand)
+                    )
+                    let result = try TerminalRemoteFileUploader.upload(
+                        localURL: file.url,
+                        executable: sshExecutable,
+                        arguments: sshArgs,
+                        environment: sshEnvironment,
+                        timeout: 45,
+                        operation: operation,
+                        completedBytesBeforeFile: completedBytes,
+                        totalBytes: totalBytes,
+                        payloadMode: .scp(
+                            fileName: (remotePath as NSString).lastPathComponent,
+                            fileSize: file.size
+                        )
+                    )
+                    guard result.status == 0 else {
+                        let detail = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let base = String(
+                            localized: "detectedSSH.fileDrop.error.uploadFailed",
+                            defaultValue: "Couldn't upload the file to the remote session. Check that the remote host is reachable, then try again."
+                        )
+                        throw NSError(domain: "cmux.detected-ssh.drop", code: 2, userInfo: [
+                            NSLocalizedDescriptionKey: detail.isEmpty ? base : base + "\n\nssh: " + detail,
+                        ])
+                    }
+                }
+                completedBytes += file.size
+                operation.reportUploadedBytes(completedBytes, totalBytes: totalBytes)
 
             }
 
@@ -239,10 +293,20 @@ struct DetectedSSHSession: Equatable {
     /// Wraps scp/ssh in sshpass when the session has a password. The password travels in
     /// the `SSHPASS` environment variable (`sshpass -e`), never in argv, where `ps`, Activity
     /// Monitor and crash reports would show it.
-    private func wrappedCommand(executable: String, arguments: [String]) -> (String, [String], [String: String]?) {
-        guard let password, !password.isEmpty,
-              let sshpass = Self.sshpassExecutablePath() else {
+    private func wrappedCommand(
+        executable: String,
+        arguments: [String]
+    ) throws -> (String, [String], [String: String]?) {
+        guard let password, !password.isEmpty else {
             return (executable, arguments, nil)
+        }
+        guard let sshpass = Self.sshpassExecutablePath() else {
+            throw NSError(domain: "com.unixcision.uniconnect.image-transfer", code: 11, userInfo: [
+                NSLocalizedDescriptionKey: String(
+                    localized: "terminal.imageTransfer.error.sshpassMissing",
+                    defaultValue: "This SSH connection needs sshpass, but UniConnect couldn't find it. Install sshpass and try again."
+                ),
+            ])
         }
         var environment = ProcessInfo.processInfo.environment
         environment["SSHPASS"] = password
@@ -250,33 +314,42 @@ struct DetectedSSHSession: Equatable {
     }
 
     private static let sshpassLookup: String? = {
-        let candidates = ["/opt/homebrew/bin/sshpass", "/usr/local/bin/sshpass", "/usr/bin/sshpass"]
-        if let found = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) { return found }
-        // Not in the usual places: ask the user's login shell, which knows their PATH
-        // (Homebrew in a custom prefix, MacPorts, ~/.local/bin…).
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-lc", "command -v sshpass"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        guard (try? process.run()) != nil else { return nil }
-        process.waitUntilExit()
-        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return process.terminationStatus == 0 && !output.isEmpty ? output : nil
+        // Resolve only explicit, conventional install locations. Running a login shell
+        // and trusting `command -v` here would let a project-controlled PATH select a
+        // shim from /tmp before a password-bearing upload.
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let candidates = [
+            "/opt/homebrew/bin/sshpass",
+            "/usr/local/bin/sshpass",
+            "/opt/local/bin/sshpass",
+            "\(home)/.local/bin/sshpass",
+            "/usr/bin/sshpass",
+        ]
+        return candidates.first(where: { candidate in
+            var isDirectory: ObjCBool = false
+            return FileManager.default.fileExists(atPath: candidate, isDirectory: &isDirectory)
+                && !isDirectory.boolValue
+                && FileManager.default.isExecutableFile(atPath: candidate)
+        })
     }()
 
     private static func sshpassExecutablePath() -> String? { sshpassLookup }
 
     private func cleanupUploadedRemotePaths(_ remotePaths: [String]) {
         guard !remotePaths.isEmpty else { return }
-        let cleanupScript = "rm -f -- " + remotePaths.map(Self.shellSingleQuoted).joined(separator: " ")
+        let targets = remotePaths.flatMap { path -> [String] in
+            if let directory = WorkspaceRemoteSessionController.remoteDropDirectory(for: path) {
+                return [directory, path]
+            }
+            return path.hasPrefix("/tmp/uniconnect-drop-") ? [path] : []
+        }
+        guard !targets.isEmpty else { return }
+        let cleanupScript = "rm -rf -- " + targets.map(Self.shellSingleQuoted).joined(separator: " ")
         let cleanupCommand = "sh -c \(Self.shellSingleQuoted(cleanupScript))"
-        let (sshExecutable, sshArgs, sshEnvironment) = wrappedCommand(
+        guard let (sshExecutable, sshArgs, sshEnvironment) = try? wrappedCommand(
             executable: "/usr/bin/ssh",
             arguments: sshArguments(command: cleanupCommand)
-        )
+        ) else { return }
         _ = try? Self.runProcess(
             executable: sshExecutable,
             arguments: sshArgs,

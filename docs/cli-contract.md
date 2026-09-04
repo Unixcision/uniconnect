@@ -329,7 +329,7 @@ Config subcommands:
 
 | Command | Contract |
 | --- | --- |
-| `config doctor [--path <file>]`, `config check`, `config validate` | Validate JSONC syntax for config files. When `--path` is absent, default discovery checks the primary config, project-level `.cmux/cmux.json` or `cmux.json`, and legacy config files. `--path <file>` may be repeated to validate multiple explicit files. Exits 0 on success and 1 on any error. Supports `--json`. Works without a socket. |
+| `config doctor [--path <file>]`, `config check`, `config validate` | Validate JSONC syntax for config files. When `--path` is absent, default discovery checks the primary config, project-level `.uniconnect/uniconnect.json` or `uniconnect.json`, and legacy config files. `--path <file>` may be repeated to validate multiple explicit files. Exits 0 on success and 1 on any error. Supports `--json`. Works without a socket. |
 | `config path`, `config paths` | Print cmux.json paths, docs URL, schema URL, backup reminder, and reload command without a socket. |
 | `config docs`, `config documentation` | Print the same output as `docs settings` without a socket. |
 | `config reload` | Ask the running cmux app to reload configuration. Requires a socket. |
@@ -365,7 +365,7 @@ response frame is an `ack`; sequence resume metadata lives under `ack.resume` as
 carry a process-local monotonic `seq` and a stable `id` for dedupe. Clients
 should persist `seq` after processing each event and reconnect with that value.
 See [events.md](events.md) for the full protocol and event catalog. Every emitted event is also appended to
-`~/.cmuxterm/events.jsonl`, including model lifecycle events for window
+`~/.uniconnect/events.jsonl`, including model lifecycle events for window
 creation, close, focus, key-window state, workspace selection, pane focus, and
 surface selection, focus, creation, or closure. The stream is bounded: cmux keeps
 4,096 replay events in memory, caps each encoded event frame at 16 KiB, closes

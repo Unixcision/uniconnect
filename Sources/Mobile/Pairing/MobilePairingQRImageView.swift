@@ -8,7 +8,7 @@ import SwiftUI
 /// The image is generated with `CIQRCodeGenerator` and scaled with no
 /// interpolation so the modules stay sharp at the requested `dimension`.
 struct MobilePairingQRImageView: View {
-    /// The string encoded into the QR (the `cmux-ios://attach?...` URL).
+    /// The string encoded into the QR (the `uniconnect://attach?...` URL).
     let payload: String
     /// The rendered side length, in points.
     let dimension: CGFloat

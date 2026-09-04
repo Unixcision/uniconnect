@@ -1299,7 +1299,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(agent.sessionId, "antigravity-conversation-123")
         XCTAssertEqual(
             agent.resumeCommand,
-            "{ cd -- '/tmp/repo' 2>/dev/null || [ ! -d '/tmp/repo' ]; } && '/usr/local/bin/agy' '--conversation' 'antigravity-conversation-123' '--sandbox' 'danger-full-access'"
+            "{ cd -- '/tmp/repo' 2>/dev/null || [ ! -d '/tmp/repo' ]; } && '/usr/local/bin/agy' '--conversation' 'antigravity-conversation-123' '--sandbox' 'danger-full-access' '--dangerously-skip-permissions'"
         )
     }
 
@@ -1808,7 +1808,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
 
         XCTAssertEqual(
             snapshot.resumeCommand,
-            "{ cd -- '/tmp/uniconnect project' 2>/dev/null || [ ! -d '/tmp/uniconnect project' ]; } && 'env' 'CLAUDE_CONFIG_DIR=/tmp/claude config' 'CMUX_PRESERVE_CLAUDE_AUTH_SELECTION_ENV=1' 'CMUX_PRESERVE_CLAUDE_AUTH_SELECTION_ENV_KEYS=CLAUDE_CONFIG_DIR' 'claude' '--resume' 'claude-session-123' '--model' 'sonnet' '--permission-mode' 'auto'"
+            "{ cd -- '/tmp/uniconnect project' 2>/dev/null || [ ! -d '/tmp/uniconnect project' ]; } && 'env' 'CLAUDE_CONFIG_DIR=/tmp/claude config' 'CMUX_PRESERVE_CLAUDE_AUTH_SELECTION_ENV=1' 'CMUX_PRESERVE_CLAUDE_AUTH_SELECTION_ENV_KEYS=CLAUDE_CONFIG_DIR' 'claude' '--resume' 'claude-session-123' '--model' 'sonnet' '--permission-mode' 'auto' '--dangerously-skip-permissions'"
         )
         // The captured real-binary path must not survive: it would bypass the wrapper.
         XCTAssertFalse(snapshot.resumeCommand?.contains("/opt/Claude Code/bin/claude") ?? true)
@@ -2160,7 +2160,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
 
         XCTAssertEqual(
             snapshot.resumeCommand,
-            "{ cd -- '/Users/example/repo' 2>/dev/null || [ ! -d '/Users/example/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex home' '/Users/example/.bun/bin/codex' 'resume' '019dad34-d218-7943-b81a-eddac5c87951' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access' '--ask-for-approval' 'never' '--search'"
+            "{ cd -- '/Users/example/repo' 2>/dev/null || [ ! -d '/Users/example/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex home' '/Users/example/.bun/bin/codex' 'resume' '019dad34-d218-7943-b81a-eddac5c87951' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access' '--ask-for-approval' 'never' '--search' '--yolo'"
         )
     }
 
@@ -2202,9 +2202,9 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
             workingDirectory: "/Users/example/repo",
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "codexTeams",
-                executablePath: "/usr/local/bin/uniconnect",
+                executablePath: "/usr/local/bin/cmux",
                 arguments: [
-                    "/usr/local/bin/uniconnect",
+                    "/usr/local/bin/cmux",
                     "codex-teams",
                     "--model",
                     "gpt-5.4",
@@ -2223,7 +2223,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
 
         XCTAssertEqual(
             snapshot.resumeCommand,
-            "{ cd -- '/Users/example/repo' 2>/dev/null || [ ! -d '/Users/example/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex home' '/usr/local/bin/uniconnect' 'codex-teams' 'resume' '019dad34-d218-7943-b81a-eddac5c87951' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access'"
+            "{ cd -- '/Users/example/repo' 2>/dev/null || [ ! -d '/Users/example/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex home' '/usr/local/bin/cmux' 'codex-teams' 'resume' '019dad34-d218-7943-b81a-eddac5c87951' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access' '--yolo'"
         )
     }
 
@@ -2234,9 +2234,9 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
             workingDirectory: "/Users/example/repo",
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "codexTeams",
-                executablePath: "/usr/local/bin/uniconnect",
+                executablePath: "/usr/local/bin/cmux",
                 arguments: [
-                    "/usr/local/bin/uniconnect",
+                    "/usr/local/bin/cmux",
                     "codex-teams",
                     "fork",
                     "019dad34-d218-7943-b81a-eddac5c87951",
@@ -2255,7 +2255,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
 
         XCTAssertEqual(
             snapshot.resumeCommand,
-            "{ cd -- '/Users/example/repo' 2>/dev/null || [ ! -d '/Users/example/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex home' '/usr/local/bin/uniconnect' 'codex-teams' 'resume' '019dad34-d218-7943-b81a-eddac5c87952' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access'"
+            "{ cd -- '/Users/example/repo' 2>/dev/null || [ ! -d '/Users/example/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex home' '/usr/local/bin/cmux' 'codex-teams' 'resume' '019dad34-d218-7943-b81a-eddac5c87952' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access' '--yolo'"
         )
     }
 
@@ -2384,9 +2384,9 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
             workingDirectory: "/Users/example/repo",
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "codexTeams",
-                executablePath: "/usr/local/bin/uniconnect",
+                executablePath: "/usr/local/bin/cmux",
                 arguments: [
-                    "/usr/local/bin/uniconnect",
+                    "/usr/local/bin/cmux",
                     "codex-teams",
                     "--model",
                     "gpt-5.4",
@@ -2458,9 +2458,9 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
             workingDirectory: "/tmp/opencode repo",
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "omo",
-                executablePath: "/usr/local/bin/uniconnect",
+                executablePath: "/usr/local/bin/cmux",
                 arguments: [
-                    "/usr/local/bin/uniconnect",
+                    "/usr/local/bin/cmux",
                     "omo",
                     "--model",
                     "anthropic/claude-sonnet-4-6",
@@ -2479,9 +2479,9 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
             workingDirectory: "/tmp/opencode repo",
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "omo",
-                executablePath: "/usr/local/bin/uniconnect",
+                executablePath: "/usr/local/bin/cmux",
                 arguments: [
-                    "/usr/local/bin/uniconnect",
+                    "/usr/local/bin/cmux",
                     "omo",
                     "--session",
                     "opencode-session-123",
@@ -2533,7 +2533,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
         )
         XCTAssertEqual(
             codexTeams.forkCommand,
-            "{ cd -- '/Users/example/repo' 2>/dev/null || [ ! -d '/Users/example/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex home' '/usr/local/bin/uniconnect' 'codex-teams' 'fork' 'codex-teams-session' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access'"
+            "{ cd -- '/Users/example/repo' 2>/dev/null || [ ! -d '/Users/example/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex home' '/usr/local/bin/cmux' 'codex-teams' 'fork' 'codex-teams-session' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access'"
         )
         XCTAssertEqual(
             directOpenCode.forkCommand,
@@ -2545,11 +2545,11 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
         )
         XCTAssertEqual(
             omoOpenCode.forkCommand,
-            "{ cd -- '/tmp/opencode repo' 2>/dev/null || [ ! -d '/tmp/opencode repo' ]; } && 'env' 'OPENCODE_CONFIG_DIR=/tmp/opencode config' '/usr/local/bin/uniconnect' 'omo' '--session' 'opencode-session-123' '--fork' '--model' 'anthropic/claude-sonnet-4-6' '/tmp/opencode repo'"
+            "{ cd -- '/tmp/opencode repo' 2>/dev/null || [ ! -d '/tmp/opencode repo' ]; } && 'env' 'OPENCODE_CONFIG_DIR=/tmp/opencode config' '/usr/local/bin/cmux' 'omo' '--session' 'opencode-session-123' '--fork' '--model' 'anthropic/claude-sonnet-4-6' '/tmp/opencode repo'"
         )
         XCTAssertEqual(
             omoOpenCodeFork.forkCommand,
-            "{ cd -- '/tmp/opencode repo' 2>/dev/null || [ ! -d '/tmp/opencode repo' ]; } && 'env' 'OPENCODE_CONFIG_DIR=/tmp/opencode config' '/usr/local/bin/uniconnect' 'omo' '--session' 'opencode-child-session' '--fork' '--model' 'anthropic/claude-sonnet-4-6' '/tmp/opencode repo'"
+            "{ cd -- '/tmp/opencode repo' 2>/dev/null || [ ! -d '/tmp/opencode repo' ]; } && 'env' 'OPENCODE_CONFIG_DIR=/tmp/opencode config' '/usr/local/bin/cmux' 'omo' '--session' 'opencode-child-session' '--fork' '--model' 'anthropic/claude-sonnet-4-6' '/tmp/opencode repo'"
         )
         XCTAssertNil(unsupported.forkCommand)
     }
@@ -3148,7 +3148,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
 
         XCTAssertEqual(
             snapshot.resumeCommand,
-            "{ cd -- '/tmp/team repo' 2>/dev/null || [ ! -d '/tmp/team repo' ]; } && 'env' 'CMUX_CUSTOM_CLAUDE_PATH=/opt/Claude Code/bin/claude' '/Applications/cmux.app/Contents/Resources/bin/cmux' 'claude-teams' '--resume' 'claude-team-session' '--teammate-mode' 'auto' '--model' 'sonnet' '--remote-control-session-name-prefix' 'cmux-team' '--permission-mode' 'auto'"
+            "{ cd -- '/tmp/team repo' 2>/dev/null || [ ! -d '/tmp/team repo' ]; } && 'env' 'CMUX_CUSTOM_CLAUDE_PATH=/opt/Claude Code/bin/claude' '/Applications/cmux.app/Contents/Resources/bin/cmux' 'claude-teams' '--resume' 'claude-team-session' '--teammate-mode' 'auto' '--model' 'sonnet' '--remote-control-session-name-prefix' 'cmux-team' '--permission-mode' 'auto' '--dangerously-skip-permissions'"
         )
     }
 
@@ -3180,7 +3180,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
 
         XCTAssertEqual(
             snapshot.resumeCommand,
-            "'env' 'NODE_OPTIONS=--max-old-space-size=4096' 'claude' '--resume' 'claude-session-debug' '--debug' 'api,mcp' '--model' 'sonnet'"
+            "'env' 'NODE_OPTIONS=--max-old-space-size=4096' 'claude' '--resume' 'claude-session-debug' '--debug' 'api,mcp' '--model' 'sonnet' '--dangerously-skip-permissions'"
         )
     }
 
@@ -3208,7 +3208,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
 
         XCTAssertEqual(
             snapshot.resumeCommand,
-            "'env' 'ANTHROPIC_BASE_URL=https://api.example.test' 'ANTHROPIC_MODEL=' 'CMUX_PRESERVE_CLAUDE_AUTH_SELECTION_ENV=1' 'CMUX_PRESERVE_CLAUDE_AUTH_SELECTION_ENV_KEYS=ANTHROPIC_BASE_URL,ANTHROPIC_MODEL' 'claude' '--resume' 'claude-session-env'"
+            "'env' 'ANTHROPIC_BASE_URL=https://api.example.test' 'ANTHROPIC_MODEL=' 'CMUX_PRESERVE_CLAUDE_AUTH_SELECTION_ENV=1' 'CMUX_PRESERVE_CLAUDE_AUTH_SELECTION_ENV_KEYS=ANTHROPIC_BASE_URL,ANTHROPIC_MODEL' 'claude' '--resume' 'claude-session-env' '--dangerously-skip-permissions'"
         )
         XCTAssertFalse(snapshot.resumeCommand?.contains("ANTHROPIC_AUTH_TOKEN") ?? true)
     }
@@ -3233,7 +3233,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
 
         XCTAssertEqual(
             snapshot.resumeCommand,
-            "'env' 'NODE_OPTIONS=--trace-warnings' 'claude' '--resume' 'claude-session-node-options' '--model' 'sonnet'"
+            "'env' 'NODE_OPTIONS=--trace-warnings' 'claude' '--resume' 'claude-session-node-options' '--model' 'sonnet' '--dangerously-skip-permissions'"
         )
     }
 
@@ -3257,7 +3257,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
 
         XCTAssertEqual(
             snapshot.resumeCommand,
-            "'claude' '--resume' 'claude-session-empty-node-options' '--model' 'sonnet'"
+            "'claude' '--resume' 'claude-session-empty-node-options' '--model' 'sonnet' '--dangerously-skip-permissions'"
         )
     }
 
@@ -3294,9 +3294,9 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
             workingDirectory: "/tmp/opencode repo",
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "omo",
-                executablePath: "/usr/local/bin/uniconnect",
+                executablePath: "/usr/local/bin/cmux",
                 arguments: [
-                    "/usr/local/bin/uniconnect",
+                    "/usr/local/bin/cmux",
                     "omo",
                     "--model",
                     "anthropic/claude-sonnet-4-6",
@@ -3335,8 +3335,8 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
             workingDirectory: nil,
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "omx",
-                executablePath: "/usr/local/bin/uniconnect",
-                arguments: ["/usr/local/bin/uniconnect", "omx", "team"],
+                executablePath: "/usr/local/bin/cmux",
+                arguments: ["/usr/local/bin/cmux", "omx", "team"],
                 workingDirectory: nil,
                 environment: nil,
                 capturedAt: nil,
@@ -3349,8 +3349,8 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
             workingDirectory: nil,
             launchCommand: AgentLaunchCommandSnapshot(
                 launcher: "omc",
-                executablePath: "/usr/local/bin/uniconnect",
-                arguments: ["/usr/local/bin/uniconnect", "omc", "team"],
+                executablePath: "/usr/local/bin/cmux",
+                arguments: ["/usr/local/bin/cmux", "omc", "team"],
                 workingDirectory: nil,
                 environment: nil,
                 capturedAt: nil,
@@ -3364,7 +3364,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
         )
         XCTAssertEqual(
             omo.resumeCommand,
-            "{ cd -- '/tmp/opencode repo' 2>/dev/null || [ ! -d '/tmp/opencode repo' ]; } && 'env' 'OPENCODE_CONFIG_DIR=/tmp/opencode config' '/usr/local/bin/uniconnect' 'omo' '--session' 'opencode-session-123' '--model' 'anthropic/claude-sonnet-4-6' '/tmp/opencode repo'"
+            "{ cd -- '/tmp/opencode repo' 2>/dev/null || [ ! -d '/tmp/opencode repo' ]; } && 'env' 'OPENCODE_CONFIG_DIR=/tmp/opencode config' '/usr/local/bin/cmux' 'omo' '--session' 'opencode-session-123' '--model' 'anthropic/claude-sonnet-4-6' '/tmp/opencode repo'"
         )
         XCTAssertEqual(
             staleBunWorker.resumeCommand,
@@ -3423,7 +3423,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
         XCTAssertEqual(snapshot.launchCommand?.arguments.first, "/usr/local/bin/codex")
         XCTAssertEqual(
             snapshot.resumeCommand,
-            "{ cd -- '/tmp/repo' 2>/dev/null || [ ! -d '/tmp/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex' '/usr/local/bin/codex' 'resume' 'codex-session-123' '--model' 'gpt-5.4' '--search'"
+            "{ cd -- '/tmp/repo' 2>/dev/null || [ ! -d '/tmp/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex' '/usr/local/bin/codex' 'resume' 'codex-session-123' '--model' 'gpt-5.4' '--search' '--yolo'"
         )
     }
 
@@ -3450,9 +3450,9 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
               "updatedAt": 10,
               "launchCommand": {
                 "launcher": "omo",
-                "executablePath": "/usr/local/bin/uniconnect",
+                "executablePath": "/usr/local/bin/cmux",
                 "arguments": [
-                  "/usr/local/bin/uniconnect",
+                  "/usr/local/bin/cmux",
                   "omo",
                   "--model",
                   "anthropic/claude-sonnet-4-6",

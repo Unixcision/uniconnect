@@ -118,7 +118,9 @@ final class SidebarWorkspaceSnapshotRefreshPolicyTests: XCTestCase {
             branchDirectoryLines: [],
             branchLinesContainBranch: false,
             pullRequestRows: [],
-            listeningPorts: listeningPorts
+            listeningPorts: listeningPorts,
+            uniConnectIsSSH: nil,
+            uniConnectWindowCount: 0
         )
     }
 

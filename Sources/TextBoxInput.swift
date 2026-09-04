@@ -2742,6 +2742,7 @@ struct TextBoxInputContainer: View {
                     onForwardControl: forwardControl(_:),
                     onPaste: handlePaste(_:into:),
                     onInsertFileURLs: insertSelectedFileURLs(_:into:),
+                    onInsertPreparedContent: insertPreparedContent(_:into:),
                     onChooseFiles: chooseFiles,
                     onContentChanged: markContentChanged,
                     onMarkedTextStateChanged: updateMarkedTextState(_:),
@@ -3020,6 +3021,9 @@ struct TextBoxInputContainer: View {
             return true
         case .fileURLs(let fileURLs):
             return attachFileURLs(fileURLs, into: textView)
+        case .textAndFileURLs(let text, let fileURLs):
+            insertText(text, into: textView)
+            return attachFileURLs(fileURLs, into: textView)
         case .reject:
             TerminalImageTransferPlanner.executeRejection(plan: .reject) { error in
                 TerminalImageTransferErrorPresenter.present(error)
@@ -3057,6 +3061,9 @@ struct TextBoxInputContainer: View {
             text = textView.plainText()
             return true
         case .uploadFiles(let uploadURLs, let remoteTarget, _):
+            uploadFileAttachments(uploadURLs, remoteTarget: remoteTarget, focusing: textView)
+            return true
+        case .uploadFilesWithLeadingText(_, let uploadURLs, let remoteTarget, _):
             uploadFileAttachments(uploadURLs, remoteTarget: remoteTarget, focusing: textView)
             return true
         case .unavailable, .reject:
@@ -3223,6 +3230,7 @@ struct TextBoxInputView: NSViewRepresentable {
     let onForwardControl: (String) -> Void
     let onPaste: (NSPasteboard, TextBoxInputTextView) -> Bool
     let onInsertFileURLs: ([URL], TextBoxInputTextView) -> Bool
+    let onInsertPreparedContent: (TerminalImageTransferPreparedContent, TextBoxInputTextView) -> Bool
     let onChooseFiles: () -> Void
     let onContentChanged: () -> Void
     let onMarkedTextStateChanged: (Bool) -> Void
@@ -3249,6 +3257,7 @@ struct TextBoxInputView: NSViewRepresentable {
         onForwardControl: @escaping (String) -> Void,
         onPaste: @escaping (NSPasteboard, TextBoxInputTextView) -> Bool,
         onInsertFileURLs: @escaping ([URL], TextBoxInputTextView) -> Bool,
+        onInsertPreparedContent: @escaping (TerminalImageTransferPreparedContent, TextBoxInputTextView) -> Bool = { _, _ in false },
         onChooseFiles: @escaping () -> Void,
         onContentChanged: @escaping () -> Void,
         onMarkedTextStateChanged: @escaping (Bool) -> Void = { _ in },
@@ -3274,6 +3283,7 @@ struct TextBoxInputView: NSViewRepresentable {
         self.onForwardControl = onForwardControl
         self.onPaste = onPaste
         self.onInsertFileURLs = onInsertFileURLs
+        self.onInsertPreparedContent = onInsertPreparedContent
         self.onChooseFiles = onChooseFiles
         self.onContentChanged = onContentChanged
         self.onMarkedTextStateChanged = onMarkedTextStateChanged
@@ -3313,7 +3323,7 @@ struct TextBoxInputView: NSViewRepresentable {
         )
         textView.textContainerInset = TextBoxLayout.textInset
         textView.textContainer?.lineFragmentPadding = 0
-        textView.registerForDraggedTypes([.fileURL])
+        textView.registerForDraggedTypes(TextBoxInputTextView.attachmentDropTypes)
 
         let scrollView = NSScrollView()
         scrollView.drawsBackground = false
@@ -3379,6 +3389,7 @@ struct TextBoxInputView: NSViewRepresentable {
         textView.onForwardControl = onForwardControl
         textView.onPaste = onPaste
         textView.onInsertFileURLs = onInsertFileURLs
+        textView.onInsertPreparedContent = onInsertPreparedContent
         textView.onChooseFiles = onChooseFiles
         textView.onMarkedTextStateChanged = { [weak coordinator, weak textView] hasMarkedText in
             coordinator?.noteMarkedTextStateChanged(hasMarkedText, from: textView)
@@ -3560,6 +3571,7 @@ final class TextBoxInputTextView: NSTextView, FileURLDropInsertingTextView {
     var onForwardControl: (String) -> Void = { _ in }
     var onPaste: (NSPasteboard, TextBoxInputTextView) -> Bool = { _, _ in false }
     var onInsertFileURLs: ([URL], TextBoxInputTextView) -> Bool = { _, _ in false }
+    var onInsertPreparedContent: (TerminalImageTransferPreparedContent, TextBoxInputTextView) -> Bool = { _, _ in false }
     var onChooseFiles: () -> Void = {}
     var onMoveToWindow: (TextBoxInputTextView) -> Void = { _ in }
     var onLayoutCompleted: (TextBoxInputTextView) -> Void = { _ in }
@@ -3567,6 +3579,16 @@ final class TextBoxInputTextView: NSTextView, FileURLDropInsertingTextView {
     private var isReportingLayoutCompletion = false
 
     private static let localControlKeys: Set<String> = ["a", "e", "f", "b", "n", "p", "k", "h"]
+    static let attachmentDropTypes: [NSPasteboard.PasteboardType] = [
+        .fileURL,
+        .png,
+        .tiff,
+        .rtfd,
+        NSPasteboard.PasteboardType(UTType.jpeg.identifier),
+        NSPasteboard.PasteboardType(UTType.gif.identifier),
+        NSPasteboard.PasteboardType(UTType.heic.identifier),
+        NSPasteboard.PasteboardType(UTType.heif.identifier),
+    ]
     private static let pendingAttachmentUploadPlaceholderCharacter = "\u{200B}"
     private static let pendingAttachmentUploadPlaceholderAttribute = NSAttributedString.Key(
         "cmux.textBoxPendingAttachmentUploadID"
@@ -4264,16 +4286,37 @@ final class TextBoxInputTextView: NSTextView, FileURLDropInsertingTextView {
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        fileURLs(from: sender.draggingPasteboard).isEmpty ? [] : .copy
+        Self.hasAttachmentDropPayload(sender.draggingPasteboard) ? .copy : []
     }
 
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        !fileURLs(from: sender.draggingPasteboard).isEmpty
+        Self.hasAttachmentDropPayload(sender.draggingPasteboard)
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        let urls = fileURLs(from: sender.draggingPasteboard)
-        return insertDroppedFileURLs(urls, atWindowPoint: sender.draggingLocation)
+        let preparedContent = TerminalImageTransferPlanner.prepare(
+            pasteboard: sender.draggingPasteboard,
+            mode: .drop
+        )
+        switch preparedContent {
+        case .fileURLs, .textAndFileURLs:
+            window?.makeFirstResponder(self)
+            let point = convert(sender.draggingLocation, from: nil)
+            setSelectedRange(NSRange(location: insertionIndex(for: point), length: 0))
+            return onInsertPreparedContent(preparedContent, self)
+        case .insertText, .reject:
+            return false
+        }
+    }
+
+    private static func hasAttachmentDropPayload(_ pasteboard: NSPasteboard) -> Bool {
+        if !PasteboardFileURLReader.fileURLs(from: pasteboard).isEmpty {
+            return true
+        }
+        return (pasteboard.types ?? []).contains { type in
+            if type == .rtfd { return true }
+            return UTType(type.rawValue)?.conforms(to: .image) == true
+        }
     }
 
     func insertDroppedFileURLs(_ fileURLs: [URL], atWindowPoint windowPoint: NSPoint) -> Bool {

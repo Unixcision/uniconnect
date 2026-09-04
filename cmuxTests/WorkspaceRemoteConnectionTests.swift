@@ -77,7 +77,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
     ) throws -> String {
         let fileManager = FileManager.default
         let home = fileManager.temporaryDirectory.appendingPathComponent("cmux-relay-zsh-\(UUID().uuidString)")
-        let relayDir = home.appendingPathComponent(".cmux/relay/64011.shell")
+        let relayDir = home.appendingPathComponent(".uniconnect/relay/64011.shell")
 
         try fileManager.createDirectory(at: relayDir, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: home) }
@@ -253,15 +253,15 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
         let path = try String(contentsOf: capturedPath, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let cmuxBinEntries = path.split(separator: ":")
-            .filter { $0 == "\(home.path)/.cmux/bin" }
+            .filter { $0 == "\(home.path)/.uniconnect/bin" }
         XCTAssertEqual(cmuxBinEntries.count, 1, path)
     }
 
     func testRemoteRelayMetadataCleanupScriptRemovesMatchingSocketAddr() {
         let fileManager = FileManager.default
         let home = fileManager.temporaryDirectory.appendingPathComponent("cmux-relay-cleanup-\(UUID().uuidString)")
-        let relayDir = home.appendingPathComponent(".cmux/relay")
-        let socketAddrURL = home.appendingPathComponent(".cmux/socket_addr")
+        let relayDir = home.appendingPathComponent(".uniconnect/relay")
+        let socketAddrURL = home.appendingPathComponent(".uniconnect/socket_addr")
         let authURL = relayDir.appendingPathComponent("64008.auth")
         let daemonPathURL = relayDir.appendingPathComponent("64008.daemon_path")
         let slotURL = relayDir.appendingPathComponent("64008.slot")
@@ -298,8 +298,8 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
     func testRemoteRelayMetadataCleanupScriptPreservesDifferentSocketAddr() {
         let fileManager = FileManager.default
         let home = fileManager.temporaryDirectory.appendingPathComponent("cmux-relay-cleanup-preserve-\(UUID().uuidString)")
-        let relayDir = home.appendingPathComponent(".cmux/relay")
-        let socketAddrURL = home.appendingPathComponent(".cmux/socket_addr")
+        let relayDir = home.appendingPathComponent(".uniconnect/relay")
+        let socketAddrURL = home.appendingPathComponent(".uniconnect/socket_addr")
         let authURL = relayDir.appendingPathComponent("64009.auth")
         let daemonPathURL = relayDir.appendingPathComponent("64009.daemon_path")
         let slotURL = relayDir.appendingPathComponent("64009.slot")
@@ -516,11 +516,11 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory.appendingPathComponent("cmux-stale-relay-metadata-\(UUID().uuidString)")
         let bin = root.appendingPathComponent("bin")
-        let relayDir = root.appendingPathComponent(".cmux/relay")
+        let relayDir = root.appendingPathComponent(".uniconnect/relay")
         let killLog = root.appendingPathComponent("kill.log")
         try fileManager.createDirectory(at: bin, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: relayDir, withIntermediateDirectories: true)
-        try "/Users/cmux/.cmux/bin/cmuxd-remote/current/darwin-arm64/cmuxd-remote".write(
+        try "/Users/example/.uniconnect/bin/cmuxd-remote/current/darwin-arm64/cmuxd-remote".write(
             to: relayDir.appendingPathComponent("50446.daemon_path"),
             atomically: true,
             encoding: .utf8
@@ -592,11 +592,11 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory.appendingPathComponent("cmux-stale-relay-metadata-preserve-\(UUID().uuidString)")
         let bin = root.appendingPathComponent("bin")
-        let relayDir = root.appendingPathComponent(".cmux/relay")
+        let relayDir = root.appendingPathComponent(".uniconnect/relay")
         let killLog = root.appendingPathComponent("kill.log")
         try fileManager.createDirectory(at: bin, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: relayDir, withIntermediateDirectories: true)
-        try "/Users/cmux/.cmux/bin/cmuxd-remote/current/darwin-arm64/cmuxd-remote".write(
+        try "/Users/example/.uniconnect/bin/cmuxd-remote/current/darwin-arm64/cmuxd-remote".write(
             to: relayDir.appendingPathComponent("50446.daemon_path"),
             atomically: true,
             encoding: .utf8
@@ -1752,7 +1752,10 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
 
         let remotePath = WorkspaceRemoteSessionController.remoteDropPath(for: fileURL, uuid: uuid)
 
-        XCTAssertEqual(remotePath, "/tmp/uniconnect-drop-12345678-1234-1234-1234-1234567890ab.png")
+        XCTAssertEqual(
+            remotePath,
+            "/tmp/.uniconnect-upload-12345678-1234-1234-1234-1234567890ab/attachment.png"
+        )
     }
 
     @MainActor
@@ -6835,23 +6838,23 @@ final class CLINotifyProcessIntegrationTests: XCTestCase {
 final class SshpassImagePasteDetectionTests: XCTestCase {
     func testSshpassSeparatePassword() {
         let s = TerminalSSHSessionDetector.parseSshpassCommandLine(
-            ["sshpass", "-p", "secretPass123", "ssh", "-o", "StrictHostKeyChecking=no", "root@187.77.175.242"])
+            ["sshpass", "-p", "fixture-value", "ssh", "-o", "StrictHostKeyChecking=no", "root@sshpass.example.test"])
         XCTAssertNotNil(s, "debe detectar sesion sshpass")
-        XCTAssertEqual(s?.destination, "root@187.77.175.242")
-        XCTAssertEqual(s?.password, "secretPass123")
+        XCTAssertEqual(s?.destination, "root@sshpass.example.test")
+        XCTAssertEqual(s?.password, "fixture-value")
     }
     func testSshpassInlinePassword() {
         let s = TerminalSSHSessionDetector.parseSshpassCommandLine(
-            ["sshpass", "-pInlinePass", "ssh", "ec2-user@1.2.3.4"])
-        XCTAssertEqual(s?.destination, "ec2-user@1.2.3.4")
-        XCTAssertEqual(s?.password, "InlinePass")
+            ["sshpass", "-pfixture-inline", "ssh", "ec2-user@inline.example.test"])
+        XCTAssertEqual(s?.destination, "ec2-user@inline.example.test")
+        XCTAssertEqual(s?.password, "fixture-inline")
     }
     func testSshpassWithIdentityAndPort() {
         let s = TerminalSSHSessionDetector.parseSshpassCommandLine(
-            ["sshpass", "-p", "pw", "ssh", "-i", "/k.pem", "-p", "2222", "user@host.example"])
-        XCTAssertEqual(s?.destination, "user@host.example")
-        XCTAssertEqual(s?.password, "pw")
-        XCTAssertEqual(s?.identityFile, "/k.pem")
+            ["sshpass", "-p", "fixture", "ssh", "-i", "/tmp/fixture-key.pem", "-p", "2222", "user@key.example.test"])
+        XCTAssertEqual(s?.destination, "user@key.example.test")
+        XCTAssertEqual(s?.password, "fixture")
+        XCTAssertEqual(s?.identityFile, "/tmp/fixture-key.pem")
         XCTAssertEqual(s?.port, 2222)
     }
 }

@@ -33,22 +33,21 @@ extension TabItemView {
                     defaultValue: "New Group from Workspace"
                 )
             if let key = groupSelectedShortcut.keyEquivalent {
-                Button(groupSelectedLabel) {
+                Button {
                     promptNewWorkspaceGroup(workspaceIds: eligibleTargetIds)
+                } label: {
+                    Label(groupSelectedLabel, systemImage: "rectangle.3.group")
                 }
                 .keyboardShortcut(key, modifiers: groupSelectedShortcut.eventModifiers)
             } else {
-                Button(groupSelectedLabel) {
+                Button {
                     promptNewWorkspaceGroup(workspaceIds: eligibleTargetIds)
+                } label: {
+                    Label(groupSelectedLabel, systemImage: "rectangle.3.group")
                 }
             }
 
-            Menu(
-                String(
-                    localized: "contextMenu.workspaceGroup.moveTo",
-                    defaultValue: "Move to Group"
-                )
-            ) {
+            Menu {
                 ForEach(groups) { group in
                     Button(group.name) {
                         for id in eligibleTargetIds {
@@ -57,19 +56,24 @@ extension TabItemView {
                     }
                     .disabled(allTargetsInSameGroup == group.id)
                 }
+            } label: {
+                Label(
+                    String(localized: "contextMenu.workspaceGroup.moveTo", defaultValue: "Move to Group"),
+                    systemImage: "folder"
+                )
             }
             .disabled(groups.isEmpty)
 
             if hasAnyGroupedTarget {
-                Button(
-                    String(
-                        localized: "contextMenu.workspaceGroup.remove",
-                        defaultValue: "Remove from Group"
-                    )
-                ) {
+                Button {
                     for id in eligibleTargetIds {
                         tabManager.removeWorkspaceFromGroup(workspaceId: id)
                     }
+                } label: {
+                    Label(
+                        String(localized: "contextMenu.workspaceGroup.remove", defaultValue: "Remove from Group"),
+                        systemImage: "folder.badge.minus"
+                    )
                 }
             }
         }

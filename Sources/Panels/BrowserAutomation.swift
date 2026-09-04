@@ -43,7 +43,7 @@ enum BrowserImportAutomationError: LocalizedError, CustomStringConvertible {
             return String.localizedStringWithFormat(
                 String(
                     localized: "browser.import.automation.error.destinationProfileNotFound",
-                    defaultValue: "No cmux browser profile matches '%@'"
+                    defaultValue: "No UniConnect browser profile matches '%@'"
                 ),
                 query
             )
@@ -51,7 +51,7 @@ enum BrowserImportAutomationError: LocalizedError, CustomStringConvertible {
             return String.localizedStringWithFormat(
                 String(
                     localized: "browser.import.automation.error.destinationProfileCreationFailed",
-                    defaultValue: "Failed to create cmux browser profile '%@'"
+                    defaultValue: "Failed to create UniConnect browser profile '%@'"
                 ),
                 name
             )
@@ -94,7 +94,7 @@ enum BrowserProfileAutomationError: LocalizedError, CustomStringConvertible {
             return String.localizedStringWithFormat(
                 String(
                     localized: "browser.profile.automation.error.profileNotFound",
-                    defaultValue: "No cmux browser profile matches '%@'"
+                    defaultValue: "No UniConnect browser profile matches '%@'"
                 ),
                 query
             )
@@ -102,7 +102,7 @@ enum BrowserProfileAutomationError: LocalizedError, CustomStringConvertible {
             return String.localizedStringWithFormat(
                 String(
                     localized: "browser.profile.automation.error.ambiguousProfile",
-                    defaultValue: "Multiple cmux browser profiles match '%@'. Use the profile ID instead."
+                    defaultValue: "Multiple UniConnect browser profiles match '%@'. Use the profile ID instead."
                 ),
                 query
             )
@@ -110,7 +110,7 @@ enum BrowserProfileAutomationError: LocalizedError, CustomStringConvertible {
             return String.localizedStringWithFormat(
                 String(
                     localized: "browser.profile.automation.error.profileCreationFailed",
-                    defaultValue: "Failed to create cmux browser profile '%@'"
+                    defaultValue: "Failed to create UniConnect browser profile '%@'"
                 ),
                 name
             )
@@ -118,7 +118,7 @@ enum BrowserProfileAutomationError: LocalizedError, CustomStringConvertible {
             return String.localizedStringWithFormat(
                 String(
                     localized: "browser.profile.automation.error.profileRenameFailed",
-                    defaultValue: "Failed to rename cmux browser profile to '%@'"
+                    defaultValue: "Failed to rename UniConnect browser profile to '%@'"
                 ),
                 name
             )
@@ -131,7 +131,7 @@ enum BrowserProfileAutomationError: LocalizedError, CustomStringConvertible {
             return String.localizedStringWithFormat(
                 String(
                     localized: "browser.profile.automation.error.profileInUse",
-                    defaultValue: "Cannot delete cmux browser profile '%@' while %d browser panel(s) are using it"
+                    defaultValue: "Cannot delete UniConnect browser profile '%@' while %d browser panel(s) are using it"
                 ),
                 name,
                 count
@@ -140,7 +140,7 @@ enum BrowserProfileAutomationError: LocalizedError, CustomStringConvertible {
             return String.localizedStringWithFormat(
                 String(
                     localized: "browser.profile.automation.error.profileDeleteFailed",
-                    defaultValue: "Failed to delete cmux browser profile '%@'"
+                    defaultValue: "Failed to delete UniConnect browser profile '%@'"
                 ),
                 name
             )
@@ -148,7 +148,7 @@ enum BrowserProfileAutomationError: LocalizedError, CustomStringConvertible {
             return String.localizedStringWithFormat(
                 String(
                     localized: "browser.profile.automation.error.profileClearFailed",
-                    defaultValue: "Failed to clear cmux browser profile '%@'"
+                    defaultValue: "Failed to clear UniConnect browser profile '%@'"
                 ),
                 name
             )

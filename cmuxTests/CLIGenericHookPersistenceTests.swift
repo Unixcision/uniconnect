@@ -870,6 +870,26 @@ extension CLINotifyProcessIntegrationRegressionTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
+        let hookURL = root
+            .appendingPathComponent(".gemini", isDirectory: true)
+            .appendingPathComponent("config", isDirectory: true)
+            .appendingPathComponent("hooks.json", isDirectory: false)
+        try FileManager.default.createDirectory(at: hookURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let upstreamCommand = "cmux hooks antigravity stop"
+        let upstreamConfig: [String: Any] = [
+            "cmux": [
+                "Stop": [
+                    [
+                        "type": "command",
+                        "command": upstreamCommand,
+                        "timeout": 10,
+                    ],
+                ],
+            ],
+        ]
+        try JSONSerialization.data(withJSONObject: upstreamConfig, options: [.prettyPrinted, .sortedKeys])
+            .write(to: hookURL, options: .atomic)
+
         let result = runProcess(
             executablePath: cliPath,
             arguments: ["hooks", "agy", "install", "--yes"],
@@ -885,15 +905,14 @@ extension CLINotifyProcessIntegrationRegressionTests {
         XCTAssertFalse(result.timedOut, result.stderr)
         XCTAssertEqual(result.status, 0, result.stderr)
 
-        let hookURL = root
-            .appendingPathComponent(".gemini", isDirectory: true)
-            .appendingPathComponent("config", isDirectory: true)
-            .appendingPathComponent("hooks.json", isDirectory: false)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: hookURL)) as? [String: Any])
         XCTAssertNil(json["hooks"])
+        let upstreamGroup = try XCTUnwrap(json["cmux"] as? [String: Any])
+        let upstreamStop = try XCTUnwrap(upstreamGroup["Stop"] as? [[String: Any]])
+        XCTAssertEqual(upstreamStop.first?["command"] as? String, upstreamCommand)
 
-        let cmuxGroup = try XCTUnwrap(json["cmux"] as? [String: Any])
-        let allCommands = cmuxGroup.values
+        let uniconnectGroup = try XCTUnwrap(json["uniconnect"] as? [String: Any])
+        let allCommands = uniconnectGroup.values
             .compactMap { $0 as? [[String: Any]] }
             .flatMap { entries in
                 entries.flatMap { entry -> [String] in
@@ -909,7 +928,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
             }
         XCTAssertFalse(allCommands.isEmpty)
         XCTAssertTrue(
-            allCommands.allSatisfy { $0.contains("cmux-antigravity-hook-v2") },
+            allCommands.allSatisfy { $0.contains("uniconnect-antigravity-hook-v2") },
             "Expected Antigravity hooks to use the pinned dispatch path, saw \(allCommands)"
         )
         XCTAssertFalse(
@@ -921,7 +940,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
             "Antigravity hooks must still dispatch when agy does not preserve CMUX_SURFACE_ID, saw \(allCommands)"
         )
 
-        let preToolUse = try XCTUnwrap(cmuxGroup["PreToolUse"] as? [[String: Any]])
+        let preToolUse = try XCTUnwrap(uniconnectGroup["PreToolUse"] as? [[String: Any]])
         let preToolCommands = preToolUse
             .compactMap { $0["hooks"] as? [[String: Any]] }
             .flatMap { $0 }
@@ -933,7 +952,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
             "Expected Antigravity PreToolUse feed hook with second-based timeout, saw \(preToolCommands)"
         )
 
-        let stop = try XCTUnwrap(cmuxGroup["Stop"] as? [[String: Any]])
+        let stop = try XCTUnwrap(uniconnectGroup["Stop"] as? [[String: Any]])
         XCTAssertTrue(
             stop.contains {
                 ($0["command"] as? String)?.contains("hooks antigravity stop") == true
@@ -941,11 +960,43 @@ extension CLINotifyProcessIntegrationRegressionTests {
             },
             "Expected Antigravity Stop hook to be a direct command handler, saw \(stop)"
         )
-        XCTAssertNotNil(cmuxGroup["SessionStart"])
-        XCTAssertNotNil(cmuxGroup["SessionEnd"])
-        XCTAssertNotNil(cmuxGroup["turn-completion"])
-        XCTAssertNotNil(cmuxGroup["Notification"])
-        XCTAssertNotNil(cmuxGroup["PostToolUse"])
+        XCTAssertNotNil(uniconnectGroup["SessionStart"])
+        XCTAssertNotNil(uniconnectGroup["SessionEnd"])
+        XCTAssertNotNil(uniconnectGroup["turn-completion"])
+        XCTAssertNotNil(uniconnectGroup["Notification"])
+        XCTAssertNotNil(uniconnectGroup["PostToolUse"])
+
+        let reinstall = runProcess(
+            executablePath: cliPath,
+            arguments: ["hooks", "agy", "install", "--yes"],
+            environment: [
+                "HOME": root.path,
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "CMUX_BUNDLED_CLI_PATH": root.path,
+                "CMUX_CLI_SENTRY_DISABLED": "1",
+            ],
+            timeout: 5
+        )
+        XCTAssertEqual(reinstall.status, 0, reinstall.stderr)
+
+        let uninstall = runProcess(
+            executablePath: cliPath,
+            arguments: ["hooks", "agy", "uninstall", "--yes"],
+            environment: [
+                "HOME": root.path,
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "CMUX_CLI_SENTRY_DISABLED": "1",
+            ],
+            timeout: 5
+        )
+        XCTAssertEqual(uninstall.status, 0, uninstall.stderr)
+        let uninstalledJSON = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: hookURL)) as? [String: Any]
+        )
+        XCTAssertNil(uninstalledJSON["uniconnect"])
+        let preservedGroup = try XCTUnwrap(uninstalledJSON["cmux"] as? [String: Any])
+        let preservedStop = try XCTUnwrap(preservedGroup["Stop"] as? [[String: Any]])
+        XCTAssertEqual(preservedStop.first?["command"] as? String, upstreamCommand)
     }
 
     func testKiroHookInstallUsesAgentConfigShapeAndPreservesDenyExit() throws {
@@ -970,22 +1021,28 @@ extension CLINotifyProcessIntegrationRegressionTests {
         XCTAssertFalse(result.timedOut, result.stderr)
         XCTAssertEqual(result.status, 0, result.stderr)
         XCTAssertTrue(
-            result.stdout.contains("kiro-cli chat --agent cmux"),
-            "Expected Kiro install to print the --agent cmux activation hint, saw: \(result.stdout)"
+            result.stdout.contains("kiro-cli chat --agent uniconnect"),
+            "Expected Kiro install to print the --agent uniconnect activation hint, saw: \(result.stdout)"
         )
 
         let hookURL = root
             .appendingPathComponent("agents", isDirectory: true)
             .appendingPathComponent("uniconnect.json", isDirectory: false)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: hookURL)) as? [String: Any])
-        XCTAssertEqual(json["name"] as? String, "cmux")
+        XCTAssertEqual(json["name"] as? String, "uniconnect")
         XCTAssertNil(json["version"], "Kiro agent configs should not receive Cursor's hooks version field")
         XCTAssertEqual(
             json["tools"] as? [String], ["*"],
-            "Kiro cmux agent must grant the full tool set so `--agent cmux` can run tools and fire preToolUse hooks"
+            "Kiro UniConnect agent must grant the full tool set so `--agent uniconnect` can run tools and fire preToolUse hooks"
         )
 
         let hooks = try XCTUnwrap(json["hooks"] as? [String: Any])
+        let allHookCommands = hooks.values
+            .compactMap { $0 as? [[String: Any]] }
+            .flatMap { $0 }
+            .compactMap { $0["command"] as? String }
+        XCTAssertFalse(allHookCommands.isEmpty)
+        XCTAssertTrue(allHookCommands.allSatisfy { $0.contains("uniconnect-agent-hook-v1:kiro") })
         let preToolUse = try XCTUnwrap(hooks["preToolUse"] as? [[String: Any]])
         XCTAssertTrue(
             preToolUse.contains {
@@ -1062,7 +1119,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
 
         XCTAssertFalse(result.timedOut, result.stderr)
         XCTAssertEqual(result.status, 2, result.stderr)
-        XCTAssertTrue(result.stderr.contains("User denied permission via cmux Feed."), result.stderr)
+        XCTAssertTrue(result.stderr.contains("User denied permission via UniConnect Feed."), result.stderr)
 
         let feedEvents = state.commands.compactMap { command -> [String: Any]? in
             guard let payload = self.jsonObject(command),
@@ -2782,12 +2839,12 @@ extension CLINotifyProcessIntegrationRegressionTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let legacyHookURL = root
+        let upstreamHookURL = root
             .appendingPathComponent(".grok", isDirectory: true)
             .appendingPathComponent("hooks", isDirectory: true)
-            .appendingPathComponent("uniconnect.json", isDirectory: false)
-        try FileManager.default.createDirectory(at: legacyHookURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let legacyHookJSON: [String: Any] = [
+            .appendingPathComponent("cmux-session.json", isDirectory: false)
+        try FileManager.default.createDirectory(at: upstreamHookURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let upstreamHookJSON: [String: Any] = [
             "hooks": [
                 "PostToolUse": [
                     [
@@ -2813,8 +2870,11 @@ extension CLINotifyProcessIntegrationRegressionTests {
                 ],
             ],
         ]
-        try JSONSerialization.data(withJSONObject: legacyHookJSON, options: [.prettyPrinted, .sortedKeys])
-            .write(to: legacyHookURL, options: .atomic)
+        let upstreamHookData = try JSONSerialization.data(
+            withJSONObject: upstreamHookJSON,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+        try upstreamHookData.write(to: upstreamHookURL, options: .atomic)
 
         let result = runProcess(
             executablePath: cliPath,
@@ -2833,7 +2893,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
         let hookURL = root
             .appendingPathComponent(".grok", isDirectory: true)
             .appendingPathComponent("hooks", isDirectory: true)
-            .appendingPathComponent("cmux-session.json", isDirectory: false)
+            .appendingPathComponent("uniconnect-session.json", isDirectory: false)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: hookURL)) as? [String: Any])
         let hooks = try XCTUnwrap(json["hooks"] as? [String: Any])
         let notificationGroups = try XCTUnwrap(hooks["Notification"] as? [[String: Any]])
@@ -2875,10 +2935,21 @@ extension CLINotifyProcessIntegrationRegressionTests {
             allCommands.contains { $0.contains("$CMUX_") },
             "Grok treats $VAR references as required hook environment, so installed commands must avoid CMUX variable interpolation. Saw \(allCommands)"
         )
-        XCTAssertFalse(
-            FileManager.default.fileExists(atPath: legacyHookURL.path),
-            "Expected setup to remove legacy cmux-owned Grok hook file"
+        XCTAssertEqual(try Data(contentsOf: upstreamHookURL), upstreamHookData)
+
+        let uninstall = runProcess(
+            executablePath: cliPath,
+            arguments: ["hooks", "grok", "uninstall", "--yes"],
+            environment: [
+                "HOME": root.path,
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "CMUX_CLI_SENTRY_DISABLED": "1",
+            ],
+            timeout: 5
         )
+        XCTAssertEqual(uninstall.status, 0, uninstall.stderr)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: hookURL.path))
+        XCTAssertEqual(try Data(contentsOf: upstreamHookURL), upstreamHookData)
     }
 
     func testGrokHookInstallPinsInstallingCLIAndSocketWithoutCMUXInterpolation() throws {
@@ -2912,7 +2983,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
         let hookURL = root
             .appendingPathComponent(".grok", isDirectory: true)
             .appendingPathComponent("hooks", isDirectory: true)
-            .appendingPathComponent("cmux-session.json", isDirectory: false)
+            .appendingPathComponent("uniconnect-session.json", isDirectory: false)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: hookURL)) as? [String: Any])
         let hooks = try XCTUnwrap(json["hooks"] as? [String: Any])
         let allCommands = hooks.values
@@ -2924,7 +2995,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
 
         XCTAssertFalse(allCommands.isEmpty)
         XCTAssertTrue(
-            allCommands.allSatisfy { $0.contains("cmux-grok-hook-v2") },
+            allCommands.allSatisfy { $0.contains("uniconnect-grok-hook-v2") },
             "Expected installed Grok hooks to carry the owned-hook marker, saw \(allCommands)"
         )
         XCTAssertTrue(
@@ -2941,21 +3012,21 @@ extension CLINotifyProcessIntegrationRegressionTests {
         )
     }
 
-    func testGrokHookInstallPreservesUserWrappedLegacyCommands() throws {
+    func testGrokHookInstallPreservesAllUpstreamCmuxCommands() throws {
         let cliPath = try bundledCLIPath()
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-grok-hook-preserve-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let legacyHookURL = root
+        let upstreamHookURL = root
             .appendingPathComponent(".grok", isDirectory: true)
             .appendingPathComponent("hooks", isDirectory: true)
-            .appendingPathComponent("uniconnect.json", isDirectory: false)
-        try FileManager.default.createDirectory(at: legacyHookURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            .appendingPathComponent("cmux-session.json", isDirectory: false)
+        try FileManager.default.createDirectory(at: upstreamHookURL.deletingLastPathComponent(), withIntermediateDirectories: true)
 
         let preservedCommand = "bash -lc 'cmux hooks grok notification && ~/bin/after-grok'"
-        let legacyHookJSON: [String: Any] = [
+        let upstreamHookJSON: [String: Any] = [
             "hooks": [
                 "Notification": [
                     [
@@ -2975,8 +3046,8 @@ extension CLINotifyProcessIntegrationRegressionTests {
                 ],
             ],
         ]
-        try JSONSerialization.data(withJSONObject: legacyHookJSON, options: [.prettyPrinted, .sortedKeys])
-            .write(to: legacyHookURL, options: .atomic)
+        try JSONSerialization.data(withJSONObject: upstreamHookJSON, options: [.prettyPrinted, .sortedKeys])
+            .write(to: upstreamHookURL, options: .atomic)
 
         let result = runProcess(
             executablePath: cliPath,
@@ -2992,35 +3063,33 @@ extension CLINotifyProcessIntegrationRegressionTests {
         XCTAssertFalse(result.timedOut, result.stderr)
         XCTAssertEqual(result.status, 0, result.stderr)
 
-        let legacyJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: legacyHookURL)) as? [String: Any])
-        let hooks = try XCTUnwrap(legacyJSON["hooks"] as? [String: Any])
+        let upstreamJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: upstreamHookURL)) as? [String: Any])
+        let hooks = try XCTUnwrap(upstreamJSON["hooks"] as? [String: Any])
         let notificationGroups = try XCTUnwrap(hooks["Notification"] as? [[String: Any]])
         let commands = notificationGroups
             .compactMap { $0["hooks"] as? [[String: Any]] }
             .flatMap { $0 }
             .compactMap { $0["command"] as? String }
 
-        XCTAssertEqual(commands, [preservedCommand])
-        XCTAssertFalse(
-            commands.contains { $0.hasPrefix("[ \"$CMUX_GROK_HOOKS_DISABLED\"") },
-            "Expected setup to remove only exact cmux-owned legacy commands, saw \(commands)"
-        )
+        XCTAssertEqual(commands.count, 2)
+        XCTAssertTrue(commands.contains(preservedCommand))
+        XCTAssertTrue(commands.contains { $0.hasPrefix("[ \"$CMUX_GROK_HOOKS_DISABLED\"") })
     }
 
-    func testGrokHookInstallPreservesLegacyFileMetadataWhenPruningOwnedHooks() throws {
+    func testGrokHookInstallLeavesUpstreamFileByteForByteUnchanged() throws {
         let cliPath = try bundledCLIPath()
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-grok-hook-metadata-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let legacyHookURL = root
+        let upstreamHookURL = root
             .appendingPathComponent(".grok", isDirectory: true)
             .appendingPathComponent("hooks", isDirectory: true)
-            .appendingPathComponent("uniconnect.json", isDirectory: false)
-        try FileManager.default.createDirectory(at: legacyHookURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            .appendingPathComponent("cmux-session.json", isDirectory: false)
+        try FileManager.default.createDirectory(at: upstreamHookURL.deletingLastPathComponent(), withIntermediateDirectories: true)
 
-        let legacyHookJSON: [String: Any] = [
+        let upstreamHookJSON: [String: Any] = [
             "version": 1,
             "hooks": [
                 "Notification": [
@@ -3036,8 +3105,11 @@ extension CLINotifyProcessIntegrationRegressionTests {
                 ],
             ],
         ]
-        try JSONSerialization.data(withJSONObject: legacyHookJSON, options: [.prettyPrinted, .sortedKeys])
-            .write(to: legacyHookURL, options: .atomic)
+        let upstreamData = try JSONSerialization.data(
+            withJSONObject: upstreamHookJSON,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+        try upstreamData.write(to: upstreamHookURL, options: .atomic)
 
         let result = runProcess(
             executablePath: cliPath,
@@ -3053,9 +3125,7 @@ extension CLINotifyProcessIntegrationRegressionTests {
         XCTAssertFalse(result.timedOut, result.stderr)
         XCTAssertEqual(result.status, 0, result.stderr)
 
-        let legacyJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: legacyHookURL)) as? [String: Any])
-        XCTAssertEqual(legacyJSON["version"] as? Int, 1)
-        XCTAssertNil(legacyJSON["hooks"])
+        XCTAssertEqual(try Data(contentsOf: upstreamHookURL), upstreamData)
     }
 
     func testCodexHookInstallPrefersLaunchingAppBundledCLI() throws {
@@ -3093,6 +3163,23 @@ extension CLINotifyProcessIntegrationRegressionTests {
         ]
         try JSONSerialization.data(withJSONObject: legacyHookJSON, options: [.prettyPrinted, .sortedKeys])
             .write(to: codexHome.appendingPathComponent("hooks.json", isDirectory: false), options: .atomic)
+        let upstreamConfig = """
+        # cmux hooks codex feature begin
+        codex_hooks = true
+        # cmux hooks codex feature end
+
+        [features]
+        # cmux-codex-hooks-feature-78f1e4ba-66df-4d35-93c1-67fdf1cbb7df begin
+        hooks = false
+        # cmux-codex-hooks-feature-78f1e4ba-66df-4d35-93c1-67fdf1cbb7df end
+
+        # cmux-codex-hook-trust-f5cc24da-7a09-4b20-a756-89e7786f6738 begin
+        [hooks.state."/upstream/cmux/hooks.json:stop:0:0"]
+        trusted_hash = "sha256:upstream-cmux"
+        # cmux-codex-hook-trust-f5cc24da-7a09-4b20-a756-89e7786f6738 end
+        """
+        let configURL = codexHome.appendingPathComponent("config.toml", isDirectory: false)
+        try upstreamConfig.write(to: configURL, atomically: true, encoding: .utf8)
 
         let result = runProcess(
             executablePath: cliPath,
@@ -3118,27 +3205,82 @@ extension CLINotifyProcessIntegrationRegressionTests {
             .compactMap { $0["hooks"] as? [[String: Any]] }
             .flatMap { $0 }
             .compactMap { $0["command"] as? String }
+        let uniconnectCommands = allCommands.filter { $0.contains("uniconnect-agent-hook-v1:codex") }
 
         XCTAssertTrue(
-            allCommands.contains {
+            uniconnectCommands.contains {
                 $0.contains("CMUX_BUNDLED_CLI_PATH")
                     && $0.contains("\"$cmux_cli\" --socket \"$CMUX_SOCKET_PATH\" hooks codex prompt-submit")
             },
             "Codex hooks should route through the launching app's bundled CLI, saw \(allCommands)"
         )
-        XCTAssertFalse(
-            allCommands.contains { $0.contains("command -v cmux >/dev/null 2>&1 && cmux hooks codex") },
-            "Codex hooks must not use the reload-global cmux shim directly, saw \(allCommands)"
-        )
-        XCTAssertFalse(
-            allCommands.contains { $0 == previousBundledHookCommand },
-            "Codex setup should replace bundled-CLI hooks that did not pin CMUX_SOCKET_PATH, saw \(allCommands)"
+        XCTAssertEqual(
+            allCommands.filter { $0 == previousBundledHookCommand }.count,
+            2,
+            "Codex setup must preserve ambiguous upstream cmux commands, saw \(allCommands)"
         )
         XCTAssertEqual(
-            allCommands.filter { $0.contains("hooks codex prompt-submit") }.count,
+            uniconnectCommands.filter { $0.contains("hooks codex prompt-submit") }.count,
             1,
-            "Codex setup should collapse duplicate cmux-owned prompt hooks to one entry, saw \(allCommands)"
+            "Codex setup should install one uniquely marked prompt hook, saw \(allCommands)"
         )
+
+        let installedConfig = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertTrue(installedConfig.contains("# cmux hooks codex feature begin"))
+        XCTAssertTrue(installedConfig.contains("codex_hooks = true"))
+        XCTAssertTrue(installedConfig.contains("# cmux-codex-hooks-feature-78f1e4ba-66df-4d35-93c1-67fdf1cbb7df begin"))
+        XCTAssertTrue(installedConfig.contains("# cmux-codex-hook-trust-f5cc24da-7a09-4b20-a756-89e7786f6738 begin"))
+        XCTAssertTrue(installedConfig.contains("trusted_hash = \"sha256:upstream-cmux\""))
+        XCTAssertTrue(installedConfig.contains("uniconnect-codex-hooks-feature-"))
+        XCTAssertTrue(installedConfig.contains("uniconnect-codex-hook-trust-"))
+
+        let reinstall = runProcess(
+            executablePath: cliPath,
+            arguments: ["hooks", "codex", "install", "--yes"],
+            environment: [
+                "HOME": root.path,
+                "CODEX_HOME": codexHome.path,
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "CMUX_CLI_SENTRY_DISABLED": "1",
+            ],
+            timeout: 5
+        )
+        XCTAssertEqual(reinstall.status, 0, reinstall.stderr)
+
+        let uninstall = runProcess(
+            executablePath: cliPath,
+            arguments: ["hooks", "codex", "uninstall", "--yes"],
+            environment: [
+                "HOME": root.path,
+                "CODEX_HOME": codexHome.path,
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "CMUX_CLI_SENTRY_DISABLED": "1",
+            ],
+            timeout: 5
+        )
+        XCTAssertEqual(uninstall.status, 0, uninstall.stderr)
+
+        let uninstalledJSON = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: hookURL)) as? [String: Any]
+        )
+        let uninstalledHooks = try XCTUnwrap(uninstalledJSON["hooks"] as? [String: Any])
+        let remainingCommands = uninstalledHooks.values
+            .compactMap { $0 as? [[String: Any]] }
+            .flatMap { $0 }
+            .compactMap { $0["hooks"] as? [[String: Any]] }
+            .flatMap { $0 }
+            .compactMap { $0["command"] as? String }
+        XCTAssertEqual(remainingCommands, [previousBundledHookCommand, previousBundledHookCommand])
+
+        let uninstalledConfig = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertTrue(uninstalledConfig.contains("# cmux hooks codex feature begin"))
+        XCTAssertTrue(uninstalledConfig.contains("codex_hooks = true"))
+        XCTAssertTrue(uninstalledConfig.contains("# cmux-codex-hooks-feature-78f1e4ba-66df-4d35-93c1-67fdf1cbb7df begin"))
+        XCTAssertTrue(uninstalledConfig.contains("hooks = false"))
+        XCTAssertTrue(uninstalledConfig.contains("# cmux-codex-hook-trust-f5cc24da-7a09-4b20-a756-89e7786f6738 begin"))
+        XCTAssertTrue(uninstalledConfig.contains("trusted_hash = \"sha256:upstream-cmux\""))
+        XCTAssertFalse(uninstalledConfig.contains("uniconnect-codex-hooks-feature-"))
+        XCTAssertFalse(uninstalledConfig.contains("uniconnect-codex-hook-trust-"))
     }
 
     func testGrokHookInstallRejectsFileAtHooksDirectory() throws {

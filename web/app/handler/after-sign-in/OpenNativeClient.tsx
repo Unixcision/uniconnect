@@ -14,7 +14,7 @@ export function OpenNativeClient({ href }: { href: string }) {
     >
       <div style={{ maxWidth: 440, textAlign: "center" }}>
         <h1 style={{ fontSize: 24, fontWeight: 600, margin: "0 0 12px" }}>
-          Signed in to cmux
+          Signed in to UniConnect
         </h1>
         <p style={{ color: "#555", lineHeight: 1.5, margin: "0 0 24px" }}>
           You can close this window.
@@ -32,7 +32,7 @@ export function OpenNativeClient({ href }: { href: string }) {
             fontWeight: 500,
           }}
         >
-          Return to cmux
+          Return to UniConnect
         </a>
       </div>
     </div>

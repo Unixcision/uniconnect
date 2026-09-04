@@ -11,7 +11,7 @@ enum PhonePushSettings {
     static let hideContentKey = "forwardNotificationsHideContent"
 }
 
-/// Forwards macOS terminal notifications to the user's iPhone via the cmux web
+/// Forwards macOS terminal notifications to the user's iPhone via the UniConnect web
 /// API (`POST /api/notifications/push`), which relays them through APNs. Gated
 /// by ``PhonePushSettings/forwardEnabledKey`` (off by default) and only invoked
 /// from the not-suppressed desktop-delivery path, so it mirrors what the Mac
@@ -24,19 +24,35 @@ final class PhonePushClient {
     /// Injected once via `configure(auth:)` at app startup. Forwarding is a
     /// best-effort path; until configured, sends are silently skipped.
     private var auth: AuthCoordinator?
+    private var baseURL: URL?
     /// Per workspace+surface throttle to defend against notification bursts.
     private var lastSentAt: [String: Date] = [:]
     private static let minInterval: TimeInterval = 1.0
 
     private init() {}
 
-    /// Inject the auth dependency. Call once at the composition root.
-    func configure(auth: AuthCoordinator) {
+    /// Inject the auth dependency and validated UniConnect API origin.
+    func configure(auth: AuthCoordinator, baseURL: URL) {
         self.auth = auth
+        self.baseURL = baseURL
     }
 
     static var isForwardingEnabled: Bool {
-        UserDefaults.standard.bool(forKey: PhonePushSettings.forwardEnabledKey)
+        AuthEnvironment.hostedServices != nil
+            && UserDefaults.standard.bool(forKey: PhonePushSettings.forwardEnabledKey)
+    }
+
+    static func hiddenNotificationContent() -> (title: String, body: String) {
+        (
+            String(
+                localized: "notifications.forwardToPhone.hidden.title",
+                defaultValue: "UniConnect"
+            ),
+            String(
+                localized: "notifications.forwardToPhone.hidden.body",
+                defaultValue: "An agent needs your attention"
+            )
+        )
     }
 
     /// Forward a notification if the user opted in. Captures the fields up front
@@ -56,7 +72,8 @@ final class PhonePushClient {
             body: notification.body,
             workspaceId: notification.tabId.uuidString,
             surfaceId: notification.surfaceId?.uuidString,
-            hideContent: hideContent
+            hideContent: hideContent,
+            localeIdentifier: Bundle.main.preferredLocalizations.first ?? Locale.current.identifier
         )
         Task { await send(payload) }
     }
@@ -68,10 +85,11 @@ final class PhonePushClient {
         let workspaceId: String
         let surfaceId: String?
         let hideContent: Bool
+        let localeIdentifier: String
     }
 
     private func send(_ payload: Payload) async {
-        guard let auth else { return }
+        guard let auth, let baseURL else { return }
         let tokens: (accessToken: String, refreshToken: String)
         do {
             tokens = try await auth.currentTokens()
@@ -80,7 +98,7 @@ final class PhonePushClient {
         }
         let teamID = auth.resolvedTeamID
 
-        guard var comps = URLComponents(url: AuthEnvironment.vmAPIBaseURL, resolvingAgainstBaseURL: false) else {
+        guard var comps = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
             return
         }
         comps.path = (comps.path.hasSuffix("/") ? String(comps.path.dropLast()) : comps.path) + "/api/notifications/push"
@@ -90,12 +108,14 @@ final class PhonePushClient {
         // never leave the Mac. Send generic placeholders so the request still
         // carries valid, parseable fields while the actual content stays local.
         // workspaceId/surfaceId/hideContent are opaque IDs/flags, not content.
+        let hiddenContent = Self.hiddenNotificationContent()
         var bodyDict: [String: Any] = [
-            "title": payload.hideContent ? "cmux" : payload.title,
+            "title": payload.hideContent ? hiddenContent.title : payload.title,
             "subtitle": payload.hideContent ? "" : payload.subtitle,
-            "body": payload.hideContent ? "New terminal activity" : payload.body,
+            "body": payload.hideContent ? hiddenContent.body : payload.body,
             "workspaceId": payload.workspaceId,
             "hideContent": payload.hideContent,
+            "locale": payload.localeIdentifier,
         ]
         if let surfaceId = payload.surfaceId { bodyDict["surfaceId"] = surfaceId }
 
@@ -113,7 +133,7 @@ final class PhonePushClient {
         do {
             let (_, response) = try await session.data(for: req)
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                NSLog("cmux.phonepush failed status=%d", http.statusCode)
+                NSLog("uniconnect.phonepush failed status=%d", http.statusCode)
             }
         } catch {
             // best-effort; phone forwarding must never disrupt the Mac.

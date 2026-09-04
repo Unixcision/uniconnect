@@ -37,7 +37,7 @@ final class MobilePairingModel {
 
     /// A minted ticket ready for display.
     struct Ready: Equatable {
-        /// The `cmux-ios://attach?...` URL encoded into the QR code.
+        /// The `uniconnect://attach?...` URL encoded into the QR code.
         let attachURL: String
         /// The Mac's display name, shown above the code.
         let macName: String

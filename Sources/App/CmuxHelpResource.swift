@@ -1,104 +1,40 @@
 import Foundation
 
 enum CmuxHelpResource {
-    case gettingStarted
-    case concepts
-    case configuration
-    case customCommands
-    case dock
-    case keyboardShortcuts
-    case apiReference
-    case browserAutomation
-    case notifications
-    case ssh
-    case skills
-    case claudeCodeTeams
-    case ohMyOpenCode
-    case ohMyCodex
-    case ohMyClaudeCode
-    case changelog
+    case manual
+    case menusAndShortcuts
     case githubIssues
-    case discord
 
     var title: String {
         switch self {
-        case .gettingStarted:
-            return String(localized: "menu.help.gettingStarted", defaultValue: "Getting Started")
-        case .concepts:
-            return String(localized: "menu.help.concepts", defaultValue: "Concepts")
-        case .configuration:
-            return String(localized: "menu.help.configuration", defaultValue: "Configuration")
-        case .customCommands:
-            return String(localized: "menu.help.customCommands", defaultValue: "Custom Commands")
-        case .dock:
-            return String(localized: "menu.help.dock", defaultValue: "Dock")
-        case .keyboardShortcuts:
-            return String(localized: "settings.section.keyboardShortcuts", defaultValue: "Keyboard Shortcuts")
-        case .apiReference:
-            return String(localized: "menu.help.apiReference", defaultValue: "API Reference")
-        case .browserAutomation:
-            return String(localized: "menu.help.browserAutomation", defaultValue: "Browser Automation")
-        case .notifications:
-            return String(localized: "menu.help.notifications", defaultValue: "Notifications")
-        case .ssh:
-            return String(localized: "menu.help.ssh", defaultValue: "SSH")
-        case .skills:
-            return String(localized: "menu.help.skills", defaultValue: "Skills")
-        case .claudeCodeTeams:
-            return String(localized: "menu.help.claudeCodeTeams", defaultValue: "Claude Code Teams")
-        case .ohMyOpenCode:
-            return String(localized: "menu.help.ohMyOpenCode", defaultValue: "oh-my-opencode")
-        case .ohMyCodex:
-            return String(localized: "menu.help.ohMyCodex", defaultValue: "oh-my-codex")
-        case .ohMyClaudeCode:
-            return String(localized: "menu.help.ohMyClaudeCode", defaultValue: "oh-my-claudecode")
-        case .changelog:
-            return String(localized: "menu.help.changelog", defaultValue: "Changelog")
+        case .manual:
+            return String(localized: "menu.help.manual", defaultValue: "UniConnect Manual")
+        case .menusAndShortcuts:
+            return String(localized: "menu.help.menusAndShortcuts", defaultValue: "Menus and Keyboard Shortcuts")
         case .githubIssues:
-            return String(localized: "sidebar.help.githubIssues", defaultValue: "GitHub Issues")
-        case .discord:
-            return String(localized: "sidebar.help.discord", defaultValue: "Discord")
+            return String(localized: "menu.help.reportIssue", defaultValue: "Report an Issue")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .manual:
+            return "book.closed"
+        case .menusAndShortcuts:
+            return "command"
+        case .githubIssues:
+            return "exclamationmark.bubble"
         }
     }
 
     var url: URL {
         switch self {
-        case .gettingStarted:
+        case .manual:
             return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
-        case .concepts:
-            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
-        case .configuration:
-            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
-        case .customCommands:
-            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
-        case .dock:
-            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
-        case .keyboardShortcuts:
-            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
-        case .apiReference:
-            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
-        case .browserAutomation:
-            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
-        case .notifications:
-            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
-        case .ssh:
-            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
-        case .skills:
-            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
-        case .claudeCodeTeams:
-            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
-        case .ohMyOpenCode:
-            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
-        case .ohMyCodex:
-            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
-        case .ohMyClaudeCode:
-            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
-        case .changelog:
-            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")!
+        case .menusAndShortcuts:
+            return URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/MENUS.md")!
         case .githubIssues:
-            return URL(string: "https://github.com/manaflow-ai/cmux/issues")!
-        case .discord:
-            return URL(string: "https://discord.gg/xsgFEVrWCZ")!
+            return URL(string: "https://github.com/Unixcision/uniconnect/issues")!
         }
     }
 }

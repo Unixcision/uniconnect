@@ -1,6 +1,6 @@
 import Foundation
 
-/// A validated, immutable update plan grouped into one command per host identity.
+/// A validated, immutable update plan grouped into one command per host and installation identity.
 public struct ClaudeUpdatePlan: Sendable, Hashable, Codable, Identifiable {
     /// The operation identifier used by progress and recovery records.
     public let id: UUID
@@ -8,7 +8,7 @@ public struct ClaudeUpdatePlan: Sendable, Hashable, Codable, Identifiable {
     /// The requested selection scope.
     public let scope: ClaudeUpdateScope
 
-    /// Validated host groups in first-discovery order.
+    /// Validated host-and-installation groups in first-discovery order.
     public let hosts: [ClaudeUpdateHostPlan]
 
     /// Every planned target in deterministic host and target order.
@@ -16,8 +16,9 @@ public struct ClaudeUpdatePlan: Sendable, Hashable, Codable, Identifiable {
 
     /// Creates and validates a host-grouped update plan.
     ///
-    /// Unresolved targets remain in the plan so orchestration can report them as skipped. Known
-    /// duplicate UUIDs, duplicate panes, and conflicting installations fail before any mutation.
+    /// Unresolved targets remain in the plan so orchestration can report them as skipped. Native
+    /// and npm installations on the same host receive separate commands. Known duplicate UUIDs,
+    /// duplicate panes, and executable-path conflicts fail before any mutation.
     ///
     /// - Parameters:
     ///   - id: A unique operation identifier.
@@ -36,10 +37,15 @@ public struct ClaudeUpdatePlan: Sendable, Hashable, Codable, Identifiable {
         try Self.validateUniquePanes(targets)
 
         var groups: [ClaudeUpdateHostPlan] = []
-        var groupIndices: [ClaudeUpdateHostIdentity: Int] = [:]
+        var groupIndices: [ClaudeUpdateHostPlanID: Int] = [:]
 
         for target in targets {
-            if let index = groupIndices[target.host] {
+            let installationID = target.binding?.installationID
+            let groupID = ClaudeUpdateHostPlanID(
+                host: target.host,
+                installationID: installationID
+            )
+            if let index = groupIndices[groupID] {
                 let current = groups[index]
                 groups[index] = ClaudeUpdateHostPlan(
                     host: current.host,
@@ -48,12 +54,12 @@ public struct ClaudeUpdatePlan: Sendable, Hashable, Codable, Identifiable {
                     executablePath: current.executablePath
                 )
             } else {
-                groupIndices[target.host] = groups.count
+                groupIndices[groupID] = groups.count
                 groups.append(
                     ClaudeUpdateHostPlan(
                         host: target.host,
                         targets: [target],
-                        installationID: nil,
+                        installationID: installationID,
                         executablePath: nil
                     )
                 )
@@ -64,14 +70,6 @@ public struct ClaudeUpdatePlan: Sendable, Hashable, Codable, Identifiable {
         self.scope = scope
         self.hosts = try groups.map { group in
             let bindings = group.targets.compactMap(\.binding)
-            let installations = Set(bindings.map(\.installationID))
-            guard installations.count <= 1 else {
-                throw ClaudeUpdatePlanError.conflictingInstallations(
-                    hostID: group.host.id,
-                    installationIDs: installations.sorted()
-                )
-            }
-
             let executablePaths = Set(bindings.map(\.executablePath))
             guard executablePaths.count <= 1 else {
                 throw ClaudeUpdatePlanError.conflictingExecutablePaths(
@@ -83,7 +81,7 @@ public struct ClaudeUpdatePlan: Sendable, Hashable, Codable, Identifiable {
             return ClaudeUpdateHostPlan(
                 host: group.host,
                 targets: group.targets,
-                installationID: installations.first,
+                installationID: group.installationID,
                 executablePath: executablePaths.first
             )
         }

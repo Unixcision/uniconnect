@@ -367,6 +367,45 @@ struct AgentExecutableResolverTests {
     }
 
     @Test
+    func testSkipsUniConnectClaudeWrapperByCurrentHeader() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "AgentExecutableResolverTests-\(UUID().uuidString)", isDirectory: true)
+        let wrapperBin = root.appendingPathComponent("wrapper-bin", isDirectory: true)
+        let realBin = root.appendingPathComponent("real-bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: wrapperBin, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: realBin, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let wrapper = wrapperBin.appendingPathComponent("claude")
+        let realClaude = realBin.appendingPathComponent("claude")
+        try """
+        #!/usr/bin/env bash
+        # UniConnect Claude wrapper - injects hooks and session tracking
+        exit 42
+        """.write(to: wrapper, atomically: true, encoding: .utf8)
+        try "#!/bin/sh\nexit 0\n".write(to: realClaude, atomically: true, encoding: .utf8)
+        for executable in [wrapper, realClaude] {
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: executable.path
+            )
+        }
+
+        let resolver = AgentExecutableResolver(
+            environment: [
+                "PATH": "\(wrapperBin.path):\(realBin.path)",
+                "HOME": root.path,
+            ],
+            bundleResourceURL: root.appendingPathComponent("Resources", isDirectory: true),
+            includeStandardSearchDirectories: false
+        )
+
+        let plan = try resolver.resolve(.claude)
+        expectEqual(plan.executableURL.path, realClaude.standardizedFileURL.path)
+    }
+
+    @Test
     func testProviderLaunchPlansNeverUseEnvFallback() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(

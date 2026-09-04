@@ -1,19 +1,19 @@
-// cmux-feed-plugin-marker v1
-// Bridges OpenCode's plugin event bus to the cmux socket's feed.* verbs.
+// uniconnect-feed-plugin-marker v2
+// Bridges OpenCode's plugin event bus to UniConnect's feed.* verbs.
 // Installed by `cmux hooks setup` or `cmux hooks opencode install`.
-// DO NOT EDIT MANUALLY - cmux upgrades this file in place.
+// DO NOT EDIT MANUALLY - UniConnect upgrades this file in place.
 
 const net = require("node:net");
 const os = require("node:os");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const DEFAULT_SOCKET = `${os.homedir()}/.config/uniconnect/uniconnect.sock`;
+const DEFAULT_SOCKET = `${os.homedir()}/.local/state/uniconnect/uniconnect.sock`;
 const SOCKET_PATH = process.env.CMUX_SOCKET_PATH || DEFAULT_SOCKET;
 const REPLY_TIMEOUT_MS = 120_000;
 const MAX_PLAN_BYTES = 128 * 1024;
 
-export const CMUXFeed = async (ctx) => {
+export const UniConnectFeed = async (ctx) => {
   let client = null;
   let buffered = "";
   const pending = new Map();
@@ -251,7 +251,7 @@ export const CMUXFeed = async (ctx) => {
       const bytes = fs.readSync(fd, buffer, 0, length, 0);
       const text = buffer.subarray(0, bytes).toString("utf8");
       if (stat.size <= bytes) return text;
-      return `${text}\n\n[cmux truncated plan file at ${bytes} bytes.]`;
+      return `${text}\n\n[UniConnect truncated plan file at ${bytes} bytes.]`;
     } finally {
       fs.closeSync(fd);
     }
@@ -296,7 +296,7 @@ export const CMUXFeed = async (ctx) => {
       await replyQuestion(requestId, [["No"]]);
       await sendPlanFeedback(
         sid,
-        `User rejected the plan via cmux Feed and wants this change: ${feedback}\n\nUpdate the plan file, then call plan_exit again.`
+        `User rejected the plan via UniConnect Feed and wants this change: ${feedback}\n\nUpdate the plan file, then call plan_exit again.`
       );
       return;
     }
@@ -310,7 +310,7 @@ export const CMUXFeed = async (ctx) => {
       await replyQuestion(requestId, [["No"]]);
       await sendPlanFeedback(
         sid,
-        "User chose Ultraplan via cmux Feed. Refine the plan more deeply, update the plan file, then call plan_exit again."
+        "User chose Ultraplan via UniConnect Feed. Refine the plan more deeply, update the plan file, then call plan_exit again."
       );
       return;
     }
@@ -326,7 +326,7 @@ export const CMUXFeed = async (ctx) => {
       await replyQuestion(requestId, [["No"]]);
       await sendPlanFeedback(
         sid,
-        "cmux could not apply the selected permission mode. Ask the user to approve the plan again before switching to build mode."
+        "UniConnect could not apply the selected permission mode. Ask the user to approve the plan again before switching to build mode."
       );
       return;
     }
@@ -565,7 +565,7 @@ export const CMUXFeed = async (ctx) => {
                 sessionId: sid,
                 requestId,
                 reply: permissionReplyForMode(mode),
-                message: mode === "deny" ? "User denied permission via cmux Feed." : undefined,
+                message: mode === "deny" ? "User denied permission via UniConnect Feed." : undefined,
               });
             } catch (e) { /* ignore - opencode already moved on */ }
           }

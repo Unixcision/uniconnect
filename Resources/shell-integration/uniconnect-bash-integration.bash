@@ -51,7 +51,7 @@ _cmux_send_bg() {
 _cmux_start_tracked_bg() {
     local __pid_var="$1"
     shift
-    local __pid_file="${TMPDIR:-/tmp}/cmux-bg-pid-$$-${RANDOM:-0}"
+    local __pid_file="${TMPDIR:-/tmp}/uniconnect-bg-pid-$$-${RANDOM:-0}"
     local __pid=""
     (
         "$@" >/dev/null 2>&1 &
@@ -69,11 +69,11 @@ _cmux_socket_is_unix() {
 }
 
 _cmux_relay_cli_path() {
-    if [[ -n "${UNICONNECT_BUNDLED_CLI_PATH:-}" && -x "${UNICONNECT_BUNDLED_CLI_PATH}" ]]; then
-        printf '%s\n' "${UNICONNECT_BUNDLED_CLI_PATH}"
+    if [[ -n "${CMUX_BUNDLED_CLI_PATH:-}" && -x "${CMUX_BUNDLED_CLI_PATH}" ]]; then
+        printf '%s\n' "${CMUX_BUNDLED_CLI_PATH}"
         return 0
     fi
-    command -v uniconnect 2>/dev/null
+    command -v cmux 2>/dev/null
 }
 
 _cmux_socket_uses_remote_relay() {
@@ -113,7 +113,7 @@ _cmux_relay_rpc() {
     local relay_cli=""
     local response=""
     _cmux_socket_uses_remote_relay || return 1
-    # Relay `uniconnect rpc` exits nonzero on server error. The real remote CLI prints
+    # Relay `cmux rpc` exits nonzero on server error. The real remote CLI prints
     # only the JSON result payload on success, while some test stubs return the
     # full `{"ok":...}` envelope. Retry only on explicit `ok:false`.
     relay_cli="$(_cmux_relay_cli_path)" || return 1
@@ -215,7 +215,7 @@ _cmux_path_prepend_unique_directory() {
 _cmux_install_cli_command_shim() {
     local command_name="$1"
     local wrapper_path="$2"
-    local shim_root="${TMPDIR:-/tmp}/uniconnect-cli-shims/${CMUX_SURFACE_ID:-$$}"
+    local shim_root="${TMPDIR:-/tmp}/cmux-cli-shims/${CMUX_SURFACE_ID:-$$}"
     local shim_path="$shim_root/$command_name"
     local escaped_wrapper="$wrapper_path"
 
@@ -287,7 +287,7 @@ _CMUX_GIT_JOB_STARTED_AT="${_CMUX_GIT_JOB_STARTED_AT:-0}"
 _CMUX_GIT_HEAD_LAST_PWD="${_CMUX_GIT_HEAD_LAST_PWD:-}"
 _CMUX_GIT_HEAD_PATH="${_CMUX_GIT_HEAD_PATH:-}"
 _CMUX_GIT_HEAD_SIGNATURE="${_CMUX_GIT_HEAD_SIGNATURE:-}"
-_CMUX_GIT_ACTIVE_PWD_FILE="${_CMUX_GIT_ACTIVE_PWD_FILE:-$(/usr/bin/mktemp "${TMPDIR:-/tmp}/cmux-git-active-pwd.XXXXXX" 2>/dev/null || true)}"
+_CMUX_GIT_ACTIVE_PWD_FILE="${_CMUX_GIT_ACTIVE_PWD_FILE:-$(/usr/bin/mktemp "${TMPDIR:-/tmp}/uniconnect-git-active-pwd.XXXXXX" 2>/dev/null || true)}"
 _CMUX_PR_POLL_PID="${_CMUX_PR_POLL_PID:-}"
 _CMUX_PR_POLL_PWD="${_CMUX_PR_POLL_PWD:-}"
 _CMUX_PR_LAST_BRANCH="${_CMUX_PR_LAST_BRANCH:-}"
@@ -298,8 +298,8 @@ _CMUX_PR_DEBUG="${_CMUX_PR_DEBUG:-0}"
 _CMUX_ASYNC_JOB_TIMEOUT="${_CMUX_ASYNC_JOB_TIMEOUT:-20}"
 _CMUX_LAST_PR_ACTION="${_CMUX_LAST_PR_ACTION:-}"
 _CMUX_LAST_PR_TARGET="${_CMUX_LAST_PR_TARGET:-}"
-_CMUX_PR_ACTION_HINT_FILE="${_CMUX_PR_ACTION_HINT_FILE:-${TMPDIR:-/tmp}/cmux-pr-action-$$}"
-_CMUX_BASH_HISTORY_LAST_FILE="${_CMUX_BASH_HISTORY_LAST_FILE:-${TMPDIR:-/tmp}/cmux-history-last-$$}"
+_CMUX_PR_ACTION_HINT_FILE="${_CMUX_PR_ACTION_HINT_FILE:-${TMPDIR:-/tmp}/uniconnect-pr-action-$$}"
+_CMUX_BASH_HISTORY_LAST_FILE="${_CMUX_BASH_HISTORY_LAST_FILE:-${TMPDIR:-/tmp}/uniconnect-history-last-$$}"
 
 _CMUX_PORTS_LAST_RUN="${_CMUX_PORTS_LAST_RUN:-0}"
 _CMUX_SHELL_ACTIVITY_LAST="${_CMUX_SHELL_ACTIVITY_LAST:-}"
@@ -308,7 +308,7 @@ _CMUX_TTY_REPORTED="${_CMUX_TTY_REPORTED:-0}"
 _CMUX_TMUX_PUSH_SIGNATURE="${_CMUX_TMUX_PUSH_SIGNATURE:-}"
 _CMUX_TMUX_PULL_SIGNATURE="${_CMUX_TMUX_PULL_SIGNATURE:-}"
 _CMUX_TMUX_SYNC_KEYS=(
-    UNICONNECT_BUNDLED_CLI_PATH
+    CMUX_BUNDLED_CLI_PATH
     CMUX_BUNDLE_ID
     CMUXD_UNIX_PATH
     CMUXTERM_REPO_ROOT
@@ -1104,7 +1104,7 @@ _cmux_report_pr_for_path() {
         gh_repo_args=(--repo "$repo_slug")
     fi
 
-    err_file="$(/usr/bin/mktemp "${TMPDIR:-/tmp}/cmux-gh-pr-view.XXXXXX" 2>/dev/null || true)"
+    err_file="$(/usr/bin/mktemp "${TMPDIR:-/tmp}/uniconnect-gh-pr-view.XXXXXX" 2>/dev/null || true)"
     [[ -n "$err_file" ]] || return 1
     gh_output="$(
         builtin cd "$repo_path" 2>/dev/null \
@@ -1391,7 +1391,7 @@ _cmux_preexec_command() {
 
 _cmux_bash_history_command() {
     local HISTTIMEFORMAT=
-    local history_file="${TMPDIR:-/tmp}/cmux-history-$$-${RANDOM:-0}"
+    local history_file="${TMPDIR:-/tmp}/uniconnect-history-$$-${RANDOM:-0}"
     local line="" history_number="" last_number=""
     builtin history 1 > "$history_file" 2>/dev/null || {
         /bin/rm -f -- "$history_file" >/dev/null 2>&1 || true

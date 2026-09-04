@@ -35,13 +35,13 @@ export function SiteHeader({
                 <BrandLogoLink className="flex items-center gap-2.5">
                   <img
                     src="/logo.png"
-                    alt="cmux"
+                    alt="UniConnect"
                     width={24}
                     height={24}
                     className="rounded-md"
                   />
                   <span className="text-sm font-semibold tracking-tight">
-                    cmux
+                    UniConnect
                   </span>
                 </BrandLogoLink>
                 {section && (

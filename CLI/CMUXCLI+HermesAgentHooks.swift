@@ -33,7 +33,14 @@ extension CMUXCLI {
             || ProcessInfo.processInfo.arguments.contains("-y")
 
         guard fm.fileExists(atPath: configDir) else {
-            print("\(configDir) does not exist. Install \(def.displayName) first.")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.hermes.configMissing",
+                    defaultValue: "%@ does not exist. Install %@ first."
+                ),
+                configDir,
+                def.displayName
+            ))
             return
         }
 
@@ -49,23 +56,44 @@ extension CMUXCLI {
                     newContent: newString,
                     fallbackContent: newString
                 )
-                print("\nProceed? [y/N] ", terminator: "")
+                print(String(localized: "cli.hooks.confirmProceed", defaultValue: "\nProceed? [y/N] "), terminator: "")
                 guard readLine()?.lowercased().hasPrefix("y") == true else {
-                    print("Aborted.")
+                    print(String(localized: "cli.hooks.aborted", defaultValue: "Aborted."))
                     return
                 }
             }
             try newString.write(toFile: filePath, atomically: true, encoding: .utf8)
-            print("\(def.displayName) hooks installed at \(filePath)")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.agent.installed",
+                    defaultValue: "%@ UniConnect hooks installed at %@"
+                ),
+                def.displayName,
+                filePath
+            ))
         } else {
-            print("\(def.displayName) hooks already up to date at \(filePath)")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.agent.alreadyUpToDate",
+                    defaultValue: "%@ UniConnect hooks already up to date at %@"
+                ),
+                def.displayName,
+                filePath
+            ))
         }
 
         let oldAllowlist = fm.contents(atPath: allowlistPath)
         let newAllowlist = try HermesAgentHookAllowlist.installing(events: events, in: oldAllowlist)
         if oldAllowlist != newAllowlist {
             try newAllowlist.write(to: URL(fileURLWithPath: allowlistPath), options: .atomic)
-            print("Approved \(def.displayName) cmux shell hooks in \(allowlistPath)")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.hermes.allowlistApproved",
+                    defaultValue: "Approved %@ UniConnect shell hooks in %@"
+                ),
+                def.displayName,
+                allowlistPath
+            ))
         }
     }
 
@@ -81,12 +109,28 @@ extension CMUXCLI {
             let newString = HermesAgentHookConfig.uninstalling(from: oldString)
             if oldString != newString {
                 try newString.write(toFile: filePath, atomically: true, encoding: .utf8)
-                print("Removed Hermes Agent cmux hooks from \(filePath)")
+                print(String.localizedStringWithFormat(
+                    String(
+                        localized: "cli.hooks.hermes.removed",
+                        defaultValue: "Removed Hermes Agent UniConnect hooks from %@"
+                    ),
+                    filePath
+                ))
             } else {
-                print("Removed 0 cmux hook(s) from \(filePath)")
+                print(String.localizedStringWithFormat(
+                    String(
+                        localized: "cli.hooks.agent.removedZero",
+                        defaultValue: "Removed 0 UniConnect hook(s) from %@"
+                    ),
+                    filePath
+                ))
             }
         } else {
-            print("No \(def.configFile) found at \(filePath)")
+            print(String.localizedStringWithFormat(
+                String(localized: "cli.hooks.agent.noneFound", defaultValue: "No %@ found at %@"),
+                def.configFile,
+                filePath
+            ))
         }
 
         guard fm.fileExists(atPath: allowlistPath) else { return }
@@ -94,7 +138,13 @@ extension CMUXCLI {
         let newAllowlist = try HermesAgentHookAllowlist.uninstalling(events: events, from: oldAllowlist)
         if oldAllowlist != newAllowlist {
             try newAllowlist.write(to: URL(fileURLWithPath: allowlistPath), options: .atomic)
-            print("Removed Hermes Agent cmux shell hook approvals from \(allowlistPath)")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.hermes.allowlistRemoved",
+                    defaultValue: "Removed Hermes Agent UniConnect shell hook approvals from %@"
+                ),
+                allowlistPath
+            ))
         }
     }
 }

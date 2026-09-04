@@ -98,11 +98,16 @@ final class MarkdownPanel: Panel, ObservableObject, FilePreviewTextEditingPanel 
     /// - Parameter fontSize: Initial body font size in points. When `nil`, the
     ///   panel uses the persistent `markdown.fontSize` default. The value is
     ///   clamped to the supported range.
-    init(workspaceId: UUID, filePath: String, fontSize: Double? = nil) {
+    init(
+        workspaceId: UUID,
+        id: UUID = UUID(),
+        filePath: String,
+        fontSize: Double? = nil
+    ) {
         let defaultSize = MarkdownFontSizeSettings.resolvedDefault()
         let defaultFamily = MarkdownFontFamily.resolvedDefault()
         let defaultMaxWidth = MarkdownMaxWidthSettings.resolvedDefault()
-        self.id = UUID()
+        self.id = id
         self.workspaceId = workspaceId
         self.filePath = filePath
         self.fontSize = MarkdownFontSizeSettings.clamp(fontSize ?? defaultSize)

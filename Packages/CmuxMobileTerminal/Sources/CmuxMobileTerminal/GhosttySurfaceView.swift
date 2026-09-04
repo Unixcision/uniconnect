@@ -6,12 +6,12 @@ import GhosttyKit
 import OSLog
 import UIKit
 
-private let log = Logger(subsystem: "ai.manaflow.cmux.ios", category: "ghostty.surface")
+private let log = Logger(subsystem: "com.unixcision.uniconnect.ios", category: "ghostty.surface")
 
 // lint:allow namespace-enum — file-local DEBUG input-trace logger on the off-limits typing-latency render path; type reshape deferred to the GhosttySurfaceView UI-god-object split wave.
 enum TerminalInputDebugLog {
     private static let isEnabled = ProcessInfo.processInfo.environment["CMUX_INPUT_DEBUG"] == "1"
-    private static let logger = Logger(subsystem: "ai.manaflow.cmux.ios", category: "ghostty.input")
+    private static let logger = Logger(subsystem: "com.unixcision.uniconnect.ios", category: "ghostty.input")
 
     static func log(_ message: String) {
         #if DEBUG
@@ -643,7 +643,7 @@ public final class GhosttySurfaceView: UIView, TerminalSurfaceHosting {
     /// blocks on libghostty's internal renderer/IO futex. Running it on the
     /// main thread hangs the app until the scene-update watchdog kills it.
     private static let outputQueue = DispatchQueue(
-        label: "dev.cmux.GhosttySurfaceView.output",
+        label: "com.unixcision.uniconnect.GhosttySurfaceView.output",
         qos: .userInitiated
     )
     #if DEBUG

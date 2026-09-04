@@ -20,7 +20,7 @@ public final class QRCodeCaptureController: UIViewController {
     private let captureSession = AVCaptureSession()
     // Apple guidance: configure/start/stop the session off the main thread to
     // avoid blocking UI; this queue serializes those session mutations.
-    private let sessionQueue = DispatchQueue(label: "dev.cmux.mobile.qr-scanner")
+    private let sessionQueue = DispatchQueue(label: "com.unixcision.uniconnect.mobile.qr-scanner")
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var isConfigured = false
 

@@ -1,6 +1,5 @@
 import { locales } from "./routing";
-
-const BASE = "https://cmux.com";
+import { SITE_URL } from "@/lib/site";
 
 /**
  * Build the full alternates object (canonical + hreflang languages)
@@ -11,12 +10,12 @@ export function buildAlternates(locale: string, path: string) {
   const languages: Record<string, string> = {};
   for (const loc of locales) {
     languages[loc] =
-      loc === "en" ? `${BASE}${path}` : `${BASE}/${loc}${path}`;
+      loc === "en" ? `${SITE_URL}${path}` : `${SITE_URL}/${loc}${path}`;
   }
-  languages["x-default"] = `${BASE}${path}`;
+  languages["x-default"] = `${SITE_URL}${path}`;
 
   const canonical =
-    locale === "en" ? `${BASE}${path}` : `${BASE}/${locale}${path}`;
+    locale === "en" ? `${SITE_URL}${path}` : `${SITE_URL}/${locale}${path}`;
 
   return { canonical, languages };
 }

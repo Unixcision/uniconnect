@@ -1,6 +1,8 @@
 # Cloud VM Backend Rollout Todo
 
-This is the scoped todo list for making the Cloud VM backend production-ready with application logic running in the existing Vercel `manaflow/cmux` project.
+This is the inherited upstream rollout record. It is reference material only;
+none of the Manaflow projects, domains, accounts, or secrets below are owned by
+or configured for UniConnect.
 
 ## Current State
 
@@ -58,13 +60,15 @@ This is the scoped todo list for making the Cloud VM backend production-ready wi
 - [x] Axiom/OpenTelemetry env is set and redeployed in staging and production.
 - [x] GitHub Cloud VM smoke workflows no longer require `VERCEL_TOKEN`.
 
-## Existing Vercel Env Vars
+## Required UniConnect Deployment Env Vars
 
-These are already configured in Vercel for development, preview, and production:
+Configure these only in a deployment controlled by the UniConnect operator:
 
 - `RESEND_API_KEY`
-- `CMUX_FEEDBACK_FROM_EMAIL`
-- `CMUX_FEEDBACK_RATE_LIMIT_ID`
+- `UNICONNECT_FEEDBACK_FROM_EMAIL`
+- `UNICONNECT_FEEDBACK_TO_EMAIL`
+- `UNICONNECT_FEEDBACK_RATE_LIMIT_ID`
+- `NEXT_PUBLIC_UNICONNECT_SITE_URL`
 - `NEXT_PUBLIC_STACK_PROJECT_ID`
 - `NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY`
 - `STACK_SECRET_SERVER_KEY`
@@ -108,9 +112,9 @@ These are already configured in Vercel for development, preview, and production:
 
 ## Phase 2: Local Secret Parity
 
-- [ ] Keep local Stack/web runtime secrets in `~/.secrets/cmuxterm-dev.env`.
-- [ ] Keep production Stack/web runtime secrets in `~/.secrets/cmuxterm.env`.
-- [ ] Keep provider image-build secrets in `~/.secrets/cmux.env`.
+- [ ] Keep local Stack/web runtime secrets in `~/.secrets/uniconnect-dev.env`.
+- [ ] Keep production Stack/web runtime secrets in `~/.secrets/uniconnect.env`.
+- [ ] Keep provider image-build secrets in `~/.secrets/uniconnect.env`.
 - [ ] Add runtime VM vars to the relevant `~/.secrets/cmuxterm*.env` file:
   - `CMUX_VM_DEFAULT_PROVIDER`
   - `CMUX_VM_CREATE_ENABLED`
@@ -119,8 +123,7 @@ These are already configured in Vercel for development, preview, and production:
   - `E2B_CMUXD_WS_TEMPLATE`
   - `FREESTYLE_SANDBOX_SNAPSHOT`
   - Axiom/OpenTelemetry vars
-- [x] Document the split between `~/.secrets/cmuxterm-dev.env`, `~/.secrets/cmuxterm.env`, and
-  `~/.secrets/cmux.env` in `AGENTS.md`.
+- [x] Document the UniConnect-owned secret paths in the web operations guide.
 - [x] Replace `web/.env.local` local development with the committed `web/.envrc` and `bun dev`
   loader.
 - [ ] Make the script print missing keys by name only, never values.

@@ -956,7 +956,7 @@ enum BrowserLinkOpenSettings {
 
 enum BrowserAvailabilitySettings {
     static let disabledKey = "browserDisabledOverride"
-    static let didChangeNotification = Notification.Name("cmux.browserAvailabilityDidChange")
+    static let didChangeNotification = Notification.Name("uniconnect.browserAvailabilityDidChange")
     static let defaultDisabled = false
 
     static func isDisabled(defaults: UserDefaults = .standard) -> Bool {
@@ -1545,7 +1545,7 @@ private func browserPresentExternalNavigationPrompt(
     )
     alert.informativeText = String(
         localized: "browser.externalOpenPrompt.message",
-        defaultValue: "A web page in cmux wants to open a link in another app. You can stay in the browser instead."
+        defaultValue: "A web page in UniConnect wants to open a link in another app. You can stay in the browser instead."
     )
     alert.addButton(withTitle: String(
         localized: "browser.externalOpenPrompt.openApp",
@@ -1578,7 +1578,7 @@ private func browserPresentExternalNavigationFailure(
     )
     alert.informativeText = String(
         localized: "browser.externalOpenFailure.message",
-        defaultValue: "cmux could not open this link. You can copy it and open it in another app."
+        defaultValue: "UniConnect could not open this link. You can copy it and open it in another app."
     )
     alert.addButton(withTitle: String(localized: "common.ok", defaultValue: "OK"))
     alert.addButton(withTitle: String(
@@ -2581,10 +2581,13 @@ final class CmuxDiffViewerURLSchemeHandler: NSObject, WKURLSchemeHandler {
     private let lock = NSLock()
     private var sessions: [String: Session] = [:]
     private var activeSchemeTasks: [ObjectIdentifier: SchemeTaskState] = [:]
-    private let streamQueue = DispatchQueue(label: "com.manaflow.cmux.diff-viewer-stream", qos: .userInitiated)
+    private let streamQueue = DispatchQueue(
+        label: "com.unixcision.uniconnect.diff-viewer-stream",
+        qos: .userInitiated
+    )
     private let maxSessionAge: TimeInterval = 24 * 60 * 60
     private let trustedRootURL = URL(fileURLWithPath: "/tmp", isDirectory: true)
-        .appendingPathComponent("cmux-diff-viewer-\(Darwin.getuid())", isDirectory: true)
+        .appendingPathComponent("uniconnect-diff-viewer-\(Darwin.getuid())", isDirectory: true)
         .standardizedFileURL
         .resolvingSymlinksInPath()
 
@@ -4382,6 +4385,7 @@ final class BrowserPanel: Panel, ObservableObject {
 
     init(
         workspaceId: UUID,
+        id: UUID = UUID(),
         profileID: UUID? = nil,
         initialURL: URL? = nil,
         initialRequest: URLRequest? = nil,
@@ -4398,7 +4402,7 @@ final class BrowserPanel: Panel, ObservableObject {
         // Register fallback defaults and normalize legacy/out-of-range settings once
         // per process, before any setting is read below or by the SwiftUI view.
         Self.bootstrapBrowserDefaultsIfNeeded()
-        self.id = UUID()
+        self.id = id
         self.workspaceId = workspaceId
         let requestedProfileID = profileID ?? BrowserProfileStore.shared.effectiveLastUsedProfileID
         let resolvedProfileID = BrowserProfileStore.shared.profileDefinition(id: requestedProfileID) != nil
@@ -6234,12 +6238,12 @@ final class BrowserPanel: Panel, ObservableObject {
         let alert = insecureHTTPAlertFactory()
         alert.alertStyle = .warning
         alert.messageText = String(localized: "browser.error.insecure.title", defaultValue: "Connection isn\u{2019}t secure")
-        alert.informativeText = String(localized: "browser.error.insecure.message", defaultValue: "\(host) uses plain HTTP, so traffic can be read or modified on the network.\n\nOpen this URL in your default browser, or proceed in cmux.")
+        alert.informativeText = String(localized: "browser.error.insecure.message", defaultValue: "\(host) uses plain HTTP, so traffic can be read or modified on the network.\n\nOpen this URL in your default browser, or proceed in UniConnect.")
         alert.addButton(withTitle: String(localized: "browser.openInDefaultBrowser", defaultValue: "Open in Default Browser"))
-        alert.addButton(withTitle: String(localized: "browser.proceedInCmux", defaultValue: "Proceed in cmux"))
+        alert.addButton(withTitle: String(localized: "browser.proceedInCmux", defaultValue: "Proceed in UniConnect"))
         alert.addButton(withTitle: String(localized: "common.cancel", defaultValue: "Cancel"))
         alert.showsSuppressionButton = true
-        alert.suppressionButton?.title = String(localized: "browser.alwaysAllowHost", defaultValue: "Always allow this host in cmux")
+        alert.suppressionButton?.title = String(localized: "browser.alwaysAllowHost", defaultValue: "Always allow this host in UniConnect")
 
         let handleResponse: (NSApplication.ModalResponse) -> Void = { [weak self, weak alert] response in
             self?.handleInsecureHTTPAlertResponse(
@@ -8771,7 +8775,7 @@ class BrowserDownloadDelegate: NSObject, WKDownloadDelegate {
     var onDownloadFailed: ((Error) -> Void)?
 
     private static let tempDir: URL = {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cmux-downloads", isDirectory: true)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("uniconnect-downloads", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }()
@@ -10780,13 +10784,13 @@ enum BrowserImportPlanRealizationError: LocalizedError {
         case .missingDestinationProfile:
             return String(
                 localized: "browser.import.error.destinationMissing",
-                defaultValue: "The selected cmux browser profile no longer exists. Pick a destination profile again."
+                defaultValue: "The selected UniConnect browser profile no longer exists. Pick a destination profile again."
             )
         case .profileCreationFailed(let name):
             return String(
                 format: String(
                     localized: "browser.import.error.destinationCreateFailed",
-                    defaultValue: "cmux could not create the destination profile \"%@\"."
+                    defaultValue: "UniConnect could not create the destination profile \"%@\"."
                 ),
                 name
             )
@@ -10906,7 +10910,7 @@ enum BrowserImportOutcomeFormatter {
                 String(
                     format: String(
                         localized: "browser.import.complete.createdProfiles",
-                        defaultValue: "Created cmux profiles: %@"
+                        defaultValue: "Created UniConnect profiles: %@"
                     ),
                     outcome.createdDestinationProfileNames.joined(separator: ", ")
                 )
@@ -12214,7 +12218,7 @@ enum BrowserImportUITestFixtureLoader {
             InstalledBrowserProfile(
                 displayName: name,
                 rootURL: FileManager.default.temporaryDirectory
-                    .appendingPathComponent("cmux-ui-test-browser-import")
+                    .appendingPathComponent("uniconnect-ui-test-browser-import")
                     .appendingPathComponent(
                         fixture.browserName
                             .lowercased()
@@ -12336,7 +12340,7 @@ final class BrowserDataImportCoordinator {
             )
             alert.informativeText = String(
                 localized: "browser.import.noBrowsers.message",
-                defaultValue: "cmux could not find browser profiles to import from on this Mac."
+                defaultValue: "UniConnect could not find browser profiles to import from on this Mac."
             )
             alert.addButton(withTitle: String(localized: "common.ok", defaultValue: "OK"))
             alert.runModal()
@@ -12934,7 +12938,7 @@ final class BrowserDataImportCoordinator {
             sourceProfilesHelpLabel.preferredMaxLayoutWidth = 500
             sourceProfilesHelpLabel.stringValue = String(
                 localized: "browser.import.sourceProfiles.help",
-                defaultValue: "Choose one or more source profiles. Step 3 lets you keep them separate or merge them into one cmux profile."
+                defaultValue: "Choose one or more source profiles. Step 3 lets you keep them separate or merge them into one UniConnect profile."
             )
 
             sourceProfilesContainer.orientation = .vertical
@@ -12980,7 +12984,7 @@ final class BrowserDataImportCoordinator {
             )
             mergeProfilesRadio.title = String(
                 localized: "browser.import.destinationMode.merge",
-                defaultValue: "Merge all into one cmux profile"
+                defaultValue: "Merge all into one UniConnect profile"
             )
             separateProfilesRadio.target = self
             separateProfilesRadio.action = #selector(handleDestinationModeChanged(_:))
@@ -13022,7 +13026,7 @@ final class BrowserDataImportCoordinator {
             let destinationTitleLabel = NSTextField(
                 labelWithString: String(
                     localized: "browser.import.destination.cmux",
-                    defaultValue: "cmux destination"
+                    defaultValue: "UniConnect destination"
                 )
             )
             destinationTitleLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
@@ -13269,13 +13273,13 @@ final class BrowserDataImportCoordinator {
             if presentation.showsSeparateRows {
                 destinationHelpLabel.stringValue = String(
                     localized: "browser.import.destinationProfile.separateHelp",
-                    defaultValue: "Missing cmux profiles are created when import starts."
+                    defaultValue: "Missing UniConnect profiles are created when import starts."
                 )
                 destinationHelpLabel.isHidden = false
             } else if plan.entries.count > 1 {
                 destinationHelpLabel.stringValue = String(
                     localized: "browser.import.destinationProfile.mergeHelp",
-                    defaultValue: "All selected source profiles will be merged into the chosen cmux browser profile."
+                    defaultValue: "All selected source profiles will be merged into the chosen UniConnect browser profile."
                 )
                 destinationHelpLabel.isHidden = false
             } else {

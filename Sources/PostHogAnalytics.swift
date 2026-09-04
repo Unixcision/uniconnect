@@ -14,8 +14,8 @@ final class PostHogAnalytics {
     private let dailyActiveEvent = "uniconnect_daily_active"
     private let hourlyActiveEvent = "uniconnect_hourly_active"
 
-    private let lastActiveDayUTCKey = "posthog.lastActiveDayUTC"
-    private let lastActiveHourUTCKey = "posthog.lastActiveHourUTC"
+    private let lastActiveDayUTCKey = "uniconnect.posthog.lastActiveDayUTC"
+    private let lastActiveHourUTCKey = "uniconnect.posthog.lastActiveHourUTC"
 
     private let workQueue: DispatchQueue
     private let workQueueSpecificKey = DispatchSpecificKey<Void>()
@@ -83,7 +83,7 @@ final class PostHogAnalytics {
         config.captureApplicationLifecycleEvents = false
         config.captureScreenViews = false
 #if DEBUG
-        config.debug = ProcessInfo.processInfo.environment["CMUX_POSTHOG_DEBUG"] == "1"
+        config.debug = ProcessInfo.processInfo.environment["UNICONNECT_POSTHOG_DEBUG"] == "1"
 #endif
 
         PostHogSDK.shared.setup(config)
@@ -211,7 +211,7 @@ final class PostHogAnalytics {
     }
 
     nonisolated static func superProperties(infoDictionary: [String: Any]) -> [String: Any] {
-        var properties: [String: Any] = ["platform": "cmuxterm"]
+        var properties: [String: Any] = ["platform": "uniconnect"]
         properties.merge(versionProperties(infoDictionary: infoDictionary)) { _, new in new }
         return properties
     }
@@ -244,7 +244,7 @@ final class PostHogAnalytics {
 
     nonisolated static func shouldFlushAfterCapture(event: String) -> Bool {
         switch event {
-        case "cmux_daily_active", "cmux_hourly_active":
+        case "uniconnect_daily_active", "uniconnect_hourly_active":
             return true
         default:
             return false

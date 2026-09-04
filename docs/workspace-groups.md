@@ -38,7 +38,7 @@ Right-click any workspace in the sidebar, choose **New Group from Workspace** (o
 
 ### From the group header context menu
 
-Right-click an existing group's header for: **Rename Group…**, **Pin / Unpin Group**, **Edit Group Config…** (opens `~/.config/cmux/cmux.json`), **Open Workspace Groups Docs**, **Ungroup (Keep Workspaces)**, **Delete Group (Close Workspaces)**. Delete is destructive and prompts for confirmation; ungroup keeps the workspaces and just removes the container.
+Right-click an existing group's header for: **Rename Group…**, **Pin / Unpin Group**, **Edit Group Config…** (opens `~/.config/uniconnect/uniconnect.json`), **Open Workspace Groups Docs**, **Ungroup (Keep Workspaces)**, **Delete Group (Close Workspaces)**. Delete is destructive and prompts for confirmation; ungroup keeps the workspaces and just removes the container.
 
 ### From the `+` button on a group header
 
@@ -92,7 +92,7 @@ cmux workspace-group list
 
 ## Configuration
 
-Per-group configuration is keyed by the anchor's working directory in `~/.config/cmux/cmux.json` (this surface lands in a follow-up; the file location is reserved). The intent:
+Per-group configuration is keyed by the anchor's working directory in `~/.config/uniconnect/uniconnect.json` (this surface lands in a follow-up; the file location is reserved). The intent:
 
 ```jsonc
 {

@@ -101,11 +101,11 @@ export function GitHubStarsBadge({
 
   return (
     <a
-      href="https://github.com/manaflow-ai/cmux"
+      href="https://github.com/Unixcision/uniconnect"
       target="_blank"
       rel="noopener noreferrer"
       onClick={() =>
-        posthog.capture("cmuxterm_github_clicked", { location })
+        posthog.capture("uniconnect_github_clicked", { location })
       }
       className={classes}
     >

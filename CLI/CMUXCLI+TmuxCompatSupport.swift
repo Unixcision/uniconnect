@@ -197,7 +197,7 @@ extension CMUXCLI {
         }
 
         let scriptURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cmux-tmux-command-\(UUID().uuidString.lowercased()).sh")
+            .appendingPathComponent("uniconnect-tmux-command-\(UUID().uuidString.lowercased()).sh")
         var lines = [
             "#!/bin/sh",
             "rm -f -- \"$0\" 2>/dev/null || true"

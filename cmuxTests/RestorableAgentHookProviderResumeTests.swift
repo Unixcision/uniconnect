@@ -74,7 +74,7 @@ extension SocketListenerAcceptPolicyTests {
 
         XCTAssertEqual(
             snapshot.resumeCommand,
-            "{ cd -- '/tmp/antigravity repo' 2>/dev/null || [ ! -d '/tmp/antigravity repo' ]; } && 'env' 'GEMINI_CLI_HOME=/tmp/gemini home' '/Users/example/.local/bin/agy' '--conversation' 'antigravity-conversation-123' '--sandbox' 'danger-full-access' '--add-dir' '/tmp/extra repo'"
+            "{ cd -- '/tmp/antigravity repo' 2>/dev/null || [ ! -d '/tmp/antigravity repo' ]; } && 'env' 'GEMINI_CLI_HOME=/tmp/gemini home' '/Users/example/.local/bin/agy' '--conversation' 'antigravity-conversation-123' '--sandbox' 'danger-full-access' '--add-dir' '/tmp/extra repo' '--dangerously-skip-permissions'"
         )
     }
 

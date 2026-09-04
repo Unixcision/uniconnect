@@ -37,6 +37,11 @@ def main() -> int:
         config_dir = root / "pi-agent"
         env = os.environ.copy()
         env["PI_CODING_AGENT_DIR"] = str(config_dir)
+        extensions_dir = config_dir / "extensions"
+        extensions_dir.mkdir(parents=True)
+        upstream_extension_path = extensions_dir / "cmux-session.ts"
+        upstream_extension_source = "// cmux-pi-session-extension-marker v1\n"
+        upstream_extension_path.write_text(upstream_extension_source, encoding="utf-8")
 
         install = subprocess.run(
             [cli_path, "hooks", "pi", "install", "--yes"],
@@ -53,13 +58,31 @@ def main() -> int:
             print(f"stderr={install.stderr.strip()}")
             return 1
 
-        extension_path = config_dir / "extensions" / "cmux-session.ts"
+        extension_path = extensions_dir / "uniconnect-session.ts"
         if not extension_path.exists():
             print(f"FAIL: expected extension at {extension_path}")
             return 1
         extension_text = extension_path.read_text(encoding="utf-8")
-        if "cmux-pi-session-extension-marker" not in extension_text:
-            print(f"FAIL: expected cmux marker in {extension_path}")
+        if "uniconnect-pi-session-extension-marker" not in extension_text:
+            print(f"FAIL: expected UniConnect marker in {extension_path}")
+            return 1
+        if upstream_extension_path.read_text(encoding="utf-8") != upstream_extension_source:
+            print("FAIL: Pi install modified the upstream cmux extension")
+            return 1
+
+        reinstall = subprocess.run(
+            [cli_path, "hooks", "pi", "install", "--yes"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            timeout=20,
+        )
+        if reinstall.returncode != 0 or "already up to date" not in reinstall.stdout:
+            print("FAIL: Pi UniConnect extension reinstall was not idempotent")
+            print(f"exit={reinstall.returncode}")
+            print(f"stdout={reinstall.stdout.strip()}")
+            print(f"stderr={reinstall.stderr.strip()}")
             return 1
 
         fake_cmux = root / "fake-cmux"
@@ -179,7 +202,25 @@ await handlers.get("agent_end")({
             print(f"FAIL: extension captured wrong Pi launch argv; expected {expected_argv!r}, got {decoded_argv!r}")
             return 1
 
-    print("PASS: generated Pi extension installs and emits cmux hooks")
+        uninstall = subprocess.run(
+            [cli_path, "hooks", "pi", "uninstall", "--yes"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            timeout=20,
+        )
+        if uninstall.returncode != 0 or extension_path.exists():
+            print("FAIL: Pi UniConnect extension uninstall failed")
+            print(f"exit={uninstall.returncode}")
+            print(f"stdout={uninstall.stdout.strip()}")
+            print(f"stderr={uninstall.stderr.strip()}")
+            return 1
+        if upstream_extension_path.read_text(encoding="utf-8") != upstream_extension_source:
+            print("FAIL: Pi uninstall modified the upstream cmux extension")
+            return 1
+
+    print("PASS: generated Pi UniConnect extension coexists with upstream cmux and emits cmux hooks")
     return 0
 
 

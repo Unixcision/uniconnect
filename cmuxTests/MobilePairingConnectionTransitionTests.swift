@@ -12,7 +12,7 @@ import Testing
 struct MobilePairingConnectionTransitionTests {
     private func makeReady() -> MobilePairingModel.Ready {
         MobilePairingModel.Ready(
-            attachURL: "cmux-ios://attach?ticket=abc",
+            attachURL: "uniconnect://attach?ticket=abc",
             macName: "Test Mac",
             tailscaleLines: ["100.64.0.1:7777"]
         )

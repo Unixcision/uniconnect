@@ -24,7 +24,7 @@ extension CMUXCLI {
         guard let data = FileManager.default.contents(atPath: path) else { return false }
         let prefixData = data.prefix(512)
         guard let prefix = String(data: prefixData, encoding: .utf8) else { return false }
-        return prefix.contains("cmux claude wrapper - injects hooks and session tracking")
+        return prefix.contains("UniConnect Claude wrapper - injects hooks and session tracking")
     }
 
     func isCmuxClaudeCommandShim(at path: String) -> Bool {

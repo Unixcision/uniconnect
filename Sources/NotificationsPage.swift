@@ -14,7 +14,11 @@ struct NotificationsPage: View {
         VStack(spacing: 0) {
             header
             Divider()
-            phoneForwardingRow
+            if AuthEnvironment.hostedServices != nil {
+                phoneForwardingRow
+            } else {
+                phoneForwardingUnavailableRow
+            }
             Divider()
 
             if !notificationStore.notificationMenuSnapshot.hasNotifications {
@@ -96,7 +100,7 @@ struct NotificationsPage: View {
             Toggle(isOn: $forwardToPhone) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(String(localized: "notifications.forwardToPhone.title", defaultValue: "Forward notifications to my iPhone"))
-                    Text(String(localized: "notifications.forwardToPhone.subtitle", defaultValue: "Send agent notifications to the cmux iPhone app. Off by default; nothing is uploaded unless this is on."))
+                    Text(String(localized: "notifications.forwardToPhone.subtitle", defaultValue: "Send agent notifications to the UniConnect iPhone app. Off by default; nothing is uploaded unless this is on."))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -109,6 +113,18 @@ struct NotificationsPage: View {
                 .padding(.leading, 20)
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    private var phoneForwardingUnavailableRow: some View {
+        Text(String(
+            localized: "notifications.forwardToPhone.unavailable",
+            defaultValue: "Phone notification forwarding stays off until UniConnect's own service is configured."
+        ))
+        .font(.caption)
+        .foregroundColor(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
     }

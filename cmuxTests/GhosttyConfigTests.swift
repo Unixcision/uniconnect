@@ -3827,7 +3827,7 @@ final class PostHogAnalyticsPropertiesTests: XCTestCase {
             ]
         )
 
-        XCTAssertEqual(properties["platform"] as? String, "cmuxterm")
+        XCTAssertEqual(properties["platform"] as? String, "uniconnect")
         XCTAssertEqual(properties["app_version"] as? String, "0.31.0")
         XCTAssertEqual(properties["app_build"] as? String, "230")
     }
@@ -3863,7 +3863,7 @@ final class PostHogAnalyticsPropertiesTests: XCTestCase {
 
     func testPropertiesOmitVersionFieldsWhenUnavailable() {
         let superProperties = PostHogAnalytics.superProperties(infoDictionary: [:])
-        XCTAssertEqual(superProperties["platform"] as? String, "cmuxterm")
+        XCTAssertEqual(superProperties["platform"] as? String, "uniconnect")
         XCTAssertNil(superProperties["app_version"])
         XCTAssertNil(superProperties["app_build"])
 
@@ -3879,9 +3879,9 @@ final class PostHogAnalyticsPropertiesTests: XCTestCase {
     }
 
     func testFlushPolicyIncludesDailyAndHourlyActiveEvents() {
-        XCTAssertTrue(PostHogAnalytics.shouldFlushAfterCapture(event: "cmux_daily_active"))
-        XCTAssertTrue(PostHogAnalytics.shouldFlushAfterCapture(event: "cmux_hourly_active"))
-        XCTAssertFalse(PostHogAnalytics.shouldFlushAfterCapture(event: "cmux_other_event"))
+        XCTAssertTrue(PostHogAnalytics.shouldFlushAfterCapture(event: "uniconnect_daily_active"))
+        XCTAssertTrue(PostHogAnalytics.shouldFlushAfterCapture(event: "uniconnect_hourly_active"))
+        XCTAssertFalse(PostHogAnalytics.shouldFlushAfterCapture(event: "uniconnect_other_event"))
     }
 }
 

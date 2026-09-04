@@ -28,20 +28,13 @@ export async function SiteFooter() {
       ],
     },
     {
-      heading: t("legal"),
-      links: [
-        { label: t("privacy"), href: "/privacy-policy" },
-        { label: t("terms"), href: "/terms-of-service" },
-        { label: t("eula"), href: "/eula" },
-      ],
-    },
-    {
       heading: t("social"),
       links: [
-        { label: t("github"), href: "https://github.com/manaflow-ai/cmux" },
-        { label: t("twitter"), href: "https://twitter.com/manaflowai" },
-        { label: t("discord"), href: "https://discord.gg/xsgFEVrWCZ" },
-        { label: t("contact"), href: "mailto:founders@manaflow.com" },
+        { label: t("github"), href: "https://github.com/Unixcision/uniconnect" },
+        {
+          label: t("contact"),
+          href: "https://github.com/Unixcision/uniconnect/issues",
+        },
       ],
     },
   ];
@@ -49,7 +42,7 @@ export async function SiteFooter() {
   return (
     <footer className="mt-16">
       <div className="max-w-2xl mx-auto px-6 py-12">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-8">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-8">
           {columns.map((col) => (
             <div key={col.heading}>
               <h3 className="text-xs font-medium text-muted tracking-tight mb-3">

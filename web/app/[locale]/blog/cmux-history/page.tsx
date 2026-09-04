@@ -15,7 +15,7 @@ export async function generateMetadata({
     title: t("metaTitle"),
     description: t("metaDescription"),
     keywords: [
-      "cmux",
+      "UniConnect",
       "history",
       "reopen closed terminal",
       "restore closed tab",

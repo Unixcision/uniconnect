@@ -27,7 +27,7 @@ public actor SecretFileStore {
     ///
     /// `userInfo[SecretFileStore.changedKeyIDKey]` carries the affected key's
     /// ``SecretFileKey/id``. ``values(for:)`` listens for this and re-reads.
-    public static let didChangeNotification = Notification.Name("cmux.secretFileStoreDidChange")
+    public static let didChangeNotification = Notification.Name("uniconnect.secretFileStoreDidChange")
 
     /// `userInfo` key under which ``didChangeNotification`` carries the changed key id.
     public static let changedKeyIDKey = "keyID"

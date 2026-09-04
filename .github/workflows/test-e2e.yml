@@ -489,8 +489,9 @@ jobs:
           \`\`\`"
           fi
 
+          RESULTS_REPO="${{ vars.E2E_RESULTS_REPOSITORY || github.repository }}"
           ISSUE_URL=$(gh issue create \
-            --repo manaflow-ai/cmux-dev-artifacts \
+            --repo "$RESULTS_REPO" \
             --title "[$STATUS_EMOJI] $TEST_FILTER @ ${COMMIT_SHA:0:7} ($REF_DISPLAY)" \
             --body "$BODY" \
             --label "$LABEL")

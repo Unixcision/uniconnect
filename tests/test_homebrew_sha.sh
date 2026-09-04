@@ -4,10 +4,10 @@
 # condition caused the cask to contain the SHA of a 404 page instead of the DMG.
 set -euo pipefail
 
-CASK_FILE="$(dirname "$0")/../homebrew-cmux/Casks/cmux.rb"
+CASK_FILE="$(dirname "$0")/../homebrew-uniconnect/Casks/uniconnect.rb"
 
 if [ ! -f "$CASK_FILE" ]; then
-  echo "SKIP: homebrew-cmux submodule not initialized"
+  echo "SKIP: UniConnect Homebrew tap checkout not present"
   exit 0
 fi
 
@@ -22,7 +22,7 @@ fi
 echo "Cask version: $VERSION"
 echo "Cask SHA256:  $CASK_SHA"
 
-URL="https://github.com/manaflow-ai/cmux/releases/download/v${VERSION}/cmux-macos.dmg"
+URL="https://github.com/Unixcision/uniconnect/releases/download/v${VERSION}/uniconnect-macos.dmg"
 TMPFILE=$(mktemp)
 trap 'rm -f "$TMPFILE"' EXIT
 

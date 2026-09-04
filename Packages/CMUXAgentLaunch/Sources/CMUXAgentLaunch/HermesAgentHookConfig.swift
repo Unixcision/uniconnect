@@ -20,8 +20,8 @@ public enum HermesAgentHookConfig {
         var events: [Event]
     }
 
-    private static let beginMarker = "# cmux hooks hermes-agent begin"
-    private static let endMarker = "# cmux hooks hermes-agent end"
+    private static let beginMarker = "# uniconnect hooks hermes-agent begin"
+    private static let endMarker = "# uniconnect hooks hermes-agent end"
     private static let restoreLineMarkerPrefix = "\(beginMarker) restore-line-base64:"
 
     public static func installing(events: [Event], in existing: String) -> String {
@@ -302,6 +302,8 @@ public enum HermesAgentHookAllowlist {
         case invalidRoot
     }
 
+    private static let ownershipMarker = "uniconnect-agent-hook-v1:hermes-agent"
+
     public static func installing(events: [HermesAgentHookConfig.Event], in existing: Data?, approvedAt: Date = Date()) throws -> Data {
         var object = try decode(existing)
         let approvals = object["approvals"] as? [[String: Any]] ?? []
@@ -311,6 +313,9 @@ public enum HermesAgentHookAllowlist {
             guard let event = approval["event"] as? String,
                   let command = approval["command"] as? String else {
                 passthrough.append(approval)
+                continue
+            }
+            if command.contains(ownershipMarker) {
                 continue
             }
             keyed[key(event: event, command: command)] = approval
@@ -341,7 +346,8 @@ public enum HermesAgentHookAllowlist {
                   let command = approval["command"] as? String else {
                 return true
             }
-            return !ownedKeys.contains(key(event: event, command: command))
+            return !command.contains(ownershipMarker)
+                && !ownedKeys.contains(key(event: event, command: command))
         }
         return try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
     }

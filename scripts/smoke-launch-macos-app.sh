@@ -97,7 +97,7 @@ for _ in $(seq 1 "$STABLE_SECONDS"); do
     echo "error: app process $APP_PID exited during ${STABLE_SECONDS}s launch smoke" >&2
     dump_open_log
     LOG_NAME="$(printf '%s' "$BUNDLE_ID" | sed -E 's/[^A-Za-z0-9._-]/-/g')"
-    STARTUP_LOG="$HOME/Library/Logs/cmux/startup-${LOG_NAME}.log"
+    STARTUP_LOG="$HOME/.uniconnect/logs/startup-${LOG_NAME}.log"
     if [[ -f "$STARTUP_LOG" ]]; then
       echo "startup breadcrumbs:" >&2
       tail -n 80 "$STARTUP_LOG" >&2 || true

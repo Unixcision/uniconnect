@@ -26,6 +26,7 @@ public struct MobileSection: View {
     /// Host bridge: opens the pairing window, applies the port (availability
     /// checked), and supplies the live pairing status and default display name.
     private let hostActions: SettingsHostActions
+    private let hostedServicesAvailable: Bool
 
     private static let columnWidth: CGFloat = 196
 
@@ -36,16 +37,19 @@ public struct MobileSection: View {
     ///   - catalog: The settings catalog defining the mobile keys.
     ///   - hostActions: Host bridge for the pairing window, port apply, and the
     ///     live pairing status the package can't produce itself.
+    ///   - hostedServicesAvailable: Whether pairing/sync infrastructure is configured.
     public init(
         defaultsStore: UserDefaultsSettingsStore,
         catalog: SettingCatalog,
-        hostActions: SettingsHostActions
+        hostActions: SettingsHostActions,
+        hostedServicesAvailable: Bool = false
     ) {
         _iOSPairingHost = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.mobile.iOSPairingHost))
         _port = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.mobile.iOSPairingPort))
         _displayName = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.mobile.iOSPairingDisplayName))
         _status = State(initialValue: MobilePairingStatusModel(hostActions: hostActions))
         self.hostActions = hostActions
+        self.hostedServicesAvailable = hostedServicesAvailable
     }
 
     /// The value shown in the field: the user's edit if any, otherwise the
@@ -68,23 +72,32 @@ public struct MobileSection: View {
     public var body: some View {
         Group {
             SettingsSectionHeader(String(localized: "settings.section.mobile", defaultValue: "Mobile"), section: .mobile)
-            SettingsCard {
-                pairDeviceRow
-                SettingsCardDivider()
-                iOSPairingHostRow
-                SettingsCardDivider()
-                portRow
-                boundPortStatusRow
-                SettingsCardDivider()
-                displayNameRow
-                if iOSPairingHost.current {
+            if hostedServicesAvailable {
+                SettingsCard {
+                    pairDeviceRow
                     SettingsCardDivider()
-                    diagnostics
+                    iOSPairingHostRow
+                    SettingsCardDivider()
+                    portRow
+                    boundPortStatusRow
+                    SettingsCardDivider()
+                    displayNameRow
+                    if iOSPairingHost.current {
+                        SettingsCardDivider()
+                        diagnostics
+                    }
+                    SettingsCardNote(String(
+                        localized: "settings.mobile.port.note",
+                        defaultValue: "Click Apply to change the port. UniConnect checks the port is free first: if it's in use, the current listener keeps running untouched; if it's free, it rebinds and connected devices reconnect on the new port."
+                    ))
                 }
-                SettingsCardNote(String(
-                    localized: "settings.mobile.port.note",
-                    defaultValue: "Click Apply to change the port. cmux checks the port is free first: if it's in use, the current listener keeps running untouched; if it's free, it rebinds and connected devices reconnect on the new port."
-                ))
+            } else {
+                SettingsCard {
+                    SettingsCardNote(String(
+                        localized: "settings.mobile.unavailable",
+                        defaultValue: "Mobile pairing and phone sync stay off until UniConnect's own service is configured."
+                    ))
+                }
             }
         }
     }

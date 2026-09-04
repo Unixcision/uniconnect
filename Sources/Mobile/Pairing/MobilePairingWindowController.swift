@@ -20,6 +20,10 @@ final class MobilePairingWindowController {
 
     /// Brings the pairing window to the front, creating it if needed.
     func show() {
+        guard AuthEnvironment.hostedServices != nil else {
+            NSSound.beep()
+            return
+        }
         NSApp.activate(ignoringOtherApps: true)
 
         if let existing = existingWindow() {

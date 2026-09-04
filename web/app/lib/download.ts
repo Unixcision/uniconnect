@@ -1,7 +1,7 @@
 /**
- * Single source of truth for cmux download links.
+ * Single source of truth for UniConnect download links.
  *
- * `DOWNLOAD_URL` is the actual release asset. cmux ships only a macOS build,
+ * `DOWNLOAD_URL` is the actual release asset. UniConnect ships only a macOS build,
  * so there is one asset; if win/linux builds are added later, route them from
  * here (and from the confirmation page) rather than duplicating URLs at call
  * sites.
@@ -20,7 +20,7 @@
  * reflects the original page load.
  */
 export const DOWNLOAD_URL =
-  "https://github.com/manaflow-ai/cmux/releases/latest/download/cmux-macos.dmg";
+  "https://github.com/Unixcision/uniconnect/releases/latest/download/uniconnect-macos.dmg";
 
 export const DOWNLOAD_CONFIRMATION_PATH = "/download/confirmation";
 

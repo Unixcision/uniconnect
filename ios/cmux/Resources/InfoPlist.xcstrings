@@ -7,13 +7,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scan cmux pairing QR codes from your Mac terminal."
+            "value" : "Scan UniConnect pairing QR codes from your Mac terminal."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mac のターミナルに表示された cmux のペアリング QR コードをスキャンします。"
+            "value" : "Mac のターミナルに表示された UniConnect のペアリング QR コードをスキャンします。"
           }
         }
       }
@@ -24,13 +24,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connect to your Mac on the local network for cmux mobile pairing and terminal sync."
+            "value" : "Connect to your Mac on the local network for UniConnect mobile pairing and terminal sync."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "cmux モバイルのペアリングとターミナル同期のため、ローカルネットワーク上の Mac に接続します。"
+            "value" : "UniConnect モバイルのペアリングとターミナル同期のため、ローカルネットワーク上の Mac に接続します。"
           }
         }
       }

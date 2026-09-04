@@ -4,7 +4,7 @@ import Foundation
 /// The fully resolved auth configuration handed to the runtime at startup.
 ///
 /// Consolidates the Stack project credentials (from ``CMUXAuthConfig``) with the
-/// magic-link callback URL and the cmux web API base URL, so both apps build
+/// magic-link callback URL and the UniConnect web API base URL, so both apps build
 /// `StackClientApp` and the push registration service from one value instead of
 /// the per-app `AppEnvironment` / `AuthEnvironment` tables. Resolve it once at
 /// the composition root via ``init(environment:overrides:)`` (injecting the
@@ -38,13 +38,16 @@ public struct AuthConfig: Equatable, Sendable {
         environment: CMUXAuthEnvironment,
         overrides: [String: String] = [:]
     ) {
+        // An unconfigured fork gets a syntactically valid, non-routable tenant
+        // placeholder. Deployments must inject UniConnect-owned Stack values;
+        // never fall back to the upstream cmux tenant.
         let stack = CMUXAuthConfig(
             environment: environment,
             overrides: overrides,
-            developmentProjectId: "454ecd03-1db2-4050-845e-4ce5b0cd9895",
-            productionProjectId: "9790718f-14cd-4f7e-824d-eaf527a82b82",
-            developmentPublishableClientKey: "pck_xb63160bwe9699vtxfzfj6emmxpafg5mkjrtp6ehzxv5g",
-            productionPublishableClientKey: "pck_kzj80gx4mh2jrzn1cx6y5e8jk0kwa01vkevh2p9zd4twr"
+            developmentProjectId: "00000000-0000-4000-8000-000000000000",
+            productionProjectId: "00000000-0000-4000-8000-000000000000",
+            developmentPublishableClientKey: "unconfigured-uniconnect-publishable-key",
+            productionPublishableClientKey: "unconfigured-uniconnect-publishable-key"
         )
 
         let callbackURL: String

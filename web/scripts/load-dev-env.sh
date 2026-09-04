@@ -21,21 +21,17 @@ cmux_existing_db_password="${CMUX_DB_PASSWORD-}"
 cmux_existing_db_name_set="${CMUX_DB_NAME+x}"
 cmux_existing_db_name="${CMUX_DB_NAME-}"
 
-cmux_extra_secret_file="${CMUXTERM_EXTRA_ENV_FILE:-${CMUX_WEB_EXTRA_ENV_FILE:-}}"
-if [[ -z "$cmux_extra_secret_file" && -f "$HOME/.secrets/cmux.env" ]]; then
-  cmux_extra_secret_file="$HOME/.secrets/cmux.env"
+cmux_extra_secret_file="${UNICONNECT_WEB_EXTRA_ENV_FILE:-}"
+if [[ -z "$cmux_extra_secret_file" && -f "$HOME/.secrets/uniconnect.env" ]]; then
+  cmux_extra_secret_file="$HOME/.secrets/uniconnect.env"
 fi
 
-cmux_secret_file="${CMUXTERM_ENV_FILE:-${CMUX_WEB_ENV_FILE:-}}"
+cmux_secret_file="${UNICONNECT_WEB_ENV_FILE:-}"
 if [[ -z "$cmux_secret_file" ]]; then
-  if [[ -f "$HOME/.secrets/cmuxterm-dev.env" ]]; then
-    cmux_secret_file="$HOME/.secrets/cmuxterm-dev.env"
-  elif [[ -f "$HOME/.secret/cmuxterm.env" ]]; then
-    cmux_secret_file="$HOME/.secret/cmuxterm.env"
-  elif [[ -f "$HOME/.secrets/cmuxterm.env" ]]; then
-    cmux_secret_file="$HOME/.secrets/cmuxterm.env"
+  if [[ -f "$HOME/.secrets/uniconnect-dev.env" ]]; then
+    cmux_secret_file="$HOME/.secrets/uniconnect-dev.env"
   else
-    echo "Missing cmux web secrets. Expected ~/.secrets/cmuxterm-dev.env." >&2
+    echo "Missing UniConnect web secrets. Expected ~/.secrets/uniconnect-dev.env." >&2
     return 1 2>/dev/null || exit 1
   fi
 fi
@@ -98,11 +94,8 @@ if [[ "${CMUX_DEV_USE_EXTERNAL_VM_API_BASE_URL:-0}" != "1" ]]; then
   export CMUX_VM_API_BASE_URL="http://localhost:${CMUX_PORT}"
 fi
 
-# Local dev should not require a checked-in or per-worktree .env.local just to pass
-# startup validation for routes the developer is not exercising.
-export RESEND_API_KEY="${RESEND_API_KEY:-cmux-local-dev}"
-export CMUX_FEEDBACK_FROM_EMAIL="${CMUX_FEEDBACK_FROM_EMAIL:-dev@example.invalid}"
-export CMUX_FEEDBACK_RATE_LIMIT_ID="${CMUX_FEEDBACK_RATE_LIMIT_ID:-cmux-feedback-local}"
+# Feedback remains intentionally disabled in local development unless the
+# operator supplies the UniConnect-owned sender, recipient, and rate-limit id.
 export CMUX_PUSH_RATE_LIMIT_ID="${CMUX_PUSH_RATE_LIMIT_ID:-cmux-push-local}"
 
 export CMUX_WEB_SECRET_ENV_FILE="$cmux_secret_file"

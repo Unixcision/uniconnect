@@ -6,9 +6,9 @@
 // ==========================================
 // Project Identity
 // ==========================================
-PRODUCT_NAME = cmux
-PRODUCT_DISPLAY_NAME = cmux
-PRODUCT_BUNDLE_IDENTIFIER = dev.cmux.ios
+PRODUCT_NAME = UniConnect
+PRODUCT_DISPLAY_NAME = UniConnect
+PRODUCT_BUNDLE_IDENTIFIER = com.unixcision.uniconnect.ios
 MARKETING_VERSION = 1.0
 CURRENT_PROJECT_VERSION = 1
 
@@ -27,10 +27,11 @@ GENERATE_INFOPLIST_FILE = NO
 INFOPLIST_FILE = Config/Info.plist
 INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationLandscapeRight UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationPortrait
 INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationLandscapeRight UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown
-INFOPLIST_KEY_NSCameraUsageDescription = Scan cmux pairing QR codes from your Mac terminal.
+INFOPLIST_KEY_NSCameraUsageDescription = Scan UniConnect pairing QR codes from your Mac terminal.
 
 // ==========================================
 // Entitlements
 // ==========================================
-// AI agents can modify Config/cmux.entitlements to add capabilities
-CODE_SIGN_ENTITLEMENTS = Config/cmux.entitlements
+// AI agents can modify Config/UniConnect.entitlements to add capabilities
+CODE_SIGN_ENTITLEMENTS = Config/UniConnect.entitlements
+APS_ENVIRONMENT = development

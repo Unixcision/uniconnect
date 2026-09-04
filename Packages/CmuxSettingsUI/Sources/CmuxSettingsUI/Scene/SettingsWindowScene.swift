@@ -85,6 +85,7 @@ public struct SettingsWindowRoot: View {
     private var catalog: SettingCatalog { runtime.catalog }
     private var hostActions: SettingsHostActions { runtime.hostActions }
     private var accountFlow: AccountFlow? { runtime.accountFlow }
+    private var hostedServicesAvailable: Bool { runtime.hostedServicesAvailable }
 
     private var searchIndex: SettingsSearchIndex {
         SettingsSearchIndex(catalog: catalog)
@@ -149,7 +150,7 @@ public struct SettingsWindowRoot: View {
         }
     }
 
-    public static let navigationRequestName = Notification.Name("cmux.settings.navigate")
+    public static let navigationRequestName = Notification.Name("uniconnect.settings.navigate")
 
     /// Legacy `SettingsRootView.onReceive` only updates the selection
     /// state (sidebar entry + section pane) in response to an external
@@ -434,7 +435,8 @@ public struct SettingsWindowRoot: View {
         AccountSection(
             defaultsStore: defaultsStore,
             catalog: catalog,
-            accountFlow: accountFlow
+            accountFlow: accountFlow,
+            hostedServicesAvailable: hostedServicesAvailable
         )
         .id(anchorID(for: .account))
 
@@ -456,7 +458,12 @@ public struct SettingsWindowRoot: View {
         TextBoxSection(defaultsStore: defaultsStore, catalog: catalog)
             .id(anchorID(for: .textBox))
 
-        MobileSection(defaultsStore: defaultsStore, catalog: catalog, hostActions: hostActions)
+        MobileSection(
+            defaultsStore: defaultsStore,
+            catalog: catalog,
+            hostActions: hostActions,
+            hostedServicesAvailable: hostedServicesAvailable
+        )
             .id(anchorID(for: .mobile))
 
         SidebarSection(defaultsStore: defaultsStore, catalog: catalog, hostActions: hostActions)

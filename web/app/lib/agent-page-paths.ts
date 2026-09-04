@@ -23,37 +23,27 @@ const blockedPrefixes = [
   "/agent-page-variant",
   "/handler",
 ];
-const englishOnlyPages = [
-  "/privacy-policy",
-  "/terms-of-service",
-  "/eula",
-] as const;
-
 export const agentReadablePages = [
   { path: "/", title: "Home" },
   { path: "/blog", title: "Blog" },
-  { path: "/blog/cmux-history", title: "cmux history" },
-  { path: "/blog/cmux-finder", title: "Introducing cmux Finder" },
-  { path: "/blog/cmux-vault", title: "cmux Vault" },
-  { path: "/blog/passkey-auth", title: "Passkey auth in the cmux browser" },
-  { path: "/blog/task-manager", title: "Task Manager in cmux" },
-  { path: "/blog/markdown-viewer", title: "A better markdown viewer in cmux" },
-  { path: "/blog/unread-shortcuts", title: "Unread workspace shortcuts in cmux" },
-  { path: "/blog/session-restore", title: "Session restore in cmux" },
-  { path: "/blog/cmux-ssh", title: "cmux SSH" },
+  { path: "/blog/cmux-history", title: "UniConnect history" },
+  { path: "/blog/cmux-finder", title: "Introducing UniConnect Finder" },
+  { path: "/blog/cmux-vault", title: "UniConnect Vault" },
+  { path: "/blog/passkey-auth", title: "Passkey auth in the UniConnect browser" },
+  { path: "/blog/task-manager", title: "Task Manager in UniConnect" },
+  { path: "/blog/markdown-viewer", title: "A better markdown viewer in UniConnect" },
+  { path: "/blog/unread-shortcuts", title: "Unread workspace shortcuts in UniConnect" },
+  { path: "/blog/session-restore", title: "Session restore in UniConnect" },
+  { path: "/blog/cmux-ssh", title: "UniConnect SSH" },
   {
     path: "/blog/cmux-claude-teams",
-    title: "Claude Code teammate agents as native cmux panes",
+    title: "Claude Code teammate agents as native UniConnect panes",
   },
   {
     path: "/blog/cmux-omo",
-    title: "oh-my-openagent subagents as native cmux panes",
+    title: "oh-my-openagent subagents as native UniConnect panes",
   },
-  { path: "/blog/gpl", title: "cmux is now GPL" },
   { path: "/blog/cmd-shift-u", title: "Cmd+Shift+U" },
-  { path: "/blog/zen-of-cmux", title: "The Zen of cmux" },
-  { path: "/blog/show-hn-launch", title: "Launching cmux on Show HN" },
-  { path: "/blog/introducing-cmux", title: "Introducing cmux" },
   { path: "/docs", title: "Docs" },
   { path: "/docs/getting-started", title: "Getting Started" },
   { path: "/docs/concepts", title: "Concepts" },
@@ -85,12 +75,8 @@ export const agentReadablePages = [
   },
   { path: "/docs/changelog", title: "Changelog" },
   { path: "/community", title: "Community" },
-  { path: "/wall-of-love", title: "Wall of Love" },
   { path: "/nightly", title: "Nightly" },
   { path: "/assets", title: "Brand Assets" },
-  { path: "/privacy-policy", title: "Privacy Policy" },
-  { path: "/terms-of-service", title: "Terms of Service" },
-  { path: "/eula", title: "EULA" },
 ] as const;
 
 export function resolveAgentPageVariant(
@@ -151,7 +137,7 @@ export function variantPathForPage(
 
 export function buildLlmsText(origin: string): string {
   const lines = [
-    "# cmux",
+    "# UniConnect",
     "",
     "Native macOS terminal built on Ghostty for running multiple AI coding agents.",
     "",
@@ -206,7 +192,6 @@ function normalizeCanonicalPagePath(pathWithoutExtension: string): string | null
   }
 
   path = normalizeEnglishLocalePrefix(path);
-  path = normalizeEnglishOnlyPage(path);
 
   if (path !== "/" && path.endsWith("/")) {
     path = path.slice(0, -1);
@@ -221,17 +206,6 @@ function normalizeEnglishLocalePrefix(path: string): string {
   }
   if (path.startsWith("/en/")) {
     return path.slice("/en".length) || "/";
-  }
-  return path;
-}
-
-function normalizeEnglishOnlyPage(path: string): string {
-  for (const locale of locales) {
-    for (const page of englishOnlyPages) {
-      if (path === `/${locale}${page}`) {
-        return page;
-      }
-    }
   }
   return path;
 }

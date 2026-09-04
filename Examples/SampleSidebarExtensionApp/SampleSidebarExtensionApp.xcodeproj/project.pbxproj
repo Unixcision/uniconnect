@@ -508,7 +508,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CMUX_SIDEBAR_EXTENSION_POINT_ID = com.cmuxterm.app.cmux.sidebar;
+				CMUX_SIDEBAR_EXTENSION_POINT_ID = com.unixcision.uniconnect.sidebar;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -526,7 +526,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				CMUX_BUNDLE_ID_SUFFIX = "";
-				PRODUCT_BUNDLE_IDENTIFIER = "co.manaflow.CMUXExtKitSampleSidebarApp$(CMUX_BUNDLE_ID_SUFFIX)";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.unixcision.uniconnect.examples.sidebar$(CMUX_BUNDLE_ID_SUFFIX)";
 				PRODUCT_NAME = "CMUX ExtKit Sample Sidebar";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -543,7 +543,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CMUX_SIDEBAR_EXTENSION_POINT_ID = com.cmuxterm.app.cmux.sidebar;
+				CMUX_SIDEBAR_EXTENSION_POINT_ID = com.unixcision.uniconnect.sidebar;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -561,7 +561,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				CMUX_BUNDLE_ID_SUFFIX = "";
-				PRODUCT_BUNDLE_IDENTIFIER = "co.manaflow.CMUXExtKitSampleSidebarApp$(CMUX_BUNDLE_ID_SUFFIX)";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.unixcision.uniconnect.examples.sidebar$(CMUX_BUNDLE_ID_SUFFIX)";
 				PRODUCT_NAME = "CMUX ExtKit Sample Sidebar";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -583,7 +583,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = co.manaflow.SampleSidebarExtensionAppTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.unixcision.uniconnect.examples.sidebar.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -604,7 +604,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = co.manaflow.SampleSidebarExtensionAppTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.unixcision.uniconnect.examples.sidebar.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -623,7 +623,7 @@
 				DEVELOPMENT_TEAM = 7WLXT3NR37;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = co.manaflow.SampleSidebarExtensionAppUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.unixcision.uniconnect.examples.sidebar.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -642,7 +642,7 @@
 				DEVELOPMENT_TEAM = 7WLXT3NR37;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = co.manaflow.SampleSidebarExtensionAppUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.unixcision.uniconnect.examples.sidebar.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -657,7 +657,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
-				CMUX_SIDEBAR_EXTENSION_POINT_ID = com.cmuxterm.app.cmux.sidebar;
+				CMUX_SIDEBAR_EXTENSION_POINT_ID = com.unixcision.uniconnect.sidebar;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 7WLXT3NR37;
@@ -675,7 +675,7 @@
 				MARKETING_VERSION = 1.0;
 				CMUX_BUNDLE_ID_SUFFIX = "";
 				CMUX_DISPLAY_NAME_SUFFIX = "";
-				PRODUCT_BUNDLE_IDENTIFIER = "co.manaflow.CMUXExtKitSampleSidebarApp$(CMUX_BUNDLE_ID_SUFFIX).Extension";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.unixcision.uniconnect.examples.sidebar$(CMUX_BUNDLE_ID_SUFFIX).Extension";
 				PRODUCT_NAME = "CMUX ExtKit Sample Sidebar Extension";
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
@@ -691,7 +691,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
-				CMUX_SIDEBAR_EXTENSION_POINT_ID = com.cmuxterm.app.cmux.sidebar;
+				CMUX_SIDEBAR_EXTENSION_POINT_ID = com.unixcision.uniconnect.sidebar;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 7WLXT3NR37;
@@ -709,7 +709,7 @@
 				MARKETING_VERSION = 1.0;
 				CMUX_BUNDLE_ID_SUFFIX = "";
 				CMUX_DISPLAY_NAME_SUFFIX = "";
-				PRODUCT_BUNDLE_IDENTIFIER = "co.manaflow.CMUXExtKitSampleSidebarApp$(CMUX_BUNDLE_ID_SUFFIX).Extension";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.unixcision.uniconnect.examples.sidebar$(CMUX_BUNDLE_ID_SUFFIX).Extension";
 				PRODUCT_NAME = "CMUX ExtKit Sample Sidebar Extension";
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;

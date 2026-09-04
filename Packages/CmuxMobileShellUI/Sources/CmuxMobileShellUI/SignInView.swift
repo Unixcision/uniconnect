@@ -442,7 +442,7 @@ struct SignInView: View {
                 .frame(width: 28, height: 28)
                 .accessibilityHidden(true)
 
-            Text(L10n.string("mobile.signIn.title", defaultValue: "cmux"))
+            Text(L10n.string("mobile.signIn.title", defaultValue: "UniConnect"))
                 .font(.title2)
                 .fontWeight(.semibold)
                 .foregroundStyle(.primary)

@@ -12,7 +12,7 @@ import Foundation
 ///
 /// ```swift
 /// let stream = QRCodeScanStream()
-/// stream.yield("cmux-ios://example")
+/// stream.yield("uniconnect://example")
 /// stream.finish()
 /// ```
 public struct QRCodeScanStream: Sendable {

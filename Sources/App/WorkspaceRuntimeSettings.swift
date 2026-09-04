@@ -95,7 +95,7 @@ enum PaneFirstClickFocusSettings {
 enum TerminalScrollBarSettings {
     static let showScrollBarKey = "terminal.showScrollBar"
     static let defaultShowScrollBar = true
-    static let didChangeNotification = Notification.Name("cmux.terminalScrollBarSettingsDidChange")
+    static let didChangeNotification = Notification.Name("uniconnect.terminalScrollBarSettingsDidChange")
 
     static func isVisible(defaults: UserDefaults = .standard) -> Bool {
         if defaults.object(forKey: showScrollBarKey) == nil {
@@ -148,7 +148,7 @@ enum TerminalTextBoxInputSettings {
 enum TerminalCopyOnSelectSettings {
     static let copyOnSelectKey = "terminal.copyOnSelect"
     static let defaultCopyOnSelect = false
-    static let didChangeNotification = Notification.Name("cmux.terminalCopyOnSelectSettingsDidChange")
+    static let didChangeNotification = Notification.Name("uniconnect.terminalCopyOnSelectSettingsDidChange")
 
     static func isEnabled(defaults: UserDefaults = .standard) -> Bool {
         storedValue(defaults: defaults) ?? defaultCopyOnSelect
@@ -212,7 +212,7 @@ enum TerminalManagedGhosttySettings {
 enum AgentSessionAutoResumeSettings {
     static let autoResumeAgentSessionsKey = "terminal.autoResumeAgentSessions"
     static let defaultAutoResumeAgentSessions = true
-    static let didChangeNotification = Notification.Name("cmux.agentSessionAutoResumeSettingsDidChange")
+    static let didChangeNotification = Notification.Name("uniconnect.agentSessionAutoResumeSettingsDidChange")
 
     static func isEnabled(defaults: UserDefaults = .standard) -> Bool {
         guard defaults.object(forKey: autoResumeAgentSessionsKey) != nil else {
@@ -271,7 +271,7 @@ enum AgentHibernationSettings {
     static let defaultIdleSeconds: TimeInterval = 5
     static let defaultMaxLiveTerminals = 12
     static let defaultConfirmationSeconds: TimeInterval = 60
-    static let didChangeNotification = Notification.Name("cmux.agentHibernationSettingsDidChange")
+    static let didChangeNotification = Notification.Name("uniconnect.agentHibernationSettingsDidChange")
 
     static func values(defaults: UserDefaults = .standard) -> Values {
         Values(

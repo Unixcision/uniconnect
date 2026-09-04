@@ -9,7 +9,6 @@ import { recordSpanError, setSpanAttributes, withApiRouteSpan } from "../../../s
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const feedbackRecipient = "feedback@manaflow.com";
 const maxAttachmentCount = 10;
 const maxAttachmentBytes = 4 * 1024 * 1024;
 // Keep multipart requests below Vercel Functions' 4.5 MB request-body limit.
@@ -55,7 +54,10 @@ export async function POST(request: Request) {
   return withApiRouteSpan(
     request,
     "/api/feedback",
-    { "cmux.subsystem": "feedback", "cmux.feedback.operation": "send" },
+    {
+      "uniconnect.subsystem": "feedback",
+      "uniconnect.feedback.operation": "send",
+    },
     async (span): Promise<Response> => {
       const feedbackConfig = resolveFeedbackConfig();
       if (!feedbackConfig) {
@@ -68,7 +70,9 @@ export async function POST(request: Request) {
           { request },
         );
 
-        setSpanAttributes(span, { "cmux.rate_limited": rateLimited || error === "blocked" });
+        setSpanAttributes(span, {
+          "uniconnect.rate_limited": rateLimited || error === "blocked",
+        });
         if (rateLimited || error === "blocked") {
           return jsonError("Rate limit exceeded", 429);
         }
@@ -110,8 +114,8 @@ export async function POST(request: Request) {
         return jsonError("Invalid feedback payload", 400);
       }
       setSpanAttributes(span, {
-        "cmux.feedback.message_length": parsed.data.message.length,
-        "cmux.feedback.app_version_set": parsed.data.appVersion.length > 0,
+        "uniconnect.feedback.message_length": parsed.data.message.length,
+        "uniconnect.feedback.app_version_set": parsed.data.appVersion.length > 0,
       });
 
       const attachmentsResult = await prepareAttachments(
@@ -128,14 +132,17 @@ export async function POST(request: Request) {
       const subject = buildSubject(email, message, appVersion);
       const attachments = attachmentsResult.attachments;
       setSpanAttributes(span, {
-        "cmux.feedback.attachment_count": attachments.length,
-        "cmux.feedback.attachment_bytes": attachments.reduce((sum, attachment) => sum + attachment.size, 0),
+        "uniconnect.feedback.attachment_count": attachments.length,
+        "uniconnect.feedback.attachment_bytes": attachments.reduce(
+          (sum, attachment) => sum + attachment.size,
+          0,
+        ),
       });
       const resend = new Resend(feedbackConfig.resendApiKey);
 
       const { error } = await resend.emails.send({
-        from: `Manaflow <${feedbackConfig.fromEmail}>`,
-        to: [feedbackRecipient],
+        from: `UniConnect <${feedbackConfig.fromEmail}>`,
+        to: [feedbackConfig.toEmail],
         replyTo: email,
         subject,
         text: buildTextBody({
@@ -197,16 +204,18 @@ export async function POST(request: Request) {
 
 function resolveFeedbackConfig() {
   const resendApiKey = env.RESEND_API_KEY;
-  const fromEmail = env.CMUX_FEEDBACK_FROM_EMAIL;
-  const rateLimitId = env.CMUX_FEEDBACK_RATE_LIMIT_ID;
+  const fromEmail = env.UNICONNECT_FEEDBACK_FROM_EMAIL;
+  const toEmail = env.UNICONNECT_FEEDBACK_TO_EMAIL;
+  const rateLimitId = env.UNICONNECT_FEEDBACK_RATE_LIMIT_ID;
 
-  if (!resendApiKey || !fromEmail || !rateLimitId) {
+  if (!resendApiKey || !fromEmail || !toEmail || !rateLimitId) {
     return null;
   }
 
   return {
     resendApiKey,
     fromEmail,
+    toEmail,
     rateLimitId,
   };
 }
@@ -216,7 +225,9 @@ function getString(formData: FormData, key: string) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-async function prepareAttachments(values: FormDataEntryValue[]): Promise<PrepareAttachmentsResult> {
+async function prepareAttachments(
+  values: FormDataEntryValue[],
+): Promise<PrepareAttachmentsResult> {
   const files = values.filter(
     (value): value is File => value instanceof File && value.name.length > 0,
   );
@@ -273,7 +284,7 @@ function buildSubject(email: string, message: string, appVersion: string) {
       : firstNonEmptyLine;
   const versionSuffix = appVersion ? ` (v${appVersion})` : "";
 
-  return `cmux feedback from ${email}${versionSuffix}: ${summary}`;
+  return `UniConnect feedback from ${email}${versionSuffix}: ${summary}`;
 }
 
 function buildTextBody(input: {
@@ -353,7 +364,7 @@ function buildHtmlBody(input: {
 
   return `
     <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111827;line-height:1.5">
-      <h1 style="font-size:18px;margin:0 0 16px">cmux feedback</h1>
+      <h1 style="font-size:18px;margin:0 0 16px">UniConnect feedback</h1>
       <p><strong>From:</strong> ${escapeHtml(input.email)}</p>
       <p><strong>App version:</strong> ${escapeHtml(input.appVersion || "unknown")}</p>
       <p><strong>App build:</strong> ${escapeHtml(input.appBuild || "unknown")}</p>

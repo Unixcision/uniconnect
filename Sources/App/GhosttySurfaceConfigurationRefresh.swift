@@ -1,9 +1,9 @@
 @MainActor
 enum GhosttySurfaceConfigurationRefresh {
     nonisolated static let forceRefreshReason = "appDelegate.refreshAfterGhosttyConfigReload"
-    nonisolated static let cmuxThemeReloadLegacySource = "distributed.cmux.themes"
-    nonisolated static let cmuxThemeReloadPreviewSource = "distributed.cmux.themes.preview"
-    nonisolated static let cmuxThemeReloadFinalSource = "distributed.cmux.themes.final"
+    nonisolated static let cmuxThemeReloadLegacySource = "distributed.uniconnect.themes"
+    nonisolated static let cmuxThemeReloadPreviewSource = "distributed.uniconnect.themes.preview"
+    nonisolated static let cmuxThemeReloadFinalSource = "distributed.uniconnect.themes.final"
     nonisolated static let cmuxThemePreviewReloadDebounceMilliseconds = 180
 
     nonisolated static func cmuxThemeReloadSource(phase: String?) -> String {

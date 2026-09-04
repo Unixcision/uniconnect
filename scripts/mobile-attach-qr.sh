@@ -116,7 +116,7 @@ if (routes.length === 0) {
 payload.ticket.routes = routes;
 payload.routes = routes;
 const encodedPayload = Buffer.from(JSON.stringify(payload.ticket)).toString("base64url");
-payload.attach_url = `cmux-ios://attach?v=${payload.ticket.version || 1}&payload=${encodedPayload}`;
+payload.attach_url = `uniconnect://attach?v=${payload.ticket.version || 1}&payload=${encodedPayload}`;
 
 let qrSVG = "";
 try {

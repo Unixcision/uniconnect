@@ -77,9 +77,9 @@ cmux omo --model claude-sonnet-4-6`}</CodeBlock>
           </tr>
         </thead>
         <tbody>
-          <tr><td><code>~/.cmuxterm/omo-bin/</code></td><td>{t("dirShim")}</td></tr>
-          <tr><td><code>~/.cmuxterm/omo-config/</code></td><td>{t("dirShadow")}</td></tr>
-          <tr><td><code>~/.cmuxterm/tmux-compat-store.json</code></td><td>{t("dirStore")}</td></tr>
+          <tr><td><code>~/.uniconnect/omo-bin/</code></td><td>{t("dirShim")}</td></tr>
+          <tr><td><code>~/.uniconnect/omo-config/</code></td><td>{t("dirShadow")}</td></tr>
+          <tr><td><code>~/.uniconnect/tmux-compat-store.json</code></td><td>{t("dirStore")}</td></tr>
         </tbody>
       </table>
 

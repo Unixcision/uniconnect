@@ -4,6 +4,7 @@ export const MAX_PUSH_TITLE_CHARS = 120;
 export const MAX_PUSH_SUBTITLE_CHARS = 120;
 export const MAX_PUSH_BODY_CHARS = 500;
 export const MAX_PUSH_ID_CHARS = 200;
+export const MAX_PUSH_LOCALE_CHARS = 35;
 export const MAX_PUSH_REQUEST_BYTES = 8 * 1024;
 
 export type ApnsBundlePolicy = {
@@ -18,6 +19,7 @@ export type PushPayload = {
   readonly workspaceId: string | null;
   readonly surfaceId: string | null;
   readonly hideContent: boolean;
+  readonly locale: string | null;
 };
 
 export type PushPayloadResult =
@@ -28,8 +30,12 @@ export type JsonObjectResult =
   | { readonly ok: true; readonly value: Record<string, unknown> }
   | { readonly ok: false; readonly error: "invalid_json" | "request_too_large" };
 
-const DEV_TAGGED_BUNDLE_ID = /^dev\.cmux\.ios\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
-const PROD_BUNDLE_IDS = new Set(["com.cmuxterm.app", "dev.cmux.app.beta"]);
+const DEV_TAGGED_BUNDLE_ID =
+  /^com\.unixcision\.uniconnect\.ios\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const PROD_BUNDLE_IDS = new Set([
+  "com.unixcision.uniconnect.ios",
+  "com.unixcision.uniconnect.ios.beta",
+]);
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -58,12 +64,14 @@ export function parsePushPayload(body: Record<string, unknown>): PushPayloadResu
   const text = boundedString(body.body, MAX_PUSH_BODY_CHARS);
   const workspaceId = body.workspaceId == null ? "" : boundedString(body.workspaceId, MAX_PUSH_ID_CHARS);
   const surfaceId = body.surfaceId == null ? "" : boundedString(body.surfaceId, MAX_PUSH_ID_CHARS);
+  const locale = body.locale == null ? "" : boundedString(body.locale, MAX_PUSH_LOCALE_CHARS);
 
   if (title == null) return { ok: false, error: "title_too_long" };
   if (subtitle == null) return { ok: false, error: "subtitle_too_long" };
   if (text == null) return { ok: false, error: "body_too_long" };
   if (workspaceId == null) return { ok: false, error: "workspace_id_too_long" };
   if (surfaceId == null) return { ok: false, error: "surface_id_too_long" };
+  if (locale == null) return { ok: false, error: "locale_too_long" };
   if (!title && !text) return { ok: false, error: "empty_notification" };
 
   return {
@@ -75,6 +83,7 @@ export function parsePushPayload(body: Record<string, unknown>): PushPayloadResu
       workspaceId: workspaceId || null,
       surfaceId: surfaceId || null,
       hideContent: body.hideContent === true,
+      locale: locale || null,
     },
   };
 }

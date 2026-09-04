@@ -128,7 +128,22 @@ export const shortcutCategories: ShortcutCategory[] = [
       { id: "nextSurface", combos: [["⌘", "⇧", "]"]], description: { en: "Next surface", ja: "次のサーフェス" } },
       { id: "prevSurface", combos: [["⌘", "⇧", "["]], description: { en: "Previous surface", ja: "前のサーフェス" } },
       { id: "selectSurfaceByNumber", combos: [["⌃", "1…9"]], description: { en: "Select surface 1…9", ja: "サーフェス1…9を選択" } },
-      { id: "renameTab", combos: [["⌘", "R"]], description: { en: "Rename tab", ja: "タブ名を変更" } },
+      {
+        id: "renameTab",
+        combos: [],
+        description: { en: "Rename window", ja: "ウインドウ名を変更" },
+        note: { en: "unbound by default", ja: "デフォルトでは未割り当て" },
+      },
+      {
+        id: "reconnectFocusedSSHWindow",
+        combos: [["⌘", "R"]],
+        description: { en: "Reconnect this SSH window now", ja: "このSSHウインドウを今すぐ再接続" },
+      },
+      {
+        id: "reconnectDroppedWindows",
+        combos: [["⌃", "⌘", "R"]],
+        description: { en: "Reconnect SSH windows now", ja: "すべてのSSHウインドウを今すぐ再接続" },
+      },
       { id: "closeTab", combos: [["⌘", "W"]], description: { en: "Close tab", ja: "タブを閉じる" } },
       { id: "closeOtherTabsInPane", combos: [["⌥", "⌘", "T"]], description: { en: "Close other tabs in pane", ja: "ペイン内の他のタブを閉じる" } },
       { id: "reopenClosedBrowserPanel", combos: [["⌘", "⇧", "T"]], description: { en: "Reopen last closed", ja: "最後に閉じた項目を再度開く" } },

@@ -9,7 +9,8 @@ extension TerminalController {
         switch method {
         case "vm.list":
             return v2VmCall(id: id) {
-                let items = try await VMClient.shared.list()
+                let client = try await VMClient.configuredClient()
+                let items = try await client.list()
                 return [
                     "vms": items.map { ["id": $0.id, "provider": $0.provider, "image": $0.image, "createdAt": $0.createdAt] as [String: Any] },
                 ]
@@ -26,7 +27,8 @@ extension TerminalController {
                 )
             }
             return v2VmCall(id: id) {
-                let vm = try await VMClient.shared.create(image: image, provider: provider, idempotencyKey: idempotencyKey)
+                let client = try await VMClient.configuredClient()
+                let vm = try await client.create(image: image, provider: provider, idempotencyKey: idempotencyKey)
                 return ["id": vm.id, "provider": vm.provider, "image": vm.image, "createdAt": vm.createdAt]
             }
         case "vm.destroy":
@@ -34,7 +36,8 @@ extension TerminalController {
                 return v2Error(id: id, code: "invalid_params", message: "vm.destroy requires `id`. Run `cmux vm ls` to find one, then `cmux vm rm <id>`.")
             }
             return v2VmCall(id: id) {
-                try await VMClient.shared.destroy(id: vmId)
+                let client = try await VMClient.configuredClient()
+                try await client.destroy(id: vmId)
                 return ["ok": true]
             }
         case "vm.exec":
@@ -46,7 +49,8 @@ extension TerminalController {
             }
             let timeoutMs = max(1, Self.socketWorkerInt(params["timeout_ms"]) ?? 30_000)
             return v2VmCall(id: id) {
-                let result = try await VMClient.shared.exec(id: vmId, command: command, timeoutMs: timeoutMs)
+                let client = try await VMClient.configuredClient()
+                let result = try await client.exec(id: vmId, command: command, timeoutMs: timeoutMs)
                 return ["exit_code": result.exitCode, "stdout": result.stdout, "stderr": result.stderr]
             }
         case "vm.ssh_info":
@@ -54,7 +58,8 @@ extension TerminalController {
                 return v2Error(id: id, code: "invalid_params", message: "vm.ssh_info requires `id`. Run `cmux vm ls` to find one.")
             }
             return v2VmCall(id: id) {
-                let endpoint = try await VMClient.shared.openSSH(id: vmId)
+                let client = try await VMClient.configuredClient()
+                let endpoint = try await client.openSSH(id: vmId)
                 return Self.socketWorkerSSHInfoPayload(endpoint)
             }
         case "vm.attach_info":
@@ -65,7 +70,8 @@ extension TerminalController {
                 ?? Self.socketWorkerBool(params["requireDaemon"])
                 ?? false
             return v2VmCall(id: id) {
-                let endpoint = try await VMClient.shared.openAttach(id: vmId, requireDaemon: requireDaemon)
+                let client = try await VMClient.configuredClient()
+                let endpoint = try await client.openAttach(id: vmId, requireDaemon: requireDaemon)
                 return Self.socketWorkerAttachInfoPayload(endpoint)
             }
         default:

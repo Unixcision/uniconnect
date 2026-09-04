@@ -16,7 +16,7 @@ extension CMUXCLI {
         let configDirResolver: (@Sendable () -> String)?
         let sessionStoreSuffix: String // e.g. "cursor" -> ~/.uniconnect/cursor-hook-sessions.json
         let disableEnvVar: String   // e.g. "CMUX_CURSOR_HOOKS_DISABLED"
-        let hookMarker: String      // Marker in commands: "cmux hooks cursor"
+        let hookMarker: String      // UniConnect ownership marker embedded in generated commands
         let binaryName: String
         let format: HookFormat
         let events: [HookEvent]
@@ -48,7 +48,7 @@ extension CMUXCLI {
         let postInstallAction: PostInstallAction?
         /// Optional CLI note printed after a successful install (or
         /// "already up to date") to guide a required activation step — e.g.
-        /// Kiro applies its hooks only when run as the `cmux` agent.
+        /// Kiro applies its hooks only when run as the `uniconnect` agent.
         let postInstallNote: String?
 
         enum HookFormat {
@@ -158,7 +158,7 @@ extension CMUXCLI {
             name: "codex", displayName: "Codex", statusKey: "codex",
             configDir: ".codex", configFile: "hooks.json", configDirEnvOverride: "CODEX_HOME",
             sessionStoreSuffix: "codex", disableEnvVar: "CMUX_CODEX_HOOKS_DISABLED",
-            hookMarker: "cmux hooks codex", format: .nested(timeoutMs: 5000),
+            hookMarker: "uniconnect-agent-hook-v1:codex", format: .nested(timeoutMs: 5000),
             events: [
                 .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
                 .init(agentEvent: "UserPromptSubmit", cmuxSubcommand: "prompt-submit"),
@@ -169,11 +169,11 @@ extension CMUXCLI {
         ),
         AgentHookDef(
             name: "grok", displayName: "Grok", statusKey: "grok",
-            configDir: ".grok/hooks", configFile: "cmux-session.json",
+            configDir: ".grok/hooks", configFile: "uniconnect-session.json",
             configDirEnvOverride: "GROK_HOME", configDirEnvOverrideSubpath: "hooks",
             createConfigDirIfMissing: true,
             sessionStoreSuffix: "grok", disableEnvVar: "CMUX_GROK_HOOKS_DISABLED",
-            hookMarker: "cmux hooks grok", format: .nested(timeoutMs: 5000),
+            hookMarker: "uniconnect-agent-hook-v1:grok", format: .nested(timeoutMs: 5000),
             events: [
                 .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
                 .init(agentEvent: "UserPromptSubmit", cmuxSubcommand: "prompt-submit"),
@@ -187,39 +187,39 @@ extension CMUXCLI {
         ),
         AgentHookDef(
             name: "opencode", displayName: "OpenCode", statusKey: "opencode",
-            configDir: ".config/opencode", configFile: "plugins/cmux-session.js", configDirEnvOverride: "OPENCODE_CONFIG_DIR",
+            configDir: ".config/opencode", configFile: "plugins/uniconnect-session.js", configDirEnvOverride: "OPENCODE_CONFIG_DIR",
             sessionStoreSuffix: "opencode", disableEnvVar: "CMUX_OPENCODE_HOOKS_DISABLED",
-            hookMarker: "cmux hooks opencode", format: .flat,
+            hookMarker: "uniconnect-agent-hook-v1:opencode", format: .flat,
             events: []
         ),
         AgentHookDef(
             name: "pi", displayName: "Pi", statusKey: "pi",
-            configDir: ".pi/agent", configFile: "extensions/cmux-session.ts", configDirEnvOverride: "PI_CODING_AGENT_DIR",
+            configDir: ".pi/agent", configFile: "extensions/uniconnect-session.ts", configDirEnvOverride: "PI_CODING_AGENT_DIR",
             sessionStoreSuffix: "pi", disableEnvVar: "CMUX_PI_HOOKS_DISABLED",
-            hookMarker: "cmux hooks pi", format: .flat,
+            hookMarker: "uniconnect-agent-hook-v1:pi", format: .flat,
             events: []
         ),
         AgentHookDef(
             name: "omp", displayName: "OMP", statusKey: "omp",
-            configDir: ".omp/agent", configFile: "extensions/cmux-omp-session.ts",
+            configDir: ".omp/agent", configFile: "extensions/uniconnect-omp-session.ts",
             createConfigDirIfMissing: true,
             configDirResolver: { CMUXCLI.resolvedOmpAgentDirectory().path },
             sessionStoreSuffix: "omp", disableEnvVar: "CMUX_OMP_HOOKS_DISABLED",
-            hookMarker: "cmux hooks omp", format: .flat,
+            hookMarker: "uniconnect-agent-hook-v1:omp", format: .flat,
             events: []
         ),
         AgentHookDef(
             name: "amp", displayName: "Amp", statusKey: "amp",
-            configDir: ".config/amp", configFile: "plugins/cmux-session.ts",
+            configDir: ".config/amp", configFile: "plugins/uniconnect-session.ts",
             sessionStoreSuffix: "amp", disableEnvVar: "CMUX_AMP_HOOKS_DISABLED",
-            hookMarker: "cmux hooks amp", format: .flat,
+            hookMarker: "uniconnect-agent-hook-v1:amp", format: .flat,
             events: []
         ),
         AgentHookDef(
             name: "cursor", displayName: "Cursor", statusKey: "cursor",
             configDir: ".cursor", configFile: "hooks.json", binaryName: "cursor-agent",
             sessionStoreSuffix: "cursor", disableEnvVar: "CMUX_CURSOR_HOOKS_DISABLED",
-            hookMarker: "cmux hooks cursor", format: .flat,
+            hookMarker: "uniconnect-agent-hook-v1:cursor", format: .flat,
             events: [
                 .init(agentEvent: "beforeSubmitPrompt", cmuxSubcommand: "prompt-submit"),
                 .init(agentEvent: "stop", cmuxSubcommand: "stop"),
@@ -233,7 +233,7 @@ extension CMUXCLI {
             name: "gemini", displayName: "Gemini", statusKey: "gemini",
             configDir: ".gemini", configFile: "settings.json",
             sessionStoreSuffix: "gemini", disableEnvVar: "CMUX_GEMINI_HOOKS_DISABLED",
-            hookMarker: "cmux hooks gemini", format: .nested(timeoutMs: 10000),
+            hookMarker: "uniconnect-agent-hook-v1:gemini", format: .nested(timeoutMs: 10000),
             events: [
                 .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
                 .init(agentEvent: "BeforeAgent", cmuxSubcommand: "prompt-submit"),
@@ -248,7 +248,7 @@ extension CMUXCLI {
             configDirEnvOverride: "KIRO_HOME", configDirEnvOverrideSubpath: "agents",
             createConfigDirIfMissing: true, binaryName: "kiro-cli",
             sessionStoreSuffix: "kiro", disableEnvVar: "CMUX_KIRO_HOOKS_DISABLED",
-            hookMarker: "cmux hooks kiro", format: .kiroAgentJSON(timeoutMs: 5000),
+            hookMarker: "uniconnect-agent-hook-v1:kiro", format: .kiroAgentJSON(timeoutMs: 5000),
             events: [
                 .init(agentEvent: "agentSpawn", cmuxSubcommand: "session-start"),
                 .init(agentEvent: "userPromptSubmit", cmuxSubcommand: "prompt-submit"),
@@ -257,7 +257,7 @@ extension CMUXCLI {
             feedHookEvents: ["preToolUse", "postToolUse"],
             postInstallNote: String(
                 localized: "cli.hooks.kiro.postInstallNote",
-                defaultValue: "Kiro applies these hooks only when run as the cmux agent. Start Kiro with `kiro-cli chat --agent cmux`, or make it the default with `kiro-cli settings chat.defaultAgent cmux`."
+                defaultValue: "Kiro applies these hooks only when run as the UniConnect agent. Start Kiro with `kiro-cli chat --agent uniconnect`, or make it the default with `kiro-cli settings chat.defaultAgent uniconnect`."
             )
         ),
         AgentHookDef(
@@ -265,7 +265,7 @@ extension CMUXCLI {
             configDir: ".gemini/config", configFile: "hooks.json",
             createConfigDirIfMissing: true, binaryName: "agy",
             sessionStoreSuffix: "antigravity", disableEnvVar: "CMUX_ANTIGRAVITY_HOOKS_DISABLED",
-            hookMarker: "cmux hooks antigravity", format: .antigravityJSON(timeoutSeconds: 10),
+            hookMarker: "uniconnect-agent-hook-v1:antigravity", format: .antigravityJSON(timeoutSeconds: 10),
             events: [
                 .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
                 .init(agentEvent: "PreInvocation", cmuxSubcommand: "prompt-submit"),
@@ -282,7 +282,7 @@ extension CMUXCLI {
             name: "rovodev", displayName: "Rovo Dev", statusKey: "rovodev",
             configDir: ".rovodev", configFile: "config.yml", binaryName: "acli",
             sessionStoreSuffix: "rovodev", disableEnvVar: "CMUX_ROVODEV_HOOKS_DISABLED",
-            hookMarker: "cmux hooks rovodev", format: .rovoDevYAML,
+            hookMarker: "uniconnect-agent-hook-v1:rovodev", format: .rovoDevYAML,
             events: [
                 .init(agentEvent: "on_complete", cmuxSubcommand: "stop"),
                 .init(agentEvent: "on_error", cmuxSubcommand: "stop"),
@@ -295,7 +295,7 @@ extension CMUXCLI {
             configDir: ".hermes", configFile: "config.yaml", configDirEnvOverride: "HERMES_HOME",
             binaryName: "hermes",
             sessionStoreSuffix: "hermes-agent", disableEnvVar: "CMUX_HERMES_AGENT_HOOKS_DISABLED",
-            hookMarker: "cmux hooks hermes-agent", format: .hermesAgentYAML,
+            hookMarker: "uniconnect-agent-hook-v1:hermes-agent", format: .hermesAgentYAML,
             events: [
                 .init(agentEvent: "on_session_start", cmuxSubcommand: "session-start"),
                 .init(agentEvent: "pre_llm_call", cmuxSubcommand: "prompt-submit"),
@@ -313,7 +313,7 @@ extension CMUXCLI {
             name: "copilot", displayName: "Copilot", statusKey: "copilot",
             configDir: ".copilot", configFile: "config.json", configDirEnvOverride: "COPILOT_HOME",
             sessionStoreSuffix: "copilot", disableEnvVar: "CMUX_COPILOT_HOOKS_DISABLED",
-            hookMarker: "cmux hooks copilot", format: .nested(timeoutMs: 5000),
+            hookMarker: "uniconnect-agent-hook-v1:copilot", format: .nested(timeoutMs: 5000),
             events: [
                 .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
                 .init(agentEvent: "Stop", cmuxSubcommand: "stop"),
@@ -326,7 +326,7 @@ extension CMUXCLI {
             name: "codebuddy", displayName: "CodeBuddy", statusKey: "codebuddy",
             configDir: ".codebuddy", configFile: "settings.json", configDirEnvOverride: "CODEBUDDY_CONFIG_DIR",
             sessionStoreSuffix: "codebuddy", disableEnvVar: "CMUX_CODEBUDDY_HOOKS_DISABLED",
-            hookMarker: "cmux hooks codebuddy", format: .nested(timeoutMs: 5000),
+            hookMarker: "uniconnect-agent-hook-v1:codebuddy", format: .nested(timeoutMs: 5000),
             events: [
                 .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
                 .init(agentEvent: "Stop", cmuxSubcommand: "stop"),
@@ -339,7 +339,7 @@ extension CMUXCLI {
             name: "factory", displayName: "Factory", statusKey: "factory",
             configDir: ".factory", configFile: "settings.json", binaryName: "droid",
             sessionStoreSuffix: "factory", disableEnvVar: "CMUX_FACTORY_HOOKS_DISABLED",
-            hookMarker: "cmux hooks factory", format: .nested(timeoutMs: 5000),
+            hookMarker: "uniconnect-agent-hook-v1:factory", format: .nested(timeoutMs: 5000),
             events: [
                 .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
                 .init(agentEvent: "Stop", cmuxSubcommand: "stop"),
@@ -352,7 +352,7 @@ extension CMUXCLI {
             name: "qoder", displayName: "Qoder", statusKey: "qoder",
             configDir: ".qoder", configFile: "settings.json", configDirEnvOverride: "QODER_CONFIG_DIR", binaryName: "qodercli",
             sessionStoreSuffix: "qoder", disableEnvVar: "CMUX_QODER_HOOKS_DISABLED",
-            hookMarker: "cmux hooks qoder", format: .nested(timeoutMs: 5000),
+            hookMarker: "uniconnect-agent-hook-v1:qoder", format: .nested(timeoutMs: 5000),
             events: [
                 .init(agentEvent: "SessionStart", cmuxSubcommand: "session-start"),
                 .init(agentEvent: "Stop", cmuxSubcommand: "stop"),
@@ -383,20 +383,24 @@ extension CMUXCLI {
         }
     }
 
-    private static let grokPinnedHookMarker = "cmux-grok-hook-v2"
-    private static let antigravityPinnedHookMarker = "cmux-antigravity-hook-v2"
+    private static let grokPinnedHookMarker = "uniconnect-grok-hook-v2"
+    private static let antigravityPinnedHookMarker = "uniconnect-antigravity-hook-v2"
 
     private static func agentHookShellCommand(_ command: String, for def: AgentHookDef) -> String {
         if usesPinnedHookDispatch(def) {
             return pinnedAgentHookShellCommand(command, for: def)
         }
-        let routedArguments = command.hasPrefix("cmux ") ? String(command.dropFirst("cmux ".count)) : command
-        return "cmux_cli=\"${CMUX_BUNDLED_CLI_PATH:-}\"; if [ -z \"$cmux_cli\" ] || [ ! -x \"$cmux_cli\" ]; then cmux_cli=\"$(command -v cmux 2>/dev/null || true)\"; fi; if [ -n \"$CMUX_SURFACE_ID\" ] && [ \"$\(def.disableEnvVar)\" != \"1\" ] && [ -n \"$cmux_cli\" ]; then { if [ -n \"${CMUX_SOCKET_PATH:-}\" ]; then \"$cmux_cli\" --socket \"$CMUX_SOCKET_PATH\" \(routedArguments); else \"$cmux_cli\" \(routedArguments); fi; } || echo '{}'; else echo '{}'; fi"
+        let routedArguments = routedAgentHookArguments(command)
+        return ": '\(def.hookMarker)'; cmux_cli=\"${CMUX_BUNDLED_CLI_PATH:-}\"; if [ -z \"$cmux_cli\" ] || [ ! -x \"$cmux_cli\" ]; then cmux_cli=\"$(command -v cmux 2>/dev/null || true)\"; fi; if [ -n \"$CMUX_SURFACE_ID\" ] && [ \"$\(def.disableEnvVar)\" != \"1\" ] && [ -n \"$cmux_cli\" ]; then { if [ -n \"${CMUX_SOCKET_PATH:-}\" ]; then \"$cmux_cli\" --socket \"$CMUX_SOCKET_PATH\" \(routedArguments); else \"$cmux_cli\" \(routedArguments); fi; } || echo '{}'; else echo '{}'; fi"
     }
 
     private static func exitTwoPropagatingAgentHookShellCommand(_ command: String, for def: AgentHookDef) -> String {
-        let routedArguments = command.hasPrefix("cmux ") ? String(command.dropFirst("cmux ".count)) : command
-        return "cmux_cli=\"${CMUX_BUNDLED_CLI_PATH:-}\"; if [ -z \"$cmux_cli\" ] || [ ! -x \"$cmux_cli\" ]; then cmux_cli=\"$(command -v cmux 2>/dev/null || true)\"; fi; if [ -n \"$CMUX_SURFACE_ID\" ] && [ \"$\(def.disableEnvVar)\" != \"1\" ] && [ -n \"$cmux_cli\" ]; then if [ -n \"${CMUX_SOCKET_PATH:-}\" ]; then \"$cmux_cli\" --socket \"$CMUX_SOCKET_PATH\" \(routedArguments); else \"$cmux_cli\" \(routedArguments); fi; status=$?; if [ \"$status\" -eq 2 ]; then exit 2; fi; if [ \"$status\" -ne 0 ]; then echo '{}'; fi; else echo '{}'; fi"
+        let routedArguments = routedAgentHookArguments(command)
+        return ": '\(def.hookMarker)'; cmux_cli=\"${CMUX_BUNDLED_CLI_PATH:-}\"; if [ -z \"$cmux_cli\" ] || [ ! -x \"$cmux_cli\" ]; then cmux_cli=\"$(command -v cmux 2>/dev/null || true)\"; fi; if [ -n \"$CMUX_SURFACE_ID\" ] && [ \"$\(def.disableEnvVar)\" != \"1\" ] && [ -n \"$cmux_cli\" ]; then if [ -n \"${CMUX_SOCKET_PATH:-}\" ]; then \"$cmux_cli\" --socket \"$CMUX_SOCKET_PATH\" \(routedArguments); else \"$cmux_cli\" \(routedArguments); fi; status=$?; if [ \"$status\" -eq 2 ]; then exit 2; fi; if [ \"$status\" -ne 0 ]; then echo '{}'; fi; else echo '{}'; fi"
+    }
+
+    private static func routedAgentHookArguments(_ command: String) -> String {
+        command.hasPrefix("cmux ") ? String(command.dropFirst("cmux ".count)) : command
     }
 
     private static func usesPinnedHookDispatch(_ def: AgentHookDef) -> Bool {
@@ -408,7 +412,7 @@ extension CMUXCLI {
     }
 
     private static func pinnedAgentHookShellCommand(_ command: String, for def: AgentHookDef) -> String {
-        let routedArguments = command.hasPrefix("cmux ") ? String(command.dropFirst("cmux ".count)) : command
+        let routedArguments = routedAgentHookArguments(command)
         let socketPath = pinnedAgentHookSocketPath()
         let shellTraceStart = pinnedHookShellTraceCommand(
             agentName: def.name,
@@ -535,7 +539,7 @@ extension CMUXCLI {
             return "/tmp/uniconnect-debug.log"
         }
         let socketName = URL(fileURLWithPath: socketPath).lastPathComponent
-        if socketName.hasPrefix("cmux-debug-"), socketName.hasSuffix(".sock") {
+        if socketName.hasPrefix("uniconnect-debug-"), socketName.hasSuffix(".sock") {
             return URL(fileURLWithPath: "/tmp", isDirectory: true)
                 .appendingPathComponent(String(socketName.dropLast(".sock".count)) + ".log")
                 .path
@@ -555,147 +559,20 @@ extension CMUXCLI {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    static func isCmuxOwnedHookCommand(_ command: String, for def: AgentHookDef, includeLegacy: Bool = true) -> Bool {
+    static func isUniConnectOwnedHookCommand(_ command: String, for def: AgentHookDef) -> Bool {
         if usesPinnedHookDispatch(def), command.contains(pinnedHookMarker(for: def)) {
             return true
         }
-        if def.events.contains(where: { hookCommandString(for: def, event: $0) == command })
-            || def.feedHookEvents.contains(where: { feedHookCommandString(for: def, agentEvent: $0) == command })
-        {
-            return true
-        }
-        return includeLegacy && isLegacyCmuxOwnedHookCommand(command, for: def)
-    }
-
-    private static func isLegacyCmuxOwnedHookCommand(_ command: String, for def: AgentHookDef) -> Bool {
-        // Codex also had older top-level codex-hook/feed-hook commands.
-        // Other generic agents can have stale `cmux hooks ...` files from
-        // earlier integration attempts, and setup should be able to prune them.
-        return legacyCmuxCommandTokenLists(from: command, for: def).contains { tokens in
-            isLegacyCmuxOwnedHookTokens(tokens, for: def)
-        }
-    }
-
-    private static func isLegacyCmuxOwnedHookTokens(_ tokens: [String], for def: AgentHookDef) -> Bool {
-        guard !tokens.isEmpty,
-              URL(fileURLWithPath: tokens[0]).lastPathComponent == "cmux"
-        else {
-            return false
-        }
-
-        if def.name == "codex", tokens.count >= 2, tokens[1] == "codex-hook" {
-            return true
-        }
-        if def.name == "codex",
-           tokens.count >= 4,
-           tokens[1] == "feed-hook",
-           tokens[2] == "--source",
-           tokens[3] == def.name {
-            return true
-        }
-        if tokens.count >= 3, tokens[1] == "hooks", tokens[2] == def.name {
-            return true
-        }
-        if tokens.count >= 5,
-           tokens[1] == "hooks",
-           tokens[2] == "feed",
-           tokens[3] == "--source",
-           tokens[4] == def.name {
-            return true
-        }
-        return false
-    }
-
-    private static func legacyCmuxCommandTokenLists(from command: String, for def: AgentHookDef) -> [[String]] {
-        if let bundledTokens = bundledCLICmuxCommandTokenLists(from: command), !bundledTokens.isEmpty {
-            return bundledTokens
-        }
-
-        let guardedPrefixes = [
-            "[ -n \"$CMUX_SURFACE_ID\" ] && [ \"$\(def.disableEnvVar)\" != \"1\" ] && command -v cmux >/dev/null 2>&1 && ",
-            "[ \"$\(def.disableEnvVar)\" != \"1\" ] && command -v cmux >/dev/null 2>&1 && ",
-        ]
-        let fallbackSuffix = " || echo '{}'"
-        var body = command
-        if def.name == "grok" {
-            let grokPrefix = "printenv \(def.disableEnvVar) | grep -qx 1 && echo '{}' || { command -v cmux >/dev/null 2>&1 && "
-            let grokSuffix = " || echo '{}'; }"
-            if body.hasPrefix(grokPrefix), body.hasSuffix(grokSuffix) {
-                body.removeFirst(grokPrefix.count)
-                body.removeLast(grokSuffix.count)
-                guard !body.contains(";"), !body.contains("|"), !body.contains("&"), !body.contains("`") else {
-                    return []
-                }
-                return [body.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)]
-            }
-        }
-        for guardedPrefix in guardedPrefixes where body.hasPrefix(guardedPrefix) {
-            body.removeFirst(guardedPrefix.count)
-            break
-        }
-        if body.hasSuffix(fallbackSuffix) {
-            body.removeLast(fallbackSuffix.count)
-        }
-        guard !body.contains(";"), !body.contains("|"), !body.contains("&"), !body.contains("`") else {
-            return []
-        }
-        return [body.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)]
-    }
-
-    private static func bundledCLICmuxCommandTokenLists(from command: String) -> [[String]]? {
-        guard command.contains("CMUX_BUNDLED_CLI_PATH"),
-              command.contains("cmux_cli="),
-              command.contains("command -v cmux") else {
-            return nil
-        }
-
-        let invocationPrefixes = [
-            "\"$cmux_cli\" --socket \"$CMUX_SOCKET_PATH\" ",
-            "\"$cmux_cli\" ",
-        ]
-        var tokenLists: [[String]] = []
-        for prefix in invocationPrefixes {
-            var searchStart = command.startIndex
-            while let prefixRange = command.range(of: prefix, range: searchStart..<command.endIndex) {
-                let argsStart = prefixRange.upperBound
-                let tail = command[argsStart..<command.endIndex]
-                let argsEnd = [
-                    tail.range(of: ";")?.lowerBound,
-                    tail.range(of: " ||")?.lowerBound,
-                    tail.range(of: " &&")?.lowerBound,
-                    tail.range(of: " }")?.lowerBound,
-                ].compactMap { $0 }.min() ?? command.endIndex
-                let args = command[argsStart..<argsEnd].trimmingCharacters(in: .whitespacesAndNewlines)
-                if !args.isEmpty,
-                   !args.contains(";"),
-                   !args.contains("|"),
-                   !args.contains("&"),
-                   !args.contains("`") {
-                    tokenLists.append(
-                        ["cmux"] + args.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
-                    )
-                }
-                searchStart = prefixRange.upperBound
-            }
-        }
-        return tokenLists
+        return command.contains(def.hookMarker)
     }
 
     static func hookMarkers(for def: AgentHookDef) -> [String] {
-        var markers = [def.hookMarker]
-        if def.name == "codex" {
-            markers.append("cmux codex-hook")
-        }
-        return markers
+        [def.hookMarker]
     }
 
     /// Marker substrings used when removing / upgrading our own Feed bridge
     /// entries on reinstall or uninstall.
     static func feedHookMarkers(for def: AgentHookDef) -> [String] {
-        var markers = ["cmux hooks feed --source"]
-        if def.name == "codex" {
-            markers.append("cmux feed-hook --source")
-        }
-        return markers
+        [def.hookMarker]
     }
 }

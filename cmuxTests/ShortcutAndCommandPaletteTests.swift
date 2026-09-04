@@ -827,6 +827,7 @@ final class CommandPaletteRenameSelectionSettingsTests: XCTestCase {
 final class CommandPaletteAuthCommandTests: XCTestCase {
     func testSignedOutContextShowsSignInCommandOnly() {
         var context = ContentView.CommandPaletteContextSnapshot()
+        context.setBool(ContentView.CommandPaletteContextKeys.authAvailable, true)
         context.setBool(ContentView.CommandPaletteContextKeys.authSignedIn, false)
         context.setBool(ContentView.CommandPaletteContextKeys.authWorking, false)
 
@@ -837,6 +838,7 @@ final class CommandPaletteAuthCommandTests: XCTestCase {
 
     func testSignedInContextShowsSignOutCommandOnly() {
         var context = ContentView.CommandPaletteContextSnapshot()
+        context.setBool(ContentView.CommandPaletteContextKeys.authAvailable, true)
         context.setBool(ContentView.CommandPaletteContextKeys.authSignedIn, true)
         context.setBool(ContentView.CommandPaletteContextKeys.authWorking, false)
 
@@ -848,11 +850,21 @@ final class CommandPaletteAuthCommandTests: XCTestCase {
     func testWorkingAuthContextHidesSignInAndSignOutCommands() {
         for signedIn in [false, true] {
             var context = ContentView.CommandPaletteContextSnapshot()
+            context.setBool(ContentView.CommandPaletteContextKeys.authAvailable, true)
             context.setBool(ContentView.CommandPaletteContextKeys.authSignedIn, signedIn)
             context.setBool(ContentView.CommandPaletteContextKeys.authWorking, true)
 
             XCTAssertTrue(visibleAuthCommandIds(context).isEmpty)
         }
+    }
+
+    func testUnavailableAuthContextHidesSignInAndSignOutCommands() {
+        var context = ContentView.CommandPaletteContextSnapshot()
+        context.setBool(ContentView.CommandPaletteContextKeys.authAvailable, false)
+        context.setBool(ContentView.CommandPaletteContextKeys.authSignedIn, false)
+        context.setBool(ContentView.CommandPaletteContextKeys.authWorking, false)
+
+        XCTAssertTrue(visibleAuthCommandIds(context).isEmpty)
     }
 
     private func visibleAuthCommandIds(_ context: ContentView.CommandPaletteContextSnapshot) -> [String] {
@@ -1885,45 +1897,43 @@ final class QuitConfirmationPolicyTests: XCTestCase {
 
 
 final class UpdateChannelSettingsTests: XCTestCase {
-    func testResolvedFeedFallsBackWhenInfoFeedMissing() {
-        let resolver = UpdateFeedResolver()
-        let resolved = resolver.resolve(infoFeedURL: nil)
-        XCTAssertEqual(resolved.url, resolver.fallbackFeedURL)
+    func testResolvedFeedDisablesUpdaterWhenInfoFeedMissing() {
+        let resolved = UpdateFeedResolver().resolve(infoFeedURL: nil)
+        XCTAssertNil(resolved.url)
         XCTAssertFalse(resolved.isNightly)
-        XCTAssertTrue(resolved.usedFallback)
+        XCTAssertFalse(resolved.isEnabled)
     }
 
-    func testResolvedFeedFallsBackWhenInfoFeedEmpty() {
-        let resolver = UpdateFeedResolver()
-        let resolved = resolver.resolve(infoFeedURL: "")
-        XCTAssertEqual(resolved.url, resolver.fallbackFeedURL)
+    func testResolvedFeedDisablesUpdaterForSourcePlaceholder() {
+        let resolved = UpdateFeedResolver().resolve(infoFeedURL: "about:blank")
+        XCTAssertNil(resolved.url)
         XCTAssertFalse(resolved.isNightly)
-        XCTAssertTrue(resolved.usedFallback)
+        XCTAssertFalse(resolved.isEnabled)
     }
 
-    func testResolvedFeedUsesInfoFeedForStableChannel() {
-        let infoFeed = "https://example.com/custom/appcast.xml"
+    func testResolvedFeedUsesAllowlistedStableChannel() {
+        let infoFeed = UpdateFeedResolver.stableFeedURL
         let resolved = UpdateFeedResolver().resolve(infoFeedURL: infoFeed)
         XCTAssertEqual(resolved.url, infoFeed)
         XCTAssertFalse(resolved.isNightly)
-        XCTAssertFalse(resolved.usedFallback)
+        XCTAssertTrue(resolved.isEnabled)
     }
 
     func testResolvedFeedDetectsNightlyFromInfoFeedURL() {
         let resolved = UpdateFeedResolver().resolve(
-            infoFeedURL: "https://example.com/nightly/appcast.xml"
+            infoFeedURL: UpdateFeedResolver.nightlyFeedURL
         )
-        XCTAssertEqual(resolved.url, "https://example.com/nightly/appcast.xml")
+        XCTAssertEqual(resolved.url, UpdateFeedResolver.nightlyFeedURL)
         XCTAssertTrue(resolved.isNightly)
-        XCTAssertFalse(resolved.usedFallback)
+        XCTAssertTrue(resolved.isEnabled)
     }
 }
 
 
 final class UpdateSettingsTests: XCTestCase {
-    func testApplyEnablesAutomaticChecksAndDailySchedule() {
+    func testApplyEnablesAutomaticChecksForConfiguredRelease() {
         let defaults = makeDefaults()
-        UpdateSettings().apply(to: defaults)
+        UpdateSettings().apply(to: defaults, updaterEnabled: true)
 
         XCTAssertTrue(defaults.bool(forKey: UpdateSettings.automaticChecksKey))
         XCTAssertEqual(defaults.double(forKey: UpdateSettings.scheduledCheckIntervalKey), UpdateSettings().scheduledCheckInterval)
@@ -1938,16 +1948,28 @@ final class UpdateSettingsTests: XCTestCase {
         defaults.set(0, forKey: UpdateSettings.scheduledCheckIntervalKey)
         defaults.set(true, forKey: UpdateSettings.automaticallyUpdateKey)
 
-        UpdateSettings().apply(to: defaults)
+        UpdateSettings().apply(to: defaults, updaterEnabled: true)
 
         XCTAssertTrue(defaults.bool(forKey: UpdateSettings.automaticChecksKey))
         XCTAssertEqual(defaults.double(forKey: UpdateSettings.scheduledCheckIntervalKey), UpdateSettings().scheduledCheckInterval)
         XCTAssertTrue(defaults.bool(forKey: UpdateSettings.automaticallyUpdateKey))
 
         defaults.set(false, forKey: UpdateSettings.automaticChecksKey)
-        UpdateSettings().apply(to: defaults)
+        UpdateSettings().apply(to: defaults, updaterEnabled: true)
 
         XCTAssertFalse(defaults.bool(forKey: UpdateSettings.automaticChecksKey))
+    }
+
+    func testApplyDisablesInheritedUpdaterPreferencesWithoutAValidatedFeed() {
+        let defaults = makeDefaults()
+        defaults.set(true, forKey: UpdateSettings.automaticChecksKey)
+        defaults.set(true, forKey: UpdateSettings.automaticallyUpdateKey)
+
+        UpdateSettings().apply(to: defaults, updaterEnabled: false)
+
+        XCTAssertFalse(defaults.bool(forKey: UpdateSettings.automaticChecksKey))
+        XCTAssertFalse(defaults.bool(forKey: UpdateSettings.automaticallyUpdateKey))
+        XCTAssertFalse(defaults.bool(forKey: UpdateSettings.sendProfileInfoKey))
     }
 
     private func makeDefaults() -> UserDefaults {

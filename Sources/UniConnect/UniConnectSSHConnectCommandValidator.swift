@@ -3,7 +3,7 @@ import Foundation
 /// Validates that a stored connection command is one safe SSH client invocation.
 struct UniConnectSSHConnectCommandValidator: Sendable {
     /// The reason a connection command cannot be executed by UniConnect.
-    enum Failure: Equatable, Sendable {
+    enum Failure: Error, Equatable, Sendable {
         case empty
         case lineBreak
         case malformedQuoting
@@ -27,31 +27,102 @@ struct UniConnectSSHConnectCommandValidator: Sendable {
         case double
     }
 
+    private enum ValidationResult {
+        case command(UniConnectSSHValidatedCommand)
+        case failure(Failure)
+    }
+
+    private struct PasswordWrapper {
+        let sshIndex: Int
+        let password: String
+        let prompt: String?
+        let verbose: Bool
+    }
+
+    static var trustedSSHpassPaths: [String] {
+        [
+            "/opt/homebrew/bin/sshpass",
+            "/usr/local/bin/sshpass",
+            "/usr/bin/sshpass",
+        ]
+    }
+
+    static func trustedSSHpassExecutable(
+        where isExecutableFile: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) -> String? {
+        trustedSSHpassPaths.first(where: isExecutableFile)
+    }
+
+    private let isExecutableFile: @Sendable (String) -> Bool
+
+    init(
+        isExecutableFile: @escaping @Sendable (String) -> Bool = {
+            FileManager.default.isExecutableFile(atPath: $0)
+        }
+    ) {
+        self.isExecutableFile = isExecutableFile
+    }
+
     private let sshNoValueOptions = Set<Character>("46AaCfGgKkMNnqsTtVvXxYy")
     private let sshValueOptions = Set<Character>("BbcDEeFIiJLlmOopQRSWw")
     // These modes suppress, background, or reinterpret the app-owned remote tmux command.
-    private let incompatibleNoValueOptions = Set<Character>("fGNnsTV")
+    private let incompatibleNoValueOptions = Set<Character>("AfGKMNnsTVXY")
     // These options load executable/config payloads, write locally, forward ports, or skip a shell.
-    private let unsafeOrIncompatibleValueOptions = Set<Character>("DEFILOQRWw")
+    private let unsafeOrIncompatibleValueOptions = Set<Character>("DEFILOQRSWw")
     // OpenSSH evaluates these values as commands, executable providers, or additional config.
     private let unsafeConfigurationKeys: Set<String> = [
+        "addkeystoagent",
+        "batchmode",
+        "clearallforwardings",
+        "controlmaster",
+        "controlpath",
+        "controlpersist",
+        "dynamicforward",
+        "exitonforwardfailure",
+        "forwardagent",
+        "forwardx11",
+        "forwardx11trusted",
+        "gssapidelegatecredentials",
         "include",
         "knownhostscommand",
         "localcommand",
+        "localforward",
         "permitlocalcommand",
         "pkcs11provider",
         "proxycommand",
         "remotecommand",
+        "remoteforward",
+        "requesttty",
         "securitykeyprovider",
+        "sendenv",
         "sessiontype",
+        "setenv",
+        "stdioforward",
     ]
 
     /// Returns the first validation failure, or `nil` for a supported connection command.
     func validate(_ command: String) -> Failure? {
+        switch validationResult(for: command) {
+        case .command:
+            return nil
+        case .failure(let failure):
+            return failure
+        }
+    }
+
+    /// Parses and validates one command into its shell-independent representation.
+    func validatedCommand(_ command: String) -> UniConnectSSHValidatedCommand? {
+        guard case .command(let validated) = validationResult(for: command) else {
+            return nil
+        }
+        return validated
+    }
+
+    private func validationResult(for command: String) -> ValidationResult {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return .empty }
+        guard !trimmed.isEmpty else { return .failure(.empty) }
         guard !command.unicodeScalars.contains(where: CharacterSet.newlines.contains) else {
-            return .lineBreak
+            return .failure(.lineBreak)
         }
 
         let words: [String]
@@ -59,54 +130,100 @@ struct UniConnectSSHConnectCommandValidator: Sendable {
         case .words(let parsedWords):
             words = parsedWords
         case .failure(let failure):
-            return failure
+            return .failure(failure)
         }
 
-        guard let first = words.first else { return .empty }
-        if isExecutable(first, named: "ssh") {
-            return validateSSHInvocation(words, executableIndex: 0)
+        guard let first = words.first else { return .failure(.empty) }
+        if isTrustedSSHExecutable(first) {
+            if let failure = validateSSHInvocation(words, executableIndex: 0) {
+                return .failure(failure)
+            }
+            return .command(UniConnectSSHValidatedCommand(
+                sshArguments: Array(words.dropFirst()),
+                password: nil,
+                passwordPrompt: nil,
+                verbosePasswordWrapper: false,
+                sshpassExecutable: nil
+            ))
         }
-        if isExecutable(first, named: "sshpass") {
-            return validateSSHPasswordWrapper(words)
+        if isTrustedSSHpassSpelling(first) {
+            let executable: String?
+            if first == "sshpass" {
+                executable = Self.trustedSSHpassExecutable(where: isExecutableFile)
+            } else {
+                guard isExecutableFile(first) else { return .failure(.unsupportedExecutable) }
+                executable = first
+            }
+            switch parseSSHPasswordWrapper(words) {
+            case .failure(let failure):
+                return .failure(failure)
+            case .success(let wrapper):
+                if let failure = validateSSHInvocation(words, executableIndex: wrapper.sshIndex) {
+                    return .failure(failure)
+                }
+                return .command(UniConnectSSHValidatedCommand(
+                    sshArguments: Array(words.dropFirst(wrapper.sshIndex + 1)),
+                    password: wrapper.password,
+                    passwordPrompt: wrapper.prompt,
+                    verbosePasswordWrapper: wrapper.verbose,
+                    sshpassExecutable: executable
+                ))
+            }
         }
-        return .unsupportedExecutable
+        return .failure(.unsupportedExecutable)
     }
 
-    private func validateSSHPasswordWrapper(_ words: [String]) -> Failure? {
+    private func parseSSHPasswordWrapper(_ words: [String]) -> Result<PasswordWrapper, Failure> {
         var index = 1
+        var password: String?
+        var prompt: String?
+        var verbose = false
         while index < words.count {
             let argument = words[index]
             if argument == "--" {
                 index += 1
                 break
             }
-            if argument == "-e" || argument == "-v" {
+            if argument == "-v" {
+                verbose = true
                 index += 1
                 continue
             }
             guard argument.hasPrefix("-"), argument != "-" else { break }
-            guard argument.count >= 2 else { return .invalidSSHPasswordWrapper }
+            guard argument.count >= 2 else { return .failure(.invalidSSHPasswordWrapper) }
 
             let optionIndex = argument.index(after: argument.startIndex)
             let option = argument[optionIndex]
-            guard option == "p" || option == "f" || option == "d" || option == "P" else {
-                return .invalidSSHPasswordWrapper
+            guard option == "p" || option == "P" else {
+                return .failure(.invalidSSHPasswordWrapper)
             }
 
             let attachedValue = argument.index(after: optionIndex)
+            let value: String
             if attachedValue < argument.endIndex {
+                value = String(argument[attachedValue...])
                 index += 1
             } else {
                 index += 1
-                guard index < words.count else { return .invalidSSHPasswordWrapper }
+                guard index < words.count else { return .failure(.invalidSSHPasswordWrapper) }
+                value = words[index]
                 index += 1
             }
+            guard !value.isEmpty else { return .failure(.invalidSSHPasswordWrapper) }
+            if option == "p" { password = value } else { prompt = value }
         }
 
-        guard index < words.count, isExecutable(words[index], named: "ssh") else {
-            return .invalidSSHPasswordWrapper
+        guard let password,
+              index < words.count,
+              isTrustedSSHExecutable(words[index]) else {
+            return .failure(.invalidSSHPasswordWrapper)
         }
-        return validateSSHInvocation(words, executableIndex: index)
+        return .success(PasswordWrapper(
+            sshIndex: index,
+            password: password,
+            prompt: prompt,
+            verbose: verbose
+        ))
     }
 
     private func validateSSHInvocation(_ words: [String], executableIndex: Int) -> Failure? {
@@ -193,10 +310,12 @@ struct UniConnectSSHConnectCommandValidator: Sendable {
         return nil
     }
 
-    private func isExecutable(_ word: String, named expectedName: String) -> Bool {
-        if word == expectedName { return true }
-        guard word.hasPrefix("/") else { return false }
-        return (word as NSString).lastPathComponent == expectedName
+    private func isTrustedSSHExecutable(_ word: String) -> Bool {
+        word == "ssh" || word == "/usr/bin/ssh"
+    }
+
+    private func isTrustedSSHpassSpelling(_ word: String) -> Bool {
+        word == "sshpass" || Self.trustedSSHpassPaths.contains(word)
     }
 
     private func isSafeDestination(_ destination: String) -> Bool {

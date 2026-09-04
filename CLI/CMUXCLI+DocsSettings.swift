@@ -26,7 +26,7 @@ extension CMUXCLI {
         DocsReference(
             topic: "settings",
             aliases: ["configuration", "config", "cmux-json", "settings-json", "settingsjson", "schema"],
-            summary: "cmux-owned settings, uniconnect.json locations, schema, and reload flow.",
+            summary: "UniConnect-owned settings, uniconnect.json locations, schema, and reload flow.",
             webURL: settingsDocsURL,
             rawResources: [
                 DocsResource(label: "settings schema", url: settingsSchemaURL),
@@ -42,10 +42,10 @@ extension CMUXCLI {
         DocsReference(
             topic: "shortcuts",
             aliases: ["keyboard", "keybindings", "keys"],
-            summary: "cmux-owned keyboard shortcuts and two-step chord syntax.",
+            summary: "UniConnect-owned keyboard shortcuts and two-step chord syntax.",
             webURL: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md",
             rawResources: [
-                DocsResource(label: "shortcut data", url: "https://raw.githubusercontent.com/manaflow-ai/cmux/main/web/data/cmux-shortcuts.ts"),
+                DocsResource(label: "shortcut data", url: "https://raw.githubusercontent.com/Unixcision/uniconnect/uniconnect/web/data/cmux-shortcuts.ts"),
                 DocsResource(label: "settings schema", url: settingsSchemaURL),
             ],
             commands: [
@@ -60,7 +60,7 @@ extension CMUXCLI {
             summary: "CLI/socket API, handle model, windows, workspaces, panes, and surfaces.",
             webURL: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md",
             rawResources: [
-                DocsResource(label: "CLI contract", url: "https://raw.githubusercontent.com/manaflow-ai/cmux/main/docs/cli-contract.md"),
+                DocsResource(label: "CLI contract", url: "https://raw.githubusercontent.com/Unixcision/uniconnect/uniconnect/docs/cli-contract.md"),
                 DocsResource(label: "cmux skill", url: "SKILL.md"),
             ],
             commands: [
@@ -74,8 +74,8 @@ extension CMUXCLI {
             summary: "Browser panel automation commands and snapshot-driven web interaction.",
             webURL: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md",
             rawResources: [
-                DocsResource(label: "browser skill", url: "https://raw.githubusercontent.com/manaflow-ai/cmux/main/skills/cmux-browser/SKILL.md"),
-                DocsResource(label: "browser commands", url: "https://raw.githubusercontent.com/manaflow-ai/cmux/main/skills/cmux-browser/references/commands.md"),
+                DocsResource(label: "browser skill", url: "https://raw.githubusercontent.com/Unixcision/uniconnect/uniconnect/skills/cmux-browser/SKILL.md"),
+                DocsResource(label: "browser commands", url: "https://raw.githubusercontent.com/Unixcision/uniconnect/uniconnect/skills/cmux-browser/references/commands.md"),
             ],
             commands: [
                 "cmux browser --help",
@@ -88,9 +88,9 @@ extension CMUXCLI {
             summary: "Agent hook integrations, Feed approvals, notifications, and session restore.",
             webURL: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md",
             rawResources: [
-                DocsResource(label: "agent hook docs", url: "https://raw.githubusercontent.com/manaflow-ai/cmux/main/docs/agent-hooks.md"),
-                DocsResource(label: "feed docs", url: "https://raw.githubusercontent.com/manaflow-ai/cmux/main/docs/feed.md"),
-                DocsResource(label: "notifications docs", url: "https://raw.githubusercontent.com/manaflow-ai/cmux/main/docs/notifications.md"),
+                DocsResource(label: "agent hook docs", url: "https://raw.githubusercontent.com/Unixcision/uniconnect/uniconnect/docs/agent-hooks.md"),
+                DocsResource(label: "feed docs", url: "https://raw.githubusercontent.com/Unixcision/uniconnect/uniconnect/docs/feed.md"),
+                DocsResource(label: "notifications docs", url: "https://raw.githubusercontent.com/Unixcision/uniconnect/uniconnect/docs/notifications.md"),
             ],
             commands: [
                 "cmux hooks setup",
@@ -103,16 +103,16 @@ extension CMUXCLI {
         DocsReference(
             topic: "dock",
             aliases: ["doc", "controls", "right-sidebar", "dock-json"],
-            summary: "Custom right-sidebar terminal controls from .cmux/dock.json or ~/.config/uniconnect/dock.json.",
+            summary: "Custom right-sidebar terminal controls from .uniconnect/dock.json or ~/.config/uniconnect/dock.json.",
             webURL: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md",
             rawResources: [
-                DocsResource(label: "dock docs", url: "https://raw.githubusercontent.com/manaflow-ai/cmux/main/docs/dock.md"),
+                DocsResource(label: "dock docs", url: "https://raw.githubusercontent.com/Unixcision/uniconnect/uniconnect/docs/dock.md"),
                 DocsResource(label: "dock web copy", url: ""),
             ],
             commands: [
                 "cmux docs dock",
                 "cmux docs dock --json",
-                "python3 -m json.tool .cmux/dock.json",
+                "python3 -m json.tool .uniconnect/dock.json",
             ]
         ),
         DocsReference(
@@ -121,7 +121,7 @@ extension CMUXCLI {
             summary: "Vibe-code a custom sidebar: a runtime-interpreted SwiftUI-style file in ~/.config/uniconnect/sidebars/ (beta).",
             webURL: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md",
             rawResources: [
-                DocsResource(label: "custom sidebar authoring guide", url: "https://raw.githubusercontent.com/manaflow-ai/cmux/main/docs/custom-sidebars.md"),
+                DocsResource(label: "custom sidebar authoring guide", url: "https://raw.githubusercontent.com/Unixcision/uniconnect/uniconnect/docs/custom-sidebars.md"),
             ],
             commands: [
                 "mkdir -p ~/.config/uniconnect/sidebars",
@@ -179,11 +179,11 @@ extension CMUXCLI {
         Usage: cmux docs [settings|shortcuts|api|browser|agents|dock]
 
         Print the canonical docs URL, raw GitHub resources, and useful commands for a cmux topic.
-        This command does not require a running cmux app or socket.
+        This command does not require a running UniConnect app or socket.
 
         Agents:
           Use `cmux docs settings` before editing ~/.config/uniconnect/uniconnect.json.
-          Use `uniconnect docs dock` before creating or editing .cmux/dock.json.
+          Use `cmux docs dock` before creating or editing .uniconnect/dock.json.
           Back up any existing uniconnect.json file to a timestamped .bak copy before editing so the user can revert.
           Fetch raw resources with the printed curl commands when you need the latest schema.
         """
@@ -270,7 +270,7 @@ extension CMUXCLI {
             print("  legacy config: \(Self.legacySettingsDisplayPath)")
             print("  legacy app support: \(Self.fallbackSettingsDisplayPath)")
             print()
-            print("Related (not cmux-owned, but cmux reads it for terminal behavior):")
+            print("Related (not UniConnect-owned, but UniConnect reads it for terminal behavior):")
             print("  \(Self.ghosttyConfigDisplayPath)")
             print("  Use this for terminal transparency (background-opacity), blur, font, theme, etc.")
             print()

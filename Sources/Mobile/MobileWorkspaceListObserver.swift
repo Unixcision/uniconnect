@@ -2,7 +2,7 @@ import Combine
 import Foundation
 import OSLog
 
-private let mobileWorkspaceObserverLog = Logger(subsystem: "dev.cmux", category: "mobile-workspace-observer")
+private let mobileWorkspaceObserverLog = Logger(subsystem: "com.unixcision.uniconnect", category: "mobile-workspace-observer")
 
 /// Watches `TabManager.tabs` (and each workspace's panels publisher) and emits
 /// `workspace.updated` to subscribed mobile clients whenever the iOS-facing

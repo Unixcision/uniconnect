@@ -181,7 +181,7 @@ import Testing
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
-        let url = "cmux-ios://attach?v=\(ticket.version)&payload=\(payload)"
+        let url = "uniconnect://attach?v=\(ticket.version)&payload=\(payload)"
 
         let decoded = try CmxAttachTicketInput.decode(url)
         #expect(decoded.macDeviceID == "mac-1")

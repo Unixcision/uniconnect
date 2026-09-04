@@ -7,7 +7,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TAG="Debug_Helper.Test"
 TAG_SLUG="debug-helper-test"
 TAG_BUNDLE_ID="debug.helper.test"
-SOCKET_PATH="/tmp/cmux-debug-${TAG_SLUG}.sock"
+SOCKET_PATH="/tmp/uniconnect-debug-${TAG_SLUG}.sock"
 TMP_DIR="$(mktemp -d)"
 SERVER_PID=""
 
@@ -21,7 +21,7 @@ cleanup() {
 trap cleanup EXIT
 
 FAKE_HOME="$TMP_DIR/home"
-FAKE_CLI_DIR="$FAKE_HOME/Library/Developer/Xcode/DerivedData/cmux-${TAG_SLUG}/Build/Products/Debug/cmux DEV ${TAG_SLUG}.app/Contents/Resources/bin"
+FAKE_CLI_DIR="$FAKE_HOME/Library/Developer/Xcode/DerivedData/uniconnect-${TAG_SLUG}/Build/Products/Debug/UniConnect DEV ${TAG_SLUG}.app/Contents/Resources/bin"
 FAKE_CLI="$FAKE_CLI_DIR/cmux"
 mkdir -p "$FAKE_CLI_DIR"
 cat > "$FAKE_CLI" <<'EOF'
@@ -75,8 +75,8 @@ OUTPUT="$(
   CMUX_SOCKET="/tmp/main-cmux-legacy.sock" \
   CMUX_SOCKET_PATH="/tmp/main-cmux.sock" \
   CMUX_SOCKET_PASSWORD="main-secret" \
-  CMUX_BUNDLE_ID="com.cmuxterm.app" \
-  CMUX_BUNDLED_CLI_PATH="/Applications/cmux.app/Contents/Resources/bin/cmux" \
+  CMUX_BUNDLE_ID="com.unixcision.uniconnect" \
+  CMUX_BUNDLED_CLI_PATH="/Applications/UniConnect.app/Contents/Resources/bin/cmux" \
   CMUX_WORKSPACE_ID="main-workspace" \
   CMUX_TAB_ID="main-tab" \
   CMUX_SURFACE_ID="main-surface" \
@@ -106,7 +106,7 @@ reject_prefix() {
 
 require_line "CMUX_SOCKET_PATH=$SOCKET_PATH"
 require_line "CMUX_TAG=$TAG_SLUG"
-require_line "CMUX_BUNDLE_ID=com.cmuxterm.app.debug.${TAG_BUNDLE_ID}"
+require_line "CMUX_BUNDLE_ID=com.unixcision.uniconnect.debug.${TAG_BUNDLE_ID}"
 require_line "CMUX_BUNDLED_CLI_PATH=$FAKE_CLI"
 
 reject_prefix "CMUX_SOCKET"

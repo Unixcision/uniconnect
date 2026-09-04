@@ -204,7 +204,7 @@ jobs:
           {
             echo "### iOS TestFlight upload"
             echo
-            echo "- lane: \`beta\` (bundle id \`dev.cmux.app.beta\`)"
+            echo "- lane: \`beta\` (bundle id \`com.unixcision.uniconnect.ios.beta\`)"
             echo "- signing: automatic (cloud-managed via ASC API key)"
             echo "- build number (CFBundleVersion): \`${BUILD_NUMBER}\`"
           } >> "$GITHUB_STEP_SUMMARY"

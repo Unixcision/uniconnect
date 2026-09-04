@@ -31,7 +31,7 @@ export function DownloadButton({
   } ${className ?? ""}`;
   const style = { color: "var(--background)", textDecoration: "none" } as const;
   const onClick = () =>
-    posthog.capture("cmuxterm_download_clicked", { location });
+    posthog.capture("uniconnect_download_clicked", { location });
   const icon = (
     <svg
       width={isSmall ? 12 : 16}

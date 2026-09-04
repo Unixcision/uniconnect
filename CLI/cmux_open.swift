@@ -915,7 +915,7 @@ extension CMUXCLI {
 
     private func taggedDiffViewerExecutableURL(socketPath: String) -> URL? {
         let socketName = URL(fileURLWithPath: socketPath).lastPathComponent
-        let prefix = "cmux-debug-"
+        let prefix = "uniconnect-debug-"
         let suffix = ".sock"
         guard socketName.hasPrefix(prefix), socketName.hasSuffix(suffix) else {
             return nil
@@ -935,7 +935,7 @@ extension CMUXCLI {
             .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
             ?? NSHomeDirectory()
         let candidate = URL(fileURLWithPath: homePath, isDirectory: true)
-            .appendingPathComponent("Library/Developer/Xcode/DerivedData/cmux-\(tag)", isDirectory: true)
+            .appendingPathComponent("Library/Developer/Xcode/DerivedData/uniconnect-\(tag)", isDirectory: true)
             .appendingPathComponent("Build/Products/Debug/UniConnect DEV \(tag).app", isDirectory: true)
             .appendingPathComponent("Contents/Resources/bin/cmux", isDirectory: false)
             .standardizedFileURL
@@ -2017,7 +2017,7 @@ extension CMUXCLI {
             return nil
         }
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cmux-diff-untracked-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("uniconnect-diff-untracked-\(UUID().uuidString)", isDirectory: true)
         let file = components.reduce(root) { partial, component in
             partial.appendingPathComponent(component, isDirectory: false)
         }
@@ -4177,7 +4177,7 @@ extension CMUXCLI {
 
     private func diffViewerDirectory() throws -> URL {
         let directory = URL(fileURLWithPath: "/tmp", isDirectory: true)
-            .appendingPathComponent("cmux-diff-viewer-\(getuid())", isDirectory: true)
+            .appendingPathComponent("uniconnect-diff-viewer-\(getuid())", isDirectory: true)
         try ensureSecureDiffViewerDirectory(directory)
         pruneDiffViewerFiles(in: directory)
         return directory

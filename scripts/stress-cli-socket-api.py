@@ -356,9 +356,9 @@ class Diagnostics:
         if self.app_pgrep:
             patterns.append(self.app_pgrep)
         if self.tag:
-            patterns.append(f"cmux DEV {self.tag}.app/Contents/MacOS/cmux DEV")
-            patterns.append(f"cmux DEV {self.tag}")
-        patterns.append("cmux DEV")
+            patterns.append(f"UniConnect DEV {self.tag}.app/Contents/MacOS/UniConnect DEV")
+            patterns.append(f"UniConnect DEV {self.tag}")
+        patterns.append("UniConnect DEV")
         seen: set[int] = set()
         for pattern in patterns:
             try:
@@ -458,9 +458,9 @@ class Diagnostics:
     def _interesting_log_paths(self) -> list[pathlib.Path]:
         paths = []
         if self.tag:
-            paths.append(pathlib.Path(f"/tmp/cmux-debug-{self.tag}.log"))
-        paths.extend(pathlib.Path(path) for path in glob.glob("/tmp/cmux-debug*.log"))
-        paths.extend(pathlib.Path(path) for path in glob.glob("/tmp/cmux-launch-*.out"))
+            paths.append(pathlib.Path(f"/tmp/uniconnect-debug-{self.tag}.log"))
+        paths.extend(pathlib.Path(path) for path in glob.glob("/tmp/uniconnect-debug*.log"))
+        paths.extend(pathlib.Path(path) for path in glob.glob("/tmp/uniconnect-launch-*.out"))
         return [path for path in paths if path.exists() and path.is_file()]
 
     def _copy_log_tail(self, source: pathlib.Path, target: pathlib.Path) -> None:
@@ -484,7 +484,7 @@ class Diagnostics:
         roots = [
             pathlib.Path.home() / "Library/Logs/DiagnosticReports",
             pathlib.Path("/Library/Logs/DiagnosticReports"),
-            pathlib.Path.home() / ".local/state/cmux/crash",
+            pathlib.Path.home() / ".local/state/uniconnect/crash",
         ]
         for root in roots:
             if not root.exists():
@@ -552,7 +552,7 @@ class StressContext:
         env["CMUX_CLAUDE_HOOK_SENTRY_DISABLED"] = "1"
         if self.tag:
             env["CMUX_TAG"] = self.tag
-            env["CMUX_BUNDLE_ID"] = f"com.cmuxterm.app.debug.{self.tag.replace('-', '.')}"
+            env["CMUX_BUNDLE_ID"] = f"com.unixcision.uniconnect.debug.{self.tag.replace('-', '.')}"
         env.pop("CMUX_SOCKET", None)
         env.pop("CMUX_SOCKET_PASSWORD", None)
         env.pop("CMUX_WORKSPACE_ID", None)
@@ -564,7 +564,7 @@ class StressContext:
     def no_socket_env(self) -> dict[str, str]:
         env = self.base_env()
         env.pop("CMUX_SOCKET_PATH", None)
-        env["CMUX_BUNDLE_ID"] = f"com.cmuxterm.stress.{self.run_id.lower()}"
+        env["CMUX_BUNDLE_ID"] = f"com.unixcision.uniconnect.stress.{self.run_id.lower()}"
         return env
 
     def setup(self) -> None:
@@ -1309,7 +1309,7 @@ class StressRunner:
         duration = parse_duration(self.args.duration)
         end_at = time.monotonic() + duration
         iteration_limit = self.args.iterations
-        heartbeat = threading.Thread(target=self.heartbeat_loop, name="cmux-stress-heartbeat", daemon=True)
+        heartbeat = threading.Thread(target=self.heartbeat_loop, name="uniconnect-stress-heartbeat", daemon=True)
         heartbeat.start()
         started_at = time.time()
         cycle = 0
@@ -1529,22 +1529,22 @@ def resolve_cli_path(raw: str | None, tag: str | None) -> str:
     candidates: list[str] = []
     if raw:
         candidates.append(os.path.expanduser(raw))
-    env_cli = os.environ.get("UNICONNECT_CLI") or os.environ.get("UNICONNECT_BUNDLED_CLI_PATH")
+    env_cli = os.environ.get("CMUXTERM_CLI") or os.environ.get("CMUX_BUNDLED_CLI_PATH")
     if env_cli:
         candidates.append(os.path.expanduser(env_cli))
     if tag:
-        candidates.append(os.path.expanduser(f"~/Library/Developer/Xcode/DerivedData/uniconnect-{tag}/Build/Products/Debug/UniConnect DEV {tag}.app/Contents/Resources/bin/uniconnect"))
-        candidates.append(os.path.expanduser(f"~/Library/Developer/Xcode/DerivedData/cmux-{tag}/Build/Products/Debug/cmux"))
+        candidates.append(os.path.expanduser(f"~/Library/Developer/Xcode/DerivedData/uniconnect-{tag}/Build/Products/Debug/UniConnect DEV {tag}.app/Contents/Resources/bin/cmux"))
     last_cli = pathlib.Path("/tmp/cmux-last-cli-path")
     if last_cli.exists():
         try:
             candidates.append(last_cli.read_text(encoding="utf-8").strip())
         except OSError:
             pass
-    candidates.extend(glob.glob(os.path.expanduser("~/Library/Developer/Xcode/DerivedData/**/Build/Products/Debug/cmux"), recursive=True))
     for candidate in candidates:
-        if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-            return candidate
+        normalized = os.path.realpath(candidate) if candidate else ""
+        is_uniconnect = "/DerivedData/uniconnect-" in normalized or "/UniConnect" in normalized
+        if is_uniconnect and os.path.isfile(normalized) and os.access(normalized, os.X_OK):
+            return normalized
     raise SystemExit("error: could not find cmux CLI. Pass --cli or set CMUXTERM_CLI.")
 
 
@@ -1555,8 +1555,8 @@ def resolve_socket_path(raw: str | None, tag: str | None) -> str:
     if env_socket:
         return env_socket
     if tag:
-        return f"/tmp/cmux-debug-{tag}.sock"
-    last_socket = pathlib.Path("/tmp/cmux-last-socket-path")
+        return f"/tmp/uniconnect-debug-{tag}.sock"
+    last_socket = pathlib.Path("/tmp/uniconnect-last-socket-path")
     if last_socket.exists():
         try:
             value = last_socket.read_text(encoding="utf-8").strip()
@@ -1570,7 +1570,7 @@ def resolve_socket_path(raw: str | None, tag: str | None) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--cli", help="Path to cmux CLI binary. Defaults to CMUXTERM_CLI, tagged DerivedData, then recent DerivedData.")
-    parser.add_argument("--socket", help="Unix socket path. Defaults to CMUX_SOCKET_PATH or /tmp/cmux-debug-<tag>.sock.")
+    parser.add_argument("--socket", help="Unix socket path. Defaults to CMUX_SOCKET_PATH or /tmp/uniconnect-debug-<tag>.sock.")
     parser.add_argument("--tag", help="Tagged dev app slug, for path defaults and diagnostics.")
     parser.add_argument("--duration", default=f"{DEFAULT_DURATION_SECONDS}s", help="Stress duration, e.g. 30s, 10m, 12h. Default: 12h.")
     parser.add_argument("--iterations", type=int, help="Stop after this many cycles. Useful for smoke runs.")

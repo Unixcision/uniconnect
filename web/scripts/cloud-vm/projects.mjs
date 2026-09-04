@@ -3,23 +3,22 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+const configuredProject = (label, prefix, stackLabel) => ({
+  projectId: process.env[`${prefix}_PROJECT_ID`]?.trim() ?? "",
+  orgId: process.env.UNICONNECT_VERCEL_ORG_ID?.trim() ?? "",
+  orgSlug: process.env.UNICONNECT_VERCEL_ORG_SLUG?.trim() ?? "",
+  projectName: process.env[`${prefix}_PROJECT_NAME`]?.trim() ?? "",
+  label,
+  url: process.env[`${prefix}_URL`]?.trim() ?? "",
+  stackLabel,
+});
+
+// Deployment metadata is deliberately configuration-only. Keeping the
+// upstream cmux Vercel ids here would allow an authenticated maintainer script
+// to inspect or mutate infrastructure outside the UniConnect fork.
 export const projects = {
-  staging: {
-    projectId: "prj_804LTAUdOwulMvEfcmfnU8bvGo3T",
-    orgId: "team_KndpHsJ15gO2OoAP2SO0thYn",
-    projectName: "cmux-staging",
-    label: "staging",
-    url: "https://cmux-staging.vercel.app",
-    stackLabel: "staging",
-  },
-  production: {
-    projectId: "prj_kH8qcuoliyJ2TLI4vMM03rnNVzr4",
-    orgId: "team_KndpHsJ15gO2OoAP2SO0thYn",
-    projectName: "cmux",
-    label: "production",
-    url: "https://cmux.com",
-    stackLabel: "prod",
-  },
+  staging: configuredProject("staging", "UNICONNECT_VERCEL_STAGING", "staging"),
+  production: configuredProject("production", "UNICONNECT_VERCEL_PRODUCTION", "prod"),
 };
 
 export const requiredRuntimeEnvKeys = [
@@ -77,6 +76,12 @@ export function resolveProject(targetArg, usage) {
     console.error(usage);
     process.exit(2);
   }
+  const missing = ["projectId", "orgId", "orgSlug", "projectName", "url"].filter((key) => !project[key]);
+  if (missing.length > 0) {
+    throw new Error(
+      `UniConnect Vercel ${target} project is not configured; missing ${missing.join(", ")}`,
+    );
+  }
   return { target, project };
 }
 
@@ -105,7 +110,7 @@ export function resolveWebDir(input) {
 }
 
 export function withLinkedVercelProject(project, fn) {
-  const scratch = mkdtempSync(path.join(tmpdir(), `cmux-${project.label}-vercel-`));
+  const scratch = mkdtempSync(path.join(tmpdir(), `uniconnect-${project.label}-vercel-`));
   try {
     const vercelDir = path.join(scratch, ".vercel");
     mkdirSync(vercelDir, { recursive: true });
@@ -119,7 +124,7 @@ export function withLinkedVercelProject(project, fn) {
 export function pullProductionEnv(project) {
   return withLinkedVercelProject(project, (scratch) => {
     const envFile = path.join(scratch, `${project.projectName}.env`);
-    runVercel(["env", "pull", envFile, "--environment=production", "--scope", "manaflow", "--cwd", scratch], {
+    runVercel(["env", "pull", envFile, "--environment=production", "--scope", project.orgSlug, "--cwd", scratch], {
       stdio: ["ignore", "pipe", "inherit"],
     });
     return loadEnv(envFile);

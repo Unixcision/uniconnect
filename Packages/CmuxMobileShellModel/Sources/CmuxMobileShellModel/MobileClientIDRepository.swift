@@ -16,7 +16,7 @@ public import Foundation
 /// ```
 public struct MobileClientIDRepository: Sendable {
     /// The defaults key under which the client identifier is stored.
-    public static let defaultsKey = "dev.cmux.mobile.clientID"
+    public static let defaultsKey = "com.unixcision.uniconnect.mobile.clientID"
 
     // UserDefaults is Apple-documented thread-safe; OK to hold nonisolated.
     private nonisolated(unsafe) let defaults: UserDefaults

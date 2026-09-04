@@ -441,7 +441,7 @@ final class cmuxUITests: XCTestCase {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let payload = base64URLEncode(try encoder.encode(ticket))
-        guard let url = URL(string: "cmux-ios://attach?v=\(ticket.version)&payload=\(payload)") else {
+        guard let url = URL(string: "uniconnect://attach?v=\(ticket.version)&payload=\(payload)") else {
             throw URLError(.badURL)
         }
         return url
@@ -908,7 +908,7 @@ private final class MobileSyncMockHostServer: @unchecked Sendable {
     }
 
     private let listener: NWListener
-    private let queue = DispatchQueue(label: "dev.cmux.ios-ui-tests.mobile-sync-server")
+    private let queue = DispatchQueue(label: "com.unixcision.uniconnect.ios-ui-tests.mobile-sync-server")
     private var readyContinuation: CheckedContinuation<UInt16, Error>?
     private var connections: [NWConnection] = []
     private var selectedWorkspaceID = "workspace-main"

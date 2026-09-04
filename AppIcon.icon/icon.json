@@ -1,5 +1,7 @@
 {
-  "fill": "automatic",
+  "fill": {
+    "solid": "srgb:0.02353,0.07451,0.23922,1.00000"
+  },
   "groups": [
     {
       "layers": [
@@ -8,7 +10,7 @@
           "image-name": "uniconnect-icon.png",
           "name": "uniconnect-icon",
           "position": {
-            "scale": 1,
+            "scale": 1.12,
             "translation-in-points": [
               0,
               0
@@ -21,7 +23,7 @@
         "opacity": 0.5
       },
       "translucency": {
-        "enabled": true,
+        "enabled": false,
         "value": 0.5
       }
     }

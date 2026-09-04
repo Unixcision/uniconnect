@@ -250,6 +250,21 @@ import Testing
         transport.releaseSocketPathLock(fd)
     }
 
+    @Test func upstreamCmuxSocketFilenamesRemainForeign() throws {
+        let path = "/tmp/cmux-debug-reclaim-\(UUID().uuidString.lowercased()).sock"
+        defer {
+            unlink(path)
+            unlink(path + ".lock")
+        }
+
+        guard case .acquired(let fd, let canReplace) = transport.acquireSocketPathLock(for: path) else {
+            Issue.record("expected lock acquisition to succeed")
+            return
+        }
+        #expect(!canReplace)
+        transport.releaseSocketPathLock(fd)
+    }
+
     @Test func secondAcquisitionFailsWhileLockIsHeld() throws {
         let path = UnixSocketFixture.makeTempSocketPath()
         defer {

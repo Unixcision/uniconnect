@@ -65,12 +65,12 @@ enum GhosttyStartupAppearancePreviewProfile: String, CaseIterable, Identifiable 
         case .realUserConfig:
             return String(
                 localized: "debug.startupAppearance.profile.realUserConfig.detail",
-                defaultValue: "Loads your actual Ghostty and cmux config files."
+                defaultValue: "Loads your actual Ghostty and UniConnect config files."
             )
         case .freshInstall:
             return String(
                 localized: "debug.startupAppearance.profile.freshInstall.detail",
-                defaultValue: "No user theme or terminal colors, so cmux applies its managed default colors."
+                defaultValue: "No user theme or terminal colors, so UniConnect applies its managed default colors."
             )
         case .userThemePair:
             return String(
@@ -348,8 +348,13 @@ enum GhosttyPasteboardHelper {
 
     static func stringContents(from pasteboard: NSPasteboard) -> String? {
         let types = pasteboard.types ?? []
+        let hasImagePayload = hasImageData(in: pasteboard)
 
-        if (types.contains(.fileURL) || types.contains(.URL)),
+        // Browser "Copy Image" deliberately writes binary data plus a source URL.
+        // The URL is a fallback for text-only apps, never a reason for image-aware
+        // terminal attachment handling to discard the actual pixels.
+        if !hasImagePayload,
+           (types.contains(.fileURL) || types.contains(.URL)),
            let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL],
            !urls.isEmpty {
             return urls
@@ -357,7 +362,6 @@ enum GhosttyPasteboardHelper {
                 .joined(separator: " ")
         }
 
-        let hasImagePayload = hasImageData(in: pasteboard)
         let hasRTFDAttachmentPayload = types.contains(.rtfd)
         if hasImagePayload,
            let html = pasteboard.string(forType: .html),
@@ -1816,6 +1820,8 @@ class GhosttyApp {
             return "insertText(length:\(text.utf8.count),hasNewlines:\(text.contains(where: \.isNewline) ? 1 : 0))"
         case .fileURLs(let fileURLs):
             return "fileURLs(count:\(fileURLs.count))"
+        case .textAndFileURLs(let text, let fileURLs):
+            return "textAndFileURLs(textLength:\(text.utf8.count),fileCount:\(fileURLs.count))"
         case .reject:
             return "reject"
         }
@@ -1887,23 +1893,23 @@ class GhosttyApp {
                 completeClipboardRequest(with: "")
             case .insertText(let text):
                 completeClipboardRequest(with: text)
-            case .fileURLs(let fileURLs):
+            case .fileURLs(let fileURLs), .textAndFileURLs(_, let fileURLs):
                 let target = MainActor.assumeIsolated {
                     callbackContext.terminalSurface?.resolvedImageTransferTarget()
                         ?? .unavailable(.disconnectedRemoteSession)
                 }
                 let plan = TerminalImageTransferPlanner.plan(
-                    fileURLs: fileURLs,
+                    preparedContent: preparedContent,
                     target: target
                 )
                 let destinationIsAvailable = {
-                    guard case .uploadFiles(_, let remoteTarget, _) = plan else { return true }
+                    guard let remoteTarget = plan.remoteUploadTarget else { return true }
                     return MainActor.assumeIsolated {
                         callbackContext.terminalSurface?.canContinueImageTransfer(to: remoteTarget) == true
                     }
                 }
                 let operation: TerminalImageTransferOperation?
-                if case .uploadFiles = plan {
+                if plan.uploadedFileURLs != nil {
                     let uploadOperation = TerminalImageTransferOperation()
                     operation = uploadOperation
                     MainActor.assumeIsolated {
@@ -7267,6 +7273,13 @@ final class TerminalSurface: Identifiable, ObservableObject {
         return ghostty_surface_needs_confirm_quit(surface)
     }
 
+    /// Reports whether an import-launched child is still alive after its readiness grace period.
+    @MainActor
+    func hasRunningProcessForImportVerification() -> Bool {
+        guard let surface else { return false }
+        return !ghostty_surface_process_exited(surface)
+    }
+
     func noteClipboardReadCompleted() {
         clipboardReadGeneration += 1
         NotificationCenter.default.post(
@@ -11621,80 +11634,248 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, modsFromEvent(event))
 
         let menu = NSMenu()
-        if onTriggerFlash != nil {
-            let flashItem = menu.addItem(
-                withTitle: String(localized: "terminalContextMenu.triggerFlash", defaultValue: "Trigger Flash"),
-                action: #selector(triggerFlash(_:)),
-                keyEquivalent: ""
-            )
-            flashItem.target = self
-            menu.addItem(.separator())
-        }
-        if ghostty_surface_has_selection(surface) {
-            let item = menu.addItem(
-                withTitle: String(localized: "terminalContextMenu.copy", defaultValue: "Copy"),
-                action: #selector(copy(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-        }
-        let pasteItem = menu.addItem(
-            withTitle: String(localized: "terminalContextMenu.paste", defaultValue: "Paste"),
+        menu.autoenablesItems = false
+        let context = terminalMenuContext()
+
+        addTerminalMenuItem(
+            to: menu,
+            title: String(localized: "terminalContextMenu.copy", defaultValue: "Copy"),
+            action: #selector(copy(_:)),
+            systemImage: "doc.on.doc",
+            shortcut: StoredShortcut(key: "c", command: true, shift: false, option: false, control: false),
+            enabled: ghostty_surface_has_selection(surface)
+        )
+        addTerminalMenuItem(
+            to: menu,
+            title: String(localized: "terminalContextMenu.paste", defaultValue: "Paste"),
             action: #selector(paste(_:)),
-            keyEquivalent: ""
-        )
-        pasteItem.target = self
-        menu.addItem(.separator())
-        let splitHorizontallyItem = menu.addItem(
-            withTitle: String(localized: "terminalContextMenu.splitHorizontally", defaultValue: "Split Horizontally"),
-            action: #selector(splitHorizontally(_:)),
-            keyEquivalent: ""
-        )
-        splitHorizontallyItem.target = self
-        applyConfiguredMenuShortcut(KeyboardShortcutSettings.menuShortcut(for: .splitDown), to: splitHorizontallyItem)
-        splitHorizontallyItem.image = NSImage(
-            systemSymbolName: "rectangle.bottomhalf.inset.filled",
-            accessibilityDescription: nil
+            systemImage: "doc.on.clipboard",
+            shortcut: StoredShortcut(key: "v", command: true, shift: false, option: false, control: false),
+            enabled: GhosttyPasteboardHelper.hasString(for: GHOSTTY_CLIPBOARD_STANDARD)
         )
 
-        let splitVerticallyItem = menu.addItem(
-            withTitle: String(localized: "terminalContextMenu.splitVertically", defaultValue: "Split Vertically"),
+        addTerminalMenuSeparatorIfNeeded(to: menu)
+
+        addTerminalMenuItem(
+            to: menu,
+            title: String(localized: "menu.file.newTabInBox", defaultValue: "New Tab"),
+            action: #selector(newTabFromTerminalContextMenu(_:)),
+            systemImage: "plus.rectangle.on.rectangle",
+            shortcut: KeyboardShortcutSettings.menuShortcut(for: .newSurface),
+            enabled: context != nil
+        )
+        addTerminalMenuItem(
+            to: menu,
+            title: String(localized: "menu.box.renameWindow", defaultValue: "Rename Window…"),
+            action: #selector(renameWindowFromTerminalContextMenu(_:)),
+            systemImage: "pencil",
+            shortcut: KeyboardShortcutSettings.menuShortcut(for: .renameTab),
+            enabled: context != nil
+        )
+
+        addTerminalMenuSeparatorIfNeeded(to: menu)
+
+        addTerminalMenuItem(
+            to: menu,
+            title: String(localized: "menu.view.splitRight", defaultValue: "Split Right"),
             action: #selector(splitVertically(_:)),
-            keyEquivalent: ""
+            systemImage: "rectangle.split.2x1",
+            shortcut: KeyboardShortcutSettings.menuShortcut(for: .splitRight),
+            enabled: canSplitCurrentSurface()
         )
-        splitVerticallyItem.target = self
-        applyConfiguredMenuShortcut(KeyboardShortcutSettings.menuShortcut(for: .splitRight), to: splitVerticallyItem)
-        splitVerticallyItem.image = NSImage(
-            systemSymbolName: "rectangle.righthalf.inset.filled",
-            accessibilityDescription: nil
+        addTerminalMenuItem(
+            to: menu,
+            title: String(localized: "menu.view.splitDown", defaultValue: "Split Down"),
+            action: #selector(splitHorizontally(_:)),
+            systemImage: "rectangle.split.1x2",
+            shortcut: KeyboardShortcutSettings.menuShortcut(for: .splitDown),
+            enabled: canSplitCurrentSurface()
         )
-        appendMoveCurrentSurfaceMoveMenuItems(to: menu); menu.addItem(.separator())
-        let resetTerminalItem = menu.addItem(
-            withTitle: String(localized: "terminalContextMenu.resetTerminal", defaultValue: "Reset Terminal"),
+        addTerminalMenuItem(
+            to: menu,
+            title: String(localized: "terminalContextMenu.resetTerminal", defaultValue: "Reset Terminal"),
             action: #selector(resetTerminal(_:)),
-            keyEquivalent: ""
+            systemImage: "arrow.trianglehead.2.clockwise"
         )
-        resetTerminalItem.target = self
-        resetTerminalItem.image = NSImage(
-            systemSymbolName: "arrow.trianglehead.2.clockwise",
-            accessibilityDescription: nil
+
+        if let context, canUpdateClaudeFromTerminalMenu(context) {
+            addTerminalMenuSeparatorIfNeeded(to: menu)
+            addTerminalMenuItem(
+                to: menu,
+                title: String(localized: "shortcut.updateClaudeInWindow.label", defaultValue: "Update Claude in This Window"),
+                action: #selector(updateClaudeFromTerminalContextMenu(_:)),
+                systemImage: "arrow.down.app",
+                shortcut: KeyboardShortcutSettings.menuShortcut(for: .updateClaudeInWindow)
+            )
+        }
+        if let context, canReconnectSSHFromTerminalMenu(context) {
+            addTerminalMenuItem(
+                to: menu,
+                title: String(
+                    localized: "uniconnect.reconnect.window.now",
+                    defaultValue: "Reconnect This Window Now"
+                ),
+                action: #selector(reconnectWindowFromTerminalContextMenu(_:)),
+                systemImage: "arrow.trianglehead.2.clockwise.rotate.90"
+            )
+        }
+        if let context,
+           let localMenu = UniConnectCoordinator.shared.localWindowActionMenuSnapshot(
+               panelID: context.panelId,
+               workspace: context.workspace
+           ) {
+            addTerminalMenuSeparatorIfNeeded(to: menu)
+            appendLocalWindowActions(localMenu, to: menu)
+        }
+
+        addTerminalMenuSeparatorIfNeeded(to: menu)
+
+        addTerminalMenuItem(
+            to: menu,
+            title: String(localized: "menu.file.closeWindowInBox", defaultValue: "Close Window"),
+            action: #selector(closeWindowFromTerminalContextMenu(_:)),
+            systemImage: "xmark",
+            shortcut: KeyboardShortcutSettings.menuShortcut(for: .closeTab),
+            enabled: context != nil
         )
-        if terminalSurface != nil {
-            menu.addItem(.separator())
-            let identifiersItem = menu.addItem(
-                withTitle: String(localized: "terminalContextMenu.copyIdentifiers", defaultValue: "Copy IDs"),
-                action: #selector(copyWorkspaceAndSurfaceIdentifiers(_:)),
-                keyEquivalent: ""
+        if let context, canEndRemoteTmuxFromTerminalMenu(context) {
+            addTerminalMenuItem(
+                to: menu,
+                title: String(localized: "menu.box.terminateRemoteTmux", defaultValue: "End Remote tmux Session…"),
+                action: #selector(endRemoteTmuxFromTerminalContextMenu(_:)),
+                systemImage: "xmark.octagon.fill"
             )
-            identifiersItem.target = self
-            let linkItem = menu.addItem(
-                withTitle: String(localized: "command.copySurfaceLink.title", defaultValue: "Copy Surface Link"),
-                action: #selector(copyCurrentSurfaceLink(_:)),
-                keyEquivalent: ""
-            )
-            linkItem.target = self
         }
         return menu
+    }
+
+    private typealias TerminalMenuContext = (manager: TabManager, workspace: Workspace, panelId: UUID)
+
+    private func terminalMenuContext() -> TerminalMenuContext? {
+        guard let terminalSurface,
+              let app = AppDelegate.shared,
+              let manager = app.tabManagerFor(tabId: terminalSurface.tabId) ?? app.tabManager,
+              let workspace = manager.tabs.first(where: { $0.id == terminalSurface.tabId }),
+              workspace.panels[terminalSurface.id] != nil else {
+            return nil
+        }
+        return (manager, workspace, terminalSurface.id)
+    }
+
+    private func canUpdateClaudeFromTerminalMenu(_ context: TerminalMenuContext) -> Bool {
+        if context.workspace.uniConnectProfile?.isSSH == true {
+            return context.workspace.uniConnectTmuxSessionsByPanelId[context.panelId] != nil
+        }
+        return context.workspace.uniConnectClaudeSessionsByPanelId[context.panelId] != nil
+    }
+
+    private func canEndRemoteTmuxFromTerminalMenu(_ context: TerminalMenuContext) -> Bool {
+        context.workspace.uniConnectProfile?.isSSH == true
+            && context.workspace.uniConnectTmuxSessionsByPanelId[context.panelId] != nil
+    }
+
+    private func canReconnectSSHFromTerminalMenu(_ context: TerminalMenuContext) -> Bool {
+        context.workspace.uniConnectProfile?.isSSH == true
+            && context.workspace.uniConnectTmuxSessionsByPanelId[context.panelId] != nil
+            && context.workspace.panels[context.panelId] != nil
+    }
+
+    private func appendLocalWindowActions(
+        _ snapshot: UniConnectLocalWindowActionMenuSnapshot,
+        to menu: NSMenu
+    ) {
+        for descriptor in snapshot.recoveryActions {
+            addLocalWindowAction(descriptor, to: menu)
+        }
+
+        appendLocalWindowActionSubmenu(
+            descriptors: snapshot.historyActions,
+            title: String(
+                localized: "uniconnect.localWindow.menu.history",
+                defaultValue: "Previous Conversations"
+            ),
+            systemImage: "clock.arrow.circlepath",
+            to: menu
+        )
+        appendLocalWindowActionSubmenu(
+            descriptors: snapshot.agentActions,
+            title: String(
+                localized: "uniconnect.localWindow.menu.agents",
+                defaultValue: "Start or Switch Agent"
+            ),
+            systemImage: "sparkles.rectangle.stack",
+            to: menu
+        )
+
+        if !snapshot.forgetActions.isEmpty {
+            addTerminalMenuSeparatorIfNeeded(to: menu)
+            appendLocalWindowActionSubmenu(
+                descriptors: snapshot.forgetActions,
+                title: String(
+                    localized: "uniconnect.localWindow.menu.forget",
+                    defaultValue: "Forget Saved Conversation"
+                ),
+                systemImage: "trash",
+                to: menu
+            )
+        }
+    }
+
+    private func appendLocalWindowActionSubmenu(
+        descriptors: [UniConnectLocalWindowActionDescriptor],
+        title: String,
+        systemImage: String,
+        to menu: NSMenu
+    ) {
+        guard !descriptors.isEmpty else { return }
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.image = NSImage(systemSymbolName: systemImage, accessibilityDescription: nil)
+        let submenu = NSMenu(title: title)
+        for descriptor in descriptors {
+            addLocalWindowAction(descriptor, to: submenu)
+        }
+        item.submenu = submenu
+        menu.addItem(item)
+    }
+
+    @discardableResult
+    private func addLocalWindowAction(
+        _ descriptor: UniConnectLocalWindowActionDescriptor,
+        to menu: NSMenu
+    ) -> NSMenuItem {
+        let item = addTerminalMenuItem(
+            to: menu,
+            title: descriptor.title,
+            action: #selector(performLocalWindowActionFromTerminalContextMenu(_:)),
+            systemImage: descriptor.systemImageName,
+            enabled: descriptor.isEnabled
+        )
+        item.representedObject = descriptor.action.id
+        item.toolTip = descriptor.subtitle
+        return item
+    }
+
+    @discardableResult
+    private func addTerminalMenuItem(
+        to menu: NSMenu,
+        title: String,
+        action: Selector,
+        systemImage: String,
+        shortcut: StoredShortcut = .unbound,
+        enabled: Bool = true
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        item.image = NSImage(systemSymbolName: systemImage, accessibilityDescription: nil)
+        item.isEnabled = enabled
+        applyConfiguredMenuShortcut(shortcut, to: item)
+        menu.addItem(item)
+        return item
+    }
+
+    private func addTerminalMenuSeparatorIfNeeded(to menu: NSMenu) {
+        guard !menu.items.isEmpty, menu.items.last?.isSeparatorItem != true else { return }
+        menu.addItem(.separator())
     }
 
     private func canSplitCurrentSurface() -> Bool {
@@ -11725,6 +11906,97 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             return false
         }
         return manager.createSplit(tabId: tabId, surfaceId: surfaceId, direction: direction) != nil
+    }
+
+    @objc private func newTabFromTerminalContextMenu(_ sender: Any?) {
+        guard let context = terminalMenuContext() else {
+            NSSound.beep()
+            return
+        }
+        context.manager.focusTab(context.workspace.id, surfaceId: context.panelId)
+        context.manager.newSurface()
+    }
+
+    @objc private func renameWindowFromTerminalContextMenu(_ sender: Any?) {
+        guard let context = terminalMenuContext() else {
+            NSSound.beep()
+            return
+        }
+        context.manager.focusTab(context.workspace.id, surfaceId: context.panelId)
+        AppDelegate.shared?.requestCommandPaletteRenameTab(
+            preferredWindow: window,
+            source: "terminal.contextMenu.renameWindow"
+        )
+    }
+
+    @objc private func updateClaudeFromTerminalContextMenu(_ sender: Any?) {
+        guard let context = terminalMenuContext(), canUpdateClaudeFromTerminalMenu(context) else {
+            NSSound.beep()
+            return
+        }
+        context.manager.focusTab(context.workspace.id, surfaceId: context.panelId)
+        UniConnectCoordinator.shared.requestClaudeUpdateInWindow(
+            panelID: context.panelId,
+            workspace: context.workspace
+        )
+    }
+
+    @objc private func reconnectWindowFromTerminalContextMenu(_ sender: Any?) {
+        guard let context = terminalMenuContext(), canReconnectSSHFromTerminalMenu(context) else {
+            NSSound.beep()
+            return
+        }
+        context.manager.focusTab(context.workspace.id, surfaceId: context.panelId)
+        UniConnectCoordinator.shared.reconnectNow(
+            panelId: context.panelId,
+            in: context.workspace,
+            userInitiated: true
+        )
+    }
+
+    @objc private func performLocalWindowActionFromTerminalContextMenu(_ sender: Any?) {
+        guard let context = terminalMenuContext(),
+              let actionID = (sender as? NSMenuItem)?.representedObject as? String,
+              let snapshot = UniConnectCoordinator.shared.localWindowActionMenuSnapshot(
+                  panelID: context.panelId,
+                  workspace: context.workspace
+              ),
+              let descriptor = (
+                  snapshot.recoveryActions
+                    + snapshot.historyActions
+                    + snapshot.agentActions
+                    + snapshot.forgetActions
+              ).first(where: { $0.action.id == actionID }),
+              descriptor.isEnabled else {
+            NSSound.beep()
+            return
+        }
+        context.manager.focusTab(context.workspace.id, surfaceId: context.panelId)
+        UniConnectCoordinator.shared.performLocalWindowAction(
+            descriptor.action,
+            panelID: context.panelId,
+            workspace: context.workspace
+        )
+    }
+
+    @objc private func closeWindowFromTerminalContextMenu(_ sender: Any?) {
+        guard let context = terminalMenuContext() else {
+            NSSound.beep()
+            return
+        }
+        context.manager.closePanelWithConfirmation(
+            tabId: context.workspace.id,
+            surfaceId: context.panelId
+        )
+    }
+
+    @objc private func endRemoteTmuxFromTerminalContextMenu(_ sender: Any?) {
+        guard let context = terminalMenuContext(), canEndRemoteTmuxFromTerminalMenu(context) else {
+            NSSound.beep()
+            return
+        }
+        context.manager.focusTab(context.workspace.id, surfaceId: context.panelId)
+        UniConnectCoordinator.shared.terminateRemoteTmuxSession(in: context.workspace)
     }
 
     @objc private func triggerFlash(_ sender: Any?) {
@@ -11955,6 +12227,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             return .insertText(segments.joined())
         case .uploadFiles(let fileURLs, _, _):
             return .uploadFiles(fileURLs)
+        case .uploadFilesWithLeadingText(_, let fileURLs, _, _):
+            return .uploadFiles(fileURLs)
         case .unavailable, .reject:
             return .reject
         }
@@ -12008,7 +12282,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         switch plan {
         case .unavailable, .reject:
             isRejected = true
-        case .insertText, .insertTextSegments, .uploadFiles:
+        case .insertText, .insertTextSegments, .uploadFiles, .uploadFilesWithLeadingText:
             isRejected = false
         }
 
@@ -12064,18 +12338,18 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         switch plan {
         case .unavailable, .reject:
             isRejected = true
-        case .insertText, .insertTextSegments, .uploadFiles:
+        case .insertText, .insertTextSegments, .uploadFiles, .uploadFilesWithLeadingText:
             isRejected = false
         }
 
         let operation = operation ?? {
-            if case .uploadFiles = plan {
+            if plan.uploadedFileURLs != nil {
                 return TerminalImageTransferOperation()
             }
             return nil
         }()
         let destinationIsAvailable = { [weak self] in
-            guard case .uploadFiles(_, let remoteTarget, _) = plan else { return true }
+            guard let remoteTarget = plan.remoteUploadTarget else { return true }
             return MainActor.assumeIsolated {
                 self?.terminalSurface?.canContinueImageTransfer(to: remoteTarget) == true
             }
@@ -12192,6 +12466,17 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         case .fileURLs(let fileURLs):
             let plan = TerminalImageTransferPlanner.plan(
                 fileURLs: fileURLs,
+                target: resolvedImageTransferTarget(),
+                mode: .drop
+            )
+            return executeImageTransferPlan(
+                plan,
+                onCancel: onCancel,
+                sourceFileURLs: fileURLs
+            )
+        case .textAndFileURLs(_, let fileURLs):
+            let plan = TerminalImageTransferPlanner.plan(
+                preparedContent: preparedContent,
                 target: resolvedImageTransferTarget(),
                 mode: .drop
             )
@@ -12436,6 +12721,10 @@ final class GhosttySurfaceScrollView: NSView {
         }
     }
 
+    static func imageTransferHUDAlpha(reduceTransparency: Bool) -> CGFloat {
+        reduceTransparency ? 1 : 0.95
+    }
+
     private static func flashPresentation(for style: FlashStyle) -> WorkspaceAttentionFlashPresentation {
         switch style {
         case .navigation:
@@ -12487,6 +12776,8 @@ final class GhosttySurfaceScrollView: NSView {
     private let imageTransferIndicatorContainerView: NSView
     private let imageTransferIndicatorView: NSVisualEffectView
     private let imageTransferIndicatorSpinner: NSProgressIndicator
+    private let imageTransferIndicatorLabel: NSTextField
+    private let imageTransferIndicatorProgressBar: NSProgressIndicator
     private let imageTransferCancelButton: NSButton
     private var searchOverlayHostingView: NSHostingView<SurfaceSearchOverlay>?
     private var deferredSearchOverlayMutationWorkItem: DispatchWorkItem?
@@ -12720,6 +13011,8 @@ final class GhosttySurfaceScrollView: NSView {
         imageTransferIndicatorContainerView = NSView(frame: .zero)
         imageTransferIndicatorView = NSVisualEffectView(frame: .zero)
         imageTransferIndicatorSpinner = NSProgressIndicator(frame: .zero)
+        imageTransferIndicatorLabel = NSTextField(labelWithString: "")
+        imageTransferIndicatorProgressBar = NSProgressIndicator(frame: .zero)
         imageTransferCancelButton = NSButton(frame: .zero)
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
@@ -12873,11 +13166,25 @@ final class GhosttySurfaceScrollView: NSView {
         imageTransferIndicatorView.layer?.masksToBounds = true
         imageTransferIndicatorView.layer?.borderWidth = 1
         imageTransferIndicatorView.layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
-        imageTransferIndicatorView.alphaValue = 0.95
+        imageTransferIndicatorView.alphaValue = Self.imageTransferHUDAlpha(
+            reduceTransparency: NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        )
         imageTransferIndicatorSpinner.translatesAutoresizingMaskIntoConstraints = false
         imageTransferIndicatorSpinner.style = .spinning
         imageTransferIndicatorSpinner.controlSize = .small
         imageTransferIndicatorSpinner.isDisplayedWhenStopped = false
+        imageTransferIndicatorLabel.translatesAutoresizingMaskIntoConstraints = false
+        imageTransferIndicatorLabel.font = NSFont.systemFont(ofSize: 11.5, weight: .semibold)
+        imageTransferIndicatorLabel.textColor = NSColor.labelColor
+        imageTransferIndicatorLabel.lineBreakMode = .byTruncatingTail
+        imageTransferIndicatorLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        imageTransferIndicatorProgressBar.translatesAutoresizingMaskIntoConstraints = false
+        imageTransferIndicatorProgressBar.style = .bar
+        imageTransferIndicatorProgressBar.controlSize = .small
+        imageTransferIndicatorProgressBar.isIndeterminate = false
+        imageTransferIndicatorProgressBar.minValue = 0
+        imageTransferIndicatorProgressBar.maxValue = 1
+        imageTransferIndicatorProgressBar.doubleValue = 0
         imageTransferCancelButton.translatesAutoresizingMaskIntoConstraints = false
         imageTransferCancelButton.isBordered = false
         imageTransferCancelButton.imagePosition = .imageOnly
@@ -12894,6 +13201,8 @@ final class GhosttySurfaceScrollView: NSView {
         imageTransferCancelButton.action = #selector(handleImageTransferCancel)
         imageTransferIndicatorContainerView.addSubview(imageTransferIndicatorView)
         imageTransferIndicatorView.addSubview(imageTransferIndicatorSpinner)
+        imageTransferIndicatorView.addSubview(imageTransferIndicatorLabel)
+        imageTransferIndicatorView.addSubview(imageTransferIndicatorProgressBar)
         imageTransferIndicatorView.addSubview(imageTransferCancelButton)
         NSLayoutConstraint.activate([
             imageTransferIndicatorView.topAnchor.constraint(equalTo: imageTransferIndicatorContainerView.topAnchor),
@@ -12904,13 +13213,18 @@ final class GhosttySurfaceScrollView: NSView {
             imageTransferIndicatorSpinner.centerYAnchor.constraint(equalTo: imageTransferIndicatorView.centerYAnchor),
             imageTransferIndicatorSpinner.widthAnchor.constraint(equalToConstant: 14),
             imageTransferIndicatorSpinner.heightAnchor.constraint(equalToConstant: 14),
-            imageTransferCancelButton.leadingAnchor.constraint(equalTo: imageTransferIndicatorSpinner.trailingAnchor, constant: 6),
+            imageTransferIndicatorLabel.leadingAnchor.constraint(equalTo: imageTransferIndicatorSpinner.trailingAnchor, constant: 8),
+            imageTransferIndicatorLabel.topAnchor.constraint(equalTo: imageTransferIndicatorView.topAnchor, constant: 7),
+            imageTransferIndicatorLabel.trailingAnchor.constraint(equalTo: imageTransferCancelButton.leadingAnchor, constant: -8),
+            imageTransferIndicatorProgressBar.leadingAnchor.constraint(equalTo: imageTransferIndicatorLabel.leadingAnchor),
+            imageTransferIndicatorProgressBar.trailingAnchor.constraint(equalTo: imageTransferIndicatorLabel.trailingAnchor),
+            imageTransferIndicatorProgressBar.topAnchor.constraint(equalTo: imageTransferIndicatorLabel.bottomAnchor, constant: 5),
+            imageTransferIndicatorProgressBar.bottomAnchor.constraint(equalTo: imageTransferIndicatorView.bottomAnchor, constant: -7),
+            imageTransferIndicatorProgressBar.widthAnchor.constraint(greaterThanOrEqualToConstant: 124),
             imageTransferCancelButton.trailingAnchor.constraint(equalTo: imageTransferIndicatorView.trailingAnchor, constant: -8),
             imageTransferCancelButton.centerYAnchor.constraint(equalTo: imageTransferIndicatorView.centerYAnchor),
             imageTransferCancelButton.widthAnchor.constraint(equalToConstant: 16),
             imageTransferCancelButton.heightAnchor.constraint(equalToConstant: 16),
-            imageTransferIndicatorSpinner.topAnchor.constraint(equalTo: imageTransferIndicatorView.topAnchor, constant: 8),
-            imageTransferIndicatorSpinner.bottomAnchor.constraint(equalTo: imageTransferIndicatorView.bottomAnchor, constant: -8),
         ])
         imageTransferIndicatorContainerView.isHidden = true
         addSubview(imageTransferIndicatorContainerView)
@@ -13600,8 +13914,25 @@ final class GhosttySurfaceScrollView: NSView {
         }
         activeImageTransferOperation = operation
         activeImageTransferCancelHandler = onCancel
+        imageTransferIndicatorView.alphaValue = Self.imageTransferHUDAlpha(
+            reduceTransparency: NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        )
         imageTransferIndicatorSpinner.stopAnimation(nil)
+        imageTransferIndicatorLabel.stringValue = String(
+            localized: "terminal.imageTransfer.progress.preparing",
+            defaultValue: "Preparing image…"
+        )
+        imageTransferIndicatorProgressBar.doubleValue = 0
+        imageTransferIndicatorProgressBar.isIndeterminate = true
+        imageTransferIndicatorProgressBar.startAnimation(nil)
         imageTransferIndicatorContainerView.isHidden = true
+        operation.installProgressHandler { [weak self, weak operation] progress in
+            DispatchQueue.main.async {
+                guard let self, let operation,
+                      self.activeImageTransferOperation === operation else { return }
+                self.updateImageTransferProgress(progress)
+            }
+        }
 
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -13645,8 +13976,59 @@ final class GhosttySurfaceScrollView: NSView {
         imageTransferAvailabilityTimer = nil
         activeImageTransferOperation = nil
         activeImageTransferCancelHandler = nil
+        operation?.clearProgressHandler()
         imageTransferIndicatorSpinner.stopAnimation(nil)
+        imageTransferIndicatorProgressBar.stopAnimation(nil)
+        imageTransferIndicatorProgressBar.isIndeterminate = false
+        imageTransferIndicatorProgressBar.doubleValue = 0
         imageTransferIndicatorContainerView.isHidden = true
+    }
+
+    private func updateImageTransferProgress(
+        _ progress: TerminalImageTransferOperation.ProgressSnapshot
+    ) {
+        switch progress.phase {
+        case .preparing:
+            imageTransferIndicatorLabel.stringValue = String(
+                localized: "terminal.imageTransfer.progress.preparing",
+                defaultValue: "Preparing image…"
+            )
+            imageTransferIndicatorProgressBar.isIndeterminate = true
+            imageTransferIndicatorProgressBar.startAnimation(nil)
+        case .uploading:
+            guard let fraction = progress.fractionCompleted else {
+                imageTransferIndicatorLabel.stringValue = String(
+                    localized: "terminal.imageTransfer.progress.preparing",
+                    defaultValue: "Preparing image…"
+                )
+                imageTransferIndicatorProgressBar.isIndeterminate = true
+                imageTransferIndicatorProgressBar.startAnimation(nil)
+                break
+            }
+            let percentage = Int((fraction * 100).rounded(.down))
+            imageTransferIndicatorLabel.stringValue = String.localizedStringWithFormat(
+                String(
+                    localized: "terminal.imageTransfer.progress.uploading",
+                    defaultValue: "Uploading image · %lld%%"
+                ),
+                Int64(percentage)
+            )
+            imageTransferIndicatorProgressBar.stopAnimation(nil)
+            imageTransferIndicatorProgressBar.isIndeterminate = false
+            imageTransferIndicatorProgressBar.doubleValue = fraction
+        case .finalizing:
+            imageTransferIndicatorLabel.stringValue = String(
+                localized: "terminal.imageTransfer.progress.finalizing",
+                defaultValue: "Finalizing upload…"
+            )
+            imageTransferIndicatorProgressBar.stopAnimation(nil)
+            imageTransferIndicatorProgressBar.isIndeterminate = false
+            imageTransferIndicatorProgressBar.doubleValue = min(
+                0.99,
+                progress.fractionCompleted ?? 0.99
+            )
+        }
+        imageTransferIndicatorView.setAccessibilityLabel(imageTransferIndicatorLabel.stringValue)
     }
 
     private func makeSearchOverlayRootView(

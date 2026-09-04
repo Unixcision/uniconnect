@@ -1,6 +1,22 @@
 # cmux.json settings
 
-Global app preferences live in `~/.config/cmux/cmux.json`.
+Global app preferences live in `~/.config/uniconnect/uniconnect.json`.
+
+## `shortcuts.bindings`
+
+Keyboard shortcuts can be overridden with their stable action identifiers. `reconnectFocusedSSHWindow` forces the selected SSH/tmux window immediately, including a hung connection that has not yet been marked disconnected. `reconnectDroppedWindows` force-reconnects all open SSH/tmux windows. Renaming a window remains available from menus and context menus but is unbound by default.
+
+```json
+{
+  "shortcuts": {
+    "bindings": {
+      "reconnectFocusedSSHWindow": "cmd+r",
+      "reconnectDroppedWindows": "ctrl+cmd+r",
+      "renameTab": "none"
+    }
+  }
+}
+```
 
 ## `app.confirmQuit`
 

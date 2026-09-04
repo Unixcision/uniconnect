@@ -33,7 +33,7 @@ public actor ReachabilityService: ReachabilityProviding {
     /// arm it.
     public init() {
         monitor = NWPathMonitor()
-        queue = DispatchQueue(label: "dev.cmux.network-reachability", qos: .utility)
+        queue = DispatchQueue(label: "com.unixcision.uniconnect.network-reachability", qos: .utility)
     }
 
     /// Whether the system currently has a satisfied network path.

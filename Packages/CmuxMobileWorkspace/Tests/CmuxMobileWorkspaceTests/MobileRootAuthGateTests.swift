@@ -14,9 +14,9 @@ import Testing
             attachTicketAuthenticated: false
         ))
 
-        let attachURL = try #require(URL(string: "cmux-ios://attach?v=1&payload=test"))
+        let attachURL = try #require(URL(string: "uniconnect://attach?v=1&payload=test"))
         let authURL = try #require(URL(string: "stack-auth-mobile-oauth-url://callback?code=test"))
-        let otherURL = try #require(URL(string: "cmux-ios://oauth?v=1"))
+        let otherURL = try #require(URL(string: "uniconnect://oauth?v=1"))
 
         #expect(MobileRootAuthGate.isAttachURL(attachURL))
         #expect(!MobileRootAuthGate.isAttachURL(authURL))

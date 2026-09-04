@@ -13,7 +13,7 @@ struct DockEmptyView: View {
                 .font(.system(size: 13, weight: .semibold))
             Text(String(
                 localized: "dock.empty.subtitle",
-                defaultValue: "Add controls to .cmux/dock.json."
+                defaultValue: "Add controls to .uniconnect/dock.json."
             ))
             .font(.system(size: 12))
             .foregroundStyle(.secondary)
@@ -97,16 +97,16 @@ struct DockEmptyView: View {
             Set up cmux Dock controls for the current context.
 
             First, learn the feature before editing:
-            1. Run `uniconnect docs dock` if the cmux CLI is available. If it is not, read https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md
+            1. Run `cmux docs dock` if the cmux CLI is available. If it is not, read https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md
             2. Inspect the repository or current directory to understand the project type, scripts, package manager, dev servers, logs, task runners, test commands, and any existing TUI tools.
             3. If the desired Dock is ambiguous, ask the user what they want monitored or controlled before writing files.
 
             Dock is cmux's right-sidebar terminal control area. A Dock config is JSON with a top-level `controls` array. Each control runs a command in its own Ghostty-backed terminal section using the user's login shell. Controls are useful for project dashboards, git/status views, dev server or build status, test watchers, log tails, queues, local services, or a custom TUI such as `cmux feed tui --opentui` when that feed is useful.
 
             Choose where to write the config:
-            - In a repository or project directory, create or edit `.cmux/dock.json` so teammates can share it.
+            - In a repository or project directory, create or edit `.uniconnect/dock.json` so teammates can share it.
             - For a personal default outside a repo, create or edit `~/.config/uniconnect/dock.json`.
-            - If both exist, project `.cmux/dock.json` is more specific for that project. Nested project configs apply to that directory tree; use the nearest relevant project config instead of writing unrelated controls globally.
+            - If both exist, project `.uniconnect/dock.json` is more specific for that project. Nested project configs apply to that directory tree; use the nearest relevant project config instead of writing unrelated controls globally.
             - If there is no repo and no clear project root, use the global config only after confirming the user wants a personal Dock.
 
             Schema:

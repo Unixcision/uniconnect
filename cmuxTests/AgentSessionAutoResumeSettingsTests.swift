@@ -201,6 +201,69 @@ final class AgentSessionAutoResumeSettingsTests: XCTestCase {
     }
 
     @MainActor
+    func testUniConnectLocalAgentRestoreUsesLoginShellInputAndExitKeepsHistory() throws {
+        try withRestoredDefaults(key: AgentSessionAutoResumeSettings.autoResumeAgentSessionsKey) {
+            UserDefaults.standard.removeObject(
+                forKey: AgentSessionAutoResumeSettings.autoResumeAgentSessionsKey
+            )
+
+            let boxRootURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("uniconnect-local-resume-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: boxRootURL, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: boxRootURL) }
+
+            let boxRoot = boxRootURL.path
+            let sessionID = "codex-uniconnect-local-resume-\(UUID().uuidString)"
+            let source = Workspace(workingDirectory: boxRoot)
+            source.uniConnectProfile = UniConnectWorkspaceProfile(
+                kind: .local,
+                importIdentity: UUID(),
+                localRoot: boxRoot
+            )
+            source.uniConnectConfigureLocalRoot(boxRoot)
+            let sourcePanelID = try XCTUnwrap(source.focusedPanelId)
+            let sourceIndex = try makeRestorableAgentIndex(
+                workspaceId: source.id,
+                panelId: sourcePanelID,
+                sessionId: sessionID
+            )
+            source.updatePanelShellActivityState(panelId: sourcePanelID, state: .commandRunning)
+            let snapshot = source.sessionSnapshot(
+                includeScrollback: false,
+                restorableAgentIndex: sourceIndex
+            )
+
+            let restored = Workspace()
+            restored.restoreSessionSnapshot(snapshot)
+            let restoredPanelID = try XCTUnwrap(restored.focusedPanelId)
+            let restoredPanel = try XCTUnwrap(restored.terminalPanel(for: restoredPanelID))
+            let startupInput = try XCTUnwrap(restoredPanel.surface.initialInput)
+
+            XCTAssertNil(
+                restoredPanel.surface.debugInitialCommand(),
+                "UniConnect local resume must not replace the durable login shell"
+            )
+            XCTAssertTrue(startupInput.contains("'codex'"), startupInput)
+            XCTAssertTrue(startupInput.contains("'resume'"), startupInput)
+            XCTAssertTrue(startupInput.contains(sessionID), startupInput)
+            XCTAssertTrue(startupInput.contains("'--yolo'"), startupInput)
+            XCTAssertTrue(startupInput.contains(boxRoot), startupInput)
+
+            // `/exit` returns the resumed agent to this login shell. Its idle report changes
+            // runtime state only; neither the latest reference nor history is destroyed.
+            restored.updatePanelShellActivityState(panelId: restoredPanelID, state: .commandRunning)
+            restored.updatePanelShellActivityState(panelId: restoredPanelID, state: .promptIdle)
+            let afterExit = try XCTUnwrap(
+                restored.sessionSnapshot(includeScrollback: false)
+                    .panels.first?.terminal?.uniConnectLocalWindow
+            )
+            XCTAssertEqual(afterExit.runtimeState, .shell)
+            XCTAssertEqual(afterExit.latestConversation?.sessionID, sessionID)
+            XCTAssertEqual(afterExit.conversations.count, 1)
+        }
+    }
+
+    @MainActor
     func testRemoteWorkspaceAutoResumeKeepsRemoteStartupCommand() throws {
         try withRestoredDefaults(key: AgentSessionAutoResumeSettings.autoResumeAgentSessionsKey) {
             let defaults = UserDefaults.standard

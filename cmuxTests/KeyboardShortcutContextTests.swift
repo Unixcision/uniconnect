@@ -7,31 +7,43 @@ import XCTest
 #endif
 
 final class KeyboardShortcutContextTests: XCTestCase {
-    func testRenameTabAndBrowserReloadCanShareDefaultChordAcrossContexts() {
+    func testFocusedSSHReconnectOwnsCommandRWhileRenameAndBrowserReloadRemainConfigurable() {
         let renameTabShortcut = KeyboardShortcutSettings.Action.renameTab.defaultShortcut
+        let focusedReconnectShortcut = KeyboardShortcutSettings.Action.reconnectFocusedSSHWindow.defaultShortcut
+        let configuredBrowserReload = StoredShortcut(
+            key: "r",
+            command: true,
+            shift: false,
+            option: false,
+            control: false
+        )
 
-        XCTAssertEqual(renameTabShortcut, KeyboardShortcutSettings.Action.browserReload.defaultShortcut)
+        XCTAssertEqual(focusedReconnectShortcut, configuredBrowserReload)
+        XCTAssertEqual(renameTabShortcut, .unbound)
+        XCTAssertEqual(KeyboardShortcutSettings.Action.browserReload.defaultShortcut, .unbound)
+        XCTAssertEqual(KeyboardShortcutSettings.Action.reconnectFocusedSSHWindow.shortcutContext, .nonBrowserPanel)
+        XCTAssertFalse(KeyboardShortcutSettings.settingsVisibleActions.contains(.browserReload))
         XCTAssertEqual(KeyboardShortcutSettings.Action.renameTab.shortcutContext, .nonBrowserPanel)
         XCTAssertEqual(KeyboardShortcutSettings.Action.browserReload.shortcutContext, .browserPanel)
         XCTAssertFalse(
-            KeyboardShortcutSettings.Action.renameTab.conflicts(
-                with: KeyboardShortcutSettings.Action.browserReload.defaultShortcut,
+            KeyboardShortcutSettings.Action.reconnectFocusedSSHWindow.conflicts(
+                with: configuredBrowserReload,
                 proposedAction: .browserReload,
-                configuredShortcut: renameTabShortcut
+                configuredShortcut: focusedReconnectShortcut
             )
         )
         XCTAssertFalse(
             KeyboardShortcutSettings.Action.browserReload.conflicts(
-                with: renameTabShortcut,
-                proposedAction: .renameTab,
-                configuredShortcut: KeyboardShortcutSettings.Action.browserReload.defaultShortcut
+                with: focusedReconnectShortcut,
+                proposedAction: .reconnectFocusedSSHWindow,
+                configuredShortcut: configuredBrowserReload
             )
         )
         XCTAssertTrue(
-            KeyboardShortcutSettings.Action.renameTab.conflicts(
-                with: renameTabShortcut,
+            KeyboardShortcutSettings.Action.reconnectFocusedSSHWindow.conflicts(
+                with: focusedReconnectShortcut,
                 proposedAction: .renameWorkspace,
-                configuredShortcut: renameTabShortcut
+                configuredShortcut: focusedReconnectShortcut
             )
         )
     }
@@ -56,14 +68,16 @@ final class KeyboardShortcutContextTests: XCTestCase {
         KeyboardShortcutSettings.resetAll()
 
         let commandR = StoredShortcut(key: "r", command: true, shift: false, option: false, control: false)
-        XCTAssertEqual(commandR, KeyboardShortcutSettings.Action.renameTab.defaultShortcut)
-        XCTAssertEqual(commandR, KeyboardShortcutSettings.Action.browserReload.defaultShortcut)
+        XCTAssertEqual(commandR, KeyboardShortcutSettings.Action.reconnectFocusedSSHWindow.defaultShortcut)
+        XCTAssertEqual(KeyboardShortcutSettings.Action.renameTab.defaultShortcut, .unbound)
+        XCTAssertEqual(KeyboardShortcutSettings.Action.browserReload.defaultShortcut, .unbound)
 
+        KeyboardShortcutSettings.clearShortcut(for: .reconnectFocusedSSHWindow)
         KeyboardShortcutSettings.setShortcut(commandR, for: .renameTab)
         KeyboardShortcutSettings.clearShortcut(for: .renameTab)
 
         XCTAssertEqual(KeyboardShortcutSettings.shortcut(for: .renameTab), .unbound)
-        XCTAssertEqual(KeyboardShortcutSettings.shortcut(for: .browserReload), commandR)
+        XCTAssertEqual(KeyboardShortcutSettings.shortcut(for: .browserReload), .unbound)
         XCTAssertEqual(
             KeyboardShortcutSettings.Action.renameTab.normalizedRecordedShortcutResult(commandR),
             .accepted(commandR)
@@ -72,7 +86,7 @@ final class KeyboardShortcutContextTests: XCTestCase {
         KeyboardShortcutSettings.setShortcut(commandR, for: .renameTab)
 
         XCTAssertEqual(KeyboardShortcutSettings.shortcut(for: .renameTab), commandR)
-        XCTAssertEqual(KeyboardShortcutSettings.shortcut(for: .browserReload), commandR)
+        XCTAssertEqual(KeyboardShortcutSettings.shortcut(for: .browserReload), .unbound)
     }
 
     func testSwapPathIgnoresNonOverlappingShortcutContexts() throws {
@@ -94,16 +108,18 @@ final class KeyboardShortcutContextTests: XCTestCase {
         )
         KeyboardShortcutSettings.resetAll()
 
-        let commandR = KeyboardShortcutSettings.Action.renameTab.defaultShortcut
-        KeyboardShortcutSettings.clearShortcut(for: .renameTab)
+        let commandR = KeyboardShortcutSettings.Action.reconnectFocusedSSHWindow.defaultShortcut
+        KeyboardShortcutSettings.clearShortcut(for: .reconnectFocusedSSHWindow)
+        KeyboardShortcutSettings.setShortcut(commandR, for: .browserReload)
 
-        KeyboardShortcutSettings.swapShortcutConflict(
+        let didSwap = KeyboardShortcutSettings.swapShortcutConflict(
             proposedShortcut: commandR,
             currentAction: .renameTab,
             conflictingAction: .browserReload,
             previousShortcut: .unbound
         )
 
+        XCTAssertFalse(didSwap)
         XCTAssertEqual(KeyboardShortcutSettings.shortcut(for: .renameTab), .unbound)
         XCTAssertEqual(KeyboardShortcutSettings.shortcut(for: .browserReload), commandR)
         XCTAssertNil(
@@ -117,6 +133,69 @@ final class KeyboardShortcutContextTests: XCTestCase {
                 shortcutForAction: { $0.defaultShortcut }
             )
         )
+    }
+
+    func testLegacyStoredRenameCommandRMigratesOnceWithoutChangingCustomRename() throws {
+        let originalSettingsFileStore = KeyboardShortcutSettings.settingsFileStore
+        let directoryURL = try makeTemporaryDirectory()
+        let settingsFileURL = directoryURL.appendingPathComponent("uniconnect.json")
+        try writeSettingsFile("{}", to: settingsFileURL)
+        KeyboardShortcutSettings.settingsFileStore = KeyboardShortcutSettingsFileStore(
+            primaryPath: settingsFileURL.path,
+            fallbackPath: nil,
+            additionalFallbackPaths: [],
+            startWatching: false
+        )
+        defer {
+            KeyboardShortcutSettings.settingsFileStore = originalSettingsFileStore
+            try? FileManager.default.removeItem(at: directoryURL)
+        }
+        let suiteName = "uniconnect-shortcut-migration-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let commandR = StoredShortcut(key: "r", command: true, shift: false, option: false, control: false)
+        defaults.set(
+            try JSONEncoder().encode(commandR),
+            forKey: KeyboardShortcutSettings.Action.renameTab.defaultsKey
+        )
+
+        KeyboardShortcutSettings.migrateLegacyRenameCommandRIfNeeded(defaults: defaults)
+
+        XCTAssertNil(defaults.object(forKey: KeyboardShortcutSettings.Action.renameTab.defaultsKey))
+        XCTAssertEqual(
+            try JSONDecoder().decode(
+                StoredShortcut.self,
+                from: try XCTUnwrap(defaults.data(
+                    forKey: KeyboardShortcutSettings.Action.reconnectFocusedSSHWindow.defaultsKey
+                ))
+            ),
+            commandR
+        )
+        XCTAssertTrue(defaults.bool(forKey: KeyboardShortcutSettings.focusedSSHReconnectCommandRMigrationKey))
+
+        let customRename = StoredShortcut(key: "e", command: true, shift: false, option: true, control: false)
+        let secondSuiteName = "uniconnect-shortcut-migration-custom-\(UUID().uuidString)"
+        let customDefaults = try XCTUnwrap(UserDefaults(suiteName: secondSuiteName))
+        defer { customDefaults.removePersistentDomain(forName: secondSuiteName) }
+        customDefaults.set(
+            try JSONEncoder().encode(customRename),
+            forKey: KeyboardShortcutSettings.Action.renameTab.defaultsKey
+        )
+
+        KeyboardShortcutSettings.migrateLegacyRenameCommandRIfNeeded(defaults: customDefaults)
+
+        XCTAssertEqual(
+            try JSONDecoder().decode(
+                StoredShortcut.self,
+                from: try XCTUnwrap(customDefaults.data(
+                    forKey: KeyboardShortcutSettings.Action.renameTab.defaultsKey
+                ))
+            ),
+            customRename
+        )
+        XCTAssertNil(customDefaults.object(
+            forKey: KeyboardShortcutSettings.Action.reconnectFocusedSSHWindow.defaultsKey
+        ))
     }
 
     func testRenameWorkspaceIsScopedOutsideBrowserPanels() {
@@ -141,19 +220,20 @@ final class KeyboardShortcutContextTests: XCTestCase {
         XCTAssertEqual(KeyboardShortcutSettings.Action.toggleReactGrab.shortcutContext, .application)
     }
 
-    func testBrowserFocusModeToggleIsBrowserScopedAndDoesNotCollideWithSplitZoom() {
+    func testLegacyBrowserFocusModeCanBeConfiguredWithoutCollidingWithSplitZoom() {
         let focusMode = KeyboardShortcutSettings.Action.toggleBrowserFocusMode
 
         // Scoped to browser panels so it only claims the key when a browser is focused.
         XCTAssertEqual(focusMode.shortcutContext, .browserPanel)
 
-        // Default is Option+Cmd+Return: a modifier tier web pages rarely bind,
-        // distinct from the other Return-based shortcut (Cmd+Shift+Return = toggle
-        // split zoom), and clear of the Ctrl+Cmd+Return some screen recorders use.
-        let focusModeShortcut = focusMode.defaultShortcut
-        XCTAssertEqual(
-            focusModeShortcut,
-            StoredShortcut(key: "\r", command: true, shift: false, option: true, control: false)
+        XCTAssertEqual(focusMode.defaultShortcut, .unbound)
+        XCTAssertFalse(KeyboardShortcutSettings.settingsVisibleActions.contains(focusMode))
+        let focusModeShortcut = StoredShortcut(
+            key: "\r",
+            command: true,
+            shift: false,
+            option: true,
+            control: false
         )
         XCTAssertNotEqual(
             focusModeShortcut,
@@ -175,6 +255,8 @@ final class KeyboardShortcutContextTests: XCTestCase {
             .markdownZoomReset,
         ] {
             XCTAssertEqual(action.shortcutContext, .markdownPanel)
+            XCTAssertEqual(action.defaultShortcut, .unbound)
+            XCTAssertFalse(KeyboardShortcutSettings.settingsVisibleActions.contains(action))
         }
 
         let markdown = KeyboardShortcutSettings.Action.markdownZoomIn.shortcutContext
@@ -206,7 +288,7 @@ final class KeyboardShortcutContextTests: XCTestCase {
         // German QWERTZ: dedicated "+" key sits at the US RightBracket position
         // (keyCode 30) and produces "+" with no Shift; "-" sits at the US Slash
         // position (keyCode 44) and produces "-" with no Shift.
-        let zoomIn = KeyboardShortcutSettings.Action.markdownZoomIn.defaultShortcut
+        let zoomIn = StoredShortcut(key: "=", command: true, shift: false, option: false, control: false)
         XCTAssertTrue(
             zoomIn.matches(
                 keyCode: 30,
@@ -217,7 +299,7 @@ final class KeyboardShortcutContextTests: XCTestCase {
             "Cmd and the dedicated + key should zoom markdown in on non-US layouts"
         )
 
-        let zoomOut = KeyboardShortcutSettings.Action.markdownZoomOut.defaultShortcut
+        let zoomOut = StoredShortcut(key: "-", command: true, shift: false, option: false, control: false)
         XCTAssertTrue(
             zoomOut.matches(
                 keyCode: 44,
@@ -230,7 +312,7 @@ final class KeyboardShortcutContextTests: XCTestCase {
     }
 
     func testBrowserZoomMatchesDedicatedPlusMinusKeysOnNonUSLayout() {
-        let zoomIn = KeyboardShortcutSettings.Action.browserZoomIn.defaultShortcut
+        let zoomIn = StoredShortcut(key: "=", command: true, shift: false, option: false, control: false)
         XCTAssertTrue(
             zoomIn.matches(
                 keyCode: 30,
@@ -241,7 +323,7 @@ final class KeyboardShortcutContextTests: XCTestCase {
             "Cmd and the dedicated + key should zoom the browser in on non-US layouts"
         )
 
-        let zoomOut = KeyboardShortcutSettings.Action.browserZoomOut.defaultShortcut
+        let zoomOut = StoredShortcut(key: "-", command: true, shift: false, option: false, control: false)
         XCTAssertTrue(
             zoomOut.matches(
                 keyCode: 44,
@@ -258,7 +340,7 @@ final class KeyboardShortcutContextTests: XCTestCase {
     // the "-" zoom-out chord. Without this, a future refactor could re-gate "_"
     // behind Shift with no failing test to catch it.
     func testZoomOutMatchesBareUnderscoreOnNonUSLayout() {
-        let markdownZoomOut = KeyboardShortcutSettings.Action.markdownZoomOut.defaultShortcut
+        let markdownZoomOut = StoredShortcut(key: "-", command: true, shift: false, option: false, control: false)
         XCTAssertTrue(
             markdownZoomOut.matches(
                 keyCode: 27,
@@ -269,7 +351,7 @@ final class KeyboardShortcutContextTests: XCTestCase {
             "Cmd and a dedicated _ key should zoom markdown out (\"_\" normalizes to \"-\")"
         )
 
-        let browserZoomOut = KeyboardShortcutSettings.Action.browserZoomOut.defaultShortcut
+        let browserZoomOut = StoredShortcut(key: "-", command: true, shift: false, option: false, control: false)
         XCTAssertTrue(
             browserZoomOut.matches(
                 keyCode: 27,
@@ -284,7 +366,7 @@ final class KeyboardShortcutContextTests: XCTestCase {
     func testZoomInDoesNotMatchUnrelatedKeyOnNonUSLayout() {
         // Guard: the layout-aware "+" handling must not make Cmd-= match keys that
         // legitimately produce other characters (e.g. a bare letter key).
-        let zoomIn = KeyboardShortcutSettings.Action.browserZoomIn.defaultShortcut
+        let zoomIn = StoredShortcut(key: "=", command: true, shift: false, option: false, control: false)
         XCTAssertFalse(
             zoomIn.matches(
                 keyCode: 45,

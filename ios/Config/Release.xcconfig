@@ -4,9 +4,9 @@
 
 #include "Shared.xcconfig"
 
-PRODUCT_BUNDLE_IDENTIFIER = dev.cmux.app.beta
+PRODUCT_BUNDLE_IDENTIFIER = com.unixcision.uniconnect.ios.beta
 DEVELOPMENT_TEAM = 7WLXT3NR37
+APS_ENVIRONMENT = production
 
-// Distinguish the TestFlight beta on-device from a future App Store "cmux"
-// (overrides PRODUCT_DISPLAY_NAME = cmux from Shared.xcconfig). Debug stays "cmux".
-PRODUCT_DISPLAY_NAME = cmux BETA
+// Distinguish the TestFlight beta on-device from the App Store build.
+PRODUCT_DISPLAY_NAME = UniConnect BETA

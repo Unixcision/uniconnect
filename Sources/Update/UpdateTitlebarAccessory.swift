@@ -203,7 +203,7 @@ private final class DetachedNotificationsPopoverDelegate: NSObject, NSPopoverDel
 }
 
 extension Notification.Name {
-    static let cmuxNotificationsPopoverVisibilityDidChange = Notification.Name("cmux.notificationsPopoverVisibilityDidChange")
+    static let cmuxNotificationsPopoverVisibilityDidChange = Notification.Name("uniconnect.notificationsPopoverVisibilityDidChange")
 }
 
 private enum NotificationsPopoverVisibilityUserInfoKey {
@@ -2592,23 +2592,31 @@ private struct NotificationPopoverRow: View {
             }
         )
         .contextMenu {
-                Button(String(localized: "notifications.open", defaultValue: "Open")) {
-                    onOpen()
+            Button {
+                onOpen()
+            } label: {
+                Label(String(localized: "notifications.open", defaultValue: "Open"), systemImage: "arrow.up.right.square")
+            }
+            if notification.isRead {
+                Button {
+                    onToggleRead()
+                } label: {
+                    Label(String(localized: "notifications.markAsUnread", defaultValue: "Mark as Unread"), systemImage: "envelope.badge")
                 }
-                if notification.isRead {
-                    Button(String(localized: "notifications.markAsUnread", defaultValue: "Mark as Unread")) {
-                        onToggleRead()
-                    }
-                } else {
-                    Button(String(localized: "notifications.markAsRead", defaultValue: "Mark as Read")) {
-                        onToggleRead()
-                    }
-                }
-                Divider()
-                Button(String(localized: "notifications.dismiss", defaultValue: "Dismiss"), role: .destructive) {
-                    onClear()
+            } else {
+                Button {
+                    onToggleRead()
+                } label: {
+                    Label(String(localized: "notifications.markAsRead", defaultValue: "Mark as Read"), systemImage: "envelope.open")
                 }
             }
+            Divider()
+            Button(role: .destructive) {
+                onClear()
+            } label: {
+                Label(String(localized: "notifications.dismiss", defaultValue: "Dismiss"), systemImage: "trash")
+            }
+        }
     }
 
     private var rowContent: some View {

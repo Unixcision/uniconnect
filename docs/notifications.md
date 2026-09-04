@@ -56,7 +56,7 @@ cmux notify --title "Done" --tab 0 --panel 1
 
 ## Navigation
 
-Use `Cmd+Shift+U` to jump to the latest unread notification. Use `Ctrl+Cmd+U` to mark the current item as oldest unread and jump to the next latest unread. Both shortcuts are configurable in Settings > Keyboard Shortcuts and in `~/.config/cmux/cmux.json`.
+Use `Cmd+Shift+U` to jump to the latest unread notification. Use `Ctrl+Cmd+U` to mark the current item as oldest unread and jump to the next latest unread. Both shortcuts are configurable in Settings > Keyboard Shortcuts and in `~/.config/uniconnect/uniconnect.json`.
 
 ## Notification Hooks
 
@@ -90,7 +90,7 @@ Hook input and output use this shape:
   },
   "context": {
     "cwd": "/path/to/project",
-    "configPath": "/path/to/project/.cmux/cmux.json",
+    "configPath": "/path/to/project/.uniconnect/uniconnect.json",
     "hookId": "agent-filter",
     "appFocused": false,
     "focusedPanel": false
@@ -107,7 +107,7 @@ Hook input and output use this shape:
 }
 ```
 
-Global hooks from `~/.config/cmux/cmux.json` run first. Project hooks from parent directories to the current workspace append after that. Project hooks use the same trust prompt as other project `cmux.json` commands before they run. Feed approval banners also pass through these hooks; disabling `desktop` suppresses the native banner while keeping the Feed item available in cmux. Set `"hooksMode": "replace"` in a project `notifications` section to ignore inherited hooks. If any hook fails, times out, or returns invalid JSON, cmux uses the default notification behavior and posts a hook failure alert.
+Global hooks from `~/.config/uniconnect/uniconnect.json` run first. Project hooks from parent directories to the current workspace append after that. Project hooks use the same trust prompt as other project `uniconnect.json` commands before they run. Feed approval banners also pass through these hooks; disabling `desktop` suppresses the native banner while keeping the Feed item available in UniConnect. Set `"hooksMode": "replace"` in a project `notifications` section to ignore inherited hooks. If any hook fails, times out, or returns invalid JSON, UniConnect uses the default notification behavior and posts a hook failure alert.
 
 ## Integration Examples
 

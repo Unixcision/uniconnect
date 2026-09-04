@@ -719,6 +719,7 @@ final class FileExplorerContainerView: NSView {
     private(set) var searchSnapshot = FileSearchSnapshot.empty
     var currentRootPath = ""
     private var currentProviderIsLocal = false
+    private var currentRemoteWorkspaceID: UUID?
 
     /// Origin for `FileExplorerTerminalPathInsertion.insert`: paths shown here come from a
     /// remote (SSH) file browser when the active provider isn't local. `nil` means "let the
@@ -726,7 +727,9 @@ final class FileExplorerContainerView: NSView {
     /// first `updateHeader(store:)` call, at which point `currentProviderIsLocal` defaults to
     /// `false`, so this stays explicit instead of guessing.
     var terminalPathInsertionOrigin: TerminalImageTransferPlanner.PathOrigin? {
-        currentProviderIsLocal ? nil : .remoteSession
+        currentProviderIsLocal ? nil : currentRemoteWorkspaceID.map {
+            .remoteSession(workspaceID: $0)
+        }
     }
     private var currentContentRevision = 0
     private let searchDebounceSubject = PassthroughSubject<Int, Never>()
@@ -1028,6 +1031,7 @@ final class FileExplorerContainerView: NSView {
 
         currentRootPath = nextRootPath
         currentProviderIsLocal = nextProviderIsLocal
+        currentRemoteWorkspaceID = store.remoteWorkspaceID
         currentContentRevision = nextContentRevision
         headerView.update(displayPath: store.displayRootPath)
         if searchScopeChanged {
@@ -1635,7 +1639,7 @@ extension FileExplorerContainerView: NSSearchFieldDelegate, NSTableViewDataSourc
         }
 
         let openInCmuxItem = NSMenuItem(
-            title: String(localized: "fileExplorer.contextMenu.openInCmux", defaultValue: "Open in cmux"),
+            title: String(localized: "fileExplorer.contextMenu.openInCmux", defaultValue: "Open in UniConnect"),
             action: #selector(contextMenuOpenSearchResultInCmux(_:)),
             keyEquivalent: ""
         )

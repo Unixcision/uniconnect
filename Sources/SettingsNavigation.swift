@@ -126,7 +126,7 @@ enum SettingsNavigationTarget: String, CaseIterable, Identifiable {
 }
 
 enum SettingsNavigationRequest {
-    static let notificationName = Notification.Name("cmux.settings.navigate")
+    static let notificationName = Notification.Name("uniconnect.settings.navigate")
     private static let targetKey = "target"
     private static let anchorKey = "anchor"
     private static let highlightKey = "highlight"
@@ -315,9 +315,9 @@ enum SettingsSearchIndex {
         setting(.app, "focus-pane-first-click", String(localized: "settings.app.paneFirstClickFocus", defaultValue: "Focus Pane on First Click"), "mouse click focus"),
         setting(.app, "file-drops", String(localized: "settings.app.fileDrop.defaultBehavior", defaultValue: "File Drops"), "drag drop files finder path text terminal editor split preview shift"),
         setting(.app, "preferred-editor", String(localized: "settings.app.preferredEditor", defaultValue: "Open Files With"), "editor code zed subl cmd click file"),
-        setting(.app, "supported-file-previews", String(localized: "settings.app.openSupportedFilesInCmux", defaultValue: "Open Supported Files in cmux"), "cmd click file preview pdf image audio video quick look editor"),
+        setting(.app, "supported-file-previews", String(localized: "settings.app.openSupportedFilesInCmux", defaultValue: "Open Supported Files in UniConnect"), "cmd click file preview pdf image audio video quick look editor"),
         setting(.app, "terminal-config", String(localized: "settings.app.configWindow", defaultValue: "Terminal Config"), "ghostty config merged preview"),
-        setting(.app, "markdown-viewer", String(localized: "settings.app.openMarkdownInCmuxViewer", defaultValue: "Open Markdown in cmux Viewer"), "md markdown viewer"),
+        setting(.app, "markdown-viewer", String(localized: "settings.app.openMarkdownInCmuxViewer", defaultValue: "Open Markdown in UniConnect Viewer"), "md markdown viewer"),
         setting(.app, "markdown-font-size", String(localized: "settings.app.markdownFontSize", defaultValue: "Markdown Viewer Font Size"), "md markdown viewer font size points zoom scale text bigger smaller"),
         setting(.app, "markdown-font-family", String(localized: "settings.app.markdownFontFamily", defaultValue: "Markdown Viewer Font"), "markdown.fontFamily md markdown viewer font font-family family typeface system stack custom"),
         setting(.app, "markdown-max-width", String(localized: "settings.app.markdownMaxWidth", defaultValue: "Markdown Viewer Max Width"), "markdown.maxWidth md markdown viewer width column reading line length pixels px"),
@@ -371,8 +371,8 @@ enum SettingsSearchIndex {
         setting(.sidebarAppearance, "show-pull-requests", String(localized: "settings.app.showPullRequests", defaultValue: "Show Pull Requests in Sidebar"), "review pr mr link"),
         setting(.sidebarAppearance, "watch-git-status", String(localized: "settings.app.watchGitStatus", defaultValue: "Watch Git Status in Sidebar"), "git status branch watcher index lock"),
         setting(.sidebarAppearance, "make-pr-clickable", String(localized: "settings.app.makeSidebarPullRequestClickable", defaultValue: "Make Sidebar PR Clickable"), "pull requests pull request pr mr review clickable links select workspace row"),
-        setting(.sidebarAppearance, "open-pr-links", String(localized: "settings.app.openSidebarPRLinks", defaultValue: "Open Sidebar PR Links in cmux Browser"), "pull request link browser"),
-        setting(.sidebarAppearance, "open-port-links", String(localized: "settings.app.openSidebarPortLinks", defaultValue: "Open Sidebar Port Links in cmux Browser"), "port link browser"),
+        setting(.sidebarAppearance, "open-pr-links", String(localized: "settings.app.openSidebarPRLinks", defaultValue: "Open Sidebar PR Links in UniConnect Browser"), "pull request link browser"),
+        setting(.sidebarAppearance, "open-port-links", String(localized: "settings.app.openSidebarPortLinks", defaultValue: "Open Sidebar Port Links in UniConnect Browser"), "port link browser"),
         setting(.sidebarAppearance, "show-ssh", String(localized: "settings.app.showSSH", defaultValue: "Show SSH in Sidebar"), "remote target"),
         setting(.sidebarAppearance, "show-ports", String(localized: "settings.app.showPorts", defaultValue: "Show Listening Ports in Sidebar"), "localhost port"),
         setting(.sidebarAppearance, "show-log", String(localized: "settings.app.showLog", defaultValue: "Show Latest Log in Sidebar"), "status message"),
@@ -393,12 +393,12 @@ enum SettingsSearchIndex {
         setting(.automation, "port-base", String(localized: "settings.automation.portBase", defaultValue: "Port Base"), "CMUX_PORT start"),
         setting(.automation, "port-range", String(localized: "settings.automation.portRange", defaultValue: "Port Range Size"), "CMUX_PORT_END workspace ports"),
         setting(.browser, "search-engine", String(localized: "settings.browser.searchEngine", defaultValue: "Default Search Engine"), "address bar query google duckduckgo bing kagi brave startpage perplexity exa yahoo ecosia qwant mojeek wikipedia github baidu yandex custom search provider"),
-        setting(.browser, "enable-browser", String(localized: "settings.browser.enabled", defaultValue: "Enable cmux Browser"), "webview tabs links"),
+        setting(.browser, "enable-browser", String(localized: "settings.browser.enabled", defaultValue: "Enable UniConnect Browser"), "webview tabs links"),
         setting(.browser, "search-suggestions", String(localized: "settings.browser.searchSuggestions", defaultValue: "Show Search Suggestions"), "browser address bar suggestions"),
         setting(.browser, "theme", String(localized: "settings.browser.theme", defaultValue: "Browser Theme"), "web appearance light dark system"),
         setting(.browser, "hidden-webview-discard", String(localized: "settings.browser.hiddenWebViewDiscard", defaultValue: "Discard Hidden Browser WebViews"), "memory hidden tabs webview discard unload"),
         setting(.browser, "hidden-webview-discard-delay", String(localized: "settings.browser.hiddenWebViewDiscardDelay", defaultValue: "Hidden WebView Discard Delay"), "memory hidden tabs delay seconds discard"),
-        setting(.browser, "terminal-links", String(localized: "settings.browser.openTerminalLinks", defaultValue: "Open Terminal Links in cmux Browser"), "click links browser"),
+        setting(.browser, "terminal-links", String(localized: "settings.browser.openTerminalLinks", defaultValue: "Open Terminal Links in UniConnect Browser"), "click links browser"),
         setting(.browser, "intercept-open", String(localized: "settings.browser.interceptOpen", defaultValue: "Intercept open http(s) in Terminal"), "open command urls"),
         setting(.browser, "host-whitelist", String(localized: "settings.browser.hostWhitelist", defaultValue: "Hosts to Open in Embedded Browser"), "hosts wildcard terminal links"),
         setting(.browser, "external-patterns", String(localized: "settings.browser.externalPatterns", defaultValue: "URLs to Always Open Externally"), "regex url rules default browser"),

@@ -1,174 +1,199 @@
-# UniConnect — documentación técnica (ES)
+# UniConnect technical architecture
 
-UniConnect es cmux con una capa de **persistencia de sesiones** pensada para sobrevivir a cierres, crashes y reinicios, y con **secretos cifrados** y **Touch ID**. El README (inglés) es la puerta de entrada; este documento describe formato, restauración, seguridad y límites con detalle.
+UniConnect is a macOS workspace manager for durable local agent conversations and
+SSH/tmux work. It is derived from cmux, but its installed product, runtime identity
+and user data are independent. The bundled terminal command intentionally remains
+`cmux` for command/API compatibility.
 
-## 1. Modelo
+This document describes contracts, not release evidence. Current verification state
+is recorded in [`UNICONNECT_PLAN.md`](../UNICONNECT_PLAN.md) and final results belong
+in [`UNICONNECT-ENTREGA.md`](UNICONNECT-ENTREGA.md).
 
-| Concepto | Qué es | Dónde vive |
-|---|---|---|
-| Caja (workspace) | Local (carpeta del Mac) o SSH (servidor) | `Workspace.uniConnectProfile` → snapshot `uniConnect` |
-| Ventana (tab) local | Terminal normal; si corre Claude Code, cmux guarda su session id vía hooks | snapshot `terminal.agent` / `resumeBinding` |
-| Ventana (tab) SSH | Cliente ssh enganchado a **una sesión tmux con nombre** en el servidor | snapshot `terminal.uniConnectTmuxSession` |
-| Comando de conexión | `ssh …`, `sshpass -p … ssh …`, `-i`, `-p`, `-J`… | **Bóveda cifrada** (`vault.uc`), referenciado por `credentialId` |
+## Identity and storage boundaries
 
-Reglas de ID tmux: letras, dígitos, `-` y `_`, máximo 40 caracteres, sin `.` ni `:` (tmux los prohíbe). Todo lo demás se sustituye por `-`. Sugerencia automática: `uc-<slug>-<4 hex>`.
-
-## 2. Ficheros en disco
-
-`~/Library/Application Support/UniConnect/` (identidad propia: bundle `com.unixcision.uniconnect`, socket en `~/.local/state/uniconnect`; cmux conserva su carpeta y su historial intactos)
-
-- `session-com.unixcision.uniconnect-uniconnect.json` — snapshot con el formato de cmux. UniConnect añade campos **opcionales**: `workspaces[].uniConnect` (`kind`, `credentialId`, `hostLabel`, `tmuxReady`) y `panels[].terminal.uniConnectTmuxSession`. Un snapshot antiguo sin estos campos se carga igual.
-- `vault.uc` — comandos de conexión, AES-256-GCM con la clave maestra. Permisos 0600.
-- `backup.uc` — último "Persistir ahora" (documento legible cifrado con la clave maestra). `history/` conserva las 30 últimas copias.
-- `$TMPDIR/uniconnect-launchers/` — scripts zsh de un solo uso (0700) que arrancan cada ventana SSH (`rm -f "$0"` antes del `exec`); se purgan a la hora. Viven en `$TMPDIR` porque Ghostty parte el comando por espacios y `Application Support` lleva uno. Mientras existen contienen el comando de conexión completo, igual que los lanzadores de resume de cmux.
-- `.master-key` — clave maestra, 32 bytes aleatorios, modo 0600 (copia principal).
-
-Clave maestra: la copia principal es el fichero 0600; además se **espeja** en el llavero de inicio de sesión (`kSecClassGenericPassword`, servicio `com.unixcision.uniconnect.master-key`, cuenta `master-key-v1`, `WhenUnlockedThisDeviceOnly`) sin permitir nunca diálogos interactivos. Motivo: la app va firmada ad-hoc (cada recompilación cambia de identidad) y el llavero clásico pediría la contraseña de la cuenta en cada instalación, o se colgaría si la pantalla está bloqueada. Las builds de desarrollo (bundle id distinto) usan `UniConnect-<sufijo>/` y no comparten bóveda con la app real. La primera vez que arranca la app con identidad propia mueve fichero a fichero lo que hubiera en la ubicación antigua (`cmux/uniconnect/`) y copia una sola vez los ajustes (UserDefaults) de cmux.
-
-## 3. Documento legible (lo que se exporta / importa)
-
-```json
-{
-  "app": "UniConnect", "version": 1, "savedAt": "2026-09-02T21:00:00Z",
-  "workspaces": [
-    { "name": "NOTBETTING", "kind": "local", "color": "#1565C0", "cwd": "~/Desktop/NOTBETTING",
-      "windows": [ { "name": "claude", "claudeSession": "bd3a3ea6-…" } ] },
-    { "name": "VPS", "kind": "ssh", "color": "#C0392B",
-      "connect": "sshpass -p '…' ssh root@1.2.3.4",
-      "windows": [ { "name": "claude", "tmux": "uc-claude-1a2b" }, { "name": "logs", "tmux": "uc-logs-9f01" } ] }
-  ]
-}
-```
-
-`connect` es el único campo sensible; por eso el documento **nunca** se escribe en claro. La semilla inicial (plantilla) sí es JSON plano porque la escribe el usuario a mano y se importa una vez.
-
-## 4. Contenedor de exportación
-
-```json
-{ "format": "uniconnect-export", "version": 1,
-  "meta": { "app": "UniConnect", "savedAt": "…", "workspaces": 12, "hostName": "MacBook" },
-  "payload": { "format": "uniconnect-aesgcm", "version": 1, "kdf": "pbkdf2-sha256", "iterations": 600000,
-               "salt": "<b64 16B>", "nonce": "<b64 12B>", "ciphertext": "<b64>", "tag": "<b64 16B>" } }
-```
-
-- Cifrado: AES-256-GCM (CryptoKit). AAD = nombre del formato. Nonce y salt aleatorios por cifrado.
-- KDF: PBKDF2-HMAC-SHA256, 600 000 iteraciones (CommonCrypto). Parámetros en cabecera; la frase nunca se guarda.
-- Cualquier byte alterado en `ciphertext`/`tag`/`nonce` hace fallar la autenticación GCM → "Contraseña incorrecta o fichero manipulado" (el mensaje no distingue a propósito).
-- Un fichero truncado o con formato distinto se rechaza antes de pedir la contraseña.
-
-## 5. Restauración
-
-1. Arranque → **Touch ID** (ventana de bloqueo a nivel `floating` en todas las pantallas: tapa la app pero no el diálogo de Touch ID del sistema). cmux carga el snapshot por debajo; nada es visible hasta desbloquear.
-2. Cajas locales: cmux recrea pestañas y splits. Si la pestaña tenía Claude, lanza `claude --resume <id> … --dangerously-skip-permissions` (el flag se añade siempre en `AgentResumeArgv.claudeResumeArgv`).
-3. Cajas SSH: para cada pestaña con `uniConnectTmuxSession`, UniConnect genera un lanzador (que exporta `TERM=xterm-256color`, porque el `xterm-ghostty` de Ghostty no suele existir en los servidores y tmux se niega a engancharse) `ssh -t … '<tmux new-session -A -D -s ID>'` con el comando de la bóveda y lo pasa como comando inicial del terminal. `-A` engancha si existe, `-D` expulsa clientes muertos. No se reproduce scrollback local: lo aporta tmux.
-4. Tras desbloquear se fuerza un autosave.
-
-Cerrar una pestaña SSH solo mata el cliente `ssh`; tmux se desengancha y sigue vivo. La pestaña va a **Cerradas** (ClosedItemHistory de cmux, con el ID tmux dentro del snapshot) y se reabre con el mismo ID.
-
-## 6. Modelo de amenaza y límites
-
-Protege contra: lectura del disco (snapshots, backups, exports) sin la sesión de usuario desbloqueada o sin la frase de exportación; manipulación de exports; apertura de la app por alguien con acceso físico sin la huella.
-
-**No** protege contra: un proceso malicioso corriendo con tu usuario (puede leer `.master-key`, que va protegido solo por permisos 0600, FileVault y la sesión de usuario; con una firma de desarrollador estable se podría pasar la copia principal al llavero de protección de datos); un atacante con root; captura de pantalla mientras la app está desbloqueada; un servidor SSH comprometido. `sshpass` expone la contraseña en la lista de procesos del Mac durante la conexión, igual que cuando lo tecleas a mano. `StrictHostKeyChecking=accept-new` acepta hosts nuevos automáticamente (evita el prompt interactivo) pero rechaza cambios de clave.
-
-Política de autenticación: Touch ID si hay sensor; si no hay biometría, no está configurada o está bloqueada por intentos, se pide la **contraseña de la cuenta** con el mismo diálogo del sistema y se avisa en pantalla. No hay bypass silencioso. Para pruebas automatizadas: `UNICONNECT_DISABLE_LOCK=1` en el entorno (nunca en producción).
-
-## 7. Variables de entorno
-
-| Variable | Efecto |
+| Resource | UniConnect value |
 |---|---|
-| `UNICONNECT_DISABLE_LOCK=1` | Sin Touch ID (solo tests/automatización) |
-| `UNICONNECT_DISABLE=1` | Desactiva el selector Local/SSH y el resto de intercepciones (comportamiento cmux puro) |
-| `UNICONNECT_IMPORT_SEED=<ruta>` | Importa una semilla JSON (o un export cifrado si hay `UNICONNECT_TEST_PASSPHRASE`) una sola vez tras desbloquear. Sin variable, se usa `~/Library/Application Support/UniConnect/seed.json` si existe (aprovisionamiento del primer arranque) |
-| `UNICONNECT_TEST_PASSPHRASE`, `UNICONNECT_TEST_EXPORT_PATH` | Ganchos de automatización para exportar/importar sin diálogos; **solo se honran si el bloqueo está desactivado** (`UNICONNECT_DISABLE_LOCK=1`), nunca en uso normal |
+| Release bundle ID | `com.unixcision.uniconnect` |
+| App/product/executable | `UniConnect.app` / `UniConnect` |
+| Application data | `~/Library/Application Support/UniConnect/` |
+| User configuration | `~/.config/uniconnect/` |
+| State, hook records, logs and recovery archive | `~/.uniconnect/` |
+| Control socket | `~/.local/state/uniconnect/` |
+| URL scheme | `uniconnect://` |
+| Keychain services | `com.unixcision.uniconnect.*` |
+| Bundled CLI command | `cmux` |
 
-## 8. Pendiente / limitaciones conocidas
+Tagged Debug and staging builds add identity-specific suffixes and use isolated state.
+Normal launch, save, restore and shutdown never read or write cmux data. The only
+compatibility boundary is the explicit, authenticated, read-only source action
+**Migrate Boxes from cmux…**, documented in
+[`UNICONNECT-CMUX-MIGRATION.md`](UNICONNECT-CMUX-MIGRATION.md).
 
-- Estado por ventana: cuando el cliente ssh muere, la pestaña se conserva con el `[exited]` de Ghostty y su título pasa a `nombre · desconectada`; la reconexión es reabrir la pestaña (Cerradas) o crear una ventana con el mismo ID tmux. No hay un botón "Reconectar" dentro de la pestaña.
-- Reconexión escalonada: los lanzadores generados en la misma ráfaga (≤5 s) esperan 0, 0.4, 0.8… s (máx. 6 s) antes de conectar.
-- Bloqueo automático por inactividad: menú **UniConnect ▸ Bloqueo automático por inactividad** (5/15/30/60 min, desactivado por defecto); usa la inactividad global del sistema. Al bloquear, las ventanas pasan a `sharingType = .none` (no aparecen en grabaciones ni capturas) hasta desbloquear.
-- **Terminar sesión tmux remota de la ventana activa…**: única acción que ejecuta `tmux kill-session`, siempre con confirmación explícita; cerrar una pestaña nunca lo hace.
-- Antes de importar se fuerza un snapshot completo y un backup cifrado (`history/`) para poder deshacer.
-- Grupos al importar: se crean con `createWorkspaceGroup`, que añade una caja ancla.
-- Firma ad-hoc: ver §2/§6 sobre la clave maestra.
+## Durable model
 
-## 9. Registro de validación (build real, 2026-09-02/03)
+A box is either LOCAL or SSH. A window belongs to one box and retains its stable
+panel identity, visible name, order, selection, timestamps and runtime metadata.
 
-Build Debug etiquetada (`UniConnect DEV uniconnect.app`, bundle `com.unixcision.uniconnect.debug.uniconnect`), pantalla del Mac bloqueada durante toda la prueba, control por socket con `scripts/cmux-debug-cli.sh`.
+LOCAL state includes:
 
-| Paso | Resultado |
-|---|---|
-| Semilla `UNICONNECT_IMPORT_SEED` (caja local `~` con 2 ventanas + caja SSH con 2 ventanas tmux) | Cajas creadas con nombre, color y descripción `Local · ~` / `SSH · root@… · tmux`; snapshot sin `sshpass` ni rutas `.pem` |
-| Ventanas SSH | `tmux ls` en el servidor muestra `uc-e2e-a` y `uc-e2e-b` con cliente enganchado; la pantalla muestra la barra de tmux |
-| Proceso dentro de cada tmux (`sleep 900`) + `kill -9` de la app | Sesiones vivas y desenganchadas (`attached=0`), `sleep` intacto |
-| Relanzar | Cajas, nombres, colores, IDs tmux restaurados; `attached=1`; scrollback con los marcadores `UC-MARK-*` visible |
-| Cerrar una pestaña SSH por socket | `uc-e2e-b` sigue viva (`attached=0`); el historial de Cerradas guarda la pestaña con `uniConnectTmuxSession=uc-e2e-b` y sin secretos |
-| ⌘Q (AppleEvent quit) + relanzar | Cierre limpio en 1 s; tmux vivos; solo la pestaña abierta se restaura |
-| Claude Code en la caja local (`claude --dangerously-skip-permissions`, un prompt) | Hook registra el session id; snapshot: `agent=05a0da08`, `wasAgentRunning=true`, política `auto` |
-| ⌘Q + relanzar | La app lanza sola `claude --resume 05a0da08-… --dangerously-skip-permissions` |
-| Tests | `UniConnectTests`: 25/25 (cripto, manipulación, IDs tmux, inyección de opciones ssh, contenedor de export, snapshot legado, lanzador) |
-| Renombrado real | `UniConnect DEV uniconnect.app` con `Contents/MacOS/UniConnect DEV`, `bin/cmux` presente; misma restauración; tests 25/25 |
+- trusted box root and window cwd;
+- shell/agent/stopped runtime state;
+- append-only conversation records for Claude, Codex, Agy and Grok;
+- native session ID, agent kind and last activity;
+- reconstructed launch policy, never captured arbitrary argv or environment.
 
-Verificado después con pantalla desbloqueada: página de bienvenida SSH (sin consola detrás), reapertura desde **Cerradas** (History) con reenganche tmux, **Persistir ahora** (backup descifrado y comprobado), **Bloquear** (ventana de bloqueo + `sharingType=none`), exportación real (contenedor descifrado con la contraseña) e importación (manipulado y contraseña incorrecta rechazados; válido importa sin duplicar). El flujo de bloqueo/desbloqueo se prueba además con un autenticador inyectado (`UniConnectAuthenticating`): éxito, fallo, biometría bloqueada y acción sensible. La única comprobación que queda fuera de la automatización es física: poner el dedo en el sensor.
+SSH state includes:
 
-## 10. Logo e icono
+- opaque immutable credential revision ID;
+- secret-free endpoint identity used only for ownership checks;
+- exact tmux name and connection state;
+- notification-bridge correlation for the stable panel.
 
-El logo (`docs/assets/logo.png`, y de él todas las tallas de `Assets.xcassets/AppIcon.appiconset` y la capa de `AppIcon.icon`) se generó el 2026-09-03 con **Nano Banana Pro** (`gemini-3-pro-image`, Gemini API, endpoint `models/gemini-3-pro-image:generateContent` con `responseModalities: ["IMAGE"]`), el modelo que Google describe como su opción premium para precisión de marca; Nano Banana 2 (`gemini-3.1-flash-image`) es el lanzamiento más reciente y más rápido. Prompt: chevrón de terminal entrelazado con un eslabón (conexión persistente), estilo icono de app de Apple, fondo oscuro, gradientes coral y cian, sin texto. Post-proceso con ImageMagick: recorte, 1024×1024 y esquinas redondeadas transparentes. Fuentes: https://ai.google.dev/gemini-api/docs/image-generation · https://blog.google/innovation-and-ai/technology/ai/nano-banana-2/ . La clave de API no está en el repo.
+Every recovery-relevant model change requests a save in the same main-run-loop
+transaction. The eight-second tick remains a safety net; a forced periodic write
+prevents an unchanged fingerprint from suppressing durable checkpoints indefinitely.
+Snapshot writes use a private temporary file, `fsync`, atomic rename and directory
+`fsync`, with directories mode `0700` and files mode `0600`.
 
-## Independencia total de cmux
+## Local window lifecycle
 
-UniConnect no comparte **nada** con cmux en disco ni en el sistema:
+**New Window** offers Terminal, Claude, Codex, Agy, Grok and a custom command. Agent
+launches always trust the box root chosen by the user. Claude and Agy use their
+required dangerous-permission switch, while Codex uses `--yolo`; resume syntax comes
+from the shared agent-launch policy.
 
-| Recurso | cmux | UniConnect |
-|---|---|---|
-| Bundle id | `com.cmuxterm.app` | `com.unixcision.uniconnect` |
-| Sesión e historial | `Application Support/cmux/` | `Application Support/UniConnect/` |
-| Ajustes de usuario | `~/.config/cmux/cmux.json` | `~/.config/uniconnect/uniconnect.json` |
-| Estado de hooks de agentes | `~/.cmuxterm/` | `~/.uniconnect/` |
-| Socket de control | `~/.local/state/cmux/cmux.sock` | `~/.local/state/uniconnect/uniconnect.sock` |
-| CLI | `/usr/local/bin/cmux` | `/usr/local/bin/uniconnect` |
-| Esquema de URL | `cmux://` | `uniconnect://` |
-| Punto de extensión | `com.cmuxterm.app.cmux.sidebar` | `com.unixcision.uniconnect.sidebar` |
-| Llavero | `com.cmuxterm.app.*` | `com.unixcision.uniconnect.*` |
-| Notificaciones distribuidas | `com.cmuxterm.*` | `com.unixcision.uniconnect.*` |
-| Temporales y logs | `/tmp/cmux-*` | `/tmp/uniconnect-*` |
-| Telemetría | PostHog | desactivada siempre |
+Running `/exit` in an agent returns to the same shell. Exiting the shell marks the
+window stopped but does not discard its conversation history or box. From the shared
+window action menu the user can resume a known conversation, start a fresh agent,
+switch agent or keep a normal terminal.
 
-La única lectura de cmux es voluntaria y de una sola dirección: **UniConnect → Migrar cajas desde cmux…**, que lee `Application Support/cmux/session-com.cmuxterm.app.json` y crea aquí las cajas. cmux nunca se modifica.
+Only one live or pending owner may claim an `(agent kind, native session ID)` pair.
+Duplicate imports/restores remain named, persisted shell windows with manual resume
+available. UUID-like IDs compare canonically; opaque provider IDs retain the case
+semantics of their provider.
 
-## Estado vacío
+If a saved local root disappears, UniConnect does not silently run an agent under a
+different project. It opens a safe recoverable shell, explains the missing path and
+offers reassignment. The new root is persisted immediately across every affected
+record.
 
-Cuando no hay nada abierto (primer arranque, o se cierran todas las cajas) no se lanza ninguna consola: la ventana muestra una portada con tres acciones (Nueva caja, Importar configuración, Migrar desde cmux si hay sesión de cmux). Esa caja "de arranque" no se persiste y desaparece sola en cuanto creas o importas una real.
+## SSH and tmux lifecycle
 
-## Pegado remoto de imágenes
+Connection material is read from the encrypted vault only when required. Validation
+accepts an effective `ssh` command or `sshpass` that really invokes `ssh`; it rejects
+shell chaining, pipes, substitutions and arbitrary payloads. Passwords are never
+copied into previews, snapshots, logs or argv for file transfer.
 
-Ya no se detecta el `ssh` husmeando el TTY ni los procesos: **manda el tipo de caja**, y el código que miraba `ps` y los argumentos de los procesos se ha eliminado. Una caja **local** pega siempre en local; una caja **SSH** sube el fichero por `scp` con el comando de conexión guardado en la bóveda, así que funciona también dentro de tmux o de una shell anidada. Detalles del camino SSH:
+There are two deliberately different remote operations:
 
-- Si la ventana está desconectada, o la caja no tiene comando de conexión utilizable, la app **no degrada a local** (pegaría una ruta del Mac en el servidor): rechaza el pegado y te dice por qué.
-- Los errores de `scp` se muestran con su mensaje real, en vez de un pitido.
-- Con `sshpass`, la contraseña viaja en la variable `SSHPASS` (`sshpass -e`), nunca en la línea de comandos donde `ps` o un informe de fallo la enseñarían. `sshpass` se busca en las rutas habituales y, si no, en el PATH de tu shell de login.
-- `~`, `$HOME` y las rutas relativas de `-i` del comando guardado se expanden antes de llamar a `scp`.
+- explicit new-window creation may run `tmux new-session -A` for its chosen name;
+- restore, history reopen, import and reconnect first run `tmux has-session` and then
+  `tmux attach-session` against the saved name.
 
-Al crear, editar o importar una conexión solo se aceptan comandos que empiecen por `ssh` o `sshpass` (y con `sshpass`, que invoquen `ssh`).
+The second path cannot create an empty replacement and never detaches another client.
+Attachment enables tmux mouse support and a 50,000-line history limit. Canonical
+ownership is based on user, host, port and tmux, not credential UUID, so two aliases
+to the same destination cannot start competing clients unnoticed.
 
-## Orden de ventanas y cajas
+A forced refresh terminates only UniConnect's local foreground SSH process group and
+respawns the same terminal surface in place. It preserves panel UUID, pane, ordering,
+title, credential revision, bridge route and tmux. `⌘R` refreshes the focused SSH/tmux
+window immediately, even before the operating system reports a timeout; `⌃⌘R`
+refreshes all eligible SSH windows. Other contexts do not consume `⌘R` incorrectly.
 
-Reordenar cajas en la barra lateral o mover/reordenar ventanas dentro de una caja guarda la sesión al instante, sin esperar al autoguardado de 8 s.
+Automatic retries use a bounded outage budget. Single-flight ownership remains held
+through child readiness and a stability interval; a stale callback cannot release a
+new generation. Programmatic tab selection during reconstruction never counts as a
+human reconnect request.
 
-## Aspecto
+## Credentials and endpoint edits
 
-Barra lateral flotante: una tarjeta separada del borde de la ventana que empieza por debajo de los botones de la ventana, con esquinas de 18, material translúcido, degradado suave y sombra. Se compacta a un carril de 64 pt con un icono de color por caja (inicial + insignia `network`/`terminal`, anillo coral en la seleccionada) desde el botón del pie de la propia barra (y el de expandir en el rail), desde el menú o con ⌘⌥B. La barra de título ya no lleva ni el botón de esconder la barra lateral ni las flechas de "foco atrás / adelante" de cmux: solo notificaciones y nueva caja. El acento de toda la app es coral (`#FF5C6E` en oscuro, `#E84664` en claro) y las pestañas de panel son píldoras redondeadas.
+An SSH command is an immutable vault revision. Editing endpoint A to B creates a new
+credential ID instead of changing the meaning of an ID referenced by current state,
+recently closed items or recovery points. UniConnect preflights every live tmux on B,
+then updates the box and respawns its windows transactionally. Failure restores A.
 
-## Sesión ligada a la ventana
+Old revisions remain available while referenced. Recovery never resolves an old ID
+to newer, different connection material. Snapshot bytes and encrypted vault bytes are
+captured coherently before asynchronous archive work begins.
 
-Cada ventana local guarda su id de sesión de Claude en el snapshot (`panels[].terminal.uniConnectClaudeSession`), igual que las ventanas SSH guardan su tmux. Al restaurar, la ventana ejecuta `cd <carpeta> && claude --dangerously-skip-permissions --resume <id>` a través de un lanzador en `$TMPDIR`; si la carpeta ya no existe, cae a `$HOME` en vez de dejar un terminal muerto. Una ventana nunca vuelve a abrirse vacía.
+## Backup and recovery
 
-## Cuando se cae la conexión
+The readable session contains local work state and opaque credential IDs, not SSH
+commands. The encrypted vault is stored separately. Automatic recovery creates at
+most one point every six hours, retains seven days and caps scheduled entries at 28.
+Before restore/import, UniConnect also records an explicit checkpoint.
 
-Si el cliente `ssh` de una ventana muere (red caída, servidor saturado, reinicio remoto) la sesión tmux del servidor sigue viva. UniConnect:
+Snapshot and vault commit or rollback together. Missing/corrupt companion vault data
+cannot be reported as a successful complete backup. Detailed formats, restore rules
+and operational recovery steps are in
+[`UNICONNECT-RECOVERY.md`](UNICONNECT-RECOVERY.md).
 
-1. Reintenta engancharse solo, hasta tres veces, con espera creciente (4, 8 y 12 s). La pestaña conserva su nombre y su sesión tmux.
-2. Si sigue caída, basta con **pulsar su pestaña**: eso cuenta como petición de reconexión y no gasta intentos.
-3. **UniConnect → Reconectar ventanas caídas (⌘⌃R)** vuelve a enganchar todas las ventanas muertas de todas las cajas, que es lo cómodo cuando se cae internet y se llevan por delante todas a la vez.
+## CONNECT.md import
 
-La reconexión recrea la pestaña en el mismo panel con el mismo nombre y el mismo `tmux new-session -A`, así que se recupera lo que estuviera corriendo.
+`~/Downloads/CONNECT.md` is parsed directly as human Markdown. Preview is immutable,
+side-effect-free and sanitised. Application requires a mutation lease, current-state
+CAS, encrypted checkpoint, private journal, attach-only remote preflight, child
+readiness and persist/reread verification. If these guarantees cannot be established,
+apply fails closed while preview remains available.
+
+See [`UNICONNECT-CONNECT-IMPORT.md`](UNICONNECT-CONNECT-IMPORT.md) for parser shapes,
+reconciliation, duplicate handling and rollback invariants.
+
+## Images
+
+The box profile—not terminal/process sniffing—selects LOCAL versus SSH behaviour.
+LOCAL uses the ordinary paste/drop path. SSH requires a valid connected profile and
+uploads through the saved connection options; failure never inserts a Mac path into
+the remote shell. Transfers expose actual byte percentage, progress, cancellation,
+timeout and cleanup.
+
+## Updates and notifications
+
+Claude update orchestration is a recoverable state machine grouped by local machine or
+remote host. It inspects the target, exits only identified Claude sessions, performs
+one update per host, verifies versions and restores each conversation on success or
+failure. Real user sessions are never update-test fixtures. Architecture:
+[`UNICONNECT-CLAUDE-UPDATE.md`](UNICONNECT-CLAUDE-UPDATE.md).
+
+The SSH completion bridge installs a namespaced, merge-safe remote hook and carries a
+minimal authenticated event over a loopback-only route. Events contain correlation
+metadata, not prompts or responses. The local store deduplicates notifications and
+routes a click to the exact box/window. Architecture:
+[`UNICONNECT-NOTIFICATION-BRIDGE.md`](UNICONNECT-NOTIFICATION-BRIDGE.md).
+
+## Rail and menus
+
+Expanded sidebar rows and compact rail tiles consume immutable snapshots plus action
+closures, keeping observable stores above lazy-list boundaries. Compact hover/focus
+opens a horizontal flyout with full box name, LOCAL/SSH, window count and individual
+window choices. State, accessibility, animation and material fallbacks are documented
+in [`UNICONNECT-SIDEBAR-2026.md`](UNICONNECT-SIDEBAR-2026.md).
+
+Menu, palette, rail, title-bar and contextual entrypoints call shared actions. The
+canonical inventory and shortcut table are in [`MENUS.md`](MENUS.md).
+
+## Locking and signing
+
+The lock surface hides app content but is ordered below the system authentication
+dialog. Touch ID uses system-password fallback where LocalAuthentication requires it;
+automatic locking is off by default and sensitive actions require recent auth.
+
+Release uses a stable Apple Development identity on this Mac. Build/install scripts
+compare designated requirements and reject ad-hoc or identity-changing replacement
+before touching `/Applications`. Tagged Debug builds remain isolated from the Release
+Keychain item and state.
+
+## Logo provenance
+
+The exact user-selected source, dimensions and SHA-256 are recorded in
+`design/UniConnect.icon/SOURCE.md`. `scripts/generate_uniconnect_icons.py` derives every
+Release/Debug/Nightly, light/dark, About and documentation size from that one canonical
+asset. No legacy chevron participates in generation.
+
+## Desktop phase 2
+
+Desktop reorganisation is not an app side effect. Its read-only inventory, proposed
+tree, path-dependency analysis and guarded rollback are documented in
+[`UNICONNECT-DESKTOP-PHASE2.md`](UNICONNECT-DESKTOP-PHASE2.md). No move is authorised
+by building, testing, installing or using UniConnect.

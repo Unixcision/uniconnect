@@ -11,6 +11,18 @@ extension ContentView {
             return .newTab
         case "palette.newWindow":
             return .newWindow
+        case "palette.uniConnect.lock":
+            return .lockApp
+        case "palette.uniConnect.persistNow":
+            return .persistNow
+        case "palette.uniConnect.reconnectDropped":
+            return .reconnectDroppedWindows
+        case "palette.uniConnect.updateClaudeWindow":
+            return .updateClaudeInWindow
+        case "palette.uniConnect.updateClaudeBox":
+            return .updateClaudeInBox
+        case "palette.uniConnect.updateClaudeEverywhere":
+            return .updateClaudeEverywhere
         case "palette.openFolder":
             return .openFolder
         case "palette.reopenPreviousSession":

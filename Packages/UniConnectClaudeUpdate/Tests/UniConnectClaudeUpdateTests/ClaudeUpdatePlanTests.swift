@@ -69,7 +69,7 @@ struct ClaudeUpdatePlanTests {
         }
     }
 
-    @Test func rejectsMultipleInstallationsOnOneHost() throws {
+    @Test func groupsNativeAndNPMInstallationsSeparatelyOnOneHost() throws {
         let fixture = ClaudeUpdateTestFixture()
         let native = fixture.target(id: "native")
         let npm = fixture.target(
@@ -78,16 +78,38 @@ struct ClaudeUpdatePlanTests {
             executablePath: "/usr/local/bin/claude"
         )
 
+        let plan = try ClaudeUpdatePlan(scope: .allOpen, targets: [native, npm])
+
+        #expect(plan.hosts.count == 2)
+        #expect(plan.hosts.map(\.installationID) == [
+            "native:/opt/claude",
+            "npm:/usr/local/lib/node_modules/claude",
+        ])
+        #expect(Set(plan.hosts.map(\.id)).count == 2)
+    }
+
+    @Test func rejectsDifferentExecutablePathsForTheSameInstallation() throws {
+        let fixture = ClaudeUpdateTestFixture()
+        let first = fixture.target(id: "first")
+        let second = fixture.target(
+            id: "second",
+            installationID: "native:/opt/claude",
+            executablePath: "/opt/claude/bin/claude-other"
+        )
+
         do {
-            _ = try ClaudeUpdatePlan(scope: .allOpen, targets: [native, npm])
-            Issue.record("Expected conflicting installation validation to fail")
+            _ = try ClaudeUpdatePlan(scope: .allOpen, targets: [first, second])
+            Issue.record("Expected executable-path conflict validation to fail")
         } catch let error as ClaudeUpdatePlanError {
-            guard case let .conflictingInstallations(hostID, installationIDs) = error else {
+            guard case let .conflictingExecutablePaths(hostID, executablePaths) = error else {
                 Issue.record("Unexpected error: \(error)")
                 return
             }
             #expect(hostID == fixture.localHost.id)
-            #expect(installationIDs.count == 2)
+            #expect(executablePaths == [
+                "/opt/claude/bin/claude",
+                "/opt/claude/bin/claude-other",
+            ])
         }
     }
 }

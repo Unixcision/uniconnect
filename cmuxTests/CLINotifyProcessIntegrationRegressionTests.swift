@@ -6793,9 +6793,9 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
                     "updatedAt": now,
                     "launchCommand": [
                         "launcher": "codexTeams",
-                        "executablePath": "/usr/local/bin/uniconnect",
+                        "executablePath": "/usr/local/bin/cmux",
                         "arguments": [
-                            "/usr/local/bin/uniconnect",
+                            "/usr/local/bin/cmux",
                             "codex-teams",
                             "fork",
                             parentSessionId,
@@ -6855,10 +6855,10 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
         environment["CMUX_AGENT_HOOK_STATE_DIR"] = root.path
         environment["CMUX_CLI_SENTRY_DISABLED"] = "1"
         environment["CMUX_AGENT_LAUNCH_KIND"] = "codexTeams"
-        environment["CMUX_AGENT_LAUNCH_EXECUTABLE"] = "/usr/local/bin/uniconnect"
+        environment["CMUX_AGENT_LAUNCH_EXECUTABLE"] = "/usr/local/bin/cmux"
         environment["CMUX_AGENT_LAUNCH_CWD"] = root.path
         environment["CMUX_AGENT_LAUNCH_ARGV_B64"] = base64NULSeparated([
-            "/usr/local/bin/uniconnect",
+            "/usr/local/bin/cmux",
             "codex-teams",
             "fork",
             parentSessionId,
@@ -6896,7 +6896,7 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
         XCTAssertEqual(request["auto_resume"] as? Bool, true)
         XCTAssertEqual(
             request["command"] as? String,
-            "{ cd -- '\(root.path)' 2>/dev/null || [ ! -d '\(root.path)' ]; } && '/usr/local/bin/uniconnect' 'codex-teams' 'resume' '\(sessionId)' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access'"
+            "{ cd -- '\(root.path)' 2>/dev/null || [ ! -d '\(root.path)' ]; } && '/usr/local/bin/cmux' 'codex-teams' 'resume' '\(sessionId)' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access' '--yolo'"
         )
     }
 
@@ -6931,8 +6931,8 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
                     "updatedAt": now,
                     "launchCommand": [
                         "launcher": "omx",
-                        "executablePath": "/usr/local/bin/uniconnect",
-                        "arguments": ["/usr/local/bin/uniconnect", "omx", "hud"],
+                        "executablePath": "/usr/local/bin/cmux",
+                        "arguments": ["/usr/local/bin/cmux", "omx", "hud"],
                         "workingDirectory": root.path,
                         "capturedAt": now,
                         "source": "test",

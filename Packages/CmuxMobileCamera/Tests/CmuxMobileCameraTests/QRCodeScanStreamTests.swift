@@ -4,15 +4,15 @@ import Testing
 @Suite struct QRCodeScanStreamTests {
     @Test func yieldsCodesInOrderThenFinishes() async {
         let stream = QRCodeScanStream()
-        stream.yield("cmux-ios://one")
-        stream.yield("cmux-ios://two")
+        stream.yield("uniconnect://one")
+        stream.yield("uniconnect://two")
         stream.finish()
 
         var seen: [String] = []
         for await code in stream.codes {
             seen.append(code)
         }
-        #expect(seen == ["cmux-ios://one", "cmux-ios://two"])
+        #expect(seen == ["uniconnect://one", "uniconnect://two"])
     }
 
     @Test func finishWithoutYieldProducesEmptySequence() async {

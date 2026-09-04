@@ -21,7 +21,7 @@ struct PairingView: View {
 
     /// The Founders Edition page (Mac download + TestFlight enrollment) the
     /// "Download via TestFlight" link points at while TestFlight is private.
-    private static let testFlightURL = URL(string: "https://github.com/manaflow-ai/cmux#founders-edition")!
+    private static let testFlightURL = URL(string: "https://github.com/Unixcision/uniconnect")!
 
     @State private var isShowingScanner = false
     @State private var deviceName = UITestConfig.addDeviceName
@@ -131,7 +131,7 @@ struct PairingView: View {
                     }
                     .accessibilityIdentifier("MobileTestFlightLink")
                 } footer: {
-                    Text(L10n.string("mobile.testflight.help", defaultValue: "TestFlight is invite-only for now. Get the Founders Edition to enroll and to download cmux for Mac."))
+                    Text(L10n.string("mobile.testflight.help", defaultValue: "TestFlight is invite-only for now. Visit the UniConnect repository for current installation details."))
                 }
 
                 if let manualRouteWarningText {
@@ -238,7 +238,7 @@ struct PairingView: View {
     private var manualRouteWarningText: String? {
         let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedHost.isEmpty,
-              !trimmedHost.hasPrefix("cmux-ios://"),
+              !trimmedHost.hasPrefix("uniconnect://"),
               MobileShellRouteAuthPolicy.manualHostNeedsTrustWarning(trimmedHost) else {
             return nil
         }
@@ -276,7 +276,7 @@ struct PairingView: View {
             validationError = L10n.string("mobile.addDevice.invalidHost", defaultValue: "Enter a host or IP address, without spaces or URL paths.")
             return
         }
-        if trimmedHost.hasPrefix("cmux-ios://") {
+        if trimmedHost.hasPrefix("uniconnect://") {
             pairingCode = trimmedHost
             startPairingTask {
                 await connectPairingCode()

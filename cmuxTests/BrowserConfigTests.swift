@@ -1792,31 +1792,17 @@ final class BrowserThemeSettingsTests: XCTestCase {
 
 
 final class BrowserDeveloperToolsShortcutDefaultsTests: XCTestCase {
-    func testSafariDefaultShortcutForToggleDeveloperTools() {
-        let shortcut = KeyboardShortcutSettings.Action.toggleBrowserDeveloperTools.defaultShortcut
-        XCTAssertEqual(shortcut.key, "i")
-        XCTAssertTrue(shortcut.command)
-        XCTAssertTrue(shortcut.option)
-        XCTAssertFalse(shortcut.shift)
-        XCTAssertFalse(shortcut.control)
-    }
+    func testBrowserDeveloperCommandsAreUnboundAndHiddenInUniConnect() {
+        let actions: [KeyboardShortcutSettings.Action] = [
+            .toggleBrowserDeveloperTools,
+            .showBrowserJavaScriptConsole,
+            .toggleReactGrab,
+        ]
 
-    func testSafariDefaultShortcutForShowJavaScriptConsole() {
-        let shortcut = KeyboardShortcutSettings.Action.showBrowserJavaScriptConsole.defaultShortcut
-        XCTAssertEqual(shortcut.key, "c")
-        XCTAssertTrue(shortcut.command)
-        XCTAssertTrue(shortcut.option)
-        XCTAssertFalse(shortcut.shift)
-        XCTAssertFalse(shortcut.control)
-    }
-
-    func testDefaultShortcutForToggleReactGrabUsesCommandShiftG() {
-        let shortcut = KeyboardShortcutSettings.Action.toggleReactGrab.defaultShortcut
-        XCTAssertEqual(shortcut.key, "g")
-        XCTAssertTrue(shortcut.command)
-        XCTAssertFalse(shortcut.option)
-        XCTAssertTrue(shortcut.shift)
-        XCTAssertFalse(shortcut.control)
+        for action in actions {
+            XCTAssertEqual(action.defaultShortcut, .unbound)
+            XCTAssertFalse(KeyboardShortcutSettings.settingsVisibleActions.contains(action))
+        }
     }
 }
 

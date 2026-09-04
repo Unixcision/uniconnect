@@ -2,33 +2,53 @@ import Testing
 @testable import CmuxUpdater
 
 @Suite struct UpdateFeedResolverTests {
-    @Test func missingInfoFeedURLUsesFallback() {
-        let resolver = UpdateFeedResolver(fallbackFeedURL: "https://example.com/appcast.xml")
-        let resolution = resolver.resolve(infoFeedURL: nil)
-        #expect(resolution.url == "https://example.com/appcast.xml")
-        #expect(resolution.usedFallback)
+    @Test func missingInfoFeedURLDisablesUpdater() {
+        let resolution = UpdateFeedResolver().resolve(infoFeedURL: nil)
+
+        #expect(resolution.url == nil)
+        #expect(!resolution.isEnabled)
+        #expect(!resolution.rejectedConfiguredURL)
+    }
+
+    @Test func sourceBuildPlaceholderDisablesUpdater() {
+        let resolution = UpdateFeedResolver().resolve(infoFeedURL: "about:blank")
+
+        #expect(resolution.url == nil)
+        #expect(!resolution.isEnabled)
+        #expect(!resolution.rejectedConfiguredURL)
+    }
+
+    @Test func exactStableFeedIsAllowed() {
+        let resolution = UpdateFeedResolver().resolve(
+            infoFeedURL: UpdateFeedResolver.stableFeedURL
+        )
+
+        #expect(resolution.url == UpdateFeedResolver.stableFeedURL)
+        #expect(resolution.isEnabled)
         #expect(!resolution.isNightly)
     }
 
-    @Test func emptyInfoFeedURLUsesFallback() {
-        let resolver = UpdateFeedResolver(fallbackFeedURL: "https://example.com/appcast.xml")
-        let resolution = resolver.resolve(infoFeedURL: "")
-        #expect(resolution.url == "https://example.com/appcast.xml")
-        #expect(resolution.usedFallback)
-    }
+    @Test func exactNightlyFeedIsAllowed() {
+        let resolution = UpdateFeedResolver().resolve(
+            infoFeedURL: UpdateFeedResolver.nightlyFeedURL
+        )
 
-    @Test func stableInfoFeedURLIsUsedVerbatim() {
-        let resolver = UpdateFeedResolver()
-        let resolution = resolver.resolve(infoFeedURL: "https://example.com/stable/appcast.xml")
-        #expect(resolution.url == "https://example.com/stable/appcast.xml")
-        #expect(!resolution.usedFallback)
-        #expect(!resolution.isNightly)
-    }
-
-    @Test func nightlyInfoFeedURLIsClassifiedNightly() {
-        let resolver = UpdateFeedResolver()
-        let resolution = resolver.resolve(infoFeedURL: "https://example.com/nightly/appcast.xml")
+        #expect(resolution.url == UpdateFeedResolver.nightlyFeedURL)
+        #expect(resolution.isEnabled)
         #expect(resolution.isNightly)
-        #expect(!resolution.usedFallback)
+    }
+
+    @Test(arguments: [
+        "http://github.com/Unixcision/uniconnect/releases/latest/download/appcast.xml",
+        "https://github.com/manaflow-ai/cmux/releases/latest/download/appcast.xml",
+        "https://example.com/Unixcision/uniconnect/releases/latest/download/appcast.xml",
+        "https://github.com/Unixcision/uniconnect/releases/latest/download/appcast.xml?redirect=1",
+    ])
+    func foreignOrModifiedFeedIsRejected(candidate: String) {
+        let resolution = UpdateFeedResolver().resolve(infoFeedURL: candidate)
+
+        #expect(resolution.url == nil)
+        #expect(!resolution.isEnabled)
+        #expect(resolution.rejectedConfiguredURL)
     }
 }

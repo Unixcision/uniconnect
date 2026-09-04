@@ -103,9 +103,7 @@ final class SidebarHelpMenuUITests: XCTestCase {
             ) != nil
         )
         XCTAssertTrue(
-            app.staticTexts[
-                "A human will read this! You can also reach us at founders@manaflow.com."
-            ].waitForExistence(timeout: 2.0)
+            app.staticTexts["A human will read your message."].waitForExistence(timeout: 2.0)
         )
 
         let messageEditor = requireElement(

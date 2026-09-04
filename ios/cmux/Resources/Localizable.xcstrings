@@ -789,13 +789,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open cmux on the Mac or wake the computer."
+            "value": "Open UniConnect on the Mac or wake the computer."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mac で cmux を開くか、コンピュータのスリープを解除してください。"
+            "value": "Mac で UniConnect を開くか、コンピュータのスリープを解除してください。"
           }
         }
       }
@@ -976,13 +976,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn't verify your account with this Mac. Make sure both devices use the same cmux account and a matching build (both release, or both development), then try again."
+            "value": "Couldn't verify your account with this Mac. Make sure both devices use the same UniConnect account and a matching build (both release, or both development), then try again."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "この Mac でアカウントを確認できませんでした。両方のデバイスで同じ cmux アカウントと一致するビルド（どちらもリリース版、またはどちらも開発版）を使用していることを確認してから、もう一度お試しください。"
+            "value": "この Mac でアカウントを確認できませんでした。両方のデバイスで同じ UniConnect アカウントと一致するビルド（どちらもリリース版、またはどちらも開発版）を使用していることを確認してから、もう一度お試しください。"
           }
         }
       }
@@ -1758,13 +1758,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "UniConnect"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "UniConnect"
           }
         }
       }
@@ -2829,13 +2829,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "TestFlight is invite-only for now. Get the Founders Edition to enroll and to download cmux for Mac."
+            "value": "TestFlight is invite-only for now. Visit the UniConnect repository for current installation details."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "TestFlight は現在招待制です。Founders Edition から登録し、Mac 版 cmux をダウンロードしてください。"
+            "value": "TestFlight は現在招待制です。最新のインストール方法については、UniConnect リポジトリをご覧ください。"
           }
         }
       }

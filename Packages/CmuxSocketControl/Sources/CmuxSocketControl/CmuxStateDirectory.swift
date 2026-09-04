@@ -1,14 +1,14 @@
 public import Foundation
 
-/// The per-user directory that holds cmux's control-plane runtime state: the
+/// The per-user directory that holds UniConnect's control-plane runtime state: the
 /// control socket, its `last-socket-path` marker files, the socket password, and
 /// the cached remote daemon binaries.
 ///
 /// ## Why not Application Support
 ///
 /// These files are read and written by **two separately code-signed binaries** —
-/// the cmux app (bundle id `com.unixcision.uniconnect`) and the standalone `cmux` CLI
-/// installed at `/usr/local/bin/uniconnect`. On macOS Sequoia, a non-sandboxed process
+/// the UniConnect app (bundle id `com.unixcision.uniconnect`) and the standalone `cmux` CLI
+/// installed at `/usr/local/bin/cmux`. On macOS Sequoia, a non-sandboxed process
 /// that reaches into another app's data under `~/Library/Application Support`,
 /// `~/Library/Containers`, or `~/Library/Group Containers` triggers the
 /// "<app> would like to access data from other apps" TCC ("App Data") prompt.
@@ -28,16 +28,12 @@ public import Foundation
 /// let socket = CmuxStateDirectory.url(homeDirectory: home).appendingPathComponent("uniconnect.sock")
 /// ```
 public enum CmuxStateDirectory {
-    /// The directory name segment under `~/.local/state` (and the legacy name
-    /// under `~/Library/Application Support`).
+    /// The directory name segment under `~/.local/state`.
     public static var directoryName: String {
-        // UniConnect (app and its bundled CLI) keeps its sockets and markers apart from cmux.
-        let argv0 = URL(fileURLWithPath: CommandLine.arguments.first ?? "").resolvingSymlinksInPath().path
-        let bundlePath = Bundle.main.bundleURL.path
-        return (argv0.contains("UniConnect") || bundlePath.contains("UniConnect")) ? "uniconnect" : "cmux"
+        "uniconnect"
     }
 
-    /// The cmux state directory: `<home>/.local/state/uniconnect`.
+    /// The UniConnect state directory: `<home>/.local/state/uniconnect`.
     ///
     /// The home directory is injected (no ambient `FileManager.default` default)
     /// so this stays a pure, testable function with no hidden global state.
@@ -56,8 +52,8 @@ public enum CmuxStateDirectory {
             .appendingPathComponent(directoryName, isDirectory: true)
     }
 
-    /// The legacy Application Support control directory
-    /// (`~/Library/Application Support/cmux`).
+    /// The legacy UniConnect Application Support control directory
+    /// (`~/Library/Application Support/UniConnect`).
     ///
     /// Retained only so the app can migrate persistent files (the socket
     /// password) out of TCC-protected storage on launch. New reads and writes go
@@ -70,6 +66,6 @@ public enum CmuxStateDirectory {
     ///   be resolved.
     public static func legacyApplicationSupportURL(fileManager: FileManager) -> URL? {
         fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent(directoryName, isDirectory: true)
+            .appendingPathComponent("UniConnect", isDirectory: true)
     }
 }

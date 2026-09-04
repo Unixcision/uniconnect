@@ -51,7 +51,7 @@ write_dev_cli_shim() {
 # UniConnect dev shim (managed by scripts/reload.sh)
 set -euo pipefail
 
-CLI_PATH_FILE="/tmp/uniconnect-last-cli-path"
+CLI_PATH_FILE="/tmp/cmux-last-cli-path"
 SOCKET_ARG=""
 EXPECT_SOCKET_VALUE=0
 for arg in "\$@"; do
@@ -75,15 +75,15 @@ if [[ -n "\$SOCKET_ARG" ]]; then
     TAG="\${SOCKET_NAME#uniconnect-debug-}"
     TAG="\${TAG%.sock}"
     if [[ "\$TAG" =~ ^[A-Za-z0-9_-]+$ ]]; then
-      TAG_CLI="\$HOME/Library/Developer/Xcode/DerivedData/uniconnect-\$TAG/Build/Products/Debug/UniConnect DEV \$TAG.app/Contents/Resources/bin/uniconnect"
+      TAG_CLI="\$HOME/Library/Developer/Xcode/DerivedData/uniconnect-\$TAG/Build/Products/Debug/UniConnect DEV \$TAG.app/Contents/Resources/bin/cmux"
       if [[ -x "\$TAG_CLI" ]] && [[ "\$TAG_CLI" != "\$0" ]]; then
         exec "\$TAG_CLI" "\$@"
       fi
     fi
   fi
 fi
-if [[ -n "\${UNICONNECT_BUNDLED_CLI_PATH:-}" ]] && [[ -f "\$UNICONNECT_BUNDLED_CLI_PATH" ]] && [[ -x "\$UNICONNECT_BUNDLED_CLI_PATH" ]] && [[ "\$UNICONNECT_BUNDLED_CLI_PATH" != "\$0" ]]; then
-  exec "\$UNICONNECT_BUNDLED_CLI_PATH" "\$@"
+if [[ -n "\${CMUX_BUNDLED_CLI_PATH:-}" ]] && [[ -f "\$CMUX_BUNDLED_CLI_PATH" ]] && [[ -x "\$CMUX_BUNDLED_CLI_PATH" ]] && [[ "\$CMUX_BUNDLED_CLI_PATH" != "\$0" ]]; then
+  exec "\$CMUX_BUNDLED_CLI_PATH" "\$@"
 fi
 
 CLI_PATH_OWNER="\$(stat -f '%u' "\$CLI_PATH_FILE" 2>/dev/null || stat -c '%u' "\$CLI_PATH_FILE" 2>/dev/null || echo -1)"
@@ -98,7 +98,7 @@ if [[ -x "$fallback_bin" ]]; then
   exec "$fallback_bin" "\$@"
 fi
 
-echo "error: no reload-selected UniConnect dev CLI found. Run ./scripts/reload.sh --tag <name> first." >&2
+echo "error: no reload-selected cmux dev CLI found. Run ./scripts/reload.sh --tag <name> first." >&2
 exit 1
 EOF
   chmod +x "$target"
@@ -121,7 +121,7 @@ select_cmux_shim_target() {
       break
     fi
     [[ -d "$path_entry" && -w "$path_entry" ]] || continue
-    candidate="$path_entry/uniconnect"
+    candidate="$path_entry/cmux"
     if [[ ! -e "$candidate" ]]; then
       target="$candidate"
       break
@@ -140,7 +140,7 @@ select_cmux_shim_target() {
   # Fallback for PATH layouts where app CLI isn't listed or no earlier entries were writable.
   for path_entry in /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" "$HOME/bin"; do
     [[ -d "$path_entry" && -w "$path_entry" ]] || continue
-    candidate="$path_entry/uniconnect"
+    candidate="$path_entry/cmux"
     if [[ ! -e "$candidate" ]]; then
       echo "$candidate"
       return 0
@@ -588,12 +588,12 @@ reload_finalize() {
     echo "CLI path:"
     echo "  $CLI_PATH"
     echo "CLI helpers:"
-    echo "  /tmp/uniconnect-cli ..."
-    echo "  $HOME/.local/bin/uniconnect-dev ..."
+    echo "  /tmp/cmux-cli ..."
+    echo "  $HOME/.local/bin/cmux-dev ..."
     if [[ -n "${CMUX_SHIM_TARGET:-}" ]]; then
       echo "  $CMUX_SHIM_TARGET ..."
     fi
-    echo "If your shell still resolves an older UniConnect CLI, run: rehash"
+    echo "If your shell still resolves an older cmux CLI, run: rehash"
   fi
   if [[ "${SWIFT_FRONTEND_WORKAROUND_EFFECTIVE:-0}" -eq 1 ]]; then
     echo
@@ -910,7 +910,7 @@ if [[ -n "$TAG" && "$APP_NAME" != "$SEARCH_APP_NAME" ]]; then
       set_plist_env "$INFO_PLIST" CMUX_SOCKET_MODE "allowAll"
       set_plist_env "$INFO_PLIST" CMUX_REMOTE_DAEMON_ALLOW_LOCAL_BUILD "1"
       set_plist_env "$INFO_PLIST" CMUXTERM_REPO_ROOT "$PWD"
-      set_plist_env "$INFO_PLIST" UNICONNECT_BUNDLED_CLI_PATH "$TAG_APP_FINAL_PATH/Contents/Resources/bin/uniconnect"
+      set_plist_env "$INFO_PLIST" CMUX_BUNDLED_CLI_PATH "$TAG_APP_FINAL_PATH/Contents/Resources/bin/cmux"
       set_plist_env "$INFO_PLIST" CMUX_SHELL_INTEGRATION_DIR "$TAG_APP_FINAL_PATH/Contents/Resources/shell-integration"
       set_plist_env "$INFO_PLIST" CMUX_PORT "$CMUX_DEV_PORT"
       set_plist_env "$INFO_PLIST" CMUX_PORT_END "$CMUX_DEV_PORT_END"
@@ -933,18 +933,18 @@ if [[ -n "$TAG" && "$APP_NAME" != "$SEARCH_APP_NAME" ]]; then
   APP_PATH="$TAG_APP_STAGING_PATH"
 fi
 
-CLI_PATH="$(dirname "$APP_PATH")/uniconnect"
+CLI_PATH="$(dirname "$APP_PATH")/cmux"
 if [[ -x "$CLI_PATH" ]]; then
-  (umask 077; printf '%s\n' "$CLI_PATH" > /tmp/uniconnect-last-cli-path) || true
-  ln -sfn "$CLI_PATH" /tmp/uniconnect-cli || true
+  (umask 077; printf '%s\n' "$CLI_PATH" > /tmp/cmux-last-cli-path) || true
+  ln -sfn "$CLI_PATH" /tmp/cmux-cli || true
 
   # Stable shim that always follows the last reload-selected dev CLI.
-  DEV_CLI_SHIM="$HOME/.local/bin/uniconnect-dev"
-  write_dev_cli_shim "$DEV_CLI_SHIM" "/Applications/UniConnect.app/Contents/Resources/bin/uniconnect"
+  DEV_CLI_SHIM="$HOME/.local/bin/cmux-dev"
+  write_dev_cli_shim "$DEV_CLI_SHIM" "/Applications/UniConnect.app/Contents/Resources/bin/cmux"
 
   CMUX_SHIM_TARGET="$(select_cmux_shim_target || true)"
   if [[ -n "${CMUX_SHIM_TARGET:-}" ]]; then
-    write_dev_cli_shim "$CMUX_SHIM_TARGET" "/Applications/UniConnect.app/Contents/Resources/bin/uniconnect"
+    write_dev_cli_shim "$CMUX_SHIM_TARGET" "/Applications/UniConnect.app/Contents/Resources/bin/cmux"
   fi
 fi
 
@@ -987,10 +987,10 @@ if [[ -n "${TAG_APP_FINAL_PATH:-}" && -n "${TAG_APP_STAGING_PATH:-}" ]]; then
   mv "$TAG_APP_STAGING_PATH" "$TAG_APP_FINAL_PATH"
   APP_PATH="$TAG_APP_FINAL_PATH"
 fi
-CLI_PATH="$APP_PATH/Contents/Resources/bin/uniconnect"
+CLI_PATH="$APP_PATH/Contents/Resources/bin/cmux"
 if [[ -x "$CLI_PATH" ]]; then
-  echo "$CLI_PATH" > /tmp/uniconnect-last-cli-path || true
-  ln -sfn "$CLI_PATH" /tmp/uniconnect-cli || true
+  echo "$CLI_PATH" > /tmp/cmux-last-cli-path || true
+  ln -sfn "$CLI_PATH" /tmp/cmux-cli || true
 fi
 
 # Tag mode: always terminate the existing same-tag instance after a successful build,
@@ -1029,7 +1029,7 @@ if [[ "$LAUNCH" -eq 1 ]]; then
     -u CMUX_TAG
     -u CMUX_DEBUG_LOG
     -u CMUX_BUNDLE_ID
-    -u UNICONNECT_BUNDLED_CLI_PATH
+    -u CMUX_BUNDLED_CLI_PATH
     -u CMUX_SHELL_INTEGRATION
     -u CMUX_SHELL_INTEGRATION_DIR
     -u CMUX_LOAD_GHOSTTY_ZSH_INTEGRATION
@@ -1046,8 +1046,8 @@ if [[ "$LAUNCH" -eq 1 ]]; then
   )
 
   # DEBUG dogfood auto-sign-in needs no env injection here: the in-app resolver
-  # reads ~/.secrets/cmuxterm-dev.env (then ~/.secrets/cmux.env) directly on
-  # launch, which fires for every launch method including Finder / the CMUX Tag
+  # reads ~/.secrets/uniconnect-dev.env (then ~/.secrets/uniconnect.env) directly on
+  # launch, which fires for every launch method including Finder / the UniConnect tag
   # Opener that this script's TAG_LAUNCH_ENV never reaches. Exporting the Stack
   # password into the long-lived GUI process environment would leak it to every
   # child terminal/CLI it spawns, for zero added coverage, so we deliberately do
@@ -1060,7 +1060,7 @@ if [[ "$LAUNCH" -eq 1 ]]; then
     CMUX_DEBUG_LOG="$CMUX_DEBUG_LOG"
     CMUX_REMOTE_DAEMON_ALLOW_LOCAL_BUILD=1
     CMUXTERM_REPO_ROOT="$PWD"
-    UNICONNECT_BUNDLED_CLI_PATH="$CLI_PATH"
+    CMUX_BUNDLED_CLI_PATH="$CLI_PATH"
     CMUX_SHELL_INTEGRATION_DIR="$APP_PATH/Contents/Resources/shell-integration"
     CMUX_PORT="$CMUX_DEV_PORT"
     CMUX_PORT_END="$CMUX_DEV_PORT_END"

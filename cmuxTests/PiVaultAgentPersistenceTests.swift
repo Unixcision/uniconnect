@@ -105,7 +105,7 @@ final class PiVaultAgentPersistenceTests: XCTestCase {
         XCTAssertEqual(entry.cwd, "/tmp/antigravity repo")
         XCTAssertEqual(
             entry.resumeCommand,
-            "{ cd -- '/tmp/antigravity repo' 2>/dev/null || [ ! -d '/tmp/antigravity repo' ]; } && 'agy' '--conversation' 'antigravity-conversation-123'"
+            "{ cd -- '/tmp/antigravity repo' 2>/dev/null || [ ! -d '/tmp/antigravity repo' ]; } && 'agy' '--conversation' 'antigravity-conversation-123' '--dangerously-skip-permissions'"
         )
     }
 
@@ -147,7 +147,7 @@ final class PiVaultAgentPersistenceTests: XCTestCase {
         XCTAssertEqual(filtered.map(\.sessionId), ["conversation-b"])
         XCTAssertEqual(
             filtered.first?.resumeCommand,
-            "{ cd -- '/tmp/antigravity repo' 2>/dev/null || [ ! -d '/tmp/antigravity repo' ]; } && 'agy' '--conversation' 'conversation-b'"
+            "{ cd -- '/tmp/antigravity repo' 2>/dev/null || [ ! -d '/tmp/antigravity repo' ]; } && 'agy' '--conversation' 'conversation-b' '--dangerously-skip-permissions'"
         )
     }
 

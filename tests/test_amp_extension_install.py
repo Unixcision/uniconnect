@@ -55,6 +55,11 @@ def main() -> int:
         # install step so we don't touch the user's real ~/.config/amp.
         env = os.environ.copy()
         env["HOME"] = str(root)
+        plugins_dir = root / ".config" / "amp" / "plugins"
+        plugins_dir.mkdir(parents=True)
+        upstream_extension_path = plugins_dir / "cmux-session.ts"
+        upstream_extension_source = "// cmux-amp-session-extension-marker v2\n"
+        upstream_extension_path.write_text(upstream_extension_source, encoding="utf-8")
 
         install = subprocess.run(
             [cli_path, "hooks", "amp", "install", "--yes"],
@@ -71,13 +76,31 @@ def main() -> int:
             print(f"stderr={install.stderr.strip()}")
             return 1
 
-        extension_path = root / ".config" / "amp" / "plugins" / "cmux-session.ts"
+        extension_path = plugins_dir / "uniconnect-session.ts"
         if not extension_path.exists():
             print(f"FAIL: expected plugin at {extension_path}")
             return 1
         extension_text = extension_path.read_text(encoding="utf-8")
-        if "cmux-amp-session-extension-marker" not in extension_text:
-            print(f"FAIL: expected cmux marker in {extension_path}")
+        if "uniconnect-amp-session-extension-marker" not in extension_text:
+            print(f"FAIL: expected UniConnect marker in {extension_path}")
+            return 1
+        if upstream_extension_path.read_text(encoding="utf-8") != upstream_extension_source:
+            print("FAIL: Amp install modified the upstream cmux extension")
+            return 1
+
+        reinstall = subprocess.run(
+            [cli_path, "hooks", "amp", "install", "--yes"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            timeout=20,
+        )
+        if reinstall.returncode != 0 or "already up to date" not in reinstall.stdout:
+            print("FAIL: Amp UniConnect extension reinstall was not idempotent")
+            print(f"exit={reinstall.returncode}")
+            print(f"stdout={reinstall.stdout.strip()}")
+            print(f"stderr={reinstall.stderr.strip()}")
             return 1
 
         fake_cmux = root / "fake-cmux"
@@ -213,7 +236,25 @@ await handlers.get("agent.end")({ thread, message: "hello amp", id: "msg-user-1"
             print(f"FAIL: plugin captured wrong Amp launch argv; expected {expected_argv!r}, got {decoded_argv!r}")
             return 1
 
-    print("PASS: generated Amp plugin installs and emits cmux hooks")
+        uninstall = subprocess.run(
+            [cli_path, "hooks", "amp", "uninstall", "--yes"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            timeout=20,
+        )
+        if uninstall.returncode != 0 or extension_path.exists():
+            print("FAIL: Amp UniConnect extension uninstall failed")
+            print(f"exit={uninstall.returncode}")
+            print(f"stdout={uninstall.stdout.strip()}")
+            print(f"stderr={uninstall.stderr.strip()}")
+            return 1
+        if upstream_extension_path.read_text(encoding="utf-8") != upstream_extension_source:
+            print("FAIL: Amp uninstall modified the upstream cmux extension")
+            return 1
+
+    print("PASS: generated Amp UniConnect plugin coexists with upstream cmux and emits cmux hooks")
     return 0
 
 

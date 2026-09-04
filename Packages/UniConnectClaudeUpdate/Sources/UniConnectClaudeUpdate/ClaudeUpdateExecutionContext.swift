@@ -66,7 +66,7 @@ struct ClaudeUpdateExecutionContext {
     }
 
     mutating func record(_ outcome: ClaudeUpdateHostOutcome) {
-        guard !hostOutcomes.contains(where: { $0.host == outcome.host }) else { return }
+        guard !hostOutcomes.contains(where: { $0.id == outcome.id }) else { return }
         hostOutcomes.append(outcome)
     }
 }

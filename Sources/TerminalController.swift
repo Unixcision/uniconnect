@@ -13,11 +13,11 @@ import WebKit
 
 extension Notification.Name {
     static let socketListenerDidStart = Notification.Name("uniconnect.socketListenerDidStart")
-    static let terminalSurfaceDidBecomeReady = Notification.Name("cmux.terminalSurfaceDidBecomeReady")
-    static let terminalSurfaceHostedViewDidMoveToWindow = Notification.Name("cmux.terminalSurfaceHostedViewDidMoveToWindow")
-    static let mainWindowContextsDidChange = Notification.Name("cmux.mainWindowContextsDidChange")
-    static let browserDownloadEventDidArrive = Notification.Name("cmux.browserDownloadEventDidArrive")
-    static let reactGrabDidCopySelection = Notification.Name("cmux.reactGrabDidCopySelection")
+    static let terminalSurfaceDidBecomeReady = Notification.Name("uniconnect.terminalSurfaceDidBecomeReady")
+    static let terminalSurfaceHostedViewDidMoveToWindow = Notification.Name("uniconnect.terminalSurfaceHostedViewDidMoveToWindow")
+    static let mainWindowContextsDidChange = Notification.Name("uniconnect.mainWindowContextsDidChange")
+    static let browserDownloadEventDidArrive = Notification.Name("uniconnect.browserDownloadEventDidArrive")
+    static let reactGrabDidCopySelection = Notification.Name("uniconnect.reactGrabDidCopySelection")
 }
 
 nonisolated private struct SocketLineProcessingResult: Sendable {
@@ -1293,6 +1293,19 @@ class TerminalController {
 #endif
 
     private nonisolated func processCommandUsingSocketExecutionPolicy(_ command: String) -> String? {
+        let importLeaseBlocksSocket = v2MainSync {
+            UniConnectCoordinator.shared.importMutationGate?.allowsMutation == false
+        }
+        if importLeaseBlocksSocket {
+            if let request = parseV2SocketRequest(command) {
+                return v2Error(
+                    id: request.id,
+                    code: "import_in_progress",
+                    message: "session mutations are temporarily locked by an import"
+                )
+            }
+            return "ERROR: session mutations are temporarily locked by an import"
+        }
         if Thread.isMainThread,
            let request = parseV2SocketRequest(command),
            Self.executionPolicy(forV2Method: request.method) == .socketWorker(mainThreadCallable: false) {
@@ -12750,7 +12763,7 @@ class TerminalController {
 
         // Best effort: keep screenshot data available even when temp-file writes fail.
         let screenshotsDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cmux-browser-screenshots", isDirectory: true)
+            .appendingPathComponent("uniconnect-browser-screenshots", isDirectory: true)
         if (try? FileManager.default.createDirectory(at: screenshotsDirectory, withIntermediateDirectories: true)) != nil {
             bestEffortPruneTemporaryFiles(in: screenshotsDirectory)
             let timestampMs = Int(Date().timeIntervalSince1970 * 1000)
@@ -17720,7 +17733,7 @@ class TerminalController {
         let snapshotId = "\(timestamp)_\(shortId)"
 
         let outputDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cmux-screenshots")
+            .appendingPathComponent("uniconnect-screenshots")
         try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
         let filename = label.isEmpty ? "\(snapshotId).png" : "\(label)_\(snapshotId).png"
         let outputPath = outputDir.appendingPathComponent(filename)
@@ -18039,7 +18052,7 @@ class TerminalController {
 
         // Determine output path
         let outputDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cmux-screenshots")
+            .appendingPathComponent("uniconnect-screenshots")
         try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
 
         let filename = label.isEmpty ? "\(screenshotId).png" : "\(label)_\(screenshotId).png"

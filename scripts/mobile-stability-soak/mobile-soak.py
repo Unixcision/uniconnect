@@ -19,7 +19,7 @@ repo = Path(os.environ.get("CMUX_REPO", Path(__file__).resolve().parents[2]))
 simulator_id = os.environ["SIMULATOR_ID"]
 client_id = os.environ.get("CLIENT_ID", "mobile-soak-cli")
 duration_seconds = int(os.environ.get("SOAK_SECONDS", str(12 * 60 * 60)))
-soak_root = Path(os.environ.get("SOAK_ROOT", f"/tmp/cmux-mobile-soak-{tag}"))
+soak_root = Path(os.environ.get("SOAK_ROOT", f"/tmp/uniconnect-mobile-soak-{tag}"))
 log_path = Path(os.environ.get("SOAK_LOG", soak_root / "mobile-soak.log"))
 status_path = Path(os.environ.get("SOAK_STATUS", soak_root / "mobile-soak.status"))
 color_probe_interval = int(os.environ.get("COLOR_PROBE_INTERVAL", "120"))
@@ -52,7 +52,7 @@ terminal_output_retry_seconds = float(os.environ.get("TERMINAL_OUTPUT_RETRY_SECO
 failure_limit = int(os.environ.get("MOBILE_FAILURE_LIMIT", "1"))
 command_timeout_seconds = float(os.environ.get("MOBILE_COMMAND_TIMEOUT_SECONDS", "45"))
 diagnostics_dir = Path(os.environ.get("SOAK_DIAGNOSTICS_DIR", soak_root / "diagnostics"))
-cmux_log_path = Path(os.environ.get("CMUX_DEBUG_LOG", f"/tmp/cmux-debug-{tag}.log"))
+cmux_log_path = Path(os.environ.get("CMUX_DEBUG_LOG", f"/tmp/uniconnect-debug-{tag}.log"))
 cmux_log_tail_lines = int(os.environ.get("CMUX_DEBUG_LOG_TAIL_LINES", "500"))
 terminal_mutation_lock_path = Path(os.environ.get("MOBILE_TERMINAL_MUTATION_LOCK", soak_root / "mobile-terminal-mutation.lock"))
 
@@ -141,7 +141,7 @@ def attach_url_for_ticket(ticket):
     encoded = base64.urlsafe_b64encode(
         json.dumps(ticket, separators=(",", ":")).encode("utf-8")
     ).decode("ascii").rstrip("=")
-    return f"cmux-ios://attach?v={ticket.get('version', 1)}&payload={encoded}"
+    return f"uniconnect://attach?v={ticket.get('version', 1)}&payload={encoded}"
 
 
 def ticket_from_payload(payload, attach_url):
@@ -188,7 +188,7 @@ def create_ticket(workspace_id=None):
 
 
 def launch_app_with_attach_ticket(ticket):
-    bundle_id = f"dev.cmux.ios.{tag}"
+    bundle_id = f"com.unixcision.uniconnect.ios.{tag}"
     run(["xcrun", "simctl", "terminate", simulator_id, bundle_id], cwd=Path("/"), check=False)
     launch_output = run(
         ["xcrun", "simctl", "launch", "--terminate-running-process", simulator_id, bundle_id],
@@ -285,7 +285,7 @@ def capture_attachment_fallback_screenshot():
 
 def assert_attached_ui(ticket):
     blockers = [
-        "Open in “cmux DEV",
+        "Open in “UniConnect DEV",
         "Sign in with Apple",
         "Sign in with Google",
         "Email address",

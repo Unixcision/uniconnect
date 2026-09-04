@@ -78,19 +78,20 @@ enum FileExplorerTerminalPathInsertion {
         let plan = TerminalImageTransferPlanner.planPathInsertion(
             paths: insertionPaths,
             origin: resolvedOrigin,
-            target: target
+            target: target,
+            targetWorkspaceID: terminalPanel.surface.owningWorkspace()?.id
         )
         let isRejected: Bool
         switch plan {
         case .unavailable, .reject:
             isRejected = true
-        case .insertText, .insertTextSegments, .uploadFiles:
+        case .insertText, .insertTextSegments, .uploadFiles, .uploadFilesWithLeadingText:
             isRejected = false
         }
 
         let operation: TerminalImageTransferOperation?
         let destinationIsAvailable: () -> Bool
-        if case .uploadFiles(_, let remoteTarget, _) = plan {
+        if let remoteTarget = plan.remoteUploadTarget {
             let uploadOperation = TerminalImageTransferOperation()
             operation = uploadOperation
             destinationIsAvailable = { [weak surface = terminalPanel.surface] in
@@ -210,7 +211,9 @@ extension FileExplorerPanelView.Coordinator {
         guard let node = sender.representedObject as? FileExplorerNode else { return }
         FileExplorerTerminalPathInsertion.insert(
             paths: contextMenuNodes(clicked: node).map(\.path),
-            origin: store.provider is SSHFileExplorerProvider ? .remoteSession : nil,
+            origin: store.remoteWorkspaceID.map {
+                .remoteSession(workspaceID: $0)
+            },
             intoTerminalFor: outlineView?.window ?? containerView?.window
         )
     }
@@ -221,7 +224,9 @@ extension FileExplorerPanelView.Coordinator {
         FileExplorerTerminalPathInsertion.insert(
             paths: contextMenuNodes(clicked: node).map(\.path),
             relativeToRootPath: store.rootPath,
-            origin: store.provider is SSHFileExplorerProvider ? .remoteSession : nil,
+            origin: store.remoteWorkspaceID.map {
+                .remoteSession(workspaceID: $0)
+            },
             intoTerminalFor: outlineView?.window ?? containerView?.window
         )
     }

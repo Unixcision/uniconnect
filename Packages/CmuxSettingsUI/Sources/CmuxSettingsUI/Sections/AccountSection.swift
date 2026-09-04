@@ -9,11 +9,20 @@ import SwiftUI
 @MainActor
 public struct AccountSection: View {
     private let accountFlow: AccountFlow?
+    private let hostedServicesAvailable: Bool
 
+    /// Creates the account section.
+    ///
+    /// - Parameters:
+    ///   - defaultsStore: The shared defaults store; retained in the uniform section API.
+    ///   - catalog: The settings catalog; retained in the uniform section API.
+    ///   - accountFlow: The host-provided account flow, when configured.
+    ///   - hostedServicesAvailable: Whether online account services are safe to use.
     public init(
         defaultsStore: UserDefaultsSettingsStore,
         catalog: SettingCatalog,
-        accountFlow: AccountFlow?
+        accountFlow: AccountFlow?,
+        hostedServicesAvailable: Bool = false
     ) {
         // `defaultsStore` and `catalog` are part of the section's shared
         // init shape (every section takes them) but the Account card binds
@@ -22,13 +31,17 @@ public struct AccountSection: View {
         _ = defaultsStore
         _ = catalog
         self.accountFlow = accountFlow
+        self.hostedServicesAvailable = hostedServicesAvailable
     }
 
     public var body: some View {
         Group {
             SettingsSectionHeader(String(localized: "settings.section.account", defaultValue: "Account"), section: .account)
             SettingsCard {
-                AccountIdentityCard(flow: accountFlow)
+                AccountIdentityCard(
+                    flow: accountFlow,
+                    hostedServicesAvailable: hostedServicesAvailable
+                )
             }
             .settingsSearchAnchors(["setting:account:account"])
         }

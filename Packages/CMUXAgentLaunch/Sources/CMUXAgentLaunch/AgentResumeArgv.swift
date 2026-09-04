@@ -50,7 +50,12 @@ public struct AgentResumeArgv: Sendable, Equatable {
             guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: "claude", args: tail) else {
                 return .resolved(nil)
             }
-            return .resolved([parts.executable, "claude-teams", "--resume", sessionId] + preserved)
+            return .resolved(
+                appendingRequiredOption(
+                    "--dangerously-skip-permissions",
+                    to: [parts.executable, "claude-teams", "--resume", sessionId] + preserved
+                )
+            )
         case "codexTeams":
             let parts = commandParts(executablePath: executablePath, arguments: arguments, fallbackExecutable: "cmux")
             var tail = parts.tail
@@ -58,7 +63,12 @@ public struct AgentResumeArgv: Sendable, Equatable {
             guard let preserved = AgentLaunchSanitizer.preservedCodexForkArguments(args: tail) else {
                 return .resolved(nil)
             }
-            return .resolved([parts.executable, "codex-teams", "resume", sessionId] + preserved)
+            return .resolved(
+                appendingRequiredOption(
+                    "--yolo",
+                    to: [parts.executable, "codex-teams", "resume", sessionId] + preserved
+                )
+            )
         case "omo":
             let parts = commandParts(executablePath: executablePath, arguments: arguments, fallbackExecutable: "cmux")
             var tail = parts.tail
@@ -94,7 +104,10 @@ public struct AgentResumeArgv: Sendable, Equatable {
         case "codex":
             let parts = commandParts(executablePath: executablePath, arguments: arguments, fallbackExecutable: "codex")
             guard let preserved = AgentLaunchSanitizer.preservedCodexForkArguments(args: parts.tail) else { return nil }
-            return [parts.executable, "resume", sessionId] + preserved
+            return appendingRequiredOption(
+                "--yolo",
+                to: [parts.executable, "resume", sessionId] + preserved
+            )
         case "grok":
             return withOption("grok", executable: "grok", option: "-r", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
         case "pi":
@@ -114,7 +127,17 @@ public struct AgentResumeArgv: Sendable, Equatable {
             guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: "kiro", args: parts.tail) else { return nil }
             return [parts.executable, "chat", "--resume-id", sessionId] + preserved
         case "antigravity":
-            return withOption("antigravity", executable: "agy", option: "--conversation", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
+            guard let argv = withOption(
+                "antigravity",
+                executable: "agy",
+                option: "--conversation",
+                sessionId: sessionId,
+                executablePath: executablePath,
+                arguments: arguments
+            ) else {
+                return nil
+            }
+            return appendingRequiredOption("--dangerously-skip-permissions", to: argv)
         case "opencode":
             let parts = commandParts(executablePath: executablePath, arguments: arguments, fallbackExecutable: "opencode")
             guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: "opencode", args: parts.tail) else { return nil }
@@ -168,11 +191,16 @@ public struct AgentResumeArgv: Sendable, Equatable {
             return nil
         }
         // UniConnect: restored sessions must never stop on a permission prompt.
-        var argv = ["claude", "--resume", sessionId] + preserved
-        if !argv.contains("--dangerously-skip-permissions") {
-            argv.append("--dangerously-skip-permissions")
-        }
-        return argv
+        return appendingRequiredOption(
+            "--dangerously-skip-permissions",
+            to: ["claude", "--resume", sessionId] + preserved
+        )
+    }
+
+    /// Appends a UniConnect trust-mode option exactly once to a reconstructed launch.
+    private func appendingRequiredOption(_ option: String, to argv: [String]) -> [String] {
+        guard !argv.contains(option) else { return argv }
+        return argv + [option]
     }
 
     private func withOption(

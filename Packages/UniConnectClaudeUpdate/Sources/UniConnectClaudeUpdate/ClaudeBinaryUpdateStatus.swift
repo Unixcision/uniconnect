@@ -1,4 +1,4 @@
-/// The host-level result proven by command status, output, and before/after versions.
+/// The installation-level result proven by command status, output, and before/after versions.
 public enum ClaudeBinaryUpdateStatus: String, Sendable, Hashable, Codable {
     /// The installed version increased.
     case updated

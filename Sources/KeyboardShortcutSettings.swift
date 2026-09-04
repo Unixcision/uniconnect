@@ -5,7 +5,7 @@ import SwiftUI
 
 /// Stores customizable keyboard shortcuts (definitions + persistence).
 enum KeyboardShortcutSettings {
-    static let didChangeNotification = Notification.Name("cmux.keyboardShortcutSettingsDidChange")
+    static let didChangeNotification = Notification.Name("uniconnect.keyboardShortcutSettingsDidChange")
     static let actionUserInfoKey = "action"
     static let settingsFileDisplayPath = "~/.config/uniconnect/uniconnect.json"
     static var settingsFileStore: KeyboardShortcutSettingsFileStore = .shared {
@@ -21,9 +21,31 @@ enum KeyboardShortcutSettings {
 
     static var settingsVisibleActions: [Action] {
         orderedSettingsVisibleActions(
-            from: publicShortcutActions.filter { $0 != .showHideAllWindows }
+            from: publicShortcutActions.filter {
+                $0 != .showHideAllWindows && !uniConnectHiddenActions.contains($0)
+            }
         )
     }
+
+    /// Inherited cmux commands that UniConnect intentionally keeps out of its
+    /// menus, palette, and shortcut editor. Their stable identifiers remain
+    /// decodable so an older config can be migrated without data loss.
+    static let uniConnectHiddenActions: Set<Action> = [
+        .newWindow, .closeWindow, .openFolder, .reopenPreviousSession,
+        .sendFeedback, .markOldestUnreadAndJumpNext,
+        .focusRightSidebar, .switchRightSidebarToFiles, .switchRightSidebarToFind,
+        .switchRightSidebarToSessions, .switchRightSidebarToFeed, .switchRightSidebarToDock,
+        .focusHistoryBack, .focusHistoryForward, .editWorkspaceDescription,
+        .splitBrowserRight, .splitBrowserDown, .toggleRightSidebar,
+        .saveFilePreview, .openBrowser, .focusBrowserAddressBar,
+        .browserBack, .browserForward, .browserReload,
+        .browserZoomIn, .browserZoomOut, .browserZoomReset,
+        .markdownZoomIn, .markdownZoomOut, .markdownZoomReset,
+        .findInDirectory, .toggleBrowserDeveloperTools, .showBrowserJavaScriptConsole,
+        .toggleBrowserFocusMode, .toggleReactGrab, .openDiffViewer,
+        .diffViewerScrollDown, .diffViewerScrollUp, .diffViewerScrollToBottom,
+        .diffViewerScrollToTop, .diffViewerOpenFileSearch,
+    ]
 
     private static func orderedSettingsVisibleActions(from actions: [Action]) -> [Action] {
         let colocatedSidebarActions = [
@@ -66,6 +88,13 @@ enum KeyboardShortcutSettings {
         case newWindow
         case closeWindow
         case toggleFullScreen
+        case lockApp
+        case persistNow
+        case reconnectDroppedWindows
+        case reconnectFocusedSSHWindow
+        case updateClaudeInWindow
+        case updateClaudeInBox
+        case updateClaudeEverywhere
         case quit
 
         // Titlebar / primary UI
@@ -110,6 +139,9 @@ enum KeyboardShortcutSettings {
         case reopenClosedBrowserPanel
         case newSurface
         case toggleTerminalCopyMode
+        case terminalFontSizeIncrease
+        case terminalFontSizeDecrease
+        case terminalFontSizeReset
         case focusTextBoxInput
         case attachTextBoxFile
         case sendCtrlFToTerminal
@@ -169,12 +201,27 @@ enum KeyboardShortcutSettings {
             case .newWindow: return String(localized: "shortcut.newWindow.label", defaultValue: "New Window")
             case .closeWindow: return String(localized: "shortcut.closeWindow.label", defaultValue: "Close Window")
             case .toggleFullScreen: return String(localized: "command.toggleFullScreen.title", defaultValue: "Toggle Full Screen")
-            case .quit: return String(localized: "menu.quitCmux", defaultValue: "Quit cmux")
-            case .toggleSidebar: return String(localized: "shortcut.toggleLeftSidebar.label", defaultValue: "Toggle Left Sidebar")
-            case .newTab: return String(localized: "shortcut.newWorkspace.label", defaultValue: "New Workspace")
+            case .lockApp: return String(localized: "shortcut.lockApp.label", defaultValue: "Lock UniConnect")
+            case .persistNow: return String(localized: "shortcut.persistNow.label", defaultValue: "Save Now")
+            case .reconnectDroppedWindows:
+                return String(
+                    localized: "uniconnect.reconnect.all.now",
+                    defaultValue: "Reconnect SSH Windows Now"
+                )
+            case .reconnectFocusedSSHWindow:
+                return String(
+                    localized: "shortcut.reconnectFocusedSSHWindow.label",
+                    defaultValue: "Reconnect This SSH Window Now"
+                )
+            case .updateClaudeInWindow: return String(localized: "shortcut.updateClaudeInWindow.label", defaultValue: "Update Claude in This Window")
+            case .updateClaudeInBox: return String(localized: "shortcut.updateClaudeInBox.label", defaultValue: "Update Claude in This Box")
+            case .updateClaudeEverywhere: return String(localized: "shortcut.updateClaudeEverywhere.label", defaultValue: "Update Claude Everywhere")
+            case .quit: return String(localized: "menu.app.quitUniConnect", defaultValue: "Quit UniConnect")
+            case .toggleSidebar: return String(localized: "shortcut.toggleLeftSidebar.label", defaultValue: "Compact or Expand Sidebar")
+            case .newTab: return String(localized: "shortcut.newWorkspace.label", defaultValue: "New Box…")
             case .openFolder: return String(localized: "shortcut.openFolder.label", defaultValue: "Open Folder")
             case .reopenPreviousSession: return String(localized: "shortcut.reopenPreviousSession.label", defaultValue: "Restore Previous App Launch")
-            case .goToWorkspace: return String(localized: "menu.file.goToWorkspace", defaultValue: "Go to Workspace…")
+            case .goToWorkspace: return String(localized: "menu.box.goTo", defaultValue: "Go to Box…")
             case .commandPalette: return String(localized: "menu.file.commandPalette", defaultValue: "Command Palette…")
             case .commandPaletteNext: return String(localized: "shortcut.commandPaletteNext.label", defaultValue: "Command Palette: Next")
             case .commandPalettePrevious: return String(localized: "shortcut.commandPalettePrevious.label", defaultValue: "Command Palette: Previous")
@@ -191,25 +238,28 @@ enum KeyboardShortcutSettings {
             case .switchRightSidebarToFeed: return String(localized: "shortcut.switchRightSidebarToFeed.label", defaultValue: "Show Sidebar Feed")
             case .switchRightSidebarToDock: return String(localized: "shortcut.switchRightSidebarToDock.label", defaultValue: "Show Sidebar Dock")
             case .triggerFlash: return String(localized: "shortcut.flashFocusedPanel.label", defaultValue: "Flash Focused Panel")
-            case .nextSurface: return String(localized: "shortcut.nextSurface.label", defaultValue: "Next Surface")
-            case .prevSurface: return String(localized: "shortcut.previousSurface.label", defaultValue: "Previous Surface")
-            case .selectSurfaceByNumber: return String(localized: "shortcut.selectSurfaceByNumber.label", defaultValue: "Select Surface 1…9")
-            case .nextSidebarTab: return String(localized: "shortcut.nextWorkspace.label", defaultValue: "Next Workspace")
-            case .prevSidebarTab: return String(localized: "shortcut.previousWorkspace.label", defaultValue: "Previous Workspace")
+            case .nextSurface: return String(localized: "shortcut.nextSurface.label", defaultValue: "Next Window")
+            case .prevSurface: return String(localized: "shortcut.previousSurface.label", defaultValue: "Previous Window")
+            case .selectSurfaceByNumber: return String(localized: "shortcut.selectSurfaceByNumber.label", defaultValue: "Select Window 1…9")
+            case .nextSidebarTab: return String(localized: "shortcut.nextWorkspace.label", defaultValue: "Next Box")
+            case .prevSidebarTab: return String(localized: "shortcut.previousWorkspace.label", defaultValue: "Previous Box")
             case .focusHistoryBack: return String(localized: "shortcut.focusHistoryBack.label", defaultValue: "Focus Back")
             case .focusHistoryForward: return String(localized: "shortcut.focusHistoryForward.label", defaultValue: "Focus Forward")
-            case .selectWorkspaceByNumber: return String(localized: "shortcut.selectWorkspaceByNumber.label", defaultValue: "Select Workspace 1…9")
-            case .renameTab: return String(localized: "shortcut.renameTab.label", defaultValue: "Rename Tab")
-            case .renameWorkspace: return String(localized: "shortcut.renameWorkspace.label", defaultValue: "Rename Workspace")
+            case .selectWorkspaceByNumber: return String(localized: "shortcut.selectWorkspaceByNumber.label", defaultValue: "Select Box 1…9")
+            case .renameTab: return String(localized: "shortcut.renameTab.label", defaultValue: "Rename Window")
+            case .renameWorkspace: return String(localized: "shortcut.renameWorkspace.label", defaultValue: "Rename Box")
             case .editWorkspaceDescription: return String(localized: "shortcut.editWorkspaceDescription.label", defaultValue: "Edit Workspace Description")
-            case .closeTab: return String(localized: "menu.file.closeTab", defaultValue: "Close Tab")
-            case .closeOtherTabsInPane: return String(localized: "menu.file.closeOtherTabs", defaultValue: "Close Other Tabs in Pane")
-            case .closeWorkspace: return String(localized: "shortcut.closeWorkspace.label", defaultValue: "Close Workspace")
-            case .groupSelectedWorkspaces: return String(localized: "shortcut.groupSelectedWorkspaces.label", defaultValue: "Group Selected Workspaces")
-            case .toggleFocusedWorkspaceGroupCollapsed: return String(localized: "shortcut.toggleFocusedWorkspaceGroupCollapsed.label", defaultValue: "Toggle Focused Workspace's Group Collapse")
+            case .closeTab: return String(localized: "menu.file.closeWindowInBox", defaultValue: "Close Window")
+            case .closeOtherTabsInPane: return String(localized: "menu.file.closeOtherWindowsInPanel", defaultValue: "Close Other Windows in Panel")
+            case .closeWorkspace: return String(localized: "shortcut.closeWorkspace.label", defaultValue: "Close Box")
+            case .groupSelectedWorkspaces: return String(localized: "shortcut.groupSelectedWorkspaces.label", defaultValue: "Group Selected Boxes")
+            case .toggleFocusedWorkspaceGroupCollapsed: return String(localized: "shortcut.toggleFocusedWorkspaceGroupCollapsed.label", defaultValue: "Collapse or Expand Focused Box Group")
             case .reopenClosedBrowserPanel: return String(localized: "menu.history.reopenLastClosed", defaultValue: "Reopen Last Closed")
-            case .newSurface: return String(localized: "shortcut.newSurface.label", defaultValue: "New Surface")
+            case .newSurface: return String(localized: "shortcut.newSurface.label", defaultValue: "New Tab")
             case .toggleTerminalCopyMode: return String(localized: "shortcut.toggleTerminalCopyMode.label", defaultValue: "Toggle Terminal Copy Mode")
+            case .terminalFontSizeIncrease: return String(localized: "shortcut.terminalFontSizeIncrease.label", defaultValue: "Increase Terminal Font Size")
+            case .terminalFontSizeDecrease: return String(localized: "shortcut.terminalFontSizeDecrease.label", defaultValue: "Decrease Terminal Font Size")
+            case .terminalFontSizeReset: return String(localized: "shortcut.terminalFontSizeReset.label", defaultValue: "Reset Terminal Font Size")
             case .focusTextBoxInput: return String(localized: "shortcut.focusTextBoxInput.label", defaultValue: "Focus TextBox Input")
             case .attachTextBoxFile: return String(localized: "shortcut.attachTextBoxFile.label", defaultValue: "Attach File to TextBox Input")
             case .sendCtrlFToTerminal: return String(localized: "shortcut.sendCtrlFToTerminal.label", defaultValue: "Send Ctrl-F to Terminal")
@@ -285,21 +335,33 @@ enum KeyboardShortcutSettings {
             case .globalSearch:
                 return StoredShortcut(key: "f", command: true, shift: false, option: true, control: false)
             case .newWindow:
-                return StoredShortcut(key: "n", command: true, shift: true, option: false, control: false)
+                return .unbound
             case .closeWindow:
-                return StoredShortcut(key: "w", command: true, shift: false, option: false, control: true)
+                return .unbound
             case .toggleFullScreen:
                 return StoredShortcut(key: "f", command: true, shift: false, option: false, control: true)
+            case .lockApp:
+                return StoredShortcut(key: "l", command: true, shift: false, option: false, control: true)
+            case .persistNow:
+                return StoredShortcut(key: "s", command: true, shift: false, option: false, control: false)
+            case .reconnectDroppedWindows:
+                return StoredShortcut(key: "r", command: true, shift: false, option: false, control: true)
+            case .reconnectFocusedSSHWindow:
+                return StoredShortcut(key: "r", command: true, shift: false, option: false, control: false)
+            case .updateClaudeInWindow:
+                return StoredShortcut(key: "u", command: true, shift: false, option: false, control: true)
+            case .updateClaudeInBox, .updateClaudeEverywhere:
+                return .unbound
             case .quit:
                 return StoredShortcut(key: "q", command: true, shift: false, option: false, control: false)
             case .toggleSidebar:
-                return StoredShortcut(key: "b", command: true, shift: false, option: false, control: false)
+                return StoredShortcut(key: "b", command: true, shift: false, option: true, control: false)
             case .newTab:
                 return StoredShortcut(key: "n", command: true, shift: false, option: false, control: false)
             case .openFolder:
-                return StoredShortcut(key: "o", command: true, shift: false, option: false, control: false)
+                return .unbound
             case .reopenPreviousSession:
-                return StoredShortcut(key: "o", command: true, shift: true, option: false, control: false)
+                return .unbound
             case .goToWorkspace:
                 return StoredShortcut(key: "p", command: true, shift: false, option: false, control: false)
             case .commandPalette:
@@ -317,19 +379,19 @@ enum KeyboardShortcutSettings {
             case .toggleUnread:
                 return StoredShortcut(key: "u", command: true, shift: false, option: true, control: false)
             case .markOldestUnreadAndJumpNext:
-                return StoredShortcut(key: "u", command: true, shift: false, option: false, control: true)
+                return .unbound
             case .focusRightSidebar:
-                return StoredShortcut(key: "e", command: true, shift: true, option: false, control: false)
+                return .unbound
             case .switchRightSidebarToFiles:
-                return StoredShortcut(key: "1", command: false, shift: false, option: false, control: true)
+                return .unbound
             case .switchRightSidebarToFind:
-                return StoredShortcut(key: "2", command: false, shift: false, option: false, control: true)
+                return .unbound
             case .switchRightSidebarToSessions:
-                return StoredShortcut(key: "3", command: false, shift: false, option: false, control: true)
+                return .unbound
             case .switchRightSidebarToFeed:
-                return StoredShortcut(key: "4", command: false, shift: false, option: false, control: true)
+                return .unbound
             case .switchRightSidebarToDock:
-                return StoredShortcut(key: "5", command: false, shift: false, option: false, control: true)
+                return .unbound
             case .triggerFlash:
                 return StoredShortcut(key: "h", command: true, shift: true, option: false, control: false)
             case .nextSidebarTab:
@@ -337,15 +399,15 @@ enum KeyboardShortcutSettings {
             case .prevSidebarTab:
                 return StoredShortcut(key: "[", command: true, shift: false, option: false, control: true)
             case .focusHistoryBack:
-                return StoredShortcut(key: "[", command: true, shift: false, option: false, control: false)
+                return .unbound
             case .focusHistoryForward:
-                return StoredShortcut(key: "]", command: true, shift: false, option: false, control: false)
+                return .unbound
             case .renameTab:
-                return StoredShortcut(key: "r", command: true, shift: false, option: false, control: false)
+                return .unbound
             case .renameWorkspace:
                 return StoredShortcut(key: "r", command: true, shift: true, option: false, control: false)
             case .editWorkspaceDescription:
-                return StoredShortcut(key: "e", command: true, shift: false, option: true, control: false)
+                return .unbound
             case .closeTab:
                 return StoredShortcut(key: "w", command: true, shift: false, option: false, control: false)
             case .closeOtherTabsInPane:
@@ -382,9 +444,9 @@ enum KeyboardShortcutSettings {
             case .toggleSplitZoom: return StoredShortcut(key: "\r", command: true, shift: true, option: false, control: false)
             case .equalizeSplits: return StoredShortcut(key: "=", command: true, shift: false, option: false, control: true)
             case .splitBrowserRight:
-                return StoredShortcut(key: "d", command: true, shift: false, option: true, control: false)
+                return .unbound
             case .splitBrowserDown:
-                return StoredShortcut(key: "d", command: true, shift: true, option: true, control: false)
+                return .unbound
             case .nextSurface:
                 return StoredShortcut(key: "]", command: true, shift: true, option: false, control: false)
             case .prevSurface:
@@ -395,6 +457,12 @@ enum KeyboardShortcutSettings {
                 return StoredShortcut(key: "t", command: true, shift: false, option: false, control: false)
             case .toggleTerminalCopyMode:
                 return StoredShortcut(key: "m", command: true, shift: true, option: false, control: false)
+            case .terminalFontSizeIncrease:
+                return StoredShortcut(key: "=", command: true, shift: false, option: false, control: false)
+            case .terminalFontSizeDecrease:
+                return StoredShortcut(key: "-", command: true, shift: false, option: false, control: false)
+            case .terminalFontSizeReset:
+                return StoredShortcut(key: "0", command: true, shift: false, option: false, control: false)
             case .focusTextBoxInput:
                 return StoredShortcut(key: "a", command: true, shift: true, option: false, control: false)
             case .attachTextBoxFile:
@@ -409,37 +477,35 @@ enum KeyboardShortcutSettings {
             case .selectWorkspaceByNumber:
                 return StoredShortcut(key: "1", command: true, shift: false, option: false, control: false)
             case .toggleRightSidebar:
-                return StoredShortcut(key: "b", command: true, shift: false, option: true, control: false)
+                return .unbound
             case .saveFilePreview:
-                return StoredShortcut(key: "s", command: true, shift: false, option: false, control: false)
+                return .unbound
             case .openBrowser:
-                return StoredShortcut(key: "l", command: true, shift: true, option: false, control: false)
+                return .unbound
             case .focusBrowserAddressBar:
-                return StoredShortcut(key: "l", command: true, shift: false, option: false, control: false)
+                return .unbound
             case .browserBack:
-                return StoredShortcut(key: "[", command: true, shift: false, option: false, control: false)
+                return .unbound
             case .browserForward:
-                return StoredShortcut(key: "]", command: true, shift: false, option: false, control: false)
+                return .unbound
             case .browserReload:
-                return StoredShortcut(key: "r", command: true, shift: false, option: false, control: false)
+                return .unbound
             case .browserZoomIn:
-                return StoredShortcut(key: "=", command: true, shift: false, option: false, control: false)
+                return .unbound
             case .browserZoomOut:
-                return StoredShortcut(key: "-", command: true, shift: false, option: false, control: false)
+                return .unbound
             case .browserZoomReset:
-                return StoredShortcut(key: "0", command: true, shift: false, option: false, control: false)
+                return .unbound
             case .markdownZoomIn:
-                // Same chord as browser zoom, but scoped to the markdown panel
-                // context so the two never collide.
-                return StoredShortcut(key: "=", command: true, shift: false, option: false, control: false)
+                return .unbound
             case .markdownZoomOut:
-                return StoredShortcut(key: "-", command: true, shift: false, option: false, control: false)
+                return .unbound
             case .markdownZoomReset:
-                return StoredShortcut(key: "0", command: true, shift: false, option: false, control: false)
+                return .unbound
             case .find:
                 return StoredShortcut(key: "f", command: true, shift: false, option: false, control: false)
             case .findInDirectory:
-                return StoredShortcut(key: "f", command: true, shift: true, option: false, control: false)
+                return .unbound
             case .findNext:
                 return StoredShortcut(key: "g", command: true, shift: false, option: false, control: false)
             case .findPrevious:
@@ -449,41 +515,25 @@ enum KeyboardShortcutSettings {
             case .useSelectionForFind:
                 return StoredShortcut(key: "e", command: true, shift: false, option: false, control: false)
             case .toggleBrowserDeveloperTools:
-                // Safari default: Show Web Inspector.
-                return StoredShortcut(key: "i", command: true, shift: false, option: true, control: false)
+                return .unbound
             case .showBrowserJavaScriptConsole:
-                // Safari default: Show JavaScript Console.
-                return StoredShortcut(key: "c", command: true, shift: false, option: true, control: false)
+                return .unbound
             case .toggleBrowserFocusMode:
-                // Option+Cmd+Return: "enter" focus mode mnemonic. Option+Cmd is a
-                // modifier tier web pages rarely bind, so it stays out of the page's
-                // way while focus mode is off and cmux owns the shortcut, and it
-                // avoids the Ctrl+Cmd+Return global hotkey some screen recorders use.
-                // Exit stays double-Escape; rebind in Settings or uniconnect.json.
-                return StoredShortcut(key: "\r", command: true, shift: false, option: true, control: false)
+                return .unbound
             case .toggleReactGrab:
-                return StoredShortcut(key: "g", command: true, shift: true, option: false, control: false)
+                return .unbound
             case .openDiffViewer:
-                // Cmd+Ctrl+Shift+D. The plain Cmd+Ctrl+D chord is reserved by macOS for
-                // "Look Up & data detectors" — the OS swallows it before it reaches the
-                // app's key monitor — and the rest of the Cmd-based "D" family is taken
-                // by split actions (Cmd+D, Cmd+Shift+D, Cmd+Opt+D, Cmd+Shift+Opt+D).
-                // Adding Shift yields a chord that reaches cmux while keeping the "D for
-                // Diff" mnemonic. Rebindable in Settings → Keyboard Shortcuts.
-                return StoredShortcut(key: "d", command: true, shift: true, option: false, control: true)
+                return .unbound
             case .diffViewerScrollDown:
-                return StoredShortcut(key: "j", command: false, shift: false, option: false, control: false)
+                return .unbound
             case .diffViewerScrollUp:
-                return StoredShortcut(key: "k", command: false, shift: false, option: false, control: false)
+                return .unbound
             case .diffViewerScrollToBottom:
-                return StoredShortcut(key: "g", command: false, shift: true, option: false, control: false)
+                return .unbound
             case .diffViewerScrollToTop:
-                return StoredShortcut(
-                    first: ShortcutStroke(key: "g", command: false, shift: false, option: false, control: false),
-                    second: ShortcutStroke(key: "g", command: false, shift: false, option: false, control: false)
-                )
+                return .unbound
             case .diffViewerOpenFileSearch:
-                return StoredShortcut(key: "/", command: false, shift: false, option: false, control: false)
+                return .unbound
             }
         }
 
@@ -2438,8 +2488,8 @@ extension StoredShortcut {
 }
 
 enum KeyboardShortcutRecorderActivity {
-    static let didChangeNotification = Notification.Name("cmux.keyboardShortcutRecorderActivityDidChange")
-    static let stopAllNotification = Notification.Name("cmux.keyboardShortcutRecorderActivityStopAll")
+    static let didChangeNotification = Notification.Name("uniconnect.keyboardShortcutRecorderActivityDidChange")
+    static let stopAllNotification = Notification.Name("uniconnect.keyboardShortcutRecorderActivityStopAll")
     private static var activeRecorderCount = 0
 
     static var isAnyRecorderActive: Bool {

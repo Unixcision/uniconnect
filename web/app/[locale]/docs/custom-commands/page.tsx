@@ -60,13 +60,13 @@ export default function CustomCommandsPage() {
       <p>{t("fileLocationsDesc")}</p>
       <ul>
         <li>
-          <strong>{t("localConfig")}</strong> <code>./.cmux/cmux.json</code> - {t("localConfigDesc")}
+          <strong>{t("localConfig")}</strong> <code>./.uniconnect/uniconnect.json</code> - {t("localConfigDesc")}
         </li>
         <li>
-          <strong>{t("fallbackLocal")}</strong> <code>./cmux.json</code> - {t("fallbackLocalDesc")}
+          <strong>{t("fallbackLocal")}</strong> <code>./uniconnect.json</code> - {t("fallbackLocalDesc")}
         </li>
         <li>
-          <strong>{t("globalConfig")}</strong> <code>~/.config/cmux/cmux.json</code> - {t("globalConfigDesc")}
+          <strong>{t("globalConfig")}</strong> <code>~/.config/uniconnect/uniconnect.json</code> - {t("globalConfigDesc")}
         </li>
       </ul>
       <Callout type="info">{t("precedenceNote")}</Callout>
@@ -94,7 +94,7 @@ export default function CustomCommandsPage() {
           actions: (chunks) => <code>{chunks}</code>,
         })}
       </p>
-      <CodeBlock title="cmux.json" lang="json">{`{
+      <CodeBlock title="uniconnect.json" lang="json">{`{
   "actions": {
     "cmux.newTerminal": {
       "type": "command",
@@ -228,7 +228,7 @@ export default function CustomCommandsPage() {
           separator: inlineCode,
         })}
       </p>
-      <CodeBlock title="cmux.json" lang="json">{`{
+      <CodeBlock title="uniconnect.json" lang="json">{`{
   "actions": {
     "worktree-agents": {
       "type": "workspaceCommand",
@@ -316,7 +316,7 @@ export default function CustomCommandsPage() {
 
       <DocsHeading level={2} id="simple-commands">{t("simpleCommands")}</DocsHeading>
       <p>{t("simpleCommandsDesc")}</p>
-      <CodeBlock title="cmux.json" lang="json">{`{
+      <CodeBlock title="uniconnect.json" lang="json">{`{
   "commands": [
     {
       "name": "Run Tests",
@@ -339,7 +339,7 @@ export default function CustomCommandsPage() {
 
       <DocsHeading level={2} id="workspace-commands">{t("workspaceCommands")}</DocsHeading>
       <p>{t("workspaceCommandsDesc")}</p>
-      <CodeBlock title="cmux.json" lang="json">{`{
+      <CodeBlock title="uniconnect.json" lang="json">{`{
   "commands": [
     {
       "name": "Dev Environment",
@@ -435,7 +435,7 @@ export default function CustomCommandsPage() {
       </ul>
 
       <DocsHeading level={2} id="full-example">{t("fullExample")}</DocsHeading>
-      <CodeBlock title="cmux.json" lang="json">{`{
+      <CodeBlock title="uniconnect.json" lang="json">{`{
   "actions": {
     "web-dev": { "type": "workspaceCommand", "commandName": "Web Dev" },
     "cmux.newTerminal": {

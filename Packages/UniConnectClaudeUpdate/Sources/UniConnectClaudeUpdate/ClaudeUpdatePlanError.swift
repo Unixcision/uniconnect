@@ -25,9 +25,12 @@ public enum ClaudeUpdatePlanError: Error, Sendable, Hashable {
         second: ClaudeUpdateTargetID
     )
 
-    /// One host group referenced multiple native or npm Claude installations.
+    /// A legacy plan attempted to merge multiple installations into one host group.
     case conflictingInstallations(hostID: String, installationIDs: [String])
 
     /// One installation identity resolved to more than one executable path on a host.
     case conflictingExecutablePaths(hostID: String, executablePaths: [String])
+
+    /// A decoded or externally supplied confirmed plan did not match canonical validation.
+    case invalidConfirmedPlan
 }

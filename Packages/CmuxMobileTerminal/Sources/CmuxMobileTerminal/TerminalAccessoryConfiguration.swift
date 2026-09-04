@@ -29,7 +29,7 @@ public final class TerminalAccessoryConfiguration {
 
     /// Posted (on the main thread) whenever the configuration changes, so the
     /// UIKit input-accessory bar can rebuild its configurable buttons.
-    public static let didChangeNotification = Notification.Name("cmux.terminal.accessoryConfigurationDidChange")
+    public static let didChangeNotification = Notification.Name("uniconnect.terminal.accessoryConfigurationDidChange")
 
     // v2 schema, keyed by ``ToolbarItemID`` storage keys + JSON custom actions.
     private static let orderDefaultsKey = "cmux.terminal.toolbar.order.v2"

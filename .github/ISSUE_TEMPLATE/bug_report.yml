@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a bug in cmux
+description: Report a bug in UniConnect
 labels: ["bug"]
 body:
   - type: markdown
@@ -8,10 +8,10 @@ body:
         Thanks for reporting a bug! Please fill out the information below so we can reproduce and fix it.
 
   - type: input
-    id: cmux-version
+    id: uniconnect-version
     attributes:
-      label: cmux version
-      description: "Run `cmux --version` or check About cmux in the menu bar."
+      label: UniConnect version
+      description: "Run `cmux --version` or check About UniConnect in the menu bar."
       placeholder: "e.g. 0.3.2"
     validations:
       required: true
@@ -49,8 +49,8 @@ body:
   - type: dropdown
     id: nightly-repro
     attributes:
-      label: Can you reproduce this on cmux NIGHTLY?
-      description: "Please test with the latest NIGHTLY build first: https://github.com/manaflow-ai/cmux?tab=readme-ov-file#nightly-builds"
+      label: Can you reproduce this on UniConnect NIGHTLY?
+      description: "Please test with the latest NIGHTLY build first: https://github.com/Unixcision/uniconnect/releases/tag/nightly"
       options:
         - Yes, it still reproduces on NIGHTLY
         - No, it does not reproduce on NIGHTLY
@@ -81,7 +81,7 @@ body:
       label: Steps to reproduce
       description: "Minimal steps to reproduce the bug."
       placeholder: |
-        1. Open cmux
+        1. Open UniConnect
         2. ...
         3. See error
     validations:

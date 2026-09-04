@@ -2,6 +2,7 @@ import XCTest
 import Foundation
 import CryptoKit
 import LocalAuthentication
+import UniConnectClaudeBridge
 
 #if canImport(cmux_DEV)
 @testable import cmux_DEV
@@ -39,7 +40,7 @@ final class UniConnectTests: XCTestCase {
 
     func testSanitizedTmuxNameHasLengthLimitAndFallback() {
         XCTAssertLessThanOrEqual(UniConnectSSH.sanitizedTmuxName(String(repeating: "a", count: 200)).count, 40)
-        XCTAssertEqual(UniConnectSSH.sanitizedTmuxName("!!!"), "ventana")
+        XCTAssertEqual(UniConnectSSH.sanitizedTmuxName("!!!"), "window")
     }
 
     func testSuggestedTmuxNamesAreUnique() {
@@ -53,18 +54,22 @@ final class UniConnectTests: XCTestCase {
 
     func testInjectsOptionsAfterSshInsideSshpassWrapper() {
         let connect = "sshpass -p 'p4ss-w0rd-$42' ssh root@203.0.113.7"
-        let result = UniConnectSSH.injectingOptions(["-t", "-o", "X=y"], into: connect)
-        XCTAssertEqual(result, "sshpass -p 'p4ss-w0rd-$42' ssh -t -o X=y root@203.0.113.7")
+        guard UniConnectSSHConnectCommandValidator.trustedSSHpassExecutable() != nil else { return }
+        let result = UniConnectSSH.injectingOptions(["-t", "-o", "ConnectTimeout=15"], into: connect)
+        XCTAssertNotNil(result)
+        XCTAssertTrue(result?.contains("SSHPASS='p4ss-w0rd-$42'") == true)
+        XCTAssertTrue(result?.contains("'-e' '/usr/bin/ssh'") == true)
+        XCTAssertFalse(result?.contains("'-p'") == true)
     }
 
     func testInjectsOptionsAfterPlainSshWithIdentity() {
         let connect = "ssh -i /path/key.pem root@1.2.3.4"
         let result = UniConnectSSH.injectingOptions(["-t"], into: connect)
-        XCTAssertEqual(result, "ssh -t -i /path/key.pem root@1.2.3.4")
+        XCTAssertEqual(result, "'/usr/bin/ssh' '-i' '/path/key.pem' '-t' 'root@1.2.3.4'")
     }
 
-    func testInjectsOptionsAppendsWhenNoSshWord() {
-        XCTAssertEqual(UniConnectSSH.injectingOptions(["-t"], into: "my-wrapper host"), "my-wrapper host -t")
+    func testInjectsOptionsRejectsUnknownWrappers() {
+        XCTAssertNil(UniConnectSSH.injectingOptions(["-t"], into: "my-wrapper host"))
     }
 
     func testAttachCommandLineQuotesRemoteCommandAndUsesSafeSession() {
@@ -73,13 +78,33 @@ final class UniConnectTests: XCTestCase {
             session: "uc-claude-1a2b",
             directory: "/srv/app"
         )
-        XCTAssertTrue(line.hasPrefix("ssh -t -o StrictHostKeyChecking=accept-new"))
+        XCTAssertTrue(line?.hasPrefix("'/usr/bin/ssh' ") == true)
         // The remote command is single-quoted for the local shell, so inner quotes are
         // escaped as '\'' — check the unescaped pieces instead of the literal string.
-        XCTAssertTrue(line.contains("tmux new-session -A -s "))
-        XCTAssertTrue(line.contains("uc-claude-1a2b"))
-        XCTAssertTrue(line.contains("/srv/app"))
-        XCTAssertFalse(line.contains("kill"))
+        XCTAssertTrue(line?.contains("tmux new-session -A -s ") == true)
+        XCTAssertTrue(line?.contains("uc-claude-1a2b") == true)
+        XCTAssertTrue(line?.contains("/srv/app") == true)
+        XCTAssertFalse(line?.contains("kill") == true)
+    }
+
+    func testAttachCommandLineKeepsGeneratedMultilineBridgePayloadInOneArgument() {
+        let bridge = ClaudeBridgeConnectionPlan(
+            routeID: UUID(),
+            sshOptions: ["-o", "ExitOnForwardFailure=yes", "-R", "127.0.0.1:45000:127.0.0.1:46000"],
+            remoteSetupCommand: "printf '%s' 'line one\nline two' >/dev/null",
+            remoteCleanupCommand: "true"
+        )
+        let line = UniConnectSSH.attachCommandLine(
+            connectCommand: "ssh root@example.test",
+            session: "uc-bridge-test",
+            directory: nil,
+            bridge: bridge
+        )
+
+        XCTAssertNotNil(line)
+        XCTAssertTrue(line?.contains("ExitOnForwardFailure=yes") == true)
+        XCTAssertTrue(line?.contains("127.0.0.1:45000:127.0.0.1:46000") == true)
+        XCTAssertTrue(line?.contains("line one\nline two") == true)
     }
 
     func testRemoteTmuxCommandEscapesDirectoryQuotes() {
@@ -87,6 +112,31 @@ final class UniConnectTests: XCTestCase {
         XCTAssertTrue(cmd.hasPrefix("tmux new-session -A -s 's1' -c '/it'\\''s/here'"))
         XCTAssertTrue(cmd.contains("set-option -g mouse on"), "wheel scrolling inside tmux")
         XCTAssertTrue(cmd.contains("history-limit 50000"))
+    }
+
+    func testExistingTmuxCommandChecksThenAttachesWithoutCreatingReplacement() {
+        let cmd = UniConnectSSH.remoteExistingTmuxCommand(session: "saved-session")
+
+        XCTAssertTrue(cmd.contains("tmux has-session -t 'saved-session'"))
+        XCTAssertTrue(cmd.contains("exec tmux attach-session -t 'saved-session'"))
+        XCTAssertTrue(cmd.contains("set-option -g mouse on"))
+        XCTAssertTrue(cmd.contains("history-limit 50000"))
+        XCTAssertFalse(cmd.contains("new-session"))
+        XCTAssertFalse(cmd.contains(" -A "))
+    }
+
+    func testExistingTmuxAttachCommandLineCannotCreateMissingSavedSession() throws {
+        let line = try XCTUnwrap(UniConnectSSH.attachCommandLine(
+            connectCommand: "ssh root@1.2.3.4",
+            session: "saved-session",
+            directory: nil,
+            existingSessionOnly: true
+        ))
+
+        XCTAssertTrue(line.contains("tmux has-session"))
+        XCTAssertTrue(line.contains("tmux attach-session"))
+        XCTAssertFalse(line.contains("tmux new-session"))
+        XCTAssertFalse(line.contains(" -A "))
     }
 
     func testHostLabelNeverContainsPassword() {
@@ -104,6 +154,9 @@ final class UniConnectTests: XCTestCase {
         XCTAssertTrue(contents.hasPrefix("#!/bin/zsh -l\n"))
         XCTAssertTrue(contents.contains("rm -f -- \"$0\""))
         XCTAssertTrue(contents.contains("export TERM=xterm-256color"))
+        XCTAssertTrue(contents.contains("export HOME="))
+        XCTAssertTrue(contents.contains("export PATH=/usr/bin:/bin:/usr/sbin:/sbin"))
+        XCTAssertTrue(contents.contains("unset SSHPASS SSH_ASKPASS"))
         XCTAssertTrue(contents.contains("echo launcher-test"))
         let perms = try FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? Int
         XCTAssertEqual(perms, 0o700)
@@ -137,15 +190,41 @@ final class UniConnectTests: XCTestCase {
     func testAuthPolicyPrefersBiometricsAndFallsBackExplicitly() {
         XCTAssertEqual(UniConnectAuthPolicy.resolve(biometricsAvailable: true, errorCode: nil).0, .deviceOwnerAuthenticationWithBiometrics)
         XCTAssertNil(UniConnectAuthPolicy.resolve(biometricsAvailable: true, errorCode: nil).1)
-        for code in [LAError.Code.biometryLockout, .biometryNotEnrolled, .biometryNotAvailable] {
+        let fallbackCases: [(LAError.Code?, String)] = [
+            (
+                .biometryLockout,
+                String(
+                    localized: "uniconnect.lock.fallback.lockout",
+                    defaultValue: "Touch ID is locked after too many attempts. Enter your Mac password."
+                )
+            ),
+            (
+                .biometryNotEnrolled,
+                String(
+                    localized: "uniconnect.lock.fallback.notEnrolled",
+                    defaultValue: "No fingerprints are enrolled. Enter your Mac password."
+                )
+            ),
+            (
+                .biometryNotAvailable,
+                String(
+                    localized: "uniconnect.lock.fallback.notAvailable",
+                    defaultValue: "This Mac does not have Touch ID. Enter your Mac password."
+                )
+            ),
+            (
+                nil,
+                String(
+                    localized: "uniconnect.lock.fallback.unavailable",
+                    defaultValue: "Touch ID is unavailable. Enter your Mac password."
+                )
+            ),
+        ]
+        for (code, expectedReason) in fallbackCases {
             let (policy, reason) = UniConnectAuthPolicy.resolve(biometricsAvailable: false, errorCode: code)
             XCTAssertEqual(policy, .deviceOwnerAuthentication, "no silent bypass: password path must be explicit")
-            XCTAssertNotNil(reason)
-            XCTAssertTrue(reason!.contains("contraseña del Mac"))
+            XCTAssertEqual(reason, expectedReason)
         }
-        let (policy, reason) = UniConnectAuthPolicy.resolve(biometricsAvailable: false, errorCode: nil)
-        XCTAssertEqual(policy, .deviceOwnerAuthentication)
-        XCTAssertNotNil(reason)
     }
 
     /// Mocked LAContext (THE_BIG_GOAL §14): drives the real lock flow without hardware.
@@ -322,6 +401,361 @@ final class UniConnectTests: XCTestCase {
     }
 
     @MainActor
+    func testPersistNowWritesReadableSecretFreeJSONWithImmutableVaultCompanions() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-readable-backup-\(UUID().uuidString)", isDirectory: true)
+        let historyDirectory = directory.appendingPathComponent("history", isDirectory: true)
+        let backupURL = directory.appendingPathComponent("backup.json")
+        let vaultURL = directory.appendingPathComponent("live-vault.uc")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let key = SymmetricKey(size: .bits256)
+        let vault = UniConnectVault(storageURL: vaultURL, keyProvider: { key })
+        let credentialID = UUID()
+        let firstCommand = "sshpass -p 'first-secret' ssh ops@first.example.test"
+        try vault.storeOrThrow(connectCommand: firstCommand, id: credentialID)
+        let firstVault = try XCTUnwrap(
+            vault.encryptedSnapshot(requiring: Set([credentialID]))
+        )
+        let savedAt = Date(timeIntervalSince1970: 2_000_000)
+        var document = UniConnectDocument(
+            workspaces: [
+                .init(
+                    id: UUID(),
+                    name: "Production",
+                    kind: .ssh,
+                    color: "#123456",
+                    group: "Servers",
+                    isPinned: true,
+                    cwd: "/srv/must-not-become-local",
+                    connect: firstCommand,
+                    credentialId: credentialID,
+                    windows: [
+                        .init(
+                            name: "API logs",
+                            tmux: "uc-api",
+                            claudeSession: nil,
+                            cwd: "/srv/app",
+                            isPinned: true
+                        ),
+                    ]
+                ),
+                .init(
+                    id: UUID(),
+                    name: "Local project",
+                    kind: .local,
+                    color: nil,
+                    group: nil,
+                    isPinned: nil,
+                    cwd: "/Users/test/Projects/Local",
+                    connect: nil,
+                    windows: [
+                        .init(
+                            name: "Claude review",
+                            tmux: nil,
+                            claudeSession: "11111111-2222-3333-4444-555555555555",
+                            cwd: "/Users/test/Projects/Local/Sources",
+                            isPinned: nil
+                        ),
+                    ]
+                ),
+            ],
+            savedAt: savedAt
+        )
+
+        try UniConnectBackup.persistLocalBackup(
+            document: document,
+            encryptedVault: firstVault,
+            to: backupURL,
+            historyDirectory: historyDirectory,
+            vault: vault,
+            now: savedAt
+        )
+
+        let firstManifestData = try Data(contentsOf: backupURL)
+        let firstManifestText = String(decoding: firstManifestData, as: UTF8.self)
+        let firstManifest = try JSONDecoder().decode(
+            UniConnectBackup.LocalBackupManifest.self,
+            from: firstManifestData
+        )
+        let firstCompanionName = try XCTUnwrap(firstManifest.vaultFile)
+        XCTAssertEqual(firstManifest.vaultSHA256?.count, 64)
+        let firstCompanionURL = directory.appendingPathComponent(firstCompanionName)
+        XCTAssertNil(firstManifest.document.workspaces[0].connect)
+        XCTAssertNil(firstManifest.document.workspaces[0].cwd)
+        XCTAssertNil(firstManifest.document.workspaces[0].windows[0].cwd)
+        XCTAssertEqual(firstManifest.document.workspaces[0].credentialId, credentialID)
+        XCTAssertEqual(
+            firstManifest.document.workspaces[1].windows[0].cwd,
+            "/Users/test/Projects/Local/Sources"
+        )
+        XCTAssertTrue(firstManifestText.contains("Production"))
+        XCTAssertTrue(firstManifestText.contains("API logs"))
+        XCTAssertTrue(firstManifestText.contains("uc-api"))
+        XCTAssertTrue(firstManifestText.contains(credentialID.uuidString))
+        XCTAssertTrue(firstManifestText.contains("11111111-2222-3333-4444-555555555555"))
+        XCTAssertFalse(firstManifestText.contains("first-secret"))
+        XCTAssertFalse(firstManifestText.localizedCaseInsensitiveContains("sshpass"))
+        XCTAssertFalse(firstManifestText.contains("first.example.test"))
+        XCTAssertFalse(firstManifestText.contains("/srv/must-not-become-local"))
+        XCTAssertFalse(firstManifestText.contains("/srv/app"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: firstCompanionURL.path))
+        XCTAssertFalse(
+            String(decoding: try Data(contentsOf: firstCompanionURL), as: UTF8.self)
+                .contains("first-secret")
+        )
+
+        let firstHistoryURL = try XCTUnwrap(
+            FileManager.default.contentsOfDirectory(
+                at: historyDirectory,
+                includingPropertiesForKeys: nil
+            ).first(where: { $0.pathExtension == "json" })
+        )
+
+        let secondCommand = "sshpass -p 'second-secret' ssh ops@second.example.test"
+        try vault.storeOrThrow(connectCommand: secondCommand, id: credentialID)
+        let secondVault = try XCTUnwrap(
+            vault.encryptedSnapshot(requiring: Set([credentialID]))
+        )
+        document.workspaces[0].connect = secondCommand
+        try UniConnectBackup.persistLocalBackup(
+            document: document,
+            encryptedVault: secondVault,
+            to: backupURL,
+            historyDirectory: historyDirectory,
+            vault: vault,
+            now: savedAt.addingTimeInterval(60)
+        )
+
+        let current = try UniConnectBackup.readReadableBackup(at: backupURL, vault: vault)
+        XCTAssertEqual(current.workspaces.first?.connect, secondCommand)
+        XCTAssertEqual(current.workspaces.first?.credentialId, credentialID)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: firstCompanionURL.path))
+
+        // The first history pair remains permanently bound to revision A even though
+        // the live vault now maps the same test ID to B.
+        let historical = try UniConnectBackup.readReadableBackup(at: firstHistoryURL, vault: vault)
+        XCTAssertEqual(historical.workspaces.first?.connect, firstCommand)
+        XCTAssertEqual(historical.workspaces.first?.credentialId, credentialID)
+        guard case .plain(let importSource) = try UniConnectBackup.inspectDetailed(
+            at: firstHistoryURL,
+            vault: vault
+        ) else {
+            return XCTFail("expected readable backup import source")
+        }
+        XCTAssertEqual(importSource.document, historical)
+
+        let currentManifest = try JSONDecoder().decode(
+            UniConnectBackup.LocalBackupManifest.self,
+            from: Data(contentsOf: backupURL)
+        )
+        let currentCompanion = directory.appendingPathComponent(
+            try XCTUnwrap(currentManifest.vaultFile)
+        )
+        let historicalManifest = try JSONDecoder().decode(
+            UniConnectBackup.LocalBackupManifest.self,
+            from: Data(contentsOf: firstHistoryURL)
+        )
+        let historicalCompanion = historyDirectory.appendingPathComponent(
+            try XCTUnwrap(historicalManifest.vaultFile)
+        )
+        try UniConnectAtomicFileWriter.write(
+            Data(contentsOf: historicalCompanion),
+            to: currentCompanion
+        )
+        XCTAssertThrowsError(
+            try UniConnectBackup.readReadableBackup(at: backupURL, vault: vault)
+        )
+        try FileManager.default.removeItem(at: currentCompanion)
+        XCTAssertThrowsError(
+            try UniConnectBackup.readReadableBackup(at: backupURL, vault: vault)
+        )
+    }
+
+    @MainActor
+    func testReadableBackupRejectsMissingCredentialRevisionBeforeWriting() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-incomplete-backup-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = SymmetricKey(size: .bits256)
+        let vault = UniConnectVault(
+            storageURL: directory.appendingPathComponent("vault.uc"),
+            keyProvider: { key }
+        )
+        let document = UniConnectDocument(workspaces: [
+            .init(
+                name: "Unrecoverable",
+                kind: .ssh,
+                color: nil,
+                group: nil,
+                isPinned: nil,
+                cwd: nil,
+                connect: "ssh ops@example.test",
+                credentialId: UUID(),
+                windows: [.init(name: "shell", tmux: "uc-shell", claudeSession: nil, cwd: nil, isPinned: nil)]
+            ),
+        ])
+        let backupURL = directory.appendingPathComponent("backup.json")
+
+        XCTAssertThrowsError(try UniConnectBackup.persistLocalBackup(
+            document: document,
+            encryptedVault: nil,
+            to: backupURL,
+            historyDirectory: directory.appendingPathComponent("history", isDirectory: true),
+            vault: vault
+        ))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backupURL.path))
+    }
+
+    @MainActor
+    func testLegacyWholeDocumentBackupMigratesWithoutDeletingItsRollbackSource() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-legacy-backup-\(UUID().uuidString)", isDirectory: true)
+        let historyDirectory = directory.appendingPathComponent("history", isDirectory: true)
+        let readableURL = directory.appendingPathComponent("backup.json")
+        let legacyURL = directory.appendingPathComponent("backup.uc")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let key = SymmetricKey(size: .bits256)
+        let vault = UniConnectVault(
+            storageURL: directory.appendingPathComponent("live-vault.uc"),
+            keyProvider: { key }
+        )
+        let command = "sshpass -p 'legacy-secret' ssh root@legacy.example.test"
+        let legacyDocument = UniConnectDocument(
+            workspaces: [
+                .init(
+                    id: UUID(),
+                    name: "Legacy VPS",
+                    kind: .ssh,
+                    color: nil,
+                    group: nil,
+                    isPinned: nil,
+                    cwd: nil,
+                    connect: command,
+                    windows: [
+                        .init(name: "worker", tmux: "uc-worker", claudeSession: nil, cwd: nil, isPinned: nil),
+                    ]
+                ),
+            ],
+            savedAt: Date(timeIntervalSince1970: 1_900_000)
+        )
+        let plaintext = try JSONEncoder().encode(legacyDocument)
+        try UniConnectAtomicFileWriter.write(
+            try UniConnectCrypto.seal(plaintext, key: key),
+            to: legacyURL
+        )
+
+        let migrated = try UniConnectBackup.readLocalBackup(
+            readableURL: readableURL,
+            legacyURL: legacyURL,
+            historyDirectory: historyDirectory,
+            vault: vault,
+            now: Date(timeIntervalSince1970: 2_000_000),
+            legacyKey: key
+        )
+
+        XCTAssertEqual(migrated.workspaces.first?.connect, command)
+        XCTAssertNotNil(migrated.workspaces.first?.credentialId)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: legacyURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: readableURL.path))
+        let readableText = String(decoding: try Data(contentsOf: readableURL), as: UTF8.self)
+        XCTAssertTrue(readableText.contains("Legacy VPS"))
+        XCTAssertTrue(readableText.contains("uc-worker"))
+        XCTAssertFalse(readableText.contains("legacy-secret"))
+        XCTAssertFalse(readableText.localizedCaseInsensitiveContains("sshpass"))
+        XCTAssertFalse(readableText.contains("legacy.example.test"))
+
+        // Prove the migrated pair is independently recoverable before removing the
+        // old source in this isolated test fixture. Production intentionally retains it.
+        try FileManager.default.removeItem(at: legacyURL)
+        let reread = try UniConnectBackup.readLocalBackup(
+            readableURL: readableURL,
+            legacyURL: legacyURL,
+            historyDirectory: historyDirectory,
+            vault: vault,
+            legacyKey: key
+        )
+        XCTAssertEqual(reread, migrated)
+    }
+
+    @MainActor
+    func testAppOwnedPlainStartupSeedIsReplacedByReadableSplitStorage() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-startup-seed-\(UUID().uuidString)", isDirectory: true)
+        let seedURL = directory.appendingPathComponent("seed.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let key = SymmetricKey(size: .bits256)
+        let vault = UniConnectVault(
+            storageURL: directory.appendingPathComponent("live-vault.uc"),
+            keyProvider: { key }
+        )
+        let command = "sshpass -p 'seed-secret' ssh ops@seed.example.test"
+        let document = UniConnectDocument(workspaces: [
+            .init(
+                id: UUID(),
+                name: "Seed VPS",
+                kind: .ssh,
+                color: nil,
+                group: nil,
+                isPinned: nil,
+                cwd: "/srv/project",
+                connect: command,
+                windows: [
+                    .init(name: "chatbot", tmux: "seed-chatbot", claudeSession: nil, cwd: "/srv/project/app", isPinned: nil),
+                ]
+            ),
+            .init(
+                id: UUID(),
+                name: "Incomplete row",
+                kind: .ssh,
+                color: nil,
+                group: nil,
+                isPinned: nil,
+                cwd: nil,
+                connect: nil,
+                windows: []
+            ),
+        ])
+        try UniConnectAtomicFileWriter.write(try JSONEncoder().encode(document), to: seedURL)
+
+        let markerData = try UniConnectBackup.securePlainStartupSeed(
+            document: document,
+            at: seedURL,
+            vault: vault
+        )
+        let onDisk = try Data(contentsOf: seedURL)
+        let text = String(decoding: onDisk, as: UTF8.self)
+        XCTAssertEqual(markerData, onDisk)
+        XCTAssertTrue(UniConnectBackup.isReadableLocalBackupManifest(onDisk))
+        XCTAssertTrue(text.contains("Seed VPS"))
+        XCTAssertTrue(text.contains("seed-chatbot"))
+        XCTAssertFalse(text.contains("seed-secret"))
+        XCTAssertFalse(text.localizedCaseInsensitiveContains("sshpass"))
+        XCTAssertFalse(text.contains("seed.example.test"))
+
+        let manifest = try JSONDecoder().decode(
+            UniConnectBackup.LocalBackupManifest.self,
+            from: onDisk
+        )
+        XCTAssertEqual(
+            manifest.document.workspaces[0].windows[0].cwd,
+            "/srv/project/app"
+        )
+        XCTAssertEqual(
+            manifest.purpose,
+            UniConnectBackup.LocalBackupManifest.startupSeedPurpose
+        )
+        let restored = try UniConnectBackup.readReadableBackup(at: seedURL, vault: vault)
+        XCTAssertEqual(restored.workspaces[0].connect, command)
+        XCTAssertEqual(restored.workspaces[0].cwd, "/srv/project")
+        XCTAssertEqual(restored.workspaces[0].windows[0].cwd, "/srv/project/app")
+        XCTAssertNil(restored.workspaces[1].connect)
+        XCTAssertNil(restored.workspaces[1].credentialId)
+    }
+
+    @MainActor
     func testInspectAcceptsPlainSeedAndRejectsGarbage() throws {
         let seed = UniConnectBackup.seedTemplate()
         guard case .plainSeed(let doc) = try UniConnectBackup.inspect(data: Data(seed.utf8)) else { return XCTFail("seed") }
@@ -393,6 +827,8 @@ final class UniConnectTests: XCTestCase {
         XCTAssertNil(UniConnectSSH.validateConnectCommand("ssh -i /k.pem root@1.2.3.4"))
         XCTAssertNil(UniConnectSSH.validateConnectCommand("sshpass -p 'x y' ssh root@1.2.3.4"))
         XCTAssertNil(UniConnectSSH.validateConnectCommand("/usr/bin/ssh root@host"))
+        XCTAssertNotNil(UniConnectSSH.validateConnectCommand("/tmp/ssh root@host"))
+        XCTAssertNotNil(UniConnectSSH.validateConnectCommand("sshpass -p x /tmp/ssh root@host"))
         XCTAssertNotNil(UniConnectSSH.validateConnectCommand("mosh root@host"))
         XCTAssertNotNil(UniConnectSSH.validateConnectCommand("bash -c 'ssh root@host'"))
         XCTAssertNotNil(UniConnectSSH.validateConnectCommand("sshpass -p x"))
@@ -442,7 +878,7 @@ final class UniConnectTests: XCTestCase {
         ### 3.4 · NOTBETTING — 6 tmux EXISTENTES (no crear nuevos)
 
         ```bash
-        ssh -i ~/keys/notbetting.pem root@15.217.153.205
+        ssh -i ~/keys/example.pem root@example.test
         ```
 
         | # | tmux |
@@ -470,7 +906,7 @@ final class UniConnectTests: XCTestCase {
 
         let ssh = try XCTUnwrap(document.workspaces.first(where: { $0.name == "NOTBETTING" }))
         XCTAssertEqual(ssh.kind, .ssh)
-        XCTAssertEqual(ssh.connect, "ssh -i ~/keys/notbetting.pem root@15.217.153.205")
+        XCTAssertEqual(ssh.connect, "ssh -i ~/keys/example.pem root@example.test")
         XCTAssertEqual(ssh.windows.map { $0.tmux }, ["claudefixerrors", "claudesupport"])
     }
 

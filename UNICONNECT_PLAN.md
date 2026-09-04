@@ -1,148 +1,148 @@
-# UniConnect — Plan de ejecución (derivado de THE_BIG_GOAL.md)
+# UniConnect finalisation plan
 
-Estado: `[ ]` pendiente · `[~]` en curso · `[x]` hecho y validado. Cada punto se marca solo con evidencia (build, test o prueba manual anotada).
+Updated: 2026-09-03
 
-## 1. Revisión inicial y protección del trabajo existente
-- [x] 1.1 Leer CLAUDE.md / AGENTS.md del repo (build con reload.sh --tag, tests, pbxproj normalizado).
-- [x] 1.2 Rama `uniconnect` creada desde `fix/sshpass-image-paste`; remotos `origin` (Unixcision/cmux) y `upstream` (manaflow-ai/cmux) intactos.
-- [x] 1.3 Inventario de sistemas reutilizables: SessionPersistence (snapshot JSON + autosave 8 s), RestorableAgentSession (hooks Claude → `--resume`), resumeBinding + aprobaciones, WorkspaceRemoteConfiguration/terminalStartupCommand, ClosedItemHistory, Keychain (HMAC resume).
-- [x] 1.4 Decisión: ampliar el sistema existente (campos nuevos en snapshot + módulo `Sources/UniConnect/`), no un sistema paralelo.
-- [x] 1.5 Commits por fases, sin force push ni borrado de ramas. — 14 commits en `uniconnect`, subidos a origin (autorizado por THE_BIG_GOAL §2); sin PR ni release
+This is the live execution checklist for the current candidate. Historical builds,
+tests and manual checks are not accepted as evidence for the final release.
 
-## 2. Renombrado completo a UniConnect
-- [x] 2.1 Nombre visible (CFBundleDisplayName) → UniConnect.
-- [x] 2.2 PRODUCT_NAME / ejecutable / scheme → UniConnect (Debug "UniConnect DEV"), TEST_HOST actualizados. — módulo Swift se mantiene cmux/cmux_DEV; CLI sigue llamándose cmux
-- [x] 2.3 Menús, About, Quit, status bar, ayuda: textos "cmux" → "UniConnect" (defaultValue + catálogo es/en). — defaultValues + catálogos (1397 valores); textos CLI/`cmux.json` intencionadamente sin tocar
-- [x] 2.4 Icono y recursos gráficos propios. — icono generado desde docs/assets/logo.png (1024) y logo-256.png generados desde el diseño de Dani del 3/9/2026, aplicado a AppIcon, AppIcon-Debug, AppIcon-Nightly, AppIconLight/Dark y la capa de AppIcon.icon
-- [x] 2.5 Scripts (reload.sh, install script, sign) adaptados al nuevo nombre de producto. — rename.py: reload/cli/cleanup/tests/smoke/sign/instalador + workflows
-- [x] 2.6 Bundle ID propio `com.unixcision.uniconnect` (sesiones, Keychain, App Support y socket separados de cmux; migración única de ajustes). Documentado.
-- [x] 2.7 Updater oficial desactivado (SUEnableAutomaticChecks=false, SUFeedURL=about:blank; el resolver cae al appcast oficial si está vacío).
-- [x] 2.8 Carpeta local → `PROYECTOS/uniconnect` (tras validar build). — 2026-09-03; instalador renombrado a uniconnect-install-patched.sh
-- [x] 2.9 `gh repo rename` Unixcision/cmux → Unixcision/uniconnect; `origin` actualizado; upstream conservado; descripción/topics. — gh repo rename + set-url origin; upstream intacto; descripción y 9 topics
-- [x] 2.10 Verificación post-renombrado: git fetch OK, build OK desde `uniconnect/` (pin XcodeProj 9.12.0), app restaura y reengancha tmux, CLI OK
+Legend:
 
-## 3. Concepto de workspace (caja)
-- [x] 3.1 Selector Local/SSH al pulsar `+` (sheet `UniConnectNewWorkspaceView`).
-- [x] 3.2 Tipo persistido en snapshot (`uniConnect` en SessionWorkspaceSnapshot).
-- [x] 3.3 Tipo visible en la interfaz (badge Local/SSH en sidebar). — descripción de caja `Local · ruta` / `SSH · host · tmux`
-- [x] 3.4 Fechas de creación / última actividad en el perfil. — createdAt/lastActivityAt en el perfil, touch() en crear ventana/reconectar/terminar; test de round-trip
-- [x] 3.5 Recuperación de cajas, ventanas, nombres, colores, orden, layout, splits, directorios y sesiones tras cierre/crash/reinicio (validación E2E). — E2E: kill -9 y ⌘Q → cajas, nombres, colores, descripción, IDs tmux y ventanas restauradas
+- `[x]` implemented and verified by a current focused check;
+- `[~]` implementation exists but integration or final validation is still open;
+- `[ ]` not yet completed.
 
-## 4. Workspaces locales
-- [x] 4.1 Alta Local: nombre + carpeta (validada) + color.
-- [x] 4.2 Carpeta desaparecida → error recuperable con selección de otra ruta. — cmux ya lo cubre: comandos de arranque 'guarded' toleran carpetas borradas y la ventana cae a $HOME con aviso; la carpeta se cambia con Editar/mover
-- [x] 4.3 Restauración Claude con `claude --resume <id> --dangerously-skip-permissions` forzado siempre (AgentResumeArgv). — E2E: tras ⌘Q la app relanzó `claude --resume <id> --dangerously-skip-permissions` sola
-- [x] 4.4 Sin diálogos repetitivos de confirmación (aprobación auto para agent-hook; investigar prompt "Bypass Permissions" de Claude). — AgentResumeArgv fuerza el flag; wrapper inyecta skipDangerousModePermissionPrompt
-- [x] 4.5 Sesión inexistente → conservar ventana e informar (comprobar comportamiento actual de cmux). — si el id no existe, `claude --resume` falla y la ventana queda con el `[exited]` de Ghostty (wait-after-command); no se inventan ids (solo hooks)
+## 1. Protect the running installation
 
-## 5. Workspaces SSH
-- [x] 5.1 Alta SSH: nombre + color + comando completo (ssh, sshpass, -i, -p, ProxyJump…).
-- [x] 5.2 Comando guardado cifrado en bóveda (AES-GCM, clave maestra en Keychain); snapshot solo guarda `credentialId`.
-- [x] 5.3 Inyección de opciones tras la palabra `ssh` (sin concatenación insegura del ID tmux: sanitizado + quoting).
-- [x] 5.4 Host keys: `StrictHostKeyChecking=accept-new` (acepta hosts nuevos, rechaza cambios). Errores de fingerprint legibles. — `StrictHostKeyChecking=accept-new`: acepta hosts nuevos, rechaza cambios; error visible en la pestaña
-- [x] 5.5 Pantalla de carga: conecta, comprueba tmux, detecta gestor, instala (apt/dnf/yum/apk/pacman/zypper/brew), verifica versión.
-- [x] 5.6 Confirmación en UI antes de instalar tmux. — fase check → botón Instalar
-- [x] 5.7 Fases reales + salida sanitizada (sin porcentaje inventado).
-- [x] 5.8 Errores humanizados: inaccesible, timeout, auth, sudo, gestor incompatible, sshpass ausente. Retry / Editar conexión / Cancelar.
+- [x] Inspect branch, worktree, recent commits, build processes and installed app.
+- [x] Keep the installed `/Applications/UniConnect.app` running and untouched.
+- [x] Avoid destructive operations on live Claude, SSH and tmux sessions.
+- [ ] Ask once for permission immediately before the single final installation.
 
-## 6. Pantalla vacía y creación de ventanas SSH
-- [x] 6.1 Caja SSH nace sin ventanas reales (placeholder oculto) y muestra página explicativa a pantalla completa. — página sustituye al terminal; relleno Markdown sin PTY
-- [x] 6.2 CTA "Crear ventana" con nombre visible + ID tmux propuesto (`uc-<slug>-<4hex>`), editable.
-- [x] 6.3 Validación/sanitizado del ID (letras, dígitos, `_`, `-`, máx 40).
-- [x] 6.4 Detección de ID duplicado dentro de la caja (pedir confirmación).
-- [x] 6.5 Cada ventana ejecuta `tmux new-session -A -D -s <id>` vía ssh -t con lanzador auto-borrable.
-- [x] 6.6 Restauración: cada ventana reengancha al mismo ID (startup command prioritario en createPanel). — E2E: reengancha al mismo ID, scrollback y proceso (`sleep`) intactos
-- [x] 6.7 Estados Connecting/Connected/Retrying/Failed por ventana y retry individual. — pestaña conservada con `[exited]` + título `· desconectada`; retry = reabrir/crear con mismo ID
-- [x] 6.8 Reconexiones escalonadas al restaurar muchas cajas. — lanzadores escalonados 0.4 s (máx 6 s) por ráfaga; test
+## 2. Identity and cmux isolation
 
-## 7. Cerrar, archivar, reabrir y eliminar
-- [x] 7.1 Cerrar ventana/caja no ejecuta `tmux kill-*` (solo cierra el cliente ssh; tmux se desengancha). — E2E: cerrar pestaña → tmux sigue vivo, detached
-- [x] 7.2 Cerradas: reutiliza ClosedItemHistory (snapshot con ID tmux/perfil) + menú "Cerradas…" con Reabrir / Eliminar definitivamente (confirmado). — E2E: historial guarda la pestaña con su ID tmux, sin secretos
-- [x] 7.3 Mostrar tipo, servidor/carpeta y última actividad en Cerradas. — History/Cerradas muestran título, detalle y hora de cierre (cmux); tipo visible en el título de caja
-- [x] 7.4 Acción separada y explícita "Terminar sesión tmux remota". — menú UniConnect ▸ Terminar sesión tmux remota… con confirmación explícita
+- [x] Release identity is UniConnect with bundle ID `com.unixcision.uniconnect`.
+- [x] The terminal command remains `cmux` by explicit product decision.
+- [x] Normal state, config, socket, relay, logs, hooks and credentials use UniConnect
+  namespaces; cmux session access is isolated to explicit read-only migration.
+- [~] Complete final residual-reference scan and classify legal/module/CLI references.
+- [ ] Prove cmux files, sockets and process state remain byte-for-byte/timestamp stable
+  during the final UniConnect E2E.
 
-## 8. Persistencia automática y recuperación
-- [x] 8.1 Autosave existente (8 s, atómico, sin escribir si no cambia) + guardado tras desbloquear y tras cambios UniConnect.
-- [x] 8.2 Esquema versionado (documento v1) y campos opcionales compatibles hacia atrás en el snapshot de cmux.
-- [x] 8.3 Validación antes de reemplazar último estado válido / recuperación ante fichero corrupto (revisar SessionPersistence). — cmux: escritura atómica, copia -previous, fingerprint; decode fallido → no reemplaza
-- [x] 8.4 "Persistir ahora" (⌘⌥S): snapshot completo + backup cifrado con historial (30 copias).
-- [x] 8.5 Confirmación indica cuándo y dónde, sin secretos (revisar texto). — el aviso muestra ruta y hora, nunca el contenido
+## 3. Durable local and SSH windows
 
-## 9. Exportación, importación y configuración inicial
-- [x] 9.1 Exportar: contenedor JSON versionado (`uniconnect-export` v1) con meta legible + payload AES-256-GCM (PBKDF2-SHA256 600k, salt/nonce únicos).
-- [x] 9.2 Importar: Touch ID → validar → (contraseña) → vista previa sin secretos → selección de cajas; duplicados por nombre desmarcados.
-- [x] 9.3 Snapshot de seguridad antes de importar (para deshacer). — snapshot + backup cifrado antes de aplicar una importación
-- [x] 9.4 Plantilla inicial (menú "Guardar plantilla inicial…") con cajas, tipo, color, carpeta/conexión, ventanas, IDs tmux.
-- [x] 9.5 Semilla real de Dani: `~/Desktop/PROYECTOS/uniconnect-seed.json` (fuera del repo) con caja `localhost` y caja SSH de prepro con las 6 sesiones tmux existentes (`claudefixerrors`, `claudefixerrors_2`, `claudefixerrors_3-7`, `claudesupport`, `claudesupportliga`, `miamigoclaude`); se importa desde el menú o con `UNICONNECT_IMPORT_SEED`
+- [~] Persist box/window identity, order, selection, names, colour, cwd, runtime state,
+  agent conversation history, credential reference and tmux identity on every change.
+- [~] Terminal, Claude, Codex, Agy, Grok and custom-command creation/switch/resume flows.
+- [x] Resume argv coverage for supported agents: 74 focused package tests passed.
+- [~] Missing local root opens a safe recoverable shell and offers reassignment.
+- [~] Shell/agent exit retains a recoverable stopped window.
+- [ ] Close ownership races for pending resumes, restored closed items and UUID
+  canonicalisation; rerun behavioural tests.
 
-## 10. Seguridad y gestión de secretos
-- [x] 10.1 Secretos nunca en snapshot/logs: comando SSH solo en bóveda cifrada; clave maestra en fichero 0600 + espejo en llavero sin diálogos (docs §2/§6).
-- [x] 10.2 Redacción en UI (`••••••••`) al mostrar comandos; revelar exige Touch ID. — revelar exige Touch ID; redacción visual pendiente — la UI solo muestra `user@host`; revelar/editar exige Touch ID
-- [x] 10.3 Cifrado autenticado con CryptoKit AES-GCM; AAD con nombre de formato; errores sin filtrar detalle.
-- [x] 10.4 Modelo de amenaza y limitaciones documentados. — docs/UNICONNECT.md §6
-- [x] 10.5 Migración de secretos heredados (cmux no guarda comandos ssh en claro; comprobar `resumeBinding` process-detected con sshpass). — no hay secretos heredados en claro (cmux no guardaba comandos ssh); nada que migrar
+## 4. SSH/tmux creation and reconnection
 
-## 11. Touch ID, apertura y bloqueo
-- [x] 11.1 Gate al arrancar (LocalAuthentication, ventana flotante en todas las pantallas, por debajo del diálogo de Touch ID).
-- [x] 11.2 Bloquear (⌘⌃L) sin matar procesos ni tmux.
-- [x] 11.3 Política sin Touch ID / no configurado / lockout: contraseña del Mac vía LAContext, avisada en pantalla, sin bypass silencioso.
-- [x] 11.4 Timeout de bloqueo automático configurable por inactividad. — menú Bloqueo automático por inactividad (5/15/30/60 min), inactividad global del sistema
-- [x] 11.5 Ocultar contenido en previews/capturas cuando sea viable. — ventanas con sharingType=.none mientras está bloqueado
-- [x] 11.6 Antes de exportar/revelar: autenticación reciente.
+- [x] Restore/reconnect uses `has-session` plus `attach-session`; only explicit creation
+  may use `new-session -A`; no `-D` path remains in the UniConnect flow.
+- [~] Forced reconnect replaces only the local foreground SSH process and retains panel,
+  box, title, credential, bridge and tmux.
+- [ ] Hold single-flight ownership through the readiness/stability window.
+- [ ] Canonicalise ownership by endpoint, user, port and tmux across create, restore,
+  history reopen, import and reconnect.
+- [ ] Prevent remote cwd values from being used as local respawn directories.
+- [ ] Bind `⌘R` to focused SSH refresh, keep `⌃⌘R` global and migrate the former rename
+  default without overwriting custom user bindings.
+- [ ] Run all deterministic reconnection and re-entry regression tests.
 
-## 12. Interfaz y experiencia
-- [x] 12.1 Badge Local/SSH y estado de conexión por caja. — descripción de caja con tipo y host
-- [x] 12.2 Indicador ventana Claude vs tmux. — título de pestaña (Claude status de cmux / nombre tmux + `· desconectada`)
-- [x] 12.3 "Último guardado" visible. — `Último guardado: hh:mm:ss` al pie del menú UniConnect
-- [x] 12.4 Textos de estados vacíos, loaders y errores cuidados.
+## 5. Credential revision safety
 
-## 13. README profesional
-- [x] 13.1 README.md en inglés con las 25 secciones. — borrador escrito, faltan capturas — README completo; faltan capturas de bloqueo/export y GIF — README completo: 25 secciones, badges reales, capturas, diagrama, anclas e imágenes verificadas
-- [x] 13.2 Logo/wordmark + hero. — logo hecho, hero pendiente — logo generado con Nano Banana Pro (gemini-3-pro-image) + icono; hero pendiente de captura — logo Nano Banana Pro + hero real
-- [x] 13.3 Capturas reales sanitizadas: selector Local/SSH, estado vacío SSH, ventanas tmux, bloqueo/exportación. — selector Local/SSH, estado vacío SSH y ventana tmux capturados y sanitizados; captura de bloqueo/exportación pendiente — selector Local/SSH, estado vacío SSH, ventana tmux y pantalla de bloqueo; todas de build real y sanitizadas
-- [x] 13.4 GIF optimizado del flujo principal. — decisión: sin GIF; las cuatro capturas cubren el flujo y un GIF añadiría peso sin información nueva (el goal lo pide solo si aporta valor)
-- [x] 13.5 Diagrama Mermaid (UniConnect, persistencia, Claude resume, SSH, tmux, Keychain, backups).
-- [x] 13.6 Badges reales; comprobación de enlaces, anchors e imágenes; sin datos privados. — 18 anclas OK, 6 imágenes y enlaces a LICENSE/THIRD_PARTY/docs responden 200 en raw.githubusercontent; sin IPs ni hostnames (difuminados)
-- [x] 13.7 Descripción/topics del repo con `gh`.
+- [ ] Make edits/imported endpoint changes create immutable credential revisions instead
+  of rewriting an ID referenced by live windows, history or backups.
+- [ ] Preflight every affected tmux on a changed endpoint and transactionally respawn all
+  live windows; rollback to the old endpoint on failure.
+- [ ] Capture snapshot and encrypted vault bytes coherently before asynchronous archive
+  work begins.
+- [ ] Test A→B edits, history reopen, vault/archive races and rollback.
 
-## 14. Pruebas
-- [x] 14.1 Tests unitarios: cripto (roundtrip, contraseña mala, manipulación, nonces/salts únicos), IDs tmux (válidos/inválidos/inyección), inyección de opciones ssh, documento (validación/versión), AgentResumeArgv con flag forzado. — 24/24 en cmux-unit
-- [x] 14.2 Tests de snapshot: campos uniConnect sobreviven a encode/decode y a snapshots antiguos.
-- [x] 14.3 Suite existente del repo sin regresiones. — UniConnectTests 25/25; suite completa pendiente — suite completa parcial: 1650 OK / 122 KO en ruta larga; reejecución con DerivedData corto: 404 OK / 56 KO en CLINotify* (integración de procesos) y AppDelegateShortcutRouting (foco/tecleo con otra app delante); ninguna aserción toca UniConnect — suite completa: 1650 OK / 122 KO en primera pasada (DerivedData con ruta larga → sockets demasiado largos), reejecución con ruta corta 404 OK / 56 KO limitados a CLINotify* (integración de procesos) y AppDelegateShortcutRouting (foco con otra app delante); ninguna aserción referencia UniConnect; UniConnect desactivado bajo XCTest
-- [x] 14.4 Comprobación manual Touch ID en hardware. — tests con autenticador inyectado (4 casos) + política pura; prueba con dedo real: propietario
+## 6. CONNECT.md transactional import
 
-## 15. Validación E2E en build real
-- [x] 15.1 Arranque + Touch ID. — gate al arrancar verificado sin huella; desbloqueo probado con LAContext simulado
-- [x] 15.2 Caja Local con ventanas y Claude (IDs registrados). — caja local con 2 ventanas + Claude registrado por hooks (session id en snapshot)
-- [x] 15.3 Caja SSH: conexión, tmux detectado/instalado, estado vacío, varias ventanas. — conexión, tmux detectado, 2 ventanas OK; estado vacío e instalación de tmux pendientes de prueba visual — conexión, tmux, estado vacío (página sin consola) y ventanas verificados
-- [x] 15.4 Cerrar/reabrir desde Cerradas. — cierre validado por socket; reapertura desde Cerradas pendiente (requiere UI) — cerrar por socket + reabrir desde History (Cerradas) por accesibilidad: `e2e-b` reenganchado (attached=1)
-- [x] 15.5 Persistir ahora + exportar. — Persistir ahora por menú verificado; exportación real por el código de la app (ganchos de automatización, solo con el bloqueo desactivado): contenedor v1, meta legible, PBKDF2+AES-GCM descifra con la contraseña, sin fugas en claro
-- [x] 15.6 Bloquear/desbloquear. — Bloquear verificado en pantalla real; desbloquear (éxito/fallo/lockout) probado con LAContext simulado
-- [x] 15.7 Cierre completo → tmux vivos → reapertura con recuperación exacta; Claude reanudado. — ⌘Q → tmux vivos → relaunch recupera exacto; Claude reanudado
-- [x] 15.8 Crash forzado (kill -9) → recuperación. — kill -9 → tmux vivos (detached) → relaunch reengancha con scrollback y proceso
-- [x] 15.9 Importar backup; contraseña mala y fichero manipulado rechazados. — importación por el código de la app: fichero manipulado rechazado (sin cambios), contraseña incorrecta rechazada, fichero válido importa solo la caja nueva y omite duplicados por nombre; tests unitarios cubren truncado/manipulación
-- [x] 15.10 Inspección de logs/snapshots/export/git en busca de secretos. — snapshot, historial y export sin sshpass ni rutas de clave (comprobado en snapshot/historial) — git grep sin sshpass/IP/hostname/claves en el repo (fuera de capturas difuminadas); snapshot, historial y backup verificados; clave de Google solo en scratchpad
+- [~] Parse the human Markdown directly, including headings, connection blocks, tables,
+  commands, cwd, tmux and harmless formatting variations.
+- [~] Side-effect-free sanitized preview with create/update/unchanged/conflict/rejected
+  rows and per-row selection.
+- [~] Journaled transaction with encrypted checkpoint, persist-and-reread verification,
+  cancellation and interrupted-transaction recovery.
+- [~] Idempotent deterministic reconciliation and duplicate-session degradation to shell.
+- [ ] Resolve starter-document mismatch and endpoint-change respawn defects found by the
+  adversarial review.
+- [ ] Run a sanitized preview against a copy of the actual `~/Downloads/CONNECT.md`.
+- [ ] Add and verify the dedicated import guide.
 
-## 16. Criterios de aceptación
-- [x] Revisión final contra THE_BIG_GOAL.md §16: nombre UniConnect consistente ✓ · carpeta `uniconnect` ✓ · repo `Unixcision/uniconnect` ✓ · historial y upstream conservados ✓ · compila y abre ✓ · sesiones anteriores intactas (bundle id igual) ✓ · `+` Local/SSH ✓ · caja SSH vacía con página ✓ · nombre visible + ID tmux por ventana ✓ · tmux sobreviven a cierre y crash ✓ · Claude `--dangerously-skip-permissions --resume` ✓ · cerrar ≠ borrar/matar ✓ · Persistir ahora ✓ · autosave y recuperación ✓ · export/import cifrado y detección de manipulación ✓ (UI de export/import con huella: manual) · secretos en bóveda cifrada ✓ · Touch ID en apertura/desbloqueo ✓ (huella real: manual) · README profesional sin datos privados ✓ · pruebas automáticas ✓ · sin restos incoherentes salvo créditos/upstream y textos del CLI `cmux` ✓
+## 7. Claude update and notification bridge
 
-## 17. Entrega final
-- [x] Informe: `docs/UNICONNECT-ENTREGA.md` (+ resumen en el chat).
+- [x] Claude update package: 23 focused tests passed.
+- [~] Local/remote update orchestration, grouping, safe restore, progress, cancellation and
+  result UI are integrated but still need app-target and sacrificial-session E2E.
+- [x] Notification bridge package: 22 focused tests passed.
+- [~] Authenticated, minimal, deduplicated remote completion events and namespaced hook
+  merge/cleanup are integrated but still need tunnel/app-closed E2E.
+- [ ] Verify notification focus routing, unread badge and reconnect status in the app.
 
-## Ampliación 2026-09-03 (tras CONNECT.md)
+## 8. Image transfer
 
-- [x] A.1 Identidad completamente separada de cmux: directorio oculto, ajustes, socket, CLI, esquema de URL, punto de extensión, llavero, notificaciones, temporales y logs.
-- [x] A.2 Telemetría desactivada y enlaces de documentación apuntando al repo propio.
-- [x] A.3 Estado vacío sin consola, con acciones Nueva caja / Importar / Migrar desde cmux.
-- [x] A.4 Migración explícita desde la sesión de cmux (solo lectura).
-- [x] A.5 Ventana de bloqueo por debajo del diálogo de Touch ID.
-- [x] A.6 Pegado remoto de imágenes según el tipo de caja, sin detección por TTY.
-- [x] A.7 Validación de comandos de conexión: solo `ssh` o `sshpass`.
-- [x] A.8 Orden de cajas y ventanas persistido al instante.
-- [x] A.9 Barra lateral flotante y modo compacto con iconos de color (⌘⌥B).
-- [x] A.10 Sesión de Claude ligada a cada ventana local y restaurada siempre.
-- [x] A.11 Probe de tmux sin falsos negativos (vacía la tubería antes de decidir).
-- [x] A.12 Semilla real de 16 cajas / 31 ventanas según CONNECT.md.
-- [x] A.13 Reconexión de ventanas tmux caídas: automática (3 intentos), al pulsar la pestaña, y todas de golpe con ⌘⌃R.
-- [x] A.14 Barra lateral: márgenes internos, badges de tipo y número de ventanas, sin rutas bajo cada caja.
+- [~] LOCAL/SSH routing is driven by box profile; SSH fails closed without valid vault
+  material and never inserts a Mac path as fallback.
+- [~] Streaming upload exposes real byte progress, percentage, cancellation and timeout.
+- [ ] Re-run all local/remote entry-point and edge-case tests on the integrated candidate.
 
+## 9. Rail, flyout and menus
+
+- [~] Expanded card and compact rail/flyout implementation exists with immutable row
+  snapshots, badges, action bundles, keyboard/VoiceOver and Reduce Motion support.
+- [~] Shared actions feed title bar, rail, flyout, main/context menus and palette.
+- [~] Menu inventory and ownership are documented in `docs/MENUS.md`.
+- [ ] Apply final shortcut change for focused `⌘R` refresh and rerun menu/action tests.
+- [ ] Validate light, dark, accessibility contrast, live counts and hover corridor in the
+  isolated Debug app.
+
+## 10. Persistence, backups and recovery
+
+- [~] Immediate observer-driven save plus eight-second safety tick and forced periodic
+  snapshot are implemented.
+- [~] Six-hour archive, seven-day retention and maximum 28 scheduled entries are present.
+- [~] Pre-restore/import checkpoints, readable non-secret JSON and encrypted vault companion.
+- [ ] Close snapshot/vault coherence and immutable credential revision defects.
+- [ ] Verify accidental deletion restore, missing cwd, missing tmux and app-crash recovery.
+
+## 11. Security, signing and localisation
+
+- [x] Signing scripts reject ad-hoc identity changes; focused shell guard passed.
+- [x] Stable Apple Development identity is available locally.
+- [~] Current redacted secret scan findings were classified as test/env/public-client-key
+  matches; rerun after final edits and record exact results.
+- [~] Localisation catalogue currently covers all stable additions in 20 locale variants;
+  final Coordinator/import/shortcut additions remain to be audited.
+- [ ] Complete repository threat model after the required assumptions review with user.
+- [ ] Build and verify one stably signed Release candidate without installing it.
+
+## 12. Documentation and Desktop phase 2
+
+- [~] README, architecture, menus, update, bridge, sidebar, recovery and cmux-migration
+  guides are present and being reconciled with the final code.
+- [~] Desktop phase 2 has a read-only exact-inventory generator and guarded rollback plan;
+  no move is authorised or performed.
+- [ ] Finish private Desktop inventory and record its path/checksum without publishing
+  sensitive contents.
+- [ ] Finalise this checklist, goal breakdown and delivery report with real evidence only.
+
+## 13. Final validation and delivery
+
+- [ ] Normalize/check the Xcode project and verify every new test is wired.
+- [ ] Build isolated Debug with `./scripts/reload.sh --tag uniconnect-final` without launch.
+- [ ] Run focused app tests, then the complete applicable test suite without concurrency.
+- [ ] Build stable signed Release and dry-run signature/install guards.
+- [ ] Perform final adversarial review for concurrency, secrets and data loss.
+- [ ] Publish `vendor/bonsplit` commit to its remote `main`, verify ancestry, then commit its
+  parent pointer.
+- [ ] Create structured parent commits and push branch `uniconnect`.
+- [ ] Ask for installation permission, back up once, cleanly quit, install and visually
+  validate Touch ID, state, sessions, tmux, rail, badges, notifications, logo and menus.

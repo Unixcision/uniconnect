@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The macOS onboarding window for pairing an iPhone with this Mac.
 ///
-/// Walks the user through the two requirements (signed in to cmux, Tailscale
+/// Walks the user through the two requirements (signed in to UniConnect, Tailscale
 /// reachable) and then shows a scannable QR code with step-by-step
 /// instructions. Pairing is gated on sign-in because authorization is a Stack
 /// same-account check; Tailscale is what gives the iPhone a route to this Mac.
@@ -16,7 +16,7 @@ struct MobilePairingView: View {
     private let browserSignIn: HostBrowserSignInFlow? = AppDelegate.shared?.auth?.browserSignIn
 
     private static let tailscaleDownloadURL = URL(string: "https://tailscale.com/download")!
-    private static let testFlightURL = URL(string: "https://github.com/manaflow-ai/cmux#founders-edition")!
+    private static let testFlightURL = URL(string: "https://github.com/Unixcision/uniconnect")!
 
     var body: some View {
         ScrollView {
@@ -45,7 +45,7 @@ struct MobilePairingView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(String(localized: "mobile.pairing.window.heading", defaultValue: "Pair your iPhone"))
                 .font(.title2.weight(.semibold))
-            Text(String(localized: "mobile.pairing.window.subheading", defaultValue: "Scan this code with the cmux app on your iPhone to sync your terminal workspaces."))
+            Text(String(localized: "mobile.pairing.window.subheading", defaultValue: "Scan this code with the UniConnect app on your iPhone to sync your terminal workspaces."))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -63,7 +63,7 @@ struct MobilePairingView: View {
 
     private var signInRow: some View {
         requirementRow(
-            title: String(localized: "mobile.pairing.req.signIn.title", defaultValue: "Signed in to cmux"),
+            title: String(localized: "mobile.pairing.req.signIn.title", defaultValue: "Signed in to UniConnect"),
             subtitle: model.signedInEmail
                 ?? String(localized: "mobile.pairing.req.signIn.subtitle", defaultValue: "Sign in to authorize this Mac for pairing.")
         ) {
@@ -184,7 +184,7 @@ struct MobilePairingView: View {
             Image(systemName: "person.crop.circle.badge.plus")
                 .font(.system(size: 28))
                 .foregroundStyle(.tint)
-            Text(String(localized: "mobile.pairing.signIn.prompt", defaultValue: "Sign in with your cmux account to pair your iPhone."))
+            Text(String(localized: "mobile.pairing.signIn.prompt", defaultValue: "Sign in with your UniConnect account to pair your iPhone."))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -266,7 +266,7 @@ struct MobilePairingView: View {
 
     private var steps: some View {
         VStack(alignment: .leading, spacing: 10) {
-            step(1, String(localized: "mobile.pairing.step.install", defaultValue: "Install cmux on your iPhone and open it."))
+            step(1, String(localized: "mobile.pairing.step.install", defaultValue: "Install UniConnect on your iPhone and open it."))
             HStack(spacing: 4) {
                 Spacer(minLength: 30)
                 Text(String(localized: "mobile.pairing.testflight.prompt", defaultValue: "Don't have it yet?"))

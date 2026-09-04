@@ -10,7 +10,7 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
     title: t("metaTitle"),
     description: t("metaDescription"),
     keywords: [
-      "cmux", "Claude Code", "agent teams", "teammate mode", "tmux",
+      "UniConnect", "Claude Code", "agent teams", "teammate mode", "tmux",
       "terminal", "macOS", "AI coding agents", "split panes",
     ],
     openGraph: {

@@ -166,7 +166,7 @@ public actor CmxNetworkByteTransport: CmxByteTransport {
             using: parameters
         )
         callbackQueue = DispatchQueue(
-            label: "dev.cmux.mobile.network-byte-transport.\(UUID().uuidString)"
+            label: "com.unixcision.uniconnect.mobile.network-byte-transport.\(UUID().uuidString)"
         )
         self.maximumReceiveLength = maximumReceiveLength
         self.connectTimeoutNanoseconds = max(1, connectTimeoutNanoseconds)

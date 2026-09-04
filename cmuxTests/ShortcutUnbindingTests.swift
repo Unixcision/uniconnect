@@ -390,7 +390,7 @@ final class ShortcutUnbindingParsingTests: XCTestCase {
             isManagedBySettingsFile: { $0 == .newSurface }
         )
 
-        XCTAssertEqual(presentation?.message, "This shortcut conflicts with New Surface (⌘T).")
+        XCTAssertEqual(presentation?.message, "This shortcut conflicts with New Tab (⌘T).")
         XCTAssertNil(presentation?.swapButtonTitle)
         XCTAssertFalse(presentation?.canSwap ?? true)
         XCTAssertEqual(presentation?.undoButtonTitle, "Undo")

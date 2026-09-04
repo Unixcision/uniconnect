@@ -10,8 +10,7 @@ import re
 
 
 IMMUTABLE_ASSET_PATTERNS = [
-    re.compile(r"^cmux-nightly-macos-(?P<build>\d+)\.dmg$"),
-    re.compile(r"^cmux-nightly-universal-macos-(?P<build>\d+)\.dmg$"),
+    re.compile(r"^uniconnect-nightly-macos-(?P<build>\d+)\.dmg$"),
     re.compile(r"^cmuxd-remote-(?:darwin-arm64|darwin-amd64|linux-arm64|linux-amd64)-(?P<build>\d+)$"),
     re.compile(r"^cmuxd-remote-checksums-(?P<build>\d+)\.txt$"),
     re.compile(r"^cmuxd-remote-manifest-(?P<build>\d+)\.json$"),
@@ -33,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Prune old immutable assets from the nightly GitHub release."
     )
-    parser.add_argument("--repo", required=True, help="owner/repo, for example manaflow-ai/cmux")
+    parser.add_argument("--repo", required=True, help="owner/repo, for example Unixcision/uniconnect")
     parser.add_argument("--release-tag", default="nightly", help="GitHub release tag to prune")
     parser.add_argument(
         "--keep-builds",

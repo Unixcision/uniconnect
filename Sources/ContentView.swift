@@ -1073,8 +1073,10 @@ struct ContentView: View {
     @AppStorage(MinimalModeTitlebarDebugSettings.trafficLightTabBarInsetKey) private var titlebarTrafficLightTabBarInset = MinimalModeTitlebarDebugSettings.defaultTrafficLightTabBarInset
     @AppStorage(MinimalModeTitlebarDebugSettings.trafficLightTitlebarLeadingInsetKey) private var titlebarTrafficLightTitlebarLeadingInset = MinimalModeTitlebarDebugSettings.defaultTrafficLightTitlebarLeadingInset
     @State private var sidebarWidth: CGFloat = CGFloat(SessionPersistencePolicy.defaultSidebarWidth)
-    /// UniConnect: compact "rail" sidebar (coloured tiles) instead of the full workspace list.
-    @AppStorage(UniConnectRailSidebar.compactDefaultsKey) private var sidebarCompact = false
+    /// Per-window compact state. UserDefaults only seeds newly-created windows.
+    @State private var sidebarCompact = UserDefaults.standard.bool(
+        forKey: UniConnectRailSidebar.compactDefaultsKey
+    )
     /// UniConnect: gap between the floating sidebar card and the window edge / content.
     /// Gap between the sidebar card and the window edges (floating panel).
     static let sidebarFloatingInset: CGFloat = 10
@@ -1083,7 +1085,6 @@ struct ContentView: View {
     static var sidebarFloatingTopInset: CGFloat {
         sidebarFloatingInset > 0 ? WindowChromeMetrics.appTitlebarHeight + 4 : 0
     }
-    static let sidebarCompactAnimation = Animation.spring(response: 0.32, dampingFraction: 0.86)
     /// Width of the sidebar card actually shown (rail when compact, user width otherwise).
     private var effectiveSidebarWidth: CGFloat {
         sidebarCompact ? UniConnectRailSidebar.width : sidebarWidth
@@ -1219,27 +1220,27 @@ struct ContentView: View {
         var title: String {
             switch kind {
             case .workspace:
-                return String(localized: "commandPalette.rename.workspaceTitle", defaultValue: "Rename Workspace")
+                return String(localized: "commandPalette.rename.workspaceTitle", defaultValue: "Rename Box")
             case .tab:
-                return String(localized: "commandPalette.rename.tabTitle", defaultValue: "Rename Tab")
+                return String(localized: "commandPalette.rename.tabTitle", defaultValue: "Rename Window")
             }
         }
 
         var description: String {
             switch kind {
             case .workspace:
-                return String(localized: "commandPalette.rename.workspaceDescription", defaultValue: "Choose a custom workspace name.")
+                return String(localized: "commandPalette.rename.workspaceDescription", defaultValue: "Choose a custom box name.")
             case .tab:
-                return String(localized: "commandPalette.rename.tabDescription", defaultValue: "Choose a custom tab name.")
+                return String(localized: "commandPalette.rename.tabDescription", defaultValue: "Choose a custom window name.")
             }
         }
 
         var placeholder: String {
             switch kind {
             case .workspace:
-                return String(localized: "commandPalette.rename.workspacePlaceholder", defaultValue: "Workspace name")
+                return String(localized: "commandPalette.rename.workspacePlaceholder", defaultValue: "Box name")
             case .tab:
-                return String(localized: "commandPalette.rename.tabPlaceholder", defaultValue: "Tab name")
+                return String(localized: "commandPalette.rename.tabPlaceholder", defaultValue: "Window name")
             }
         }
     }
@@ -1519,6 +1520,7 @@ struct ContentView: View {
         static let cliInstalledInPATH = "cli.installedInPATH"
         static let defaultTerminalIsDefault = "defaultTerminal.isDefault"
         static let browserDisabled = "browser.disabled"
+        static let authAvailable = "auth.available"
         static let authSignedIn = "auth.signedIn"
         static let authWorking = "auth.working"
         static func terminalOpenTargetAvailable(_ target: TerminalDirectoryOpenTarget) -> String {
@@ -2045,9 +2047,9 @@ struct ContentView: View {
 
     private func setSidebarCompact(_ compact: Bool) {
         guard sidebarCompact != compact else { return }
-        withAnimation(Self.sidebarCompactAnimation) {
-            sidebarCompact = compact
-        }
+        sidebarCompact = compact
+        UserDefaults.standard.set(compact, forKey: UniConnectRailSidebar.compactDefaultsKey)
+        AppDelegate.shared?.uniConnectRequestCriticalSessionSave(reason: "rail-compact-mode")
     }
 
     /// Small control at the foot of the expanded sidebar that collapses it to the rail.
@@ -2065,8 +2067,8 @@ struct ContentView: View {
                     updateViewModel: updateViewModel,
                     fileExplorerState: fileExplorerState,
                     windowId: windowId,
-                    onSendFeedback: presentFeedbackComposer,
                     onToggleSidebar: { sidebarState.toggle() },
+                    onCompactSidebar: { setSidebarCompact(true) },
                     onNewTab: performSidebarNewWorkspace,
                     observedWindow: observedWindow,
                     selection: $sidebarSelectionState.selection,
@@ -2835,7 +2837,6 @@ struct ContentView: View {
 
         return AnyView(
             layout
-                .animation(Self.sidebarCompactAnimation, value: sidebarCompact)
                 .overlay(alignment: .leading) {
                     if sidebarState.isVisible && !sidebarCompact {
                         sidebarResizerOverlay
@@ -3537,7 +3538,13 @@ struct ContentView: View {
                 sidebarState: sidebarState,
                 sidebarSelectionState: sidebarSelectionState,
                 fileExplorerState: fileExplorerState,
-                cmuxConfigStore: cmuxConfigStore
+                cmuxConfigStore: cmuxConfigStore,
+                setUniConnectSidebarCompact: { compact in
+                    setSidebarCompact(compact)
+                },
+                isUniConnectSidebarCompact: {
+                    sidebarCompact
+                }
             )
             installFileDropOverlayWhenReady(on: window, tabManager: tabManager)
         }))
@@ -6662,6 +6669,7 @@ struct ContentView: View {
         snapshot.setBool(CommandPaletteContextKeys.sidebarMatchTerminalBackground, sidebarMatchTerminalBackground)
         snapshot.setBool(CommandPaletteContextKeys.browserDisabled, BrowserAvailabilitySettings.isDisabled())
         if let auth = AppDelegate.shared?.auth {
+            snapshot.setBool(CommandPaletteContextKeys.authAvailable, true)
             snapshot.setBool(CommandPaletteContextKeys.authSignedIn, auth.coordinator.isAuthenticated)
             snapshot.setBool(
                 CommandPaletteContextKeys.authWorking,
@@ -6780,13 +6788,13 @@ struct ContentView: View {
         }
 
         func workspaceSubtitle(_ context: CommandPaletteContextSnapshot) -> String {
-            let name = context.string(CommandPaletteContextKeys.workspaceName) ?? String(localized: "commandPalette.subtitle.workspaceFallback", defaultValue: "Workspace")
-            return String(localized: "commandPalette.subtitle.workspaceWithName", defaultValue: "Workspace • \(name)")
+            let name = context.string(CommandPaletteContextKeys.workspaceName) ?? String(localized: "palette.boxFallback", defaultValue: "Box")
+            return String(localized: "palette.boxWithName", defaultValue: "Box • \(name)")
         }
 
         func panelSubtitle(_ context: CommandPaletteContextSnapshot) -> String {
-            let name = context.string(CommandPaletteContextKeys.panelName) ?? String(localized: "commandPalette.subtitle.tabFallback", defaultValue: "Tab")
-            return String(localized: "commandPalette.subtitle.tabWithName", defaultValue: "Tab • \(name)")
+            let name = context.string(CommandPaletteContextKeys.panelName) ?? String(localized: "palette.windowFallback", defaultValue: "Window")
+            return String(localized: "palette.windowWithName", defaultValue: "Window • \(name)")
         }
 
         func browserPanelSubtitle(_ context: CommandPaletteContextSnapshot) -> String {
@@ -6807,27 +6815,27 @@ struct ContentView: View {
         func workspaceColorCommandTitle(_ paletteName: String) -> String {
             switch paletteName {
             case "Red":
-                return String(localized: "shortcut.setWorkspaceColorRed.label", defaultValue: "Workspace Color: Red")
+                return String(localized: "shortcut.setWorkspaceColorRed.label", defaultValue: "Box Color: Red")
             case "Crimson":
-                return String(localized: "shortcut.setWorkspaceColorCrimson.label", defaultValue: "Workspace Color: Crimson")
+                return String(localized: "shortcut.setWorkspaceColorCrimson.label", defaultValue: "Box Color: Crimson")
             case "Orange":
-                return String(localized: "shortcut.setWorkspaceColorOrange.label", defaultValue: "Workspace Color: Orange")
+                return String(localized: "shortcut.setWorkspaceColorOrange.label", defaultValue: "Box Color: Orange")
             case "Amber":
-                return String(localized: "shortcut.setWorkspaceColorAmber.label", defaultValue: "Workspace Color: Amber")
+                return String(localized: "shortcut.setWorkspaceColorAmber.label", defaultValue: "Box Color: Amber")
             case "Olive":
-                return String(localized: "shortcut.setWorkspaceColorOlive.label", defaultValue: "Workspace Color: Olive")
+                return String(localized: "shortcut.setWorkspaceColorOlive.label", defaultValue: "Box Color: Olive")
             case "Green":
-                return String(localized: "shortcut.setWorkspaceColorGreen.label", defaultValue: "Workspace Color: Green")
+                return String(localized: "shortcut.setWorkspaceColorGreen.label", defaultValue: "Box Color: Green")
             case "Teal":
-                return String(localized: "shortcut.setWorkspaceColorTeal.label", defaultValue: "Workspace Color: Teal")
+                return String(localized: "shortcut.setWorkspaceColorTeal.label", defaultValue: "Box Color: Teal")
             case "Aqua":
-                return String(localized: "shortcut.setWorkspaceColorAqua.label", defaultValue: "Workspace Color: Aqua")
+                return String(localized: "shortcut.setWorkspaceColorAqua.label", defaultValue: "Box Color: Aqua")
             case "Blue":
-                return String(localized: "shortcut.setWorkspaceColorBlue.label", defaultValue: "Workspace Color: Blue")
+                return String(localized: "shortcut.setWorkspaceColorBlue.label", defaultValue: "Box Color: Blue")
             default:
                 return String(
-                    localized: "command.workspaceColor.named",
-                    defaultValue: "Workspace Color: \(paletteName)"
+                    localized: "palette.boxColor.named",
+                    defaultValue: "Box Color: \(paletteName)"
                 )
             }
         }
@@ -6837,9 +6845,9 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.newWorkspace",
-                title: constant(String(localized: "command.newWorkspace.title", defaultValue: "New Workspace")),
-                subtitle: constant(String(localized: "command.newWorkspace.subtitle", defaultValue: "Workspace")),
-                keywords: ["create", "new", "workspace"]
+                title: constant(String(localized: "menu.file.newBox", defaultValue: "New Box…")),
+                subtitle: constant(String(localized: "menu.box.title", defaultValue: "Box")),
+                keywords: ["create", "new", "box", "workspace"]
             )
         )
         contributions.append(
@@ -6906,8 +6914,8 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.newTerminalTab",
-                title: constant(String(localized: "command.newTerminalTab.title", defaultValue: "New Tab (Terminal)")),
-                subtitle: constant(String(localized: "command.newTerminalTab.subtitle", defaultValue: "Tab")),
+                title: constant(String(localized: "menu.file.newTabInBox", defaultValue: "New Tab")),
+                subtitle: constant(String(localized: "command.newWindow.subtitle", defaultValue: "Window")),
                 shortcutHint: "⌘T",
                 keywords: ["new", "terminal", "tab"]
             )
@@ -6925,8 +6933,8 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.closeTab",
-                title: constant(String(localized: "command.closeTab.title", defaultValue: "Close Tab")),
-                subtitle: constant(String(localized: "command.closeTab.subtitle", defaultValue: "Tab")),
+                title: constant(String(localized: "menu.file.closeWindowInBox", defaultValue: "Close Window")),
+                subtitle: constant(String(localized: "command.newWindow.subtitle", defaultValue: "Window")),
                 shortcutHint: "⌘W",
                 keywords: ["close", "tab"]
             )
@@ -6934,8 +6942,8 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.closeWorkspace",
-                title: constant(String(localized: "command.closeWorkspace.title", defaultValue: "Close Workspace")),
-                subtitle: constant(String(localized: "command.closeWorkspace.subtitle", defaultValue: "Workspace")),
+                title: constant(String(localized: "menu.file.closeBox", defaultValue: "Close Box")),
+                subtitle: constant(String(localized: "menu.box.title", defaultValue: "Box")),
                 shortcutHint: "⌘⇧W",
                 keywords: ["close", "workspace"]
             )
@@ -6967,7 +6975,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.toggleSidebar",
-                title: constant(String(localized: "command.toggleLeftSidebar.title", defaultValue: "Toggle Left Sidebar")),
+                title: constant(String(localized: "shortcut.toggleLeftSidebar.label", defaultValue: "Compact or Expand Sidebar")),
                 subtitle: constant(String(localized: "command.toggleSidebar.subtitle", defaultValue: "Layout")),
                 keywords: ["toggle", "sidebar", "left", "layout"]
             )
@@ -7096,7 +7104,8 @@ struct ContentView: View {
                 commandId: "palette.mobileConnect",
                 title: constant(String(localized: "command.mobileConnect.title", defaultValue: "Connect iPhone/iPad")),
                 subtitle: constant(String(localized: "command.mobileConnect.subtitle", defaultValue: "Mobile")),
-                keywords: Self.commandPaletteMobileConnectKeywords
+                keywords: Self.commandPaletteMobileConnectKeywords,
+                when: { $0.bool(CommandPaletteContextKeys.authAvailable) }
             )
         )
         contributions.append(contentsOf: Self.commandPaletteAuthCommandContributions())
@@ -7106,7 +7115,7 @@ struct ContentView: View {
                 title: constant(
                     String(
                         localized: "command.makeDefaultTerminal.title",
-                        defaultValue: "Make cmux the Default Terminal"
+                        defaultValue: "Make UniConnect the Default Terminal"
                     )
                 ),
                 subtitle: constant(
@@ -7158,7 +7167,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.disableBrowser",
-                title: constant(String(localized: "command.disableBrowser.title", defaultValue: "Disable cmux Browser")),
+                title: constant(String(localized: "command.disableBrowser.title", defaultValue: "Disable UniConnect Browser")),
                 subtitle: constant(String(localized: "command.browserAvailability.subtitle", defaultValue: "Browser")),
                 keywords: ["browser", "disable", "external", "default", "open", "auth"],
                 when: { !$0.bool(CommandPaletteContextKeys.browserDisabled) }
@@ -7167,7 +7176,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.enableBrowser",
-                title: constant(String(localized: "command.enableBrowser.title", defaultValue: "Enable cmux Browser")),
+                title: constant(String(localized: "command.enableBrowser.title", defaultValue: "Enable UniConnect Browser")),
                 subtitle: constant(String(localized: "command.browserAvailability.subtitle", defaultValue: "Browser")),
                 keywords: ["browser", "enable", "embedded", "open"],
                 when: { $0.bool(CommandPaletteContextKeys.browserDisabled) }
@@ -7178,7 +7187,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.renameWorkspace",
-                title: constant(String(localized: "command.renameWorkspace.title", defaultValue: "Rename Workspace…")),
+                title: constant(String(localized: "menu.box.rename", defaultValue: "Rename Box…")),
                 subtitle: workspaceSubtitle,
                 keywords: ["rename", "workspace", "title"],
                 dismissOnRun: false,
@@ -7223,7 +7232,7 @@ struct ContentView: View {
             CommandPaletteCommandContribution(
                 commandId: "palette.toggleWorkspacePin",
                 title: { context in
-                    context.bool(CommandPaletteContextKeys.workspaceShouldPin) ? String(localized: "command.pinWorkspace.title", defaultValue: "Pin Workspace") : String(localized: "command.unpinWorkspace.title", defaultValue: "Unpin Workspace")
+                    context.bool(CommandPaletteContextKeys.workspaceShouldPin) ? String(localized: "contextMenu.pinBox", defaultValue: "Pin Box") : String(localized: "contextMenu.unpinBox", defaultValue: "Unpin Box")
                 },
                 subtitle: workspaceSubtitle,
                 keywords: ["workspace", "pin", "pinned"],
@@ -7233,7 +7242,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.resetWorkspaceColor",
-                title: constant(String(localized: "shortcut.resetWorkspaceColor.label", defaultValue: "Reset Workspace Color")),
+                title: constant(String(localized: "shortcut.resetWorkspaceColor.label", defaultValue: "Reset Box Color")),
                 subtitle: workspaceSubtitle,
                 keywords: ["workspace", "color", "reset", "clear", "palette"],
                 when: { $0.bool(CommandPaletteContextKeys.hasWorkspace) }
@@ -7253,8 +7262,8 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.nextWorkspace",
-                title: constant(String(localized: "command.nextWorkspace.title", defaultValue: "Next Workspace")),
-                subtitle: constant(String(localized: "command.nextWorkspace.subtitle", defaultValue: "Workspace Navigation")),
+                title: constant(String(localized: "menu.box.next", defaultValue: "Next Box")),
+                subtitle: constant(String(localized: "menu.box.title", defaultValue: "Box")),
                 keywords: ["next", "workspace", "navigate"],
                 when: { $0.bool(CommandPaletteContextKeys.hasWorkspace) }
             )
@@ -7262,8 +7271,8 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.previousWorkspace",
-                title: constant(String(localized: "command.previousWorkspace.title", defaultValue: "Previous Workspace")),
-                subtitle: constant(String(localized: "command.previousWorkspace.subtitle", defaultValue: "Workspace Navigation")),
+                title: constant(String(localized: "menu.box.previous", defaultValue: "Previous Box")),
+                subtitle: constant(String(localized: "menu.box.title", defaultValue: "Box")),
                 keywords: ["previous", "workspace", "navigate"],
                 when: { $0.bool(CommandPaletteContextKeys.hasWorkspace) }
             )
@@ -7301,7 +7310,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.closeOtherWorkspaces",
-                title: constant(String(localized: "contextMenu.closeOtherWorkspaces", defaultValue: "Close Other Workspaces")),
+                title: constant(String(localized: "contextMenu.closeOtherBoxes", defaultValue: "Close Other Boxes")),
                 subtitle: workspaceSubtitle,
                 keywords: ["close", "other", "workspaces", "reset", "workspace"],
                 when: { $0.bool(CommandPaletteContextKeys.hasWorkspace) },
@@ -7311,7 +7320,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.closeWorkspacesBelow",
-                title: constant(String(localized: "contextMenu.closeWorkspacesBelow", defaultValue: "Close Workspaces Below")),
+                title: constant(String(localized: "contextMenu.closeBoxesBelow", defaultValue: "Close Boxes Below")),
                 subtitle: workspaceSubtitle,
                 keywords: ["close", "below", "workspaces", "workspace"],
                 when: { $0.bool(CommandPaletteContextKeys.hasWorkspace) },
@@ -7321,7 +7330,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.closeWorkspacesAbove",
-                title: constant(String(localized: "contextMenu.closeWorkspacesAbove", defaultValue: "Close Workspaces Above")),
+                title: constant(String(localized: "contextMenu.closeBoxesAbove", defaultValue: "Close Boxes Above")),
                 subtitle: workspaceSubtitle,
                 keywords: ["close", "above", "workspaces", "workspace"],
                 when: { $0.bool(CommandPaletteContextKeys.hasWorkspace) },
@@ -7331,7 +7340,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.markWorkspaceRead",
-                title: constant(String(localized: "contextMenu.markWorkspaceRead", defaultValue: "Mark Workspace as Read")),
+                title: constant(String(localized: "contextMenu.markBoxRead", defaultValue: "Mark Box as Read")),
                 subtitle: workspaceSubtitle,
                 keywords: ["workspace", "read", "notification", "inbox"],
                 when: { $0.bool(CommandPaletteContextKeys.hasWorkspace) },
@@ -7341,7 +7350,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.markWorkspaceUnread",
-                title: constant(String(localized: "contextMenu.markWorkspaceUnread", defaultValue: "Mark Workspace as Unread")),
+                title: constant(String(localized: "contextMenu.markBoxUnread", defaultValue: "Mark Box as Unread")),
                 subtitle: workspaceSubtitle,
                 keywords: ["workspace", "unread", "notification", "inbox"],
                 when: { $0.bool(CommandPaletteContextKeys.hasWorkspace) },
@@ -7357,7 +7366,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.renameTab",
-                title: constant(String(localized: "command.renameTab.title", defaultValue: "Rename Tab…")),
+                title: constant(String(localized: "menu.box.renameWindow", defaultValue: "Rename Window…")),
                 subtitle: panelSubtitle,
                 keywords: ["rename", "tab", "title"],
                 dismissOnRun: false,
@@ -7367,7 +7376,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.clearTabName",
-                title: constant(String(localized: "command.clearTabName.title", defaultValue: "Clear Tab Name")),
+                title: constant(String(localized: "command.clearTabName.title", defaultValue: "Clear Window Name")),
                 subtitle: panelSubtitle,
                 keywords: ["clear", "tab", "name"],
                 when: {
@@ -7381,7 +7390,7 @@ struct ContentView: View {
             CommandPaletteCommandContribution(
                 commandId: "palette.toggleTabPin",
                 title: { context in
-                    context.bool(CommandPaletteContextKeys.panelShouldPin) ? String(localized: "command.pinTab.title", defaultValue: "Pin Tab") : String(localized: "command.unpinTab.title", defaultValue: "Unpin Tab")
+                    context.bool(CommandPaletteContextKeys.panelShouldPin) ? String(localized: "command.pinTab.title", defaultValue: "Pin Window") : String(localized: "command.unpinTab.title", defaultValue: "Unpin Window")
                 },
                 subtitle: panelSubtitle,
                 keywords: ["tab", "pin", "pinned"],
@@ -7392,7 +7401,7 @@ struct ContentView: View {
             CommandPaletteCommandContribution(
                 commandId: "palette.toggleTabUnread",
                 title: { context in
-                    context.bool(CommandPaletteContextKeys.panelHasUnread) ? String(localized: "command.markTabRead.title", defaultValue: "Mark Tab as Read") : String(localized: "command.markTabUnread.title", defaultValue: "Mark Tab as Unread")
+                    context.bool(CommandPaletteContextKeys.panelHasUnread) ? String(localized: "command.markTabRead.title", defaultValue: "Mark Window as Read") : String(localized: "command.markTabUnread.title", defaultValue: "Mark Window as Unread")
                 },
                 subtitle: panelSubtitle,
                 keywords: ["tab", "read", "unread", "notification"],
@@ -7402,8 +7411,8 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.nextTabInPane",
-                title: constant(String(localized: "command.nextTabInPane.title", defaultValue: "Next Tab in Pane")),
-                subtitle: constant(String(localized: "command.nextTabInPane.subtitle", defaultValue: "Tab Navigation")),
+                title: constant(String(localized: "menu.box.nextWindow", defaultValue: "Next Window")),
+                subtitle: constant(String(localized: "command.newWindow.subtitle", defaultValue: "Window")),
                 keywords: ["next", "tab", "pane"],
                 when: { $0.bool(CommandPaletteContextKeys.hasFocusedPanel) }
             )
@@ -7411,8 +7420,8 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.previousTabInPane",
-                title: constant(String(localized: "command.previousTabInPane.title", defaultValue: "Previous Tab in Pane")),
-                subtitle: constant(String(localized: "command.previousTabInPane.subtitle", defaultValue: "Tab Navigation")),
+                title: constant(String(localized: "menu.box.previousWindow", defaultValue: "Previous Window")),
+                subtitle: constant(String(localized: "command.newWindow.subtitle", defaultValue: "Window")),
                 keywords: ["previous", "tab", "pane"],
                 when: { $0.bool(CommandPaletteContextKeys.hasFocusedPanel) }
             )
@@ -7941,7 +7950,130 @@ struct ContentView: View {
             )
         }
 
-        return contributions
+        let uniConnectSubtitle = constant(
+            String(localized: "palette.uniConnect.subtitle", defaultValue: "UniConnect")
+        )
+        contributions.append(contentsOf: [
+            CommandPaletteCommandContribution(
+                commandId: "palette.uniConnect.lock",
+                title: constant(String(localized: "menu.app.lock", defaultValue: "Lock")),
+                subtitle: uniConnectSubtitle,
+                keywords: ["lock", "touch id", "security"]
+            ),
+            CommandPaletteCommandContribution(
+                commandId: "palette.uniConnect.persistNow",
+                title: constant(String(localized: "menu.file.persistNow", defaultValue: "Save Now")),
+                subtitle: uniConnectSubtitle,
+                keywords: ["save", "persist", "backup", "snapshot"]
+            ),
+            CommandPaletteCommandContribution(
+                commandId: "palette.uniConnect.restoreBackup",
+                title: constant(String(localized: "menu.file.restoreBackup", defaultValue: "Restore Backup…")),
+                subtitle: uniConnectSubtitle,
+                keywords: ["restore", "recovery", "backup", "snapshot"]
+            ),
+            CommandPaletteCommandContribution(
+                commandId: "palette.uniConnect.reconnectDropped",
+                title: constant(String(
+                    localized: "uniconnect.reconnect.all.now",
+                    defaultValue: "Reconnect SSH Windows Now"
+                )),
+                subtitle: uniConnectSubtitle,
+                keywords: ["ssh", "tmux", "reconnect", "dropped", "hung", "force"]
+            ),
+            CommandPaletteCommandContribution(
+                commandId: "palette.uniConnect.updateClaudeWindow",
+                title: constant(String(localized: "shortcut.updateClaudeInWindow.label", defaultValue: "Update Claude in This Window")),
+                subtitle: uniConnectSubtitle,
+                keywords: ["claude", "update", "window"],
+                when: { $0.bool(CommandPaletteContextKeys.hasFocusedPanel) }
+            ),
+            CommandPaletteCommandContribution(
+                commandId: "palette.uniConnect.updateClaudeBox",
+                title: constant(String(localized: "contextMenu.updateClaudeInBox", defaultValue: "Update Claude in This Box…")),
+                subtitle: uniConnectSubtitle,
+                keywords: ["claude", "update", "box"],
+                when: { $0.bool(CommandPaletteContextKeys.hasWorkspace) }
+            ),
+            CommandPaletteCommandContribution(
+                commandId: "palette.uniConnect.updateClaudeEverywhere",
+                title: constant(String(localized: "menu.box.updateClaude.all", defaultValue: "In All Boxes…")),
+                subtitle: uniConnectSubtitle,
+                keywords: ["claude", "update", "all", "boxes"]
+            ),
+            CommandPaletteCommandContribution(
+                commandId: "palette.uniConnect.importConfiguration",
+                title: constant(String(localized: "menu.file.importConfiguration", defaultValue: "Import Configuration…")),
+                subtitle: uniConnectSubtitle,
+                keywords: ["import", "configuration", "backup"]
+            ),
+            CommandPaletteCommandContribution(
+                commandId: "palette.uniConnect.migrateFromCmux",
+                title: constant(String(localized: "menu.file.migrateFromCmux", defaultValue: "Migrate Boxes from cmux…")),
+                subtitle: uniConnectSubtitle,
+                keywords: ["migrate", "cmux", "boxes"]
+            ),
+            CommandPaletteCommandContribution(
+                commandId: "palette.uniConnect.exportConfiguration",
+                title: constant(String(localized: "menu.file.exportConfiguration", defaultValue: "Export Configuration…")),
+                subtitle: uniConnectSubtitle,
+                keywords: ["export", "configuration", "backup"]
+            ),
+            CommandPaletteCommandContribution(
+                commandId: "palette.uniConnect.saveSeedTemplate",
+                title: constant(String(localized: "menu.file.saveSeedTemplate", defaultValue: "Save Initial Template…")),
+                subtitle: uniConnectSubtitle,
+                keywords: ["save", "seed", "initial", "template", "configuration"]
+            ),
+        ])
+
+        return contributions.filter { Self.uniConnectAllowsCommandPaletteContribution($0.commandId) }
+    }
+
+    /// Keeps inherited cmux-only routes out of UniConnect's palette even when
+    /// an older configuration still contains a binding for their stable ID.
+    static func uniConnectAllowsCommandPaletteContribution(_ commandId: String) -> Bool {
+        if let shortcutAction = commandPaletteShortcutAction(forCommandID: commandId),
+           KeyboardShortcutSettings.uniConnectHiddenActions.contains(shortcutAction) {
+            return false
+        }
+
+        let blockedIds: Set<String> = [
+            "palette.clearWorkspaceDescription",
+            "palette.clearWorkspaceName",
+            "palette.checkForUpdates",
+            "palette.disableBrowser",
+            "palette.editWorkspaceDescription",
+            "palette.enableBrowser",
+            "palette.forkAgentConversationNewWorkspace",
+            "palette.makeDefaultTerminal",
+            "palette.markdownZoomIn",
+            "palette.markdownZoomOut",
+            "palette.markdownZoomReset",
+            "palette.moveTabToNewWorkspace",
+            "palette.openWorkspacePullRequests",
+            "palette.openFolderInVSCodeInline",
+            "palette.openDiffViewer",
+            "palette.openFilesPane",
+            "palette.openFindPane",
+            "palette.openVaultPane",
+            "palette.openTaskManager",
+            "palette.applyUpdateIfAvailable",
+            "palette.attemptUpdate",
+        ]
+        if blockedIds.contains(commandId) { return false }
+
+        let blockedPrefixes = [
+            "palette.browser",
+            "palette.copy",
+            "palette.extensionSidebar.",
+            "palette.showRightSidebar",
+            "palette.terminalOpenDirectory.",
+            "palette.terminalSplitBrowser",
+            "palette.toggleSetting.",
+            "palette.vscode",
+        ]
+        return !blockedPrefixes.contains { commandId.hasPrefix($0) }
     }
 
     private func sanitizeCmuxConfigPaletteText(_ text: String) -> String {
@@ -8076,6 +8208,50 @@ struct ContentView: View {
             guard let appDelegate = AppDelegate.shared else { return }
             appDelegate.openNewMainWindow(preferredWindow: appDelegate.mainWindow(for: windowId))
         }
+        registry.register(commandId: "palette.uniConnect.lock") {
+            UniConnectAppLock.shared.lock()
+        }
+        registry.register(commandId: "palette.uniConnect.persistNow") {
+            UniConnectCoordinator.shared.persistNow()
+        }
+        registry.register(commandId: "palette.uniConnect.restoreBackup") {
+            AppDelegate.shared?.restoreUniConnectRecoveryBackup(nil)
+        }
+        registry.register(commandId: "palette.uniConnect.reconnectDropped") {
+            UniConnectCoordinator.shared.reconnectAllSSHWindowsNow()
+        }
+        registry.register(commandId: "palette.uniConnect.updateClaudeWindow") {
+            guard let panelContext = focusedPanelContext else {
+                NSSound.beep()
+                return
+            }
+            UniConnectCoordinator.shared.requestClaudeUpdateInWindow(
+                panelID: panelContext.panelId,
+                workspace: panelContext.workspace
+            )
+        }
+        registry.register(commandId: "palette.uniConnect.updateClaudeBox") {
+            guard let workspace = tabManager.selectedWorkspace else {
+                NSSound.beep()
+                return
+            }
+            UniConnectCoordinator.shared.requestClaudeUpdateInBox(workspace)
+        }
+        registry.register(commandId: "palette.uniConnect.updateClaudeEverywhere") {
+            UniConnectCoordinator.shared.requestClaudeUpdateEverywhere()
+        }
+        registry.register(commandId: "palette.uniConnect.importConfiguration") {
+            UniConnectCoordinator.shared.importConfiguration()
+        }
+        registry.register(commandId: "palette.uniConnect.migrateFromCmux") {
+            UniConnectCoordinator.shared.migrateFromCmux()
+        }
+        registry.register(commandId: "palette.uniConnect.exportConfiguration") {
+            UniConnectCoordinator.shared.exportConfiguration()
+        }
+        registry.register(commandId: "palette.uniConnect.saveSeedTemplate") {
+            UniConnectCoordinator.shared.saveSeedTemplate()
+        }
         registry.register(commandId: "palette.installCLI") {
             AppDelegate.shared?.installCmuxCLIInPath(nil)
         }
@@ -8129,7 +8305,11 @@ struct ContentView: View {
             }
         }
         registry.register(commandId: "palette.toggleSidebar") {
-            sidebarState.toggle()
+            if AppDelegate.shared?.toggleSidebarInActiveMainWindow(
+                preferredWindow: observedWindow ?? NSApp.keyWindow ?? NSApp.mainWindow
+            ) != true {
+                sidebarState.toggle()
+            }
         }
         // Register a handler for every possible view (including the hosted
         // extension sidebar) regardless of the beta flag, so a contribution that
@@ -8205,6 +8385,10 @@ struct ContentView: View {
 #if DEBUG
             cmuxDebugLog("palette.mobileConnect.invoke")
 #endif
+            guard AppDelegate.shared?.auth != nil else {
+                NSSound.beep()
+                return
+            }
             MobilePairingWindowController.shared.show()
         }
         registerAuthCommandHandlers(&registry)
@@ -10653,8 +10837,8 @@ struct VerticalTabsSidebar: View {
     var updateViewModel: UpdateStateModel
     @ObservedObject var fileExplorerState: FileExplorerState
     let windowId: UUID
-    let onSendFeedback: () -> Void
     let onToggleSidebar: () -> Void
+    let onCompactSidebar: () -> Void
     let onNewTab: () -> Void
     let observedWindow: NSWindow?
     @EnvironmentObject var tabManager: TabManager
@@ -11088,7 +11272,11 @@ struct VerticalTabsSidebar: View {
             } else {
                 extensionSidebarScrollArea(renderContext: renderContext)
             }
-            SidebarFooter(updateViewModel: updateViewModel, fileExplorerState: fileExplorerState, onSendFeedback: onSendFeedback)
+            SidebarFooter(
+                updateViewModel: updateViewModel,
+                fileExplorerState: fileExplorerState,
+                onCompactSidebar: onCompactSidebar
+            )
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityIdentifier("Sidebar")
@@ -12893,9 +13081,7 @@ enum DevBuildBannerDebugSettings {
 
 private enum FeedbackComposerSettings {
     static let storedEmailKey = "sidebarHelpFeedbackEmail"
-    static let endpointEnvironmentKey = "CMUX_FEEDBACK_API_URL"
-    static let defaultEndpoint = "https://github.com/Unixcision/uniconnect/issues"
-    static let foundersEmail = "founders@manaflow.com"
+    static let endpointEnvironmentKey = "UNICONNECT_FEEDBACK_API_URL"
     static let maxMessageLength = 4_000
     static let maxAttachmentCount = 10
     // Keep the multipart body below Vercel's 4.5 MB request limit.
@@ -12904,11 +13090,9 @@ private enum FeedbackComposerSettings {
 
     static func endpointURL() -> URL? {
         let env = ProcessInfo.processInfo.environment
-        if let override = env[endpointEnvironmentKey]?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !override.isEmpty {
-            return URL(string: override)
-        }
-        return URL(string: defaultEndpoint)
+        guard let override = env[endpointEnvironmentKey]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !override.isEmpty else { return nil }
+        return URL(string: override)
     }
 }
 
@@ -13270,8 +13454,8 @@ private enum FeedbackComposerClient {
 }
 
 enum SidebarDragLifecycleNotification {
-    static let stateDidChange = Notification.Name("cmux.sidebarDragStateDidChange")
-    static let requestClear = Notification.Name("cmux.sidebarDragRequestClear")
+    static let stateDidChange = Notification.Name("uniconnect.sidebarDragStateDidChange")
+    static let requestClear = Notification.Name("uniconnect.sidebarDragRequestClear")
     static let tabIdKey = "tabId"
     static let reasonKey = "reason"
 
@@ -13696,13 +13880,21 @@ final class WindowScopedShortcutHintModifierMonitor {
 private struct SidebarFooter: View {
     var updateViewModel: UpdateStateModel
     @ObservedObject var fileExplorerState: FileExplorerState
-    let onSendFeedback: () -> Void
+    let onCompactSidebar: () -> Void
 
     var body: some View {
 #if DEBUG
-        SidebarDevFooter(updateViewModel: updateViewModel, fileExplorerState: fileExplorerState, onSendFeedback: onSendFeedback)
+        SidebarDevFooter(
+            updateViewModel: updateViewModel,
+            fileExplorerState: fileExplorerState,
+            onCompactSidebar: onCompactSidebar
+        )
 #else
-        SidebarFooterButtons(updateViewModel: updateViewModel, fileExplorerState: fileExplorerState, onSendFeedback: onSendFeedback)
+        SidebarFooterButtons(
+            updateViewModel: updateViewModel,
+            fileExplorerState: fileExplorerState,
+            onCompactSidebar: onCompactSidebar
+        )
             .padding(.leading, 6)
             .padding(.trailing, 10)
             .padding(.bottom, 6)
@@ -13713,21 +13905,15 @@ private struct SidebarFooter: View {
 private struct SidebarFooterButtons: View {
     var updateViewModel: UpdateStateModel
     @ObservedObject var fileExplorerState: FileExplorerState
-    let onSendFeedback: () -> Void
-    /// UniConnect: collapse the sidebar to the icon rail. Lives in the footer, with the
-    /// other sidebar controls, instead of floating over the content. Written straight to
-    /// the shared default so it needs no plumbing through the sidebar hierarchy.
-    @AppStorage(UniConnectRailSidebar.compactDefaultsKey) private var sidebarCompact = false
+    let onCompactSidebar: () -> Void
     @State private var extensionBrowserAnchorView: NSView?
     @LiveSetting(\.betaFeatures.extensions) private var extensionsExperimentalEnabled
 
     var body: some View {
         HStack(spacing: 4) {
-            SidebarHelpMenuButton(onSendFeedback: onSendFeedback)
+            SidebarHelpMenuButton()
             if UniConnectCoordinator.isEnabled {
-                Button {
-                    withAnimation(ContentView.sidebarCompactAnimation) { sidebarCompact = true }
-                } label: {
+                Button(action: onCompactSidebar) {
                     Image(systemName: "sidebar.squares.left")
                         .symbolRenderingMode(.monochrome)
                         .font(.system(size: 12, weight: .medium))
@@ -13736,8 +13922,10 @@ private struct SidebarFooterButtons: View {
                 }
                 .buttonStyle(SidebarFooterIconButtonStyle())
                 .frame(width: 22, height: 22, alignment: .center)
-                .safeHelp("Compactar barra lateral (⌘⌥B)")
-                .accessibilityLabel("Compactar barra lateral")
+                .safeHelp(KeyboardShortcutSettings.Action.toggleSidebar.tooltip(
+                    String(localized: "menu.view.compactSidebar", defaultValue: "Compact Sidebar")
+                ))
+                .accessibilityLabel(String(localized: "menu.view.compactSidebar", defaultValue: "Compact Sidebar"))
                 .accessibilityIdentifier("SidebarCompactToggle")
             }
             // The puzzle button opens the extensions browser; it only shows
@@ -14009,16 +14197,10 @@ final class FeedbackComposerMessageEditorView: NSView {
 }
 
 private enum SidebarHelpMenuAction {
-    case importBrowserData
     case keyboardShortcuts
     case docs
-    case changelog
-    case github
+    case menusAndShortcuts
     case githubIssues
-    case discord
-    case checkForUpdates
-    case sendFeedback
-    case welcome
 }
 
 private struct SidebarFeedbackComposerSheet: View {
@@ -14073,7 +14255,7 @@ private struct SidebarFeedbackComposerSheet: View {
             Text(
                 String(
                     localized: "sidebar.help.feedback.successBody",
-                    defaultValue: "You can also reach us at founders@manaflow.com."
+                    defaultValue: "Thank you for helping improve UniConnect."
                 )
             )
             .font(.system(size: 12))
@@ -14095,7 +14277,7 @@ private struct SidebarFeedbackComposerSheet: View {
             Text(
                 String(
                     localized: "sidebar.help.feedback.note",
-                    defaultValue: "A human will read this! You can also reach us at founders@manaflow.com."
+                    defaultValue: "A human will read your message."
                 )
             )
             .font(.system(size: 12))
@@ -14348,7 +14530,7 @@ private struct SidebarFeedbackComposerSheet: View {
         case .invalidEndpoint:
             return String(
                 localized: "sidebar.help.feedback.endpointError",
-                defaultValue: "Feedback is unavailable right now. Email founders@manaflow.com instead."
+                defaultValue: "Feedback submission is not configured. Use Report an Issue in the Help menu instead."
             )
         case .invalidResponse:
             return String(
@@ -14391,7 +14573,7 @@ private struct SidebarFeedbackComposerSheet: View {
             case 500...599:
                 return String(
                     localized: "sidebar.help.feedback.endpointError",
-                    defaultValue: "Feedback is unavailable right now. Email founders@manaflow.com instead."
+                    defaultValue: "Feedback submission is not configured. Use Report an Issue in the Help menu instead."
                 )
             default:
                 return String(
@@ -14414,15 +14596,21 @@ enum FeedbackComposerBridgeError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidEmail:
-            return "Enter a valid email address."
+            return String(localized: "sidebar.help.feedback.invalidEmail", defaultValue: "Enter a valid email address.")
         case .emptyMessage:
-            return "Enter a message before sending."
+            return String(localized: "sidebar.help.feedback.emptyMessage", defaultValue: "Enter a message before sending.")
         case .messageTooLong:
-            return "Your message is too long."
+            return String(localized: "sidebar.help.feedback.messageTooLong", defaultValue: "Your message is too long.")
         case .tooManyImages:
-            return "You can attach up to 10 images."
+            return String(localized: "sidebar.help.feedback.tooManyImages", defaultValue: "You can attach up to 10 images.")
         case .invalidImagePath(let path):
-            return "Could not attach image: \(path)"
+            return String(
+                format: String(
+                    localized: "sidebar.help.feedback.invalidImagePath",
+                    defaultValue: "Could not attach image: %@"
+                ),
+                path
+            )
         case .submissionFailed(let message):
             return message
         }
@@ -14487,33 +14675,39 @@ enum FeedbackComposerBridge {
 
     private static func userFacingMessage(for error: Error) -> String {
         guard let submissionError = error as? FeedbackComposerSubmissionError else {
-            return "Couldn't send feedback. Please try again."
+            return String(localized: "sidebar.help.feedback.genericError", defaultValue: "Couldn't send feedback. Please try again.")
         }
 
         switch submissionError {
         case .invalidEndpoint:
-            return "Feedback is unavailable right now. Email founders@manaflow.com instead."
+            return String(
+                localized: "sidebar.help.feedback.endpointError",
+                defaultValue: "Feedback submission is not configured. Use Report an Issue in the Help menu instead."
+            )
         case .invalidResponse:
-            return "Couldn't send feedback. Please try again."
+            return String(localized: "sidebar.help.feedback.genericError", defaultValue: "Couldn't send feedback. Please try again.")
         case .attachmentReadFailed:
-            return "One of the selected files could not be attached."
+            return String(localized: "sidebar.help.feedback.invalidImageSelection", defaultValue: "One of the selected files could not be attached.")
         case .attachmentPreparationFailed:
-            return "These images are too large to send together. Remove a few and try again."
+            return String(localized: "sidebar.help.feedback.totalImagesTooLarge", defaultValue: "These images are too large to send together. Remove a few and try again.")
         case .transport(let transportError):
             if transportError.code == .notConnectedToInternet || transportError.code == .networkConnectionLost {
-                return "Couldn't send feedback. Check your connection and try again."
+                return String(localized: "sidebar.help.feedback.connectionError", defaultValue: "Couldn't send feedback. Check your connection and try again.")
             }
-            return "Couldn't send feedback. Please try again."
+            return String(localized: "sidebar.help.feedback.genericError", defaultValue: "Couldn't send feedback. Please try again.")
         case .rejected(let statusCode):
             switch statusCode {
             case 400, 413, 415:
-                return "Check your message and attachments, then try again."
+                return String(localized: "sidebar.help.feedback.validationError", defaultValue: "Check your message and attachments, then try again.")
             case 429:
-                return "Too many feedback attempts. Please try again later."
+                return String(localized: "sidebar.help.feedback.rateLimited", defaultValue: "Too many feedback attempts. Please try again later.")
             case 500...599:
-                return "Feedback is unavailable right now. Email founders@manaflow.com instead."
+                return String(
+                    localized: "sidebar.help.feedback.endpointError",
+                    defaultValue: "Feedback submission is not configured. Use Report an Issue in the Help menu instead."
+                )
             default:
-                return "Couldn't send feedback. Please try again."
+                return String(localized: "sidebar.help.feedback.genericError", defaultValue: "Couldn't send feedback. Please try again.")
             }
         }
     }
@@ -14521,23 +14715,13 @@ enum FeedbackComposerBridge {
 
 private struct SidebarHelpMenuButton: View {
     private let docsURL = URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")
-    private let changelogURL = URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")
-    private let githubURL = URL(string: "https://github.com/manaflow-ai/cmux")
-    private let githubIssuesURL = URL(string: "https://github.com/manaflow-ai/cmux/issues")
-    private let discordURL = URL(string: "https://discord.gg/xsgFEVrWCZ")
+    private let menusAndShortcutsURL = URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/MENUS.md")
+    private let githubIssuesURL = URL(string: "https://github.com/Unixcision/uniconnect/issues")
     private let helpTitle = String(localized: "sidebar.help.button", defaultValue: "Help")
     private let buttonSize: CGFloat = 22
     private let iconSize: CGFloat = 11
-    @ObservedObject private var keyboardShortcutSettingsObserver = KeyboardShortcutSettingsObserver.shared
-
-    let onSendFeedback: () -> Void
 
     @State private var isPopoverPresented = false
-
-    private var sendFeedbackShortcutHint: String {
-        let _ = keyboardShortcutSettingsObserver.revision
-        return KeyboardShortcutSettings.shortcut(for: .sendFeedback).displayString
-    }
 
     var body: some View {
         Button {
@@ -14566,78 +14750,36 @@ private struct SidebarHelpMenuButton: View {
 
     private var helpPopover: some View {
         VStack(alignment: .leading, spacing: 2) {
-            helpOptionButton(
-                title: String(localized: "sidebar.help.welcome", defaultValue: "Welcome to cmux!"),
-                action: .welcome,
-                accessibilityIdentifier: "SidebarHelpMenuOptionWelcome",
-                isExternalLink: false
-            )
-            helpOptionButton(
-                title: String(localized: "sidebar.help.sendFeedback", defaultValue: "Send Feedback"),
-                action: .sendFeedback,
-                accessibilityIdentifier: "SidebarHelpMenuOptionSendFeedback",
-                isExternalLink: false,
-                shortcutHint: sendFeedbackShortcutHint,
-                trailingSystemImage: "bubble.left.and.text.bubble.right"
-            )
-            helpOptionButton(
-                title: String(localized: "settings.section.keyboardShortcuts", defaultValue: "Keyboard Shortcuts"),
-                action: .keyboardShortcuts,
-                accessibilityIdentifier: "SidebarHelpMenuOptionKeyboardShortcuts",
-                isExternalLink: false
-            )
-            helpOptionButton(
-                title: String(localized: "menu.view.importFromBrowser", defaultValue: "Import Browser Data…"),
-                action: .importBrowserData,
-                accessibilityIdentifier: "SidebarHelpMenuOptionImportBrowserData",
-                isExternalLink: false
-            )
             if docsURL != nil {
                 helpOptionButton(
-                    title: String(localized: "about.docs", defaultValue: "Docs"),
+                    title: String(localized: "menu.help.manual", defaultValue: "UniConnect Manual"),
                     action: .docs,
                     accessibilityIdentifier: "SidebarHelpMenuOptionDocs",
                     isExternalLink: true
                 )
             }
-            if changelogURL != nil {
+            if menusAndShortcutsURL != nil {
                 helpOptionButton(
-                    title: String(localized: "sidebar.help.changelog", defaultValue: "Changelog"),
-                    action: .changelog,
-                    accessibilityIdentifier: "SidebarHelpMenuOptionChangelog",
+                    title: String(localized: "menu.help.menusAndShortcuts", defaultValue: "Menus and Keyboard Shortcuts"),
+                    action: .menusAndShortcuts,
+                    accessibilityIdentifier: "SidebarHelpMenuOptionMenusAndShortcuts",
                     isExternalLink: true
                 )
             }
-            if githubURL != nil {
-                helpOptionButton(
-                    title: String(localized: "about.github", defaultValue: "GitHub"),
-                    action: .github,
-                    accessibilityIdentifier: "SidebarHelpMenuOptionGitHub",
-                    isExternalLink: true
-                )
-            }
+            helpOptionButton(
+                title: String(localized: "menu.help.keyboardShortcutsSettings", defaultValue: "Keyboard Shortcuts…"),
+                action: .keyboardShortcuts,
+                accessibilityIdentifier: "SidebarHelpMenuOptionKeyboardShortcuts",
+                isExternalLink: false
+            )
             if githubIssuesURL != nil {
                 helpOptionButton(
-                    title: String(localized: "sidebar.help.githubIssues", defaultValue: "GitHub Issues"),
+                    title: String(localized: "menu.help.reportIssue", defaultValue: "Report an Issue"),
                     action: .githubIssues,
                     accessibilityIdentifier: "SidebarHelpMenuOptionGitHubIssues",
                     isExternalLink: true
                 )
             }
-            if discordURL != nil {
-                helpOptionButton(
-                    title: String(localized: "sidebar.help.discord", defaultValue: "Discord"),
-                    action: .discord,
-                    accessibilityIdentifier: "SidebarHelpMenuOptionDiscord",
-                    isExternalLink: true
-                )
-            }
-            helpOptionButton(
-                title: String(localized: "command.checkForUpdates.title", defaultValue: "Check for Updates"),
-                action: .checkForUpdates,
-                accessibilityIdentifier: "SidebarHelpMenuOptionCheckForUpdates",
-                isExternalLink: false
-            )
         }
         .padding(8)
         .frame(minWidth: 200)
@@ -14696,11 +14838,6 @@ private struct SidebarHelpMenuButton: View {
 
     private func perform(_ action: SidebarHelpMenuAction) {
         switch action {
-        case .importBrowserData:
-            isPopoverPresented = false
-            DispatchQueue.main.async {
-                BrowserDataImportCoordinator.shared.presentImportDialog()
-            }
         case .keyboardShortcuts:
             isPopoverPresented = false
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
@@ -14718,32 +14855,12 @@ private struct SidebarHelpMenuButton: View {
         case .docs:
             guard let docsURL else { return }
             NSWorkspace.shared.open(docsURL)
-        case .changelog:
-            guard let changelogURL else { return }
-            NSWorkspace.shared.open(changelogURL)
-        case .github:
-            guard let githubURL else { return }
-            NSWorkspace.shared.open(githubURL)
+        case .menusAndShortcuts:
+            guard let menusAndShortcutsURL else { return }
+            NSWorkspace.shared.open(menusAndShortcutsURL)
         case .githubIssues:
             guard let githubIssuesURL else { return }
             NSWorkspace.shared.open(githubIssuesURL)
-        case .discord:
-            guard let discordURL else { return }
-            NSWorkspace.shared.open(discordURL)
-        case .checkForUpdates:
-            Task { @MainActor in
-                AppDelegate.shared?.checkForUpdates(nil)
-            }
-        case .sendFeedback:
-            isPopoverPresented = false
-            onSendFeedback()
-        case .welcome:
-            isPopoverPresented = false
-            Task { @MainActor in
-                if let appDelegate = AppDelegate.shared {
-                    appDelegate.openWelcomeWorkspace()
-                }
-            }
         }
     }
 
@@ -14933,13 +15050,17 @@ private struct SidebarFooterIconButtonStyleBody: View {
 private struct SidebarDevFooter: View {
     var updateViewModel: UpdateStateModel
     @ObservedObject var fileExplorerState: FileExplorerState
-    let onSendFeedback: () -> Void
+    let onCompactSidebar: () -> Void
     @AppStorage(DevBuildBannerDebugSettings.sidebarBannerVisibleKey)
     private var showSidebarDevBuildBanner = DevBuildBannerDebugSettings.defaultShowSidebarBanner
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SidebarFooterButtons(updateViewModel: updateViewModel, fileExplorerState: fileExplorerState, onSendFeedback: onSendFeedback)
+            SidebarFooterButtons(
+                updateViewModel: updateViewModel,
+                fileExplorerState: fileExplorerState,
+                onCompactSidebar: onCompactSidebar
+            )
             if showSidebarDevBuildBanner {
                 Text(String(localized: "debug.devBuildBanner.title", defaultValue: "THIS IS A DEV BUILD"))
                     .font(.system(size: 11, weight: .semibold))
@@ -15194,6 +15315,8 @@ struct SidebarWorkspaceSnapshotBuilder {
         let branchLinesContainBranch: Bool
         let pullRequestRows: [PullRequestDisplay]
         let listeningPorts: [Int]
+        let uniConnectIsSSH: Bool?
+        let uniConnectWindowCount: Int
 
     }
 }
@@ -15570,7 +15693,7 @@ struct TabItemView: View, Equatable {
 
     var body: some View {
         let workspaceSnapshot = self.workspaceSnapshot
-        let closeWorkspaceTooltip = String(localized: "sidebar.closeWorkspace.tooltip", defaultValue: "Close Workspace")
+        let closeWorkspaceTooltip = String(localized: "sidebar.closeWorkspace.tooltip", defaultValue: "Close Box")
         let protectedWorkspaceTooltip = String(
             localized: "sidebar.pinnedWorkspaceProtected.tooltip",
             defaultValue: "Pinned workspace. Closing requires confirmation."
@@ -15656,12 +15779,10 @@ struct TabItemView: View, Equatable {
 
             // UniConnect: kind (Local/SSH) and window count as two small pills on their own
             // line under the name, so the name keeps the full width of the row.
-            if let profile = tab.uniConnectProfile {
-                // Observes the workspace so the window count refreshes when a window is
-                // opened or closed: TabItemView itself is Equatable and would not.
+            if let isSSH = workspaceSnapshot.uniConnectIsSSH {
                 UniConnectRowBadges(
-                    workspace: tab,
-                    isSSH: profile.isSSH,
+                    windowCount: workspaceSnapshot.uniConnectWindowCount,
+                    isSSH: isSSH,
                     fontScale: fontScale,
                     isActive: usesInvertedActiveForeground,
                     activeForeground: activeSecondaryColor(0.95)
@@ -16095,125 +16216,72 @@ struct TabItemView: View, Equatable {
         let isMulti = targetIds.count > 1
         let tabColorPalette = WorkspaceTabColorSettings.palette()
         let shouldPin = contextMenuPinState?.pinned ?? !tab.isPinned
-        let reconnectLabel = contextMenuLabel(
-            multi: String(localized: "contextMenu.reconnectWorkspaces", defaultValue: "Reconnect Workspaces"),
-            single: String(localized: "contextMenu.reconnectWorkspace", defaultValue: "Reconnect Workspace"),
-            isMulti: isMulti)
-        let disconnectLabel = contextMenuLabel(
-            multi: String(localized: "contextMenu.disconnectWorkspaces", defaultValue: "Disconnect Workspaces"),
-            single: String(localized: "contextMenu.disconnectWorkspace", defaultValue: "Disconnect Workspace"),
-            isMulti: isMulti)
         let pinLabel = shouldPin
             ? contextMenuLabel(
-                multi: String(localized: "contextMenu.pinWorkspaces", defaultValue: "Pin Workspaces"),
-                single: String(localized: "contextMenu.pinWorkspace", defaultValue: "Pin Workspace"),
+                multi: String(localized: "contextMenu.pinBoxes", defaultValue: "Pin Boxes"),
+                single: String(localized: "contextMenu.pinBox", defaultValue: "Pin Box"),
                 isMulti: isMulti)
             : contextMenuLabel(
-                multi: String(localized: "contextMenu.unpinWorkspaces", defaultValue: "Unpin Workspaces"),
-                single: String(localized: "contextMenu.unpinWorkspace", defaultValue: "Unpin Workspace"),
+                multi: String(localized: "contextMenu.unpinBoxes", defaultValue: "Unpin Boxes"),
+                single: String(localized: "contextMenu.unpinBox", defaultValue: "Unpin Box"),
                 isMulti: isMulti)
         let closeLabel = contextMenuLabel(
-            multi: String(localized: "contextMenu.closeWorkspaces", defaultValue: "Close Workspaces"),
-            single: String(localized: "contextMenu.closeWorkspace", defaultValue: "Close Workspace"),
+            multi: String(localized: "contextMenu.closeBoxes", defaultValue: "Close Boxes"),
+            single: String(localized: "contextMenu.closeBox", defaultValue: "Close Box"),
             isMulti: isMulti)
         let markReadLabel = contextMenuLabel(
-            multi: String(localized: "contextMenu.markWorkspacesRead", defaultValue: "Mark Workspaces as Read"),
-            single: String(localized: "contextMenu.markWorkspaceRead", defaultValue: "Mark Workspace as Read"),
+            multi: String(localized: "contextMenu.markBoxesRead", defaultValue: "Mark Boxes as Read"),
+            single: String(localized: "contextMenu.markBoxRead", defaultValue: "Mark Box as Read"),
             isMulti: isMulti)
         let markUnreadLabel = contextMenuLabel(
-            multi: String(localized: "contextMenu.markWorkspacesUnread", defaultValue: "Mark Workspaces as Unread"),
-            single: String(localized: "contextMenu.markWorkspaceUnread", defaultValue: "Mark Workspace as Unread"),
+            multi: String(localized: "contextMenu.markBoxesUnread", defaultValue: "Mark Boxes as Unread"),
+            single: String(localized: "contextMenu.markBoxUnread", defaultValue: "Mark Box as Unread"),
             isMulti: isMulti)
-        let clearLatestNotificationLabel = contextMenuLabel(
-            multi: String(localized: "contextMenu.clearLatestNotifications", defaultValue: "Clear Latest Notifications"),
-            single: String(localized: "contextMenu.clearLatestNotification", defaultValue: "Clear Latest Notification"),
-            isMulti: isMulti)
-        let copyWorkspaceIDLabel = contextMenuLabel(
-            multi: String(localized: "contextMenu.copyWorkspaceIDs", defaultValue: "Copy Workspace IDs"),
-            single: String(localized: "contextMenu.copyWorkspaceID", defaultValue: "Copy Workspace ID"),
-            isMulti: isMulti)
-        let copyWorkspaceLinkLabel = contextMenuLabel(
-            multi: String(localized: "contextMenu.copyWorkspaceLinks", defaultValue: "Copy Workspace Links"),
-            single: String(localized: "contextMenu.copyWorkspaceLink", defaultValue: "Copy Workspace Link"),
-            isMulti: isMulti)
+        let targetWorkspaces = targetIds.compactMap { targetId in
+            tabManager.tabs.first(where: { $0.id == targetId })
+        }
+        let reconnectableSSHTargets = targetWorkspaces.flatMap { workspace in
+            workspace.uniConnectTmuxSessionsByPanelId.keys.compactMap { panelId in
+                workspace.panels[panelId] == nil ? nil : (workspace, panelId)
+            }
+        }
         let renameWorkspaceShortcut = KeyboardShortcutSettings.shortcut(for: .renameWorkspace)
-        let editWorkspaceDescriptionShortcut = KeyboardShortcutSettings.shortcut(for: .editWorkspaceDescription)
+        let newSurfaceShortcut = KeyboardShortcutSettings.shortcut(for: .newSurface)
         let closeWorkspaceShortcut = KeyboardShortcutSettings.shortcut(for: .closeWorkspace)
         let finderDirectoryCacheKey = WorkspaceFinderDirectoryCacheKey(
             path: isMulti ? nil : WorkspaceFinderDirectoryResolver.path(for: tab)
         )
         let finderDirectoryURL = workspaceFinderDirectoryCache.url(for: finderDirectoryCacheKey)
-        Button(pinLabel) {
-            guard let contextMenuPinState else {
-                NSSound.beep()
-                return
-            }
-            let result = WorkspaceActionDispatcher.performPinAction(contextMenuPinState, in: tabManager)
-            if result.changedWorkspaceIds.isEmpty {
-                refreshWorkspaceSnapshot(force: true)
-            }
-            syncSelectionAfterMutation()
-        }
-        .disabled(contextMenuPinState == nil)
-
-        workspaceGroupContextMenuSection(targetIds: targetIds, isMulti: isMulti)
-
-        if let key = renameWorkspaceShortcut.keyEquivalent {
-            Button(String(localized: "contextMenu.renameWorkspace", defaultValue: "Rename Workspace…")) {
-                promptRename()
-            }
-            .keyboardShortcut(key, modifiers: renameWorkspaceShortcut.eventModifiers)
-        } else {
-            Button(String(localized: "contextMenu.renameWorkspace", defaultValue: "Rename Workspace…")) {
-                promptRename()
-            }
-        }
-
-        if tab.hasCustomTitle {
-            Button(String(localized: "contextMenu.removeCustomWorkspaceName", defaultValue: "Remove Custom Workspace Name")) {
-                tabManager.clearCustomTitle(tabId: tab.id)
-            }
-        }
 
         if !isMulti {
-            if let key = editWorkspaceDescriptionShortcut.keyEquivalent {
-                Button(String(localized: "contextMenu.editWorkspaceDescription", defaultValue: "Edit Workspace Description…")) {
-                    beginWorkspaceDescriptionEditFromContextMenu()
+            if let key = renameWorkspaceShortcut.keyEquivalent {
+                Button {
+                    promptRename()
+                } label: {
+                    Label(String(localized: "contextMenu.renameBox", defaultValue: "Rename Box…"), systemImage: "pencil")
                 }
-                .keyboardShortcut(key, modifiers: editWorkspaceDescriptionShortcut.eventModifiers)
+                .keyboardShortcut(key, modifiers: renameWorkspaceShortcut.eventModifiers)
             } else {
-                Button(String(localized: "contextMenu.editWorkspaceDescription", defaultValue: "Edit Workspace Description…")) {
-                    beginWorkspaceDescriptionEditFromContextMenu()
+                Button {
+                    promptRename()
+                } label: {
+                    Label(String(localized: "contextMenu.renameBox", defaultValue: "Rename Box…"), systemImage: "pencil")
                 }
             }
 
-            if tab.hasCustomDescription {
-                Button(String(localized: "contextMenu.clearWorkspaceDescription", defaultValue: "Clear Workspace Description")) {
-                    tabManager.clearCustomDescription(tabId: tab.id)
+            if tab.uniConnectProfile?.isSSH == true {
+                Button {
+                    UniConnectCoordinator.shared.editConnection(for: tab)
+                } label: {
+                    Label(
+                        String(localized: "contextMenu.editSSHConnection", defaultValue: "Edit SSH Connection…"),
+                        systemImage: "network"
+                    )
                 }
             }
-
         }
 
-        if !remoteContextMenuWorkspaceIds.isEmpty {
-            Divider()
-
-            Button(reconnectLabel) {
-                for workspace in remoteContextMenuWorkspaces() {
-                    workspace.reconnectRemoteConnection()
-                }
-            }
-            .disabled(allRemoteContextMenuTargetsConnecting)
-
-            Button(disconnectLabel) {
-                for workspace in remoteContextMenuWorkspaces() {
-                    workspace.disconnectRemoteConnection(clearConfiguration: false)
-                }
-            }
-            .disabled(allRemoteContextMenuTargetsDisconnected)
-        }
-
-        Menu(String(localized: "contextMenu.workspaceColor", defaultValue: "Workspace Color")) {
+        Menu {
             if tab.customColor != nil {
                 Button {
                     applyTabColor(nil, targetIds: targetIds)
@@ -16228,9 +16296,7 @@ struct TabItemView: View, Equatable {
                 Label(String(localized: "contextMenu.chooseCustomColor", defaultValue: "Choose Custom Color…"), systemImage: "paintpalette")
             }
 
-            if !tabColorPalette.isEmpty {
-                Divider()
-            }
+            if !tabColorPalette.isEmpty { Divider() }
 
             ForEach(tabColorPalette, id: \.id) { entry in
                 Button {
@@ -16243,121 +16309,162 @@ struct TabItemView: View, Equatable {
                     }
                 }
             }
+        } label: {
+            Label(String(localized: "contextMenu.boxColor", defaultValue: "Box Color"), systemImage: "paintpalette.fill")
         }
 
-        if let copyableSidebarSSHError = workspaceSnapshot.copyableSidebarSSHError {
-            Button(String(localized: "contextMenu.copySshError", defaultValue: "Copy SSH Error")) {
-                WorkspaceSurfaceIdentifierClipboardText.copy(copyableSidebarSSHError)
+        Button {
+            guard let contextMenuPinState else {
+                NSSound.beep()
+                return
             }
+            let result = WorkspaceActionDispatcher.performPinAction(contextMenuPinState, in: tabManager)
+            if result.changedWorkspaceIds.isEmpty {
+                refreshWorkspaceSnapshot(force: true)
+            }
+            syncSelectionAfterMutation()
+        } label: {
+            Label(pinLabel, systemImage: shouldPin ? "pin" : "pin.slash")
         }
+        .disabled(contextMenuPinState == nil)
+
+        workspaceGroupContextMenuSection(targetIds: targetIds, isMulti: isMulti)
 
         Divider()
 
-        Button(String(localized: "contextMenu.moveUp", defaultValue: "Move Up")) {
+        if !isMulti {
+            if let key = newSurfaceShortcut.keyEquivalent {
+                Button {
+                    tabManager.selectTab(tab)
+                    tabManager.newSurface()
+                } label: {
+                    Label(String(localized: "contextMenu.newTabInBox", defaultValue: "New Window"), systemImage: "plus.rectangle.on.rectangle")
+                }
+                .keyboardShortcut(key, modifiers: newSurfaceShortcut.eventModifiers)
+            } else {
+                Button {
+                    tabManager.selectTab(tab)
+                    tabManager.newSurface()
+                } label: {
+                    Label(String(localized: "contextMenu.newTabInBox", defaultValue: "New Window"), systemImage: "plus.rectangle.on.rectangle")
+                }
+            }
+
+            Button {
+                UniConnectCoordinator.shared.requestClaudeUpdateInBox(tab)
+            } label: {
+                Label(String(localized: "contextMenu.updateClaudeInBox", defaultValue: "Update Claude in This Box…"), systemImage: "arrow.down.app")
+            }
+        }
+
+        Button {
+            UniConnectCoordinator.shared.reconnectSSHWindowsNow(in: targetWorkspaces)
+        } label: {
+            Label(
+                isMulti
+                    ? String(
+                        localized: "uniconnect.reconnect.boxes.now",
+                        defaultValue: "Reconnect SSH Windows in These Boxes Now"
+                    )
+                    : String(
+                        localized: "uniconnect.reconnect.box.now",
+                        defaultValue: "Reconnect SSH Windows Now"
+                    ),
+                systemImage: "arrow.clockwise"
+            )
+        }
+        .disabled(reconnectableSSHTargets.isEmpty)
+
+        Divider()
+
+        Button {
             moveBy(-1)
+        } label: {
+            Label(String(localized: "contextMenu.moveUp", defaultValue: "Move Up"), systemImage: "arrow.up")
         }
         .disabled(index == 0)
 
-        Button(String(localized: "contextMenu.moveDown", defaultValue: "Move Down")) {
+        Button {
             moveBy(1)
+        } label: {
+            Label(String(localized: "contextMenu.moveDown", defaultValue: "Move Down"), systemImage: "arrow.down")
         }
         .disabled(index >= tabManager.tabs.count - 1)
 
-        Button(String(localized: "contextMenu.moveToTop", defaultValue: "Move to Top")) {
+        Button {
             tabManager.moveTabsToTop(Set(targetIds))
             syncSelectionAfterMutation()
+        } label: {
+            Label(String(localized: "contextMenu.moveToTop", defaultValue: "Move to Top"), systemImage: "arrow.up.to.line")
         }
         .disabled(targetIds.isEmpty)
 
-        let referenceWindowId = AppDelegate.shared?.windowId(for: tabManager)
-        let windowMoveTargets = AppDelegate.shared?.windowMoveTargets(referenceWindowId: referenceWindowId) ?? []
-        let moveMenuTitle = targetIds.count > 1
-            ? String(localized: "contextMenu.moveWorkspacesToWindow", defaultValue: "Move Workspaces to Window")
-            : String(localized: "contextMenu.moveWorkspaceToWindow", defaultValue: "Move Workspace to Window")
-        Menu(moveMenuTitle) {
-            Button(String(localized: "contextMenu.newWindow", defaultValue: "New Window")) {
-                moveWorkspacesToNewWindow(targetIds)
-            }
-            .disabled(targetIds.isEmpty)
+        Divider()
 
-            if !windowMoveTargets.isEmpty {
-                Divider()
-            }
-
-            ForEach(windowMoveTargets) { target in
-                Button(target.label) {
-                    moveWorkspaces(targetIds, toWindow: target.windowId)
-                }
-                .disabled(target.isCurrentWindow || targetIds.isEmpty)
-            }
+        Button {
+            markTabsRead(targetIds)
+        } label: {
+            Label(markReadLabel, systemImage: "envelope.open")
         }
-        .disabled(targetIds.isEmpty)
+        .disabled(!notificationStore.canMarkWorkspaceRead(forTabIds: targetIds))
+
+        Button {
+            markTabsUnread(targetIds)
+        } label: {
+            Label(markUnreadLabel, systemImage: "envelope.badge")
+        }
+        .disabled(!notificationStore.canMarkWorkspaceUnread(forTabIds: targetIds))
+
+        if !isMulti, tab.uniConnectProfile?.isSSH != true {
+            Divider()
+
+            Button {
+                workspaceFinderDirectoryOpenRequest = WorkspaceFinderDirectoryOpenRequest(directoryURL: finderDirectoryURL)
+            } label: {
+                Label(String(localized: "contextMenu.showBoxInFinder", defaultValue: "Show in Finder"), systemImage: "folder")
+            }
+            .disabled(finderDirectoryURL == nil)
+        }
 
         Divider()
 
         if let key = closeWorkspaceShortcut.keyEquivalent {
-            Button(closeLabel) {
+            Button(role: .destructive) {
                 closeTabs(targetIds, allowPinned: true)
+            } label: {
+                Label(closeLabel, systemImage: "xmark.square")
             }
             .keyboardShortcut(key, modifiers: closeWorkspaceShortcut.eventModifiers)
             .disabled(targetIds.isEmpty)
         } else {
-            Button(closeLabel) {
+            Button(role: .destructive) {
                 closeTabs(targetIds, allowPinned: true)
+            } label: {
+                Label(closeLabel, systemImage: "xmark.square")
             }
             .disabled(targetIds.isEmpty)
         }
 
-        Button(String(localized: "contextMenu.closeOtherWorkspaces", defaultValue: "Close Other Workspaces")) {
+        Button(role: .destructive) {
             closeOtherTabs(targetIds)
+        } label: {
+            Label(String(localized: "contextMenu.closeOtherBoxes", defaultValue: "Close Other Boxes"), systemImage: "xmark.square.fill")
         }
         .disabled(tabManager.tabs.count <= 1 || targetIds.count == tabManager.tabs.count)
 
-        Button(String(localized: "contextMenu.closeWorkspacesBelow", defaultValue: "Close Workspaces Below")) {
+        Button(role: .destructive) {
             closeTabsBelow(tabId: tab.id)
+        } label: {
+            Label(String(localized: "contextMenu.closeBoxesBelow", defaultValue: "Close Boxes Below"), systemImage: "arrow.down.to.line")
         }
         .disabled(index >= tabManager.tabs.count - 1)
 
-        Button(String(localized: "contextMenu.closeWorkspacesAbove", defaultValue: "Close Workspaces Above")) {
+        Button(role: .destructive) {
             closeTabsAbove(tabId: tab.id)
+        } label: {
+            Label(String(localized: "contextMenu.closeBoxesAbove", defaultValue: "Close Boxes Above"), systemImage: "arrow.up.to.line")
         }
         .disabled(index == 0)
-
-        Divider()
-
-        Button(markReadLabel) {
-            markTabsRead(targetIds)
-        }
-        .disabled(!notificationStore.canMarkWorkspaceRead(forTabIds: targetIds))
-
-        Button(markUnreadLabel) {
-            markTabsUnread(targetIds)
-        }
-        .disabled(!notificationStore.canMarkWorkspaceUnread(forTabIds: targetIds))
-
-        Button(clearLatestNotificationLabel) {
-            clearLatestNotifications(targetIds)
-        }
-        .disabled(!hasLatestNotifications(in: targetIds))
-
-        Divider()
-
-        Button(copyWorkspaceIDLabel) {
-            copyWorkspaceIdsToPasteboard(targetIds)
-        }
-        .disabled(targetIds.isEmpty)
-
-        Button(copyWorkspaceLinkLabel) {
-            copyWorkspaceLinksToPasteboard(targetIds)
-        }
-        .disabled(targetIds.isEmpty)
-
-        if !isMulti {
-            Button(String(localized: "contextMenu.showWorkspaceInFinder", defaultValue: "Show in Finder")) {
-                workspaceFinderDirectoryOpenRequest = WorkspaceFinderDirectoryOpenRequest(directoryURL: finderDirectoryURL)
-            }
-            .disabled(finderDirectoryURL == nil)
-        }
     }
 
     private var backgroundColor: Color {
@@ -16658,7 +16765,9 @@ struct TabItemView: View, Equatable {
             branchDirectoryLines: branchDirectoryLines,
             branchLinesContainBranch: branchLinesContainBranch,
             pullRequestRows: pullRequestRows,
-            listeningPorts: detailVisibility.showsPorts ? tab.listeningPorts : []
+            listeningPorts: detailVisibility.showsPorts ? tab.listeningPorts : [],
+            uniConnectIsSSH: tab.uniConnectProfile?.isSSH,
+            uniConnectWindowCount: tab.uniConnectProfile == nil ? 0 : tab.uniConnectOrderedTerminalPanelIds().count
         )
     }
 
@@ -17031,7 +17140,7 @@ struct TabItemView: View, Equatable {
 
     private func promptCustomColor(targetIds: [UUID]) {
         let alert = NSAlert()
-        alert.messageText = String(localized: "alert.customColor.title", defaultValue: "Custom Workspace Color")
+        alert.messageText = String(localized: "alert.customColor.title", defaultValue: "Custom Box Color")
         alert.informativeText = String(localized: "alert.customColor.message", defaultValue: "Enter a hex color in the format #RRGGBB.")
 
         let seed = tab.customColor ?? WorkspaceTabColorSettings.customPaletteEntries().first?.hex ?? ""
@@ -17074,10 +17183,10 @@ struct TabItemView: View, Equatable {
 
     private func promptRename() {
         let alert = NSAlert()
-        alert.messageText = String(localized: "alert.renameWorkspace.title", defaultValue: "Rename Workspace")
-        alert.informativeText = String(localized: "alert.renameWorkspace.message", defaultValue: "Enter a custom name for this workspace.")
+        alert.messageText = String(localized: "alert.renameWorkspace.title", defaultValue: "Rename Box")
+        alert.informativeText = String(localized: "alert.renameWorkspace.message", defaultValue: "Enter a custom name for this box.")
         let input = NSTextField(string: tab.customTitle ?? tab.title)
-        input.placeholderString = String(localized: "alert.renameWorkspace.placeholder", defaultValue: "Workspace name")
+        input.placeholderString = String(localized: "alert.renameWorkspace.placeholder", defaultValue: "Box name")
         input.frame = NSRect(x: 0, y: 0, width: 240, height: 22)
         alert.accessoryView = input
         alert.addButton(withTitle: String(localized: "alert.renameWorkspace.rename", defaultValue: "Rename"))
@@ -19105,15 +19214,13 @@ extension NSColor {
 
 /// Two pills on a workspace row: the kind of box and how many windows it has.
 private struct UniConnectRowBadges: View {
-    @ObservedObject var workspace: Workspace
+    let windowCount: Int
     let isSSH: Bool
     let fontScale: CGFloat
     let isActive: Bool
     let activeForeground: Color
 
     @Environment(\.colorScheme) private var colorScheme
-
-    private var windowCount: Int { workspace.uniConnectOrderedTerminalPanelIds().count }
 
     private var size: CGFloat { max(7.5, 8.5 * fontScale) }
 
@@ -19127,7 +19234,12 @@ private struct UniConnectRowBadges: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            pill(text: isSSH ? "SSH" : "LOCAL", tint: isActive ? activeForeground : kindTint)
+            pill(
+                text: isSSH
+                    ? String(localized: "uniconnect.import.kind.ssh", defaultValue: "SSH")
+                    : String(localized: "uniconnect.import.kind.local", defaultValue: "Local").uppercased(),
+                tint: isActive ? activeForeground : kindTint
+            )
             if windowCount > 0 {
                 pill(text: "\(windowCount)", tint: isActive ? activeForeground : (colorScheme == .dark ? Color.secondary : Color(white: 0.28)))
             }

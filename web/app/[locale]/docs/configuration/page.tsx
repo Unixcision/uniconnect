@@ -32,9 +32,9 @@ const typedSettingsSchema = settingsSchema as SchemaDocument;
 const schemaProperties = typedSettingsSchema.properties ?? {};
 const schemaUrl =
   typedSettingsSchema.$id ??
-  "https://raw.githubusercontent.com/manaflow-ai/cmux/main/web/data/cmux.schema.json";
+  "https://raw.githubusercontent.com/Unixcision/uniconnect/main/web/data/cmux.schema.json";
 const schemaSourceUrl =
-  "https://github.com/manaflow-ai/cmux/blob/main/web/data/cmux.schema.json";
+  "https://github.com/Unixcision/uniconnect/blob/main/web/data/cmux.schema.json";
 const sectionOrder = [
   "app",
   "terminal",
@@ -313,29 +313,29 @@ scrollback-limit = 50000000
 split-divider-color = #3e4451
 working-directory = ~/code`}</CodeBlock>
 
-      <DocsHeading level={2} id="cmux-json" className="scroll-mt-24">cmux.json</DocsHeading>
+      <DocsHeading level={2} id="cmux-json" className="scroll-mt-24">uniconnect.json</DocsHeading>
       <p>
-        cmux keeps app-owned settings, shortcuts, actions, custom commands, and workspace layouts in{" "}
-        <code>~/.config/cmux/cmux.json</code>. Terminal rendering still lives in Ghostty config.
-        On launch, if the file is missing, cmux writes a commented template there.
+        UniConnect keeps app-owned settings, shortcuts, actions, custom commands, and workspace layouts in{" "}
+        <code>~/.config/uniconnect/uniconnect.json</code>. Terminal rendering still lives in Ghostty config.
+        On launch, if the file is missing, UniConnect writes a commented template there.
       </p>
       <p>
-        Open cmux Settings, then use the <code>cmux.json</code> section to open the canonical file
+        Open UniConnect Settings, then use the <code>uniconnect.json</code> section to open the canonical file
         in your preferred text editor.
       </p>
       <ol>
         <li>
-          <code>~/.config/cmux/cmux.json</code>
+          <code>~/.config/uniconnect/uniconnect.json</code>
         </li>
         <li>
-          <code>.cmux/cmux.json</code> in a project for project-scoped actions and workspace commands
+          <code>.uniconnect/uniconnect.json</code> in a project for project-scoped actions and workspace commands
         </li>
       </ol>
       <Callout type="info">
-        <strong>Precedence:</strong> global <code>~/.config/cmux/cmux.json</code> settings override
-        values saved in the Settings window. Legacy <code>~/.config/cmux/settings.json</code> and
+        <strong>Precedence:</strong> global <code>~/.config/uniconnect/uniconnect.json</code> settings override
+        values saved in the Settings window. Legacy <code>~/.config/uniconnect/settings.json</code> and
         Application Support settings files are read only as fallback for missing settings keys.
-        Project-local <code>.cmux/cmux.json</code> can override actions, commands, UI action
+        Project-local <code>.uniconnect/uniconnect.json</code> can override actions, commands, UI action
         wiring, and notification hooks, but not global app preferences.
       </Callout>
       <Callout type="info">
@@ -344,7 +344,7 @@ working-directory = ~/code`}</CodeBlock>
       </Callout>
       <Callout type="warn">
         <strong>Migrations:</strong> keep <code>schemaVersion</code> at <code>1</code> for now.
-        Future cmux versions will use that field for upgrades. If cmux sees a newer schema version,
+        Future UniConnect versions will use that field for upgrades. If UniConnect sees a newer schema version,
         it logs a warning and parses known keys only.
       </Callout>
       <p>
@@ -352,13 +352,13 @@ working-directory = ~/code`}</CodeBlock>
         at <a href={schemaUrl}>{schemaUrl}</a> and the source lives at{" "}
         <a href={schemaSourceUrl}>{schemaSourceUrl}</a>.
       </p>
-      <CodeBlock title="~/.config/cmux/cmux.json" lang="json">
+      <CodeBlock title="~/.config/uniconnect/uniconnect.json" lang="json">
         {buildSettingsFileExample(t)}
       </CodeBlock>
 
       <DocsHeading level={2} id="schema-reference">Schema reference</DocsHeading>
       <p>
-        This reference covers every supported global settings key in <code>cmux.json</code>. The embedded
+        This reference covers every supported global settings key in <code>uniconnect.json</code>. The embedded
         browser, terminal, sidebar, notifications, automation, and cmux-owned keyboard shortcuts
         all live here. Actions and workspace commands are documented on the{" "}
         <Link href="/docs/custom-commands">custom commands page</Link>.

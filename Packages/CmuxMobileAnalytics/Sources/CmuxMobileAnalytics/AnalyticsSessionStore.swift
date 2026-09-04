@@ -9,8 +9,8 @@ public import Foundation
 /// The backing `UserDefaults` is injected so the store is testable without
 /// touching `.standard`. Returning value types keeps the read path pure.
 public struct AnalyticsSessionStore: Sendable {
-    private static let sessionIDKey = "dev.cmux.analytics.sessionID"
-    private static let lastBackgroundedKey = "dev.cmux.analytics.lastBackgroundedAt"
+    private static let sessionIDKey = "com.unixcision.uniconnect.analytics.sessionID"
+    private static let lastBackgroundedKey = "com.unixcision.uniconnect.analytics.lastBackgroundedAt"
 
     // UserDefaults is Apple-documented thread-safe; OK to hold nonisolated.
     private nonisolated(unsafe) let defaults: UserDefaults

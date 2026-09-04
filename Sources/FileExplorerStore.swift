@@ -748,6 +748,8 @@ final class FileExplorerStore: ObservableObject {
     @Published private(set) var rootStatusMessage: String?
 
     var provider: FileExplorerProvider?
+    /// Identity of the SSH workspace that owns the current remote provider.
+    private(set) var remoteWorkspaceID: UUID?
 
     /// Whether hidden files are shown. Set from FileExplorerState externally.
     var showHiddenFiles: Bool = false
@@ -802,6 +804,7 @@ final class FileExplorerStore: ObservableObject {
     ) {
         switch request {
         case .none:
+            remoteWorkspaceID = nil
             cancelRemoteHomeResolution()
             setRootStatusMessage(nil)
             if provider != nil {
@@ -810,6 +813,7 @@ final class FileExplorerStore: ObservableObject {
             setRootPath("")
 
         case .local(let path):
+            remoteWorkspaceID = nil
             cancelRemoteHomeResolution()
             setRootStatusMessage(nil)
             if !(provider is LocalFileExplorerProvider) {
@@ -819,6 +823,7 @@ final class FileExplorerStore: ObservableObject {
             setRootPath(path)
 
         case .remoteSSH(let workspaceId, let connection, let displayTarget, let rootPath, let isAvailable, let unavailableDetail):
+            remoteWorkspaceID = workspaceId
             applyRemoteSSHWorkspaceRoot(
                 workspaceId: workspaceId,
                 connection: connection,
@@ -1288,7 +1293,7 @@ final class FileExplorerStore: ObservableObject {
 
     private static func remotePreviewCacheURL(displayTarget: String, remotePath: String) -> URL {
         let cacheRoot = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cmux-remote-file-previews", isDirectory: true)
+            .appendingPathComponent("uniconnect-remote-file-previews", isDirectory: true)
         let target = sanitizedCacheComponent(displayTarget)
         let remote = sanitizedCacheComponent(remotePath)
         let basename = URL(fileURLWithPath: remotePath).lastPathComponent

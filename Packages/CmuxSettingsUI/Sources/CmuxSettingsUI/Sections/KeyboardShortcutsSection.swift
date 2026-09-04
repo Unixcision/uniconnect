@@ -269,7 +269,9 @@ public struct KeyboardShortcutsSection: View {
     /// or `jumpToUnread` (the unread navigation cluster), so colocated
     /// sidebar/find shortcuts appear together in the settings UI.
     private static var settingsVisibleActions: [ShortcutAction] {
-        let base = ShortcutAction.allCases.filter { $0 != .showHideAllWindows }
+        let base = ShortcutAction.allCases.filter {
+            $0 != .showHideAllWindows && !uniConnectHiddenActions.contains($0)
+        }
         let colocated: [ShortcutAction] = [
             .focusRightSidebar,
             .toggleRightSidebar,
@@ -287,6 +289,21 @@ public struct KeyboardShortcutsSection: View {
         ordered.insert(contentsOf: colocated, at: anchorIndex + 1)
         return ordered
     }
+
+    private static let uniConnectHiddenActions: Set<ShortcutAction> = [
+        .newWindow, .closeWindow, .openFolder, .reopenPreviousSession,
+        .sendFeedback, .markOldestUnreadAndJumpNext,
+        .focusRightSidebar, .switchRightSidebarToFiles, .switchRightSidebarToFind,
+        .switchRightSidebarToSessions, .switchRightSidebarToFeed, .switchRightSidebarToDock,
+        .focusHistoryBack, .focusHistoryForward, .editWorkspaceDescription,
+        .splitBrowserRight, .splitBrowserDown, .toggleRightSidebar,
+        .saveFilePreview, .openBrowser, .focusBrowserAddressBar,
+        .browserBack, .browserForward, .browserReload,
+        .browserZoomIn, .browserZoomOut, .browserZoomReset,
+        .markdownZoomIn, .markdownZoomOut, .markdownZoomReset,
+        .findInDirectory, .toggleBrowserDeveloperTools, .showBrowserJavaScriptConsole,
+        .toggleBrowserFocusMode, .toggleReactGrab, .openDiffViewer,
+    ]
 
     // MARK: - Conflict helpers
 

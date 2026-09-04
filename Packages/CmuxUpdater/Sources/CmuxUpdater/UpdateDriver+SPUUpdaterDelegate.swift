@@ -17,12 +17,20 @@ extension UpdateDriver: @preconcurrency SPUUpdaterDelegate {
 #endif
         // The feed URL is baked into Info.plist at build time:
         // - Stable releases use the stable appcast URL
-        // - cmux NIGHTLY has the nightly appcast URL injected by CI
+        // - UniConnect NIGHTLY has the nightly appcast URL injected by CI
         let infoFeedURL = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
         let resolved = UpdateFeedResolver().resolve(infoFeedURL: infoFeedURL)
+        guard let feedURL = resolved.url else {
+            log.append(
+                resolved.rejectedConfiguredURL
+                    ? "software updates disabled: configured feed was rejected"
+                    : "software updates disabled: no release feed configured"
+            )
+            return nil
+        }
         log.append("update channel: \(resolved.isNightly ? "nightly" : "stable")")
-        recordFeedURLString(resolved.url, usedFallback: resolved.usedFallback)
-        return resolved.url
+        recordFeedURLString(feedURL, usedFallback: false)
+        return feedURL
     }
 
     func updater(_ updater: SPUUpdater, willScheduleUpdateCheckAfterDelay delay: TimeInterval) {

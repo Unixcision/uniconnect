@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tiny HTTP server that regenerates the mobile attach QR on every page hit
 # so the QR you see is always linked to the currently-running Mac instance.
-# Defaults to 127.0.0.1:17321 to match the existing tools/cmux-tag-opener
+# Defaults to 127.0.0.1:17321 to match the existing UniConnect tag opener
 # pattern. Stop with Ctrl-C.
 
 set -euo pipefail
@@ -75,9 +75,9 @@ def _apply_tags(mac_tag: str, ios_tag: str) -> None:
     global TAG, IOS_TAG, OUT_DIR, IOS_TAG_SLUG, IOS_BUNDLE_ID
     TAG = mac_tag
     IOS_TAG = ios_tag
-    OUT_DIR = os.path.join(TMP_ROOT, f"cmux-mobile-attach-qr-{TAG}")
+    OUT_DIR = os.path.join(TMP_ROOT, f"uniconnect-mobile-attach-qr-{TAG}")
     IOS_TAG_SLUG = _ios_slug(IOS_TAG)
-    IOS_BUNDLE_ID = f"dev.cmux.ios.{IOS_TAG_SLUG}"
+    IOS_BUNDLE_ID = f"com.unixcision.uniconnect.ios.{IOS_TAG_SLUG}"
 
 
 def refresh_tags() -> None:

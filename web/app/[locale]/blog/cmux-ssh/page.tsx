@@ -10,7 +10,7 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
     title: t("metaTitle"),
     description: t("metaDescription"),
     keywords: [
-      "cmux", "SSH", "remote development", "terminal", "macOS",
+      "UniConnect", "SSH", "remote development", "terminal", "macOS",
       "port forwarding", "notifications", "AI coding agents",
       "Claude Code", "remote workspace", "developer tools",
     ],
@@ -77,7 +77,7 @@ export default function CmuxSshPage() {
       <iframe
         className="my-6 rounded-lg w-full aspect-video"
         src="https://www.youtube.com/embed/RoR9pMOZWkk"
-        title="cmux SSH demo"
+        title="UniConnect SSH demo"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
         allowFullScreen
       />

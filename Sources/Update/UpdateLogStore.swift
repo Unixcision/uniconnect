@@ -6,7 +6,7 @@ import CmuxUpdater
 // other stored properties are immutable. Conforms to CmuxUpdater's `UpdateLogging` seam so the
 // updater package can log through this app-owned file logger.
 final class UpdateLogStore: UpdateLogging, @unchecked Sendable {
-    private let queue = DispatchQueue(label: "cmux.update.log")
+    private let queue = DispatchQueue(label: "com.unixcision.uniconnect.update.log")
     private var entries: [String] = []
     private let maxEntries = 200
     private let logURL: URL
@@ -15,9 +15,10 @@ final class UpdateLogStore: UpdateLogging, @unchecked Sendable {
     init() {
         formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let logsDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        logURL = logsDir.appendingPathComponent("Logs/cmux-update.log")
+        let stateDirectory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".uniconnect", isDirectory: true)
+            .appendingPathComponent("logs", isDirectory: true)
+        logURL = stateDirectory.appendingPathComponent("update.log", isDirectory: false)
         ensureLogFile()
     }
 
@@ -48,10 +49,16 @@ final class UpdateLogStore: UpdateLogging, @unchecked Sendable {
 
     private func ensureLogFile() {
         let directory = logURL.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         if !FileManager.default.fileExists(atPath: logURL.path) {
             try? Data().write(to: logURL)
         }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: logURL.path)
     }
 
     private func appendToFile(line: String) {
@@ -70,7 +77,7 @@ final class UpdateLogStore: UpdateLogging, @unchecked Sendable {
 // stored properties are immutable. Owned and injected by `AppDelegate` (see `AppDelegate.focusLog`)
 // rather than self-vending a global, so its lifecycle has a single composition root.
 final class FocusLogStore: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "cmux.focus.log")
+    private let queue = DispatchQueue(label: "com.unixcision.uniconnect.focus.log")
     private var entries: [String] = []
     private let maxEntries = 400
     private let logURL: URL
@@ -79,9 +86,10 @@ final class FocusLogStore: @unchecked Sendable {
     init() {
         formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let logsDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        logURL = logsDir.appendingPathComponent("Logs/cmux-focus.log")
+        let stateDirectory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".uniconnect", isDirectory: true)
+            .appendingPathComponent("logs", isDirectory: true)
+        logURL = stateDirectory.appendingPathComponent("focus.log", isDirectory: false)
         ensureLogFile()
     }
 
@@ -112,10 +120,16 @@ final class FocusLogStore: @unchecked Sendable {
 
     private func ensureLogFile() {
         let directory = logURL.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         if !FileManager.default.fileExists(atPath: logURL.path) {
             try? Data().write(to: logURL)
         }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: logURL.path)
     }
 
     private func appendToFile(line: String) {

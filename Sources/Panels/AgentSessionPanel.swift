@@ -23,11 +23,12 @@ final class AgentSessionPanel: Panel {
 
     init(
         workspaceId: UUID,
+        id: UUID = UUID(),
         rendererKind: AgentSessionRendererKind,
         initialProviderID: AgentSessionProviderID = .codex,
         workingDirectory: String? = nil
     ) {
-        self.id = UUID()
+        self.id = id
         self.workspaceId = workspaceId
         self.rendererKind = rendererKind
         self.initialProviderID = initialProviderID

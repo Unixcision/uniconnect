@@ -12,8 +12,8 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     private let onShowNotifications: () -> Void
     private let onOpenNotification: (TerminalNotification) -> Void
     private let onJumpToLatestUnread: () -> Void
-    private let onOpenTaskManager: () -> Void
-    private let onCheckForUpdates: () -> Void
+    private let onLock: () -> Void
+    private let onReconnect: () -> Void
     private let onOpenPreferences: () -> Void
     private let onQuitApp: () -> Void
     private var notificationMenuSnapshotCancellable: AnyCancellable?
@@ -21,18 +21,18 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
 
     private let stateHintItem = NSMenuItem(title: String(localized: "statusMenu.noUnread", defaultValue: "No unread notifications"), action: nil, keyEquivalent: "")
     private let buildHintItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-    private let globalSearchItem = NSMenuItem(title: String(localized: "statusMenu.searchAllWindows", defaultValue: "Search All Windows..."), action: nil, keyEquivalent: "")
-    private let showMainWindowItem = NSMenuItem(title: String(localized: "statusMenu.showCmux", defaultValue: "Show cmux"), action: nil, keyEquivalent: "")
-    private let taskManagerItem = NSMenuItem(title: String(localized: "statusMenu.taskManager", defaultValue: "Task Manager..."), action: nil, keyEquivalent: "")
+    private let globalSearchItem = NSMenuItem(title: String(localized: "statusMenu.searchAllBoxes", defaultValue: "Search All Boxes…"), action: nil, keyEquivalent: "")
+    private let showMainWindowItem = NSMenuItem(title: String(localized: "statusMenu.showUniConnect", defaultValue: "Show UniConnect"), action: nil, keyEquivalent: "")
     private let notificationListSeparator = NSMenuItem.separator()
     private let notificationSectionSeparator = NSMenuItem.separator()
     private let showNotificationsItem = NSMenuItem(title: String(localized: "statusMenu.showNotifications", defaultValue: "Show Notifications"), action: nil, keyEquivalent: "")
     private let jumpToUnreadItem = NSMenuItem(title: String(localized: "statusMenu.jumpToLatestUnread", defaultValue: "Jump to Latest Unread"), action: nil, keyEquivalent: "")
     private let markAllReadItem = NSMenuItem(title: String(localized: "statusMenu.markAllRead", defaultValue: "Mark All Read"), action: nil, keyEquivalent: "")
     private let clearAllItem = NSMenuItem(title: String(localized: "statusMenu.clearAll", defaultValue: "Clear All"), action: nil, keyEquivalent: "")
-    private let checkForUpdatesItem = NSMenuItem(title: String(localized: "menu.checkForUpdates", defaultValue: "Check for Updates…"), action: nil, keyEquivalent: "")
-    private let preferencesItem = NSMenuItem(title: String(localized: "menu.preferences", defaultValue: "Preferences…"), action: nil, keyEquivalent: "")
-    private let quitItem = NSMenuItem(title: String(localized: "menu.quitCmux", defaultValue: "Quit cmux"), action: nil, keyEquivalent: "")
+    private let lockItem = NSMenuItem(title: String(localized: "statusMenu.lock", defaultValue: "Lock"), action: nil, keyEquivalent: "")
+    private let reconnectItem = NSMenuItem(title: String(localized: "statusMenu.reconnect", defaultValue: "Reconnect Dropped Windows"), action: nil, keyEquivalent: "")
+    private let preferencesItem = NSMenuItem(title: String(localized: "menu.app.settings", defaultValue: "Settings…"), action: nil, keyEquivalent: "")
+    private let quitItem = NSMenuItem(title: String(localized: "menu.app.quitUniConnect", defaultValue: "Quit UniConnect"), action: nil, keyEquivalent: "")
 
     private var notificationItems: [NSMenuItem] = []
     init(
@@ -42,8 +42,8 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         onShowNotifications: @escaping () -> Void,
         onOpenNotification: @escaping (TerminalNotification) -> Void,
         onJumpToLatestUnread: @escaping () -> Void,
-        onOpenTaskManager: @escaping () -> Void,
-        onCheckForUpdates: @escaping () -> Void,
+        onLock: @escaping () -> Void,
+        onReconnect: @escaping () -> Void,
         onOpenPreferences: @escaping () -> Void,
         onQuitApp: @escaping () -> Void
     ) {
@@ -53,8 +53,8 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         self.onShowNotifications = onShowNotifications
         self.onOpenNotification = onOpenNotification
         self.onJumpToLatestUnread = onJumpToLatestUnread
-        self.onOpenTaskManager = onOpenTaskManager
-        self.onCheckForUpdates = onCheckForUpdates
+        self.onLock = onLock
+        self.onReconnect = onReconnect
         self.onOpenPreferences = onOpenPreferences
         self.onQuitApp = onQuitApp
         self.buildHintTitle = MenuBarBuildHintFormatter.menuTitle()
@@ -95,15 +95,13 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
 
         globalSearchItem.target = self
         globalSearchItem.action = #selector(globalSearchAction)
+        globalSearchItem.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
         menu.addItem(globalSearchItem)
 
         showMainWindowItem.target = self
         showMainWindowItem.action = #selector(showMainWindowAction)
+        showMainWindowItem.image = NSImage(systemSymbolName: "macwindow", accessibilityDescription: nil)
         menu.addItem(showMainWindowItem)
-
-        taskManagerItem.target = self
-        taskManagerItem.action = #selector(taskManagerAction)
-        menu.addItem(taskManagerItem)
 
         menu.addItem(notificationListSeparator)
         notificationSectionSeparator.isHidden = true
@@ -111,34 +109,48 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
 
         showNotificationsItem.target = self
         showNotificationsItem.action = #selector(showNotificationsAction)
+        showNotificationsItem.image = NSImage(systemSymbolName: "bell", accessibilityDescription: nil)
         menu.addItem(showNotificationsItem)
 
         jumpToUnreadItem.target = self
         jumpToUnreadItem.action = #selector(jumpToUnreadAction)
+        jumpToUnreadItem.image = NSImage(systemSymbolName: "bell.and.waves.left.and.right", accessibilityDescription: nil)
         menu.addItem(jumpToUnreadItem)
 
         markAllReadItem.target = self
         markAllReadItem.action = #selector(markAllReadAction)
+        markAllReadItem.image = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: nil)
         menu.addItem(markAllReadItem)
 
         clearAllItem.target = self
         clearAllItem.action = #selector(clearAllAction)
+        clearAllItem.image = NSImage(systemSymbolName: "trash", accessibilityDescription: nil)
         menu.addItem(clearAllItem)
 
         menu.addItem(.separator())
 
-        checkForUpdatesItem.target = self
-        checkForUpdatesItem.action = #selector(checkForUpdatesAction)
-        menu.addItem(checkForUpdatesItem)
+        lockItem.target = self
+        lockItem.action = #selector(lockAction)
+        lockItem.image = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)
+        menu.addItem(lockItem)
+
+        reconnectItem.target = self
+        reconnectItem.action = #selector(reconnectAction)
+        reconnectItem.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
+        menu.addItem(reconnectItem)
+
+        menu.addItem(.separator())
 
         preferencesItem.target = self
         preferencesItem.action = #selector(preferencesAction)
+        preferencesItem.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
         menu.addItem(preferencesItem)
 
         menu.addItem(.separator())
 
         quitItem.target = self
         quitItem.action = #selector(quitAction)
+        quitItem.image = NSImage(systemSymbolName: "power", accessibilityDescription: nil)
         menu.addItem(quitItem)
     }
 
@@ -177,10 +189,18 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         applyShortcut(KeyboardShortcutSettings.menuShortcut(for: .globalSearch), to: globalSearchItem)
         applyShortcut(KeyboardShortcutSettings.menuShortcut(for: .showNotifications), to: showNotificationsItem)
         applyShortcut(KeyboardShortcutSettings.menuShortcut(for: .jumpToUnread), to: jumpToUnreadItem)
+        applyShortcut(KeyboardShortcutSettings.menuShortcut(for: .lockApp), to: lockItem)
+        applyShortcut(KeyboardShortcutSettings.menuShortcut(for: .reconnectDroppedWindows), to: reconnectItem)
+        applyShortcut(KeyboardShortcutSettings.menuShortcut(for: .quit), to: quitItem)
 
         jumpToUnreadItem.isEnabled = snapshot.hasUnreadNotifications
         markAllReadItem.isEnabled = snapshot.hasUnreadNotifications
         clearAllItem.isEnabled = snapshot.hasNotifications
+        reconnectItem.isEnabled = UniConnectCoordinator.shared.allTabManagers().contains { manager in
+            manager.tabs.contains { workspace in
+                workspace.uniConnectDisconnectedPanelIds.contains { workspace.panels[$0] != nil }
+            }
+        }
 
         rebuildInlineNotificationItems(recentNotifications: snapshot.recentNotifications)
 
@@ -189,8 +209,8 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
             button.toolTip = displayedUnreadCount == 0
                 ? "UniConnect"
                 : displayedUnreadCount == 1
-                    ? "cmux: " + String(localized: "statusMenu.tooltip.unread.one", defaultValue: "1 unread notification")
-                    : "cmux: " + String(localized: "statusMenu.tooltip.unread.other", defaultValue: "\(displayedUnreadCount) unread notifications")
+                    ? "UniConnect: " + String(localized: "statusMenu.tooltip.unread.one", defaultValue: "1 unread notification")
+                    : "UniConnect: " + String(localized: "statusMenu.tooltip.unread.other", defaultValue: "\(displayedUnreadCount) unread notifications")
         }
     }
 
@@ -262,10 +282,6 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         onJumpToLatestUnread()
     }
 
-    @objc private func taskManagerAction() {
-        onOpenTaskManager()
-    }
-
     @objc private func markAllReadAction() {
         notificationStore.markAllRead()
     }
@@ -274,8 +290,12 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         notificationStore.clearAll()
     }
 
-    @objc private func checkForUpdatesAction() {
-        onCheckForUpdates()
+    @objc private func lockAction() {
+        onLock()
+    }
+
+    @objc private func reconnectAction() {
+        onReconnect()
     }
 
     @objc private func preferencesAction() {

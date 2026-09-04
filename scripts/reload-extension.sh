@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# reload-extension.sh — build a CMUX sample sidebar extension scoped to a dev build tag.
+# reload-extension.sh — build a UniConnect sample sidebar extension scoped to a dev build tag.
 #
 # A tagged cmux dev app (built by reload.sh --tag <t>) declares a host-scoped
 # extension point <host-bundle-id>.cmux.sidebar (baked at build time via the
@@ -42,7 +42,7 @@ Usage: scripts/reload-extension.sh --tag <tag> [--host-bundle-id <id>] [--exampl
   --host-bundle-id   Host app bundle id when reload.sh used --bundle-id.
                      Defaults to com.unixcision.uniconnect.debug.<sanitized-tag>.
   --bundle-id        Alias for --host-bundle-id.
-  --example <which>  sample (CMUX ExtKit Sample Sidebar), tabs (TabsVisibleSidebar),
+  --example <which>  sample (UniConnect ExtKit Sample Sidebar), tabs (TabsVisibleSidebar),
                      or both (default).
   --no-launch        Build and install but do not launch to register.
   -h, --help         Show this help.
@@ -96,9 +96,9 @@ TAGGED_POINT_ID="${HOST_BUNDLE_ID}.${SIDEBAR_POINT_NAME}"
 example_specs() {
   case "$1" in
     sample)
-      echo "Examples/SampleSidebarExtensionApp/SampleSidebarExtensionApp.xcodeproj|CMUXExtKitSampleSidebarApp|CMUX ExtKit Sample Sidebar|co.manaflow.CMUXExtKitSampleSidebarApp|Contents/Extensions/CMUX ExtKit Sample Sidebar Extension.appex|co.manaflow.CMUXExtKitSampleSidebarApp.Extension" ;;
+      echo "Examples/SampleSidebarExtensionApp/SampleSidebarExtensionApp.xcodeproj|CMUXExtKitSampleSidebarApp|UniConnect ExtKit Sample Sidebar|com.unixcision.uniconnect.examples.sidebar|Contents/Extensions/UniConnect ExtKit Sample Sidebar Extension.appex|com.unixcision.uniconnect.examples.sidebar.Extension" ;;
     tabs)
-      echo "Examples/TabsVisibleSidebar/TabsVisibleSidebar.xcodeproj|TabsVisibleSidebar|TabsVisibleSidebar|co.manaflow.TabsVisibleSidebar|Contents/Extensions/Tabs Visible Sidebar Extension.appex|co.manaflow.TabsVisibleSidebar.Extension" ;;
+      echo "Examples/TabsVisibleSidebar/TabsVisibleSidebar.xcodeproj|TabsVisibleSidebar|TabsVisibleSidebar|com.unixcision.uniconnect.examples.tabs-visible|Contents/Extensions/Tabs Visible Sidebar Extension.appex|com.unixcision.uniconnect.examples.tabs-visible.Extension" ;;
   esac
 }
 
@@ -130,7 +130,7 @@ build_install_example() {
   # enable/disable + availability counts the host reads, so two same-named appexes (a base
   # and a tagged copy installed side by side) are treated as one logical extension and
   # toggling one perturbs the other. A per-tag display name keeps them distinct. Leading
-  # space so it reads "CMUX ExtKit Sample Sidebar <tag>".
+  # space so it reads "UniConnect ExtKit Sample Sidebar <tag>".
   #
   # Ad-hoc sign (CODE_SIGN_IDENTITY="-") so resources and Info.plist are bound.
   # CODE_SIGNING_ALLOWED=NO produces a bundle whose Info.plist is "not bound", which
@@ -163,7 +163,7 @@ build_install_example() {
   rm -rf "$derived" "$derived.log"
 
   # Do NOT re-sign. xcodebuild already ad-hoc signs with the appex's entitlements
-  # (App Sandbox + the co.manaflow.cmux.sidebar app group) bound in. Those entitlements
+  # (including any app groups declared by the sample) bound in. Those entitlements
   # are required for the extension's XPC connection to the host; a bare
   # `codesign --force --sign -` re-sign strips them, and the extension then connects and
   # immediately drops ("Extension Blocked / lost the connection") with no recovery.

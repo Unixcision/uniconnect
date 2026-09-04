@@ -15,6 +15,7 @@ private let hostSettingsLogger = Logger(subsystem: "com.unixcision.uniconnect", 
 @MainActor
 final class HostSettingsActions: SettingsHostActions {
     private let configFileURL: URL
+    private let hostedServicesAvailable: Bool
 
     /// Serializes font-size config writes so rapid slider saves persist in order.
     private let fontConfigWriter = FontConfigWriter()
@@ -40,8 +41,9 @@ final class HostSettingsActions: SettingsHostActions {
     /// window instead of stacking duplicates.
     private weak var configWindow: NSWindow?
 
-    init(configFileURL: URL) {
+    init(configFileURL: URL, hostedServicesAvailable: Bool) {
         self.configFileURL = configFileURL
+        self.hostedServicesAvailable = hostedServicesAvailable
         startObservingAppIconMode()
     }
 
@@ -74,12 +76,12 @@ final class HostSettingsActions: SettingsHostActions {
         // Honor the user's configured editor (`preferredEditorCommand`),
         // falling back to the OS default. Opening the config file directly
         // through `NSWorkspace.shared.open` would route to the default
-        // `.json` handler and ignore the cmux setting.
+        // `.json` handler and ignore the UniConnect setting.
         PreferredEditorSettings.open(configFileURL)
     }
 
     func sendFeedback() {
-        guard let url = URL(string: "https://github.com/manaflow-ai/cmux/issues/new") else { return }
+        guard let url = URL(string: "https://github.com/Unixcision/uniconnect/issues/new") else { return }
         NSWorkspace.shared.open(url)
     }
 
@@ -141,6 +143,7 @@ final class HostSettingsActions: SettingsHostActions {
     }
 
     func openMobilePairingWindow() {
+        guard hostedServicesAvailable else { return }
         MobilePairingWindowController.shared.show()
     }
 
@@ -204,11 +207,15 @@ final class HostSettingsActions: SettingsHostActions {
     }
 
     func mobilePairingStatus() -> MobilePairingStatusSnapshot? {
-        Self.mobilePairingSnapshot(from: MobileHostService.shared.statusSnapshot())
+        guard hostedServicesAvailable else { return nil }
+        return Self.mobilePairingSnapshot(from: MobileHostService.shared.statusSnapshot())
     }
 
     func mobilePairingStatusUpdates() -> AsyncStream<MobilePairingStatusSnapshot> {
-        AsyncStream { continuation in
+        guard hostedServicesAvailable else {
+            return AsyncStream { $0.finish() }
+        }
+        return AsyncStream { continuation in
             // Bridge the notification through a Sendable `Void` signal stream so
             // the non-Sendable `Notification` never crosses into the MainActor
             // drain task. Mirrors `UserDefaultsSettingsStore.values(for:)`.
@@ -271,6 +278,11 @@ final class HostSettingsActions: SettingsHostActions {
     }
 
     func applyMobilePairingPort(_ port: Int) async -> MobilePairingPortApplyResult {
+        guard hostedServicesAvailable else {
+            return (1...65535).contains(port)
+                ? .savedForLater(port: port)
+                : .invalid(requestedPort: port)
+        }
         switch await MobileHostService.shared.applyConfiguredPort(port) {
         case .applied(let bound):
             return .applied(port: bound)

@@ -76,7 +76,10 @@ extension KeyboardShortcutSettings.Action {
             return .browserPanel
         case .switchRightSidebarToFiles, .switchRightSidebarToFind, .switchRightSidebarToSessions, .switchRightSidebarToFeed, .switchRightSidebarToDock:
             return .rightSidebarFocus
-        case .renameTab, .renameWorkspace, .sendCtrlFToTerminal:
+        case .renameTab, .renameWorkspace, .sendCtrlFToTerminal,
+             .reconnectFocusedSSHWindow,
+             .updateClaudeInWindow,
+             .terminalFontSizeIncrease, .terminalFontSizeDecrease, .terminalFontSizeReset:
             return .nonBrowserPanel
         case .browserBack, .browserForward, .browserReload, .toggleBrowserDeveloperTools, .showBrowserJavaScriptConsole,
              .browserZoomIn, .browserZoomOut, .browserZoomReset, .toggleBrowserFocusMode:
@@ -90,7 +93,7 @@ extension KeyboardShortcutSettings.Action {
 }
 
 extension Notification.Name {
-    static let debugBrowserReloadShortcutInvoked = Notification.Name("cmux.debugBrowserReloadShortcutInvoked")
+    static let debugBrowserReloadShortcutInvoked = Notification.Name("uniconnect.debugBrowserReloadShortcutInvoked")
 }
 
 extension AppDelegate {

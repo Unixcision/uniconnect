@@ -81,8 +81,8 @@ extension CMUXCLI {
     private static func unifiedDiff(old: String, new: String) -> String? {
         if old == new { return "" }
         let tempDir = FileManager.default.temporaryDirectory
-        let oldURL = tempDir.appendingPathComponent("cmux-old-\(UUID().uuidString)")
-        let newURL = tempDir.appendingPathComponent("cmux-new-\(UUID().uuidString)")
+        let oldURL = tempDir.appendingPathComponent("uniconnect-old-\(UUID().uuidString)")
+        let newURL = tempDir.appendingPathComponent("uniconnect-new-\(UUID().uuidString)")
         defer {
             try? FileManager.default.removeItem(at: oldURL)
             try? FileManager.default.removeItem(at: newURL)

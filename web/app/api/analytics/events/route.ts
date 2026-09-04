@@ -32,25 +32,26 @@ type IncomingEvent = {
 };
 
 export async function POST(request: Request): Promise<Response> {
+  if (!POSTHOG_HOST || !POSTHOG_PROJECT_KEY) {
+    return jsonResponse({ error: "analytics_disabled" }, 503);
+  }
   // Auth is read opportunistically, NOT required: the two-phase identity design
   // depends on pre-auth events (install, sign-in attempts, pairing) flowing while
   // the user is still anonymous. When a Stack session is present we stamp the
   // authoritative `user.id` over the client distinct id; when absent we trust the
   // client-supplied anonymous `client_id`. The event-name allowlist is the abuse
-  // gate, not auth. The PostHog key is already public (the web client posts to
-  // r.cmux.com directly), so an anonymous proxy is no weaker than today.
+  // gate, not auth. Forwarding exists only when an operator explicitly configures
+  // a UniConnect-owned PostHog destination.
   //
   // Rate limiting is deferred for Phase A (tracked in
-  // https://github.com/manaflow-ai/cmux/issues/5569). The only reusable limiter in
+  // the upstream issue tracker). The only reusable limiter in
   // the codebase (`services/apns/rateLimit.ts`) is a per-`userId` Postgres-
   // transaction gate, which does not fit an anonymous-first, high-volume telemetry
   // ingest path (no user id pre-auth, and a DB write + advisory lock per analytics
   // batch would defeat a lightweight proxy; in-memory limiting does not work on
   // Vercel's per-instance stateless functions). The shape gate (allowlist + 64 KB
   // body cap + per-batch/per-event bounds below) limits payload abuse; a dedicated
-  // anonymous IP/edge rate limit on cmux's own compute is the follow-up. The
-  // downstream PostHog quota risk is no worse than the already-public direct
-  // r.cmux.com path.
+  // anonymous IP/edge rate limit on UniConnect's own compute is the follow-up.
   const user = await verifyRequest(request, { allowCookie: false });
 
   const body = await readBoundedJsonObject(request, MAX_ANALYTICS_REQUEST_BYTES);
@@ -80,7 +81,12 @@ export async function POST(request: Request): Promise<Response> {
     return jsonResponse({ error: "no_valid_events" }, 400);
   }
 
-  const forwarded = await forwardToPostHog(accepted, user?.id ?? null);
+  const forwarded = await forwardToPostHog(
+    accepted,
+    user?.id ?? null,
+    POSTHOG_HOST,
+    POSTHOG_PROJECT_KEY,
+  );
   if (!forwarded.ok) {
     return jsonResponse({ error: "forward_failed" }, forwarded.status);
   }
@@ -132,6 +138,8 @@ function isScalar(value: unknown): boolean {
 async function forwardToPostHog(
   events: readonly IncomingEvent[],
   userId: string | null,
+  posthogHost: string,
+  posthogProjectKey: string,
 ): Promise<{ readonly ok: true } | { readonly ok: false; readonly status: number }> {
   // When authenticated, the server stamps the authoritative user id as the
   // distinct id so a client cannot attribute events to another user. When
@@ -146,10 +154,10 @@ async function forwardToPostHog(
   }));
 
   try {
-    const response = await fetch(`${POSTHOG_HOST}/batch/`, {
+    const response = await fetch(`${posthogHost}/batch/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key: POSTHOG_PROJECT_KEY, batch }),
+      body: JSON.stringify({ api_key: posthogProjectKey, batch }),
     });
     if (!response.ok) {
       // PostHog 4xx is a permanent client problem; 5xx is transient. Surface the

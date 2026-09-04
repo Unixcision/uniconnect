@@ -20,6 +20,11 @@ import UserNotifications
 
 @MainActor
 final class GhosttyPasteboardHelperTests: XCTestCase {
+    func testImageTransferHUDBecomesOpaqueWhenTransparencyIsReduced() {
+        XCTAssertEqual(GhosttySurfaceScrollView.imageTransferHUDAlpha(reduceTransparency: false), 0.95)
+        XCTAssertEqual(GhosttySurfaceScrollView.imageTransferHUDAlpha(reduceTransparency: true), 1)
+    }
+
     private func make1x1PNG(color: NSColor) throws -> Data {
         let image = NSImage(size: NSSize(width: 1, height: 1))
         image.lockFocus()
@@ -304,6 +309,36 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: imagePath))
     }
 
+    func testBrowserCopyImageKeepsBinaryPayloadAheadOfSourceURLForRemoteUpload() throws {
+        let imageData = try make1x1PNG(color: .systemTeal)
+        let sourceURL = try XCTUnwrap(URL(string: "https://example.invalid/assets/keyboard.png"))
+        let items = BrowserImageCopyPasteboardBuilder.makePasteboardItems(
+            from: BrowserImageCopyPasteboardPayload(
+                imageData: imageData,
+                mimeType: "image/png",
+                sourceURL: sourceURL
+            )
+        )
+        let pasteboard = NSPasteboard(
+            name: .init("uniconnect-browser-image-copy-\(UUID().uuidString)")
+        )
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.writeObjects(items))
+
+        let plan = TerminalImageTransferPlanner.plan(
+            pasteboard: pasteboard,
+            mode: .paste,
+            target: .remote(.workspaceRemote)
+        )
+        guard case .uploadFiles(let urls, .workspaceRemote, nil) = plan else {
+            return XCTFail("expected browser pixels to upload, got \(plan)")
+        }
+        defer { GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(urls) }
+        XCTAssertEqual(urls.count, 1)
+        XCTAssertNotEqual(urls.first?.absoluteString, sourceURL.absoluteString)
+        XCTAssertNotNil(NSImage(data: try Data(contentsOf: XCTUnwrap(urls.first))))
+    }
+
     func testImageHTMLClipboardFallsBackToImagePath() throws {
         let pasteboard = NSPasteboard(name: .init("cmux-test-image-html-\(UUID().uuidString)"))
         pasteboard.clearContents()
@@ -373,6 +408,44 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
 
         XCTAssertEqual(cmuxPasteboardStringContentsForTesting(pasteboard), "Hello")
         XCTAssertNil(cmuxPasteboardImagePathForTesting(pasteboard))
+    }
+
+    func testMixedVisibleTextAndImagePlannerPreservesBothForRemoteUpload() throws {
+        let pasteboard = NSPasteboard(
+            name: .init("uniconnect-mixed-text-image-\(UUID().uuidString)")
+        )
+        pasteboard.clearContents()
+        pasteboard.setString(
+            "<p>Review this screenshot <img src='https://example.invalid/image.png'></p>",
+            forType: .html
+        )
+        pasteboard.setData(try make1x1PNG(color: .systemPurple), forType: .png)
+
+        let prepared = TerminalImageTransferPlanner.prepare(
+            pasteboard: pasteboard,
+            mode: .paste
+        )
+        guard case .textAndFileURLs(let text, let URLs) = prepared else {
+            return XCTFail("expected text and image, got \(prepared)")
+        }
+        defer { GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(URLs) }
+        XCTAssertEqual(text, "Review this screenshot")
+        XCTAssertEqual(URLs.count, 1)
+
+        let plan = TerminalImageTransferPlanner.plan(
+            preparedContent: prepared,
+            target: .remote(.workspaceRemote)
+        )
+        guard case .uploadFilesWithLeadingText(
+            let leadingText,
+            let uploadURLs,
+            .workspaceRemote,
+            nil
+        ) = plan else {
+            return XCTFail("expected mixed remote upload, got \(plan)")
+        }
+        XCTAssertEqual(leadingText, text)
+        XCTAssertEqual(uploadURLs, URLs)
     }
 
     func testJPEGClipboardFallsBackToImagePath() throws {
@@ -1079,6 +1152,252 @@ struct TerminalImageTransferSwiftTests {
         return (directory, files)
     }
 
+    @Test func imageUploadReportsPreparingThenByteAccurateProgress() {
+        let operation = TerminalImageTransferOperation()
+        var snapshots: [TerminalImageTransferOperation.ProgressSnapshot] = []
+
+        operation.installProgressHandler { snapshots.append($0) }
+        operation.beginUpload(totalBytes: 1_000)
+        operation.reportUploadedBytes(375, totalBytes: 1_000)
+        operation.reportUploadedBytes(2_000, totalBytes: 1_000)
+
+        #expect(snapshots.count == 4)
+        #expect(snapshots[0].phase == .preparing)
+        #expect(snapshots[0].fractionCompleted == nil)
+        #expect(snapshots[1].fractionCompleted == 0)
+        #expect(snapshots[2].fractionCompleted == 0.375)
+        #expect(snapshots[3].completedBytes == 1_000)
+        #expect(snapshots[3].fractionCompleted == 1)
+    }
+
+    @Test func cancelledImageUploadStopsLateProgressCallbacks() {
+        let operation = TerminalImageTransferOperation()
+        var snapshots: [TerminalImageTransferOperation.ProgressSnapshot] = []
+
+        operation.installProgressHandler { snapshots.append($0) }
+        operation.beginUpload(totalBytes: 100)
+        #expect(operation.cancel())
+        operation.reportUploadedBytes(50, totalBytes: 100)
+
+        #expect(snapshots.count == 2)
+    }
+
+    @Test func streamedFileUploaderReportsRealBytesAndPreservesContent() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "uniconnect-stream-upload-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("source.bin")
+        let destination = directory.appendingPathComponent("destination.bin")
+        let payload = Data((0..<(320 * 1024 + 17)).map { UInt8($0 % 251) })
+        try payload.write(to: source)
+
+        let operation = TerminalImageTransferOperation()
+        var snapshots: [TerminalImageTransferOperation.ProgressSnapshot] = []
+        operation.installProgressHandler { snapshots.append($0) }
+        operation.beginUpload(totalBytes: Int64(payload.count))
+        let result = try TerminalRemoteFileUploader.upload(
+            localURL: source,
+            executable: "/bin/sh",
+            arguments: ["-c", "cat > \(destination.path)"],
+            timeout: 5,
+            operation: operation,
+            completedBytesBeforeFile: 0,
+            totalBytes: Int64(payload.count)
+        )
+
+        #expect(result.status == 0)
+        #expect(try Data(contentsOf: destination) == payload)
+        #expect(snapshots.contains { ($0.fractionCompleted ?? 0) > 0 && ($0.fractionCompleted ?? 0) < 1 })
+        #expect(snapshots.last?.fractionCompleted == 1)
+    }
+
+    @Test func streamedUploaderDrainsLargeStderrWithoutDeadlocking() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "uniconnect-stream-stderr-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("source.bin")
+        let destination = directory.appendingPathComponent("destination.bin")
+        let payload = Data(repeating: 0x5A, count: 512 * 1_024)
+        try payload.write(to: source)
+
+        let operation = TerminalImageTransferOperation()
+        operation.beginUpload(totalBytes: Int64(payload.count))
+        let result = try TerminalRemoteFileUploader.upload(
+            localURL: source,
+            executable: "/bin/sh",
+            arguments: [
+                "-c",
+                "head -c 1048576 /dev/zero >&2 & cat > \"$1\"; wait",
+                "uniconnect-test",
+                destination.path,
+            ],
+            timeout: 3,
+            operation: operation,
+            completedBytesBeforeFile: 0,
+            totalBytes: Int64(payload.count)
+        )
+
+        #expect(result.status == 0)
+        #expect(result.stderr.utf8.count <= 256 * 1_024)
+        #expect(try Data(contentsOf: destination) == payload)
+    }
+
+    @Test func streamedUploaderCancellationStopsBlockedProcessGroup() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "uniconnect-stream-cancel-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("source.bin")
+        try Data(repeating: 0x41, count: 8 * 1_024 * 1_024).write(to: source)
+
+        let operation = TerminalImageTransferOperation()
+        operation.beginUpload(totalBytes: 8 * 1_024 * 1_024)
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.1) {
+            _ = operation.cancel()
+        }
+
+        #expect(throws: TerminalImageTransferExecutionError.cancelled) {
+            _ = try TerminalRemoteFileUploader.upload(
+                localURL: source,
+                executable: "/bin/sh",
+                arguments: ["-c", "sleep 30"],
+                timeout: 5,
+                operation: operation,
+                completedBytesBeforeFile: 0,
+                totalBytes: 8 * 1_024 * 1_024
+            )
+        }
+    }
+
+    @Test func streamedUploaderUsesInactivityTimeoutRatherThanSuccessfulByteProgress() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "uniconnect-stream-timeout-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("source.bin")
+        try Data([0x41]).write(to: source)
+        let operation = TerminalImageTransferOperation()
+        operation.beginUpload(totalBytes: 1)
+
+        #expect(throws: TerminalRemoteFileUploader.UploadError.timedOut) {
+            _ = try TerminalRemoteFileUploader.upload(
+                localURL: source,
+                executable: "/bin/sh",
+                arguments: ["-c", "cat >/dev/null; sleep 30"],
+                timeout: 0.2,
+                operation: operation,
+                completedBytesBeforeFile: 0,
+                totalBytes: 1
+            )
+        }
+    }
+
+    @Test func streamedUploaderDoesNotRetroactivelyTimeoutAfterChildExit() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "uniconnect-stream-fast-exit-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("source.bin")
+        try Data([0x41]).write(to: source)
+        let operation = TerminalImageTransferOperation()
+        operation.beginUpload(totalBytes: 1)
+
+        let result = try TerminalRemoteFileUploader.upload(
+            localURL: source,
+            executable: "/bin/sh",
+            arguments: ["-c", "cat >/dev/null"],
+            timeout: 0.01,
+            operation: operation,
+            completedBytesBeforeFile: 0,
+            totalBytes: 1
+        )
+
+        #expect(result.status == 0)
+    }
+
+    @Test func scpProtocolUploaderWaitsForRemoteAcknowledgementBeforeCompleting() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "uniconnect-stream-scp-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("source.bin")
+        let destination = directory.appendingPathComponent("destination.bin")
+        let payload = Data((0..<(192 * 1_024 + 11)).map { UInt8($0 % 239) })
+        try payload.write(to: source)
+        let receiver = """
+        destination=$1
+        printf '\\000'
+        IFS=' ' read -r mode size name
+        printf '\\000'
+        dd of="$destination" bs=1 count="$size" 2>/dev/null
+        dd of=/dev/null bs=1 count=1 2>/dev/null
+        printf '\\000'
+        """
+
+        let operation = TerminalImageTransferOperation()
+        var snapshots: [TerminalImageTransferOperation.ProgressSnapshot] = []
+        operation.installProgressHandler { snapshots.append($0) }
+        operation.beginUpload(totalBytes: Int64(payload.count))
+        let result = try TerminalRemoteFileUploader.upload(
+            localURL: source,
+            executable: "/bin/sh",
+            arguments: ["-c", receiver, "uniconnect-test", destination.path],
+            timeout: 3,
+            operation: operation,
+            completedBytesBeforeFile: 0,
+            totalBytes: Int64(payload.count),
+            payloadMode: .scp(fileName: "attachment.bin", fileSize: Int64(payload.count))
+        )
+
+        #expect(result.status == 0)
+        #expect(try Data(contentsOf: destination) == payload)
+        #expect(snapshots.contains { $0.phase == .finalizing })
+        #expect(snapshots.last?.fractionCompleted == 1)
+    }
+
+    @Test func zeroByteUploadUsesIndeterminateFinalizationInsteadOfFakeZeroPercent() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "uniconnect-stream-empty-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("empty.bin")
+        try Data().write(to: source)
+
+        let operation = TerminalImageTransferOperation()
+        var snapshots: [TerminalImageTransferOperation.ProgressSnapshot] = []
+        operation.installProgressHandler { snapshots.append($0) }
+        operation.beginUpload(totalBytes: 0)
+        let result = try TerminalRemoteFileUploader.upload(
+            localURL: source,
+            executable: "/bin/sh",
+            arguments: ["-c", "cat >/dev/null"],
+            timeout: 2,
+            operation: operation,
+            completedBytesBeforeFile: 0,
+            totalBytes: 0
+        )
+
+        #expect(result.status == 0)
+        #expect(snapshots.contains { $0.phase == .finalizing })
+        #expect(snapshots.allSatisfy { $0.totalBytes != 0 || $0.fractionCompleted == nil })
+    }
+
     @Test func remoteMultiImageDropCarriesDeterministicMeteringPolicy() throws {
         let temporary = try temporaryImageURLs()
         defer { try? FileManager.default.removeItem(at: temporary.directory) }
@@ -1095,6 +1414,36 @@ struct TerminalImageTransferSwiftTests {
         }
         #expect(files == temporary.files)
         #expect(delay == 2.0)
+    }
+
+    @Test func mixedRemoteUploadDeliversVisibleTextAndConfirmedRemotePath() throws {
+        let temporary = try temporaryImageURLs()
+        defer { try? FileManager.default.removeItem(at: temporary.directory) }
+        let operation = TerminalImageTransferOperation()
+        var insertedText: String?
+
+        TerminalImageTransferPlanner.executeForTesting(
+            plan: .uploadFilesWithLeadingText(
+                "Review this",
+                [temporary.files[0]],
+                .workspaceRemote,
+                interSegmentDelay: nil
+            ),
+            operation: operation,
+            uploadWorkspaceRemote: { _, _, finish in
+                finish(.success(["/tmp/.uniconnect-upload-test/attachment.png"]))
+            },
+            uploadDetectedSSH: { _, _, _, _ in
+                Issue.record("Unexpected detected SSH upload")
+            },
+            insertText: {
+                insertedText = $0
+                return true
+            },
+            onFailure: { Issue.record("Unexpected failure: \($0)") }
+        )
+
+        #expect(insertedText == "Review this /tmp/.uniconnect-upload-test/attachment.png")
     }
 
     @Test func remoteMultiImageUploadDeliversInOrderBeforeFinishing() throws {
@@ -1255,13 +1604,38 @@ struct TerminalImageTransferSwiftTests {
     }
 
     @Test func fileExplorerPathPlannerRejectsRemotePathForLocalTarget() {
+        let sourceWorkspaceID = UUID()
         let plan = TerminalImageTransferPlanner.planPathInsertion(
             paths: ["/srv/remote image.png"],
-            origin: .remoteSession,
-            target: .local
+            origin: .remoteSession(workspaceID: sourceWorkspaceID),
+            target: .local,
+            targetWorkspaceID: UUID()
         )
 
         #expect(plan == .unavailable(.mismatchedFileExplorerSession))
+    }
+
+    @Test func fileExplorerPathPlannerRejectsPathFromDifferentSSHWorkspace() {
+        let plan = TerminalImageTransferPlanner.planPathInsertion(
+            paths: ["/srv/private/image.png"],
+            origin: .remoteSession(workspaceID: UUID()),
+            target: .remote(.workspaceRemote),
+            targetWorkspaceID: UUID()
+        )
+
+        #expect(plan == .unavailable(.mismatchedFileExplorerSession))
+    }
+
+    @Test func fileExplorerPathPlannerAcceptsPathFromSameSSHWorkspace() {
+        let workspaceID = UUID()
+        let plan = TerminalImageTransferPlanner.planPathInsertion(
+            paths: ["/srv/private/image.png"],
+            origin: .remoteSession(workspaceID: workspaceID),
+            target: .remote(.workspaceRemote),
+            targetWorkspaceID: workspaceID
+        )
+
+        #expect(plan == .insertText("/srv/private/image.png"))
     }
 }
 

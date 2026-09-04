@@ -102,13 +102,17 @@ extension SocketTransport {
     }
 
     /// Whether a refused socket at `path` may be replaced even without a
-    /// reusable lock marker, based on the well-known cmux socket filenames
+    /// reusable lock marker, based on the well-known UniConnect socket filenames
     /// (debug/nightly/staging and their tagged variants).
     func canReplaceUnmarkedRefusedSocket(at path: String) -> Bool {
         let filename = URL(fileURLWithPath: (path as NSString).standardizingPath)
             .lastPathComponent
             .lowercased()
-        let recoverablePrefixes = ["cmux-debug-", "cmux-nightly-", "cmux-staging-"]
+        let recoverablePrefixes = [
+            "uniconnect-debug-",
+            "uniconnect-nightly-",
+            "uniconnect-staging-",
+        ]
         return filename == "uniconnect-debug.sock" ||
             filename == "uniconnect-nightly.sock" ||
             filename == "uniconnect-staging.sock" ||

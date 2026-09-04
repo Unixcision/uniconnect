@@ -205,11 +205,11 @@ export default function SkillsPage() {
         })}
       </p>
       <CodeBlock title={t("installWithVercel")} lang="bash">{`# Install all cmux skills
-npx skills add manaflow-ai/cmux -g -y
+npx skills add Unixcision/uniconnect -g -y
 
 # Or install just diagnostics
-npx skills add manaflow-ai/cmux --skill cmux-diagnostics -g -y`}</CodeBlock>
-      <CodeBlock title={t("installWithSkillsSh")} lang="bash">{`curl -fsSL https://raw.githubusercontent.com/manaflow-ai/cmux/main/skills.sh | bash`}</CodeBlock>
+npx skills add Unixcision/uniconnect --skill cmux-diagnostics -g -y`}</CodeBlock>
+      <CodeBlock title={t("installWithSkillsSh")} lang="bash">{`curl -fsSL https://raw.githubusercontent.com/Unixcision/uniconnect/main/skills.sh | bash`}</CodeBlock>
       <Callout type="info">
         {t.rich("installDestination", {
           code: (chunks) => <code>{chunks}</code>,
@@ -224,7 +224,7 @@ npx skills add manaflow-ai/cmux --skill cmux-diagnostics -g -y`}</CodeBlock>
 ./skills.sh --dest ~/.codex/skills
 ./skills.sh --dry-run`}</CodeBlock>
       <p>{t("pinRefIntro")}</p>
-      <CodeBlock lang="bash">{`curl -fsSL https://raw.githubusercontent.com/manaflow-ai/cmux/main/skills.sh | bash -s -- --ref main`}</CodeBlock>
+      <CodeBlock lang="bash">{`curl -fsSL https://raw.githubusercontent.com/Unixcision/uniconnect/main/skills.sh | bash -s -- --ref main`}</CodeBlock>
 
       <DocsHeading level={2} id="included-title">{t("includedTitle")}</DocsHeading>
       <p>{t("includedIntro")}</p>

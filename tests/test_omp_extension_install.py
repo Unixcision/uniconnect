@@ -299,14 +299,18 @@ def main() -> int:
         home.mkdir()
         shared_agent_dir = root / "shared-agent-dir"
         shared_pi_extension = shared_agent_dir / "extensions" / "cmux-session.ts"
+        shared_omp_extension = shared_agent_dir / "extensions" / "cmux-omp-session.ts"
         shared_pi_extension.parent.mkdir(parents=True)
-        shared_pi_extension.write_text("// cmux-pi-session-extension-marker v1\n", encoding="utf-8")
+        upstream_pi_source = "// cmux-pi-session-extension-marker v1\n"
+        upstream_omp_source = "// cmux-omp-session-extension-marker v1\n"
+        shared_pi_extension.write_text(upstream_pi_source, encoding="utf-8")
+        shared_omp_extension.write_text(upstream_omp_source, encoding="utf-8")
 
         env = os.environ.copy()
         env["HOME"] = str(home)
         # OMP treats PI_CODING_AGENT_DIR as the full agent directory override.
-        # Install the OMP extension there while proving it does not collide with
-        # Pi's different cmux-session.ts filename in the same extensions folder.
+        # Install the UniConnect OMP extension there while proving it does not
+        # collide with upstream cmux's Pi or OMP extension files.
         env["PI_CODING_AGENT_DIR"] = str(shared_agent_dir)
 
         install = subprocess.run(
@@ -324,16 +328,19 @@ def main() -> int:
             print(f"stderr={install.stderr.strip()}")
             return 1
 
-        extension_path = shared_agent_dir / "extensions" / "cmux-omp-session.ts"
+        extension_path = shared_agent_dir / "extensions" / "uniconnect-omp-session.ts"
         if not extension_path.exists():
             print(f"FAIL: expected extension at {extension_path}")
             return 1
         extension_text = extension_path.read_text(encoding="utf-8")
-        if "cmux-omp-session-extension-marker" not in extension_text:
-            print(f"FAIL: expected cmux marker in {extension_path}")
+        if "uniconnect-omp-session-extension-marker" not in extension_text:
+            print(f"FAIL: expected UniConnect marker in {extension_path}")
             return 1
-        if shared_pi_extension.read_text(encoding="utf-8") != "// cmux-pi-session-extension-marker v1\n":
-            print("FAIL: OMP install modified the Pi extension in PI_CODING_AGENT_DIR")
+        if shared_pi_extension.read_text(encoding="utf-8") != upstream_pi_source:
+            print("FAIL: OMP install modified the upstream cmux Pi extension")
+            return 1
+        if shared_omp_extension.read_text(encoding="utf-8") != upstream_omp_source:
+            print("FAIL: OMP install modified the upstream cmux OMP extension")
             return 1
 
         reinstall = subprocess.run(
@@ -500,10 +507,16 @@ if (elapsed > 2000) throw new Error(`handlers blocked for ${elapsed}ms`);
             timeout=20,
         )
         if uninstall.returncode != 0 or extension_path.exists():
-            print("FAIL: omp extension uninstall failed")
+            print("FAIL: OMP UniConnect extension uninstall failed")
             print(f"exit={uninstall.returncode}")
             print(f"stdout={uninstall.stdout.strip()}")
             print(f"stderr={uninstall.stderr.strip()}")
+            return 1
+        if shared_pi_extension.read_text(encoding="utf-8") != upstream_pi_source:
+            print("FAIL: OMP uninstall modified the upstream cmux Pi extension")
+            return 1
+        if shared_omp_extension.read_text(encoding="utf-8") != upstream_omp_source:
+            print("FAIL: OMP uninstall modified the upstream cmux OMP extension")
             return 1
         foreign_path = extension_path
         foreign_path.parent.mkdir(parents=True, exist_ok=True)
@@ -517,7 +530,7 @@ if (elapsed > 2000) throw new Error(`handlers blocked for ${elapsed}ms`);
             timeout=20,
         )
         if uninstall_foreign.returncode != 0 or not foreign_path.exists() or "Refusing to remove" not in uninstall_foreign.stdout:
-            print("FAIL: omp extension uninstall did not preserve non-cmux file")
+            print("FAIL: OMP extension uninstall did not preserve non-UniConnect file")
             print(f"exit={uninstall_foreign.returncode}")
             print(f"stdout={uninstall_foreign.stdout.strip()}")
             print(f"stderr={uninstall_foreign.stderr.strip()}")
@@ -540,7 +553,7 @@ if (elapsed > 2000) throw new Error(`handlers blocked for ${elapsed}ms`);
             print(f"stderr={install_invalid.stderr.strip()}")
             return 1
         install_invalid_output = install_invalid.stdout + install_invalid.stderr
-        if "Failed to read" not in install_invalid_output or "not a cmux extension" in install_invalid_output:
+        if "Failed to read" not in install_invalid_output or "not a UniConnect extension" in install_invalid_output:
             print("FAIL: omp extension install did not report unreadable file distinctly")
             print(f"stdout={install_invalid.stdout.strip()}")
             print(f"stderr={install_invalid.stderr.strip()}")
@@ -560,7 +573,7 @@ if (elapsed > 2000) throw new Error(`handlers blocked for ${elapsed}ms`);
             print(f"stderr={uninstall_invalid.stderr.strip()}")
             return 1
         uninstall_invalid_output = uninstall_invalid.stdout + uninstall_invalid.stderr
-        if "Failed to read" not in uninstall_invalid_output or "not a cmux extension" in uninstall_invalid_output:
+        if "Failed to read" not in uninstall_invalid_output or "not a UniConnect extension" in uninstall_invalid_output:
             print("FAIL: omp extension uninstall did not report unreadable file distinctly")
             print(f"stdout={uninstall_invalid.stdout.strip()}")
             print(f"stderr={uninstall_invalid.stderr.strip()}")
@@ -580,7 +593,7 @@ if (elapsed > 2000) throw new Error(`handlers blocked for ${elapsed}ms`);
             env=config_env,
             timeout=20,
         )
-        config_extension_path = config_override / "agent" / "extensions" / "cmux-omp-session.ts"
+        config_extension_path = config_override / "agent" / "extensions" / "uniconnect-omp-session.ts"
         if config_install.returncode != 0 or not config_extension_path.exists():
             print("FAIL: omp extension install did not respect absolute PI_CONFIG_DIR")
             print(f"exit={config_install.returncode}")
@@ -601,7 +614,7 @@ if (elapsed > 2000) throw new Error(`handlers blocked for ${elapsed}ms`);
             print(f"stdout={config_uninstall.stdout.strip()}")
             print(f"stderr={config_uninstall.stderr.strip()}")
             return 1
-    print("PASS: generated OMP extension installs, emits complete cmux hook payloads, and persists hook sessions")
+    print("PASS: generated OMP UniConnect extension coexists with upstream cmux, emits hook payloads, and persists sessions")
     return 0
 
 

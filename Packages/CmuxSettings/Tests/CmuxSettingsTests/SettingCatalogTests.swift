@@ -4,17 +4,49 @@ import Testing
 
 @Suite("SettingCatalog")
 struct SettingCatalogTests {
+    @Test func appLanguagesCoverEveryShippedCatalogAndPreserveVietnameseCompatibility() {
+        let shipped: Set<AppLanguage> = [
+            .en, .ar, .bs, .zhHans, .zhHant, .da, .de, .es, .fr, .it,
+            .ja, .km, .ko, .nb, .pl, .ptBR, .ru, .th, .tr, .uk,
+        ]
+
+        #expect(shipped.count == 20)
+        #expect(shipped.isSubset(of: Set(AppLanguage.allCases)))
+        #expect(AppLanguage(rawValue: "vi") == .vi)
+    }
+
     @Test func eachKeyHasUniqueId() {
         let ids = SettingCatalog().all.map(\.id)
         #expect(ids.count == Set(ids).count)
     }
 
-    @Test func userDefaultsStorageKeysAreUnique() {
+    @Test func userDefaultsStorageKeysAreUniqueOrExplicitAliases() {
         let keys = SettingCatalog().all.compactMap { entry -> String? in
             if case let .userDefaults(key, _, _) = entry.kind { return key }
             return nil
         }
-        #expect(keys.count == Set(keys).count)
+        let duplicateGroups = Dictionary(grouping: keys, by: { $0 })
+            .filter { $0.value.count > 1 }
+        let expectedAliases: Set<String> = [
+            "ampHooksEnabled",
+            "claudeCodeCustomClaudePath",
+            "claudeCodeHooksEnabled",
+            "cursorHooksEnabled",
+            "geminiHooksEnabled",
+            "kiroHooksEnabled",
+            "kiroNotificationLevel",
+            "ripgrepCustomBinaryPath",
+            "sidebarActiveTabIndicatorStyle",
+            "sidebarNotificationBadgeColorHex",
+            "sidebarSelectionColorHex",
+            "suppressSubagentNotifications",
+        ]
+
+        // The automation/integrations and sidebar/workspace-colors namespaces are
+        // intentional API aliases backed by one UserDefaults value. Everything
+        // else must retain one-to-one storage ownership.
+        #expect(Set(duplicateGroups.keys) == expectedAliases)
+        #expect(duplicateGroups.values.allSatisfy { $0.count == 2 })
     }
 
     @Test func jsonBackedKeysUseTheirIdAsPath() {

@@ -80,7 +80,7 @@ import Testing
       "transport": "tailscale"
     }
     """
-    let url = try #require(URL(string: "cmux-ios://pair?v=1&payload=\(base64URLEncode(Data(json.utf8)))"))
+    let url = try #require(URL(string: "uniconnect://pair?v=1&payload=\(base64URLEncode(Data(json.utf8)))"))
 
     do {
         _ = try MobileSyncPairingPayload.decodeURL(
@@ -141,7 +141,7 @@ import Testing
       "transport": "tailscale"
     }
     """
-    let url = try #require(URL(string: "cmux-ios://pair?v=1&payload=\(base64URLEncode(Data(json.utf8)))"))
+    let url = try #require(URL(string: "uniconnect://pair?v=1&payload=\(base64URLEncode(Data(json.utf8)))"))
 
     let decoded = try MobileSyncPairingPayload.decodeURL(
         url,

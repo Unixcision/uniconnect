@@ -52,7 +52,7 @@ public struct ClaudeUpdateOutputParser: Sendable {
     ///   - command: Captured output and process status from the controlled update command.
     ///   - before: The version read before any session exits.
     ///   - after: The version read after the update command.
-    /// - Returns: A deterministic host-level assessment.
+    /// - Returns: A deterministic installation-level assessment.
     public func assess(
         command: ClaudeUpdateCommandResult,
         before: ClaudeVersion?,

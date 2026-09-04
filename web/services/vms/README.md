@@ -257,6 +257,12 @@ bun run cloud-vm:stress -- staging --count 8 --concurrency 4 --provider default
 bun run cloud-vm:stress -- production --count 12 --concurrency 4 --provider default
 ```
 
+The operational scripts do not embed or fall back to upstream cmux Vercel metadata. Configure
+`UNICONNECT_VERCEL_ORG_ID`, `UNICONNECT_VERCEL_ORG_SLUG`, and the three target-specific variables
+ending in `_PROJECT_ID`, `_PROJECT_NAME`, and `_URL` under the
+`UNICONNECT_VERCEL_STAGING_*` / `UNICONNECT_VERCEL_PRODUCTION_*` prefixes. Destructive smoke and
+stress users additionally require `UNICONNECT_STACK_TEST_EMAIL_DOMAIN`.
+
 ## GitHub operations
 
 Cloud VM migrations and smoke checks are exposed as manual GitHub Actions:
@@ -288,7 +294,7 @@ Use `CMUX_PORT` to run multiple isolated web and database environments on one ma
 CMUX_PORT=10180 bun dev
 ```
 
-`bun dev` sources `~/.secrets/cmuxterm-dev.env` (falling back to the legacy secret files), derives the local database URL from `CMUX_PORT`, starts this worktree's Docker Postgres, applies Drizzle migrations, then starts Next.js. When it exits or is interrupted, it stops the matching Docker container and network while preserving the Postgres volume.
+`bun dev` sources `~/.secrets/uniconnect.env` and `~/.secrets/uniconnect-dev.env`, derives the local database URL from `CMUX_PORT`, starts this worktree's Docker Postgres, applies Drizzle migrations, then starts Next.js. It deliberately does not read cmux secret files. When it exits or is interrupted, it stops the matching Docker container and network while preserving the Postgres volume.
 
 The dev Postgres port is `CMUX_PORT + 10000`, so `CMUX_PORT=10180` maps to `localhost:20180`. `bun db:test` starts a separate test DB on `CMUX_PORT + 30000`, applies migrations twice, and runs behavior tests against a real Postgres container.
 

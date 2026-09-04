@@ -39,7 +39,7 @@ final class CmuxAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
-        NSLog("cmux.push registration failed: %@", error.localizedDescription)
+        NSLog("uniconnect.push registration failed: %@", error.localizedDescription)
         let nsError = error as NSError
         Task { @MainActor in
             analytics?.capture("ios_push_token_registration_failed", [
@@ -54,7 +54,7 @@ final class CmuxAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        let ids = Self.cmuxIDs(from: notification.request.content.userInfo)
+        let ids = Self.uniconnectIDs(from: notification.request.content.userInfo)
         let present = await pushCoordinator?.shouldPresentInForeground(
             workspaceId: ids.workspaceId,
             surfaceId: ids.surfaceId
@@ -66,7 +66,7 @@ final class CmuxAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
-        let ids = Self.cmuxIDs(from: response.notification.request.content.userInfo)
+        let ids = Self.uniconnectIDs(from: response.notification.request.content.userInfo)
         let appState = await UIApplication.shared.applicationState
         await analytics?.capture("ios_push_tapped", [
             "has_workspace_id": .bool(ids.workspaceId != nil),
@@ -89,10 +89,12 @@ final class CmuxAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
         }
     }
 
-    private nonisolated static func cmuxIDs(
+    private nonisolated static func uniconnectIDs(
         from userInfo: [AnyHashable: Any]
     ) -> (workspaceId: String?, surfaceId: String?) {
-        guard let cmux = userInfo["cmux"] as? [String: Any] else { return (nil, nil) }
-        return (cmux["workspaceId"] as? String, cmux["surfaceId"] as? String)
+        let payload = userInfo["uniconnect"] as? [String: Any]
+            ?? userInfo["cmux"] as? [String: Any]
+        guard let payload else { return (nil, nil) }
+        return (payload["workspaceId"] as? String, payload["surfaceId"] as? String)
     }
 }

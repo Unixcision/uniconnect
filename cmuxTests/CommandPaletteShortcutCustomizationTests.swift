@@ -31,9 +31,17 @@ final class CommandPaletteShortcutCustomizationTests: XCTestCase {
             fallbackPath: nil,
             startWatching: false
         )
+        #if DEBUG
+        KeyboardShortcutRecorderActivity.resetForTesting()
+        AppDelegate.shared?.debugResetShortcutRoutingStateForTesting()
+        #endif
     }
 
     override func tearDown() {
+        #if DEBUG
+        KeyboardShortcutRecorderActivity.resetForTesting()
+        AppDelegate.shared?.debugResetShortcutRoutingStateForTesting()
+        #endif
         restoreDefault(savedCommandPaletteNext, forKey: KeyboardShortcutSettings.Action.commandPaletteNext.defaultsKey)
         restoreDefault(savedCommandPalettePrevious, forKey: KeyboardShortcutSettings.Action.commandPalettePrevious.defaultsKey)
         savedCommandPaletteNext = nil
@@ -51,6 +59,54 @@ final class CommandPaletteShortcutCustomizationTests: XCTestCase {
         } else {
             UserDefaults.standard.removeObject(forKey: key)
         }
+    }
+
+    func testUniConnectPaletteKeepsProductActionsAndFiltersInheritedCmuxSurfaces() {
+        let kept = [
+            "palette.newWorkspace",
+            "palette.newTerminalTab",
+            "palette.renameWorkspace",
+            "palette.renameTab",
+            "palette.terminalSplitRight",
+            "palette.uniConnect.lock",
+            "palette.uniConnect.persistNow",
+            "palette.uniConnect.restoreBackup",
+            "palette.uniConnect.reconnectDropped",
+            "palette.uniConnect.updateClaudeWindow",
+            "palette.uniConnect.saveSeedTemplate",
+        ]
+        let filtered = [
+            "palette.newWindow",
+            "palette.openFolder",
+            "palette.openFolderInVSCodeInline",
+            "palette.newBrowserTab",
+            "palette.browserReload",
+            "palette.showRightSidebarFiles",
+            "palette.openFilesPane",
+            "palette.openDiffViewer",
+            "palette.openTaskManager",
+            "palette.checkForUpdates",
+            "palette.applyUpdateIfAvailable",
+            "palette.attemptUpdate",
+            "palette.disableBrowser",
+            "palette.makeDefaultTerminal",
+            "palette.moveTabToNewWorkspace",
+            "palette.forkAgentConversationNewWorkspace",
+            "palette.terminalSplitBrowserRight",
+            "palette.terminalOpenDirectory.vscode",
+            "palette.copyIdentifiers",
+            "palette.toggleSetting.browserOpenAuthLinksInDefaultBrowser",
+            "palette.extensionSidebar.builtin",
+            "palette.vscodeServeWebRestart",
+        ]
+
+        XCTAssertTrue(kept.allSatisfy { ContentView.uniConnectAllowsCommandPaletteContribution($0) })
+        XCTAssertTrue(filtered.allSatisfy { !ContentView.uniConnectAllowsCommandPaletteContribution($0) })
+        XCTAssertEqual(ContentView.commandPaletteShortcutAction(forCommandID: "palette.uniConnect.lock"), .lockApp)
+        XCTAssertEqual(ContentView.commandPaletteShortcutAction(forCommandID: "palette.uniConnect.persistNow"), .persistNow)
+        XCTAssertNil(ContentView.commandPaletteShortcutAction(forCommandID: "palette.uniConnect.restoreBackup"))
+        XCTAssertEqual(ContentView.commandPaletteShortcutAction(forCommandID: "palette.uniConnect.reconnectDropped"), .reconnectDroppedWindows)
+        XCTAssertEqual(ContentView.commandPaletteShortcutAction(forCommandID: "palette.uniConnect.updateClaudeWindow"), .updateClaudeInWindow)
     }
 
     func testFieldEditorMoveCommandHonorsClearedCommandPalettePreviousShortcut() {
@@ -217,19 +273,6 @@ final class CommandPaletteShortcutCustomizationTests: XCTestCase {
                 KeyboardShortcutSettings.setShortcut(remappedPrevious, for: .commandPalettePrevious)
                 XCTAssertEqual(KeyboardShortcutSettings.shortcutIfBound(for: .commandPalettePrevious), remappedPrevious)
 
-                let controlPExpectation = expectation(
-                    description: "Remapped Ctrl+P should not route command palette move-selection"
-                )
-                controlPExpectation.isInverted = true
-                let controlPToken = NotificationCenter.default.addObserver(
-                    forName: .commandPaletteMoveSelection,
-                    object: nil,
-                    queue: nil
-                ) { _ in
-                    controlPExpectation.fulfill()
-                }
-                defer { NotificationCenter.default.removeObserver(controlPToken) }
-
                 guard let controlPEvent = makeKeyDownEvent(
                     key: "\u{10}",
                     modifiers: [.control],
@@ -239,6 +282,14 @@ final class CommandPaletteShortcutCustomizationTests: XCTestCase {
                     XCTFail("Failed to construct Ctrl+P event")
                     return
                 }
+                var observedControlP = false
+                let controlPToken = NotificationCenter.default.addObserver(
+                    forName: .commandPaletteMoveSelection,
+                    object: window,
+                    queue: nil
+                ) { _ in
+                    observedControlP = true
+                }
 
                 #if DEBUG
                 XCTAssertFalse(appDelegate.debugHandleCustomShortcut(event: controlPEvent))
@@ -246,19 +297,16 @@ final class CommandPaletteShortcutCustomizationTests: XCTestCase {
                 XCTFail("debugHandleCustomShortcut is only available in DEBUG")
                 #endif
 
-                wait(for: [controlPExpectation], timeout: 0.15)
+                NotificationCenter.default.removeObserver(controlPToken)
+                XCTAssertFalse(observedControlP)
 
-                let controlUExpectation = expectation(
-                    description: "Remapped Ctrl+U should route command palette previous selection"
-                )
                 var observedDelta: Int?
                 let controlUToken = NotificationCenter.default.addObserver(
                     forName: .commandPaletteMoveSelection,
-                    object: nil,
+                    object: window,
                     queue: nil
                 ) { notification in
                     observedDelta = notification.userInfo?["delta"] as? Int
-                    controlUExpectation.fulfill()
                 }
                 defer { NotificationCenter.default.removeObserver(controlUToken) }
 
@@ -278,7 +326,6 @@ final class CommandPaletteShortcutCustomizationTests: XCTestCase {
                 XCTFail("debugHandleCustomShortcut is only available in DEBUG")
                 #endif
 
-                wait(for: [controlUExpectation], timeout: 1.0)
                 XCTAssertEqual(observedDelta, -1)
             }
         }
@@ -295,16 +342,13 @@ final class CommandPaletteShortcutCustomizationTests: XCTestCase {
                 KeyboardShortcutSettings.unbindShortcut(for: .commandPalettePrevious)
                 XCTAssertNil(KeyboardShortcutSettings.shortcutIfBound(for: .commandPalettePrevious))
 
-                let moveExpectation = expectation(
-                    description: "Unbound Ctrl+P should not route command palette move-selection"
-                )
-                moveExpectation.isInverted = true
+                var observedMove = false
                 let moveToken = NotificationCenter.default.addObserver(
                     forName: .commandPaletteMoveSelection,
-                    object: nil,
+                    object: window,
                     queue: nil
                 ) { _ in
-                    moveExpectation.fulfill()
+                    observedMove = true
                 }
                 defer { NotificationCenter.default.removeObserver(moveToken) }
 
@@ -327,7 +371,7 @@ final class CommandPaletteShortcutCustomizationTests: XCTestCase {
                 XCTFail("debugHandleCustomShortcut is only available in DEBUG")
                 #endif
 
-                wait(for: [moveExpectation], timeout: 0.15)
+                XCTAssertFalse(observedMove)
             }
         }
     }
@@ -344,14 +388,12 @@ final class CommandPaletteShortcutCustomizationTests: XCTestCase {
                     StoredShortcut(key: "b", command: false, shift: false, option: false, control: true, chordKey: "n"),
                     for: .commandPaletteNext
                 )
-                let moveExpectation = expectation(description: "Expected chorded next shortcut to move selection")
                 var observedDeltas: [Int] = []
                 var observedWindow: NSWindow?
-                let moveToken = NotificationCenter.default.addObserver(forName: .commandPaletteMoveSelection, object: nil, queue: nil) { notification in
+                let moveToken = NotificationCenter.default.addObserver(forName: .commandPaletteMoveSelection, object: window, queue: nil) { notification in
                     observedWindow = notification.object as? NSWindow
                     if let delta = notification.userInfo?["delta"] as? Int {
                         observedDeltas.append(delta)
-                        moveExpectation.fulfill()
                     }
                 }
                 defer { NotificationCenter.default.removeObserver(moveToken) }
@@ -370,7 +412,6 @@ final class CommandPaletteShortcutCustomizationTests: XCTestCase {
                 XCTFail("debugHandleCustomShortcut is only available in DEBUG")
                 #endif
 
-                wait(for: [moveExpectation], timeout: 1.0)
                 XCTAssertEqual(observedWindow?.windowNumber, window.windowNumber)
                 XCTAssertEqual(observedDeltas, [1])
             }
@@ -486,9 +527,12 @@ final class CommandPaletteShortcutCustomizationTests: XCTestCase {
             let fieldEditor = CommandPaletteShortcutFieldEditor(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
             fieldEditor.isFieldEditor = true
             overlayContainer.addSubview(fieldEditor)
+            appDelegate.setCommandPaletteVisible(true, for: window)
+            window.displayIfNeeded()
             XCTAssertTrue(window.makeFirstResponder(fieldEditor))
 
             defer {
+                appDelegate.setCommandPaletteVisible(false, for: window)
                 fieldEditor.removeFromSuperview()
             }
 
@@ -500,20 +544,44 @@ final class CommandPaletteShortcutCustomizationTests: XCTestCase {
         appDelegate: AppDelegate,
         _ body: (NSWindow, NSView) -> Void
     ) {
-        let windowId = appDelegate.createMainWindow()
-        defer { closeWindow(withId: windowId) }
-
-        guard let window = window(withId: windowId),
-              let contentView = window.contentView else {
-            XCTFail("Expected test window")
-            return
+        let previousTabManager = appDelegate.tabManager
+        let windowId = UUID()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.identifier = NSUserInterfaceItemIdentifier("cmux.main.\(windowId.uuidString)")
+        let tabManager = TabManager(autoWelcomeIfNeeded: false)
+        appDelegate.registerMainWindow(
+            window,
+            windowId: windowId,
+            tabManager: tabManager,
+            sidebarState: SidebarState(),
+            sidebarSelectionState: SidebarSelectionState()
+        )
+        defer {
+            window.orderOut(nil)
+            window.close()
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+            appDelegate.tabManager = previousTabManager
         }
 
-        let overlayContainer = NSView(frame: contentView.bounds)
+        window.makeKeyAndOrderFront(nil)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        guard let contentView = window.contentView else {
+            XCTFail("Expected test window content view")
+            return
+        }
+        let overlayHost = contentView.superview ?? contentView
+
+        let overlayContainer = NSView(frame: overlayHost.bounds)
         overlayContainer.identifier = commandPaletteOverlayContainerIdentifier
         overlayContainer.alphaValue = 1
         overlayContainer.isHidden = false
-        contentView.addSubview(overlayContainer)
+        overlayHost.addSubview(overlayContainer)
 
         defer {
             appDelegate.setCommandPaletteVisible(false, for: window)
@@ -563,16 +631,6 @@ final class CommandPaletteShortcutCustomizationTests: XCTestCase {
         )
     }
 
-    private func window(withId windowId: UUID) -> NSWindow? {
-        let identifier = "cmux.main.\(windowId.uuidString)"
-        return NSApp.windows.first(where: { $0.identifier?.rawValue == identifier })
-    }
-
-    private func closeWindow(withId windowId: UUID) {
-        guard let window = window(withId: windowId) else { return }
-        window.performClose(nil)
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-    }
 }
 
 private final class CommandPaletteShortcutFieldEditor: NSTextView {

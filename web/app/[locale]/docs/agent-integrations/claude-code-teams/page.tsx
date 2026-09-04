@@ -72,8 +72,8 @@ cmux claude-teams --model sonnet`}</CodeBlock>
           </tr>
         </thead>
         <tbody>
-          <tr><td><code>~/.cmuxterm/claude-teams-bin/</code></td><td>{t("dirShim")}</td></tr>
-          <tr><td><code>~/.cmuxterm/tmux-compat-store.json</code></td><td>{t("dirStore")}</td></tr>
+          <tr><td><code>~/.uniconnect/claude-teams-bin/</code></td><td>{t("dirShim")}</td></tr>
+          <tr><td><code>~/.uniconnect/tmux-compat-store.json</code></td><td>{t("dirStore")}</td></tr>
         </tbody>
       </table>
 

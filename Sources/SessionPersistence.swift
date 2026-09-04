@@ -22,9 +22,10 @@ enum SessionPersistencePolicy {
     static let minimumWindowWidth: Double = 300
     static let minimumWindowHeight: Double = 200
     static let autosaveInterval: TimeInterval = 8.0
-    static let maxWindowsPerSnapshot: Int = 12
-    static let maxWorkspacesPerWindow: Int = 128
-    static let maxPanelsPerWorkspace: Int = 512
+    // Recovery is lossless: a large session must never silently drop the tail.
+    static let maxWindowsPerSnapshot: Int = .max
+    static let maxWorkspacesPerWindow: Int = .max
+    static let maxPanelsPerWorkspace: Int = .max
     static let maxScrollbackLinesPerTerminal: Int = 4000
     static let maxScrollbackCharactersPerTerminal: Int = 400_000
 
@@ -226,6 +227,8 @@ struct SessionSidebarSnapshot: Codable, Sendable {
     var isVisible: Bool
     var selection: SessionSidebarSelection
     var width: Double?
+    /// Window-scoped UniConnect rail mode. Nil keeps legacy snapshots compatible.
+    var uniConnectCompact: Bool? = nil
 }
 
 struct SessionStatusEntrySnapshot: Codable, Sendable {
@@ -698,7 +701,7 @@ enum SurfaceResumeApprovalSignature {
 }
 
 enum SurfaceResumeApprovalStore {
-    static let didChangeNotification = Notification.Name("cmux.surfaceResumeApprovalsDidChange")
+    static let didChangeNotification = Notification.Name("uniconnect.surfaceResumeApprovalsDidChange")
     private static let legacyFileName = "resume-commands.json"
     private static let secretFileName = ".surface-resume-approval-secret"
     private static let settingsTerminalSectionKey = "terminal"
@@ -1392,6 +1395,8 @@ struct SessionTerminalPanelSnapshot: Codable, Sendable {
     var uniConnectTmuxSession: String? = nil
     /// UniConnect: Claude Code session id this window always resumes (local workspaces).
     var uniConnectClaudeSession: String? = nil
+    /// UniConnect: logical local-window identity, runtime mode, and non-destructive agent history.
+    var uniConnectLocalWindow: UniConnectLocalWindowRecord? = nil
 
     init(
         workingDirectory: String? = nil,
@@ -1405,10 +1410,12 @@ struct SessionTerminalPanelSnapshot: Codable, Sendable {
         remotePTYSessionID: String? = nil,
         wasAgentRunning: Bool? = nil,
         uniConnectTmuxSession: String? = nil,
-        uniConnectClaudeSession: String? = nil
+        uniConnectClaudeSession: String? = nil,
+        uniConnectLocalWindow: UniConnectLocalWindowRecord? = nil
     ) {
         self.uniConnectTmuxSession = uniConnectTmuxSession
         self.uniConnectClaudeSession = uniConnectClaudeSession
+        self.uniConnectLocalWindow = uniConnectLocalWindow
         self.workingDirectory = workingDirectory
         self.scrollback = scrollback
         self.agent = agent
@@ -1793,9 +1800,8 @@ indirect enum SessionWorkspaceLayoutSnapshot: Codable, Sendable {
 }
 
 struct SessionWorkspaceSnapshot: Codable, Sendable {
-    /// Original workspace ID captured when the snapshot comes from a live workspace.
-    /// Restore uses this to remap closed-panel history onto the new workspace IDs;
-    /// legacy or externally-created snapshots can leave it nil.
+    /// Stable workspace ID captured from the live graph and reused during restore.
+    /// Legacy or externally-created snapshots can leave it nil to generate a new ID.
     var workspaceId: UUID? = nil
     var processTitle: String
     var customTitle: String?
@@ -1824,10 +1830,8 @@ struct SessionWorkspaceGroupSnapshot: Codable, Sendable, Equatable {
     var id: UUID
     var name: String
     var isCollapsed: Bool
-    /// The workspace whose close dissolves the group. Only meaningful within
-    /// a single app run; on restore, each workspace gets a fresh UUID. The
-    /// loader prefers `anchorMemberIndex` (restore-stable) and treats this
-    /// field as a hint for in-process round-trips.
+    /// The workspace whose close dissolves the group. Current restores preserve
+    /// workspace UUIDs; `anchorMemberIndex` remains the legacy-compatible fallback.
     var anchorWorkspaceId: UUID? = nil
     /// 0-based index of the anchor among the group's members in tab order.
     /// Restore-stable: tab order is preserved across restore, so the same
@@ -1873,9 +1877,14 @@ struct AppSessionSnapshot: Codable, Sendable {
 }
 
 enum SessionPersistenceStore {
+    static let maximumSSHHostLabelUTF8Bytes = 512
+
     static func load(fileURL: URL? = nil) -> AppSessionSnapshot? {
         guard let fileURL = fileURL ?? defaultSnapshotFileURL() else { return nil }
-        guard let data = try? Data(contentsOf: fileURL) else { return nil }
+        guard let data = try? UniConnectAtomicFileWriter.readPrivateFile(
+            at: fileURL,
+            repairPermissions: true
+        ) else { return nil }
         let decoder = JSONDecoder()
         guard let snapshot = try? decoder.decode(AppSessionSnapshot.self, from: data) else { return nil }
         guard snapshot.version == SessionSnapshotSchema.currentVersion else { return nil }
@@ -1888,22 +1897,217 @@ enum SessionPersistenceStore {
         guard let fileURL = fileURL ?? defaultSnapshotFileURL() else { return false }
         let directory = fileURL.deletingLastPathComponent()
         do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
-            let data = try encodedSnapshotData(snapshot)
-            if let existingData = try? Data(contentsOf: fileURL), existingData == data {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: NSNumber(value: 0o700)]
+            )
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: NSNumber(value: 0o700)],
+                ofItemAtPath: directory.path
+            )
+            let data = try encodedSnapshotDataForPersistence(snapshot)
+            if let existingData = try? UniConnectAtomicFileWriter.readPrivateFile(
+                at: fileURL,
+                repairPermissions: true
+            ), existingData == data {
                 return true
             }
-            try data.write(to: fileURL, options: .atomic)
+            try UniConnectAtomicFileWriter.write(data, to: fileURL)
             return true
         } catch {
             return false
         }
     }
 
-    private static func encodedSnapshotData(_ snapshot: AppSessionSnapshot) throws -> Data {
+    static func encodedSnapshotDataForPersistence(_ snapshot: AppSessionSnapshot) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        return try encoder.encode(snapshot)
+        return try encoder.encode(sanitizedForPersistence(snapshot))
+    }
+
+    /// Removes secrets and executable connection material from the readable session JSON.
+    /// SSH recovery retains only the opaque vault UUID/tmux binding; UniConnect local
+    /// recovery retains agent identity through the secret-free local-window record.
+    static func sanitizedForPersistence(_ snapshot: AppSessionSnapshot) -> AppSessionSnapshot {
+        var sanitized = snapshot
+        for windowIndex in sanitized.windows.indices {
+            for workspaceIndex in sanitized.windows[windowIndex].tabManager.workspaces.indices {
+                let workspace = sanitized.windows[windowIndex]
+                    .tabManager.workspaces[workspaceIndex]
+                sanitized.windows[windowIndex]
+                    .tabManager.workspaces[workspaceIndex] = sanitizedWorkspaceForPersistence(
+                        workspace,
+                        fallbackCreatedAt: sanitized.createdAt
+                    )
+            }
+        }
+        return sanitized
+    }
+
+    /// Shared sanitizer used by live recovery and recently-closed history persistence.
+    static func sanitizedWorkspaceForPersistence(
+        _ workspace: SessionWorkspaceSnapshot,
+        fallbackCreatedAt: TimeInterval
+    ) -> SessionWorkspaceSnapshot {
+        guard let unsafeProfile = workspace.uniConnect else { return workspace }
+        var sanitized = workspace
+        let profile = sanitizedProfileForPersistence(
+            unsafeProfile,
+            localRootCandidate: workspace.currentDirectory
+        )
+        if profile.isSSH {
+            sanitized.remote = nil
+            sanitized.uniConnect = profile
+            // Terminal cwd telemetry inside an SSH/tmux window describes the remote
+            // filesystem. Never feed it back to Ghostty as a local launch directory
+            // when the credential is temporarily unavailable during recovery.
+            sanitized.currentDirectory = FileManager.default.homeDirectoryForCurrentUser.path
+            sanitized.panels = sanitized.panels.map {
+                sanitizedPanelForPersistence(
+                    $0,
+                    profile: profile,
+                    authoritativeLocalRoot: nil,
+                    fallbackCreatedAt: fallbackCreatedAt
+                )
+            }
+            return sanitized
+        }
+
+        let root = profile.localRoot ?? UniConnectLocalWindowRecord(boxRoot: "~").boxRoot
+        sanitized.uniConnect = profile
+        sanitized.currentDirectory = UniConnectLocalWindowRecord.validatedWorkingDirectory(
+            sanitized.currentDirectory,
+            within: root
+        ) ?? root
+        sanitized.panels = sanitized.panels.map {
+            sanitizedPanelForPersistence(
+                $0,
+                profile: profile,
+                authoritativeLocalRoot: root,
+                fallbackCreatedAt: fallbackCreatedAt
+            )
+        }
+        return sanitized
+    }
+
+    /// Reduces a UniConnect profile to transport-appropriate, non-executable recovery data.
+    static func sanitizedProfileForPersistence(
+        _ profile: UniConnectWorkspaceProfile,
+        localRootCandidate: String?
+    ) -> UniConnectWorkspaceProfile {
+        var sanitized = profile
+        switch sanitized.kind {
+        case .ssh:
+            sanitized.hostLabel = sanitizedSSHHostLabel(sanitized.hostLabel)
+            sanitized.localRoot = nil
+        case .local:
+            sanitized.credentialId = nil
+            sanitized.hostLabel = nil
+            sanitized.tmuxReady = false
+            sanitized.localRoot = sanitized.localRoot.flatMap { candidate in
+                UniConnectLocalWindowRecord.validatedBoxRoot(candidate)
+            }
+                ?? localRootCandidate.flatMap { candidate in
+                    UniConnectLocalWindowRecord.validatedBoxRoot(candidate)
+                }
+                ?? UniConnectLocalWindowRecord(boxRoot: "~").boxRoot
+        }
+        return sanitized
+    }
+
+    /// Applies the same transport policy to an isolated panel in closed-item history.
+    static func sanitizedPanelForPersistence(
+        _ panel: SessionPanelSnapshot,
+        profile: UniConnectWorkspaceProfile,
+        authoritativeLocalRoot: String?,
+        fallbackCreatedAt: TimeInterval
+    ) -> SessionPanelSnapshot {
+        guard var terminal = panel.terminal else { return panel }
+        var sanitized = panel
+        if profile.isSSH {
+            terminal.scrollback = nil
+            terminal.agent = nil
+            terminal.tmuxStartCommand = nil
+            terminal.resumeBinding = nil
+            terminal.textBoxDraft = nil
+            terminal.uniConnectLocalWindow = nil
+            terminal.workingDirectory = nil
+            sanitized.directory = nil
+            sanitized.terminal = terminal
+            return sanitized
+        }
+
+        let root = authoritativeLocalRoot.flatMap { candidate in
+            UniConnectLocalWindowRecord.validatedBoxRoot(candidate)
+        }
+            ?? terminal.uniConnectLocalWindow?.boxRoot
+            ?? terminal.workingDirectory
+            ?? panel.directory
+            ?? "~"
+        let workingDirectory = [
+            terminal.uniConnectLocalWindow?.workingDirectory,
+            terminal.workingDirectory,
+            panel.directory,
+            root,
+        ].compactMap { candidate in
+            candidate.flatMap {
+                UniConnectLocalWindowRecord.validatedWorkingDirectory($0, within: root)
+            }
+        }.first ?? root
+        var localWindow = terminal.uniConnectLocalWindow
+            ?? UniConnectLocalWindowRecord.migratingLegacy(
+                id: panel.id,
+                visibleName: panel.customTitle ?? panel.title,
+                boxRoot: root,
+                workingDirectory: workingDirectory,
+                agent: terminal.agent,
+                claudeSession: terminal.uniConnectClaudeSession,
+                wasAgentRunning: terminal.wasAgentRunning,
+                timestamp: profile.createdAt ?? fallbackCreatedAt
+            )
+        _ = localWindow.reconcileIdentity(
+            visibleName: panel.customTitle ?? panel.title,
+            boxRoot: root,
+            workingDirectory: workingDirectory,
+            at: localWindow.updatedAt
+        )
+        if let agent = terminal.agent {
+            _ = localWindow.record(agent, at: localWindow.updatedAt)
+            if terminal.wasAgentRunning == false {
+                _ = localWindow.transitionToShell(at: localWindow.updatedAt)
+            }
+        }
+
+        let emptyRegistry = CmuxVaultAgentRegistry(registrations: [])
+        terminal.workingDirectory = localWindow.workingDirectory
+        terminal.agent = localWindow.latestRestorableSnapshot(registry: emptyRegistry)
+        terminal.wasAgentRunning = localWindow.runtimeState == .agent
+        terminal.uniConnectClaudeSession = localWindow.legacyClaudeSession
+        terminal.uniConnectLocalWindow = localWindow
+        sanitized.directory = localWindow.workingDirectory
+        sanitized.terminal = terminal
+        return sanitized
+    }
+
+    private static func sanitizedSSHHostLabel(_ label: String?) -> String? {
+        guard let rawLabel = label,
+              rawLabel.utf8.count <= maximumSSHHostLabelUTF8Bytes,
+              !rawLabel.unicodeScalars.contains(where: {
+                  CharacterSet.controlCharacters.contains($0)
+              }) else {
+            return nil
+        }
+        let label = rawLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard
+              !label.isEmpty,
+              label.range(of: "sshpass", options: .caseInsensitive) == nil,
+              !label.contains(" "),
+              !label.contains("/"),
+              !label.contains("\\") else {
+            return nil
+        }
+        return label
     }
 
     static func removeSnapshot(fileURL: URL? = nil) {

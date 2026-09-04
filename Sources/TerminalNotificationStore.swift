@@ -41,12 +41,12 @@ enum NotificationSoundSettings {
     static let customFileValue = "custom_file"
     static let customFilePathKey = "notificationSoundCustomFilePath"
     static let defaultCustomFilePath = ""
-    private static let stagedCustomSoundBaseName = "cmux-custom-notification-sound"
+    private static let stagedCustomSoundBaseName = "uniconnect-custom-notification-sound"
     private static let customSoundPreparationQueue = DispatchQueue(
         label: "com.unixcision.uniconnect.notification-sound-preparation",
         qos: .utility
     )
-    private static let systemSoundBaseName = "cmux-system-notification-sound"
+    private static let systemSoundBaseName = "uniconnect-system-notification-sound"
     private static let systemSoundDirectoryURL = URL(fileURLWithPath: "/System/Library/Sounds", isDirectory: true)
     private static let pendingCustomSoundPreparationLock = NSLock()
     private static var pendingCustomSoundPreparationPaths: Set<String> = []
@@ -619,9 +619,9 @@ enum NotificationSoundSettings {
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
             process.arguments = ["-c", command]
             var env = ProcessInfo.processInfo.environment
-            env["CMUX_NOTIFICATION_TITLE"] = title
-            env["CMUX_NOTIFICATION_SUBTITLE"] = subtitle
-            env["CMUX_NOTIFICATION_BODY"] = body
+            env["UNICONNECT_NOTIFICATION_TITLE"] = title
+            env["UNICONNECT_NOTIFICATION_SUBTITLE"] = subtitle
+            env["UNICONNECT_NOTIFICATION_BODY"] = body
             process.environment = env
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
@@ -743,8 +743,8 @@ enum NotificationAuthorizationState: Equatable {
 enum TerminalNotificationClickAction: Codable, Hashable, Sendable {
     case revealInFinder(path: String)
 
-    private static let kindUserInfoKey = "cmuxClickAction"
-    private static let revealInFinderPathUserInfoKey = "cmuxRevealInFinderPath"
+    private static let kindUserInfoKey = "uniconnectClickAction"
+    private static let revealInFinderPathUserInfoKey = "uniconnectRevealInFinderPath"
     private static let revealInFinderKind = "revealInFinder"
 
     var userInfo: [String: String] {
@@ -1591,7 +1591,7 @@ final class TerminalNotificationStore: ObservableObject {
             // Mirror to the user's iPhone (opt-in, off by default). Only on the
             // desktop-delivery path so it matches what the Mac actually shows;
             // suppressed/focused notifications are not forwarded.
-            if effects.desktop {
+            if effects.desktop, AuthEnvironment.hostedServices != nil {
                 PhonePushClient.shared.forward(notification)
             }
         }
@@ -1624,7 +1624,7 @@ final class TerminalNotificationStore: ObservableObject {
             )
             let format = String(
                 localized: "notificationHook.failure.body",
-                defaultValue: "cmux used default notification behavior because '%@' failed."
+                defaultValue: "UniConnect used default notification behavior because '%@' failed."
             )
             let content = UNMutableNotificationContent()
             content.title = title
@@ -1632,7 +1632,7 @@ final class TerminalNotificationStore: ObservableObject {
             content.sound = NotificationSoundSettings.sound()
             content.categoryIdentifier = Self.categoryIdentifier
             let request = UNNotificationRequest(
-                identifier: "cmux.notification-hook.failure.\(UUID().uuidString)",
+                identifier: "uniconnect.notification-hook.failure.\(UUID().uuidString)",
                 content: content,
                 trigger: nil
             )
@@ -2209,8 +2209,8 @@ final class TerminalNotificationStore: ObservableObject {
         }
 
         let alert = notificationSettingsAlertFactory()
-        alert.messageText = String(localized: "dialog.enableNotifications.title", defaultValue: "Enable Notifications for cmux")
-        alert.informativeText = String(localized: "dialog.enableNotifications.message", defaultValue: "Notifications are disabled for cmux. Enable them in System Settings to see alerts.")
+        alert.messageText = String(localized: "dialog.enableNotifications.title", defaultValue: "Enable Notifications for UniConnect")
+        alert.informativeText = String(localized: "dialog.enableNotifications.message", defaultValue: "Notifications are disabled for UniConnect. Enable them in System Settings to see alerts.")
         alert.addButton(withTitle: String(localized: "dialog.enableNotifications.openSettings", defaultValue: "Open Settings"))
         alert.addButton(withTitle: String(localized: "dialog.enableNotifications.notNow", defaultValue: "Not Now"))
         alert.beginSheetModal(for: window) { [weak self] response in

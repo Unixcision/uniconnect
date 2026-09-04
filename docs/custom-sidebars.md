@@ -39,8 +39,8 @@ SwiftUI, files, or syntax. Concretely:
 
 Write a named file (the name becomes the menu label; use short kebab-case):
 
-    ~/.config/cmux/sidebars/<name>.swift     # interpreted Swift (preferred)
-    ~/.config/cmux/sidebars/<name>.json      # declarative JSON (simpler, static)
+    ~/.config/uniconnect/sidebars/<name>.swift     # interpreted Swift (preferred)
+    ~/.config/uniconnect/sidebars/<name>.json      # declarative JSON (simpler, static)
 
 Each file shows up as an option in the **sidebar toggle button's right-click
 menu**. Pick it and it renders in the sidebar; edit the file and save and it
@@ -51,7 +51,7 @@ A sidebar file is a single SwiftUI-style view expression (no `struct`, no
 
 ## Quick start
 
-    cat > ~/.config/cmux/sidebars/mine.swift <<'SWIFT'
+    cat > ~/.config/uniconnect/sidebars/mine.swift <<'SWIFT'
     VStack(alignment: .leading, spacing: 8) {
         Text("My sidebar").font(.title3).bold()
         Text(clock.time).font(.caption).foregroundColor(.secondary)

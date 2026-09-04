@@ -285,7 +285,7 @@ jobs:
         if: needs.decide.outputs.should_publish != 'true' || steps.current_head_prebuild.outputs.still_current == 'true'
         run: |
           set -euo pipefail
-          APP_BINARY="build-universal/Build/Products/Release/UniConnect.app/Contents/MacOS/cmux"
+          APP_BINARY="build-universal/Build/Products/Release/UniConnect.app/Contents/MacOS/UniConnect"
           CLI_BINARY="build-universal/Build/Products/Release/UniConnect.app/Contents/Resources/bin/cmux"
           HELPER_BINARY="build-universal/Build/Products/Release/UniConnect.app/Contents/Resources/bin/ghostty"
           APP_ARCHS="$(lipo -archs "$APP_BINARY")"
@@ -334,7 +334,7 @@ jobs:
           SHORT_SHA="${{ needs.decide.outputs.short_sha }}"
           APP_DIR="build-universal/Build/Products/Release"
 
-          BASE_MARKETING=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${APP_DIR}/cmux.app/Contents/Info.plist")
+          BASE_MARKETING=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${APP_DIR}/UniConnect.app/Contents/Info.plist")
           NIGHTLY_DATE=$(date -u +%Y%m%d)
 
           # Build number: unique/monotonic per workflow run attempt so same-day
@@ -347,7 +347,7 @@ jobs:
           fi
           NIGHTLY_MARKETING_VERSION="${BASE_MARKETING}-nightly.${NIGHTLY_BUILD}"
 
-          NIGHTLY_DMG_IMMUTABLE="cmux-nightly-macos-${NIGHTLY_BUILD}.dmg"
+          NIGHTLY_DMG_IMMUTABLE="uniconnect-nightly-macos-${NIGHTLY_BUILD}.dmg"
           {
             echo "NIGHTLY_BUILD=${NIGHTLY_BUILD}"
             echo "NIGHTLY_MARKETING_VERSION=${NIGHTLY_MARKETING_VERSION}"
@@ -359,10 +359,10 @@ jobs:
             local app_dir="$1"
             local bundle_id="$2"
             local feed_url="$3"
-            local app_plist="$app_dir/cmux.app/Contents/Info.plist"
+            local app_plist="$app_dir/UniConnect.app/Contents/Info.plist"
 
-            /usr/libexec/PlistBuddy -c "Set :CFBundleName cmux NIGHTLY" "$app_plist"
-            /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName cmux NIGHTLY" "$app_plist"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleName UniConnect NIGHTLY" "$app_plist"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName UniConnect NIGHTLY" "$app_plist"
             /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${bundle_id}" "$app_plist"
             local url_type_name
             url_type_name="$(/usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:1:CFBundleURLName" "$app_plist")"
@@ -370,7 +370,7 @@ jobs:
               echo "Expected CFBundleURLTypes[1] to be the auth URL type, found: $url_type_name" >&2
               exit 1
             fi
-            /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:1:CFBundleURLSchemes:0 cmux-nightly" "$app_plist"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:1:CFBundleURLSchemes:0 uniconnect-nightly" "$app_plist"
             /usr/libexec/PlistBuddy -c "Delete :SUPublicEDKey" "$app_plist" >/dev/null 2>&1 || true
             /usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$app_plist" >/dev/null 2>&1 || true
             /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string ${SPARKLE_PUBLIC_KEY}" "$app_plist"
@@ -379,16 +379,16 @@ jobs:
             /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${NIGHTLY_BUILD}" "$app_plist"
             /usr/libexec/PlistBuddy -c "Delete :CMUXCommit" "$app_plist" >/dev/null 2>&1 || true
             /usr/libexec/PlistBuddy -c "Add :CMUXCommit string ${SHORT_SHA}" "$app_plist"
-            mv "$app_dir/cmux.app" "$app_dir/cmux NIGHTLY.app"
+            mv "$app_dir/UniConnect.app" "$app_dir/UniConnect NIGHTLY.app"
           }
 
           prepare_variant \
             "$APP_DIR" \
-            "com.cmuxterm.app.nightly" \
-            "https://files.cmux.com/nightly/appcast.xml"
+            "com.unixcision.uniconnect.nightly" \
+            "https://github.com/Unixcision/uniconnect/releases/download/nightly/appcast.xml"
 
-          echo "Nightly app name: cmux NIGHTLY"
-          echo "Nightly bundle ID: com.cmuxterm.app.nightly"
+          echo "Nightly app name: UniConnect NIGHTLY"
+          echo "Nightly bundle ID: com.unixcision.uniconnect.nightly"
           echo "Nightly marketing version: ${NIGHTLY_MARKETING_VERSION}"
           echo "Nightly build number: ${NIGHTLY_BUILD}"
           echo "Nightly immutable DMG: ${NIGHTLY_DMG_IMMUTABLE}"
@@ -405,11 +405,11 @@ jobs:
           ./scripts/build_remote_daemon_release_assets.sh \
             --version "$NIGHTLY_REMOTE_DAEMON_VERSION" \
             --release-tag "nightly" \
-            --repo "manaflow-ai/cmux" \
+            --repo "Unixcision/uniconnect" \
             --output-dir "remote-daemon-assets" \
             --asset-suffix "$NIGHTLY_BUILD"
           MANIFEST_JSON="$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1], encoding="utf-8")), separators=(",",":")))' "remote-daemon-assets/cmuxd-remote-manifest-${NIGHTLY_BUILD}.json")"
-          APP_PLIST="build-universal/Build/Products/Release/cmux NIGHTLY.app/Contents/Info.plist"
+          APP_PLIST="build-universal/Build/Products/Release/UniConnect NIGHTLY.app/Contents/Info.plist"
           if [ ! -f "$APP_PLIST" ]; then
             echo "Missing nightly app Info.plist at $APP_PLIST" >&2
             exit 1
@@ -469,23 +469,24 @@ jobs:
         if: needs.decide.outputs.should_publish != 'true' || (steps.current_head_prebuild.outputs.still_current == 'true' && steps.current_head_postbuild.outputs.still_current == 'true')
         env:
           APPLE_NIGHTLY_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_NIGHTLY_PROVISIONING_PROFILE_BASE64 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           if [ -z "$APPLE_NIGHTLY_PROVISIONING_PROFILE_BASE64" ]; then
             echo "Missing APPLE_NIGHTLY_PROVISIONING_PROFILE_BASE64 secret" >&2
             exit 1
           fi
 
-          APP_PATH="build-universal/Build/Products/Release/cmux NIGHTLY.app"
+          APP_PATH="build-universal/Build/Products/Release/UniConnect NIGHTLY.app"
           PROFILE_PATH="$APP_PATH/Contents/embedded.provisionprofile"
-          TMP_PROFILE="$(mktemp /tmp/cmux-nightly-profile.XXXXXX)"
-          TMP_PLIST="$(mktemp /tmp/cmux-nightly-profile.XXXXXX.plist)"
+          TMP_PROFILE="$(mktemp /tmp/uniconnect-nightly-profile.XXXXXX)"
+          TMP_PLIST="$(mktemp /tmp/uniconnect-nightly-profile.XXXXXX.plist)"
           trap 'rm -f "$TMP_PROFILE" "$TMP_PLIST"' EXIT
 
           echo "$APPLE_NIGHTLY_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$TMP_PROFILE"
           security cms -D -i "$TMP_PROFILE" > "$TMP_PLIST"
 
           APP_ID="$(/usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.application-identifier" "$TMP_PLIST")"
-          if [ "$APP_ID" != "7WLXT3NR37.com.cmuxterm.app.nightly" ]; then
+          if [ -z "$APPLE_TEAM_ID" ] || [ "$APP_ID" != "${APPLE_TEAM_ID}.com.unixcision.uniconnect.nightly" ]; then
             echo "Nightly provisioning profile targets unexpected app ID: $APP_ID" >&2
             exit 1
           fi
@@ -508,17 +509,23 @@ jobs:
         if: needs.decide.outputs.should_publish != 'true' || (steps.current_head_prebuild.outputs.still_current == 'true' && steps.current_head_postbuild.outputs.still_current == 'true')
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if [ -z "$APPLE_SIGNING_IDENTITY" ]; then
-            echo "Missing APPLE_SIGNING_IDENTITY secret" >&2
+          if [ -z "$APPLE_SIGNING_IDENTITY" ] || [ -z "$APPLE_TEAM_ID" ]; then
+            echo "Missing APPLE_SIGNING_IDENTITY or APPLE_TEAM_ID secret" >&2
             exit 1
           fi
+          APP_ENTITLEMENTS="$(mktemp /tmp/uniconnect-nightly-entitlements.XXXXXX.plist)"
+          trap 'rm -f "$APP_ENTITLEMENTS"' EXIT
+          cp cmux.nightly.entitlements "$APP_ENTITLEMENTS"
+          /usr/libexec/PlistBuddy -c "Set :com.apple.application-identifier ${APPLE_TEAM_ID}.com.unixcision.uniconnect.nightly" "$APP_ENTITLEMENTS"
+          /usr/libexec/PlistBuddy -c "Set :com.apple.developer.team-identifier ${APPLE_TEAM_ID}" "$APP_ENTITLEMENTS"
           for APP_PATH in \
-            "build-universal/Build/Products/Release/cmux NIGHTLY.app"
+            "build-universal/Build/Products/Release/UniConnect NIGHTLY.app"
           do
             ./scripts/sign-cmux-bundle.sh \
               "$APP_PATH" \
-              cmux.nightly.entitlements \
+              "$APP_ENTITLEMENTS" \
               "$APPLE_SIGNING_IDENTITY"
           done
 
@@ -585,19 +592,19 @@ jobs:
           }
 
           notarize_and_package \
-            "build-universal/Build/Products/Release/cmux NIGHTLY.app" \
-            "cmux-nightly-macos.dmg" \
+            "build-universal/Build/Products/Release/UniConnect NIGHTLY.app" \
+            "uniconnect-nightly-macos.dmg" \
             "$NIGHTLY_DMG_IMMUTABLE"
 
       - name: Upload dSYMs to Sentry
         if: needs.decide.outputs.should_publish != 'true' || (steps.current_head_prebuild.outputs.still_current == 'true' && steps.current_head_postbuild.outputs.still_current == 'true')
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: manaflow
-          SENTRY_PROJECT: cmuxterm-macos
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
         run: |
-          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
-            echo "SENTRY_AUTH_TOKEN not set, skipping dSYM upload"
+          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT" ]; then
+            echo "UniConnect Sentry configuration is incomplete, skipping dSYM upload"
             exit 0
           fi
           brew install getsentry/tools/sentry-cli || true
@@ -634,9 +641,9 @@ jobs:
         if: needs.decide.outputs.should_publish != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: cmux-nightly-${{ needs.decide.outputs.short_sha }}
+          name: uniconnect-nightly-${{ needs.decide.outputs.short_sha }}
           path: |
-            cmux-nightly-macos*.dmg
+            uniconnect-nightly-macos*.dmg
             appcast.xml
             remote-daemon-assets/cmuxd-remote-*
             appcast-universal.xml
@@ -666,7 +673,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 ./scripts/prune_nightly_release_assets.py \
-            --repo manaflow-ai/cmux \
+            --repo Unixcision/uniconnect \
             --release-tag nightly \
             --keep-builds 100 \
             --execute
@@ -682,40 +689,19 @@ jobs:
           body: |
             Automated nightly build for `${{ needs.decide.outputs.short_sha }}`.
 
-            **cmux NIGHTLY** is published as a universal app:
-            - bundle ID `com.cmuxterm.app.nightly`
+            **UniConnect NIGHTLY** is published as a universal app:
+            - bundle ID `com.unixcision.uniconnect.nightly`
             - feed `appcast.xml`
             - compatibility feed `appcast-universal.xml` for older universal nightlies
 
-            [Download cmux-nightly-macos.dmg](https://github.com/manaflow-ai/cmux/releases/download/nightly/cmux-nightly-macos.dmg)
+            [Download the UniConnect nightly build](https://github.com/Unixcision/uniconnect/releases/download/nightly/uniconnect-nightly-macos.dmg)
           files: |
-            cmux-nightly-macos-${{ github.run_id }}*.dmg
-            cmux-nightly-macos.dmg
+            uniconnect-nightly-macos-${{ github.run_id }}*.dmg
+            uniconnect-nightly-macos.dmg
             appcast.xml
             remote-daemon-assets/cmuxd-remote-*
             appcast-universal.xml
           overwrite_files: true
-
-      - name: Upload nightly appcast to R2
-        if: needs.decide.outputs.should_publish == 'true' && steps.current_head_prebuild.outputs.still_current == 'true' && steps.current_head_postbuild.outputs.still_current == 'true'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ENDPOINT: "https://${{ secrets.CF_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
-        run: |
-          set -euo pipefail
-          command -v aws >/dev/null 2>&1 || { echo "Installing AWS CLI..."; brew install awscli; }
-
-          # Upload after GitHub Release publish so the appcast never references
-          # a DMG that doesn't exist yet. R2 PutObject is atomic, so the appcast
-          # is either the old version or the new one, never missing.
-          aws s3 cp appcast.xml \
-            "s3://cmux-binaries/nightly/appcast.xml" \
-            --endpoint-url "$R2_ENDPOINT" \
-            --cache-control "no-cache, no-store, must-revalidate"
-
-          echo "R2 appcast upload complete: https://files.cmux.com/nightly/appcast.xml"
 
       - name: Cleanup keychain
         if: always()

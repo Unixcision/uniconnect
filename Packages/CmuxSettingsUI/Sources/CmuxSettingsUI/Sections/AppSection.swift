@@ -102,14 +102,12 @@ public struct AppSection: View {
     private static let columnWidth: CGFloat = 196
     private static let notificationSoundControlWidth: CGFloat = 280
 
-    /// Languages legacy `AppLanguage` exposes (cmuxApp.swift line
-    /// 4338). The shared `CmuxSettings.AppLanguage` adds `.vi` for a
-    /// future Vietnamese localization that the legacy in-app picker
-    /// doesn't surface yet; filter it out here so the Settings UI
-    /// matches the legacy menu shape exactly.
-    private static let legacyLanguageCases: [AppLanguage] = [
+    /// Languages backed by catalogs in the current app bundle. Vietnamese stays
+    /// decodable in ``AppLanguage`` for compatibility but is not offered until
+    /// its catalog ships.
+    static let supportedLanguageCases: [AppLanguage] = [
         .system, .en, .ar, .bs, .zhHans, .zhHant, .da, .de, .es, .fr,
-        .it, .ja, .ko, .nb, .pl, .ptBR, .ru, .th, .tr,
+        .it, .ja, .km, .ko, .nb, .pl, .ptBR, .ru, .th, .tr, .uk,
     ]
 
     public var body: some View {
@@ -131,12 +129,12 @@ public struct AppSection: View {
                 configurationReview: .json("app.language"),
                 String(localized: "settings.app.language", defaultValue: "Language"),
                 subtitle: languageAtAppear != nil && language.current != languageAtAppear
-                    ? String(localized: "settings.app.language.restartSubtitle", defaultValue: "Restart cmux to apply")
+                    ? String(localized: "settings.app.language.restartSubtitle", defaultValue: "Restart UniConnect to apply")
                     : nil,
                 controlWidth: Self.columnWidth
             ) {
                 Picker("", selection: Binding(get: { language.current }, set: { language.set($0) })) {
-                    ForEach(Self.legacyLanguageCases, id: \.self) { lang in
+                    ForEach(Self.supportedLanguageCases, id: \.self) { lang in
                         Text(languageDisplayName(lang)).tag(lang)
                     }
                 }
@@ -234,8 +232,8 @@ public struct AppSection: View {
                 configurationReview: .json("app.focusPaneOnFirstClick"),
                 String(localized: "settings.app.paneFirstClickFocus", defaultValue: "Focus Pane on First Click"),
                 subtitle: firstClick.current
-                    ? String(localized: "settings.app.paneFirstClickFocus.subtitleOn", defaultValue: "When cmux is inactive, clicking a pane activates the window and focuses that pane in one click.")
-                    : String(localized: "settings.app.paneFirstClickFocus.subtitleOff", defaultValue: "When cmux is inactive, the first click only activates the window. Click again to focus the pane.")
+                    ? String(localized: "settings.app.paneFirstClickFocus.subtitleOn", defaultValue: "When UniConnect is inactive, clicking a pane activates the window and focuses that pane in one click.")
+                    : String(localized: "settings.app.paneFirstClickFocus.subtitleOff", defaultValue: "When UniConnect is inactive, the first click only activates the window. Click again to focus the pane.")
             ) {
                 Toggle("", isOn: Binding(get: { firstClick.current }, set: { firstClick.set($0) }))
                     .labelsHidden()
@@ -278,8 +276,8 @@ public struct AppSection: View {
             // Open Supported Files in cmux
             SettingsCardRow(
                 configurationReview: .json("app.openSupportedFilesInCmux"),
-                String(localized: "settings.app.openSupportedFilesInCmux", defaultValue: "Open Supported Files in cmux"),
-                subtitle: String(localized: "settings.app.openSupportedFilesInCmux.subtitle", defaultValue: "Cmd-clicking readable files opens text, code, PDFs, images, audio, video, and Quick Look previews in cmux.")
+                String(localized: "settings.app.openSupportedFilesInCmux", defaultValue: "Open Supported Files in UniConnect"),
+                subtitle: String(localized: "settings.app.openSupportedFilesInCmux.subtitle", defaultValue: "Cmd-clicking readable files opens text, code, PDFs, images, audio, video, and Quick Look previews in UniConnect.")
             ) {
                 Toggle("", isOn: Binding(get: { openSupported.current }, set: { openSupported.set($0) }))
                     .labelsHidden()
@@ -292,7 +290,7 @@ public struct AppSection: View {
                 configurationReview: .action,
                 searchAnchorID: "setting:app:terminal-config",
                 String(localized: "settings.app.configWindow", defaultValue: "Terminal Config"),
-                subtitle: String(localized: "settings.app.configWindow.subtitle", defaultValue: "Open the cmux terminal config and generated preview in one utility window."),
+                subtitle: String(localized: "settings.app.configWindow.subtitle", defaultValue: "Open the UniConnect terminal config and generated preview in one utility window."),
                 controlWidth: Self.columnWidth
             ) {
                 Button(String(localized: "settings.app.configWindow.openButton", defaultValue: "Open Config")) {
@@ -306,8 +304,8 @@ public struct AppSection: View {
             // Open Markdown in cmux Viewer
             SettingsCardRow(
                 configurationReview: .json("app.openMarkdownInCmuxViewer"),
-                String(localized: "settings.app.openMarkdownInCmuxViewer", defaultValue: "Open Markdown in cmux Viewer"),
-                subtitle: String(localized: "settings.app.openMarkdownInCmuxViewer.subtitle", defaultValue: "When supported file routing is on, Cmd-clicking Markdown files opens the rendered cmux markdown viewer instead of the generic file preview.")
+                String(localized: "settings.app.openMarkdownInCmuxViewer", defaultValue: "Open Markdown in UniConnect Viewer"),
+                subtitle: String(localized: "settings.app.openMarkdownInCmuxViewer.subtitle", defaultValue: "When supported file routing is on, Cmd-clicking Markdown files opens the rendered UniConnect markdown viewer instead of the generic file preview.")
             ) {
                 Toggle("", isOn: Binding(get: { openMarkdown.current }, set: { openMarkdown.set($0) }))
                     .labelsHidden()
@@ -431,7 +429,7 @@ public struct AppSection: View {
             SettingsCardRow(
                 configurationReview: .json("app.menuBarOnly"),
                 String(localized: "settings.app.menuBarOnly", defaultValue: "Menu Bar Only"),
-                subtitle: String(localized: "settings.app.menuBarOnly.subtitle", defaultValue: "Hide the Dock icon and Cmd+Tab entry. Use the menu bar item to show cmux.")
+                subtitle: String(localized: "settings.app.menuBarOnly.subtitle", defaultValue: "Hide the Dock icon and Cmd+Tab entry. Use the menu bar item to show UniConnect.")
             ) {
                 Toggle("", isOn: Binding(get: { menuBarOnly.current }, set: { menuBarOnly.set($0) }))
                     .labelsHidden()
@@ -444,7 +442,7 @@ public struct AppSection: View {
             SettingsCardRow(
                 configurationReview: .json("notifications.showInMenuBar"),
                 String(localized: "settings.app.showInMenuBar", defaultValue: "Show in Menu Bar"),
-                subtitle: String(localized: "settings.app.showInMenuBar.subtitle", defaultValue: "Keep cmux in the menu bar for unread notifications and quick actions.")
+                subtitle: String(localized: "settings.app.showInMenuBar.subtitle", defaultValue: "Keep UniConnect in the menu bar for unread notifications and quick actions.")
             ) {
                 Toggle("", isOn: Binding(get: { showInMenuBar.current }, set: { showInMenuBar.set($0) }))
                     .labelsHidden()
@@ -469,7 +467,7 @@ public struct AppSection: View {
             SettingsCardRow(
                 configurationReview: .json("notifications.paneFlash"),
                 String(localized: "settings.notifications.paneFlash.title", defaultValue: "Pane Flash"),
-                subtitle: String(localized: "settings.notifications.paneFlash.subtitle", defaultValue: "Briefly flash a blue outline when cmux highlights a pane.")
+                subtitle: String(localized: "settings.notifications.paneFlash.subtitle", defaultValue: "Briefly flash a blue outline when UniConnect highlights a pane.")
             ) {
                 Toggle("", isOn: Binding(get: { paneFlash.current }, set: { paneFlash.set($0) }))
                     .labelsHidden()
@@ -518,7 +516,7 @@ public struct AppSection: View {
             SettingsCardRow(
                 configurationReview: .json("notifications.command"),
                 String(localized: "settings.notifications.command", defaultValue: "Notification Command"),
-                subtitle: String(localized: "settings.notifications.command.subtitle", defaultValue: "Run a shell command when a notification arrives. $CMUX_NOTIFICATION_TITLE, $CMUX_NOTIFICATION_SUBTITLE, $CMUX_NOTIFICATION_BODY are set.")
+                subtitle: String(localized: "settings.notifications.command.subtitle", defaultValue: "Run a shell command when a notification arrives. $UNICONNECT_NOTIFICATION_TITLE, $UNICONNECT_NOTIFICATION_SUBTITLE, $UNICONNECT_NOTIFICATION_BODY are set.")
             ) {
                 TextField(
                     String(localized: "settings.notifications.command.placeholder", defaultValue: "say \"done\""),
@@ -733,6 +731,8 @@ public struct AppSection: View {
         case .fr: return "Français (French)"
         case .it: return "Italiano (Italian)"
         case .ja: return "日本語 (Japanese)"
+        case .km:
+            return String(localized: "language.khmer.displayName", defaultValue: "ខ្មែរ (Khmer)")
         case .ko: return "한국어 (Korean)"
         case .nb: return "Norsk (Norwegian)"
         case .pl: return "Polski (Polish)"
@@ -740,6 +740,8 @@ public struct AppSection: View {
         case .ru: return "Русский (Russian)"
         case .th: return "ไทย (Thai)"
         case .tr: return "Türkçe (Turkish)"
+        case .uk:
+            return String(localized: "language.ukrainian.displayName", defaultValue: "Українська (Ukrainian)")
         case .vi: return "Tiếng Việt (Vietnamese)"
         }
     }

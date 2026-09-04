@@ -6,16 +6,6 @@ import { isAgentPageVariantPath } from "./app/lib/agent-page-paths";
 const intlMiddleware = createMiddleware(routing);
 
 export default function middleware(request: NextRequest) {
-  const host = request.headers.get("host") ?? "";
-
-  // 301 redirect cmux.dev (and www.cmux.dev) to cmux.com, preserving path and query
-  if (host === "cmux.dev" || host === "www.cmux.dev") {
-    const url = new URL(request.url);
-    url.host = "cmux.com";
-    url.protocol = "https:";
-    return NextResponse.redirect(url.toString(), 301);
-  }
-
   const { pathname } = request.nextUrl;
 
   // Temporary redirect: /changelog → /docs/changelog, preserving any locale prefix.
@@ -31,7 +21,7 @@ export default function middleware(request: NextRequest) {
     url.pathname = "/agent-page-variant";
     url.searchParams.set("path", pathname);
     const requestHeaders = new Headers(request.headers);
-    requestHeaders.set("x-cmux-agent-page-path", pathname);
+    requestHeaders.set("x-uniconnect-agent-page-path", pathname);
     return NextResponse.rewrite(url, {
       request: { headers: requestHeaders },
     });

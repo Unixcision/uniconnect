@@ -18,8 +18,8 @@ final class RightSidebarToolPanel: Panel, ObservableObject {
     private var sessionIndexStoreStorage: SessionIndexStore?
     private var workspaceObservationCancellable: AnyCancellable?
 
-    init(workspace: Workspace, mode: RightSidebarMode) {
-        self.id = UUID()
+    init(workspace: Workspace, id: UUID = UUID(), mode: RightSidebarMode) {
+        self.id = id
         self.mode = mode
         reattach(to: workspace)
     }

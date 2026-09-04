@@ -1,13 +1,13 @@
 import Foundation
 
 extension CMUXCLI {
-    private static let ompExtensionMarker = "cmux-omp-session-extension-marker"
-    private static let ompExtensionFilename = "cmux-omp-session.ts"
+    private static let ompExtensionMarker = "uniconnect-omp-session-extension-marker"
+    private static let ompExtensionFilename = "uniconnect-omp-session.ts"
     private static let ompExtensionSource = #"""
-// cmux-omp-session-extension-marker v1
-// Bridges OMP session lifecycle events into cmux's restorable session store.
+// uniconnect-omp-session-extension-marker v2
+// Bridges OMP session lifecycle events into UniConnect's restorable session store.
 // Installed by `cmux hooks omp install` or `cmux hooks setup`.
-// DO NOT EDIT MANUALLY. cmux upgrades this file in place.
+// DO NOT EDIT MANUALLY. UniConnect upgrades this file in place.
 
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
@@ -179,7 +179,7 @@ async function sendHook(subcommand: string, ctx: ExtensionContext, extra: Record
   });
 }
 
-export default function cmuxOmpSessionExtension(api: ExtensionAPI) {
+export default function uniconnectOmpSessionExtension(api: ExtensionAPI) {
   api.on("session_start", async (_event, ctx) => {
     await sendHook("session-start", ctx);
   });
@@ -248,6 +248,7 @@ export default function cmuxOmpSessionExtension(api: ExtensionAPI) {
     func installOmpExtensionHooks(_ _: AgentHookDef) throws {
         let extensionURL = ompExtensionURL()
         let fileManager = FileManager.default
+        let extensionExists = fileManager.fileExists(atPath: extensionURL.path)
         let skipConfirm = ProcessInfo.processInfo.arguments.contains("--yes")
             || ProcessInfo.processInfo.arguments.contains("-y")
         let existing = try existingOmpExtensionContents(at: extensionURL, fileManager: fileManager)
@@ -255,17 +256,17 @@ export default function cmuxOmpSessionExtension(api: ExtensionAPI) {
             print(String.localizedStringWithFormat(
                 String(
                     localized: "cli.hooks.omp.alreadyUpToDate",
-                    defaultValue: "OMP hooks already up to date at %@"
+                    defaultValue: "OMP UniConnect hooks already up to date at %@"
                 ),
                 extensionURL.path
             ))
             return
         }
-        if !existing.isEmpty, !existing.contains(Self.ompExtensionMarker) {
+        if extensionExists, !existing.contains(Self.ompExtensionMarker) {
             throw CLIError(message: String.localizedStringWithFormat(
                 String(
                     localized: "cli.hooks.omp.error.notCmuxExtension",
-                    defaultValue: "%@ exists and is not a cmux extension; leaving it alone"
+                    defaultValue: "%@ exists and is not a UniConnect extension; leaving it alone"
                 ),
                 extensionURL.path
             ))
@@ -291,7 +292,7 @@ export default function cmuxOmpSessionExtension(api: ExtensionAPI) {
         print(String.localizedStringWithFormat(
             String(
                 localized: "cli.hooks.omp.installed",
-                defaultValue: "OMP hooks installed at %@"
+                defaultValue: "OMP UniConnect hooks installed at %@"
             ),
             extensionURL.path
         ))
@@ -304,7 +305,7 @@ export default function cmuxOmpSessionExtension(api: ExtensionAPI) {
             print(String.localizedStringWithFormat(
                 String(
                     localized: "cli.hooks.omp.noneFound",
-                    defaultValue: "No OMP cmux extension found at %@"
+                    defaultValue: "No OMP UniConnect extension found at %@"
                 ),
                 extensionURL.path
             ))
@@ -315,7 +316,7 @@ export default function cmuxOmpSessionExtension(api: ExtensionAPI) {
             print(String.localizedStringWithFormat(
                 String(
                     localized: "cli.hooks.omp.refuseRemoveMissingMarker",
-                    defaultValue: "Refusing to remove %@: missing cmux marker"
+                    defaultValue: "Refusing to remove %@: missing UniConnect marker"
                 ),
                 extensionURL.path
             ))
@@ -325,7 +326,7 @@ export default function cmuxOmpSessionExtension(api: ExtensionAPI) {
         print(String.localizedStringWithFormat(
             String(
                 localized: "cli.hooks.omp.removed",
-                defaultValue: "Removed OMP cmux extension from %@"
+                defaultValue: "Removed OMP UniConnect extension from %@"
             ),
             extensionURL.path
         ))

@@ -17,7 +17,8 @@ extension ContentView {
                 subtitle: constant(String(localized: "command.auth.subtitle", defaultValue: "Account")),
                 keywords: ["account", "auth", "authenticate", "authentication", "login", "log in", "signin", "sign in"],
                 when: { context in
-                    !context.bool(CommandPaletteContextKeys.authSignedIn)
+                    context.bool(CommandPaletteContextKeys.authAvailable)
+                        && !context.bool(CommandPaletteContextKeys.authSignedIn)
                         && !context.bool(CommandPaletteContextKeys.authWorking)
                 }
             ),
@@ -27,7 +28,8 @@ extension ContentView {
                 subtitle: constant(String(localized: "command.auth.subtitle", defaultValue: "Account")),
                 keywords: ["account", "auth", "logout", "log out", "signout", "sign out"],
                 when: { context in
-                    context.bool(CommandPaletteContextKeys.authSignedIn)
+                    context.bool(CommandPaletteContextKeys.authAvailable)
+                        && context.bool(CommandPaletteContextKeys.authSignedIn)
                         && !context.bool(CommandPaletteContextKeys.authWorking)
                 }
             ),

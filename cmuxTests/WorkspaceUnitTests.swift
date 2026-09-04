@@ -262,32 +262,32 @@ final class SidebarSelectedWorkspaceColorTests: XCTestCase {
 
 
 final class WorkspaceRenameShortcutDefaultsTests: XCTestCase {
-    func testRenameTabShortcutDefaultsAndMetadata() {
-        XCTAssertEqual(KeyboardShortcutSettings.Action.renameTab.label, "Rename Tab")
+    func testRenameTabShortcutIsUnboundAndMetadataIsStable() {
+        XCTAssertEqual(
+            KeyboardShortcutSettings.Action.renameTab.label,
+            String(localized: "shortcut.renameTab.label", defaultValue: "Rename Window")
+        )
         XCTAssertEqual(KeyboardShortcutSettings.Action.renameTab.defaultsKey, "shortcut.renameTab")
 
-        let shortcut = KeyboardShortcutSettings.Action.renameTab.defaultShortcut
-        XCTAssertEqual(shortcut.key, "r")
-        XCTAssertTrue(shortcut.command)
-        XCTAssertFalse(shortcut.shift)
-        XCTAssertFalse(shortcut.option)
-        XCTAssertFalse(shortcut.control)
+        XCTAssertEqual(KeyboardShortcutSettings.Action.renameTab.defaultShortcut, .unbound)
+        XCTAssertTrue(KeyboardShortcutSettings.settingsVisibleActions.contains(.renameTab))
     }
 
-    func testCloseWindowShortcutDefaultsAndMetadata() {
-        XCTAssertEqual(KeyboardShortcutSettings.Action.closeWindow.label, "Close Window")
+    func testMainWindowCloseShortcutIsUnavailableInUniConnect() {
+        XCTAssertEqual(
+            KeyboardShortcutSettings.Action.closeWindow.label,
+            String(localized: "shortcut.closeWindow.label", defaultValue: "Close Window")
+        )
         XCTAssertEqual(KeyboardShortcutSettings.Action.closeWindow.defaultsKey, "shortcut.closeWindow")
-
-        let shortcut = KeyboardShortcutSettings.Action.closeWindow.defaultShortcut
-        XCTAssertEqual(shortcut.key, "w")
-        XCTAssertTrue(shortcut.command)
-        XCTAssertFalse(shortcut.shift)
-        XCTAssertFalse(shortcut.option)
-        XCTAssertTrue(shortcut.control)
+        XCTAssertEqual(KeyboardShortcutSettings.Action.closeWindow.defaultShortcut, .unbound)
+        XCTAssertFalse(KeyboardShortcutSettings.settingsVisibleActions.contains(.closeWindow))
     }
 
     func testRenameWorkspaceShortcutDefaultsAndMetadata() {
-        XCTAssertEqual(KeyboardShortcutSettings.Action.renameWorkspace.label, "Rename Workspace")
+        XCTAssertEqual(
+            KeyboardShortcutSettings.Action.renameWorkspace.label,
+            String(localized: "shortcut.renameWorkspace.label", defaultValue: "Rename Box")
+        )
         XCTAssertEqual(KeyboardShortcutSettings.Action.renameWorkspace.defaultsKey, "shortcut.renameWorkspace")
 
         let shortcut = KeyboardShortcutSettings.Action.renameWorkspace.defaultShortcut
@@ -308,7 +308,10 @@ final class WorkspaceRenameShortcutDefaultsTests: XCTestCase {
     }
 
     func testCloseWorkspaceShortcutDefaultsAndMetadata() {
-        XCTAssertEqual(KeyboardShortcutSettings.Action.closeWorkspace.label, "Close Workspace")
+        XCTAssertEqual(
+            KeyboardShortcutSettings.Action.closeWorkspace.label,
+            String(localized: "shortcut.closeWorkspace.label", defaultValue: "Close Box")
+        )
         XCTAssertEqual(KeyboardShortcutSettings.Action.closeWorkspace.defaultsKey, "shortcut.closeWorkspace")
 
         let shortcut = KeyboardShortcutSettings.Action.closeWorkspace.defaultShortcut
@@ -329,10 +332,16 @@ final class WorkspaceRenameShortcutDefaultsTests: XCTestCase {
     }
 
     func testNextPreviousWorkspaceShortcutDefaultsAndMetadata() {
-        XCTAssertEqual(KeyboardShortcutSettings.Action.nextSidebarTab.label, "Next Workspace")
-        XCTAssertEqual(KeyboardShortcutSettings.Action.prevSidebarTab.label, "Previous Workspace")
-        XCTAssertEqual(KeyboardShortcutSettings.Action.focusHistoryBack.label, "Focus Back")
-        XCTAssertEqual(KeyboardShortcutSettings.Action.focusHistoryForward.label, "Focus Forward")
+        XCTAssertEqual(KeyboardShortcutSettings.Action.nextSidebarTab.label, String(localized: "shortcut.nextWorkspace.label", defaultValue: "Next Box"))
+        XCTAssertEqual(KeyboardShortcutSettings.Action.prevSidebarTab.label, String(localized: "shortcut.previousWorkspace.label", defaultValue: "Previous Box"))
+        XCTAssertEqual(
+            KeyboardShortcutSettings.Action.focusHistoryBack.label,
+            String(localized: "shortcut.focusHistoryBack.label", defaultValue: "Focus Back")
+        )
+        XCTAssertEqual(
+            KeyboardShortcutSettings.Action.focusHistoryForward.label,
+            String(localized: "shortcut.focusHistoryForward.label", defaultValue: "Focus Forward")
+        )
         XCTAssertEqual(KeyboardShortcutSettings.Action.nextSidebarTab.defaultsKey, "shortcut.nextSidebarTab")
         XCTAssertEqual(KeyboardShortcutSettings.Action.prevSidebarTab.defaultsKey, "shortcut.prevSidebarTab")
         XCTAssertEqual(KeyboardShortcutSettings.Action.focusHistoryBack.defaultsKey, "shortcut.focusHistoryBack")
@@ -352,22 +361,10 @@ final class WorkspaceRenameShortcutDefaultsTests: XCTestCase {
         XCTAssertFalse(prevShortcut.option)
         XCTAssertTrue(prevShortcut.control)
 
-        let focusBackShortcut = KeyboardShortcutSettings.Action.focusHistoryBack.defaultShortcut
-        XCTAssertEqual(focusBackShortcut.key, "[")
-        XCTAssertTrue(focusBackShortcut.command)
-        XCTAssertFalse(focusBackShortcut.shift)
-        XCTAssertFalse(focusBackShortcut.option)
-        XCTAssertFalse(focusBackShortcut.control)
-
-        let focusForwardShortcut = KeyboardShortcutSettings.Action.focusHistoryForward.defaultShortcut
-        XCTAssertEqual(focusForwardShortcut.key, "]")
-        XCTAssertTrue(focusForwardShortcut.command)
-        XCTAssertFalse(focusForwardShortcut.shift)
-        XCTAssertFalse(focusForwardShortcut.option)
-        XCTAssertFalse(focusForwardShortcut.control)
-
-        XCTAssertTrue(KeyboardShortcutSettings.settingsVisibleActions.contains(.focusHistoryBack))
-        XCTAssertTrue(KeyboardShortcutSettings.settingsVisibleActions.contains(.focusHistoryForward))
+        XCTAssertEqual(KeyboardShortcutSettings.Action.focusHistoryBack.defaultShortcut, .unbound)
+        XCTAssertEqual(KeyboardShortcutSettings.Action.focusHistoryForward.defaultShortcut, .unbound)
+        XCTAssertFalse(KeyboardShortcutSettings.settingsVisibleActions.contains(.focusHistoryBack))
+        XCTAssertFalse(KeyboardShortcutSettings.settingsVisibleActions.contains(.focusHistoryForward))
     }
 
     func testNextPreviousWorkspaceShortcutsConvertToMenuShortcut() {
@@ -385,7 +382,13 @@ final class WorkspaceRenameShortcutDefaultsTests: XCTestCase {
     }
 
     func testToggleTerminalCopyModeShortcutDefaultsAndMetadata() {
-        XCTAssertEqual(KeyboardShortcutSettings.Action.toggleTerminalCopyMode.label, "Toggle Terminal Copy Mode")
+        XCTAssertEqual(
+            KeyboardShortcutSettings.Action.toggleTerminalCopyMode.label,
+            String(
+                localized: "shortcut.toggleTerminalCopyMode.label",
+                defaultValue: "Toggle Terminal Copy Mode"
+            )
+        )
         XCTAssertEqual(
             KeyboardShortcutSettings.Action.toggleTerminalCopyMode.defaultsKey,
             "shortcut.toggleTerminalCopyMode"
@@ -399,22 +402,21 @@ final class WorkspaceRenameShortcutDefaultsTests: XCTestCase {
         XCTAssertFalse(shortcut.control)
     }
 
-    func testSaveFilePreviewShortcutDefaultsAndMetadata() {
-        XCTAssertEqual(KeyboardShortcutSettings.Action.saveFilePreview.label, "Save File Preview")
+    func testFilePreviewSaveShortcutIsUnavailableInUniConnect() {
+        XCTAssertEqual(
+            KeyboardShortcutSettings.Action.saveFilePreview.label,
+            String(localized: "shortcut.saveFilePreview.label", defaultValue: "Save File Preview")
+        )
         XCTAssertEqual(
             KeyboardShortcutSettings.Action.saveFilePreview.defaultsKey,
             "shortcut.saveFilePreview"
         )
 
-        let shortcut = KeyboardShortcutSettings.Action.saveFilePreview.defaultShortcut
-        XCTAssertEqual(shortcut.key, "s")
-        XCTAssertTrue(shortcut.command)
-        XCTAssertFalse(shortcut.shift)
-        XCTAssertFalse(shortcut.option)
-        XCTAssertFalse(shortcut.control)
+        XCTAssertEqual(KeyboardShortcutSettings.Action.saveFilePreview.defaultShortcut, .unbound)
+        XCTAssertFalse(KeyboardShortcutSettings.settingsVisibleActions.contains(.saveFilePreview))
     }
 
-    func testRightSidebarAndFindShortcutDefaultsMatchSettingsSurface() {
+    func testRemovedRightSidebarAndDirectoryFindShortcutsAreUnavailable() {
         XCTAssertEqual(
             KeyboardShortcutSettings.Action.focusRightSidebar.label,
             String(localized: "shortcut.focusRightSidebar.label", defaultValue: "Toggle Right Sidebar Focus")
@@ -424,58 +426,41 @@ final class WorkspaceRenameShortcutDefaultsTests: XCTestCase {
             String(localized: "shortcut.toggleRightSidebar.label", defaultValue: "Toggle Right Sidebar")
         )
 
-        let toggleRightSidebar = KeyboardShortcutSettings.Action.toggleRightSidebar.defaultShortcut
-        XCTAssertEqual(toggleRightSidebar.key, "b")
-        XCTAssertTrue(toggleRightSidebar.command)
-        XCTAssertFalse(toggleRightSidebar.shift)
-        XCTAssertTrue(toggleRightSidebar.option)
-        XCTAssertFalse(toggleRightSidebar.control)
-
-        let focusRightSidebar = KeyboardShortcutSettings.Action.focusRightSidebar.defaultShortcut
-        XCTAssertEqual(focusRightSidebar.key, "e")
-        XCTAssertTrue(focusRightSidebar.command)
-        XCTAssertTrue(focusRightSidebar.shift)
-        XCTAssertFalse(focusRightSidebar.option)
-        XCTAssertFalse(focusRightSidebar.control)
-
-        let findInDirectory = KeyboardShortcutSettings.Action.findInDirectory.defaultShortcut
-        XCTAssertEqual(findInDirectory.key, "f")
-        XCTAssertTrue(findInDirectory.command)
-        XCTAssertTrue(findInDirectory.shift)
-        XCTAssertFalse(findInDirectory.option)
-        XCTAssertFalse(findInDirectory.control)
+        XCTAssertEqual(KeyboardShortcutSettings.Action.toggleRightSidebar.defaultShortcut, .unbound)
+        XCTAssertEqual(KeyboardShortcutSettings.Action.focusRightSidebar.defaultShortcut, .unbound)
+        XCTAssertEqual(KeyboardShortcutSettings.Action.findInDirectory.defaultShortcut, .unbound)
+        XCTAssertFalse(KeyboardShortcutSettings.settingsVisibleActions.contains(.toggleRightSidebar))
+        XCTAssertFalse(KeyboardShortcutSettings.settingsVisibleActions.contains(.focusRightSidebar))
+        XCTAssertFalse(KeyboardShortcutSettings.settingsVisibleActions.contains(.findInDirectory))
     }
 
-    func testRightSidebarModeSwitchesHavePrivateControlDigitDefaults() {
-        let modeSwitchActions: [(KeyboardShortcutSettings.Action, String)] = [
-            (.switchRightSidebarToFiles, "1"),
-            (.switchRightSidebarToFind, "2"),
-            (.switchRightSidebarToSessions, "3"),
-            (.switchRightSidebarToFeed, "4"),
-            (.switchRightSidebarToDock, "5"),
+    func testRightSidebarModeSwitchesRemainPrivateAndUnbound() {
+        let modeSwitchActions: [KeyboardShortcutSettings.Action] = [
+            .switchRightSidebarToFiles,
+            .switchRightSidebarToFind,
+            .switchRightSidebarToSessions,
+            .switchRightSidebarToFeed,
+            .switchRightSidebarToDock,
         ]
 
-        for (action, key) in modeSwitchActions {
-            XCTAssertEqual(action.defaultShortcut.key, key)
-            XCTAssertFalse(action.defaultShortcut.command)
-            XCTAssertFalse(action.defaultShortcut.shift)
-            XCTAssertFalse(action.defaultShortcut.option)
-            XCTAssertTrue(action.defaultShortcut.control)
+        for action in modeSwitchActions {
+            XCTAssertEqual(action.defaultShortcut, .unbound)
             XCTAssertFalse(action.isPublicShortcutAction)
             XCTAssertFalse(KeyboardShortcutSettings.publicShortcutActions.contains(action))
             XCTAssertFalse(KeyboardShortcutSettings.settingsVisibleActions.contains(action))
         }
     }
 
-    func testSettingsVisibleShortcutActionsIncludeRemappableExampleShortcuts() {
+    func testSettingsVisibleShortcutActionsMatchUniConnectProductSurface() {
         let visibleActions = Set(KeyboardShortcutSettings.settingsVisibleActions)
 
-        XCTAssertTrue(visibleActions.contains(.toggleRightSidebar))
-        XCTAssertTrue(visibleActions.contains(.focusRightSidebar))
-        XCTAssertTrue(visibleActions.contains(.findInDirectory))
+        XCTAssertTrue(visibleActions.contains(.lockApp))
+        XCTAssertTrue(visibleActions.contains(.persistNow))
+        XCTAssertTrue(visibleActions.contains(.reconnectDroppedWindows))
+        XCTAssertTrue(visibleActions.contains(.terminalFontSizeIncrease))
         XCTAssertTrue(visibleActions.contains(.toggleUnread))
-        XCTAssertTrue(visibleActions.contains(.markOldestUnreadAndJumpNext))
         XCTAssertFalse(visibleActions.contains(.showHideAllWindows))
+        XCTAssertTrue(visibleActions.isDisjoint(with: KeyboardShortcutSettings.uniConnectHiddenActions))
     }
 
     func testToggleUnreadUsesConfigurableCommandOptionUDefault() {
@@ -490,37 +475,39 @@ final class WorkspaceRenameShortcutDefaultsTests: XCTestCase {
         XCTAssertTrue(KeyboardShortcutSettings.settingsVisibleActions.contains(.toggleUnread))
     }
 
-    func testMarkOldestUnreadAndJumpNextUsesConfigurableCommandControlUDefault() {
-        let shortcut = KeyboardShortcutSettings.Action.markOldestUnreadAndJumpNext.defaultShortcut
-
-        XCTAssertEqual(shortcut.key, "u")
-        XCTAssertTrue(shortcut.command)
-        XCTAssertFalse(shortcut.shift)
-        XCTAssertFalse(shortcut.option)
-        XCTAssertTrue(shortcut.control)
+    func testRemovedOldestUnreadCommandIsUnboundAndHidden() {
+        XCTAssertEqual(KeyboardShortcutSettings.Action.markOldestUnreadAndJumpNext.defaultShortcut, .unbound)
         XCTAssertTrue(KeyboardShortcutSettings.publicShortcutActions.contains(.markOldestUnreadAndJumpNext))
-        XCTAssertTrue(KeyboardShortcutSettings.settingsVisibleActions.contains(.markOldestUnreadAndJumpNext))
+        XCTAssertFalse(KeyboardShortcutSettings.settingsVisibleActions.contains(.markOldestUnreadAndJumpNext))
     }
 
-    func testSettingsVisibleShortcutActionsColocateRightSidebarFileExplorerAndFindShortcuts() {
-        let visibleActions = KeyboardShortcutSettings.settingsVisibleActions
-        let expectedActions: [KeyboardShortcutSettings.Action] = [
-            .focusRightSidebar,
-            .toggleRightSidebar,
-            .findInDirectory,
+    func testUniConnectRequiredMenuShortcutsAndVisibleDefaultsAreCollisionFree() {
+        let expected: [KeyboardShortcutSettings.Action: StoredShortcut] = [
+            .newTab: StoredShortcut(key: "n", command: true, shift: false, option: false, control: false),
+            .newSurface: StoredShortcut(key: "t", command: true, shift: false, option: false, control: false),
+            .toggleSidebar: StoredShortcut(key: "b", command: true, shift: false, option: true, control: false),
+            .reconnectFocusedSSHWindow: StoredShortcut(key: "r", command: true, shift: false, option: false, control: false),
+            .renameWorkspace: StoredShortcut(key: "r", command: true, shift: true, option: false, control: false),
+            .reconnectDroppedWindows: StoredShortcut(key: "r", command: true, shift: false, option: false, control: true),
         ]
 
-        guard let startIndex = visibleActions.firstIndex(of: .focusRightSidebar) else {
-            XCTFail("Toggle Right Sidebar Focus should be visible in keyboard shortcut settings")
-            return
+        for (action, shortcut) in expected {
+            XCTAssertEqual(action.defaultShortcut, shortcut, "Unexpected default for \(action.rawValue)")
         }
 
-        let endIndex = startIndex + expectedActions.count
-        guard endIndex <= visibleActions.count else {
-            XCTFail("Expected shortcut settings to include the full right-sidebar shortcut run")
-            return
+        let bound = KeyboardShortcutSettings.settingsVisibleActions.filter { !$0.defaultShortcut.isUnbound }
+        for (index, lhs) in bound.enumerated() {
+            for rhs in bound.dropFirst(index + 1) {
+                XCTAssertFalse(
+                    lhs.conflicts(
+                        with: rhs.defaultShortcut,
+                        proposedAction: rhs,
+                        configuredShortcut: lhs.defaultShortcut
+                    ),
+                    "Default shortcut collision: \(lhs.rawValue) and \(rhs.rawValue)"
+                )
+            }
         }
-        XCTAssertEqual(Array(visibleActions[startIndex..<endIndex]), expectedActions)
     }
 
     func testMenuItemKeyEquivalentHandlesArrowAndTabKeys() {
@@ -2727,7 +2714,7 @@ final class StoredShortcutMatchingTests: XCTestCase {
             shortcutForAction: { $0.defaultShortcut }
         )
 
-        XCTAssertEqual(presentation?.message, "This shortcut conflicts with New Surface (⌘T). Swap shortcuts?")
+        XCTAssertEqual(presentation?.message, "This shortcut conflicts with New Tab (⌘T). Swap shortcuts?")
         XCTAssertEqual(presentation?.swapButtonTitle, "Swap")
         XCTAssertTrue(presentation?.canSwap ?? false)
         XCTAssertEqual(presentation?.undoButtonTitle, "Undo")
@@ -2746,7 +2733,7 @@ final class StoredShortcutMatchingTests: XCTestCase {
 
         XCTAssertEqual(
             presentation?.message,
-            "This shortcut conflicts with Select Workspace 1…9 (⌘1…9)."
+            "This shortcut conflicts with Select Box 1…9 (⌘1…9)."
         )
         XCTAssertNil(presentation?.swapButtonTitle)
         XCTAssertFalse(presentation?.canSwap ?? true)
@@ -3139,6 +3126,7 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
             restorableAgent: nil,
             restorableAgentResumeState: nil,
             resumeBinding: resumeBinding,
+            uniConnectLocalWindow: nil,
             agentRuntime: nil,
             isRemoteTerminal: false,
             remoteRelayPort: nil,

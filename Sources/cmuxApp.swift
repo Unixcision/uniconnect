@@ -4,7 +4,10 @@ import CmuxSidebarRemoteRender
 import CmuxSocketControl
 import CmuxSettings
 import CmuxSettingsUI
+import CmuxUpdater
 import CmuxUpdaterUI
+import UniConnectClaudeBridge
+import UniConnectClaudeUpdate
 import SwiftUI
 import Observation
 import Darwin
@@ -46,7 +49,10 @@ struct cmuxApp: App {
     /// The de-singletonized auth graph (shared AuthCoordinator + the macOS
     /// hosted-browser sign-in flow). Constructed once at app launch and
     /// injected into AppDelegate and the auth-consuming services.
-    private let authComposition: MacAuthComposition
+    private let authComposition: MacAuthComposition?
+
+    /// Direct-SSH Claude completion bridge assembled once at the executable boundary.
+    private let claudeBridgeRuntime: UniConnectClaudeBridgeRuntime?
 
     @StateObject private var tabManager: TabManager
     @StateObject private var notificationStore = TerminalNotificationStore.shared
@@ -60,7 +66,6 @@ struct cmuxApp: App {
     private var showSidebarDevBuildBanner = DevBuildBannerDebugSettings.defaultShowSidebarBanner
     @AppStorage(SocketControlSettings.appStorageKey) private var socketControlMode = SocketControlSettings.defaultMode.rawValue
     @AppStorage(BrowserToolbarAccessorySpacingDebugSettings.key) private var browserToolbarAccessorySpacingRaw = BrowserToolbarAccessorySpacingDebugSettings.defaultSpacing
-    @State private var browserFocusModeMenuRevision = 0
     @StateObject var focusHistoryMenuInvalidator = FocusHistoryMenuInvalidator()
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.openWindow) private var openWindow
@@ -118,8 +123,18 @@ struct cmuxApp: App {
             saveSecret: { try socketPasswordStore.savePassword($0) },
             backupTimestamp: secretMigrationTimestamp
         )
-        let authComposition = MacAuthComposition()
+        let hostedServicesConfiguration = AuthEnvironment.hostedServices
+        let authComposition = MacAuthComposition(configuration: hostedServicesConfiguration)
         self.authComposition = authComposition
+        let accountFlow: HostAccountFlow?
+        if let authComposition {
+            accountFlow = HostAccountFlow(
+                coordinator: authComposition.coordinator,
+                browserSignIn: authComposition.browserSignIn
+            )
+        } else {
+            accountFlow = nil
+        }
         self.settingsRuntime = SettingsRuntime(
             catalog: settingsCatalog,
             userDefaultsStore: UserDefaultsSettingsStore(
@@ -129,15 +144,16 @@ struct cmuxApp: App {
             jsonStore: JSONConfigStore(fileURL: configFileURL),
             secretStore: secretStore,
             errorLog: SettingsErrorLog(),
-            accountFlow: HostAccountFlow(
-                coordinator: authComposition.coordinator,
-                browserSignIn: authComposition.browserSignIn
-            ),
-            hostActions: HostSettingsActions(configFileURL: configFileURL)
+            accountFlow: accountFlow,
+            hostedServicesAvailable: hostedServicesConfiguration != nil,
+            hostActions: HostSettingsActions(
+                configFileURL: configFileURL,
+                hostedServicesAvailable: hostedServicesConfiguration != nil
+            )
         )
 
         // If invoked with CLI-style arguments (e.g. `cmux hooks setup`), exec the
-        // bundled CLI at Contents/Resources/bin/uniconnect. The GUI binary and the CLI
+        // bundled CLI at Contents/Resources/bin/cmux. The GUI binary and the CLI
         // share the name `cmux`, so if the GUI's Contents/MacOS leaks onto $PATH
         // (which happens for any shell descended from this process), bare `cmux`
         // resolves here instead of the CLI. See
@@ -187,7 +203,150 @@ struct cmuxApp: App {
         KeyboardShortcutSettings.settingsFileStore.applyDeferredManagedDefaultSideEffects()
         StartupBreadcrumbLog.append("app.init.keyboardShortcuts.sideEffectsApplied")
         StartupBreadcrumbLog.append("app.init.tabManager.begin")
-        _tabManager = StateObject(wrappedValue: TabManager())
+        let importMutationGate = UniConnectImportMutationGate()
+        let tabManager = TabManager(importMutationGate: importMutationGate)
+        _tabManager = StateObject(wrappedValue: tabManager)
+        let tabManagersProvider: @MainActor @Sendable () -> [TabManager] = { [weak tabManager] in
+            let registered = UniConnectCoordinator.shared.allTabManagers()
+            guard let tabManager else { return registered }
+            guard !registered.contains(where: { $0 === tabManager }) else { return registered }
+            return [tabManager] + registered
+        }
+        let bridgeKey = UniConnectMasterKey.load()
+        let bridgeTokenStore = UniConnectClaudeBridgeTokenVault(key: bridgeKey)
+        let bridgeMaintenance = UniConnectClaudeBridgeMaintenanceService(
+            tokenStore: bridgeTokenStore,
+            commandExecutor: UniConnectSSHCommandService(),
+            installationKey: bridgeKey
+        )
+        let bridgeRuntime = try? UniConnectClaudeBridgeRuntime(
+            tokenStore: bridgeTokenStore,
+            notificationDelivery: UniConnectClaudeBridgeNotificationSink(
+                tabManagersProvider: tabManagersProvider,
+                notificationStore: TerminalNotificationStore.shared
+            ),
+            installationKey: bridgeKey,
+            statusDelivery: { route, status in
+                guard let workspace = tabManagersProvider()
+                    .lazy
+                    .compactMap({ manager in
+                        manager.tabs.first(where: { $0.id == route.workspaceID })
+                    })
+                    .first else {
+                    return
+                }
+                if status == .inactive {
+                    workspace.uniConnectClaudeBridgeStatusByPanelId.removeValue(forKey: route.id)
+                } else {
+                    workspace.uniConnectClaudeBridgeStatusByPanelId[route.id] = status
+                }
+            }
+        )
+        self.claudeBridgeRuntime = bridgeRuntime
+        UniConnectCoordinator.shared.configureClaudeBridge(
+            bridgeRuntime,
+            maintenance: bridgeMaintenance,
+            listenerUnavailable: bridgeRuntime == nil
+        )
+        let importCheckpoints = UniConnectImportCheckpointRepository()
+        UniConnectCoordinator.shared.configureSSHCommandExecutor(
+            UniConnectSSHCommandService()
+        )
+        UniConnectCoordinator.shared.configureImportRuntime(
+            transaction: UniConnectImportTransaction(
+                journal: UniConnectImportJournalRepository(),
+                tmuxVerifier: UniConnectExistingTmuxVerifier(
+                    executor: UniConnectSSHCommandService()
+                )
+            ),
+            checkpoints: importCheckpoints,
+            mutationGate: importMutationGate
+        )
+
+        let credentialResolver: @Sendable (UUID) async -> String? = { credentialID in
+            UniConnectVault.shared.connectCommand(for: credentialID)
+        }
+        let processRunner = UniConnectControlledProcessRunner()
+        let applicationStateReader = UniConnectClaudeUpdateApplicationStateReader(
+            tabManagersProvider: tabManagersProvider
+        )
+        let binaryUpdater = UniConnectClaudeBinaryUpdater(
+            processRunner: processRunner,
+            credentialResolver: credentialResolver
+        )
+        let sessionRegistry = UniConnectClaudeSessionRegistry()
+        let bridgeKeyData = bridgeKey.withUnsafeBytes { Data($0) }
+        let remoteResolver = UniConnectClaudeRemoteTargetResolver(
+            processRunner: processRunner,
+            binaryUpdater: binaryUpdater,
+            credentialResolver: credentialResolver,
+            installationID: ClaudeBridgeInstallationIdentity.derive(from: bridgeKeyData),
+            signalProvider: { routeID in
+                await sessionRegistry.latestRemoteSignal(routeID: routeID)
+            },
+            eventProvider: { workspaceID, panelID in
+                await sessionRegistry.events(workspaceID: workspaceID, panelID: panelID)
+            }
+        )
+        let targetProvider = UniConnectClaudeUpdateTargetProvider(
+            stateReader: applicationStateReader,
+            remoteResolver: remoteResolver,
+            credentialSnapshotResolver: { credentialID in
+                guard let revisionID = try? UniConnectVault.shared.immutableRevision(for: credentialID),
+                      let command = UniConnectVault.shared.connectCommand(for: revisionID),
+                      UniConnectSSH.validateConnectCommand(command) == nil,
+                      let session = UniConnectSSH.detectedSession(fromConnectCommand: command) else {
+                    return nil
+                }
+                return (
+                    revisionID: revisionID,
+                    endpointFingerprint: UniConnectClaudeUpdateHostID.endpointFingerprint(for: session)
+                )
+            }
+        )
+        let terminalWriter = UniConnectClaudeTerminalWriter(
+            tabManagersProvider: tabManagersProvider
+        )
+        let localInspector = UniConnectClaudeLocalProcessInspector(
+            stateReader: applicationStateReader,
+            binaryUpdater: binaryUpdater
+        )
+        let sessionController = UniConnectClaudeSessionController(
+            stateReader: applicationStateReader,
+            terminalWriter: terminalWriter,
+            localInspector: localInspector,
+            remoteController: remoteResolver,
+            processExitWaiter: UniConnectLocalProcessExitWaiter(),
+            sessionRegistry: sessionRegistry
+        )
+        let updateOrchestrator = ClaudeUpdateOrchestrator(
+            targetProvider: targetProvider,
+            sessionController: sessionController,
+            binaryUpdater: binaryUpdater,
+            journal: UniConnectClaudeUpdateJournal(),
+            clock: SystemClaudeUpdateClock(),
+            logger: UniConnectClaudeUpdateLogger()
+        )
+        let updateCoordinator = UniConnectClaudeUpdateCoordinator(
+            targetProvider: targetProvider,
+            orchestrator: updateOrchestrator,
+            terminateOwnedProcesses: {
+                processRunner.shutdown()
+            }
+        )
+        Task {
+            await sessionRegistry.start(
+                localSignals: UniConnectClaudeSessionSignalSource(center: .default),
+                remoteSignals: bridgeRuntime?.sessionSignals
+            )
+        }
+        UniConnectCoordinator.shared.configureClaudeUpdater(
+            updateCoordinator,
+            shutdown: {
+                processRunner.shutdown()
+                Task { await sessionRegistry.stop() }
+            }
+        )
         StartupBreadcrumbLog.append("app.init.tabManager.complete")
         // Migrate legacy and old-format socket mode values to the new enum.
         if let stored = defaults.string(forKey: SocketControlSettings.appStorageKey) {
@@ -422,42 +581,89 @@ struct cmuxApp: App {
                 .onChange(of: socketControlMode) { _ in
                     updateSocketController()
                 }
-                .onReceive(NotificationCenter.default.publisher(for: .browserFocusModeStateDidChange)) { _ in
-                    browserFocusModeMenuRevision &+= 1
-                }
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .appSettings) {
-                splitCommandButton(title: String(localized: "menu.app.settings", defaultValue: "Settings…"), shortcut: menuShortcut(for: .openSettings)) {
+                splitCommandButton(
+                    title: String(localized: "menu.app.settings", defaultValue: "Settings…"),
+                    systemImage: "gearshape",
+                    shortcut: menuShortcut(for: .openSettings)
+                ) {
                     appDelegate.openPreferencesWindow(debugSource: "menu.cmdComma")
                 }
-                Button(String(localized: "menu.app.openCmuxSettingsFile", defaultValue: "Open uniconnect.json")) {
+                Button {
                     openCmuxSettingsFileInEditor()
+                } label: {
+                    Label(
+                        String(localized: "menu.app.openUniConnectSettingsFile", defaultValue: "Open uniconnect.json"),
+                        systemImage: "doc.text"
+                    )
                 }
-                Button(String(localized: "menu.app.ghosttySettings", defaultValue: "Ghostty Settings…")) {
+                Button {
                     GhosttyApp.shared.openConfigurationInTextEdit()
+                } label: {
+                    Label(
+                        String(localized: "menu.app.ghosttySettings", defaultValue: "Ghostty Settings…"),
+                        systemImage: "terminal"
+                    )
                 }
-                splitCommandButton(title: String(localized: "menu.app.reloadConfiguration", defaultValue: "Reload Configuration"), shortcut: menuShortcut(for: .reloadConfiguration)) {
+                splitCommandButton(
+                    title: String(localized: "menu.app.reloadConfiguration", defaultValue: "Reload Configuration"),
+                    systemImage: "arrow.clockwise",
+                    shortcut: menuShortcut(for: .reloadConfiguration)
+                ) {
                     dispatchReloadConfigurationMenuCommand()
                 }
-                Button(String(localized: "menu.app.makeDefaultTerminal", defaultValue: "Make cmux the Default Terminal")) {
-                    DefaultTerminalUserAction.setAsDefault(debugSource: "menu.makeDefaultTerminal")
+
+                Divider()
+
+                splitCommandButton(
+                    title: String(localized: "menu.app.lock", defaultValue: "Lock"),
+                    systemImage: "lock.fill",
+                    shortcut: menuShortcut(for: .lockApp)
+                ) {
+                    performUniConnectLockAction()
+                }
+
+                Menu {
+                    ForEach([0, 5, 15, 30, 60], id: \.self) { minutes in
+                        Button {
+                            UniConnectAppLock.autoLockMinutes = minutes
+                        } label: {
+                            if UniConnectAppLock.autoLockMinutes == minutes {
+                                Label(autoLockMenuTitle(minutes: minutes), systemImage: "checkmark")
+                            } else {
+                                Text(autoLockMenuTitle(minutes: minutes))
+                            }
+                        }
+                    }
+                } label: {
+                    Label(
+                        String(localized: "menu.app.autoLock", defaultValue: "Lock Automatically"),
+                        systemImage: "timer"
+                    )
                 }
             }
 
             CommandGroup(replacing: .appInfo) {
-                Button(String(localized: "menu.app.about", defaultValue: "About cmux")) {
+                Button(String(localized: "menu.app.aboutUniConnect", defaultValue: "About UniConnect")) {
                     showAboutPanel()
                 }
-                Button(String(localized: "menu.app.checkForUpdates", defaultValue: "Check for Updates…")) {
-                    appDelegate.checkForUpdates(nil)
+                if showsUniConnectSoftwareUpdateMenu {
+                    Button(String(localized: "menu.app.checkForUpdates", defaultValue: "Check for Updates…")) {
+                        appDelegate.checkForUpdates(nil)
+                    }
+                    InstallUpdateMenuItem(model: appDelegate.updateViewModel)
                 }
-                InstallUpdateMenuItem(model: appDelegate.updateViewModel)
             }
 
             CommandGroup(replacing: .appTermination) {
-                splitCommandButton(title: String(localized: "menu.quitCmux", defaultValue: "Quit cmux"), shortcut: menuShortcut(for: .quit)) {
+                splitCommandButton(
+                    title: String(localized: "menu.app.quitUniConnect", defaultValue: "Quit UniConnect"),
+                    systemImage: "power",
+                    shortcut: menuShortcut(for: .quit)
+                ) {
                     NSApp.terminate(nil)
                 }
             }
@@ -481,49 +687,6 @@ struct cmuxApp: App {
                 }
             }
 #endif
-
-            CommandMenu(String(localized: "menu.notifications.title", defaultValue: "Notifications")) {
-                let snapshot = notificationMenuSnapshot
-
-                Button(snapshot.stateHintTitle) {}
-                    .disabled(true)
-
-                if !snapshot.recentNotifications.isEmpty {
-                    Divider()
-
-                    ForEach(snapshot.recentNotifications) { notification in
-                        Button(notificationMenuItemTitle(for: notification)) {
-                            openNotificationFromMainMenu(notification)
-                        }
-                    }
-
-                    Divider()
-                }
-
-                splitCommandButton(title: String(localized: "menu.notifications.show", defaultValue: "Show Notifications"), shortcut: menuShortcut(for: .showNotifications)) {
-                    showNotificationsPopover()
-                }
-
-                splitCommandButton(title: String(localized: "menu.notifications.jumpToUnread", defaultValue: "Jump to Latest Unread"), shortcut: menuShortcut(for: .jumpToUnread)) {
-                    appDelegate.jumpToLatestUnread()
-                }
-                .disabled(!snapshot.hasUnreadNotifications)
-
-                splitCommandButton(title: String(localized: "menu.notifications.toggleUnread", defaultValue: "Toggle Unread"), shortcut: menuShortcut(for: .toggleUnread)) {
-                    appDelegate.toggleFocusedNotificationUnread()
-                }
-                .disabled(activeTabManager.selectedWorkspace == nil)
-
-                Button(String(localized: "menu.notifications.markAllRead", defaultValue: "Mark All Read")) {
-                    notificationStore.markAllRead()
-                }
-                .disabled(!snapshot.hasUnreadNotifications)
-
-                Button(String(localized: "menu.notifications.clearAll", defaultValue: "Clear All")) {
-                    notificationStore.clearAll()
-                }
-                .disabled(!snapshot.hasNotifications)
-            }
 
 #if DEBUG
             CommandMenu("Debug") {
@@ -709,110 +872,162 @@ struct cmuxApp: App {
             }
 #endif
 
-            // New tab commands
+            // File — UniConnect owns one main app window. A box is a workspace and a
+            // window is a terminal/tmux tab inside that box.
             CommandGroup(replacing: .newItem) {
-                // UniConnect: one window. The File menu offers exactly two ways to create
-                // things — a new box (workspace) and a new tab inside the current box — so
-                // "New Window" and the folder-opening variants are cmux-only.
-                if !UniConnectCoordinator.isEnabled {
-                    splitCommandButton(title: String(localized: "menu.file.newWindow", defaultValue: "New Window"), shortcut: menuShortcut(for: .newWindow)) {
-                        appDelegate.openNewMainWindow(nil)
-                    }
-                }
-
-                splitCommandButton(title: String(localized: "menu.file.newWorkspace", defaultValue: "New Workspace"), shortcut: menuShortcut(for: .newTab)) {
+                splitCommandButton(
+                    title: String(localized: "menu.file.newBox", defaultValue: "New Box…"),
+                    systemImage: "shippingbox",
+                    shortcut: menuShortcut(for: .newTab)
+                ) {
                     if let appDelegate = AppDelegate.shared {
                         appDelegate.performNewWorkspaceAction(
                             tabManager: activeTabManager,
-                            debugSource: "menu.newWorkspace"
+                            debugSource: "menu.newBox"
                         )
                     } else {
                         activeTabManager.addWorkspace()
                     }
                 }
 
-                if UniConnectCoordinator.isEnabled {
-                    // Same path as the "+" of the tab bar: SSH boxes get the tmux window sheet.
-                    splitCommandButton(title: String(localized: "menu.file.newTabInWorkspace", defaultValue: "New Tab"), shortcut: menuShortcut(for: .newSurface)) {
-                        activeTabManager.newSurface()
-                    }
-                } else {
-                    splitCommandButton(title: String(localized: "menu.file.openFolder", defaultValue: "Open Folder…"), shortcut: menuShortcut(for: .openFolder)) {
-                        AppDelegate.shared?.showOpenFolderPanel()
-                    }
-
-                    Button(
-                        String(
-                            localized: "menu.file.openFolderInVSCodeInline",
-                            defaultValue: "Open Folder in VS Code (Inline)…"
-                        )
-                    ) {
-                        AppDelegate.shared?.showOpenFolderInInlineVSCodePanel()
-                    }
-                    .disabled(!TerminalDirectoryOpenTarget.vscodeInline.isAvailable())
+                splitCommandButton(
+                    title: String(localized: "menu.file.newTabInBox", defaultValue: "New Tab"),
+                    systemImage: "plus.rectangle.on.rectangle",
+                    shortcut: menuShortcut(for: .newSurface)
+                ) {
+                    activeTabManager.newSurface()
                 }
+                .disabled(activeTabManager.selectedWorkspace == nil)
             }
 
-            // Close tab/workspace
             CommandGroup(after: .newItem) {
-                splitCommandButton(title: String(localized: "menu.file.goToWorkspace", defaultValue: "Go to Workspace…"), shortcut: menuShortcut(for: .goToWorkspace)) {
-                    let targetWindow = NSApp.keyWindow ?? NSApp.mainWindow
-                    NotificationCenter.default.post(name: .commandPaletteSwitcherRequested, object: targetWindow)
+                splitCommandButton(
+                    title: String(localized: "menu.file.reopenLastClosed", defaultValue: "Reopen Last Closed"),
+                    systemImage: "arrow.uturn.backward",
+                    shortcut: menuShortcut(for: .reopenClosedBrowserPanel)
+                ) {
+                    if AppDelegate.shared?.reopenMostRecentlyClosedItem(preferredTabManager: activeTabManager) != true {
+                        NSSound.beep()
+                    }
                 }
+                .disabled(!closedItemHistoryStore.canReopen)
 
-                splitCommandButton(title: String(localized: "menu.file.commandPalette", defaultValue: "Command Palette…"), shortcut: menuShortcut(for: .commandPalette)) {
-                    let targetWindow = NSApp.keyWindow ?? NSApp.mainWindow
-                    NotificationCenter.default.post(name: .commandPaletteRequested, object: targetWindow)
+                Menu {
+                    recentlyClosedMenuContent(manager: activeTabManager)
+                } label: {
+                    Label(
+                        String(localized: "menu.file.recentlyClosed", defaultValue: "Recently Closed"),
+                        systemImage: "clock.arrow.circlepath"
+                    )
                 }
 
                 Divider()
 
-                // Terminal semantics:
-                // The Close Tab shortcut closes the focused tab/surface with confirmation
-                // when needed. By default, closing the last surface also closes the
-                // workspace and the window if it was also the last workspace.
-                // Users can opt into keeping the workspace open instead.
-                splitCommandButton(title: String(localized: "menu.file.closeTab", defaultValue: "Close Tab"), shortcut: menuShortcut(for: .closeTab)) {
+                splitCommandButton(
+                    title: String(localized: "menu.file.closeWindowInBox", defaultValue: "Close Window"),
+                    systemImage: "xmark",
+                    shortcut: menuShortcut(for: .closeTab)
+                ) {
                     closePanelOrWindow()
                 }
+                .disabled(activeTabManager.selectedWorkspace == nil)
 
-                splitCommandButton(title: String(localized: "menu.file.closeOtherTabs", defaultValue: "Close Other Tabs in Pane"), shortcut: menuShortcut(for: .closeOtherTabsInPane)) {
+                splitCommandButton(
+                    title: String(localized: "menu.file.closeOtherWindowsInPanel", defaultValue: "Close Other Windows in Panel"),
+                    systemImage: "xmark.rectangle.stack",
+                    shortcut: menuShortcut(for: .closeOtherTabsInPane)
+                ) {
                     closeOtherTabsInFocusedPane()
                 }
                 .disabled(!activeTabManager.canCloseOtherTabsInFocusedPane())
 
-                // The Close Workspace shortcut closes the current workspace with confirmation
-                // when needed. If this is the last workspace, it closes the window.
-                splitCommandButton(title: String(localized: "menu.file.closeWorkspace", defaultValue: "Close Workspace"), shortcut: menuShortcut(for: .closeWorkspace)) {
+                splitCommandButton(
+                    title: String(localized: "menu.file.closeBox", defaultValue: "Close Box"),
+                    systemImage: "xmark.square",
+                    shortcut: menuShortcut(for: .closeWorkspace)
+                ) {
                     closeTabOrWindow()
                 }
+                .disabled(activeTabManager.selectedWorkspace == nil)
 
-                Menu(String(localized: "commandPalette.switcher.workspaceLabel", defaultValue: "Workspace")) {
-                    workspaceCommandMenuContent(manager: activeTabManager)
+                Divider()
+
+                splitCommandButton(
+                    title: String(localized: "menu.file.persistNow", defaultValue: "Save Now"),
+                    systemImage: "externaldrive.badge.checkmark",
+                    shortcut: menuShortcut(for: .persistNow)
+                ) {
+                    performUniConnectPersistAction()
                 }
 
+                Text(UniConnectCoordinator.lastSavedMenuLabel())
+
+                Button {
+                    appDelegate.restoreUniConnectRecoveryBackup(nil)
+                } label: {
+                    Label(
+                        String(localized: "menu.file.restoreBackup", defaultValue: "Restore Backup…"),
+                        systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90"
+                    )
+                }
+
+                Divider()
+
+                Button {
+                    UniConnectCoordinator.shared.importConfiguration()
+                } label: {
+                    Label(
+                        String(localized: "menu.file.importConfiguration", defaultValue: "Import Configuration…"),
+                        systemImage: "square.and.arrow.down"
+                    )
+                }
+
+                Button {
+                    UniConnectCoordinator.shared.migrateFromCmux()
+                } label: {
+                    Label(
+                        String(localized: "menu.file.migrateFromCmux", defaultValue: "Migrate Boxes from cmux…"),
+                        systemImage: "arrow.triangle.2.circlepath"
+                    )
+                }
+
+                Button {
+                    UniConnectCoordinator.shared.exportConfiguration()
+                } label: {
+                    Label(
+                        String(localized: "menu.file.exportConfiguration", defaultValue: "Export Configuration…"),
+                        systemImage: "square.and.arrow.up"
+                    )
+                }
+
+                Button {
+                    UniConnectCoordinator.shared.saveSeedTemplate()
+                } label: {
+                    Label(
+                        String(localized: "menu.file.saveSeedTemplate", defaultValue: "Save Initial Template…"),
+                        systemImage: "doc.badge.plus"
+                    )
+                }
             }
 
-            // Find
+            // Edit › Find, plus the terminal-native copy mode.
             CommandGroup(after: .textEditing) {
-                Menu(String(localized: "menu.find.title", defaultValue: "Find")) {
+                Menu {
                     let restoreFindTargetFocus = {
                         _ = AppDelegate.shared?.restoreFocusedMainPanelFocusFromRightSidebar(
                             preferredWindow: NSApp.keyWindow ?? NSApp.mainWindow
                         )
                     }
 
-                    splitCommandButton(title: String(localized: "menu.find.find", defaultValue: "Find…"), shortcut: menuShortcut(for: .find)) {
+                    splitCommandButton(
+                        title: String(localized: "menu.find.find", defaultValue: "Find…"),
+                        systemImage: "magnifyingglass",
+                        shortcut: menuShortcut(for: .find)
+                    ) {
 #if DEBUG
                         cmuxDebugLog("find.menu Cmd+F fired")
 #endif
                         _ = AppDelegate.shared?.performFindShortcutInActiveMainWindow(
-                            preferredWindow: NSApp.keyWindow ?? NSApp.mainWindow
-                        )
-                    }
-
-                    splitCommandButton(title: String(localized: "menu.find.findInDirectory", defaultValue: "Find in Directory…"), shortcut: menuShortcut(for: .findInDirectory)) {
-                        _ = AppDelegate.shared?.focusFileSearchInActiveMainWindow(
                             preferredWindow: NSApp.keyWindow ?? NSApp.mainWindow
                         )
                     }
@@ -854,7 +1069,20 @@ struct cmuxApp: App {
                         }
                     }
                     .disabled(activeTabManager.selectedTerminalPanel == nil)
+                } label: {
+                    Label(String(localized: "menu.find.title", defaultValue: "Find"), systemImage: "magnifyingglass")
                 }
+
+                splitCommandButton(
+                    title: String(localized: "menu.edit.terminalCopyMode", defaultValue: "Terminal Copy Mode"),
+                    systemImage: "selection.pin.in.out",
+                    shortcut: menuShortcut(for: .toggleTerminalCopyMode)
+                ) {
+                    if !activeTabManager.toggleFocusedTerminalCopyMode() {
+                        NSSound.beep()
+                    }
+                }
+                .disabled(activeTabManager.selectedTerminalPanel == nil)
             }
 
             windowAndViewCommands
@@ -883,260 +1111,357 @@ struct cmuxApp: App {
 
     @CommandsBuilder
     private var windowAndViewCommands: some Commands {
-        CommandMenu("UniConnect") {
-            Button("Nueva caja (Local o SSH)…") {
-                _ = AppDelegate.shared?.performNewWorkspaceAction(tabManager: activeTabManager, debugSource: "menu.uniconnect.newWorkspace")
-            }
-            Button("Nueva ventana tmux…") {
-                guard let workspace = activeTabManager.selectedWorkspace else { return }
-                if !UniConnectCoordinator.shared.interceptNewSurface(in: workspace) {
-                    activeTabManager.newSurface()
-                }
-            }
-            Button("Editar conexión SSH de la caja…") {
-                guard let workspace = activeTabManager.selectedWorkspace else { return }
-                UniConnectCoordinator.shared.editConnection(for: workspace)
-            }
-            Divider()
-            Button("Persistir ahora") {
-                UniConnectCoordinator.shared.persistNow()
-            }
-            .keyboardShortcut("s", modifiers: [.command, .option])
-            Button("Exportar configuración…") {
-                UniConnectCoordinator.shared.exportConfiguration()
-            }
-            Button("Importar configuración…") {
-                UniConnectCoordinator.shared.importConfiguration()
-            }
-            Button("Migrar cajas desde cmux…") {
-                UniConnectCoordinator.shared.migrateFromCmux()
-            }
-            Button("Guardar plantilla inicial…") {
-                UniConnectCoordinator.shared.saveSeedTemplate()
-            }
-            Divider()
-            Button("Cerradas…") {
-                UniConnectCoordinator.shared.showClosedItemsMenu(tabManager: activeTabManager)
-            }
-            Button("Reconectar ventanas caídas") {
-                UniConnectCoordinator.shared.reconnectAllDisconnected()
-            }
-            // ⌘⌃R: la familia ⌘R / ⌘⇧R / ⌘⌥R se deja libre para renombrar.
-            .keyboardShortcut("r", modifiers: [.command, .control])
-            Button("Terminar sesión tmux remota de la ventana activa…") {
-                guard let workspace = activeTabManager.selectedWorkspace else { return }
-                UniConnectCoordinator.shared.terminateRemoteTmuxSession(in: workspace)
-            }
-            Menu("Actualizar Claude") {
-                Button("En esta ventana") {
-                    guard let workspace = activeTabManager.selectedWorkspace,
-                          let panelId = workspace.focusedPanelId else { return }
-                    UniConnectClaudeUpdater.run(.window(panelId, workspace))
-                }
-                .keyboardShortcut("u", modifiers: [.command, .control])
-                Button("En esta caja") {
-                    guard let workspace = activeTabManager.selectedWorkspace else { return }
-                    UniConnectClaudeUpdater.run(.box(workspace))
-                }
-                Button("En todas las cajas…") {
-                    UniConnectClaudeUpdater.run(.all)
-                }
-            }
-            Divider()
-            Toggle("Barra lateral compacta", isOn: $uniConnectSidebarCompact)
-                .keyboardShortcut("b", modifiers: [.command, .option])
-            Button("Bloquear") {
-                UniConnectAppLock.shared.lock()
-            }
-            .keyboardShortcut("l", modifiers: [.command, .control])
-            Menu("Bloqueo automático por inactividad") {
-                ForEach([0, 5, 15, 30, 60], id: \.self) { minutes in
-                    Button((minutes == 0 ? "Desactivado" : "\(minutes) min") + (UniConnectAppLock.autoLockMinutes == minutes ? "  ✓" : "")) {
-                        UniConnectAppLock.autoLockMinutes = minutes
-                    }
-                }
-            }
-            Divider()
-            Text(UniConnectCoordinator.lastSavedMenuLabel())
-        }
-
-        CommandGroup(after: .windowArrangement) {
-            Button(String(localized: "menu.window.taskManager", defaultValue: "Task Manager...")) {
-                TaskManagerWindowController.shared.show()
-            }
-        }
         helpCommands
-        historyCommands
+
+        // View contains presentation-only actions. Browser and right-sidebar commands
+        // are intentionally absent from the UniConnect product surface.
         CommandGroup(after: .toolbar) {
-            splitCommandButton(title: String(localized: "menu.view.toggleLeftSidebar", defaultValue: "Toggle Left Sidebar"), shortcut: menuShortcut(for: .toggleSidebar)) {
+            splitCommandButton(
+                title: uniConnectSidebarCompact
+                    ? String(localized: "menu.view.expandSidebar", defaultValue: "Expand Sidebar")
+                    : String(localized: "menu.view.compactSidebar", defaultValue: "Compact Sidebar"),
+                systemImage: uniConnectSidebarCompact ? "sidebar.left" : "sidebar.squares.left",
+                shortcut: menuShortcut(for: .toggleSidebar)
+            ) {
                 if AppDelegate.shared?.toggleSidebarInActiveMainWindow() != true {
                     sidebarState.toggle()
                 }
             }
 
-            splitCommandButton(title: String(localized: "menu.view.toggleRightSidebar", defaultValue: "Toggle Right Sidebar"), shortcut: menuShortcut(for: .toggleRightSidebar)) {
-                if AppDelegate.shared?.toggleRightSidebarInActiveMainWindow(
-                    preferredWindow: NSApp.keyWindow ?? NSApp.mainWindow
-                ) != true {
-                    NSSound.beep()
-                }
+            splitCommandButton(
+                title: String(localized: "menu.view.commandPalette", defaultValue: "Command Palette…"),
+                systemImage: "command",
+                shortcut: menuShortcut(for: .commandPalette)
+            ) {
+                let targetWindow = NSApp.keyWindow ?? NSApp.mainWindow
+                NotificationCenter.default.post(name: .commandPaletteRequested, object: targetWindow)
             }
 
-            splitCommandButton(title: String(localized: "menu.view.focusRightSidebar", defaultValue: "Toggle Right Sidebar Focus"), shortcut: menuShortcut(for: .focusRightSidebar)) {
-                if AppDelegate.shared?.toggleRightSidebarKeyboardFocusInActiveMainWindow() != true {
-                    if AppDelegate.shared?.focusRightSidebarInActiveMainWindow(
-                        preferredWindow: NSApp.keyWindow ?? NSApp.mainWindow
-                    ) != true {
+            splitCommandButton(
+                title: String(localized: "menu.view.showNotifications", defaultValue: "Show Notifications"),
+                systemImage: "bell",
+                shortcut: menuShortcut(for: .showNotifications)
+            ) {
+                showNotificationsPopover()
+            }
+
+            Divider()
+
+            Menu {
+                ForEach(AppearanceMode.visibleCases) { mode in
+                    Button {
+                        appearanceMode = mode.rawValue
+                    } label: {
+                        if appearanceMode == mode.rawValue {
+                            Label(mode.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(mode.displayName)
+                        }
+                    }
+                }
+            } label: {
+                Label(String(localized: "menu.view.appearance", defaultValue: "Appearance"), systemImage: "circle.lefthalf.filled")
+            }
+
+            Divider()
+
+            splitCommandButton(
+                title: String(localized: "menu.view.increaseTerminalFont", defaultValue: "Increase Font Size"),
+                systemImage: "plus.magnifyingglass",
+                shortcut: menuShortcut(for: .terminalFontSizeIncrease)
+            ) {
+                performTerminalFontAction("increase_font_size:1")
+            }
+            .disabled(activeTabManager.selectedTerminalPanel == nil)
+
+            splitCommandButton(
+                title: String(localized: "menu.view.decreaseTerminalFont", defaultValue: "Decrease Font Size"),
+                systemImage: "minus.magnifyingglass",
+                shortcut: menuShortcut(for: .terminalFontSizeDecrease)
+            ) {
+                performTerminalFontAction("decrease_font_size:1")
+            }
+            .disabled(activeTabManager.selectedTerminalPanel == nil)
+
+            splitCommandButton(
+                title: String(localized: "menu.view.resetTerminalFont", defaultValue: "Default Font Size"),
+                systemImage: "1.magnifyingglass",
+                shortcut: menuShortcut(for: .terminalFontSizeReset)
+            ) {
+                performTerminalFontAction("reset_font_size")
+            }
+            .disabled(activeTabManager.selectedTerminalPanel == nil)
+
+            Divider()
+
+            Menu {
+                splitCommandButton(
+                    title: String(localized: "menu.view.splitRight", defaultValue: "Split Right"),
+                    systemImage: "rectangle.split.2x1",
+                    shortcut: menuShortcut(for: .splitRight)
+                ) {
+                    performSplitFromMenu(direction: .right)
+                }
+
+                splitCommandButton(
+                    title: String(localized: "menu.view.splitDown", defaultValue: "Split Down"),
+                    systemImage: "rectangle.split.1x2",
+                    shortcut: menuShortcut(for: .splitDown)
+                ) {
+                    performSplitFromMenu(direction: .down)
+                }
+
+                equalizeSplitsCommandButton()
+
+                splitCommandButton(
+                    title: activeTabManager.selectedWorkspace?.bonsplitController.isSplitZoomed == true
+                        ? String(localized: "menu.view.restorePanel", defaultValue: "Restore Panel")
+                        : String(localized: "menu.view.expandPanel", defaultValue: "Expand Panel"),
+                    systemImage: activeTabManager.selectedWorkspace?.bonsplitController.isSplitZoomed == true
+                        ? "arrow.down.right.and.arrow.up.left"
+                        : "arrow.up.left.and.arrow.down.right",
+                    shortcut: menuShortcut(for: .toggleSplitZoom)
+                ) {
+                    if !activeTabManager.toggleFocusedSplitZoom() {
                         NSSound.beep()
                     }
                 }
+                .disabled(activeTabManager.selectedWorkspace == nil)
+
+                Divider()
+
+                splitCommandButton(title: String(localized: "menu.view.focusLeft", defaultValue: "Focus Left"), systemImage: "arrow.left", shortcut: menuShortcut(for: .focusLeft)) {
+                    activeTabManager.movePaneFocus(direction: .left)
+                }
+                splitCommandButton(title: String(localized: "menu.view.focusRight", defaultValue: "Focus Right"), systemImage: "arrow.right", shortcut: menuShortcut(for: .focusRight)) {
+                    activeTabManager.movePaneFocus(direction: .right)
+                }
+                splitCommandButton(title: String(localized: "menu.view.focusUp", defaultValue: "Focus Up"), systemImage: "arrow.up", shortcut: menuShortcut(for: .focusUp)) {
+                    activeTabManager.movePaneFocus(direction: .up)
+                }
+                splitCommandButton(title: String(localized: "menu.view.focusDown", defaultValue: "Focus Down"), systemImage: "arrow.down", shortcut: menuShortcut(for: .focusDown)) {
+                    activeTabManager.movePaneFocus(direction: .down)
+                }
+            } label: {
+                Label(String(localized: "menu.view.panel", defaultValue: "Panel"), systemImage: "rectangle.split.2x2")
             }
+        }
+
+        CommandMenu(String(localized: "menu.box.title", defaultValue: "Box")) {
+            splitCommandButton(
+                title: String(localized: "menu.box.rename", defaultValue: "Rename Box…"),
+                systemImage: "pencil",
+                shortcut: menuShortcut(for: .renameWorkspace)
+            ) {
+                _ = AppDelegate.shared?.requestRenameWorkspaceViaCommandPalette()
+            }
+            .disabled(activeTabManager.selectedWorkspace == nil)
+
+            Button {
+                guard let workspace = activeTabManager.selectedWorkspace else { return }
+                UniConnectCoordinator.shared.editConnection(for: workspace)
+            } label: {
+                Label(String(localized: "menu.box.editSSH", defaultValue: "Edit SSH Connection…"), systemImage: "key.horizontal")
+            }
+            .disabled(activeTabManager.selectedWorkspace?.uniConnectProfile?.isSSH != true)
+
+            Menu {
+                ForEach(WorkspaceTabColorSettings.palette(), id: \.id) { entry in
+                    Button {
+                        guard let workspaceId = activeTabManager.selectedWorkspace?.id else { return }
+                        activeTabManager.applyWorkspaceColor(entry.hex, toWorkspaceIds: [workspaceId])
+                    } label: {
+                        Label(entry.name, systemImage: "circle.fill")
+                    }
+                }
+
+                Divider()
+
+                Button {
+                    promptCustomWorkspaceColorFromMenu()
+                } label: {
+                    Label(String(localized: "menu.box.chooseCustomColor", defaultValue: "Choose Custom Color…"), systemImage: "paintpalette")
+                }
+
+                Button {
+                    guard let workspaceId = activeTabManager.selectedWorkspace?.id else { return }
+                    activeTabManager.applyWorkspaceColor(nil, toWorkspaceIds: [workspaceId])
+                } label: {
+                    Label(String(localized: "menu.box.removeColor", defaultValue: "Remove Color"), systemImage: "xmark.circle")
+                }
+                .disabled(activeTabManager.selectedWorkspace?.customColor == nil)
+            } label: {
+                Label(String(localized: "menu.box.color", defaultValue: "Color"), systemImage: "paintpalette.fill")
+            }
+            .disabled(activeTabManager.selectedWorkspace == nil)
+
+            Button {
+                toggleSelectedWorkspacePinned(in: activeTabManager)
+            } label: {
+                Label(
+                    WorkspacePinCommands.selectedWorkspaceMenuLabel(in: activeTabManager),
+                    systemImage: activeTabManager.selectedWorkspace?.isPinned == true ? "pin.slash" : "pin"
+                )
+            }
+            .disabled(activeTabManager.selectedWorkspace == nil)
+
             Divider()
-            splitCommandButton(title: String(localized: "menu.view.nextSurface", defaultValue: "Next Surface"), shortcut: menuShortcut(for: .nextSurface)) {
-                activeTabManager.selectNextSurface()
-            }
-            splitCommandButton(title: String(localized: "menu.view.previousSurface", defaultValue: "Previous Surface"), shortcut: menuShortcut(for: .prevSurface)) {
-                activeTabManager.selectPreviousSurface()
+
+            splitCommandButton(
+                title: String(localized: "menu.box.goTo", defaultValue: "Go to Box…"),
+                systemImage: "rectangle.and.hand.point.up.left",
+                shortcut: menuShortcut(for: .goToWorkspace)
+            ) {
+                let targetWindow = NSApp.keyWindow ?? NSApp.mainWindow
+                NotificationCenter.default.post(name: .commandPaletteSwitcherRequested, object: targetWindow)
             }
 
-            splitCommandButton(title: String(localized: "menu.view.back", defaultValue: "Back"), shortcut: menuShortcut(for: .browserBack)) {
-                activeTabManager.focusedBrowserPanel?.goBack()
+            splitCommandButton(title: String(localized: "menu.box.previous", defaultValue: "Previous Box"), systemImage: "chevron.up", shortcut: menuShortcut(for: .prevSidebarTab)) {
+                activeTabManager.selectPreviousTab()
             }
-
-            splitCommandButton(title: String(localized: "menu.view.forward", defaultValue: "Forward"), shortcut: menuShortcut(for: .browserForward)) {
-                activeTabManager.focusedBrowserPanel?.goForward()
-            }
-
-            splitCommandButton(title: String(localized: "menu.view.reloadPage", defaultValue: "Reload Page"), shortcut: menuShortcut(for: .browserReload)) {
-                activeTabManager.focusedBrowserPanel?.reload()
-            }
-
-            splitCommandButton(title: String(localized: "menu.view.toggleDevTools", defaultValue: "Toggle Developer Tools"), shortcut: menuShortcut(for: .toggleBrowserDeveloperTools)) {
-                let manager = activeTabManager
-                if !manager.toggleDeveloperToolsFocusedBrowser() {
-                    NSSound.beep()
-                }
-            }
-
-            splitCommandButton(title: String(localized: "menu.view.showJSConsole", defaultValue: "Show JavaScript Console"), shortcut: menuShortcut(for: .showBrowserJavaScriptConsole)) {
-                let manager = activeTabManager
-                if !manager.showJavaScriptConsoleFocusedBrowser() {
-                    NSSound.beep()
-                }
-            }
-
-            splitCommandButton(title: String(localized: "menu.view.toggleReactGrab", defaultValue: "Toggle React Grab"), shortcut: menuShortcut(for: .toggleReactGrab)) {
-                if !activeTabManager.toggleReactGrabFromCurrentFocus() {
-                    NSSound.beep()
-                }
-            }
-
-            let browserFocusModeMenu = browserFocusModeMenuSnapshot
-            Button(browserFocusModeMenu.title) {
-                if !activeTabManager.toggleBrowserFocusModeForFocusedBrowser(reason: "viewMenu") {
-                    NSSound.beep()
-                }
-            }
-            .disabled(!browserFocusModeMenu.canToggle)
-
-            splitCommandButton(title: String(localized: "menu.view.zoomIn", defaultValue: "Zoom In"), shortcut: menuShortcut(for: .browserZoomIn)) {
-                _ = activeTabManager.zoomInFocusedBrowser()
-            }
-
-            splitCommandButton(title: String(localized: "menu.view.zoomOut", defaultValue: "Zoom Out"), shortcut: menuShortcut(for: .browserZoomOut)) {
-                _ = activeTabManager.zoomOutFocusedBrowser()
-            }
-
-            splitCommandButton(title: String(localized: "menu.view.actualSize", defaultValue: "Actual Size"), shortcut: menuShortcut(for: .browserZoomReset)) {
-                _ = activeTabManager.resetZoomFocusedBrowser()
-            }
-
-            Button(String(localized: "menu.view.clearBrowserHistory", defaultValue: "Clear Browser History")) {
-                BrowserHistoryStore.shared.clearHistory()
-            }
-
-            Button(String(localized: "menu.view.importFromBrowser", defaultValue: "Import Browser Data…")) {
-                // Defer modal presentation until after AppKit finishes menu tracking.
-                DispatchQueue.main.async {
-                    BrowserDataImportCoordinator.shared.presentImportDialog()
-                }
-            }
-
-            splitCommandButton(title: String(localized: "menu.view.nextWorkspace", defaultValue: "Next Workspace"), shortcut: menuShortcut(for: .nextSidebarTab)) {
+            splitCommandButton(title: String(localized: "menu.box.next", defaultValue: "Next Box"), systemImage: "chevron.down", shortcut: menuShortcut(for: .nextSidebarTab)) {
                 activeTabManager.selectNextTab()
             }
 
-            splitCommandButton(title: String(localized: "menu.view.previousWorkspace", defaultValue: "Previous Workspace"), shortcut: menuShortcut(for: .prevSidebarTab)) {
-                activeTabManager.selectPreviousTab()
-            }
-
-            splitCommandButton(title: String(localized: "menu.view.renameWorkspace", defaultValue: "Rename Workspace…"), shortcut: menuShortcut(for: .renameWorkspace)) {
-                _ = AppDelegate.shared?.requestRenameWorkspaceViaCommandPalette()
-            }
-
-            splitCommandButton(title: String(localized: "menu.view.editWorkspaceDescription", defaultValue: "Edit Workspace Description…"), shortcut: menuShortcut(for: .editWorkspaceDescription)) {
-                _ = AppDelegate.shared?.requestEditWorkspaceDescriptionViaCommandPalette()
-            }
-
-            splitCommandButton(title: String(localized: "command.toggleFullScreen.title", defaultValue: "Toggle Full Screen"), shortcut: menuShortcut(for: .toggleFullScreen)) {
-                guard let targetWindow = NSApp.keyWindow ?? NSApp.mainWindow else { return }
-                targetWindow.toggleFullScreen(nil)
-            }
-
-            Divider()
-
-            splitCommandButton(title: String(localized: "menu.view.splitRight", defaultValue: "Split Right"), shortcut: menuShortcut(for: .splitRight)) {
-                performSplitFromMenu(direction: .right)
-            }
-
-            splitCommandButton(title: String(localized: "menu.view.splitDown", defaultValue: "Split Down"), shortcut: menuShortcut(for: .splitDown)) {
-                performSplitFromMenu(direction: .down)
-            }
-
-            splitCommandButton(title: String(localized: "menu.view.splitBrowserRight", defaultValue: "Split Browser Right"), shortcut: menuShortcut(for: .splitBrowserRight)) {
-                performBrowserSplitFromMenu(direction: .right)
-            }
-
-            splitCommandButton(title: String(localized: "menu.view.splitBrowserDown", defaultValue: "Split Browser Down"), shortcut: menuShortcut(for: .splitBrowserDown)) {
-                performBrowserSplitFromMenu(direction: .down)
-            }
-
-            equalizeSplitsCommandButton()
-            Divider()
-
-            // Numbered workspace selection (9 = last workspace)
             ForEach(1...9, id: \.self) { number in
-                let selectWorkspaceByNumberShortcut = menuShortcut(for: .selectWorkspaceByNumber)
-                if selectWorkspaceByNumberShortcut.isUnbound || selectWorkspaceByNumberShortcut.hasChord {
-                    Button(String(localized: "menu.view.workspace", defaultValue: "Workspace \(number)")) {
-                        let manager = activeTabManager
-                        if let targetIndex = WorkspaceShortcutMapper.workspaceIndex(forDigit: number, workspaceCount: manager.tabs.count) {
-                            manager.selectTab(at: targetIndex)
-                        }
-                    }
-                } else {
-                    Button(String(localized: "menu.view.workspace", defaultValue: "Workspace \(number)")) {
-                        let manager = activeTabManager
-                        if let targetIndex = WorkspaceShortcutMapper.workspaceIndex(forDigit: number, workspaceCount: manager.tabs.count) {
-                            manager.selectTab(at: targetIndex)
-                        }
-                    }
-                    .keyboardShortcut(
-                        KeyEquivalent(Character("\(number)")),
-                        modifiers: selectWorkspaceByNumberShortcut.eventModifiers
-                    )
+                numberedWorkspaceMenuButton(number)
+            }
+
+            Menu {
+                Button(String(localized: "contextMenu.moveUp", defaultValue: "Move Up")) {
+                    moveSelectedWorkspace(in: activeTabManager, by: -1)
                 }
+                .disabled(selectedWorkspaceMenuIndex == nil || selectedWorkspaceMenuIndex == 0)
+
+                Button(String(localized: "contextMenu.moveDown", defaultValue: "Move Down")) {
+                    moveSelectedWorkspace(in: activeTabManager, by: 1)
+                }
+                .disabled(
+                    selectedWorkspaceMenuIndex == nil ||
+                        selectedWorkspaceMenuIndex == activeTabManager.tabs.count - 1
+                )
+
+                Button(String(localized: "contextMenu.moveToTop", defaultValue: "Move to Top")) {
+                    moveSelectedWorkspaceToTop(in: activeTabManager)
+                }
+                .disabled(selectedWorkspaceMenuIndex == nil || selectedWorkspaceMenuIndex == 0)
+            } label: {
+                Label(String(localized: "menu.box.move", defaultValue: "Move"), systemImage: "arrow.up.arrow.down")
+            }
+            .disabled(activeTabManager.selectedWorkspace == nil)
+
+            Divider()
+
+            splitCommandButton(title: String(localized: "menu.box.previousWindow", defaultValue: "Previous Window"), systemImage: "chevron.left", shortcut: menuShortcut(for: .prevSurface)) {
+                activeTabManager.selectPreviousSurface()
+            }
+            splitCommandButton(title: String(localized: "menu.box.nextWindow", defaultValue: "Next Window"), systemImage: "chevron.right", shortcut: menuShortcut(for: .nextSurface)) {
+                activeTabManager.selectNextSurface()
+            }
+            splitCommandButton(
+                title: String(localized: "menu.box.renameWindow", defaultValue: "Rename Window…"),
+                systemImage: "pencil.line",
+                shortcut: menuShortcut(for: .renameTab)
+            ) {
+                appDelegate.requestCommandPaletteRenameTab(
+                    preferredWindow: NSApp.keyWindow ?? NSApp.mainWindow,
+                    source: "menu.box.renameWindow"
+                )
+            }
+            .disabled(activeTabManager.selectedWorkspace?.focusedPanelId == nil)
+
+            Divider()
+
+            splitCommandButton(
+                title: String(
+                    localized: "uniconnect.reconnect.window.now",
+                    defaultValue: "Reconnect This Window Now"
+                ),
+                systemImage: "arrow.clockwise",
+                shortcut: menuShortcut(for: .reconnectFocusedSSHWindow)
+            ) {
+                performUniConnectReconnectFocusedWindowAction()
+            }
+            .disabled(!canReconnectFocusedRemoteTmuxSession)
+
+            splitCommandButton(
+                title: String(
+                    localized: "uniconnect.reconnect.all.now",
+                    defaultValue: "Reconnect SSH Windows Now"
+                ),
+                systemImage: "arrow.trianglehead.2.clockwise.rotate.90",
+                shortcut: menuShortcut(for: .reconnectDroppedWindows)
+            ) {
+                performUniConnectReconnectAction()
+            }
+            .disabled(!hasReconnectableUniConnectWindows)
+
+            Button {
+                guard let workspace = activeTabManager.selectedWorkspace else { return }
+                UniConnectCoordinator.shared.terminateRemoteTmuxSession(in: workspace)
+            } label: {
+                Label(String(localized: "menu.box.terminateRemoteTmux", defaultValue: "End Remote tmux Session…"), systemImage: "xmark.octagon")
+            }
+            .disabled(!canTerminateFocusedRemoteTmuxSession)
+
+            Menu {
+                splitCommandButton(
+                    title: String(localized: "menu.box.updateClaude.window", defaultValue: "In This Window"),
+                    systemImage: "rectangle",
+                    shortcut: menuShortcut(for: .updateClaudeInWindow)
+                ) {
+                    performUniConnectClaudeUpdateInWindow()
+                }
+                .disabled(activeTabManager.selectedWorkspace?.focusedPanelId == nil)
+
+                splitCommandButton(
+                    title: String(localized: "menu.box.updateClaude.box", defaultValue: "In This Box"),
+                    systemImage: "shippingbox",
+                    shortcut: menuShortcut(for: .updateClaudeInBox)
+                ) {
+                    performUniConnectClaudeUpdateInBox()
+                }
+                .disabled(activeTabManager.selectedWorkspace == nil)
+
+                splitCommandButton(
+                    title: String(localized: "menu.box.updateClaude.all", defaultValue: "In All Boxes…"),
+                    systemImage: "square.stack.3d.up",
+                    shortcut: menuShortcut(for: .updateClaudeEverywhere)
+                ) {
+                    performUniConnectClaudeUpdateEverywhere()
+                }
+            } label: {
+                Label(String(localized: "menu.box.updateClaude", defaultValue: "Update Claude"), systemImage: "arrow.down.app")
             }
 
             Divider()
 
-            splitCommandButton(title: String(localized: "menu.view.jumpToUnread", defaultValue: "Jump to Latest Unread"), shortcut: menuShortcut(for: .jumpToUnread)) {
-                AppDelegate.shared?.jumpToLatestUnread()
+            splitCommandButton(
+                title: String(localized: "menu.box.jumpToUnread", defaultValue: "Go to Latest Unread"),
+                systemImage: "bell.and.waves.left.and.right",
+                shortcut: menuShortcut(for: .jumpToUnread)
+            ) {
+                appDelegate.jumpToLatestUnread()
             }
+            .disabled(!notificationMenuSnapshot.hasUnreadNotifications)
 
-            splitCommandButton(title: String(localized: "menu.view.showNotifications", defaultValue: "Show Notifications"), shortcut: menuShortcut(for: .showNotifications)) {
-                showNotificationsPopover()
+            splitCommandButton(
+                title: selectedWorkspaceIsUnread
+                    ? String(localized: "menu.box.markRead", defaultValue: "Mark Box as Read")
+                    : String(localized: "menu.box.markUnread", defaultValue: "Mark Box as Unread"),
+                systemImage: selectedWorkspaceIsUnread ? "envelope.open" : "envelope.badge",
+                shortcut: menuShortcut(for: .toggleUnread)
+            ) {
+                _ = appDelegate.toggleFocusedNotificationUnread()
             }
+            .disabled(activeTabManager.selectedWorkspace == nil)
+
+            Button {
+                notificationStore.markAllRead()
+            } label: {
+                Label(String(localized: "menu.box.markAllRead", defaultValue: "Mark All as Read"), systemImage: "checkmark.circle")
+            }
+            .disabled(!notificationMenuSnapshot.hasUnreadNotifications)
         }
     }
 
@@ -1198,30 +1523,10 @@ struct cmuxApp: App {
         notificationStore.notificationMenuSnapshot
     }
 
-    private var browserFocusModeMenuSnapshot: (title: String, canToggle: Bool) {
-        let _ = browserFocusModeMenuRevision
-        let panel = activeTabManager.focusedBrowserPanel
-        return (
-            title: panel?.isBrowserFocusModeActive == true
-                ? String(localized: "menu.view.exitBrowserFocusMode", defaultValue: "Exit Browser Focus Mode")
-                : String(localized: "menu.view.enterBrowserFocusMode", defaultValue: "Enter Browser Focus Mode"),
-            canToggle: panel?.canToggleBrowserFocusMode == true
-        )
-    }
-
     var activeTabManager: TabManager {
         AppDelegate.shared?.activeTabManagerForCommands(
             preferredWindow: NSApp.keyWindow ?? NSApp.mainWindow
         ) ?? tabManager
-    }
-
-    private func notificationMenuItemTitle(for notification: TerminalNotification) -> String {
-        let tabTitle = appDelegate.tabTitle(for: notification.tabId)
-        return MenuBarNotificationLineFormatter.menuTitle(notification: notification, tabTitle: tabTitle)
-    }
-
-    private func openNotificationFromMainMenu(_ notification: TerminalNotification) {
-        _ = appDelegate.openTerminalNotification(notification)
     }
 
     private func performSplitFromMenu(direction: SplitDirection) {
@@ -1231,31 +1536,14 @@ struct cmuxApp: App {
         tabManager.createSplit(direction: direction)
     }
 
-    private func performBrowserSplitFromMenu(direction: SplitDirection) {
-        if AppDelegate.shared?.performBrowserSplitShortcut(direction: direction) == true {
-            return
-        }
-        _ = tabManager.createBrowserSplit(direction: direction)
-    }
-
     private func selectedWorkspaceIndex(in manager: TabManager, workspaceId: UUID) -> Int? {
         manager.tabs.firstIndex { $0.id == workspaceId }
-    }
-
-    private func selectedWorkspaceWindowMoveTargets(in manager: TabManager) -> [AppDelegate.WindowMoveTarget] {
-        let referenceWindowId = AppDelegate.shared?.windowId(for: manager)
-        return AppDelegate.shared?.windowMoveTargets(referenceWindowId: referenceWindowId) ?? []
     }
 
     private func toggleSelectedWorkspacePinned(in manager: TabManager) {
         if !WorkspacePinCommands.toggleSelectedWorkspace(in: manager) {
             NSSound.beep()
         }
-    }
-
-    private func clearSelectedWorkspaceCustomName(in manager: TabManager) {
-        guard let workspace = manager.selectedWorkspace else { return }
-        manager.clearCustomTitle(tabId: workspace.id)
     }
 
     private func moveSelectedWorkspace(in manager: TabManager, by delta: Int) {
@@ -1271,16 +1559,6 @@ struct cmuxApp: App {
         guard let workspace = manager.selectedWorkspace else { return }
         manager.moveTabsToTop([workspace.id])
         manager.selectWorkspace(workspace)
-    }
-
-    private func moveSelectedWorkspace(in manager: TabManager, toWindow windowId: UUID) {
-        guard let workspace = manager.selectedWorkspace else { return }
-        _ = AppDelegate.shared?.moveWorkspaceToWindow(workspaceId: workspace.id, windowId: windowId, focus: true)
-    }
-
-    private func moveSelectedWorkspaceToNewWindow(in manager: TabManager) {
-        guard let workspace = manager.selectedWorkspace else { return }
-        _ = AppDelegate.shared?.moveWorkspaceToNewWindow(workspaceId: workspace.id, focus: true)
     }
 
     private func closeWorkspaceIds(
@@ -1332,112 +1610,200 @@ struct cmuxApp: App {
     }
 
     @ViewBuilder
-    private func workspaceCommandMenuContent(manager: TabManager) -> some View {
-        let workspace = manager.selectedWorkspace
-        let workspaceIndex = workspace.flatMap { selectedWorkspaceIndex(in: manager, workspaceId: $0.id) }
-        let windowMoveTargets = selectedWorkspaceWindowMoveTargets(in: manager)
-        let pinState = WorkspacePinCommands.selectedWorkspacePinState(in: manager)
-
-        Button(WorkspacePinCommands.selectedWorkspaceMenuLabel(in: manager, pinState: pinState)) {
-            toggleSelectedWorkspacePinned(in: manager)
-        }
-        .disabled(pinState == nil)
-
-        Button(String(localized: "menu.view.renameWorkspace", defaultValue: "Rename Workspace…")) {
-            _ = AppDelegate.shared?.requestRenameWorkspaceViaCommandPalette()
-        }
-        .disabled(workspace == nil)
-
-        Button(String(localized: "menu.view.editWorkspaceDescription", defaultValue: "Edit Workspace Description…")) {
-            _ = AppDelegate.shared?.requestEditWorkspaceDescriptionViaCommandPalette()
-        }
-        .disabled(workspace == nil)
-
-        if workspace?.hasCustomTitle == true {
-            Button(String(localized: "contextMenu.removeCustomWorkspaceName", defaultValue: "Remove Custom Workspace Name")) {
-                clearSelectedWorkspaceCustomName(in: manager)
-            }
-        }
-
-        Divider()
-
-        Button(String(localized: "contextMenu.moveUp", defaultValue: "Move Up")) {
-            moveSelectedWorkspace(in: manager, by: -1)
-        }
-        .disabled(workspaceIndex == nil || workspaceIndex == 0)
-
-        Button(String(localized: "contextMenu.moveDown", defaultValue: "Move Down")) {
-            moveSelectedWorkspace(in: manager, by: 1)
-        }
-        .disabled(workspaceIndex == nil || workspaceIndex == manager.tabs.count - 1)
-
-        Button(String(localized: "contextMenu.moveToTop", defaultValue: "Move to Top")) {
-            moveSelectedWorkspaceToTop(in: manager)
-        }
-        .disabled(workspace == nil || workspaceIndex == 0)
-
-        Menu(String(localized: "contextMenu.moveWorkspaceToWindow", defaultValue: "Move Workspace to Window")) {
-            Button(String(localized: "contextMenu.newWindow", defaultValue: "New Window")) {
-                moveSelectedWorkspaceToNewWindow(in: manager)
-            }
-            .disabled(workspace == nil)
-
-            if !windowMoveTargets.isEmpty {
-                Divider()
-            }
-
-            ForEach(windowMoveTargets) { target in
-                Button(target.label) {
-                    moveSelectedWorkspace(in: manager, toWindow: target.windowId)
+    func splitCommandButton(
+        title: String,
+        systemImage: String? = nil,
+        shortcut: StoredShortcut,
+        action: @escaping () -> Void
+    ) -> some View {
+        if let key = shortcut.keyEquivalent {
+            Button(action: action) {
+                if let systemImage {
+                    Label(title, systemImage: systemImage)
+                } else {
+                    Text(title)
                 }
-                .disabled(target.isCurrentWindow || workspace == nil)
+            }
+                .keyboardShortcut(key, modifiers: shortcut.eventModifiers)
+        } else {
+            Button(action: action) {
+                if let systemImage {
+                    Label(title, systemImage: systemImage)
+                } else {
+                    Text(title)
+                }
             }
         }
-        .disabled(workspace == nil)
-
-        Divider()
-
-        Button(String(localized: "menu.file.closeWorkspace", defaultValue: "Close Workspace")) {
-            manager.closeCurrentWorkspaceWithConfirmation()
-        }
-        .disabled(workspace == nil)
-
-        Button(String(localized: "contextMenu.closeOtherWorkspaces", defaultValue: "Close Other Workspaces")) {
-            closeOtherSelectedWorkspacePeers(in: manager)
-        }
-        .disabled(workspace == nil || manager.tabs.count <= 1)
-
-        Button(String(localized: "contextMenu.closeWorkspacesBelow", defaultValue: "Close Workspaces Below")) {
-            closeSelectedWorkspacesBelow(in: manager)
-        }
-        .disabled(workspaceIndex == nil || workspaceIndex == manager.tabs.count - 1)
-
-        Button(String(localized: "contextMenu.closeWorkspacesAbove", defaultValue: "Close Workspaces Above")) {
-            closeSelectedWorkspacesAbove(in: manager)
-        }
-        .disabled(workspaceIndex == nil || workspaceIndex == 0)
-
-        Divider()
-
-        Button(String(localized: "contextMenu.markWorkspaceRead", defaultValue: "Mark Workspace as Read")) {
-            markSelectedWorkspaceRead(in: manager)
-        }
-        .disabled(!selectedWorkspaceCanMarkRead(in: manager))
-
-        Button(String(localized: "contextMenu.markWorkspaceUnread", defaultValue: "Mark Workspace as Unread")) {
-            markSelectedWorkspaceUnread(in: manager)
-        }
-        .disabled(!selectedWorkspaceCanMarkUnread(in: manager))
     }
 
     @ViewBuilder
-    func splitCommandButton(title: String, shortcut: StoredShortcut, action: @escaping () -> Void) -> some View {
-        if let key = shortcut.keyEquivalent {
+    private func numberedWorkspaceMenuButton(_ number: Int) -> some View {
+        let shortcut = menuShortcut(for: .selectWorkspaceByNumber)
+        let title = String(
+            format: String(localized: "menu.box.numbered", defaultValue: "Box %lld"),
+            number
+        )
+        let action = {
+            let manager = activeTabManager
+            if let targetIndex = WorkspaceShortcutMapper.workspaceIndex(
+                forDigit: number,
+                workspaceCount: manager.tabs.count
+            ) {
+                manager.selectTab(at: targetIndex)
+            }
+        }
+
+        if shortcut.isUnbound || shortcut.hasChord {
             Button(title, action: action)
-                .keyboardShortcut(key, modifiers: shortcut.eventModifiers)
+                .disabled(WorkspaceShortcutMapper.workspaceIndex(
+                    forDigit: number,
+                    workspaceCount: activeTabManager.tabs.count
+                ) == nil)
         } else {
             Button(title, action: action)
+                .keyboardShortcut(
+                    KeyEquivalent(Character("\(number)")),
+                    modifiers: shortcut.eventModifiers
+                )
+                .disabled(WorkspaceShortcutMapper.workspaceIndex(
+                    forDigit: number,
+                    workspaceCount: activeTabManager.tabs.count
+                ) == nil)
         }
+    }
+
+    private var showsUniConnectSoftwareUpdateMenu: Bool {
+        UpdateFeedResolver().resolve(
+            infoFeedURL: Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
+        ).isEnabled
+    }
+
+    private func autoLockMenuTitle(minutes: Int) -> String {
+        guard minutes > 0 else {
+            return String(localized: "menu.app.autoLock.off", defaultValue: "Off")
+        }
+        return String(
+            format: String(localized: "menu.app.autoLock.minutes", defaultValue: "%lld min"),
+            minutes
+        )
+    }
+
+    private func performUniConnectLockAction() {
+        UniConnectAppLock.shared.lock()
+    }
+
+    private func performUniConnectPersistAction() {
+        UniConnectCoordinator.shared.persistNow()
+    }
+
+    private func performUniConnectReconnectAction() {
+        UniConnectCoordinator.shared.reconnectAllSSHWindowsNow()
+    }
+
+    private func performUniConnectReconnectFocusedWindowAction() {
+        guard let workspace = activeTabManager.selectedWorkspace,
+              let panelID = workspace.focusedPanelId,
+              workspace.uniConnectTmuxSessionsByPanelId[panelID] != nil else {
+            NSSound.beep()
+            return
+        }
+        UniConnectCoordinator.shared.reconnectNow(
+            panelId: panelID,
+            in: workspace,
+            userInitiated: true
+        )
+    }
+
+    private func performUniConnectClaudeUpdateInWindow() {
+        guard let workspace = activeTabManager.selectedWorkspace,
+              let panelId = workspace.focusedPanelId else {
+            NSSound.beep()
+            return
+        }
+        UniConnectCoordinator.shared.requestClaudeUpdateInWindow(
+            panelID: panelId,
+            workspace: workspace
+        )
+    }
+
+    private func performUniConnectClaudeUpdateInBox() {
+        guard let workspace = activeTabManager.selectedWorkspace else {
+            NSSound.beep()
+            return
+        }
+        UniConnectCoordinator.shared.requestClaudeUpdateInBox(workspace)
+    }
+
+    private func performUniConnectClaudeUpdateEverywhere() {
+        UniConnectCoordinator.shared.requestClaudeUpdateEverywhere()
+    }
+
+    private func performTerminalFontAction(_ bindingAction: String) {
+        guard activeTabManager.selectedTerminalPanel?.performBindingAction(bindingAction) == true else {
+            NSSound.beep()
+            return
+        }
+    }
+
+    private var hasReconnectableUniConnectWindows: Bool {
+        UniConnectCoordinator.shared.allTabManagers().contains { manager in
+            manager.tabs.contains { workspace in
+                workspace.uniConnectTmuxSessionsByPanelId.keys.contains {
+                    workspace.panels[$0] != nil
+                }
+            }
+        }
+    }
+
+    private var canReconnectFocusedRemoteTmuxSession: Bool {
+        guard let workspace = activeTabManager.selectedWorkspace,
+              workspace.uniConnectProfile?.isSSH == true,
+              let panelId = workspace.focusedPanelId else {
+            return false
+        }
+        return workspace.uniConnectTmuxSessionsByPanelId[panelId] != nil
+    }
+
+    private var canTerminateFocusedRemoteTmuxSession: Bool {
+        guard let workspace = activeTabManager.selectedWorkspace,
+              workspace.uniConnectProfile?.isSSH == true,
+              let panelId = workspace.focusedPanelId else {
+            return false
+        }
+        return workspace.uniConnectTmuxSessionsByPanelId[panelId] != nil
+    }
+
+    private var selectedWorkspaceIsUnread: Bool {
+        guard let workspaceId = activeTabManager.selectedWorkspace?.id else { return false }
+        return notificationStore.workspaceIsUnread(forTabId: workspaceId)
+    }
+
+    private var selectedWorkspaceMenuIndex: Int? {
+        guard let workspaceId = activeTabManager.selectedWorkspace?.id else { return nil }
+        return selectedWorkspaceIndex(in: activeTabManager, workspaceId: workspaceId)
+    }
+
+    private func promptCustomWorkspaceColorFromMenu() {
+        guard let workspace = activeTabManager.selectedWorkspace else { return }
+        let alert = NSAlert()
+        alert.messageText = String(localized: "alert.customColor.title", defaultValue: "Custom Box Color")
+        alert.informativeText = String(
+            localized: "alert.customColor.message",
+            defaultValue: "Enter a hex color in the format #RRGGBB."
+        )
+        let input = NSTextField(string: workspace.customColor ?? "")
+        input.placeholderString = "#1565C0"
+        input.frame = NSRect(x: 0, y: 0, width: 240, height: 22)
+        alert.accessoryView = input
+        alert.addButton(withTitle: String(localized: "alert.customColor.apply", defaultValue: "Apply"))
+        alert.addButton(withTitle: String(localized: "alert.customColor.cancel", defaultValue: "Cancel"))
+        alert.window.initialFirstResponder = input
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard let normalized = WorkspaceTabColorSettings.addCustomColor(input.stringValue) else {
+            NSSound.beep()
+            return
+        }
+        activeTabManager.applyWorkspaceColor(normalized, toWorkspaceIds: [workspace.id])
     }
 
     private func dispatchReloadConfigurationMenuCommand() {
@@ -2923,7 +3289,7 @@ private final class SidebarDebugWindowController: NSWindowController, NSWindowDe
 private struct AboutPanelView: View {
     @Environment(\.openURL) private var openURL
 
-    private let githubURL = URL(string: "https://github.com/manaflow-ai/cmux")
+    private let githubURL = URL(string: "https://github.com/Unixcision/uniconnect")
     private let docsURL = URL(string: "https://github.com/Unixcision/uniconnect/blob/uniconnect/docs/UNICONNECT.md")
 
     private var version: String? { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String }
@@ -2968,7 +3334,7 @@ private struct AboutPanelView: View {
                     }
                     let commitText = commit ?? "—"
                     let commitURL = commit.flatMap { hash in
-                        URL(string: "https://github.com/manaflow-ai/cmux/commit/\(hash)")
+                        URL(string: "https://github.com/Unixcision/uniconnect/commit/\(hash)")
                     }
                     AboutPropertyRow(label: String(localized: "about.commit", defaultValue: "Commit"), text: commitText, url: commitURL)
                 }
@@ -4658,6 +5024,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     case fr
     case it
     case ja
+    case km
     case ko
     case nb
     case pl
@@ -4665,6 +5032,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     case ru
     case th
     case tr
+    case uk
 
     var id: String { rawValue }
 
@@ -4682,6 +5050,8 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         case .fr: return "Français (French)"
         case .it: return "Italiano (Italian)"
         case .ja: return "日本語 (Japanese)"
+        case .km:
+            return String(localized: "language.khmer.displayName", defaultValue: "ខ្មែរ (Khmer)")
         case .ko: return "한국어 (Korean)"
         case .nb: return "Norsk (Norwegian)"
         case .pl: return "Polski (Polish)"
@@ -4689,6 +5059,8 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         case .ru: return "Русский (Russian)"
         case .th: return "ไทย (Thai)"
         case .tr: return "Türkçe (Turkish)"
+        case .uk:
+            return String(localized: "language.ukrainian.displayName", defaultValue: "Українська (Ukrainian)")
         }
     }
 }
@@ -4773,16 +5145,39 @@ enum AppIconSettings {
 
     struct Environment {
         let isApplicationFinishedLaunching: () -> Bool
+        let usesBundleIcon: () -> Bool
         let imageForMode: (AppIconMode) -> NSImage?
-        let setApplicationIconImage: (NSImage) -> Void
+        let setApplicationIconImage: (NSImage?) -> Void
         let startAppearanceObservation: () -> Void
         let stopAppearanceObservation: () -> Void
         let notifyDockTilePlugin: () -> Void
+
+        init(
+            isApplicationFinishedLaunching: @escaping () -> Bool,
+            usesBundleIcon: @escaping () -> Bool = { false },
+            imageForMode: @escaping (AppIconMode) -> NSImage?,
+            setApplicationIconImage: @escaping (NSImage?) -> Void,
+            startAppearanceObservation: @escaping () -> Void,
+            stopAppearanceObservation: @escaping () -> Void,
+            notifyDockTilePlugin: @escaping () -> Void
+        ) {
+            self.isApplicationFinishedLaunching = isApplicationFinishedLaunching
+            self.usesBundleIcon = usesBundleIcon
+            self.imageForMode = imageForMode
+            self.setApplicationIconImage = setApplicationIconImage
+            self.startAppearanceObservation = startAppearanceObservation
+            self.stopAppearanceObservation = stopAppearanceObservation
+            self.notifyDockTilePlugin = notifyDockTilePlugin
+        }
 
         static func live() -> Self {
             Self(
                 isApplicationFinishedLaunching: {
                     AppIconLaunchState.isApplicationFinishedLaunching()
+                },
+                usesBundleIcon: {
+                    if #available(macOS 26.0, *) { return true }
+                    return false
                 },
                 imageForMode: { mode in
                     guard let imageName = mode.imageName else { return nil }
@@ -4824,6 +5219,13 @@ enum AppIconSettings {
         // so leave settings replay to update defaults only and let AppDelegate
         // apply the resolved icon once didFinishLaunching begins.
         guard environment.isApplicationFinishedLaunching() else { return }
+
+        if environment.usesBundleIcon() {
+            environment.stopAppearanceObservation()
+            environment.setApplicationIconImage(nil)
+            environment.notifyDockTilePlugin()
+            return
+        }
 
         switch mode {
         case .automatic:
@@ -5336,7 +5738,7 @@ enum TelemetrySettings {
 
 enum CmdClickMarkdownRouteSettings {
     static let key = "openMarkdownInCmuxViewer"
-    static let didChangeNotification = Notification.Name("cmux.cmdClickMarkdownRouteDidChange")
+    static let didChangeNotification = Notification.Name("uniconnect.cmdClickMarkdownRouteDidChange")
     static let defaultValue = true
 
     static func isEnabled(defaults: UserDefaults = .standard) -> Bool {
@@ -5376,7 +5778,7 @@ enum CmdClickMarkdownRouteSettings {
 
 enum CmdClickSupportedFileRouteSettings {
     static let key = "openSupportedFilesInCmux"
-    static let didChangeNotification = Notification.Name("cmux.cmdClickSupportedFileRouteDidChange")
+    static let didChangeNotification = Notification.Name("uniconnect.cmdClickSupportedFileRouteDidChange")
     static let defaultValue = true
 
     static func isEnabled(defaults: UserDefaults = .standard) -> Bool {

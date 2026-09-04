@@ -13,7 +13,7 @@ struct DisconnectedWorkspaceShellView: View {
     /// The Founders Edition page (Mac download + TestFlight enrollment) the
     /// onboarding "Download via TestFlight" link points at while TestFlight is
     /// still private.
-    private static let testFlightURL = URL(string: "https://github.com/manaflow-ai/cmux#founders-edition")!
+    private static let testFlightURL = URL(string: "https://github.com/Unixcision/uniconnect")!
 
     var body: some View {
         NavigationStack {

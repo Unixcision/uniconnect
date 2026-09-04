@@ -75,6 +75,13 @@ select_zig_for_target() {
   fi
 
   local -a candidates=()
+  # Prefer Homebrew's versioned Zig 0.15 formula. Its macOS bottle carries the
+  # Xcode 26.4+ linker compatibility backport while remaining keg-only, so it
+  # can coexist with a newer globally linked Zig.
+  candidates+=(
+    "/opt/homebrew/opt/zig@0.15/bin/zig"
+    "/usr/local/opt/zig@0.15/bin/zig"
+  )
   # Prefer Apple Silicon Homebrew Zig on macOS runners. Some CI shells expose
   # /usr/local/bin first or run under Rosetta, but the x86_64 Zig link path can
   # fail against newer macOS SDKs while arm64 Zig cross-compiles both slices.

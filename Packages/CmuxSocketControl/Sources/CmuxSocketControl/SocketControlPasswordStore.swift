@@ -217,7 +217,7 @@ public struct SocketControlPasswordStore: Sendable {
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
-    /// The default password file URL within the cmux state directory.
+    /// The default password file URL within the UniConnect state directory.
     ///
     /// Resolves to `<directory>/socket-control-password`, where `directory`
     /// defaults to ``CmuxStateDirectory`` (`~/.local/state/uniconnect`). The file lives
@@ -290,7 +290,7 @@ public struct SocketControlPasswordStore: Sendable {
     }
 
     /// Migrates the socket password out of the legacy Application Support location
-    /// (`~/Library/Application Support/cmux/socket-control-password`) into the
+    /// (`~/Library/Application Support/UniConnect/socket-control-password`) into the
     /// current ``CmuxStateDirectory`` location, once.
     ///
     /// The app — which owns its Application Support data and can read it without a

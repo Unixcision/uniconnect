@@ -17,6 +17,10 @@ const count = positiveInteger(optionValue(rest, "--count") ?? "8", "--count");
 const concurrency = Math.min(positiveInteger(optionValue(rest, "--concurrency") ?? "4", "--concurrency"), count);
 const provider = optionValue(rest, "--provider") ?? "default";
 const targetUrl = optionValue(rest, "--url") ?? project.url;
+const testEmailDomain = process.env.UNICONNECT_STACK_TEST_EMAIL_DOMAIN?.trim();
+if (!testEmailDomain) {
+  throw new Error("UNICONNECT_STACK_TEST_EMAIL_DOMAIN is required for destructive stress users");
+}
 if (!["default", "e2b", "freestyle"].includes(provider)) {
   console.error("--provider must be default, e2b, or freestyle");
   process.exit(2);
@@ -116,11 +120,11 @@ async function runCase(index) {
   const started = Date.now();
   try {
     user = await stack.createUser({
-      primaryEmail: `cmux-${project.stackLabel}-stress+${suffix}@manaflow.dev`,
+      primaryEmail: `uniconnect-${project.stackLabel}-stress+${suffix}@${testEmailDomain}`,
       primaryEmailVerified: true,
       primaryEmailAuthEnabled: true,
       password: randomBytes(24).toString("base64url"),
-      displayName: `cmux ${project.stackLabel} stress ${index}`,
+      displayName: `UniConnect ${project.stackLabel} stress ${index}`,
     });
     throwIfInterrupted();
     const session = await user.createSession({ expiresInMillis: 20 * 60 * 1000, isImpersonation: true });

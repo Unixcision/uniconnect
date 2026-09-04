@@ -8,11 +8,11 @@ import OSLog
 import StackAuth
 import os
 
-private let mobileHostLog = Logger(subsystem: "dev.cmux", category: "mobile-host")
+private let mobileHostLog = Logger(subsystem: "com.unixcision.uniconnect", category: "mobile-host")
 
 extension Notification.Name {
     static let mobileHostEventSubscriptionsDidChange = Notification.Name(
-        "cmux.mobileHostEventSubscriptionsDidChange"
+        "uniconnect.mobileHostEventSubscriptionsDidChange"
     )
 
     /// Posted whenever the mobile pairing host's observable status changes:
@@ -21,7 +21,7 @@ extension Notification.Name {
     /// `AsyncStream` so the Mobile settings section can show the live bound
     /// port and connection count without polling.
     static let mobileHostStatusDidChange = Notification.Name(
-        "cmux.mobileHostStatusDidChange"
+        "uniconnect.mobileHostStatusDidChange"
     )
 }
 
@@ -316,7 +316,7 @@ final class MobileHostService {
         return capabilities
     }
 
-    private let callbackQueue = DispatchQueue(label: "dev.cmux.mobile.host-listener")
+    private let callbackQueue = DispatchQueue(label: "com.unixcision.uniconnect.mobile.host-listener")
     private let routeResolver = MobileRouteResolver()
     private let ticketStore = MobileAttachTicketStore()
     private var listener: NWListener?
@@ -1560,6 +1560,7 @@ extension MobileHostService {
 #endif
 
 private enum MobileHostAuthorizationError: Error {
+    case serviceUnavailable
     case missingStackTokens
     case invalidStackUser
     case missingLocalUser
@@ -1638,7 +1639,9 @@ private actor MobileHostStackAuthVerifier {
     }
 
     private func fetchAndCacheRemoteUserID(cacheKey: String, accessToken: String) async throws -> String {
-        let stack = Self.makeStackClient(accessToken: accessToken)
+        guard let stack = Self.makeStackClient(accessToken: accessToken) else {
+            throw MobileHostAuthorizationError.serviceUnavailable
+        }
         guard let user = try await Self.withVerificationTimeout({
             try await stack.getUser(or: .throw)
         }) else {
@@ -1664,11 +1667,12 @@ private actor MobileHostStackAuthVerifier {
         _ = try? await fetchAndCacheRemoteUserID(cacheKey: cacheKey, accessToken: accessToken)
     }
 
-    private static func makeStackClient(accessToken: String) -> StackClientApp {
-        StackClientApp(
-            projectId: AuthEnvironment.stackProjectID,
-            publishableClientKey: AuthEnvironment.stackPublishableClientKey,
-            baseUrl: AuthEnvironment.stackBaseURL.absoluteString,
+    private static func makeStackClient(accessToken: String) -> StackClientApp? {
+        guard let configuration = AuthEnvironment.hostedServices else { return nil }
+        return StackClientApp(
+            projectId: configuration.stackProjectID,
+            publishableClientKey: configuration.stackPublishableClientKey,
+            baseUrl: configuration.stackBaseURL.absoluteString,
             tokenStore: .custom(MobileHostAccessTokenStore(accessToken: accessToken)),
             noAutomaticPrefetch: true
         )
@@ -1783,7 +1787,7 @@ actor MobileHostConnection {
     ) {
         self.id = id
         self.connection = connection
-        self.callbackQueue = DispatchQueue(label: "dev.cmux.mobile.host-connection.\(id.uuidString)")
+        self.callbackQueue = DispatchQueue(label: "com.unixcision.uniconnect.mobile.host-connection.\(id.uuidString)")
         self.firstFrameTimeoutNanoseconds = firstFrameTimeoutNanoseconds
         self.idleTimeoutNanoseconds = idleTimeoutNanoseconds
         self.authorizeRequest = authorizeRequest

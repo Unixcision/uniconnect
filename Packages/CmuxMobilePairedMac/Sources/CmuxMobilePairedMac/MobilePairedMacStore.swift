@@ -24,7 +24,7 @@ public actor MobilePairedMacStore: MobilePairedMacStoring {
 
     /// The default on-disk location for the paired-Mac database.
     /// - Parameter fileManager: File manager used to resolve and create the directory.
-    /// - Returns: The `paired-macs.sqlite3` URL under Application Support/cmux.
+    /// - Returns: The `paired-macs.sqlite3` URL under Application Support/UniConnect.
     /// - Throws: Any error thrown while resolving or creating the directory.
     public static func defaultDatabaseURL(fileManager: FileManager = .default) throws -> URL {
         let appSupport = try fileManager.url(

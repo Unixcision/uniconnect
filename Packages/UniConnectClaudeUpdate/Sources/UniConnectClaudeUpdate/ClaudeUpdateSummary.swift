@@ -8,7 +8,7 @@ public struct ClaudeUpdateSummary: Sendable, Hashable, Codable {
     /// Per-target outcomes in deterministic completion order.
     public let outcomes: [ClaudeUpdateOutcome]
 
-    /// Per-host outcomes in deterministic plan order.
+    /// Per-host-and-installation outcomes in deterministic plan order.
     public let hostOutcomes: [ClaudeUpdateHostOutcome]
 
     /// The operation start time supplied by the injected clock.
@@ -25,7 +25,7 @@ public struct ClaudeUpdateSummary: Sendable, Hashable, Codable {
     /// - Parameters:
     ///   - plan: The validated plan that ran.
     ///   - outcomes: Per-target terminal outcomes.
-    ///   - hostOutcomes: Per-host terminal outcomes.
+    ///   - hostOutcomes: Per-host-and-installation terminal outcomes.
     ///   - startedAt: The injected-clock start time.
     ///   - finishedAt: The injected-clock completion time.
     ///   - wasCancelled: Whether cancellation was observed.

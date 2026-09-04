@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Launch a tagged cmux iOS DEV build fully signed in (and optionally paired to a
+# Launch a tagged UniConnect iOS DEV build fully signed in (and optionally paired to a
 # running Mac), with NO human OAuth, so an agent can autonomously reproduce and
 # dogfood on the simulator or a device.
 #
 # It reuses the app's existing DEBUG launch hooks:
 #   CMUX_UITEST_STACK_EMAIL / CMUX_UITEST_STACK_PASSWORD  -> real Stack sign-in
 #   CMUX_UITEST_MOCK_DATA=0                               -> real backend, not mock
-#   CMUX_UITEST_ATTACH_URL=<cmux-ios://attach...>         -> auto-pair after sign-in
+#   CMUX_UITEST_ATTACH_URL=<uniconnect://attach...>         -> auto-pair after sign-in
 # (sim env via SIMCTL_CHILD_*, device env via DEVICECTL_CHILD_*).
 #
-# Credentials come from the environment or ~/.secrets/cmux.env (preferred) /
-# ~/.secrets/cmuxterm-dev.env. Use a DEDICATED dev/agent Stack account, never a
+# Credentials come from the environment or ~/.secrets/uniconnect.env (preferred) /
+# ~/.secrets/uniconnect-dev.env. Use a DEDICATED dev/agent Stack account, never a
 # real user's primary login.
 #
 # Usage:
@@ -58,17 +58,17 @@ load_secret_file() {
     esac
   done < "$f"
 }
-load_secret_file "$HOME/.secrets/cmux.env"
-load_secret_file "$HOME/.secrets/cmuxterm-dev.env"
+load_secret_file "$HOME/.secrets/uniconnect.env"
+load_secret_file "$HOME/.secrets/uniconnect-dev.env"
 
 if [[ -z "${CMUX_UITEST_STACK_EMAIL:-}" || -z "${CMUX_UITEST_STACK_PASSWORD:-}" ]]; then
   cat >&2 <<EOF
 error: no dev sign-in credentials found.
 
 Set a DEDICATED dev/agent Stack account (not your primary login) in
-~/.secrets/cmux.env:
+~/.secrets/uniconnect.env:
 
-  CMUX_UITEST_STACK_EMAIL=agent-dev@manaflow.ai
+  CMUX_UITEST_STACK_EMAIL=agent-dev@uniconnect.example
   CMUX_UITEST_STACK_PASSWORD=<password>
 
 (or export them in the environment before running this script).
@@ -79,7 +79,7 @@ fi
 # --- bundle id (matches ios/scripts/reload.sh sanitize_tag) ------------------
 slug="$(echo "$TAG" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-+/-/g')"
 [[ -n "$slug" ]] || slug="dev"
-BUNDLE_ID="dev.cmux.ios.$slug"
+BUNDLE_ID="com.unixcision.uniconnect.ios.$slug"
 
 # --- optional fresh attach ticket -------------------------------------------
 ATTACH_URL=""

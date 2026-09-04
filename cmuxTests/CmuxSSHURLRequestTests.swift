@@ -270,7 +270,7 @@ final class CmuxSSHURLRequestTests: XCTestCase {
     }
 
     func testParsesStableNightlyAndDevSchemes() throws {
-        for scheme in ["cmux", "cmux-nightly", "cmux-dev"] {
+        for scheme in ["uniconnect", "uniconnect-nightly", "uniconnect-dev"] {
             var components = URLComponents()
             components.scheme = scheme
             components.host = "ssh"

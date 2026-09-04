@@ -1,7 +1,7 @@
-# cmux web
+# UniConnect web
 
-Next.js app deployed as the existing Vercel `manaflow/cmux` project. The app serves the website,
-Stack Auth handlers, feedback endpoint, and Cloud VM backend routes.
+Next.js app for the UniConnect-owned deployment. The app serves the website, Stack Auth
+handlers, feedback endpoint, and Cloud VM backend routes.
 
 ## Development
 
@@ -10,8 +10,8 @@ bun install
 bun dev
 ```
 
-`bun dev` sources provider secrets from `~/.secrets/cmux.env` when present, then sources
-Stack/web secrets from `~/.secrets/cmuxterm-dev.env`. It derives local database URLs from `CMUX_PORT`,
+`bun dev` sources provider secrets from `~/.secrets/uniconnect.env` when present, then sources
+Stack/web secrets from `~/.secrets/uniconnect-dev.env`. It derives local database URLs from `CMUX_PORT`,
 starts this worktree's Docker Postgres, applies Drizzle migrations, then starts Next.js.
 It listens on `CMUX_PORT` when it is set, otherwise `PORT`, otherwise `3777`.
 When `bun dev` exits or is interrupted, it stops the matching Docker Postgres container and
@@ -21,9 +21,8 @@ The committed `.envrc` uses the same loader for direnv. Run `direnv allow` once 
 want shells opened there to automatically get the same local dev environment.
 
 `web/.env.local` is not used for local development. Keep Stack/web runtime secrets in
-`~/.secrets/cmuxterm-dev.env` and Cloud VM provider secrets in `~/.secrets/cmux.env`.
-`~/.secret/cmuxterm.env` and `~/.secrets/cmuxterm.env` are accepted as legacy fallbacks for the
-Stack/web file.
+`~/.secrets/uniconnect-dev.env` and Cloud VM provider secrets in
+`~/.secrets/uniconnect.env`. UniConnect deliberately does not read cmux secret files.
 
 To start Next without Docker Postgres, use:
 

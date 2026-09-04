@@ -13,7 +13,7 @@ import SwiftUI
 import CmuxMobileTerminal
 #endif
 
-private let mobileRootSceneLog = Logger(subsystem: "dev.cmux.ios", category: "mobile-root-scene")
+private let mobileRootSceneLog = Logger(subsystem: "com.unixcision.uniconnect.ios", category: "mobile-root-scene")
 
 /// Top-level mobile scene root.
 ///

@@ -135,9 +135,9 @@ IOS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 WORKSPACE="$IOS_DIR/cmux.xcworkspace"
 SCHEME="cmux-ios"
 TAG_SLUG="$(sanitize_tag "$TAG")"
-DISPLAY_NAME="cmux DEV $TAG"
-BUNDLE_ID="dev.cmux.ios.$TAG_SLUG"
-DERIVED_DATA="$HOME/Library/Developer/Xcode/DerivedData/cmux-ios-$TAG_SLUG"
+DISPLAY_NAME="UniConnect DEV $TAG"
+BUNDLE_ID="com.unixcision.uniconnect.ios.$TAG_SLUG"
+DERIVED_DATA="$HOME/Library/Developer/Xcode/DerivedData/uniconnect-$TAG_SLUG"
 DESTINATION="platform=iOS Simulator,name=$SIMULATOR_NAME"
 
 LOCAL_ASC_CONFIG="$IOS_DIR/Config/AppStoreConnect.local.plist"
@@ -164,7 +164,7 @@ fi
 update_qr_tag_marker() {
   # FIXED /tmp path (not TMPDIR): the QR server runs in a different shell whose
   # per-session TMPDIR differs, so the rendezvous file must be machine-shared.
-  local marker="/tmp/cmux-mobile-attach-qr-tags.json"
+  local marker="/tmp/uniconnect-mobile-attach-qr-tags.json"
   command -v python3 >/dev/null 2>&1 || return 0
   IOS_TAG="$TAG" MARKER="$marker" python3 - <<'PY' 2>/dev/null || true
 import json, os
@@ -400,7 +400,7 @@ reload_simulator() {
     GCC_OPTIMIZATION_LEVEL=s \
     build
 
-  APP_PATH="$DERIVED_DATA/Build/Products/Debug-iphonesimulator/cmux.app"
+  APP_PATH="$DERIVED_DATA/Build/Products/Debug-iphonesimulator/UniConnect.app"
   if [[ ! -d "$APP_PATH" ]]; then
     echo "error: built app not found at $APP_PATH" >&2
     exit 1
@@ -465,8 +465,8 @@ reload_device() {
   if [[ "$ALLOW_DEVICE_REGISTRATION" -eq 1 ]]; then
     device_destination="platform=iOS,id=$selected_device_id"
   fi
-  device_app_path="$DERIVED_DATA/Build/Products/Debug-iphoneos/cmux.app"
-  build_log="${TMPDIR:-/tmp}/cmux-ios-device-build-$TAG_SLUG.log"
+  device_app_path="$DERIVED_DATA/Build/Products/Debug-iphoneos/UniConnect.app"
+  build_log="${TMPDIR:-/tmp}/uniconnect-device-build-$TAG_SLUG.log"
 
   echo "==> Building physical device app (tag: $TAG, device: $selected_device_name)"
 

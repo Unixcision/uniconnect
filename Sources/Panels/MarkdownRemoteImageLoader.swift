@@ -332,7 +332,7 @@ private final class MarkdownPinnedRemoteImageLoader {
     private let maximumBytes: Int
     private let target: MarkdownRemoteImageFetchTarget
     private let lock = NSLock()
-    private let queue = DispatchQueue(label: "dev.cmux.markdown-remote-image", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.unixcision.uniconnect.markdown-remote-image", qos: .userInitiated)
     private var rawBody = Data()
     private var mimeType = "image/png"
     private var completion: ((MarkdownRemoteImageLoadOutcome?) -> Void)?

@@ -11,7 +11,7 @@ Usage:
 Archives cmux iOS, exports an App Store Connect IPA, and uploads it to
 TestFlight. The default lane is beta:
 
-  bundle id: dev.cmux.app.beta
+  bundle id: com.unixcision.uniconnect.ios.beta
   profile:   cmux Beta Distribution
 
 Authentication uses one of:
@@ -126,7 +126,7 @@ done
 
 case "$LANE" in
   beta)
-    PRODUCT_BUNDLE_IDENTIFIER="dev.cmux.app.beta"
+    PRODUCT_BUNDLE_IDENTIFIER="com.unixcision.uniconnect.ios.beta"
     PROVISIONING_PROFILE_NAME="${IOS_BETA_PROVISIONING_PROFILE_NAME:-cmux Beta Distribution}"
     ;;
   *)
@@ -273,7 +273,7 @@ if [[ -n "${CMUX_BUILD_NUMBER_OUT_FILE:-}" ]]; then
   printf '%s\n' "$SHIPPED_BUILD_NUMBER" > "$CMUX_BUILD_NUMBER_OUT_FILE"
 fi
 
-OUT_DIR="${CMUX_IOS_UPLOAD_DIR:-/tmp/cmux-ios-testflight-$BUILD_NUMBER}"
+OUT_DIR="${CMUX_IOS_UPLOAD_DIR:-/tmp/uniconnect-testflight-$BUILD_NUMBER}"
 DERIVED_DATA="$OUT_DIR/DerivedData"
 EXPORT_PATH="$OUT_DIR/export"
 EXPORT_OPTIONS="$OUT_DIR/ExportOptions.plist"

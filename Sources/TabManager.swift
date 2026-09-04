@@ -1291,6 +1291,11 @@ class TabManager: ObservableObject {
     // Drives the git/PR polling delays (probe retry gaps, fallback loop, PR
     // poll deadline). Injected so tests can use virtual time.
     private let gitPollClock: any GitPollClock
+    private let importMutationGate: UniConnectImportMutationGate?
+
+    private func permitsImportSensitiveMutation() -> Bool {
+        importMutationGate?.registerMutation() ?? true
+    }
 
     init(
         initialWorkspaceTitle: String? = nil,
@@ -1300,12 +1305,14 @@ class TabManager: ObservableObject {
         commandRunner: any CommandRunning = CommandRunner(),
         gitMetadataService: GitMetadataService = GitMetadataService(),
         workspaceGitMetadataReader: (any WorkspaceGitMetadataReading)? = nil,
-        gitPollClock: any GitPollClock = SystemGitPollClock()
+        gitPollClock: any GitPollClock = SystemGitPollClock(),
+        importMutationGate: UniConnectImportMutationGate? = nil
     ) {
         self.commandRunner = commandRunner
         self.gitMetadataService = gitMetadataService
         self.workspaceGitMetadataReader = workspaceGitMetadataReader ?? gitMetadataService
         self.gitPollClock = gitPollClock
+        self.importMutationGate = importMutationGate
 #if DEBUG
         self.pullRequestProbeService = PullRequestProbeService(
             commandRunner: commandRunner,
@@ -2530,6 +2537,7 @@ class TabManager: ObservableObject {
         initialTerminalEnvironment: [String: String]
     ) -> Workspace {
         Workspace(
+            importMutationGate: importMutationGate,
             title: title,
             workingDirectory: workingDirectory,
             portOrdinal: portOrdinal,
@@ -2620,6 +2628,11 @@ class TabManager: ObservableObject {
         autoRefreshMetadata: Bool = true,
         normalizeWorkspaceGroupsAfterInsert: Bool = true
     ) -> Workspace {
+        guard permitsImportSensitiveMutation() else {
+            // A live manager always owns at least its bootstrap workspace. Returning
+            // that existing value keeps legacy non-optional callers fail-closed.
+            return selectedWorkspace ?? tabs[0]
+        }
         let sourceWorkspace = selectedWorkspace
         let capturedTabs = tabs
         // Snapshot the selected tab from the pinned workspace instead of rereading the
@@ -3458,8 +3471,9 @@ class TabManager: ObservableObject {
             appendCandidate(terminalPanel)
         }
 
-        if let livePanel = candidates.first(where: { $0.surface.hasLiveSurface && $0.surface.surface != nil }) {
-            return livePanel
+        for candidate in candidates
+            where candidate.surface.hasLiveSurface && candidate.surface.surface != nil {
+            return candidate
         }
         return candidates.first
     }
@@ -3664,6 +3678,7 @@ class TabManager: ObservableObject {
 
     @discardableResult
     func reorderWorkspace(tabId: UUID, toIndex targetIndex: Int, isDragOperation: Bool = false) -> Bool {
+        guard permitsImportSensitiveMutation() else { return false }
         guard let plan = workspaceReorderPlan(tabId: tabId, toIndex: targetIndex) else { return false }
         // No-op reorders (single workspace, clamped to current index, etc.)
         // must not run group inference. Otherwise socket calls like
@@ -3927,6 +3942,7 @@ class TabManager: ObservableObject {
         let result = workspaceBatchReorderPlan(orderedWorkspaceIds: orderedWorkspaceIds)
         guard case .success(let plan) = result else { return result }
         guard !dryRun else { return result }
+        guard permitsImportSensitiveMutation() else { return result }
 
         let movedWorkspaceIds = plan
             .filter { $0.fromIndex != $0.toIndex }
@@ -4035,6 +4051,7 @@ class TabManager: ObservableObject {
     }
 
     func setPinned(_ tab: Workspace, pinned: Bool) {
+        guard permitsImportSensitiveMutation() else { return }
         guard tab.isPinned != pinned else { return }
         tab.isPinned = pinned
         // Pinned workspaces never belong to a group. Pinning a grouped member
@@ -4060,6 +4077,7 @@ class TabManager: ObservableObject {
 
     @discardableResult
     func setPinned(workspaceIds: [UUID], pinned: Bool) -> [UUID] {
+        guard permitsImportSensitiveMutation() else { return [] }
         guard !workspaceIds.isEmpty else { return [] }
         if workspaceIds.count == 1,
            let workspaceId = workspaceIds.first,
@@ -4148,6 +4166,7 @@ class TabManager: ObservableObject {
         selectAnchor: Bool = true,
         collapseSidebarSelection: Bool = true
     ) -> UUID? {
+        guard permitsImportSensitiveMutation() else { return nil }
         // Eligible children: not pinned and not currently an anchor of a
         // different group. Pulling an anchor into a new group would orphan the
         // source group (its anchorWorkspaceId would no longer match), so we
@@ -4342,6 +4361,7 @@ class TabManager: ObservableObject {
         placement: WorkspaceGroupNewPlacement? = nil,
         referenceWorkspaceId: UUID? = nil
     ) {
+        guard permitsImportSensitiveMutation() else { return }
         guard let tab = tabs.first(where: { $0.id == workspaceId }), !tab.isPinned else { return }
         guard workspaceGroups.contains(where: { $0.id == groupId }) else { return }
         guard tab.groupId != groupId else { return }
@@ -4378,6 +4398,7 @@ class TabManager: ObservableObject {
     /// group's anchor, the group is dissolved instead (other members survive
     /// as ungrouped workspaces).
     func removeWorkspaceFromGroup(workspaceId: UUID) {
+        guard permitsImportSensitiveMutation() else { return }
         guard let tab = tabs.first(where: { $0.id == workspaceId }),
               let groupId = tab.groupId else { return }
         if let group = workspaceGroups.first(where: { $0.id == groupId }),
@@ -4401,6 +4422,7 @@ class TabManager: ObservableObject {
     /// bottom" slot, which makes Ungroup feel like a destructive move
     /// instead of a flatten-in-place.
     func ungroupWorkspaceGroup(groupId: UUID) {
+        guard permitsImportSensitiveMutation() else { return }
         let memberIds = tabs.filter { $0.groupId == groupId }.map(\.id)
         guard !memberIds.isEmpty || workspaceGroups.contains(where: { $0.id == groupId }) else { return }
         for id in memberIds {
@@ -4418,6 +4440,7 @@ class TabManager: ObservableObject {
     /// out of the prompt cleanly.
     @discardableResult
     func deleteWorkspaceGroup(groupId: UUID, recordHistory: Bool = true) -> Int {
+        guard permitsImportSensitiveMutation() else { return 0 }
         guard workspaceGroups.contains(where: { $0.id == groupId }) else { return 0 }
         let members = tabs.filter { $0.groupId == groupId }
         var closed = 0
@@ -4446,6 +4469,7 @@ class TabManager: ObservableObject {
 
     /// Rename a group. Whitespace-only names are ignored.
     func renameWorkspaceGroup(groupId: UUID, name: String) {
+        guard permitsImportSensitiveMutation() else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         guard let index = workspaceGroups.firstIndex(where: { $0.id == groupId }) else { return }
@@ -4467,6 +4491,7 @@ class TabManager: ObservableObject {
     /// `setWorkspaceGroupCollapsed` is the right call for socket/CLI paths
     /// that must preserve focus (the socket focus policy in CLAUDE.md).
     func toggleWorkspaceGroupCollapsed(groupId: UUID) {
+        guard permitsImportSensitiveMutation() else { return }
         guard let index = workspaceGroups.firstIndex(where: { $0.id == groupId }) else { return }
         let nextCollapsed = !workspaceGroups[index].isCollapsed
         if nextCollapsed {
@@ -4513,6 +4538,7 @@ class TabManager: ObservableObject {
     /// selection. Use this from socket/CLI handlers so a non-focus-intent
     /// command never steals the user's active workspace.
     func setWorkspaceGroupCollapsed(groupId: UUID, isCollapsed: Bool) {
+        guard permitsImportSensitiveMutation() else { return }
         guard let index = workspaceGroups.firstIndex(where: { $0.id == groupId }) else { return }
         guard workspaceGroups[index].isCollapsed != isCollapsed else { return }
         workspaceGroups[index].isCollapsed = isCollapsed
@@ -4525,6 +4551,7 @@ class TabManager: ObservableObject {
     }
 
     func setWorkspaceGroupPinned(groupId: UUID, isPinned: Bool) {
+        guard permitsImportSensitiveMutation() else { return }
         guard let index = workspaceGroups.firstIndex(where: { $0.id == groupId }) else { return }
         guard workspaceGroups[index].isPinned != isPinned else { return }
         workspaceGroups[index].isPinned = isPinned
@@ -4534,6 +4561,7 @@ class TabManager: ObservableObject {
     }
 
     func setWorkspaceGroupColor(groupId: UUID, hex: String?) {
+        guard permitsImportSensitiveMutation() else { return }
         guard let index = workspaceGroups.firstIndex(where: { $0.id == groupId }) else { return }
         guard workspaceGroups[index].customColor != hex else { return }
         workspaceGroups[index].customColor = hex
@@ -4541,6 +4569,7 @@ class TabManager: ObservableObject {
 
     @discardableResult
     func setWorkspaceGroupIcon(groupId: UUID, symbol: String?) -> String? {
+        guard permitsImportSensitiveMutation() else { return nil }
         let normalized = RenderableSystemSymbol.normalized(symbol)
         guard let index = workspaceGroups.firstIndex(where: { $0.id == groupId }) else { return nil }
         guard workspaceGroups[index].iconSymbol != normalized else { return normalized }
@@ -4551,6 +4580,7 @@ class TabManager: ObservableObject {
     /// Reassign which member workspace serves as the group's anchor.
     /// `workspaceId` must already be a member of the group.
     func setWorkspaceGroupAnchor(groupId: UUID, workspaceId: UUID) {
+        guard permitsImportSensitiveMutation() else { return }
         guard let groupIndex = workspaceGroups.firstIndex(where: { $0.id == groupId }) else { return }
         guard let tab = tabs.first(where: { $0.id == workspaceId }), tab.groupId == groupId else { return }
         guard workspaceGroups[groupIndex].anchorWorkspaceId != workspaceId else { return }
@@ -4576,6 +4606,7 @@ class TabManager: ObservableObject {
     /// slots; the reordered group anchors are projected back into the existing
     /// group slots.
     func moveWorkspaceGroup(groupId: UUID, toIndex targetIndex: Int) {
+        guard permitsImportSensitiveMutation() else { return }
         guard moveWorkspaceGroupSlot(groupId: groupId, toIndex: targetIndex) else { return }
         applyWorkspaceGroupSlotOrderToTabs()
         let memberIds = tabs.filter { $0.groupId == groupId }.map(\.id)
@@ -4668,6 +4699,7 @@ class TabManager: ObservableObject {
     }
 
     func assignGroup(workspaceId: UUID, groupId: UUID?) {
+        guard permitsImportSensitiveMutation() else { return }
         guard let tab = tabs.first(where: { $0.id == workspaceId }) else { return }
         guard tab.groupId != groupId else { return }
         tab.groupId = groupId
@@ -5209,6 +5241,7 @@ class TabManager: ObservableObject {
     }
 
     func closeWorkspace(_ workspace: Workspace, recordHistory: Bool = true) {
+        guard permitsImportSensitiveMutation() else { return }
         guard tabs.count > 1 else { return }
         sentryBreadcrumb("workspace.close", data: ["tabCount": tabs.count - 1])
         if recordHistory,
@@ -5444,11 +5477,13 @@ class TabManager: ObservableObject {
     }
 
     func setSidebarSelectedWorkspaceIds(_ workspaceIds: Set<UUID>) {
+        guard permitsImportSensitiveMutation() else { return }
         let existingIds = Set(tabs.map(\.id))
         sidebarSelectedWorkspaceIds = workspaceIds.intersection(existingIds)
     }
 
     func closeWorkspacesWithConfirmation(_ workspaceIds: [UUID], allowPinned: Bool) {
+        guard permitsImportSensitiveMutation() else { return }
         let workspaces = orderedClosableWorkspaces(workspaceIds, allowPinned: allowPinned)
         guard !workspaces.isEmpty else { return }
         guard workspaces.count > 1 else {
@@ -5511,6 +5546,7 @@ class TabManager: ObservableObject {
     }
 
     func selectWorkspace(_ workspace: Workspace) {
+        guard permitsImportSensitiveMutation() else { return }
 #if DEBUG
         debugPrimeWorkspaceSwitchTrigger("select", to: workspace.id)
 #endif
@@ -6012,10 +6048,12 @@ class TabManager: ObservableObject {
             tab.uniConnectMarkDisconnected(panelId: surfaceId)
             return
         }
-        // A local window bound to a Claude session must survive its command dying (a failed
-        // `claude --resume`, an exit typed by mistake): the window is the user's, not the
-        // process's, and closing the last one would take the whole box with it.
-        if tab.uniConnectClaudeSessionsByPanelId[surfaceId] != nil {
+        // Every UniConnect local window is a durable container, independent from the shell or
+        // agent process inside it. `exit`, a failed resume, or Ctrl+D marks it stopped; only an
+        // explicit window-close operation removes its persisted identity and conversation links.
+        if (tab.uniConnectProfile?.isSSH == false && tab.panels[surfaceId] is TerminalPanel)
+            || tab.uniConnectClaudeSessionsByPanelId[surfaceId] != nil {
+            _ = tab.uniConnectMarkLocalWindowStopped(panelId: surfaceId)
 #if DEBUG
             cmuxDebugLog("surface.close.childExited.keepUniConnectLocal tab=\(tabId.uuidString.prefix(5)) surface=\(surfaceId.uuidString.prefix(5))")
 #endif
@@ -6408,6 +6446,7 @@ class TabManager: ObservableObject {
         _ tabId: UUID,
         notificationDismissalContext: NotificationDismissalContext?
     ) {
+        guard permitsImportSensitiveMutation() else { return }
         guard selectedTabId != tabId else {
             pendingSelectedTabNotificationDismissContext = nil
             if let notificationDismissalContext {
@@ -7803,6 +7842,23 @@ class TabManager: ObservableObject {
     @discardableResult
     func restoreClosedPanel(_ entry: ClosedPanelHistoryEntry) -> Bool {
         guard let workspace = tabs.first(where: { $0.id == entry.workspaceId }) else {
+            return false
+        }
+        let historicalProfile = entry.uniConnectProfile
+        let isSSHHistory = historicalProfile?.isSSH == true
+            || entry.snapshot.terminal?.uniConnectTmuxSession != nil
+        if isSSHHistory,
+           (historicalProfile?.isSSH != true
+               || historicalProfile?.credentialId == nil
+               || workspace.uniConnectProfile?.isSSH != true
+               || workspace.uniConnectProfile?.credentialId != historicalProfile?.credentialId) {
+            // Credentials are immutable revisions. Replaying an A-bound history item
+            // through a live workspace already migrated to B—or replaying a legacy
+            // item whose revision is unknown—could connect the saved tmux name to the
+            // wrong machine. Fail closed; the caller keeps the history record intact.
+            tabManagerLogger.error(
+                "history.restore.panel.reject reason=sshCredentialRevisionMismatch workspace=\(entry.workspaceId.uuidString, privacy: .public) panel=\(entry.snapshot.id.uuidString, privacy: .public)"
+            )
             return false
         }
 
@@ -9269,6 +9325,19 @@ extension TabManager {
             hasher.combine(workspace.panelPullRequests.count)
             hasher.combine(workspace.panelGitBranches.count)
             hasher.combine(workspace.surfaceListeningPorts.count)
+            if let profile = workspace.uniConnectProfile {
+                hasher.combine(true)
+                hasher.combine(profile.kind.rawValue)
+                hasher.combine(profile.importIdentity)
+                hasher.combine(profile.credentialId)
+                Self.hashOptionalString(profile.hostLabel, into: &hasher)
+                hasher.combine(profile.tmuxReady)
+                Self.hashOptionalString(profile.localRoot, into: &hasher)
+                Self.hashOptionalDouble(profile.createdAt, into: &hasher)
+                Self.hashOptionalDouble(profile.lastActivityAt, into: &hasher)
+            } else {
+                hasher.combine(false)
+            }
             hasher.combine(notificationStore?.hasManualUnread(forTabId: workspace.id) ?? false)
             hasher.combine(notificationStore?.workspaceIsUnread(forTabId: workspace.id) ?? false)
             Self.hashNotifications(
@@ -9280,6 +9349,17 @@ extension TabManager {
             hasher.combine(panelIds.count)
             for panelId in panelIds {
                 hasher.combine(panelId)
+                Self.hashOptionalString(workspace.panelDirectories[panelId], into: &hasher)
+                Self.hashOptionalString(workspace.panelTitles[panelId], into: &hasher)
+                Self.hashOptionalString(workspace.panelCustomTitles[panelId], into: &hasher)
+                Self.hashOptionalString(workspace.uniConnectTmuxSessionsByPanelId[panelId], into: &hasher)
+                Self.hashOptionalString(workspace.uniConnectClaudeSessionsByPanelId[panelId], into: &hasher)
+                Self.hashUniConnectLocalWindowRecord(
+                    workspace.uniConnectLocalWindowsByPanelId[panelId],
+                    into: &hasher
+                )
+                hasher.combine(workspace.pinnedPanelIds.contains(panelId))
+                hasher.combine(workspace.uniConnectDisconnectedPanelIds.contains(panelId))
                 hasher.combine(workspace.manualUnreadPanelIds.contains(panelId))
                 hasher.combine(workspace.restoredUnreadPanelIds.contains(panelId))
                 hasher.combine(workspace.restoredUnreadIndicatorContributesToWorkspace(panelId: panelId))
@@ -9346,6 +9426,35 @@ extension TabManager {
         var hasher = Hasher()
         hashRestorableAgentSnapshot(snapshot, into: &hasher)
         return hasher.finalize()
+    }
+
+    nonisolated private static func hashUniConnectLocalWindowRecord(
+        _ record: UniConnectLocalWindowRecord?,
+        into hasher: inout Hasher
+    ) {
+        guard let record else {
+            hasher.combine(false)
+            return
+        }
+        hasher.combine(true)
+        hasher.combine(record.version)
+        hasher.combine(record.id)
+        hashOptionalString(record.visibleName, into: &hasher)
+        hasher.combine(record.boxRoot)
+        hasher.combine(record.workingDirectory)
+        hasher.combine(record.runtimeState.rawValue)
+        hasher.combine(record.latestConversationID)
+        hasher.combine(record.activeConversationID)
+        hasher.combine(record.createdAt)
+        hasher.combine(record.updatedAt)
+        hasher.combine(record.conversations.count)
+        for conversation in record.conversations {
+            hasher.combine(conversation.id)
+            hasher.combine(conversation.kind.rawValue)
+            hasher.combine(conversation.sessionID)
+            hasher.combine(conversation.displayName)
+            hasher.combine(conversation.firstSeenAt)
+        }
     }
 
     nonisolated private static func hashRestorableAgentSnapshot(
@@ -9599,6 +9708,7 @@ extension TabManager {
         _ snapshot: SessionTabManagerSnapshot,
         remapClosedPanelHistory: Bool = true
     ) -> [[UUID: UUID]] {
+        guard permitsImportSensitiveMutation() else { return [] }
         isRestoringSessionSnapshot = true
         defer { isRestoringSessionSnapshot = false }
         let previousTabs = tabs
@@ -9644,6 +9754,8 @@ extension TabManager {
             let ordinal = Self.nextPortOrdinal
             Self.nextPortOrdinal += 1
             let workspace = Workspace(
+                id: workspaceSnapshot.workspaceId ?? UUID(),
+                importMutationGate: importMutationGate,
                 title: workspaceSnapshot.processTitle,
                 workingDirectory: workspaceSnapshot.currentDirectory,
                 portOrdinal: ordinal
@@ -9659,7 +9771,11 @@ extension TabManager {
         if newTabs.isEmpty {
             let ordinal = Self.nextPortOrdinal
             Self.nextPortOrdinal += 1
-            let fallback = Workspace(title: "Terminal 1", portOrdinal: ordinal)
+            let fallback = Workspace(
+                importMutationGate: importMutationGate,
+                title: "Terminal 1",
+                portOrdinal: ordinal
+            )
             fallback.owningTabManager = self
             wireClosedBrowserTracking(for: fallback)
             newTabs.append(fallback)
@@ -9692,18 +9808,15 @@ extension TabManager {
             return groupSnapshots.compactMap { groupSnapshot in
                 guard let members = workspaceIdsByGroupId[groupSnapshot.id], !members.isEmpty,
                       seen.insert(groupSnapshot.id).inserted else { return nil }
-                // Resolve anchor: prefer the restore-stable index (since each
-                // restored workspace gets a fresh UUID, the old
-                // anchorWorkspaceId rarely matches). Fall back to the in-process
-                // UUID hint, then to "first member by tab order" for very old
-                // snapshots that pre-date both fields.
+                // Resolve anchor from the stable UUID when available. The member
+                // index remains a compatibility fallback for legacy snapshots.
                 let anchorId: UUID = {
+                    if let stored = groupSnapshot.anchorWorkspaceId, members.contains(stored) {
+                        return stored
+                    }
                     if let index = groupSnapshot.anchorMemberIndex,
                        members.indices.contains(index) {
                         return members[index]
-                    }
-                    if let stored = groupSnapshot.anchorWorkspaceId, members.contains(stored) {
-                        return stored
                     }
                     return members[0]
                 }()
@@ -9824,26 +9937,26 @@ extension Notification.Name {
     /// multi-selection state (SwiftUI @State Set<UUID> in VerticalTabsSidebar)
     /// should collapse to that workspace. Subscribers read
     /// `SidebarMultiSelectionCollapseKey.focusedWorkspaceId` from userInfo.
-    static let sidebarMultiSelectionShouldCollapse = Notification.Name("cmux.sidebarMultiSelectionShouldCollapse")
+    static let sidebarMultiSelectionShouldCollapse = Notification.Name("uniconnect.sidebarMultiSelectionShouldCollapse")
     /// Posted when specific workspaces become hidden (group collapse). The
     /// SwiftUI sidebar should drop only those ids from its multi-selection
     /// without disturbing other entries. userInfo:
     /// `SidebarMultiSelectionHideKey.hiddenWorkspaceIds` (Set<UUID>), and
     /// optionally `SidebarMultiSelectionHideKey.focusedWorkspaceId` (UUID)
     /// when focus moved (so the focused row stays in the selection set).
-    static let sidebarMultiSelectionDidHide = Notification.Name("cmux.sidebarMultiSelectionDidHide")
-    static let commandPaletteToggleRequested = Notification.Name("cmux.commandPaletteToggleRequested")
-    static let commandPaletteRequested = Notification.Name("cmux.commandPaletteRequested")
-    static let commandPaletteSwitcherRequested = Notification.Name("cmux.commandPaletteSwitcherRequested")
-    static let commandPaletteSubmitRequested = Notification.Name("cmux.commandPaletteSubmitRequested")
-    static let commandPaletteDismissRequested = Notification.Name("cmux.commandPaletteDismissRequested")
-    static let commandPaletteRenameTabRequested = Notification.Name("cmux.commandPaletteRenameTabRequested")
-    static let commandPaletteRenameWorkspaceRequested = Notification.Name("cmux.commandPaletteRenameWorkspaceRequested")
-    static let commandPaletteEditWorkspaceDescriptionRequested = Notification.Name("cmux.commandPaletteEditWorkspaceDescriptionRequested")
-    static let commandPaletteMoveSelection = Notification.Name("cmux.commandPaletteMoveSelection")
-    static let commandPaletteRenameInputInteractionRequested = Notification.Name("cmux.commandPaletteRenameInputInteractionRequested")
-    static let commandPaletteRenameInputDeleteBackwardRequested = Notification.Name("cmux.commandPaletteRenameInputDeleteBackwardRequested")
-    static let feedbackComposerRequested = Notification.Name("cmux.feedbackComposerRequested")
+    static let sidebarMultiSelectionDidHide = Notification.Name("uniconnect.sidebarMultiSelectionDidHide")
+    static let commandPaletteToggleRequested = Notification.Name("uniconnect.commandPaletteToggleRequested")
+    static let commandPaletteRequested = Notification.Name("uniconnect.commandPaletteRequested")
+    static let commandPaletteSwitcherRequested = Notification.Name("uniconnect.commandPaletteSwitcherRequested")
+    static let commandPaletteSubmitRequested = Notification.Name("uniconnect.commandPaletteSubmitRequested")
+    static let commandPaletteDismissRequested = Notification.Name("uniconnect.commandPaletteDismissRequested")
+    static let commandPaletteRenameTabRequested = Notification.Name("uniconnect.commandPaletteRenameTabRequested")
+    static let commandPaletteRenameWorkspaceRequested = Notification.Name("uniconnect.commandPaletteRenameWorkspaceRequested")
+    static let commandPaletteEditWorkspaceDescriptionRequested = Notification.Name("uniconnect.commandPaletteEditWorkspaceDescriptionRequested")
+    static let commandPaletteMoveSelection = Notification.Name("uniconnect.commandPaletteMoveSelection")
+    static let commandPaletteRenameInputInteractionRequested = Notification.Name("uniconnect.commandPaletteRenameInputInteractionRequested")
+    static let commandPaletteRenameInputDeleteBackwardRequested = Notification.Name("uniconnect.commandPaletteRenameInputDeleteBackwardRequested")
+    static let feedbackComposerRequested = Notification.Name("uniconnect.feedbackComposerRequested")
     static let ghosttyDidSetTitle = Notification.Name("ghosttyDidSetTitle")
     static let ghosttyDidFocusTab = Notification.Name("ghosttyDidFocusTab")
     static let ghosttyDidFocusSurface = Notification.Name("ghosttyDidFocusSurface")
@@ -9854,18 +9967,18 @@ extension Notification.Name {
     static let browserDidExitAddressBar = Notification.Name("browserDidExitAddressBar")
     static let browserDidFocusAddressBar = Notification.Name("browserDidFocusAddressBar")
     static let browserDidBlurAddressBar = Notification.Name("browserDidBlurAddressBar")
-    static let browserFocusModeStateDidChange = Notification.Name("cmux.browserFocusModeStateDidChange")
+    static let browserFocusModeStateDidChange = Notification.Name("uniconnect.browserFocusModeStateDidChange")
     static let webViewDidReceiveClick = Notification.Name("webViewDidReceiveClick")
-    static let terminalPortalVisibilityDidChange = Notification.Name("cmux.terminalPortalVisibilityDidChange")
-    static let browserPortalRegistryDidChange = Notification.Name("cmux.browserPortalRegistryDidChange")
-    static let workspaceOrderDidChange = Notification.Name("cmux.workspaceOrderDidChange")
+    static let terminalPortalVisibilityDidChange = Notification.Name("uniconnect.terminalPortalVisibilityDidChange")
+    static let browserPortalRegistryDidChange = Notification.Name("uniconnect.browserPortalRegistryDidChange")
+    static let workspaceOrderDidChange = Notification.Name("uniconnect.workspaceOrderDidChange")
     /// Posted when an existing workspace group's `name` changes (rename). The
     /// imperatively-cached window-chrome surfaces (custom title bar in
     /// `ContentView`, toolbar command label in `WindowToolbarController`) read
     /// a grouped anchor's displayed name from `group.name` and refresh on this.
-    static let workspaceGroupNameDidChange = Notification.Name("cmux.workspaceGroupNameDidChange")
-    static let workspaceCurrentDirectoryDidChange = Notification.Name("cmux.workspaceCurrentDirectoryDidChange")
-    static let tabManagerFocusHistoryRevisionDidChange = Notification.Name("cmux.tabManagerFocusHistoryRevisionDidChange")
+    static let workspaceGroupNameDidChange = Notification.Name("uniconnect.workspaceGroupNameDidChange")
+    static let workspaceCurrentDirectoryDidChange = Notification.Name("uniconnect.workspaceCurrentDirectoryDidChange")
+    static let tabManagerFocusHistoryRevisionDidChange = Notification.Name("uniconnect.tabManagerFocusHistoryRevisionDidChange")
 }
 
 enum BrowserFirstResponderNotificationUserInfoKey {

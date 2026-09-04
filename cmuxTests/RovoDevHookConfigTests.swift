@@ -17,7 +17,7 @@ final class RovoDevHookConfigTests: XCTestCase {
 
         let installed = RovoDevHookConfig.installing(events: Self.events, in: existing)
 
-        XCTAssertTrue(installed.contains("# cmux hooks rovodev begin"))
+        XCTAssertTrue(installed.contains("# uniconnect hooks rovodev begin"))
         XCTAssertTrue(installed.contains("eventHooks:"))
         XCTAssertTrue(installed.contains("  events:"))
         XCTAssertTrue(installed.contains("    - name: on_complete"))
@@ -39,7 +39,7 @@ final class RovoDevHookConfigTests: XCTestCase {
         let reinstalled = RovoDevHookConfig.installing(events: Self.events, in: installed)
 
         XCTAssertEqual(reinstalled, installed)
-        XCTAssertTrue(installed.contains("    # cmux hooks rovodev begin"))
+        XCTAssertTrue(installed.contains("    # uniconnect hooks rovodev begin"))
         XCTAssertTrue(installed.contains("    - name: user_hook"))
         XCTAssertTrue(installed.contains("        - command: \"echo user\""))
         XCTAssertTrue(installed.contains("    - name: on_tool_permission"))
@@ -55,7 +55,7 @@ final class RovoDevHookConfigTests: XCTestCase {
 
         let installed = RovoDevHookConfig.installing(events: Self.events, in: existing)
 
-        XCTAssertTrue(installed.contains("eventHooks:\n  # cmux hooks rovodev begin\n  events:"))
+        XCTAssertTrue(installed.contains("eventHooks:\n  # uniconnect hooks rovodev begin\n  events:"))
         XCTAssertTrue(installed.contains("  enabled: true"))
         XCTAssertEqual(RovoDevHookConfig.uninstalling(from: installed), existing)
     }
@@ -73,7 +73,7 @@ final class RovoDevHookConfigTests: XCTestCase {
 
         let installed = RovoDevHookConfig.installing(events: Self.events, in: existing)
 
-        XCTAssertTrue(installed.contains("eventHooks:\n  # cmux hooks rovodev begin\n  events:"))
+        XCTAssertTrue(installed.contains("eventHooks:\n  # uniconnect hooks rovodev begin\n  events:"))
         XCTAssertTrue(installed.contains("    events:\n      - name: user_hook"))
         XCTAssertEqual(RovoDevHookConfig.uninstalling(from: installed), existing)
     }

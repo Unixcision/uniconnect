@@ -10,7 +10,7 @@ import UIKit
 /// SwiftUI host for the ``CmuxMobileCamera`` QR-capture controller.
 ///
 /// Owns one ``QRCodeScanStream`` per presentation, mounts the package's
-/// ``QRCodeCaptureController``, and forwards accepted `cmux-ios://` codes to
+/// ``QRCodeCaptureController``, and forwards accepted `uniconnect://` codes to
 /// `onCode`. The AVCaptureSession lifecycle now lives entirely in the camera
 /// service; this wrapper only bridges the stream to a SwiftUI callback.
 struct QRCodeScannerView: UIViewControllerRepresentable {

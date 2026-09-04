@@ -24,17 +24,17 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>dev.cmux.ios.attach</string>
+			<string>com.unixcision.uniconnect.ios.attach</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>cmux-ios</string>
+				<string>uniconnect</string>
 			</array>
 		</dict>
 		<dict>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>dev.cmux.ios.stack-auth</string>
+			<string>com.unixcision.uniconnect.ios.stack-auth</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>stack-auth-mobile-oauth-url</string>
@@ -48,9 +48,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Scan cmux pairing QR codes from your Mac terminal.</string>
+	<string>Scan UniConnect pairing QR codes from your Mac terminal.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Connect to your Mac on the local network for cmux mobile pairing and terminal sync.</string>
+	<string>Connect to your Mac on the local network for UniConnect mobile pairing and terminal sync.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

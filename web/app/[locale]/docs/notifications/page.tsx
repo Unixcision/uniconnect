@@ -110,7 +110,7 @@ echo "$CMUX_NOTIFICATION_TITLE: $CMUX_NOTIFICATION_BODY" >> ~/notifications.log`
   },
   "context": {
     "cwd": "/path/to/project",
-    "configPath": "/path/to/project/.cmux/cmux.json",
+    "configPath": "/path/to/project/.uniconnect/uniconnect.json",
     "hookId": "quiet-docs",
     "appFocused": false,
     "focusedPanel": false
@@ -212,8 +212,8 @@ printf '\\e]99;i=1;e=1;d=1;p=body:All tests passed\\e\\\\'`}</CodeBlock>
 
       <DocsHeading level={3} id="create-hook-script">{t("createHookScript")}</DocsHeading>
       <CodeBlock title="~/.claude/hooks/cmux-notify.sh" lang="bash">{`#!/bin/bash
-# Skip if not in cmux
-[ -S /tmp/cmux.sock ] || exit 0
+# Skip if not in UniConnect
+[ -S /tmp/uniconnect.sock ] || exit 0
 
 EVENT=$(cat)
 EVENT_TYPE=$(echo "$EVENT" | jq -r '.hook_event_name // "unknown"')

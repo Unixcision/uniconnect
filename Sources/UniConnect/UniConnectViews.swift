@@ -37,7 +37,7 @@ struct UniConnectColorPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Color")
+            Text(String(localized: "menu.box.color", defaultValue: "Color"))
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(26), spacing: 8), count: 8), spacing: 8) {
@@ -68,7 +68,7 @@ struct UniConnectColorPicker: View {
             .frame(width: 22, height: 22)
         }
         .buttonStyle(.plain)
-        .help(hex ?? "Sin color")
+        .help(hex ?? String(localized: "uniconnect.color.none", defaultValue: "No color"))
     }
 }
 
@@ -122,7 +122,11 @@ struct UniConnectNewWorkspaceView: View {
     enum Kind: String, CaseIterable, Identifiable {
         case local, ssh
         var id: String { rawValue }
-        var label: String { self == .local ? "Local" : "SSH" }
+        var label: String {
+            self == .local
+                ? String(localized: "uniconnect.workspace.kind.local", defaultValue: "Local")
+                : String(localized: "uniconnect.workspace.kind.ssh", defaultValue: "SSH")
+        }
         var icon: String { self == .local ? "folder.fill" : "network" }
     }
 
@@ -153,7 +157,8 @@ struct UniConnectNewWorkspaceView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Image(systemName: "shippingbox.fill").foregroundStyle(UniConnectStyle.accent)
-                Text("Nueva caja").font(.system(size: 20, weight: .bold, design: .rounded))
+                Text(String(localized: "uniconnect.workspace.new.title", defaultValue: "New box"))
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
                 Spacer()
             }
             Picker("", selection: $kind) {
@@ -165,25 +170,45 @@ struct UniConnectNewWorkspaceView: View {
             .labelsHidden()
 
             VStack(alignment: .leading, spacing: 10) {
-                field("Nombre") {
-                    TextField(kind == .local ? "NOTBETTING" : "VPS Hetzner", text: $name)
+                field(String(localized: "uniconnect.workspace.field.name", defaultValue: "Name")) {
+                    TextField(
+                        kind == .local
+                            ? String(localized: "uniconnect.workspace.placeholder.localName", defaultValue: "MY PROJECT")
+                            : String(localized: "uniconnect.workspace.placeholder.sshName", defaultValue: "My VPS"),
+                        text: $name
+                    )
                         .textFieldStyle(.roundedBorder)
                 }
                 if kind == .local {
-                    field("Carpeta") {
+                    field(String(localized: "uniconnect.workspace.field.folder", defaultValue: "Folder")) {
                         HStack {
-                            TextField("~/Desktop/PROYECTOS/…", text: $folder)
+                            TextField(
+                                String(
+                                    localized: "uniconnect.workspace.placeholder.localFolder",
+                                    defaultValue: "~/Projects/…"
+                                ),
+                                text: $folder
+                            )
                                 .textFieldStyle(.roundedBorder)
-                            Button("Elegir…") { chooseFolder() }
+                            Button(String(localized: "uniconnect.action.choose", defaultValue: "Choose…")) { chooseFolder() }
                         }
                     }
                 } else {
-                    field("Comando de conexión") {
-                        TextField("sshpass -p 'clave' ssh root@1.2.3.4", text: $connect)
+                    field(String(localized: "uniconnect.workspace.field.connectionCommand", defaultValue: "Connection command")) {
+                        TextField(
+                            String(
+                                localized: "uniconnect.workspace.placeholder.sshCommand",
+                                defaultValue: "sshpass -p 'PASSWORD' ssh user@example.com"
+                            ),
+                            text: $connect
+                        )
                             .textFieldStyle(.roundedBorder)
                             .font(.system(.body, design: .monospaced))
                     }
-                    Text("Se guarda cifrado. Cada ventana de esta caja será una sesión tmux en el servidor; si no hay tmux, se instala.")
+                    Text(String(
+                        localized: "uniconnect.workspace.ssh.encryptionDescription",
+                        defaultValue: "It is stored encrypted. Each window in this box is a tmux session on the server; if tmux is missing, UniConnect can install it."
+                    ))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -197,8 +222,13 @@ struct UniConnectNewWorkspaceView: View {
             Spacer(minLength: 0)
             HStack {
                 Spacer()
-                Button("Cancelar", action: onCancel).keyboardShortcut(.cancelAction)
-                Button(kind == .local ? "Crear caja local" : "Conectar") { submit() }
+                Button(String(localized: "common.cancel", defaultValue: "Cancel"), action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                Button(
+                    kind == .local
+                        ? String(localized: "uniconnect.workspace.action.createLocal", defaultValue: "Create local box")
+                        : String(localized: "uniconnect.workspace.action.connect", defaultValue: "Connect")
+                ) { submit() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .tint(kind == .local ? UniConnectStyle.accent : UniConnectStyle.accentSSH)
@@ -224,7 +254,7 @@ struct UniConnectNewWorkspaceView: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "Elegir"
+        panel.prompt = String(localized: "uniconnect.action.choose", defaultValue: "Choose…")
         if panel.runModal() == .OK, let url = panel.url {
             folder = url.path
         }
@@ -237,7 +267,10 @@ struct UniConnectNewWorkspaceView: View {
             let expanded = (folder.trimmingCharacters(in: .whitespacesAndNewlines) as NSString).expandingTildeInPath
             var isDir: ObjCBool = false
             guard !expanded.isEmpty, FileManager.default.fileExists(atPath: expanded, isDirectory: &isDir), isDir.boolValue else {
-                error = "Elige una carpeta que exista."
+                error = String(
+                    localized: "uniconnect.workspace.error.folderMissing",
+                    defaultValue: "Choose an existing folder."
+                )
                 return
             }
             let resolvedName = trimmedName.isEmpty ? URL(fileURLWithPath: expanded).lastPathComponent.uppercased() : trimmedName
@@ -249,7 +282,10 @@ struct UniConnectNewWorkspaceView: View {
                 return
             }
             guard !trimmedConnect.contains("\n") else {
-                error = "El comando no puede tener saltos de línea."
+                error = String(
+                    localized: "uniconnect.workspace.error.connectionLineBreak",
+                    defaultValue: "The command cannot contain line breaks."
+                )
                 return
             }
             let resolvedName = trimmedName.isEmpty ? UniConnectSSH.hostLabel(from: trimmedConnect) : trimmedName
@@ -274,14 +310,27 @@ struct UniConnectNewWindowView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Image(systemName: "macwindow.badge.plus").foregroundStyle(UniConnectStyle.accentSSH)
-                Text("Nueva ventana en \(workspaceName)").font(.system(size: 18, weight: .bold, design: .rounded))
+                Text(String.localizedStringWithFormat(
+                    String(localized: "uniconnect.window.new.title", defaultValue: "New window in %@"),
+                    workspaceName
+                ))
+                .font(.system(size: 18, weight: .bold, design: .rounded))
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text("Nombre visible").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-                TextField("claude, logs, deploy…", text: $name).textFieldStyle(.roundedBorder)
+                Text(String(localized: "uniconnect.window.field.visibleName", defaultValue: "Visible name"))
+                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                TextField(
+                    String(localized: "uniconnect.window.placeholder.name", defaultValue: "claude, logs, deploy…"),
+                    text: $name
+                )
+                .textFieldStyle(.roundedBorder)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text("Código tmux (interno, para recuperar la sesión)").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                Text(String(
+                    localized: "uniconnect.window.field.tmuxRecoveryCode",
+                    defaultValue: "tmux code (internal, used to recover the session)"
+                ))
+                .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
                 TextField("uc-…", text: $tmux)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(.body, design: .monospaced))
@@ -291,8 +340,9 @@ struct UniConnectNewWindowView: View {
             Spacer(minLength: 0)
             HStack {
                 Spacer()
-                Button("Cancelar", action: onCancel).keyboardShortcut(.cancelAction)
-                Button("Crear ventana") { submit() }
+                Button(String(localized: "common.cancel", defaultValue: "Cancel"), action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                Button(String(localized: "uniconnect.window.action.create", defaultValue: "Create window")) { submit() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .tint(UniConnectStyle.accentSSH)
@@ -308,11 +358,20 @@ struct UniConnectNewWindowView: View {
 
     private func submit() {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else { error = "Ponle un nombre a la ventana."; return }
+        guard !trimmedName.isEmpty else {
+            error = String(localized: "uniconnect.window.error.nameMissing", defaultValue: "Give the window a name.")
+            return
+        }
         let candidate = tmux.trimmingCharacters(in: .whitespacesAndNewlines)
         let safe = UniConnectSSH.sanitizedTmuxName(candidate.isEmpty ? UniConnectSSH.suggestedTmuxName(windowName: trimmedName) : candidate)
         guard safe == candidate || candidate.isEmpty else {
-            error = "El código tmux solo admite letras, números, guiones y guiones bajos. Sugerencia: \(safe)"
+            error = String.localizedStringWithFormat(
+                String(
+                    localized: "uniconnect.window.error.invalidTmuxCode",
+                    defaultValue: "The tmux code can only contain letters, numbers, hyphens, and underscores. Suggestion: %@"
+                ),
+                safe
+            )
             tmux = safe
             tmuxEdited = true
             return
@@ -364,7 +423,10 @@ struct UniConnectSSHWelcomeView: View {
     @State private var error: String?
 
     private var title: String { workspace.customTitle ?? workspace.title }
-    private var host: String { workspace.uniConnectProfile?.hostLabel ?? "servidor" }
+    private var host: String {
+        workspace.uniConnectProfile?.hostLabel
+            ?? String(localized: "uniconnect.bridge.hostFallback", defaultValue: "Remote host")
+    }
 
     var body: some View {
         ZStack {
@@ -400,7 +462,11 @@ struct UniConnectSSHWelcomeView: View {
             VStack(spacing: 14) {
                 HStack(spacing: 12) {
                     ProgressView().controlSize(.regular).tint(UniConnectStyle.onTerminal)
-                    Text(state.phase == .installing ? "Instalando tmux en el servidor…" : "Conectando y comprobando tmux…")
+                    Text(
+                        state.phase == .installing
+                            ? String(localized: "uniconnect.ssh.setup.installing", defaultValue: "Installing tmux on the server…")
+                            : String(localized: "uniconnect.ssh.setup.checking", defaultValue: "Connecting and checking tmux…")
+                    )
                         .font(.system(size: 22, weight: .semibold, design: .rounded))
                         .foregroundStyle(UniConnectStyle.onTerminal)
                 }
@@ -408,30 +474,57 @@ struct UniConnectSSHWelcomeView: View {
             }
         case .needsInstall(let detail):
             VStack(spacing: 14) {
-                Text("tmux no está instalado en el servidor")
+                Text(String(
+                    localized: "uniconnect.ssh.setup.tmuxMissing.title",
+                    defaultValue: "tmux is not installed on the server"
+                ))
                     .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundStyle(UniConnectStyle.onTerminal)
-                Text("Detectado: \(detail.replacingOccurrences(of: "=", with: ": ").replacingOccurrences(of: " ", with: " · "))")
+                Text(String.localizedStringWithFormat(
+                    String(localized: "uniconnect.ssh.setup.detected", defaultValue: "Detected: %@"),
+                    detail.replacingOccurrences(of: "=", with: ": ").replacingOccurrences(of: " ", with: " · ")
+                ))
                     .font(.system(size: 13, design: .monospaced))
                     .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.7))
                     .multilineTextAlignment(.center)
-                Text("UniConnect instalará el paquete tmux con el gestor del sistema (apt, dnf, yum, apk, pacman, zypper o brew). No toca nada más.")
+                Text(String(
+                    localized: "uniconnect.ssh.setup.installDescription",
+                    defaultValue: "UniConnect will install the tmux package with the system package manager (apt, dnf, yum, apk, pacman, zypper, or brew). It will not change anything else."
+                ))
                     .font(.system(size: 15, design: .rounded))
                     .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.85))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 logView
                 HStack(spacing: 12) {
-                    Button { onInstallTmux() } label: { Label("Instalar tmux", systemImage: "arrow.down.circle.fill") }
+                    Button { onInstallTmux() } label: {
+                        Label(
+                            String(localized: "uniconnect.ssh.setup.action.installTmux", defaultValue: "Install tmux"),
+                            systemImage: "arrow.down.circle.fill"
+                        )
+                    }
                         .buttonStyle(.borderedProminent).tint(UniConnectStyle.accentSSH)
                         .disabled(detail.contains("SIN permisos"))
-                    Button { onRetry() } label: { Label("Volver a comprobar", systemImage: "arrow.clockwise") }
+                    Button { onRetry() } label: {
+                        Label(
+                            String(localized: "uniconnect.ssh.setup.action.checkAgain", defaultValue: "Check again"),
+                            systemImage: "arrow.clockwise"
+                        )
+                    }
                         .buttonStyle(.bordered)
-                    Button { onEditConnection() } label: { Label("Editar conexión", systemImage: "pencil") }
+                    Button { onEditConnection() } label: {
+                        Label(
+                            String(localized: "uniconnect.ssh.setup.action.editConnection", defaultValue: "Edit connection"),
+                            systemImage: "pencil"
+                        )
+                    }
                         .buttonStyle(.bordered)
                 }
                 if detail.contains("SIN permisos") {
-                    Text("Este usuario no puede instalar paquetes (ni root ni sudo sin contraseña). Instala tmux a mano o conecta con otro usuario.")
+                    Text(String(
+                        localized: "uniconnect.ssh.setup.noInstallPermission",
+                        defaultValue: "This user cannot install packages (neither root nor passwordless sudo). Install tmux manually or connect as another user."
+                    ))
                         .font(.system(size: 13, design: .rounded))
                         .foregroundStyle(Color(red: 1, green: 0.7, blue: 0.5))
                         .multilineTextAlignment(.center)
@@ -439,7 +532,10 @@ struct UniConnectSSHWelcomeView: View {
             }
         case .failed(let message):
             VStack(spacing: 14) {
-                Text("No se pudo preparar el servidor")
+                Text(String(
+                    localized: "uniconnect.ssh.setup.failed.title",
+                    defaultValue: "The server could not be prepared"
+                ))
                     .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundStyle(Color(red: 1, green: 0.55, blue: 0.55))
                 Text(message)
@@ -448,29 +544,56 @@ struct UniConnectSSHWelcomeView: View {
                     .multilineTextAlignment(.center)
                 logView
                 HStack(spacing: 12) {
-                    Button { onRetry() } label: { Label("Reintentar", systemImage: "arrow.clockwise") }
+                    Button { onRetry() } label: {
+                        Label(
+                            String(localized: "uniconnect.action.retry", defaultValue: "Retry"),
+                            systemImage: "arrow.clockwise"
+                        )
+                    }
                         .buttonStyle(.borderedProminent).tint(UniConnectStyle.accentSSH)
-                    Button { onEditConnection() } label: { Label("Editar conexión", systemImage: "pencil") }
+                    Button { onEditConnection() } label: {
+                        Label(
+                            String(localized: "uniconnect.ssh.setup.action.editConnection", defaultValue: "Edit connection"),
+                            systemImage: "pencil"
+                        )
+                    }
                         .buttonStyle(.bordered)
                 }
             }
         case .ready:
             VStack(spacing: 18) {
-                Text("Servidor listo. Crea tu primera ventana.")
+                Text(String(
+                    localized: "uniconnect.ssh.setup.ready.title",
+                    defaultValue: "Server ready. Create your first window."
+                ))
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundStyle(UniConnectStyle.onTerminal)
-                Text("Cada ventana es una sesión tmux con nombre en \(host). Si UniConnect se cierra o peta, la ventana sigue viva en el servidor y se reengancha sola al volver.")
+                Text(String.localizedStringWithFormat(
+                    String(
+                        localized: "uniconnect.ssh.setup.ready.description",
+                        defaultValue: "Each window is a named tmux session on %@. If UniConnect closes or crashes, the window stays alive on the server and reconnects automatically when you return."
+                    ),
+                    host
+                ))
                     .font(.system(size: 15, design: .rounded))
                     .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.7))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Nombre de la ventana").font(.system(size: 13, weight: .semibold)).foregroundStyle(UniConnectStyle.onTerminal.opacity(0.7))
-                    TextField("claude, logs, deploy…", text: $name)
+                    Text(String(localized: "uniconnect.window.field.name", defaultValue: "Window name"))
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(UniConnectStyle.onTerminal.opacity(0.7))
+                    TextField(
+                        String(localized: "uniconnect.window.placeholder.name", defaultValue: "claude, logs, deploy…"),
+                        text: $name
+                    )
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 18))
                         .onSubmit { submit() }
-                    Text("Código tmux (interno, editable)").font(.system(size: 13, weight: .semibold)).foregroundStyle(UniConnectStyle.onTerminal.opacity(0.7))
+                    Text(String(
+                        localized: "uniconnect.window.field.tmuxEditableCode",
+                        defaultValue: "tmux code (internal, editable)"
+                    ))
+                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(UniConnectStyle.onTerminal.opacity(0.7))
                     TextField("uc-…", text: $tmux)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 15, design: .monospaced))
@@ -479,7 +602,10 @@ struct UniConnectSSHWelcomeView: View {
                     HStack {
                         Spacer()
                         Button { submit() } label: {
-                            Label("Crear ventana", systemImage: "plus")
+                            Label(
+                                String(localized: "uniconnect.window.action.create", defaultValue: "Create window"),
+                                systemImage: "plus"
+                            )
                                 .font(.system(size: 16, weight: .semibold, design: .rounded))
                                 .padding(.horizontal, 14).padding(.vertical, 6)
                         }
@@ -524,11 +650,20 @@ struct UniConnectSSHWelcomeView: View {
 
     private func submit() {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else { error = "Ponle un nombre a la ventana."; return }
+        guard !trimmedName.isEmpty else {
+            error = String(localized: "uniconnect.window.error.nameMissing", defaultValue: "Give the window a name.")
+            return
+        }
         let candidate = tmux.trimmingCharacters(in: .whitespacesAndNewlines)
         let safe = UniConnectSSH.sanitizedTmuxName(candidate.isEmpty ? UniConnectSSH.suggestedTmuxName(windowName: trimmedName) : candidate)
         guard candidate.isEmpty || safe == candidate else {
-            error = "El código tmux solo admite letras, números, guiones y guiones bajos. Sugerencia: \(safe)"
+            error = String.localizedStringWithFormat(
+                String(
+                    localized: "uniconnect.window.error.invalidTmuxCode",
+                    defaultValue: "The tmux code can only contain letters, numbers, hyphens, and underscores. Suggestion: %@"
+                ),
+                safe
+            )
             tmux = safe
             tmuxEdited = true
             return
@@ -558,16 +693,25 @@ struct UniConnectPassphraseView: View {
                 Text(title).font(.system(size: 18, weight: .bold, design: .rounded))
             }
             Text(message).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            SecureField("Contraseña", text: $passphrase).textFieldStyle(.roundedBorder)
+            SecureField(
+                String(localized: "uniconnect.passphrase.field.password", defaultValue: "Password"),
+                text: $passphrase
+            )
+            .textFieldStyle(.roundedBorder)
             if confirm {
-                SecureField("Repite la contraseña", text: $repeatPassphrase).textFieldStyle(.roundedBorder)
+                SecureField(
+                    String(localized: "uniconnect.passphrase.field.repeatPassword", defaultValue: "Repeat password"),
+                    text: $repeatPassphrase
+                )
+                .textFieldStyle(.roundedBorder)
             }
             if let error { Text(error).font(.system(size: 12)).foregroundStyle(.red) }
             Spacer(minLength: 0)
             HStack {
                 Spacer()
-                Button("Cancelar", action: onCancel).keyboardShortcut(.cancelAction)
-                Button("Continuar") { submit() }
+                Button(String(localized: "common.cancel", defaultValue: "Cancel"), action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                Button(String(localized: "uniconnect.action.continue", defaultValue: "Continue")) { submit() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .tint(UniConnectStyle.accent)
@@ -578,11 +722,16 @@ struct UniConnectPassphraseView: View {
 
     private func submit() {
         guard passphrase.count >= (confirm ? 8 : 1) else {
-            error = confirm ? "Mínimo 8 caracteres." : "Escribe la contraseña."
+            error = confirm
+                ? String(localized: "uniconnect.passphrase.error.tooShort", defaultValue: "Use at least 8 characters.")
+                : String(localized: "uniconnect.passphrase.error.empty", defaultValue: "Enter the password.")
             return
         }
         if confirm, passphrase != repeatPassphrase {
-            error = "Las contraseñas no coinciden."
+            error = String(
+                localized: "uniconnect.passphrase.error.mismatch",
+                defaultValue: "The passwords do not match."
+            )
             return
         }
         onSubmit(passphrase)
@@ -606,7 +755,7 @@ struct UniConnectImportPreviewView: View {
         self.plan = plan
         self.onImport = onImport
         self.onCancel = onCancel
-        _selected = State(initialValue: plan.canUseCreateOnlyExecutor ? Set(plan.createRows.map(\.id)) : [])
+        _selected = State(initialValue: plan.defaultSelectedRowIDs)
     }
 
     var body: some View {
@@ -630,44 +779,103 @@ struct UniConnectImportPreviewView: View {
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if !plan.documentIssues.isEmpty {
+                Text(plan.documentIssues.map(issueText).joined(separator: "\n"))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             List(plan.rows) { row in
-                HStack(spacing: 10) {
-                    Toggle(isOn: Binding(
-                        get: { selected.contains(row.id) },
-                        set: { on in if on { selected.insert(row.id) } else { selected.remove(row.id) } }
-                    )) { EmptyView() }
-                        .labelsHidden()
-                        .disabled(row.outcome != .create || !plan.canUseCreateOnlyExecutor)
-                    Circle().fill(row.workspace.color.map { UniConnectStyle.color(hex: $0) } ?? .gray).frame(width: 10, height: 10)
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Text(row.workspace.name).font(.system(size: 13, weight: .semibold))
-                            Text(kindText(for: row.workspace.kind))
-                                .font(.system(size: 10, weight: .bold))
-                                .padding(.horizontal, 5).padding(.vertical, 1)
-                                .background(Capsule().fill(row.workspace.kind == .ssh ? UniConnectStyle.accentSSH.opacity(0.25) : Color.secondary.opacity(0.2)))
-                            Text(outcomeText(row.outcome))
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(outcomeColor(row.outcome))
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top, spacing: 10) {
+                        Toggle(isOn: Binding(
+                            get: { selected.contains(row.id) },
+                            set: { on in
+                                if on { selected.insert(row.id) }
+                                else { selected.remove(row.id) }
+                            }
+                        )) { EmptyView() }
+                            .labelsHidden()
+                            .disabled(!row.isSelectable)
+                        Circle()
+                            .fill(row.preview.color.map { UniConnectStyle.color(hex: $0) } ?? .gray)
+                            .frame(width: 10, height: 10)
+                            .padding(.top, 4)
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 6) {
+                                Text(row.preview.name)
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text(kindText(for: row.preview.kind))
+                                    .font(.system(size: 10, weight: .bold))
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(Capsule().fill(
+                                        row.preview.kind == .ssh
+                                            ? UniConnectStyle.accentSSH.opacity(0.25)
+                                            : Color.secondary.opacity(0.2)
+                                    ))
+                                Text(outcomeText(row.outcome))
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(outcomeColor(row.outcome))
+                                if let location = locationText(row.sourceLocation) {
+                                    Text(location)
+                                        .font(.system(size: 9, design: .monospaced))
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
+                            Text(summary(for: row.preview))
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                            if !row.issues.isEmpty {
+                                Text(row.issues.map(issueText).joined(separator: "\n"))
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(row.outcome == .rejected ? .red : .orange)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
-                        Text(summary(for: row.workspace))
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
-                        if !row.issues.isEmpty {
-                            Text(row.issues.map(issueText).joined(separator: "\n"))
-                                .font(.system(size: 10))
-                                .foregroundStyle(row.outcome == .rejected ? .red : .orange)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                        Spacer()
                     }
-                    Spacer()
+                    ForEach(row.windowRows) { windowRow in
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "rectangle.on.rectangle")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 14)
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text(windowRow.name)
+                                        .font(.system(size: 11, weight: .medium))
+                                    Text(outcomeText(windowRow.outcome))
+                                        .font(.system(size: 9, weight: .semibold))
+                                        .foregroundStyle(outcomeColor(windowRow.outcome))
+                                    if let location = locationText(windowRow.sourceLocation) {
+                                        Text(location)
+                                            .font(.system(size: 9, design: .monospaced))
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                }
+                                Text(actionText(windowRow.action))
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                                if !windowRow.issues.isEmpty {
+                                    Text(windowRow.issues.map(issueText).joined(separator: "\n"))
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(windowRow.outcome == .rejected ? .red : .orange)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            Spacer()
+                        }
+                        .padding(.leading, 32)
+                    }
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, 4)
             }
             HStack {
                 Button(String(localized: "uniconnect.import.button.all", defaultValue: "All")) {
-                    selected = Set(plan.createRows.map(\.id))
+                    selected = plan.defaultSelectedRowIDs
                 }
-                .disabled(!plan.canUseCreateOnlyExecutor || plan.createRows.isEmpty)
+                .disabled(plan.defaultSelectedRowIDs.isEmpty)
                 Button(String(localized: "uniconnect.import.button.none", defaultValue: "None")) {
                     selected = []
                 }
@@ -681,7 +889,7 @@ struct UniConnectImportPreviewView: View {
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .tint(UniConnectStyle.accent)
-                .disabled(selected.isEmpty || !plan.canUseCreateOnlyExecutor)
+                .disabled(selected.isEmpty)
             }
         }
         .padding(20)
@@ -690,14 +898,8 @@ struct UniConnectImportPreviewView: View {
     private var blockingMessage: String? {
         if plan.hasBlockingIssues {
             return String(
-                localized: "uniconnect.import.error.blocked",
-                defaultValue: "Resolve every conflict or rejected row before importing. No changes were made."
-            )
-        }
-        if plan.requiresTransactionalUpdates {
-            return String(
-                localized: "uniconnect.import.error.transactionalUpdatesRequired",
-                defaultValue: "This import contains updates. No changes were made because updates require transactional reconciliation."
+                localized: "uniconnect.import.preview.skippedRows",
+                defaultValue: "Conflicts and rejected declarations cannot be selected. Safe Create and Update rows can still be imported."
             )
         }
         return nil
@@ -744,28 +946,115 @@ struct UniConnectImportPreviewView: View {
         }
     }
 
-    private func summary(for workspace: UniConnectDocument.Workspace) -> String {
+    private func summary(for workspace: UniConnectImportPlan.WorkspacePreview) -> String {
         switch workspace.kind {
         case .local:
             return String.localizedStringWithFormat(
                 String(localized: "uniconnect.import.summary.local", defaultValue: "%1$@ · %2$lld windows"),
                 workspace.cwd ?? "~",
-                Int64(workspace.windows.count)
+                Int64(workspace.declaredWindowCount)
             )
         case .ssh:
-            let host: String
-            if let connect = workspace.connect, UniConnectSSH.validateConnectCommand(connect) == nil {
-                host = UniConnectSSH.hostLabel(from: connect)
-            } else {
-                host = String(
+            let host = workspace.hostLabel ?? String(
                     localized: "uniconnect.import.summary.unknownHost",
                     defaultValue: "Unknown SSH host"
                 )
-            }
             return String.localizedStringWithFormat(
                 String(localized: "uniconnect.import.summary.ssh", defaultValue: "%1$@ · %2$lld tmux windows"),
                 host,
-                Int64(workspace.windows.count)
+                Int64(workspace.declaredWindowCount)
+            )
+        }
+    }
+
+    private func locationText(_ location: UniConnectImportSourceLocation?) -> String? {
+        guard let location else { return nil }
+        if let section = location.section, !section.isEmpty {
+            return String.localizedStringWithFormat(
+                String(
+                    localized: "uniconnect.import.source.lineSection",
+                    defaultValue: "Line %1$lld · %2$@"
+                ),
+                Int64(location.line),
+                section
+            )
+        }
+        return String.localizedStringWithFormat(
+            String(localized: "uniconnect.import.source.line", defaultValue: "Line %lld"),
+            Int64(location.line)
+        )
+    }
+
+    private func actionText(_ action: UniConnectImportPlan.WindowAction) -> String {
+        switch action {
+        case .create(let destination):
+            return String.localizedStringWithFormat(
+                String(
+                    localized: "uniconnect.import.windowAction.create",
+                    defaultValue: "Create · %@"
+                ),
+                destinationText(destination)
+            )
+        case .update(let destination):
+            return String.localizedStringWithFormat(
+                String(
+                    localized: "uniconnect.import.windowAction.update",
+                    defaultValue: "Update · %@"
+                ),
+                destinationText(destination)
+            )
+        case .leaveUnchanged:
+            return String(
+                localized: "uniconnect.import.windowAction.unchanged",
+                defaultValue: "Keep the existing window unchanged"
+            )
+        case .keepTerminalBecauseDuplicateAgent(let kind, _, let mutation):
+            return String.localizedStringWithFormat(
+                String(
+                    localized: "uniconnect.import.windowAction.keepTerminalDuplicate",
+                    defaultValue: "%1$@ · keep as a normal terminal because the %2$@ session already has an owner"
+                ),
+                outcomeText(mutation),
+                kind.displayName
+            )
+        case .reject:
+            return String(
+                localized: "uniconnect.import.windowAction.reject",
+                defaultValue: "Do not import this window"
+            )
+        }
+    }
+
+    private func destinationText(_ destination: UniConnectImportPlan.WindowDestination) -> String {
+        switch destination {
+        case .terminal:
+            return String(
+                localized: "uniconnect.import.windowDestination.terminal",
+                defaultValue: "normal terminal"
+            )
+        case .agent(let kind, _):
+            return String.localizedStringWithFormat(
+                String(
+                    localized: "uniconnect.import.windowDestination.agent",
+                    defaultValue: "resume %@ from its trusted folder"
+                ),
+                kind.displayName
+            )
+        case .attachExistingTmux(let session):
+            return String.localizedStringWithFormat(
+                String(
+                    localized: "uniconnect.import.windowDestination.attachExistingTmux",
+                    defaultValue: "read-only check, then attach existing tmux %@"
+                ),
+                session
+            )
+        case .createTmuxIfMissing(let session):
+            return String.localizedStringWithFormat(
+                String(
+                    localized: "uniconnect.import.windowDestination.createTmux",
+                    defaultValue: "create or attach tmux %@ (explicitly declared new)"
+                ),
+                session
             )
         }
     }
@@ -784,6 +1073,11 @@ struct UniConnectImportPreviewView: View {
             return String(localized: "uniconnect.import.issue.localWorkspaceMissingWindow", defaultValue: "A local workspace needs at least one window.")
         case .localWindowHasTmux:
             return String(localized: "uniconnect.import.issue.localWindowHasTmux", defaultValue: "A local window cannot contain a tmux target.")
+        case .invalidLocalWorkingDirectory:
+            return String(
+                localized: "uniconnect.import.issue.invalidLocalWorkingDirectory",
+                defaultValue: "A local window working directory must stay inside its trusted box folder."
+            )
         case .sshWindowMissingTmux:
             return String(localized: "uniconnect.import.issue.sshWindowMissingTmux", defaultValue: "Every SSH window needs a tmux target.")
         case .sshWindowHasClaudeSession:
@@ -814,6 +1108,15 @@ struct UniConnectImportPreviewView: View {
                 ),
                 id.uuidString
             )
+        case .duplicateAgentSession(let kind, let sessionID):
+            return String.localizedStringWithFormat(
+                String(
+                    localized: "uniconnect.import.issue.duplicateAgentSession",
+                    defaultValue: "%1$@ session %2$@ appears more than once; only its first owner can resume it."
+                ),
+                kind.displayName,
+                sessionID
+            )
         case .duplicateTmuxTarget(let host, let session):
             return String.localizedStringWithFormat(
                 String(
@@ -829,6 +1132,75 @@ struct UniConnectImportPreviewView: View {
             return String(localized: "uniconnect.import.issue.ambiguousName", defaultValue: "The normalized name matches more than one workspace.")
         case .workspaceKindMismatch:
             return String(localized: "uniconnect.import.issue.workspaceKindMismatch", defaultValue: "The imported and existing workspace kinds differ.")
+        case .activeAgentWouldBeReplaced:
+            return String(
+                localized: "uniconnect.import.issue.activeAgentWouldBeReplaced",
+                defaultValue: "This update would replace a different active agent owner. Leave it unselected and resolve the live session first."
+            )
+        case .sourceDiagnostic(let code, let line):
+            return String.localizedStringWithFormat(
+                String(
+                    localized: "uniconnect.import.issue.sourceDiagnostic",
+                    defaultValue: "Line %1$lld: %2$@"
+                ),
+                Int64(line),
+                sourceDiagnosticText(code)
+            )
+        }
+    }
+
+    private func sourceDiagnosticText(_ code: UniConnectImportDiagnostic.Code) -> String {
+        switch code {
+        case .unclosedCodeFence:
+            return String(
+                localized: "uniconnect.import.diagnostic.unclosedCodeFence",
+                defaultValue: "the code block is not closed"
+            )
+        case .workspaceMissingName:
+            return String(
+                localized: "uniconnect.import.diagnostic.workspaceMissingName",
+                defaultValue: "the workspace declaration has no name"
+            )
+        case .conflictingWorkspaceKind:
+            return String(
+                localized: "uniconnect.import.diagnostic.conflictingWorkspaceKind",
+                defaultValue: "the workspace declares conflicting local and SSH types"
+            )
+        case .malformedTableRow:
+            return String(
+                localized: "uniconnect.import.diagnostic.malformedTableRow",
+                defaultValue: "the table row is malformed"
+            )
+        case .windowMissingIdentity:
+            return String(
+                localized: "uniconnect.import.diagnostic.windowMissingIdentity",
+                defaultValue: "the window has neither a name nor a session identifier"
+            )
+        case .malformedClaudeResume:
+            return String(
+                localized: "uniconnect.import.diagnostic.malformedClaudeResume",
+                defaultValue: "the Claude resume declaration is malformed"
+            )
+        case .malformedTmuxDeclaration:
+            return String(
+                localized: "uniconnect.import.diagnostic.malformedTmuxDeclaration",
+                defaultValue: "the tmux declaration is malformed"
+            )
+        case .duplicateDeclaration:
+            return String(
+                localized: "uniconnect.import.diagnostic.duplicateDeclaration",
+                defaultValue: "the declaration is duplicated"
+            )
+        case .malformedJSONWorkspace:
+            return String(
+                localized: "uniconnect.import.diagnostic.malformedJSONWorkspace",
+                defaultValue: "the JSON workspace object is malformed"
+            )
+        case .malformedJSONWindow:
+            return String(
+                localized: "uniconnect.import.diagnostic.malformedJSONWindow",
+                defaultValue: "the JSON window object is malformed"
+            )
         }
     }
 }
@@ -862,7 +1234,7 @@ struct UniConnectStarterView: View {
                     Text("UniConnect")
                         .font(.system(size: 40, weight: .bold, design: .rounded))
                         .foregroundStyle(UniConnectStyle.onTerminal)
-                    Text("No hay ninguna caja abierta.")
+                    Text(String(localized: "uniconnect.starter.empty", defaultValue: "No boxes are open."))
                         .font(.system(size: 17, weight: .medium))
                         .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.7))
                 }
@@ -870,16 +1242,25 @@ struct UniConnectStarterView: View {
                     UniConnectStarterCard(
                         icon: "plus.square.on.square",
                         tint: UniConnectStyle.accent,
-                        title: "Nueva caja",
-                        detail: "Local con Claude, o SSH con ventanas tmux que sobreviven a todo.",
+                        title: String(localized: "uniconnect.starter.newBox.title", defaultValue: "New box"),
+                        detail: String(
+                            localized: "uniconnect.starter.newBox.detail",
+                            defaultValue: "Local with Claude, or SSH with tmux windows that stay alive."
+                        ),
                         shortcut: "⌘T",
                         action: onNewBox
                     )
                     UniConnectStarterCard(
                         icon: "lock.doc",
                         tint: UniConnectStyle.accentSSH,
-                        title: "Importar configuración",
-                        detail: "Un export cifrado de UniConnect o una semilla JSON.",
+                        title: String(
+                            localized: "uniconnect.starter.import.title",
+                            defaultValue: "Import configuration"
+                        ),
+                        detail: String(
+                            localized: "uniconnect.starter.import.detail",
+                            defaultValue: "An encrypted UniConnect export or a JSON seed."
+                        ),
                         shortcut: nil,
                         action: onImport
                     )
@@ -887,8 +1268,14 @@ struct UniConnectStarterView: View {
                         UniConnectStarterCard(
                             icon: "arrow.down.doc",
                             tint: Color(red: 0.62, green: 0.55, blue: 0.95),
-                            title: "Migrar desde cmux",
-                            detail: "Copia las cajas de cmux como cajas locales. cmux no se toca.",
+                            title: String(
+                                localized: "uniconnect.starter.migrate.title",
+                                defaultValue: "Migrate from cmux"
+                            ),
+                            detail: String(
+                                localized: "uniconnect.starter.migrate.detail",
+                                defaultValue: "Copy cmux workspaces as local boxes. cmux is left untouched."
+                            ),
                             shortcut: nil,
                             action: onMigrate
                         )
@@ -896,7 +1283,10 @@ struct UniConnectStarterView: View {
                 }
                 .frame(maxWidth: 820)
                 .padding(.horizontal, 32)
-                Text("También puedes usar el + de la barra lateral.")
+                Text(String(
+                    localized: "uniconnect.starter.sidebarHint",
+                    defaultValue: "You can also use the + button in the sidebar."
+                ))
                     .font(.system(size: 12))
                     .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.45))
                 Spacer(minLength: 24)

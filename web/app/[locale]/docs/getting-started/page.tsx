@@ -34,10 +34,10 @@ export default function GettingStartedPage() {
       <p>{t("dmgDesc")}</p>
 
       <DocsHeading level={3} id="homebrew">{t("homebrew")}</DocsHeading>
-      <CodeBlock lang="bash">{`brew tap manaflow-ai/cmux
-brew install --cask cmux`}</CodeBlock>
+      <CodeBlock lang="bash">{`brew tap Unixcision/uniconnect
+brew install --cask uniconnect`}</CodeBlock>
       <p>{t("updateLater")}</p>
-      <CodeBlock lang="bash">{`brew upgrade --cask cmux`}</CodeBlock>
+      <CodeBlock lang="bash">{`brew upgrade --cask uniconnect`}</CodeBlock>
 
       <Callout>
         {t.rich("firstLaunchCallout", {
@@ -55,7 +55,7 @@ brew install --cask cmux`}</CodeBlock>
 
       <DocsHeading level={2} id="cli-setup">{t("cliSetup")}</DocsHeading>
       <p>{t("cliDesc")}</p>
-      <CodeBlock lang="bash">{`sudo ln -sf "/Applications/cmux.app/Contents/Resources/bin/cmux" /usr/local/bin/cmux`}</CodeBlock>
+      <CodeBlock lang="bash">{`sudo ln -sf "/Applications/UniConnect.app/Contents/Resources/bin/cmux" /usr/local/bin/cmux`}</CodeBlock>
       <p>{t("cliThen")}</p>
       <CodeBlock lang="bash">{`cmux list-workspaces
 cmux notify --title "Build Complete" --body "Your build finished"`}</CodeBlock>

@@ -301,6 +301,18 @@ extension Workspace {
 
         let closedAgentRuntimeState = agentRuntimeState(forPanelId: panelId)
         removePendingTerminalInputObservers(forPanelId: panelId)
+        if UniConnectCoordinator.isEnabled {
+            NotificationCenter.default.post(
+                name: .uniConnectClaudeSessionSignal,
+                object: UniConnectClaudeSessionSignal(
+                    workspaceID: id,
+                    panelID: panelId,
+                    kind: .panelClosed,
+                    lifecycle: nil,
+                    shellActivity: nil
+                )
+            )
+        }
         let transferredRemoteCleanupConfiguration = transferredRemoteCleanupConfigurationsByPanelId.removeValue(forKey: panelId)
         panelSubscriptions.removeValue(forKey: panelId)?.cancel()
         discardAgentSessionPanelSubscription(panelId: panelId, panel: panel)
@@ -326,6 +338,14 @@ extension Workspace {
         panelPullRequests.removeValue(forKey: panelId)
         panelTitles.removeValue(forKey: panelId)
         panelCustomTitles.removeValue(forKey: panelId)
+        if closePanel {
+            uniConnectTmuxSessionsByPanelId.removeValue(forKey: panelId)
+            uniConnectClaudeSessionsByPanelId.removeValue(forKey: panelId)
+            uniConnectLocalWindowsByPanelId.removeValue(forKey: panelId)
+            uniConnectDisconnectedPanelIds.remove(panelId)
+            uniConnectClaudeBridgeStatusByPanelId.removeValue(forKey: panelId)
+            UniConnectCoordinator.shared.unregisterClaudeBridgeRoute(panelId)
+        }
         pinnedPanelIds.remove(panelId)
         manualUnreadPanelIds.remove(panelId)
         manualUnreadMarkedAt.removeValue(forKey: panelId)

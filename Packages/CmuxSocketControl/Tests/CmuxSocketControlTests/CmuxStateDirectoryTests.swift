@@ -33,9 +33,9 @@ import Testing
 
     @Test func legacyApplicationSupportURLPointsAtOldLocation() {
         let legacy = CmuxStateDirectory.legacyApplicationSupportURL(fileManager: .default)
-        // Only used for one-time migration; it must still address the old folder.
-        #expect(legacy?.lastPathComponent == "cmux")
-        #expect(legacy?.path.contains("/Application Support/cmux") == true)
+        // Only used for one-time migration inside UniConnect's own storage.
+        #expect(legacy?.lastPathComponent == "UniConnect")
+        #expect(legacy?.path.contains("/Application Support/UniConnect") == true)
     }
 }
 

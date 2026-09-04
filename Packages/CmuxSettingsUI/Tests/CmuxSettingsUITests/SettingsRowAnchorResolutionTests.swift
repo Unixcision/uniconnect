@@ -18,6 +18,18 @@ import Testing
 /// single key). Together they must cover every curated setting entry.
 @Suite("SettingsRowAnchorResolution")
 struct SettingsRowAnchorResolutionTests {
+    @MainActor
+    @Test func languagePickerMatchesTheTwentyShippedCatalogs() {
+        let selectable = AppSection.supportedLanguageCases
+
+        #expect(selectable.first == .system)
+        #expect(selectable.count == 21)
+        #expect(Set(selectable.dropFirst()).count == 20)
+        #expect(selectable.contains(.km))
+        #expect(selectable.contains(.uk))
+        #expect(!selectable.contains(.vi))
+    }
+
     /// Every singular uniconnect.json path declared by an *unconditionally
     /// rendered* settings row. Excludes rows that aren't standalone search
     /// results: `workspaceColors.colors` (repeated per-palette rows) and
@@ -51,7 +63,6 @@ struct SettingsRowAnchorResolutionTests {
         "app.preferredEditor",
         "app.renameSelectsExistingName",
         "app.reorderOnNotification",
-        "app.sendAnonymousTelemetry",
         "app.warnBeforeClosingTab",
         "app.warnBeforeClosingTabXButton",
         "app.workspaceInheritWorkingDirectory",

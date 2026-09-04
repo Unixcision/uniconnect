@@ -1,4 +1,4 @@
-import { useTranslations, useLocale } from "next-intl";
+import { useTranslations } from "next-intl";
 import { FadeImage } from "./components/fade-image";
 import Balancer from "react-wrap-balancer";
 import landingImage from "./assets/landing-image.png";
@@ -7,11 +7,6 @@ import { DownloadButton } from "./components/download-button";
 import { GitHubButton } from "./components/github-button";
 import { SiteHeader } from "./components/site-header";
 import { BrandLogoLink } from "./components/brand-logo-link";
-import {
-  testimonials,
-  getTestimonialSubtitle,
-  getTestimonialTranslation,
-} from "./testimonials";
 import { Link } from "../../i18n/navigation";
 
 export default function Home() {
@@ -21,10 +16,6 @@ export default function Home() {
 function HomeContent() {
   const t = useTranslations("home");
   const tc = useTranslations("common");
-  const tt = useTranslations("testimonials");
-  const tst = useTranslations("testimonialSubtitles");
-  const locale = useLocale();
-
   const linkClass =
     "underline underline-offset-2 decoration-border hover:decoration-foreground transition-colors";
 
@@ -38,13 +29,13 @@ function HomeContent() {
           <BrandLogoLink className="shrink-0">
             <img
               src="/logo.png"
-              alt="cmux icon"
+              alt="UniConnect icon"
               width={48}
               height={48}
               className="rounded-xl"
             />
           </BrandLogoLink>
-          <h1 className="text-2xl font-semibold tracking-tight">cmux</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">UniConnect</h1>
         </div>
 
         {/* Tagline */}
@@ -148,7 +139,7 @@ function HomeContent() {
         >
           <FadeImage
             src={landingImage}
-            alt="cmux terminal app screenshot"
+            alt="UniConnect terminal app screenshot"
             priority
             className="w-full rounded-xl"
           />
@@ -231,7 +222,7 @@ function HomeContent() {
                 {t.rich("faqFreeA", {
                   link: (chunks) => (
                     <a
-                      href="https://github.com/manaflow-ai/cmux"
+                      href="https://github.com/Unixcision/uniconnect"
                       className={linkClass}
                     >
                       {chunks}
@@ -241,71 +232,6 @@ function HomeContent() {
               </p>
             </div>
           </div>
-        </section>
-
-        {/* Community */}
-        <section data-dev="community" className="mb-10">
-          <h2 className="text-xs font-medium text-muted tracking-tight mb-3">
-            {t("communitySection")}
-          </h2>
-          <ul
-            data-dev="community-ul"
-            className="text-[15px]"
-            style={{
-              lineHeight: 1.5,
-              display: "flex",
-              flexDirection: "column",
-              gap: 16,
-            }}
-          >
-            {testimonials.map((item) => {
-              const translation = getTestimonialTranslation(item, locale, tt);
-              const subtitle = getTestimonialSubtitle(item, tst);
-              return (
-              <li key={item.url}>
-                <span>
-                  <a
-                    href={item.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="group"
-                  >
-                    <span className="text-muted group-hover:text-foreground transition-colors">
-                      &quot;{item.text}&quot;
-                    </span>
-                    {translation && (
-                      <span className="text-muted/60 text-xs italic">
-                        {" "}
-                        — {translation}
-                      </span>
-                    )}
-                  </a>{" "}
-                  <a
-                    href={item.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-muted hover:text-foreground transition-colors"
-                  >
-                    —
-                    {item.avatar && (
-                      <img
-                        src={item.avatar}
-                        alt={item.name}
-                        width={16}
-                        height={16}
-                        loading="lazy"
-                        decoding="async"
-                        className="rounded-full inline-block object-cover"
-                      />
-                    )}
-                    {item.name}
-                    {subtitle ? `, ${subtitle}` : ""}
-                  </a>
-                </span>
-              </li>
-              );
-            })}
-          </ul>
         </section>
 
         {/* Bottom CTA */}

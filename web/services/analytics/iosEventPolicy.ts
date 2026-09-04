@@ -1,13 +1,12 @@
 // Server-side policy for the iOS analytics proxy. Keeps event-name validation
 // and forwarding config in one place so the route handler stays thin.
 
-/** The PostHog project key. Public (already shipped in the web client bundle),
- * overridable via env so dev/preview can point at a separate project. */
-export const POSTHOG_PROJECT_KEY =
-  process.env.POSTHOG_PROJECT_KEY ?? "phc_opOVu7oFzR9wD3I6ZahFGOV2h3mqGpl5EHyQvmHciDP";
+/** The explicitly configured UniConnect PostHog project key. */
+export const POSTHOG_PROJECT_KEY = process.env.UNICONNECT_POSTHOG_PROJECT_KEY?.trim() || null;
 
-/** The PostHog capture host (no trailing slash). */
-export const POSTHOG_HOST = (process.env.POSTHOG_HOST ?? "https://r.cmux.com").replace(/\/$/, "");
+/** The explicitly configured UniConnect PostHog capture host (no trailing slash). */
+export const POSTHOG_HOST =
+  process.env.UNICONNECT_POSTHOG_HOST?.trim().replace(/\/$/, "") || null;
 
 /** Max request size for an analytics batch. */
 export const MAX_ANALYTICS_REQUEST_BYTES = 64 * 1024;

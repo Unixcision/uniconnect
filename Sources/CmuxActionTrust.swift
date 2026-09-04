@@ -26,7 +26,7 @@ struct CmuxActionTrustDescriptor: Codable, Sendable {
 
 final class CmuxActionTrust {
     static let shared = CmuxActionTrust()
-    static let didChangeNotification = Notification.Name("cmux.actionTrustDidChange")
+    static let didChangeNotification = Notification.Name("uniconnect.actionTrustDidChange")
 
     private let storePath: String
     private var trustedFingerprints: Set<String>

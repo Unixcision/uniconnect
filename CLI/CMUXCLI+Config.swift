@@ -129,7 +129,7 @@ extension CMUXCLI {
 
         Examples:
           cmux config doctor
-          cmux config doctor --path .cmux/uniconnect.json
+          cmux config doctor --path .uniconnect/uniconnect.json
           cmux config set sidebar-font-size 14
           cmux config sidebar-font-size 12.5
           cmux config set surface-tab-bar-font-size 13
@@ -145,7 +145,7 @@ extension CMUXCLI {
             "fallback": Self.fallbackSettingsDisplayPath,
             "ghostty_config": [
                 "path": Self.ghosttyConfigDisplayPath,
-                "note": "Not cmux-owned, but cmux reads it. Use for terminal transparency (background-opacity), blur, font, theme, etc.",
+                "note": "Not UniConnect-owned, but UniConnect reads it. Use for terminal transparency (background-opacity), blur, font, theme, etc.",
             ],
             "docs_url": Self.settingsDocsURL,
             "schema_url": Self.settingsSchemaURL,
@@ -164,7 +164,7 @@ extension CMUXCLI {
         print("  legacy config: \(Self.legacySettingsDisplayPath)")
         print("  legacy app support: \(Self.fallbackSettingsDisplayPath)")
         print()
-        print("Related (not cmux-owned, but cmux reads it for terminal behavior):")
+        print("Related (not UniConnect-owned, but UniConnect reads it for terminal behavior):")
         print("  \(Self.ghosttyConfigDisplayPath)")
         print()
         print("Docs:")
@@ -297,7 +297,7 @@ extension CMUXCLI {
             if let message = reloadResult.message {
                 print("reload: \(message)")
             }
-            print("Run `cmux config reload` after cmux is running to apply it.")
+            print("Run `cmux config reload` after UniConnect is running to apply it.")
         default:
             print("OK \(key) = \(formattedValue) (saved)")
             print("Run `cmux config reload` to apply it.")
@@ -560,7 +560,7 @@ extension CMUXCLI {
         guard fileManager.fileExists(atPath: target.path, isDirectory: &isDirectory) else {
             let message = target.missingIsError
                 ? "file not found"
-                : "not found; cmux will use defaults until this file exists"
+                : "not found; UniConnect will use defaults until this file exists"
             return ConfigDoctorFinding(
                 label: target.label,
                 displayPath: target.displayPath,

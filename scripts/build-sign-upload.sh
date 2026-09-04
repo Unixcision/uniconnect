@@ -3,7 +3,8 @@ set -euo pipefail
 
 # Build, sign, notarize, create DMG, generate appcast, and upload to GitHub release.
 # Usage: ./scripts/build-sign-upload.sh <tag> [--allow-overwrite]
-# Requires: source the private release environment and export SPARKLE_PRIVATE_KEY.
+# Requires: source the private release environment and export SPARKLE_PRIVATE_KEY plus
+# UNICONNECT_DEVELOPER_IDENTITY (the Developer ID Application SHA-1 or exact identity).
 
 usage() {
   cat <<'EOF'
@@ -46,19 +47,48 @@ if [[ $# -ne 1 ]]; then
 fi
 
 TAG="$1"
-SIGN_HASH="A050CC7E193C8221BDBA204E731B046CDCCC1B30"
-ENTITLEMENTS="UniConnect.entitlements"
+
+# This legacy all-in-one publisher performs irreversible external writes. Keep it
+# unavailable during ordinary local development; CI remains the normal release path.
+if [[ "${UNICONNECT_ALLOW_LOCAL_PUBLISH:-}" != "I_UNDERSTAND_THIS_PUBLISHES_A_RELEASE" ]]; then
+  echo "REFUSED: local publishing is locked; use the reviewed GitHub release workflow." >&2
+  echo "For an emergency owner-run release, set UNICONNECT_ALLOW_LOCAL_PUBLISH=I_UNDERSTAND_THIS_PUBLISHES_A_RELEASE." >&2
+  exit 1
+fi
+
+[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] \
+  || { echo "INVALID: release tag must be an explicit vMAJOR.MINOR.PATCH tag" >&2; exit 1; }
+ORIGIN_URL="$(git remote get-url origin 2>/dev/null || true)"
+[[ "$ORIGIN_URL" =~ github\.com[:/]Unixcision/uniconnect(\.git)?$ ]] \
+  || { echo "INVALID: origin is not Unixcision/uniconnect" >&2; exit 1; }
+TAG_COMMIT="$(git rev-parse -q --verify "refs/tags/$TAG^{commit}" 2>/dev/null || true)"
+[[ -n "$TAG_COMMIT" && "$TAG_COMMIT" == "$(git rev-parse HEAD)" ]] \
+  || { echo "INVALID: $TAG must already exist and point at HEAD" >&2; exit 1; }
+[[ -z "$(git status --porcelain --untracked-files=no)" ]] \
+  || { echo "INVALID: tracked worktree changes must be committed before publishing" >&2; exit 1; }
+
+ENTITLEMENTS="Resources/UniConnect.entitlements"
 APP_PATH="build/Build/Products/Release/UniConnect.app"
 GHOSTTYKIT_CRASH_REPORT_SUBDIR="uniconnect/crash"
 
 # --- Pre-flight ---
 if [[ -f "$HOME/.secrets/uniconnect.env" ]]; then
   source "$HOME/.secrets/uniconnect.env"
-elif [[ -f "$HOME/.secrets/cmuxterm.env" ]]; then
-  # Temporary developer-only compatibility while release credentials migrate.
-  source "$HOME/.secrets/cmuxterm.env"
 fi
 export SPARKLE_PRIVATE_KEY
+SIGNING_IDENTITY="${UNICONNECT_DEVELOPER_IDENTITY:-}"
+if [[ -z "$SIGNING_IDENTITY" ]]; then
+  echo "MISSING: UNICONNECT_DEVELOPER_IDENTITY" >&2
+  exit 1
+fi
+if ! /usr/bin/security find-identity -v -p codesigning 2>&1 \
+  | /usr/bin/awk -v expected="$SIGNING_IDENTITY" '
+      index($0, "\"Developer ID Application:") && ($2 == expected || index($0, expected) > 0) { found=1 }
+      END { exit found ? 0 : 1 }
+    '; then
+  echo "INVALID: UNICONNECT_DEVELOPER_IDENTITY is not an available Developer ID Application identity" >&2
+  exit 1
+fi
 for tool in zig xcodebuild create-dmg xcrun codesign ditto gh; do
   command -v "$tool" >/dev/null || { echo "MISSING: $tool" >&2; exit 1; }
 done
@@ -101,15 +131,7 @@ echo "Sparkle keys injected"
 
 # --- Codesign ---
 echo "Codesigning..."
-CLI_PATH="$APP_PATH/Contents/Resources/bin/uniconnect"
-if [ -f "$CLI_PATH" ]; then
-  /usr/bin/codesign --force --options runtime --timestamp --sign "$SIGN_HASH" --entitlements "$ENTITLEMENTS" "$CLI_PATH"
-fi
-if [ -f "$HELPER_PATH" ]; then
-  /usr/bin/codesign --force --options runtime --timestamp --sign "$SIGN_HASH" --entitlements "$ENTITLEMENTS" "$HELPER_PATH"
-fi
-/usr/bin/codesign --force --options runtime --timestamp --sign "$SIGN_HASH" --entitlements "$ENTITLEMENTS" --deep "$APP_PATH"
-/usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+./scripts/sign-uniconnect-bundle.sh "$APP_PATH" "$ENTITLEMENTS" "$SIGNING_IDENTITY"
 echo "Codesign verified"
 
 # --- Notarize app ---
@@ -125,7 +147,7 @@ echo "App notarized"
 # --- Create and notarize DMG ---
 echo "Creating DMG..."
 rm -f uniconnect-macos.dmg
-create-dmg --codesign "$SIGN_HASH" uniconnect-macos.dmg "$APP_PATH"
+create-dmg --codesign "$SIGNING_IDENTITY" uniconnect-macos.dmg "$APP_PATH"
 echo "Notarizing DMG..."
 xcrun notarytool submit uniconnect-macos.dmg \
   --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait
@@ -195,16 +217,11 @@ cask "uniconnect" do
   depends_on macos: ">= :ventura"
 
   app "UniConnect.app"
-  binary "#{appdir}/UniConnect.app/Contents/Resources/bin/uniconnect"
+  binary "#{appdir}/UniConnect.app/Contents/Resources/bin/cmux"
 
-  zap trash: [
-    "~/Library/Application Support/UniConnect",
-    "~/.config/uniconnect",
-    "~/.local/state/uniconnect",
-    "~/.uniconnect",
-    "~/Library/Caches/com.unixcision.uniconnect",
-    "~/Library/Preferences/com.unixcision.uniconnect.plist",
-  ]
+  # Preserve sessions, encrypted SSH credentials and the seven-day recovery
+  # archive even during `brew uninstall --zap`; only disposable caches are removed.
+  zap trash: "~/Library/Caches/com.unixcision.uniconnect"
 end
 CASKEOF
     cd homebrew-uniconnect

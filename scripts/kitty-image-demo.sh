@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Interactive Kitty Graphics Protocol gallery for cmux/Ghostty verification.
+# Interactive Kitty Graphics Protocol gallery for UniConnect/Ghostty verification.
 # Downloads cat photos over HTTPS, converts them to PNG, then renders them.
 
-cache_dir="${TMPDIR:-/tmp}/cmux-kitty-image-demo"
-curl_user_agent="cmux-kitty-image-demo/1.0 (https://github.com/manaflow-ai/cmux)"
+cache_dir="${TMPDIR:-/tmp}/uniconnect-kitty-image-demo"
+curl_user_agent="uniconnect-kitty-image-demo/1.0 (https://github.com/Unixcision/uniconnect)"
 
 names=(
   "White Cat"

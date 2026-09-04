@@ -202,7 +202,7 @@ final class DockControlRuntime: ObservableObject, Identifiable {
         cmux_dock_working_directory="$(cmux_dock_decode '\(encodedWorkingDirectory)')"
         cmux_dock_shell="$(cmux_dock_login_shell)"
         cmux_dock_bundle_bin=""
-        if [ -n "${UNICONNECT_BUNDLED_CLI_PATH:-}" ]; then cmux_dock_bundle_bin="$(dirname "$UNICONNECT_BUNDLED_CLI_PATH")"; fi
+        if [ -n "${CMUX_BUNDLED_CLI_PATH:-}" ]; then cmux_dock_bundle_bin="$(dirname "$CMUX_BUNDLED_CLI_PATH")"; fi
         export SHELL="$cmux_dock_shell"
         rm -f -- "$0" 2>/dev/null || true
         case "$(basename "$cmux_dock_shell")" in

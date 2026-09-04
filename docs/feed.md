@@ -1,6 +1,6 @@
 # Feed
 
-Feed is cmux's inline surface for AI agent decisions. It stays in the right sidebar on `Ctrl-4`. The keyboard-first OpenTUI Feed can also run in the separate right-sidebar [Dock](dock.md) after you add a Dock control that runs `cmux feed tui`. It shows three things that need a human response:
+Feed is UniConnect's inline surface for AI agent decisions. It stays in the right sidebar on `Ctrl-4`. The keyboard-first OpenTUI Feed can also run in the separate right-sidebar [Dock](dock.md) after you add a Dock control that runs `cmux feed tui`. It shows three things that need a human response:
 
 - **Permission requests:** Agent wants to run a tool, edit a file, or execute a shell command. Pick Once / Always / All tools / Bypass / Deny.
 - **ExitPlanMode:** Agent finished planning and is ready to start editing. Pick Ultraplan / Manual / Auto.
@@ -8,18 +8,18 @@ Feed is cmux's inline surface for AI agent decisions. It stays in the right side
 
 Anything else the agent does, including tool uses, assistant messages, session starts/stops, and `TodoWrite` updates, is stored and shown in the TUI's latest-first timeline as informational activity.
 
-`cmux feed tui` uses OpenTUI through Bun in the terminal alternate screen. The first run creates `~/.cmuxterm/feed-tui-opentui`, writes the bundled Feed app there, and installs `@opentui/core`. The prepared app is launched by absolute path, so the TUI keeps the workspace cwd where you ran the command. Use `cmux feed tui --opentui` to dogfood OpenTUI in isolation and fail loudly if it cannot start. Set `CMUX_FEED_TUI_BUN_PATH` to an explicit Bun executable when your shell does not expose Bun on `PATH`. Set `CMUX_FEED_TUI_LEGACY=1` or run `cmux feed tui --legacy` to force the older built-in TUI.
+`cmux feed tui` uses OpenTUI through Bun in the terminal alternate screen. The first run creates `~/.uniconnect/feed-tui-opentui`, writes the bundled Feed app there, and installs `@opentui/core`. The prepared app is launched by absolute path, so the TUI keeps the workspace cwd where you ran the command. Use `cmux feed tui --opentui` to dogfood OpenTUI in isolation and fail loudly if it cannot start. Set `CMUX_FEED_TUI_BUN_PATH` to an explicit Bun executable when your shell does not expose Bun on `PATH`. Set `CMUX_FEED_TUI_LEGACY=1` or run `cmux feed tui --legacy` to force the older built-in TUI.
 
 ## How it works
 
 ```text
 ┌─────────────────────┐  hook/stdin  ┌──────────────────────────┐
 │ Agent CLI           ├─────────────▶│ cmux hooks feed          │
-│ (Claude / Codex /…) │              │  forwards to cmux socket │
+│ (Claude / Codex /…) │              │ forwards to UniConnect   │
 └─────────────────────┘              └──────────────┬───────────┘
                                                     │
 ┌─────────────────────┐  plugin in   ┌──────────────┼───────────┐
-│ OpenCode            ├─────────────▶│ cmux-feed.js ▼           │
+│ OpenCode            ├─────────────▶│ uniconnect-feed.js ▼     │
 │                     │  process     │ writes same socket       │
 └─────────────────────┘              └──────────────┬───────────┘
                                                     │
@@ -43,11 +43,11 @@ Anything else the agent does, including tool uses, assistant messages, session s
                          └───────────────┘   └──────────────────┘
 ```
 
-Agents pipe their hook events into `cmux hooks feed --source <agent>`. The bridge forwards the event to the cmux socket as a `feed.push` V2 frame. The `FeedCoordinator` records it on the `@MainActor` `WorkstreamStore`, displays it in the sidebar (and posts a native notification if the window isn't focused), then blocks the hook on a semaphore keyed by the event's `request_id`.
+Agents pipe their hook events into `cmux hooks feed --source <agent>`. The bridge forwards the event to the UniConnect socket as a `feed.push` V2 frame. The `FeedCoordinator` records it on the `@MainActor` `WorkstreamStore`, displays it in the sidebar (and posts a native notification if the window isn't focused), then blocks the hook on a semaphore keyed by the event's `request_id`.
 
 When you click Allow / Deny / Submit (either in Feed or in the notification's inline action buttons), `feed.permission.reply` / `feed.question.reply` / `feed.exit_plan.reply` delivers the decision back through `FeedCoordinator`, which wakes the hook. The hook emits the agent's expected decision JSON on stdout and the agent proceeds.
 
-All events (actionable and telemetry) are appended to `~/.cmuxterm/workstream.jsonl` for audit. Memory holds the most recent 2000 items in a ring; older items remain available in the JSONL audit log.
+All events (actionable and telemetry) are appended to `~/.uniconnect/workstream.jsonl` for audit. Memory holds the most recent 2000 items in a ring; older items remain available in the JSONL audit log.
 
 The reconnectable [events stream](events.md) also publishes Feed and agent-hook
 activity as it happens:
@@ -76,16 +76,16 @@ Installs supported agent hooks whose binaries are on `PATH`. See [Agent hook int
 |--------------|-------------------------------------------|--------------------------|
 | Claude Code  | wrapper-injected                          | PermissionRequest        |
 | Codex        | `~/.codex/hooks.json`                     | PermissionRequest        |
-| Grok         | `~/.grok/hooks/cmux-session.json`         | PreToolUse               |
-| OpenCode     | `~/.config/opencode/plugins/cmux-feed.js` | plugin event bus         |
+| Grok         | `~/.grok/hooks/uniconnect-session.json`         | PreToolUse               |
+| OpenCode     | `~/.config/opencode/plugins/uniconnect-feed.js` | plugin event bus         |
 | Cursor CLI   | `~/.cursor/hooks.json`                    | beforeShellExecution     |
 | Gemini       | `~/.gemini/settings.json`                 | PreToolUse               |
 | Copilot      | `~/.copilot/config.json`                  | PreToolUse               |
 | CodeBuddy    | `~/.codebuddy/settings.json`              | PreToolUse               |
 | Factory      | `~/.factory/settings.json`                | PreToolUse               |
 | Qoder        | `~/.qoder/settings.json`                  | PreToolUse               |
-| Pi           | `~/.pi/agent/extensions/cmux-session.ts`  | lifecycle only           |
-| OMP          | `~/.omp/agent/extensions/cmux-omp-session.ts` or `$PI_CODING_AGENT_DIR/extensions/cmux-omp-session.ts` | lifecycle only           |
+| Pi           | `~/.pi/agent/extensions/uniconnect-session.ts`  | lifecycle only           |
+| OMP          | `~/.omp/agent/extensions/uniconnect-omp-session.ts` or `$PI_CODING_AGENT_DIR/extensions/uniconnect-omp-session.ts` | lifecycle only           |
 | Rovo Dev     | `~/.rovodev/config.yml`                   | lifecycle only           |
 
 Individual agents:
@@ -93,7 +93,7 @@ Individual agents:
 ```bash
 cmux hooks codex install
 cmux hooks opencode install               # global
-cmux hooks opencode install --project     # .opencode/plugins/cmux-feed.js in cwd
+cmux hooks opencode install --project     # .opencode/plugins/uniconnect-feed.js in cwd
 cmux hooks <agent> uninstall
 ```
 
@@ -105,7 +105,7 @@ Pi, OMP, and Rovo Dev provide lifecycle and session-restore hooks only; they do 
 
 **Permission modes**
 
-| Mode   | What cmux sends back to the agent                                             |
+| Mode   | What UniConnect sends back to the agent                                      |
 |--------|--------------------------------------------------------------------------------|
 | Once   | Allow once through the agent's native permission hook.                         |
 | Always | Allow and apply the agent's suggested persistent permission rule when present. |
@@ -113,7 +113,7 @@ Pi, OMP, and Rovo Dev provide lifecycle and session-restore hooks only; they do 
 | Bypass | Allow and request session-level bypass mode when the agent supports it.        |
 | Deny   | Deny through the agent's native permission hook.                               |
 
-For Claude Code, the cmux wrapper launches Claude with `--allow-dangerously-skip-permissions`. This does not enable bypass by default, but it lets a later `PermissionRequest` response switch the current session into `bypassPermissions`. Without that launch flag, Claude ignores `setMode: bypassPermissions`.
+For Claude Code, the UniConnect wrapper launches Claude with `--allow-dangerously-skip-permissions`. This does not enable bypass by default, but it lets a later `PermissionRequest` response switch the current session into `bypassPermissions`. Without that launch flag, Claude ignores `setMode: bypassPermissions`.
 
 **Plan-mode decisions**
 
@@ -128,7 +128,7 @@ For Claude Code, the cmux wrapper launches Claude with `--allow-dangerously-skip
 
 For Claude Code, AskUserQuestion is answered by allowing the PermissionRequest with an updated tool input containing the selected answers. Other agents use their native question reply shape where available.
 
-Codex's `request_user_input` and `update_plan` currently surface through its app-server request/notification path, not through command hooks. A stock `codex` TUI running in a cmux terminal keeps those frames inside Codex's in-process app-server client, so its plan-mode questions still fall back to Codex's own TUI. cmux can route Codex permission approvals through `PermissionRequest`; showing Codex plan questions in Feed would require launching Codex against a shared standalone app server and adding a Codex app-server Feed adapter, or upstream Codex hook coverage for those frames.
+Codex's `request_user_input` and `update_plan` currently surface through its app-server request/notification path, not through command hooks. A stock `codex` TUI running in a UniConnect terminal keeps those frames inside Codex's in-process app-server client, so its plan-mode questions still fall back to Codex's own TUI. UniConnect can route Codex permission approvals through `PermissionRequest`; showing Codex plan questions in Feed would require launching Codex against a shared standalone app server and adding a Codex app-server Feed adapter, or upstream Codex hook coverage for those frames.
 
 ## Timeout behavior
 
@@ -140,10 +140,10 @@ Per-event timeout inside agent hook configs is raised to roughly 120 to 125 seco
 
 | Path                              | Contents                                                   |
 |-----------------------------------|------------------------------------------------------------|
-| `~/.cmuxterm/workstream.jsonl`    | Append-only audit log of every Feed event.                 |
-| `~/.cmuxterm/<agent>-hook-sessions.json` | Session-to-workspace mapping used by `feed.jump`.   |
-| `~/.config/cmux/cmux.sock`        | V2 socket the hooks/plugin talk to.                        |
-| `~/.config/opencode/plugins/cmux-feed.js` | OpenCode plugin emitted by `cmux hooks opencode install`. |
+| `~/.uniconnect/workstream.jsonl`    | Append-only audit log of every Feed event.                 |
+| `~/.uniconnect/<agent>-hook-sessions.json` | Session-to-workspace mapping used by `feed.jump`.   |
+| `~/.local/state/uniconnect/uniconnect.sock` | V2 socket the hooks/plugin talk to.                |
+| `~/.config/opencode/plugins/uniconnect-feed.js` | OpenCode plugin emitted by `cmux hooks opencode install`. |
 
 To reset history:
 
@@ -154,7 +154,7 @@ cmux feed clear --yes
 
 ## Jumping from Feed to the terminal
 
-Double-click a Feed row and cmux focuses the cmux workspace + surface where the agent is running, via `workspace.select` + `surface.focus` V2 verbs. If the agent isn't running in a cmux terminal (no matching entry in `<agent>-hook-sessions.json`), the jump is a no-op.
+Double-click a Feed row and UniConnect focuses the workspace and surface where the agent is running, via `workspace.select` + `surface.focus` V2 verbs. If the agent isn't running in a UniConnect terminal (no matching entry in `<agent>-hook-sessions.json`), the jump is a no-op.
 
 ## Troubleshooting
 
@@ -162,8 +162,8 @@ Double-click a Feed row and cmux focuses the cmux workspace + surface where the 
 
 **Codex plan-mode question stays in the terminal.** Codex `request_user_input` is not a hook event in the stock TUI path. Feed only sees Codex permission hooks today.
 
-**Agent hangs on a permission request.** Feed never blocks the agent longer than 120 seconds; if you see a longer hang, the hook failed to reach the socket. Verify `$CMUX_SOCKET_PATH` matches the running app (default is `~/.config/cmux/cmux.sock`).
+**Agent hangs on a permission request.** Feed never blocks the agent longer than 120 seconds; if you see a longer hang, the hook failed to reach the socket. Verify `$CMUX_SOCKET_PATH` matches the running app (default is `~/.local/state/uniconnect/uniconnect.sock`).
 
 **Notifications aren't showing inline buttons.** The three Feed categories (`CMUXFeedPermission`, `CMUXFeedExitPlan`, `CMUXFeedQuestion`) are registered at app launch. On first Feed use, macOS may prompt for notification authorization; if authorization is denied, Feed rows still appear in the sidebar but no native banner is delivered.
 
-**OpenCode plugin doesn't fire.** Plugin is only installed if `opencode` is on `PATH` at `cmux hooks setup` time. Check `~/.config/opencode/plugins/cmux-feed.js` contains `// cmux-feed-plugin-marker v1`. If you added project-local plugins (`.opencode/plugins/…`), re-run `cmux hooks opencode install --project`.
+**OpenCode plugin doesn't fire.** Plugin is only installed if `opencode` is on `PATH` at `cmux hooks setup` time. Check `~/.config/opencode/plugins/uniconnect-feed.js` contains `// uniconnect-feed-plugin-marker v2`. If you added project-local plugins (`.opencode/plugins/…`), re-run `cmux hooks opencode install --project`.

@@ -1,9 +1,9 @@
 public import Foundation
 internal import OSLog
 
-private let analyticsUploadLog = Logger(subsystem: "dev.cmux.ios", category: "analytics-upload")
+private let analyticsUploadLog = Logger(subsystem: "com.unixcision.uniconnect.ios", category: "analytics-upload")
 
-/// An ``AnalyticsUploading`` that POSTs batches to the cmux web analytics proxy.
+/// An ``AnalyticsUploading`` that POSTs batches to the UniConnect web analytics proxy.
 ///
 /// Mirrors ``PushRegistrationService``'s request shape: `Bearer <accessToken>` +
 /// `X-Stack-Refresh-Token`, posting JSON to `<apiBaseURL>/api/analytics/events`.
@@ -24,7 +24,7 @@ public struct HTTPAnalyticsUploader: AnalyticsUploading {
     /// Creates an uploader.
     ///
     /// - Parameters:
-    ///   - apiBaseURL: The cmux web API base URL, no trailing slash (resolved at
+    ///   - apiBaseURL: The UniConnect web API base URL, no trailing slash (resolved at
     ///     the composition root from the same `LocalConfig.plist`/`ApiBaseURL`
     ///     override table the auth + push services use).
     ///   - tokenProvider: Supplies the Stack bearer/refresh tokens.

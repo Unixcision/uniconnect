@@ -33,7 +33,7 @@ export const changelogMedia: Record<string, VersionMedia> = {
       {
         title: "iPhone Companion App (Beta)",
         description:
-          "Pair an iPhone with your Mac from the new Mobile Connect window and attach to your terminals from your phone, with opt-in forwarding of terminal notifications. The iOS beta ships on TestFlight as cmux BETA.",
+          "Pair an iPhone with your Mac from the new Mobile Connect window and attach to your terminals from your phone, with opt-in forwarding of terminal notifications. The iOS beta ships on TestFlight as UniConnect Beta.",
       },
       {
         title: "Cross-Window Workspace Drag",
@@ -43,7 +43,7 @@ export const changelogMedia: Record<string, VersionMedia> = {
       {
         title: "Out-of-Process Custom Sidebars",
         description:
-          "Custom sidebar extensions now run in their own process with an isolated interpreter, so a broken sidebar can't hang or crash cmux, and the interpreter covers a broader set of SwiftUI primitives.",
+          "Custom sidebar extensions now run in their own process with an isolated interpreter, so a broken sidebar can't hang or crash UniConnect, and the interpreter covers a broader set of SwiftUI primitives.",
       },
       {
         title: "Browser Polish",
@@ -95,7 +95,7 @@ export const changelogMedia: Record<string, VersionMedia> = {
       {
         title: "Diff Viewer Shortcut",
         description:
-          "Open the diff viewer with a keyboard shortcut, configurable and editable in Settings alongside every other cmux shortcut.",
+          "Open the diff viewer with a keyboard shortcut, configurable and editable in Settings alongside every other UniConnect shortcut.",
       },
       {
         title: "Markdown Viewer Zoom",
@@ -126,7 +126,7 @@ export const changelogMedia: Record<string, VersionMedia> = {
       {
         title: "Workspace Groups",
         description:
-          "Select sidebar workspaces and press ⌘⇧G to gather them under a collapsible header. Each group has an anchor workspace, its own color and icon, and an unread badge on the header. Drag workspaces in and out, reorder inside a group, and control where new workspaces land per group or via cmux.json. A full `cmux workspace-group` CLI namespace creates, colors, moves, focuses, and deletes groups from scripts.",
+          "Select sidebar workspaces and press ⌘⇧G to gather them under a collapsible header. Each group has an anchor workspace, its own color and icon, and an unread badge on the header. Drag workspaces in and out, reorder inside a group, and control where new workspaces land per group or via uniconnect.json. A full `cmux workspace-group` CLI namespace creates, colors, moves, focuses, and deletes groups from scripts.",
       },
       {
         title: "Focus & Recently Closed History",
@@ -218,7 +218,7 @@ export const changelogMedia: Record<string, VersionMedia> = {
       {
         title: "Native Grok Vault Resume",
         description:
-          "Grok sessions can now be resumed natively from Vault. cmux parses registered Grok transcripts by layout, deduplicates sessions across shell-Grok homes, and quotes built-in resume commands so they round-trip cleanly.",
+          "Grok sessions can now be resumed natively from Vault. UniConnect parses registered Grok transcripts by layout, deduplicates sessions across shell-Grok homes, and quotes built-in resume commands so they round-trip cleanly.",
       },
       {
         title: "CLI Window Targeting",
@@ -264,7 +264,7 @@ export const changelogMedia: Record<string, VersionMedia> = {
       {
         title: "Crash Diagnostics from Notifications",
         description:
-          "When cmux logs a crash, the notification now opens directly into the crash diagnostics view so you can inspect the breadcrumb trail without digging through state.",
+          "When UniConnect logs a crash, the notification now opens directly into the crash diagnostics view so you can inspect the breadcrumb trail without digging through state.",
       },
       {
         title: "Bug Fixes",
@@ -334,7 +334,7 @@ export const changelogMedia: Record<string, VersionMedia> = {
       {
         title: "SSH Files Polish",
         description:
-          "The Files sidebar now follows SSH workspaces and shows the remote root instead of the local macOS path. SSH workspace descriptors restore on relaunch, and new guarded cmux://ssh deep links prompt before launching ssh so unfamiliar links can't run arbitrary commands.",
+          "The Files sidebar now follows SSH workspaces and shows the remote root instead of the local macOS path. SSH workspace descriptors restore on relaunch, and new guarded uniconnect://ssh deep links prompt before launching ssh so unfamiliar links can't run arbitrary commands.",
       },
       {
         title: "Vault Pi and Hermes",
@@ -359,7 +359,7 @@ export const changelogMedia: Record<string, VersionMedia> = {
       {
         title: "Session Restore on Quit",
         description:
-          "Closing the last window with the red X no longer drops your work. cmux restores prior panes on relaunch and resumes Claude Code, Codex, OpenCode, Gemini, and Rovo Dev sessions where you left off.",
+          "Closing the last window with the red X no longer drops your work. UniConnect restores prior panes on relaunch and resumes Claude Code, Codex, OpenCode, Gemini, and Rovo Dev sessions where you left off.",
       },
       {
         title: "Passkeys, WebAuthn, and FIDO2",
@@ -399,7 +399,7 @@ export const changelogMedia: Record<string, VersionMedia> = {
       {
         title: "Browser Profile Import",
         description:
-          "Import cookies, history, and sessions from Chrome, Arc, Brave, Firefox, Safari, and 20+ browsers. The import wizard detects installed browsers, lets you pick profiles, and injects everything into cmux's browser panes so you're already logged in.",
+          "Import cookies, history, and sessions from Chrome, Arc, Brave, Firefox, Safari, and 20+ browsers. The import wizard detects installed browsers, lets you pick profiles, and injects everything into UniConnect's browser panes so you're already logged in.",
       },
       {
         title: "Minimal Mode",
@@ -409,7 +409,7 @@ export const changelogMedia: Record<string, VersionMedia> = {
       {
         title: "Custom Commands",
         description:
-          "Define project-specific actions in cmux.json that launch from the command palette. One file per repo, no global config needed.",
+          "Define project-specific actions in uniconnect.json that launch from the command palette. One file per repo, no global config needed.",
       },
     ],
   },
@@ -439,7 +439,7 @@ export const changelogMedia: Record<string, VersionMedia> = {
       {
         title: "Expanded Localization",
         description:
-          "cmux now includes Japanese plus 16 additional languages, and a per-app language override lets you change the UI language without changing macOS system settings.",
+          "UniConnect now includes Japanese plus 16 additional languages, and a per-app language override lets you change the UI language without changing macOS system settings.",
       },
     ],
   },
@@ -455,7 +455,7 @@ export const changelogMedia: Record<string, VersionMedia> = {
       {
         title: "Command Palette",
         description:
-          "Hit Cmd+Shift+P to open a searchable command palette. Every action in cmux is here: creating workspaces, toggling the sidebar, checking for updates, switching windows. Keyboard shortcuts are shown inline so you can learn them as you go.",
+          "Hit Cmd+Shift+P to open a searchable command palette. Every action in UniConnect is here: creating workspaces, toggling the sidebar, checking for updates, switching windows. Keyboard shortcuts are shown inline so you can learn them as you go.",
         image: "/changelog/0.61.0-command-palette.png",
       },
       {

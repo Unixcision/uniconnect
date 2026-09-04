@@ -1,4 +1,4 @@
-/// A pure assessment of one host-level update attempt.
+/// A pure assessment of one installation-level update attempt.
 public struct ClaudeBinaryUpdateAssessment: Sendable, Hashable, Codable {
     /// The proven binary disposition.
     public let status: ClaudeBinaryUpdateStatus

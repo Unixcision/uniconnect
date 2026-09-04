@@ -252,7 +252,7 @@ function nativeHref(kind: LinkKind, params: SearchParams) {
     }
   }
   const queryString = query.toString().replace(/\+/g, "%20");
-  return `cmux://${kind}${queryString ? `?${queryString}` : ""}`;
+  return `uniconnect://${kind}${queryString ? `?${queryString}` : ""}`;
 }
 
 export function generateStaticParams() {

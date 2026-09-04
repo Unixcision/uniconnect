@@ -104,10 +104,10 @@ fi
 
 TAG_ID="$(sanitize_bundle "$TAG")"
 TAG_SLUG="$(sanitize_path "$TAG")"
-APP="$HOME/Library/Developer/Xcode/DerivedData/cmux-${TAG_SLUG}/Build/Products/Debug/UniConnect DEV ${TAG}.app"
+APP="$HOME/Library/Developer/Xcode/DerivedData/uniconnect-${TAG_SLUG}/Build/Products/Debug/UniConnect DEV ${TAG_SLUG}.app"
 BID="com.unixcision.uniconnect.debug.${TAG_ID}"
 SOCK="/tmp/uniconnect-debug-${TAG_SLUG}.sock"
-DSOCK="$HOME/Library/Application Support/cmux/cmuxd-dev-${TAG_SLUG}.sock"
+DSOCK="$HOME/Library/Application Support/UniConnect/cmuxd-dev-${TAG_SLUG}.sock"
 LOG="/tmp/uniconnect-debug-${TAG_SLUG}.log"
 
 if [[ ! -d "$APP" ]]; then

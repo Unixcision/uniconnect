@@ -4,12 +4,14 @@ import { describe, expect, test } from "bun:test";
 import {
   apnsHostForEnvironment,
   buildApnsPayload,
+  hiddenNotificationBody,
   shouldPruneToken,
 } from "../services/apns/payload";
 import { summarizeApnsSendResults } from "../services/apns/response";
 import { sendApnsNotification, signApnsJwt, normalizeP8 } from "../services/apns/sender";
 import {
   MAX_PUSH_BODY_CHARS,
+  MAX_PUSH_LOCALE_CHARS,
   normalizeApnsBundle,
   parsePushPayload,
   readBoundedJsonObject,
@@ -23,17 +25,17 @@ describe("apns payload", () => {
       body: "Agent finished",
       workspaceId: "ws-1",
       surfaceId: "sf-2",
-    }) as { aps: Record<string, unknown>; cmux: Record<string, string> };
+    }) as { aps: Record<string, unknown>; uniconnect: Record<string, string> };
 
     expect(payload.aps.alert).toEqual({ title: "claude", subtitle: "issue-118", body: "Agent finished" });
     expect(payload.aps["interruption-level"]).toBe("time-sensitive");
     expect(payload.aps.sound).toBe("default");
-    expect(payload.cmux).toEqual({ workspaceId: "ws-1", surfaceId: "sf-2" });
+    expect(payload.uniconnect).toEqual({ workspaceId: "ws-1", surfaceId: "sf-2" });
   });
 
-  test("omits cmux block when no ids", () => {
+  test("omits UniConnect block when no ids", () => {
     const payload = buildApnsPayload({ title: "t", body: "b" }) as Record<string, unknown>;
-    expect("cmux" in payload).toBe(false);
+    expect("uniconnect" in payload).toBe(false);
   });
 
   test("hideContent redacts terminal content but keeps a generic compatibility body and deep-link", () => {
@@ -43,17 +45,52 @@ describe("apns payload", () => {
       body: "rm -rf secret output",
       workspaceId: "ws-9",
       hideContent: true,
-    }) as { aps: { alert: Record<string, string> }; cmux: Record<string, string> };
+      locale: "es_ES",
+    }) as { aps: { alert: Record<string, string> }; uniconnect: Record<string, string> };
 
-    expect(payload.aps.alert.title).toBe("cmux");
-    expect(payload.aps.alert.body).toBe("An agent needs your attention");
+    expect(payload.aps.alert.title).toBe("UniConnect");
+    expect(payload.aps.alert.body).toBe("Un agente necesita tu atención");
     expect(payload.aps.alert.subtitle).toBeUndefined();
-    expect(payload.cmux).toEqual({ workspaceId: "ws-9" });
+    expect(payload.uniconnect).toEqual({ workspaceId: "ws-9" });
   });
 
-  test("empty title falls back to cmux", () => {
+  test("hideContent localizes only from the bounded supported locale table", () => {
+    const expected = new Map<string, string>([
+      ["ar", "يحتاج وكيل إلى انتباهك"],
+      ["bs", "Agent treba vašu pažnju"],
+      ["da", "En agent har brug for din opmærksomhed"],
+      ["de", "Ein Agent benötigt deine Aufmerksamkeit"],
+      ["en", "An agent needs your attention"],
+      ["es", "Un agente necesita tu atención"],
+      ["fr", "Un agent a besoin de votre attention"],
+      ["it", "Un agente richiede la tua attenzione"],
+      ["ja", "エージェントが注意を必要としています"],
+      ["km", "ភ្នាក់ងារត្រូវការការយកចិត្តទុកដាក់របស់អ្នក"],
+      ["ko", "에이전트가 사용자의 주의를 필요로 합니다"],
+      ["nb", "En agent trenger oppmerksomheten din"],
+      ["pl", "Agent wymaga Twojej uwagi"],
+      ["pt-BR", "Um agente precisa da sua atenção"],
+      ["ru", "Агент требует вашего внимания"],
+      ["th", "เอเจนต์ต้องการความสนใจจากคุณ"],
+      ["tr", "Bir ajan dikkatinizi bekliyor"],
+      ["uk", "Агент потребує вашої уваги"],
+      ["zh-Hans", "某个智能体需要你的关注"],
+      ["zh-Hant", "某個代理程式需要你的注意"],
+    ]);
+
+    expect(expected.size).toBe(20);
+    for (const [locale, body] of expected) {
+      expect(hiddenNotificationBody(locale)).toBe(body);
+    }
+    expect(hiddenNotificationBody("uk-UA")).toBe("Агент потребує вашої уваги");
+    expect(hiddenNotificationBody("zh_TW")).toBe("某個代理程式需要你的注意");
+    expect(hiddenNotificationBody("no-NO")).toBe("En agent trenger oppmerksomheten din");
+    expect(hiddenNotificationBody("../../secret-host")).toBe("An agent needs your attention");
+  });
+
+  test("empty title falls back to UniConnect", () => {
     const payload = buildApnsPayload({ title: "   ", body: "b" }) as { aps: { alert: { title: string } } };
-    expect(payload.aps.alert.title).toBe("cmux");
+    expect(payload.aps.alert.title).toBe("UniConnect");
   });
 });
 
@@ -93,23 +130,23 @@ describe("apns response", () => {
 });
 
 describe("apns route policy", () => {
-  test("allows only cmux iOS bundle IDs and derives the APNs environment", () => {
-    expect(normalizeApnsBundle("com.cmuxterm.app")).toEqual({
-      bundleId: "com.cmuxterm.app",
+  test("allows only UniConnect iOS bundle IDs and derives the APNs environment", () => {
+    expect(normalizeApnsBundle("com.unixcision.uniconnect.ios")).toEqual({
+      bundleId: "com.unixcision.uniconnect.ios",
       environment: "production",
     });
-    expect(normalizeApnsBundle("dev.cmux.app.beta")).toEqual({
-      bundleId: "dev.cmux.app.beta",
+    expect(normalizeApnsBundle("com.unixcision.uniconnect.ios.beta")).toEqual({
+      bundleId: "com.unixcision.uniconnect.ios.beta",
       environment: "production",
     });
-    expect(normalizeApnsBundle("dev.cmux.ios.push1")).toEqual({
-      bundleId: "dev.cmux.ios.push1",
+    expect(normalizeApnsBundle("com.unixcision.uniconnect.ios.push1")).toEqual({
+      bundleId: "com.unixcision.uniconnect.ios.push1",
       environment: "sandbox",
     });
 
     expect(normalizeApnsBundle("com.example.app")).toBeNull();
-    expect(normalizeApnsBundle("dev.cmux.ios.bad_topic")).toBeNull();
-    expect(normalizeApnsBundle("dev.cmux.ios.-bad")).toBeNull();
+    expect(normalizeApnsBundle("com.unixcision.uniconnect.ios.bad_topic")).toBeNull();
+    expect(normalizeApnsBundle("com.unixcision.uniconnect.ios.-bad")).toBeNull();
   });
 
   test("bounds and trims push payloads before sending to APNs", () => {
@@ -120,6 +157,7 @@ describe("apns route policy", () => {
       workspaceId: " ws-1 ",
       surfaceId: " sf-1 ",
       hideContent: true,
+      locale: " es_ES ",
     });
 
     expect(parsed).toEqual({
@@ -131,6 +169,7 @@ describe("apns route policy", () => {
         workspaceId: "ws-1",
         surfaceId: "sf-1",
         hideContent: true,
+        locale: "es_ES",
       },
     });
 
@@ -141,6 +180,14 @@ describe("apns route policy", () => {
     expect(parsePushPayload({ title: "agent", body: "x".repeat(MAX_PUSH_BODY_CHARS + 1) })).toEqual({
       ok: false,
       error: "body_too_long",
+    });
+    expect(parsePushPayload({
+      title: "agent",
+      body: "done",
+      locale: "x".repeat(MAX_PUSH_LOCALE_CHARS + 1),
+    })).toEqual({
+      ok: false,
+      error: "locale_too_long",
     });
   });
 
@@ -278,8 +325,8 @@ describe("apns sender transport", () => {
     const resultPromise = sendApnsNotification(
       { keyP8: p8, keyId: "KID-CONCURRENT", teamId: "TEAM456" },
       [
-        { deviceToken: "a".repeat(64), bundleId: "dev.cmux.ios.push1", environment: "sandbox" },
-        { deviceToken: "b".repeat(64), bundleId: "com.cmuxterm.app", environment: "production" },
+        { deviceToken: "a".repeat(64), bundleId: "com.unixcision.uniconnect.ios.push1", environment: "sandbox" },
+        { deviceToken: "b".repeat(64), bundleId: "com.unixcision.uniconnect.ios", environment: "production" },
       ],
       { title: "agent", body: "done" },
       1000,
@@ -356,8 +403,8 @@ describe("apns sender transport", () => {
     const results = await sendApnsNotification(
       { keyP8: p8, keyId: "KID-PARTIAL", teamId: "TEAM456" },
       [
-        { deviceToken: "a".repeat(64), bundleId: "dev.cmux.ios.push1", environment: "sandbox" },
-        { deviceToken: "b".repeat(64), bundleId: "com.cmuxterm.app", environment: "production" },
+        { deviceToken: "a".repeat(64), bundleId: "com.unixcision.uniconnect.ios.push1", environment: "sandbox" },
+        { deviceToken: "b".repeat(64), bundleId: "com.unixcision.uniconnect.ios", environment: "production" },
       ],
       { title: "agent", body: "done" },
       1000,
@@ -420,8 +467,8 @@ describe("apns sender transport", () => {
     const results = await sendApnsNotification(
       { keyP8: p8, keyId: "KID-SAME-HOST-PARTIAL", teamId: "TEAM456" },
       [
-        { deviceToken: "a".repeat(64), bundleId: "com.cmuxterm.app", environment: "production" },
-        { deviceToken: "b".repeat(64), bundleId: "dev.cmux.app.beta", environment: "production" },
+        { deviceToken: "a".repeat(64), bundleId: "com.unixcision.uniconnect.ios", environment: "production" },
+        { deviceToken: "b".repeat(64), bundleId: "com.unixcision.uniconnect.ios.beta", environment: "production" },
       ],
       { title: "agent", body: "done" },
       1000,

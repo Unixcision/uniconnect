@@ -34,7 +34,22 @@ final class CloudVMActionLauncher {
         preferredWindow: NSWindow?,
         onCompletion: ((Completion) -> Void)? = nil
     ) -> Bool {
-        let cliURL = Bundle.main.resourceURL?.appendingPathComponent("bin/uniconnect")
+        guard AuthEnvironment.hostedServices != nil else {
+            presentStartFailure(
+                summary: String(
+                    localized: "settings.account.unavailable.title",
+                    defaultValue: "Account services unavailable"
+                ),
+                output: "",
+                action: String(
+                    localized: "settings.account.unavailable.subtitle",
+                    defaultValue: "Sign-in and cloud sync stay off until UniConnect's own service is configured."
+                ),
+                preferredWindow: preferredWindow
+            )
+            return false
+        }
+        let cliURL = Bundle.main.resourceURL?.appendingPathComponent("bin/cmux")
         guard let cliURL,
               FileManager.default.isExecutableFile(atPath: cliURL.path) else {
             presentStartFailure(
@@ -57,7 +72,7 @@ final class CloudVMActionLauncher {
         process.arguments = ["--socket", socketPath, "--id-format", "uuids", "vm", "new"]
         var environment = ProcessInfo.processInfo.environment
         environment["CMUX_SOCKET_PATH"] = socketPath
-        environment["UNICONNECT_BUNDLED_CLI_PATH"] = cliURL.path
+        environment["CMUX_BUNDLED_CLI_PATH"] = cliURL.path
         environment.removeValue(forKey: "CMUX_SOCKET")
         process.environment = environment
 

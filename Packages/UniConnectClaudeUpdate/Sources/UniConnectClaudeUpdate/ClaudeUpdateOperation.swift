@@ -5,6 +5,9 @@ public struct ClaudeUpdateOperation: Sendable, Identifiable {
     /// The operation identifier shared by progress, summary, logs, and recovery records.
     public let id: UUID
 
+    /// The immutable plan validated immediately before mutation.
+    public let plan: ClaudeUpdatePlan
+
     /// Buffered immutable progress snapshots, finished when the result becomes available.
     public let progress: AsyncStream<ClaudeUpdateProgress>
 
@@ -12,10 +15,12 @@ public struct ClaudeUpdateOperation: Sendable, Identifiable {
 
     init(
         id: UUID,
+        plan: ClaudeUpdatePlan,
         progress: AsyncStream<ClaudeUpdateProgress>,
         resultTask: Task<ClaudeUpdateSummary, Never>
     ) {
         self.id = id
+        self.plan = plan
         self.progress = progress
         self.resultTask = resultTask
     }

@@ -4,13 +4,13 @@ import Testing
 @Suite("AgentResumeArgv")
 struct AgentResumeArgvTests {
     @Test("Built-in --option style kinds", arguments: [
-        ("claude", "claude", ["claude", "--resume", "SID"]),
+        ("claude", "claude", ["claude", "--resume", "SID", "--dangerously-skip-permissions"]),
         ("grok", "grok", ["grok", "-r", "SID"]),
         ("pi", "pi", ["pi", "--session", "SID"]),
         ("omp", "omp", ["omp", "--session", "SID"]),
         ("cursor", "cursor-agent", ["cursor-agent", "--resume", "SID"]),
         ("gemini", "gemini", ["gemini", "--resume", "SID"]),
-        ("antigravity", "agy", ["agy", "--conversation", "SID"]),
+        ("antigravity", "agy", ["agy", "--conversation", "SID", "--dangerously-skip-permissions"]),
         ("copilot", "copilot", ["copilot", "--resume", "SID"]),
         ("codebuddy", "codebuddy", ["codebuddy", "--resume", "SID"]),
         ("factory", "droid", ["droid", "--resume", "SID"]),
@@ -28,7 +28,7 @@ struct AgentResumeArgvTests {
     func builtInSpecialShapes() {
         #expect(
             AgentResumeArgv().builtInKind(kind: "codex", sessionId: "SID", executablePath: nil, arguments: ["codex"])
-                == ["codex", "resume", "SID"]
+                == ["codex", "resume", "SID", "--yolo"]
         )
         #expect(
             AgentResumeArgv().builtInKind(kind: "amp", sessionId: "SID", executablePath: nil, arguments: ["amp"])
@@ -55,6 +55,26 @@ struct AgentResumeArgvTests {
         )
     }
 
+    @Test("Required trust flags are present exactly once when already captured")
+    func requiredTrustFlagsAreNotDuplicated() {
+        #expect(
+            AgentResumeArgv().builtInKind(
+                kind: "antigravity",
+                sessionId: "SID",
+                executablePath: nil,
+                arguments: ["agy", "--dangerously-skip-permissions"]
+            ) == ["agy", "--conversation", "SID", "--dangerously-skip-permissions"]
+        )
+        #expect(
+            AgentResumeArgv().builtInKind(
+                kind: "codex",
+                sessionId: "SID",
+                executablePath: nil,
+                arguments: ["codex", "--yolo"]
+            ) == ["codex", "resume", "SID", "--yolo"]
+        )
+    }
+
     @Test("Captured executable path overrides the fallback executable")
     func executablePathOverridesFallback() {
         // Non-claude kinds replay the captured executable path verbatim.
@@ -64,7 +84,7 @@ struct AgentResumeArgvTests {
                 sessionId: "SID",
                 executablePath: "/opt/bin/codex",
                 arguments: ["/opt/bin/codex"]
-            ) == ["/opt/bin/codex", "resume", "SID"]
+            ) == ["/opt/bin/codex", "resume", "SID", "--yolo"]
         )
     }
 
@@ -73,12 +93,12 @@ struct AgentResumeArgvTests {
         #expect(
             AgentResumeArgv().launcherResolution(
                 launcher: "claudeTeams", sessionId: "SID", executablePath: nil, arguments: ["cmux", "claude-teams"]
-            ) == .resolved(["cmux", "claude-teams", "--resume", "SID"])
+            ) == .resolved(["cmux", "claude-teams", "--resume", "SID", "--dangerously-skip-permissions"])
         )
         #expect(
             AgentResumeArgv().launcherResolution(
                 launcher: "codexTeams", sessionId: "SID", executablePath: nil, arguments: ["cmux", "codex-teams"]
-            ) == .resolved(["cmux", "codex-teams", "resume", "SID"])
+            ) == .resolved(["cmux", "codex-teams", "resume", "SID", "--yolo"])
         )
         #expect(
             AgentResumeArgv().launcherResolution(

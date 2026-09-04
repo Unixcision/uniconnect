@@ -1,15 +1,15 @@
 import Foundation
 
 extension CMUXCLI {
-    private static let ampExtensionMarker = "cmux-amp-session-extension-marker"
-    private static let ampExtensionFilename = "cmux-session.ts"
+    private static let ampExtensionMarker = "uniconnect-amp-session-extension-marker"
+    private static let ampExtensionFilename = "uniconnect-session.ts"
     private static let ampExtensionSource = #"""
-// cmux-amp-session-extension-marker v2
-// Bridges Amp session lifecycle events into cmux's restorable session store
+// uniconnect-amp-session-extension-marker v3
+// Bridges Amp session lifecycle events into UniConnect's restorable session store
 // AND reports live agent status (idle/thinking/tool calls/done/error) into
-// the cmux tab status bar.
+// the UniConnect tab status bar.
 // Installed by `cmux hooks amp install` or `cmux hooks setup`.
-// DO NOT EDIT MANUALLY. cmux upgrades this file in place.
+// DO NOT EDIT MANUALLY. UniConnect upgrades this file in place.
 // @i-know-the-amp-plugin-api-is-wip-and-very-experimental-right-now
 
 import { spawn } from "node:child_process";
@@ -146,14 +146,14 @@ function threadIdFrom(event: { thread?: { id?: string } } | undefined, ctx?: Amp
 
 // ─── Live status reporting ────────────────────────────────────────────────
 // Fires `cmux set-status` / `cmux clear-status` / `cmux log` so the tab
-// status bar reflects what Amp is doing (idle, thinking, running cmd,
+// UniConnect status bar reflects what Amp is doing (idle, thinking, running cmd,
 // reading file X, etc.). All calls are fire-and-forget; failures never
 // disturb the agent.
 
 const STATUS_KEY = "amp";
 const LOG_SOURCE = "amp";
 
-// Short verbs shown in the cmux status bar for each Amp tool.
+// Short verbs shown in the UniConnect status bar for each Amp tool.
 function toolLabel(tool: string): string {
   switch (tool) {
     case "Read":
@@ -188,7 +188,7 @@ function toolLabel(tool: string): string {
   }
 }
 
-// SF Symbol names rendered inside the cmux status badge.
+// SF Symbol names rendered inside the UniConnect status badge.
 function toolIcon(tool: string): string {
   switch (tool) {
     case "Read":
@@ -235,9 +235,9 @@ function basename(p: string): string {
   return m ? m[0] : p;
 }
 
-// Pin every cmux call to the workspace this plugin process was launched in.
-// cmux sets CMUX_WORKSPACE_ID in every pane env, so this is stable across
-// async callbacks. Without --workspace, cmux defaults to whichever pane is
+// Pin every UniConnect CLI call to the workspace this plugin process was launched in.
+// UniConnect sets CMUX_WORKSPACE_ID in every pane env, so this is stable across
+// async callbacks. Without --workspace, the CLI defaults to whichever pane is
 // globally focused at the moment of the call, which can be a different
 // workspace by the time our async handler runs.
 function workspaceArgs(): string[] {
@@ -245,7 +245,7 @@ function workspaceArgs(): string[] {
   return ws ? ["--workspace", ws] : [];
 }
 
-// Sanitized environment for fire-and-forget cmux status subprocesses.
+// Sanitized environment for fire-and-forget UniConnect status subprocesses.
 // Strips Amp-provided secrets (`AMP_API_KEY`) so we never propagate them to
 // every spawned `cmux set-status` / `cmux log` / `cmux clear-status` child.
 // Mirrors the secret-stripping done in `hookEnvironment` without the launch-
@@ -371,7 +371,7 @@ export default function (amp: PluginAPI) {
 
   // True between agent.start and agent.end. Used so that a tool.result that
   // arrives after agent.end (cancellation/error races) cannot overwrite the
-  // final status badge with "thinking". cmux runs one Amp session per terminal
+  // final status badge with "thinking". UniConnect runs one Amp session per terminal
   // pane, so a single flag is sufficient — concurrent threads would need a
   // per-thread map.
   let turnActive = false;
@@ -469,17 +469,46 @@ export default function (amp: PluginAPI) {
             .appendingPathComponent(Self.ampExtensionFilename, isDirectory: false)
     }
 
+    private func existingAmpExtensionContents(at url: URL, fileManager: FileManager = .default) throws -> String {
+        guard fileManager.fileExists(atPath: url.path) else { return "" }
+        do {
+            return try String(contentsOf: url, encoding: .utf8)
+        } catch {
+            let message = String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.amp.error.readFailed",
+                    defaultValue: "Failed to read %@"
+                ),
+                url.path
+            )
+            throw CLIError(message: "\(message): \(String(describing: error))")
+        }
+    }
+
     func installAmpExtensionHooks(_ def: AgentHookDef) throws {
         let extensionURL = ampExtensionURL(for: def)
+        let extensionExists = FileManager.default.fileExists(atPath: extensionURL.path)
         let skipConfirm = ProcessInfo.processInfo.arguments.contains("--yes")
             || ProcessInfo.processInfo.arguments.contains("-y")
-        let existing = (try? String(contentsOf: extensionURL, encoding: .utf8)) ?? ""
+        let existing = try existingAmpExtensionContents(at: extensionURL)
         if existing == Self.ampExtensionSource {
-            print("Amp hooks already up to date at \(extensionURL.path)")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.amp.alreadyUpToDate",
+                    defaultValue: "Amp UniConnect hooks already up to date at %@"
+                ),
+                extensionURL.path
+            ))
             return
         }
-        if !existing.isEmpty, !existing.contains(Self.ampExtensionMarker) {
-            throw CLIError(message: "\(extensionURL.path) exists and is not a cmux plugin; leaving it alone")
+        if extensionExists, !existing.contains(Self.ampExtensionMarker) {
+            throw CLIError(message: String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.amp.error.notUniConnectPlugin",
+                    defaultValue: "%@ exists and is not a UniConnect plugin; leaving it alone"
+                ),
+                extensionURL.path
+            ))
         }
         if !skipConfirm {
             Self.printInstallPreview(
@@ -488,9 +517,9 @@ export default function (amp: PluginAPI) {
                 newContent: Self.ampExtensionSource,
                 fallbackContent: Self.ampExtensionSource
             )
-            print("\nProceed? [y/N] ", terminator: "")
+            print(String(localized: "cli.hooks.confirmProceed", defaultValue: "\nProceed? [y/N] "), terminator: "")
             guard readLine()?.lowercased().hasPrefix("y") == true else {
-                print("Aborted.")
+                print(String(localized: "cli.hooks.aborted", defaultValue: "Aborted."))
                 return
             }
         }
@@ -499,22 +528,43 @@ export default function (amp: PluginAPI) {
             withIntermediateDirectories: true
         )
         try Self.ampExtensionSource.write(to: extensionURL, atomically: true, encoding: .utf8)
-        print("Amp hooks installed at \(extensionURL.path)")
+        print(String.localizedStringWithFormat(
+            String(localized: "cli.hooks.amp.installed", defaultValue: "Amp UniConnect hooks installed at %@"),
+            extensionURL.path
+        ))
     }
 
     func uninstallAmpExtensionHooks(_ def: AgentHookDef) throws {
         let extensionURL = ampExtensionURL(for: def)
         let fm = FileManager.default
         guard fm.fileExists(atPath: extensionURL.path) else {
-            print("No Amp cmux plugin found at \(extensionURL.path)")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.amp.noneFound",
+                    defaultValue: "No Amp UniConnect plugin found at %@"
+                ),
+                extensionURL.path
+            ))
             return
         }
-        let existing = (try? String(contentsOf: extensionURL, encoding: .utf8)) ?? ""
+        let existing = try existingAmpExtensionContents(at: extensionURL, fileManager: fm)
         guard existing.contains(Self.ampExtensionMarker) else {
-            print("Refusing to remove \(extensionURL.path): missing cmux marker")
+            print(String.localizedStringWithFormat(
+                String(
+                    localized: "cli.hooks.amp.refuseRemoveMissingMarker",
+                    defaultValue: "Refusing to remove %@: missing UniConnect marker"
+                ),
+                extensionURL.path
+            ))
             return
         }
         try fm.removeItem(at: extensionURL)
-        print("Removed Amp cmux plugin from \(extensionURL.path)")
+        print(String.localizedStringWithFormat(
+            String(
+                localized: "cli.hooks.amp.removed",
+                defaultValue: "Removed Amp UniConnect plugin from %@"
+            ),
+            extensionURL.path
+        ))
     }
 }

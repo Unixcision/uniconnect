@@ -91,8 +91,7 @@ struct FileExternalOpenApplicationResolver: Sendable {
         if Bundle.main.bundleIdentifier?.lowercased() == bundleIdentifier {
             return false
         }
-        return !bundleIdentifier.hasPrefix("dev.cmux.")
-            && !bundleIdentifier.hasPrefix("com.unixcision.uniconnect.")
+        return !bundleIdentifier.hasPrefix("com.unixcision.uniconnect.")
     }
 }
 
@@ -1001,12 +1000,13 @@ final class FilePreviewPanel: Panel, ObservableObject, FilePreviewTextEditingPan
 
     init(
         workspaceId: UUID,
+        id: UUID = UUID(),
         filePath: String,
         textLoader: @escaping @Sendable (URL) async -> FilePreviewTextLoader.Result = { url in
             await FilePreviewTextLoader.load(url: url)
         }
     ) {
-        self.id = UUID()
+        self.id = id
         self.workspaceId = workspaceId
         self.filePath = filePath
         self.displayTitle = URL(fileURLWithPath: filePath).lastPathComponent

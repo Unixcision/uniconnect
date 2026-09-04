@@ -23,7 +23,7 @@ public struct ClaudeUpdateProgress: Sendable, Equatable {
     /// Completed target outcomes in deterministic completion order.
     public let outcomes: [ClaudeUpdateOutcome]
 
-    /// Completed host outcomes in deterministic plan order.
+    /// Completed host-and-installation outcomes in deterministic plan order.
     public let hostOutcomes: [ClaudeUpdateHostOutcome]
 
     /// Whether cancellation was observed and no new mutation will start.
@@ -39,7 +39,7 @@ public struct ClaudeUpdateProgress: Sendable, Equatable {
     ///   - currentTargetID: The target currently being processed.
     ///   - targetPhases: Current per-target phases.
     ///   - outcomes: Completed target outcomes.
-    ///   - hostOutcomes: Completed host outcomes.
+    ///   - hostOutcomes: Completed host-and-installation outcomes.
     ///   - isCancellationRequested: Whether cancellation has been observed.
     public init(
         operationID: UUID,

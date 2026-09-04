@@ -32,12 +32,12 @@ fi
 
 case "$CHANNEL" in
   stable)
-    EXPECTED_NAME="cmux"
+    EXPECTED_NAME="UniConnect"
     EXPECTED_BUNDLE_ID="com.unixcision.uniconnect"
     EXPECTED_ICON_NAME="AppIcon"
     ;;
   nightly)
-    EXPECTED_NAME="cmux NIGHTLY"
+    EXPECTED_NAME="UniConnect NIGHTLY"
     EXPECTED_BUNDLE_ID="com.unixcision.uniconnect.nightly"
     EXPECTED_ICON_NAME="AppIcon-Nightly"
     ;;

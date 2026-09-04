@@ -35,11 +35,17 @@ enum StartupBreadcrumbLog {
             let url = logURL
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
-                withIntermediateDirectories: true
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700],
+                ofItemAtPath: url.deletingLastPathComponent().path
             )
             if !FileManager.default.fileExists(atPath: url.path) {
                 FileManager.default.createFile(atPath: url.path, contents: nil)
             }
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
             let line = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
             let handle = try FileHandle(forWritingTo: url)
             defer { try? handle.close() }
@@ -53,7 +59,7 @@ enum StartupBreadcrumbLog {
             try handle.write(contentsOf: line)
             try handle.write(contentsOf: Data([0x0A]))
         } catch {
-            logger.fault("cmux startup breadcrumb failed: \(String(describing: error), privacy: .public)")
+            logger.fault("UniConnect startup breadcrumb failed: \(String(describing: error), privacy: .public)")
         }
     }
 
@@ -73,11 +79,9 @@ enum StartupBreadcrumbLog {
     }
 
     private static var logURL: URL {
-        let logsDirectory = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)
-            .first?
-            .appendingPathComponent("Logs/cmux", isDirectory: true)
-            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-                .appendingPathComponent("cmux-logs", isDirectory: true)
+        let logsDirectory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".uniconnect", isDirectory: true)
+            .appendingPathComponent("logs", isDirectory: true)
         let sanitizedBundleIdentifier = logFileComponent(Bundle.main.bundleIdentifier ?? "unknown")
         return logsDirectory.appendingPathComponent("startup-\(sanitizedBundleIdentifier).log")
     }

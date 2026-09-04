@@ -117,7 +117,7 @@ final class MobileAttachTicketStore {
         encoder.dateEncodingStrategy = .iso8601
         let data = try encoder.encode(ticket)
         let payload = Self.base64URLEncode(data)
-        guard let url = URL(string: "cmux-ios://attach?v=\(ticket.version)&payload=\(payload)") else {
+        guard let url = URL(string: "uniconnect://attach?v=\(ticket.version)&payload=\(payload)") else {
             throw MobileAttachTicketStoreError.invalidAttachURL
         }
         return url

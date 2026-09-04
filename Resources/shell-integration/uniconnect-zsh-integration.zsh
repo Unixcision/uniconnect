@@ -70,8 +70,8 @@ _cmux_socket_is_unix() {
 }
 
 _cmux_relay_cli_path() {
-    if [[ -n "${UNICONNECT_BUNDLED_CLI_PATH:-}" && -x "${UNICONNECT_BUNDLED_CLI_PATH}" ]]; then
-        print -r -- "${UNICONNECT_BUNDLED_CLI_PATH}"
+    if [[ -n "${CMUX_BUNDLED_CLI_PATH:-}" && -x "${CMUX_BUNDLED_CLI_PATH}" ]]; then
+        print -r -- "${CMUX_BUNDLED_CLI_PATH}"
         return 0
     fi
     command -v cmux 2>/dev/null
@@ -222,7 +222,7 @@ _cmux_path_prepend_unique_directory() {
 _cmux_install_cli_command_shim() {
     local command_name="$1"
     local wrapper_path="$2"
-    local shim_root="${TMPDIR:-/tmp}/uniconnect-cli-shims/${CMUX_SURFACE_ID:-$$}"
+    local shim_root="${TMPDIR:-/tmp}/cmux-cli-shims/${CMUX_SURFACE_ID:-$$}"
     local shim_path="$shim_root/$command_name"
     local escaped_wrapper="$wrapper_path"
 
@@ -311,7 +311,7 @@ typeset -g _CMUX_GIT_HEAD_LAST_PWD=""
 typeset -g _CMUX_GIT_HEAD_PATH=""
 typeset -g _CMUX_GIT_HEAD_SIGNATURE=""
 typeset -g _CMUX_GIT_HEAD_WATCH_PID=""
-typeset -g _CMUX_GIT_ACTIVE_PWD_FILE="${_CMUX_GIT_ACTIVE_PWD_FILE:-$(/usr/bin/mktemp "${TMPDIR:-/tmp}/cmux-git-active-pwd.XXXXXX" 2>/dev/null || true)}"
+typeset -g _CMUX_GIT_ACTIVE_PWD_FILE="${_CMUX_GIT_ACTIVE_PWD_FILE:-$(/usr/bin/mktemp "${TMPDIR:-/tmp}/uniconnect-git-active-pwd.XXXXXX" 2>/dev/null || true)}"
 typeset -g _CMUX_PR_POLL_PID=""
 typeset -g _CMUX_PR_POLL_PWD=""
 typeset -g _CMUX_PR_LAST_BRANCH=""
@@ -334,7 +334,7 @@ typeset -g _CMUX_TMUX_PUSH_SIGNATURE=""
 typeset -g _CMUX_TMUX_PULL_SIGNATURE=""
 typeset -g _CMUX_DELAY_TERM_RESTORE_UNTIL_FIRST_PROMPT=${_CMUX_DELAY_TERM_RESTORE_UNTIL_FIRST_PROMPT:-0}
 typeset -ga _CMUX_TMUX_SYNC_KEYS=(
-    UNICONNECT_BUNDLED_CLI_PATH
+    CMUX_BUNDLED_CLI_PATH
     CMUX_BUNDLE_ID
     CMUXD_UNIX_PATH
     CMUXTERM_REPO_ROOT
@@ -1266,7 +1266,7 @@ _cmux_report_pr_for_path() {
         gh_repo_args=(--repo "$repo_slug")
     fi
 
-    err_file="$(/usr/bin/mktemp "${TMPDIR:-/tmp}/cmux-gh-pr-view.XXXXXX" 2>/dev/null || true)"
+    err_file="$(/usr/bin/mktemp "${TMPDIR:-/tmp}/uniconnect-gh-pr-view.XXXXXX" 2>/dev/null || true)"
     [[ -n "$err_file" ]] || return 1
     gh_output="$(
         builtin cd "$repo_path" 2>/dev/null \

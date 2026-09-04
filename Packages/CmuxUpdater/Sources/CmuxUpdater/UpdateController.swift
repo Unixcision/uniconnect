@@ -25,6 +25,7 @@ public final class UpdateController {
     private let fileManager: FileManager
     private let hostBundle: Bundle
     private let backgroundProbeInterval: TimeInterval
+    private let isUpdaterEnabled: Bool
 
     /// Host actions the updater delegates upward (retry, relaunch prep). Forwarded to the driver.
     public weak var actionDelegate: (any UpdateActionDelegate)? {
@@ -50,12 +51,16 @@ public final class UpdateController {
     private let readyRetryCount = 20
 
     private var didStartUpdater = false
+    private var didLogDisabledUpdater = false
 
     /// The observable model the UI renders from.
     public var model: UpdateStateModel { driver.model }
 
     /// Whether a force-install is in progress (auto-confirming each installable state).
     public var isInstalling: Bool { isForceInstalling }
+
+    /// Whether this build has an allowlisted Unixcision appcast and may start Sparkle.
+    public var updatesAreEnabled: Bool { isUpdaterEnabled }
 
     /// Creates a controller, applying the Sparkle preference defaults and wiring the updater.
     ///
@@ -79,7 +84,17 @@ public final class UpdateController {
         self.fileManager = fileManager
         self.hostBundle = hostBundle
         self.backgroundProbeInterval = settings.scheduledCheckInterval
-        settings.apply(to: defaults)
+        let infoFeedURL = hostBundle.object(forInfoDictionaryKey: "SUFeedURL") as? String
+        let releaseFeedIsEnabled = UpdateFeedResolver()
+            .resolve(infoFeedURL: infoFeedURL)
+            .isEnabled
+#if DEBUG
+        let hasUITestFeedOverride = !(ProcessInfo.processInfo.environment["CMUX_UI_TEST_FEED_URL"] ?? "").isEmpty
+#else
+        let hasUITestFeedOverride = false
+#endif
+        self.isUpdaterEnabled = releaseFeedIsEnabled || hasUITestFeedOverride
+        settings.apply(to: defaults, updaterEnabled: self.isUpdaterEnabled)
 
         let model = UpdateStateModel()
         let driver = UpdateDriver(model: model, log: log, clock: clock)
@@ -152,6 +167,10 @@ public final class UpdateController {
 
     /// Check for updates and auto-confirm install if one is found.
     public func attemptUpdate() {
+        guard isUpdaterEnabled else {
+            logDisabledUpdaterIfNeeded()
+            return
+        }
         stopAttemptUpdateMonitoring()
         didObserveAttemptUpdateProgress = false
         isAttemptingUpdate = true
@@ -246,6 +265,10 @@ public final class UpdateController {
 
     /// Check for updates once the updater reports it can.
     private func checkForUpdatesWhenReady() {
+        guard isUpdaterEnabled else {
+            logDisabledUpdaterIfNeeded()
+            return
+        }
         cancelReadinessRetry()
         startUpdaterIfNeeded()
         ensureSparkleInstallationCache()
@@ -299,6 +322,10 @@ public final class UpdateController {
 
     /// Start the updater. If startup fails, the error is shown via the custom UI.
     public func startUpdaterIfNeeded() {
+        guard isUpdaterEnabled else {
+            logDisabledUpdaterIfNeeded()
+            return
+        }
         guard !didStartUpdater else { return }
         ensureSparkleInstallationCache()
 #if DEBUG
@@ -335,6 +362,12 @@ public final class UpdateController {
                 }
             )))
         }
+    }
+
+    private func logDisabledUpdaterIfNeeded() {
+        guard !didLogDisabledUpdater else { return }
+        didLogDisabledUpdater = true
+        log.append("software updates disabled: this build has no allowlisted release feed")
     }
 
     private func startLaunchUpdateProbeIfNeeded() {

@@ -14,7 +14,7 @@ import Foundation
 /// Hooks then receive the decision inline in the `feed.push` response.
 final class FeedCoordinator: @unchecked Sendable {
     static let shared = FeedCoordinator()
-    static let storeInstalledNotification = Notification.Name("cmux.feed.storeInstalled")
+    static let storeInstalledNotification = Notification.Name("uniconnect.feed.storeInstalled")
 
     // The store runs on the main actor. The coordinator is not isolated,
     // so it hops to main explicitly when touching the store.
@@ -401,8 +401,8 @@ enum FeedJumpResolver {
 }
 
 extension Notification.Name {
-    static let feedRequestFocus = Notification.Name("cmux.feedRequestFocus")
-    static let feedRequestSendText = Notification.Name("cmux.feedRequestSendText")
+    static let feedRequestFocus = Notification.Name("uniconnect.feedRequestFocus")
+    static let feedRequestSendText = Notification.Name("uniconnect.feedRequestSendText")
 }
 
 // MARK: - Native notification banner

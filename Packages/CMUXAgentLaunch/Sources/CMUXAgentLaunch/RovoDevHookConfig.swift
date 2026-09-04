@@ -11,8 +11,8 @@ public enum RovoDevHookConfig {
         }
     }
 
-    private static let beginMarker = "# cmux hooks rovodev begin"
-    private static let endMarker = "# cmux hooks rovodev end"
+    private static let beginMarker = "# uniconnect hooks rovodev begin"
+    private static let endMarker = "# uniconnect hooks rovodev end"
 
     public static func installing(events: [Event], in existing: String) -> String {
         var lines = normalizedLines(existing)

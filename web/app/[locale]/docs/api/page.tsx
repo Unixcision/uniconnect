@@ -58,13 +58,13 @@ export default function ApiPage() {
           <tr>
             <td>{t("release")}</td>
             <td>
-              <code>/tmp/cmux.sock</code>
+              <code>/tmp/uniconnect.sock</code>
             </td>
           </tr>
           <tr>
             <td>{t("debug")}</td>
             <td>
-              <code>/tmp/cmux-debug.sock</code>
+              <code>/tmp/uniconnect-debug.sock</code>
             </td>
           </tr>
           <tr>
@@ -104,7 +104,7 @@ export default function ApiPage() {
           </tr>
           <tr>
             <td>
-              <strong>cmux processes only</strong>
+              <strong>UniConnect processes only</strong>
             </td>
             <td>{t("cmuxOnlyMode")}</td>
             <td>{t("cmuxOnlyEnable")}</td>
@@ -426,7 +426,7 @@ cmux identify --json`}
 
       <DocsHeading level={2} id="detecting-cmux">{t("detectingCmux")}</DocsHeading>
       <CodeBlock title="bash" lang="bash">{`# Prefer explicit socket path if set
-SOCK="\${CMUX_SOCKET_PATH:-/tmp/cmux.sock}"
+SOCK="\${CMUX_SOCKET_PATH:-/tmp/uniconnect.sock}"
 [ -S "$SOCK" ] && echo "Socket available"
 
 # Check for the CLI
@@ -445,7 +445,7 @@ command -v cmux &>/dev/null && echo "cmux available"
 import os
 import socket
 
-SOCKET_PATH = os.environ.get("CMUX_SOCKET_PATH", "/tmp/cmux.sock")
+SOCKET_PATH = os.environ.get("CMUX_SOCKET_PATH", "/tmp/uniconnect.sock")
 
 def rpc(method, params=None, req_id=1):
     payload = {"id": req_id, "method": method, "params": params or {}}
@@ -466,7 +466,7 @@ print(rpc(
 
       <DocsHeading level={3} id="shell-script">{t("shellScript")}</DocsHeading>
       <CodeBlock title="bash" lang="bash">{`#!/bin/bash
-SOCK="\${CMUX_SOCKET_PATH:-/tmp/cmux.sock}"
+SOCK="\${CMUX_SOCKET_PATH:-/tmp/uniconnect.sock}"
 
 cmux_cmd() {
     printf "%s\\n" "$1" | nc -U "$SOCK"

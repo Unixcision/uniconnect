@@ -707,6 +707,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         var fileExplorerState: FileExplorerState?
         let keyboardFocusCoordinator: MainWindowFocusController
         var cmuxConfigStore: CmuxConfigStore?
+        var setUniConnectSidebarCompact: ((Bool) -> Void)?
+        var isUniConnectSidebarCompact: (() -> Bool)?
+        var uniConnectPersistenceObserver: UniConnectSessionPersistenceObserver?
+        var pendingUniConnectSidebarCompact: Bool?
         weak var window: NSWindow?
 
         init(
@@ -716,6 +720,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             sidebarSelectionState: SidebarSelectionState,
             fileExplorerState: FileExplorerState?,
             cmuxConfigStore: CmuxConfigStore?,
+            setUniConnectSidebarCompact: ((Bool) -> Void)? = nil,
+            isUniConnectSidebarCompact: (() -> Bool)? = nil,
             window: NSWindow?
         ) {
             self.windowId = windowId
@@ -724,6 +730,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             self.sidebarSelectionState = sidebarSelectionState
             self.fileExplorerState = fileExplorerState
             self.cmuxConfigStore = cmuxConfigStore
+            self.setUniConnectSidebarCompact = setUniConnectSidebarCompact
+            self.isUniConnectSidebarCompact = isUniConnectSidebarCompact
             self.window = window
             self.keyboardFocusCoordinator = MainWindowFocusController(
                 windowId: windowId,
@@ -790,6 +798,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         #endif
 
         func windowShouldClose(_ sender: NSWindow) -> Bool {
+            guard UniConnectCoordinator.shared.importMutationGate?.allowsMutation != false else {
+                return false
+            }
             let shouldClose = shouldClose?() ?? true
             if shouldClose {
                 WebViewInspectorTeardown.closeAllInspectors(in: sender)
@@ -1062,6 +1073,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         label: "com.unixcision.uniconnect.sessionPersistence",
         qos: .utility
     )
+    private let uniConnectRecoveryRepository = UniConnectRecoveryBackupRepository()
+    private lazy var uniConnectRecoveryCoordinator = UniConnectRecoveryCoordinator(
+        repository: uniConnectRecoveryRepository,
+        snapshotProvider: { [weak self] in
+            self?.buildSessionSnapshot(includeScrollback: false)
+        },
+        snapshotRestorer: { [weak self] snapshot in
+            guard let self,
+                  self.restorePreviousSessionSnapshot(snapshot, shouldActivate: true) else {
+                return false
+            }
+            self.uniConnectRequestCriticalSessionSave(reason: "recovery-restore")
+            return true
+        },
+        encryptedVaultSnapshotProvider: { credentialIDs in
+            try UniConnectVault.shared.encryptedSnapshot(requiring: credentialIDs)
+        },
+        encryptedVaultMerger: { encryptedVault in
+            try UniConnectVault.shared.mergeEncryptedBackup(encryptedVault)
+        },
+        encryptedVaultRestorer: { encryptedVault in
+            try UniConnectVault.shared.restoreExactEncryptedSnapshot(encryptedVault)
+        }
+    )
+    private var uniConnectCriticalSaveScheduled = false
+    private var didScheduleClaudeUpdateRecovery = false
     private nonisolated static let launchServicesRegistrationQueue = DispatchQueue(
         label: "com.unixcision.uniconnect.launchServicesRegistration",
         qos: .utility
@@ -1752,7 +1789,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         DispatchQueue.main.async {
             let alert = NSAlert()
             alert.alertStyle = .warning
-            alert.messageText = String(localized: "dialog.quitCmux.title", defaultValue: "Quit cmux?")
+            alert.messageText = String(localized: "dialog.quitCmux.title", defaultValue: "Quit UniConnect?")
             alert.informativeText = String(localized: "dialog.quitCmux.message", defaultValue: "This will close all windows and workspaces.")
             alert.addButton(withTitle: String(localized: "dialog.quitCmux.quit", defaultValue: "Quit"))
             alert.addButton(withTitle: String(localized: "common.cancel", defaultValue: "Cancel"))
@@ -1816,13 +1853,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationWillTerminate(_ notification: Notification) {
         StartupBreadcrumbLog.append("appDelegate.willTerminate.begin")
         isTerminatingApp = true
+        UniConnectCoordinator.shared.shutdownClaudeUpdater()
+        UniConnectCoordinator.shared.shutdownClaudeBridge()
         closeAllWebInspectorsBeforeAppTeardown()
         _ = saveSessionSnapshotIncludingProcessDetectedIndexes(includeScrollback: true, removeWhenEmpty: false)
         ClosedItemHistoryStore.shared.flushPendingSaves()
         stopSessionAutosaveTimer()
         CloudVMActionLauncher.shared.terminateAll()
         CmuxSSHURLProcessLauncher.shared.terminateAll()
-        MobileHostService.shared.stop()
+        if auth != nil {
+            MobileHostService.shared.stop()
+        }
         TerminalController.shared.stop()
         GhosttyPasteboardHelper.cleanupAllOwnedTemporaryImageFiles()
         VSCodeServeWebController.shared.stop()
@@ -1857,24 +1898,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         notificationStore: TerminalNotificationStore,
         sidebarState: SidebarState,
         settingsRuntime: SettingsRuntime,
-        auth: MacAuthComposition
+        auth: MacAuthComposition?
     ) {
         self.tabManager = tabManager
         self.settingsRuntime = settingsRuntime
         self.notificationStore = notificationStore
         self.sidebarState = sidebarState
         self.auth = auth
-        VMClient.bootstrap(auth: auth.coordinator)
-        PhonePushClient.shared.configure(auth: auth.coordinator)
-        MobileHostService.shared.configure(auth: auth.coordinator)
-        TerminalController.shared.attachAuth(
-            coordinator: auth.coordinator,
-            browserSignIn: auth.browserSignIn
-        )
-        auth.start()
-        ensureMobileWorkspaceListObserver(for: tabManager)
-        MobileTerminalRenderObserver.shared.start()
-        installMobileHostSettingsObserver()
+        if let auth {
+            VMClient.bootstrap(
+                auth: auth.coordinator,
+                baseURL: auth.configuration.vmAPIBaseURL
+            )
+            PhonePushClient.shared.configure(
+                auth: auth.coordinator,
+                baseURL: auth.configuration.vmAPIBaseURL
+            )
+            MobileHostService.shared.configure(auth: auth.coordinator)
+            TerminalController.shared.attachAuth(
+                coordinator: auth.coordinator,
+                browserSignIn: auth.browserSignIn
+            )
+            auth.start()
+            ensureMobileWorkspaceListObserver(for: tabManager)
+            MobileTerminalRenderObserver.shared.start()
+            installMobileHostSettingsObserver()
+        }
         scheduleGhosttyCrashBreadcrumbIfNeeded(notificationStore: notificationStore)
         disableSuddenTerminationIfNeeded()
         installLifecycleSnapshotObserversIfNeeded()
@@ -1912,7 +1961,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 surfaceId: nil,
                 title: String(
                     localized: "crashBreadcrumb.title",
-                    defaultValue: "cmux crashed during your last session"
+                    defaultValue: "UniConnect crashed during your last session"
                 ),
                 subtitle: String(
                     localized: "crashBreadcrumb.subtitle",
@@ -2951,7 +3000,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         Self.removeLegacyPersistedWindowGeometry()
         SessionPersistenceStore.syncManualRestoreSnapshotCache()
         guard SessionRestorePolicy.shouldAttemptRestore() else { return }
-        startupSessionSnapshot = SessionPersistenceStore.load()
+        startupSessionSnapshot = SessionPersistenceStore.load().map {
+            UniConnectCoordinator.shared.resolvingDuplicateAutomaticLocalAgentClaims(in: $0)
+        }
     }
 
     private func persistedWindowGeometry(defaults: UserDefaults = .standard) -> PersistedWindowGeometry? {
@@ -3116,6 +3167,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // restored process-detected bindings until a later live scan.
             _ = saveSessionSnapshot(includeScrollback: false)
         }
+        scheduleClaudeUpdateRecoveryIfReady()
+    }
+
+    /// Defers updater-journal recovery until every startup window has restored its panel graph.
+    private func scheduleClaudeUpdateRecoveryIfReady() {
+        guard !didScheduleClaudeUpdateRecovery,
+              didAttemptStartupSessionRestore,
+              !isApplyingSessionRestore,
+              !isTerminatingApp else {
+            return
+        }
+        didScheduleClaudeUpdateRecovery = true
+        DispatchQueue.main.async {
+            guard !self.isTerminatingApp else { return }
+            UniConnectCoordinator.shared.recoverPendingClaudeUpdateSessions()
+        }
     }
 
     nonisolated static func shouldSaveSessionSnapshotOnRestoreCompletion(
@@ -3137,8 +3204,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         _ snapshot: AppSessionSnapshot,
         shouldActivate: Bool = true
     ) -> Bool {
+        let resolvedSnapshot = UniConnectCoordinator.shared
+            .resolvingDuplicateAutomaticLocalAgentClaims(in: snapshot)
         let snapshotWindows = Array(
-            snapshot.windows.prefix(SessionPersistencePolicy.maxWindowsPerSnapshot)
+            resolvedSnapshot.windows.prefix(SessionPersistencePolicy.maxWindowsPerSnapshot)
         )
         guard !snapshotWindows.isEmpty else { return false }
 
@@ -3194,6 +3263,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             SessionPersistencePolicy.sanitizedSidebarWidth(snapshot.sidebar.width)
         )
         context.sidebarSelectionState.selection = snapshot.sidebar.selection.sidebarSelection
+        if let compact = snapshot.sidebar.uniConnectCompact {
+            if let setCompact = context.setUniConnectSidebarCompact {
+                setCompact(compact)
+            } else {
+                context.pendingUniConnectSidebarCompact = compact
+            }
+        }
 
         if let restoredFrame = resolvedWindowFrame(from: snapshot), let window {
             window.setFrame(restoredFrame, display: true)
@@ -3760,19 +3836,92 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         tabManager ?? sortedMainWindowContextsForSessionSnapshot().first?.tabManager
     }
 
-    func uniConnectPersistSessionNow() {
-        _ = saveSessionSnapshot(includeScrollback: true)
+    /// Captures the complete secret-sanitized live graph for a CONNECT transaction.
+    func uniConnectImportSessionSnapshot(includeScrollback: Bool) -> AppSessionSnapshot? {
+        buildSessionSnapshot(includeScrollback: includeScrollback).map(
+            SessionPersistenceStore.sanitizedForPersistence
+        )
+    }
+
+    /// Restores a CONNECT checkpoint into the same window identities.
+    ///
+    /// Import never creates application windows, so a changed window set indicates an
+    /// external mutation and fails closed instead of closing somebody else's window.
+    func uniConnectRestoreImportSessionSnapshot(_ snapshot: AppSessionSnapshot) -> Bool {
+        let contexts = sortedMainWindowContextsForSessionSnapshot()
+        var snapshotsByWindowID: [UUID: SessionWindowSnapshot] = [:]
+        for item in snapshot.windows {
+            guard let windowID = item.windowId,
+                  snapshotsByWindowID.updateValue(item, forKey: windowID) == nil else {
+                return false
+            }
+        }
+        guard snapshot.windows.count == contexts.count,
+              snapshotsByWindowID.count == snapshot.windows.count,
+              Set(contexts.map(\.windowId)) == Set(snapshotsByWindowID.keys) else {
+            return false
+        }
+        for context in contexts {
+            guard let windowSnapshot = snapshotsByWindowID[context.windowId] else {
+                return false
+            }
+            applySessionWindowSnapshot(
+                windowSnapshot,
+                to: context,
+                window: context.window ?? windowForMainWindowId(context.windowId)
+            )
+        }
+        return true
+    }
+
+    @discardableResult
+    func uniConnectPersistSessionNow() -> Bool {
+        saveSessionSnapshot(includeScrollback: true, forceSynchronous: true)
     }
 
     func uniConnectRequestSessionSave() {
-        _ = saveSessionSnapshot(includeScrollback: false)
+        uniConnectRequestCriticalSessionSave(reason: "explicit-request")
+    }
+
+    /// Opens a historical session JSON and restores it into additional windows.
+    @objc func restoreUniConnectRecoveryBackup(_ sender: Any?) {
+        _ = sender
+        uniConnectRecoveryCoordinator.presentRestorePicker()
+    }
+
+    /// Coalesces mutations from the same main-run-loop transaction, then captures
+    /// their final coherent state before the next user event can run.
+    func uniConnectRequestCriticalSessionSave(reason: String) {
+        guard UniConnectCoordinator.isEnabled else { return }
+#if DEBUG
+        cmuxDebugLog("session.criticalSave.request reason=\(reason)")
+#endif
+        guard !uniConnectCriticalSaveScheduled else { return }
+        uniConnectCriticalSaveScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.uniConnectCriticalSaveScheduled = false
+            _ = self.saveSessionSnapshot(includeScrollback: false, removeWhenEmpty: false)
+        }
+    }
+
+    private func installUniConnectPersistenceObserverIfNeeded(for context: MainWindowContext) {
+        guard UniConnectCoordinator.isEnabled,
+              context.uniConnectPersistenceObserver == nil else { return }
+        context.uniConnectPersistenceObserver = UniConnectSessionPersistenceObserver(
+            tabManager: context.tabManager,
+            onMutation: { [weak self] reason in
+                self?.uniConnectRequestCriticalSessionSave(reason: reason)
+            }
+        )
     }
 
     private func saveSessionSnapshot(
         includeScrollback: Bool,
         removeWhenEmpty: Bool = false,
         restorableAgentIndex: RestorableAgentSessionIndex? = nil,
-        surfaceResumeBindingIndex: SurfaceResumeBindingIndex? = nil
+        surfaceResumeBindingIndex: SurfaceResumeBindingIndex? = nil,
+        forceSynchronous: Bool = false
     ) -> Bool {
         if Self.shouldSkipSessionSaveDuringRestore(
             isApplyingSessionRestore: isApplyingSessionRestore,
@@ -3783,7 +3932,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #endif
             return false
         }
-        let writeSynchronously = Self.shouldWriteSessionSnapshotSynchronously(
+        let writeSynchronously = forceSynchronous || Self.shouldWriteSessionSnapshotSynchronously(
             isTerminatingApp: isTerminatingApp,
             includeScrollback: includeScrollback
         )
@@ -3825,13 +3974,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #if DEBUG
         debugLogSessionSaveSnapshot(snapshot, includeScrollback: includeScrollback)
 #endif
-        persistSessionSnapshot(
+        return persistSessionSnapshot(
             snapshot,
             removeWhenEmpty: false,
             persistedGeometryData: persistedGeometryData,
             synchronously: writeSynchronously
         )
-        return true
     }
 
 #if DEBUG
@@ -4140,8 +4288,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         removeWhenEmpty: Bool,
         persistedGeometryData: Data?,
         synchronously: Bool
-    ) {
-        guard snapshot != nil || removeWhenEmpty || persistedGeometryData != nil else { return }
+    ) -> Bool {
+        guard snapshot != nil || removeWhenEmpty || persistedGeometryData != nil else { return false }
+        let recoveryRepository = uniConnectRecoveryRepository
+        let shouldArchiveRecovery = UniConnectCoordinator.isEnabled
+        let recoveryVaultResult: Result<Data?, Error>? = snapshot.flatMap { snapshot in
+            guard shouldArchiveRecovery else { return nil }
+            return Result {
+                try UniConnectVault.shared.encryptedSnapshot(
+                    requiring: UniConnectRecoveryBackupRepository.referencedSSHCredentialIDs(
+                        in: snapshot
+                    )
+                )
+            }
+        }
 
         let writeBlock = {
             Self.removeLegacyPersistedWindowGeometry()
@@ -4152,16 +4312,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 )
             }
             if let snapshot {
-                _ = SessionPersistenceStore.save(snapshot)
+                let didSave = SessionPersistenceStore.save(snapshot)
+                if didSave, shouldArchiveRecovery {
+                    switch recoveryVaultResult {
+                    case .success(let encryptedVault):
+                        Task {
+                            do {
+                                _ = try await recoveryRepository.archiveIfDue(
+                                    snapshot: snapshot,
+                                    encryptedVault: encryptedVault
+                                )
+                            } catch {
+                                NSLog("[UniConnect] recovery backup failed: %@", error.localizedDescription)
+                            }
+                        }
+                    case .failure(let error):
+                        NSLog("[UniConnect] recovery backup skipped: %@", error.localizedDescription)
+                    case nil:
+                        break
+                    }
+                }
+                return didSave
             } else if removeWhenEmpty {
                 SessionPersistenceStore.removeSnapshot()
+                return true
             }
+            return persistedGeometryData != nil
         }
 
         if synchronously {
-            writeBlock()
+            return writeBlock()
         } else {
-            sessionPersistenceQueue.async(execute: writeBlock)
+            sessionPersistenceQueue.async {
+                _ = writeBlock()
+            }
+            return true
         }
     }
 
@@ -4228,7 +4413,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             sidebar: SessionSidebarSnapshot(
                 isVisible: context.sidebarState.isVisible,
                 selection: SessionSidebarSelection(selection: context.sidebarSelectionState.selection),
-                width: SessionPersistencePolicy.sanitizedSidebarWidth(Double(context.sidebarState.persistedWidth))
+                width: SessionPersistencePolicy.sanitizedSidebarWidth(Double(context.sidebarState.persistedWidth)),
+                uniConnectCompact: context.isUniConnectSidebarCompact?()
             )
         )
     }
@@ -4308,7 +4494,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sidebarState: SidebarState,
         sidebarSelectionState: SidebarSelectionState,
         fileExplorerState: FileExplorerState? = nil,
-        cmuxConfigStore: CmuxConfigStore? = nil
+        cmuxConfigStore: CmuxConfigStore? = nil,
+        setUniConnectSidebarCompact: ((Bool) -> Void)? = nil,
+        isUniConnectSidebarCompact: (() -> Bool)? = nil
     ) {
         let key = ObjectIdentifier(window)
         forgetRecoverableMainWindowRoute(windowId: windowId)
@@ -4329,6 +4517,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             )
             if let cmuxConfigStore {
                 existing.cmuxConfigStore = cmuxConfigStore
+            }
+            if let setUniConnectSidebarCompact {
+                existing.setUniConnectSidebarCompact = setUniConnectSidebarCompact
+            }
+            if let isUniConnectSidebarCompact {
+                existing.isUniConnectSidebarCompact = isUniConnectSidebarCompact
             }
         } else if let existing = mainWindowContexts.values.first(where: { $0.windowId == windowId }) {
             if let existingWindow = existing.window,
@@ -4364,6 +4558,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if let cmuxConfigStore {
                 existing.cmuxConfigStore = cmuxConfigStore
             }
+            if let setUniConnectSidebarCompact {
+                existing.setUniConnectSidebarCompact = setUniConnectSidebarCompact
+            }
+            if let isUniConnectSidebarCompact {
+                existing.isUniConnectSidebarCompact = isUniConnectSidebarCompact
+            }
             reindexMainWindowContextIfNeeded(existing, for: window)
         } else {
             tabManager.window = window
@@ -4374,6 +4574,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 sidebarSelectionState: sidebarSelectionState,
                 fileExplorerState: fileExplorerState,
                 cmuxConfigStore: cmuxConfigStore,
+                setUniConnectSidebarCompact: setUniConnectSidebarCompact,
+                isUniConnectSidebarCompact: isUniConnectSidebarCompact,
                 window: window
             )
             NotificationCenter.default.addObserver(
@@ -4402,6 +4604,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         let didApplyStartupSessionRestore = attemptStartupSessionRestoreIfNeeded(primaryWindow: window)
+        if let registeredContext = contextForMainTerminalWindow(window) {
+            if let pendingCompact = registeredContext.pendingUniConnectSidebarCompact,
+               let setCompact = registeredContext.setUniConnectSidebarCompact {
+                setCompact(pendingCompact)
+                registeredContext.pendingUniConnectSidebarCompact = nil
+            }
+            installUniConnectPersistenceObserverIfNeeded(for: registeredContext)
+        }
         if Self.shouldSaveSessionSnapshotAfterMainWindowRegistration(
             isTerminatingApp: isTerminatingApp,
             didApplyStartupSessionRestore: didApplyStartupSessionRestore,
@@ -4409,6 +4619,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         ) {
             saveSessionSnapshotAfterLoadingProcessDetectedIndexes(includeScrollback: false)
         }
+        scheduleClaudeUpdateRecoveryIfReady()
     }
 
 #if DEBUG
@@ -5495,6 +5706,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func closeMainWindow(windowId: UUID, recordHistory: Bool = true) -> Bool {
+        guard UniConnectCoordinator.shared.importMutationGate?.allowsMutation != false else {
+            return false
+        }
         guard let window = windowForMainWindowId(windowId) else { return false }
         if !recordHistory {
             closedWindowHistorySuppressedWindowIds.insert(windowId)
@@ -5504,6 +5718,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func discardMainWindowWithoutClosedHistory(windowId: UUID) {
+        guard UniConnectCoordinator.shared.importMutationGate?.allowsMutation != false else { return }
         guard let window = windowForMainWindowId(windowId) else { return }
         closedWindowHistorySuppressedWindowIds.insert(windowId)
         window.close()
@@ -5928,7 +6143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     /// Opens the diff viewer for the focused workspace of `tabManager` by spawning the
-    /// bundled `uniconnect diff` CLI. This is the single shared diff-open path: both the
+    /// bundled `cmux diff` CLI. This is the single shared diff-open path: both the
     /// command-palette entry and the Open Diff Viewer keyboard shortcut funnel through
     /// here so neither duplicates diff-open logic. Returns `false` (caller beeps) when
     /// there is no focused workspace or the bundled CLI is missing.
@@ -5941,7 +6156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 #endif
         guard let workspace = tabManager?.selectedWorkspace,
-              let cliURL = Bundle.main.resourceURL?.appendingPathComponent("bin/uniconnect"),
+              let cliURL = Bundle.main.resourceURL?.appendingPathComponent("bin/cmux"),
               FileManager.default.isExecutableFile(atPath: cliURL.path) else {
             return false
         }
@@ -5984,7 +6199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
         var environment = ProcessInfo.processInfo.environment
         environment["CMUX_SOCKET_PATH"] = socketPath
-        environment["UNICONNECT_BUNDLED_CLI_PATH"] = cliURL.path
+        environment["CMUX_BUNDLED_CLI_PATH"] = cliURL.path
         environment["CMUX_WORKSPACE_ID"] = workspaceId.uuidString
         if let surfaceId {
             environment["CMUX_SURFACE_ID"] = surfaceId.uuidString
@@ -6302,13 +6517,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             setActiveMainWindow(window)
             if UniConnectCoordinator.isEnabled {
                 // UniConnect: the sidebar never disappears; the button folds it into the rail
-                // of coloured circles and unfolds it again. A hidden sidebar (older session)
+                // of coloured squircles and unfolds it again. A hidden sidebar (older session)
                 // is brought back first so the button always does something visible.
                 if !context.sidebarState.isVisible {
                     context.sidebarState.toggle()
                 } else {
-                    let key = UniConnectRailSidebar.compactDefaultsKey
-                    UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: key), forKey: key)
+                    let current = context.isUniConnectSidebarCompact?()
+                        ?? UserDefaults.standard.bool(forKey: UniConnectRailSidebar.compactDefaultsKey)
+                    if let setCompact = context.setUniConnectSidebarCompact {
+                        setCompact(!current)
+                    } else {
+                        UserDefaults.standard.set(
+                            !current,
+                            forKey: UniConnectRailSidebar.compactDefaultsKey
+                        )
+                    }
                 }
                 return true
             }
@@ -6841,24 +7064,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
-        // UniConnect: single window, so the Dock offers no "New Window".
-        if UniConnectCoordinator.isEnabled { return nil }
         let menu = NSMenu(title: "")
-        let newWindowItem = NSMenuItem(
-            title: String(localized: "menu.file.newWindow", defaultValue: "New Window"),
-            action: #selector(openNewMainWindow(_:)),
+        let newBoxItem = NSMenuItem(
+            title: String(localized: "dock.newBox", defaultValue: "New Box…"),
+            action: #selector(newBoxFromDock(_:)),
             keyEquivalent: ""
         )
-        newWindowItem.target = self
-        menu.addItem(newWindowItem)
+        newBoxItem.target = self
+        newBoxItem.image = NSImage(systemSymbolName: "shippingbox", accessibilityDescription: nil)
+        menu.addItem(newBoxItem)
+
+        let lockItem = NSMenuItem(
+            title: String(localized: "dock.lock", defaultValue: "Lock"),
+            action: #selector(lockFromDock(_:)),
+            keyEquivalent: ""
+        )
+        lockItem.target = self
+        lockItem.image = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)
+        menu.addItem(lockItem)
         return menu
     }
 
+    @objc func newBoxFromDock(_ sender: Any?) {
+        performNewWorkspaceAction(
+            tabManager: activeTabManagerForCommands(preferredWindow: NSApp.keyWindow ?? NSApp.mainWindow),
+            debugSource: "dock.newBox"
+        )
+    }
+
+    @objc func lockFromDock(_ sender: Any?) {
+        UniConnectAppLock.shared.lock()
+    }
+
     @objc func openNewMainWindow(_ sender: Any?) {
+        guard UniConnectCoordinator.shared.importMutationGate?.allowsMutation != false else { return }
         _ = createMainWindow(sourceWindow: preferredSourceWindowForNewMainWindow(sender: sender))
     }
 
     func openNewMainWindow(preferredWindow: NSWindow?) {
+        guard UniConnectCoordinator.shared.importMutationGate?.allowsMutation != false else { return }
         _ = createMainWindow(sourceWindow: preferredWindow)
     }
 
@@ -6920,7 +7164,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 tabManager: manager,
                 source: "bootstrapInitialMainWindow.\(debugSource)"
             )
-            MobileHostService.shared.start()
+            if auth != nil {
+                MobileHostService.shared.start()
+            }
         }
         guard !didBootstrapInitialMainWindow else { return windowId }
 
@@ -7194,6 +7440,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         event: NSEvent,
         debugSource: String = "titlebar.newWorkspace.contextMenu"
     ) -> Bool {
+        // UniConnect's box creation has one product-owned route. Inherited
+        // configurable cmux actions can include Open Folder / VS Code entries,
+        // so don't surface them indirectly from a right-click on the plus button.
+        guard !UniConnectCoordinator.isEnabled else { return false }
+
         let context = contextForMainWindow(anchorView.window)
             ?? mainWindowContext(forShortcutEvent: event, debugSource: debugSource)
             ?? preferredMainWindowContextForWorkspaceCreation(event: event, debugSource: debugSource)
@@ -7965,13 +8216,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         remapClosedPanelHistoryFromSessionSnapshot: Bool = true,
         restoredSessionSnapshotHandler: (([[UUID: UUID]], TabManager) -> Void)? = nil
     ) -> UUID {
+        if UniConnectCoordinator.shared.importMutationGate?.allowsMutation == false {
+            return preferredRegisteredMainWindowContext(
+                preferredWindow: preferredSourceWindow
+            )?.windowId ?? UUID()
+        }
         reserveInitialSocketPathIfNeeded()
         let windowId = UUID()
         let tabManager = TabManager(
             initialWorkspaceTitle: initialWorkspaceTitle,
             initialWorkingDirectory: initialWorkingDirectory,
             initialTerminalInput: initialTerminalInput,
-            autoWelcomeIfNeeded: initialTerminalInput == nil
+            autoWelcomeIfNeeded: initialTerminalInput == nil,
+            importMutationGate: UniConnectCoordinator.shared.importMutationGate
         )
         if let sessionWindowSnapshot {
             let restoredPanelIdsByWorkspaceIndex = tabManager.restoreSessionSnapshot(
@@ -8343,11 +8600,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             onJumpToLatestUnread: { [weak self] in
                 self?.jumpToLatestUnread()
             },
-            onOpenTaskManager: {
-                TaskManagerWindowController.shared.show()
+            onLock: {
+                UniConnectAppLock.shared.lock()
             },
-            onCheckForUpdates: { [weak self] in
-                self?.checkForUpdates(nil)
+            onReconnect: {
+                UniConnectCoordinator.shared.reconnectAllSSHWindowsNow()
             },
             onOpenPreferences: { [weak self] in
                 self?.openPreferencesWindow(debugSource: "menuBarExtra")
@@ -11453,7 +11710,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             "windowRouteFailure": "",
         ], at: path)
 
-        guard let cliURL = Bundle.main.resourceURL?.appendingPathComponent("bin/uniconnect"),
+        guard let cliURL = Bundle.main.resourceURL?.appendingPathComponent("bin/cmux"),
               FileManager.default.isExecutableFile(atPath: cliURL.path) else {
             writeMultiWindowNotificationTestData([
                 "windowRouteStatus": "0",
@@ -12359,7 +12616,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = String(localized: "dialog.quitCmux.title", defaultValue: "Quit cmux?")
+        alert.messageText = String(localized: "dialog.quitCmux.title", defaultValue: "Quit UniConnect?")
         alert.informativeText = String(localized: "dialog.quitCmux.message", defaultValue: "This will close all windows and workspaces.")
         alert.addButton(withTitle: String(localized: "dialog.quitCmux.quit", defaultValue: "Quit"))
         alert.addButton(withTitle: String(localized: "common.cancel", defaultValue: "Cancel"))
@@ -12389,10 +12646,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         let alert = NSAlert()
-        alert.messageText = String(localized: "dialog.renameWorkspace.title", defaultValue: "Rename Workspace")
-        alert.informativeText = String(localized: "dialog.renameWorkspace.message", defaultValue: "Enter a custom name for this workspace.")
+        alert.messageText = String(localized: "dialog.renameWorkspace.title", defaultValue: "Rename Box")
+        alert.informativeText = String(localized: "dialog.renameWorkspace.message", defaultValue: "Enter a custom name for this box.")
         let input = NSTextField(string: tab.customTitle ?? tab.title)
-        input.placeholderString = String(localized: "dialog.renameWorkspace.placeholder", defaultValue: "Workspace name")
+        input.placeholderString = String(localized: "dialog.renameWorkspace.placeholder", defaultValue: "Box name")
         input.frame = NSRect(x: 0, y: 0, width: 240, height: 22)
         alert.accessoryView = input
         alert.addButton(withTitle: String(localized: "common.rename", defaultValue: "Rename"))
@@ -12980,6 +13237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Handled here to prevent AppKit's default NSDocumentController from opening
         // the Documents folder when SwiftUI menu dispatch fails due to focus bugs.
         if matchConfiguredShortcut(event: event, action: .openFolder) {
+            if UniConnectCoordinator.isEnabled { return true }
             showOpenFolderPanel()
             return true
         }
@@ -13254,6 +13512,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
             _ = synchronizeActiveMainWindowContext(preferredWindow: targetWindow)
             closeWindowWithConfirmation(targetWindow)
+            return true
+        }
+
+        if matchConfiguredShortcut(event: event, action: .reconnectFocusedSSHWindow) {
+            let targetWindow = commandPaletteTargetWindow ?? event.window ?? NSApp.keyWindow ?? NSApp.mainWindow
+            guard let terminalContext = focusedTerminalShortcutContext(preferredWindow: targetWindow),
+                  let workspace = terminalContext.tabManager.tabs.first(where: {
+                      $0.id == terminalContext.workspaceId
+                  }),
+                  workspace.uniConnectProfile?.isSSH == true,
+                  workspace.panels[terminalContext.panelId] is TerminalPanel,
+                  workspace.uniConnectTmuxSessionsByPanelId[terminalContext.panelId] != nil else {
+                return false
+            }
+            UniConnectCoordinator.shared.reconnectNow(
+                panelId: terminalContext.panelId,
+                in: workspace,
+                userInitiated: true
+            )
             return true
         }
 
@@ -13584,6 +13861,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         if matchConfiguredShortcut(event: event, action: .reopenPreviousSession) {
+            if UniConnectCoordinator.isEnabled { return true }
             if !reopenPreviousSession() {
                 NSSound.beep()
             }
@@ -15260,9 +15538,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if UniConnectCoordinator.shared.importMutationGate?.allowsMutation == false {
+            return false
+        }
         // User-initiated update checks are always allowed; other items are unconditionally valid
         // (this preserves the prior UpdateController.validateMenuItem behavior).
-        true
+        return true
     }
 
 
@@ -15487,7 +15768,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
         let embeddedCLIURL = Bundle.main.bundleURL
-            .appendingPathComponent("Contents/Resources/bin/uniconnect", isDirectory: false)
+            .appendingPathComponent("Contents/Resources/bin/cmux", isDirectory: false)
             .standardizedFileURL
             .resolvingSymlinksInPath()
         let currentPid = ProcessInfo.processInfo.processIdentifier
@@ -15839,6 +16120,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sidebarSelectionState = context.sidebarSelectionState
         fileExplorerState = context.fileExplorerState
         TerminalController.shared.setActiveTabManager(context.tabManager)
+        if UniConnectCoordinator.isEnabled,
+           let compact = context.isUniConnectSidebarCompact?() {
+            // `cmuxApp` observes this preference for the View-menu label. The actual
+            // state remains window-scoped; this only mirrors the newly active window.
+            UserDefaults.standard.set(compact, forKey: UniConnectRailSidebar.compactDefaultsKey)
+        }
     }
 
     func setActiveMainWindow(_ window: NSWindow) {
@@ -15973,6 +16260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func closeMainWindowContainingTabId(_ tabId: UUID, recordHistory: Bool = true) {
+        guard UniConnectCoordinator.shared.importMutationGate?.allowsMutation != false else { return }
 #if DEBUG
         closeMainWindowContainingTabIdObserverForTesting?(tabId, recordHistory)
 #endif
@@ -16962,6 +17250,10 @@ private extension NSWindow {
     }
 
     @objc func cmux_performKeyEquivalent(with event: NSEvent) -> Bool {
+        let importAllowsMutation = UniConnectCoordinator.shared.importMutationGate?.allowsMutation ?? true
+        if UniConnectImportMutationGate.shouldConsumeShortcut(allowsMutation: importAllowsMutation) {
+            return true
+        }
 #if DEBUG
         let typingTimingStart = CmuxTypingTiming.start()
         defer {

@@ -21,6 +21,10 @@ const useVercelCurl = rest.includes("--vercel-curl");
 const skipAttach = rest.includes("--skip-attach");
 const provider = optionValue(rest, "--provider") ?? "e2b";
 const targetUrl = optionValue(rest, "--url") ?? project.url;
+const testEmailDomain = process.env.UNICONNECT_STACK_TEST_EMAIL_DOMAIN?.trim();
+if (!testEmailDomain) {
+  throw new Error("UNICONNECT_STACK_TEST_EMAIL_DOMAIN is required for destructive smoke users");
+}
 const REQUEST_TIMEOUT_MS = 45_000;
 
 if (shouldCreate && provider !== "e2b" && provider !== "freestyle") {
@@ -49,7 +53,7 @@ async function fetchWithTimeout(url, init = {}, timeoutMs = REQUEST_TIMEOUT_MS) 
 
 function vercelCurlFetch(url, init = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
   const parsed = new URL(url);
-  const scratch = mkdtempSync(path.join(tmpdir(), "cmux-vercel-curl-"));
+  const scratch = mkdtempSync(path.join(tmpdir(), "uniconnect-vercel-curl-"));
   const responsePath = path.join(scratch, "response.txt");
   const bodyPath = path.join(scratch, "body.txt");
   const configPath = path.join(scratch, "curl.conf");
@@ -79,7 +83,7 @@ function vercelCurlFetch(url, init = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
       "--deployment",
       parsed.origin,
       "--scope",
-      "manaflow",
+      project.orgSlug,
       "--",
       "--config",
       configPath,
@@ -115,11 +119,11 @@ try {
   const app = new StackServerApp({ projectId, publishableClientKey, secretServerKey });
   const suffix = `${Date.now()}-${randomBytes(3).toString("hex")}`;
   user = await app.createUser({
-    primaryEmail: `cmux-${project.stackLabel}-smoke+${suffix}@manaflow.dev`,
+    primaryEmail: `uniconnect-${project.stackLabel}-smoke+${suffix}@${testEmailDomain}`,
     primaryEmailVerified: true,
     primaryEmailAuthEnabled: true,
     password: randomBytes(24).toString("base64url"),
-    displayName: `cmux ${project.stackLabel} smoke`,
+    displayName: `UniConnect ${project.stackLabel} smoke`,
   });
 
   const session = await user.createSession({ expiresInMillis: 20 * 60 * 1000, isImpersonation: true });

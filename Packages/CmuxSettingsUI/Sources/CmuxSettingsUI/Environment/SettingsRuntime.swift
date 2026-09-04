@@ -18,8 +18,22 @@ public struct SettingsRuntime: @unchecked Sendable {
     public let secretStore: SecretFileStore
     public let errorLog: SettingsErrorLog
     public let accountFlow: AccountFlow?
+    /// Whether the host has a complete, explicitly enabled online-services configuration.
+    public let hostedServicesAvailable: Bool
     public let hostActions: SettingsHostActions
 
+    /// Creates the dependency bundle consumed by the Settings scene.
+    ///
+    /// - Parameters:
+    ///   - catalog: The typed settings catalog.
+    ///   - userDefaultsStore: The defaults-backed settings repository.
+    ///   - jsonStore: The JSON configuration repository.
+    ///   - secretStore: The protected secret repository.
+    ///   - errorLog: The settings error sink.
+    ///   - accountFlow: The host account adapter, when online services exist.
+    ///   - hostedServicesAvailable: Whether auth, cloud, push, and pairing are
+    ///     completely configured and safe to present as interactive.
+    ///   - hostActions: Host-only actions invoked by settings rows.
     @MainActor
     public init(
         catalog: SettingCatalog,
@@ -28,6 +42,7 @@ public struct SettingsRuntime: @unchecked Sendable {
         secretStore: SecretFileStore,
         errorLog: SettingsErrorLog,
         accountFlow: AccountFlow? = nil,
+        hostedServicesAvailable: Bool = false,
         hostActions: SettingsHostActions = NoopSettingsHostActions()
     ) {
         self.catalog = catalog
@@ -36,6 +51,7 @@ public struct SettingsRuntime: @unchecked Sendable {
         self.secretStore = secretStore
         self.errorLog = errorLog
         self.accountFlow = accountFlow
+        self.hostedServicesAvailable = hostedServicesAvailable
         self.hostActions = hostActions
     }
 }

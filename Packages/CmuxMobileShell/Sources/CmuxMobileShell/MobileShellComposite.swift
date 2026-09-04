@@ -10,7 +10,7 @@ import Observation
 internal import OSLog
 
 private let mobileShellLog = Logger(
-    subsystem: Bundle.main.bundleIdentifier ?? "dev.cmux.ios",
+    subsystem: Bundle.main.bundleIdentifier ?? "com.unixcision.uniconnect.ios",
     category: "mobile-shell"
 )
 
@@ -767,7 +767,7 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         guard !trimmedCode.isEmpty else {
             return
         }
-        if trimmedCode.hasPrefix("cmux-ios://") {
+        if trimmedCode.hasPrefix("uniconnect://") {
             return
         }
         let attemptID = beginPairingAttempt()
@@ -790,7 +790,7 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         guard !trimmedCode.isEmpty else {
             return
         }
-        if trimmedCode.hasPrefix("cmux-ios://") {
+        if trimmedCode.hasPrefix("uniconnect://") {
             await connectPairingURL(trimmedCode)
             return
         }
@@ -1220,7 +1220,7 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
 
     private static func normalizedPairingURL(_ rawValue: String) -> String {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix("cmux-ios://") else {
+        guard trimmed.hasPrefix("uniconnect://") else {
             return trimmed
         }
         let scalars = trimmed.unicodeScalars.filter {
@@ -2966,12 +2966,12 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
                 case .connectionRefused:
                     return L10n.string(
                         "mobile.pairing.appNotRunning",
-                        defaultValue: "Your Mac is reachable, but cmux isn't running there (or mobile pairing is off). Open cmux on the Mac, then try again."
+                        defaultValue: "Your Mac is reachable, but UniConnect isn't running there (or mobile pairing is off). Open UniConnect on the Mac, then try again."
                     )
                 case .permissionDenied:
                     return L10n.string(
                         "mobile.pairing.localNetworkPermission",
-                        defaultValue: "iOS blocked the connection. Allow cmux to use the Local Network in iOS Settings, then try again."
+                        defaultValue: "iOS blocked the connection. Allow UniConnect to use the Local Network in iOS Settings, then try again."
                     )
                 case .hostUnreachable:
                     return localizedHostPortConnectionError(
@@ -3035,9 +3035,9 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         case .attachTicketExpired:
             return L10n.string("mobile.pairing.attachTicketExpired", defaultValue: "This pairing link expired. Pair again with a fresh QR/link from that computer.")
         case .authorizationFailed:
-            return L10n.string("mobile.pairing.authorizationFailed", defaultValue: "Couldn't verify your account with this Mac. Make sure both devices use the same cmux account and a matching build (both release, or both development), then try again.")
+            return L10n.string("mobile.pairing.authorizationFailed", defaultValue: "Couldn't verify your account with this Mac. Make sure both devices use the same UniConnect account and a matching build (both release, or both development), then try again.")
         case .accountMismatch:
-            return L10n.string("mobile.pairing.accountMismatch", defaultValue: "This Mac is signed in to a different cmux account. Sign out and sign back in with the account that owns this Mac.")
+            return L10n.string("mobile.pairing.accountMismatch", defaultValue: "This Mac is signed in to a different UniConnect account. Sign out and sign back in with the account that owns this Mac.")
         case .invalidResponse, .connectionClosed, .rpcError:
             return L10n.string("mobile.pairing.runtimeUnavailable", defaultValue: "Could not connect to your computer.")
         }

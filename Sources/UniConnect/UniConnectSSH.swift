@@ -1,4 +1,5 @@
 import Foundation
+import UniConnectClaudeBridge
 
 // MARK: - Command construction
 
@@ -13,8 +14,15 @@ enum UniConnectSSH {
         var command = ""
         if let directory, !directory.isEmpty {
             let quoted = singleQuoted(directory)
+            let message = String(
+                format: String(
+                    localized: "uniconnect.ssh.resume.folderMissing",
+                    defaultValue: "The folder %@ no longer exists; this session cannot be resumed from here."
+                ),
+                directory
+            )
             command += "if ! cd \(quoted) 2>/dev/null; then "
-            command += "echo \"[UniConnect] la carpeta \(quoted) ya no existe; la sesión no se puede reanudar desde aquí\"; "
+            command += "printf '%s\\n' \(shellQuote("[UniConnect] \(message)")); "
             command += "exec \"$SHELL\" -l; fi; "
         }
         command += "exec claude --dangerously-skip-permissions --resume \(singleQuoted(session))"
@@ -32,25 +40,19 @@ enum UniConnectSSH {
         "-o", "StrictHostKeyChecking=accept-new",
         "-o", "ServerAliveInterval=20",
         "-o", "ServerAliveCountMax=3",
-        "-o", "ConnectTimeout=15"
+        "-o", "ConnectTimeout=15",
+        "-o", "ForwardAgent=no",
+        "-o", "ForwardX11=no",
+        "-o", "ForwardX11Trusted=no",
+        "-o", "PermitLocalCommand=no"
     ]
 
-    /// Inserts `options` after the first standalone `ssh` word of a user supplied
-    /// connect command. If no `ssh` word is found the options are appended, which
-    /// works for thin wrappers that forward their arguments to ssh.
-    static func injectingOptions(_ options: [String], into connectCommand: String) -> String {
-        let trimmed = connectCommand.trimmingCharacters(in: .whitespacesAndNewlines)
-        let optionString = options.joined(separator: " ")
-        guard !optionString.isEmpty else { return trimmed }
-        let pattern = #"(^|\s)((?:\S*/)?ssh)(?=\s)"#
-        if let regex = try? NSRegularExpression(pattern: pattern),
-           let match = regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
-           let sshRange = Range(match.range(at: 2), in: trimmed) {
-            var result = trimmed
-            result.insert(contentsOf: " " + optionString, at: sshRange.upperBound)
-            return result
-        }
-        return trimmed + " " + optionString
+    /// Rebuilds a validated connection with trusted absolute executables and safely
+    /// quoted arguments. The imported string is never returned or executed verbatim.
+    static func injectingOptions(_ options: [String], into connectCommand: String) -> String? {
+        UniConnectSSHConnectCommandValidator()
+            .validatedCommand(connectCommand)?
+            .sensitiveCanonicalShellCommand(injecting: options)
     }
 
     /// Sanitizes a tmux session name: tmux forbids `.` and `:`; keep it shell-safe too.
@@ -69,7 +71,7 @@ enum UniConnectSSH {
             }
         }
         out = out.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        if out.isEmpty { out = "ventana" }
+        if out.isEmpty { out = "window" }
         return String(out.prefix(40))
     }
 
@@ -85,12 +87,11 @@ enum UniConnectSSH {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    /// The remote command that (re)attaches to the named tmux session. `-A` attaches if
-    /// it exists, `-D` kicks stale clients (a dead app leaves none, but a lingering one
-    /// would otherwise shrink the pane), `-c` seeds the directory on first creation.
+    /// The remote command used only for an explicit new window. `-A` attaches if the
+    /// named session exists and otherwise creates it; `-c` seeds that first directory.
     static func remoteTmuxCommand(session: String, directory: String?) -> String {
-        // `-A` reuses an existing session without creating a replacement. Do not pass
-        // `-D`: detaching another client would disrupt terminals outside UniConnect.
+        // Do not pass `-D`: detaching another client would disrupt terminals outside
+        // UniConnect. Restore and reconnect use `remoteExistingTmuxCommand` instead.
         var parts = ["tmux", "new-session", "-A", "-s", shellQuote(session)]
         if let directory = directory?.trimmingCharacters(in: .whitespacesAndNewlines), !directory.isEmpty {
             parts += ["-c", shellQuote(directory)]
@@ -101,17 +102,68 @@ enum UniConnectSSH {
         return parts.joined(separator: " ")
     }
 
-    /// Full local command line that opens a terminal tab bound to a tmux session.
-    static func attachCommandLine(connectCommand: String, session: String, directory: String?) -> String {
-        let client = injectingOptions(["-t"] + baseClientOptions, into: connectCommand)
-        // Wrap the remote command in a POSIX shell so a missing tmux still yields a
-        // readable message instead of ssh's terse exit.
-        let remote = "command -v tmux >/dev/null 2>&1 && exec \(remoteTmuxCommand(session: session, directory: directory)) || { echo '[UniConnect] tmux no está instalado en el servidor'; exec ${SHELL:-sh} -l; }"
-        return client + " " + shellQuote(remote)
+    /// The remote command used when a persisted window must attach to the exact tmux
+    /// session it previously owned. Unlike ``remoteTmuxCommand(session:directory:)``,
+    /// this path is deliberately incapable of creating a replacement session.
+    static func remoteExistingTmuxCommand(session: String) -> String {
+        let target = shellQuote(session)
+        let missingTmuxMessage = String(
+            localized: "uniconnect.ssh.tmux.missing",
+            defaultValue: "tmux is not installed on the server."
+        )
+        let missingSessionFormat = String(
+            localized: "uniconnect.ssh.tmux.savedSessionMissing",
+            defaultValue: "The saved tmux session “%@” no longer exists."
+        )
+        let missingSessionMessage = String(
+            format: missingSessionFormat,
+            locale: Locale.current,
+            session
+        )
+        return [
+            "if ! command -v tmux >/dev/null 2>&1; then",
+            "printf '%s\\n' \(shellQuote("[UniConnect] \(missingTmuxMessage)")) >&2;",
+            "exit 127;",
+            "fi;",
+            "if ! tmux has-session -t \(target) 2>/dev/null; then",
+            "printf '%s\\n' \(shellQuote("[UniConnect] \(missingSessionMessage)")) >&2;",
+            "exit 72;",
+            "fi;",
+            "tmux set-option -g mouse on >/dev/null 2>&1 || true;",
+            "tmux set-option -g history-limit 50000 >/dev/null 2>&1 || true;",
+            "exec tmux attach-session -t \(target)"
+        ].joined(separator: " ")
     }
 
-    /// Writes a self-deleting launcher script (mirrors cmux's restore launchers) so the
-    /// command runs through zsh with the user's exact quoting, and returns its path.
+    /// Full local command line that opens a terminal tab bound to a tmux session.
+    static func attachCommandLine(
+        connectCommand: String,
+        session: String,
+        directory: String?,
+        bridge: ClaudeBridgeConnectionPlan? = nil,
+        existingSessionOnly: Bool = false
+    ) -> String? {
+        let options = ["-t"] + baseClientOptions + (bridge?.sshOptions ?? [])
+        let tmux: String
+        if existingSessionOnly {
+            tmux = remoteExistingTmuxCommand(session: session)
+        } else {
+            // Explicitly creating a new SSH window keeps create-or-attach semantics. A
+            // missing tmux still yields a readable shell instead of ssh's terse exit.
+            let message = String(
+                localized: "uniconnect.ssh.tmux.missing",
+                defaultValue: "tmux is not installed on the server."
+            )
+            tmux = "command -v tmux >/dev/null 2>&1 && exec \(remoteTmuxCommand(session: session, directory: directory)) || { printf '%s\\n' \(shellQuote("[UniConnect] \(message)")) >&2; exec ${SHELL:-sh} -l; }"
+        }
+        let remote = bridge.map { $0.remoteSetupCommand + "; " + tmux } ?? tmux
+        return UniConnectSSHConnectCommandValidator()
+            .validatedCommand(connectCommand)?
+            .sensitiveCanonicalShellCommand(injecting: options, remoteCommand: remote)
+    }
+
+    /// Writes a self-deleting launcher script for an already canonicalized command and
+    /// returns its path. Imported shell text must never be passed to this method directly.
     /// Restore-time launchers are spaced out so opening many SSH boxes at once does not
     /// fire dozens of connections in the same instant: each launcher created within a
     /// short window waits a little longer than the previous one (0, 0.4, 0.8… seconds).
@@ -146,6 +198,14 @@ enum UniConnectSSH {
                 // tmux then refuses to attach ("missing or unsuitable terminal"). ssh forwards
                 // TERM, so pin a universally available one for the remote side.
                 "export TERM=xterm-256color",
+                "export HOME=\(shellQuote(FileManager.default.homeDirectoryForCurrentUser.path))",
+                // ProxyJump may start a nested ssh client. Keep that lookup on Apple's
+                // trusted system path rather than inheriting a login-shell PATH entry.
+                "export PATH=/usr/bin:/bin:/usr/sbin:/sbin",
+                // Do not let ambient launch helpers, dynamic-loader overrides, or a stale
+                // password variable influence the trusted executables below. A password
+                // connection sets a command-scoped SSHPASS assignment on its final line.
+                "unset SSHPASS SSH_ASKPASS SSH_ASKPASS_REQUIRE DYLD_INSERT_LIBRARIES DYLD_LIBRARY_PATH LD_PRELOAD",
                 delay > 0 ? String(format: "sleep %.1f", delay) : ":",
                 commandLine,
                 ""
@@ -156,6 +216,18 @@ enum UniConnectSSH {
         } catch {
             return nil
         }
+    }
+
+    /// Creates a readable local placeholder when restore detects another live owner for
+    /// the same endpoint/tmux target. It never invokes ssh or creates a remote session.
+    static func duplicateTargetPlaceholderLauncher(session: String) -> String? {
+        let message = String(
+            localized: "uniconnect.ssh.window.restoreDuplicate",
+            defaultValue: "This saved SSH/tmux window was not attached because the same remote target is already open. Close the other owner, then reconnect this window."
+        )
+        let quotedMessage = shellQuote("[UniConnect] \(message)")
+        let command = "printf '%s\\n' \(quotedMessage) >&2; exit 75"
+        return writeLauncherScript(commandLine: command, label: session)
     }
 
     private static func pruneOldLaunchers(in directory: URL) {
@@ -170,30 +242,13 @@ enum UniConnectSSH {
 
     /// Password-free label for display, e.g. `root@1.2.3.4`.
     static func hostLabel(from connectCommand: String) -> String {
-        let pattern = #"([A-Za-z0-9._-]+@)?([A-Za-z0-9.-]+|\[[0-9a-fA-F:]+\])(?=\s|$)"#
-        // Shell-aware split, and drop the value of every option that carries a secret or a
-        // path: `sshpass -p 'clave'` used to end up in the label, which is persisted in the
-        // session snapshot and shown in the sidebar.
-        var tokens: [String] = []
-        var skipNext = false
-        for token in shellWords(connectCommand) {
-            if skipNext { skipNext = false; continue }
-            if token == "-p" || token == "-i" || token == "-o" || token == "-F" || token == "-P" || token == "-f" {
-                skipNext = true
-                continue
-            }
-            // `-p'clave'` / `-i/ruta/clave.pem` glued together.
-            if token.hasPrefix("-p") || token.hasPrefix("-i") { continue }
-            tokens.append(token)
-        }
-        // Prefer the token containing '@'; fall back to the last non-option token.
-        if let at = tokens.first(where: { $0.contains("@") && !$0.hasPrefix("-") }) { return at }
-        if let regex = try? NSRegularExpression(pattern: pattern),
-           let last = tokens.last(where: { !$0.hasPrefix("-") && $0 != "ssh" && $0 != "sshpass" }),
-           regex.firstMatch(in: last, range: NSRange(last.startIndex..., in: last)) != nil {
-            return last
-        }
-        return "servidor"
+        // Derive labels from the same validated representation used to launch. This avoids
+        // ever scanning a password-bearing wrapper for a plausible-looking host token.
+        return UniConnectSSHConnectCommandValidator()
+            .validatedCommand(connectCommand)?
+            .detectedSession()?
+            .destination
+            ?? String(localized: "uniconnect.ssh.hostFallback", defaultValue: "server")
     }
 }
 
@@ -233,13 +288,13 @@ final class UniConnectTmuxProbe {
     OS="$(uname -s 2>/dev/null)"
     DISTRO=""
     if [ -r /etc/os-release ]; then DISTRO="$(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-$ID}")"; fi
-    PM="desconocido"
+    PM="unknown"
     for c in apt-get dnf yum apk pacman zypper brew; do
       if command -v "$c" >/dev/null 2>&1; then PM="$c"; break; fi
     done
     PERM="root"
     if [ "$(id -u)" != "0" ]; then
-      if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then PERM="sudo sin contraseña"; else PERM="SIN permisos de instalación"; fi
+      if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then PERM="passwordless-sudo"; else PERM="no-install-permission"; fi
     fi
     echo "UC_TMUX_MISSING os=$OS distro=$DISTRO pm=$PM perm=$PERM"
     exit 0
@@ -251,10 +306,10 @@ final class UniConnectTmuxProbe {
       echo "UC_TMUX_OK $(tmux -V 2>/dev/null)"
       exit 0
     fi
-    echo "UC_TMUX_MISSING: tmux no está instalado, instalando…"
+    echo "UC_TMUX_MISSING"
     SUDO=""
     if [ "$(id -u)" != "0" ]; then
-      if command -v sudo >/dev/null 2>&1; then SUDO="sudo -n"; else echo "UC_TMUX_FAIL sin root ni sudo"; exit 1; fi
+      if command -v sudo >/dev/null 2>&1; then SUDO="sudo -n"; else echo "UC_TMUX_FAIL NO_PRIVILEGES"; exit 1; fi
     fi
     if command -v apt-get >/dev/null 2>&1; then
       export DEBIAN_FRONTEND=noninteractive
@@ -273,26 +328,38 @@ final class UniConnectTmuxProbe {
     elif command -v brew >/dev/null 2>&1; then
       brew install tmux 2>&1
     else
-      echo "UC_TMUX_FAIL gestor de paquetes desconocido"
+      echo "UC_TMUX_FAIL UNKNOWN_PACKAGE_MANAGER"
       exit 1
     fi
     if command -v tmux >/dev/null 2>&1; then
       echo "UC_TMUX_OK $(tmux -V 2>/dev/null)"
       exit 0
     fi
-    echo "UC_TMUX_FAIL la instalación no dejó tmux disponible"
+    echo "UC_TMUX_FAIL INSTALL_INCOMPLETE"
     exit 1
     """
 
     func start(connectCommand: String) {
         let script = mode == .install ? Self.remoteScript : Self.checkScript
-        let client = UniConnectSSH.injectingOptions(["-T"] + UniConnectSSH.baseClientOptions, into: connectCommand)
-        let commandLine = client + " " + UniConnectSSH.shellQuote("sh -s")
+        guard let invocation = UniConnectSSHConnectCommandValidator()
+            .validatedCommand(connectCommand)?
+            .invocation(
+                injecting: ["-T"] + UniConnectSSH.baseClientOptions,
+                remoteCommand: "sh -s"
+            ) else {
+            onFinish(.failed(
+                UniConnectSSH.validateConnectCommand(connectCommand) ?? String(
+                    localized: "uniconnect.ssh.probe.error.launchUnavailable",
+                    defaultValue: "The SSH connection could not be started."
+                )
+            ))
+            return
+        }
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-lc", commandLine]
-        var env = ProcessInfo.processInfo.environment
+        process.executableURL = URL(fileURLWithPath: invocation.executable)
+        process.arguments = invocation.arguments
+        var env = invocation.environment
         env["TERM"] = "dumb"
         env["LANG"] = env["LANG"] ?? "en_US.UTF-8"
         process.environment = env
@@ -326,9 +393,18 @@ final class UniConnectTmuxProbe {
                 } else if self.rawOutput.contains("UC_TMUX_OK") {
                     self.onFinish(.ready(version: ""))
                 } else if self.rawOutput.contains("UC_TMUX_MISSING"), self.mode == .check {
-                    self.onFinish(.needsInstall(detail: "tmux no está instalado"))
+                    self.onFinish(.needsInstall(detail: String(
+                        localized: "uniconnect.ssh.probe.tmuxMissing",
+                        defaultValue: "tmux is not installed"
+                    )))
                 } else {
-                    self.onFinish(.failed("la conexión terminó con código \(proc.terminationStatus)"))
+                    self.onFinish(.failed(String(
+                        format: String(
+                            localized: "uniconnect.ssh.probe.error.terminated",
+                            defaultValue: "The connection ended with status %d."
+                        ),
+                        proc.terminationStatus
+                    )))
                 }
             }
         }
@@ -345,7 +421,10 @@ final class UniConnectTmuxProbe {
         DispatchQueue.main.asyncAfter(deadline: .now() + 240) { [weak self] in
             guard let self, let process = self.process, process.isRunning else { return }
             process.terminate()
-            self.onFinish(.failed("tiempo de espera agotado"))
+            self.onFinish(.failed(String(
+                localized: "uniconnect.ssh.probe.error.timedOut",
+                defaultValue: "The connection timed out."
+            )))
         }
     }
 
@@ -375,18 +454,44 @@ final class UniConnectTmuxProbe {
         let line = rawLine.replacingOccurrences(of: "\r", with: "")
         if line.hasPrefix("UC_TMUX_OK") {
             sawOK = line.replacingOccurrences(of: "UC_TMUX_OK", with: "").trimmingCharacters(in: .whitespaces)
-            onLine("✓ tmux listo" + (sawOK!.isEmpty ? "" : " (\(sawOK!))"))
+            let ready = String(localized: "uniconnect.ssh.probe.tmuxReady", defaultValue: "tmux is ready")
+            onLine("✓ \(ready)" + (sawOK!.isEmpty ? "" : " (\(sawOK!))"))
             return
         }
         if line.hasPrefix("UC_TMUX_FAIL") {
-            onLine("✗ " + line.replacingOccurrences(of: "UC_TMUX_FAIL", with: "").trimmingCharacters(in: .whitespaces))
+            let code = line.replacingOccurrences(of: "UC_TMUX_FAIL", with: "").trimmingCharacters(in: .whitespaces)
+            let message: String
+            switch code {
+            case "NO_PRIVILEGES":
+                message = String(
+                    localized: "uniconnect.ssh.probe.error.noPrivileges",
+                    defaultValue: "Administrator privileges are unavailable on the server."
+                )
+            case "UNKNOWN_PACKAGE_MANAGER":
+                message = String(
+                    localized: "uniconnect.ssh.probe.error.unknownPackageManager",
+                    defaultValue: "No supported package manager was found on the server."
+                )
+            case "INSTALL_INCOMPLETE":
+                message = String(
+                    localized: "uniconnect.ssh.probe.error.installIncomplete",
+                    defaultValue: "tmux is still unavailable after installation."
+                )
+            default:
+                message = code
+            }
+            onLine("✗ " + message)
             return
         }
         if line.hasPrefix("UC_TMUX_MISSING") {
             let detail = line.replacingOccurrences(of: "UC_TMUX_MISSING:", with: "")
                 .replacingOccurrences(of: "UC_TMUX_MISSING", with: "").trimmingCharacters(in: .whitespaces)
-            if mode == .check { sawMissing = detail.isEmpty ? "tmux no está instalado" : detail }
-            onLine("⏳ tmux no está instalado" + (detail.isEmpty ? "" : " (\(detail))"))
+            let missing = String(
+                localized: "uniconnect.ssh.probe.tmuxMissing",
+                defaultValue: "tmux is not installed"
+            )
+            if mode == .check { sawMissing = detail.isEmpty ? missing : detail }
+            onLine("⏳ \(missing)" + (detail.isEmpty ? "" : " (\(detail))"))
             return
         }
         if !line.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -437,41 +542,39 @@ extension UniConnectSSH {
         case nil:
             return nil
         case .empty:
-            return "Pega el comando completo de conexión."
+            return String(
+                localized: "uniconnect.ssh.validation.empty",
+                defaultValue: "Paste the complete connection command."
+            )
         case .lineBreak:
-            return "El comando no puede tener saltos de línea."
+            return String(
+                localized: "uniconnect.ssh.validation.lineBreak",
+                defaultValue: "The command cannot contain line breaks."
+            )
         case .invalidSSHPasswordWrapper:
-            return "Con `sshpass` el comando tiene que invocar `ssh` después de las opciones."
+            return String(
+                localized: "uniconnect.ssh.validation.invalidSSHPasswordWrapper",
+                defaultValue: "With `sshpass`, the command must invoke `ssh` after the options."
+            )
         case .missingDestination:
-            return "Falta el destino (usuario@host)."
+            return String(
+                localized: "uniconnect.ssh.validation.missingDestination",
+                defaultValue: "The destination (user@host) is missing."
+            )
         case .malformedQuoting, .unsafeShellSyntax, .unsupportedExecutable,
              .unsupportedSSHOption, .unsafeSSHOption, .invalidDestination, .remoteCommand:
-            return "El comando tiene que empezar por `ssh` o `sshpass` (p. ej. `ssh -i clave.pem root@host` o `sshpass -p 'clave' ssh root@host`)."
+            return String(
+                localized: "uniconnect.ssh.validation.unsupportedCommand",
+                defaultValue: "The command must start with `ssh` or `sshpass` (for example, `ssh -i key.pem root@host` or `sshpass -p 'password' ssh root@host`)."
+            )
         }
     }
 
     /// Builds the SSH session used for remote image paste straight from the stored connect
     /// command (no TTY/process detection).
     static func detectedSession(fromConnectCommand command: String) -> DetectedSSHSession? {
-        // The command was typed for a shell, which would expand `~` and `$HOME`; scp gets the
-        // words verbatim, so expand them here and make a relative key path absolute.
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        var words = shellWords(command).map { word -> String in
-            var w = word.replacingOccurrences(of: "$HOME", with: home).replacingOccurrences(of: "${HOME}", with: home)
-            if w.hasPrefix("~/") || w == "~" { w = (w as NSString).expandingTildeInPath }
-            if w.hasPrefix("-i~/") { w = "-i" + ((String(w.dropFirst(2))) as NSString).expandingTildeInPath }
-            return w
-        }
-        for index in words.indices where index > 0 && words[index - 1] == "-i" {
-            let key = words[index]
-            if !key.hasPrefix("/") { words[index] = (home as NSString).appendingPathComponent(key) }
-        }
-        guard let first = words.first else { return nil }
-        let exe = (first as NSString).lastPathComponent
-        if exe == "sshpass" {
-            return TerminalSSHSessionDetector.parseSshpassCommandLine(words)
-        }
-        guard let transport = RemoteShellTransport(executableName: exe) else { return nil }
-        return TerminalSSHSessionDetector.parseCommandLine(words, for: transport)
+        UniConnectSSHConnectCommandValidator()
+            .validatedCommand(command)?
+            .detectedSession()
     }
 }

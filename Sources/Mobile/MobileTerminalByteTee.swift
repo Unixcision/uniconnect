@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 
 private let mobileTerminalByteTeeLog = Logger(
-    subsystem: "dev.cmux",
+    subsystem: "com.unixcision.uniconnect",
     category: "mobile-terminal-byte-tee"
 )
 
@@ -45,7 +45,7 @@ final class MobileTerminalByteTee {
     /// Serial queue so fan-out preserves byte order even though the
     /// upstream callback runs off the main thread.
     private let publishQueue = DispatchQueue(
-        label: "dev.cmux.mobile.byte-tee.publish",
+        label: "com.unixcision.uniconnect.mobile.byte-tee.publish",
         qos: .userInitiated
     )
 
