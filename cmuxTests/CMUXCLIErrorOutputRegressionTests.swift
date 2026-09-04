@@ -94,6 +94,68 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         )
     }
 
+    func testTaggedSocketDiscoveryStaysWithinUniConnectNamespace() throws {
+        let cliPath = try bundledCLIPath()
+        let nonce = UUID().uuidString.lowercased()
+        let missingTag = "cli-discovery-missing-\(nonce)"
+        let uniConnectSocketPath = "/tmp/uniconnect-debug-cli-discovery-own-\(nonce).sock"
+        let foreignCmuxSocketPath = "/tmp/cmux-debug-cli-discovery-foreign-\(nonce).sock"
+        let home = try makeTemporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let uniConnectResponder = try UnixSocketResponder(
+            path: uniConnectSocketPath,
+            response: "UNICONNECT"
+        )
+        defer { uniConnectResponder.stop() }
+        let foreignCmuxResponder = try UnixSocketResponder(
+            path: foreignCmuxSocketPath,
+            response: "FOREIGN CMUX"
+        )
+        defer { foreignCmuxResponder.stop() }
+
+        // Discovery sorts by mtime. Keep both fixtures ahead of unrelated stale
+        // sockets, and make the foreign decoy newer so a namespace leak is visible.
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSinceNow: 60)],
+            ofItemAtPath: uniConnectSocketPath
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSinceNow: 120)],
+            ofItemAtPath: foreignCmuxSocketPath
+        )
+
+        let fakeCLIPath = try fakeTaggedBundledCLIPath(
+            sourceCLIPath: cliPath,
+            tagSlug: "untagged-discovery-fixture",
+            bundleIdentifier: "com.unixcision.uniconnect.debug",
+            bundleName: "UniConnect DEV"
+        )
+        var environment = ProcessInfo.processInfo.environment
+        for key in Array(environment.keys) where key.hasPrefix("CMUX_") {
+            environment.removeValue(forKey: key)
+        }
+        environment["CMUX_TAG"] = missingTag
+        environment["CMUX_CLI_SENTRY_DISABLED"] = "1"
+        environment["CFFIXED_USER_HOME"] = home.path
+
+        let result = runProcess(
+            executablePath: fakeCLIPath,
+            arguments: ["ping"],
+            environment: environment,
+            timeout: 5
+        )
+
+        XCTAssertFalse(result.timedOut, result.stdout)
+        XCTAssertEqual(result.status, 0, result.stdout)
+        XCTAssertEqual(
+            result.stdout.trimmingCharacters(in: .whitespacesAndNewlines),
+            "UNICONNECT",
+            result.stdout
+        )
+        XCTAssertEqual(foreignCmuxResponder.receivedRequests, [])
+    }
+
     func testBundledCLIInTaggedDebugAppTreatsCaseVariantStableEnvSocketAsImplicitDefault() throws {
         let cliPath = try bundledCLIPath()
         let tagSlug = "cli-case-\(UUID().uuidString.lowercased())"
