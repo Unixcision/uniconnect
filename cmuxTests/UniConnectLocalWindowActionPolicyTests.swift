@@ -405,6 +405,43 @@ struct UniConnectLocalWindowActionPolicyTests {
         #expect(workspace.uniConnectLocalWindowsByPanelId[panelID]?.conversations.count == 1)
     }
 
+    @Test("Respawning a local terminal cancels the previous generation's pending agent launch")
+    @MainActor
+    func localRespawnCancelsPendingAgentLaunchBeforePanelIDReuse() throws {
+        let root = NSTemporaryDirectory()
+        let workspace = Workspace(workingDirectory: root)
+        workspace.uniConnectProfile = UniConnectWorkspaceProfile(
+            kind: .local,
+            importIdentity: UUID(),
+            localRoot: root
+        )
+        workspace.uniConnectConfigureLocalRoot(root)
+        let panelID = try #require(workspace.focusedPanelId)
+        let coordinator = UniConnectCoordinator.shared
+        defer {
+            coordinator.localWindowDidStop(panelID: panelID, workspace: workspace)
+        }
+
+        #expect(coordinator.prepareAutomaticLocalAgentLaunch(
+            snapshot: snapshot(.codex, sessionID: "before-respawn-\(UUID().uuidString)"),
+            panelID: panelID,
+            workspace: workspace
+        ))
+        let replacement = workspace.respawnTerminalSurface(
+            panelId: panelID,
+            command: "/bin/zsh -l",
+            workingDirectory: root,
+            focus: false
+        )
+        #expect(replacement?.id == panelID)
+
+        #expect(coordinator.prepareAutomaticLocalAgentLaunch(
+            snapshot: snapshot(.claude, sessionID: "after-respawn-\(UUID().uuidString)"),
+            panelID: panelID,
+            workspace: workspace
+        ))
+    }
+
     @Test("Forced SSH reconnect bypasses stale disconnected state and resets its budget")
     func forcedReconnectPolicyHandlesHungConnections() {
         #expect(
