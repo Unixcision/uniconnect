@@ -691,6 +691,52 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
         XCTAssertNotNil(ClosedItemHistoryStore.shared.record(id: recordID))
     }
 
+    func testReopenClosedSSHPanelRecreatesDeletedOriginalWorkspaceFromHistoricalRevision() throws {
+        let originalAppDelegate = AppDelegate.shared
+        AppDelegate.shared = nil
+        defer { AppDelegate.shared = originalAppDelegate }
+
+        let manager = TabManager()
+        let fixtureWorkspace = try XCTUnwrap(manager.selectedWorkspace)
+        let historicalCredentialID = UUID()
+        try UniConnectVault.shared.storeOrThrow(
+            connectCommand: "ssh archive@history.example.test",
+            id: historicalCredentialID
+        )
+        defer { UniConnectVault.shared.remove(id: historicalCredentialID) }
+        var snapshot = try XCTUnwrap(
+            fixtureWorkspace.sessionSnapshot(includeScrollback: false).panels.first
+        )
+        snapshot.id = UUID()
+        snapshot.customTitle = "Archived worker"
+        snapshot.terminal?.uniConnectTmuxSession = "archived_worker"
+        let recordID = UUID()
+        ClosedItemHistoryStore.shared.push(ClosedItemHistoryRecord(
+            id: recordID,
+            entry: .panel(ClosedPanelHistoryEntry(
+                workspaceId: UUID(),
+                paneId: UUID(),
+                tabIndex: 0,
+                snapshot: snapshot,
+                uniConnectProfile: UniConnectWorkspaceProfile(
+                    kind: .ssh,
+                    credentialId: historicalCredentialID,
+                    hostLabel: "archive@history.example.test",
+                    tmuxReady: true
+                )
+            ))
+        ))
+        let originalWorkspaceCount = manager.tabs.count
+
+        XCTAssertTrue(manager.reopenClosedHistoryItem(id: recordID))
+
+        XCTAssertEqual(manager.tabs.count, originalWorkspaceCount + 1)
+        let recoveredWorkspace = try XCTUnwrap(manager.selectedWorkspace)
+        XCTAssertEqual(recoveredWorkspace.uniConnectProfile?.credentialId, historicalCredentialID)
+        XCTAssertEqual(Set(recoveredWorkspace.uniConnectTmuxSessionsByPanelId.values), ["archived_worker"])
+        XCTAssertNil(ClosedItemHistoryStore.shared.record(id: recordID))
+    }
+
     func testReopenClosedPanelPreservesForwardFocusHistoryBranch() throws {
         let manager = TabManager()
         let firstWorkspace = try XCTUnwrap(manager.selectedWorkspace)
