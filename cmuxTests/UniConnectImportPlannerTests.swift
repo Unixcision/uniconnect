@@ -333,6 +333,85 @@ struct UniConnectImportPlannerTests {
         #expect(fallback.conversations == [conversation])
     }
 
+    @Test("UUID-shaped Antigravity sessions canonicalize case before duplicate ownership")
+    func resolvesDuplicateAntigravityUUIDAcrossCaseVariants() throws {
+        let upperSessionID = "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"
+        let lowerSessionID = upperSessionID.lowercased()
+
+        func window(
+            id: UUID,
+            conversationID: UUID,
+            name: String,
+            sessionID: String
+        ) throws -> UniConnectDocument.Window {
+            let conversation = try #require(UniConnectLocalAgentConversation(
+                id: conversationID,
+                kind: .antigravity,
+                sessionID: sessionID,
+                firstSeenAt: 1
+            ))
+            return .init(
+                name: name,
+                tmux: nil,
+                claudeSession: nil,
+                cwd: "/Users/test/Project",
+                isPinned: nil,
+                localWindow: .init(
+                    id: id,
+                    visibleName: name,
+                    boxRoot: "/Users/test/Project",
+                    runtimeState: .agent,
+                    conversations: [conversation],
+                    latestConversationID: conversationID,
+                    activeConversationID: conversationID,
+                    createdAt: 1,
+                    updatedAt: 1
+                )
+            )
+        }
+
+        let imported = document([
+            .init(
+                name: "Antigravity box",
+                kind: .local,
+                color: nil,
+                group: nil,
+                isPinned: nil,
+                cwd: "/Users/test/Project",
+                connect: nil,
+                windows: [
+                    try window(
+                        id: UUID(uuidString: "64000000-0000-0000-0000-000000000006")!,
+                        conversationID: UUID(uuidString: "65000000-0000-0000-0000-000000000006")!,
+                        name: "Owner",
+                        sessionID: upperSessionID
+                    ),
+                    try window(
+                        id: UUID(uuidString: "66000000-0000-0000-0000-000000000006")!,
+                        conversationID: UUID(uuidString: "67000000-0000-0000-0000-000000000006")!,
+                        name: "Fallback",
+                        sessionID: lowerSessionID
+                    ),
+                ]
+            ),
+        ])
+
+        let plan = planner.plan(importing: imported, against: document([]))
+        let fallback = try #require(plan.rows[0].workspace.windows[1].localWindow)
+
+        guard case .keepTerminalBecauseDuplicateAgent(
+            kind: .antigravity,
+            sessionID: lowerSessionID,
+            mutation: .create
+        ) = plan.rows[0].windowRows[1].action else {
+            Issue.record("Expected the case-variant Antigravity UUID to become a shell")
+            return
+        }
+        #expect(fallback.runtimeState == .shell)
+        #expect(fallback.activeConversationID == nil)
+        #expect(fallback.conversations.count == 1)
+    }
+
     @Test("A malformed Markdown UUID remains visible as a rejected row")
     func rejectsMalformedMarkdownUUIDWithoutDroppingIt() throws {
         let markdown = """
