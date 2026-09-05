@@ -2,7 +2,7 @@ name: UniConnect · núcleo compartido
 
 on:
   push:
-    branches: [uniconnect, desarrollo/multiplataforma]
+    branches: [uniconnect, 'desarrollo/**']
     paths:
       - Packages/CMUXAgentLaunch/**
       - Packages/CMUXAgentVault/**

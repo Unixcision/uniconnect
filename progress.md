@@ -6,7 +6,9 @@ de conexión, UUID de conversaciones ni capturas privadas.
 ## Ramas y coordinación
 
 - Repositorio: `Unixcision/uniconnect`. Principal: `uniconnect`.
-- Desarrollo conjunto: `desarrollo/multiplataforma`, no una línea Linux separada.
+- Desarrollo conjunto Mac/Linux, no una línea Linux separada. La antigua rama
+  `desarrollo/multiplataforma` se eliminó remotamente tras quedar su contenido en
+  principal; no recrearla. Este bloque se publica en `desarrollo/monitor-ramas`.
 - Trabajo funcional publicado: `25eec3eb13`; incluye el cambio de español
   `29a8edec3e`. Durante esta revisión, principal avanzó remotamente a
   `fa91daa4c2`: ya contiene el trabajo funcional y el arreglo de CI de desarrollo.
