@@ -21552,60 +21552,49 @@ class TerminalController {
         guard let paneId = workspace.bonsplitController.focusedPaneId ?? workspace.bonsplitController.allPaneIds.first else {
             return .err(code: "not_found", message: "Pane not found", data: nil)
         }
-        if let profile = workspace.uniConnectProfile {
-            guard v2UUID(params, "workspace_id") != nil,
-                  let creation = UniConnectMobileTerminalCreation(
-                      name: v2RawString(params, "name"), tmuxSession: v2RawString(params, "tmux_session"),
-                      directory: v2RawString(params, "directory"), agentID: v2RawString(params, "agent"),
-                      isSSH: profile.isSSH
-                  ) else { return mobileCreationInvalidParameters() }
-            let terminal: TerminalPanel?
-            if profile.isSSH {
-                terminal = UniConnectCoordinator.shared.createSSHWindow(
-                    in: workspace, name: creation.name, tmuxSession: creation.tmuxSession!,
-                    directory: creation.directory, focus: false, showErrors: false,
-                    placement: .tab(paneID: paneId, afterTabID: nil)
-                )
-            } else {
-                guard let boxRoot = workspace.uniConnectLocalBoxRoot else { return mobileCreationInvalidParameters() }
-                let directory = creation.directory ?? boxRoot
-                guard UniConnectLocalBoxRootPolicy.isAvailableDirectory(directory) else {
-                    return mobileCreationInvalidParameters()
-                }
-                let registry = CmuxVaultAgentRegistry.load(workingDirectory: directory)
-                let targets = UniConnectLocalWindowLaunchTarget.builtInAgents
-                    + UniConnectLocalWindowLaunchTarget.customTargets(from: registry)
-                guard let request = creation.localRequest(boxRoot: boxRoot, availableTargets: targets) else {
-                    return mobileCreationInvalidParameters()
-                }
-                terminal = UniConnectCoordinator.shared.createLocalWindow(
-                    in: workspace, request: request, focus: false,
-                    placement: .tab(paneID: paneId, afterTabID: nil)
-                )
+        let isSSH = workspace.uniConnectProfile?.isSSH == true
+        guard v2UUID(params, "workspace_id") != nil,
+              let creation = UniConnectMobileTerminalCreation(
+                  name: v2RawString(params, "name"), tmuxSession: v2RawString(params, "tmux_session"),
+                  directory: v2RawString(params, "directory"), agentID: v2RawString(params, "agent"),
+                  isSSH: isSSH
+              ) else { return mobileCreationInvalidParameters() }
+        let terminal: TerminalPanel?
+        if isSSH {
+            terminal = UniConnectCoordinator.shared.createSSHWindow(
+                in: workspace, name: creation.name, tmuxSession: creation.tmuxSession!,
+                directory: creation.directory, focus: false, showErrors: false,
+                placement: .tab(paneID: paneId, afterTabID: nil)
+            )
+        } else {
+            let root = workspace.uniConnectProfile == nil
+                ? UniConnectLocalWindowRecord.validatedBoxRoot(workspace.currentDirectory)
+                : workspace.uniConnectLocalBoxRoot
+            guard let boxRoot = root else { return mobileCreationInvalidParameters() }
+            let directory = creation.directory ?? boxRoot
+            guard UniConnectLocalBoxRootPolicy.isAvailableDirectory(directory) else {
+                return mobileCreationInvalidParameters()
             }
-            guard let terminal else {
-                return .err(code: "create_failed", message: String(
-                    localized: "uniconnect.mobile.createFailed",
-                    defaultValue: "No se pudo crear la ventana. Comprueba la carpeta, la conexión y que esa sesión tmux no esté abierta en otra ventana."
-                ), data: nil)
+            let registry = CmuxVaultAgentRegistry.load(workingDirectory: directory)
+            let targets = UniConnectLocalWindowLaunchTarget.builtInAgents
+                + UniConnectLocalWindowLaunchTarget.customTargets(from: registry)
+            guard let request = creation.localRequest(boxRoot: boxRoot, availableTargets: targets) else {
+                return mobileCreationInvalidParameters()
             }
-            return v2MobileWorkspaceList(
-                params: ["workspace_id": workspace.id.uuidString], tabManager: tabManager,
-                createdTerminalID: terminal.id.uuidString
+            terminal = UniConnectCoordinator.shared.createLocalWindow(
+                in: workspace, request: request, focus: false,
+                placement: .tab(paneID: paneId, afterTabID: nil)
             )
         }
-        guard let terminal = workspace.newTerminalSurface(
-            inPane: paneId,
-            focus: false,
-            autoRefreshMetadata: false,
-            preserveFocusWhenUnfocused: false
-        ) else {
-            return .err(code: "internal_error", message: "Failed to create terminal", data: nil)
+        guard let terminal else {
+            return .err(code: "create_failed", message: String(
+                localized: "uniconnect.mobile.createFailed",
+                defaultValue: "No se pudo crear la ventana. Comprueba la carpeta, la conexión y que esa sesión tmux no esté abierta en otra ventana."
+            ), data: nil)
         }
         // workspace.updated emit is handled by MobileWorkspaceListObserver.
         return v2MobileWorkspaceList(
-            params: params,
-            tabManager: tabManager,
+            params: ["workspace_id": workspace.id.uuidString], tabManager: tabManager,
             createdTerminalID: terminal.id.uuidString
         )
     }

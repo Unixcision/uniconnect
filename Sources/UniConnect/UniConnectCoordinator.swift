@@ -1096,8 +1096,11 @@ final class UniConnectCoordinator: ObservableObject {
         placement requestedPlacement: UniConnectNewWindowPlacement? = nil
     ) -> TerminalPanel? {
         guard permitsImportSensitiveMutation() else { return nil }
-        guard workspace.uniConnectProfile?.isSSH == false,
-              let boxRoot = workspace.uniConnectLocalBoxRoot,
+        let root = workspace.uniConnectProfile == nil
+            ? UniConnectLocalWindowRecord.validatedBoxRoot(request.boxRoot)
+            : workspace.uniConnectLocalBoxRoot
+        guard workspace.uniConnectProfile?.isSSH != true,
+              let boxRoot = root,
               let placement = requestedPlacement ?? .focusedPane(in: workspace),
               placement.isAvailable(in: workspace) else {
             return nil
@@ -1174,6 +1177,15 @@ final class UniConnectCoordinator: ObservableObject {
                 )
             )
             return nil
+        }
+        // Adopt a generic local workspace only after a successful explicit creation.
+        // Reconcile metadata in place; existing panels and live PTYs are not replaced.
+        if workspace.uniConnectProfile == nil {
+            workspace.uniConnectProfile = UniConnectWorkspaceProfile(
+                kind: .local, importIdentity: workspace.id, localRoot: boxRoot
+            )
+            workspace.uniConnectIsStarter = false
+            workspace.uniConnectConfigureLocalRoot(boxRoot)
         }
         workspace.setPanelCustomTitle(panelId: panel.id, title: request.visibleName)
         workspace.uniConnectInstallLocalWindowRecord(
