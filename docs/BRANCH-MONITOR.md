@@ -13,7 +13,7 @@ en el servidor Linux; no hace falta duplicarlo en Mac.
 - No consulta al modelo cuando no hay novedades. No ejecuta contenido de ramas,
   no cambia el árbol de trabajo y no hace checkout, pull, merge ni push.
 - Archiva un evento privado y lo envía mediante `codex queue` a la conversación
-  configurada. El aviso pide leer `progress.md` de las referencias modificadas,
+  configurada. El aviso pide leer `/tmp/coord5Sep.md` en el MINIPC Linux,
   comparar los cambios y coordinar únicamente el desarrollo autorizado.
 - El agente receptor puede integrar cambios pertinentes en desarrollo tras
   comprobar el árbol y las pruebas; conflictos y promoción a principal requieren
@@ -40,6 +40,14 @@ que el HEAD actual haya pasado. No incorpora cambios locales de otros equipos.
 
 El código instalado es una copia revisada, no se actualiza por recibir un push.
 Así una rama remota no puede sustituir automáticamente el ejecutable del monitor.
+
+Desde el 5 de septiembre, la coordinación activa se escribe solo en
+`/tmp/coord5Sep.md` del MINIPC (`dgomezm@100.123.234.20`), nunca en un `/tmp`
+local de cada equipo. El antiguo `progress.md` del repo y `/tmp/conver.txt` del
+Mac se migraron íntegros al apartado histórico de ese documento y se retiraron.
+La consola backend del Mac firma `CLAUDE LOCAL/backend`, diferenciada de la
+consola de frontend. Cada equipo añade entradas sin sobrescribir las ajenas.
+
 Después de revisar cambios, detener el temporizador y esperar a que el servicio
 termine; instalar ambos scripts de `scripts/uniconnect_branch_*.py`, reinstalar
 las unidades de `scripts/systemd/` si cambiaron, ejecutar `daemon-reload` y volver
