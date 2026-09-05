@@ -375,6 +375,48 @@ class ExistingDesktopTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("CI") == "true" and shutil.which("tmux"), "Real tmux runs only in CI")
 class RealTmuxReplayTests(unittest.TestCase):
+    def test_full_replay_carries_last_300_styled_history_rows_without_moving_the_pane(self):
+        socket_name = "uc-scrollback-ci-" + uuid.uuid4().hex[:12]
+        with tempfile.TemporaryDirectory(prefix="uc-mobile-history-") as folder:
+            args = ["tmux", "-f", "/dev/null", "-L", socket_name]
+            program = "import sys,time; [print('\\x1b[31mHISTORIA-%03d\\x1b[0m' % i) for i in range(400)]; print('UC_SCROLL_READY', flush=True); time.sleep(30)"
+            try:
+                subprocess.run(args + ["new-session", "-d", "-s", "fixture", "-x", "80", "-y", "12",
+                                       shlex.join([sys.executable, "-c", program])], check=True, timeout=5)
+                pid = subprocess.check_output(args + ["display-message", "-p", "-t", "=fixture:", "#{pane_pid}"], text=True).strip()
+                record = {"id": "window", "name": "Validación", "tmux": "fixture", "tmuxSocket": socket_name, "cwd": folder}
+                workspace = {"id": "workspace", "name": "Fixture", "kind": "local", "windows": [record]}
+                surface = types.SimpleNamespace(disposed=False, mobile_color_profile=fixture_profile())
+                window = types.SimpleNamespace(locked=False,
+                    store=types.SimpleNamespace(workspaces=[workspace], data={"selectedWorkspaceId": "other"}),
+                    surfaces={"window": surface}, focused_surface=None)
+                rpc = MobileRPC(window, None, lambda callback: callback())
+                deadline = time.monotonic() + 5
+                while True:
+                    result = rpc.replay({"workspace_id": "workspace", "surface_id": "window"})
+                    if "UC_SCROLL_READY" in grid_text(result):
+                        break
+                    self.assertLess(time.monotonic(), deadline)
+                    time.sleep(0.04)
+                grid = result["render_grid"]
+                self.assertTrue(grid["full"])
+                self.assertEqual(grid["scrollback_rows"], 300)
+                lines = [""] * grid["scrollback_rows"]
+                for span in grid["scrollback_spans"]:
+                    self.assertGreaterEqual(span["row"], 0)
+                    self.assertLess(span["row"], 300)
+                    lines[span["row"]] += span["text"]
+                    style = next(item for item in grid["styles"] if item["id"] == span["style_id"])
+                    self.assertEqual(style["foreground"], fixture_profile()["palette"][1])
+                expected = subprocess.check_output(args + ["capture-pane", "-p", "-N", "-S", "-300", "-E", "-1", "-t", "=fixture:"], text=True).splitlines()
+                self.assertEqual(lines, expected)
+                self.assertNotIn("HISTORIA-000", lines)
+                self.assertEqual(pid, subprocess.check_output(args + ["display-message", "-p", "-t", "=fixture:", "#{pane_pid}"], text=True).strip())
+                self.assertEqual(window.store.data["selectedWorkspaceId"], "other")
+                self.assertIsNone(window.focused_surface)
+            finally:
+                subprocess.run(args + ["kill-server"], capture_output=True, timeout=5)
+
     def test_replay_reads_exact_existing_pane_without_starting_another_process(self):
         socket_name = "uc-mobile-ci-" + uuid.uuid4().hex[:12]
         with tempfile.TemporaryDirectory(prefix="uc-mobile-tmux-") as folder:
