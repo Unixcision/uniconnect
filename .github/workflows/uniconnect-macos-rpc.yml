@@ -8,6 +8,7 @@ on:
       - Sources/Workspace.swift
       - Sources/UniConnect/**
       - cmuxTests/MobileWorkspaceListFidelityTests.swift
+      - cmuxTests/UniConnectLocalTmuxSocketAccessTests.swift
       - cmux.xcodeproj/**
       - ghostty
       - scripts/download-prebuilt-ghosttykit.sh
@@ -67,6 +68,7 @@ jobs:
         run: |
           ./scripts/install-zig-ci.sh
           ./scripts/install-rust-ci.sh
+          command -v tmux >/dev/null || brew install tmux
 
       - name: Caché de dependencias Swift
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
@@ -91,6 +93,24 @@ jobs:
             CMUX_SKIP_ZIG_BUILD=1 \
             test 2>&1 | tee "$RUNNER_TEMP/uniconnect-mobile-rpc.log"
 
+      # A separate runner invocation keeps the process-global controller and AppDelegate
+      # isolated from the mobile suite. Reuse the products; do not build the app again.
+      - name: Verificar acceso real desde el panel tmux registrado
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/ci/xcodebuild_noninteractive.py \
+            xcodebuild -project cmux.xcodeproj -scheme cmux-unit -configuration Debug \
+            -derivedDataPath "$RUNNER_TEMP/uniconnect-mobile-rpc-dd" \
+            -clonedSourcePackagesDirPath "$GITHUB_WORKSPACE/.ci-source-packages" \
+            -destination 'platform=macOS' \
+            -parallel-testing-enabled NO \
+            -only-testing:cmuxTests/UniConnectLocalTmuxSocketAccessTests \
+            -resultBundlePath "$RUNNER_TEMP/uniconnect-tmux-socket-access.xcresult" \
+            CMUX_SKIP_ZIG_BUILD=1 \
+            test-without-building 2>&1 | tee "$RUNNER_TEMP/uniconnect-tmux-socket-access.log"
+
       - name: Conservar resultados y registro de la ejecución
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -99,5 +119,7 @@ jobs:
           path: |
             ${{ runner.temp }}/uniconnect-mobile-rpc.xcresult
             ${{ runner.temp }}/uniconnect-mobile-rpc.log
+            ${{ runner.temp }}/uniconnect-tmux-socket-access.xcresult
+            ${{ runner.temp }}/uniconnect-tmux-socket-access.log
           if-no-files-found: warn
           retention-days: 7
