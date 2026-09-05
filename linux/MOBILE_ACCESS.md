@@ -20,6 +20,12 @@ Los permisos y la identidad de máquina se guardan en `mobile-access.json`, priv
 y con escritura atómica, dentro del directorio de estado de UniConnect. No contiene
 contraseñas SSH. Una aprobación no se activa si falla su escritura.
 
+Activar el listener es una decisión local de este equipo. Importar una configuración
+o un archivo cifrado no incorpora `settings.mobileHostEnabled`: conserva su valor
+local, incluso cuando todavía no existe y el acceso está desactivado por omisión.
+Restaurar un punto de recuperación tampoco cambia esa decisión. Los dispositivos
+autorizados de `mobile-access.json` no se importan con los espacios de trabajo.
+
 ## Qué comparte y qué no
 
 - Usa el encuadre de `CMUXMobileCore`: longitud UInt32 big-endian y JSON UTF-8.

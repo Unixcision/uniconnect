@@ -291,6 +291,9 @@ class ImportPreview:
                         if key == "settings":
                             # Import missing preferences without overwriting current user choices.
                             for name, setting in value.items():
+                                # Listening is local consent, never a portable preference.
+                                if name == "mobileHostEnabled":
+                                    continue
                                 store.data.setdefault("settings", {}).setdefault(name, copy.deepcopy(setting))
                         else:
                             store.data.setdefault(key, copy.deepcopy(value))
