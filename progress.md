@@ -47,7 +47,8 @@ de conexión, UUID de conversaciones ni capturas privadas.
   CI móvil [33983039150](https://github.com/Unixcision/uniconnect/actions/runs/33983039150)
   correcto, incluidos dominio, tmux real aislado y Android. No demuestra paridad
   completa de interfaces ni la ejecución de toda la suite GUI macOS.
-- El proceso GUI Linux ya abierto no fue reiniciado con los últimos commits.
+- Runtime Linux actualizado y reabierto con `c1ea46a48b`; detalle de instalación
+  y comprobaciones en el bloque de responsables, sin sustituir sesiones tmux.
 - Pixel físico: APK instalada; autorización desde Mac, árbol, pantalla en directo,
   texto e Intro confirmados en la misma terminal. Avisos en segundo plano,
   deduplicación al reconectar y apertura del destino exacto comprobados contra
@@ -120,6 +121,18 @@ Continuar sobre `uniconnect`; no crear otra línea de entrega Linux. Antes de
 cambiar el checkout del Linux activo, conservar sus procesos/estado y comprobar
 que no haya nuevos cambios locales ni remotos.
 
+### Hallazgo adicional del catálogo Mac (`9f8365fc9`)
+
+En espacios sin `uniConnectProfile`, `v2MobileWorkspaceList` anuncia agentes
+locales, pero el fallback de `v2MobileTerminalCreate` crea una terminal genérica
+sin aplicar `agent`, `name` ni `directory`. El selector Android recién publicado
+expone esa discrepancia: una elección explícita de agente puede recibir una shell
+con respuesta de éxito. Contraste estático de `Sources/TerminalController.swift`
+y el constructor de `Workspace`; no reproducción sobre el Mac del usuario.
+Pendiente coordinar que el catálogo anuncie solo capacidades realmente admitidas
+y que la creación no ignore parámetros explícitos. No se modificó el host Mac
+ni el frontend Android para este hallazgo; Linux no usa ese fallback.
+
 ## Responsables de este bloque
 
 Actualización Mac, 2026-09-05 21:05 CEST:
@@ -133,10 +146,21 @@ Actualización Mac, 2026-09-05 21:05 CEST:
   dry-run del instalador correcto. **No instalada**, producción y sesiones intactas.
 - Debug aislado: primera lectura fría `is_ready:false`, después cuadrícula real
   lista sin crear otra terminal. No confundirlo con migración local ya validada.
-- Linux real: monitor systemd habilitado/activo y última ejecución correcta a las
-  20:54:26 CEST. Checkout limpio en `702f05309`, rama `desarrollo/monitor-ramas`;
-  todo su código está integrado en principal. GUI PID8997 y estado
-  `/root/.local/state/uniconnect` conservados; falta actualizar ese runtime.
+- Linux real, sustitución solicitada por el usuario: checkout en `uniconnect`,
+  código `c1ea46a48b` instalado y GUI reabierta. Todas las ramas propias ya están
+  incluidas en principal; no se fusionaron ni borraron ramas heredadas.
+  Instalador y lanzador actualizados con `wcwidth==0.2.13` en entorno privado,
+  sin cambiar el Python del sistema. Validación aislada: 186 pruebas sin fallos,
+  una omisión reservada a CI; núcleo Mac/Linux `33985991660`, español y capturas
+  de ese mismo SHA correctos. Android `9f8365fc9`, CI `33985907727`, correcto.
+  Cierre ordenado de la GUI anterior y copia privada coherente antes del cambio.
+  Las seis cajas y quince ventanas conservan IDs, tmux, agentes e historial
+  (huella comparada antes/después); las dos superficies de la caja visible
+  responden en ejecución, las otras trece están guardadas sin abrirlas como prueba.
+  Mismo estado y vault, cifrado con desbloqueo automático y sin contraseña de
+  arranque; idioma español y listener móvil desactivado conservados. No se
+  reiniciaron procesos dentro de tmux ni se reimportó configuración. El monitor
+  mantiene su instalación independiente. Esto no valida Android contra Linux real.
 - Siguiente trabajo de esta consola: instalación protegida, recuperación local
   tmux y Android contra Linux real. Chat real propuesto, **no implementado**;
   requiere historial por identidad de conversación, no convertir texto de la
