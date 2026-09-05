@@ -94,7 +94,8 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
         require(text.isNotEmpty())
         require(text.toByteArray(Charsets.UTF_8).size <= MAX_INPUT_BYTES)
         val result = call(machine, "mobile.terminal.input", target(workspaceID, windowID).put("text", text))
-        if (!result.optBoolean("queued", false)) throw MachineFailure.InputNotQueued()
+        val actual = TerminalTarget(result.getString("workspace_id"), result.getString("surface_id"))
+        if (!TerminalInputReceipt.accepts(TerminalTarget(workspaceID, windowID), actual, result.opt("queued") as? Boolean)) throw MachineFailure.InputNotQueued()
     }
 
     private fun decodeMachine(machine: Machine, result: JSONObject): MachineSnapshot {
