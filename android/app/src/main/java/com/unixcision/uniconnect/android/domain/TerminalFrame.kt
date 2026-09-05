@@ -14,6 +14,8 @@ data class TerminalFrame(val snapshot: TerminalSnapshot, val full: Boolean, val 
             foreground = snapshot.foreground ?: previous.foreground,
             background = snapshot.background ?: previous.background,
             cursor = snapshot.cursor ?: previous.cursor,
+            scrollbackRows = previous.scrollbackRows,
+            scrollbackSpans = previous.scrollbackSpans,
         )
     }
 

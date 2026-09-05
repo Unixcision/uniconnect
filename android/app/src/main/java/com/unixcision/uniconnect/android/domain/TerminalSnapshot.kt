@@ -5,6 +5,9 @@ data class TerminalSnapshot(
     val columns: Int, val rows: Int, val spans: List<Span>,
     val foreground: String?, val background: String?, val cursor: Cursor?,
     val revision: ULong? = null,
+    /** History lines above the screen; spans use rows `0 until scrollbackRows`. Empty on hosts that do not export it. */
+    val scrollbackRows: Int = 0,
+    val scrollbackSpans: List<Span> = emptyList(),
 ) {
     // Styles are frozen per span: frame-local style IDs may be reused in a later delta.
     data class Span(val row: Int, val column: Int, val text: String, val cellWidth: Int, val style: Style)

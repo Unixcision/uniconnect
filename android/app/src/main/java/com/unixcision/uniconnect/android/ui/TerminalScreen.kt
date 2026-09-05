@@ -115,14 +115,23 @@ fun TerminalScreen(
                 val viewport = IntSize(constraints.maxWidth, constraints.maxHeight)
                 val metrics = rememberTerminalMetrics(snapshot, if (viewMode == ViewMode.FIT) viewport else null)
                 val scroll by rememberUpdatedState(onScroll)
-                when (viewMode) {
-                    ViewMode.WRAP -> {
+                val history = snapshot.scrollbackRows > 0
+                when {
+                    // With exported history the whole canvas scrolls locally, newest lines at the bottom.
+                    viewMode == ViewMode.FIT && history -> {
+                        val scrollState = rememberScrollState(Int.MAX_VALUE)
+                        LaunchedEffect(snapshot.scrollbackRows, snapshot.rows, snapshot.revision) {
+                            if (scrollState.value >= scrollState.maxValue - metrics.lineHeight * 2) scrollState.scrollTo(scrollState.maxValue)
+                        }
+                        Box(Modifier.fillMaxSize().verticalScroll(scrollState), contentAlignment = Alignment.TopCenter) { TerminalGrid(snapshot, metrics) }
+                    }
+                    viewMode == ViewMode.WRAP -> {
                         // Readable size; long desktop rows wrap at the inner width instead of scrolling sideways.
                         val wrapColumns = ((viewport.width - 16f) / metrics.cellWidth).toInt().coerceAtLeast(8)
                         Box(Modifier.verticalScroll(rememberScrollState())) { TerminalGrid(snapshot, metrics, wrapColumns.takeIf { it < snapshot.columns }) }
                     }
-                    ViewMode.PAN -> Box(Modifier.horizontalScroll(rememberScrollState()).verticalScroll(rememberScrollState())) { TerminalGrid(snapshot, metrics) }
-                    ViewMode.FIT -> Box(
+                    viewMode == ViewMode.PAN -> Box(Modifier.horizontalScroll(rememberScrollState()).verticalScroll(rememberScrollState())) { TerminalGrid(snapshot, metrics) }
+                    else -> Box(
                     Modifier.fillMaxSize()
                         .semantics { contentDescription = "" }
                         .pointerInput(metrics.lineHeight, connected) {
@@ -206,8 +215,9 @@ private fun TerminalGrid(snapshot: TerminalSnapshot, metrics: TerminalMetrics, w
     val lineHeight = metrics.lineHeight
     val wrap = wrapColumns ?: snapshot.columns
     val linesPerRow = (snapshot.columns + wrap - 1) / wrap
+    val history = snapshot.scrollbackRows
     val width = with(density) { (wrap * cellWidth + 16f).toDp() }
-    val height = with(density) { (snapshot.rows * linesPerRow * lineHeight + 16f).toDp() }
+    val height = with(density) { ((history + snapshot.rows) * linesPerRow * lineHeight + 16f).toDp() }
     val defaultForeground = parseColor(snapshot.foreground, android.graphics.Color.rgb(238, 243, 255))
     val defaultBackground = parseColor(snapshot.background, android.graphics.Color.rgb(7, 13, 32))
     // Cell → pixel origin, folding wide rows when wrapping.
@@ -217,7 +227,10 @@ private fun TerminalGrid(snapshot: TerminalSnapshot, metrics: TerminalMetrics, w
         drawIntoCanvas { target ->
             val canvas = target.nativeCanvas
             canvas.drawColor(defaultBackground)
-            snapshot.spans.forEach { span ->
+            // History first (rows 0 until scrollbackRows), then the live screen shifted below it.
+            val drawable = snapshot.scrollbackSpans.asSequence().map { it to it.row } +
+                snapshot.spans.asSequence().map { it to it.row + history }
+            drawable.forEach { (span, drawRow) ->
                 val style = span.style
                 var foreground = parseColor(style.foreground, defaultForeground)
                 var background = parseColor(style.background, defaultBackground)
@@ -240,7 +253,7 @@ private fun TerminalGrid(snapshot: TerminalSnapshot, metrics: TerminalMetrics, w
                 }
                 pieces.forEach { (column, text, cells) ->
                     val x = originX(column)
-                    val y = originY(span.row, column)
+                    val y = originY(drawRow, column)
                     paint.style = Paint.Style.FILL
                     paint.color = background
                     canvas.drawRect(x, y, x + cells * cellWidth, y + lineHeight, paint)
@@ -260,7 +273,7 @@ private fun TerminalGrid(snapshot: TerminalSnapshot, metrics: TerminalMetrics, w
                 paint.strokeWidth = 1.5f
                 paint.color = defaultForeground
                 val x = originX(cursor.column)
-                val y = originY(cursor.row, cursor.column)
+                val y = originY(cursor.row + history, cursor.column)
                 canvas.drawRect(x, y, x + cellWidth, y + lineHeight, paint)
                 paint.style = Paint.Style.FILL
             }
