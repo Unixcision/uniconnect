@@ -15,7 +15,8 @@ permissions:
 
 # Conserva ambos resultados de la secuencia de regresión: prueba roja y arreglo verde.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Cada revisión usa su propio Mac de CI: rojo y arreglo no se cancelan ni se bloquean.
+  group: ${{ github.workflow }}-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
