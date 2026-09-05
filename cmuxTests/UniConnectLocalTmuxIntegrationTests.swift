@@ -13,6 +13,41 @@ import Testing
 @Suite("Real local tmux lifecycle", .serialized,
        .enabled(if: ProcessInfo.processInfo.environment["CI"] == "true", "Real PTY integration runs only in CI"))
 struct UniConnectLocalTmuxIntegrationTests {
+    @Test("The first real pane has 50,000 history lines and reattach preserves it")
+    func historyLimitIsAppliedBeforeCreatingTheFirstPane() async throws {
+        let fixture = try Fixture()
+        do {
+            let binding = fixture.binding(name: "history")
+            let panelID = UUID(), generation = UUID()
+            let firstClient = try fixture.launch(
+                binding: binding, directory: fixture.root.path, command: nil,
+                panelID: panelID, generation: generation
+            )
+            let firstPane = try await fixture.attachedPane(binding)
+            // This format reads the pane's actual grid limit, not the session option:
+            // setting history-limit after new-session leaves the first grid at 2,000.
+            let historyArguments = [
+                "display-message", "-p", "-t", "=" + binding.name + ":", "#{history_limit}",
+            ]
+            #expect(try await fixture.command(historyArguments) == "50000")
+            try await fixture.detach(binding, client: firstClient)
+
+            let secondClient = try fixture.launch(
+                binding: binding, directory: fixture.root.path, command: nil,
+                panelID: panelID, generation: UUID()
+            )
+            let secondPane = try await fixture.attachedPane(binding)
+            #expect(secondPane.sessionID == firstPane.sessionID)
+            #expect(secondPane.pid == firstPane.pid)
+            #expect(try await fixture.command(historyArguments) == "50000")
+            try await fixture.detach(binding, client: secondClient)
+            await fixture.cleanup()
+        } catch {
+            await fixture.cleanup()
+            throw error
+        }
+    }
+
     @Test("Detach and reattach preserve the pane PID and native launch; missing sessions recreate once")
     func realAttachAndMissingSessionRecovery() async throws {
         let fixture = try Fixture()
