@@ -2094,7 +2094,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             displayToken = "\(baseDisplayToken)\(displaySuffix)"
             let shellToken = singleQuotedShellLiteral(displayToken)
             // The private fixture prints one long path at a known physical row.
-            // Real mouse reporting makes Ghostty consume the release without opening a URL.
+            // Request mouse reporting, but do not assume the embedded runtime consumes Cmd-click.
             shellCommand = "clear\rprintf '\\033[?1049h\\033[2J\\033[2;1H\\033[?1000h\\033[?1006h%s' '\(shellToken)'; sleep 60\r"
         case "log":
             displayToken = "\(baseDisplayToken)\(displaySuffix)"

@@ -13,9 +13,9 @@ on:
 permissions:
   contents: read
 
-# Conserva ambos resultados de la secuencia de regresión: prueba roja y arreglo verde.
+# Compatibilidad de los dos PNG; este caso no reprodujo el fallo comunicado por Dani.
 concurrency:
-  # Cada ejecución conserva baseline y arreglo juntos; no cancela otra regresión.
+  # Conserva evidencia anterior y actual sin presentar la comparación como un repro.
   group: ${{ github.workflow }}-${{ github.sha }}
   cancel-in-progress: false
 
@@ -116,7 +116,7 @@ jobs:
           git rev-parse HEAD > "$RUNNER_TEMP/uniconnect-command-click/baseline/revision.txt"
           shasum -a 256 cmuxUITests/TerminalCmdClickUITests.swift Sources/AppDelegate.swift > "$RUNNER_TEMP/uniconnect-command-click/baseline/fixture.sha256"
 
-      - name: Baseline — PNG normal pasa y ruta partida reproduce el fallo
+      - name: Compatibilidad anterior — ambos PNG abren el visor
         id: baseline
         timeout-minutes: 35
         shell: bash
@@ -137,7 +137,7 @@ jobs:
           statuses=("${PIPESTATUS[@]}")
           set -e
           echo "finished=true" >> "$GITHUB_OUTPUT"
-          test "${statuses[0]}" -eq 65
+          test "${statuses[0]}" -eq 0
           test "${statuses[1]}" -eq 0
           python3 - <<'PY'
           import os, pathlib, re
@@ -145,15 +145,11 @@ jobs:
           normal = "testCmdClickPngOpensInCmuxFilePreviewWhenEnabled"
           wrapped = "testCmdClickWrappedPngWithMouseReportingOpensExactFileOnce"
           outcomes = re.findall(r"^Test Case '-\[cmuxUITests\.TerminalCmdClickUITests (\w+)\]' (passed|failed) \(", log, re.M)
-          assert len(outcomes) == 2 and dict(outcomes) == {normal: "passed", wrapped: "failed"}, outcomes
-          failures = [line for line in log.splitlines() if "error:" in line]
-          assert not any("setupError" in line or "Expected terminal cmd-click setup data" in line for line in failures), failures
-          assert any(wrapped in line and "XCTAssertEqual failed" in line and
-                     "Clicking the wrapped suffix must recover the complete PNG path" in line for line in failures), failures
-          print("Baseline válido: fixture preparada, PNG normal correcto y fallo real de ruta partida.")
+          assert len(outcomes) == 2 and dict(outcomes) == {normal: "passed", wrapped: "passed"}, outcomes
+          print("Compatibilidad anterior confirmada. Este caso NO reproduce el fallo comunicado.")
           PY
 
-      - name: Arreglo — ambos PNG pasan con recompilación incremental
+      - name: Compatibilidad actual — ambos PNG pasan con recompilación incremental
         if: ${{ !cancelled() && steps.baseline.outputs.finished == 'true' }}
         timeout-minutes: 35
         shell: bash
