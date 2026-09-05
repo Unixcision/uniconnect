@@ -327,6 +327,37 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         finally:
             self._building_workspace -= 1
 
+    def ensure_mobile_surface(self, workspace, record):
+        """Attach only the requested saved pane; GTK can adopt this same widget later."""
+        from .mobile_protocol import RPCError
+        if self._closed or self.locked:
+            raise RPCError("locked", "UniConnect está bloqueado")
+        if (self._runtime_operation and self._runtime_operation.active) or self.store._active_transaction is not None:
+            raise RPCError("busy", "Hay una conexión en preparación; espera a que termine")
+        if (not any(value is workspace for value in self.store.workspaces)
+                or not any(value is record for value in workspace["windows"])):
+            raise RPCError("not_found", "No se encontró la terminal")
+        surface = self.surfaces.get(record["id"])
+        if surface is not None:
+            return surface
+        try:
+            TmuxCommand.validate_name(record.get("tmux"))
+        except Exception as error:
+            raise RPCError("not_durable", "Esta consola antigua no tiene una sesión tmux recuperable") from error
+
+        def prepare(workspace, launch_record, connection, create):
+            # The local tmux CLIENT needs an existing cwd, not the pane's saved
+            # working directory. Never let a missing folder select a new shell
+            # while mobile replay still displays the original tmux pane.
+            if workspace["kind"] == "local":
+                launch_record = {**launch_record, "cwd": "/"}
+            return TerminalSurface._build_launch(workspace, launch_record, connection, False)
+
+        surface = TerminalSurface(self, workspace, record, auto_launch=False, launch_preparer=prepare)
+        self.surfaces[record["id"]] = surface
+        surface.launch(create=False)
+        return surface
+
     @staticmethod
     def _detach_terminals(container):
         # Detach from the actual GTK tree, including a terminal whose model has

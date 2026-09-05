@@ -89,6 +89,12 @@ class MobileRPC:
             record = self.window.create_mobile_window(workspace, params)
             return {**self.workspace_list({"workspace_id": workspace["id"]}), "created_terminal_id": record["id"]}
         workspace, record, surface = self.target(params)
+        attached = False
+        if operation in ("terminal.reconnect", "terminal.reset") and surface is None:
+            attach = getattr(self.window, "ensure_mobile_surface", None)
+            if attach is not None:
+                surface = attach(workspace, record)
+                attached = True
         if surface is None or surface.disposed:
             raise RPCError("surface_unavailable", "Esta terminal no está abierta en el escritorio")
         identifiers = {"workspace_id": workspace["id"], "surface_id": record["id"]}
@@ -103,7 +109,8 @@ class MobileRPC:
         if operation in ("terminal.reconnect", "terminal.reset"):
             if not record.get("tmux"):
                 raise RPCError("not_durable", "Esta consola antigua no tiene una sesión tmux recuperable")
-            surface.launch()
+            if not attached:
+                surface.launch()
             return {**identifiers, "queued": True}
         if operation == "terminal.viewport":
             return {**identifiers, **self.viewport(surface, params, connection_id)}
@@ -188,6 +195,10 @@ class MobileRPC:
             workspace, record, surface = self.target(params)
             if not record.get("tmux"):
                 raise RPCError("snapshot_unavailable", "Esta consola antigua no ofrece una pantalla tmux recuperable")
+            if surface is None:
+                attach = getattr(self.window, "ensure_mobile_surface", None)
+                if attach is not None:
+                    surface = attach(workspace, record)
             if surface is None or surface.disposed or not getattr(surface, "mobile_color_profile", None):
                 raise RPCError("surface_unavailable", "Esta terminal no está abierta en el escritorio")
             command = SSHCommand.parse(self.window.connection(workspace)) if workspace["kind"] == "ssh" else None
