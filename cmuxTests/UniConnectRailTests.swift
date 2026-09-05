@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 
 #if canImport(cmux_DEV)
@@ -9,6 +10,14 @@ import XCTest
 
 @MainActor
 final class UniConnectRailTests: XCTestCase {
+    func testNotificationBadgeTextCapsAtNinetyNine() {
+        XCTAssertNil(UniConnectRailSidebar.notificationBadgeText(unreadCount: 0))
+        XCTAssertNil(UniConnectRailSidebar.notificationBadgeText(unreadCount: -1))
+        XCTAssertEqual(UniConnectRailSidebar.notificationBadgeText(unreadCount: 1), "1")
+        XCTAssertEqual(UniConnectRailSidebar.notificationBadgeText(unreadCount: 99), "99")
+        XCTAssertEqual(UniConnectRailSidebar.notificationBadgeText(unreadCount: 100), "99+")
+    }
+
     func testMonogramUsesWordsCamelCaseAndStableFallbacks() {
         XCTAssertEqual(UniConnectChipSnapshot.monogram(for: "notbetting-prepro"), "NP")
         XCTAssertEqual(UniConnectChipSnapshot.monogram(for: "mcpProjekt"), "MP")
@@ -27,6 +36,201 @@ final class UniConnectRailTests: XCTestCase {
             "#C53A68", "#55A84E", "#4899AA", "#852FB1",
             "#4857B8", "#83AB48", "#D15B31", "#2DA08F",
         ].contains(first))
+    }
+
+    func testRailIdentityContrastAcrossCompositedColourMatrix() throws {
+        let palette = [
+            "#3769B4", "#B3366A", "#C54A3C", "#A8B747",
+            "#C53A68", "#55A84E", "#4899AA", "#852FB1",
+            "#4857B8", "#83AB48", "#D15B31", "#2DA08F",
+        ]
+        let appearances: [(scheme: ColorScheme, surface: NSColor)] = [
+            (
+                .dark,
+                NSColor(srgbRed: 0.11, green: 0.11, blue: 0.12, alpha: 1)
+            ),
+            (
+                .light,
+                NSColor(srgbRed: 0.94, green: 0.94, blue: 0.94, alpha: 1)
+            ),
+        ]
+        let layerOpacities: [CGFloat] = [1, 0.84, 0.72, 0.64, 0.52]
+        let gradientOpacities = [
+            UniConnectRailPalette.railGradientMidpointOpacity,
+            UniConnectRailPalette.flyoutGradientMidpointOpacity,
+        ]
+
+        for hex in palette {
+            for appearance in appearances {
+                let baseColor = try XCTUnwrap(
+                    WorkspaceTabColorSettings.displayNSColor(
+                        hex: hex,
+                        colorScheme: appearance.scheme
+                    )
+                )
+                for layerOpacity in layerOpacities {
+                    for gradientOpacity in gradientOpacities {
+                        let background = UniConnectRailPalette.identityBackgroundNSColor(
+                            baseColor: baseColor,
+                            layerOpacity: layerOpacity,
+                            gradientOpacity: gradientOpacity,
+                            surfaceColor: appearance.surface
+                        )
+                        let foreground = UniConnectRailPalette.identityForegroundNSColor(
+                            baseColor: baseColor,
+                            layerOpacity: layerOpacity,
+                            gradientOpacity: gradientOpacity,
+                            surfaceColor: appearance.surface
+                        )
+                        XCTAssertGreaterThanOrEqual(
+                            cmuxContrastRatio(foreground: foreground, background: background),
+                            4.5,
+                            "\(hex), \(appearance.scheme), layer \(layerOpacity), gradient \(gradientOpacity)"
+                        )
+                    }
+                }
+            }
+        }
+
+        XCTAssertGreaterThanOrEqual(
+            cmuxContrastRatio(
+                foreground: .white,
+                background: UniConnectRailPalette.unreadNSColor
+            ),
+            4.5
+        )
+    }
+
+    func testRailIdentityBackgroundCombinesLayerAndGradientOpacity() {
+        let background = UniConnectRailPalette.identityBackgroundNSColor(
+            baseColor: NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1),
+            layerOpacity: 0.5,
+            gradientOpacity: 0.8,
+            surfaceColor: NSColor(srgbRed: 0, green: 0, blue: 1, alpha: 1)
+        )
+        let srgb = background.usingColorSpace(.sRGB) ?? background
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        srgb.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+
+        XCTAssertEqual(red, 0.4, accuracy: 0.0001)
+        XCTAssertEqual(green, 0, accuracy: 0.0001)
+        XCTAssertEqual(blue, 0.6, accuracy: 0.0001)
+        XCTAssertEqual(alpha, 1, accuracy: 0.0001)
+    }
+
+    func testRailSurfaceColoursResolveFromExplicitScheme() {
+        let darkAppearance = UniConnectRailPalette.appKitAppearance(for: .dark)
+        let lightAppearance = UniConnectRailPalette.appKitAppearance(for: .light)
+        XCTAssertEqual(
+            darkAppearance?.bestMatch(from: [.darkAqua, .aqua]),
+            .darkAqua
+        )
+        XCTAssertEqual(
+            lightAppearance?.bestMatch(from: [.darkAqua, .aqua]),
+            .aqua
+        )
+
+        let dark = UniConnectRailPalette.windowBackgroundNSColor(for: .dark)
+        let light = UniConnectRailPalette.windowBackgroundNSColor(for: .light)
+
+        XCTAssertGreaterThan(
+            cmuxContrastRatio(foreground: .white, background: dark),
+            cmuxContrastRatio(foreground: .white, background: light)
+        )
+    }
+
+    func testFlyoutConnectionBadgesAreSemanticAndReadableInBothSchemes() throws {
+        let appearances: [(scheme: ColorScheme, surface: NSColor)] = [
+            (.dark, NSColor(srgbRed: 0.11, green: 0.11, blue: 0.12, alpha: 1)),
+            (.light, NSColor(srgbRed: 0.94, green: 0.94, blue: 0.94, alpha: 1)),
+        ]
+        let kinds: [UniConnectChipSnapshot.ConnectionKind] = [.local, .ssh, .mixed]
+
+        for appearance in appearances {
+            for kind in kinds {
+                let foreground = UniConnectRailPalette.connectionBadgeNSColor(
+                    for: kind,
+                    colorScheme: appearance.scheme
+                )
+                for increasedContrast in [false, true] {
+                    let fillOpacity = UniConnectRailPalette.badgeFillOpacity(
+                        increasedContrast: increasedContrast
+                    )
+                    let background = cmuxCompositedNSColor(
+                        foreground.withAlphaComponent(CGFloat(fillOpacity)),
+                        over: appearance.surface
+                    )
+                    XCTAssertGreaterThanOrEqual(
+                        cmuxContrastRatio(foreground: foreground, background: background),
+                        4.5,
+                        "\(kind.rawValue), \(appearance.scheme), increasedContrast=\(increasedContrast)"
+                    )
+                }
+            }
+
+            let local = try XCTUnwrap(
+                UniConnectRailPalette.connectionBadgeNSColor(
+                    for: .local,
+                    colorScheme: appearance.scheme
+                ).usingColorSpace(.sRGB)
+            )
+            let ssh = try XCTUnwrap(
+                UniConnectRailPalette.connectionBadgeNSColor(
+                    for: .ssh,
+                    colorScheme: appearance.scheme
+                ).usingColorSpace(.sRGB)
+            )
+            XCTAssertGreaterThan(local.greenComponent, local.redComponent)
+            XCTAssertGreaterThan(local.greenComponent, local.blueComponent)
+            XCTAssertGreaterThan(ssh.blueComponent, ssh.redComponent)
+            XCTAssertGreaterThan(ssh.blueComponent, ssh.greenComponent)
+
+            let disconnected = UniConnectRailPalette.disconnectedBadgeNSColor(
+                for: appearance.scheme
+            )
+            let disconnectedBackground = cmuxCompositedNSColor(
+                disconnected.withAlphaComponent(
+                    CGFloat(
+                        UniConnectRailPalette.badgeFillOpacity(increasedContrast: true)
+                    )
+                ),
+                over: appearance.surface
+            )
+            XCTAssertGreaterThanOrEqual(
+                cmuxContrastRatio(
+                    foreground: disconnected,
+                    background: disconnectedBackground
+                ),
+                4.5
+            )
+        }
+    }
+
+    func testCompactDisconnectedBadgeStaysReadableOverLightAndDarkTiles() {
+        let foreground = UniConnectRailPalette.compactDisconnectedForegroundNSColor
+
+        for surface in [NSColor.black, NSColor.white] {
+            for increasedContrast in [false, true] {
+                let background = cmuxCompositedNSColor(
+                    NSColor.black.withAlphaComponent(
+                        CGFloat(
+                            UniConnectRailPalette.compactBadgeBackgroundOpacity(
+                                increasedContrast: increasedContrast
+                            )
+                        )
+                    ),
+                    over: surface
+                )
+                XCTAssertGreaterThanOrEqual(
+                    cmuxContrastRatio(foreground: foreground, background: background),
+                    4.5,
+                    "surface=\(surface), increasedContrast=\(increasedContrast)"
+                )
+            }
+        }
     }
 
     func testSnapshotEqualityTracksOnlyImmutableRenderingValues() {
@@ -218,6 +422,44 @@ final class UniConnectRailTests: XCTestCase {
         XCTAssertEqual(layout.corridorFrame.maxX, anchor.minX, accuracy: 1)
     }
 
+    func testLayoutAddsHeightForAWorkspaceNameThatWrapsPastTwoLines() {
+        let bounds = CGRect(x: 0, y: 0, width: 700, height: 700)
+        let anchor = CGRect(x: 18, y: 320, width: 36, height: 36)
+        let shortNameLayout = UniConnectSidebarFlyoutLayout.resolve(
+            containerBounds: bounds,
+            anchorFrame: anchor,
+            windowCount: 3,
+            displayName: "Build"
+        )
+        let fullNameLayout = UniConnectSidebarFlyoutLayout.resolve(
+            containerBounds: bounds,
+            anchorFrame: anchor,
+            windowCount: 3,
+            displayName: "Build and validate the complete international university connection workspace",
+            hasShortcut: true
+        )
+
+        XCTAssertGreaterThan(fullNameLayout.cardFrame.height, shortNameLayout.cardFrame.height)
+        XCTAssertGreaterThanOrEqual(fullNameLayout.cardFrame.minY, bounds.minY + 12)
+        XCTAssertLessThanOrEqual(fullNameLayout.cardFrame.maxY, bounds.maxY - 12)
+    }
+
+    func testLongWorkspaceNameHeightStillClampsToTheWindow() {
+        let bounds = CGRect(x: 0, y: 0, width: 700, height: 220)
+        let anchor = CGRect(x: 18, y: 92, width: 36, height: 36)
+        let layout = UniConnectSidebarFlyoutLayout.resolve(
+            containerBounds: bounds,
+            anchorFrame: anchor,
+            windowCount: 12,
+            displayName: String(repeating: "International workspace ", count: 12),
+            hasShortcut: true
+        )
+
+        XCTAssertEqual(layout.cardFrame.height, bounds.height - 24, accuracy: 1)
+        XCTAssertGreaterThanOrEqual(layout.cardFrame.minY, bounds.minY + 12)
+        XCTAssertLessThanOrEqual(layout.cardFrame.maxY, bounds.maxY - 12)
+    }
+
     func testOverlayContainerPassesThroughOutsideCardAndCorridor() {
         let container = UniConnectSidebarFlyoutContainerView(
             frame: CGRect(x: 0, y: 0, width: 500, height: 300)
@@ -277,7 +519,6 @@ final class UniConnectRailTests: XCTestCase {
             groupID: nil,
             isGroupCollapsed: false,
             displayName: "Example",
-            secondaryLabel: nil,
             symbolName: nil,
             monogram: "EX",
             colorHex: "#3769B4",
@@ -310,6 +551,8 @@ final class UniConnectRailTests: XCTestCase {
             updateClaude: {},
             markRead: {},
             markUnread: {},
+            editGroupConfiguration: nil,
+            ungroup: nil,
             closeBox: {},
             toggleGroup: nil
         )

@@ -77,7 +77,7 @@ struct UniConnectDocument: Codable, Equatable {
         var tmux: String?
         /// Claude Code session id (local workspaces) for `claude --resume`.
         var claudeSession: String?
-        /// Per-window local cwd. It must remain inside the workspace's trusted `cwd` root.
+        /// Independent absolute local folder for this window; the workspace default is unchanged.
         var cwd: String?
         var isPinned: Bool?
         /// Durable local-window state. Nil for SSH and version-1 documents.
@@ -93,7 +93,7 @@ struct UniConnectDocument: Codable, Equatable {
         var color: String?
         var group: String?
         var isPinned: Bool?
-        /// Local: immutable trusted box root. SSH: initial remote directory (optional).
+        /// Local: default folder for new windows. SSH: initial remote directory (optional).
         var cwd: String?
         /// SSH connect command, e.g. `sshpass -p 'x' ssh root@1.2.3.4`.
         var connect: String?

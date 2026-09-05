@@ -9,7 +9,7 @@ nonisolated struct CmuxTopProcessScopeCacheKey: Hashable {
 }
 
 private nonisolated struct CmuxTopProcessScopeCacheValue {
-    let scope: CmuxTopProcessScope
+    let scope: CmuxTopProcessScope?
 }
 
 // CmuxTopProcessSnapshot.capture is intentionally synchronous because it backs
@@ -46,15 +46,38 @@ nonisolated extension CmuxTopProcessSnapshot {
             return cached.scope
         }
 
-        guard let scope = cmuxScope(for: pid, expectedCacheKey: cacheKey) else {
+        guard let process = validatedProcessArgumentsAndEnvironment(
+            for: pid,
+            expectedCacheKey: cacheKey
+        ) else {
             return nil
         }
 
-        cmuxTopScopeCache.withLock { cache in
-            cache[cacheKey] = CmuxTopProcessScopeCacheValue(scope: scope)
+        // Reaching this point means procargs were read and parsed for the same
+        // process lifetime. Cache a nil scope as a valid "not attributed"
+        // result; transient sysctl, parsing, and PID-race failures return above
+        // and remain eligible for a later retry.
+        return cachedCMUXScope(cacheKey: cacheKey) {
+            cmuxScope(arguments: process.arguments, environment: process.environment)
+        }
+    }
+
+    static func cachedCMUXScope(
+        cacheKey: CmuxTopProcessScopeCacheKey,
+        resolver: () -> CmuxTopProcessScope?
+    ) -> CmuxTopProcessScope? {
+        if let cached = cmuxTopScopeCache.withLock({ cache in cache[cacheKey] }) {
+            return cached.scope
         }
 
-        return scope
+        let resolvedScope = resolver()
+        return cmuxTopScopeCache.withLock { cache in
+            if let cached = cache[cacheKey] {
+                return cached.scope
+            }
+            cache[cacheKey] = CmuxTopProcessScopeCacheValue(scope: resolvedScope)
+            return resolvedScope
+        }
     }
 
     static func pruneCMUXScopeCache(activeKeys: Set<CmuxTopProcessScopeCacheKey>) {
@@ -63,10 +86,10 @@ nonisolated extension CmuxTopProcessSnapshot {
         }
     }
 
-    private static func cmuxScope(
+    private static func validatedProcessArgumentsAndEnvironment(
         for pid: Int,
         expectedCacheKey: CmuxTopProcessScopeCacheKey
-    ) -> CmuxTopProcessScope? {
+    ) -> CmuxTopProcessArguments? {
         guard let currentProcess = kinfoProc(for: pid),
               scopeCacheKey(from: currentProcess) == expectedCacheKey else {
             return nil
@@ -89,7 +112,7 @@ nonisolated extension CmuxTopProcessSnapshot {
             return nil
         }
 
-        return cmuxScope(fromKernProcArgs: Array(buffer.prefix(Int(size))))
+        return processArgumentsAndEnvironment(fromKernProcArgs: Array(buffer.prefix(Int(size))))
     }
 
     static func cmuxScope(fromKernProcArgs bytes: [UInt8]) -> CmuxTopProcessScope? {

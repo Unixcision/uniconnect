@@ -14,6 +14,8 @@ final class UniConnectSidebarFlyoutOverlayController: NSObject {
         let anchorFrameInWindow: CGRect
         let reduceMotion: Bool
         let reduceTransparency: Bool
+        let colorScheme: ColorScheme
+        let colorSchemeContrast: ColorSchemeContrast
     }
 
     private weak var window: NSWindow?
@@ -28,6 +30,7 @@ final class UniConnectSidebarFlyoutOverlayController: NSObject {
     private var scheduledShow: DispatchWorkItem?
     private var scheduledHide: DispatchWorkItem?
     private var escapeMonitor: Any?
+    private var outsideClickMonitor: Any?
     private var windowDidResignKeyObserver: NSObjectProtocol?
     private var windowDidResizeObserver: NSObjectProtocol?
 
@@ -62,7 +65,8 @@ final class UniConnectSidebarFlyoutOverlayController: NSObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.handle(.escape)
+                guard let self, self.window?.isKeyWindow == false else { return }
+                self.handle(.escape)
             }
         }
         windowDidResizeObserver = NotificationCenter.default.addObserver(
@@ -84,6 +88,9 @@ final class UniConnectSidebarFlyoutOverlayController: NSObject {
         if let escapeMonitor {
             NSEvent.removeMonitor(escapeMonitor)
         }
+        if let outsideClickMonitor {
+            NSEvent.removeMonitor(outsideClickMonitor)
+        }
         if let windowDidResignKeyObserver {
             NotificationCenter.default.removeObserver(windowDidResignKeyObserver)
         }
@@ -104,6 +111,10 @@ final class UniConnectSidebarFlyoutOverlayController: NSObject {
 
     func focusChanged(id: UUID, isFocused: Bool) {
         handle(.focusChanged(id, isFocused: isFocused))
+    }
+
+    func presentPersistently(id: UUID) {
+        handle(.presentPersistently(id))
     }
 
     func removeSource(id: UUID) {
@@ -185,13 +196,16 @@ final class UniConnectSidebarFlyoutOverlayController: NSObject {
         let layout = UniConnectSidebarFlyoutLayout.resolve(
             containerBounds: containerView.bounds,
             anchorFrame: anchorFrame,
-            windowCount: context.snapshot.windows.count
+            windowCount: context.snapshot.windows.count,
+            displayName: context.snapshot.displayName,
+            hasShortcut: context.snapshot.shortcutDigit != nil
         )
 
         let root = UniConnectSidebarFlyoutView(
             snapshot: context.snapshot,
             reduceMotion: context.reduceMotion,
             reduceTransparency: context.reduceTransparency,
+            colorSchemeContrast: context.colorSchemeContrast,
             onSelectWindow: { [weak self] workspaceID, panelID in
                 context.actions.selectWindow(workspaceID, panelID)
                 self?.dismiss()
@@ -210,7 +224,9 @@ final class UniConnectSidebarFlyoutOverlayController: NSObject {
             }
         )
         .frame(width: layout.cardFrame.width, height: layout.cardFrame.height, alignment: .topLeading)
+        .environment(\.colorScheme, context.colorScheme)
 
+        hostingView.appearance = UniConnectRailPalette.appKitAppearance(for: context.colorScheme)
         hostingView.rootView = AnyView(root)
         hostingView.isHidden = false
         corridorView.isHidden = false
@@ -240,10 +256,12 @@ final class UniConnectSidebarFlyoutOverlayController: NSObject {
             containerView.alphaValue = 1
         }
         installEscapeMonitorIfNeeded()
+        installOutsideClickMonitorIfNeeded()
     }
 
     private func hideNow() {
         removeEscapeMonitor()
+        removeOutsideClickMonitor()
         containerView.alphaValue = 0
         containerView.isHidden = true
         containerView.interactiveLayout = nil
@@ -274,6 +292,34 @@ final class UniConnectSidebarFlyoutOverlayController: NSObject {
         guard let escapeMonitor else { return }
         NSEvent.removeMonitor(escapeMonitor)
         self.escapeMonitor = nil
+    }
+
+    private func installOutsideClickMonitorIfNeeded() {
+        guard outsideClickMonitor == nil else { return }
+        outsideClickMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] event in
+            guard let self,
+                  event.window === self.window,
+                  let visibleSourceID = self.policy.visibleSourceID,
+                  let layout = self.containerView.interactiveLayout,
+                  let context = self.sourceContexts[visibleSourceID] else {
+                return event
+            }
+            let point = self.containerView.convert(event.locationInWindow, from: nil)
+            let anchorFrame = self.containerView.convert(context.anchorFrameInWindow, from: nil)
+            guard !layout.acceptsHit(at: point), !anchorFrame.contains(point) else {
+                return event
+            }
+            self.handle(.outsideClick)
+            return event
+        }
+    }
+
+    private func removeOutsideClickMonitor() {
+        guard let outsideClickMonitor else { return }
+        NSEvent.removeMonitor(outsideClickMonitor)
+        self.outsideClickMonitor = nil
     }
 
     @discardableResult

@@ -355,6 +355,13 @@ nonisolated struct SurfaceResumeBindingSnapshot: Codable, Equatable, Sendable {
         autoResume == true
     }
 
+    /// Whether this binding is safe to keep in user-readable settings/session files.
+    /// SSH connection commands belong exclusively to UniConnect's encrypted credential vault.
+    var isSafeForReadablePersistence: Bool {
+        !SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterial(command)
+            && !SurfaceResumeCommandCanonicalizer.containsSensitiveEnvironmentMaterial(environment)
+    }
+
     func shouldYieldToDetectedSurfaceResumeBinding(_ detectedBinding: SurfaceResumeBindingSnapshot) -> Bool {
         detectedBinding.isProcessDetected && (isProcessDetected || isAgentHookBinding)
     }
@@ -366,6 +373,7 @@ nonisolated struct SurfaceResumeBindingSnapshot: Codable, Equatable, Sendable {
     }
 
     var inlineStartupInput: String? {
+        guard isSafeForReadablePersistence else { return nil }
         let trimmed = startupCommand.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         guard let environment, !environment.isEmpty else {
@@ -467,6 +475,7 @@ nonisolated struct SurfaceResumeBindingSnapshot: Codable, Equatable, Sendable {
             "AUTH_TOKEN",
             "BEARER_TOKEN",
             "PRIVATE_KEY",
+            "SSHPASS",
             "PASSWORD",
             "PASSWD",
             "SECRET",
@@ -528,6 +537,17 @@ nonisolated struct SurfaceResumeApprovalRecord: Codable, Equatable, Identifiable
 
     var commandPrefixText: String {
         commandPrefix.map(SurfaceResumeCommandCanonicalizer.shellQuoted).joined(separator: " ")
+    }
+
+    /// Whether this approval is free of SSH connection material and plaintext secrets.
+    var isSafeForReadablePersistence: Bool {
+        !SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterial(
+            commandPrefix.joined(separator: " ")
+        )
+            && !SurfaceResumeCommandCanonicalizer.containsSensitiveEnvironmentMaterial(environment)
+            && !environmentKeys.contains(where: {
+                SurfaceResumeCommandCanonicalizer.isSensitiveEnvironmentKey($0)
+            })
     }
 
     func matches(_ binding: SurfaceResumeBindingSnapshot) -> Bool {
@@ -678,6 +698,971 @@ enum SurfaceResumeCommandCanonicalizer {
         return ((rawValue as NSString).expandingTildeInPath as NSString).standardizingPath
     }
 
+    /// Detects commands that could establish an SSH connection. These commands may
+    /// contain passwords or credential-bearing routing options and must live only in
+    /// UniConnect's encrypted SSH vault, never in readable resume metadata.
+    static func containsSSHConnectionMaterial(_ command: String) -> Bool {
+        containsSSHConnectionMaterial(command, recursionDepth: 0)
+    }
+
+    /// Scans terminal output without treating ordinary SSH prose or here-document
+    /// bodies as commands. Definite prompts, credentials, and remote targets remain protected.
+    static func containsSSHConnectionMaterialInFreeText(_ text: String) -> Bool {
+        var activeHeredoc: (delimiter: String, executesAsShell: Bool)?
+        var shellHeredocBody: [String] = []
+        for lineSlice in text.split(
+            omittingEmptySubsequences: false,
+            whereSeparator: { $0.isNewline }
+        ) {
+            let line = String(lineSlice)
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if let heredoc = activeHeredoc {
+                if trimmed == heredoc.delimiter {
+                    if heredoc.executesAsShell,
+                       containsSSHConnectionMaterial(shellHeredocBody.joined(separator: "\n")) {
+                        return true
+                    }
+                    activeHeredoc = nil
+                    shellHeredocBody.removeAll(keepingCapacity: true)
+                } else {
+                    // Even a data-only heredoc must never persist plaintext credentials.
+                    if containsSensitiveConnectionCredential(line) {
+                        return true
+                    }
+                    if heredoc.executesAsShell {
+                        shellHeredocBody.append(line)
+                    }
+                }
+                continue
+            }
+
+            if containsSSHConnectionMaterial(line),
+               isHighConfidenceSSHCommandLineInFreeText(line) {
+                return true
+            }
+            activeHeredoc = heredocDescriptor(in: line)
+        }
+        if activeHeredoc?.executesAsShell == true,
+           containsSSHConnectionMaterial(shellHeredocBody.joined(separator: "\n")) {
+            return true
+        }
+        return false
+    }
+
+    private static func containsSSHConnectionMaterial(
+        _ command: String,
+        recursionDepth: Int
+    ) -> Bool {
+        guard recursionDepth < 8 else { return false }
+
+        // Scan literal credential material before parsing so quotes, assignments,
+        // or unknown wrappers cannot turn a secret into apparently inert text.
+        if textContainsSensitiveSSHMaterial(command) {
+            return true
+        }
+
+        if shellSubstitutionPayloads(in: command).contains(where: {
+            containsSSHConnectionMaterial($0, recursionDepth: recursionDepth + 1)
+        }) {
+            return true
+        }
+
+        guard let shellTokens = sshScanTokens(from: command) else {
+            return malformedCommandContainsPlausibleSSHExecutable(command)
+        }
+        if shellTokensContainSensitiveConnectionCredential(shellTokens) {
+            return true
+        }
+        return shellCommandSegments(from: shellTokens).contains {
+            shellSegmentContainsSSHExecutable($0, recursionDepth: recursionDepth)
+        }
+    }
+
+    private enum SSHScanToken: Equatable {
+        case word(String)
+        case control
+        case redirection(String)
+
+        var word: String? {
+            guard case .word(let value) = self else { return nil }
+            return value
+        }
+
+        var redirectionOperator: String? {
+            guard case .redirection(let value) = self else { return nil }
+            return value
+        }
+    }
+
+    /// Extracts command substitutions outside single quotes so quoted `$(...)`
+    /// cannot hide a connection command from the executable-position scanner.
+    private static func shellSubstitutionPayloads(in command: String) -> [String] {
+        let scalars = Array(command.unicodeScalars)
+        var payloads: [String] = []
+        var isSingleQuoted = false
+        var isDoubleQuoted = false
+        var index = 0
+
+        while index < scalars.count {
+            let scalar = scalars[index]
+            if scalar == "\\", !isSingleQuoted {
+                index += min(2, scalars.count - index)
+                continue
+            }
+            if scalar == "'", !isDoubleQuoted {
+                isSingleQuoted.toggle()
+                index += 1
+                continue
+            }
+            if scalar == "\"", !isSingleQuoted {
+                isDoubleQuoted.toggle()
+                index += 1
+                continue
+            }
+            guard !isSingleQuoted else {
+                index += 1
+                continue
+            }
+
+            if scalar == "`" {
+                var end = index + 1
+                while end < scalars.count {
+                    if scalars[end] == "\\" {
+                        end += min(2, scalars.count - end)
+                        continue
+                    }
+                    if scalars[end] == "`" { break }
+                    end += 1
+                }
+                let payloadEnd = min(end, scalars.count)
+                payloads.append(String(String.UnicodeScalarView(scalars[(index + 1)..<payloadEnd])))
+                index = end < scalars.count ? end + 1 : end
+                continue
+            }
+
+            if scalar == "$", index + 1 < scalars.count, scalars[index + 1] == "(" {
+                var end = index + 2
+                var depth = 1
+                var innerSingleQuoted = false
+                var innerDoubleQuoted = false
+                while end < scalars.count, depth > 0 {
+                    let inner = scalars[end]
+                    if inner == "\\", !innerSingleQuoted {
+                        end += min(2, scalars.count - end)
+                        continue
+                    }
+                    if inner == "'", !innerDoubleQuoted {
+                        innerSingleQuoted.toggle()
+                    } else if inner == "\"", !innerSingleQuoted {
+                        innerDoubleQuoted.toggle()
+                    } else if !innerSingleQuoted, !innerDoubleQuoted {
+                        if inner == "(" {
+                            depth += 1
+                        } else if inner == ")" {
+                            depth -= 1
+                        }
+                    }
+                    end += 1
+                }
+                let payloadEnd = depth == 0 ? end - 1 : scalars.count
+                payloads.append(String(String.UnicodeScalarView(scalars[(index + 2)..<payloadEnd])))
+                index = end
+                continue
+            }
+            index += 1
+        }
+        return payloads
+    }
+
+    /// Lexes the shell structure needed by the SSH detector while retaining quoted
+    /// separators inside ordinary arguments. It intentionally does not expand shell data.
+    private static func sshScanTokens(from command: String) -> [SSHScanToken]? {
+        let scalars = Array(command.unicodeScalars)
+        let whitespace = CharacterSet.whitespaces
+        let newlines = CharacterSet.newlines
+        let controlCharacters = CharacterSet(charactersIn: ";&|()")
+        let redirectionCharacters = CharacterSet(charactersIn: "<>")
+        var result: [SSHScanToken] = []
+        var word = String.UnicodeScalarView()
+        var wordStarted = false
+        var quote: UnicodeScalar?
+        var index = 0
+
+        func flushWord() {
+            guard wordStarted else { return }
+            result.append(.word(String(word)))
+            word.removeAll(keepingCapacity: true)
+            wordStarted = false
+        }
+
+        func isStandaloneBrace(at index: Int) -> Bool {
+            let previousIsBoundary = index == 0
+                || whitespace.contains(scalars[index - 1])
+                || newlines.contains(scalars[index - 1])
+                || controlCharacters.contains(scalars[index - 1])
+            let nextIsBoundary = index + 1 == scalars.count
+                || whitespace.contains(scalars[index + 1])
+                || newlines.contains(scalars[index + 1])
+                || controlCharacters.contains(scalars[index + 1])
+            return previousIsBoundary && nextIsBoundary
+        }
+
+        while index < scalars.count {
+            let scalar = scalars[index]
+            if let activeQuote = quote {
+                if scalar == activeQuote {
+                    quote = nil
+                } else if activeQuote == "\"", scalar == "\\", index + 1 < scalars.count {
+                    index += 1
+                    word.append(scalars[index])
+                } else {
+                    word.append(scalar)
+                }
+                wordStarted = true
+            } else if scalar == "'" || scalar == "\"" {
+                quote = scalar
+                wordStarted = true
+            } else if scalar == "\\", index + 1 < scalars.count {
+                index += 1
+                word.append(scalars[index])
+                wordStarted = true
+            } else if newlines.contains(scalar) {
+                flushWord()
+                result.append(.control)
+            } else if whitespace.contains(scalar) {
+                flushWord()
+            } else if scalar == "`" {
+                flushWord()
+                result.append(.control)
+            } else if (scalar == "{" || scalar == "}") && isStandaloneBrace(at: index) {
+                flushWord()
+                result.append(.control)
+            } else if scalar == "&", index + 1 < scalars.count,
+                      scalars[index + 1] == ">" {
+                flushWord()
+                var redirection = "&>"
+                index += 1
+                while index + 1 < scalars.count, scalars[index + 1] == ">" {
+                    index += 1
+                    redirection.append(">")
+                }
+                result.append(.redirection(redirection))
+            } else if redirectionCharacters.contains(scalar) {
+                flushWord()
+                var redirection = String(scalar)
+                while index + 1 < scalars.count,
+                      redirectionCharacters.contains(scalars[index + 1]) {
+                    index += 1
+                    redirection.append(Character(String(scalars[index])))
+                }
+                if index + 1 < scalars.count,
+                   scalars[index + 1] == "&" || scalars[index + 1] == "|" {
+                    index += 1
+                    redirection.append(Character(String(scalars[index])))
+                } else if index + 1 < scalars.count, scalars[index + 1] == "-" {
+                    index += 1
+                    redirection.append("-")
+                }
+                result.append(.redirection(redirection))
+            } else if controlCharacters.contains(scalar) {
+                flushWord()
+                result.append(.control)
+                if index + 1 < scalars.count,
+                   scalars[index + 1] == scalar {
+                    index += 1
+                }
+            } else {
+                word.append(scalar)
+                wordStarted = true
+            }
+            index += 1
+        }
+
+        guard quote == nil else { return nil }
+        flushWord()
+        return result
+    }
+
+    private static func shellCommandSegments(
+        from tokens: [SSHScanToken]
+    ) -> [[SSHScanToken]] {
+        var result: [[SSHScanToken]] = []
+        var current: [SSHScanToken] = []
+        for token in tokens {
+            if token == .control {
+                if !current.isEmpty {
+                    result.append(current)
+                    current.removeAll(keepingCapacity: true)
+                }
+            } else {
+                current.append(token)
+            }
+        }
+        if !current.isEmpty {
+            result.append(current)
+        }
+        return result
+    }
+
+    private static func shellSegmentContainsSSHExecutable(
+        _ tokens: [SSHScanToken],
+        recursionDepth: Int
+    ) -> Bool {
+        guard recursionDepth < 8 else { return false }
+        var index = promptAdjustedStartIndex(in: tokens)
+        var remoteTransportOverride: String?
+
+        while index < tokens.count {
+            if let afterRedirection = indexAfterShellRedirection(in: tokens, at: index) {
+                index = afterRedirection
+                continue
+            }
+            guard let word = tokens[index].word else {
+                index += 1
+                continue
+            }
+            if let assignment = environmentAssignment(word) {
+                if isSensitiveEnvironmentKey(assignment.name) {
+                    return true
+                }
+                if ["GIT_SSH", "GIT_SSH_COMMAND", "RSYNC_RSH", "SVN_SSH"].contains(
+                    assignment.name.uppercased()
+                ),
+                   containsSSHConnectionMaterial(
+                       assignment.value,
+                       recursionDepth: recursionDepth + 1
+                   ) {
+                    remoteTransportOverride = assignment.name.uppercased()
+                }
+                index += 1
+                continue
+            }
+            if ["if", "then", "elif", "else", "while", "until", "do", "!"].contains(
+                word.lowercased()
+            ) {
+                index += 1
+                continue
+            }
+            break
+        }
+
+        guard index < tokens.count, let command = tokens[index].word else { return false }
+        let executable = normalizedExecutableName(command)
+        let remoteExecutables: Set<String> = ["ssh", "scp", "sftp", "mosh", "autossh"]
+        if remoteExecutables.contains(executable) || executable == "sshpass" {
+            return true
+        }
+        if executable == "git",
+           remoteTransportOverride == "GIT_SSH"
+            || remoteTransportOverride == "GIT_SSH_COMMAND" {
+            return true
+        }
+        if executable == "rsync" {
+            return remoteTransportOverride == "RSYNC_RSH"
+                || rsyncArgumentsContainSSH(
+                    tokens,
+                    startingAt: index + 1,
+                    recursionDepth: recursionDepth
+                )
+        }
+        if executable == "svn", remoteTransportOverride == "SVN_SSH" {
+            return true
+        }
+        if executable == "eval" {
+            return recursiveShellArgumentsContainSSH(
+                tokens,
+                startingAt: index + 1,
+                recursionDepth: recursionDepth
+            )
+        }
+        if executable == "env",
+           let payload = envSplitStringPayload(tokens, startingAt: index + 1) {
+            return containsSSHConnectionMaterial(
+                payload,
+                recursionDepth: recursionDepth + 1
+            )
+        }
+        if ["sh", "bash", "zsh", "dash", "ksh"].contains(executable) {
+            return shellCommandPayloadContainsSSH(
+                tokens,
+                startingAt: index + 1,
+                recursionDepth: recursionDepth
+            )
+        }
+
+        guard let wrappedIndex = wrappedCommandIndex(
+            for: executable,
+            tokens: tokens,
+            startingAt: index + 1
+        ) else {
+            return false
+        }
+        return shellSegmentContainsSSHExecutable(
+            Array(tokens[wrappedIndex...]),
+            recursionDepth: recursionDepth + 1
+        )
+    }
+
+    private static func indexAfterShellRedirection(
+        in tokens: [SSHScanToken],
+        at candidate: Int
+    ) -> Int? {
+        guard candidate < tokens.count else { return nil }
+        if tokens[candidate].redirectionOperator != nil {
+            let operand = candidate + 1
+            return operand < tokens.count ? operand + 1 : operand
+        }
+        if let word = tokens[candidate].word,
+           word.allSatisfy(\.isNumber),
+           candidate + 1 < tokens.count,
+           tokens[candidate + 1].redirectionOperator != nil {
+            let operand = candidate + 2
+            return operand < tokens.count ? operand + 1 : operand
+        }
+        return nil
+    }
+
+    private static func promptAdjustedStartIndex(in tokens: [SSHScanToken]) -> Int {
+        guard !tokens.isEmpty else { return 0 }
+        let promptMarkers: Set<String> = ["$", "%", "❯", "➜", "›"]
+        func isAttachedHostPrompt(_ word: String) -> Bool {
+            guard word.contains("@"), let suffix = word.last else { return false }
+            return ["$", "#", "%", ">"].contains(suffix)
+        }
+        if let first = tokens[0].word, promptMarkers.contains(first) {
+            return 1
+        }
+        if let first = tokens[0].word, isAttachedHostPrompt(first) {
+            return 1
+        }
+        let upperBound = min(tokens.count, 8)
+        for index in 1..<upperBound {
+            guard let marker = tokens[index].word else { continue }
+            if isAttachedHostPrompt(marker) {
+                return index + 1
+            }
+            guard promptMarkers.contains(marker) || marker == "#" else { continue }
+            let prefixHasHostPrompt = tokens[..<index].contains { token in
+                token.word?.contains("@") == true
+            }
+            if prefixHasHostPrompt {
+                return index + 1
+            }
+        }
+        return 0
+    }
+
+    private static func normalizedExecutableName(_ value: String) -> String {
+        URL(fileURLWithPath: value).lastPathComponent.lowercased()
+    }
+
+    /// Rejects credentials globally so an unrecognised command wrapper cannot hide them.
+    private static func shellTokensContainSensitiveConnectionCredential(
+        _ tokens: [SSHScanToken]
+    ) -> Bool {
+        for (index, token) in tokens.enumerated() {
+            guard let word = token.word else { continue }
+            if let assignment = environmentAssignment(word),
+               isSensitiveEnvironmentKey(assignment.name) {
+                return true
+            }
+            guard normalizedExecutableName(word) == "sshpass" else { continue }
+            var optionIndex = index + 1
+            while optionIndex < tokens.count, tokens[optionIndex] != .control {
+                guard let option = tokens[optionIndex].word else {
+                    optionIndex += 1
+                    continue
+                }
+                let credentialOptions = ["-p", "-f", "-e"]
+                if credentialOptions.contains(option)
+                    || credentialOptions.contains(where: {
+                        option.hasPrefix($0) && option.count > $0.count
+                    })
+                    || option.hasPrefix("--password=")
+                    || option.hasPrefix("--file=")
+                    || option == "--password"
+                    || option == "--file"
+                    || option == "--env" {
+                    return true
+                }
+                optionIndex += 1
+            }
+        }
+        return false
+    }
+
+    private static func containsSensitiveConnectionCredential(_ line: String) -> Bool {
+        if textContainsSensitiveSSHMaterial(line) {
+            return true
+        }
+        if let tokens = sshScanTokens(from: line) {
+            return shellTokensContainSensitiveConnectionCredential(tokens)
+        }
+        return false
+    }
+
+    private static func isHighConfidenceSSHCommandLineInFreeText(_ line: String) -> Bool {
+        if let tokens = sshScanTokens(from: line) {
+            for segment in shellCommandSegments(from: tokens)
+                where promptAdjustedStartIndex(in: segment) > 0 {
+                if shellSegmentContainsSSHExecutable(segment, recursionDepth: 0) {
+                    return true
+                }
+            }
+        }
+        if line.range(
+            of: #"(?i)(?:^|[^a-z0-9_-])sshpass(?:$|[^a-z0-9_-])|(?:^|[\s;])(?:SSHPASS|[^\s=]*(?:PASSWORD|PASSWD|SECRET|TOKEN|CREDENTIAL))\s*="#,
+            options: .regularExpression
+        ) != nil {
+            return true
+        }
+        return line.range(
+            of: #"(?i)(?:ssh://|(?:^|\s)[^\s@]+@[^\s]+|\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b|\b[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\:\d+)?\b)"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    /// Finds an actual unquoted heredoc redirection and records whether stdin is shell code.
+    private static func heredocDescriptor(
+        in line: String
+    ) -> (delimiter: String, executesAsShell: Bool)? {
+        guard let tokens = sshScanTokens(from: line) else { return nil }
+        for index in tokens.indices {
+            guard let redirection = tokens[index].redirectionOperator,
+                  redirection == "<<" || redirection == "<<-",
+                  index + 1 < tokens.count,
+                  let delimiter = tokens[index + 1].word,
+                  !delimiter.isEmpty else {
+                continue
+            }
+            var commandTokens = tokens
+            let removalStart: Int
+            if index > 0, tokens[index - 1].word == "0" {
+                removalStart = index - 1
+            } else {
+                removalStart = index
+            }
+            commandTokens.removeSubrange(removalStart...(index + 1))
+            return (
+                delimiter,
+                shellCommandSegments(from: commandTokens).contains {
+                    shellSegmentExecutesStandardInputAsShell($0, recursionDepth: 0)
+                }
+            )
+        }
+        return nil
+    }
+
+    private static func shellSegmentExecutesStandardInputAsShell(
+        _ tokens: [SSHScanToken],
+        recursionDepth: Int
+    ) -> Bool {
+        guard recursionDepth < 8 else { return false }
+        var index = promptAdjustedStartIndex(in: tokens)
+        while index < tokens.count {
+            if let afterRedirection = indexAfterShellRedirection(in: tokens, at: index) {
+                index = afterRedirection
+                continue
+            }
+            guard let word = tokens[index].word,
+                  environmentAssignment(word) != nil else {
+                break
+            }
+            index += 1
+        }
+        guard index < tokens.count, let command = tokens[index].word else { return false }
+        let executable = normalizedExecutableName(command)
+        if ["sh", "bash", "zsh", "dash", "ksh"].contains(executable) {
+            return true
+        }
+        guard let wrappedIndex = wrappedCommandIndex(
+            for: executable,
+            tokens: tokens,
+            startingAt: index + 1
+        ) else {
+            return false
+        }
+        return shellSegmentExecutesStandardInputAsShell(
+            Array(tokens[wrappedIndex...]),
+            recursionDepth: recursionDepth + 1
+        )
+    }
+
+    private static func environmentAssignment(
+        _ token: String
+    ) -> (name: String, value: String)? {
+        guard let separator = token.firstIndex(of: "=") else { return nil }
+        let name = String(token[..<separator])
+        guard isSensitiveOrOrdinaryEnvironmentAssignment(token) else { return nil }
+        return (name, String(token[token.index(after: separator)...]))
+    }
+
+    private static func recursiveShellArgumentsContainSSH(
+        _ tokens: [SSHScanToken],
+        startingAt start: Int,
+        recursionDepth: Int
+    ) -> Bool {
+        let payload = tokens.dropFirst(start).compactMap(\.word).joined(separator: " ")
+        return !payload.isEmpty
+            && containsSSHConnectionMaterial(payload, recursionDepth: recursionDepth + 1)
+    }
+
+    private static func shellCommandPayloadContainsSSH(
+        _ tokens: [SSHScanToken],
+        startingAt start: Int,
+        recursionDepth: Int
+    ) -> Bool {
+        var index = start
+        while index < tokens.count, let option = tokens[index].word,
+              option.hasPrefix("-") {
+            if option == "--" {
+                index += 1
+                continue
+            }
+            if option == "-c" || option == "--command"
+                || (option.hasPrefix("-")
+                    && !option.hasPrefix("--")
+                    && option.dropFirst().contains("c")) {
+                guard index + 1 < tokens.count,
+                      let payload = tokens[index + 1].word else {
+                    return false
+                }
+                return containsSSHConnectionMaterial(
+                    payload,
+                    recursionDepth: recursionDepth + 1
+                )
+            }
+            if ["--help", "--version"].contains(option) {
+                return false
+            }
+            let valuedOptions: Set<String> = ["--rcfile", "-O", "-o"]
+            let optionName = String(option.prefix { $0 != "=" })
+            let attachedShortOption = valuedOptions.first(where: {
+                $0.hasPrefix("-")
+                    && !$0.hasPrefix("--")
+                    && option.hasPrefix($0)
+                    && option.count > $0.count
+            })
+            if valuedOptions.contains(optionName) || attachedShortOption != nil {
+                index += option.contains("=") || attachedShortOption != nil
+                    ? 1
+                    : 2
+                continue
+            }
+            let valuelessOptions: Set<String> = [
+                "--login", "--noediting", "--noprofile", "--norc", "--posix",
+                "--restricted", "--verbose",
+            ]
+            guard valuelessOptions.contains(option)
+                    || (option.hasPrefix("-") && !option.hasPrefix("--")) else {
+                return false
+            }
+            index += 1
+        }
+        return false
+    }
+
+    private static func wrappedCommandIndex(
+        for executable: String,
+        tokens: [SSHScanToken],
+        startingAt start: Int
+    ) -> Int? {
+        var index = start
+
+        switch executable {
+        case "command":
+            while index < tokens.count, let option = tokens[index].word,
+                  option.hasPrefix("-") {
+                if option == "-v" || option == "-V" { return nil }
+                guard option == "-p" || option == "--" else { return nil }
+                index += 1
+            }
+        case "env":
+            let valuelessOptions: Set<String> = [
+                "-0", "--null", "-i", "--ignore-environment", "-v", "--debug",
+            ]
+            let valuedOptions: Set<String> = [
+                "-P", "--path", "-S", "--split-string", "-u", "--unset",
+                "-C", "--chdir",
+            ]
+            while index < tokens.count, let option = tokens[index].word,
+                  option.hasPrefix("-") {
+                if option == "--" {
+                    index += 1
+                    break
+                }
+                if ["--help", "--version"].contains(option) { return nil }
+                if valuelessOptions.contains(option) {
+                    index += 1
+                    continue
+                }
+                let optionName = String(option.prefix { $0 != "=" })
+                let attachedShortOption = valuedOptions.first(where: {
+                    $0.hasPrefix("-")
+                        && !$0.hasPrefix("--")
+                        && option.hasPrefix($0)
+                        && option.count > $0.count
+                })
+                guard valuedOptions.contains(optionName) || attachedShortOption != nil else {
+                    return nil
+                }
+                let hasAttachedValue = option.contains("=") || attachedShortOption != nil
+                index += hasAttachedValue ? 1 : 2
+            }
+        case "sudo":
+            let valuelessOptions: Set<String> = [
+                "-A", "--askpass", "-b", "--background", "-E", "--preserve-env",
+                "-H", "--set-home", "-K", "--remove-timestamp", "-k", "--reset-timestamp",
+                "-n", "--non-interactive", "-P", "--preserve-groups", "-S", "--stdin",
+            ]
+            let valuedOptions: Set<String> = [
+                "-a", "--auth-type", "-C", "--close-from", "-D", "--chdir", "-g", "--group",
+                "-h", "--host", "-p", "--prompt", "-R", "--chroot",
+                "-r", "--role", "-T", "--command-timeout", "-t", "--type",
+                "-U", "--other-user", "-u", "--user",
+            ]
+            while index < tokens.count, let option = tokens[index].word,
+                  option.hasPrefix("-") {
+                if option == "--" {
+                    index += 1
+                    break
+                }
+                if ["--help", "--version", "-V", "-l", "--list", "-v", "--validate"].contains(option) {
+                    return nil
+                }
+                if valuelessOptions.contains(option) {
+                    index += 1
+                    continue
+                }
+                let optionName = String(option.prefix { $0 != "=" })
+                let attachedShortOption = valuedOptions.first(where: {
+                    $0.hasPrefix("-")
+                        && !$0.hasPrefix("--")
+                        && option.hasPrefix($0)
+                        && option.count > $0.count
+                })
+                guard valuedOptions.contains(optionName) || attachedShortOption != nil else {
+                    return nil
+                }
+                let hasAttachedValue = option.contains("=") || attachedShortOption != nil
+                index += hasAttachedValue ? 1 : 2
+            }
+        case "exec":
+            while index < tokens.count, let option = tokens[index].word,
+                  option.hasPrefix("-") {
+                if option == "--" {
+                    index += 1
+                    break
+                }
+                guard ["-a", "-c", "-l"].contains(option) else { return nil }
+                index += option == "-a" ? 2 : 1
+            }
+        case "nice":
+            while index < tokens.count, let option = tokens[index].word,
+                  option.hasPrefix("-") {
+                if option == "--" {
+                    index += 1
+                    break
+                }
+                if ["--help", "--version"].contains(option) { return nil }
+                if option.range(of: #"^-[0-9]+$"#, options: .regularExpression) != nil
+                    || option.hasPrefix("--adjustment=") {
+                    index += 1
+                    continue
+                }
+                guard option == "-n" || option == "--adjustment" else { return nil }
+                index += 2
+            }
+        case "time":
+            let valuelessOptions: Set<String> = ["-l", "-p", "-v", "--verbose"]
+            let valuedOptions: Set<String> = ["-f", "--format", "-o", "--output"]
+            while index < tokens.count, let option = tokens[index].word,
+                  option.hasPrefix("-") {
+                if option == "--" {
+                    index += 1
+                    break
+                }
+                if ["--help", "--version"].contains(option) { return nil }
+                if valuelessOptions.contains(option) {
+                    index += 1
+                    continue
+                }
+                let optionName = String(option.prefix { $0 != "=" })
+                guard valuedOptions.contains(optionName) else { return nil }
+                index += option.contains("=") ? 1 : 2
+            }
+        case "timeout", "gtimeout":
+            let valuelessOptions: Set<String> = [
+                "--foreground", "--preserve-status", "-v", "--verbose",
+            ]
+            let valuedOptions: Set<String> = ["-k", "--kill-after", "-s", "--signal"]
+            while index < tokens.count, let option = tokens[index].word,
+                  option.hasPrefix("-") {
+                if option == "--" {
+                    index += 1
+                    break
+                }
+                if ["--help", "--version"].contains(option) { return nil }
+                if valuelessOptions.contains(option) {
+                    index += 1
+                    continue
+                }
+                let optionName = String(option.prefix { $0 != "=" })
+                let attachedShortOption = valuedOptions.first(where: {
+                    $0.hasPrefix("-")
+                        && !$0.hasPrefix("--")
+                        && option.hasPrefix($0)
+                        && option.count > $0.count
+                })
+                guard valuedOptions.contains(optionName) || attachedShortOption != nil else {
+                    return nil
+                }
+                index += option.contains("=") || attachedShortOption != nil ? 1 : 2
+            }
+            // The mandatory duration precedes the wrapped command.
+            index += 1
+        case "nohup":
+            if index < tokens.count, let option = tokens[index].word,
+               ["--help", "--version"].contains(option) {
+                return nil
+            }
+            if index < tokens.count, tokens[index].word == "--" {
+                index += 1
+            } else if index < tokens.count,
+                      tokens[index].word?.hasPrefix("-") == true {
+                return nil
+            }
+        default:
+            return nil
+        }
+        return index < tokens.count ? index : nil
+    }
+
+    private static func envSplitStringPayload(
+        _ tokens: [SSHScanToken],
+        startingAt start: Int
+    ) -> String? {
+        var index = start
+        while index < tokens.count, let option = tokens[index].word,
+              option.hasPrefix("-") {
+            if option == "-S" || option == "--split-string" {
+                guard index + 1 < tokens.count else { return nil }
+                return tokens[index + 1].word
+            }
+            if option.hasPrefix("--split-string=") {
+                guard let separator = option.firstIndex(of: "=") else { return nil }
+                return String(option[option.index(after: separator)...])
+            }
+            let optionsWithValues: Set<String> = [
+                "-P", "--path", "-u", "--unset", "-C", "--chdir",
+            ]
+            let optionName = String(option.prefix { $0 != "=" })
+            let attachedShortOption = optionsWithValues.first(where: {
+                $0.hasPrefix("-")
+                    && !$0.hasPrefix("--")
+                    && option.hasPrefix($0)
+                    && option.count > $0.count
+            })
+            index += 1
+            if optionsWithValues.contains(optionName),
+               !option.contains("="),
+               attachedShortOption == nil {
+                index += 1
+            }
+        }
+        return nil
+    }
+
+    private static func rsyncArgumentsContainSSH(
+        _ tokens: [SSHScanToken],
+        startingAt start: Int,
+        recursionDepth: Int
+    ) -> Bool {
+        var index = start
+        while index < tokens.count {
+            guard let argument = tokens[index].word else {
+                index += 1
+                continue
+            }
+            if argument == "-e" || argument == "--rsh" {
+                guard index + 1 < tokens.count,
+                      let payload = tokens[index + 1].word else { return false }
+                return recursiveShellArgumentsContainSSH(
+                    [.word(payload)],
+                    startingAt: 0,
+                    recursionDepth: recursionDepth
+                )
+            }
+            if argument.hasPrefix("--rsh="),
+               let separator = argument.firstIndex(of: "=") {
+                return recursiveShellArgumentsContainSSH(
+                    [.word(String(argument[argument.index(after: separator)...]))],
+                    startingAt: 0,
+                    recursionDepth: recursionDepth
+                )
+            }
+            index += 1
+        }
+        return false
+    }
+
+    private static func malformedCommandContainsPlausibleSSHExecutable(_ command: String) -> Bool {
+        command.range(
+            of: #"(?im)(?:^|[\r\n;&|()])[\t ]*(?:(?:[A-Za-z_][A-Za-z0-9_]*=[^\t \r\n]+|sudo(?:[\t ]+-[^\t \r\n]+(?:[\t ]+[^\t \r\n]+)?)?|env(?:[\t ]+-[^\t \r\n]+)?|command|exec|nohup|nice|time)[\t ]+)*(?:(?:[^\s;&|()]+/)?(?:sh|bash|zsh|dash|ksh)[\t ]+-[^\t \r\n]*c[^\t \r\n]*[\t ]+['\"]?[\t ]*)?(?:[^\s;&|()]+/)?(?:sshpass|autossh|ssh|scp|sftp|mosh)(?=$|[\t \r\n;&|()])"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    private static func textContainsSensitiveSSHMaterial(_ command: String) -> Bool {
+        command.range(
+            of: #"(?i)ssh://|(?:^|[^A-Za-z0-9_-])(?:[^\s'\";&|()]+/)?sshpass(?=$|[\s'\";&|()])|(?:^|[\s;&|()])(?:SSHPASS|[^\s=]*(?:PASSWORD|PASSWD|SECRET|TOKEN|CREDENTIAL))\s*="#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    static func containsSensitiveEnvironmentMaterial(_ environment: [String: String]?) -> Bool {
+        guard let environment else { return false }
+        return environment.contains { key, value in
+            isSensitiveEnvironmentKey(key) || containsSSHConnectionMaterial(value)
+        }
+    }
+
+    static func isSensitiveEnvironmentKey(_ key: String) -> Bool {
+        let normalized = key.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let sensitiveFragments = [
+            "API_KEY",
+            "ACCESS_KEY",
+            "AUTH_TOKEN",
+            "BEARER_TOKEN",
+            "PRIVATE_KEY",
+            "SSHPASS",
+            "PASSWORD",
+            "PASSWD",
+            "SECRET",
+            "TOKEN",
+            "CREDENTIAL",
+            "COOKIE",
+        ]
+        return sensitiveFragments.contains { normalized.contains($0) }
+    }
+
+    private static func isSensitiveEnvironmentAssignment(_ token: String) -> Bool {
+        guard let separator = token.firstIndex(of: "=") else { return false }
+        return isSensitiveEnvironmentKey(String(token[..<separator]))
+    }
+
+    private static func isSensitiveOrOrdinaryEnvironmentAssignment(_ token: String) -> Bool {
+        guard let separator = token.firstIndex(of: "=") else { return false }
+        let name = token[..<separator]
+        guard let first = name.unicodeScalars.first,
+              CharacterSet.letters.union(CharacterSet(charactersIn: "_")).contains(first) else {
+            return false
+        }
+        return name.dropFirst().unicodeScalars.allSatisfy {
+            CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_")).contains($0)
+        }
+    }
+
     static func shellQuoted(_ value: String) -> String {
         guard !value.isEmpty else { return "''" }
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_+-=./:@%")
@@ -728,6 +1713,25 @@ enum SurfaceResumeApprovalStore {
         return URL(fileURLWithPath: CmuxSettingsFileStore.defaultPrimaryPath, isDirectory: false)
     }
 
+    /// Removes legacy SSH connection approvals from both the primary settings file
+    /// and its former standalone store before either can be restored or displayed.
+    static func scrubSensitiveRecordsAtStartup(
+        fileURL: URL = defaultURL(),
+        fileManager: FileManager = .default
+    ) {
+        _ = loadRecords(
+            fileURL: fileURL,
+            fileManager: fileManager,
+            defaultSettingsURL: fileURL
+        )
+        if storesRecordsInCmuxSettings(fileURL) {
+            _ = loadStandaloneRecords(
+                fileURL: legacyURL(forCmuxSettingsURL: fileURL),
+                fileManager: fileManager
+            )
+        }
+    }
+
     static func loadRecords(
         fileURL: URL = defaultURL(),
         fileManager: FileManager = .default,
@@ -736,7 +1740,15 @@ enum SurfaceResumeApprovalStore {
         if storesRecordsInCmuxSettings(fileURL) {
             let loaded = loadRecordsFromCmuxSettings(fileURL: fileURL)
             if loaded.hasResumeCommandsKey {
-                return loaded.records
+                let safeRecords = recordsSafeForReadablePersistence(loaded.records)
+                if loaded.recordsWereDecodable, safeRecords.count != loaded.records.count {
+                    _ = writeRecordsToCmuxSettings(
+                        records: safeRecords,
+                        fileURL: fileURL,
+                        fileManager: fileManager
+                    )
+                }
+                return safeRecords
             }
             guard fileURL.standardizedFileURL.path == defaultSettingsURL.standardizedFileURL.path else {
                 return loaded.records
@@ -788,10 +1800,23 @@ enum SurfaceResumeApprovalStore {
         fileManager: FileManager
     ) -> [SurfaceResumeApprovalRecord] {
         guard let data = try? Data(contentsOf: fileURL) else { return [] }
+        let decoded: [SurfaceResumeApprovalRecord]
         if let file = try? JSONDecoder().decode(StoredFile.self, from: data) {
-            return file.records
+            decoded = file.records
+        } else if let records = try? JSONDecoder().decode([SurfaceResumeApprovalRecord].self, from: data) {
+            decoded = records
+        } else {
+            return []
         }
-        return (try? JSONDecoder().decode([SurfaceResumeApprovalRecord].self, from: data)) ?? []
+        let safeRecords = recordsSafeForReadablePersistence(decoded)
+        if safeRecords.count != decoded.count {
+            _ = writeStandaloneRecords(
+                records: safeRecords,
+                fileURL: fileURL,
+                fileManager: fileManager
+            )
+        }
+        return safeRecords
     }
 
     static func validRecords(
@@ -802,7 +1827,10 @@ enum SurfaceResumeApprovalStore {
         let signingSecret = signingSecret ?? defaultSigningSecret(fileManager: fileManager)
         guard let signingSecret else { return [] }
         return loadRecords(fileURL: fileURL, fileManager: fileManager)
-            .filter { $0.hasValidSignature(secret: signingSecret) }
+            .filter {
+                $0.isSafeForReadablePersistence
+                    && $0.hasValidSignature(secret: signingSecret)
+            }
     }
 
     static func matchingRecord(
@@ -811,7 +1839,8 @@ enum SurfaceResumeApprovalStore {
         fileManager: FileManager = .default,
         signingSecret: Data? = nil
     ) -> SurfaceResumeApprovalRecord? {
-        validRecords(fileURL: fileURL, fileManager: fileManager, signingSecret: signingSecret)
+        guard binding.isSafeForReadablePersistence else { return nil }
+        return validRecords(fileURL: fileURL, fileManager: fileManager, signingSecret: signingSecret)
             .filter { $0.matches(binding) }
             .sorted { lhs, rhs in
                 if lhs.commandPrefix.count != rhs.commandPrefix.count {
@@ -828,6 +1857,16 @@ enum SurfaceResumeApprovalStore {
         fileManager: FileManager = .default,
         signingSecret: Data? = nil
     ) -> SurfaceResumeBindingSnapshot {
+        guard binding.isSafeForReadablePersistence else {
+            var rejectedBinding = binding
+            // Never echo a legacy password-bearing command through UI/CLI payloads.
+            rejectedBinding.command = ""
+            rejectedBinding.environment = nil
+            rejectedBinding.autoResume = false
+            rejectedBinding.approvalPolicy = .manual
+            rejectedBinding.approvalRecordId = nil
+            return rejectedBinding
+        }
         if binding.isProcessDetected {
             var trustedBinding = binding
             trustedBinding.autoResume = true
@@ -869,6 +1908,9 @@ enum SurfaceResumeApprovalStore {
         isMainThread: Bool,
         isRunningTests: Bool
     ) -> Bool {
+        guard binding.isSafeForReadablePersistence else {
+            return false
+        }
         guard isMainThread else {
             return false
         }
@@ -929,12 +1971,18 @@ enum SurfaceResumeApprovalStore {
         signingSecret: Data? = nil
     ) -> SurfaceResumeApprovalRecord? {
         let signingSecret = signingSecret ?? defaultSigningSecret(fileManager: fileManager)
-        guard let signingSecret,
+        guard binding.isSafeForReadablePersistence,
+              let signingSecret,
               let tokens = SurfaceResumeCommandCanonicalizer.tokens(from: binding.command) else {
             return nil
         }
         let prefix = commandPrefix ?? tokens
-        guard !prefix.isEmpty, tokens.count >= prefix.count, Array(tokens.prefix(prefix.count)) == prefix else {
+        guard !prefix.isEmpty,
+              tokens.count >= prefix.count,
+              Array(tokens.prefix(prefix.count)) == prefix,
+              !SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterial(
+                  prefix.joined(separator: " ")
+              ) else {
             return nil
         }
         let now = Date().timeIntervalSince1970
@@ -981,9 +2029,13 @@ enum SurfaceResumeApprovalStore {
             record.policy = policy
         }
         if let commandPrefix {
-            guard !commandPrefix.isEmpty else { return false }
+            guard !commandPrefix.isEmpty,
+                  !SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterial(
+                      commandPrefix.joined(separator: " ")
+                  ) else { return false }
             record.commandPrefix = commandPrefix
         }
+        guard record.isSafeForReadablePersistence else { return false }
         record.updatedAt = Date().timeIntervalSince1970
         records[index] = record.signed(secret: signingSecret)
         return write(records: records, fileURL: fileURL, fileManager: fileManager)
@@ -1015,7 +2067,8 @@ enum SurfaceResumeApprovalStore {
 
     static func isValid(_ record: SurfaceResumeApprovalRecord, signingSecret: Data? = defaultSigningSecret()) -> Bool {
         guard let signingSecret else { return false }
-        return record.hasValidSignature(secret: signingSecret)
+        return record.isSafeForReadablePersistence
+            && record.hasValidSignature(secret: signingSecret)
     }
 
     static func defaultSigningSecret(fileManager: FileManager = .default) -> Data? {
@@ -1055,6 +2108,7 @@ enum SurfaceResumeApprovalStore {
         fileURL: URL,
         fileManager: FileManager
     ) -> Bool {
+        guard records.allSatisfy(\.isSafeForReadablePersistence) else { return false }
         if storesRecordsInCmuxSettings(fileURL) {
             return writeRecordsToCmuxSettings(records: records, fileURL: fileURL, fileManager: fileManager)
         }
@@ -1096,26 +2150,37 @@ enum SurfaceResumeApprovalStore {
 
     private static func loadRecordsFromCmuxSettings(
         fileURL: URL
-    ) -> (records: [SurfaceResumeApprovalRecord], hasResumeCommandsKey: Bool, canWriteSettings: Bool) {
+    ) -> (
+        records: [SurfaceResumeApprovalRecord],
+        hasResumeCommandsKey: Bool,
+        canWriteSettings: Bool,
+        recordsWereDecodable: Bool
+    ) {
         let root: [String: Any]
         switch loadCmuxSettingsRoot(fileURL: fileURL) {
         case .missing:
-            return ([], false, true)
+            return ([], false, true, true)
         case .invalid:
-            return ([], false, false)
+            return ([], false, false, false)
         case .parsed(let parsedRoot):
             root = parsedRoot
         }
         guard let terminalSection = root[settingsTerminalSectionKey] as? [String: Any],
               let rawRecords = terminalSection[settingsRecordsKey] else {
-            return ([], false, true)
+            return ([], false, true, true)
         }
         guard JSONSerialization.isValidJSONObject(rawRecords),
               let data = try? JSONSerialization.data(withJSONObject: rawRecords, options: []),
               let records = try? JSONDecoder().decode([SurfaceResumeApprovalRecord].self, from: data) else {
-            return ([], true, true)
+            return ([], true, true, false)
         }
-        return (records, true, true)
+        return (records, true, true, true)
+    }
+
+    private static func recordsSafeForReadablePersistence(
+        _ records: [SurfaceResumeApprovalRecord]
+    ) -> [SurfaceResumeApprovalRecord] {
+        records.filter(\.isSafeForReadablePersistence)
     }
 
     private static func loadCmuxSettingsRoot(fileURL: URL) -> CmuxSettingsRootLoadResult {
@@ -1889,23 +2954,17 @@ enum SessionPersistenceStore {
         guard let snapshot = try? decoder.decode(AppSessionSnapshot.self, from: data) else { return nil }
         guard snapshot.version == SessionSnapshotSchema.currentVersion else { return nil }
         guard !snapshot.windows.isEmpty else { return nil }
-        return snapshot
+        let sanitized = sanitizedForPersistence(snapshot)
+        // Rewrite legacy snapshots immediately. Even if the write fails, only the
+        // sanitized in-memory value can reach restore/command execution.
+        _ = save(sanitized, fileURL: fileURL)
+        return sanitized
     }
 
     @discardableResult
     static func save(_ snapshot: AppSessionSnapshot, fileURL: URL? = nil) -> Bool {
         guard let fileURL = fileURL ?? defaultSnapshotFileURL() else { return false }
-        let directory = fileURL.deletingLastPathComponent()
         do {
-            try FileManager.default.createDirectory(
-                at: directory,
-                withIntermediateDirectories: true,
-                attributes: [.posixPermissions: NSNumber(value: 0o700)]
-            )
-            try? FileManager.default.setAttributes(
-                [.posixPermissions: NSNumber(value: 0o700)],
-                ofItemAtPath: directory.path
-            )
             let data = try encodedSnapshotDataForPersistence(snapshot)
             if let existingData = try? UniConnectAtomicFileWriter.readPrivateFile(
                 at: fileURL,
@@ -1950,8 +3009,9 @@ enum SessionPersistenceStore {
         _ workspace: SessionWorkspaceSnapshot,
         fallbackCreatedAt: TimeInterval
     ) -> SessionWorkspaceSnapshot {
-        guard let unsafeProfile = workspace.uniConnect else { return workspace }
         var sanitized = workspace
+        sanitized.panels = sanitized.panels.map(sanitizedPanelConnectionMaterialForPersistence)
+        guard let unsafeProfile = workspace.uniConnect else { return sanitized }
         let profile = sanitizedProfileForPersistence(
             unsafeProfile,
             localRootCandidate: workspace.currentDirectory
@@ -1991,6 +3051,76 @@ enum SessionPersistenceStore {
         return sanitized
     }
 
+    /// Surgically removes only password-bearing/SSH connection material from a
+    /// generic or local terminal snapshot while preserving ordinary recovery data.
+    static func sanitizedPanelConnectionMaterialForPersistence(
+        _ panel: SessionPanelSnapshot
+    ) -> SessionPanelSnapshot {
+        guard var terminal = panel.terminal else { return panel }
+        var sanitized = panel
+
+        if let scrollback = terminal.scrollback,
+           SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterialInFreeText(scrollback) {
+            terminal.scrollback = nil
+        }
+        if let command = terminal.tmuxStartCommand,
+           SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterial(command) {
+            terminal.tmuxStartCommand = nil
+        }
+        if let binding = terminal.resumeBinding,
+           !binding.isSafeForReadablePersistence {
+            terminal.resumeBinding = nil
+        }
+        if let draft = terminal.textBoxDraft,
+           draftContainsSSHConnectionMaterial(draft) {
+            terminal.textBoxDraft = nil
+        }
+        if var agent = terminal.agent {
+            if let launchCommand = agent.launchCommand,
+               launchCommandContainsSSHConnectionMaterial(launchCommand) {
+                agent.launchCommand = nil
+            }
+            if let registration = agent.registration,
+               SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterial(
+                   registration.resumeCommand
+               ) {
+                agent.registration = nil
+            }
+            terminal.agent = agent
+        }
+
+        sanitized.terminal = terminal
+        return sanitized
+    }
+
+    private static func draftContainsSSHConnectionMaterial(
+        _ draft: SessionTextBoxInputDraftSnapshot
+    ) -> Bool {
+        draft.parts.contains { part in
+            if let text = part.text,
+               SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterial(text) {
+                return true
+            }
+            guard let attachment = part.attachment else { return false }
+            // Names and filesystem paths are data, not shell programs. Only the
+            // text an attachment would actually submit can carry a connection command.
+            return [attachment.submissionText].compactMap { $0 }.contains {
+                SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterial($0)
+            }
+        }
+    }
+
+    private static func launchCommandContainsSSHConnectionMaterial(
+        _ launchCommand: AgentLaunchCommandSnapshot
+    ) -> Bool {
+        let command = ([launchCommand.launcher, launchCommand.executablePath].compactMap { $0 }
+            + launchCommand.arguments).joined(separator: " ")
+        return SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterial(command)
+            || SurfaceResumeCommandCanonicalizer.containsSensitiveEnvironmentMaterial(
+                launchCommand.environment
+            )
+    }
+
     /// Reduces a UniConnect profile to transport-appropriate, non-executable recovery data.
     static func sanitizedProfileForPersistence(
         _ profile: UniConnectWorkspaceProfile,
@@ -2023,8 +3153,9 @@ enum SessionPersistenceStore {
         authoritativeLocalRoot: String?,
         fallbackCreatedAt: TimeInterval
     ) -> SessionPanelSnapshot {
-        guard var terminal = panel.terminal else { return panel }
-        var sanitized = panel
+        let connectionSafePanel = sanitizedPanelConnectionMaterialForPersistence(panel)
+        guard var terminal = connectionSafePanel.terminal else { return connectionSafePanel }
+        var sanitized = connectionSafePanel
         if profile.isSSH {
             terminal.scrollback = nil
             terminal.agent = nil
@@ -2112,7 +3243,7 @@ enum SessionPersistenceStore {
 
     static func removeSnapshot(fileURL: URL? = nil) {
         guard let fileURL = fileURL ?? defaultSnapshotFileURL() else { return }
-        try? FileManager.default.removeItem(at: fileURL)
+        try? UniConnectAtomicFileWriter.removeIfPresent(at: fileURL)
     }
 
     static func loadReopenSessionSnapshot(

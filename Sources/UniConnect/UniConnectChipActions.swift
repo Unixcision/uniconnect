@@ -3,6 +3,7 @@ import Foundation
 /// Action bundle kept outside ``UniConnectChipSnapshot`` equality.
 struct UniConnectChipActions {
     let selectBox: @MainActor () -> Void
+    let presentWindowList: @MainActor () -> Void
     let selectWindow: @MainActor (_ workspaceID: UUID, _ panelID: UUID) -> Void
     let performLocalWindowAction: @MainActor (
         _ workspaceID: UUID,
@@ -18,6 +19,8 @@ struct UniConnectChipActions {
     let updateClaude: @MainActor () -> Void
     let markRead: @MainActor () -> Void
     let markUnread: @MainActor () -> Void
+    let editGroupConfiguration: (@MainActor () -> Void)?
+    let ungroup: (@MainActor () -> Void)?
     let closeBox: @MainActor () -> Void
     let toggleGroup: (@MainActor () -> Void)?
 }

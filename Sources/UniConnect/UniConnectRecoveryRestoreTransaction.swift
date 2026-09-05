@@ -37,6 +37,11 @@ struct UniConnectRecoveryRestoreTransaction {
         recoveredSnapshot: AppSessionSnapshot,
         recoveredVault: Data?
     ) async throws {
+        guard UniConnectRecoveryBackupRepository.everySSHWorkspaceHasCredentialReference(
+            in: recoveredSnapshot
+        ) else {
+            throw UniConnectError.missingCredential
+        }
         let currentSnapshot = snapshotProvider()
         let currentCredentialIDs = currentSnapshot.map {
             UniConnectRecoveryBackupRepository.referencedSSHCredentialIDs(in: $0)

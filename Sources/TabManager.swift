@@ -1321,16 +1321,17 @@ class TabManager: ObservableObject {
 #else
         self.pullRequestProbeService = PullRequestProbeService(commandRunner: commandRunner)
 #endif
-        let initialWorkspace = addWorkspace(
+        let shouldCreateUniConnectStarter = UniConnectCoordinator.isEnabled
+            && initialWorkspaceTitle == nil
+            && initialWorkingDirectory == nil
+            && initialTerminalInput == nil
+        _ = addWorkspace(
             title: initialWorkspaceTitle,
             workingDirectory: initialWorkingDirectory,
             initialTerminalInput: initialTerminalInput,
-            autoWelcomeIfNeeded: autoWelcomeIfNeeded
+            autoWelcomeIfNeeded: autoWelcomeIfNeeded,
+            asUniConnectStarter: shouldCreateUniConnectStarter
         )
-        if UniConnectCoordinator.isEnabled,
-           initialWorkspaceTitle == nil, initialWorkingDirectory == nil, initialTerminalInput == nil {
-            initialWorkspace.uniConnectIsStarter = true
-        }
         observers.append(NotificationCenter.default.addObserver(
             forName: .ghosttyDidSetTitle,
             object: nil,
@@ -2626,7 +2627,8 @@ class TabManager: ObservableObject {
         placementOverride: NewWorkspacePlacement? = nil,
         autoWelcomeIfNeeded: Bool = true,
         autoRefreshMetadata: Bool = true,
-        normalizeWorkspaceGroupsAfterInsert: Bool = true
+        normalizeWorkspaceGroupsAfterInsert: Bool = true,
+        asUniConnectStarter: Bool = false
     ) -> Workspace {
         guard permitsImportSensitiveMutation() else {
             // A live manager always owns at least its bootstrap workspace. Returning
@@ -2683,6 +2685,9 @@ class TabManager: ObservableObject {
                 to: newWorkspace,
                 from: sourceWorkspace ?? capturedTabs.first
             )
+            if asUniConnectStarter {
+                newWorkspace.uniConnectConfigureAsStarter()
+            }
             newWorkspace.owningTabManager = self
             if title != nil {
                 newWorkspace.setCustomTitle(title)
@@ -2706,7 +2711,9 @@ class TabManager: ObservableObject {
             if normalizeWorkspaceGroupsAfterInsert, !workspaceGroups.isEmpty {
                 normalizeWorkspaceGroupContiguity()
             }
-            if autoRefreshMetadata, let terminalPanel = newWorkspace.focusedTerminalPanel {
+            if autoRefreshMetadata,
+               !newWorkspace.uniConnectShowsStarter,
+               let terminalPanel = newWorkspace.focusedTerminalPanel {
                 scheduleInitialWorkspaceGitMetadataRefreshIfPossible(
                     workspaceId: newWorkspace.id,
                     panelId: terminalPanel.id
@@ -2718,7 +2725,9 @@ class TabManager: ObservableObject {
                 }
             }
             publishCmuxWorkspaceCreated(newWorkspace, selected: select)
-            publishCmuxInitialSurfaceCreated(newWorkspace, selected: select)
+            if !newWorkspace.uniConnectShowsStarter {
+                publishCmuxInitialSurfaceCreated(newWorkspace, selected: select)
+            }
             if select {
 #if DEBUG
                 debugPrimeWorkspaceSwitchTrigger("create", to: newWorkspace.id)
@@ -2737,7 +2746,10 @@ class TabManager: ObservableObject {
                 "selectedTabId": select ? newWorkspace.id.uuidString : (snapshot.selectedTabId?.uuidString ?? "")
             ])
 #endif
-            if autoWelcomeIfNeeded && select && !UserDefaults.standard.bool(forKey: WelcomeSettings.shownKey) {
+            if autoWelcomeIfNeeded,
+               !newWorkspace.uniConnectShowsStarter,
+               select,
+               !UserDefaults.standard.bool(forKey: WelcomeSettings.shownKey) {
                 if let appDelegate = AppDelegate.shared {
                     appDelegate.sendWelcomeCommandWhenReady(to: newWorkspace, markShownOnSend: true)
                 } else {
@@ -5122,10 +5134,15 @@ class TabManager: ObservableObject {
     func updateSurfaceShellActivity(
         tabId: UUID,
         surfaceId: UUID,
-        state: Workspace.PanelShellActivityState
+        state: Workspace.PanelShellActivityState,
+        reportedSurfaceGeneration: UUID? = nil
     ) {
         guard let tab = tabs.first(where: { $0.id == tabId }) else { return }
-        tab.updatePanelShellActivityState(panelId: surfaceId, state: state)
+        guard tab.updatePanelShellActivityState(
+            panelId: surfaceId,
+            state: state,
+            reportedSurfaceGeneration: reportedSurfaceGeneration
+        ) else { return }
         if state == .promptIdle {
             scheduleWorkspacePullRequestRefresh(
                 workspaceId: tabId,
@@ -5339,8 +5356,7 @@ class TabManager: ObservableObject {
 
         if tabs.isEmpty {
             // The UI assumes each window always has at least one workspace.
-            let starter = addWorkspace()
-            starter.uniConnectIsStarter = UniConnectCoordinator.isEnabled
+            _ = addWorkspace(asUniConnectStarter: UniConnectCoordinator.isEnabled)
             return removed
         }
 
@@ -6035,7 +6051,7 @@ class TabManager: ObservableObject {
     ///
     /// This should never prompt: the process is already gone, and Ghostty emits the
     /// `SHOW_CHILD_EXITED` action specifically so the host app can decide what to do.
-    func closePanelAfterChildExited(tabId: UUID, surfaceId: UUID) {
+    func closePanelAfterChildExited(tabId: UUID, surfaceId: UUID, exitCode: UInt32? = nil) {
         guard let tab = tabs.first(where: { $0.id == tabId }) else { return }
         guard tab.panels[surfaceId] != nil else { return }
         // UniConnect: a tmux-backed SSH window whose ssh client died (network drop, auth
@@ -6045,7 +6061,7 @@ class TabManager: ObservableObject {
 #if DEBUG
             cmuxDebugLog("surface.close.childExited.keepUniConnectTmux tab=\(tabId.uuidString.prefix(5)) surface=\(surfaceId.uuidString.prefix(5))")
 #endif
-            tab.uniConnectMarkDisconnected(panelId: surfaceId)
+            tab.uniConnectMarkDisconnected(panelId: surfaceId, exitCode: exitCode)
             return
         }
         // Every UniConnect local window is a durable container, independent from the shell or
@@ -6990,8 +7006,7 @@ class TabManager: ObservableObject {
     /// Create a new terminal surface in the focused pane of the selected workspace
     func newSurface() {
         // Cmd+T should always focus the newly created surface.
-        selectedWorkspace?.clearSplitZoom()
-        selectedWorkspace?.newTerminalSurfaceInFocusedPane(focus: true)
+        selectedWorkspace?.requestNewTerminal()
     }
 
     func newSurface(initialInput: String) {
@@ -7000,6 +7015,25 @@ class TabManager: ObservableObject {
     }
 
     // MARK: - Split Creation
+
+    /// Returns whether the UI request was handled, including a pending creation sheet.
+    @discardableResult
+    func requestNewTerminalSplit(direction: SplitDirection) -> Bool {
+        guard let workspace = selectedWorkspace,
+              let sourcePanelID = workspace.focusedPanelId else { return false }
+        return requestNewTerminalSplit(tabId: workspace.id, surfaceId: sourcePanelID, direction: direction)
+    }
+
+    /// Captures the source before presenting UI; synchronous split factories stay noninteractive.
+    @discardableResult
+    func requestNewTerminalSplit(tabId: UUID, surfaceId: UUID, direction: SplitDirection) -> Bool {
+        guard let workspace = tabs.first(where: { $0.id == tabId }) else { return false }
+        return workspace.requestNewTerminal(placement: .split(
+            sourcePanelID: surfaceId,
+            orientation: direction.orientation,
+            insertFirst: direction.insertFirst
+        ))
+    }
 
     /// Create a new split in the current tab
     @discardableResult
@@ -7849,7 +7883,9 @@ class TabManager: ObservableObject {
             guard let historicalProfile,
                   historicalProfile.isSSH,
                   let historicalCredentialID = historicalProfile.credentialId,
-                  UniConnectVault.shared.connectCommand(for: historicalCredentialID) != nil else {
+                  UniConnectVault.shared.credentialRecord(
+                      for: historicalCredentialID
+                  )?.effectiveTarget != nil else {
                 // A legacy or damaged history item without a resolvable immutable
                 // credential must never fall through to a local login shell.
                 tabManagerLogger.error(
@@ -9857,6 +9893,9 @@ extension TabManager {
                 title: "Terminal 1",
                 portOrdinal: ordinal
             )
+            if UniConnectCoordinator.isEnabled {
+                fallback.uniConnectConfigureAsStarter()
+            }
             fallback.owningTabManager = self
             wireClosedBrowserTracking(for: fallback)
             newTabs.append(fallback)

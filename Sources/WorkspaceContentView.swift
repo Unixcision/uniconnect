@@ -794,8 +794,7 @@ struct EmptyPanelView: View {
         #if DEBUG
         cmuxDebugLog("emptyPane.newTerminal pane=\(paneId.id.uuidString.prefix(5))")
         #endif
-        focusPane()
-        _ = workspace.newTerminalSurface(inPane: paneId)
+        workspace.requestNewTerminal(placement: .tab(paneID: paneId, afterTabID: nil))
     }
 
     private func createBrowser() {

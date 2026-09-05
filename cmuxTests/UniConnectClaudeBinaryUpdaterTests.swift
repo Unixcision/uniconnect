@@ -144,9 +144,16 @@ struct UniConnectClaudeBinaryUpdaterTests {
     @Test("Rejects a credential revision that resolves to a different SSH endpoint")
     func rejectsRetargetedCredential() async {
         let credentialID = UUID()
-        let original = try! #require(
-            UniConnectSSH.detectedSession(fromConnectCommand: "ssh owner@original.example")
-        )
+        let original = try! #require(UniConnectSSHEffectiveTarget(
+            user: "owner",
+            host: "original.example",
+            port: 22
+        ))
+        let different = try! #require(UniConnectSSHEffectiveTarget(
+            user: "owner",
+            host: "different.example",
+            port: 22
+        ))
         let host = ClaudeUpdateHostIdentity(
             kind: .remote,
             id: UniConnectClaudeUpdateHostID.remote(
@@ -159,7 +166,12 @@ struct UniConnectClaudeBinaryUpdaterTests {
         let updater = UniConnectClaudeBinaryUpdater(
             processRunner: runner,
             credentialResolver: { requestedID in
-                requestedID == credentialID ? "ssh owner@different.example" : nil
+                requestedID == credentialID
+                    ? UniConnectSSHCredentialRecord(
+                        connectCommand: "ssh production",
+                        effectiveTarget: different
+                    )
+                    : nil
             }
         )
 
@@ -167,5 +179,50 @@ struct UniConnectClaudeBinaryUpdaterTests {
             try await updater.installedVersion(on: host, executablePath: "/usr/bin/claude")
         }
         #expect(await runner.requests.isEmpty)
+    }
+
+    @Test("Pins remote updater commands to the encrypted endpoint revision")
+    func pinsRemoteUpdaterToSavedEndpoint() async throws {
+        let credentialID = UUID()
+        let target = try #require(UniConnectSSHEffectiveTarget(
+            user: "owner",
+            host: "server-a.example",
+            port: 2207
+        ))
+        let host = ClaudeUpdateHostIdentity(
+            kind: .remote,
+            id: UniConnectClaudeUpdateHostID.remote(
+                credentialID: credentialID,
+                endpointFingerprint: UniConnectClaudeUpdateHostID.endpointFingerprint(for: target)
+            ),
+            displayName: "Production"
+        )
+        let runner = ProcessRunner([.success(.init(
+            terminationStatus: 0,
+            standardOutput: Data("2.7.1 (Claude Code)\n".utf8),
+            standardError: Data(),
+            outputWasTruncated: false
+        ))])
+        let updater = UniConnectClaudeBinaryUpdater(
+            processRunner: runner,
+            credentialResolver: { requestedID in
+                requestedID == credentialID
+                    ? UniConnectSSHCredentialRecord(
+                        connectCommand: "ssh production",
+                        effectiveTarget: target
+                    )
+                    : nil
+            }
+        )
+
+        _ = try await updater.installedVersion(
+            on: host,
+            executablePath: "/usr/bin/claude"
+        )
+        let requests = await runner.requests
+        let request = try #require(requests.first)
+        #expect(request.arguments.starts(with: target.sshPinningOptions))
+        #expect(!request.arguments.contains(where: { $0.contains("server-b.example") }))
+        #expect(request.arguments.suffix(2) == ["production", "sh -s -- '/usr/bin/claude'"])
     }
 }

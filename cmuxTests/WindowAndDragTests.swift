@@ -2006,8 +2006,151 @@ final class TitlebarLeadingInsetPassthroughViewTests: XCTestCase {
 }
 
 
+@MainActor
+private final class FullScreenToggleSpyWindow: NSWindow {
+    private(set) var fullScreenToggleCount = 0
+
+    override func toggleFullScreen(_ sender: Any?) {
+        fullScreenToggleCount += 1
+    }
+}
+
 @Suite("Custom titlebar leading padding")
 struct CustomTitlebarLeadingPaddingTests {
+    @Test func uniConnectSidebarUsesDistinctExpandedAndCompactTopGeometry() {
+        // Expanded is a true inset card. Compact reserves the full titlebar lane
+        // before its rail begins, because its traffic lights live at window root.
+        #expect(ContentView.sidebarFloatingTopInset(isCompact: false) == 8)
+        #expect(ContentView.sidebarFloatingTopInset(isCompact: true) == 42)
+        #expect(
+            ContentView.sidebarFloatingTopInset(isCompact: true)
+                == WindowChromeMetrics.appTitlebarHeight + UniConnectSidebarChromeMetrics.panelInset
+        )
+        #expect(
+            ContentView.sidebarFloatingTopInset(isCompact: true)
+                >= UniConnectSidebarChromeMetrics.compactWindowControlsTopInset
+                    + WindowChromeMetrics.appTitlebarHeight
+        )
+    }
+
+    @Test func expandedUniConnectHeaderOwnsTheFirstRowClearance() {
+        // The whole expanded header moves with its card. Traffic lights and the
+        // action capsule remain on one centre line inside that row.
+        #expect(UniConnectSidebarHeaderMetrics.controlCenterY == 16)
+        #expect(UniConnectSidebarHeaderMetrics.rowHeight == 32)
+        #expect(UniConnectSidebarChromeMetrics.expandedHeaderHeight == 32)
+        #expect(UniConnectSidebarChromeMetrics.compactWindowControlsTopInset == 8)
+        #expect(UniConnectSidebarChromeMetrics.globalWindowControlCenterY == 24)
+        #expect(
+            UniConnectSidebarChromeMetrics.compactWindowControlsTopInset
+                + UniConnectSidebarHeaderMetrics.controlCenterY
+                == UniConnectSidebarChromeMetrics.globalWindowControlCenterY
+        )
+        #expect(UniConnectWindowControls.controlDiameter == 12)
+        #expect(UniConnectWindowControls.controlHitTarget == 20)
+        #expect(SidebarWorkspaceScrollInsets.uniConnectWorkspaceList.top == 38)
+        #expect(UniConnectSidebarChromeMetrics.panelLeadingInset(isCompact: false) == 8)
+        #expect(UniConnectSidebarChromeMetrics.panelTopInset(isCompact: false) == 8)
+        #expect(UniConnectSidebarChromeMetrics.panelBottomInset(isCompact: false) == 8)
+        #expect(UniConnectSidebarChromeMetrics.panelTrailingInset(isCompact: false) == 8)
+        #expect(UniConnectSidebarChromeMetrics.usesDistinctPanelSurface(isCompact: false))
+        #expect(!UniConnectSidebarChromeMetrics.usesDistinctPanelSurface(isCompact: true))
+    }
+
+    @MainActor
+    @Test func uniConnectWindowControlAvailabilityAndFullscreenActionFollowNativeSemantics() {
+        let window = FullScreenToggleSpyWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 420),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.orderOut(nil) }
+
+        #expect(UniConnectWindowControlKind.close.isEnabled(for: window))
+        #expect(UniConnectWindowControlKind.minimize.isEnabled(for: window))
+        #expect(UniConnectWindowControlKind.zoom.isEnabled(for: window))
+        #expect(!UniConnectWindowControlKind.close.isEnabled(for: nil))
+        UniConnectWindowControlKind.zoom.perform(on: window)
+        #expect(window.fullScreenToggleCount == 1)
+
+        window.styleMask.insert(.fullScreen)
+        #expect(!UniConnectWindowControlKind.minimize.isEnabled(for: window))
+        #expect(UniConnectWindowControlKind.zoom.isEnabled(for: window))
+        UniConnectWindowControlKind.zoom.perform(on: window)
+        #expect(window.fullScreenToggleCount == 2)
+    }
+
+    @MainActor
+    @Test func customChromeReceivesTheFirstClickWhileItsWindowIsInactive() throws {
+        _ = NSApplication.shared
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 240, height: 64),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.orderOut(nil) }
+        let host = MainWindowHostingView(rootView: AnyView(EmptyView()))
+        host.frame = NSRect(x: 0, y: 0, width: 240, height: 64)
+        window.contentView = host
+        let marker = TitlebarInteractiveControlRegion.RegisteredView(
+            frame: NSRect(x: 12, y: 20, width: 60, height: 20)
+        )
+        host.addSubview(marker)
+
+        let controlEvent = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: NSPoint(x: 42, y: 30),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+        let contentEvent = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: NSPoint(x: 180, y: 30),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 2,
+            clickCount: 1,
+            pressure: 1
+        ))
+
+        #expect(host.acceptsFirstMouse(for: controlEvent))
+        #expect(!host.acceptsFirstMouse(for: contentEvent))
+    }
+
+    @Test func compactRailOwnsFullscreenControlsWithoutDuplicates() {
+        #expect(shouldShowFullscreenTitlebarControls(
+            isFullScreen: true,
+            isSidebarVisible: true,
+            isUniConnectSidebarCompact: false
+        ))
+        #expect(!shouldShowFullscreenTitlebarControls(
+            isFullScreen: true,
+            isSidebarVisible: true,
+            isUniConnectSidebarCompact: true,
+            usesEmbeddedSidebarHeader: true
+        ))
+        #expect(!shouldShowFullscreenTitlebarControls(
+            isFullScreen: true,
+            isSidebarVisible: true,
+            isUniConnectSidebarCompact: false,
+            usesEmbeddedSidebarHeader: true
+        ))
+        #expect(!shouldShowFullscreenTitlebarControls(
+            isFullScreen: false,
+            isSidebarVisible: true,
+            isUniConnectSidebarCompact: false
+        ))
+    }
+
     @Test func hiddenSidebarUsesMinimumSidebarTitleInset() {
         #expect(
             ContentView.customTitlebarLeadingPadding(

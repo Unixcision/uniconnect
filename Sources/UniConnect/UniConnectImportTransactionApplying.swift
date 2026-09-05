@@ -4,6 +4,8 @@ import Foundation
 @MainActor
 protocol UniConnectImportTransactionApplying: AnyObject {
     func currentDocument() async throws -> UniConnectDocument
+    /// Returns immutable vault records keyed by the matching current-document row.
+    func currentSSHCredentialRecords() async throws -> [Int: UniConnectSSHCredentialRecord]
     func currentStateToken() async throws -> String
     func createCheckpoint(id: UUID) async throws
     func deleteCheckpoint(id: UUID) async throws
@@ -15,4 +17,10 @@ protocol UniConnectImportTransactionApplying: AnyObject {
     func verifyCommitted(_ mutations: [UniConnectImportMutation]) async throws -> Bool
     func rollback(to checkpointID: UUID, expectedStateToken: String?) async throws
     func verifyRolledBack(to checkpointID: UUID) async throws -> Bool
+}
+
+extension UniConnectImportTransactionApplying {
+    func currentSSHCredentialRecords() async throws -> [Int: UniConnectSSHCredentialRecord] {
+        [:]
+    }
 }

@@ -14,7 +14,6 @@ struct UniConnectChipSnapshot: Identifiable, Equatable, Sendable {
     let groupID: UUID?
     let isGroupCollapsed: Bool
     let displayName: String
-    let secondaryLabel: String?
     let symbolName: String?
     let monogram: String
     let colorHex: String

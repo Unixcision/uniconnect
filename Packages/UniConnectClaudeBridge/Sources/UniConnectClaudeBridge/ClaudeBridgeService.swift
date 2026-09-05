@@ -3,8 +3,9 @@ import Foundation
 /// Coordinates route registration, authenticated ingestion, notification delivery, and status.
 public actor ClaudeBridgeService {
     private struct RegisteredRoute: Sendable {
-        let route: ClaudeBridgeRoute
+        var route: ClaudeBridgeRoute
         let generation: UUID
+        let connectionID: UUID?
         var token: Data?
     }
 
@@ -34,13 +35,13 @@ public actor ClaudeBridgeService {
     /// - Parameters:
     ///   - tokenStore: Encrypted per-route token repository.
     ///   - notificationDelivery: Main-actor delivery boundary into the app.
-    ///   - enrollmentTimeout: Bounded time allowed for the remote registration handshake.
+    ///   - enrollmentTimeout: Bounded time for enrollment, remote publication, and signed confirmation.
     ///   - now: Injectable clock used for deterministic freshness tests.
     ///   - sleep: Injectable one-shot timeout suspension; it is never used for polling.
     public init(
         tokenStore: any ClaudeBridgeTokenStoring,
         notificationDelivery: any ClaudeBridgeNotificationDelivering,
-        enrollmentTimeout: Duration = .seconds(12),
+        enrollmentTimeout: Duration = .seconds(30),
         now: @escaping @Sendable () -> Date = Date.init,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { duration in
             try await Task.sleep(for: duration)
@@ -68,14 +69,25 @@ public actor ClaudeBridgeService {
 
     /// Registers a trusted local route before its SSH reverse-forward starts.
     ///
-    /// - Parameter route: Trusted routing metadata assembled by the app.
-    public func register(route: ClaudeBridgeRoute) async {
+    /// - Parameters:
+    ///   - route: Trusted routing metadata assembled by the app.
+    ///   - connectionID: Current SSH attempt identity, required on its wire messages when supplied.
+    public func register(route: ClaudeBridgeRoute, connectionID: UUID? = nil) async {
         guard !isShutdown, !Task.isCancelled else { return }
         let generation = UUID()
+        timeoutTasks.removeValue(forKey: route.id)?.cancel()
         pendingRegistrationGenerations[route.id] = generation
+        defer {
+            if pendingRegistrationGenerations[route.id] == generation {
+                pendingRegistrationGenerations.removeValue(forKey: route.id)
+            }
+        }
         let storedToken: Data?
         do {
-            storedToken = try await tokenStore.token(for: route.id)
+            storedToken = try await tokenStore.token(
+                for: route.id,
+                credentialID: route.credentialID
+            )
         } catch {
             guard !isShutdown, !Task.isCancelled,
                   pendingRegistrationGenerations[route.id] == generation else {
@@ -84,8 +96,15 @@ public actor ClaudeBridgeService {
                 }
                 return
             }
+            await authenticator.unregister(routeID: route.id)
+            guard !isShutdown, !Task.isCancelled,
+                  pendingRegistrationGenerations[route.id] == generation else {
+                return
+            }
             pendingRegistrationGenerations.removeValue(forKey: route.id)
-            routes[route.id] = RegisteredRoute(route: route, generation: generation, token: nil)
+            routes[route.id] = RegisteredRoute(
+                route: route, generation: generation, connectionID: connectionID, token: nil
+            )
             updateStatus(.error(.tokenStore), routeID: route.id)
             return
         }
@@ -97,11 +116,19 @@ public actor ClaudeBridgeService {
             }
             return
         }
-        pendingRegistrationGenerations.removeValue(forKey: route.id)
-        routes[route.id] = RegisteredRoute(route: route, generation: generation, token: storedToken)
         if let storedToken, storedToken.count == 32 {
             await authenticator.register(token: storedToken, for: route.id)
+        } else {
+            await authenticator.unregister(routeID: route.id)
         }
+        guard !isShutdown, !Task.isCancelled,
+              pendingRegistrationGenerations[route.id] == generation else {
+            return
+        }
+        pendingRegistrationGenerations.removeValue(forKey: route.id)
+        routes[route.id] = RegisteredRoute(
+            route: route, generation: generation, connectionID: connectionID, token: storedToken
+        )
         updateStatus(.reconnecting, routeID: route.id)
         scheduleEnrollmentTimeout(routeID: route.id, generation: generation)
     }
@@ -120,12 +147,19 @@ public actor ClaudeBridgeService {
               let registered = routes[routeID] else {
             return encodedResponse(.init(accepted: false, code: "malformed"))
         }
+        guard pendingRegistrationGenerations[routeID] == nil else {
+            return encodedResponse(.init(accepted: false, code: "route_changed"))
+        }
+        if let connectionID = registered.connectionID,
+           message.connectionID.flatMap(UUID.init(uuidString:)) != connectionID {
+            return encodedResponse(.init(accepted: false, code: "superseded"))
+        }
 
         switch message.message {
         case .enroll:
             return await ingestEnrollment(message, routeID: routeID, registered: registered)
         case .hello, .event:
-            return await ingestAuthenticated(message, routeID: routeID, route: registered.route)
+            return await ingestAuthenticated(message, routeID: routeID, registered: registered)
         }
     }
 
@@ -157,12 +191,14 @@ public actor ClaudeBridgeService {
         timeoutTasks.removeValue(forKey: routeID)?.cancel()
         routes.removeValue(forKey: routeID)
         statuses.removeValue(forKey: routeID)
-        await authenticator.unregister(routeID: routeID)
         statusContinuation.yield(.init(routeID: routeID, status: .inactive))
+        await authenticator.unregister(routeID: routeID)
         if removeToken {
             do {
                 try await tokenStore.removeToken(for: routeID)
             } catch {
+                guard !isShutdown, routes[routeID] == nil,
+                      pendingRegistrationGenerations[routeID] == nil else { return }
                 statusContinuation.yield(.init(routeID: routeID, status: .error(.tokenStore)))
             }
         }
@@ -182,6 +218,29 @@ public actor ClaudeBridgeService {
     /// - Returns: The current status, or `.inactive` for an unknown route.
     public func status(for routeID: UUID) -> ClaudeBridgeStatus {
         statuses[routeID] ?? .inactive
+    }
+
+    /// Rebinds presentation metadata after the same terminal surface moves workspaces.
+    ///
+    /// Connection identity remains immutable: the surface, credential, host, and tmux
+    /// session must match the registered route. Only the trusted local workspace and
+    /// display names may change.
+    ///
+    /// - Parameter route: Updated trusted local route metadata.
+    /// - Returns: True when the registered route accepted the rebind.
+    @discardableResult
+    public func rebind(route: ClaudeBridgeRoute) -> Bool {
+        guard !isShutdown,
+              var current = routes[route.id],
+              route.surfaceID == current.route.surfaceID,
+              route.credentialID == current.route.credentialID,
+              route.hostLabel == current.route.hostLabel,
+              route.tmuxSession == current.route.tmuxSession else {
+            return false
+        }
+        current.route = route
+        routes[route.id] = current
+        return true
     }
 
     /// Cancels route timeouts and finishes the status stream during app termination.
@@ -222,20 +281,22 @@ public actor ClaudeBridgeService {
             return encodedResponse(.init(accepted: false, code: "token_mismatch"))
         }
 
-        switch await authenticator.acceptEnrollment(message, expectedRouteID: routeID) {
+        let acceptance = await authenticator.acceptEnrollment(message, expectedRouteID: routeID)
+        guard isCurrent(routeID: routeID, generation: registered.generation) else {
+            return encodedResponse(.init(accepted: false, code: "route_changed"))
+        }
+        switch acceptance {
         case .success:
             break
         case .failure(.duplicate):
             return encodedResponse(.init(accepted: false, duplicate: true))
         case .failure(.stale):
             return encodedResponse(.init(accepted: false, code: "stale"))
+        case .failure(.capacity):
+            return encodedResponse(.init(accepted: false, code: "capacity"))
         case .failure(.malformed), .failure(.unauthenticated), .failure(.unknownRoute):
             updateStatus(.error(.authentication), routeID: routeID)
             return encodedResponse(.init(accepted: false, code: "invalid_enrollment"))
-        }
-
-        guard let current = routes[routeID], current.generation == registered.generation else {
-            return encodedResponse(.init(accepted: false, code: "route_changed"))
         }
 
         if registered.token == nil {
@@ -246,10 +307,14 @@ public actor ClaudeBridgeService {
                     credentialID: registered.route.credentialID
                 )
             } catch {
+                guard isCurrent(routeID: routeID, generation: registered.generation) else {
+                    return encodedResponse(.init(accepted: false, code: "route_changed"))
+                }
                 updateStatus(.error(.tokenStore), routeID: routeID)
                 return encodedResponse(.init(accepted: false, code: "token_store"))
             }
-            guard var current = routes[routeID], current.generation == registered.generation else {
+            guard isCurrent(routeID: routeID, generation: registered.generation),
+                  var current = routes[routeID] else {
                 return encodedResponse(.init(accepted: false, code: "route_changed"))
             }
             current.token = token
@@ -257,24 +322,35 @@ public actor ClaudeBridgeService {
         }
 
         await authenticator.register(token: token, for: routeID)
-        timeoutTasks.removeValue(forKey: routeID)?.cancel()
+        guard isCurrent(routeID: routeID, generation: registered.generation) else {
+            return encodedResponse(.init(accepted: false, code: "route_changed"))
+        }
         if message.integrationReady == false {
+            timeoutTasks.removeValue(forKey: routeID)?.cancel()
             updateStatus(
                 .unavailable(unavailableReason(forRemoteCode: message.integrationError)),
                 routeID: routeID
             )
-        } else {
+        } else if registered.connectionID == nil {
+            timeoutTasks.removeValue(forKey: routeID)?.cancel()
             updateStatus(.active, routeID: routeID)
         }
+        // A bound connection is ready only after the remote route file is published
+        // and a signed hello/event arrives. Accepting enrollment alone proves neither.
         return encodedResponse(.init(accepted: true))
     }
 
     private func ingestAuthenticated(
         _ message: ClaudeBridgeWireMessage,
         routeID: UUID,
-        route: ClaudeBridgeRoute
+        registered: RegisteredRoute
     ) async -> Data {
-        switch await authenticator.authenticate(message, expectedRouteID: routeID) {
+        let authentication = await authenticator.authenticate(message, expectedRouteID: routeID)
+        guard isCurrent(routeID: routeID, generation: registered.generation),
+              let current = routes[routeID] else {
+            return encodedResponse(.init(accepted: false, code: "route_changed"))
+        }
+        switch authentication {
         case .success(nil):
             timeoutTasks.removeValue(forKey: routeID)?.cancel()
             updateStatus(.active, routeID: routeID)
@@ -293,7 +369,7 @@ public actor ClaudeBridgeService {
                 ))
             }
             if event.kind.isUserVisibleCompletion {
-                await notificationDelivery.deliver(event: event, route: route)
+                await notificationDelivery.deliver(event: event, route: current.route)
             }
             return encodedResponse(.init(accepted: true))
         case .failure(.duplicate):
@@ -302,6 +378,8 @@ public actor ClaudeBridgeService {
             return encodedResponse(.init(accepted: false, code: "stale"))
         case .failure(.malformed):
             return encodedResponse(.init(accepted: false, code: "malformed"))
+        case .failure(.capacity):
+            return encodedResponse(.init(accepted: false, code: "capacity"))
         case .failure(.unauthenticated), .failure(.unknownRoute):
             updateStatus(.error(.authentication), routeID: routeID)
             return encodedResponse(.init(accepted: false, code: "unauthenticated"))
@@ -318,15 +396,23 @@ public actor ClaudeBridgeService {
             } catch {
                 return
             }
+            guard !Task.isCancelled else { return }
             await self?.expireEnrollment(routeID: routeID, generation: generation)
         }
     }
 
     private func expireEnrollment(routeID: UUID, generation: UUID) {
+        guard isCurrent(routeID: routeID, generation: generation) else { return }
         defer { timeoutTasks.removeValue(forKey: routeID) }
-        guard let registered = routes[routeID], registered.generation == generation,
-              statuses[routeID] == .reconnecting else { return }
+        guard statuses[routeID] == .reconnecting else { return }
         updateStatus(.unavailable(.enrollmentTimedOut), routeID: routeID)
+    }
+
+    /// Rejects work that resumed after replacement, removal, cancellation, or shutdown.
+    private func isCurrent(routeID: UUID, generation: UUID) -> Bool {
+        !isShutdown && !Task.isCancelled
+            && pendingRegistrationGenerations[routeID] == nil
+            && routes[routeID]?.generation == generation
     }
 
     private func unavailableReason(forRemoteCode code: String?) -> ClaudeBridgeUnavailableReason {

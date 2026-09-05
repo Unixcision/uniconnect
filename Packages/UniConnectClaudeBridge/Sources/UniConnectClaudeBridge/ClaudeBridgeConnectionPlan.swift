@@ -5,7 +5,7 @@ public struct ClaudeBridgeConnectionPlan: Sendable, Equatable {
     /// Stable route UUID for status and cleanup.
     public let routeID: UUID
 
-    /// SSH client options that create a loopback-only reverse forward.
+    /// SSH client options that request an owner-private remote Unix-socket forward.
     public let sshOptions: [String]
 
     /// Non-secret remote setup command executed before attaching tmux.

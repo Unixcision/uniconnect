@@ -1,16 +1,25 @@
 import AppKit
 
 final class WindowDecorationsController {
+    typealias UniConnectSidebarPresentation = (isVisible: Bool, isCompact: Bool)
+
     private var observers: [NSObjectProtocol] = []
     private var didStart = false
     private var minimalModeSidebarChromeHoverMonitor: Any?
     private var lastMinimalModeTitlebarClick: MinimalModeTitlebarClickRecord?
     private var lastKnownPresentationMode = WorkspacePresentationModeSettings.mode()
     private var lastKnownTitlebarDebugSnapshot = MinimalModeTitlebarDebugSettings.snapshot()
+    private let uniConnectSidebarPresentation: (NSWindow) -> UniConnectSidebarPresentation?
     private let minimalModeSidebarTitlebarClickTargets = NSMapTable<NSWindow, MinimalModeSidebarControlActionView>(
         keyOptions: .weakMemory,
         valueOptions: .strongMemory
     )
+
+    init(
+        uniConnectSidebarPresentation: @escaping (NSWindow) -> UniConnectSidebarPresentation? = { _ in nil }
+    ) {
+        self.uniConnectSidebarPresentation = uniConnectSidebarPresentation
+    }
 
     deinit {
         let center = NotificationCenter.default
@@ -43,7 +52,6 @@ final class WindowDecorationsController {
         }
         let shouldHideButtons = shouldHideTrafficLights(for: window)
         hideStandardButtons(on: window, hidden: shouldHideButtons)
-        // Native traffic-light frames are AppKit-owned. cmux reads them for layout but never moves them.
         applyMinimalModeSidebarTitlebarClickTarget(to: window)
     }
 
@@ -58,6 +66,14 @@ final class WindowDecorationsController {
         for name in TitlebarWindowGeometryNotifications.names {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main, using: handler))
         }
+        observers.append(center.addObserver(
+            forName: NSWindow.didDeminiaturizeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self, let window = notification.object as? NSWindow else { return }
+            self.apply(to: window)
+        })
         observers.append(center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             self?.applyDefaultsDrivenDecorationChangeIfNeeded()
         })
@@ -366,6 +382,18 @@ final class WindowDecorationsController {
         }
     }
 
+    /// Whether UniConnect's sidebar header is rendering this window's controls.
+    ///
+    /// - Parameter window: The window to check.
+    /// - Returns: `true` when the sidebar is on screen and owns the traffic lights.
+    func uniConnectDrawsOwnWindowControls(for window: NSWindow) -> Bool {
+        guard UniConnectCoordinator.isEnabled,
+              let presentation = uniConnectSidebarPresentation(window) else {
+            return false
+        }
+        return presentation.isVisible
+    }
+
     private func hideStandardButtons(on window: NSWindow, hidden: Bool) {
         window.standardWindowButton(.closeButton)?.isHidden = hidden
         window.standardWindowButton(.miniaturizeButton)?.isHidden = hidden
@@ -375,6 +403,7 @@ final class WindowDecorationsController {
     private func applyMinimalModeSidebarTitlebarClickTarget(to window: NSWindow) {
         let shouldInstall = isMainWorkspaceWindow(window)
             && WorkspacePresentationModeSettings.isMinimal()
+            && !UniConnectCoordinator.isEnabled
             && !window.styleMask.contains(.fullScreen)
             && minimalModeSidebarTitlebarControlsAreAvailable(in: window)
         guard shouldInstall,
@@ -452,6 +481,12 @@ final class WindowDecorationsController {
     }
 
     private func shouldHideTrafficLights(for window: NSWindow) -> Bool {
+        // UniConnect draws its own window controls in the sidebar header while the
+        // sidebar is on screen. AppKit's are hidden then, which is what stops the
+        // system from repositioning buttons the header has to lay out around.
+        if uniConnectDrawsOwnWindowControls(for: window) {
+            return true
+        }
         if window.isSheet {
             return true
         }

@@ -55,8 +55,15 @@ final class UniConnectRecoveryCoordinator {
         guard panel.runModal() == .OK, let snapshotURL = panel.url else { return }
 
         Task { @MainActor [weak self] in
-            guard let self,
-                  let recoveredSnapshot = await repository.loadSnapshot(from: snapshotURL) else {
+            guard let self else { return }
+            let recoveryPoint: UniConnectRecoveryBackupRepository.RecoveryPoint
+            do {
+                guard let loaded = try await repository.loadRecoveryPoint(from: snapshotURL) else {
+                    Self.presentInvalidBackupAlert()
+                    return
+                }
+                recoveryPoint = loaded
+            } catch {
                 Self.presentInvalidBackupAlert()
                 return
             }
@@ -64,7 +71,6 @@ final class UniConnectRecoveryCoordinator {
             guard Self.confirmRestore() else { return }
 
             do {
-                let recoveredVault = try await repository.loadEncryptedVault(for: snapshotURL)
                 let transaction = UniConnectRecoveryRestoreTransaction(
                     snapshotProvider: snapshotProvider,
                     snapshotRestorer: snapshotRestorer,
@@ -80,8 +86,8 @@ final class UniConnectRecoveryCoordinator {
                     vaultRestorer: encryptedVaultRestorer
                 )
                 try await transaction.execute(
-                    recoveredSnapshot: recoveredSnapshot,
-                    recoveredVault: recoveredVault
+                    recoveredSnapshot: recoveryPoint.snapshot,
+                    recoveredVault: recoveryPoint.encryptedVault
                 )
             } catch {
                 Self.presentRecoveryFailureAlert(error)

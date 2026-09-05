@@ -19,6 +19,14 @@ struct UniConnectSSHTargetKey: Hashable, Sendable {
         )
     }
 
+    init?(effectiveTarget: UniConnectSSHEffectiveTarget, tmuxSession: String) {
+        self.init(
+            destination: "\(effectiveTarget.user)@\(effectiveTarget.host)",
+            port: effectiveTarget.port,
+            tmuxSession: tmuxSession
+        )
+    }
+
     init?(destination: String, port: Int?, tmuxSession: String) {
         let destination = destination.trimmingCharacters(in: .whitespacesAndNewlines)
         let tmuxSession = tmuxSession.trimmingCharacters(in: .whitespacesAndNewlines)

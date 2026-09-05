@@ -16,22 +16,30 @@ struct UniConnectRailSidebar: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var renderedRows: [UniConnectRailRow] = []
+    @State private var notificationsAnchor = NotificationsAnchorReference()
 
     let onNewTab: () -> Void
+    let onToggleNotifications: (NSView?) -> Void
     let onExpand: () -> Void
+
+    static func notificationBadgeText(unreadCount: Int) -> String? {
+        guard unreadCount > 0 else { return nil }
+        return unreadCount > 99 ? "99+" : "\(unreadCount)"
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView(.vertical, showsIndicators: false) {
+            ScrollView(.vertical) {
                 LazyVStack(spacing: Self.tileSpacing) {
                     ForEach(renderedRows, id: \.id) { row in
                         railRow(row)
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.top, SidebarWorkspaceListMetrics.firstRowTopOffset)
+                .padding(.top, UniConnectSidebarChromeMetrics.panelInset)
                 .padding(.bottom, 12)
             }
+            .scrollIndicators(.automatic)
             .mask(
                 SidebarWorkspaceScrollEdgeFadeMask(
                     topHeight: 14,
@@ -82,7 +90,58 @@ struct UniConnectRailSidebar: View {
                 .frame(width: Self.tileSize, height: 1)
                 .allowsHitTesting(false)
 
-            Button(action: onNewTab) {
+            Button {
+                #if DEBUG
+                cmuxDebugLog("titlebar.notifications")
+                #endif
+                onToggleNotifications(notificationsAnchor.view)
+            } label: {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: "bell")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Color.secondary)
+                        .frame(width: Self.tileSize, height: Self.tileSize)
+
+                    if let badgeText = Self.notificationBadgeText(
+                        unreadCount: notificationStore.unreadCount
+                    ) {
+                        Text(badgeText)
+                            .font(.system(size: 8, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(Color.white)
+                            .padding(.horizontal, 3)
+                            .frame(minWidth: 14, minHeight: 14)
+                            .background(Capsule().fill(cmuxAccentColor()))
+                            .offset(x: 4, y: -3)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .frame(width: Self.tileSize, height: Self.tileSize)
+                .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            }
+            .buttonStyle(UniConnectRailButtonStyle(reduceMotion: reduceMotion))
+            .safeHelp(KeyboardShortcutSettings.Action.showNotifications.tooltip(
+                String(localized: "titlebar.notifications.tooltip", defaultValue: "Show notifications")
+            ))
+            .accessibilityLabel(String(
+                localized: "titlebar.notifications.accessibilityLabel",
+                defaultValue: "Notifications"
+            ))
+            .accessibilityValue("\(notificationStore.unreadCount)")
+            .accessibilityIdentifier("titlebarControl.showNotifications")
+            .titlebarInteractiveControl()
+            .background(
+                NotificationsAnchorView(preferredEdge: .maxX) { anchor in
+                    notificationsAnchor.view = anchor
+                }
+            )
+
+            Button {
+                #if DEBUG
+                cmuxDebugLog("titlebar.newTab")
+                #endif
+                onNewTab()
+            } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Color.secondary)
@@ -101,7 +160,8 @@ struct UniConnectRailSidebar: View {
                 String(localized: "menu.file.newBox", defaultValue: "New Box…")
             ))
             .accessibilityLabel(String(localized: "menu.file.newBox", defaultValue: "New Box…"))
-            .accessibilityIdentifier("UniConnectRailNewWorkspace")
+            .accessibilityIdentifier("titlebarControl.newTab")
+            .titlebarInteractiveControl()
 
             Button(action: onExpand) {
                 Image(systemName: "sidebar.squares.left")
@@ -155,6 +215,7 @@ struct UniConnectRailSidebar: View {
                 workspace.$panelCustomTitles.map { _ in () }.eraseToAnyPublisher(),
                 workspace.$manualUnreadPanelIds.map { _ in () }.eraseToAnyPublisher(),
                 workspace.$uniConnectProfile.map { _ in () }.eraseToAnyPublisher(),
+                workspace.$uniConnectIsStarter.map { _ in () }.eraseToAnyPublisher(),
                 workspace.$uniConnectTmuxSessionsByPanelId.map { _ in () }.eraseToAnyPublisher(),
                 workspace.$uniConnectDisconnectedPanelIds.map { _ in () }.eraseToAnyPublisher(),
                 workspace.$uniConnectClaudeBridgeStatusByPanelId.map { _ in () }.eraseToAnyPublisher(),
@@ -192,7 +253,7 @@ struct UniConnectRailSidebar: View {
     }
 
     private func makeRows() -> [UniConnectRailRow] {
-        let tabs = tabManager.tabs
+        let tabs = tabManager.tabs.filter(\.uniConnectAppearsInWorkspaceNavigation)
         let groupsByID = Dictionary(uniqueKeysWithValues: tabManager.workspaceGroups.map { ($0.id, $0) })
         let renderItems = SidebarWorkspaceRenderItem.renderItems(tabs: tabs, groupsById: groupsByID)
         var rows: [UniConnectRailRow] = []
@@ -245,13 +306,12 @@ struct UniConnectRailSidebar: View {
             groupID: nil,
             isGroupCollapsed: false,
             displayName: displayName,
-            secondaryLabel: isSSH ? workspace.uniConnectProfile?.hostLabel : nil,
             symbolName: nil,
             monogram: UniConnectChipSnapshot.monogram(for: displayName),
             colorHex: resolvedColorHex(workspace.customColor, id: workspace.id),
             connectionKind: isSSH ? .ssh : .local,
             isDisconnected: !workspace.uniConnectDisconnectedPanelIds.isEmpty,
-            isConnecting: isConnecting(workspace, bridgeStatus: bridgeStatus),
+            isConnecting: isConnecting(workspace),
             isSelected: tabManager.selectedTabId == workspace.id,
             isPinned: workspace.isPinned,
             unreadCount: notificationStore.unreadCount(forTabId: workspace.id),
@@ -281,13 +341,12 @@ struct UniConnectRailSidebar: View {
             groupID: group.id,
             isGroupCollapsed: group.isCollapsed,
             displayName: group.name,
-            secondaryLabel: nil,
             symbolName: group.iconSymbol ?? "folder.fill",
             monogram: UniConnectChipSnapshot.monogram(for: group.name),
             colorHex: resolvedColorHex(group.customColor ?? anchor.customColor, id: group.id),
             connectionKind: kind,
             isDisconnected: effectiveMembers.contains { !$0.uniConnectDisconnectedPanelIds.isEmpty },
-            isConnecting: effectiveMembers.contains { isConnecting($0, bridgeStatus: bridgeStatus) },
+            isConnecting: effectiveMembers.contains { isConnecting($0) },
             isSelected: selectedID.map { memberWorkspaceID in
                 effectiveMembers.contains { $0.id == memberWorkspaceID }
             } ?? false,
@@ -346,9 +405,9 @@ struct UniConnectRailSidebar: View {
 
     private func makeActions(workspaceID: UUID, groupID: UUID?) -> UniConnectChipActions {
         let targetWorkspaceIDs = workspaceIDs(workspaceID: workspaceID, groupID: groupID)
-        let editableSSHWorkspaceID = targetWorkspaceIDs.first { targetID in
+        let editableSSHWorkspaceID = groupID == nil ? targetWorkspaceIDs.first { targetID in
             tabManager.tabs.first(where: { $0.id == targetID })?.uniConnectProfile?.isSSH == true
-        }
+        } : nil
         let editSSHConnection: (@MainActor () -> Void)? = editableSSHWorkspaceID.map { targetID in
             {
                 guard let workspace = tabManager.tabs.first(where: { $0.id == targetID }),
@@ -359,6 +418,11 @@ struct UniConnectRailSidebar: View {
         return UniConnectChipActions(
             selectBox: {
                 tabManager.focusTab(workspaceID)
+            },
+            presentWindowList: {
+                guard let window = tabManager.window else { return }
+                uniConnectSidebarFlyoutController(for: window)
+                    .presentPersistently(id: groupID ?? workspaceID)
             },
             selectWindow: { targetWorkspaceID, panelID in
                 tabManager.focusTab(targetWorkspaceID, surfaceId: panelID)
@@ -387,6 +451,15 @@ struct UniConnectRailSidebar: View {
                 )
             },
             renameBox: {
+                if let groupID,
+                   let group = tabManager.workspaceGroups.first(where: { $0.id == groupID }) {
+                    presentSidebarWorkspaceGroupRenamePrompt(
+                        tabManager: tabManager,
+                        groupId: groupID,
+                        currentName: group.name
+                    )
+                    return
+                }
                 tabManager.focusTab(workspaceID)
                 _ = AppDelegate.shared?.requestRenameWorkspaceViaCommandPalette(
                     preferredWindow: tabManager.window
@@ -421,7 +494,28 @@ struct UniConnectRailSidebar: View {
                     notificationStore.markUnread(forTabId: $0)
                 }
             },
+            editGroupConfiguration: groupID.map { _ in
+                { SidebarWorkspaceGroupConfigOpener.openCmuxConfigInEditor() }
+            },
+            ungroup: groupID.map { resolvedGroupID in
+                { tabManager.ungroupWorkspaceGroup(groupId: resolvedGroupID) }
+            },
             closeBox: {
+                if let groupID,
+                   let group = tabManager.workspaceGroups.first(where: { $0.id == groupID }) {
+                    let memberCount = workspaceIDs(
+                        workspaceID: workspaceID,
+                        groupID: groupID
+                    ).count
+                    guard confirmDeleteWorkspaceGroup(
+                        groupName: group.name,
+                        otherMemberCount: max(memberCount - 1, 0)
+                    ) else {
+                        return
+                    }
+                    _ = tabManager.deleteWorkspaceGroup(groupId: groupID)
+                    return
+                }
                 _ = tabManager.closeWorkspaceWithConfirmation(tabId: workspaceID)
             },
             toggleGroup: groupID.map { resolvedGroupID in
@@ -453,7 +547,8 @@ struct UniConnectRailSidebar: View {
     }
 
     private func shortcutDigit(for workspaceID: UUID) -> Int? {
-        guard let index = tabManager.tabs.firstIndex(where: { $0.id == workspaceID }), index < 9 else {
+        let visibleWorkspaces = tabManager.tabs.filter(\.uniConnectAppearsInWorkspaceNavigation)
+        guard let index = visibleWorkspaces.firstIndex(where: { $0.id == workspaceID }), index < 9 else {
             return nil
         }
         return index + 1
@@ -467,10 +562,9 @@ struct UniConnectRailSidebar: View {
         return customColor
     }
 
-    private func isConnecting(_ workspace: Workspace, bridgeStatus: ClaudeBridgeStatus?) -> Bool {
+    private func isConnecting(_ workspace: Workspace) -> Bool {
         workspace.remoteConnectionState == .connecting
             || workspace.remoteConnectionState == .reconnecting
-            || bridgeStatus == .reconnecting
     }
 
     private func projectedBridgeStatus(for workspaces: [Workspace]) -> ClaudeBridgeStatus? {
@@ -487,5 +581,12 @@ struct UniConnectRailSidebar: View {
         if values.contains(.active) { return .active }
         if values.contains(.inactive) { return .inactive }
         return nil
+    }
+
+    /// Keeps the compact bell's AppKit anchor stable across SwiftUI renders
+    /// without turning routing-only state into observable presentation state.
+    @MainActor
+    private final class NotificationsAnchorReference {
+        weak var view: NSView?
     }
 }

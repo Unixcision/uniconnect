@@ -820,6 +820,7 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
             notificationCommands.contains {
                 $0.hasPrefix("set_agent_lifecycle codex needsInput --tab=\(context.workspaceId)")
                     && $0.contains("--panel=\(context.surfaceId)")
+                    && $0.contains("--generation=\(context.surfaceGeneration)")
             },
             "Notification requiring user input must correct the visible lifecycle, saw \(notificationCommands)"
         )
@@ -7624,6 +7625,7 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
         let root: URL
         let workspaceId: String
         let surfaceId: String
+        let surfaceGeneration: String
 
         func cleanup() {
             Darwin.close(listenerFD)
@@ -7698,6 +7700,7 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
             "CMUX_SOCKET_PATH": context.socketPath,
             "CMUX_WORKSPACE_ID": context.workspaceId,
             "CMUX_SURFACE_ID": context.surfaceId,
+            "UNICONNECT_SURFACE_GENERATION": context.surfaceGeneration,
             "CMUX_AGENT_HOOK_STATE_DIR": context.root.path,
             "CMUX_CLI_SENTRY_DISABLED": "1",
         ]
@@ -7793,7 +7796,8 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
             state: MockSocketServerState(),
             root: root,
             workspaceId: "11111111-1111-1111-1111-111111111111",
-            surfaceId: "22222222-2222-2222-2222-222222222222"
+            surfaceId: "22222222-2222-2222-2222-222222222222",
+            surfaceGeneration: "33333333-3333-4333-8333-333333333333"
         )
     }
 
@@ -7828,6 +7832,7 @@ final class CLINotifyProcessIntegrationRegressionTests: XCTestCase {
             "CMUX_SOCKET_PATH": context.socketPath,
             "CMUX_WORKSPACE_ID": context.workspaceId,
             "CMUX_SURFACE_ID": context.surfaceId,
+            "UNICONNECT_SURFACE_GENERATION": context.surfaceGeneration,
             "CMUX_CLAUDE_HOOK_STATE_PATH": context.root.appendingPathComponent("claude-hook-sessions.json").path,
             "CMUX_CLI_SENTRY_DISABLED": "1",
             "CMUX_CLAUDE_HOOK_SENTRY_DISABLED": "1",

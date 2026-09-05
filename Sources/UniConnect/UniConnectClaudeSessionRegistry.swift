@@ -1,11 +1,12 @@
 import Foundation
 import UniConnectClaudeBridge
 
-/// Multiplexes one-shot Claude streams into per-panel event subscriptions and metadata snapshots.
+/// Multiplexes one-shot Claude streams into per-surface-generation event subscriptions.
 actor UniConnectClaudeSessionRegistry {
     private struct Subscriber {
         let workspaceID: UUID
         let panelID: UUID
+        let surfaceGeneration: UUID?
         let continuation: AsyncStream<UniConnectClaudeSessionEvent>.Continuation
     }
 
@@ -53,7 +54,8 @@ actor UniConnectClaudeSessionRegistry {
 
     func events(
         workspaceID: UUID,
-        panelID: UUID
+        panelID: UUID,
+        surfaceGeneration: UUID? = nil
     ) -> AsyncStream<UniConnectClaudeSessionEvent> {
         let subscriptionID = UUID()
         let pair = AsyncStream<UniConnectClaudeSessionEvent>.makeStream(
@@ -62,6 +64,7 @@ actor UniConnectClaudeSessionRegistry {
         subscribers[subscriptionID] = Subscriber(
             workspaceID: workspaceID,
             panelID: panelID,
+            surfaceGeneration: surfaceGeneration,
             continuation: pair.continuation
         )
         pair.continuation.onTermination = { @Sendable [weak self] _ in
@@ -72,7 +75,10 @@ actor UniConnectClaudeSessionRegistry {
 
     private func record(local signal: UniConnectClaudeSessionSignal) {
         for subscriber in subscribers.values
-        where subscriber.workspaceID == signal.workspaceID && subscriber.panelID == signal.panelID {
+        where subscriber.workspaceID == signal.workspaceID
+            && subscriber.panelID == signal.panelID
+            && (subscriber.surfaceGeneration == nil
+                || subscriber.surfaceGeneration == signal.surfaceGeneration) {
             subscriber.continuation.yield(.local(signal))
         }
     }

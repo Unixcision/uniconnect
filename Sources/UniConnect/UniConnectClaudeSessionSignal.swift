@@ -10,9 +10,26 @@ struct UniConnectClaudeSessionSignal: Sendable, Equatable {
 
     let workspaceID: UUID
     let panelID: UUID
+    let surfaceGeneration: UUID?
     let kind: Kind
     let lifecycle: String?
     let shellActivity: String?
+
+    init(
+        workspaceID: UUID,
+        panelID: UUID,
+        surfaceGeneration: UUID? = nil,
+        kind: Kind,
+        lifecycle: String?,
+        shellActivity: String?
+    ) {
+        self.workspaceID = workspaceID
+        self.panelID = panelID
+        self.surfaceGeneration = surfaceGeneration
+        self.kind = kind
+        self.lifecycle = lifecycle
+        self.shellActivity = shellActivity
+    }
 }
 
 extension Notification.Name {

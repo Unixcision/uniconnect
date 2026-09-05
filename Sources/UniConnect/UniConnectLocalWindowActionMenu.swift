@@ -7,16 +7,19 @@ struct UniConnectLocalWindowActionMenu: View {
 
     var body: some View {
         Group {
-            if !snapshot.recoveryActions.isEmpty {
-                ForEach(snapshot.recoveryActions) { descriptor in
+            if !snapshot.enabledRecoveryActions.isEmpty {
+                ForEach(snapshot.enabledRecoveryActions) { descriptor in
                     actionButton(descriptor)
                 }
+            }
+
+            if !snapshot.enabledRecoveryActions.isEmpty, hasLaunchActions {
                 Divider()
             }
 
-            if !snapshot.historyActions.isEmpty {
+            if !snapshot.enabledHistoryActions.isEmpty {
                 Menu {
-                    ForEach(snapshot.historyActions) { descriptor in
+                    ForEach(snapshot.enabledHistoryActions) { descriptor in
                         actionButton(descriptor)
                     }
                 } label: {
@@ -30,9 +33,9 @@ struct UniConnectLocalWindowActionMenu: View {
                 }
             }
 
-            if !snapshot.agentActions.isEmpty {
+            if !snapshot.enabledAgentActions.isEmpty {
                 Menu {
-                    ForEach(snapshot.agentActions) { descriptor in
+                    ForEach(snapshot.enabledAgentActions) { descriptor in
                         actionButton(descriptor)
                     }
                 } label: {
@@ -46,10 +49,12 @@ struct UniConnectLocalWindowActionMenu: View {
                 }
             }
 
-            if !snapshot.forgetActions.isEmpty {
-                Divider()
+            if !snapshot.enabledForgetActions.isEmpty {
+                if !snapshot.enabledRecoveryActions.isEmpty || hasLaunchActions {
+                    Divider()
+                }
                 Menu {
-                    ForEach(snapshot.forgetActions) { descriptor in
+                    ForEach(snapshot.enabledForgetActions) { descriptor in
                         actionButton(descriptor)
                     }
                 } label: {
@@ -74,7 +79,10 @@ struct UniConnectLocalWindowActionMenu: View {
         ) {
             Label(descriptor.title, systemImage: descriptor.systemImageName)
         }
-        .disabled(!descriptor.isEnabled)
         .help(descriptor.subtitle ?? descriptor.title)
+    }
+
+    private var hasLaunchActions: Bool {
+        !snapshot.enabledHistoryActions.isEmpty || !snapshot.enabledAgentActions.isEmpty
     }
 }

@@ -32,7 +32,7 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
     let createdAt: TimeInterval
     private(set) var updatedAt: TimeInterval
 
-    static let currentVersion = 2
+    static let currentVersion = 3
 
     init(
         id: UUID = UUID(),
@@ -46,16 +46,26 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         createdAt: TimeInterval = Date().timeIntervalSince1970,
         updatedAt: TimeInterval? = nil
     ) {
+        let normalizedBoxRoot = Self.normalizedRoot(boxRoot)
+        let normalizedWorkingDirectory = Self.validatedWorkingDirectory(
+            workingDirectory ?? normalizedBoxRoot,
+            within: normalizedBoxRoot
+        ) ?? normalizedBoxRoot
+
         self.version = Self.currentVersion
         self.id = id
         self.visibleName = Self.normalizedVisibleName(visibleName)
-        self.boxRoot = Self.normalizedRoot(boxRoot)
-        self.workingDirectory = Self.validatedWorkingDirectory(
-            workingDirectory ?? self.boxRoot,
-            within: self.boxRoot
-        ) ?? self.boxRoot
+        self.boxRoot = normalizedBoxRoot
+        self.workingDirectory = normalizedWorkingDirectory
         self.runtimeState = runtimeState
-        self.conversations = Self.uniqueConversations(conversations)
+        self.conversations = Self.uniqueConversations(
+            conversations.map {
+                Self.fillingMissingResumeWorkingDirectory(
+                    in: $0,
+                    fallback: normalizedWorkingDirectory
+                )
+            }
+        )
         self.latestConversationID = latestConversationID
         self.activeConversationID = activeConversationID
         self.createdAt = createdAt.isFinite ? createdAt : 0
@@ -105,7 +115,7 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
             throw DecodingError.dataCorruptedError(
                 forKey: .workingDirectory,
                 in: container,
-                debugDescription: "UniConnect local-window cwd must be an absolute, bounded path inside its box root"
+                debugDescription: "UniConnect local-window cwd must be an absolute, bounded path without control characters"
             )
         }
         self.workingDirectory = validatedWorkingDirectory
@@ -113,11 +123,24 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
             UniConnectLocalWindowRuntimeState.self,
             forKey: .runtimeState
         ) ?? .shell
+        let decodedConversations = try container.decodeIfPresent(
+            [UniConnectLocalAgentConversation].self,
+            forKey: .conversations
+        ) ?? []
+        guard Set(decodedConversations.map(\.id)).count == decodedConversations.count else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .conversations,
+                in: container,
+                debugDescription: "UniConnect local-window conversations must have unique identifiers"
+            )
+        }
         self.conversations = Self.uniqueConversations(
-            try container.decodeIfPresent(
-                [UniConnectLocalAgentConversation].self,
-                forKey: .conversations
-            ) ?? []
+            decodedConversations.map {
+                Self.fillingMissingResumeWorkingDirectory(
+                    in: $0,
+                    fallback: validatedWorkingDirectory
+                )
+            }
         )
         self.latestConversationID = try container.decodeIfPresent(UUID.self, forKey: .latestConversationID)
         self.activeConversationID = try container.decodeIfPresent(UUID.self, forKey: .activeConversationID)
@@ -144,8 +167,9 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
     func latestRestorableSnapshot(
         registry: CmuxVaultAgentRegistry
     ) -> SessionRestorableAgentSnapshot? {
-        latestConversation?.restorableSnapshot(
-            workingDirectory: workingDirectory,
+        guard let latestConversationID else { return nil }
+        return restorableSnapshot(
+            for: latestConversationID,
             registry: registry
         )
     }
@@ -155,8 +179,23 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         registry: CmuxVaultAgentRegistry,
         workingDirectory overrideWorkingDirectory: String? = nil
     ) -> SessionRestorableAgentSnapshot? {
-        conversation(id: conversationID)?.restorableSnapshot(
-            workingDirectory: overrideWorkingDirectory ?? workingDirectory,
+        guard let conversation = conversation(id: conversationID) else { return nil }
+        let hasCustomRegistration = conversation.customAgentDescriptor != nil
+            || conversation.kind.customAgentID.flatMap {
+                registry.registration(id: $0)
+            } != nil
+        if conversation.kind.customAgentID != nil, !hasCustomRegistration {
+            return nil
+        }
+        guard let resumeWorkingDirectory = trustedResumeWorkingDirectory(
+            for: conversation,
+            override: overrideWorkingDirectory,
+            hasCustomRegistration: hasCustomRegistration
+        ) else {
+            return nil
+        }
+        return conversation.restorableSnapshot(
+            workingDirectory: resumeWorkingDirectory,
             registry: registry
         )
     }
@@ -186,7 +225,7 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         return true
     }
 
-    /// Updates this window's cwd without changing the box-wide trust boundary.
+    /// Updates this window's folder without changing the workspace default or any conversation's resume folder.
     @discardableResult
     mutating func reconcileWorkingDirectory(
         _ value: String,
@@ -208,7 +247,19 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         at timestamp: TimeInterval = Date().timeIntervalSince1970
     ) -> Bool {
         let original = self
-        conversations = Self.uniqueConversations(conversations + imported.conversations)
+        for importedConversation in imported.conversations {
+            if let index = conversations.firstIndex(where: {
+                $0.identityKey == importedConversation.identityKey
+            }) {
+                conversations[index] = refreshingResumeWorkingDirectory(
+                    in: conversations[index],
+                    from: importedConversation
+                )
+            } else {
+                conversations.append(importedConversation)
+            }
+        }
+        conversations = Self.uniqueConversations(conversations)
 
         func mergedID(for importedID: UUID?) -> UUID? {
             guard let importedID,
@@ -241,26 +292,39 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         _ snapshot: SessionRestorableAgentSnapshot,
         at timestamp: TimeInterval = Date().timeIntervalSince1970
     ) -> Bool {
-        guard let candidate = UniConnectLocalAgentConversation(
-            snapshot: snapshot,
+        guard let candidate = candidateConversation(
+            from: snapshot,
             firstSeenAt: timestamp
         ) else {
             return false
         }
         let conversation: UniConnectLocalAgentConversation
         let inserted: Bool
-        if let existing = conversations.first(where: { $0.identityKey == candidate.identityKey }) {
-            conversation = existing
+        let refreshed: Bool
+        if let index = conversations.firstIndex(where: {
+            $0.identityKey == candidate.identityKey
+        }) {
+            let existing = conversations[index]
+            conversation = refreshingResumeWorkingDirectory(
+                in: existing,
+                from: candidate
+            )
+            refreshed = conversation != existing
+            if refreshed {
+                conversations[index] = conversation
+            }
             inserted = false
         } else {
             conversations.append(candidate)
             conversation = candidate
             inserted = true
+            refreshed = false
         }
         let changed = latestConversationID != conversation.id
             || activeConversationID != conversation.id
             || runtimeState != .agent
             || inserted
+            || refreshed
         latestConversationID = conversation.id
         activeConversationID = conversation.id
         runtimeState = .agent
@@ -274,26 +338,39 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         _ snapshot: SessionRestorableAgentSnapshot,
         at timestamp: TimeInterval = Date().timeIntervalSince1970
     ) -> Bool {
-        guard let candidate = UniConnectLocalAgentConversation(
-            snapshot: snapshot,
+        guard let candidate = candidateConversation(
+            from: snapshot,
             firstSeenAt: timestamp
         ) else {
             return false
         }
         let conversation: UniConnectLocalAgentConversation
         let inserted: Bool
-        if let existing = conversations.first(where: { $0.identityKey == candidate.identityKey }) {
-            conversation = existing
+        let refreshed: Bool
+        if let index = conversations.firstIndex(where: {
+            $0.identityKey == candidate.identityKey
+        }) {
+            let existing = conversations[index]
+            conversation = refreshingResumeWorkingDirectory(
+                in: existing,
+                from: candidate
+            )
+            refreshed = conversation != existing
+            if refreshed {
+                conversations[index] = conversation
+            }
             inserted = false
         } else {
             conversations.append(candidate)
             conversation = candidate
             inserted = true
+            refreshed = false
         }
         let changed = latestConversationID != conversation.id
             || activeConversationID != nil
             || runtimeState != .shell
             || inserted
+            || refreshed
         latestConversationID = conversation.id
         activeConversationID = nil
         runtimeState = .shell
@@ -414,6 +491,81 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         return conversations.first { $0.id == id }
     }
 
+    private func candidateConversation(
+        from snapshot: SessionRestorableAgentSnapshot,
+        firstSeenAt: TimeInterval
+    ) -> UniConnectLocalAgentConversation? {
+        let trustedWorkingDirectory = snapshot.workingDirectory.flatMap {
+            Self.validatedWorkingDirectory($0, within: boxRoot)
+        } ?? workingDirectory
+        var trustedSnapshot = snapshot
+        trustedSnapshot.workingDirectory = trustedWorkingDirectory
+        return UniConnectLocalAgentConversation(
+            snapshot: trustedSnapshot,
+            firstSeenAt: firstSeenAt
+        )
+    }
+
+    private func trustedResumeWorkingDirectory(
+        for conversation: UniConnectLocalAgentConversation,
+        override: String?,
+        hasCustomRegistration: Bool
+    ) -> String? {
+        if let override {
+            guard let trustedOverride = Self.validatedWorkingDirectory(
+                override,
+                within: boxRoot
+            ) else {
+                return nil
+            }
+            // Only id-addressed providers may deliberately fall back to a new cwd.
+            // Directory-namespaced providers must keep the immutable launch cwd.
+            if conversation.kind.cwdNamespacing == .byDirectory,
+               !hasCustomRegistration,
+               let historical = conversation.resumeWorkingDirectory {
+                return Self.validatedWorkingDirectory(historical, within: boxRoot)
+                    == trustedOverride ? trustedOverride : nil
+            }
+            return trustedOverride
+        }
+        if let historical = conversation.resumeWorkingDirectory,
+           let trusted = Self.validatedWorkingDirectory(historical, within: boxRoot) {
+            return trusted
+        }
+        // ID-addressed stores such as Codex can recover in the window's current cwd.
+        // Directory-namespaced stores must never be redirected to a different project.
+        guard hasCustomRegistration
+                || conversation.kind.cwdNamespacing == .cwdInFile else {
+            return nil
+        }
+        return Self.validatedWorkingDirectory(workingDirectory, within: boxRoot)
+    }
+
+    private func refreshingResumeWorkingDirectory(
+        in existing: UniConnectLocalAgentConversation,
+        from candidate: UniConnectLocalAgentConversation
+    ) -> UniConnectLocalAgentConversation {
+        let descriptor = existing.customAgentDescriptor ?? candidate.customAgentDescriptor
+        let recordsRuntimeWorkingDirectory = descriptor != nil
+            || existing.kind.cwdNamespacing == .cwdInFile
+        let workingDirectory = recordsRuntimeWorkingDirectory
+            ? (candidate.resumeWorkingDirectory ?? existing.resumeWorkingDirectory)
+            : existing.resumeWorkingDirectory
+        guard workingDirectory != existing.resumeWorkingDirectory
+                || descriptor != existing.customAgentDescriptor else {
+            return existing
+        }
+        return UniConnectLocalAgentConversation(
+            id: existing.id,
+            kind: existing.kind,
+            sessionID: existing.sessionID,
+            displayName: existing.displayName,
+            resumeWorkingDirectory: workingDirectory,
+            customAgentDescriptor: descriptor,
+            firstSeenAt: existing.firstSeenAt
+        ) ?? existing
+    }
+
     private mutating func repairReferences() {
         if conversation(id: latestConversationID) == nil {
             latestConversationID = conversations.last?.id
@@ -437,8 +589,51 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
     private static func uniqueConversations(
         _ conversations: [UniConnectLocalAgentConversation]
     ) -> [UniConnectLocalAgentConversation] {
-        var seen: Set<String> = []
-        return conversations.filter { seen.insert($0.identityKey).inserted }
+        var seenIDs: Set<UUID> = []
+        var indexesByIdentity: [String: Int] = [:]
+        var unique: [UniConnectLocalAgentConversation] = []
+        unique.reserveCapacity(conversations.count)
+        for conversation in conversations {
+            if let index = indexesByIdentity[conversation.identityKey] {
+                let existing = unique[index]
+                if existing.customAgentDescriptor == nil,
+                   let descriptor = conversation.customAgentDescriptor {
+                    unique[index] = UniConnectLocalAgentConversation(
+                        id: existing.id,
+                        kind: existing.kind,
+                        sessionID: existing.sessionID,
+                        displayName: existing.displayName,
+                        resumeWorkingDirectory: existing.resumeWorkingDirectory,
+                        customAgentDescriptor: descriptor,
+                        firstSeenAt: existing.firstSeenAt
+                    ) ?? existing
+                }
+                continue
+            }
+            var retained = conversation
+            if seenIDs.contains(retained.id) {
+                var replacementID = UUID()
+                while seenIDs.contains(replacementID) {
+                    replacementID = UUID()
+                }
+                retained = UniConnectLocalAgentConversation(
+                    reidentifying: retained,
+                    as: replacementID
+                )
+            }
+            seenIDs.insert(retained.id)
+            indexesByIdentity[retained.identityKey] = unique.count
+            unique.append(retained)
+        }
+        return unique
+    }
+
+    private static func fillingMissingResumeWorkingDirectory(
+        in conversation: UniConnectLocalAgentConversation,
+        fallback: String
+    ) -> UniConnectLocalAgentConversation {
+        guard conversation.resumeWorkingDirectory == nil else { return conversation }
+        return conversation.assigningResumeWorkingDirectory(fallback) ?? conversation
     }
 
     private static func normalizedVisibleName(_ value: String?) -> String? {
@@ -467,12 +662,14 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         return (expanded as NSString).standardizingPath
     }
 
+    /// Validates an independent local folder while retaining the existing call-site label.
+    /// The workspace root is a default, not a containment boundary: windows may use any local folder.
     static func validatedWorkingDirectory(_ value: String, within boxRoot: String) -> String? {
         guard value.utf8.count <= maximumWorkingDirectoryUTF8Bytes,
               !value.unicodeScalars.contains(where: {
                   CharacterSet.controlCharacters.contains($0)
               }),
-              let normalizedRoot = validatedBoxRoot(boxRoot) else {
+              validatedBoxRoot(boxRoot) != nil else {
             return nil
         }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -480,34 +677,10 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         let expanded = (trimmed as NSString).expandingTildeInPath
         guard (expanded as NSString).isAbsolutePath else { return nil }
         let normalized = (expanded as NSString).standardizingPath
-        guard normalized.utf8.count <= maximumWorkingDirectoryUTF8Bytes,
-              containsPath(normalized, root: normalizedRoot) else {
+        guard normalized.utf8.count <= maximumWorkingDirectoryUTF8Bytes else {
             return nil
         }
-
-        // `URL.resolvingSymlinksInPath()` does not resolve an existing symlink when
-        // a later path component is missing. Resolve every prefix independently so
-        // `/box/link-to-outside/not-created-yet` cannot pass containment validation
-        // and become an escape once its final directory appears.
-        let resolvedRoot = resolvingExistingSymbolicLinkPrefixes(in: normalizedRoot)
-        let resolved = resolvingExistingSymbolicLinkPrefixes(in: normalized)
-        guard containsPath(resolved, root: resolvedRoot) else { return nil }
         return normalized
-    }
-
-    private static func resolvingExistingSymbolicLinkPrefixes(in path: String) -> String {
-        let components = URL(fileURLWithPath: path, isDirectory: true).pathComponents
-        var resolved = URL(fileURLWithPath: "/", isDirectory: true)
-        for component in components.dropFirst() {
-            resolved.appendPathComponent(component, isDirectory: true)
-            resolved = resolved.resolvingSymlinksInPath().standardizedFileURL
-        }
-        return resolved.path
-    }
-
-    private static func containsPath(_ path: String, root: String) -> Bool {
-        if root == "/" { return path.hasPrefix("/") }
-        return path == root || path.hasPrefix(root + "/")
     }
 
     private static func isAcceptableVisibleName(_ value: String?) -> Bool {

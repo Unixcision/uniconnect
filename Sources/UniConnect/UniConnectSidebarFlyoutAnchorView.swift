@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// Native tracking surface that publishes one rail tile to its window controller.
 @MainActor
@@ -7,6 +8,8 @@ final class UniConnectSidebarFlyoutAnchorView: NSView {
     var actions: UniConnectChipActions?
     var reduceMotion = false
     var reduceTransparency = false
+    var colorScheme: ColorScheme?
+    var colorSchemeContrast: ColorSchemeContrast?
 
     private var trackedSourceID: UUID?
     private weak var trackedWindow: NSWindow?
@@ -77,7 +80,11 @@ final class UniConnectSidebarFlyoutAnchorView: NSView {
     }
 
     func publishContextIfPossible() {
-        guard let window, let snapshot, let actions else { return }
+        guard let window,
+              let snapshot,
+              let actions,
+              let colorScheme,
+              let colorSchemeContrast else { return }
         if let trackedSourceID,
            trackedSourceID != snapshot.id || trackedWindow !== window {
             if let trackedWindow {
@@ -95,7 +102,9 @@ final class UniConnectSidebarFlyoutAnchorView: NSView {
                 actions: actions,
                 anchorFrameInWindow: frameInWindow,
                 reduceMotion: reduceMotion,
-                reduceTransparency: reduceTransparency
+                reduceTransparency: reduceTransparency,
+                colorScheme: colorScheme,
+                colorSchemeContrast: colorSchemeContrast
             )
         )
         if lastFocused && !reportedFocused {

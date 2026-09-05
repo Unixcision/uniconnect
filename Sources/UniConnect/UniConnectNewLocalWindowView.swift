@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Modern local-window chooser for a terminal, built-in agent, or configured custom agent.
@@ -23,6 +24,7 @@ struct UniConnectNewLocalWindowView: View {
 
     @State private var selection: Selection = .terminal
     @State private var visibleName = ""
+    @State private var workingDirectory: String
     @State private var selectedCustomTargetID: String
     @State private var customName = ""
     @State private var customExecutable = ""
@@ -40,6 +42,7 @@ struct UniConnectNewLocalWindowView: View {
         self.availableCustomTargets = availableCustomTargets
         self.onCreate = onCreate
         self.onCancel = onCancel
+        _workingDirectory = State(initialValue: boxRoot)
         _selectedCustomTargetID = State(
             initialValue: availableCustomTargets.first?.id ?? Self.manualCustomID
         )
@@ -48,7 +51,20 @@ struct UniConnectNewLocalWindowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
-            trustedRootCard
+            ScrollView {
+                formFields
+                    .padding(.horizontal, 1)
+            }
+            footer
+        }
+        .padding(20)
+        .animation(.snappy(duration: 0.22), value: selection)
+        .accessibilityIdentifier("UniConnectNewLocalWindow")
+    }
+
+    private var formFields: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            directoryFields
 
             Text(
                 String(
@@ -92,13 +108,7 @@ struct UniConnectNewLocalWindowView: View {
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
-            Spacer(minLength: 0)
-            footer
         }
-        .padding(20)
-        .animation(.snappy(duration: 0.22), value: selection)
-        .accessibilityIdentifier("UniConnectNewLocalWindow")
     }
 
     private var header: some View {
@@ -136,36 +146,53 @@ struct UniConnectNewLocalWindowView: View {
         }
     }
 
-    private var trustedRootCard: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "checkmark.shield.fill")
-                .foregroundStyle(.green)
-            VStack(alignment: .leading, spacing: 2) {
+    private var directoryFields: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(
+                String(
+                    localized: "uniconnect.localWindow.new.directory",
+                    defaultValue: "Window Folder"
+                )
+            )
+            .font(.system(size: 11.5, weight: .semibold))
+            HStack(spacing: 8) {
+                TextField(boxRoot, text: $workingDirectory)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11, design: .monospaced))
+                    .accessibilityIdentifier("UniConnectLocalWindowDirectoryField")
+                Button(
+                    String(
+                        localized: "uniconnect.localWindow.new.directory.choose",
+                        defaultValue: "Choose…"
+                    ),
+                    action: chooseDirectory
+                )
+                .accessibilityIdentifier("UniConnectLocalWindowChooseDirectoryButton")
+            }
+            Text(
+                String(
+                    localized: "uniconnect.localWindow.new.directory.hint",
+                    defaultValue: "This window can use any folder on this Mac. Other windows and the workspace default stay unchanged."
+                )
+            )
+            .font(.system(size: 10.5))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 5) {
+                Image(systemName: "folder")
                 Text(
                     String(
                         localized: "uniconnect.localWindow.new.trustedRoot",
-                        defaultValue: "Trusted Box Folder"
+                        defaultValue: "Workspace Default Folder"
                     )
                 )
-                .font(.system(size: 10.5, weight: .semibold))
                 Text(boxRoot)
-                    .font(.system(size: 10.5, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .fontDesign(.monospaced)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            Spacer(minLength: 0)
-            Text(
-                String(
-                    localized: "uniconnect.localWindow.new.always",
-                    defaultValue: "ALWAYS"
-                )
-            )
-            .font(.system(size: 8.5, weight: .bold, design: .rounded))
-            .foregroundStyle(.green)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(.green.opacity(0.12), in: Capsule())
+            .font(.system(size: 9.5))
+            .foregroundStyle(.secondary)
         }
         .padding(10)
         .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -173,6 +200,31 @@ struct UniConnectNewLocalWindowView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.7)
         }
+    }
+
+    private func chooseDirectory() {
+        let picker = NSOpenPanel()
+        picker.canChooseDirectories = true
+        picker.canChooseFiles = false
+        picker.allowsMultipleSelection = false
+        picker.canCreateDirectories = true
+        picker.title = String(
+            localized: "uniconnect.localWindow.new.directory.picker.title",
+            defaultValue: "Choose Window Folder"
+        )
+        picker.prompt = String(
+            localized: "uniconnect.localWindow.new.directory.picker.confirm",
+            defaultValue: "Use Folder"
+        )
+        if let normalized = UniConnectLocalWindowRecord.validatedWorkingDirectory(
+            workingDirectory,
+            within: boxRoot
+        ) {
+            picker.directoryURL = URL(fileURLWithPath: normalized, isDirectory: true)
+        }
+        guard picker.runModal() == .OK, let url = picker.url, url.isFileURL else { return }
+        workingDirectory = url.path
+        errorMessage = nil
     }
 
     private func targetCard(_ item: Selection) -> some View {
@@ -254,7 +306,7 @@ struct UniConnectNewLocalWindowView: View {
                         Text(
                             String(
                                 localized: "uniconnect.localWindow.new.otherExecutable",
-                                defaultValue: "Other Executable…"
+                                defaultValue: "One-off Command…"
                             )
                         )
                         .tag(Self.manualCustomID)
@@ -357,8 +409,7 @@ struct UniConnectNewLocalWindowView: View {
         }
         let name = customName.trimmingCharacters(in: .whitespacesAndNewlines)
         let executable = customExecutable.trimmingCharacters(in: .whitespacesAndNewlines)
-        return UniConnectLocalWindowLaunchTarget.custom(
-            id: customIdentifier(name: name, executable: executable),
+        return UniConnectLocalWindowLaunchTarget.oneOffCommand(
             name: name,
             executable: executable
         )
@@ -383,27 +434,34 @@ struct UniConnectNewLocalWindowView: View {
         if let target = builtInTarget(for: item) {
             return (target.displayName, target.localizedSummary)
         }
+        let configured = availableCustomTargets.contains {
+            $0.id == selectedCustomTargetID
+        }
         return (
             String(localized: "uniconnect.localWindow.target.custom", defaultValue: "Custom Agent"),
-            String(
-                localized: "uniconnect.localWindow.target.custom.summary",
-                defaultValue: "A configured CLI agent in this box's trusted folder."
-            )
+            configured
+                ? String(
+                    localized: "uniconnect.localWindow.target.custom.summary",
+                    defaultValue: "A configured CLI agent in this window’s folder."
+                )
+                : String(
+                    localized: "uniconnect.localWindow.target.command.summary",
+                    defaultValue: "One-off shell command; UniConnect cannot resume it."
+                )
         )
     }
 
-    private func customIdentifier(name: String, executable: String) -> String {
-        let source = name.isEmpty ? executable : name
-        let components = source.lowercased().unicodeScalars.map { scalar -> Character in
-            CharacterSet.alphanumerics.contains(scalar) ? Character(String(scalar)) : "-"
-        }
-        let collapsed = String(components)
-            .split(separator: "-", omittingEmptySubsequences: true)
-            .joined(separator: "-")
-        return collapsed.isEmpty ? "custom-agent" : String(collapsed.prefix(64))
-    }
-
     private func submit() {
+        guard let normalizedDirectory = UniConnectLocalWindowRecord.validatedWorkingDirectory(
+            workingDirectory,
+            within: boxRoot
+        ), UniConnectLocalBoxRootPolicy.isAvailableDirectory(normalizedDirectory) else {
+            errorMessage = String(
+                localized: "uniconnect.localWindow.new.error.invalidDirectory",
+                defaultValue: "Choose an existing local folder using an absolute path."
+            )
+            return
+        }
         guard let target = resolvedTarget else {
             errorMessage = String(
                 localized: "uniconnect.localWindow.new.error.invalidCustomAgent",
@@ -414,6 +472,7 @@ struct UniConnectNewLocalWindowView: View {
         guard let request = UniConnectNewLocalWindowRequest(
             visibleName: visibleName,
             boxRoot: boxRoot,
+            workingDirectory: normalizedDirectory,
             launchTarget: target
         ) else {
             errorMessage = String(

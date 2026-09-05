@@ -7,7 +7,7 @@ struct UniConnectRailButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .opacity(configuration.isPressed ? 0.76 : 1)
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.96 : 1))
             .animation(reduceMotion ? nil : .easeOut(duration: 0.08), value: configuration.isPressed)
     }
 }

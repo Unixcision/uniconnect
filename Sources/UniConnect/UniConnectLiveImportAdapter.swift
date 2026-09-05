@@ -5,6 +5,7 @@ import CryptoKit
 @MainActor
 final class UniConnectLiveImportAdapter: UniConnectImportTransactionApplying {
     typealias DocumentReader = @MainActor () throws -> UniConnectDocument
+    typealias SSHCredentialRecordReader = @MainActor () throws -> [Int: UniConnectSSHCredentialRecord]
     typealias SessionSnapshotReader = @MainActor () throws -> AppSessionSnapshot
     typealias MutationApplier = @MainActor (UniConnectImportMutation) throws -> Void
     typealias MutationVerifier = @MainActor (UniConnectImportMutation) async throws -> Bool
@@ -23,6 +24,7 @@ final class UniConnectLiveImportAdapter: UniConnectImportTransactionApplying {
 
     private let checkpoints: any UniConnectImportCheckpointing
     private let readDocument: DocumentReader
+    private let readSSHCredentialRecords: SSHCredentialRecordReader
     private let readCheckpointSnapshot: SessionSnapshotReader
     private let readStateSnapshot: SessionSnapshotReader
     private let applyMutation: MutationApplier
@@ -40,6 +42,7 @@ final class UniConnectLiveImportAdapter: UniConnectImportTransactionApplying {
     init(
         checkpoints: any UniConnectImportCheckpointing,
         readDocument: @escaping DocumentReader,
+        readSSHCredentialRecords: @escaping SSHCredentialRecordReader = { [:] },
         readCheckpointSnapshot: @escaping SessionSnapshotReader,
         readStateSnapshot: @escaping SessionSnapshotReader,
         applyMutation: @escaping MutationApplier,
@@ -54,6 +57,7 @@ final class UniConnectLiveImportAdapter: UniConnectImportTransactionApplying {
     ) {
         self.checkpoints = checkpoints
         self.readDocument = readDocument
+        self.readSSHCredentialRecords = readSSHCredentialRecords
         self.readCheckpointSnapshot = readCheckpointSnapshot
         self.readStateSnapshot = readStateSnapshot
         self.applyMutation = applyMutation
@@ -69,6 +73,10 @@ final class UniConnectLiveImportAdapter: UniConnectImportTransactionApplying {
 
     func currentDocument() async throws -> UniConnectDocument {
         try readDocument()
+    }
+
+    func currentSSHCredentialRecords() async throws -> [Int: UniConnectSSHCredentialRecord] {
+        try readSSHCredentialRecords()
     }
 
     func currentStateToken() async throws -> String {
@@ -123,6 +131,7 @@ final class UniConnectLiveImportAdapter: UniConnectImportTransactionApplying {
 
     func verifyCommitted(_ mutations: [UniConnectImportMutation]) async throws -> Bool {
         let current = try readDocument()
+        let currentRecords = try readSSHCredentialRecords()
         return mutations.allSatisfy { mutation in
             let source = UniConnectDocument(
                 workspaces: [mutation.workspace],
@@ -130,7 +139,11 @@ final class UniConnectLiveImportAdapter: UniConnectImportTransactionApplying {
             )
             let replanned = UniConnectImportPlanner().plan(
                 importing: source,
-                against: current
+                against: current,
+                sshCredentialRecordsByWorkspaceIndex: mutation.sshCredentialRecord.map {
+                    [0: $0]
+                } ?? [:],
+                existingSSHCredentialRecordsByWorkspaceIndex: currentRecords
             )
             return replanned.rows.count == 1 && replanned.rows[0].outcome == .unchanged
         }

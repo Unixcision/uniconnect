@@ -20,6 +20,7 @@ public final class SocketFastPathState: Sendable {
     private struct SocketSurfaceKey: Hashable {
         let workspaceId: UUID
         let panelId: UUID
+        let surfaceGeneration: UUID?
     }
 
     // Lock carve-out: synchronous compare-and-set on the socket telemetry hot
@@ -42,15 +43,21 @@ public final class SocketFastPathState: Sendable {
     /// - Parameters:
     ///   - workspaceId: The reporting workspace.
     ///   - panelId: The reporting surface/panel.
+    ///   - surfaceGeneration: The optional process generation for a stable panel identity.
     ///   - state: The shell-activity state's raw token.
     /// - Returns: `true` when the state differs from the last published value
     ///   for this surface (recording it), `false` for a duplicate.
     public func shouldPublishShellActivity(
         workspaceId: UUID,
         panelId: UUID,
+        surfaceGeneration: UUID? = nil,
         state: String
     ) -> Bool {
-        let key = SocketSurfaceKey(workspaceId: workspaceId, panelId: panelId)
+        let key = SocketSurfaceKey(
+            workspaceId: workspaceId,
+            panelId: panelId,
+            surfaceGeneration: surfaceGeneration
+        )
         return lastReportedShellStates.withLock { lastReportedShellStates in
             if lastReportedShellStates[key] == state {
                 return false

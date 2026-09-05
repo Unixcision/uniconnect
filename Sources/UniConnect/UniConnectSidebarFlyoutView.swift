@@ -13,6 +13,7 @@ struct UniConnectSidebarFlyoutView: View {
     let snapshot: UniConnectChipSnapshot
     let reduceMotion: Bool
     let reduceTransparency: Bool
+    let colorSchemeContrast: ColorSchemeContrast
     let onSelectWindow: (_ workspaceID: UUID, _ panelID: UUID) -> Void
     let onPerformLocalWindowAction: (
         _ workspaceID: UUID,
@@ -24,12 +25,14 @@ struct UniConnectSidebarFlyoutView: View {
     let onDismiss: () -> Void
 
     private let cornerRadius: CGFloat = 18
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isPointerInside = false
     @FocusState private var focusedTarget: FocusTarget?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
+                .layoutPriority(1)
 
             if snapshot.windows.isEmpty {
                 Text(String(localized: "uniconnect.rail.flyout.noWindows", defaultValue: "No windows yet"))
@@ -45,10 +48,11 @@ struct UniConnectSidebarFlyoutView: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .background(
+        .modifier(
             UniConnectGlassCardBackground(
                 cornerRadius: cornerRadius,
-                reduceTransparency: reduceTransparency
+                reduceTransparency: reduceTransparency,
+                increasedContrast: colorSchemeContrast == .increased
             )
         )
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -57,7 +61,7 @@ struct UniConnectSidebarFlyoutView: View {
             isPointerInside = isInside
             onHoverChanged(isInside || focusedTarget != nil)
         }
-        .onChange(of: focusedTarget) { newTarget in
+        .onChange(of: focusedTarget) { _, newTarget in
             onHoverChanged(isPointerInside || newTarget != nil)
         }
         .backport.onKeyPress(.escape) { _ in
@@ -65,6 +69,8 @@ struct UniConnectSidebarFlyoutView: View {
             return .handled
         }
         .accessibilityElement(children: .contain)
+        .accessibilityLabel(snapshot.displayName)
+        .accessibilityValue(accessibilityValue)
         .accessibilityIdentifier("UniConnectRailFlyout")
     }
 
@@ -76,16 +82,7 @@ struct UniConnectSidebarFlyoutView: View {
                 Text(snapshot.displayName)
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary)
-                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-
-                if let secondaryLabel = snapshot.secondaryLabel, !secondaryLabel.isEmpty {
-                    Text(secondaryLabel)
-                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
 
                 HStack(spacing: 6) {
                     badge(
@@ -107,12 +104,7 @@ struct UniConnectSidebarFlyoutView: View {
                     }
                 }
 
-                if let bridgeStatus = snapshot.bridgeStatus {
-                    Label(bridgeStatus.uniConnectRailLocalizedLabel, systemImage: "bell.and.waves.left.and.right")
-                        .font(.system(size: 9.5, weight: .medium))
-                        .foregroundStyle(bridgeStatus.uniConnectRailTint)
-                        .lineLimit(1)
-                }
+                connectionAndBridgeStatuses
             }
 
             Spacer(minLength: 0)
@@ -129,7 +121,7 @@ struct UniConnectSidebarFlyoutView: View {
     }
 
     private var windowList: some View {
-        ScrollView(.vertical, showsIndicators: snapshot.windows.count > 7) {
+        ScrollView(.vertical) {
             LazyVStack(spacing: 3) {
                 ForEach(snapshot.windows) { window in
                     HStack(spacing: 3) {
@@ -167,8 +159,8 @@ struct UniConnectSidebarFlyoutView: View {
 
                                 if window.isFocused {
                                     Image(systemName: "checkmark")
-                                        .font(.system(size: 9, weight: .bold))
-                                        .foregroundStyle(Color(nsColor: NSColor(hex: snapshot.colorHex) ?? .controlAccentColor))
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(.primary)
                                 }
                             }
                             .padding(.horizontal, 8)
@@ -180,7 +172,8 @@ struct UniConnectSidebarFlyoutView: View {
                         .accessibilityLabel(windowAccessibilityLabel(window))
                         .accessibilityIdentifier("UniConnectRailFlyoutWindow-\(window.id.uuidString)")
                         .contextMenu {
-                            if let localActionMenu = window.localActionMenu {
+                            if let localActionMenu = window.localActionMenu,
+                               localActionMenu.hasEnabledActions {
                                 UniConnectLocalWindowActionMenu(
                                     snapshot: localActionMenu,
                                     onPerform: { action in
@@ -202,7 +195,8 @@ struct UniConnectSidebarFlyoutView: View {
                             }
                         }
 
-                        if let localActionMenu = window.localActionMenu {
+                        if let localActionMenu = window.localActionMenu,
+                           localActionMenu.hasEnabledActions {
                             Menu {
                                 UniConnectLocalWindowActionMenu(
                                     snapshot: localActionMenu,
@@ -260,6 +254,7 @@ struct UniConnectSidebarFlyoutView: View {
                 }
             }
         }
+        .scrollIndicators(.automatic)
         .frame(maxHeight: CGFloat(min(snapshot.windows.count, 7)) * UniConnectSidebarFlyoutLayout.rowHeight)
     }
 
@@ -269,13 +264,53 @@ struct UniConnectSidebarFlyoutView: View {
 
     private func badge(text: String, systemImage: String, tint: Color) -> some View {
         Label(text, systemImage: systemImage)
-            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+            .font(.system(size: 10, weight: .bold, design: .rounded))
             .foregroundStyle(tint)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(Capsule().fill(tint.opacity(0.12)))
-            .overlay(Capsule().strokeBorder(tint.opacity(0.22), lineWidth: 0.6))
+            .background(
+                Capsule().fill(
+                    tint.opacity(
+                        UniConnectRailPalette.badgeFillOpacity(
+                            increasedContrast: colorSchemeContrast == .increased
+                        )
+                    )
+                )
+            )
+            .overlay(
+                Capsule().strokeBorder(
+                    tint.opacity(colorSchemeContrast == .increased ? 0.52 : 0.22),
+                    lineWidth: colorSchemeContrast == .increased ? 1 : 0.6
+                )
+            )
             .fixedSize()
+    }
+
+    @ViewBuilder
+    private var connectionAndBridgeStatuses: some View {
+        if snapshot.isConnecting {
+            Label(
+                String(localized: "remote.status.connecting", defaultValue: "Connecting"),
+                systemImage: "arrow.clockwise"
+            )
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(colorSchemeContrast == .increased ? Color.primary : Color.blue)
+            .lineLimit(1)
+        }
+
+        if let bridgeStatus = snapshot.bridgeStatus {
+            Label(
+                bridgeStatus.uniConnectRailLocalizedLabel,
+                systemImage: bridgeStatus.uniConnectRailSymbolName
+            )
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(
+                colorSchemeContrast == .increased
+                    ? Color.primary
+                    : bridgeStatus.uniConnectRailTint
+            )
+            .lineLimit(1)
+        }
     }
 
     private var connectionLabel: String {
@@ -298,9 +333,33 @@ struct UniConnectSidebarFlyoutView: View {
     }
 
     private var connectionTint: Color {
-        if snapshot.isDisconnected { return .orange }
-        if snapshot.isConnecting { return .blue }
-        return .secondary
+        if snapshot.isDisconnected {
+            return Color(
+                nsColor: UniConnectRailPalette.disconnectedBadgeNSColor(
+                    for: colorScheme
+                )
+            )
+        }
+        return Color(
+            nsColor: UniConnectRailPalette.connectionBadgeNSColor(
+                for: snapshot.connectionKind,
+                colorScheme: colorScheme
+            )
+        )
+    }
+
+    private var accessibilityValue: String {
+        var components = [connectionLabel]
+        if snapshot.isDisconnected {
+            components.append(String(localized: "remote.status.disconnected", defaultValue: "Disconnected"))
+        }
+        if snapshot.isConnecting {
+            components.append(String(localized: "remote.status.connecting", defaultValue: "Connecting"))
+        }
+        if let bridgeStatus = snapshot.bridgeStatus {
+            components.append(bridgeStatus.uniConnectRailLocalizedLabel)
+        }
+        return components.joined(separator: ", ")
     }
 
     private func windowIndicatorColor(_ window: UniConnectWindowSnapshot) -> Color {
@@ -340,12 +399,15 @@ struct UniConnectSidebarFlyoutView: View {
     }
 
     private var identityMark: some View {
-        let color = Color(nsColor: NSColor(hex: snapshot.colorHex) ?? .controlAccentColor)
+        let color = Color(nsColor: identityBaseColor)
         return ZStack {
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [color.opacity(0.98), color.opacity(0.74)],
+                        colors: [
+                            color.opacity(UniConnectRailPalette.flyoutGradientStartOpacity),
+                            color.opacity(UniConnectRailPalette.flyoutGradientEndOpacity),
+                        ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -359,9 +421,30 @@ struct UniConnectSidebarFlyoutView: View {
                     .tracking(-0.4)
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(identityForegroundColor)
         .frame(width: 38, height: 38)
-        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(.white.opacity(0.22), lineWidth: 0.8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(identityForegroundColor.opacity(0.24), lineWidth: 0.8)
+        )
         .accessibilityHidden(true)
+    }
+
+    private var identityBaseColor: NSColor {
+        WorkspaceTabColorSettings.displayNSColor(
+            hex: snapshot.colorHex,
+            colorScheme: colorScheme
+        ) ?? NSColor(hex: snapshot.colorHex) ?? .controlAccentColor
+    }
+
+    private var identityForegroundColor: Color {
+        Color(
+            nsColor: UniConnectRailPalette.identityForegroundNSColor(
+                baseColor: identityBaseColor,
+                layerOpacity: 1,
+                gradientOpacity: UniConnectRailPalette.flyoutGradientMidpointOpacity,
+                surfaceColor: UniConnectRailPalette.windowBackgroundNSColor(for: colorScheme)
+            )
+        )
     }
 }

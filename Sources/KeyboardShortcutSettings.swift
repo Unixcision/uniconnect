@@ -206,7 +206,7 @@ enum KeyboardShortcutSettings {
             case .reconnectDroppedWindows:
                 return String(
                     localized: "uniconnect.reconnect.all.now",
-                    defaultValue: "Reconnect SSH Windows Now"
+                    defaultValue: "Reconnect All SSH Windows"
                 )
             case .reconnectFocusedSSHWindow:
                 return String(
@@ -489,7 +489,7 @@ enum KeyboardShortcutSettings {
             case .browserForward:
                 return .unbound
             case .browserReload:
-                return .unbound
+                return StoredShortcut(key: "r", command: true, shift: false, option: false, control: false)
             case .browserZoomIn:
                 return .unbound
             case .browserZoomOut:
@@ -521,7 +521,7 @@ enum KeyboardShortcutSettings {
             case .toggleBrowserFocusMode:
                 return .unbound
             case .toggleReactGrab:
-                return .unbound
+                return StoredShortcut(key: "g", command: true, shift: true, option: false, control: false)
             case .openDiffViewer:
                 return .unbound
             case .diffViewerScrollDown:
@@ -1376,6 +1376,11 @@ final class SystemWideHotkeyController {
 
     @MainActor
     private func perform(_ action: KeyboardShortcutSettings.Action) {
+        guard !UniConnectAppLock.shared.shouldConsumeApplicationAction(
+            nil,
+            target: self,
+            sender: nil
+        ) else { return }
         switch action {
         case .showHideAllWindows:
             AppDelegate.shared?.toggleApplicationVisibilityFromGlobalHotkey()

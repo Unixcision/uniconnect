@@ -14,6 +14,9 @@ struct DetectedSSHSession: Equatable, Sendable {
     let compressionEnabled: Bool
     let sshOptions: [String]
     var password: String? = nil
+    /// Immutable endpoint captured by UniConnect when this session comes from its vault.
+    /// Sessions detected from arbitrary foreground processes intentionally leave it nil.
+    var uniConnectEffectiveTarget: UniConnectSSHEffectiveTarget? = nil
 
     func uploadDroppedFiles(
         _ fileURLs: [URL],
@@ -190,7 +193,8 @@ struct DetectedSSHSession: Equatable, Sendable {
     }
 
     private func scpArguments(localPath: String, remotePath: String) -> [String] {
-        var args: [String] = [
+        var args: [String] = uniConnectEffectiveTarget?.sshPinningOptions ?? []
+        args += [
             "-o", "ConnectTimeout=6",
             "-o", "ServerAliveInterval=20",
             "-o", "ServerAliveCountMax=2",
@@ -240,7 +244,8 @@ struct DetectedSSHSession: Equatable, Sendable {
     }
 
     private func sshArguments(command: String) -> [String] {
-        var args: [String] = [
+        var args: [String] = uniConnectEffectiveTarget?.sshPinningOptions ?? []
+        args += [
             "-T",
             "-o", "ConnectTimeout=6",
             "-o", "ServerAliveInterval=20",
@@ -295,10 +300,12 @@ struct DetectedSSHSession: Equatable, Sendable {
     /// Monitor and crash reports would show it.
     private func wrappedCommand(
         executable: String,
-        arguments: [String]
+        arguments: [String],
+        ambientEnvironment: [String: String] = ProcessInfo.processInfo.environment
     ) throws -> (String, [String], [String: String]?) {
+        var environment = Self.sanitizedUploadEnvironment(from: ambientEnvironment)
         guard let password, !password.isEmpty else {
-            return (executable, arguments, nil)
+            return (executable, arguments, environment)
         }
         guard let sshpass = Self.sshpassExecutablePath() else {
             throw NSError(domain: "com.unixcision.uniconnect.image-transfer", code: 11, userInfo: [
@@ -308,9 +315,32 @@ struct DetectedSSHSession: Equatable, Sendable {
                 ),
             ])
         }
-        var environment = ProcessInfo.processInfo.environment
         environment["SSHPASS"] = password
         return (sshpass, ["-e", executable] + arguments, environment)
+    }
+
+    /// Keeps ProxyJump's nested `ssh` and password-bearing uploads off ambient/project PATHs.
+    private static func sanitizedUploadEnvironment(
+        from ambientEnvironment: [String: String]
+    ) -> [String: String] {
+        let inheritedKeys = [
+            "HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "SSH_AUTH_SOCK",
+            "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+        ]
+        var environment: [String: String] = [:]
+        for key in inheritedKeys {
+            if let value = ambientEnvironment[key], !value.contains("\0") {
+                environment[key] = value
+            }
+        }
+        for (key, value) in ambientEnvironment
+            where key.hasPrefix("LC_") && !value.contains("\0") {
+            environment[key] = value
+        }
+        environment["HOME"] = FileManager.default.homeDirectoryForCurrentUser.path
+        environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+        environment["TERM"] = "dumb"
+        return environment
     }
 
     private static let sshpassLookup: String? = {
@@ -504,6 +534,16 @@ struct DetectedSSHSession: Equatable, Sendable {
 #if DEBUG
     func scpArgumentsForTesting(localPath: String, remotePath: String) -> [String] {
         scpArguments(localPath: localPath, remotePath: remotePath)
+    }
+
+    func uploadEnvironmentForTesting(
+        ambientEnvironment: [String: String]
+    ) -> [String: String] {
+        var environment = Self.sanitizedUploadEnvironment(from: ambientEnvironment)
+        if let password, !password.isEmpty {
+            environment["SSHPASS"] = password
+        }
+        return environment
     }
 #endif
 }

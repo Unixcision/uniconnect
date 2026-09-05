@@ -1,21 +1,29 @@
 import Darwin
+import CryptoKit
 import Foundation
 
 /// Owns the rolling, crash-safe session recovery archive under `~/.uniconnect`.
 actor UniConnectRecoveryBackupRepository {
     typealias FileWriter = @Sendable (Data, URL, FileManager) throws -> Void
 
-    private enum DirectorySecurityError: Error {
-        case openFailed(path: String, errno: Int32)
-        case metadataFailed(path: String, errno: Int32)
-        case notDirectory(path: String)
-        case unexpectedOwner(path: String)
-        case permissionsFailed(path: String, errno: Int32)
-    }
-
     enum Reason: String, Sendable, CaseIterable {
         case scheduled
         case beforeRestore = "before-restore"
+    }
+
+    private struct ArchiveDocument: Codable {
+        static let formatName = "uniconnect-recovery-backup"
+        static let currentVersion = 1
+
+        let format: String
+        let version: Int
+        let vaultSHA256: String?
+        let snapshot: AppSessionSnapshot
+    }
+
+    struct RecoveryPoint: Sendable {
+        let snapshot: AppSessionSnapshot
+        let encryptedVault: Data?
     }
 
     struct Entry: Identifiable, Sendable, Equatable {
@@ -104,6 +112,9 @@ actor UniConnectRecoveryBackupRepository {
         reason: Reason,
         now: Date = Date()
     ) throws -> Entry {
+        guard Self.everySSHWorkspaceHasCredentialReference(in: snapshot) else {
+            throw UniConnectError.missingCredential
+        }
         let requiredCredentialIDs = Self.referencedSSHCredentialIDs(in: snapshot)
         guard requiredCredentialIDs.isEmpty || encryptedVault != nil else {
             throw UniConnectError.missingCredential
@@ -121,13 +132,24 @@ actor UniConnectRecoveryBackupRepository {
         }
 
         do {
-            let data = try SessionPersistenceStore.encodedSnapshotDataForPersistence(snapshot)
+            let document = ArchiveDocument(
+                format: ArchiveDocument.formatName,
+                version: ArchiveDocument.currentVersion,
+                vaultSHA256: encryptedVault.map(Self.sha256Hex),
+                snapshot: SessionPersistenceStore.sanitizedForPersistence(snapshot)
+            )
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(document)
             try fileWriter(data, snapshotURL, fileManager)
         } catch {
             let destinationWasCommitted = (error as? UniConnectAtomicFileWriter.WriteError)?
                 .destinationWasCommitted == true
             if copiedVaultURL != nil, !destinationWasCommitted {
-                try? fileManager.removeItem(at: vaultURL)
+                try? UniConnectAtomicFileWriter.removeIfPresent(
+                    at: vaultURL,
+                    fileManager: fileManager
+                )
             }
             throw error
         }
@@ -150,11 +172,11 @@ actor UniConnectRecoveryBackupRepository {
     }
 
     func loadSnapshot(from snapshotURL: URL) -> AppSessionSnapshot? {
-        guard isImmediateArchiveSnapshot(snapshotURL),
-              isRegularFileWithoutFollowingSymbolicLinks(snapshotURL) else {
+        do {
+            return try loadRecoveryPoint(from: snapshotURL)?.snapshot
+        } catch {
             return nil
         }
-        return SessionPersistenceStore.load(fileURL: snapshotURL)
     }
 
     func encryptedVaultURL(for snapshotURL: URL) -> URL? {
@@ -167,8 +189,71 @@ actor UniConnectRecoveryBackupRepository {
 
     /// Reads the exact encrypted companion bytes belonging to one discovered snapshot.
     func loadEncryptedVault(for snapshotURL: URL) throws -> Data? {
-        guard let url = encryptedVaultURL(for: snapshotURL) else { return nil }
-        return try UniConnectAtomicFileWriter.readPrivateFile(at: url, repairPermissions: true)
+        try loadRecoveryPoint(from: snapshotURL)?.encryptedVault
+    }
+
+    /// Loads a snapshot and its encrypted companion as one hash-bound generation.
+    /// Legacy raw snapshots remain readable, but every newly written archive binds
+    /// the companion bytes in the readable JSON before either value is returned.
+    func loadRecoveryPoint(from snapshotURL: URL) throws -> RecoveryPoint? {
+        guard isImmediateArchiveSnapshot(snapshotURL),
+              isRegularFileWithoutFollowingSymbolicLinks(snapshotURL) else {
+            return nil
+        }
+        let data = try UniConnectAtomicFileWriter.readPrivateFile(
+            at: snapshotURL,
+            repairPermissions: true
+        )
+        let decoder = JSONDecoder()
+
+        if let document = try? decoder.decode(ArchiveDocument.self, from: data) {
+            guard document.format == ArchiveDocument.formatName,
+                  document.version == ArchiveDocument.currentVersion,
+                  isValidSnapshot(document.snapshot),
+                  Self.everySSHWorkspaceHasCredentialReference(in: document.snapshot),
+                  Self.referencedSSHCredentialIDs(in: document.snapshot).isEmpty
+                    || document.vaultSHA256 != nil else {
+                return nil
+            }
+            let encryptedVault: Data?
+            if let expectedHash = document.vaultSHA256 {
+                guard let vaultURL = encryptedVaultURL(for: snapshotURL) else { return nil }
+                let candidate = try UniConnectAtomicFileWriter.readPrivateFile(
+                    at: vaultURL,
+                    repairPermissions: true
+                )
+                guard Self.sha256Hex(candidate) == expectedHash else { return nil }
+                encryptedVault = candidate
+            } else {
+                encryptedVault = nil
+            }
+            return RecoveryPoint(
+                snapshot: SessionPersistenceStore.sanitizedForPersistence(document.snapshot),
+                encryptedVault: encryptedVault
+            )
+        }
+
+        // Compatibility for backups written before the hash-bound wrapper.
+        guard let legacy = try? decoder.decode(AppSessionSnapshot.self, from: data),
+              isValidSnapshot(legacy),
+              Self.everySSHWorkspaceHasCredentialReference(in: legacy) else {
+            return nil
+        }
+        let requiredCredentialIDs = Self.referencedSSHCredentialIDs(in: legacy)
+        let encryptedVault: Data?
+        if let vaultURL = encryptedVaultURL(for: snapshotURL) {
+            encryptedVault = try UniConnectAtomicFileWriter.readPrivateFile(
+                at: vaultURL,
+                repairPermissions: true
+            )
+        } else {
+            guard requiredCredentialIDs.isEmpty else { return nil }
+            encryptedVault = nil
+        }
+        return RecoveryPoint(
+            snapshot: SessionPersistenceStore.sanitizedForPersistence(legacy),
+            encryptedVault: encryptedVault
+        )
     }
 
     /// Returns every opaque SSH credential reference that must exist in the companion vault.
@@ -183,14 +268,24 @@ actor UniConnectRecoveryBackupRepository {
         })
     }
 
+    /// Rejects a falsely "successful" SSH backup whose JSON cannot name any
+    /// encrypted credential record during recovery.
+    nonisolated static func everySSHWorkspaceHasCredentialReference(
+        in snapshot: AppSessionSnapshot
+    ) -> Bool {
+        snapshot.windows.allSatisfy { window in
+            window.tabManager.workspaces.allSatisfy { workspace in
+                workspace.uniConnect?.isSSH != true || workspace.uniConnect?.credentialId != nil
+            }
+        }
+    }
+
     private func ensureRootDirectory() throws {
-        try fileManager.createDirectory(
-            at: rootDirectory,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: NSNumber(value: Int16(0o700))]
-        )
         for directory in managedPrivateDirectoryChain() {
-            try secureDirectory(directory)
+            try UniConnectAtomicFileWriter.ensurePrivateDirectory(
+                at: directory,
+                fileManager: fileManager
+            )
         }
     }
 
@@ -209,45 +304,34 @@ actor UniConnectRecoveryBackupRepository {
         return Array(chain.reversed())
     }
 
-    /// Applies private permissions through a no-follow descriptor and verifies ownership first.
-    private func secureDirectory(_ directory: URL) throws {
-        let descriptor = open(directory.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
-        guard descriptor >= 0 else {
-            throw DirectorySecurityError.openFailed(path: directory.path, errno: errno)
-        }
-        defer { _ = close(descriptor) }
-
-        var metadata = stat()
-        guard fstat(descriptor, &metadata) == 0 else {
-            throw DirectorySecurityError.metadataFailed(path: directory.path, errno: errno)
-        }
-        guard metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) else {
-            throw DirectorySecurityError.notDirectory(path: directory.path)
-        }
-        guard metadata.st_uid == geteuid() else {
-            throw DirectorySecurityError.unexpectedOwner(path: directory.path)
-        }
-        guard fchmod(descriptor, 0o700) == 0 else {
-            throw DirectorySecurityError.permissionsFailed(path: directory.path, errno: errno)
-        }
-    }
-
     private func discoveredEntries() throws -> [Entry] {
-        guard fileManager.fileExists(atPath: rootDirectory.path) else { return [] }
+        guard pathEntryExistsWithoutFollowingSymbolicLinks(rootDirectory) else { return [] }
         for directory in managedPrivateDirectoryChain() {
-            try secureDirectory(directory)
+            try UniConnectAtomicFileWriter.verifyPrivateDirectory(
+                at: directory,
+                fileManager: fileManager
+            )
         }
         let urls = try fileManager.contentsOfDirectory(
             at: rootDirectory,
             includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
             options: [.skipsHiddenFiles]
         )
-        return urls.compactMap { snapshotURL -> Entry? in
-            guard snapshotURL.pathExtension == "json",
-                  isRegularFileWithoutFollowingSymbolicLinks(snapshotURL),
-                  let parsed = Self.parseSnapshotFilename(snapshotURL.lastPathComponent) else {
+        return urls.compactMap { enumeratedSnapshotURL -> Entry? in
+            let snapshotFilename = enumeratedSnapshotURL.lastPathComponent
+            guard enumeratedSnapshotURL.pathExtension == "json",
+                  isRegularFileWithoutFollowingSymbolicLinks(enumeratedSnapshotURL),
+                  let parsed = Self.parseSnapshotFilename(snapshotFilename) else {
                 return nil
             }
+            // FileManager may canonicalize `/var` to `/private/var` while enumerating.
+            // Keep repository-facing URLs rooted in the original, already validated
+            // directory identity so immediate-child checks remain stable without
+            // resolving caller-controlled symlinks.
+            let snapshotURL = rootDirectory.appendingPathComponent(
+                snapshotFilename,
+                isDirectory: false
+            )
             let stem = snapshotURL.deletingPathExtension().lastPathComponent
             let possibleVault = rootDirectory.appendingPathComponent("\(stem).vault.uc")
             let encryptedVaultURL = isRegularFileWithoutFollowingSymbolicLinks(possibleVault)
@@ -284,16 +368,40 @@ actor UniConnectRecoveryBackupRepository {
         )
 
         for entry in sorted where !keptURLs.contains(entry.snapshotURL) {
-            try? fileManager.removeItem(at: entry.snapshotURL)
+            do {
+                // The readable JSON is the pair's commit marker. Its durable
+                // absence must be established before the credential companion
+                // can be removed, otherwise a failed prune destroys recovery.
+                try UniConnectAtomicFileWriter.removeIfPresent(
+                    at: entry.snapshotURL,
+                    fileManager: fileManager
+                )
+            } catch {
+                continue
+            }
             if let encryptedVaultURL = entry.encryptedVaultURL {
-                try? fileManager.removeItem(at: encryptedVaultURL)
+                try? UniConnectAtomicFileWriter.removeIfPresent(
+                    at: encryptedVaultURL,
+                    fileManager: fileManager
+                )
             }
         }
         try removeOrphanedVaultCopies()
     }
 
     private func removeOrphanedVaultCopies() throws {
-        guard fileManager.fileExists(atPath: rootDirectory.path) else { return }
+        guard pathEntryExistsWithoutFollowingSymbolicLinks(rootDirectory) else { return }
+        try UniConnectAtomicFileWriter.verifyPrivateDirectory(
+            at: rootDirectory,
+            fileManager: fileManager
+        )
+        // A prior unlink may have succeeded but reported an fsync failure. Do not
+        // classify any companion as orphaned until the marker directory itself is
+        // durably synchronized in this pass.
+        try UniConnectAtomicFileWriter.synchronizePrivateDirectory(
+            at: rootDirectory,
+            fileManager: fileManager
+        )
         let urls = try fileManager.contentsOfDirectory(
             at: rootDirectory,
             includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
@@ -303,10 +411,21 @@ actor UniConnectRecoveryBackupRepository {
             guard isRegularFileWithoutFollowingSymbolicLinks(vaultURL) else { continue }
             let stem = String(vaultURL.lastPathComponent.dropLast(".vault.uc".count))
             let snapshotURL = rootDirectory.appendingPathComponent("\(stem).json")
-            if !fileManager.fileExists(atPath: snapshotURL.path) {
-                try? fileManager.removeItem(at: vaultURL)
+            if !pathEntryExistsWithoutFollowingSymbolicLinks(snapshotURL) {
+                try? UniConnectAtomicFileWriter.removeIfPresent(
+                    at: vaultURL,
+                    fileManager: fileManager
+                )
             }
         }
+    }
+
+    /// Treats any inode (including a symlink) as present. Cleanup is intentionally
+    /// conservative: only `ENOENT` proves a companion has no possible marker.
+    private func pathEntryExistsWithoutFollowingSymbolicLinks(_ url: URL) -> Bool {
+        var metadata = stat()
+        if lstat(url.path, &metadata) == 0 { return true }
+        return errno != ENOENT
     }
 
     private func isRegularFileWithoutFollowingSymbolicLinks(_ url: URL) -> Bool {
@@ -314,6 +433,10 @@ actor UniConnectRecoveryBackupRepository {
             return false
         }
         return values.isRegularFile == true && values.isSymbolicLink != true
+    }
+
+    private func isValidSnapshot(_ snapshot: AppSessionSnapshot) -> Bool {
+        snapshot.version == SessionSnapshotSchema.currentVersion && !snapshot.windows.isEmpty
     }
 
     /// Backups are flat by design. Requiring an immediate child also prevents a
@@ -340,11 +463,19 @@ actor UniConnectRecoveryBackupRepository {
         let reason: Reason
         if tail.hasPrefix(Reason.beforeRestore.rawValue + "-") {
             reason = .beforeRestore
+            let suffix = tail.dropFirst(Reason.beforeRestore.rawValue.count + 1)
+            guard UUID(uuidString: String(suffix)) != nil else { return nil }
         } else if tail.hasPrefix(Reason.scheduled.rawValue + "-") {
             reason = .scheduled
+            let suffix = tail.dropFirst(Reason.scheduled.rawValue.count + 1)
+            guard UUID(uuidString: String(suffix)) != nil else { return nil }
         } else {
             return nil
         }
         return (Date(timeIntervalSince1970: TimeInterval(millis) / 1_000), reason)
+    }
+
+    private nonisolated static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 }

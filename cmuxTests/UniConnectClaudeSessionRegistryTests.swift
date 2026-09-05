@@ -26,10 +26,15 @@ struct UniConnectClaudeSessionRegistryTests {
     func exactLocalRouting() async throws {
         let workspaceID = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
         let panelID = UUID(uuidString: "22222222-2222-4222-8222-222222222222")!
+        let surfaceGeneration = UUID(uuidString: "33333333-3333-4333-8333-333333333333")!
         let local = AsyncStream<UniConnectClaudeSessionSignal>.makeStream()
         let registry = UniConnectClaudeSessionRegistry()
         await registry.start(localSignals: LocalSource(stream: local.stream), remoteSignals: nil)
-        let events = await registry.events(workspaceID: workspaceID, panelID: panelID)
+        let events = await registry.events(
+            workspaceID: workspaceID,
+            panelID: panelID,
+            surfaceGeneration: surfaceGeneration
+        )
         let next = Task {
             var iterator = events.makeAsyncIterator()
             return await iterator.next()
@@ -42,11 +47,62 @@ struct UniConnectClaudeSessionRegistryTests {
             lifecycle: nil,
             shellActivity: "prompt_idle"
         ))
+        local.continuation.yield(UniConnectClaudeSessionSignal(
+            workspaceID: workspaceID,
+            panelID: panelID,
+            surfaceGeneration: UUID(),
+            kind: .shellActivityChanged,
+            lifecycle: nil,
+            shellActivity: "prompt_idle"
+        ))
         let expected = UniConnectClaudeSessionSignal(
             workspaceID: workspaceID,
             panelID: panelID,
+            surfaceGeneration: surfaceGeneration,
+            kind: .shellActivityChanged,
+            lifecycle: nil,
+            shellActivity: "command_running"
+        )
+        local.continuation.yield(expected)
+
+        let event = try #require(await next.value)
+        #expect(event == .local(expected))
+        await registry.stop()
+        local.continuation.finish()
+    }
+
+    @Test("Rejects stale lifecycle transitions for a generation-bound subscriber")
+    func lifecycleRequiresExactSurfaceGeneration() async throws {
+        let workspaceID = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
+        let panelID = UUID(uuidString: "22222222-2222-4222-8222-222222222222")!
+        let surfaceGeneration = UUID(uuidString: "33333333-3333-4333-8333-333333333333")!
+        let local = AsyncStream<UniConnectClaudeSessionSignal>.makeStream()
+        let registry = UniConnectClaudeSessionRegistry()
+        await registry.start(localSignals: LocalSource(stream: local.stream), remoteSignals: nil)
+        let events = await registry.events(
+            workspaceID: workspaceID,
+            panelID: panelID,
+            surfaceGeneration: surfaceGeneration
+        )
+        let next = Task {
+            var iterator = events.makeAsyncIterator()
+            return await iterator.next()
+        }
+
+        local.continuation.yield(UniConnectClaudeSessionSignal(
+            workspaceID: workspaceID,
+            panelID: panelID,
+            surfaceGeneration: UUID(),
             kind: .lifecycleChanged,
             lifecycle: "idle",
+            shellActivity: nil
+        ))
+        let expected = UniConnectClaudeSessionSignal(
+            workspaceID: workspaceID,
+            panelID: panelID,
+            surfaceGeneration: surfaceGeneration,
+            kind: .lifecycleChanged,
+            lifecycle: "running",
             shellActivity: nil
         )
         local.continuation.yield(expected)
@@ -97,13 +153,26 @@ struct UniConnectClaudeSessionRegistryTests {
     @Test("Ignores a delayed close signal after the same panel ID respawns")
     @MainActor
     func stalePanelCloseDoesNotCancelReplacementOwner() {
+        let closedGeneration = UUID()
+        let replacementGeneration = UUID()
         #expect(
             !UniConnectCoordinator.shouldCancelLocalAgentLaunchForPanelClosedSignal(
+                signalGeneration: closedGeneration,
+                currentGeneration: replacementGeneration,
                 hasCurrentPanel: true
             )
         )
         #expect(
             UniConnectCoordinator.shouldCancelLocalAgentLaunchForPanelClosedSignal(
+                signalGeneration: closedGeneration,
+                currentGeneration: nil,
+                hasCurrentPanel: false
+            )
+        )
+        #expect(
+            !UniConnectCoordinator.shouldCancelLocalAgentLaunchForPanelClosedSignal(
+                signalGeneration: nil,
+                currentGeneration: nil,
                 hasCurrentPanel: false
             )
         )

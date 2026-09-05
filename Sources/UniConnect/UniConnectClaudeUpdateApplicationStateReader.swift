@@ -67,6 +67,7 @@ final class UniConnectClaudeUpdateApplicationStateReader:
         return UniConnectClaudeUpdatePanelSnapshot(
             id: panelID,
             workspaceID: workspace.id,
+            surfaceGeneration: terminal.surface.uniConnectSurfaceGeneration,
             displayName: displayName,
             directory: directory,
             persistedClaudeSessionID: workspace.uniConnectClaudeSessionsByPanelId[panelID],

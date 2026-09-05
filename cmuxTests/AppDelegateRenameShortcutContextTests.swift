@@ -69,7 +69,7 @@ final class AppDelegateRenameShortcutContextTests: XCTestCase {
         super.tearDown()
     }
 
-    func testDefaultCmdRRequestsRenameTabOnlyWhenBrowserNotFocused() {
+    func testDefaultCmdRPassesThroughLocalTerminalWithoutRequestingRename() {
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("Expected AppDelegate.shared")
             return
@@ -83,7 +83,8 @@ final class AppDelegateRenameShortcutContextTests: XCTestCase {
             return
         }
 
-        let renameTabExpectation = expectation(description: "Rename tab notification should fire for default Cmd+R")
+        let renameTabExpectation = expectation(description: "Local terminal Cmd+R should not request rename")
+        renameTabExpectation.isInverted = true
         let renameTabToken = NotificationCenter.default.addObserver(
             forName: .commandPaletteRenameTabRequested,
             object: nil,
@@ -93,7 +94,7 @@ final class AppDelegateRenameShortcutContextTests: XCTestCase {
         }
         defer { NotificationCenter.default.removeObserver(renameTabToken) }
 
-        let renameWorkspaceExpectation = expectation(description: "Rename workspace notification should not fire for default Cmd+R")
+        let renameWorkspaceExpectation = expectation(description: "Local terminal Cmd+R should not request box rename")
         renameWorkspaceExpectation.isInverted = true
         let renameWorkspaceToken = NotificationCenter.default.addObserver(
             forName: .commandPaletteRenameWorkspaceRequested,
@@ -115,12 +116,136 @@ final class AppDelegateRenameShortcutContextTests: XCTestCase {
         }
 
 #if DEBUG
-        XCTAssertTrue(appDelegate.debugHandleCustomShortcut(event: cmdR))
+        XCTAssertFalse(appDelegate.debugHandleCustomShortcut(event: cmdR))
 #else
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
         wait(for: [renameTabExpectation, renameWorkspaceExpectation], timeout: 1.0)
+    }
+
+    func testDefaultControlCmdRIsHandledAsGlobalSSHReconnect() throws {
+        let appDelegate = try XCTUnwrap(AppDelegate.shared)
+        let windowId = appDelegate.createMainWindow()
+        defer { closeWindow(withId: windowId) }
+
+        let window = try XCTUnwrap(window(withId: windowId))
+        let controlCmdR = try XCTUnwrap(makeKeyDownEvent(
+            key: "r",
+            modifiers: [.command, .control],
+            keyCode: 15,
+            windowNumber: window.windowNumber
+        ))
+
+#if DEBUG
+        XCTAssertTrue(appDelegate.debugHandleCustomShortcut(event: controlCmdR))
+#else
+        XCTFail("debugHandleCustomShortcut is only available in DEBUG")
+#endif
+    }
+
+    func testCustomChordCanInvokeGlobalSSHReconnect() throws {
+        let appDelegate = try XCTUnwrap(AppDelegate.shared)
+        let windowId = appDelegate.createMainWindow()
+        defer { closeWindow(withId: windowId) }
+
+        let window = try XCTUnwrap(window(withId: windowId))
+        let firstStroke = ShortcutStroke(
+            key: "k",
+            command: true,
+            shift: false,
+            option: true,
+            control: false,
+            keyCode: 40
+        )
+        let secondStroke = ShortcutStroke(
+            key: "r",
+            command: true,
+            shift: true,
+            option: false,
+            control: false,
+            keyCode: 15
+        )
+        KeyboardShortcutSettings.setShortcut(
+            StoredShortcut(first: firstStroke, second: secondStroke),
+            for: .reconnectDroppedWindows
+        )
+
+        let firstEvent = try XCTUnwrap(makeKeyDownEvent(
+            key: "k",
+            modifiers: [.command, .option],
+            keyCode: 40,
+            windowNumber: window.windowNumber
+        ))
+        let secondEvent = try XCTUnwrap(makeKeyDownEvent(
+            key: "r",
+            modifiers: [.command, .shift],
+            keyCode: 15,
+            windowNumber: window.windowNumber
+        ))
+
+#if DEBUG
+        XCTAssertTrue(appDelegate.debugHandleShortcutMonitorEvent(event: firstEvent))
+        XCTAssertTrue(appDelegate.debugHandleShortcutMonitorEvent(event: secondEvent))
+#else
+        XCTFail("debugHandleShortcutMonitorEvent is only available in DEBUG")
+#endif
+    }
+
+    func testDefaultCmdRConsumesFocusedSSHtmuxWindowWithoutRequestingRename() throws {
+        guard let appDelegate = AppDelegate.shared else {
+            XCTFail("Expected AppDelegate.shared")
+            return
+        }
+
+        let windowId = appDelegate.createMainWindow()
+        defer { closeWindow(withId: windowId) }
+
+        let window = try XCTUnwrap(window(withId: windowId))
+        let manager = try XCTUnwrap(appDelegate.tabManagerFor(windowId: windowId))
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let panelID = try XCTUnwrap(workspace.focusedPanelId)
+        let terminalPanel = try XCTUnwrap(workspace.terminalPanel(for: panelID))
+        let terminalView = try XCTUnwrap(surfaceView(in: terminalPanel.hostedView))
+        workspace.uniConnectProfile = UniConnectWorkspaceProfile(
+            kind: .ssh,
+            credentialId: UUID(),
+            hostLabel: "fixture.example.test",
+            tmuxReady: true
+        )
+        workspace.uniConnectTmuxSessionsByPanelId[panelID] = "fixture-session"
+        window.makeKeyAndOrderFront(nil)
+        window.displayIfNeeded()
+        terminalPanel.hostedView.setVisibleInUI(true)
+        terminalPanel.hostedView.setActive(true)
+        XCTAssertTrue(window.makeFirstResponder(terminalView))
+        terminalPanel.terminalDidBecomeFocused()
+
+        let renameExpectation = expectation(description: "SSH reconnect Cmd+R should not request rename")
+        renameExpectation.isInverted = true
+        let renameToken = NotificationCenter.default.addObserver(
+            forName: .commandPaletteRenameTabRequested,
+            object: nil,
+            queue: nil
+        ) { _ in
+            renameExpectation.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(renameToken) }
+
+        let cmdR = try XCTUnwrap(makeKeyDownEvent(
+            key: "r",
+            modifiers: [.command],
+            keyCode: 15,
+            windowNumber: window.windowNumber
+        ))
+
+#if DEBUG
+        XCTAssertTrue(appDelegate.debugHandleCustomShortcut(event: cmdR))
+#else
+        XCTFail("debugHandleCustomShortcut is only available in DEBUG")
+#endif
+
+        wait(for: [renameExpectation], timeout: 0.2)
     }
 
     func testDefaultCmdShiftRRequestsRenameWorkspaceOnlyWhenBrowserNotFocused() {
@@ -424,5 +549,16 @@ final class AppDelegateRenameShortcutContextTests: XCTestCase {
         guard let window = window(withId: windowId) else { return }
         window.performClose(nil)
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+    }
+
+    private func surfaceView(in hostedView: GhosttySurfaceScrollView) -> GhosttyNSView? {
+        var stack: [NSView] = [hostedView]
+        while let current = stack.popLast() {
+            if let surfaceView = current as? GhosttyNSView {
+                return surfaceView
+            }
+            stack.append(contentsOf: current.subviews)
+        }
+        return nil
     }
 }

@@ -29,7 +29,8 @@ enum BridgeTestMessages {
         timestamp: Date,
         eventID: String = String(repeating: "a", count: 64),
         ready: Bool = true,
-        error: String? = nil
+        error: String? = nil,
+        connectionID: UUID? = nil
     ) -> ClaudeBridgeWireMessage {
         ClaudeBridgeWireMessage(
             protocolName: ClaudeBridgeWireMessage.protocolName,
@@ -45,7 +46,8 @@ enum BridgeTestMessages {
             token: token.base64EncodedString(),
             signature: nil,
             integrationReady: ready,
-            integrationError: error
+            integrationError: error,
+            connectionID: connectionID?.uuidString.lowercased()
         )
     }
 
@@ -57,7 +59,8 @@ enum BridgeTestMessages {
         kind: ClaudeBridgeEventKind = .stop,
         sessionID: String = "11111111-2222-4333-8444-555555555555",
         cwd: String = "/srv/test",
-        pane: String = "%7"
+        pane: String = "%7",
+        connectionID: UUID? = nil
     ) -> ClaudeBridgeWireMessage {
         let unsigned = ClaudeBridgeWireMessage(
             protocolName: ClaudeBridgeWireMessage.protocolName,
@@ -73,7 +76,8 @@ enum BridgeTestMessages {
             token: nil,
             signature: nil,
             integrationReady: nil,
-            integrationError: nil
+            integrationError: nil,
+            connectionID: connectionID?.uuidString.lowercased()
         )
         let signature = HMAC<SHA256>.authenticationCode(
             for: unsigned.canonicalAuthenticationData(),
@@ -93,7 +97,55 @@ enum BridgeTestMessages {
             token: nil,
             signature: signature,
             integrationReady: nil,
-            integrationError: nil
+            integrationError: nil,
+            connectionID: unsigned.connectionID
+        )
+    }
+
+    static func hello(
+        routeID: UUID,
+        token: Data,
+        timestamp: Date,
+        eventID: String = String(repeating: "f", count: 64),
+        connectionID: UUID? = nil
+    ) -> ClaudeBridgeWireMessage {
+        let unsigned = ClaudeBridgeWireMessage(
+            protocolName: ClaudeBridgeWireMessage.protocolName,
+            version: ClaudeBridgeWireMessage.currentVersion,
+            message: .hello,
+            routeID: routeID.uuidString.lowercased(),
+            eventID: eventID,
+            timestampMilliseconds: Int64(timestamp.timeIntervalSince1970 * 1_000),
+            eventType: nil,
+            sessionCorrelation: nil,
+            cwd: nil,
+            tmuxPane: nil,
+            token: nil,
+            signature: nil,
+            integrationReady: nil,
+            integrationError: nil,
+            connectionID: connectionID?.uuidString.lowercased()
+        )
+        let signature = HMAC<SHA256>.authenticationCode(
+            for: unsigned.canonicalAuthenticationData(),
+            using: SymmetricKey(data: token)
+        ).map { String(format: "%02x", $0) }.joined()
+        return ClaudeBridgeWireMessage(
+            protocolName: unsigned.protocolName,
+            version: unsigned.version,
+            message: unsigned.message,
+            routeID: unsigned.routeID,
+            eventID: unsigned.eventID,
+            timestampMilliseconds: unsigned.timestampMilliseconds,
+            eventType: nil,
+            sessionCorrelation: nil,
+            cwd: nil,
+            tmuxPane: nil,
+            token: nil,
+            signature: signature,
+            integrationReady: nil,
+            integrationError: nil,
+            connectionID: unsigned.connectionID
         )
     }
 

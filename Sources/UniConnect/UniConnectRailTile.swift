@@ -8,6 +8,7 @@ struct UniConnectRailTile: View, Equatable {
     let actions: UniConnectChipActions
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.controlActiveState) private var controlActiveState
@@ -34,16 +35,28 @@ struct UniConnectRailTile: View, Equatable {
     }
 
     private var chipOpacity: Double {
-        if snapshot.isDisconnected { return 0.45 }
+        if colorSchemeContrast == .increased {
+            if snapshot.isDisconnected { return 0.72 }
+            if snapshot.isSelected { return 1 }
+            if isHovered || isFocused { return 0.96 }
+            return isWindowActive ? 0.84 : 0.76
+        }
+        if snapshot.isDisconnected { return 0.52 }
         if snapshot.isSelected { return isWindowActive ? 1 : 0.82 }
         if isHovered || isFocused { return isWindowActive ? 0.90 : 0.72 }
         return isWindowActive ? 0.64 : 0.52
     }
 
     private var chipScale: CGFloat {
+        if reduceMotion { return 1 }
         if snapshot.isSelected { return 1 }
-        if isHovered && !reduceMotion { return 0.98 }
+        if isHovered { return 0.98 }
         return 0.92
+    }
+
+    private var chipSaturation: Double {
+        guard snapshot.isDisconnected || !isWindowActive else { return 1 }
+        return colorSchemeContrast == .increased ? 0.82 : 0.55
     }
 
     private var cornerRadius: CGFloat {
@@ -51,14 +64,25 @@ struct UniConnectRailTile: View, Equatable {
     }
 
     private var glyphColor: Color {
-        Color(nsColor: cmuxReadableForegroundNSColor(on: baseColor, opacity: 0.96))
+        Color(
+            nsColor: UniConnectRailPalette.identityForegroundNSColor(
+                baseColor: baseColor,
+                layerOpacity: CGFloat(chipOpacity),
+                gradientOpacity: UniConnectRailPalette.railGradientMidpointOpacity,
+                surfaceColor: UniConnectRailPalette.windowBackgroundNSColor(for: colorScheme)
+            )
+        )
     }
 
     var body: some View {
         Button(action: activateBox) {
             ZStack {
                 groupDeck
+                    .opacity(chipOpacity)
+                    .saturation(chipSaturation)
                 squircle
+                    .opacity(chipOpacity)
+                    .saturation(chipSaturation)
                 identity
             }
             .frame(width: chipSize, height: chipSize)
@@ -67,8 +91,6 @@ struct UniConnectRailTile: View, Equatable {
             .overlay(alignment: .bottomLeading) { statusBadge }
             .overlay { focusRing }
             .scaleEffect(chipScale)
-            .opacity(chipOpacity)
-            .saturation(snapshot.isDisconnected || !isWindowActive ? 0.55 : 1)
             .shadow(
                 color: snapshot.isSelected ? Color.black.opacity(colorScheme == .dark ? 0.32 : 0.16) : .clear,
                 radius: 5,
@@ -87,7 +109,9 @@ struct UniConnectRailTile: View, Equatable {
                 actions: actions,
                 isFocused: isFocused,
                 reduceMotion: reduceMotion,
-                reduceTransparency: reduceTransparency
+                reduceTransparency: reduceTransparency,
+                colorScheme: colorScheme,
+                colorSchemeContrast: colorSchemeContrast
             )
         )
         .contextMenu { contextMenu }
@@ -96,12 +120,22 @@ struct UniConnectRailTile: View, Equatable {
         .accessibilityValue(accessibilityValue)
         .accessibilityAddTraits(snapshot.isSelected ? [.isSelected, .isButton] : [.isButton])
         .accessibilityAction(
-            named: Text(String(localized: "contextMenu.renameBox", defaultValue: "Rename Box…"))
+            named: Text(
+                String(
+                    localized: "uniconnect.rail.flyout.showWindows",
+                    defaultValue: "Show Window List"
+                )
+            )
+        ) {
+            presentWindowList()
+        }
+        .accessibilityAction(
+            named: Text(renameItemLabel)
         ) {
             actions.renameBox()
         }
         .accessibilityAction(
-            named: Text(String(localized: "contextMenu.closeBox", defaultValue: "Close Box"))
+            named: Text(closeItemLabel)
         ) {
             actions.closeBox()
         }
@@ -112,7 +146,10 @@ struct UniConnectRailTile: View, Equatable {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(
                 LinearGradient(
-                    colors: [color.opacity(1), color.opacity(0.78)],
+                    colors: [
+                        color.opacity(UniConnectRailPalette.railGradientStartOpacity),
+                        color.opacity(UniConnectRailPalette.railGradientEndOpacity),
+                    ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -120,8 +157,14 @@ struct UniConnectRailTile: View, Equatable {
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(
-                        Color.white.opacity(snapshot.isSelected ? 0.28 : (colorScheme == .dark ? 0.12 : 0.18)),
-                        lineWidth: snapshot.isSelected ? 1.2 : 0.8
+                        Color.primary.opacity(
+                            colorSchemeContrast == .increased
+                                ? (snapshot.isSelected ? 0.48 : 0.30)
+                                : (snapshot.isSelected ? 0.28 : (colorScheme == .dark ? 0.14 : 0.18))
+                        ),
+                        lineWidth: colorSchemeContrast == .increased
+                            ? (snapshot.isSelected ? 1.6 : 1.2)
+                            : (snapshot.isSelected ? 1.2 : 0.8)
                     )
             }
     }
@@ -160,7 +203,7 @@ struct UniConnectRailTile: View, Equatable {
     private var unreadBadge: some View {
         if snapshot.unreadCount > 0 {
             Text(snapshot.unreadCount > 9 ? "9+" : "\(snapshot.unreadCount)")
-                .font(.system(size: 8.5, weight: .bold, design: .rounded))
+                .font(.system(size: 10, weight: .bold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(.white)
                 .padding(.horizontal, 3.5)
@@ -175,35 +218,35 @@ struct UniConnectRailTile: View, Equatable {
 
     @ViewBuilder
     private var connectionBadge: some View {
-        if !snapshot.isGroup {
-            Image(systemName: connectionSymbol)
-                .font(.system(size: 7, weight: .bold))
-                .foregroundStyle(snapshot.isDisconnected ? Color.orange : Color.white)
-                .frame(width: 14, height: 14)
-                .background(Circle().fill(Color.black.opacity(0.68)))
-                .overlay(Circle().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 1.2))
-                .offset(x: 4, y: 4)
-                .accessibilityHidden(true)
-        }
+        Image(systemName: connectionSymbol)
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(connectionBadgeForeground)
+            .frame(width: 16, height: 16)
+            .background(Circle().fill(connectionBadgeBackground))
+            .overlay(Circle().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 1.2))
+            .offset(x: 5, y: 5)
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder
     private var statusBadge: some View {
         if snapshot.requiresLocalRootReassignment {
             Image(systemName: "folder.badge.questionmark")
-                .font(.system(size: 7, weight: .bold))
+                .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(.white)
-                .frame(width: 14, height: 14)
+                .frame(width: 16, height: 16)
                 .background(Circle().fill(Color.orange))
                 .overlay(Circle().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 1.2))
-                .offset(x: -3, y: 4)
+                .offset(x: -4, y: 5)
                 .accessibilityHidden(true)
         } else if let bridgeStatus = snapshot.bridgeStatus {
-            Circle()
-                .fill(bridgeStatus.uniConnectRailTint)
-                .frame(width: 8, height: 8)
+            Image(systemName: bridgeStatus.uniConnectRailSymbolName)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(bridgeStatus.uniConnectRailTint)
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(Color.black.opacity(colorSchemeContrast == .increased ? 0.92 : 0.74)))
                 .overlay(Circle().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 1.2))
-                .offset(x: -2, y: 3)
+                .offset(x: -4, y: 5)
                 .accessibilityHidden(true)
         }
     }
@@ -220,19 +263,20 @@ struct UniConnectRailTile: View, Equatable {
 
     @ViewBuilder
     private var contextMenu: some View {
-        let renameShortcut = KeyboardShortcutSettings.shortcut(for: .renameWorkspace)
-        let newSurfaceShortcut = KeyboardShortcutSettings.shortcut(for: .newSurface)
-        let closeShortcut = KeyboardShortcutSettings.shortcut(for: .closeWorkspace)
+        if !snapshot.windows.isEmpty {
+            Button(action: presentWindowList) {
+                Label(
+                    String(
+                        localized: "uniconnect.rail.flyout.showWindows",
+                        defaultValue: "Show Window List"
+                    ),
+                    systemImage: "macwindow.on.rectangle"
+                )
+            }
+        }
 
-        if let key = renameShortcut.keyEquivalent {
-            Button(action: actions.renameBox) {
-                Label(String(localized: "contextMenu.renameBox", defaultValue: "Rename Box…"), systemImage: "pencil")
-            }
-            .keyboardShortcut(key, modifiers: renameShortcut.eventModifiers)
-        } else {
-            Button(action: actions.renameBox) {
-                Label(String(localized: "contextMenu.renameBox", defaultValue: "Rename Box…"), systemImage: "pencil")
-            }
+        Button(action: actions.renameBox) {
+            Label(renameItemLabel, systemImage: "pencil")
         }
 
         if let editSSHConnection = actions.editSSHConnection {
@@ -257,73 +301,142 @@ struct UniConnectRailTile: View, Equatable {
 
         Button { actions.setPinned(!snapshot.isPinned) } label: {
             Label(
-                snapshot.isPinned
-                    ? String(localized: "contextMenu.unpinBox", defaultValue: "Unpin Box")
-                    : String(localized: "contextMenu.pinBox", defaultValue: "Pin Box"),
+                pinItemLabel,
                 systemImage: snapshot.isPinned ? "pin.slash" : "pin"
             )
         }
 
-        Divider()
+        if !snapshot.isGroup {
+            Divider()
 
-        if let key = newSurfaceShortcut.keyEquivalent {
             Button(action: actions.createWindow) {
                 Label(String(localized: "contextMenu.newTabInBox", defaultValue: "New Window"), systemImage: "plus.rectangle.on.rectangle")
             }
-            .keyboardShortcut(key, modifiers: newSurfaceShortcut.eventModifiers)
-        } else {
-            Button(action: actions.createWindow) {
-                Label(String(localized: "contextMenu.newTabInBox", defaultValue: "New Window"), systemImage: "plus.rectangle.on.rectangle")
+            if snapshot.windows.contains(where: \.canReconnectSSHNow) {
+                Button(action: actions.reconnectSSHWindowsNow) {
+                    Label(
+                        String(
+                            localized: "uniconnect.reconnect.box.now",
+                            defaultValue: "Reconnect SSH Windows in This Box"
+                        ),
+                        systemImage: "arrow.clockwise"
+                    )
+                }
             }
-        }
-        Button(action: actions.reconnectSSHWindowsNow) {
-            Label(
-                String(
-                    localized: "uniconnect.reconnect.box.now",
-                    defaultValue: "Reconnect SSH Windows Now"
-                ),
-                systemImage: "arrow.clockwise"
-            )
-        }
-        .disabled(!snapshot.windows.contains(where: \.canReconnectSSHNow))
-        Button(action: actions.updateClaude) {
-            Label(
-                String(localized: "contextMenu.updateClaudeInBox", defaultValue: "Update Claude in This Box…"),
-                systemImage: "arrow.down.app"
-            )
+            Button(action: actions.updateClaude) {
+                Label(
+                    String(localized: "contextMenu.updateClaudeInBox", defaultValue: "Update Claude in This Box…"),
+                    systemImage: "arrow.down.app"
+                )
+            }
+        } else if let editGroupConfiguration = actions.editGroupConfiguration {
+            Divider()
+
+            Button(action: editGroupConfiguration) {
+                Label(
+                    String(
+                        localized: "workspaceGroup.contextMenu.editConfig",
+                        defaultValue: "Edit Group Configuration…"
+                    ),
+                    systemImage: "gearshape"
+                )
+            }
         }
 
         Divider()
 
-        Button(action: actions.markRead) {
-            Label(String(localized: "contextMenu.markBoxRead", defaultValue: "Mark Box as Read"), systemImage: "envelope.open")
+        if snapshot.canMarkRead {
+            Button(action: actions.markRead) {
+                Label(markReadItemLabel, systemImage: "envelope.open")
+            }
         }
-        .disabled(!snapshot.canMarkRead)
-        Button(action: actions.markUnread) {
-            Label(String(localized: "contextMenu.markBoxUnread", defaultValue: "Mark Box as Unread"), systemImage: "envelope.badge")
+        if snapshot.canMarkUnread {
+            Button(action: actions.markUnread) {
+                Label(markUnreadItemLabel, systemImage: "envelope.badge")
+            }
         }
-        .disabled(!snapshot.canMarkUnread)
 
         Divider()
 
-        if let key = closeShortcut.keyEquivalent {
-            Button(role: .destructive, action: actions.closeBox) {
-                Label(String(localized: "contextMenu.closeBox", defaultValue: "Close Box"), systemImage: "xmark.square")
+        if let ungroup = actions.ungroup {
+            Button(action: ungroup) {
+                Label(
+                    String(
+                        localized: "workspaceGroup.contextMenu.ungroup",
+                        defaultValue: "Ungroup (Keep Boxes)"
+                    ),
+                    systemImage: "rectangle.3.group"
+                )
             }
-            .keyboardShortcut(key, modifiers: closeShortcut.eventModifiers)
-        } else {
-            Button(role: .destructive, action: actions.closeBox) {
-                Label(String(localized: "contextMenu.closeBox", defaultValue: "Close Box"), systemImage: "xmark.square")
-            }
+        }
+
+        Button(role: .destructive, action: actions.closeBox) {
+            Label(closeItemLabel, systemImage: snapshot.isGroup ? "trash" : "xmark.square")
         }
     }
 
+    private var renameItemLabel: String {
+        snapshot.isGroup
+            ? String(localized: "workspaceGroup.contextMenu.rename", defaultValue: "Rename Group…")
+            : String(localized: "contextMenu.renameBox", defaultValue: "Rename Box…")
+    }
+
+    private var pinItemLabel: String {
+        if snapshot.isGroup {
+            return snapshot.isPinned
+                ? String(localized: "workspaceGroup.contextMenu.unpin", defaultValue: "Unpin Group")
+                : String(localized: "workspaceGroup.contextMenu.pin", defaultValue: "Pin Group")
+        }
+        return snapshot.isPinned
+            ? String(localized: "contextMenu.unpinBox", defaultValue: "Unpin Box")
+            : String(localized: "contextMenu.pinBox", defaultValue: "Pin Box")
+    }
+
+    private var markReadItemLabel: String {
+        snapshot.isGroup
+            ? String(localized: "notifications.markAsRead", defaultValue: "Mark as Read")
+            : String(localized: "contextMenu.markBoxRead", defaultValue: "Mark Box as Read")
+    }
+
+    private var markUnreadItemLabel: String {
+        snapshot.isGroup
+            ? String(localized: "notifications.markAsUnread", defaultValue: "Mark as Unread")
+            : String(localized: "contextMenu.markBoxUnread", defaultValue: "Mark Box as Unread")
+    }
+
+    private var closeItemLabel: String {
+        snapshot.isGroup
+            ? String(
+                localized: "workspaceGroup.contextMenu.delete",
+                defaultValue: "Delete Group (Close Boxes)"
+            )
+            : String(localized: "contextMenu.closeBox", defaultValue: "Close Box")
+    }
+
     private var connectionSymbol: String {
+        if snapshot.isDisconnected { return "network.slash" }
+        if snapshot.isConnecting { return "arrow.clockwise" }
         switch snapshot.connectionKind {
         case .local: return "terminal"
-        case .ssh: return snapshot.isDisconnected ? "network.slash" : "network"
+        case .ssh: return "network"
         case .mixed: return "square.stack.3d.up"
         }
+    }
+
+    private var connectionBadgeForeground: Color {
+        if snapshot.isDisconnected {
+            return Color(nsColor: UniConnectRailPalette.compactDisconnectedForegroundNSColor)
+        }
+        return .white
+    }
+
+    private var connectionBadgeBackground: Color {
+        if snapshot.isConnecting, !snapshot.isDisconnected { return .blue }
+        return .black.opacity(
+            UniConnectRailPalette.compactBadgeBackgroundOpacity(
+                increasedContrast: colorSchemeContrast == .increased
+            )
+        )
     }
 
     private var accessibilityValue: String {
@@ -337,14 +450,7 @@ struct UniConnectRailTile: View, Equatable {
             kind = String(localized: "uniconnect.rail.kind.mixed", defaultValue: "Mixed")
         }
         var values = [kind]
-        if let secondaryLabel = snapshot.secondaryLabel, !secondaryLabel.isEmpty {
-            values.append(secondaryLabel)
-        }
-        values.append(String(
-            format: String(localized: "uniconnect.rail.accessibility.windowCount", defaultValue: "%lld windows"),
-            locale: .current,
-            Int64(snapshot.windowCount)
-        ))
+        values.append(windowCountAccessibilityLabel)
         if snapshot.unreadCount > 0 {
             values.append(String(
                 format: String(localized: "workspaceGroup.unread.a11y", defaultValue: "%lld unread"),
@@ -354,6 +460,9 @@ struct UniConnectRailTile: View, Equatable {
         }
         if snapshot.isDisconnected {
             values.append(String(localized: "remote.status.disconnected", defaultValue: "Disconnected"))
+        }
+        if snapshot.isConnecting {
+            values.append(String(localized: "remote.status.connecting", defaultValue: "Connecting"))
         }
         if snapshot.requiresLocalRootReassignment {
             values.append(
@@ -369,12 +478,34 @@ struct UniConnectRailTile: View, Equatable {
         return values.joined(separator: ", ")
     }
 
+    private var windowCountAccessibilityLabel: String {
+        guard snapshot.windowCount != 1 else {
+            return String(
+                localized: "uniconnect.rail.accessibility.oneWindow",
+                defaultValue: "1 window"
+            )
+        }
+        return String(
+            format: String(
+                localized: "uniconnect.rail.accessibility.windowCount",
+                defaultValue: "%lld windows"
+            ),
+            locale: .current,
+            Int64(snapshot.windowCount)
+        )
+    }
+
     private func activateBox() {
         if snapshot.isGroup, NSEvent.modifierFlags.contains(.option), let toggleGroup = actions.toggleGroup {
             toggleGroup()
         } else {
             actions.selectBox()
+            presentWindowList()
         }
+    }
+
+    private func presentWindowList() {
+        actions.presentWindowList()
     }
 
 }

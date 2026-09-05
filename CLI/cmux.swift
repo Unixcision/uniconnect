@@ -11,9 +11,6 @@ import LocalAuthentication
 #if canImport(Security)
 import Security
 #endif
-#if canImport(Sentry)
-import Sentry
-#endif
 
 struct CLIError: Error, CustomStringConvertible {
     let message: String
@@ -37,277 +34,22 @@ private enum CLISocketEnvironment {
         return socketPath ?? legacySocketPath
     }
 
-    static func socketPathForTelemetry(in environment: [String: String]) -> String? {
-        normalized(environment["CMUX_SOCKET_PATH"]) ?? normalized(environment["CMUX_SOCKET"])
-    }
-
     private static func normalized(_ raw: String?) -> String? {
         let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
     }
 }
 
-private final class CLISocketSentryTelemetry {
-    private struct PendingBreadcrumb {
-        let message: String
-        let data: [String: Any]
-    }
+/// Compatibility sink for inherited hook call sites.
+///
+/// UniConnect has no approved CLI telemetry service. These methods intentionally
+/// retain no data, enumerate no files, and perform no I/O.
+private struct CLIDisabledTelemetry {
+    init(command: String, commandArgs: [String], socketPath: String, processEnv: [String: String]) {}
 
-    private let command: String
-    private let subcommand: String
-    private let socketPath: String
-    private let envSocketPath: String?
-    private let processEnv: [String: String]
-    private let workspaceId: String?
-    private let surfaceId: String?
-    private let disabledByEnv: Bool
-    private var pendingBreadcrumbs: [PendingBreadcrumb] = []
+    func breadcrumb(_ message: String, data: [String: Any] = [:]) {}
 
-#if canImport(Sentry)
-    private static let startupLock = NSLock()
-    private static var started = false
-    private static let dsn = "https://ecba1ec90ecaee02a102fba931b6d2b3@o4507547940749312.ingest.us.sentry.io/4510796264636416"
-
-    private static func currentSentryReleaseName() -> String? {
-        guard let bundleIdentifier = currentSentryBundleIdentifier(),
-              let version = currentBundleVersionValue(forKey: "CFBundleShortVersionString"),
-              let build = currentBundleVersionValue(forKey: "CFBundleVersion")
-        else {
-            return nil
-        }
-        return "\(bundleIdentifier)@\(version)+\(build)"
-    }
-
-    private static func currentSentryBundleIdentifier() -> String? {
-        if let bundleIdentifier = ProcessInfo.processInfo.environment["CMUX_BUNDLE_ID"]?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !bundleIdentifier.isEmpty {
-            return bundleIdentifier
-        }
-
-        if let bundleIdentifier = currentSentryBundle()?.bundleIdentifier?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !bundleIdentifier.isEmpty {
-            return bundleIdentifier
-        }
-
-        return nil
-    }
-
-    private static func currentBundleVersionValue(forKey key: String) -> String? {
-        guard let value = currentSentryBundle()?.infoDictionary?[key] as? String else {
-            return nil
-        }
-
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.contains("$(") else {
-            return nil
-        }
-        return trimmed
-    }
-
-    private static func currentSentryBundle() -> Bundle? {
-        if Bundle.main.bundleIdentifier?.isEmpty == false {
-            return Bundle.main
-        }
-
-        if let bundle = CLIExecutableLocator.enclosingAppBundle() {
-            return bundle
-        }
-
-        return Bundle.main
-    }
-
-#endif
-
-    init(command: String, commandArgs: [String], socketPath: String, processEnv: [String: String]) {
-        self.command = command.lowercased()
-        self.subcommand = commandArgs.first?.lowercased() ?? "help"
-        self.socketPath = socketPath
-        self.envSocketPath = CLISocketEnvironment.socketPathForTelemetry(in: processEnv)
-        self.processEnv = processEnv
-        self.workspaceId = processEnv["CMUX_WORKSPACE_ID"]
-        self.surfaceId = processEnv["CMUX_SURFACE_ID"]
-        self.disabledByEnv =
-            processEnv["CMUX_CLI_SENTRY_DISABLED"] == "1" ||
-            processEnv["CMUX_CLAUDE_HOOK_SENTRY_DISABLED"] == "1"
-    }
-
-    func breadcrumb(_ message: String, data: [String: Any] = [:]) {
-        guard shouldEmit else { return }
-#if canImport(Sentry)
-        pendingBreadcrumbs.append(PendingBreadcrumb(message: message, data: data))
-#endif
-    }
-
-    func captureError(stage: String, error: Error, data: [String: Any] = [:]) {
-        guard shouldEmit else { return }
-#if canImport(Sentry)
-        Self.ensureStarted()
-        flushPendingBreadcrumbs()
-        var context = baseContext()
-        context["stage"] = stage
-        context["error"] = String(describing: error)
-        for (key, value) in socketDiagnostics() {
-            context[key] = value
-        }
-        for (key, value) in data {
-            context[key] = value
-        }
-        let subcommand = self.subcommand
-        let command = self.command
-        _ = SentrySDK.capture(error: error) { scope in
-            scope.setLevel(.error)
-            scope.setTag(value: "cmux-cli", key: "component")
-            scope.setTag(value: command, key: "cli_command")
-            scope.setTag(value: subcommand, key: "cli_subcommand")
-            scope.setContext(value: context, key: "cli_socket")
-        }
-        SentrySDK.flush(timeout: 2.0)
-#endif
-    }
-
-    private var shouldEmit: Bool {
-        !disabledByEnv
-    }
-
-#if canImport(Sentry)
-    private func flushPendingBreadcrumbs() {
-        for pending in pendingBreadcrumbs {
-            addBreadcrumb(message: pending.message, data: pending.data)
-        }
-        pendingBreadcrumbs.removeAll()
-    }
-
-    private func addBreadcrumb(message: String, data: [String: Any]) {
-        var payload = baseContext()
-        for (key, value) in data {
-            payload[key] = value
-        }
-        let crumb = Breadcrumb(level: .info, category: "cmux.cli")
-        crumb.message = message
-        crumb.data = payload
-        SentrySDK.addBreadcrumb(crumb)
-    }
-#endif
-
-    private func baseContext() -> [String: Any] {
-        var context: [String: Any] = [
-            "command": command,
-            "subcommand": subcommand,
-            "requested_socket_path": socketPath,
-            "env_socket_path": envSocketPath ?? "<unset>"
-        ]
-        if let workspaceId {
-            context["workspace_id"] = workspaceId
-        }
-        if let surfaceId {
-            context["surface_id"] = surfaceId
-        }
-        return context
-    }
-
-    private func socketDiagnostics() -> [String: Any] {
-        var context: [String: Any] = [
-            "cwd": FileManager.default.currentDirectoryPath,
-            "uid": Int(getuid()),
-            "euid": Int(geteuid())
-        ]
-
-        var st = stat()
-        if lstat(socketPath, &st) == 0 {
-            context["socket_exists"] = true
-            context["socket_mode"] = String(format: "%o", Int(st.st_mode & 0o7777))
-            context["socket_owner_uid"] = Int(st.st_uid)
-            context["socket_owner_gid"] = Int(st.st_gid)
-            context["socket_file_type"] = Self.fileTypeDescription(mode: st.st_mode)
-        } else {
-            let code = errno
-            context["socket_exists"] = false
-            context["socket_errno"] = Int(code)
-            context["socket_errno_description"] = String(cString: strerror(code))
-        }
-
-        let tmpSockets = Self.discoverSockets(in: "/tmp", limit: 10)
-        if !tmpSockets.isEmpty {
-            context["tmp_cmux_sockets"] = tmpSockets
-        }
-        let taggedSockets = tmpSockets.filter { $0 != CLISocketPathResolver.legacyDefaultSocketPath }
-        if CLISocketPathResolver.isImplicitDefaultPath(
-            socketPath,
-            bundleIdentifier: CLISocketPathResolver.currentAppBundleIdentifier(),
-            environment: processEnv
-        ),
-           (envSocketPath?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
-           !taggedSockets.isEmpty {
-            context["possible_root_cause"] = "CMUX_SOCKET_PATH missing while tagged sockets exist"
-        }
-
-        return context
-    }
-
-    private static func fileTypeDescription(mode: mode_t) -> String {
-        switch mode & mode_t(S_IFMT) {
-        case mode_t(S_IFSOCK):
-            return "socket"
-        case mode_t(S_IFREG):
-            return "regular"
-        case mode_t(S_IFDIR):
-            return "directory"
-        case mode_t(S_IFLNK):
-            return "symlink"
-        default:
-            return "other"
-        }
-    }
-
-    private static func discoverSockets(in directory: String, limit: Int) -> [String] {
-        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: directory) else {
-            return []
-        }
-        var sockets: [String] = []
-        for name in entries.sorted() {
-            guard name.hasPrefix("cmux"), name.hasSuffix(".sock") else { continue }
-            let fullPath = URL(fileURLWithPath: directory)
-                .appendingPathComponent(name, isDirectory: false)
-                .path
-            var st = stat()
-            guard lstat(fullPath, &st) == 0 else { continue }
-            guard (st.st_mode & mode_t(S_IFMT)) == mode_t(S_IFSOCK) else { continue }
-            sockets.append(fullPath)
-            if sockets.count >= limit {
-                break
-            }
-        }
-        return sockets
-    }
-
-#if canImport(Sentry)
-    private static func ensureStarted() {
-        startupLock.lock()
-        defer { startupLock.unlock() }
-        guard !started else { return }
-        SentrySDK.start { options in
-            options.dsn = dsn
-            options.releaseName = currentSentryReleaseName()
-#if DEBUG
-            options.environment = "development-cli"
-#else
-            options.environment = "production-cli"
-#endif
-            options.debug = false
-            options.sendDefaultPii = true
-            options.attachStacktrace = true
-            options.tracesSampleRate = 0.0
-            options.enableAppHangTracking = false
-            options.enableWatchdogTerminationTracking = false
-            options.enableAutoSessionTracking = false
-            options.enableCaptureFailedRequests = false
-            options.enableMetricKit = false
-        }
-        started = true
-    }
-#endif
+    func captureError(stage: String, error: Error, data: [String: Any] = [:]) {}
 }
 
 struct WindowInfo {
@@ -1564,7 +1306,6 @@ final class SocketClient {
     private let path: String
     private var socketFD: Int32 = -1
     private var lastConfiguredReceiveTimeout: TimeInterval?
-    private var lastOperationTelemetry: CLISocketOperationTelemetry.State?
     private static let defaultResponseTimeoutSeconds: TimeInterval = 15.0
     private static let multilineResponseIdleTimeoutSeconds: TimeInterval = 0.12
     private static let maxSocketTimeoutSeconds: TimeInterval = 9_007_199_254_740_991
@@ -1642,12 +1383,6 @@ final class SocketClient {
         }
     }
 
-    func operationTelemetryContext() -> [String: Any] {
-        lastOperationTelemetry?.context() ?? [:]
-    }
-
-    func hasUnfinishedOperationTelemetry() -> Bool { lastOperationTelemetry.map { $0.phase != .completed } ?? false }
-
     private var relayEndpoint: RelayEndpoint? {
         Self.parseRelayEndpoint(path)
     }
@@ -1672,10 +1407,6 @@ final class SocketClient {
             tv_sec: Int(seconds),
             tv_usec: __darwin_suseconds_t(microseconds)
         )
-    }
-
-    private func recordOperation(_ operation: CLISocketOperationTelemetry.State) {
-        lastOperationTelemetry = operation
     }
 
     func connect() throws {
@@ -1724,14 +1455,6 @@ final class SocketClient {
             try configureReceiveTimeout(initialResponseTimeout)
         }
         _ = try? configureSocketWriteSafety(initialResponseTimeout)
-        var operation = CLISocketOperationTelemetry.State(
-            name: CLISocketOperationTelemetry.operationName(for: command),
-            timeout: initialResponseTimeout,
-            startedAt: Date(),
-            phase: .writeRequest
-        )
-        recordOperation(operation)
-
         let payload = command + "\n"
         try writeAll(
             Data(payload.utf8),
@@ -1741,14 +1464,9 @@ final class SocketClient {
 
         var data = Data()
         var sawNewline = false
-        var receivedCompleteResponse = false
 
         while true {
             let currentTimeout = sawNewline ? Self.multilineResponseIdleTimeoutSeconds : initialResponseTimeout
-            operation.phase = sawNewline ? .readMultilineResponse : .waitForResponse
-            operation.sawNewline = sawNewline
-            operation.timeout = currentTimeout
-            recordOperation(operation)
             if lastConfiguredReceiveTimeout != currentTimeout {
                 try configureReceiveTimeout(currentTimeout)
             }
@@ -1761,7 +1479,6 @@ final class SocketClient {
                 }
                 if errno == EAGAIN || errno == EWOULDBLOCK {
                     if sawNewline {
-                        receivedCompleteResponse = true
                         break
                     }
                     throw CLIError(message: "Command timed out")
@@ -1769,33 +1486,22 @@ final class SocketClient {
                 throw CLIError(message: "Socket read error")
             }
             if count == 0 {
-                operation.sawNewline = sawNewline
-                recordOperation(operation)
                 if data.isEmpty {
                     throw CLIError(message: "Socket closed before reply")
                 }
                 if !sawNewline {
                     throw CLIError(message: "Socket closed before complete reply")
                 }
-                receivedCompleteResponse = true
                 break
             }
             data.append(buffer, count: count)
-            operation.bytesRead += count
             if data.contains(UInt8(0x0A)) {
                 sawNewline = true
                 if Self.isCompleteSingleLineResponse(data) {
-                    receivedCompleteResponse = true
                     break
                 }
             }
         }
-
-        operation.sawNewline = sawNewline
-        if receivedCompleteResponse {
-            operation.phase = .completed
-        }
-        recordOperation(operation)
 
         guard var response = String(data: data, encoding: .utf8) else {
             throw CLIError(message: "Invalid UTF-8 response")
@@ -1814,14 +1520,6 @@ final class SocketClient {
         let shouldCloseAfterSend = relayEndpoint != nil
 
         try configureSocketWriteSafety(writeTimeout)
-        var operation = CLISocketOperationTelemetry.State(
-            name: CLISocketOperationTelemetry.operationName(for: command),
-            timeout: writeTimeout,
-            startedAt: Date(),
-            phase: .writeRequest
-        )
-        recordOperation(operation)
-
         do {
             try writeAllNonBlocking(
                 Data((command + "\n").utf8),
@@ -1833,8 +1531,6 @@ final class SocketClient {
             close()
             throw error
         }
-        operation.phase = .completed
-        recordOperation(operation)
         if shouldCloseAfterSend {
             close()
         } else {
@@ -1845,6 +1541,28 @@ final class SocketClient {
     }
 
     private func connectOnce(responseTimeout: TimeInterval? = nil) throws {
+        let processEnvironment = ProcessInfo.processInfo.environment
+        let executableBundleIdentifier = CLISocketPathResolver.currentAppBundleIdentifier()
+        let canonicalPath = path.hasPrefix("/")
+            ? (path as NSString).resolvingSymlinksInPath
+            : path
+        guard UniConnectSocketIsolationPolicy.permitsConnection(
+            to: path,
+            executableBundleIdentifier: executableBundleIdentifier,
+            environment: processEnvironment
+        ), UniConnectSocketIsolationPolicy.permitsConnection(
+            to: canonicalPath,
+            executableBundleIdentifier: executableBundleIdentifier,
+            environment: processEnvironment
+        ) else {
+            throw CLIError(
+                message: String(
+                    localized: "cli.socketIsolation.error.foreignEndpoint",
+                    defaultValue: "UniConnect refused a control socket outside its isolated namespace. Set UNICONNECT_ALLOW_FOREIGN_SOCKET=1 only for a deliberate one-command override."
+                )
+            )
+        }
+
         if let relayEndpoint {
             try connectToRelay(endpoint: relayEndpoint, responseTimeout: responseTimeout)
             return
@@ -1852,7 +1570,7 @@ final class SocketClient {
 
         // Verify socket is owned by the current user to prevent fake-socket attacks.
         var st = stat()
-        guard stat(path, &st) == 0 else {
+        guard lstat(path, &st) == 0 else {
             throw CLIError(message: "Socket not found at \(path)")
         }
         guard (st.st_mode & mode_t(S_IFMT)) == mode_t(S_IFSOCK) else {
@@ -2601,11 +2319,7 @@ struct CMUXCLI {
         return keys
     }
 
-    private func captureSocketTransportError(telemetry: CLISocketSentryTelemetry, stage: String, error: Error, client: SocketClient) {
-        if client.hasUnfinishedOperationTelemetry() {
-            telemetry.captureError(stage: stage, error: error, data: client.operationTelemetryContext())
-        }
-    }
+    private func captureSocketTransportError(telemetry: CLIDisabledTelemetry, stage: String, error: Error, client: SocketClient) {}
 
     private struct VMCreateIdempotencyStore: Codable {
         var records: [String: VMCreateIdempotencyRecord] = [:]
@@ -3025,7 +2739,7 @@ struct CMUXCLI {
 
         let envSocketPath = explicitSocketPath == nil
             ? try CLISocketEnvironment.socketPath(in: processEnv)
-            : CLISocketEnvironment.socketPathForTelemetry(in: processEnv)
+            : nil
         let socketPath = explicitSocketPath ?? envSocketPath ?? CLISocketPathResolver.defaultSocketPath(
             bundleIdentifier: cliBundleIdentifier,
             environment: processEnv
@@ -3042,7 +2756,7 @@ struct CMUXCLI {
         } else {
             socketPathSource = .implicitDefault
         }
-        let cliTelemetry = CLISocketSentryTelemetry(
+        let cliTelemetry = CLIDisabledTelemetry(
             command: command,
             commandArgs: commandArgs,
             socketPath: socketPath,
@@ -5226,6 +4940,7 @@ struct CMUXCLI {
         "CMUX_SURFACE_ID",
         "CMUX_TAB_ID",
         "CMUX_WORKSPACE_ID",
+        UniConnectSocketIsolationPolicy.allowForeignSocketEnvironmentKey,
     ]
 
     private func launchServicesPathOpenEnvironment() -> [String: String] {
@@ -21214,7 +20929,7 @@ struct CMUXCLI {
     private func runClaudeHook(
         commandArgs: [String],
         client: SocketClient,
-        telemetry: CLISocketSentryTelemetry,
+        telemetry: CLIDisabledTelemetry,
         socketPassword: String? = nil
     ) throws {
         let subcommand = commandArgs.first?.lowercased() ?? "help"
@@ -21885,13 +21600,30 @@ struct CMUXCLI {
             return
         }
         do {
+            let generationOption = agentLifecycleSurfaceGenerationOption(surfaceId: surfaceId)
             _ = try sendV1Command(
-                "set_agent_lifecycle \(key) \(lifecycle.rawValue) --tab=\(workspaceId)\(socketPanelOption(surfaceId))",
+                "set_agent_lifecycle \(key) \(lifecycle.rawValue) --tab=\(workspaceId)\(socketPanelOption(surfaceId))\(generationOption)",
                 client: client
             )
         } catch {
             fputs("Warning: failed to set agent lifecycle\n", stderr)
         }
+    }
+
+    private func agentLifecycleSurfaceGenerationOption(surfaceId: String?) -> String {
+        let environment = ProcessInfo.processInfo.environment
+        guard let surfaceId = surfaceId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              let targetSurfaceID = UUID(uuidString: surfaceId),
+              let ambientSurface = environment["CMUX_SURFACE_ID"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              let ambientSurfaceID = UUID(uuidString: ambientSurface),
+              targetSurfaceID == ambientSurfaceID,
+              let rawGeneration = environment["UNICONNECT_SURFACE_GENERATION"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              let generation = UUID(uuidString: rawGeneration) else {
+            return ""
+        }
+        return " --generation=\(generation.uuidString)"
     }
 
     private func runAgentHibernation(
@@ -21928,7 +21660,7 @@ struct CMUXCLI {
         sessionStore: ClaudeHookSessionStore,
         parsedInput: ClaudeHookParsedInput,
         workspaceId: String,
-        telemetry: CLISocketSentryTelemetry
+        telemetry: CLIDisabledTelemetry
     ) -> Bool {
         shouldApplyClaudeHookVisibleMutation(
             sessionStore: sessionStore,
@@ -21944,7 +21676,7 @@ struct CMUXCLI {
         sessionId: String?,
         turnId: String?,
         workspaceId: String,
-        telemetry: CLISocketSentryTelemetry
+        telemetry: CLIDisabledTelemetry
     ) -> Bool {
         do {
             return try sessionStore.isCurrent(
@@ -21970,7 +21702,7 @@ struct CMUXCLI {
         sessionStore: ClaudeHookSessionStore,
         parsedInput: ClaudeHookParsedInput,
         workspaceId: String,
-        telemetry: CLISocketSentryTelemetry
+        telemetry: CLIDisabledTelemetry
     ) -> Bool {
         do {
             return try sessionStore.canReplaceActiveSession(
@@ -23735,7 +23467,7 @@ struct CMUXCLI {
         surfaceId: String?,
         leasePath: String?,
         env: [String: String],
-        telemetry: CLISocketSentryTelemetry
+        telemetry: CLIDisabledTelemetry
     ) {
         guard !sessionId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !workspaceId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -27551,7 +27283,7 @@ export default function uniconnectPiSessionExtension(pi: ExtensionAPI) {
         def: AgentHookDef,
         commandArgs: [String],
         client: SocketClient,
-        telemetry: CLISocketSentryTelemetry,
+        telemetry: CLIDisabledTelemetry,
         socketPassword: String? = nil
     ) throws {
         let env = ProcessInfo.processInfo.environment
@@ -30757,7 +30489,7 @@ export default function uniconnectPiSessionExtension(pi: ExtensionAPI) {
         client: SocketClient? = nil,
         socketPath: String? = nil,
         socketPassword: String? = nil,
-        telemetry: CLISocketSentryTelemetry
+        telemetry: CLIDisabledTelemetry
     ) throws {
         _ = telemetry
         let source = optionValue(commandArgs, name: "--source") ?? ""
@@ -31362,13 +31094,13 @@ export default function uniconnectPiSessionExtension(pi: ExtensionAPI) {
 
     private func runCursorInstallHooks() throws { try installAgentHooks(Self.agentDef(named: "cursor")!) }
     private func runCursorUninstallHooks() throws { try uninstallAgentHooks(Self.agentDef(named: "cursor")!) }
-    private func runCursorHook(commandArgs: [String], client: SocketClient, telemetry: CLISocketSentryTelemetry) throws {
+    private func runCursorHook(commandArgs: [String], client: SocketClient, telemetry: CLIDisabledTelemetry) throws {
         try runGenericAgentHook(def: Self.agentDef(named: "cursor")!, commandArgs: commandArgs, client: client, telemetry: telemetry)
     }
 
     private func runGeminiInstallHooks() throws { try installAgentHooks(Self.agentDef(named: "gemini")!) }
     private func runGeminiUninstallHooks() throws { try uninstallAgentHooks(Self.agentDef(named: "gemini")!) }
-    private func runGeminiHook(commandArgs: [String], client: SocketClient, telemetry: CLISocketSentryTelemetry) throws {
+    private func runGeminiHook(commandArgs: [String], client: SocketClient, telemetry: CLIDisabledTelemetry) throws {
         try runGenericAgentHook(def: Self.agentDef(named: "gemini")!, commandArgs: commandArgs, client: client, telemetry: telemetry)
     }
 
@@ -31489,7 +31221,7 @@ export default function uniconnectPiSessionExtension(pi: ExtensionAPI) {
     private func runHooksSocketCommand(
         commandArgs: [String],
         client: SocketClient,
-        telemetry: CLISocketSentryTelemetry,
+        telemetry: CLIDisabledTelemetry,
         socketPassword: String? = nil
     ) throws {
         guard let first = commandArgs.first?.lowercased() else {

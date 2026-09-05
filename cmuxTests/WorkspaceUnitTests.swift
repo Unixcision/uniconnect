@@ -24,27 +24,33 @@ func makeTemporaryBrowserProfile(named prefix: String) throws -> BrowserProfileD
 }
 
 final class SidebarSelectedWorkspaceColorTests: XCTestCase {
-    func testLightModeUsesConfiguredSelectedWorkspaceBackgroundColor() {
-        guard let color = sidebarSelectedWorkspaceBackgroundNSColor(for: .light).usingColorSpace(.sRGB) else {
+    func testLightModeUsesUniConnectAccentAsDefaultSelectedWorkspaceBackgroundColor() {
+        guard let color = sidebarSelectedWorkspaceBackgroundNSColor(
+            for: .light,
+            sidebarSelectionColorHex: nil
+        ).usingColorSpace(.sRGB) else {
             XCTFail("Expected sRGB-convertible color")
             return
         }
 
-        XCTAssertEqual(color.redComponent, 0, accuracy: 0.001)
-        XCTAssertEqual(color.greenComponent, 136.0 / 255.0, accuracy: 0.001)
-        XCTAssertEqual(color.blueComponent, 1.0, accuracy: 0.001)
+        XCTAssertEqual(color.redComponent, 30.0 / 255.0, accuracy: 0.001)
+        XCTAssertEqual(color.greenComponent, 24.0 / 255.0, accuracy: 0.001)
+        XCTAssertEqual(color.blueComponent, 223.0 / 255.0, accuracy: 0.001)
         XCTAssertEqual(color.alphaComponent, 1.0, accuracy: 0.001)
     }
 
-    func testDarkModeUsesConfiguredSelectedWorkspaceBackgroundColor() {
-        guard let color = sidebarSelectedWorkspaceBackgroundNSColor(for: .dark).usingColorSpace(.sRGB) else {
+    func testDarkModeUsesUniConnectAccentAsDefaultSelectedWorkspaceBackgroundColor() {
+        guard let color = sidebarSelectedWorkspaceBackgroundNSColor(
+            for: .dark,
+            sidebarSelectionColorHex: nil
+        ).usingColorSpace(.sRGB) else {
             XCTFail("Expected sRGB-convertible color")
             return
         }
 
-        XCTAssertEqual(color.redComponent, 0, accuracy: 0.001)
-        XCTAssertEqual(color.greenComponent, 145.0 / 255.0, accuracy: 0.001)
-        XCTAssertEqual(color.blueComponent, 1.0, accuracy: 0.001)
+        XCTAssertEqual(color.redComponent, 90.0 / 255.0, accuracy: 0.001)
+        XCTAssertEqual(color.greenComponent, 31.0 / 255.0, accuracy: 0.001)
+        XCTAssertEqual(color.blueComponent, 229.0 / 255.0, accuracy: 0.001)
         XCTAssertEqual(color.alphaComponent, 1.0, accuracy: 0.001)
     }
 
@@ -80,7 +86,10 @@ final class SidebarSelectedWorkspaceColorTests: XCTestCase {
 
     func testDefaultSelectedWorkspaceForegroundUsesNativeSelectionTextOnAccentBackground() {
         guard let color = sidebarSelectedWorkspaceForegroundNSColor(
-            on: sidebarSelectedWorkspaceBackgroundNSColor(for: .light),
+            on: sidebarSelectedWorkspaceBackgroundNSColor(
+                for: .light,
+                sidebarSelectionColorHex: nil
+            ),
             opacity: 0.65
         ).usingColorSpace(.sRGB) else {
             XCTFail("Expected sRGB-convertible color")
@@ -122,14 +131,17 @@ final class SidebarSelectedWorkspaceColorTests: XCTestCase {
 
         XCTAssertEqual(
             background.color?.hexString(),
-            sidebarSelectedWorkspaceBackgroundNSColor(for: .light).hexString()
+            sidebarSelectedWorkspaceBackgroundNSColor(
+                for: .light,
+                sidebarSelectionColorHex: nil
+            ).hexString()
         )
         XCTAssertEqual(background.opacity, 1.0, accuracy: 0.001)
         withExtendedLifetime(cancellable) {}
     }
 
     @MainActor
-    func testLeftRailKeepsSelectedBackgroundForActiveCustomColoredWorkspaceRow() {
+    func testLeftRailUsesSubtleSelectedTintForActiveCustomColoredWorkspaceRow() {
         let manager = TabManager()
         guard let workspace = manager.tabs.first else {
             XCTFail("Expected TabManager to initialise with a workspace")
@@ -157,10 +169,45 @@ final class SidebarSelectedWorkspaceColorTests: XCTestCase {
 
         XCTAssertEqual(
             background.color?.hexString(),
-            sidebarSelectedWorkspaceBackgroundNSColor(for: .light).hexString()
+            sidebarSelectedWorkspaceBackgroundNSColor(
+                for: .light,
+                sidebarSelectionColorHex: nil
+            ).hexString()
         )
-        XCTAssertEqual(background.opacity, 1.0, accuracy: 0.001)
+        XCTAssertEqual(background.opacity, 0.10, accuracy: 0.001)
+
+        let darkBackground = sidebarWorkspaceRowBackgroundStyle(
+            activeTabIndicatorStyle: .leftRail,
+            isActive: true,
+            isMultiSelected: false,
+            customColorHex: workspace.customColor,
+            colorScheme: .dark,
+            sidebarSelectionColorHex: nil
+        )
+        XCTAssertEqual(
+            darkBackground.color?.hexString(),
+            sidebarSelectedWorkspaceBackgroundNSColor(
+                for: .dark,
+                sidebarSelectionColorHex: nil
+            ).hexString()
+        )
+        XCTAssertEqual(darkBackground.opacity, 0.16, accuracy: 0.001)
         withExtendedLifetime(cancellable) {}
+    }
+
+    func testLeftRailActiveRowKeepsNativeForegroundWhileSolidFillInvertsIt() {
+        XCTAssertFalse(sidebarWorkspaceRowUsesInvertedForeground(
+            activeTabIndicatorStyle: .leftRail,
+            isActive: true
+        ))
+        XCTAssertTrue(sidebarWorkspaceRowUsesInvertedForeground(
+            activeTabIndicatorStyle: .solidFill,
+            isActive: true
+        ))
+        XCTAssertFalse(sidebarWorkspaceRowUsesInvertedForeground(
+            activeTabIndicatorStyle: .solidFill,
+            isActive: false
+        ))
     }
 
     @MainActor
@@ -203,7 +250,32 @@ final class SidebarSelectedWorkspaceColorTests: XCTestCase {
         )
 
         XCTAssertNotNil(railColor)
-        XCTAssertEqual(railColor?.hexString(), "#C0392B")
+        XCTAssertEqual(
+            railColor?.hexString(),
+            WorkspaceTabColorSettings.displayNSColor(
+                hex: "#C0392B",
+                colorScheme: .light,
+                forceBright: true
+            )?.hexString()
+        )
+    }
+
+    func testLeftRailActiveRowWithoutCustomColorUsesAccentRail() {
+        let activeRail = sidebarWorkspaceRowExplicitRailNSColor(
+            activeTabIndicatorStyle: .leftRail,
+            customColorHex: nil,
+            colorScheme: .dark,
+            isActive: true
+        )
+        let inactiveRail = sidebarWorkspaceRowExplicitRailNSColor(
+            activeTabIndicatorStyle: .leftRail,
+            customColorHex: nil,
+            colorScheme: .dark,
+            isActive: false
+        )
+
+        XCTAssertEqual(activeRail?.hexString(), cmuxAccentNSColor(for: .dark).hexString())
+        XCTAssertNil(inactiveRail)
     }
 
     @MainActor
@@ -3127,6 +3199,9 @@ final class WorkspaceCreationWorkingDirectoryInheritanceTests: XCTestCase {
             restorableAgentResumeState: nil,
             resumeBinding: resumeBinding,
             uniConnectLocalWindow: nil,
+            requiresUniConnectLocalCompatibility: false,
+            requiresUniConnectSSHCompatibility: false,
+            uniConnectSSHState: nil,
             agentRuntime: nil,
             isRemoteTerminal: false,
             remoteRelayPort: nil,

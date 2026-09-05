@@ -3124,6 +3124,71 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
         XCTAssertEqual(scpArgs.last, "lawrence@[2001:db8::1]:/tmp/uniconnect-drop-123.png")
     }
 
+    func testVaultDerivedImageUploadPinsSavedEndpointBeforeAlias() throws {
+        let target = try XCTUnwrap(UniConnectSSHEffectiveTarget(
+            user: "deploy",
+            host: "server-a.example",
+            port: 2206
+        ))
+        var session = DetectedSSHSession(
+            destination: "production",
+            port: nil,
+            identityFile: nil,
+            configFile: nil,
+            jumpHost: nil,
+            controlPath: nil,
+            useIPv4: false,
+            useIPv6: false,
+            forwardAgent: false,
+            compressionEnabled: false,
+            sshOptions: []
+        )
+        session.uniConnectEffectiveTarget = target
+
+        let arguments = session.scpArgumentsForTesting(
+            localPath: "/tmp/local.png",
+            remotePath: "/tmp/uniconnect-drop-123.png"
+        )
+
+        XCTAssertTrue(arguments.starts(with: target.sshPinningOptions))
+        XCTAssertFalse(arguments.contains(where: { $0.contains("server-b.example") }))
+        XCTAssertEqual(arguments.last, "production:/tmp/uniconnect-drop-123.png")
+    }
+
+    func testImageUploadPinsNestedSSHPathAndDropsAmbientInjectionVariables() {
+        var session = DetectedSSHSession(
+            destination: "production",
+            port: nil,
+            identityFile: nil,
+            configFile: nil,
+            jumpHost: "jump.example.test",
+            controlPath: nil,
+            useIPv4: false,
+            useIPv6: false,
+            forwardAgent: false,
+            compressionEnabled: false,
+            sshOptions: []
+        )
+        session.password = "environment-only"
+
+        let environment = session.uploadEnvironmentForTesting(ambientEnvironment: [
+            "PATH": "/tmp/project-controlled-bin",
+            "HOME": "/tmp/project-controlled-home",
+            "SSH_AUTH_SOCK": "/tmp/agent.sock",
+            "LANG": "es_ES.UTF-8",
+            "DYLD_INSERT_LIBRARIES": "/tmp/injected.dylib",
+            "SSH_ASKPASS": "/tmp/fake-askpass",
+        ])
+
+        XCTAssertEqual(environment["PATH"], "/usr/bin:/bin:/usr/sbin:/sbin")
+        XCTAssertEqual(environment["HOME"], FileManager.default.homeDirectoryForCurrentUser.path)
+        XCTAssertEqual(environment["SSH_AUTH_SOCK"], "/tmp/agent.sock")
+        XCTAssertEqual(environment["LANG"], "es_ES.UTF-8")
+        XCTAssertEqual(environment["SSHPASS"], "environment-only")
+        XCTAssertNil(environment["DYLD_INSERT_LIBRARIES"])
+        XCTAssertNil(environment["SSH_ASKPASS"])
+    }
+
     func testDetectsForegroundSSHSessionWithLowercaseAgentFlag() {
         let session = TerminalSSHSessionDetector.detectForTesting(
             ttyName: "/dev/ttys004",

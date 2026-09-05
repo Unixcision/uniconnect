@@ -3,71 +3,53 @@ import SwiftUI
 
 /// Collapsible group header that doubles as the anchor workspace row.
 struct SidebarWorkspaceGroupHeaderView: View, Equatable {
-    // Closures and delegate factories are excluded because they are recreated
+    // Closure action bundles are excluded because they are recreated
     // by the parent on each evaluation. The scalar snapshots below are the
     // header's render and behavior inputs under the LazyVStack.
     nonisolated static func == (lhs: SidebarWorkspaceGroupHeaderView, rhs: SidebarWorkspaceGroupHeaderView) -> Bool {
-        lhs.groupId == rhs.groupId &&
-            lhs.anchorWorkspaceId == rhs.anchorWorkspaceId &&
-            lhs.name == rhs.name &&
-            lhs.iconSymbol == rhs.iconSymbol &&
-            lhs.tintHex == rhs.tintHex &&
-            lhs.isCollapsed == rhs.isCollapsed &&
-            lhs.isPinned == rhs.isPinned &&
-            lhs.isAnchorActive == rhs.isAnchorActive &&
-            lhs.memberCount == rhs.memberCount &&
-            lhs.anchorUnreadCount == rhs.anchorUnreadCount &&
-            lhs.shortcutDigit == rhs.shortcutDigit &&
-            lhs.shortcutModifierSymbol == rhs.shortcutModifierSymbol &&
-            lhs.showsShortcutHint == rhs.showsShortcutHint &&
-            lhs.shortcutHintXOffset == rhs.shortcutHintXOffset &&
-            lhs.shortcutHintYOffset == rhs.shortcutHintYOffset &&
-            lhs.fontScale == rhs.fontScale &&
-            lhs.cwdContextMenuItems == rhs.cwdContextMenuItems &&
-            lhs.newWorkspacePlacement == rhs.newWorkspacePlacement &&
-            lhs.rowSpacing == rhs.rowSpacing &&
-            lhs.isFirstRow == rhs.isFirstRow &&
-            lhs.isBeingDragged == rhs.isBeingDragged &&
-            lhs.topDropIndicatorVisible == rhs.topDropIndicatorVisible
+        lhs.snapshot == rhs.snapshot
     }
 
-    let groupId: UUID
-    let anchorWorkspaceId: UUID
-    let name: String
-    let iconSymbol: String
-    let tintHex: String?
-    let isCollapsed: Bool
-    let isPinned: Bool
-    let isAnchorActive: Bool
-    let memberCount: Int
-    let anchorUnreadCount: Int
-    let shortcutDigit: Int?
-    let shortcutModifierSymbol: String?
-    let showsShortcutHint: Bool
-    let shortcutHintXOffset: Double
-    let shortcutHintYOffset: Double
-    let fontScale: CGFloat
-    let cwdContextMenuItems: [CmuxResolvedConfigContextMenuItem]
-    let newWorkspacePlacement: WorkspaceGroupNewPlacement?
-    let rowSpacing: CGFloat
-    let isFirstRow: Bool
-    let isBeingDragged: Bool
-    let topDropIndicatorVisible: Bool
-    let onDragStart: () -> NSItemProvider
-    let tabDropDelegateFactory: (CGFloat) -> SidebarWorkspaceGroupHeaderDropDelegate
-    let onToggleCollapsed: () -> Void
-    let onFocusAnchor: () -> Void
-    let onTapPlus: () -> Void
-    let onRunResolvedItem: (CmuxResolvedConfigMenuAction) -> Void
-    let onRename: () -> Void
-    let onTogglePinned: () -> Void
-    let onUngroup: () -> Void
-    let onDelete: () -> Void
-    let onEditConfig: () -> Void
-    let onOpenDocs: () -> Void
+    let snapshot: SidebarWorkspaceGroupHeaderSnapshot
+    let actions: SidebarWorkspaceGroupHeaderActions
 
     @State private var isHovered = false
     @State private var rowHeight: CGFloat = 1
+
+    private var groupId: UUID { snapshot.groupId }
+    private var anchorWorkspaceId: UUID { snapshot.anchorWorkspaceId }
+    private var name: String { snapshot.name }
+    private var iconSymbol: String { snapshot.iconSymbol }
+    private var tintHex: String? { snapshot.tintHex }
+    private var isCollapsed: Bool { snapshot.isCollapsed }
+    private var isPinned: Bool { snapshot.isPinned }
+    private var isAnchorActive: Bool { snapshot.isAnchorActive }
+    private var memberCount: Int { snapshot.memberCount }
+    private var anchorUnreadCount: Int { snapshot.anchorUnreadCount }
+    private var shortcutDigit: Int? { snapshot.shortcutDigit }
+    private var shortcutModifierSymbol: String? { snapshot.shortcutModifierSymbol }
+    private var showsShortcutHint: Bool { snapshot.showsShortcutHint }
+    private var shortcutHintXOffset: Double { snapshot.shortcutHintXOffset }
+    private var shortcutHintYOffset: Double { snapshot.shortcutHintYOffset }
+    private var fontScale: CGFloat { snapshot.fontScale }
+    private var cwdContextMenuItems: [CmuxResolvedConfigContextMenuItem] { snapshot.cwdContextMenuItems }
+    private var newWorkspacePlacement: WorkspaceGroupNewPlacement? { snapshot.newWorkspacePlacement }
+    private var rowSpacing: CGFloat { snapshot.rowSpacing }
+    private var isFirstRow: Bool { snapshot.isFirstRow }
+    private var isBeingDragged: Bool { snapshot.isBeingDragged }
+    private var topDropIndicatorVisible: Bool { snapshot.topDropIndicatorVisible }
+    private var onDragStart: () -> NSItemProvider { actions.beginDrag }
+    private var dropActions: SidebarTabItemDropActions { actions.drop }
+    private var onToggleCollapsed: () -> Void { actions.toggleCollapsed }
+    private var onFocusAnchor: () -> Void { actions.focusAnchor }
+    private var onTapPlus: () -> Void { actions.createWorkspace }
+    private var onRunResolvedItem: (CmuxResolvedConfigMenuAction) -> Void { actions.runResolvedItem }
+    private var onRename: () -> Void { actions.rename }
+    private var onTogglePinned: () -> Void { actions.togglePinned }
+    private var onUngroup: () -> Void { actions.ungroup }
+    private var onDelete: () -> Void { actions.delete }
+    private var onEditConfig: () -> Void { actions.editConfig }
+    private var onOpenDocs: () -> Void { actions.openDocs }
 
     private var metrics: SidebarWorkspaceGroupHeaderMetrics {
         SidebarWorkspaceGroupHeaderMetrics(fontScale: fontScale)
@@ -220,7 +202,13 @@ struct SidebarWorkspaceGroupHeaderView: View, Equatable {
         }
         .onDrag(onDragStart)
         .internalOnlyTabDrag()
-        .onDrop(of: SidebarTabDragPayload.dropContentTypes, delegate: tabDropDelegateFactory(rowHeight))
+        .onDrop(
+            of: SidebarTabDragPayload.dropContentTypes,
+            delegate: SidebarTabItemDropDelegate(
+                actions: dropActions,
+                rowHeight: rowHeight
+            )
+        )
         .onHover { hovering in
             isHovered = hovering
         }

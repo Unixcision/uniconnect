@@ -12,7 +12,7 @@ actor UniConnectClaudeBinaryUpdater: ClaudeBinaryUpdating {
         case processFailure
     }
 
-    typealias CredentialResolver = @Sendable (UUID) async -> String?
+    typealias CredentialResolver = @Sendable (UUID) async -> UniConnectSSHCredentialRecord?
 
     private let processRunner: any UniConnectProcessRunning
     private let credentialResolver: CredentialResolver
@@ -137,14 +137,16 @@ actor UniConnectClaudeBinaryUpdater: ClaudeBinaryUpdating {
         ) else {
             throw UpdaterError.invalidHost
         }
-        guard let command = await credentialResolver(credentialID) else {
+        guard let credentialRecord = await credentialResolver(credentialID) else {
             throw UpdaterError.missingCredential
         }
-        guard UniConnectSSH.validateConnectCommand(command) == nil,
-              let session = UniConnectSSH.detectedSession(fromConnectCommand: command) else {
+        guard let effectiveTarget = credentialRecord.effectiveTarget,
+              let session = UniConnectSSH.detectedSession(
+                  fromCredentialRecord: credentialRecord
+              ) else {
             throw UpdaterError.invalidCredential
         }
-        guard UniConnectClaudeUpdateHostID.endpointFingerprint(for: session)
+        guard UniConnectClaudeUpdateHostID.endpointFingerprint(for: effectiveTarget)
                 == expectedEndpointFingerprint else {
             throw UpdaterError.invalidCredential
         }

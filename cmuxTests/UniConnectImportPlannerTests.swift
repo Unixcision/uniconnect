@@ -92,18 +92,73 @@ struct UniConnectImportPlannerTests {
         #expect(unchanged.rows.map(\.outcome) == [.unchanged])
     }
 
-    @Test("CONNECT rejects a local window cwd outside its trusted root")
-    func rejectsLocalWindowWorkingDirectoryOutsideRoot() {
+    @Test("CONNECT preserves an independent local window folder and the workspace default")
+    func acceptsLocalWindowWorkingDirectoryOutsideDefaultRoot() {
         var imported = local(name: "Repository")
         imported.cwd = "/repo"
-        imported.windows[0].cwd = "/tmp/escaped"
+        imported.windows[0].cwd = "/Other Project"
 
         let plan = planner.plan(importing: document([imported]), against: document([]))
 
-        #expect(plan.rows.map(\.outcome) == [.rejected])
-        #expect(plan.rows.first?.issues.contains(.invalidLocalWorkingDirectory) == true)
-        #expect(plan.rows.first?.windowRows.first?.issues.contains(.invalidLocalWorkingDirectory) == true)
-        #expect(plan.createRows.isEmpty)
+        #expect(plan.rows.map(\.outcome) == [.create])
+        #expect(plan.rows.first?.issues.isEmpty == true)
+        #expect(plan.rows.first?.workspace.cwd == "/repo")
+        #expect(plan.rows.first?.workspace.windows.first?.cwd == "/Other Project")
+        #expect(plan.createRows.count == 1)
+    }
+
+    @Test("CONNECT still rejects invalid independent local window folders")
+    func rejectsInvalidIndependentLocalWindowWorkingDirectory() {
+        for folder in ["relative/project", "/tmp/bad\npath", "/tmp/bad\u{0}path"] {
+            var imported = local(name: "Repository")
+            imported.cwd = "/repo"
+            imported.windows[0].cwd = folder
+            let plan = planner.plan(importing: document([imported]), against: document([]))
+            #expect(plan.rows.map(\.outcome) == [.rejected])
+            #expect(plan.rows.first?.issues.contains(.invalidLocalWorkingDirectory) == true)
+            #expect(plan.createRows.isEmpty)
+        }
+    }
+
+    @Test("CONNECT deterministically rejects duplicate stable local-window UUIDs")
+    func rejectsDuplicateLocalWindowIdentifiers() {
+        let repeatedID = UUID(uuidString: "51500000-0000-0000-0000-000000000001")!
+        func window(name: String) -> UniConnectDocument.Window {
+            UniConnectDocument.Window(
+                name: name,
+                tmux: nil,
+                claudeSession: nil,
+                cwd: "/repo",
+                isPinned: nil,
+                localWindow: UniConnectLocalWindowRecord(
+                    id: repeatedID,
+                    visibleName: name,
+                    boxRoot: "/repo",
+                    workingDirectory: "/repo",
+                    createdAt: 1,
+                    updatedAt: 1
+                )
+            )
+        }
+        let imported = UniConnectDocument.Workspace(
+            name: "Repository",
+            kind: .local,
+            color: nil,
+            group: nil,
+            isPinned: nil,
+            cwd: "/repo",
+            connect: nil,
+            windows: [window(name: "API"), window(name: "Web")]
+        )
+
+        let first = planner.plan(importing: document([imported]), against: document([]))
+        let second = planner.plan(importing: document([imported]), against: document([]))
+
+        #expect(first == second)
+        #expect(first.rows.map(\.outcome) == [.conflict])
+        #expect(first.rows.first?.issues.contains(.ambiguousStableIdentity) == true)
+        #expect(first.hasBlockingIssues)
+        #expect(first.createRows.isEmpty)
     }
 
     @Test("CONNECT rejects conflicting compatibility and durable cwd values")
@@ -181,6 +236,7 @@ struct UniConnectImportPlannerTests {
             id: conversationID,
             kind: .codex,
             sessionID: "codex-existing-history",
+            resumeWorkingDirectory: "/repo/api",
             firstSeenAt: 1
         ))
         var record = UniConnectLocalWindowRecord(
@@ -272,6 +328,7 @@ struct UniConnectImportPlannerTests {
             id: conversationID,
             kind: .codex,
             sessionID: "codex-session-fixture",
+            resumeWorkingDirectory: "/Users/test/Project",
             firstSeenAt: 1
         ))
         func window(id: UUID, name: String) -> UniConnectDocument.Window {
@@ -465,6 +522,63 @@ struct UniConnectImportPlannerTests {
         #expect(!plan.canUseCreateOnlyExecutor)
     }
 
+    @Test("Captured targets deduplicate different SSH aliases")
+    func capturedTargetsDeduplicateAliases() throws {
+        var first = ssh(name: "Alias A", host: "ops@edge-a", tmux: "app")
+        var second = ssh(name: "Alias B", host: "ops@edge-b", tmux: "app")
+        first.id = UUID(uuidString: "81818181-8181-8181-8181-818181818181")
+        second.id = UUID(uuidString: "82828282-8282-8282-8282-828282828282")
+        let target = try #require(UniConnectSSHEffectiveTarget(
+            user: "ops",
+            host: "canonical.example.test",
+            port: 2222
+        ))
+        let records: [Int: UniConnectSSHCredentialRecord] = [
+            0: .init(connectCommand: first.connect!, effectiveTarget: target),
+            1: .init(connectCommand: second.connect!, effectiveTarget: target),
+        ]
+
+        let plan = planner.plan(
+            importing: document([first, second]),
+            against: document([]),
+            sshCredentialRecordsByWorkspaceIndex: records
+        )
+
+        #expect(plan.rows.map(\.outcome) == [.conflict, .conflict])
+        #expect(plan.rows.allSatisfy {
+            $0.issues.contains(.duplicateTmuxTarget(
+                host: "ops@canonical.example.test#2222",
+                session: "app"
+            ))
+        })
+    }
+
+    @Test("Captured target matches an existing tmux owner across aliases")
+    func capturedTargetMatchesExistingAlias() throws {
+        let existing = ssh(name: "Old name", host: "ops@edge-a", tmux: "app")
+        let imported = ssh(name: "New name", host: "ops@edge-b", tmux: "app")
+        let target = try #require(UniConnectSSHEffectiveTarget(
+            user: "ops",
+            host: "canonical.example.test",
+            port: 2222
+        ))
+
+        let plan = planner.plan(
+            importing: document([imported]),
+            against: document([existing]),
+            sshCredentialRecordsByWorkspaceIndex: [
+                0: .init(connectCommand: imported.connect!, effectiveTarget: target),
+            ],
+            existingSSHCredentialRecordsByWorkspaceIndex: [
+                0: .init(connectCommand: existing.connect!, effectiveTarget: target),
+            ]
+        )
+
+        #expect(plan.rows.map(\.outcome) == [.update])
+        #expect(plan.rows.first?.existingWorkspaceIndex == 0)
+        #expect(plan.createRows.isEmpty)
+    }
+
     @Test("Canonical SSH ownership normalizes host spelling and bracketed IPv6")
     func canonicalizesTmuxEndpointSpellings() {
         var dotted = ssh(name: "Dotted", host: "root@HOST-A.", tmux: "app")
@@ -509,7 +623,7 @@ struct UniConnectImportPlannerTests {
     }
 
     @Test("Endpoint migration matches tmux across the old endpoint and forces attach-only")
-    func endpointMigrationIsAttachOnly() throws {
+    func endpointMigrationIsAttachOnly() async throws {
         let workspaceID = UUID(uuidString: "83000000-0000-0000-0000-000000000001")!
         var existing = ssh(name: "Remote", host: "ops@old.example.test", tmux: "worker_1")
         existing.id = workspaceID
@@ -520,10 +634,20 @@ struct UniConnectImportPlannerTests {
         var sourceMap = UniConnectImportSourceMap.empty
         sourceMap.tmuxPolicies[.init(workspaceIndex: 0, windowIndex: 0)] = .createIfMissing
 
+        let target = try #require(UniConnectSSHEffectiveTarget(
+            user: "ops",
+            host: "new.example.test",
+            port: 22
+        ))
         let prepared = planner.prepare(
-            importing: document([imported]),
-            against: document([existing]),
-            sourceMap: sourceMap
+            importing: UniConnectImportSourceDocument(
+                document: document([imported]),
+                sourceMap: sourceMap,
+                sshCredentialRecordsByWorkspaceIndex: [
+                    0: .init(connectCommand: imported.connect!, effectiveTarget: target),
+                ]
+            ),
+            against: document([existing])
         )
         let window = try #require(prepared.plan.rows.first?.windowRows.first)
 
@@ -533,8 +657,14 @@ struct UniConnectImportPlannerTests {
             Issue.record("Endpoint migration must never create the remote tmux session")
             return
         }
+        let mutations = try await prepared.resolvedMutations(
+            for: .allMutations(in: prepared.plan),
+            against: document([existing]),
+            existingSSHCredentialRecordsByWorkspaceIndex: [:],
+            resolver: FakePlannerSSHTargetResolver()
+        )
         let requirements = try prepared.existingTmuxRequirements(
-            for: .allMutations(in: prepared.plan)
+            for: mutations
         )
         #expect(requirements.count == 1)
         #expect(requirements[0].invocation.arguments.contains("ops@new.example.test"))
@@ -688,5 +818,13 @@ struct UniConnectImportPlannerTests {
             cwd: nil,
             isPinned: nil
         )
+    }
+}
+
+private struct FakePlannerSSHTargetResolver: UniConnectSSHTargetResolving {
+    func resolve(
+        _ requests: [UniConnectSSHTargetResolutionRequest]
+    ) async -> [UniConnectSSHTargetResolutionOutcome] {
+        requests.map { _ in .indeterminate }
     }
 }

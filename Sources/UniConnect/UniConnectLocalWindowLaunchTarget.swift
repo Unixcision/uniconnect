@@ -7,6 +7,7 @@ enum UniConnectLocalWindowLaunchTarget: Hashable, Identifiable, Sendable {
     case codex
     case agy
     case grok
+    case command(name: String, executable: String)
     case custom(id: String, name: String, executable: String, iconAssetName: String?)
 
     var id: String {
@@ -16,6 +17,7 @@ enum UniConnectLocalWindowLaunchTarget: Hashable, Identifiable, Sendable {
         case .codex: return "codex"
         case .agy: return "agy"
         case .grok: return "grok"
+        case .command(let name, let executable): return "command:\(name)\u{0}\(executable)"
         case .custom(let id, _, _, _): return "custom:\(id)"
         }
     }
@@ -32,6 +34,8 @@ enum UniConnectLocalWindowLaunchTarget: Hashable, Identifiable, Sendable {
             return String(localized: "uniconnect.localWindow.target.agy", defaultValue: "Agy")
         case .grok:
             return String(localized: "sessionIndex.agent.grok", defaultValue: "Grok")
+        case .command(let name, _):
+            return name
         case .custom(_, let name, _, _):
             return name
         }
@@ -62,12 +66,17 @@ enum UniConnectLocalWindowLaunchTarget: Hashable, Identifiable, Sendable {
         case .grok:
             return String(
                 localized: "uniconnect.localWindow.target.grok.summary",
-                defaultValue: "Grok CLI in this box's trusted folder."
+                defaultValue: "Grok CLI in this window’s folder."
+            )
+        case .command:
+            return String(
+                localized: "uniconnect.localWindow.target.command.summary",
+                defaultValue: "One-off shell command; UniConnect cannot resume it."
             )
         case .custom:
             return String(
                 localized: "uniconnect.localWindow.target.custom.summary",
-                defaultValue: "A configured CLI agent in this box's trusted folder."
+                defaultValue: "A configured CLI agent in this window’s folder."
             )
         }
     }
@@ -79,6 +88,7 @@ enum UniConnectLocalWindowLaunchTarget: Hashable, Identifiable, Sendable {
         case .codex: return "chevron.left.forwardslash.chevron.right"
         case .agy: return "a.circle.fill"
         case .grok: return "bolt.horizontal.circle.fill"
+        case .command: return "terminal.badge.ellipsis"
         case .custom: return "person.crop.circle.badge.gearshape"
         }
     }
@@ -90,6 +100,7 @@ enum UniConnectLocalWindowLaunchTarget: Hashable, Identifiable, Sendable {
         case .codex: return "AgentIcons/Codex"
         case .agy: return "AgentIcons/Antigravity"
         case .grok: return "AgentIcons/Grok"
+        case .command: return nil
         case .custom(_, _, _, let iconAssetName): return iconAssetName
         }
     }
@@ -101,6 +112,7 @@ enum UniConnectLocalWindowLaunchTarget: Hashable, Identifiable, Sendable {
         case .codex: return .codex
         case .agy: return .antigravity
         case .grok: return .grok
+        case .command: return nil
         case .custom(let id, _, _, _): return .custom(id)
         }
     }
@@ -122,6 +134,15 @@ enum UniConnectLocalWindowLaunchTarget: Hashable, Identifiable, Sendable {
             argv = ["agy", "--dangerously-skip-permissions"]
         case .grok:
             argv = ["grok"]
+        case .command(_, let executable):
+            let normalizedExecutable = executable.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalizedExecutable.isEmpty,
+                  !normalizedExecutable.unicodeScalars.contains(where: {
+                      CharacterSet.controlCharacters.contains($0)
+                  }) else {
+                return nil
+            }
+            argv = [normalizedExecutable]
         case .custom(_, _, let executable, _):
             let normalizedExecutable = executable.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !normalizedExecutable.isEmpty,
@@ -152,7 +173,7 @@ enum UniConnectLocalWindowLaunchTarget: Hashable, Identifiable, Sendable {
         let representedIDs: Set<String> = ["antigravity", "grok"]
         return registry.registrations.compactMap { registration in
             guard !representedIDs.contains(registration.id),
-                  let target = custom(
+                  let target = makeCustom(
                       id: registration.id,
                       name: registration.name,
                       executable: registration.defaultExecutable,
@@ -164,7 +185,22 @@ enum UniConnectLocalWindowLaunchTarget: Hashable, Identifiable, Sendable {
         }
     }
 
-    static func custom(
+    /// Builds a ``custom(id:name:executable:iconAssetName:)`` target from raw
+    /// registry values, or `nil` when they do not describe a usable agent.
+    ///
+    /// Named `makeCustom` rather than `custom` on purpose. An overload named for
+    /// its own case is a trap: inside the factory, `return .custom(…)` resolves to
+    /// the factory itself — an exact match, where the case would need promoting to
+    /// `Optional` — so the call recursed until the stack guard tripped and the app
+    /// died with SIGSEGV whenever a registry held a custom agent.
+    ///
+    /// - Parameters:
+    ///   - id: Registry identifier; must satisfy ``CmuxVaultAgentRegistration/isValidID(_:)``.
+    ///   - name: Display name; must not be blank after trimming.
+    ///   - executable: Command to launch; must be non-blank and free of control characters.
+    ///   - iconAssetName: Optional asset name; blank values are treated as absent.
+    /// - Returns: The target, or `nil` when any value is unusable.
+    static func makeCustom(
         id: String,
         name: String,
         executable: String,
@@ -188,5 +224,25 @@ enum UniConnectLocalWindowLaunchTarget: Hashable, Identifiable, Sendable {
             executable: normalizedExecutable,
             iconAssetName: normalizedIcon?.isEmpty == false ? normalizedIcon : nil
         )
+    }
+
+    /// Creates a one-off executable launch that intentionally has no resume descriptor.
+    static func oneOffCommand(
+        name: String,
+        executable: String
+    ) -> UniConnectLocalWindowLaunchTarget? {
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedExecutable = executable.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedName.isEmpty,
+              !normalizedExecutable.isEmpty,
+              !normalizedName.unicodeScalars.contains(where: {
+                  CharacterSet.controlCharacters.contains($0)
+              }),
+              !normalizedExecutable.unicodeScalars.contains(where: {
+                  CharacterSet.controlCharacters.contains($0)
+              }) else {
+            return nil
+        }
+        return .command(name: normalizedName, executable: normalizedExecutable)
     }
 }

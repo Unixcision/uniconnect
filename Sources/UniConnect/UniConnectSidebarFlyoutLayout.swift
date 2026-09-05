@@ -9,6 +9,11 @@ struct UniConnectSidebarFlyoutLayout: Equatable {
     static let minimumCardHeight: CGFloat = 122
     static let maximumCardHeight: CGFloat = 342
 
+    private static let titleFontSize: CGFloat = 14
+    private static let titleWidthWithoutShortcutInset: CGFloat = 82
+    private static let titleWidthWithShortcutInset: CGFloat = 119
+    private static let titleMeasurementSafetyInset: CGFloat = 8
+
     let cardFrame: CGRect
     let corridorFrame: CGRect
 
@@ -17,16 +22,36 @@ struct UniConnectSidebarFlyoutLayout: Equatable {
         return min(maximumCardHeight, minimumCardHeight + rowsHeight)
     }
 
+    private static func preferredCardHeight(
+        windowCount: Int,
+        displayName: String,
+        resolvedCardWidth: CGFloat,
+        hasShortcut: Bool
+    ) -> CGFloat {
+        preferredCardHeight(windowCount: windowCount) + additionalTitleHeight(
+            displayName: displayName,
+            resolvedCardWidth: resolvedCardWidth,
+            hasShortcut: hasShortcut
+        )
+    }
+
     static func resolve(
         containerBounds: CGRect,
         anchorFrame: CGRect,
-        windowCount: Int
+        windowCount: Int,
+        displayName: String = "",
+        hasShortcut: Bool = false
     ) -> UniConnectSidebarFlyoutLayout {
+        let width = min(cardWidth, max(1, containerBounds.width - windowMargin * 2))
         let height = min(
-            preferredCardHeight(windowCount: windowCount),
+            preferredCardHeight(
+                windowCount: windowCount,
+                displayName: displayName,
+                resolvedCardWidth: width,
+                hasShortcut: hasShortcut
+            ),
             max(1, containerBounds.height - windowMargin * 2)
         )
-        let width = min(cardWidth, max(1, containerBounds.width - windowMargin * 2))
 
         let preferredRightX = anchorFrame.maxX + horizontalGap
         let leftCandidateX = anchorFrame.minX - horizontalGap - width
@@ -62,6 +87,35 @@ struct UniConnectSidebarFlyoutLayout: Equatable {
         ).intersection(containerBounds)
 
         return UniConnectSidebarFlyoutLayout(cardFrame: cardFrame, corridorFrame: corridorFrame)
+    }
+
+    private static func additionalTitleHeight(
+        displayName: String,
+        resolvedCardWidth: CGFloat,
+        hasShortcut: Bool
+    ) -> CGFloat {
+        guard !displayName.isEmpty else { return 0 }
+
+        let reservedWidth = hasShortcut
+            ? titleWidthWithShortcutInset
+            : titleWidthWithoutShortcutInset
+        let availableWidth = max(
+            1,
+            resolvedCardWidth - reservedWidth - titleMeasurementSafetyInset
+        )
+        let baseFont = NSFont.systemFont(ofSize: titleFontSize, weight: .semibold)
+        let font = baseFont.fontDescriptor.withDesign(.rounded)
+            .flatMap { NSFont(descriptor: $0, size: titleFontSize) } ?? baseFont
+        let measuredHeight = ceil(
+            (displayName as NSString).boundingRect(
+                with: CGSize(width: availableWidth, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [.font: font]
+            ).height
+        )
+        let lineHeight = font.ascender - font.descender + font.leading
+        let twoLineBaseline = ceil(lineHeight * 2)
+        return max(0, measuredHeight - twoLineBaseline)
     }
 
     func acceptsHit(at point: CGPoint) -> Bool {

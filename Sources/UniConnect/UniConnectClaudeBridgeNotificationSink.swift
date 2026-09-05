@@ -17,15 +17,55 @@ final class UniConnectClaudeBridgeNotificationSink: ClaudeBridgeNotificationDeli
         self.notificationStore = notificationStore
     }
 
+    /// Resolves the current owner of a stable surface. The route's workspace is authoritative
+    /// while it still owns the surface; the surface lookup handles an in-process tab move that
+    /// happened after the SSH command (and therefore its signed route) was created.
+    static func workspace(
+        for route: ClaudeBridgeRoute,
+        in tabManagers: [TabManager]
+    ) -> Workspace? {
+        var movedSurfaceOwner: Workspace?
+        for manager in tabManagers {
+            for workspace in manager.tabs where workspace.panels[route.surfaceID] != nil {
+                if workspace.id == route.workspaceID {
+                    return workspace
+                }
+                if movedSurfaceOwner == nil {
+                    movedSurfaceOwner = workspace
+                }
+            }
+        }
+        return movedSurfaceOwner
+    }
+
+    /// Rebinds bridge status to the current owner of a moved surface and removes stale badges.
+    static func deliverStatus(
+        _ status: ClaudeBridgeStatus,
+        for route: ClaudeBridgeRoute,
+        in tabManagers: [TabManager]
+    ) {
+        let owner = workspace(for: route, in: tabManagers)
+        for manager in tabManagers {
+            for workspace in manager.tabs
+            where status == .inactive || workspace.id != owner?.id {
+                workspace.uniConnectClaudeBridgeStatusByPanelId.removeValue(forKey: route.id)
+            }
+        }
+        guard status != .inactive, let owner else { return }
+        owner.uniConnectClaudeBridgeStatusByPanelId[route.id] = status
+    }
+
     func deliver(event: ClaudeBridgeEvent, route: ClaudeBridgeRoute) {
-        guard let workspace = tabManagersProvider()
-            .lazy
-            .compactMap({ manager in manager.tabs.first(where: { $0.id == route.workspaceID }) })
-            .first,
-              workspace.panels[route.surfaceID] != nil else {
+        let tabManagers = tabManagersProvider()
+        guard let workspace = Self.workspace(for: route, in: tabManagers) else {
             return
         }
-        let workspaceName = workspace.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A service that was already active does not emit another status transition for
+        // every completion. Rebind here too so a moved surface cannot leave its badge on
+        // the old workspace while the notification correctly targets the new owner.
+        Self.deliverStatus(.active, for: route, in: tabManagers)
+        let workspaceName = (workspace.customTitle ?? workspace.title)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         let windowName = (workspace.panelTitle(panelId: route.surfaceID) ?? route.windowName)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let location = String.localizedStringWithFormat(
@@ -52,7 +92,7 @@ final class UniConnectClaudeBridgeNotificationSink: ClaudeBridgeNotificationDeli
             return
         }
         notificationStore.addNotification(
-            tabId: route.workspaceID,
+            tabId: workspace.id,
             surfaceId: route.surfaceID,
             title: String(localized: "bridge.notification.title", defaultValue: "Claude Code"),
             subtitle: location,

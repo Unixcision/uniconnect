@@ -29,3 +29,4 @@ if [[ "$actual" != "$EXPECTED_OBJECT_VERSION" ]]; then
 fi
 
 python3 "$SCRIPT_DIR/normalize-pbxproj.py" --check "$PBXPROJ"
+"$SCRIPT_DIR/check-uniconnect-app-icon.sh"

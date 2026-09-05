@@ -390,6 +390,14 @@ final class TerminalImageTransferOperation: @unchecked Sendable {
         }
     }
 
+    /// Reclaims app-owned temporary source images even when cancellation happens before upload starts.
+    func installTemporarySourceImageCleanup(_ fileURLs: [URL]) {
+        guard !fileURLs.isEmpty else { return }
+        installCancellationCleanupHandler {
+            GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles(fileURLs)
+        }
+    }
+
     @discardableResult
     func cancel() -> Bool {
         let handler: (() -> Void)?
@@ -1055,10 +1063,14 @@ extension TerminalSurface {
                 return .unavailable(.disconnectedSSHWindow)
             }
             guard let credentialId = workspace.uniConnectProfile?.credentialId,
-                  let connect = UniConnectVault.shared.connectCommand(for: credentialId) else {
+                  let credentialRecord = UniConnectVault.shared.credentialRecord(
+                      for: credentialId
+                  ) else {
                 return .unavailable(.missingSSHConnectCommand)
             }
-            guard let session = UniConnectSSH.detectedSession(fromConnectCommand: connect) else {
+            guard let session = UniConnectSSH.detectedSession(
+                fromCredentialRecord: credentialRecord
+            ) else {
                 return .unavailable(.unparseableSSHConnectCommand)
             }
             return .remote(.detectedSSH(session))

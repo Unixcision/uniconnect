@@ -2,24 +2,14 @@ import AppKit
 import SwiftUI
 
 extension VerticalTabsSidebar {
-    @ViewBuilder
-    func sidebarWorkspaceGroupHeader(
+    func sidebarWorkspaceGroupHeaderSnapshot(
         group: WorkspaceGroup,
         memberWorkspaceIds: [UUID],
-        renderContext: WorkspaceListRenderContext,
-        shouldCollectWorkspaceDropTargets: Bool
-    ) -> some View {
+        renderContext: WorkspaceListRenderContext
+    ) -> SidebarWorkspaceGroupHeaderSnapshot {
         let settings = renderContext.tabItemSettings
-        let isAnchorActive = tabManager.selectedTabId == group.anchorWorkspaceId
         let anchorCwd = renderContext.workspaceById[group.anchorWorkspaceId]?.currentDirectory
         let resolvedConfig = cmuxConfigStore.resolveWorkspaceGroupConfig(forCwd: anchorCwd)
-        let effectiveColor = group.customColor ?? resolvedConfig?.color
-        let effectiveIcon = RenderableSystemSymbol.resolvedWorkspaceGroupIcon(
-            explicit: group.iconSymbol,
-            configured: resolvedConfig?.iconSymbol
-        )
-        let cwdContextMenuItems = resolvedConfig?.contextMenuItems ?? []
-        let newWorkspacePlacement = resolvedConfig?.newWorkspacePlacement
         let anchorUnreadCount: Int = {
             if group.isCollapsed {
                 return memberWorkspaceIds.reduce(0) { partial, workspaceId in
@@ -29,31 +19,52 @@ extension VerticalTabsSidebar {
             return notificationStore.unreadCount(forTabId: group.anchorWorkspaceId)
         }()
         let anchorIndex = renderContext.tabIndexById[group.anchorWorkspaceId] ?? 0
-        let shortcutDigit = WorkspaceShortcutMapper.digitForWorkspace(
-            at: anchorIndex,
-            workspaceCount: renderContext.workspaceCount
+
+        return SidebarWorkspaceGroupHeaderSnapshot(
+            groupId: group.id,
+            anchorWorkspaceId: group.anchorWorkspaceId,
+            name: group.name,
+            iconSymbol: RenderableSystemSymbol.resolvedWorkspaceGroupIcon(
+                explicit: group.iconSymbol,
+                configured: resolvedConfig?.iconSymbol
+            ),
+            tintHex: group.customColor ?? resolvedConfig?.color,
+            isCollapsed: group.isCollapsed,
+            isPinned: group.isPinned,
+            isAnchorActive: tabManager.selectedTabId == group.anchorWorkspaceId,
+            memberCount: memberWorkspaceIds.count,
+            anchorUnreadCount: anchorUnreadCount,
+            shortcutDigit: WorkspaceShortcutMapper.digitForWorkspace(
+                at: anchorIndex,
+                workspaceCount: renderContext.workspaceCount
+            ),
+            shortcutModifierSymbol: renderContext.workspaceNumberShortcut.numberedDigitHintPrefix,
+            showsShortcutHint: modifierKeyMonitor.isModifierPressed,
+            shortcutHintXOffset: settings.sidebarShortcutHintXOffset,
+            shortcutHintYOffset: settings.sidebarShortcutHintYOffset,
+            fontScale: settings.sidebarFontScale,
+            cwdContextMenuItems: resolvedConfig?.contextMenuItems ?? [],
+            newWorkspacePlacement: resolvedConfig?.newWorkspacePlacement,
+            rowSpacing: tabRowSpacing,
+            isFirstRow: renderContext.sidebarReorderIds.first == group.anchorWorkspaceId,
+            isBeingDragged: dragState.draggedTabId == group.anchorWorkspaceId,
+            topDropIndicatorVisible: SidebarTabDropIndicatorPredicate.topVisible(
+                forTabId: group.anchorWorkspaceId,
+                draggedTabId: dragState.draggedTabId,
+                dropIndicator: dragState.dropIndicator,
+                tabIds: renderContext.sidebarReorderIds
+            )
         )
-        let modifierSymbol = renderContext.workspaceNumberShortcut.numberedDigitHintPrefix
-        let showsHintForAnchor = modifierKeyMonitor.isModifierPressed
-        let topDropIndicatorVisible = SidebarTabDropIndicatorPredicate.topVisible(
-            forTabId: group.anchorWorkspaceId,
-            draggedTabId: dragState.draggedTabId,
-            dropIndicator: dragState.dropIndicator,
-            tabIds: renderContext.sidebarReorderIds
-        )
-        let onDragStart: () -> NSItemProvider = { [anchorId = group.anchorWorkspaceId] in
-            #if DEBUG
-            cmuxDebugLog("sidebar.onDrag groupAnchor=\(anchorId.uuidString.prefix(5))")
-            #endif
-            dragState.beginDragging(tabId: anchorId)
-            return SidebarTabDragPayload.provider(for: anchorId)
-        }
-        let tabDropDelegateFactory: (CGFloat) -> SidebarWorkspaceGroupHeaderDropDelegate = { [
-            groupId = group.id,
-            anchorId = group.anchorWorkspaceId,
-            selectedTabIds = $selectedTabIds,
-            lastSidebarSelectionIndex = $lastSidebarSelectionIndex
-        ] rowHeight in
+    }
+
+    func sidebarWorkspaceGroupHeaderActions(
+        snapshot: SidebarWorkspaceGroupHeaderSnapshot
+    ) -> SidebarWorkspaceGroupHeaderActions {
+        let groupId = snapshot.groupId
+        let anchorId = snapshot.anchorWorkspaceId
+        let selectedTabIds = $selectedTabIds
+        let lastSidebarSelectionIndex = $lastSidebarSelectionIndex
+        let makeDropDelegate: (CGFloat) -> SidebarWorkspaceGroupHeaderDropDelegate = { rowHeight in
             let reorderDelegate = SidebarTabDropDelegate(
                 targetTabId: anchorId,
                 tabManager: tabManager,
@@ -74,37 +85,23 @@ extension VerticalTabsSidebar {
             )
         }
 
-        let header = SidebarWorkspaceGroupHeaderView(
-            groupId: group.id,
-            anchorWorkspaceId: group.anchorWorkspaceId,
-            name: group.name,
-            iconSymbol: effectiveIcon,
-            tintHex: effectiveColor,
-            isCollapsed: group.isCollapsed,
-            isPinned: group.isPinned,
-            isAnchorActive: isAnchorActive,
-            memberCount: memberWorkspaceIds.count,
-            anchorUnreadCount: anchorUnreadCount,
-            shortcutDigit: shortcutDigit,
-            shortcutModifierSymbol: modifierSymbol,
-            showsShortcutHint: showsHintForAnchor,
-            shortcutHintXOffset: settings.sidebarShortcutHintXOffset,
-            shortcutHintYOffset: settings.sidebarShortcutHintYOffset,
-            fontScale: settings.sidebarFontScale,
-            cwdContextMenuItems: cwdContextMenuItems,
-            newWorkspacePlacement: newWorkspacePlacement,
-            rowSpacing: tabRowSpacing,
-            isFirstRow: renderContext.sidebarReorderIds.first == group.anchorWorkspaceId,
-            isBeingDragged: dragState.draggedTabId == group.anchorWorkspaceId,
-            topDropIndicatorVisible: topDropIndicatorVisible,
-            onDragStart: onDragStart,
-            tabDropDelegateFactory: tabDropDelegateFactory,
-            onToggleCollapsed: { [weak tabManager, groupId = group.id] in
+        return SidebarWorkspaceGroupHeaderActions(
+            beginDrag: {
+#if DEBUG
+                cmuxDebugLog("sidebar.onDrag groupAnchor=\(anchorId.uuidString.prefix(5))")
+#endif
+                dragState.beginDragging(tabId: anchorId)
+                return SidebarTabDragPayload.provider(for: anchorId)
+            },
+            drop: .forwarding(to: makeDropDelegate),
+            toggleCollapsed: { [weak tabManager] in
                 tabManager?.toggleWorkspaceGroupCollapsed(groupId: groupId)
             },
-            onFocusAnchor: { [weak tabManager, anchorId = group.anchorWorkspaceId, selectedTabIds = $selectedTabIds, lastSidebarSelectionIndex = $lastSidebarSelectionIndex] in
-                guard let tabManager else { return }
-                guard let anchorTab = tabManager.tabs.first(where: { $0.id == anchorId }) else { return }
+            focusAnchor: { [weak tabManager] in
+                guard let tabManager,
+                      let anchorTab = tabManager.tabs.first(where: { $0.id == anchorId }) else {
+                    return
+                }
                 tabManager.selectWorkspace(anchorTab)
                 if selectedTabIds.wrappedValue != [anchorId] {
                     selectedTabIds.wrappedValue = [anchorId]
@@ -113,12 +110,12 @@ extension VerticalTabsSidebar {
                     lastSidebarSelectionIndex.wrappedValue = anchorIndex
                 }
             },
-            onTapPlus: { [weak tabManager, groupId = group.id, placement = newWorkspacePlacement] in
+            createWorkspace: { [weak tabManager, placement = snapshot.newWorkspacePlacement] in
                 guard let tabManager else { return }
                 let resolved = placement ?? WorkspaceGroupNewWorkspacePlacementSettings.resolved()
                 _ = tabManager.createWorkspaceInGroup(groupId: groupId, placement: resolved)
             },
-            onRunResolvedItem: { [weak tabManager, groupId = group.id] item in
+            runResolvedItem: { [weak tabManager] item in
                 guard let tabManager else { return }
                 SidebarWorkspaceGroupContextMenuRunner.run(
                     item: item,
@@ -126,7 +123,7 @@ extension VerticalTabsSidebar {
                     groupId: groupId
                 )
             },
-            onRename: { [weak tabManager, groupId = group.id, currentName = group.name] in
+            rename: { [weak tabManager, currentName = snapshot.name] in
                 guard let tabManager else { return }
                 presentSidebarWorkspaceGroupRenamePrompt(
                     tabManager: tabManager,
@@ -134,33 +131,53 @@ extension VerticalTabsSidebar {
                     currentName: currentName
                 )
             },
-            onTogglePinned: { [weak tabManager, groupId = group.id] in
+            togglePinned: { [weak tabManager] in
                 tabManager?.toggleWorkspaceGroupPinned(groupId: groupId)
             },
-            onUngroup: { [weak tabManager, groupId = group.id] in
+            ungroup: { [weak tabManager] in
                 tabManager?.ungroupWorkspaceGroup(groupId: groupId)
             },
-            onDelete: { [weak tabManager, groupId = group.id, groupName = group.name, memberCount = memberWorkspaceIds.count] in
+            delete: { [weak tabManager, groupName = snapshot.name, memberCount = snapshot.memberCount] in
                 guard let tabManager else { return }
                 let otherMemberCount = max(memberCount - 1, 0)
-                guard confirmDeleteWorkspaceGroup(groupName: groupName, otherMemberCount: otherMemberCount) else { return }
+                guard confirmDeleteWorkspaceGroup(
+                    groupName: groupName,
+                    otherMemberCount: otherMemberCount
+                ) else {
+                    return
+                }
                 tabManager.deleteWorkspaceGroup(groupId: groupId)
             },
-            onEditConfig: {
+            editConfig: {
                 SidebarWorkspaceGroupConfigOpener.openCmuxConfigInEditor()
             },
-            onOpenDocs: {
+            openDocs: {
                 SidebarWorkspaceGroupConfigOpener.openWorkspaceGroupsDocs()
             }
         )
+    }
+
+    @ViewBuilder
+    func sidebarWorkspaceGroupHeader(
+        snapshot: SidebarWorkspaceGroupHeaderSnapshot,
+        actions: SidebarWorkspaceGroupHeaderActions,
+        shouldCollectWorkspaceDropTargets: Bool
+    ) -> some View {
+        let header = SidebarWorkspaceGroupHeaderView(
+            snapshot: snapshot,
+            actions: actions
+        )
         .equatable()
-        .id(group.anchorWorkspaceId)
-        .accessibilityIdentifier("sidebarWorkspaceGroup.\(group.id.uuidString)")
-        .preference(key: SidebarWorkspaceRowIdsPreferenceKey.self, value: Set([group.anchorWorkspaceId]))
+        .id(snapshot.anchorWorkspaceId)
+        .accessibilityIdentifier("sidebarWorkspaceGroup.\(snapshot.groupId.uuidString)")
+        .preference(
+            key: SidebarWorkspaceRowIdsPreferenceKey.self,
+            value: Set([snapshot.anchorWorkspaceId])
+        )
 
         header
             .sidebarWorkspaceFrameAnchor(
-                id: group.anchorWorkspaceId,
+                id: snapshot.anchorWorkspaceId,
                 isEnabled: shouldCollectWorkspaceDropTargets
             )
     }

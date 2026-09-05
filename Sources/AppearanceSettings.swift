@@ -79,14 +79,19 @@ enum AppearanceSettings {
     }
 
     static let appearanceModeKey = "appearanceMode"
-    static let defaultMode: AppearanceMode = .system
+    // UniConnect's visual identity is dark on first launch. An explicit saved
+    // `.system` or `.light` preference still wins on every subsequent launch.
+    static let defaultMode: AppearanceMode = .dark
     private static let appleInterfaceStyleKey = "AppleInterfaceStyle"
     private static let darkInterfaceStyleValue = "Dark"
 
     static func mode(for rawValue: String?) -> AppearanceMode {
-        guard let rawValue, let mode = AppearanceMode(rawValue: rawValue) else {
+        guard let rawValue else {
             return defaultMode
         }
+        // Keep the legacy, non-forcing fallback for corrupt or future values.
+        // The dark default applies only when no preference has ever been saved.
+        guard let mode = AppearanceMode(rawValue: rawValue) else { return .system }
         return mode == .auto ? .system : mode
     }
 

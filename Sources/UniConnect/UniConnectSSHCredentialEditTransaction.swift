@@ -25,20 +25,28 @@ struct UniConnectSSHCredentialEditTransaction {
         Set<UniConnectSSHTargetKey>,
         Set<Window>
     ) -> UniConnectSSHTargetKey?
-    typealias CredentialCreator = @MainActor (String) throws -> UUID
+    typealias CredentialCreator = @MainActor (
+        String,
+        UniConnectSSHEffectiveTarget
+    ) throws -> UUID
     typealias CredentialRemover = @MainActor (UUID) throws -> Void
     typealias RuntimeMutation = @MainActor (
         UUID,
-        DetectedSSHSession,
+        UniConnectSSHEffectiveTarget,
         [Window]
     ) -> Bool
     typealias RuntimeRollback = @MainActor (UUID, [Window]) -> Bool
     typealias PersistenceCommit = @MainActor () throws -> Void
 
     private let executor: any UniConnectSSHCommandExecuting
+    private let targetResolver: any UniConnectSSHTargetResolving
 
-    init(executor: any UniConnectSSHCommandExecuting) {
+    init(
+        executor: any UniConnectSSHCommandExecuting,
+        targetResolver: any UniConnectSSHTargetResolving
+    ) {
         self.executor = executor
+        self.targetResolver = targetResolver
     }
 
     /// Preflights every live tmux session, then switches and respawns in one main-actor phase.
@@ -58,13 +66,23 @@ struct UniConnectSSHCredentialEditTransaction {
     ) async throws -> UUID {
         guard let validated = UniConnectSSHConnectCommandValidator()
             .validatedCommand(newConnectCommand),
-              let session = validated.detectedSession() else {
+              let resolutionRequest = validated.targetResolutionRequest() else {
+            throw Failure.invalidConnection
+        }
+
+        guard !Task.isCancelled else { throw Failure.cancelled }
+        let resolution = await targetResolver.resolve(resolutionRequest)
+        guard !Task.isCancelled else { throw Failure.cancelled }
+        guard case .resolved(let effectiveTarget) = resolution else {
             throw Failure.invalidConnection
         }
 
         let orderedWindows = windows.sorted(by: Self.windowSort)
         let windowTargets = orderedWindows.compactMap {
-            UniConnectSSHTargetKey(session: session, tmuxSession: $0.tmuxSession)
+            UniConnectSSHTargetKey(
+                effectiveTarget: effectiveTarget,
+                tmuxSession: $0.tmuxSession
+            )
         }
         guard windowTargets.count == orderedWindows.count else {
             throw Failure.invalidConnection
@@ -81,9 +99,17 @@ struct UniConnectSSHCredentialEditTransaction {
         for tmuxSession in orderedWindows.map(\.tmuxSession).sorted() {
             guard let remoteCommand = UniConnectTmuxImportCommand
                 .readOnlyExistenceCheck(session: tmuxSession),
-                  let invocation = UniConnectSSHProcessInvocation(
-                      session: session,
+                  let validatedInvocation = validated.invocation(
+                      injecting: Self.preflightOptions(
+                          usesPasswordWrapper: validated.usesPasswordWrapper
+                      ),
+                      pinnedTo: effectiveTarget,
                       remoteCommand: remoteCommand
+                  ),
+                  let invocation = UniConnectSSHProcessInvocation(
+                      executable: validatedInvocation.executable,
+                      arguments: validatedInvocation.arguments,
+                      environment: validatedInvocation.environment
                   ) else {
                 throw Failure.invalidConnection
             }
@@ -104,12 +130,15 @@ struct UniConnectSSHCredentialEditTransaction {
 
         let newCredentialID: UUID
         do {
-            newCredentialID = try createCredentialRevision(newConnectCommand)
+            newCredentialID = try createCredentialRevision(
+                newConnectCommand,
+                effectiveTarget
+            )
         } catch {
             throw Failure.credentialWriteFailed
         }
 
-        let committed = commit(newCredentialID, session, orderedWindows)
+        let committed = commit(newCredentialID, effectiveTarget, orderedWindows)
         do {
             guard committed else { throw Failure.commitFailed }
             try persist()
@@ -153,5 +182,28 @@ struct UniConnectSSHCredentialEditTransaction {
             return lhs.tmuxSession < rhs.tmuxSession
         }
         return lhs.panelID.uuidString < rhs.panelID.uuidString
+    }
+
+    /// Keeps the edit preflight on the endpoint captured before any remote I/O.
+    private static func preflightOptions(
+        usesPasswordWrapper: Bool
+    ) -> [String] {
+        [
+            "-T",
+            "-o", "ConnectTimeout=12",
+            "-o", "ServerAliveInterval=20",
+            "-o", "ServerAliveCountMax=2",
+            "-o", "ControlMaster=no",
+            "-o", "ControlPath=none",
+            "-o", "ControlPersist=no",
+            "-o", "ClearAllForwardings=yes",
+            "-o", "ForwardAgent=no",
+            "-o", "ForwardX11=no",
+            "-o", "ForwardX11Trusted=no",
+            "-o", "PermitLocalCommand=no",
+            "-o", "NumberOfPasswordPrompts=1",
+            "-o", usesPasswordWrapper ? "BatchMode=no" : "BatchMode=yes",
+            "-o", "StrictHostKeyChecking=accept-new",
+        ]
     }
 }

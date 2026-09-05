@@ -40,7 +40,11 @@ extension SidebarWorkspaceSnapshotBuilder.Snapshot {
             pullRequestRows: pullRequestRows,
             listeningPorts: listeningPorts,
             uniConnectIsSSH: uniConnectIsSSH,
-            uniConnectWindowCount: uniConnectWindowCount
+            uniConnectWindowCount: uniConnectWindowCount,
+            customTitle: snapshot.customTitle,
+            groupId: groupId,
+            finderDirectoryPath: finderDirectoryPath,
+            canReconnectSSH: canReconnectSSH
         )
     }
 }

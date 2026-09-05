@@ -81,6 +81,9 @@ struct cmuxApp: App {
         // shared static.
         let settingsCatalog = SettingCatalog()
         let configFileURL = CmuxConfigLocation().userConfigFile
+        // Resume approvals are readable metadata, not a credential store. Remove
+        // legacy SSH/sshpass entries before settings or restore code can observe them.
+        SurfaceResumeApprovalStore.scrubSensitiveRecordsAtStartup(fileURL: configFileURL)
         // Relocate a pre-existing socket password out of the legacy
         // Application Support directory before any store reads it. The CLI reads
         // this file on every agent hook, and a cross-identity reach into
@@ -202,6 +205,23 @@ struct cmuxApp: App {
         )
         KeyboardShortcutSettings.settingsFileStore.applyDeferredManagedDefaultSideEffects()
         StartupBreadcrumbLog.append("app.init.keyboardShortcuts.sideEffectsApplied")
+
+        // Legacy vaults predate captured SSH endpoints. Add that metadata before any
+        // workspace restoration asks for an attach launcher; keep all saved UUIDs intact.
+        let sshTargetResolver = UniConnectSSHConfigTargetResolver()
+        if UniConnectCoordinator.isEnabled {
+            do {
+                let migrated = try UniConnectVault.shared.hydrateLegacyEffectiveTargets(
+                    resolving: sshTargetResolver.resolveForStartup
+                )
+                if migrated > 0 {
+                    NSLog("[UniConnect] restored endpoint metadata for %d legacy credential(s)", migrated)
+                }
+            } catch {
+                // Do not expose commands/config diagnostics or discard recoverable records.
+                NSLog("[UniConnect] legacy endpoint metadata migration was not committed")
+            }
+        }
         StartupBreadcrumbLog.append("app.init.tabManager.begin")
         let importMutationGate = UniConnectImportMutationGate()
         let tabManager = TabManager(importMutationGate: importMutationGate)
@@ -227,19 +247,11 @@ struct cmuxApp: App {
             ),
             installationKey: bridgeKey,
             statusDelivery: { route, status in
-                guard let workspace = tabManagersProvider()
-                    .lazy
-                    .compactMap({ manager in
-                        manager.tabs.first(where: { $0.id == route.workspaceID })
-                    })
-                    .first else {
-                    return
-                }
-                if status == .inactive {
-                    workspace.uniConnectClaudeBridgeStatusByPanelId.removeValue(forKey: route.id)
-                } else {
-                    workspace.uniConnectClaudeBridgeStatusByPanelId[route.id] = status
-                }
+                UniConnectClaudeBridgeNotificationSink.deliverStatus(
+                    status,
+                    for: route,
+                    in: tabManagersProvider()
+                )
             }
         )
         self.claudeBridgeRuntime = bridgeRuntime
@@ -250,21 +262,23 @@ struct cmuxApp: App {
         )
         let importCheckpoints = UniConnectImportCheckpointRepository()
         UniConnectCoordinator.shared.configureSSHCommandExecutor(
-            UniConnectSSHCommandService()
+            UniConnectSSHCommandService(),
+            targetResolver: sshTargetResolver
         )
         UniConnectCoordinator.shared.configureImportRuntime(
             transaction: UniConnectImportTransaction(
                 journal: UniConnectImportJournalRepository(),
                 tmuxVerifier: UniConnectExistingTmuxVerifier(
                     executor: UniConnectSSHCommandService()
-                )
+                ),
+                sshTargetResolver: sshTargetResolver
             ),
             checkpoints: importCheckpoints,
             mutationGate: importMutationGate
         )
 
-        let credentialResolver: @Sendable (UUID) async -> String? = { credentialID in
-            UniConnectVault.shared.connectCommand(for: credentialID)
+        let credentialResolver: @Sendable (UUID) async -> UniConnectSSHCredentialRecord? = { credentialID in
+            UniConnectVault.shared.credentialRecord(for: credentialID)
         }
         let processRunner = UniConnectControlledProcessRunner()
         let applicationStateReader = UniConnectClaudeUpdateApplicationStateReader(
@@ -293,14 +307,16 @@ struct cmuxApp: App {
             remoteResolver: remoteResolver,
             credentialSnapshotResolver: { credentialID in
                 guard let revisionID = try? UniConnectVault.shared.immutableRevision(for: credentialID),
-                      let command = UniConnectVault.shared.connectCommand(for: revisionID),
-                      UniConnectSSH.validateConnectCommand(command) == nil,
-                      let session = UniConnectSSH.detectedSession(fromConnectCommand: command) else {
+                      let record = UniConnectVault.shared.credentialRecord(for: revisionID),
+                      let effectiveTarget = record.effectiveTarget,
+                      UniConnectSSH.detectedSession(fromCredentialRecord: record) != nil else {
                     return nil
                 }
                 return (
                     revisionID: revisionID,
-                    endpointFingerprint: UniConnectClaudeUpdateHostID.endpointFingerprint(for: session)
+                    endpointFingerprint: UniConnectClaudeUpdateHostID.endpointFingerprint(
+                        for: effectiveTarget
+                    )
                 )
             }
         )
@@ -486,7 +502,7 @@ struct cmuxApp: App {
     private func migrateSidebarAppearanceDefaultsIfNeeded(defaults: UserDefaults) {
         seedUniConnectSidebarPresetIfNeeded(defaults: defaults)
         let migrationKey = "sidebarAppearanceDefaultsVersion"
-        let targetVersion = 1
+        let targetVersion = 3
         guard defaults.integer(forKey: migrationKey) < targetVersion else { return }
 
         func normalizeHex(_ value: String) -> String {
@@ -517,6 +533,19 @@ struct cmuxApp: App {
             approximatelyEqual(blurOpacity, 0.79) &&
             approximatelyEqual(cornerRadius, 0.0)
 
+        let oldUniConnectTintHexes = ["FF5C6E", "5B58D6"]
+        let usesOldUniConnectPreset =
+            defaults.string(forKey: "sidebarPreset") == SidebarPresetOption.uniConnect.rawValue &&
+            material == SidebarMaterialOption.sidebar.rawValue &&
+            blendMode == SidebarBlendModeOption.withinWindow.rawValue &&
+            state == SidebarStateOption.followWindow.rawValue &&
+            oldUniConnectTintHexes.contains(normalizeHex(tintHex)) &&
+            approximatelyEqual(tintOpacity, 0.06) &&
+            approximatelyEqual(blurOpacity, 0.85) &&
+            approximatelyEqual(cornerRadius, 18.0) &&
+            defaults.string(forKey: "sidebarTintHexLight") == nil &&
+            defaults.string(forKey: "sidebarTintHexDark") == nil
+
         if usesLegacyDefaults {
             let preset = SidebarPresetOption.uniConnect
             defaults.set(preset.rawValue, forKey: "sidebarPreset")
@@ -527,6 +556,10 @@ struct cmuxApp: App {
             defaults.set(preset.tintOpacity, forKey: "sidebarTintOpacity")
             defaults.set(preset.blurOpacity, forKey: "sidebarBlurOpacity")
             defaults.set(preset.cornerRadius, forKey: "sidebarCornerRadius")
+        } else if usesOldUniConnectPreset {
+            // Upgrade only the exact preset UniConnect used to seed. A user who
+            // changed any appearance field keeps that explicit choice.
+            defaults.set(SidebarPresetOption.uniConnect.tintHex, forKey: "sidebarTintHex")
         }
 
         defaults.set(targetVersion, forKey: migrationKey)
@@ -537,6 +570,24 @@ struct cmuxApp: App {
     private func seedUniConnectSidebarPresetIfNeeded(defaults: UserDefaults) {
         let seededKey = "uniconnect.sidebarPresetSeeded2"
         guard !defaults.bool(forKey: seededKey) else { return }
+        let appearanceKeys = [
+            "sidebarPreset",
+            "sidebarMaterial",
+            "sidebarBlendMode",
+            "sidebarState",
+            "sidebarTintHex",
+            "sidebarTintOpacity",
+            "sidebarBlurOpacity",
+            "sidebarCornerRadius",
+            "sidebarTintHexLight",
+            "sidebarTintHexDark",
+        ]
+        guard !appearanceKeys.contains(where: { defaults.object(forKey: $0) != nil }) else {
+            // This profile predates the seed marker but already has an explicit
+            // appearance. Mark it observed without overwriting the user's work.
+            defaults.set(true, forKey: seededKey)
+            return
+        }
         let preset = SidebarPresetOption.uniConnect
         defaults.set(preset.rawValue, forKey: "sidebarPreset")
         defaults.set(preset.material.rawValue, forKey: "sidebarMaterial")
@@ -891,7 +942,7 @@ struct cmuxApp: App {
                 }
 
                 splitCommandButton(
-                    title: String(localized: "menu.file.newTabInBox", defaultValue: "New Tab"),
+                    title: String(localized: "menu.file.newTabInBox", defaultValue: "New Window"),
                     systemImage: "plus.rectangle.on.rectangle",
                     shortcut: menuShortcut(for: .newSurface)
                 ) {
@@ -1261,7 +1312,7 @@ struct cmuxApp: App {
                 guard let workspace = activeTabManager.selectedWorkspace else { return }
                 UniConnectCoordinator.shared.editConnection(for: workspace)
             } label: {
-                Label(String(localized: "menu.box.editSSH", defaultValue: "Edit SSH Connection…"), systemImage: "key.horizontal")
+                Label(String(localized: "menu.box.editSSH", defaultValue: "Edit SSH Connection…"), systemImage: "network")
             }
             .disabled(activeTabManager.selectedWorkspace?.uniConnectProfile?.isSSH != true)
 
@@ -1323,8 +1374,15 @@ struct cmuxApp: App {
                 activeTabManager.selectNextTab()
             }
 
-            ForEach(1...9, id: \.self) { number in
-                numberedWorkspaceMenuButton(number)
+            Menu {
+                ForEach(1...9, id: \.self) { number in
+                    numberedWorkspaceMenuButton(number)
+                }
+            } label: {
+                Label(
+                    String(localized: "menu.box.quickSwitch", defaultValue: "Quick Switch"),
+                    systemImage: "list.number"
+                )
             }
 
             Menu {
@@ -1387,7 +1445,7 @@ struct cmuxApp: App {
             splitCommandButton(
                 title: String(
                     localized: "uniconnect.reconnect.all.now",
-                    defaultValue: "Reconnect SSH Windows Now"
+                    defaultValue: "Reconnect All SSH Windows"
                 ),
                 systemImage: "arrow.trianglehead.2.clockwise.rotate.90",
                 shortcut: menuShortcut(for: .reconnectDroppedWindows)
@@ -1395,14 +1453,6 @@ struct cmuxApp: App {
                 performUniConnectReconnectAction()
             }
             .disabled(!hasReconnectableUniConnectWindows)
-
-            Button {
-                guard let workspace = activeTabManager.selectedWorkspace else { return }
-                UniConnectCoordinator.shared.terminateRemoteTmuxSession(in: workspace)
-            } label: {
-                Label(String(localized: "menu.box.terminateRemoteTmux", defaultValue: "End Remote tmux Session…"), systemImage: "xmark.octagon")
-            }
-            .disabled(!canTerminateFocusedRemoteTmuxSession)
 
             Menu {
                 splitCommandButton(
@@ -1433,6 +1483,22 @@ struct cmuxApp: App {
             } label: {
                 Label(String(localized: "menu.box.updateClaude", defaultValue: "Update Claude"), systemImage: "arrow.down.app")
             }
+
+            Divider()
+
+            Button(role: .destructive) {
+                guard let workspace = activeTabManager.selectedWorkspace else { return }
+                UniConnectCoordinator.shared.terminateRemoteTmuxSession(in: workspace)
+            } label: {
+                Label(
+                    String(
+                        localized: "menu.box.terminateRemoteTmux",
+                        defaultValue: "End Remote tmux Session…"
+                    ),
+                    systemImage: "xmark.octagon.fill"
+                )
+            }
+            .disabled(!canTerminateFocusedRemoteTmuxSession)
 
             Divider()
 
@@ -1533,7 +1599,7 @@ struct cmuxApp: App {
         if AppDelegate.shared?.performSplitShortcut(direction: direction) == true {
             return
         }
-        tabManager.createSplit(direction: direction)
+        tabManager.requestNewTerminalSplit(direction: direction)
     }
 
     private func selectedWorkspaceIndex(in manager: TabManager, workspaceId: UUID) -> Int? {

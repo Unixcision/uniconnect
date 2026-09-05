@@ -23,6 +23,33 @@ struct SocketFastPathStateTests {
         #expect(state.shouldPublishShellActivity(workspaceId: workspace, panelId: UUID(), state: "promptIdle"))
     }
 
+    @Test func replacementGenerationsAreTrackedIndependentlyForOneStablePanelID() {
+        let state = SocketFastPathState()
+        let workspace = UUID()
+        let panel = UUID()
+        let closedGeneration = UUID()
+        let replacementGeneration = UUID()
+
+        #expect(state.shouldPublishShellActivity(
+            workspaceId: workspace,
+            panelId: panel,
+            surfaceGeneration: closedGeneration,
+            state: "promptIdle"
+        ))
+        #expect(state.shouldPublishShellActivity(
+            workspaceId: workspace,
+            panelId: panel,
+            surfaceGeneration: replacementGeneration,
+            state: "promptIdle"
+        ))
+        #expect(!state.shouldPublishShellActivity(
+            workspaceId: workspace,
+            panelId: panel,
+            surfaceGeneration: replacementGeneration,
+            state: "promptIdle"
+        ))
+    }
+
     @Test func cacheResetsAtCapacityAndKeepsPublishing() {
         let state = SocketFastPathState(maxTrackedShellStates: 4)
         let workspace = UUID()

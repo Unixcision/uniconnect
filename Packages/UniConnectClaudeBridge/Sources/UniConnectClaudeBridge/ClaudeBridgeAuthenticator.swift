@@ -11,7 +11,6 @@ actor ClaudeBridgeAuthenticator {
     private struct CompletionKey: Hashable {
         let routeID: UUID
         let sessionCorrelation: String
-        let cwd: String
     }
 
     private struct CompletionStamp {
@@ -24,6 +23,10 @@ actor ClaudeBridgeAuthenticator {
     private let replayRetention: TimeInterval
     private let completionCoalescingWindow: TimeInterval
     private let complementaryCompletionWindow: TimeInterval
+    private let maximumReplayEntries: Int
+    private let maximumReplayEntriesPerRoute: Int
+    private let maximumCompletionEntries: Int
+    private let maximumCompletionEntriesPerRoute: Int
     private let now: @Sendable () -> Date
     private var tokens: [UUID: Data] = [:]
     private var acceptedEventExpirations: [ReplayKey: Date] = [:]
@@ -32,16 +35,29 @@ actor ClaudeBridgeAuthenticator {
     init(
         maximumAge: TimeInterval = 5 * 60,
         futureTolerance: TimeInterval = 30,
-        replayRetention: TimeInterval = 24 * 60 * 60,
+        replayRetention: TimeInterval = 6 * 60,
         completionCoalescingWindow: TimeInterval = 4,
         complementaryCompletionWindow: TimeInterval = 90,
+        maximumReplayEntries: Int = 32_768,
+        maximumReplayEntriesPerRoute: Int = 4_096,
+        maximumCompletionEntries: Int = 8_192,
+        maximumCompletionEntriesPerRoute: Int = 512,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
-        self.maximumAge = maximumAge
-        self.futureTolerance = futureTolerance
-        self.replayRetention = replayRetention
-        self.completionCoalescingWindow = completionCoalescingWindow
-        self.complementaryCompletionWindow = complementaryCompletionWindow
+        let boundedMaximumAge = max(0, maximumAge)
+        let boundedFutureTolerance = max(0, futureTolerance)
+        self.maximumAge = boundedMaximumAge
+        self.futureTolerance = boundedFutureTolerance
+        self.replayRetention = max(
+            replayRetention,
+            boundedMaximumAge + boundedFutureTolerance + 1
+        )
+        self.completionCoalescingWindow = max(0, completionCoalescingWindow)
+        self.complementaryCompletionWindow = max(0, complementaryCompletionWindow)
+        self.maximumReplayEntries = max(1, maximumReplayEntries)
+        self.maximumReplayEntriesPerRoute = max(1, maximumReplayEntriesPerRoute)
+        self.maximumCompletionEntries = max(1, maximumCompletionEntries)
+        self.maximumCompletionEntriesPerRoute = max(1, maximumCompletionEntriesPerRoute)
         self.now = now
     }
 
@@ -103,6 +119,9 @@ actor ClaudeBridgeAuthenticator {
                   message.integrationError == nil else {
                 return .failure(.malformed)
             }
+            guard hasReplayCapacity(for: routeID) else {
+                return .failure(.capacity)
+            }
             acceptedEventExpirations[replayKey] = currentDate.addingTimeInterval(replayRetention)
             return .success(nil)
         }
@@ -118,23 +137,33 @@ actor ClaudeBridgeAuthenticator {
             return .failure(.malformed)
         }
 
-        acceptedEventExpirations[replayKey] = currentDate.addingTimeInterval(replayRetention)
+        guard hasReplayCapacity(for: routeID) else {
+            return .failure(.capacity)
+        }
         if kind.isUserVisibleCompletion {
             let completionKey = CompletionKey(
                 routeID: routeID,
-                sessionCorrelation: sessionCorrelation,
-                cwd: cwd
+                sessionCorrelation: sessionCorrelation
             )
             if let previous = latestCompletionByKey[completionKey] {
+                guard occurredAt > previous.occurredAt else {
+                    acceptedEventExpirations[replayKey] = currentDate.addingTimeInterval(replayRetention)
+                    return .failure(.duplicate)
+                }
                 let window = previous.kind == kind
                     ? completionCoalescingWindow
                     : complementaryCompletionWindow
-                if abs(occurredAt.timeIntervalSince(previous.occurredAt)) <= window {
+                if occurredAt.timeIntervalSince(previous.occurredAt) <= window {
+                    acceptedEventExpirations[replayKey] = currentDate.addingTimeInterval(replayRetention)
                     return .failure(.duplicate)
                 }
             }
+            guard hasCompletionCapacity(for: completionKey) else {
+                return .failure(.capacity)
+            }
             latestCompletionByKey[completionKey] = CompletionStamp(kind: kind, occurredAt: occurredAt)
         }
+        acceptedEventExpirations[replayKey] = currentDate.addingTimeInterval(replayRetention)
         return .success(
             ClaudeBridgeEvent(
                 id: eventID,
@@ -171,6 +200,9 @@ actor ClaudeBridgeAuthenticator {
         ) != nil else {
             return .failure(.stale)
         }
+        guard hasReplayCapacity(for: routeID) else {
+            return .failure(.capacity)
+        }
         acceptedEventExpirations[replayKey] = currentDate.addingTimeInterval(replayRetention)
         return .success(())
     }
@@ -181,6 +213,19 @@ actor ClaudeBridgeAuthenticator {
         latestCompletionByKey = latestCompletionByKey.filter {
             abs(date.timeIntervalSince($0.value.occurredAt)) <= retention
         }
+    }
+
+    private func hasReplayCapacity(for routeID: UUID) -> Bool {
+        guard acceptedEventExpirations.count < maximumReplayEntries else { return false }
+        let routeCount = acceptedEventExpirations.keys.lazy.filter { $0.routeID == routeID }.count
+        return routeCount < maximumReplayEntriesPerRoute
+    }
+
+    private func hasCompletionCapacity(for key: CompletionKey) -> Bool {
+        if latestCompletionByKey[key] != nil { return true }
+        guard latestCompletionByKey.count < maximumCompletionEntries else { return false }
+        let routeCount = latestCompletionByKey.keys.lazy.filter { $0.routeID == key.routeID }.count
+        return routeCount < maximumCompletionEntriesPerRoute
     }
 
     private func freshDate(timestampMilliseconds: Int64, relativeTo currentDate: Date) -> Date? {

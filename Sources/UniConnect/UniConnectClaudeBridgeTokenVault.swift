@@ -31,11 +31,13 @@ actor UniConnectClaudeBridgeTokenVault: ClaudeBridgeTokenStoring {
         self.key = key
     }
 
-    func token(for routeID: UUID) async throws -> Data? {
+    func token(for routeID: UUID, credentialID: UUID) async throws -> Data? {
         let payload = try load()
-        guard let encoded = payload.entries[routeID.uuidString.lowercased()]?.token else {
+        guard let entry = payload.entries[routeID.uuidString.lowercased()],
+              entry.credentialID == credentialID else {
             return nil
         }
+        let encoded = entry.token
         guard let data = Data(base64Encoded: encoded), data.count == 32 else {
             throw VaultError.invalidToken
         }

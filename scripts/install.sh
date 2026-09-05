@@ -104,7 +104,11 @@ fi
 "$SCRIPT_DIR/verify-uniconnect-signature.sh" "${STAGED_VERIFY_ARGS[@]}"
 
 if [[ -d "$TARGET_APP" ]]; then
-  /usr/bin/osascript -e 'tell application id "com.unixcision.uniconnect" to quit' >/dev/null 2>&1 || true
+  # Sending an Apple event to a stopped app can launch the old version. Only
+  # request a graceful quit when this exact installed executable is running.
+  if /usr/bin/pgrep -f '^/Applications/UniConnect\.app/Contents/MacOS/UniConnect($| )' >/dev/null 2>&1; then
+    /usr/bin/osascript -e 'tell application id "com.unixcision.uniconnect" to quit' >/dev/null 2>&1 || true
+  fi
   for _ in {1..40}; do
     if ! /usr/bin/pgrep -f '^/Applications/UniConnect\.app/Contents/MacOS/UniConnect($| )' >/dev/null 2>&1; then
       break

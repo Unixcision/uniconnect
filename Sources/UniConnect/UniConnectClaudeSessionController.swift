@@ -67,17 +67,37 @@ actor UniConnectClaudeSessionController: ClaudeSessionControlling {
         _ target: ClaudeUpdateTarget
     ) async throws -> ClaudeSessionInspection {
         let identity = try Self.applicationIdentity(target)
+        let expectedSurfaceGeneration = try await localSurfaceGeneration(
+            for: target,
+            identity: identity
+        )
         let events = await sessionRegistry.events(
             workspaceID: identity.workspaceID,
-            panelID: identity.panelID
+            panelID: identity.panelID,
+            surfaceGeneration: expectedSurfaceGeneration
         )
         let initial = try await inspect(target)
+        if let expectedSurfaceGeneration {
+            guard await surfaceGenerationIsCurrent(
+                identity,
+                expected: expectedSurfaceGeneration
+            ) else {
+                throw UniConnectClaudeSessionControllerError.identityMismatch
+            }
+        }
         if initial.isIdle { return initial }
 
         let result = await withTaskGroup(of: InspectionWaitResult.self) { group in
             group.addTask { [weak self] in
                 for await _ in events {
                     guard !Task.isCancelled, let self else { return .streamEnded }
+                    if let expectedSurfaceGeneration,
+                       !(await self.surfaceGenerationIsCurrent(
+                           identity,
+                           expected: expectedSurfaceGeneration
+                       )) {
+                        return .streamEnded
+                    }
                     guard let inspection = try? await self.inspect(target), inspection.isIdle else {
                         continue
                     }
@@ -170,15 +190,17 @@ actor UniConnectClaudeSessionController: ClaudeSessionControlling {
         exitedProcessID: Int32
     ) async throws {
         let identity = try Self.applicationIdentity(target)
+        let expectedSurfaceGeneration = try await requiredLocalSurfaceGeneration(identity)
         let events = await sessionRegistry.events(
             workspaceID: identity.workspaceID,
-            panelID: identity.panelID
+            panelID: identity.panelID,
+            surfaceGeneration: expectedSurfaceGeneration
         )
         try await processExitWaiter.waitForExit(
             processID: exitedProcessID,
             timeout: shellTimeout
         )
-        if await shellIsReady(identity) { return }
+        if await shellIsReady(identity, surfaceGeneration: expectedSurfaceGeneration) { return }
 
         let result = await withTaskGroup(of: ShellWaitResult.self) { group in
             group.addTask { [weak self] in
@@ -187,7 +209,10 @@ actor UniConnectClaudeSessionController: ClaudeSessionControlling {
                     guard case .local(let signal) = event,
                           signal.kind == .shellActivityChanged,
                           signal.shellActivity == Workspace.PanelShellActivityState.promptIdle.rawValue,
-                          await self.shellIsReady(identity) else {
+                          await self.shellIsReady(
+                              identity,
+                              surfaceGeneration: expectedSurfaceGeneration
+                          ) else {
                         continue
                     }
                     return .ready
@@ -213,14 +238,16 @@ actor UniConnectClaudeSessionController: ClaudeSessionControlling {
             throw UniConnectClaudeSessionControllerError.invalidTarget
         }
         let identity = try Self.applicationIdentity(target)
-        guard await shellIsReady(identity),
+        let expectedSurfaceGeneration = try await requiredLocalSurfaceGeneration(identity)
+        guard await shellIsReady(identity, surfaceGeneration: expectedSurfaceGeneration),
               let wrapperPath = wrapperPathProvider(),
               FileManager.default.isExecutableFile(atPath: wrapperPath) else {
             throw UniConnectClaudeSessionControllerError.restoreUnavailable
         }
         let events = await sessionRegistry.events(
             workspaceID: identity.workspaceID,
-            panelID: identity.panelID
+            panelID: identity.panelID,
+            surfaceGeneration: expectedSurfaceGeneration
         )
         let command = Self.localRestoreCommand(binding: binding, wrapperPath: wrapperPath)
         let sent = await terminalWriter.sendText(
@@ -258,13 +285,49 @@ actor UniConnectClaudeSessionController: ClaudeSessionControlling {
     }
 
     private func shellIsReady(
-        _ identity: (workspaceID: UUID, panelID: UUID)
+        _ identity: (workspaceID: UUID, panelID: UUID),
+        surfaceGeneration: UUID
     ) async -> Bool {
         let panel = await stateReader.panelSnapshot(
             workspaceID: identity.workspaceID,
             panelID: identity.panelID
         )
-        return panel?.shellActivity == Workspace.PanelShellActivityState.promptIdle.rawValue
+        return panel?.surfaceGeneration == surfaceGeneration
+            && panel?.shellActivity == Workspace.PanelShellActivityState.promptIdle.rawValue
+    }
+
+    private func localSurfaceGeneration(
+        for target: ClaudeUpdateTarget,
+        identity: (workspaceID: UUID, panelID: UUID)
+    ) async throws -> UUID? {
+        switch target.host.kind {
+        case .local:
+            return try await requiredLocalSurfaceGeneration(identity)
+        case .remote:
+            return nil
+        }
+    }
+
+    private func requiredLocalSurfaceGeneration(
+        _ identity: (workspaceID: UUID, panelID: UUID)
+    ) async throws -> UUID {
+        guard let generation = await stateReader.panelSnapshot(
+            workspaceID: identity.workspaceID,
+            panelID: identity.panelID
+        )?.surfaceGeneration else {
+            throw UniConnectClaudeSessionControllerError.identityMismatch
+        }
+        return generation
+    }
+
+    private func surfaceGenerationIsCurrent(
+        _ identity: (workspaceID: UUID, panelID: UUID),
+        expected: UUID
+    ) async -> Bool {
+        await stateReader.panelSnapshot(
+            workspaceID: identity.workspaceID,
+            panelID: identity.panelID
+        )?.surfaceGeneration == expected
     }
 
     private static func applicationIdentity(

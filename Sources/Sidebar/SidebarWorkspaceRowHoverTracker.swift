@@ -2,45 +2,51 @@ import AppKit
 import SwiftUI
 
 struct SidebarWorkspaceRowHoverTracker: NSViewRepresentable {
-    @Binding var rowInteractionState: SidebarWorkspaceRowInteractionState
+    let onPointerHoverChanged: (Bool) -> Void
+    let onMenuTrackingChanged: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(rowInteractionState: $rowInteractionState)
+        Coordinator(
+            onPointerHoverChanged: onPointerHoverChanged,
+            onMenuTrackingChanged: onMenuTrackingChanged
+        )
     }
 
     func makeNSView(context: Context) -> SidebarWorkspaceRowHoverTrackingView {
         let view = SidebarWorkspaceRowHoverTrackingView()
-        let coordinator = context.coordinator
         view.onPointerHoverChanged = { hovering in
-            coordinator.pointerHoverChanged(hovering)
+            context.coordinator.pointerHoverChanged(hovering)
         }
         view.onMenuTrackingChanged = { tracking in
-            coordinator.menuTrackingChanged(tracking)
+            context.coordinator.menuTrackingChanged(tracking)
         }
         return view
     }
 
     func updateNSView(_ nsView: SidebarWorkspaceRowHoverTrackingView, context: Context) {
-        context.coordinator.rowInteractionState = $rowInteractionState
+        context.coordinator.onPointerHoverChanged = onPointerHoverChanged
+        context.coordinator.onMenuTrackingChanged = onMenuTrackingChanged
     }
 
+    /// Bridges AppKit tracking callbacks without retaining row or workspace state.
     final class Coordinator {
-        var rowInteractionState: Binding<SidebarWorkspaceRowInteractionState>
+        var onPointerHoverChanged: (Bool) -> Void
+        var onMenuTrackingChanged: (Bool) -> Void
 
-        init(rowInteractionState: Binding<SidebarWorkspaceRowInteractionState>) {
-            self.rowInteractionState = rowInteractionState
+        init(
+            onPointerHoverChanged: @escaping (Bool) -> Void,
+            onMenuTrackingChanged: @escaping (Bool) -> Void
+        ) {
+            self.onPointerHoverChanged = onPointerHoverChanged
+            self.onMenuTrackingChanged = onMenuTrackingChanged
         }
 
         func pointerHoverChanged(_ hovering: Bool) {
-            rowInteractionState.wrappedValue.setPointerHovering(hovering)
+            onPointerHoverChanged(hovering)
         }
 
         func menuTrackingChanged(_ tracking: Bool) {
-            if tracking {
-                rowInteractionState.wrappedValue.contextMenuTrackingDidBegin()
-            } else {
-                rowInteractionState.wrappedValue.contextMenuTrackingDidEnd()
-            }
+            onMenuTrackingChanged(tracking)
         }
     }
 }

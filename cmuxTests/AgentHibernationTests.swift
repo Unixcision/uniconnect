@@ -74,6 +74,57 @@ final class AgentHibernationTests: XCTestCase {
         XCTAssertEqual(workspace.agentLifecycleStatesByPanelId[panelId]?["local-agent"], .idle)
     }
 
+    @MainActor
+    func testSocketLifecycleRequiresCurrentGenerationForUniConnectLocalPanel() throws {
+        let previousManager = TerminalController.shared.activeTabManagerForCallerNotification()
+        let manager = TabManager()
+        TerminalController.shared.setActiveTabManager(manager)
+        defer {
+            TerminalController.shared.setActiveTabManager(previousManager)
+            TerminalMutationBus.shared.drainForTesting()
+        }
+
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        workspace.uniConnectProfile = UniConnectWorkspaceProfile(
+            kind: .local,
+            importIdentity: UUID(),
+            localRoot: NSTemporaryDirectory()
+        )
+        let panelId = try XCTUnwrap(workspace.focusedPanelId)
+        let currentGeneration = try XCTUnwrap(
+            workspace.terminalPanel(for: panelId)?.surface.uniConnectSurfaceGeneration
+        )
+        let prefix = "set_agent_lifecycle claude_code idle "
+            + "--tab=\(workspace.id.uuidString) --panel=\(panelId.uuidString)"
+
+        XCTAssertEqual(TerminalController.shared.handleSocketLine(prefix), "OK")
+        TerminalMutationBus.shared.drainForTesting()
+        XCTAssertNil(workspace.agentLifecycleStatesByPanelId[panelId]?["claude_code"])
+
+        XCTAssertEqual(
+            TerminalController.shared.handleSocketLine(prefix + " --generation=not-a-uuid"),
+            "OK"
+        )
+        TerminalMutationBus.shared.drainForTesting()
+        XCTAssertNil(workspace.agentLifecycleStatesByPanelId[panelId]?["claude_code"])
+
+        XCTAssertEqual(
+            TerminalController.shared.handleSocketLine(prefix + " --generation=\(UUID().uuidString)"),
+            "OK"
+        )
+        TerminalMutationBus.shared.drainForTesting()
+        XCTAssertNil(workspace.agentLifecycleStatesByPanelId[panelId]?["claude_code"])
+
+        XCTAssertEqual(
+            TerminalController.shared.handleSocketLine(
+                prefix + " --generation=\(currentGeneration.uuidString)"
+            ),
+            "OK"
+        )
+        TerminalMutationBus.shared.drainForTesting()
+        XCTAssertEqual(workspace.agentLifecycleStatesByPanelId[panelId]?["claude_code"], .idle)
+    }
+
     func testSettingsDefaultToOptInAndNotifyOnChanges() throws {
         let suiteName = "cmux-agent-hibernation-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

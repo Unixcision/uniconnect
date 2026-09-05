@@ -473,53 +473,91 @@ final class BonsplitTabDragUITests: XCTestCase {
         }
     }
 
-    func testStandardModeKeepsWorkspaceControlsOutOfSidebar() {
-        let (app, dataPath) = launchConfiguredApp(presentationMode: .standard)
+    func testUniConnectCustomChromeHasOneControlSetInExpandedAndCompactSidebars() {
+        for compactSidebar in [false, true] {
+            let (app, dataPath) = launchConfiguredApp(
+                presentationMode: .standard,
+                enableUniConnect: true,
+                compactSidebar: compactSidebar
+            )
+            defer { app.terminate() }
 
-        XCTAssertTrue(
-            ensureForegroundAfterLaunch(app, timeout: launchTimeout),
-            "Expected app to launch for standard-mode sidebar control placement UI test. state=\(app.state.rawValue)"
-        )
-        XCTAssertTrue(waitForAnyJSON(atPath: dataPath, timeout: setupTimeout), "Expected tab-drag setup data at \(dataPath)")
-        guard let ready = waitForJSONKey("ready", equals: "1", atPath: dataPath, timeout: setupTimeout) else {
-            XCTFail("Timed out waiting for ready=1. data=\(loadJSON(atPath: dataPath) ?? [:])")
-            return
+            XCTAssertTrue(
+                ensureForegroundAfterLaunch(app, timeout: launchTimeout),
+                "Expected UniConnect to launch with compactSidebar=\(compactSidebar). state=\(app.state.rawValue)"
+            )
+            XCTAssertTrue(waitForAnyJSON(atPath: dataPath, timeout: setupTimeout))
+            guard let ready = waitForJSONKey("ready", equals: "1", atPath: dataPath, timeout: setupTimeout) else {
+                XCTFail("Timed out waiting for ready=1. data=\(loadJSON(atPath: dataPath) ?? [:])")
+                return
+            }
+            if let setupError = ready["setupError"], !setupError.isEmpty {
+                XCTFail("Setup failed: \(setupError)")
+                return
+            }
+
+            let window = app.windows.element(boundBy: 0)
+            XCTAssertTrue(window.waitForExistence(timeout: 5.0))
+            let notifications = app.descendants(matching: .any)
+                .matching(identifier: "titlebarControl.showNotifications")
+            let newWorkspace = app.descendants(matching: .any)
+                .matching(identifier: "titlebarControl.newTab")
+            let close = app.descendants(matching: .any)
+                .matching(identifier: "uniConnectWindowControl.close")
+            let minimize = app.descendants(matching: .any)
+                .matching(identifier: "uniConnectWindowControl.minimize")
+            let zoom = app.descendants(matching: .any)
+                .matching(identifier: "uniConnectWindowControl.zoom")
+
+            XCTAssertTrue(notifications.firstMatch.waitForExistence(timeout: 5.0))
+            XCTAssertTrue(newWorkspace.firstMatch.waitForExistence(timeout: 5.0))
+            XCTAssertTrue(close.firstMatch.waitForExistence(timeout: 5.0))
+            XCTAssertTrue(minimize.firstMatch.waitForExistence(timeout: 5.0))
+            XCTAssertTrue(zoom.firstMatch.waitForExistence(timeout: 5.0))
+            XCTAssertEqual(notifications.count, 1, "AppKit must not leave a duplicate bell accessory")
+            XCTAssertEqual(newWorkspace.count, 1, "AppKit must not leave a duplicate plus accessory")
+            XCTAssertEqual(close.count, 1)
+            XCTAssertEqual(minimize.count, 1)
+            XCTAssertEqual(zoom.count, 1)
+            XCTAssertTrue(notifications.firstMatch.isHittable)
+            XCTAssertTrue(newWorkspace.firstMatch.isHittable)
+
+            if compactSidebar {
+                let rail = app.descendants(matching: .any)
+                    .matching(identifier: "UniConnectRailSidebar").firstMatch
+                XCTAssertTrue(rail.waitForExistence(timeout: 5.0))
+                XCTAssertEqual(
+                    distanceToTopEdge(of: rail, in: window),
+                    42,
+                    accuracy: 4,
+                    "The compact rail must begin below its root-level traffic lights"
+                )
+            } else {
+                let sidebar = app.descendants(matching: .any)
+                    .matching(identifier: "Sidebar").firstMatch
+                let header = app.descendants(matching: .any)
+                    .matching(identifier: "UniConnectSidebarHeader").firstMatch
+                XCTAssertTrue(sidebar.waitForExistence(timeout: 5.0))
+                XCTAssertTrue(header.waitForExistence(timeout: 5.0))
+                XCTAssertEqual(
+                    distanceToTopEdge(of: sidebar, in: window),
+                    8,
+                    accuracy: 4,
+                    "The expanded card must keep the same top margin as its side margins"
+                )
+                XCTAssertEqual(
+                    close.firstMatch.frame.midY,
+                    notifications.firstMatch.frame.midY,
+                    accuracy: 2,
+                    "Traffic lights and actions must share one header row"
+                )
+                XCTAssertEqual(
+                    notifications.firstMatch.frame.midY,
+                    newWorkspace.firstMatch.frame.midY,
+                    accuracy: 2
+                )
+            }
         }
-
-        if let setupError = ready["setupError"], !setupError.isEmpty {
-            XCTFail("Setup failed: \(setupError)")
-            return
-        }
-
-        let window = app.windows.element(boundBy: 0)
-        XCTAssertTrue(window.waitForExistence(timeout: 5.0), "Expected main window to exist")
-
-        let sidebar = app.descendants(matching: .any).matching(identifier: "Sidebar").firstMatch
-        XCTAssertTrue(sidebar.waitForExistence(timeout: 5.0), "Expected sidebar to exist")
-
-        let toggleSidebarButton = app.descendants(matching: .any).matching(identifier: "titlebarControl.toggleSidebar").firstMatch
-        let notificationsButton = app.descendants(matching: .any).matching(identifier: "titlebarControl.showNotifications").firstMatch
-        let newWorkspaceButton = app.descendants(matching: .any).matching(identifier: "titlebarControl.newTab").firstMatch
-
-        XCTAssertTrue(
-            waitForCondition(timeout: 2.0) {
-                toggleSidebarButton.exists && toggleSidebarButton.isHittable &&
-                    notificationsButton.exists && notificationsButton.isHittable &&
-                    newWorkspaceButton.exists && newWorkspaceButton.isHittable
-            },
-            "Expected standard mode to keep workspace controls visible in the titlebar."
-        )
-
-        let lowestControlY = max(
-            toggleSidebarButton.frame.maxY,
-            notificationsButton.frame.maxY,
-            newWorkspaceButton.frame.maxY
-        )
-        XCTAssertLessThanOrEqual(
-            lowestControlY,
-            sidebar.frame.minY + 4,
-            "Expected standard mode workspace controls to stay in the titlebar above the sidebar list. sidebar=\(sidebar.frame) toggle=\(toggleSidebarButton.frame) notifications=\(notificationsButton.frame) new=\(newWorkspaceButton.frame)"
-        )
     }
 
     func testMinimalModeSidebarControlsRevealOnlyFromSidebarHover() {
@@ -839,7 +877,9 @@ final class BonsplitTabDragUITests: XCTestCase {
         showRightSidebar: Bool = false,
         alwaysShowShortcutHints: Bool = false,
         windowSize: String? = nil,
-        actionButtonCount: Int? = nil
+        actionButtonCount: Int? = nil,
+        enableUniConnect: Bool = false,
+        compactSidebar: Bool? = nil
     ) -> (XCUIApplication, String) {
         let app = XCUIApplication()
         let dataPath = "/tmp/cmux-ui-test-bonsplit-tab-drag-\(UUID().uuidString).json"
@@ -863,7 +903,16 @@ final class BonsplitTabDragUITests: XCTestCase {
         if alwaysShowShortcutHints {
             app.launchEnvironment["CMUX_UI_TEST_SHORTCUT_HINTS_ALWAYS_SHOW"] = "1"
         }
+        if enableUniConnect {
+            app.launchEnvironment["UNICONNECT_TEST_ENABLE"] = "1"
+        }
         app.launchArguments += ["-workspacePresentationMode", presentationMode.rawValue]
+        if let compactSidebar {
+            app.launchArguments += [
+                "-uniconnect.sidebarCompact",
+                compactSidebar ? "true" : "false",
+            ]
+        }
         let options = XCTExpectedFailure.Options()
         options.isStrict = false
         XCTExpectFailure("App activation may fail on headless CI runners", options: options) {

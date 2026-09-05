@@ -42,6 +42,7 @@ struct UniConnectSSHConnectCommandValidator: Sendable {
     static var trustedSSHpassPaths: [String] {
         [
             "/opt/homebrew/bin/sshpass",
+            "/opt/local/bin/sshpass",
             "/usr/local/bin/sshpass",
             "/usr/bin/sshpass",
         ]
@@ -98,6 +99,8 @@ struct UniConnectSSHConnectCommandValidator: Sendable {
         "sessiontype",
         "setenv",
         "stdioforward",
+        "streamlocalbindmask",
+        "streamlocalbindunlink",
     ]
 
     /// Returns the first validation failure, or `nil` for a supported connection command.

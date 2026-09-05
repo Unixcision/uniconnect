@@ -148,6 +148,29 @@ final class NotificationsAnchorRegistry {
         anchors.add(view)
     }
 
+    /// The visible notifications anchor belonging to `window`, if one is mounted.
+    ///
+    /// When a sidebar owns the bell the AppKit titlebar accessory is removed, so
+    /// keyboard- and menu-driven opens have no accessory anchor to fall back on.
+    /// They resolve the mounted anchor through this instead of dropping the
+    /// request or drifting to a corner of the window.
+    ///
+    /// - Parameter window: Window whose anchor is wanted.
+    /// - Returns: The anchor view, or `nil` when the window has none on screen.
+    func anchor(in window: NSWindow) -> NSView? {
+        anchors.allObjects.first { view in
+            view.window === window
+                && notificationsPopoverAnchorIsVisible(view)
+                && !view.convert(view.bounds, to: nil).isEmpty
+        }
+    }
+
+    /// Presentation edge declared by the mounted control. Generic/legacy
+    /// anchors retain the conventional below-titlebar fallback.
+    func preferredEdge(for anchor: NSView) -> NSRectEdge {
+        (anchor as? AnchorNSView)?.notificationsPopoverPreferredEdge ?? .maxY
+    }
+
     func closestAnchor(in window: NSWindow, to pointInWindow: NSPoint) -> NSView? {
         anchors.allObjects
             .compactMap { view -> (view: NSView, distance: CGFloat)? in
@@ -188,6 +211,16 @@ func preferredNotificationsPopoverAnchor(buttonAnchor: NSView?, fallbackAnchor: 
         return fallbackAnchor
     }
     return buttonAnchor
+}
+
+@MainActor
+func shouldDismissDetachedNotificationsPopover(
+    isShown: Bool,
+    anchorWindow: NSWindow?,
+    reconciledWindow: NSWindow,
+    usesEmbeddedHeader: Bool
+) -> Bool {
+    !usesEmbeddedHeader && isShown && anchorWindow === reconciledWindow
 }
 
 private final class DetachedNotificationsPopoverDelegate: NSObject, NSPopoverDelegate {
@@ -296,10 +329,23 @@ private func postNotificationsPopoverVisibilityDidChange(isShown: Bool, source: 
 }
 
 struct NotificationsAnchorView: NSViewRepresentable {
+    /// The edge the popover should use when this anchor is resolved through the
+    /// keyboard/menu path. Compact rail anchors deliberately open alongside;
+    /// their square geometry is not enough to infer that intent.
+    let preferredEdge: NSRectEdge
     let onResolve: (NSView) -> Void
+
+    init(
+        preferredEdge: NSRectEdge = .maxY,
+        onResolve: @escaping (NSView) -> Void
+    ) {
+        self.preferredEdge = preferredEdge
+        self.onResolve = onResolve
+    }
 
     func makeNSView(context: Context) -> NSView {
         let view = AnchorNSView()
+        view.notificationsPopoverPreferredEdge = preferredEdge
         view.onLayout = { [weak view] in
             guard let view else { return }
             NotificationsAnchorRegistry.shared.register(view)
@@ -308,7 +354,10 @@ struct NotificationsAnchorView: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let view = nsView as? AnchorNSView else { return }
+        view.notificationsPopoverPreferredEdge = preferredEdge
+    }
 }
 
 struct TitlebarControlAnchorView: NSViewRepresentable {
@@ -328,6 +377,9 @@ struct TitlebarControlAnchorView: NSViewRepresentable {
 
 final class AnchorNSView: NSView {
     var onLayout: (() -> Void)?
+    /// Explicit presentation intent supplied by the SwiftUI control that owns
+    /// this anchor. Defaults to the conventional titlebar-below placement.
+    var notificationsPopoverPreferredEdge: NSRectEdge = .maxY
 
     override func layout() {
         super.layout()
@@ -816,6 +868,9 @@ struct TitlebarControlsView: View {
     let onFocusHistoryBack: () -> Void
     let onFocusHistoryForward: () -> Void
     let visibilityMode: TitlebarControlsVisibilityMode
+    var styleOverride: TitlebarControlsStyle? = nil
+    var usesIntrinsicWidth = false
+    var showsShortcutHints = true
     @ObservedObject private var popoverVisibilityState = NotificationsPopoverVisibilityState.shared
     @AppStorage("titlebarControlsStyle") private var styleRawValue = TitlebarControlsStyle.classic.rawValue
     @State private var shortcutRefreshTick = 0
@@ -838,7 +893,7 @@ struct TitlebarControlsView: View {
     }
 
     private var shouldShowTitlebarShortcutHints: Bool {
-        alwaysShowShortcutHints || modifierKeyMonitor.isModifierPressed
+        showsShortcutHints && (alwaysShowShortcutHints || modifierKeyMonitor.isModifierPressed)
     }
 
     private var shouldShowControls: Bool {
@@ -855,7 +910,7 @@ struct TitlebarControlsView: View {
         // (The titlebar controls don't otherwise re-render on UserDefaults changes.)
         let _ = shortcutRefreshTick
         let _ = appearanceRefreshTick
-        let style = TitlebarControlsStyle(rawValue: styleRawValue) ?? .classic
+        let style = styleOverride ?? TitlebarControlsStyle(rawValue: styleRawValue) ?? .classic
         let config = style.config
         let contentSize = TitlebarControlsLayoutMetrics.contentSize(
             config: config,
@@ -864,8 +919,17 @@ struct TitlebarControlsView: View {
         let foregroundColor = Color(nsColor: titlebarControlForegroundNSColor(opacity: 1.0))
         controlsGroup(config: config, foregroundColor: foregroundColor)
             .padding(.leading, TitlebarControlsLayoutMetrics.hintLeadingPadding)
-            .padding(.trailing, titlebarHintTrailingInset)
-            .frame(width: contentSize.width, height: contentSize.height, alignment: .leading)
+            .padding(.trailing, usesIntrinsicWidth ? 0 : titlebarHintTrailingInset)
+            .frame(
+                width: usesIntrinsicWidth ? nil : contentSize.width,
+                height: contentSize.height,
+                alignment: .leading
+            )
+            .background {
+                if usesIntrinsicWidth {
+                    MinimalModeTitlebarButtonHitRegionView(config: config)
+                }
+            }
             .fixedSize()
             .contentShape(Rectangle())
             .opacity(shouldShowControls ? 1 : 0)
@@ -1848,6 +1912,25 @@ func titlebarControlsShouldTrackButtonHover(config: TitlebarControlsStyleConfig)
     true
 }
 
+/// Whether the titlebar accessory's controls should be suppressed.
+///
+/// - Parameters:
+///   - presentationMode: Minimal mode hides all window chrome.
+///   - isFullScreen: Whether the window is in full screen. macOS hides the whole
+///     titlebar there until the pointer summons it, taking any accessory with it,
+///     so the controls have to be floated over the content instead — see
+///     `shouldShowFullscreenTitlebarControls(...)`.
+///   - usesEmbeddedUniConnectSidebarHeader: Whether a sidebar draws these
+///     controls itself.
+/// - Returns: `true` when the accessory should render nothing.
+func titlebarControlsShouldHide(
+    presentationMode: WorkspacePresentationModeSettings.Mode,
+    isFullScreen: Bool,
+    usesEmbeddedUniConnectSidebarHeader: Bool
+) -> Bool {
+    presentationMode == .minimal || isFullScreen || usesEmbeddedUniConnectSidebarHeader
+}
+
 func titlebarControlsShouldScheduleForViewSizeChange(
     previous: NSSize,
     current: NSSize,
@@ -1895,6 +1978,7 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
     private var cachedContentSize: NSSize?
     private var lastObservedViewSize: NSSize = .zero
     private var lastAppliedLayoutSnapshot: TitlebarControlsLayoutSnapshot?
+    private var isVisibilitySuppressed = false
     private weak var observedWindow: NSWindow?
     private var windowGeometryObservers: [NSObjectProtocol] = []
     private let viewModel = TitlebarControlsViewModel()
@@ -2046,7 +2130,7 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
     private func updateSize() {
         updateObservedWindowIfNeeded()
         applyWorkspaceTitlebarVisibility()
-        guard showsWorkspaceTitlebar else { return }
+        guard showsWorkspaceTitlebar, !isVisibilitySuppressed else { return }
         let styleRawValue = UserDefaults.standard.integer(forKey: "titlebarControlsStyle")
         let style = TitlebarControlsStyle(rawValue: styleRawValue) ?? .classic
         let contentSize = TitlebarControlsLayoutMetrics.contentSize(config: style.config)
@@ -2105,12 +2189,24 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
     }
 
     private func applyWorkspaceTitlebarVisibility() {
-        let shouldShow = showsWorkspaceTitlebar
+        let shouldShow = showsWorkspaceTitlebar && !isVisibilitySuppressed
         self.isHidden = !shouldShow
         view.isHidden = !shouldShow
         view.alphaValue = shouldShow ? 1 : 0
         if !shouldShow {
             preferredContentSize = .zero
+        }
+    }
+
+    func setVisibilitySuppressed(_ suppressed: Bool) {
+        guard isVisibilitySuppressed != suppressed else {
+            applyWorkspaceTitlebarVisibility()
+            return
+        }
+        isVisibilitySuppressed = suppressed
+        applyWorkspaceTitlebarVisibility()
+        if !suppressed, showsWorkspaceTitlebar {
+            restoreSizeAfterMinimalMode()
         }
     }
 
@@ -2127,11 +2223,26 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
         scheduleSizeUpdate(invalidateIntrinsicSize: true)
     }
 
-    func toggleNotificationsPopover(animated: Bool = true, externalAnchor: NSView? = nil) {
+    func toggleNotificationsPopover(
+        animated: Bool = true,
+        externalAnchor: NSView? = nil,
+        preferredEdge: NSRectEdge = .maxY
+    ) {
         if notificationsPopover.isShown {
             notificationsPopover.animates = animated
             notificationsPopover.performClose(nil)
             return
+        }
+        let resolvedAnchor = preferredNotificationsPopoverAnchor(
+            buttonAnchor: externalAnchor,
+            fallbackAnchor: viewModel.notificationsAnchorView
+        ) ?? viewModel.notificationsAnchorView
+        let availableHeight = resolvedAnchor.flatMap {
+            NotificationsPopoverPlacement.availableHeight(
+                for: $0,
+                preferredEdge: preferredEdge,
+                margin: NotificationsPopoverMetrics.screenClearance
+            )
         }
         // Recreate content view each time to avoid stale observers when popover is hidden
         let hostingController = NSHostingController(
@@ -2139,7 +2250,8 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
                 notificationStore: notificationStore,
                 onDismiss: { [weak notificationsPopover] in
                     notificationsPopover?.performClose(nil)
-                }
+                },
+                anchorAvailableHeight: availableHeight
             )
         )
         hostingController.view.wantsLayer = true
@@ -2157,8 +2269,8 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
         // Use external anchor (e.g. fullscreen sidebar controls) if provided.
         if let externalAnchor, externalAnchor.window != nil {
             let anchorView = preferredNotificationsPopoverAnchor(
-                buttonAnchor: viewModel.notificationsAnchorView,
-                fallbackAnchor: externalAnchor
+                buttonAnchor: externalAnchor,
+                fallbackAnchor: viewModel.notificationsAnchorView
             ) ?? externalAnchor
             let anchorContentView = anchorView.window?.contentView ?? contentView
             anchorContentView.layoutSubtreeIfNeeded()
@@ -2166,7 +2278,7 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
             let anchorRect = anchorView.convert(anchorView.bounds, to: anchorContentView)
             if !anchorRect.isEmpty {
                 notificationsPopover.animates = animated
-                notificationsPopover.show(relativeTo: anchorRect, of: anchorContentView, preferredEdge: .maxY)
+                notificationsPopover.show(relativeTo: anchorRect, of: anchorContentView, preferredEdge: preferredEdge)
                 postNotificationsPopoverVisibilityDidChange(
                     isShown: true,
                     source: notificationsPopover,
@@ -2181,7 +2293,7 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
             let anchorRect = anchorView.convert(anchorView.bounds, to: contentView)
             if !anchorRect.isEmpty {
                 notificationsPopover.animates = animated
-                notificationsPopover.show(relativeTo: anchorRect, of: contentView, preferredEdge: .maxY)
+                notificationsPopover.show(relativeTo: anchorRect, of: contentView, preferredEdge: preferredEdge)
                 postNotificationsPopoverVisibilityDidChange(
                     isShown: true,
                     source: notificationsPopover,
@@ -2228,18 +2340,26 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
 }
 
 private enum NotificationsPopoverMetrics {
-    static let defaultWidth: CGFloat = 560
-    static let defaultHeight: CGFloat = 760
+    // Sized to sit comfortably inside a default terminal window rather than to
+    // fill the display: the popover is anchored to a control in the window's
+    // titlebar band, so one larger than its own window reads as a detached panel.
+    static let defaultWidth: CGFloat = 420
+    static let defaultHeight: CGFloat = 460
     static let minWidth: CGFloat = 420
     static let minHeight: CGFloat = 320
     static let maxWidth: CGFloat = 1000
     static let maxHeight: CGFloat = 1200
+    /// Clearance kept between the popover and the edge of the screen.
+    static let screenClearance: CGFloat = 24
 }
 
 private struct NotificationsPopoverView: View {
     @ObservedObject var notificationStore: TerminalNotificationStore
     @ObservedObject private var keyboardShortcutSettingsObserver = KeyboardShortcutSettingsObserver.shared
     let onDismiss: () -> Void
+    /// Height the anchor actually leaves for the popover, from
+    /// ``NotificationsPopoverPlacement``. `nil` when it could not be resolved.
+    var anchorAvailableHeight: CGFloat?
 
     @AppStorage("cmux.notifications.popover.width")
     private var savedWidth: Double = Double(NotificationsPopoverMetrics.defaultWidth)
@@ -2269,7 +2389,7 @@ private struct NotificationsPopoverView: View {
 
     // Cap against the current screen so the popover (and especially the bottom-right resize
     // handle) stays reachable on small displays even if saved defaults came from a larger one.
-    private static let screenMargin: CGFloat = 80
+    private static let screenMargin: CGFloat = 120
 
     // The popover doesn't take key, so its host (anchor) window remains key. Use that window's
     // screen so multi-monitor setups clamp against the display where the popover actually
@@ -2288,16 +2408,48 @@ private struct NotificationsPopoverView: View {
         return max(NotificationsPopoverMetrics.minHeight, screenHeight - Self.screenMargin)
     }
 
+    // Clamping against the screen alone let the popover grow larger than the
+    // window it hangs off — a 560x760 panel over a 1000x700 window spilled past
+    // three of its edges and read as unanchored. The anchoring window is the real
+    // bound: the popover should look like it belongs to it.
+    // Generous on purpose. AppKit slides a popover that does not fit back inside
+    // the screen, and with a tight bound that slide ends with the popover flush
+    // against an edge — visually stuck to it, and with its arrow dragged away from
+    // the control it points at. Leaving real slack keeps it clear of both.
+    private static let windowMargin: CGFloat = 56
+
+    private var windowMaxWidth: CGFloat {
+        guard let width = NSApp.keyWindow?.frame.width else {
+            return NotificationsPopoverMetrics.maxWidth
+        }
+        return max(NotificationsPopoverMetrics.minWidth, width - Self.windowMargin)
+    }
+
+    private var windowMaxHeight: CGFloat {
+        guard let height = NSApp.keyWindow?.frame.height else {
+            return NotificationsPopoverMetrics.maxHeight
+        }
+        // The popover hangs below the titlebar band it is anchored in, so that
+        // band is unavailable to it.
+        let available = height - WindowChromeMetrics.appTitlebarHeight - Self.windowMargin
+        return max(NotificationsPopoverMetrics.minHeight, available)
+    }
+
     private var clampedWidth: CGFloat {
         let raw = liveWidth ?? CGFloat(savedWidth)
-        let upper = min(NotificationsPopoverMetrics.maxWidth, screenMaxWidth)
+        let upper = min(NotificationsPopoverMetrics.maxWidth, screenMaxWidth, windowMaxWidth)
         return min(upper, max(NotificationsPopoverMetrics.minWidth, raw))
     }
 
     private var clampedHeight: CGFloat {
         let raw = liveHeight ?? CGFloat(savedHeight)
-        let upper = min(NotificationsPopoverMetrics.maxHeight, screenMaxHeight)
-        return min(upper, max(NotificationsPopoverMetrics.minHeight, raw))
+        let upper = min(NotificationsPopoverMetrics.maxHeight, screenMaxHeight, windowMaxHeight)
+        return NotificationsPopoverPlacement.clampedHeight(
+            requested: raw,
+            minimum: NotificationsPopoverMetrics.minHeight,
+            maximum: upper,
+            anchorAvailableHeight: anchorAvailableHeight
+        )
     }
 
     // Invisible bottom-right corner resize region. NSPopover has no native resize chrome and
@@ -2314,9 +2466,14 @@ private struct NotificationsPopoverView: View {
             },
             onDrag: { startW, startH, dx, dy in
                 let upperW = min(NotificationsPopoverMetrics.maxWidth, screenMaxWidth)
-                let upperH = min(NotificationsPopoverMetrics.maxHeight, screenMaxHeight)
+                let upperH = min(NotificationsPopoverMetrics.maxHeight, screenMaxHeight, windowMaxHeight)
                 let newW = min(upperW, max(NotificationsPopoverMetrics.minWidth, startW + dx))
-                let newH = min(upperH, max(NotificationsPopoverMetrics.minHeight, startH + dy))
+                let newH = NotificationsPopoverPlacement.clampedHeight(
+                    requested: startH + dy,
+                    minimum: NotificationsPopoverMetrics.minHeight,
+                    maximum: upperH,
+                    anchorAvailableHeight: anchorAvailableHeight
+                )
                 liveWidth = newW
                 liveHeight = newH
             },
@@ -2830,6 +2987,7 @@ private final class HoverTrackingNSView: NSView {
 @MainActor
 final class UpdateTitlebarAccessoryController {
     private let updateLog: UpdateLogStore
+    private let usesEmbeddedUniConnectSidebarHeader: (NSWindow) -> Bool
     private var didStart = false
     private let attachedWindows = NSHashTable<NSWindow>.weakObjects()
     private var observers: [NSObjectProtocol] = []
@@ -2840,9 +2998,14 @@ final class UpdateTitlebarAccessoryController {
     private var lastKnownPresentationMode: WorkspacePresentationModeSettings.Mode = WorkspacePresentationModeSettings.mode()
     private var detachedNotificationsPopover: NSPopover?
     private var detachedNotificationsPopoverDelegate: DetachedNotificationsPopoverDelegate?
+    private weak var detachedNotificationsPopoverAnchorWindow: NSWindow?
 
-    init(updateLog: UpdateLogStore) {
+    init(
+        updateLog: UpdateLogStore,
+        usesEmbeddedUniConnectSidebarHeader: @escaping (NSWindow) -> Bool = { _ in false }
+    ) {
         self.updateLog = updateLog
+        self.usesEmbeddedUniConnectSidebarHeader = usesEmbeddedUniConnectSidebarHeader
     }
 
     deinit {
@@ -2861,6 +3024,18 @@ final class UpdateTitlebarAccessoryController {
 
     func attach(to window: NSWindow) {
         attachIfNeeded(to: window)
+    }
+
+    func refreshVisibility(
+        for window: NSWindow,
+        isFullScreenOverride: Bool? = nil,
+        uniConnectEmbeddedHeaderVisibleOverride: Bool? = nil
+    ) {
+        reconcileAccessory(
+            for: window,
+            isFullScreenOverride: isFullScreenOverride,
+            uniConnectEmbeddedHeaderVisibleOverride: uniConnectEmbeddedHeaderVisibleOverride
+        )
     }
 
     private func installObservers() {
@@ -2889,8 +3064,8 @@ final class UpdateTitlebarAccessoryController {
             }
         })
 
-        // Re-evaluate all windows when the presentation mode changes so that
-        // accessories are removed in minimal mode and re-attached in standard mode.
+        // Re-evaluate all windows when presentation mode changes so accessories
+        // are suppressed in minimal mode and restored in standard mode.
         observers.append(center.addObserver(
             forName: UserDefaults.didChangeNotification,
             object: nil,
@@ -2911,11 +3086,8 @@ final class UpdateTitlebarAccessoryController {
         guard currentMode != lastKnownPresentationMode else { return }
         lastKnownPresentationMode = currentMode
 
-        if currentMode == .standard {
-            attachToExistingWindows()
-        }
-        for window in attachedWindows.allObjects {
-            applyAccessoryVisibility(for: window)
+        for window in NSApp.windows {
+            reconcileAccessory(for: window)
         }
     }
 
@@ -2949,7 +3121,11 @@ final class UpdateTitlebarAccessoryController {
         }
     }
 
-    private func attachIfNeeded(to window: NSWindow) {
+    private func attachIfNeeded(
+        to window: NSWindow,
+        isFullScreenOverride: Bool? = nil,
+        uniConnectEmbeddedHeaderVisibleOverride: Bool? = nil
+    ) {
         guard NSApp.windows.contains(where: { $0 === window }) else {
             pendingAttachRetries.removeValue(forKey: ObjectIdentifier(window))
             return
@@ -2967,7 +3143,11 @@ final class UpdateTitlebarAccessoryController {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak window] in
                     Task { @MainActor [weak self, weak window] in
                         guard let self, let window else { return }
-                        self.attachIfNeeded(to: window)
+                        self.attachIfNeeded(
+                            to: window,
+                            isFullScreenOverride: isFullScreenOverride,
+                            uniConnectEmbeddedHeaderVisibleOverride: uniConnectEmbeddedHeaderVisibleOverride
+                        )
                     }
                 }
             } else {
@@ -2979,24 +3159,44 @@ final class UpdateTitlebarAccessoryController {
         pendingAttachRetries.removeValue(forKey: ObjectIdentifier(window))
         guard canAccessTitlebarAccessories(on: window) else { return }
 
-        // Don't re-attach controls if already attached.
-        guard !attachedWindows.contains(window) else {
-            applyAccessoryVisibility(for: window)
+        let usesEmbeddedHeader = uniConnectEmbeddedHeaderVisibleOverride
+            ?? usesEmbeddedUniConnectSidebarHeader(window)
+        // Both UniConnect sidebar presentations own these actions in SwiftUI.
+        // Remove the AppKit accessory entirely: a merely hidden accessory's clip
+        // view can still win hit-testing over the embedded bell and plus.
+        guard !usesEmbeddedHeader else {
+            removeAccessoryIfPresent(from: window)
             return
         }
+        let shouldSuppress = titlebarControlsShouldHide(
+            presentationMode: WorkspacePresentationModeSettings.mode(),
+            isFullScreen: isFullScreenOverride ?? window.styleMask.contains(.fullScreen),
+            usesEmbeddedUniConnectSidebarHeader: false
+        )
 
-        if !window.titlebarAccessoryViewControllers.contains(where: { $0.view.identifier == controlsIdentifier }) {
+        if !window.titlebarAccessoryViewControllers.contains(where: {
+            $0.view.identifier == controlsIdentifier
+        }) {
             let controls = TitlebarControlsAccessoryViewController(
                 notificationStore: TerminalNotificationStore.shared
             )
             controls.layoutAttribute = .left
             controls.view.identifier = controlsIdentifier
             window.addTitlebarAccessoryViewController(controls)
-            controlsControllers.add(controls)
+        }
+        for accessory in window.titlebarAccessoryViewControllers
+            where accessory.view.identifier == controlsIdentifier {
+            if let controls = accessory as? TitlebarControlsAccessoryViewController {
+                controlsControllers.add(controls)
+                controls.setVisibilitySuppressed(shouldSuppress)
+            } else {
+                accessory.isHidden = shouldSuppress
+                accessory.view.isHidden = shouldSuppress
+                accessory.view.alphaValue = shouldSuppress ? 0 : 1
+            }
         }
 
         attachedWindows.add(window)
-        applyAccessoryVisibility(for: window)
 
 #if DEBUG
         let env = ProcessInfo.processInfo.environment
@@ -3007,19 +3207,38 @@ final class UpdateTitlebarAccessoryController {
 #endif
     }
 
-    private func applyAccessoryVisibility(for window: NSWindow) {
+    private func reconcileAccessory(
+        for window: NSWindow,
+        isFullScreenOverride: Bool? = nil,
+        uniConnectEmbeddedHeaderVisibleOverride: Bool? = nil
+    ) {
         guard canAccessTitlebarAccessories(on: window) else {
             attachedWindows.remove(window)
             pendingAttachRetries.removeValue(forKey: ObjectIdentifier(window))
             return
         }
-        let shouldHide = WorkspacePresentationModeSettings.mode() == .minimal
-            || window.styleMask.contains(.fullScreen)
-        for accessory in window.titlebarAccessoryViewControllers
-            where accessory.view.identifier == controlsIdentifier {
-            accessory.isHidden = shouldHide
-            accessory.view.isHidden = shouldHide
-            accessory.view.alphaValue = shouldHide ? 0 : 1
+        let usesEmbeddedHeader = uniConnectEmbeddedHeaderVisibleOverride
+            ?? usesEmbeddedUniConnectSidebarHeader(window)
+        if usesEmbeddedHeader {
+            removeAccessoryIfPresent(from: window)
+        } else {
+            // A detached popover belongs to a SwiftUI sidebar bell. Once that
+            // sidebar is hidden its anchor no longer exists, so close it before
+            // handing ownership back to the AppKit titlebar accessory.
+            if let popover = detachedNotificationsPopover,
+               shouldDismissDetachedNotificationsPopover(
+                   isShown: popover.isShown,
+                   anchorWindow: detachedNotificationsPopoverAnchorWindow,
+                   reconciledWindow: window,
+                   usesEmbeddedHeader: usesEmbeddedHeader
+               ) {
+                popover.performClose(nil)
+            }
+            attachIfNeeded(
+                to: window,
+                isFullScreenOverride: isFullScreenOverride,
+                uniConnectEmbeddedHeaderVisibleOverride: usesEmbeddedHeader
+            )
         }
     }
 
@@ -3039,6 +3258,7 @@ final class UpdateTitlebarAccessoryController {
             let accessory = window.titlebarAccessoryViewControllers[index]
             if let controls = accessory as? TitlebarControlsAccessoryViewController {
                 controls.dismissNotificationsPopover()
+                controlsControllers.remove(controls)
             }
             window.removeTitlebarAccessoryViewController(at: index)
         }
@@ -3098,21 +3318,42 @@ final class UpdateTitlebarAccessoryController {
         return controllers.first
     }
 
-    func toggleNotificationsPopover(animated: Bool = true, anchorView: NSView? = nil) {
-        let controllers = controlsControllers.allObjects
+    func toggleNotificationsPopover(
+        animated: Bool = true,
+        anchorView: NSView? = nil,
+        preferredEdge: NSRectEdge = .maxY
+    ) {
+        let controllers = controlsControllers.allObjects.filter { $0.view.window != nil }
 
         // If an external anchor is provided (e.g. fullscreen sidebar controls),
         // use it for popover positioning instead of the hidden titlebar accessory.
         if let anchorView, anchorView.window != nil {
             let target = preferredNotificationsController(from: controllers, preferShownPopover: true)
             guard let target else {
-                toggleDetachedNotificationsPopover(animated: animated, anchorView: anchorView)
+                toggleDetachedNotificationsPopover(
+                    animated: animated,
+                    anchorView: anchorView,
+                    preferredEdge: preferredEdge
+                )
                 return
             }
             for controller in controllers where controller !== target {
                 controller.dismissNotificationsPopover()
             }
-            target.toggleNotificationsPopover(animated: animated, externalAnchor: anchorView)
+            target.toggleNotificationsPopover(
+                animated: animated,
+                externalAnchor: anchorView,
+                preferredEdge: preferredEdge
+            )
+            return
+        }
+
+        if let resolved = resolvedSidebarAnchor() {
+            toggleNotificationsPopover(
+                animated: animated,
+                anchorView: resolved.anchor,
+                preferredEdge: resolved.preferredEdge
+            )
             return
         }
 
@@ -3127,7 +3368,26 @@ final class UpdateTitlebarAccessoryController {
         target?.toggleNotificationsPopover(animated: animated)
     }
 
-    private func toggleDetachedNotificationsPopover(animated: Bool, anchorView: NSView) {
+    /// The mounted sidebar anchor for the key window, with the edge its
+    /// presentation calls for.
+    ///
+    /// Returns `nil` when a titlebar accessory is still installed on that window,
+    /// so the accessory keeps owning its own popover.
+    private func resolvedSidebarAnchor() -> (anchor: NSView, preferredEdge: NSRectEdge)? {
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return nil }
+        guard !window.titlebarAccessoryViewControllers.contains(where: {
+            $0.view.identifier == controlsIdentifier
+        }) else { return nil }
+        guard let anchor = NotificationsAnchorRegistry.shared.anchor(in: window) else { return nil }
+        let preferredEdge = NotificationsAnchorRegistry.shared.preferredEdge(for: anchor)
+        return (anchor, preferredEdge)
+    }
+
+    private func toggleDetachedNotificationsPopover(
+        animated: Bool,
+        anchorView: NSView,
+        preferredEdge: NSRectEdge
+    ) {
         if let popover = detachedNotificationsPopover, popover.isShown {
             popover.animates = animated
             popover.performClose(nil)
@@ -3144,6 +3404,7 @@ final class UpdateTitlebarAccessoryController {
             guard let self, self.detachedNotificationsPopover === popover else { return }
             self.detachedNotificationsPopover = nil
             self.detachedNotificationsPopoverDelegate = nil
+            self.detachedNotificationsPopoverAnchorWindow = nil
             if let popover {
                 postNotificationsPopoverVisibilityDidChange(isShown: false, source: popover)
             } else {
@@ -3158,7 +3419,12 @@ final class UpdateTitlebarAccessoryController {
                 notificationStore: TerminalNotificationStore.shared,
                 onDismiss: { [weak popover] in
                     popover?.performClose(nil)
-                }
+                },
+                anchorAvailableHeight: NotificationsPopoverPlacement.availableHeight(
+                    for: anchorView,
+                    preferredEdge: preferredEdge,
+                    margin: NotificationsPopoverMetrics.screenClearance
+                )
             )
         )
 
@@ -3169,7 +3435,8 @@ final class UpdateTitlebarAccessoryController {
 
         detachedNotificationsPopover = popover
         detachedNotificationsPopoverDelegate = delegate
-        popover.show(relativeTo: anchorRect, of: contentView, preferredEdge: .maxY)
+        detachedNotificationsPopoverAnchorWindow = window
+        popover.show(relativeTo: anchorRect, of: contentView, preferredEdge: preferredEdge)
         postNotificationsPopoverVisibilityDidChange(
             isShown: true,
             source: popover,
@@ -3198,6 +3465,16 @@ final class UpdateTitlebarAccessoryController {
     }
 
     func showNotificationsPopover(animated: Bool = true) {
+        if let resolved = resolvedSidebarAnchor() {
+            guard !isNotificationsPopoverShown() else { return }
+            toggleNotificationsPopover(
+                animated: animated,
+                anchorView: resolved.anchor,
+                preferredEdge: resolved.preferredEdge
+            )
+            return
+        }
+
         let controllers = controlsControllers.allObjects
         guard !controllers.isEmpty else { return }
 

@@ -27,4 +27,15 @@ extension ClaudeBridgeStatus {
         case .unavailable, .error: return .red
         }
     }
+
+    /// A non-colour-only status cue shared by compact and expanded presentations.
+    var uniConnectRailSymbolName: String {
+        switch self {
+        case .inactive: return "bell.slash"
+        case .reconnecting: return "bell.badge"
+        case .active: return "bell.and.waves.left.and.right"
+        case .unavailable: return "bell.slash.fill"
+        case .error: return "exclamationmark.triangle.fill"
+        }
+    }
 }

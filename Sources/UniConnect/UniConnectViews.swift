@@ -4,8 +4,9 @@ import AppKit
 // MARK: - Shared styling
 
 enum UniConnectStyle {
-    static let accent = Color(red: 0.95, green: 0.32, blue: 0.42)
-    static let accentSSH = Color(red: 0.25, green: 0.72, blue: 0.95)
+    /// Violet and cyan sampled from the dark UniConnect app icon.
+    static let accent = Color(red: 90.0 / 255.0, green: 31.0 / 255.0, blue: 229.0 / 255.0)
+    static let accentSSH = Color(red: 7.0 / 255.0, green: 155.0 / 255.0, blue: 235.0 / 255.0)
     static let paletteHex: [String] = {
         WorkspaceTabColorSettings.palette().map(\.hex)
     }()
@@ -324,6 +325,7 @@ struct UniConnectNewWindowView: View {
                     text: $name
                 )
                 .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("UniConnectSSHWindowNameField")
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(String(
@@ -334,21 +336,30 @@ struct UniConnectNewWindowView: View {
                 TextField("uc-…", text: $tmux)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(.body, design: .monospaced))
+                    .accessibilityIdentifier("UniConnectSSHWindowTmuxField")
                     .onChange(of: tmux) { _, _ in tmuxEdited = true }
             }
-            if let error { Text(error).font(.system(size: 12)).foregroundStyle(.red) }
+            if let error {
+                Text(error)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier("UniConnectSSHWindowValidationError")
+            }
             Spacer(minLength: 0)
             HStack {
                 Spacer()
                 Button(String(localized: "common.cancel", defaultValue: "Cancel"), action: onCancel)
                     .keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier("UniConnectSSHWindowCancel")
                 Button(String(localized: "uniconnect.window.action.create", defaultValue: "Create window")) { submit() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .tint(UniConnectStyle.accentSSH)
+                    .accessibilityIdentifier("UniConnectSSHWindowCreate")
             }
         }
         .padding(20)
+        .accessibilityIdentifier("UniConnectNewSSHWindow")
         .onChange(of: name) { _, newValue in
             guard !tmuxEdited || tmux.isEmpty else { return }
             tmux = newValue.isEmpty ? "" : UniConnectSSH.suggestedTmuxName(windowName: newValue)
@@ -1076,7 +1087,7 @@ struct UniConnectImportPreviewView: View {
         case .invalidLocalWorkingDirectory:
             return String(
                 localized: "uniconnect.import.issue.invalidLocalWorkingDirectory",
-                defaultValue: "A local window working directory must stay inside its trusted box folder."
+                    defaultValue: "The window folder must be a valid absolute local path."
             )
         case .sshWindowMissingTmux:
             return String(localized: "uniconnect.import.issue.sshWindowMissingTmux", defaultValue: "Every SSH window needs a tmux target.")
@@ -1215,14 +1226,90 @@ struct UniConnectStarterView: View {
     let onImport: () -> Void
     let onMigrate: () -> Void
 
+    static var windowBackdrop: some View {
+        let navyHighlight = Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return isDark
+                ? NSColor(
+                    srgbRed: 5.0 / 255.0,
+                    green: 20.0 / 255.0,
+                    blue: 78.0 / 255.0,
+                    alpha: 1
+                )
+                : NSColor(
+                    srgbRed: 248.0 / 255.0,
+                    green: 250.0 / 255.0,
+                    blue: 1,
+                    alpha: 1
+                )
+        })
+        let navyBase = Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return isDark
+                ? NSColor(
+                    srgbRed: 2.0 / 255.0,
+                    green: 10.0 / 255.0,
+                    blue: 51.0 / 255.0,
+                    alpha: 1
+                )
+                : NSColor(
+                    srgbRed: 220.0 / 255.0,
+                    green: 228.0 / 255.0,
+                    blue: 247.0 / 255.0,
+                    alpha: 1
+                )
+        })
+        let cyanBloom = Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return NSColor(
+                srgbRed: isDark ? 11.0 / 255.0 : 14.0 / 255.0,
+                green: isDark ? 228.0 / 255.0 : 101.0 / 255.0,
+                blue: isDark ? 250.0 / 255.0 : 214.0 / 255.0,
+                alpha: isDark ? 0.12 : 0.07
+            )
+        })
+        let violetBloom = Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return NSColor(
+                srgbRed: isDark ? 90.0 / 255.0 : 30.0 / 255.0,
+                green: isDark ? 31.0 / 255.0 : 24.0 / 255.0,
+                blue: isDark ? 229.0 / 255.0 : 223.0 / 255.0,
+                alpha: isDark ? 0.11 : 0.06
+            )
+        })
+        let magentaBloom = Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return NSColor(
+                srgbRed: 195.0 / 255.0,
+                green: 68.0 / 255.0,
+                blue: 243.0 / 255.0,
+                alpha: isDark ? 0.06 : 0.035
+            )
+        })
+
+        return ZStack {
+            LinearGradient(
+                colors: [navyHighlight, navyBase],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            RadialGradient(
+                colors: [cyanBloom, .clear],
+                center: .topLeading,
+                startRadius: 0,
+                endRadius: 560
+            )
+            RadialGradient(
+                colors: [magentaBloom, violetBloom, .clear],
+                center: .bottomTrailing,
+                startRadius: 0,
+                endRadius: 620
+            )
+        }
+    }
+
     var body: some View {
         ZStack {
-            UniConnectStyle.terminalBackground.ignoresSafeArea()
-            LinearGradient(
-                colors: [UniConnectStyle.accent.opacity(0.10), .clear, UniConnectStyle.accentSSH.opacity(0.06)],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
             VStack(spacing: 30) {
                 Spacer(minLength: 24)
                 VStack(spacing: 12) {
@@ -1233,10 +1320,10 @@ struct UniConnectStarterView: View {
                         .shadow(color: .black.opacity(0.35), radius: 18, y: 10)
                     Text("UniConnect")
                         .font(.system(size: 40, weight: .bold, design: .rounded))
-                        .foregroundStyle(UniConnectStyle.onTerminal)
+                        .foregroundStyle(Color.primary)
                     Text(String(localized: "uniconnect.starter.empty", defaultValue: "No boxes are open."))
                         .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.7))
+                        .foregroundStyle(Color.primary.opacity(0.7))
                 }
                 HStack(alignment: .top, spacing: 16) {
                     UniConnectStarterCard(
@@ -1267,7 +1354,11 @@ struct UniConnectStarterView: View {
                     if hasCmuxSession {
                         UniConnectStarterCard(
                             icon: "arrow.down.doc",
-                            tint: Color(red: 0.62, green: 0.55, blue: 0.95),
+                            tint: Color(
+                                red: 195.0 / 255.0,
+                                green: 68.0 / 255.0,
+                                blue: 243.0 / 255.0
+                            ),
                             title: String(
                                 localized: "uniconnect.starter.migrate.title",
                                 defaultValue: "Migrate from cmux"
@@ -1288,7 +1379,7 @@ struct UniConnectStarterView: View {
                     defaultValue: "You can also use the + button in the sidebar."
                 ))
                     .font(.system(size: 12))
-                    .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.45))
+                    .foregroundStyle(Color.primary.opacity(0.45))
                 Spacer(minLength: 24)
             }
         }
@@ -1316,18 +1407,18 @@ private struct UniConnectStarterCard: View {
                     if let shortcut {
                         Text(shortcut)
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.55))
+                            .foregroundStyle(Color.primary.opacity(0.55))
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
-                            .background(UniConnectStyle.onTerminal.opacity(0.08), in: Capsule())
+                            .background(Color.primary.opacity(0.08), in: Capsule())
                     }
                 }
                 Text(title)
                     .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    .foregroundStyle(UniConnectStyle.onTerminal)
+                    .foregroundStyle(Color.primary)
                 Text(detail)
                     .font(.system(size: 12.5))
-                    .foregroundStyle(UniConnectStyle.onTerminal.opacity(0.65))
+                    .foregroundStyle(Color.primary.opacity(0.65))
                     .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(.leading)
             }
@@ -1335,11 +1426,11 @@ private struct UniConnectStarterCard: View {
             .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(UniConnectStyle.onTerminal.opacity(hovering ? 0.10 : 0.06))
+                    .fill(Color.primary.opacity(hovering ? 0.10 : 0.06))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(hovering ? tint.opacity(0.6) : UniConnectStyle.onTerminal.opacity(0.12), lineWidth: 1)
+                    .stroke(hovering ? tint.opacity(0.6) : Color.primary.opacity(0.12), lineWidth: 1)
             )
             .scaleEffect(hovering ? 1.015 : 1)
             .animation(.easeOut(duration: 0.15), value: hovering)

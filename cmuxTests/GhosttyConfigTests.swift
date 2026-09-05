@@ -5179,6 +5179,7 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
                 "CMUX_SURFACE_ID": "22222222-2222-2222-2222-222222222222",
                 "CMUX_TAB_ID": "11111111-1111-1111-1111-111111111111",
                 "CMUX_PANEL_ID": "22222222-2222-2222-2222-222222222222",
+                "UNICONNECT_SURFACE_GENERATION": "33333333-3333-4333-8333-333333333333",
             ]
         )
 
@@ -5232,6 +5233,48 @@ final class ZshShellIntegrationHandoffTests: XCTestCase {
         let log = (try? String(contentsOf: logPath, encoding: .utf8)) ?? ""
         XCTAssertTrue(log.contains("set-environment -gu CMUX_SURFACE_ID"), log)
         XCTAssertTrue(log.contains("set-environment -gu CMUX_PANEL_ID"), log)
+        XCTAssertTrue(log.contains("set-environment -gu UNICONNECT_SURFACE_GENERATION"), log)
+    }
+
+    func testShellActivityReportsCarrySurfaceGenerationInZshAndBash() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("uniconnect-shell-generation-\(UUID().uuidString)")
+        let socketPath = root.appendingPathComponent("cmux-test.sock", isDirectory: false)
+        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        let socketFD = try bindUnixSocket(at: socketPath.path)
+        defer {
+            Darwin.close(socketFD)
+            unlink(socketPath.path)
+            try? fileManager.removeItem(at: root)
+        }
+        let generation = "33333333-3333-4333-8333-333333333333"
+        let expected = "report_shell_state running --tab=11111111-1111-4111-8111-111111111111 "
+            + "--panel=22222222-2222-4222-8222-222222222222 --generation=\(generation)"
+        let environment = [
+            "CMUX_SOCKET_PATH": socketPath.path,
+            "CMUX_TAB_ID": "11111111-1111-4111-8111-111111111111",
+            "CMUX_PANEL_ID": "22222222-2222-4222-8222-222222222222",
+            "UNICONNECT_SURFACE_GENERATION": generation,
+        ]
+
+        let zsh = try runInteractiveZsh(
+            cmuxLoadGhosttyIntegration: false,
+            cmuxLoadShellIntegration: true,
+            command: "_cmux_send_bg() { print -r -- \"$1\"; }; "
+                + "_CMUX_SHELL_ACTIVITY_LAST=; _cmux_report_shell_activity_state running",
+            extraEnvironment: environment
+        )
+        XCTAssertEqual(zsh, expected)
+
+        let bash = try runInteractiveBash(
+            cmuxLoadShellIntegration: true,
+            command: "trap - DEBUG; PROMPT_COMMAND=; "
+                + "_cmux_send_bg() { printf '%s\\n' \"$1\"; }; "
+                + "_CMUX_SHELL_ACTIVITY_LAST=; _cmux_report_shell_activity_state running",
+            extraEnvironment: environment
+        )
+        XCTAssertEqual(bash.stdout, expected)
     }
 
     func testShellIntegrationRefreshesWorkspaceScopedCmuxEnvironmentFromTmuxWithoutOverwritingSurfaceScope() throws {

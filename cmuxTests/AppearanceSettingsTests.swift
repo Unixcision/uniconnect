@@ -14,7 +14,7 @@ final class AppearanceSettingsTests: XCTestCase {
         XCTAssertTrue(
             AppBundleIconPersistencePolicy.shouldPersist(
                 bundleIdentifier: "com.unixcision.uniconnect",
-                appBundleLastPathComponent: "cmux.app",
+                appBundleLastPathComponent: "UniConnect.app",
                 persistenceDisabled: false
             )
         )

@@ -91,7 +91,7 @@ enum UniConnectSSH {
     /// named session exists and otherwise creates it; `-c` seeds that first directory.
     static func remoteTmuxCommand(session: String, directory: String?) -> String {
         // Do not pass `-D`: detaching another client would disrupt terminals outside
-        // UniConnect. Restore and reconnect use `remoteExistingTmuxCommand` instead.
+        // UniConnect. Restore and reconnect use `remoteRecoverableTmuxCommand` instead.
         var parts = ["tmux", "new-session", "-A", "-s", shellQuote(session)]
         if let directory = directory?.trimmingCharacters(in: .whitespacesAndNewlines), !directory.isEmpty {
             parts += ["-c", shellQuote(directory)]
@@ -102,11 +102,45 @@ enum UniConnectSSH {
         return parts.joined(separator: " ")
     }
 
-    /// The remote command used when a persisted window must attach to the exact tmux
-    /// session it previously owned. Unlike ``remoteTmuxCommand(session:directory:)``,
-    /// this path is deliberately incapable of creating a replacement session.
+    /// Restores a saved session atomically, creating it only if its exact name is absent.
+    /// Existing panes and clients are preserved; failures leave a usable remote shell.
+    static func remoteRecoverableTmuxCommand(session: String, directory: String?) -> String {
+        let createOrAttach = remoteTmuxCommand(session: session, directory: nil)
+        let operation: String
+        if let directory = directory?.trimmingCharacters(in: .whitespacesAndNewlines), !directory.isEmpty {
+            // Starting the client in the saved directory seeds a newly created session
+            // without depending on version-specific handling of -A with -c. Existing
+            // panes stay untouched; a vanished directory must not prevent attaching.
+            operation = [
+                "if cd \(shellQuote(directory)); then",
+                "\(createOrAttach);",
+                "else",
+                "tmux attach-session -t \(shellQuote("=" + session));",
+                "fi"
+            ].joined(separator: " ")
+        } else {
+            operation = createOrAttach
+        }
+        let missingTmuxMessage = String(
+            localized: "uniconnect.ssh.tmux.missing",
+            defaultValue: "tmux is not installed on the server."
+        )
+        // Do not exec tmux here: a failed exec would terminate the shell before the
+        // fallback can run. A normal tmux detach/exit succeeds and never opens a shell.
+        return [
+            "if command -v tmux >/dev/null 2>&1; then",
+            "\(operation);",
+            "else",
+            "printf '%s\\n' \(shellQuote("[UniConnect] \(missingTmuxMessage)")) >&2;",
+            "false;",
+            "fi || exec \"${SHELL:-/bin/sh}\" -l"
+        ].joined(separator: " ")
+    }
+
+    /// Strictly attaches to an existing exact name for import and validation flows.
+    /// This path deliberately cannot create a replacement for a missing session.
     static func remoteExistingTmuxCommand(session: String) -> String {
-        let target = shellQuote(session)
+        let target = shellQuote("=" + session)
         let missingTmuxMessage = String(
             localized: "uniconnect.ssh.tmux.missing",
             defaultValue: "tmux is not installed on the server."
@@ -141,11 +175,15 @@ enum UniConnectSSH {
         session: String,
         directory: String?,
         bridge: ClaudeBridgeConnectionPlan? = nil,
-        existingSessionOnly: Bool = false
+        existingSessionOnly: Bool = false,
+        recoverMissingSession: Bool = false,
+        effectiveTarget: UniConnectSSHEffectiveTarget? = nil
     ) -> String? {
         let options = ["-t"] + baseClientOptions + (bridge?.sshOptions ?? [])
         let tmux: String
-        if existingSessionOnly {
+        if recoverMissingSession {
+            tmux = remoteRecoverableTmuxCommand(session: session, directory: directory)
+        } else if existingSessionOnly {
             tmux = remoteExistingTmuxCommand(session: session)
         } else {
             // Explicitly creating a new SSH window keeps create-or-attach semantics. A
@@ -157,9 +195,68 @@ enum UniConnectSSH {
             tmux = "command -v tmux >/dev/null 2>&1 && exec \(remoteTmuxCommand(session: session, directory: directory)) || { printf '%s\\n' \(shellQuote("[UniConnect] \(message)")) >&2; exec ${SHELL:-sh} -l; }"
         }
         let remote = bridge.map { $0.remoteSetupCommand + "; " + tmux } ?? tmux
-        return UniConnectSSHConnectCommandValidator()
-            .validatedCommand(connectCommand)?
-            .sensitiveCanonicalShellCommand(injecting: options, remoteCommand: remote)
+        guard let validated = UniConnectSSHConnectCommandValidator()
+            .validatedCommand(connectCommand) else {
+            return nil
+        }
+        if let effectiveTarget {
+            return validated.sensitiveCanonicalShellCommand(
+                injecting: options,
+                pinnedTo: effectiveTarget,
+                remoteCommand: remote
+            )
+        }
+        return validated.sensitiveCanonicalShellCommand(
+            injecting: options,
+            remoteCommand: remote
+        )
+    }
+
+    /// Builds an SSH/tmux launcher from one complete encrypted credential revision.
+    /// Legacy command-only records fail closed until their endpoint is migrated.
+    static func attachCommandLine(
+        credentialRecord: UniConnectSSHCredentialRecord,
+        session: String,
+        directory: String?,
+        bridge: ClaudeBridgeConnectionPlan? = nil,
+        existingSessionOnly: Bool = false,
+        recoverMissingSession: Bool = false
+    ) -> String? {
+        guard let effectiveTarget = credentialRecord.effectiveTarget else { return nil }
+        return attachCommandLine(
+            connectCommand: credentialRecord.connectCommand,
+            session: session,
+            directory: directory,
+            bridge: bridge,
+            existingSessionOnly: existingSessionOnly,
+            recoverMissingSession: recoverMissingSession,
+            effectiveTarget: effectiveTarget
+        )
+    }
+
+    /// Constructs a shell-free SSH subprocess pinned to the record's saved endpoint.
+    static func processInvocation(
+        credentialRecord: UniConnectSSHCredentialRecord,
+        injecting options: [String] = [],
+        remoteCommand: String? = nil,
+        ambientEnvironment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> UniConnectSSHProcessInvocation? {
+        guard let effectiveTarget = credentialRecord.effectiveTarget,
+              let invocation = UniConnectSSHConnectCommandValidator()
+                .validatedCommand(credentialRecord.connectCommand)?
+                .invocation(
+                    injecting: options,
+                    pinnedTo: effectiveTarget,
+                    remoteCommand: remoteCommand,
+                    ambientEnvironment: ambientEnvironment
+                ) else {
+            return nil
+        }
+        return UniConnectSSHProcessInvocation(
+            executable: invocation.executable,
+            arguments: invocation.arguments,
+            environment: invocation.environment
+        )
     }
 
     /// Writes a self-deleting launcher script for an already canonicalized command and
@@ -339,16 +436,15 @@ final class UniConnectTmuxProbe {
     exit 1
     """
 
-    func start(connectCommand: String) {
+    func start(credentialRecord: UniConnectSSHCredentialRecord) {
         let script = mode == .install ? Self.remoteScript : Self.checkScript
-        guard let invocation = UniConnectSSHConnectCommandValidator()
-            .validatedCommand(connectCommand)?
-            .invocation(
-                injecting: ["-T"] + UniConnectSSH.baseClientOptions,
-                remoteCommand: "sh -s"
-            ) else {
+        guard let invocation = UniConnectSSH.processInvocation(
+            credentialRecord: credentialRecord,
+            injecting: ["-T"] + UniConnectSSH.baseClientOptions,
+            remoteCommand: "sh -s"
+        ) else {
             onFinish(.failed(
-                UniConnectSSH.validateConnectCommand(connectCommand) ?? String(
+                UniConnectSSH.validateConnectCommand(credentialRecord.connectCommand) ?? String(
                     localized: "uniconnect.ssh.probe.error.launchUnavailable",
                     defaultValue: "The SSH connection could not be started."
                 )
@@ -576,5 +672,17 @@ extension UniConnectSSH {
         UniConnectSSHConnectCommandValidator()
             .validatedCommand(command)?
             .detectedSession()
+    }
+
+    /// Derives upload metadata while retaining the vault's immutable endpoint pin.
+    static func detectedSession(
+        fromCredentialRecord record: UniConnectSSHCredentialRecord
+    ) -> DetectedSSHSession? {
+        guard let effectiveTarget = record.effectiveTarget,
+              var session = detectedSession(fromConnectCommand: record.connectCommand) else {
+            return nil
+        }
+        session.uniConnectEffectiveTarget = effectiveTarget
+        return session
     }
 }

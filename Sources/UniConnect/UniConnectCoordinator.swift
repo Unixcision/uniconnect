@@ -38,10 +38,14 @@ final class UniConnectCoordinator: ObservableObject {
     private var rejectedLocalAgentObservations: [LocalAgentOwner: UniConnectLocalAgentRestoreClaimPolicy.Claim] = [:]
     private var localAgentObservers: [NSObjectProtocol] = []
     private var sshCommandExecutor: (any UniConnectSSHCommandExecuting)?
+    private var sshTargetResolver: (any UniConnectSSHTargetResolving)?
+    private var sshWorkspaceCreationTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
+    private var sshWorkspaceCreationTokens: [ObjectIdentifier: UUID] = [:]
     private var sshCredentialEditTasks: [UUID: Task<Void, Never>] = [:]
     private var importTransaction: UniConnectImportTransaction?
     private var importCheckpoints: (any UniConnectImportCheckpointing)?
     private var importTask: Task<Void, Never>?
+    private var manualSaveTask: Task<Void, Never>?
     private var didRecoverInterruptedImport = false
     private var isRestoringImportCheckpoint = false
     private(set) var importMutationGate: UniConnectImportMutationGate?
@@ -120,9 +124,13 @@ final class UniConnectCoordinator: ObservableObject {
         importMutationGate = mutationGate
     }
 
-    /// Receives the bounded SSH maintenance service from the executable composition root.
-    func configureSSHCommandExecutor(_ executor: any UniConnectSSHCommandExecuting) {
+    /// Receives bounded SSH services from the executable composition root.
+    func configureSSHCommandExecutor(
+        _ executor: any UniConnectSSHCommandExecuting,
+        targetResolver: any UniConnectSSHTargetResolving
+    ) {
         sshCommandExecutor = executor
+        sshTargetResolver = targetResolver
     }
 
     /// Receives the direct-SSH bridge graph from the executable composition root.
@@ -192,6 +200,20 @@ final class UniConnectCoordinator: ObservableObject {
         claudeBridgeRuntime?.unregister(routeID: routeID, removeToken: removeToken)
     }
 
+    /// Keeps a live bridge route aligned with the workspace that adopted its stable panel.
+    func rebindClaudeBridgeRoute(_ routeID: UUID, to workspace: Workspace) {
+        guard workspace.panels[routeID] != nil,
+              let tmuxSession = workspace.uniConnectTmuxSessionsByPanelId[routeID] else {
+            return
+        }
+        claudeBridgeRuntime?.rebindRoute(
+            routeID,
+            workspaceID: workspace.id,
+            workspaceName: workspace.customTitle ?? workspace.title,
+            windowName: workspace.panelTitle(panelId: routeID) ?? tmuxSession
+        )
+    }
+
     // MARK: Window helpers
 
     private func hostWindow(for tabManager: TabManager?) -> NSWindow? {
@@ -217,7 +239,7 @@ final class UniConnectCoordinator: ObservableObject {
     /// workspace was created). False lets cmux fall back to its stock behaviour.
     func interceptNewWorkspace(tabManager: TabManager) -> Bool {
         guard Self.isEnabled else { return false }
-        guard permitsImportSensitiveMutation() else { return true }
+        guard importMutationGate?.allowsMutation ?? true else { return true }
         let window = hostWindow(for: tabManager)
         UniConnectSheet.present(on: window, size: CGSize(width: 480, height: 400)) { dismiss in
             UniConnectNewWorkspaceView(
@@ -234,7 +256,7 @@ final class UniConnectCoordinator: ObservableObject {
                 onSSH: { [weak self, weak tabManager] result in
                     dismiss()
                     guard let self, let tabManager else { return }
-                    self.createSSHWorkspace(
+                    self.beginSSHWorkspaceCreation(
                         name: result.name,
                         color: result.color,
                         connectCommand: result.connect,
@@ -245,6 +267,83 @@ final class UniConnectCoordinator: ObservableObject {
             )
         }
         return true
+    }
+
+    private func beginSSHWorkspaceCreation(
+        name: String,
+        color: String?,
+        connectCommand: String,
+        in tabManager: TabManager
+    ) {
+        let owner = ObjectIdentifier(tabManager)
+        guard sshWorkspaceCreationTasks[owner] == nil,
+              let targetResolver = sshTargetResolver else {
+            if sshWorkspaceCreationTasks[owner] == nil {
+                presentError(String(
+                    localized: "uniconnect.ssh.probe.error.launchUnavailable",
+                    defaultValue: "The SSH connection could not be started."
+                ))
+            }
+            return
+        }
+        let token = UUID()
+        let expectedMutationRevision = importMutationGate?.externalMutationRevision
+        sshWorkspaceCreationTokens[owner] = token
+        let transaction = UniConnectSSHWorkspaceCreationTransaction(
+            targetResolver: targetResolver
+        )
+        let task = Task { @MainActor [weak self, weak tabManager] in
+            guard let self else { return }
+            defer {
+                if self.sshWorkspaceCreationTokens[owner] == token {
+                    self.sshWorkspaceCreationTasks.removeValue(forKey: owner)
+                    self.sshWorkspaceCreationTokens.removeValue(forKey: owner)
+                }
+            }
+            guard let tabManager else { return }
+            do {
+                let record = try await transaction.prepare(
+                    connectCommand: connectCommand,
+                    isCurrentSubmission: { [weak self, weak tabManager] in
+                        guard let self, let tabManager,
+                              self.sshWorkspaceCreationTokens[owner] == token,
+                              self.allTabManagers().contains(where: { $0 === tabManager }),
+                              self.importMutationGate?.isLocked != true else {
+                            return false
+                        }
+                        guard let expectedMutationRevision else { return true }
+                        return self.importMutationGate?.externalMutationRevision
+                            == expectedMutationRevision
+                    }
+                )
+                guard self.sshWorkspaceCreationTokens[owner] == token else { return }
+                _ = self.createSSHWorkspace(
+                    name: name,
+                    color: color,
+                    credentialRecord: record,
+                    in: tabManager
+                )
+            } catch let failure as UniConnectSSHWorkspaceCreationTransaction.Failure {
+                switch failure {
+                case .invalidConnection:
+                    self.presentError(
+                        String(
+                            localized: "uniconnect.ssh.edit.error.invalid",
+                            defaultValue: "The SSH command is not a supported safe connection command."
+                        ),
+                        title: String(
+                            localized: "uniconnect.ssh.edit.invalid.title",
+                            defaultValue: "Invalid SSH Connection"
+                        )
+                    )
+                case .staleSubmission, .cancelled:
+                    break
+                }
+            } catch {
+                self.presentError(error.localizedDescription)
+            }
+        }
+        sshWorkspaceCreationTasks[owner] = task
     }
 
     @discardableResult
@@ -303,6 +402,68 @@ final class UniConnectCoordinator: ObservableObject {
             presentError(error.localizedDescription)
             return nil
         }
+        return installSSHWorkspace(
+            name: name,
+            color: color,
+            connectCommand: connectCommand,
+            credentialID: credentialId,
+            in: tabManager,
+            select: select,
+            probeImmediately: probeImmediately,
+            finalizeCreation: finalizeCreation,
+            stableIdentity: stableIdentity
+        )
+    }
+
+    @discardableResult
+    private func createSSHWorkspace(
+        name: String,
+        color: String?,
+        credentialRecord: UniConnectSSHCredentialRecord,
+        in tabManager: TabManager,
+        select: Bool = true,
+        probeImmediately: Bool = true,
+        finalizeCreation: Bool = true,
+        stableIdentity: UUID? = nil
+    ) -> Workspace? {
+        guard permitsImportSensitiveMutation(),
+              credentialRecord.effectiveTarget != nil else {
+            return nil
+        }
+        let credentialID: UUID
+        do {
+            credentialID = try UniConnectVault.shared.storeOrThrow(
+                connectCommand: credentialRecord.connectCommand,
+                effectiveTarget: credentialRecord.effectiveTarget
+            )
+        } catch {
+            presentError(error.localizedDescription)
+            return nil
+        }
+        return installSSHWorkspace(
+            name: name,
+            color: color,
+            connectCommand: credentialRecord.connectCommand,
+            credentialID: credentialID,
+            in: tabManager,
+            select: select,
+            probeImmediately: probeImmediately,
+            finalizeCreation: finalizeCreation,
+            stableIdentity: stableIdentity
+        )
+    }
+
+    private func installSSHWorkspace(
+        name: String,
+        color: String?,
+        connectCommand: String,
+        credentialID: UUID,
+        in tabManager: TabManager,
+        select: Bool,
+        probeImmediately: Bool,
+        finalizeCreation: Bool,
+        stableIdentity: UUID?
+    ) -> Workspace {
         let workspace = tabManager.addWorkspace(
             title: name,
             workingDirectory: nil,
@@ -313,7 +474,7 @@ final class UniConnectCoordinator: ObservableObject {
         workspace.uniConnectProfile = UniConnectWorkspaceProfile(
             kind: .ssh,
             importIdentity: stableIdentity ?? UUID(),
-            credentialId: credentialId,
+            credentialId: credentialID,
             hostLabel: UniConnectSSH.hostLabel(from: connectCommand),
             tmuxReady: false
         )
@@ -351,7 +512,8 @@ final class UniConnectCoordinator: ObservableObject {
         guard permitsImportSensitiveMutation() else { return }
         guard let profile = workspace.uniConnectProfile, profile.isSSH,
               let credentialId = profile.credentialId,
-              let connect = UniConnectVault.shared.connectCommand(for: credentialId) else {
+              let credentialRecord = UniConnectVault.shared.credentialRecord(for: credentialId),
+              credentialRecord.effectiveTarget != nil else {
             let state = setupState(for: workspace)
             state.phase = .failed(String(
                 localized: "uniconnect.ssh.setup.error.missingConnection",
@@ -362,8 +524,17 @@ final class UniConnectCoordinator: ObservableObject {
         probes[workspace.id]?.cancel()
         let state = setupState(for: workspace)
         state.phase = .connecting
-        state.log = ["$ \(UniConnectSSH.hostLabel(from: connect)) — comprobando tmux…"]
-        runProbe(for: workspace, connect: connect, state: state, install: false)
+        let checkingMessage = String(
+            localized: "uniconnect.ssh.setup.checking",
+            defaultValue: "Connecting and checking tmux…"
+        )
+        state.log = ["$ \(UniConnectSSH.hostLabel(from: credentialRecord.connectCommand)) — \(checkingMessage)"]
+        runProbe(
+            for: workspace,
+            credentialRecord: credentialRecord,
+            state: state,
+            install: false
+        )
     }
 
     /// Second step of the welcome flow: the user confirmed the tmux installation.
@@ -371,17 +542,35 @@ final class UniConnectCoordinator: ObservableObject {
         guard permitsImportSensitiveMutation() else { return }
         guard let profile = workspace.uniConnectProfile, profile.isSSH,
               let credentialId = profile.credentialId,
-              let connect = UniConnectVault.shared.connectCommand(for: credentialId) else { return }
+              let credentialRecord = UniConnectVault.shared.credentialRecord(for: credentialId),
+              credentialRecord.effectiveTarget != nil else {
+            let state = setupState(for: workspace)
+            state.phase = .failed(String(
+                localized: "uniconnect.ssh.setup.error.missingConnection",
+                defaultValue: "The saved connection command could not be found."
+            ))
+            return
+        }
         let state = setupState(for: workspace)
         state.phase = .installing
         state.log.append(String(
             localized: "uniconnect.ssh.setup.log.installing",
             defaultValue: "⏳ Installing tmux…"
         ))
-        runProbe(for: workspace, connect: connect, state: state, install: true)
+        runProbe(
+            for: workspace,
+            credentialRecord: credentialRecord,
+            state: state,
+            install: true
+        )
     }
 
-    private func runProbe(for workspace: Workspace, connect: String, state: UniConnectSSHSetupState, install: Bool) {
+    private func runProbe(
+        for workspace: Workspace,
+        credentialRecord: UniConnectSSHCredentialRecord,
+        state: UniConnectSSHSetupState,
+        install: Bool
+    ) {
         probes[workspace.id]?.cancel()
         let workspaceId = workspace.id
         let probe = UniConnectTmuxProbe(
@@ -411,7 +600,7 @@ final class UniConnectCoordinator: ObservableObject {
             }
         )
         probes[workspace.id] = probe
-        probe.start(connectCommand: connect)
+        probe.start(credentialRecord: credentialRecord)
     }
 
     /// Pure string matching, no actor state: callable from background work (the remote
@@ -474,8 +663,11 @@ final class UniConnectCoordinator: ObservableObject {
     private func editConnectionAuthenticated(for workspace: Workspace, profile: UniConnectWorkspaceProfile) {
         guard sshCredentialEditTasks[workspace.id] == nil,
               let oldCredentialID = profile.credentialId,
-              let current = UniConnectVault.shared.connectCommand(for: oldCredentialID),
-              let executor = sshCommandExecutor else {
+              let oldCredentialRecord = UniConnectVault.shared.credentialRecord(
+                  for: oldCredentialID
+              ),
+              let executor = sshCommandExecutor,
+              let targetResolver = sshTargetResolver else {
             presentError(
                 String(
                     localized: "uniconnect.ssh.edit.unavailable",
@@ -484,6 +676,7 @@ final class UniConnectCoordinator: ObservableObject {
             )
             return
         }
+        let current = oldCredentialRecord.connectCommand
         let alert = NSAlert()
         alert.messageText = String(
             localized: "uniconnect.ssh.edit.title",
@@ -528,7 +721,10 @@ final class UniConnectCoordinator: ObservableObject {
                     tmuxSession: tmuxSession
                 )
         }
-        let transaction = UniConnectSSHCredentialEditTransaction(executor: executor)
+        let transaction = UniConnectSSHCredentialEditTransaction(
+            executor: executor,
+            targetResolver: targetResolver
+        )
         let task = Task { @MainActor [weak self, weak workspace] in
             guard let self, let workspace else { return }
             defer { self.sshCredentialEditTasks.removeValue(forKey: workspace.id) }
@@ -554,15 +750,30 @@ final class UniConnectCoordinator: ObservableObject {
                             )?.targetKey
                         }.sorted(by: Self.sshTargetSort).first
                     },
-                    createCredentialRevision: { value in
-                        try UniConnectVault.shared.createImmutableRevision(connectCommand: value)
+                    createCredentialRevision: { value, effectiveTarget in
+                        try UniConnectVault.shared.createImmutableRevision(
+                            connectCommand: value,
+                            effectiveTarget: effectiveTarget
+                        )
                     },
                     removeCredentialRevision: { credentialID in
                         try UniConnectVault.shared.removeOrThrow(id: credentialID)
                     },
-                    commit: { [weak self, weak workspace] credentialID, _, editedWindows in
+                    commit: { [weak self, weak workspace] credentialID, effectiveTarget, editedWindows in
                         guard let self, let workspace,
+                              Self.sshCredentialEditWorkspaceIsCurrent(
+                                  expected: workspace,
+                                  liveWorkspace: self.workspace(for: workspace.id)
+                              ),
                               workspace.uniConnectProfile == profile else { return false }
+                        guard Self.sshCredentialEditWindowSetMatches(
+                            expected: editedWindows,
+                            workspaceID: workspace.id,
+                            liveTmuxSessions: workspace.uniConnectTmuxSessionsByPanelId,
+                            livePanelIDs: Set(workspace.panels.keys)
+                        ) else {
+                            return false
+                        }
                         didBeginRuntimeMutation = true
                         var updatedProfile = profile
                         updatedProfile.credentialId = credentialID
@@ -571,6 +782,7 @@ final class UniConnectCoordinator: ObservableObject {
                         updatedProfile.touch()
                         return self.applySSHConnectionRevision(
                             command: command,
+                            effectiveTarget: effectiveTarget,
                             credentialID: credentialID,
                             profile: updatedProfile,
                             windows: editedWindows,
@@ -579,12 +791,13 @@ final class UniConnectCoordinator: ObservableObject {
                     },
                     rollback: { [weak self, weak workspace] credentialID, editedWindows in
                         guard let self, let workspace,
-                              let oldCommand = UniConnectVault.shared.connectCommand(for: credentialID) else {
+                              credentialID == oldCredentialID else {
                             return false
                         }
                         guard didBeginRuntimeMutation else { return true }
                         return self.applySSHConnectionRevision(
-                            command: oldCommand,
+                            command: oldCredentialRecord.connectCommand,
+                            effectiveTarget: oldCredentialRecord.effectiveTarget,
                             credentialID: credentialID,
                             profile: profile,
                             windows: editedWindows,
@@ -607,8 +820,37 @@ final class UniConnectCoordinator: ObservableObject {
         sshCredentialEditTasks[workspace.id] = task
     }
 
+    /// Confirms an async SSH edit still targets the exact live workspace object.
+    static func sshCredentialEditWorkspaceIsCurrent(
+        expected: Workspace,
+        liveWorkspace: Workspace?
+    ) -> Bool {
+        liveWorkspace === expected
+    }
+
+    /// Rejects a credential commit if a window changed while SSH preflight was suspended.
+    static func sshCredentialEditWindowSetMatches(
+        expected: [UniConnectSSHCredentialEditTransaction.Window],
+        workspaceID: UUID,
+        liveTmuxSessions: [UUID: String],
+        livePanelIDs: Set<UUID>
+    ) -> Bool {
+        let live: Set<UniConnectSSHCredentialEditTransaction.Window> = Set(
+            liveTmuxSessions.compactMap { panelID, tmuxSession in
+            guard livePanelIDs.contains(panelID) else { return nil }
+            return UniConnectSSHCredentialEditTransaction.Window(
+                workspaceID: workspaceID,
+                panelID: panelID,
+                tmuxSession: tmuxSession
+            )
+            }
+        )
+        return live == Set(expected)
+    }
+
     private func applySSHConnectionRevision(
         command: String,
+        effectiveTarget: UniConnectSSHEffectiveTarget?,
         credentialID: UUID,
         profile: UniConnectWorkspaceProfile,
         windows: [UniConnectSSHCredentialEditTransaction.Window],
@@ -621,6 +863,9 @@ final class UniConnectCoordinator: ObservableObject {
             let launcher: String
         }
 
+        // A legacy command-only revision cannot safely respawn remote windows during
+        // rollback: ssh_config may now point its alias at a different machine.
+        guard windows.isEmpty || effectiveTarget != nil else { return false }
         var prepared: [PreparedWindow] = []
         for window in windows {
             guard window.workspaceID == workspace.id,
@@ -645,7 +890,9 @@ final class UniConnectCoordinator: ObservableObject {
                 session: window.tmuxSession,
                 directory: nil,
                 bridge: bridge,
-                existingSessionOnly: true
+                existingSessionOnly: true,
+                recoverMissingSession: true,
+                effectiveTarget: effectiveTarget
             ), let launcher = UniConnectSSH.writeLauncherScript(
                 commandLine: commandLine,
                 label: window.tmuxSession
@@ -744,11 +991,18 @@ final class UniConnectCoordinator: ObservableObject {
 
     // MARK: Windows (tabs) inside a UniConnect workspace
 
-    /// Intercepts Cmd+T / "+" so each UniConnect box uses its own window flow.
-    func interceptNewSurface(in workspace: Workspace) -> Bool {
+    /// Presents the workspace-aware chooser for every generic terminal creation action.
+    func interceptNewSurface(
+        in workspace: Workspace,
+        placement requestedPlacement: UniConnectNewWindowPlacement? = nil
+    ) -> Bool {
         guard Self.isEnabled, let profile = workspace.uniConnectProfile else { return false }
         guard permitsImportSensitiveMutation() else { return true }
-        let window = hostWindow(for: nil)
+        guard let placement = requestedPlacement ?? .focusedPane(in: workspace),
+              placement.isAvailable(in: workspace) else { return true }
+        let window = workspace.focusedTerminalPanel?.surface.uiWindow
+            ?? workspace.panels.values.compactMap { ($0 as? TerminalPanel)?.surface.uiWindow }.first
+            ?? hostWindow(for: workspace.owningTabManager)
         let title = workspace.customTitle ?? workspace.title
         if !profile.isSSH {
             guard let boxRoot = workspace.uniConnectLocalBoxRoot else {
@@ -762,7 +1016,7 @@ final class UniConnectCoordinator: ObservableObject {
             }
             let registry = CmuxVaultAgentRegistry.load(workingDirectory: boxRoot)
             let customTargets = UniConnectLocalWindowLaunchTarget.customTargets(from: registry)
-            UniConnectSheet.present(on: window, size: CGSize(width: 620, height: 650)) { dismiss in
+            UniConnectSheet.present(on: window, size: CGSize(width: 620, height: 700)) { dismiss in
                 UniConnectNewLocalWindowView(
                     workspaceName: title,
                     boxRoot: boxRoot,
@@ -770,7 +1024,7 @@ final class UniConnectCoordinator: ObservableObject {
                     onCreate: { [weak self, weak workspace] request in
                         dismiss()
                         guard let self, let workspace else { return }
-                        self.createLocalWindow(in: workspace, request: request)
+                        self.createLocalWindow(in: workspace, request: request, placement: placement)
                     },
                     onCancel: { dismiss() }
                 )
@@ -784,7 +1038,7 @@ final class UniConnectCoordinator: ObservableObject {
                 onCreate: { [weak self, weak workspace] name, tmux in
                     dismiss()
                     guard let self, let workspace else { return }
-                    self.createSSHWindow(in: workspace, name: name, tmuxSession: tmux)
+                    self.createSSHWindow(in: workspace, name: name, tmuxSession: tmux, placement: placement)
                 },
                 onCancel: { dismiss() }
             )
@@ -792,39 +1046,54 @@ final class UniConnectCoordinator: ObservableObject {
         return true
     }
 
-    /// Creates a durable local window and launches its selected tool from the box trust root.
+    /// Creates a durable local window in its chosen folder, without changing the workspace default.
     @discardableResult
     func createLocalWindow(
         in workspace: Workspace,
         request: UniConnectNewLocalWindowRequest,
         focus: Bool = true,
-        requestPersistence: Bool = true
+        requestPersistence: Bool = true,
+        placement requestedPlacement: UniConnectNewWindowPlacement? = nil
     ) -> TerminalPanel? {
         guard permitsImportSensitiveMutation() else { return nil }
         guard workspace.uniConnectProfile?.isSSH == false,
               let boxRoot = workspace.uniConnectLocalBoxRoot,
-              let pane = workspace.bonsplitController.focusedPaneId
-                ?? workspace.bonsplitController.allPaneIds.first else {
+              let placement = requestedPlacement ?? .focusedPane(in: workspace),
+              placement.isAvailable(in: workspace) else {
             return nil
         }
 
-        guard UniConnectLocalBoxRootPolicy.isAvailableDirectory(boxRoot) else {
+        // The box root is its default, not a boundary around independent window folders.
+        // Reassign a missing default only when no explicit folder was chosen.
+        if request.workingDirectory == nil,
+           !UniConnectLocalBoxRootPolicy.isAvailableDirectory(boxRoot) {
             resolveMissingLocalBoxRoot(in: workspace, missingRoot: boxRoot) { [weak self, weak workspace] in
                 guard let self, let workspace else { return }
                 _ = self.createLocalWindow(
                     in: workspace,
                     request: request,
                     focus: focus,
-                    requestPersistence: requestPersistence
+                    requestPersistence: requestPersistence,
+                    placement: placement
                 )
             }
             return nil
         }
 
-        // The current workspace root wins over the sheet snapshot. A stale sheet can never
-        // redirect a trusted agent launch after the box configuration changes underneath it.
+        guard let workingDirectory = UniConnectLocalWindowRecord.validatedWorkingDirectory(
+            request.workingDirectory ?? boxRoot,
+            within: boxRoot
+        ), UniConnectLocalBoxRootPolicy.isAvailableDirectory(workingDirectory) else {
+            presentError(String(
+                localized: "uniconnect.workspace.error.folderMissing",
+                defaultValue: "Choose an existing folder."
+            ))
+            return nil
+        }
+
+        // Preserve the authoritative workspace identity, while launching in this window's folder.
         let startupInput = request.launchTarget
-            .startupCommand(boxRoot: boxRoot)
+            .startupCommand(boxRoot: boxRoot, workingDirectory: workingDirectory)
             .map { $0 + "\n" }
         let panelID = UUID()
         let launchAttempt: LocalAgentLaunchAttempt?
@@ -840,11 +1109,11 @@ final class UniConnectCoordinator: ObservableObject {
         } else {
             launchAttempt = nil
         }
-        guard let panel = workspace.newTerminalSurface(
+        guard let panel = placement.createPanel(
+            in: workspace,
             panelID: panelID,
-            inPane: pane,
             focus: focus,
-            workingDirectory: boxRoot,
+            workingDirectory: workingDirectory,
             initialInput: startupInput
         ) else {
             if let launchAttempt {
@@ -877,11 +1146,14 @@ final class UniConnectCoordinator: ObservableObject {
               let record = workspace.uniConnectLocalWindowsByPanelId[panelID] else {
             return nil
         }
-        let registry = CmuxVaultAgentRegistry.load(workingDirectory: record.boxRoot)
+        let registry = CmuxVaultAgentRegistry.load(workingDirectory: record.workingDirectory)
         return UniConnectLocalWindowActionPolicy.menuSnapshot(
             record: record,
             customTargets: UniConnectLocalWindowLaunchTarget.customTargets(from: registry),
-            boxRootIsAvailable: UniConnectLocalBoxRootPolicy.isAvailableDirectory(record.boxRoot)
+            boxRootIsAvailable: UniConnectLocalBoxRootPolicy.hasAvailableLaunchDirectory(
+                savedWorkingDirectory: record.workingDirectory,
+                boxRoot: record.boxRoot
+            )
         )
     }
 
@@ -907,7 +1179,10 @@ final class UniConnectCoordinator: ObservableObject {
             return
         }
 
-        guard UniConnectLocalBoxRootPolicy.isAvailableDirectory(originalRecord.boxRoot) else {
+        guard UniConnectLocalBoxRootPolicy.hasAvailableLaunchDirectory(
+            savedWorkingDirectory: originalRecord.workingDirectory,
+            boxRoot: originalRecord.boxRoot
+        ) else {
             resolveMissingLocalBoxRoot(
                 in: workspace,
                 missingRoot: originalRecord.boxRoot
@@ -932,6 +1207,21 @@ final class UniConnectCoordinator: ObservableObject {
             return
         }
 
+        // A hook/process observation may time out before a long-running command or an
+        // undetected agent exits. Never type a new foreground command into that process.
+        if !action.canDispatchForegroundCommand(
+            runtimeState: originalRecord.runtimeState,
+            shellIsAtPrompt: workspace.panelShellActivityStates[panelID] == .promptIdle
+        ) {
+            presentError(
+                String(
+                    localized: "uniconnect.localWindow.error.actionUnavailable",
+                    defaultValue: "That saved window action is no longer available."
+                )
+            )
+            return
+        }
+
         if case .forgetConversation(let conversationID) = action {
             confirmForgetLocalConversation(
                 conversationID,
@@ -941,14 +1231,11 @@ final class UniConnectCoordinator: ObservableObject {
             )
             return
         }
-        let registry = CmuxVaultAgentRegistry.load(workingDirectory: originalRecord.boxRoot)
-        let resumeSnapshot: SessionRestorableAgentSnapshot? = {
-            guard case .resumeConversation(let conversationID) = action else { return nil }
-            return originalRecord.restorableSnapshot(
-                for: conversationID,
-                registry: registry
-            )
-        }()
+        let registry = CmuxVaultAgentRegistry.load(workingDirectory: originalRecord.workingDirectory)
+        let resumeSnapshot = action.resolvedResumeSnapshot(
+            record: originalRecord,
+            registry: registry
+        )
         guard let plan = action.terminalLaunchPlan(
             record: originalRecord,
             registry: registry
@@ -1178,11 +1465,22 @@ final class UniConnectCoordinator: ObservableObject {
             panelID: signal.panelID
         )
         if signal.kind == .panelClosed {
+            let currentWorkspace = workspace(for: owner.workspaceID)
+            let hasCurrentPanel = currentWorkspace?.panels[owner.panelID] != nil
+            guard Self.shouldCancelLocalAgentLaunchForPanelClosedSignal(
+                signalGeneration: signal.surfaceGeneration,
+                currentGeneration: currentWorkspace?.uniConnectSurfaceGeneration(panelId: owner.panelID),
+                hasCurrentPanel: hasCurrentPanel
+            ) else {
+                return
+            }
             cancelLocalAgentLaunchAttempt(for: owner, transitionToShell: false)
             return
         }
         guard signal.kind == .shellActivityChanged else { return }
         guard let currentWorkspace = workspace(for: owner.workspaceID),
+              let signalGeneration = signal.surfaceGeneration,
+              signalGeneration == currentWorkspace.uniConnectSurfaceGeneration(panelId: owner.panelID),
               Self.isCurrentLocalAgentShellActivitySignal(
                   signal.shellActivity,
                   currentState: currentWorkspace.panelShellActivityStates[owner.panelID],
@@ -1215,6 +1513,18 @@ final class UniConnectCoordinator: ObservableObject {
         default:
             break
         }
+    }
+
+    /// A deferred close notification belongs to an older surface when the stable panel ID
+    /// has already been rebound to a replacement terminal.
+    static func shouldCancelLocalAgentLaunchForPanelClosedSignal(
+        signalGeneration: UUID?,
+        currentGeneration: UUID?,
+        hasCurrentPanel: Bool
+    ) -> Bool {
+        guard signalGeneration != nil else { return false }
+        guard hasCurrentPanel else { return true }
+        return signalGeneration == currentGeneration
     }
 
     static func isCurrentLocalAgentShellActivitySignal(
@@ -1307,6 +1617,14 @@ final class UniConnectCoordinator: ObservableObject {
         let owner = LocalAgentOwner(workspaceID: workspace.id, panelID: panelID)
         rejectedLocalAgentObservations.removeValue(forKey: owner)
         cancelLocalAgentLaunchAttempt(for: owner, transitionToShell: false)
+    }
+
+    /// Ends the old surface generation before a stable panel ID is reused by respawn.
+    func localWindowWillRespawn(panelID: UUID, workspace: Workspace) {
+        let owner = LocalAgentOwner(workspaceID: workspace.id, panelID: panelID)
+        rejectedLocalAgentObservations.removeValue(forKey: owner)
+        cancelLocalAgentLaunchAttempt(for: owner, transitionToShell: false)
+        _ = workspace.uniConnectTransitionLocalWindowToShell(panelId: panelID)
     }
 
     func resolvingDuplicateAutomaticLocalAgentClaims(
@@ -1457,12 +1775,14 @@ final class UniConnectCoordinator: ObservableObject {
         replacingPanelID: UUID? = nil,
         focus: Bool = true,
         requestPersistence: Bool = true,
-        showErrors: Bool = true
+        showErrors: Bool = true,
+        placement requestedPlacement: UniConnectNewWindowPlacement? = nil
     ) -> TerminalPanel? {
         guard permitsImportSensitiveMutation() else { return nil }
         guard let profile = workspace.uniConnectProfile, profile.isSSH,
               let credentialId = profile.credentialId,
-              let connect = UniConnectVault.shared.connectCommand(for: credentialId) else {
+              let credentialRecord = UniConnectVault.shared.credentialRecord(for: credentialId),
+              let effectiveTarget = credentialRecord.effectiveTarget else {
             if showErrors {
                 presentError(String(
                     localized: "uniconnect.ssh.window.error.missingConnection",
@@ -1472,9 +1792,8 @@ final class UniConnectCoordinator: ObservableObject {
             return nil
         }
         let session = UniConnectSSH.sanitizedTmuxName(rawSession)
-        guard let detectedSession = UniConnectSSH.detectedSession(fromConnectCommand: connect),
-              let targetKey = UniConnectSSHTargetKey(
-                  session: detectedSession,
+        guard let targetKey = UniConnectSSHTargetKey(
+                  effectiveTarget: effectiveTarget,
                   tmuxSession: session
               ) else {
             if showErrors {
@@ -1540,7 +1859,7 @@ final class UniConnectCoordinator: ObservableObject {
             tmuxSession: session
         )
         guard let commandLine = UniConnectSSH.attachCommandLine(
-            connectCommand: connect,
+            credentialRecord: credentialRecord,
             session: session,
             directory: directory,
             bridge: bridge,
@@ -1566,11 +1885,10 @@ final class UniConnectCoordinator: ObservableObject {
                 focus: focus,
                 forceTerminateForegroundProcess: true
             )
-        } else if let pane = workspace.bonsplitController.focusedPaneId
-            ?? workspace.bonsplitController.allPaneIds.first {
-            panel = workspace.newTerminalSurface(
+        } else if let placement = requestedPlacement ?? .focusedPane(in: workspace) {
+            panel = placement.createPanel(
+                in: workspace,
                 panelID: panelID,
-                inPane: pane,
                 focus: focus,
                 initialCommand: launcher,
                 tmuxStartCommand: launcher,
@@ -1671,11 +1989,14 @@ final class UniConnectCoordinator: ObservableObject {
               let profile = workspace.uniConnectProfile,
               profile.isSSH,
               let credentialID = profile.credentialId,
-              let command = UniConnectVault.shared.connectCommand(for: credentialID),
-              let detected = UniConnectSSH.detectedSession(fromConnectCommand: command) else {
+              let record = UniConnectVault.shared.credentialRecord(for: credentialID),
+              let effectiveTarget = record.effectiveTarget else {
             return nil
         }
-        return UniConnectSSHTargetKey(session: detected, tmuxSession: tmuxSession)
+        return UniConnectSSHTargetKey(
+            effectiveTarget: effectiveTarget,
+            tmuxSession: tmuxSession
+        )
     }
 
     private func liveSSHReconnectCandidates() -> [UniConnectSSHReconnectPolicy.Candidate] {
@@ -1767,7 +2088,8 @@ final class UniConnectCoordinator: ObservableObject {
               workspace.panels[panelId] != nil,
               let profile = workspace.uniConnectProfile,
               let credentialId = profile.credentialId,
-              let connect = UniConnectVault.shared.connectCommand(for: credentialId) else {
+              let credentialRecord = UniConnectVault.shared.credentialRecord(for: credentialId),
+              credentialRecord.effectiveTarget != nil else {
             finishReconnectFlight(flight)
             return
         }
@@ -1788,11 +2110,12 @@ final class UniConnectCoordinator: ObservableObject {
             tmuxSession: session
         )
         guard let commandLine = UniConnectSSH.attachCommandLine(
-            connectCommand: connect,
+            credentialRecord: credentialRecord,
             session: session,
             directory: nil,
             bridge: bridge,
-            existingSessionOnly: true
+            existingSessionOnly: true,
+            recoverMissingSession: true
         ), let launcher = UniConnectSSH.writeLauncherScript(commandLine: commandLine, label: session) else {
             // Keep the existing route/token alive. A failed reconnect preparation must not
             // sever notifications from the logical window that still owns this panel ID.
@@ -1869,6 +2192,15 @@ final class UniConnectCoordinator: ObservableObject {
         if reconnectFlightLeases[flight.target] == flight {
             reconnectFlightLeases.removeValue(forKey: flight.target)
         }
+    }
+
+    /// Stops every automatic entrypoint after a permanent launcher failure. A deliberate
+    /// reconnect still resets this target's budget after the user repairs its setup.
+    func stopAutomaticReconnect(panelId: UUID, in workspace: Workspace) {
+        guard let key = sshTargetKey(panelID: panelId, in: workspace) else { return }
+        reconnectTasks.removeValue(forKey: key)?.cancel()
+        cancelReconnectStability(for: key)
+        reconnectAttempts[key] = Self.maxReconnectAttempts
     }
 
     /// Reconnects one SSH/tmux window. A user-forced call also replaces a hung connection
@@ -2057,6 +2389,13 @@ final class UniConnectCoordinator: ObservableObject {
     /// A keyed marker is written only after the resulting state is durably persisted.
     func applyStartupSeedIfNeeded() {
         guard Self.isEnabled else { return }
+        let securedSeedCount = UniConnectBackup.secureAppOwnedStartupSeeds(
+            in: UniConnectPaths.directory,
+            vault: .shared
+        )
+        if securedSeedCount > 0 {
+            NSLog("[UniConnect] secured %d app-owned startup seed file(s)", securedSeedCount)
+        }
         guard importTask == nil,
               let transaction = importTransaction,
               let adapter = try? liveImportAdapter(),
@@ -2140,8 +2479,7 @@ final class UniConnectCoordinator: ObservableObject {
         let originalMarker = startupSeedMarker(for: data)
         let wasAlreadyApplied = FileManager.default.fileExists(atPath: originalMarker.path)
             && !force
-        let isReadableSplitSeed = managesDropIn
-            && UniConnectBackup.isReadableLocalBackupManifest(data)
+        let isReadableSplitSeed = UniConnectBackup.isReadableLocalBackupManifest(data)
         if wasAlreadyApplied && (!managesDropIn || isReadableSplitSeed) {
             return
         }
@@ -2150,12 +2488,9 @@ final class UniConnectCoordinator: ObservableObject {
         var markerData = data
         do {
             if isReadableSplitSeed {
-                source = UniConnectImportSourceDocument(
-                    document: try UniConnectBackup.readReadableBackup(
-                        at: url,
-                        vault: .shared
-                    ),
-                    sourceMap: .empty
+                source = try UniConnectBackup.readReadableBackupSource(
+                    at: url,
+                    vault: .shared
                 )
             } else {
                 switch try UniConnectBackup.inspectDetailed(data: data) {
@@ -2416,9 +2751,32 @@ final class UniConnectCoordinator: ObservableObject {
     }
 
     func persistNow(showConfirmation: Bool = true) {
-        AppDelegate.shared?.uniConnectPersistSessionNow()
+        guard manualSaveTask == nil, permitsImportSensitiveMutation() else { return }
+        manualSaveTask = Task { @MainActor [weak self] in
+            let resumeIndexes = await ProcessDetectedResumeIndexes.load()
+            guard let self else { return }
+            defer { self.manualSaveTask = nil }
+            guard !Task.isCancelled, self.permitsImportSensitiveMutation() else { return }
+            self.finishManualSave(resumeIndexes: resumeIndexes, showConfirmation: showConfirmation)
+        }
+    }
+
+    private func finishManualSave(
+        resumeIndexes: ProcessDetectedResumeIndexes,
+        showConfirmation: Bool
+    ) {
+        guard AppDelegate.shared?.uniConnectPersistSessionNow(resumeIndexes: resumeIndexes) == true else {
+            presentError(String(
+                localized: "uniconnect.backup.sessionSaveFailed",
+                defaultValue: "The app session could not be written to disk. No complete backup was confirmed."
+            ))
+            return
+        }
         do {
-            let url = try UniConnectBackup.persistNow(tabManagers: allTabManagers())
+            let url = try UniConnectBackup.persistNow(
+                tabManagers: allTabManagers(),
+                restorableAgentIndex: resumeIndexes.restorableAgentIndex
+            )
             if showConfirmation {
                 let alert = NSAlert()
                 alert.messageText = String(
@@ -2431,6 +2789,10 @@ final class UniConnectCoordinator: ObservableObject {
                         defaultValue: "Readable backup saved to:\n%@\n\nSSH connection details are stored in its encrypted companion. The complete app session was also saved."
                     ),
                     url.path
+                )
+                alert.informativeText += "\n\n" + String(
+                    localized: "uniconnect.backup.saved.detectionDetail",
+                    defaultValue: "AI sessions are resumable only when their native session ID is detected. Previously saved conversations are preserved."
                 )
                 alert.addButton(withTitle: String(localized: "common.ok", defaultValue: "OK"))
                 alert.addButton(withTitle: String(
@@ -2453,7 +2815,8 @@ final class UniConnectCoordinator: ObservableObject {
     }
 
     /// Automation hooks. They exist only for the headless end-to-end run and are ignored
-    /// unless the Touch ID gate itself is disabled (`UNICONNECT_DISABLE_LOCK=1`).
+    /// unless a Debug/XCTest build explicitly disables the Touch ID gate
+    /// (`UNICONNECT_DISABLE_LOCK=1`). Release builds always keep the gate enabled.
     @MainActor private struct TestHooks {
         let passphrase: String?
         let exportPath: String?
@@ -2564,12 +2927,9 @@ final class UniConnectCoordinator: ObservableObject {
         let source: UniConnectBackup.DetailedImportSource
         do {
             if UniConnectBackup.isReadableLocalBackupManifest(data) {
-                source = .plain(UniConnectImportSourceDocument(
-                    document: try UniConnectBackup.readReadableBackup(
-                        at: url,
-                        vault: .shared
-                    ),
-                    sourceMap: .empty
+                source = .plain(try UniConnectBackup.readReadableBackupSource(
+                    at: url,
+                    vault: .shared
                 ))
             } else {
                 source = try UniConnectBackup.inspectDetailed(data: data)
@@ -2661,29 +3021,72 @@ final class UniConnectCoordinator: ObservableObject {
     }
 
     private func currentImportDocument() -> UniConnectDocument {
+        importDocument(from: liveImportWorkspaces())
+    }
+
+    private func importDocument(
+        from entries: [LiveImportWorkspace]
+    ) -> UniConnectDocument {
         UniConnectDocument(
-            workspaces: liveImportWorkspaces().map(\.document),
+            workspaces: entries.map(\.document),
             savedAt: Date(timeIntervalSince1970: 0)
         )
+    }
+
+    /// Reads each current workspace and its exact encrypted SSH revision using the
+    /// same row ordering consumed by ``currentImportDocument``.
+    private func importSSHCredentialRecords(
+        from entries: [LiveImportWorkspace]
+    ) -> [Int: UniConnectSSHCredentialRecord] {
+        Dictionary(uniqueKeysWithValues: entries.enumerated().compactMap { index, entry in
+            guard entry.document.kind == .ssh,
+                  let credentialID = entry.workspace.uniConnectProfile?.credentialId,
+                  let record = UniConnectVault.shared.credentialRecord(for: credentialID) else {
+                return nil
+            }
+            return (index, record)
+        })
+    }
+
+    private func currentImportSSHCredentialRecords() -> [Int: UniConnectSSHCredentialRecord] {
+        importSSHCredentialRecords(from: liveImportWorkspaces())
+    }
+
+    private func importSSHCredentialRecords(
+        referencedBy document: UniConnectDocument
+    ) -> [Int: UniConnectSSHCredentialRecord] {
+        Dictionary(uniqueKeysWithValues: document.workspaces.enumerated().compactMap {
+            index, workspace in
+            guard workspace.kind == .ssh,
+                  let credentialID = workspace.credentialId,
+                  let record = UniConnectVault.shared.credentialRecord(for: credentialID) else {
+                return nil
+            }
+            return (index, record)
+        })
     }
 
     private func makeImportPlan(
         for source: UniConnectImportSourceDocument
     ) -> UniConnectImportPlan {
-        UniConnectImportPlanner().plan(
-            importing: source.document,
-            against: currentImportDocument(),
-            sourceMap: source.sourceMap
+        let entries = liveImportWorkspaces()
+        return UniConnectImportPlanner().plan(
+            importing: source,
+            against: importDocument(from: entries),
+            existingSSHCredentialRecordsByWorkspaceIndex:
+                importSSHCredentialRecords(from: entries)
         )
     }
 
     private func makePreparedImport(
         for source: UniConnectImportSourceDocument
     ) -> UniConnectPreparedImport {
-        UniConnectImportPlanner().prepare(
-            importing: source.document,
-            against: currentImportDocument(),
-            sourceMap: source.sourceMap
+        let entries = liveImportWorkspaces()
+        return UniConnectImportPlanner().prepare(
+            importing: source,
+            against: importDocument(from: entries),
+            existingSSHCredentialRecordsByWorkspaceIndex:
+                importSSHCredentialRecords(from: entries)
         )
     }
 
@@ -2694,6 +3097,10 @@ final class UniConnectCoordinator: ObservableObject {
             readDocument: { [weak self] in
                 guard let self else { throw ImportApplicationError.runtimeUnavailable }
                 return self.currentImportDocument()
+            },
+            readSSHCredentialRecords: { [weak self] in
+                guard let self else { throw ImportApplicationError.runtimeUnavailable }
+                return self.currentImportSSHCredentialRecords()
             },
             readCheckpointSnapshot: {
                 guard let snapshot = AppDelegate.shared?.uniConnectImportSessionSnapshot(
@@ -2790,7 +3197,16 @@ final class UniConnectCoordinator: ObservableObject {
         let candidates = liveImportWorkspaces().filter {
             liveEntry($0, matches: mutation.workspace)
         }
-        guard candidates.count == 1, let entry = candidates.first else { return false }
+        guard candidates.count == 1,
+              let entry = candidates.first,
+              let expectedRecord = try validatedSSHCredentialRecord(
+                  mutation.sshCredentialRecord,
+                  for: mutation.workspace
+              ),
+              let credentialID = entry.workspace.uniConnectProfile?.credentialId,
+              UniConnectVault.shared.credentialRecord(for: credentialID) == expectedRecord else {
+            return false
+        }
         for row in mutation.windowRows where row.requiresMutation {
             guard mutation.workspace.windows.indices.contains(row.id.windowIndex),
                   let tmux = mutation.workspace.windows[row.id.windowIndex].tmux else {
@@ -2857,12 +3273,14 @@ final class UniConnectCoordinator: ObservableObject {
                 throw ImportApplicationError.windowCreationFailed
             }
         case .ssh:
-            guard let connect = item.connect,
-                  UniConnectSSH.validateConnectCommand(connect) == nil,
+            guard let credentialRecord = try validatedSSHCredentialRecord(
+                      mutation.sshCredentialRecord,
+                      for: item
+                  ),
                   let created = createSSHWorkspace(
                       name: item.name,
                       color: item.color,
-                      connectCommand: connect,
+                      credentialRecord: credentialRecord,
                       in: tabManager,
                       select: false,
                       probeImmediately: false,
@@ -2896,7 +3314,12 @@ final class UniConnectCoordinator: ObservableObject {
                 }
             }
         }
-        try applyImportedWorkspaceMetadata(item, to: workspace, in: tabManager)
+        try applyImportedWorkspaceMetadata(
+            item,
+            sshCredentialRecord: mutation.sshCredentialRecord,
+            to: workspace,
+            in: tabManager
+        )
         closeUntouchedInitialWorkspaces()
     }
 
@@ -2905,16 +3328,19 @@ final class UniConnectCoordinator: ObservableObject {
         guard entry.document.kind == mutation.workspace.kind else {
             throw ImportApplicationError.workspaceKindMismatch
         }
-        let previousSSHConnect = entry.workspace.uniConnectProfile?.credentialId.flatMap {
-            UniConnectVault.shared.connectCommand(for: $0)
-        }?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let importedSSHConnect = mutation.workspace.connect?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let previousSSHRecord = entry.workspace.uniConnectProfile?.credentialId.flatMap {
+            UniConnectVault.shared.credentialRecord(for: $0)
+        }
+        let importedSSHRecord = try validatedSSHCredentialRecord(
+            mutation.sshCredentialRecord,
+            for: mutation.workspace
+        )
         let reconnectSSHWindows = mutation.workspace.kind == .ssh
-            && previousSSHConnect != importedSSHConnect
+            && previousSSHRecord != importedSSHRecord
         let orderedPanelIDs = entry.workspace.uniConnectOrderedTerminalPanelIds()
         try applyImportedWorkspaceMetadata(
             mutation.workspace,
+            sshCredentialRecord: importedSSHRecord,
             to: entry.workspace,
             in: entry.tabManager
         )
@@ -2976,6 +3402,7 @@ final class UniConnectCoordinator: ObservableObject {
 
     private func applyImportedWorkspaceMetadata(
         _ item: UniConnectDocument.Workspace,
+        sshCredentialRecord: UniConnectSSHCredentialRecord?,
         to workspace: Workspace,
         in tabManager: TabManager
     ) throws {
@@ -2997,36 +3424,36 @@ final class UniConnectCoordinator: ObservableObject {
             workspace.uniConnectProfile = profile
             workspace.uniConnectConfigureLocalRoot(folder)
         case .ssh:
-            guard let connect = item.connect,
-                  UniConnectSSH.validateConnectCommand(connect) == nil else {
-                throw ImportApplicationError.invalidMutation
-            }
-            let normalizedConnect = connect.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let record = try validatedSSHCredentialRecord(
+                sshCredentialRecord,
+                for: item
+            ) else { throw ImportApplicationError.invalidMutation }
             let currentCredentialID = profile.credentialId
-            let currentConnect = currentCredentialID.flatMap {
-                UniConnectVault.shared.connectCommand(for: $0)
+            let currentRecord = currentCredentialID.flatMap {
+                UniConnectVault.shared.credentialRecord(for: $0)
             }
             let credentialID: UUID
             if let currentCredentialID,
-               currentConnect == normalizedConnect {
+               currentRecord == record {
                 credentialID = currentCredentialID
             } else if isRestoringImportCheckpoint,
                       let checkpointCredentialID = UniConnectVault.shared.credentialID(
-                          matching: normalizedConnect,
+                          matching: record,
                           excluding: currentCredentialID
                       ) {
                 credentialID = checkpointCredentialID
             } else {
                 // Connection changes get a fresh immutable binding. The previous vault
                 // entry remains available to snapshots and to transactional rollback.
-                credentialID = try UniConnectVault.shared.storeOrThrow(
-                    connectCommand: normalizedConnect
+                credentialID = try UniConnectVault.shared.createImmutableRevision(
+                    connectCommand: record.connectCommand,
+                    effectiveTarget: record.effectiveTarget
                 )
             }
             profile.credentialId = credentialID
-            profile.hostLabel = UniConnectSSH.hostLabel(from: connect)
+            profile.hostLabel = UniConnectSSH.hostLabel(from: record.connectCommand)
             profile.localRoot = nil
-            if currentConnect != normalizedConnect {
+            if currentRecord != record {
                 profile.tmuxReady = false
             }
             workspace.uniConnectProfile = profile
@@ -3049,6 +3476,30 @@ final class UniConnectCoordinator: ObservableObject {
         } else if workspace.groupId != nil {
             tabManager.removeWorkspaceFromGroup(workspaceId: workspace.id)
         }
+    }
+
+    /// Validates that transaction-owned SSH metadata and its encrypted record are
+    /// the same declaration. Import never accepts a command-only or unresolved record.
+    private func validatedSSHCredentialRecord(
+        _ record: UniConnectSSHCredentialRecord?,
+        for workspace: UniConnectDocument.Workspace
+    ) throws -> UniConnectSSHCredentialRecord? {
+        guard workspace.kind == .ssh else { return nil }
+        guard let rawConnect = workspace.connect,
+              UniConnectSSH.validateConnectCommand(rawConnect) == nil,
+              let record,
+              let effectiveTarget = record.effectiveTarget else {
+            throw ImportApplicationError.invalidMutation
+        }
+        let connect = rawConnect.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard record.connectCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+            == connect else {
+            throw ImportApplicationError.invalidMutation
+        }
+        return UniConnectSSHCredentialRecord(
+            connectCommand: connect,
+            effectiveTarget: effectiveTarget
+        )
     }
 
     private func appendImportedWindow(
@@ -3356,7 +3807,14 @@ final class UniConnectCoordinator: ObservableObject {
         }
         try stopConflictingImportedAgents(beforeRestoring: checkpoint)
 
-        let source = UniConnectImportSourceDocument(document: checkpoint, sourceMap: .empty)
+        let checkpointCredentialRecords = importSSHCredentialRecords(
+            referencedBy: checkpoint
+        )
+        let source = UniConnectImportSourceDocument(
+            document: checkpoint,
+            sourceMap: .empty,
+            sshCredentialRecordsByWorkspaceIndex: checkpointCredentialRecords
+        )
         let plan = makeImportPlan(for: source)
         guard !plan.hasBlockingIssues else { throw ImportApplicationError.rollbackMismatch }
         for row in plan.mutationRows.sorted(by: { $0.sourceIndex < $1.sourceIndex }) {
@@ -3366,7 +3824,8 @@ final class UniConnectCoordinator: ObservableObject {
                 existingWorkspaceIndex: row.existingWorkspaceIndex,
                 existingWorkspaceID: row.existingWorkspaceID,
                 workspace: row.workspace,
-                windowRows: row.windowRows
+                windowRows: row.windowRows,
+                sshCredentialRecord: checkpointCredentialRecords[row.sourceIndex]
             )
             try applyImportMutation(mutation)
         }
@@ -3434,11 +3893,11 @@ final class UniConnectCoordinator: ObservableObject {
                     ?? entry.workspace.uniConnectLocalBoxRoot
                     ?? ""
                 guard let boxRoot = UniConnectLocalWindowRecord.validatedBoxRoot(rawBoxRoot),
-                      UniConnectLocalBoxRootPolicy.isAvailableDirectory(boxRoot),
                       let workingDirectory = try? importedLocalWorkingDirectory(
                           for: desiredWindow,
                           boxRoot: boxRoot
                       ),
+                      UniConnectLocalBoxRootPolicy.isAvailableDirectory(workingDirectory),
                       entry.workspace.respawnTerminalSurface(
                           panelId: panelID,
                           command: Self.localLoginShellCommand,
@@ -3467,18 +3926,20 @@ final class UniConnectCoordinator: ObservableObject {
                   let active = localWindow.activeConversation else {
                 return nil
             }
-            return active.kind.rawValue
-                + "\u{0}"
-                + (active.kind == .claude
-                    ? active.sessionID.lowercased()
-                    : active.sessionID)
+            return UniConnectLocalAgentRestoreClaimPolicy.canonicalKey(
+                kind: active.kind,
+                sessionID: active.sessionID
+            )
         }
         guard let claude = window.claudeSession?
             .trimmingCharacters(in: .whitespacesAndNewlines),
               !claude.isEmpty else {
             return nil
         }
-        return RestorableAgentKind.claude.rawValue + "\u{0}" + claude.lowercased()
+        return UniConnectLocalAgentRestoreClaimPolicy.canonicalKey(
+            kind: .claude,
+            sessionID: claude
+        )
     }
 
     private func liveEntry(
@@ -3807,8 +4268,7 @@ final class UniConnectCoordinator: ObservableObject {
 
     private func seedLocalWindows(_ windows: [UniConnectDocument.Window], in workspace: Workspace) -> Bool {
         guard !windows.isEmpty else { return true }
-        guard let boxRoot = workspace.uniConnectLocalBoxRoot,
-              UniConnectLocalBoxRootPolicy.isAvailableDirectory(boxRoot) else {
+        guard let boxRoot = workspace.uniConnectLocalBoxRoot else {
             return false
         }
         // The first window reuses the initial terminal; the rest are new tabs.
@@ -3817,7 +4277,7 @@ final class UniConnectCoordinator: ObservableObject {
             guard let workingDirectory = try? importedLocalWorkingDirectory(
                 for: window,
                 boxRoot: boxRoot
-            ) else {
+            ), UniConnectLocalBoxRootPolicy.isAvailableDirectory(workingDirectory) else {
                 return false
             }
             let panelId: UUID?
@@ -3898,7 +4358,8 @@ final class UniConnectCoordinator: ObservableObject {
               let panelId = workspace.focusedPanelId,
               let session = workspace.uniConnectTmuxSessionsByPanelId[panelId],
               let credentialId = profile.credentialId,
-              let connect = UniConnectVault.shared.connectCommand(for: credentialId) else {
+              let credentialRecord = UniConnectVault.shared.credentialRecord(for: credentialId),
+              credentialRecord.effectiveTarget != nil else {
             presentError(String(
                 localized: "uniconnect.ssh.terminate.error.notRemoteTmux",
                 defaultValue: "The active window is not a tmux window in an SSH box."
@@ -3930,12 +4391,11 @@ final class UniConnectCoordinator: ObservableObject {
         ))
         alert.addButton(withTitle: String(localized: "common.cancel", defaultValue: "Cancel"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        guard let invocation = UniConnectSSHConnectCommandValidator()
-            .validatedCommand(connect)?
-            .invocation(
-                injecting: ["-T"] + UniConnectSSH.baseClientOptions,
-                remoteCommand: "tmux kill-session -t \(UniConnectSSH.shellQuote(session))"
-            ) else {
+        guard let invocation = UniConnectSSH.processInvocation(
+            credentialRecord: credentialRecord,
+            injecting: ["-T"] + UniConnectSSH.baseClientOptions,
+            remoteCommand: "tmux kill-session -t \(UniConnectSSH.shellQuote(session))"
+        ) else {
             presentError(String(
                 localized: "uniconnect.ssh.error.secureInvocation",
                 defaultValue: "A secure SSH connection could not be prepared."
@@ -4106,8 +4566,12 @@ final class UniConnectCoordinator: ObservableObject {
             guard !routeIDs.isEmpty else { return }
             allRouteIDs.formUnion(routeIDs)
             guard let credentialID = profile.credentialId,
-                  let connectCommand = UniConnectVault.shared.connectCommand(for: credentialID),
-                  let session = UniConnectSSH.detectedSession(fromConnectCommand: connectCommand) else {
+                  let credentialRecord = UniConnectVault.shared.credentialRecord(
+                      for: credentialID
+                  ),
+                  let session = UniConnectSSH.detectedSession(
+                      fromCredentialRecord: credentialRecord
+                  ) else {
                 hasUnavailableCredential = true
                 return
             }
@@ -4230,6 +4694,16 @@ extension Workspace {
     /// True for the stock workspace created when there is nothing to show → empty state.
     var uniConnectShowsStarter: Bool { uniConnectIsStarter && uniConnectProfile == nil }
 
+    /// Whether this workspace represents a real box in workspace navigation.
+    var uniConnectAppearsInWorkspaceNavigation: Bool { !uniConnectShowsStarter }
+
+    /// Converts cmux's required bootstrap workspace into UniConnect's non-user-facing empty state.
+    func uniConnectConfigureAsStarter() {
+        guard uniConnectProfile == nil else { return }
+        uniConnectPlaceholderPanelIds = Set(panels.keys)
+        uniConnectIsStarter = true
+    }
+
     /// True while an SSH workspace has no tmux-bound window yet → show the welcome page.
     var uniConnectShowsWelcome: Bool {
         guard uniConnectIsSSH else { return false }
@@ -4292,12 +4766,15 @@ extension Workspace {
         guard let profile = uniConnectProfile, profile.isSSH,
               let session = panelSnapshot.terminal?.uniConnectTmuxSession,
               let credentialId = profile.credentialId,
-              let connect = UniConnectVault.shared.connectCommand(for: credentialId) else {
+              let credentialRecord = UniConnectVault.shared.credentialRecord(for: credentialId),
+              let effectiveTarget = credentialRecord.effectiveTarget else {
             return nil
         }
         let safe = UniConnectSSH.sanitizedTmuxName(session)
-        if let detected = UniConnectSSH.detectedSession(fromConnectCommand: connect),
-           let target = UniConnectSSHTargetKey(session: detected, tmuxSession: safe),
+        if let target = UniConnectSSHTargetKey(
+            effectiveTarget: effectiveTarget,
+            tmuxSession: safe
+        ),
            UniConnectCoordinator.shared.hasConflictingLiveSSHTarget(
                target,
                workspaceID: id,
@@ -4314,11 +4791,12 @@ extension Workspace {
             tmuxSession: safe
         )
         guard let commandLine = UniConnectSSH.attachCommandLine(
-            connectCommand: connect,
+            credentialRecord: credentialRecord,
             session: safe,
             directory: nil,
             bridge: bridge,
-            existingSessionOnly: true
+            existingSessionOnly: true,
+            recoverMissingSession: true
         ), let launcher = UniConnectSSH.writeLauncherScript(
             commandLine: commandLine,
             label: safe,
@@ -4331,7 +4809,7 @@ extension Workspace {
     }
 
     /// Marks a tmux-bound window whose ssh client died so the tab itself says so.
-    func uniConnectMarkDisconnected(panelId: UUID) {
+    func uniConnectMarkDisconnected(panelId: UUID, exitCode: UInt32? = nil) {
         guard uniConnectTmuxSessionsByPanelId[panelId] != nil else { return }
         let suffix = String(
             localized: "uniconnect.window.disconnectedSuffix",
@@ -4354,9 +4832,14 @@ extension Workspace {
         }
         uniConnectProfile?.touch()
         uniConnectDisconnectedPanelIds.insert(panelId)
-        // The tmux session on the server is alive; only the ssh client died (slow host,
-        // network drop). Try to re-attach on our own before making the user do it.
-        UniConnectCoordinator.shared.scheduleReconnect(panelId: panelId, in: self)
+        if UniConnectSSHReconnectPolicy.shouldAutomaticallyReconnect(afterChildExitCode: exitCode) {
+            // A transport loss can be recovered without changing the saved tmux binding.
+            UniConnectCoordinator.shared.scheduleReconnect(panelId: panelId, in: self)
+        } else {
+            // Preserve the terminal and its error text, but cancel pending delays and
+            // stability resets so a permanent bootstrap error cannot restart the loop.
+            UniConnectCoordinator.shared.stopAutomaticReconnect(panelId: panelId, in: self)
+        }
     }
 }
 

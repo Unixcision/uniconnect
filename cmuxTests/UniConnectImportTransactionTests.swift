@@ -108,6 +108,7 @@ struct UniConnectImportTransactionTests {
         let transaction = UniConnectImportTransaction(
             journal: FakeImportJournal(),
             tmuxVerifier: verifier,
+            sshTargetResolver: FakeImportSSHTargetResolver(),
             makeID: DeterministicIDs().next,
             now: { 300 }
         )
@@ -130,6 +131,197 @@ struct UniConnectImportTransactionTests {
         #expect(invocations[0].arguments.last == "tmux has-session -t 'worker_1'")
         #expect(!invocations[0].arguments.joined(separator: " ").contains("new-session"))
         #expect(!invocations[0].arguments.joined(separator: " ").contains("attach-session"))
+    }
+
+    @Test("An indeterminate SSH endpoint fails closed before checkpoint or mutation")
+    func indeterminateSSHTargetFailsBeforeMutation() async throws {
+        let existing = document([])
+        let imported = document([remote(
+            id: UUID(uuidString: "91919191-9191-9191-9191-919191919191")!,
+            connect: "ssh ops@alias.example.test"
+        )])
+        let prepared = UniConnectImportPlanner().prepare(
+            importing: imported,
+            against: existing
+        )
+        let adapter = FakeImportAdapter(document: existing)
+        let verifier = FakeTmuxVerifier(status: .available)
+        let resolver = FakeImportSSHTargetResolver(scriptedOutcomes: [.indeterminate])
+        let transaction = UniConnectImportTransaction(
+            journal: FakeImportJournal(),
+            tmuxVerifier: verifier,
+            sshTargetResolver: resolver,
+            makeID: DeterministicIDs().next,
+            now: { 325 }
+        )
+
+        let result = await transaction.execute(
+            prepared: prepared,
+            selection: .allMutations(in: prepared.plan),
+            adapter: adapter
+        )
+
+        #expect(result == .failedBeforeMutation(.invalidSelection))
+        #expect(adapter.checkpointCount == 0)
+        #expect(adapter.appliedRowIDs.isEmpty)
+        #expect(await verifier.receivedInvocations().isEmpty)
+        #expect(await resolver.receivedRequests().count == 1)
+    }
+
+    @Test("SSH resolution is captured once and pins preflight plus mutation")
+    func resolvedSSHTargetPinsEveryLaterPhase() async throws {
+        let markdown = """
+        ## Cajas SSH
+        ### Production — tmux EXISTENTE (no crear)
+        ```bash
+        ssh deployment-alias
+        ```
+        | Ventana | tmux |
+        |---|---|
+        | worker | worker_1 |
+        """
+        let parsed = try UniConnectMarkdown.parseDetailed(markdown)
+        let existing = document([])
+        let prepared = UniConnectImportPlanner().prepare(
+            importing: parsed,
+            against: existing
+        )
+        let target = try #require(UniConnectSSHEffectiveTarget(
+            user: "deploy",
+            host: "203.0.113.42",
+            port: 2222
+        ))
+        let resolver = FakeImportSSHTargetResolver(scriptedOutcomes: [.resolved(target)])
+        let verifier = FakeTmuxVerifier(status: .available)
+        let adapter = FakeImportAdapter(document: existing)
+        let transaction = UniConnectImportTransaction(
+            journal: FakeImportJournal(),
+            tmuxVerifier: verifier,
+            sshTargetResolver: resolver,
+            makeID: DeterministicIDs().next,
+            now: { 350 }
+        )
+
+        let result = await transaction.execute(
+            prepared: prepared,
+            selection: .allMutations(in: prepared.plan),
+            adapter: adapter
+        )
+
+        guard case .committed = result else {
+            Issue.record("Expected pinned SSH import to commit, got \(result)")
+            return
+        }
+        #expect(await resolver.receivedRequests().count == 1)
+        #expect(adapter.appliedSSHCredentialRecords == [
+            .init(
+                connectCommand: "ssh deployment-alias",
+                effectiveTarget: target
+            ),
+        ])
+        let invocation = try #require(await verifier.receivedInvocations().first)
+        #expect(invocation.arguments.contains("HostName=203.0.113.42"))
+        #expect(invocation.arguments.contains("User=deploy"))
+        #expect(invocation.arguments.contains("Port=2222"))
+        #expect(invocation.arguments.contains("deployment-alias"))
+        #expect(invocation.environment["SSHPASS"] == nil)
+    }
+
+    @Test("A backup's captured SSH target is reused without consulting current config")
+    func capturedBackupTargetSkipsResolution() async throws {
+        let workspaceID = UUID(uuidString: "93939393-9393-9393-9393-939393939393")!
+        let importedWorkspace = remote(
+            id: workspaceID,
+            connect: "ssh ops@historical-alias"
+        )
+        let target = try #require(UniConnectSSHEffectiveTarget(
+            user: "ops",
+            host: "198.51.100.77",
+            port: 2207
+        ))
+        let record = UniConnectSSHCredentialRecord(
+            connectCommand: importedWorkspace.connect!,
+            effectiveTarget: target
+        )
+        let source = UniConnectImportSourceDocument(
+            document: document([importedWorkspace]),
+            sourceMap: .empty,
+            sshCredentialRecordsByWorkspaceIndex: [0: record]
+        )
+        let prepared = UniConnectImportPlanner().prepare(
+            importing: source,
+            against: document([])
+        )
+        let resolver = FakeImportSSHTargetResolver(scriptedOutcomes: [.indeterminate])
+        let adapter = FakeImportAdapter(document: document([]))
+        let transaction = UniConnectImportTransaction(
+            journal: FakeImportJournal(),
+            tmuxVerifier: FakeTmuxVerifier(status: .available),
+            sshTargetResolver: resolver,
+            makeID: DeterministicIDs().next,
+            now: { 360 }
+        )
+
+        let result = await transaction.execute(
+            prepared: prepared,
+            selection: .allMutations(in: prepared.plan),
+            adapter: adapter
+        )
+
+        guard case .committed = result else {
+            Issue.record("Expected historical target import to commit, got \(result)")
+            return
+        }
+        #expect(await resolver.receivedRequests().isEmpty)
+        #expect(adapter.appliedSSHCredentialRecords == [record])
+    }
+
+    @Test("Aliases resolving to one endpoint cannot import duplicate tmux owners")
+    func resolvedAliasesDeduplicateBeforeMutation() async throws {
+        var first = remote(
+            id: UUID(uuidString: "92929292-9292-9292-9292-929292929291")!,
+            connect: "ssh ops@alias-a"
+        )
+        first.name = "Remote A"
+        var second = remote(
+            id: UUID(uuidString: "92929292-9292-9292-9292-929292929292")!,
+            connect: "ssh ops@alias-b"
+        )
+        second.name = "Remote B"
+        let existing = document([])
+        let prepared = UniConnectImportPlanner().prepare(
+            importing: document([first, second]),
+            against: existing
+        )
+        #expect(prepared.plan.rows.map(\.outcome) == [.create, .create])
+        let target = try #require(UniConnectSSHEffectiveTarget(
+            user: "ops",
+            host: "canonical.example.test",
+            port: 22
+        ))
+        let resolver = FakeImportSSHTargetResolver(scriptedOutcomes: [
+            .resolved(target),
+            .resolved(target),
+        ])
+        let adapter = FakeImportAdapter(document: existing)
+        let transaction = UniConnectImportTransaction(
+            journal: FakeImportJournal(),
+            tmuxVerifier: FakeTmuxVerifier(status: .available),
+            sshTargetResolver: resolver,
+            makeID: DeterministicIDs().next,
+            now: { 375 }
+        )
+
+        let result = await transaction.execute(
+            prepared: prepared,
+            selection: .allMutations(in: prepared.plan),
+            adapter: adapter
+        )
+
+        #expect(result == .failedBeforeMutation(.blockedPlan))
+        #expect(adapter.checkpointCount == 0)
+        #expect(adapter.appliedRowIDs.isEmpty)
+        #expect(await resolver.receivedRequests().first?.count == 2)
     }
 
     @Test("Startup recovery rolls back an interrupted applying journal")
@@ -543,9 +735,19 @@ struct UniConnectImportTransactionTests {
         let newConnect = "ssh ops@new.example.test"
         let existing = document([remote(id: id, connect: oldConnect)])
         let imported = document([remote(id: id, connect: newConnect)])
+        let oldTarget = try #require(UniConnectSSHEffectiveTarget(
+            user: "ops",
+            host: "old.example.test",
+            port: 22
+        ))
+        let oldRecord = UniConnectSSHCredentialRecord(
+            connectCommand: oldConnect,
+            effectiveTarget: oldTarget
+        )
         let prepared = UniConnectImportPlanner().prepare(
             importing: imported,
-            against: existing
+            against: existing,
+            existingSSHCredentialRecordsByWorkspaceIndex: [0: oldRecord]
         )
         let window = try #require(prepared.plan.rows.first?.windowRows.first)
         guard case .update(.attachExistingTmux(session: "worker_1")) = window.action else {
@@ -556,10 +758,12 @@ struct UniConnectImportTransactionTests {
             document: existing,
             failPersistAtCall: 1
         )
+        adapter.currentCredentialRecords = [0: oldRecord]
         let verifier = FakeTmuxVerifier(status: .available)
         let transaction = UniConnectImportTransaction(
             journal: FakeImportJournal(),
             tmuxVerifier: verifier,
+            sshTargetResolver: FakeImportSSHTargetResolver(),
             makeID: DeterministicIDs().next,
             now: { 800 }
         )
@@ -577,6 +781,7 @@ struct UniConnectImportTransactionTests {
         #expect(adapter.document == existing)
         #expect(adapter.activeSSHConnect == oldConnect)
         #expect(adapter.appliedSSHConnects == [newConnect])
+        #expect(adapter.currentCredentialRecords == [0: oldRecord])
         let invocation = try #require(await verifier.receivedInvocations().first)
         #expect(invocation.arguments.contains("ops@new.example.test"))
         #expect(invocation.arguments.last == "tmux has-session -t 'worker_1'")
@@ -594,6 +799,7 @@ struct UniConnectImportTransactionTests {
         let transaction = UniConnectImportTransaction(
             journal: FakeImportJournal(),
             tmuxVerifier: FakeTmuxVerifier(status: .available),
+            sshTargetResolver: FakeImportSSHTargetResolver(),
             makeID: DeterministicIDs().next,
             now: { 900 }
         )
@@ -714,9 +920,11 @@ struct UniConnectImportTransactionTests {
         importedSnapshot.windows[0].tabManager.workspaces[0]
             .panels[0].terminal?.uniConnectTmuxSession = "worker_1"
         let encryptedVault = Data("immutable-vault-fixture".utf8)
+        var liveCredentialRecords: [Int: UniConnectSSHCredentialRecord] = [:]
         let adapter = UniConnectLiveImportAdapter(
             checkpoints: checkpoints,
             readDocument: { liveDocument },
+            readSSHCredentialRecords: { liveCredentialRecords },
             readCheckpointSnapshot: { liveSnapshot },
             readStateSnapshot: { liveSnapshot },
             applyMutation: { mutation in
@@ -724,6 +932,9 @@ struct UniConnectImportTransactionTests {
                     mutation,
                     to: liveDocument
                 )
+                if let record = mutation.sshCredentialRecord {
+                    liveCredentialRecords[0] = record
+                }
                 liveSnapshot = importedSnapshot
             },
             verifyMutation: { _ in
@@ -749,6 +960,7 @@ struct UniConnectImportTransactionTests {
         let transaction = UniConnectImportTransaction(
             journal: FakeImportJournal(),
             tmuxVerifier: FakeTmuxVerifier(status: .available),
+            sshTargetResolver: FakeImportSSHTargetResolver(),
             makeID: DeterministicIDs().next,
             now: { 1_050 }
         )
@@ -764,6 +976,63 @@ struct UniConnectImportTransactionTests {
             return
         }
         #expect(liveDocument == imported)
+        #expect(liveCredentialRecords[0]?.effectiveTarget != nil)
+    }
+
+    @Test("Committed verification rejects an SSH alias retargeted after capture")
+    func committedVerificationRejectsRetargetedAlias() async throws {
+        let workspaceID = UUID(uuidString: "61616161-6161-6161-6161-616161616161")!
+        let workspace = remote(id: workspaceID, connect: "ssh deployment-alias")
+        let capturedTarget = try #require(UniConnectSSHEffectiveTarget(
+            user: "deploy",
+            host: "203.0.113.61",
+            port: 22
+        ))
+        let retargeted = try #require(UniConnectSSHEffectiveTarget(
+            user: "deploy",
+            host: "203.0.113.62",
+            port: 22
+        ))
+        let capturedRecord = UniConnectSSHCredentialRecord(
+            connectCommand: workspace.connect!,
+            effectiveTarget: capturedTarget
+        )
+        var currentRecords: [Int: UniConnectSSHCredentialRecord] = [
+            0: .init(
+                connectCommand: workspace.connect!,
+                effectiveTarget: retargeted
+            ),
+        ]
+        let snapshot = sessionSnapshotFixture()
+        let adapter = UniConnectLiveImportAdapter(
+            checkpoints: CapturingImportCheckpointRepository(),
+            readDocument: { document([workspace]) },
+            readSSHCredentialRecords: { currentRecords },
+            readCheckpointSnapshot: { snapshot },
+            readStateSnapshot: { snapshot },
+            applyMutation: { _ in },
+            verifyMutation: { _ in true },
+            finalizeMutation: { _ in },
+            persist: {},
+            restoreSessionSnapshot: { _ in },
+            readVaultSnapshot: { nil },
+            restoreVault: { _ in },
+            restoreVaultDelta: { checkpoint, _ in checkpoint },
+            verifyVault: { _ in true }
+        )
+        let mutation = UniConnectImportMutation(
+            rowID: 0,
+            outcome: .update,
+            existingWorkspaceIndex: 0,
+            existingWorkspaceID: workspaceID,
+            workspace: workspace,
+            windowRows: [],
+            sshCredentialRecord: capturedRecord
+        )
+
+        #expect(try await adapter.verifyCommitted([mutation]) == false)
+        currentRecords[0] = capturedRecord
+        #expect(try await adapter.verifyCommitted([mutation]))
     }
 
     @Test("SSH import token still detects structural and canonical binding changes")
@@ -1094,6 +1363,11 @@ private actor CapturingImportCheckpointRepository: UniConnectImportCheckpointing
 private final class FakeImportAdapter: UniConnectImportTransactionApplying {
     enum FixtureError: Error { case requestedFailure }
 
+    private struct Checkpoint {
+        let document: UniConnectDocument
+        let credentialRecords: [Int: UniConnectSSHCredentialRecord]
+    }
+
     var document: UniConnectDocument
     var persistCount = 0
     var rollbackCount = 0
@@ -1103,6 +1377,8 @@ private final class FakeImportAdapter: UniConnectImportTransactionApplying {
     var pruneCutoffs: [Date] = []
     var appliedRowIDs: [Int] = []
     var appliedSSHConnects: [String] = []
+    var appliedSSHCredentialRecords: [UniConnectSSHCredentialRecord] = []
+    var currentCredentialRecords: [Int: UniConnectSSHCredentialRecord] = [:]
     var activeSSHConnect: String?
     var failOnRowID: Int?
     var failPersistAtCall: Int?
@@ -1111,7 +1387,7 @@ private final class FakeImportAdapter: UniConnectImportTransactionApplying {
     var rollbackVerificationSucceeds = true
     var injectConcurrentMutationDuringVerification = false
     private(set) var externalRevision = 0
-    private var checkpoints: [UUID: UniConnectDocument] = [:]
+    private var checkpoints: [UUID: Checkpoint] = [:]
 
     var remainingCheckpointCount: Int { checkpoints.count }
 
@@ -1128,6 +1404,10 @@ private final class FakeImportAdapter: UniConnectImportTransactionApplying {
 
     func currentDocument() async throws -> UniConnectDocument { document }
 
+    func currentSSHCredentialRecords() async throws -> [Int: UniConnectSSHCredentialRecord] {
+        currentCredentialRecords
+    }
+
     func currentStateToken() async throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -1136,7 +1416,10 @@ private final class FakeImportAdapter: UniConnectImportTransactionApplying {
 
     func createCheckpoint(id: UUID) async throws {
         checkpointCount += 1
-        checkpoints[id] = document
+        checkpoints[id] = Checkpoint(
+            document: document,
+            credentialRecords: currentCredentialRecords
+        )
     }
 
     func deleteCheckpoint(id: UUID) async throws {
@@ -1155,6 +1438,15 @@ private final class FakeImportAdapter: UniConnectImportTransactionApplying {
         appliedRowIDs.append(mutation.rowID)
         if mutation.workspace.kind == .ssh {
             activeSSHConnect = mutation.workspace.connect
+            if let record = mutation.sshCredentialRecord {
+                appliedSSHCredentialRecords.append(record)
+                if let index = document.workspaces.firstIndex(where: {
+                    if let id = mutation.workspace.id { return $0.id == id }
+                    return $0.name == mutation.workspace.name
+                }) {
+                    currentCredentialRecords[index] = record
+                }
+            }
             if let connect = mutation.workspace.connect {
                 appliedSSHConnects.append(connect)
             }
@@ -1180,12 +1472,18 @@ private final class FakeImportAdapter: UniConnectImportTransactionApplying {
     }
 
     func verifyCommitted(_ mutations: [UniConnectImportMutation]) async throws -> Bool {
+        let sourceRecords = Dictionary(uniqueKeysWithValues: mutations.enumerated().compactMap {
+            index, mutation in
+            mutation.sshCredentialRecord.map { (index, $0) }
+        })
         let replanned = UniConnectImportPlanner().plan(
             importing: UniConnectDocument(
                 workspaces: mutations.map(\.workspace),
                 savedAt: Date(timeIntervalSince1970: 0)
             ),
-            against: document
+            against: document,
+            sshCredentialRecordsByWorkspaceIndex: sourceRecords,
+            existingSSHCredentialRecordsByWorkspaceIndex: currentCredentialRecords
         )
         return replanned.rows.allSatisfy { $0.outcome == .unchanged }
     }
@@ -1194,17 +1492,25 @@ private final class FakeImportAdapter: UniConnectImportTransactionApplying {
         _ = expectedStateToken
         guard let checkpoint = checkpoints[checkpointID] else { throw FixtureError.requestedFailure }
         rollbackCount += 1
-        document = checkpoint
-        activeSSHConnect = checkpoint.workspaces.first(where: { $0.kind == .ssh })?.connect
+        document = checkpoint.document
+        currentCredentialRecords = checkpoint.credentialRecords
+        activeSSHConnect = checkpoint.document.workspaces
+            .first(where: { $0.kind == .ssh })?.connect
     }
 
     func verifyRolledBack(to checkpointID: UUID) async throws -> Bool {
         verifyRollbackCount += 1
-        return rollbackVerificationSucceeds && checkpoints[checkpointID] == document
+        guard let checkpoint = checkpoints[checkpointID] else { return false }
+        return rollbackVerificationSucceeds
+            && checkpoint.document == document
+            && checkpoint.credentialRecords == currentCredentialRecords
     }
 
     func installCheckpoint(id: UUID, document: UniConnectDocument) {
-        checkpoints[id] = document
+        checkpoints[id] = Checkpoint(
+            document: document,
+            credentialRecords: currentCredentialRecords
+        )
     }
 }
 
@@ -1262,6 +1568,34 @@ private actor FakeTmuxVerifier: UniConnectExistingTmuxVerifying {
     }
 
     func receivedInvocations() -> [UniConnectSSHProcessInvocation] { invocations }
+}
+
+private actor FakeImportSSHTargetResolver: UniConnectSSHTargetResolving {
+    private let scriptedOutcomes: [UniConnectSSHTargetResolutionOutcome]?
+    private var requests: [[UniConnectSSHTargetResolutionRequest]] = []
+
+    init(scriptedOutcomes: [UniConnectSSHTargetResolutionOutcome]? = nil) {
+        self.scriptedOutcomes = scriptedOutcomes
+    }
+
+    func resolve(
+        _ requests: [UniConnectSSHTargetResolutionRequest]
+    ) async -> [UniConnectSSHTargetResolutionOutcome] {
+        self.requests.append(requests)
+        if let scriptedOutcomes { return scriptedOutcomes }
+        return requests.map { request in
+            guard let target = UniConnectSSHEffectiveTarget(
+                user: request.explicitUser ?? "fixture",
+                host: request.explicitHostName ?? request.originalHost,
+                port: request.explicitPort ?? 22
+            ) else {
+                return .indeterminate
+            }
+            return .resolved(target)
+        }
+    }
+
+    func receivedRequests() -> [[UniConnectSSHTargetResolutionRequest]] { requests }
 }
 
 private final class DeterministicIDs: @unchecked Sendable {

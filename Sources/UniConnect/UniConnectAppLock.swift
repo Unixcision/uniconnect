@@ -4,7 +4,7 @@ import LocalAuthentication
 
 // MARK: - App lock (Touch ID gate)
 //
-// UniConnect refuses to show anything until the owner authenticates with Touch ID.
+// UniConnect refuses to show anything until macOS authenticates the owner.
 // Locking never touches the underlying workspaces: terminals, SSH and tmux keep
 // running; the lock is a full-screen borderless window above everything.
 
@@ -25,7 +25,8 @@ struct UniConnectLocalAuthenticator: UniConnectAuthenticating {
     func evaluate(_ policy: LAPolicy, reason: String, completion: @escaping (Bool, Error?) -> Void) {
         let context = LAContext()
         context.localizedCancelTitle = String(localized: "common.cancel", defaultValue: "Cancel")
-        context.localizedFallbackTitle = ""
+        // Keep the system-localized password alternative available. macOS owns
+        // credential entry and validation; the app never receives the password.
         context.evaluatePolicy(policy, localizedReason: reason, reply: completion)
     }
 }
@@ -34,13 +35,26 @@ struct UniConnectLocalAuthenticator: UniConnectAuthenticating {
 final class UniConnectAppLock: ObservableObject {
     static let shared = UniConnectAppLock()
 
-    /// Injected for tests; production uses `UniConnectLocalAuthenticator`.
+    enum LockedShortcutDecision: Equatable {
+        case passThrough
+        case authenticate
+        case terminate
+        case consume
+    }
+
+#if DEBUG
+    /// Injected for tests; production builds always use `UniConnectLocalAuthenticator`.
     var authenticator: any UniConnectAuthenticating = UniConnectLocalAuthenticator()
     /// Tests can keep the lock logic without creating screen-level windows.
     var presentsWindows = true
     /// Tests can force the gate on/off regardless of environment.
     var enabledOverride: Bool?
     var effectiveIsEnabled: Bool { enabledOverride ?? Self.isEnabled }
+#else
+    private let authenticator: any UniConnectAuthenticating = UniConnectLocalAuthenticator()
+    private let presentsWindows = true
+    var effectiveIsEnabled: Bool { Self.isEnabled }
+#endif
 
     @Published private(set) var isLocked = false
     @Published var lastError: String?
@@ -75,11 +89,29 @@ final class UniConnectAppLock: ObservableObject {
     }
 
     static var isEnabled: Bool {
-        // Escape hatch for tests / debugging.
-        let env = ProcessInfo.processInfo.environment
-        if env["UNICONNECT_DISABLE_LOCK"] == "1" { return false }
-        if env["XCTestConfigurationFilePath"] != nil { return false }
-        return UserDefaults.standard.object(forKey: "uniconnect.lockEnabled") as? Bool ?? true
+#if DEBUG
+        return resolvedIsEnabled(
+            allowsDevelopmentOverrides: true,
+            environment: ProcessInfo.processInfo.environment,
+            persistedOverride: UserDefaults.standard.object(forKey: "uniconnect.lockEnabled") as? Bool
+        )
+#else
+        // A signed production build must never turn its launch gate into a preference.
+        // Development and XCTest keep explicit seams below, but Release is fail-closed.
+        return true
+#endif
+    }
+
+    /// Resolves the development-only escape hatches without weakening Release builds.
+    static func resolvedIsEnabled(
+        allowsDevelopmentOverrides: Bool,
+        environment: [String: String],
+        persistedOverride: Bool?
+    ) -> Bool {
+        guard allowsDevelopmentOverrides else { return true }
+        if environment["UNICONNECT_DISABLE_LOCK"] == "1" { return false }
+        if environment["XCTestConfigurationFilePath"] != nil { return false }
+        return persistedOverride ?? true
     }
 
     private init() {}
@@ -113,14 +145,127 @@ final class UniConnectAppLock: ObservableObject {
             window.sharingType = .none
         }
         guard presentsWindows else { return }
+        // `.popUpMenu` panels sit above a floating lock cover. Dismiss them
+        // synchronously before creating the cover so no completion menu or other
+        // transient app content can remain readable over the locked application.
+        Self.dismissTransientPopUpWindows(NSApp.windows)
         showLockWindows()
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Policy: Touch ID whenever the sensor is available. If the Mac has no biometrics,
-    /// or biometry is locked out after too many failures, we fall back to the macOS
-    /// account password through the same system dialog. That fallback is announced
-    /// on screen; there is never a silent bypass.
+    /// Routes every keyboard entrypoint through the same fail-closed lock policy.
+    @discardableResult
+    func handleShortcutIfLocked(_ event: NSEvent) -> Bool {
+        let decision = Self.lockedShortcutDecision(
+            isLocked: isLocked,
+            event: event,
+            quitShortcut: KeyboardShortcutSettings.shortcut(for: .quit)
+        )
+        switch decision {
+        case .passThrough:
+            return false
+        case .authenticate:
+            authenticate()
+            return true
+        case .terminate:
+            NSApp.terminate(nil)
+            return true
+        case .consume:
+            return true
+        }
+    }
+
+    /// Decides how an app-level shortcut behaves while the cover is active.
+    static func lockedShortcutDecision(
+        isLocked: Bool,
+        event: NSEvent,
+        quitShortcut: StoredShortcut
+    ) -> LockedShortcutDecision {
+        guard isLocked, event.type == .keyDown else { return .passThrough }
+        if quitShortcut.matches(event: event) { return .terminate }
+
+        let flags = ShortcutStroke.normalizedModifierFlags(from: event.modifierFlags)
+        if flags.isEmpty, event.keyCode == 36 || event.keyCode == 76 {
+            return .authenticate
+        }
+        return .consume
+    }
+
+    /// Rejects AppKit/SwiftUI target-action dispatch outside the lock surface.
+    func shouldConsumeApplicationAction(
+        _ action: Selector?,
+        target: Any?,
+        sender: Any?
+    ) -> Bool {
+        Self.shouldConsumeApplicationAction(
+            isLocked: isLocked,
+            isTerminationAction: Self.isTerminationAction(action),
+            isQuitMenuItem: (sender as? NSMenuItem).map(Self.isQuitMenuItem) ?? false,
+            originatesInLockSurface: actionOriginatesInLockSurface(target: target, sender: sender)
+        )
+    }
+
+    /// Pure policy seam used by the target-action gate and its regression tests.
+    static func shouldConsumeApplicationAction(
+        isLocked: Bool,
+        isTerminationAction: Bool,
+        isQuitMenuItem: Bool,
+        originatesInLockSurface: Bool
+    ) -> Bool {
+        isLocked && !isTerminationAction && !isQuitMenuItem && !originatesInLockSurface
+    }
+
+    private func actionOriginatesInLockSurface(target: Any?, sender: Any?) -> Bool {
+        for candidate in [sender, target] {
+            guard let window = Self.window(forActionObject: candidate) else { continue }
+            if lockWindows.contains(where: { $0 === window }) { return true }
+        }
+        return false
+    }
+
+    private static func window(forActionObject object: Any?) -> NSWindow? {
+        if let window = object as? NSWindow { return window }
+        if let windowController = object as? NSWindowController { return windowController.window }
+        if let view = object as? NSView { return view.window }
+        if let viewController = object as? NSViewController { return viewController.view.window }
+        return nil
+    }
+
+    private static func isTerminationAction(_ action: Selector?) -> Bool {
+        guard let action else { return false }
+        return action == #selector(NSApplication.terminate(_:))
+    }
+
+    private static func isQuitMenuItem(_ item: NSMenuItem) -> Bool {
+        item.title == String(localized: "menu.app.quitUniConnect", defaultValue: "Quit UniConnect")
+    }
+
+    /// Hides app-owned panels whose level would otherwise place them above the cover.
+    @discardableResult
+    static func dismissTransientPopUpWindows(_ windows: [NSWindow]) -> Int {
+        var dismissedCount = 0
+        for window in windows where shouldDismissTransientPopUpWindow(window) {
+            window.parent?.removeChildWindow(window)
+            window.orderOut(nil)
+            dismissedCount += 1
+        }
+        return dismissedCount
+    }
+
+    private static func shouldDismissTransientPopUpWindow(_ window: NSWindow) -> Bool {
+        guard !(window is UniConnectLockWindow) else { return false }
+        if window.level == .popUpMenu { return true }
+
+        // AppKit can normalize a child panel's reported level to its parent when
+        // `addChildWindow` runs. Preserve the semantic `.popUpMenu` classification
+        // used by our completion panel: floating + transient NSPanel.
+        guard let panel = window as? NSPanel else { return false }
+        return panel.isFloatingPanel && panel.collectionBehavior.contains(.transient)
+    }
+
+    /// macOS offers Touch ID first, with its native account-password alternative.
+    /// The launch and sensitive-action gates both require a successful system
+    /// authentication; choosing a password never disables either gate.
     private func policy() -> (LAPolicy, String?) {
         let (available, code) = authenticator.canEvaluate(.deviceOwnerAuthenticationWithBiometrics)
         return UniConnectAuthPolicy.resolve(biometricsAvailable: available, errorCode: code)
@@ -215,6 +360,29 @@ final class UniConnectAppLock: ObservableObject {
             lockWindows.append(window)
         }
     }
+
+#if DEBUG
+    /// Restores singleton state between tests without exposing a Release bypass.
+    func resetForTesting() {
+        idleTimer?.invalidate()
+        idleTimer = nil
+        for window in lockWindows {
+            window.orderOut(nil)
+            window.close()
+        }
+        lockWindows.removeAll()
+        for window in NSApp.windows where !(window is UniConnectLockWindow) {
+            window.sharingType = .readOnly
+        }
+        isLocked = false
+        isLaunchGate = false
+        isAuthenticating = false
+        lastError = nil
+        authenticator = UniConnectLocalAuthenticator()
+        presentsWindows = true
+        enabledOverride = nil
+    }
+#endif
 }
 
 private final class UniConnectLockWindow: NSWindow {
@@ -299,7 +467,7 @@ struct UniConnectLockView: View {
 /// user. Kept free of `LAContext` so tests can exercise every branch without hardware.
 enum UniConnectAuthPolicy {
     static func resolve(biometricsAvailable: Bool, errorCode: LAError.Code?) -> (LAPolicy, String?) {
-        if biometricsAvailable { return (.deviceOwnerAuthenticationWithBiometrics, nil) }
+        if biometricsAvailable { return (.deviceOwnerAuthentication, nil) }
         let reason: String
         switch errorCode {
         case .biometryLockout?:

@@ -3,19 +3,30 @@ import Foundation
 /// Coordinates preflight, checkpointing, mutation, durable persistence, verification, and rollback.
 @MainActor
 struct UniConnectImportTransaction {
+    private actor FailClosedSSHTargetResolver: UniConnectSSHTargetResolving {
+        func resolve(
+            _ requests: [UniConnectSSHTargetResolutionRequest]
+        ) async -> [UniConnectSSHTargetResolutionOutcome] {
+            requests.map { _ in .indeterminate }
+        }
+    }
+
     private let journal: any UniConnectImportJournalWriting
     private let tmuxVerifier: any UniConnectExistingTmuxVerifying
+    private let sshTargetResolver: any UniConnectSSHTargetResolving
     private let makeID: @Sendable () -> UUID
     private let now: @Sendable () -> TimeInterval
 
     init(
         journal: any UniConnectImportJournalWriting,
         tmuxVerifier: any UniConnectExistingTmuxVerifying,
+        sshTargetResolver: (any UniConnectSSHTargetResolving)? = nil,
         makeID: @escaping @Sendable () -> UUID = { UUID() },
         now: @escaping @Sendable () -> TimeInterval = { Date().timeIntervalSince1970 }
     ) {
         self.journal = journal
         self.tmuxVerifier = tmuxVerifier
+        self.sshTargetResolver = sshTargetResolver ?? FailClosedSSHTargetResolver()
         self.makeID = makeID
         self.now = now
     }
@@ -25,23 +36,66 @@ struct UniConnectImportTransaction {
         selection: UniConnectImportSelection,
         adapter: any UniConnectImportTransactionApplying
     ) async -> UniConnectImportTransactionResult {
-        let mutations: [UniConnectImportMutation]
+        let previewMutations: [UniConnectImportMutation]
         do {
-            mutations = try prepared.mutations(for: selection)
+            previewMutations = try prepared.mutations(for: selection)
         } catch {
             return .failedBeforeMutation(.invalidSelection)
         }
         if let failure = await prepareJournalForNewTransaction(adapter: adapter) {
             return .failedBeforeMutation(failure)
         }
-        guard !mutations.isEmpty else { return .noChanges }
+        guard !previewMutations.isEmpty else { return .noChanges }
         guard await stateStillMatches(prepared: prepared, adapter: adapter) else {
+            return .failedBeforeMutation(.stateChanged)
+        }
+
+        let resolutionDocument: UniConnectDocument
+        let existingSSHCredentialRecords: [Int: UniConnectSSHCredentialRecord]
+        do {
+            resolutionDocument = try await adapter.currentDocument()
+            existingSSHCredentialRecords = try await adapter.currentSSHCredentialRecords()
+        } catch {
+            return .failedBeforeMutation(.stateChanged)
+        }
+
+        let mutations: [UniConnectImportMutation]
+        do {
+            mutations = try await prepared.resolvedMutations(
+                for: selection,
+                against: resolutionDocument,
+                existingSSHCredentialRecordsByWorkspaceIndex: existingSSHCredentialRecords,
+                resolver: sshTargetResolver
+            )
+        } catch let error as UniConnectPreparedImport.PreparationError {
+            switch error {
+            case .resolvedPlanBlocked:
+                return .failedBeforeMutation(.blockedPlan)
+            case .resolvedPlanChanged:
+                return .failedBeforeMutation(.stateChanged)
+            case .invalidSelection, .invalidSSHConnection,
+                    .indeterminateSSHTarget, .invalidTmuxDeclaration:
+                return .failedBeforeMutation(.invalidSelection)
+            }
+        } catch {
+            return .failedBeforeMutation(.invalidSelection)
+        }
+        guard !Task.isCancelled else {
+            return .failedBeforeMutation(.cancelled)
+        }
+        // Target resolution is an async boundary. Reconcile local state and the
+        // exact existing credential revisions, but retain the captured import targets.
+        guard await stateStillMatches(prepared: prepared, adapter: adapter),
+              await sshCredentialRecordsStillMatch(
+                  existingSSHCredentialRecords,
+                  adapter: adapter
+              ) else {
             return .failedBeforeMutation(.stateChanged)
         }
 
         let requirements: [UniConnectExistingTmuxRequirement]
         do {
-            requirements = try prepared.existingTmuxRequirements(for: selection)
+            requirements = try prepared.existingTmuxRequirements(for: mutations)
         } catch {
             return .failedBeforeMutation(.invalidSelection)
         }
@@ -55,6 +109,12 @@ struct UniConnectImportTransaction {
         }
         // A preflight can take seconds. Reconcile again before the first mutation.
         guard await stateStillMatches(prepared: prepared, adapter: adapter) else {
+            return .failedBeforeMutation(.stateChanged)
+        }
+        guard await sshCredentialRecordsStillMatch(
+            existingSSHCredentialRecords,
+            adapter: adapter
+        ) else {
             return .failedBeforeMutation(.stateChanged)
         }
 
@@ -326,8 +386,14 @@ struct UniConnectImportTransaction {
         prepared: UniConnectPreparedImport,
         adapter: any UniConnectImportTransactionApplying
     ) async -> Bool {
-        guard let current = try? await adapter.currentDocument() else { return false }
-        return prepared.refreshedPlan(against: current) == prepared.plan
+        guard let current = try? await adapter.currentDocument(),
+              let records = try? await adapter.currentSSHCredentialRecords() else {
+            return false
+        }
+        return prepared.refreshedPlan(
+            against: current,
+            existingSSHCredentialRecordsByWorkspaceIndex: records
+        ) == prepared.plan
     }
 
     private func stateTokenMatches(
@@ -335,6 +401,16 @@ struct UniConnectImportTransaction {
         adapter: any UniConnectImportTransactionApplying
     ) async -> Bool {
         guard let current = try? await adapter.currentStateToken() else { return false }
+        return current == expected
+    }
+
+    private func sshCredentialRecordsStillMatch(
+        _ expected: [Int: UniConnectSSHCredentialRecord],
+        adapter: any UniConnectImportTransactionApplying
+    ) async -> Bool {
+        guard let current = try? await adapter.currentSSHCredentialRecords() else {
+            return false
+        }
         return current == expected
     }
 

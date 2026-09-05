@@ -23,8 +23,11 @@ enum UniConnectPaths {
             : "-" + bundleId.replacingOccurrences(of: release + ".", with: "")
 #endif
         let dir = base.appendingPathComponent("UniConnect\(suffix)", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+        do {
+            try UniConnectAtomicFileWriter.ensurePrivateDirectory(at: dir)
+        } catch {
+            preconditionFailure("UniConnect refused an insecure private-storage path: \(error)")
+        }
         return dir
     }
 
@@ -40,7 +43,7 @@ enum UniConnectPaths {
                 localized: "uniconnect.vault.placeholder.emptySSH",
                 defaultValue: "# SSH Box Without Windows\n\nCreate the first window from the UniConnect welcome page (UniConnect ▸ New tmux Window…).\n"
             )
-            try? text.write(to: url, atomically: true, encoding: .utf8)
+            try? UniConnectAtomicFileWriter.write(Data(text.utf8), to: url)
         }
         return url
     }
@@ -51,7 +54,11 @@ enum UniConnectPaths {
     static var masterKeyFallbackFile: URL { directory.appendingPathComponent(".master-key") }
     static var backupHistoryDirectory: URL {
         let dir = directory.appendingPathComponent("history", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        do {
+            try UniConnectAtomicFileWriter.ensurePrivateDirectory(at: dir)
+        } catch {
+            preconditionFailure("UniConnect refused an insecure backup-history path: \(error)")
+        }
         return dir
     }
 }
@@ -295,11 +302,12 @@ enum UniConnectMasterKey {
     }
 
     private static func baseQuery() -> [String: Any] {
+        // Local releases use the login Keychain: the data-protection backend requires
+        // provisioned access-group entitlements, which these signed builds do not carry.
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecUseDataProtectionKeychain as String: true,
         ]
     }
 
@@ -382,7 +390,6 @@ enum UniConnectMasterKey {
         withoutKeychainUI {
             var attributes = baseQuery()
             attributes[kSecValueData as String] = data
-            attributes[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
             attributes[kSecAttrLabel as String] = "UniConnect master key"
             let status = SecItemAdd(attributes as CFDictionary, nil)
             if status == errSecDuplicateItem {
@@ -399,10 +406,25 @@ enum UniConnectMasterKey {
 final class UniConnectVault {
     static let shared = UniConnectVault()
 
+    private struct Payload: Codable {
+        static let formatName = "uniconnect-ssh-credential-vault"
+        static let currentVersion = 1
+
+        let format: String
+        let version: Int
+        let entries: [String: UniConnectSSHCredentialRecord]
+
+        init(entries: [String: UniConnectSSHCredentialRecord]) {
+            format = Self.formatName
+            version = Self.currentVersion
+            self.entries = entries
+        }
+    }
+
     private let queue = DispatchQueue(label: "uniconnect.vault")
     private let storageURL: URL
     private let keyProvider: () -> SymmetricKey
-    private var entries: [UUID: String] = [:]
+    private var entries: [UUID: UniConnectSSHCredentialRecord] = [:]
     private var loaded = false
     private var loadFailure: Error?
 
@@ -436,8 +458,7 @@ final class UniConnectVault {
     }
 
     private func persist() throws {
-        let payload = Dictionary(uniqueKeysWithValues: entries.map { ($0.key.uuidString, $0.value) })
-        let plaintext = try JSONEncoder().encode(payload)
+        let plaintext = try Self.encodeEntries(entries)
         let sealed = try UniConnectCrypto.seal(plaintext, key: keyProvider())
         try UniConnectAtomicFileWriter.write(sealed, to: storageURL)
     }
@@ -445,13 +466,97 @@ final class UniConnectVault {
     func connectCommand(for id: UUID) -> String? {
         queue.sync {
             guard loadIfNeeded() else { return nil }
+            return entries[id]?.connectCommand
+        }
+    }
+
+    func credentialRecord(for id: UUID) -> UniConnectSSHCredentialRecord? {
+        queue.sync {
+            guard loadIfNeeded() else { return nil }
             return entries[id]
         }
     }
 
-    /// Finds an existing immutable credential during checkpoint restoration.
-    func credentialID(matching connectCommand: String, excluding excludedID: UUID?) -> UUID? {
-        let normalized = connectCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+    private enum LegacyTargetMigrationError: Error {
+        case concurrentChange
+        case backupVerificationFailed
+    }
+
+    /// Adds the first resolved endpoint to legacy records without changing their identity.
+    ///
+    /// This is a schema migration, not a connection edit: UUIDs and exact commands stay
+    /// unchanged, and a non-nil target is never re-resolved or overwritten. The original
+    /// encrypted generation is durably backed up before committing the additive metadata.
+    /// Resolution runs outside the vault queue; the commit compares both records and disk
+    /// bytes so an intervening edit cannot be overwritten. Unresolvable records stay intact.
+    @discardableResult
+    func hydrateLegacyEffectiveTargets(
+        resolving resolve: ([UniConnectSSHTargetResolutionRequest]) -> [UniConnectSSHTargetResolutionOutcome]
+    ) throws -> Int {
+        let prepared: (records: [UUID: UniConnectSSHCredentialRecord], ciphertext: Data?) = try queue.sync {
+            guard loadIfNeeded() else {
+                throw loadFailure ?? UniConnectError.vaultLocked
+            }
+            let legacy = entries.filter { $0.value.effectiveTarget == nil }
+            guard !legacy.isEmpty else { return ([:], nil) }
+            return (legacy, try UniConnectAtomicFileWriter.readPrivateFile(at: storageURL))
+        }
+        guard let ciphertext = prepared.ciphertext else { return 0 }
+        let validator = UniConnectSSHConnectCommandValidator()
+        let candidates = prepared.records.sorted { $0.key.uuidString < $1.key.uuidString }.compactMap {
+            entry -> (id: UUID, record: UniConnectSSHCredentialRecord, request: UniConnectSSHTargetResolutionRequest)? in
+            guard let command = validator.validatedCommand(entry.value.connectCommand),
+                  let request = command.targetResolutionRequest() else { return nil }
+            return (entry.key, entry.value, request)
+        }
+        guard !candidates.isEmpty else { return 0 }
+        let outcomes = resolve(candidates.map(\.request))
+        guard outcomes.count == candidates.count else { return 0 }
+
+        return try queue.sync {
+            guard try UniConnectAtomicFileWriter.readPrivateFile(at: storageURL) == ciphertext,
+                  prepared.records.allSatisfy({ entries[$0.key] == $0.value }) else {
+                throw LegacyTargetMigrationError.concurrentChange
+            }
+            var replacements: [UUID: UniConnectSSHCredentialRecord] = [:]
+            for (candidate, outcome) in zip(candidates, outcomes) {
+                guard case .resolved(let target) = outcome else { continue }
+                replacements[candidate.id] = UniConnectSSHCredentialRecord(
+                    connectCommand: candidate.record.connectCommand,
+                    effectiveTarget: target
+                )
+            }
+            guard !replacements.isEmpty else { return 0 }
+
+            let backupURL = storageURL.deletingLastPathComponent().appendingPathComponent(
+                "vault-before-target-migration-\(UUID().uuidString.lowercased()).uc"
+            )
+            try UniConnectAtomicFileWriter.write(ciphertext, to: backupURL)
+            guard try UniConnectAtomicFileWriter.readPrivateFile(at: backupURL) == ciphertext else {
+                throw LegacyTargetMigrationError.backupVerificationFailed
+            }
+            let previous = entries
+            entries.merge(replacements) { _, migrated in migrated }
+            do {
+                try persist()
+            } catch {
+                entries = previous
+                throw error
+            }
+            return replacements.count
+        }
+    }
+
+    func effectiveTarget(for id: UUID) -> UniConnectSSHEffectiveTarget? {
+        credentialRecord(for: id)?.effectiveTarget
+    }
+
+    /// Finds an exact immutable credential revision, including its resolved endpoint.
+    func credentialID(
+        matching record: UniConnectSSHCredentialRecord,
+        excluding excludedID: UUID?
+    ) -> UUID? {
+        let normalized = Self.normalizedRecord(record)
         return queue.sync {
             guard loadIfNeeded() else { return nil }
             return entries.keys
@@ -461,22 +566,42 @@ final class UniConnectVault {
         }
     }
 
+    /// Finds an existing legacy command-only credential during checkpoint restoration.
+    ///
+    /// Records with a resolved endpoint deliberately do not match: a command-only caller cannot
+    /// prove that the same SSH alias still names that endpoint. New callers should use the exact
+    /// record overload above.
+    func credentialID(matching connectCommand: String, excluding excludedID: UUID?) -> UUID? {
+        let normalized = connectCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        return queue.sync {
+            guard loadIfNeeded() else { return nil }
+            return entries.keys
+                .filter {
+                    $0 != excludedID
+                        && entries[$0]?.connectCommand == normalized
+                        && entries[$0]?.effectiveTarget == nil
+                }
+                .sorted { $0.uuidString < $1.uuidString }
+                .first
+        }
+    }
+
     /// Creates a durable encrypted credential revision that updater recovery can keep using.
     ///
-    /// The revision identifier is derived from the source ID and exact command, while the command
-    /// itself remains only inside the encrypted vault. Editing or deleting the workspace's active
-    /// credential therefore cannot retarget an already-confirmed recovery obligation.
+    /// The revision identifier is derived from the source ID and complete credential record. Both
+    /// the command and resolved endpoint remain only inside the encrypted vault, so an alias that
+    /// later resolves elsewhere cannot retarget an already-confirmed recovery obligation.
     func immutableRevision(for sourceID: UUID) throws -> UUID {
         try queue.sync {
             guard loadIfNeeded() else {
                 throw loadFailure ?? UniConnectError.vaultLocked
             }
-            guard let command = entries[sourceID] else {
+            guard let record = entries[sourceID] else {
                 throw UniConnectError.missingCredential
             }
-            let revisionID = Self.revisionID(sourceID: sourceID, command: command)
+            let revisionID = try Self.revisionID(sourceID: sourceID, record: record)
             if let existing = entries[revisionID] {
-                guard existing == command else {
+                guard existing == record else {
                     throw UniConnectError.corruptFile(String(
                         localized: "uniconnect.vault.error.revisionCollision",
                         defaultValue: "credential revision collision"
@@ -484,7 +609,7 @@ final class UniConnectVault {
                 }
                 return revisionID
             }
-            entries[revisionID] = command
+            entries[revisionID] = record
             do {
                 try persist()
             } catch {
@@ -505,6 +630,24 @@ final class UniConnectVault {
         }
     }
 
+    @discardableResult
+    func store(
+        connectCommand: String,
+        effectiveTarget: UniConnectSSHEffectiveTarget?,
+        id: UUID = UUID()
+    ) -> UUID {
+        do {
+            return try storeOrThrow(
+                connectCommand: connectCommand,
+                effectiveTarget: effectiveTarget,
+                id: id
+            )
+        } catch {
+            NSLog("[UniConnect] credential vault save failed: \(error)")
+            return id
+        }
+    }
+
     /// Persists a connection transactionally so callers never publish a vault
     /// reference whose encrypted value was not durably committed.
     @discardableResult
@@ -514,23 +657,70 @@ final class UniConnectVault {
                 throw loadFailure ?? UniConnectError.vaultLocked
             }
             let normalized = connectCommand.trimmingCharacters(in: .whitespacesAndNewlines)
-            let previous = entries[id]
-            // Preserve the exact encrypted checkpoint bytes during rollback and avoid
-            // needless vault churn when an import reasserts the same credential.
-            if previous == normalized { return id }
-            entries[id] = normalized
-            do {
-                try persist()
-            } catch {
-                if let previous {
-                    entries[id] = previous
-                } else {
-                    entries.removeValue(forKey: id)
+            // A command-only caller cannot prove that a changed alias still names the
+            // endpoint captured by a target-aware record. Never silently downgrade it.
+            if let existing = entries[id], existing.effectiveTarget != nil {
+                guard existing.connectCommand == normalized else {
+                    throw UniConnectError.corruptFile(String(
+                        localized: "uniconnect.vault.error.revisionIdentifierCollision",
+                        defaultValue: "credential revision identifier collision"
+                    ))
                 }
-                throw error
+                return id
             }
-            return id
+            return try storeRecordLocked(
+                UniConnectSSHCredentialRecord(
+                    connectCommand: normalized,
+                    effectiveTarget: nil
+                ),
+                id: id
+            )
         }
+    }
+
+    /// Persists both the private connection command and its resolved endpoint atomically.
+    @discardableResult
+    func storeOrThrow(
+        connectCommand: String,
+        effectiveTarget: UniConnectSSHEffectiveTarget?,
+        id: UUID = UUID()
+    ) throws -> UUID {
+        try queue.sync {
+            guard loadIfNeeded() else {
+                throw loadFailure ?? UniConnectError.vaultLocked
+            }
+            let record = Self.normalizedRecord(UniConnectSSHCredentialRecord(
+                connectCommand: connectCommand,
+                effectiveTarget: effectiveTarget
+            ))
+            return try storeRecordLocked(record, id: id)
+        }
+    }
+
+    private func storeRecordLocked(
+        _ record: UniConnectSSHCredentialRecord,
+        id: UUID
+    ) throws -> UUID {
+        guard !record.connectCommand.isEmpty else {
+            throw UniConnectError.missingCredential
+        }
+        let previous = entries[id]
+        // Preserve the exact encrypted checkpoint bytes during rollback and avoid
+        // needless vault churn when an import reasserts the same credential.
+        if previous == record { return id }
+        entries[id] = record
+        do {
+            try persist()
+        } catch {
+            // No half-published record remains reachable after an atomic write failure.
+            if let previous {
+                entries[id] = previous
+            } else {
+                entries.removeValue(forKey: id)
+            }
+            throw error
+        }
+        return id
     }
 
     /// Creates a fresh immutable credential revision for a connection-profile edit.
@@ -541,6 +731,20 @@ final class UniConnectVault {
     @discardableResult
     func createImmutableRevision(
         connectCommand: String,
+        id: UUID = UUID()
+    ) throws -> UUID {
+        try createImmutableRevision(
+            connectCommand: connectCommand,
+            effectiveTarget: nil,
+            id: id
+        )
+    }
+
+    /// Creates a fresh immutable credential revision with its resolved endpoint.
+    @discardableResult
+    func createImmutableRevision(
+        connectCommand: String,
+        effectiveTarget: UniConnectSSHEffectiveTarget?,
         id: UUID = UUID()
     ) throws -> UUID {
         try queue.sync {
@@ -557,7 +761,10 @@ final class UniConnectVault {
             guard !normalized.isEmpty else {
                 throw UniConnectError.missingCredential
             }
-            entries[id] = normalized
+            entries[id] = UniConnectSSHCredentialRecord(
+                connectCommand: normalized,
+                effectiveTarget: effectiveTarget
+            )
             do {
                 try persist()
             } catch {
@@ -648,6 +855,22 @@ final class UniConnectVault {
                 throw UniConnectError.missingCredential
             }
             return Dictionary(uniqueKeysWithValues: credentialIDs.compactMap { id in
+                snapshotEntries[id].map { (id, $0.connectCommand) }
+            })
+        }
+    }
+
+    /// Resolves complete credential records from an authenticated encrypted snapshot.
+    func credentialRecords(
+        fromEncryptedSnapshot encryptedSnapshot: Data?,
+        requiring credentialIDs: Set<UUID>
+    ) throws -> [UUID: UniConnectSSHCredentialRecord] {
+        try queue.sync {
+            let snapshotEntries = try entries(fromEncryptedSnapshot: encryptedSnapshot)
+            guard credentialIDs.allSatisfy({ snapshotEntries[$0] != nil }) else {
+                throw UniConnectError.missingCredential
+            }
+            return Dictionary(uniqueKeysWithValues: credentialIDs.compactMap { id in
                 snapshotEntries[id].map { (id, $0) }
             })
         }
@@ -669,19 +892,51 @@ final class UniConnectVault {
             for (id, rawCommand) in additionalEntries {
                 let command = rawCommand.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !command.isEmpty else { throw UniConnectError.missingCredential }
-                if let existing = snapshotEntries[id], existing != command {
+                if let existing = snapshotEntries[id] {
+                    guard existing.connectCommand == command else {
+                        throw UniConnectError.corruptFile(String(
+                            localized: "uniconnect.vault.error.revisionIdentifierCollision",
+                            defaultValue: "credential revision identifier collision"
+                        ))
+                    }
+                    continue
+                }
+                snapshotEntries[id] = UniConnectSSHCredentialRecord(
+                    connectCommand: command,
+                    effectiveTarget: nil
+                )
+            }
+            guard !snapshotEntries.isEmpty else { return nil }
+            let plaintext = try Self.encodeEntries(snapshotEntries)
+            return try UniConnectCrypto.seal(plaintext, key: keyProvider())
+        }
+    }
+
+
+    /// Builds an authenticated snapshot with additional complete credential records.
+    func encryptedSnapshot(
+        including additionalRecords: [UUID: UniConnectSSHCredentialRecord]
+    ) throws -> Data? {
+        try queue.sync {
+            guard loadIfNeeded() else {
+                throw loadFailure ?? UniConnectError.vaultLocked
+            }
+            var snapshotEntries = entries
+            for (id, rawRecord) in additionalRecords {
+                let record = Self.normalizedRecord(rawRecord)
+                guard !record.connectCommand.isEmpty else {
+                    throw UniConnectError.missingCredential
+                }
+                if let existing = snapshotEntries[id], existing != record {
                     throw UniConnectError.corruptFile(String(
                         localized: "uniconnect.vault.error.revisionIdentifierCollision",
                         defaultValue: "credential revision identifier collision"
                     ))
                 }
-                snapshotEntries[id] = command
+                snapshotEntries[id] = record
             }
             guard !snapshotEntries.isEmpty else { return nil }
-            let payload = Dictionary(uniqueKeysWithValues: snapshotEntries.map {
-                ($0.key.uuidString, $0.value)
-            })
-            let plaintext = try JSONEncoder().encode(payload)
+            let plaintext = try Self.encodeEntries(snapshotEntries)
             return try UniConnectCrypto.seal(plaintext, key: keyProvider())
         }
     }
@@ -745,7 +1000,7 @@ final class UniConnectVault {
     /// Replaces the vault with checkpoint bytes only after authenticating and decoding them.
     func restoreExactEncryptedSnapshot(_ encryptedSnapshot: Data?) throws {
         try queue.sync {
-            let restoredEntries: [UUID: String]
+            let restoredEntries: [UUID: UniConnectSSHCredentialRecord]
             if let encryptedSnapshot {
                 let envelope = try UniConnectCrypto.parseEnvelope(encryptedSnapshot)
                 let plaintext = try UniConnectCrypto.open(
@@ -767,7 +1022,9 @@ final class UniConnectVault {
         }
     }
 
-    private func entries(fromEncryptedSnapshot snapshot: Data?) throws -> [UUID: String] {
+    private func entries(
+        fromEncryptedSnapshot snapshot: Data?
+    ) throws -> [UUID: UniConnectSSHCredentialRecord] {
         guard let snapshot else { return [:] }
         let envelope = try UniConnectCrypto.parseEnvelope(snapshot)
         let plaintext = try UniConnectCrypto.open(
@@ -795,8 +1052,8 @@ final class UniConnectVault {
 
     /// Merges a backup without ever retargeting an existing immutable credential ID.
     ///
-    /// When the same ID names different connection material, the recovered command receives
-    /// a deterministic revision ID and the returned map tells the snapshot restorer to use it.
+    /// When the same ID names different connection material, the recovered record receives a
+    /// deterministic revision ID and the returned map tells the snapshot restorer to use it.
     func mergeEncryptedBackup(_ encrypted: Data) throws -> [UUID: UUID] {
         try queue.sync {
             guard loadIfNeeded() else {
@@ -809,14 +1066,17 @@ final class UniConnectVault {
             var remappedIDs: [UUID: UUID] = [:]
             var changed = false
             for id in backupEntries.keys.sorted(by: { $0.uuidString < $1.uuidString }) {
-                guard let command = backupEntries[id] else { continue }
+                guard let record = backupEntries[id] else { continue }
                 if let current = entries[id] {
-                    if current == command {
+                    if current == record {
                         remappedIDs[id] = id
                         continue
                     }
-                    let revisionID = Self.recoveryRevisionID(sourceID: id, command: command)
-                    if let revision = entries[revisionID], revision != command {
+                    let revisionID = try Self.recoveryRevisionID(
+                        sourceID: id,
+                        record: record
+                    )
+                    if let revision = entries[revisionID], revision != record {
                         entries = previous
                         throw UniConnectError.corruptFile(String(
                             localized: "uniconnect.vault.error.recoveryRevisionCollision",
@@ -824,12 +1084,12 @@ final class UniConnectVault {
                         ))
                     }
                     if entries[revisionID] == nil {
-                        entries[revisionID] = command
+                        entries[revisionID] = record
                         changed = true
                     }
                     remappedIDs[id] = revisionID
                 } else {
-                    entries[id] = command
+                    entries[id] = record
                     remappedIDs[id] = id
                     changed = true
                 }
@@ -846,38 +1106,147 @@ final class UniConnectVault {
         }
     }
 
-    private static func decodeEntries(_ plaintext: Data) throws -> [UUID: String] {
-        let decoded = try JSONDecoder().decode([String: String].self, from: plaintext)
-        return decoded.reduce(into: [UUID: String]()) { result, item in
-            guard let id = UUID(uuidString: item.key) else { return }
-            result[id] = item.value
+    private static func encodeEntries(
+        _ entries: [UUID: UniConnectSSHCredentialRecord]
+    ) throws -> Data {
+        let encodedEntries = Dictionary(uniqueKeysWithValues: entries.map {
+            ($0.key.uuidString, $0.value)
+        })
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(Payload(entries: encodedEntries))
+    }
+
+    private static func decodeEntries(
+        _ plaintext: Data
+    ) throws -> [UUID: UniConnectSSHCredentialRecord] {
+        let decoder = JSONDecoder()
+        let decoded: [String: UniConnectSSHCredentialRecord]
+        do {
+            let payload = try decoder.decode(Payload.self, from: plaintext)
+            guard payload.format == Payload.formatName,
+                  payload.version == Payload.currentVersion else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: [],
+                    debugDescription: "Unsupported encrypted SSH credential vault format"
+                ))
+            }
+            decoded = payload.entries
+        } catch let payloadError {
+            do {
+                let legacy = try decoder.decode([String: String].self, from: plaintext)
+                decoded = legacy.mapValues {
+                    UniConnectSSHCredentialRecord(
+                        connectCommand: $0,
+                        effectiveTarget: nil
+                    )
+                }
+            } catch {
+                throw payloadError
+            }
         }
+        var result: [UUID: UniConnectSSHCredentialRecord] = [:]
+        result.reserveCapacity(decoded.count)
+        for (rawID, rawRecord) in decoded {
+            guard let id = UUID(uuidString: rawID) else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: [],
+                    debugDescription: "Invalid encrypted SSH credential identifier"
+                ))
+            }
+            let record = normalizedRecord(rawRecord)
+            guard !record.connectCommand.isEmpty else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: [],
+                    debugDescription: "Empty encrypted SSH connection command"
+                ))
+            }
+            guard result[id] == nil else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: [],
+                    debugDescription: "Duplicate canonical SSH credential identifier"
+                ))
+            }
+            result[id] = record
+        }
+        return result
     }
 
-    private static func revisionID(sourceID: UUID, command: String) -> UUID {
-        let material = "uniconnect-updater-credential-v1\0"
+    private static func normalizedRecord(
+        _ record: UniConnectSSHCredentialRecord
+    ) -> UniConnectSSHCredentialRecord {
+        UniConnectSSHCredentialRecord(
+            connectCommand: record.connectCommand.trimmingCharacters(in: .whitespacesAndNewlines),
+            effectiveTarget: record.effectiveTarget
+        )
+    }
+
+    private static func revisionID(
+        sourceID: UUID,
+        record: UniConnectSSHCredentialRecord
+    ) throws -> UUID {
+        guard record.effectiveTarget != nil else {
+            return legacyDerivedRevisionID(
+                namespace: "uniconnect-updater-credential-v1",
+                sourceID: sourceID,
+                command: record.connectCommand
+            )
+        }
+        return try derivedRevisionID(
+            namespace: "uniconnect-updater-credential-v2",
+            sourceID: sourceID,
+            record: record
+        )
+    }
+
+    private static func recoveryRevisionID(
+        sourceID: UUID,
+        record: UniConnectSSHCredentialRecord
+    ) throws -> UUID {
+        guard record.effectiveTarget != nil else {
+            return legacyDerivedRevisionID(
+                namespace: "uniconnect-recovery-credential-v1",
+                sourceID: sourceID,
+                command: record.connectCommand
+            )
+        }
+        return try derivedRevisionID(
+            namespace: "uniconnect-recovery-credential-v2",
+            sourceID: sourceID,
+            record: record
+        )
+    }
+
+    private static func derivedRevisionID(
+        namespace: String,
+        sourceID: UUID,
+        record: UniConnectSSHCredentialRecord
+    ) throws -> UUID {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        var material = Data(namespace.utf8)
+        material.append(0)
+        material.append(contentsOf: sourceID.uuidString.lowercased().utf8)
+        material.append(0)
+        material.append(try encoder.encode(record))
+        return uuid(from: material)
+    }
+
+    private static func legacyDerivedRevisionID(
+        namespace: String,
+        sourceID: UUID,
+        command: String
+    ) -> UUID {
+        let material = namespace
+            + "\0"
             + sourceID.uuidString.lowercased()
             + "\0"
             + command
-        let hex = SHA256.hash(data: Data(material.utf8))
-            .prefix(16)
-            .map { String(format: "%02x", $0) }
-            .joined()
-        let first = String(hex.prefix(8))
-        let second = String(hex.dropFirst(8).prefix(4))
-        let third = String(hex.dropFirst(12).prefix(4))
-        let fourth = String(hex.dropFirst(16).prefix(4))
-        let fifth = String(hex.dropFirst(20).prefix(12))
-        let value = "\(first)-\(second)-\(third)-\(fourth)-\(fifth)"
-        return UUID(uuidString: value)!
+        return uuid(from: Data(material.utf8))
     }
 
-    private static func recoveryRevisionID(sourceID: UUID, command: String) -> UUID {
-        let material = "uniconnect-recovery-credential-v1\0"
-            + sourceID.uuidString.lowercased()
-            + "\0"
-            + command
-        let hex = SHA256.hash(data: Data(material.utf8))
+    private static func uuid(from material: Data) -> UUID {
+        let hex = SHA256.hash(data: material)
             .prefix(16)
             .map { String(format: "%02x", $0) }
             .joined()

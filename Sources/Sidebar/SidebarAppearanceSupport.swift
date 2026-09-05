@@ -57,22 +57,22 @@ func titlebarControlForegroundNSColor(
     )
 }
 
-/// UniConnect accent: coral (the warm end of the logo's coral→magenta ramp).
-/// Slightly deeper in light mode so it keeps contrast on white chrome.
+/// UniConnect accent: the logo's violet in dark chrome and its deeper electric
+/// indigo on light chrome, keeping white selection text readable in both.
 func cmuxAccentNSColor(for colorScheme: ColorScheme) -> NSColor {
     switch colorScheme {
     case .dark:
         return NSColor(
-            srgbRed: 1.0,
-            green: 92.0 / 255.0,
-            blue: 110.0 / 255.0,
+            srgbRed: 90.0 / 255.0,
+            green: 31.0 / 255.0,
+            blue: 229.0 / 255.0,
             alpha: 1.0
         )
     default:
         return NSColor(
-            srgbRed: 232.0 / 255.0,
-            green: 70.0 / 255.0,
-            blue: 100.0 / 255.0,
+            srgbRed: 30.0 / 255.0,
+            green: 24.0 / 255.0,
+            blue: 223.0 / 255.0,
             alpha: 1.0
         )
     }
@@ -256,20 +256,31 @@ struct SidebarWorkspaceRowBackgroundStyle {
     static let clear = Self(color: nil, opacity: 0)
 }
 
+func sidebarWorkspaceRowUsesInvertedForeground(
+    activeTabIndicatorStyle: SidebarActiveTabIndicatorStyle,
+    isActive: Bool
+) -> Bool {
+    isActive && activeTabIndicatorStyle == .solidFill
+}
+
 func sidebarWorkspaceRowExplicitRailNSColor(
     activeTabIndicatorStyle: SidebarActiveTabIndicatorStyle,
     customColorHex: String?,
-    colorScheme: ColorScheme
+    colorScheme: ColorScheme,
+    isActive: Bool = false
 ) -> NSColor? {
-    guard activeTabIndicatorStyle == .leftRail,
-          let customColorHex else {
+    guard activeTabIndicatorStyle == .leftRail else {
         return nil
     }
-    return WorkspaceTabColorSettings.displayNSColor(
-        hex: customColorHex,
-        colorScheme: colorScheme,
-        forceBright: true
-    )
+    if let customColorHex,
+       let customColor = WorkspaceTabColorSettings.displayNSColor(
+            hex: customColorHex,
+            colorScheme: colorScheme,
+            forceBright: true
+       ) {
+        return customColor
+    }
+    return isActive ? cmuxAccentNSColor(for: colorScheme) : nil
 }
 
 func sidebarWorkspaceRowBackgroundStyle(
@@ -298,7 +309,7 @@ func sidebarWorkspaceRowBackgroundStyle(
         if isActive {
             return SidebarWorkspaceRowBackgroundStyle(
                 color: selectedBackground,
-                opacity: 1
+                opacity: colorScheme == .dark ? 0.16 : 0.10
             )
         }
         if isMultiSelected {

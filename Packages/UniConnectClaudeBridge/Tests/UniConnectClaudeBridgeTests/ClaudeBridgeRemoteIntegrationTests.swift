@@ -4,26 +4,61 @@ import Testing
 
 struct ClaudeBridgeRemoteIntegrationTests {
     @Test
-    func rendersSameConnectionPortAndLoopbackForwardForAStableRoute() {
+    func rendersSamePrivateUnixSocketForwardForOneConnectionAttempt() {
         let routeID = UUID(uuidString: "12345678-1234-4234-9234-1234567890ab")!
         let route = BridgeTestMessages.route(id: routeID)
+        let installationID = String(repeating: "a", count: 32)
+        let connectionID = UUID()
         let first = ClaudeBridgeRemoteIntegration.connectionPlan(
             route: route,
-            installationID: String(repeating: "a", count: 32),
-            localListenerPort: 49_321
+            installationID: installationID,
+            localListenerPort: 49_321,
+            connectionID: connectionID
         )
         let second = ClaudeBridgeRemoteIntegration.connectionPlan(
             route: route,
-            installationID: String(repeating: "a", count: 32),
-            localListenerPort: 49_321
+            installationID: installationID,
+            localListenerPort: 49_321,
+            connectionID: connectionID
+        )
+        let socketPath = ClaudeBridgeRemoteIntegration.remoteForwardSocketPath(
+            for: routeID,
+            installationID: installationID,
+            connectionID: connectionID
         )
 
         #expect(first == second)
-        #expect(first.sshOptions.contains("ExitOnForwardFailure=yes"))
-        #expect(first.sshOptions.contains {
-            $0.hasPrefix("127.0.0.1:") && $0.hasSuffix(":127.0.0.1:49321")
-        })
-        #expect((42_000...61_999).contains(Int(ClaudeBridgeRemoteIntegration.remoteForwardPort(for: routeID))))
+        #expect(first.sshOptions.contains("ExitOnForwardFailure=no"))
+        #expect(first.sshOptions.contains("ClearAllForwardings=no"))
+        #expect(first.sshOptions.contains("StreamLocalBindMask=0177"))
+        #expect(first.sshOptions.contains("StreamLocalBindUnlink=yes"))
+
+        #expect(first.sshOptions.contains("\(socketPath):127.0.0.1:49321"))
+        #expect(socketPath.utf8.count == 79)
+        #expect(
+            socketPath.range(
+                of: #"^/tmp/ucb-[0-9a-f]{32}-[0-9a-f]{32}\.sock$"#,
+                options: .regularExpression
+            ) != nil
+        )
+        #expect(!first.sshOptions.contains(where: { $0.contains("0.0.0.0") || $0.contains("*") }))
+        #expect(!first.sshOptions.contains(where: { $0.hasPrefix("127.0.0.1:") }))
+    }
+
+    @Test
+    func newRoutesUseUnixSocketsWhileTheScriptCanReadLiveLegacyTCPRoutes() {
+        let plan = ClaudeBridgeRemoteIntegration.connectionPlan(
+            route: BridgeTestMessages.route(),
+            installationID: String(repeating: "a", count: 32),
+            localListenerPort: 49_322
+        )
+
+        #expect(plan.remoteSetupCommand.contains("\"socket_path\": endpoint"))
+        #expect(plan.remoteSetupCommand.contains("elif socket_path is None and route.get(\"connection_id\") is None:"))
+        #expect(plan.remoteSetupCommand.contains("legacy_port = int(route.get(\"port\", 0))"))
+        #expect(plan.remoteSetupCommand.contains("endpoint = legacy_port"))
+        #expect(!plan.remoteSetupCommand.contains("\"port\": args.port"))
+        #expect(!plan.remoteSetupCommand.contains("registration.add_argument(\"--port\""))
     }
 
     @Test
@@ -44,6 +79,10 @@ struct ClaudeBridgeRemoteIntegrationTests {
         #expect(plan.remoteSetupCommand.contains("settings-"))
         #expect(plan.remoteSetupCommand.contains("JsonLayoutParser"))
         #expect(plan.remoteSetupCommand.contains("safe_restore"))
+        #expect(plan.remoteSetupCommand.contains("LIFECYCLE_LOCK"))
+        #expect(
+            plan.remoteSetupCommand.components(separatedBy: "with lifecycle_lock():").count == 4
+        )
         #expect(!plan.remoteSetupCommand.contains("json.dumps(document, ensure_ascii=False, indent=2)"))
         #expect(plan.remoteCleanupCommand.contains("unregister"))
         #expect(plan.remoteCleanupCommand.contains(route.id.uuidString.lowercased()))
@@ -74,7 +113,7 @@ struct ClaudeBridgeRemoteIntegrationTests {
     }
 
     @Test
-    func remoteJournalRejectsLateCompletionFromAnOlderPrompt() {
+    func remoteJournalRejectsOlderWritesWithoutHashingPromptText() {
         let plan = ClaudeBridgeRemoteIntegration.connectionPlan(
             route: BridgeTestMessages.route(),
             installationID: String(repeating: "d", count: 32),
@@ -84,6 +123,18 @@ struct ClaudeBridgeRemoteIntegrationTests {
         #expect(plan.remoteSetupCommand.contains("current_prompt != prompt_correlation"))
         #expect(plan.remoteSetupCommand.contains("current_timestamp > timestamp_ms"))
         #expect(plan.remoteSetupCommand.contains("normalized_prompt_correlation(source.get(\"prompt_id\"))"))
+        #expect(!plan.remoteSetupCommand.contains("normalized_prompt_correlation(source.get(\"prompt\"))"))
+    }
+
+    @Test
+    func promptHookStopsAfterUpdatingPrivateJournal() {
+        let plan = ClaudeBridgeRemoteIntegration.connectionPlan(
+            route: BridgeTestMessages.route(),
+            installationID: String(repeating: "f", count: 32),
+            localListenerPort: 50_004
+        )
+
+        #expect(plan.remoteSetupCommand.contains("if kind == \"prompt\":\n            return 0"))
     }
 
     @Test
@@ -99,4 +150,23 @@ struct ClaudeBridgeRemoteIntegrationTests {
         #expect(command.contains(second.uuidString.lowercased()))
         #expect(command.components(separatedBy: "printf '%s'").count == 2)
     }
+
+    @Test("Reconnect keeps the route identity but allocates a fresh transport path")
+    func reconnectDoesNotReusePreviousForwardSocket() {
+        let route = BridgeTestMessages.route()
+        let first = ClaudeBridgeRemoteIntegration.connectionPlan(
+            route: route,
+            installationID: String(repeating: "a", count: 32),
+            localListenerPort: 51234
+        )
+        let second = ClaudeBridgeRemoteIntegration.connectionPlan(
+            route: route,
+            installationID: String(repeating: "a", count: 32),
+            localListenerPort: 51234
+        )
+        #expect(first.routeID == second.routeID)
+        #expect(first.sshOptions != second.sshOptions)
+        #expect(first.remoteCleanupCommand == second.remoteCleanupCommand)
+    }
+
 }

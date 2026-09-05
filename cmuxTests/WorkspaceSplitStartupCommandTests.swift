@@ -1,4 +1,5 @@
 import XCTest
+import Testing
 import Bonsplit
 import AppKit
 import SwiftUI
@@ -17,6 +18,251 @@ private func workspaceSplitNodes(in node: ExternalTreeNode) -> [ExternalSplitNod
         return [split] + workspaceSplitNodes(in: split.first) + workspaceSplitNodes(in: split.second)
     }
 }
+
+#if DEBUG
+@MainActor
+@Suite
+struct UniConnectNewTerminalRoutingTests {
+    @Test(arguments: [UniConnectWorkspaceKind.local, .ssh])
+    func toolbarNewTerminalKeepsClickedPaneWithoutCreatingBeforeConfirmation(kind: UniConnectWorkspaceKind) throws {
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        let source = try #require(workspace.focusedPanelId)
+        let clickedPane = try #require(workspace.paneId(forPanelId: source))
+        let other = try #require(workspace.newTerminalSplit(from: source, orientation: .horizontal))
+        workspace.focusPanel(other.id)
+        workspace.uniConnectProfile = .init(kind: kind, localRoot: NSTemporaryDirectory())
+        let beforePanelIDs = Set(workspace.panels.keys)
+        let beforePanes = workspace.bonsplitController.allPaneIds
+        var requests: [UniConnectNewWindowPlacement] = []
+        workspace.debugInterceptNewTerminalRequest = { requests.append($0); return true }
+
+        workspace.bonsplitController.requestNewTab(kind: "terminal", inPane: clickedPane)
+
+        #expect(requests == [.tab(paneID: clickedPane, afterTabID: nil)])
+        #expect(Set(workspace.panels.keys) == beforePanelIDs)
+        #expect(workspace.bonsplitController.allPaneIds == beforePanes)
+        #expect(workspace.focusedPanelId == other.id)
+    }
+
+    @Test
+    func toolbarSplitsUseCustomRequestBeforeBonsplitMutatesLayout() throws {
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        let source = try #require(workspace.focusedPanelId)
+        let pane = try #require(workspace.paneId(forPanelId: source))
+        let defaults = BonsplitConfiguration.SplitActionButton.defaults
+        let routed = Workspace.workspaceRoutedSplitButtons(defaults, uniConnectEnabled: true)
+        #expect(routed.map(\.id) == defaults.map(\.id))
+        #expect(routed.map(\.icon) == defaults.map(\.icon))
+        let tooltips = workspace.bonsplitController.configuration.appearance.splitButtonTooltips
+        #expect(routed[2].tooltip == tooltips.splitRight)
+        #expect(routed[3].tooltip == tooltips.splitDown)
+        #expect(Workspace.workspaceRoutedSplitButtons(defaults, uniConnectEnabled: false) == defaults)
+        workspace.bonsplitController.configuration.appearance.splitButtons = routed
+        var requests: [UniConnectNewWindowPlacement] = []
+        workspace.debugInterceptNewTerminalRequest = { requests.append($0); return true }
+
+        for button in workspace.bonsplitController.configuration.appearance.splitButtons {
+            if case .custom(let identifier) = button.action {
+                workspace.bonsplitController.requestCustomAction(identifier, inPane: pane)
+            }
+        }
+
+        #expect(requests == [
+            .split(sourcePanelID: source, orientation: .horizontal, insertFirst: false),
+            .split(sourcePanelID: source, orientation: .vertical, insertFirst: false)
+        ])
+        #expect(workspace.bonsplitController.allPaneIds == [pane])
+        #expect(Set(workspace.panels.keys) == [source])
+    }
+
+    @Test
+    func routedSplitTooltipsRefreshDefaultsButPreserveConfiguredText() throws {
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        workspace.applySurfaceTabBarButtons(
+            [
+                .init(id: "default-right", action: .builtIn(.splitRight)),
+                .init(id: "blank-down", tooltip: "  ", action: .builtIn(.splitDown)),
+                .init(id: "custom-right", tooltip: "My custom split", action: .builtIn(.splitRight))
+            ],
+            sourcePath: nil,
+            globalConfigPath: "/tmp/uniconnect-tooltip-test.json",
+            terminalCommandSourcePaths: [:],
+            workspaceCommands: [:]
+        )
+        var configuration = workspace.bonsplitController.configuration
+        configuration.appearance.splitButtons = Workspace.workspaceRoutedSplitButtons(
+            configuration.appearance.splitButtons,
+            uniConnectEnabled: true
+        )
+        #expect(configuration.appearance.splitButtons[2].tooltip == "My custom split")
+        // Simulate a previously rendered default from before a shortcut refresh, without
+        // changing shared settings or the user's preference domain.
+        configuration.appearance.splitButtons[0].tooltip = "previous shortcut label"
+        configuration.appearance.splitButtons[1].tooltip = "previous shortcut label"
+        workspace.bonsplitController.configuration = configuration
+
+        workspace.refreshSplitButtonTooltips()
+
+        let appearance = workspace.bonsplitController.configuration.appearance
+        #expect(appearance.splitButtons[0].tooltip == appearance.splitButtonTooltips.splitRight)
+        #expect(appearance.splitButtons[1].tooltip == appearance.splitButtonTooltips.splitDown)
+        #expect(appearance.splitButtons[2].tooltip == "My custom split")
+    }
+
+    @Test
+    func contextNewTerminalRetainsAnchorAndCancelledSplitKeepsZoom() throws {
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        let source = try #require(workspace.focusedPanelId)
+        let pane = try #require(workspace.paneId(forPanelId: source))
+        let anchor = try #require(workspace.surfaceIdFromPanelId(source))
+        _ = try #require(workspace.newTerminalSplit(from: source, orientation: .horizontal, focus: false))
+        _ = workspace.toggleSplitZoom(panelId: source)
+        let beforePanes = workspace.bonsplitController.allPaneIds
+        let beforePanelIDs = Set(workspace.panels.keys)
+        var requests: [UniConnectNewWindowPlacement] = []
+        workspace.debugInterceptNewTerminalRequest = { requests.append($0); return true }
+
+        workspace.bonsplitController.requestTabContextAction(.newTerminalToRight, for: anchor, inPane: pane)
+        let accepted = workspace.requestNewTerminal(placement: .split(
+            sourcePanelID: source, orientation: .vertical, insertFirst: true
+        ))
+
+        #expect(accepted)
+        #expect(requests == [
+            .tab(paneID: pane, afterTabID: anchor),
+            .split(sourcePanelID: source, orientation: .vertical, insertFirst: true)
+        ])
+        #expect(workspace.bonsplitController.isSplitZoomed)
+        #expect(workspace.bonsplitController.allPaneIds == beforePanes)
+        #expect(Set(workspace.panels.keys) == beforePanelIDs)
+    }
+
+    @Test
+    func uiSplitReportsHandledWhileProgrammaticSplitStaysSynchronous() throws {
+        let manager = TabManager()
+        defer { manager.tabs.forEach { $0.teardownAllPanels() } }
+        let workspace = try #require(manager.selectedWorkspace)
+        let source = try #require(workspace.focusedPanelId)
+        let pane = try #require(workspace.paneId(forPanelId: source))
+        var requests: [UniConnectNewWindowPlacement] = []
+        workspace.debugInterceptNewTerminalRequest = { requests.append($0); return true }
+
+        #expect(manager.requestNewTerminalSplit(tabId: workspace.id, surfaceId: source, direction: .left))
+        #expect(requests == [.split(sourcePanelID: source, orientation: .horizontal, insertFirst: true)])
+        #expect(workspace.bonsplitController.allPaneIds == [pane])
+        let created = try #require(manager.newSplit(
+            tabId: workspace.id, surfaceId: source, direction: .down, focus: false,
+            initialCommand: "/usr/bin/false"
+        ))
+        #expect(requests.count == 1)
+        #expect(workspace.terminalPanel(for: created) != nil)
+        #expect(workspace.bonsplitController.allPaneIds.count == 2)
+    }
+
+    @Test
+    func restoreKeepsIndependentWindowDirectoryWhenWorkspaceDefaultIsMissing() throws {
+        let fixture = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-window-restore-\(UUID().uuidString)", isDirectory: true)
+        let workingDirectory = fixture.appendingPathComponent("window", isDirectory: true)
+        let missingDefault = fixture.appendingPathComponent("missing-workspace", isDirectory: true)
+        try FileManager.default.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        var snapshot = workspace.sessionSnapshot(includeScrollback: false)
+        let savedID = try #require(snapshot.panels.first?.id)
+        let record = UniConnectLocalWindowRecord(
+            id: savedID, visibleName: "Independent window",
+            boxRoot: missingDefault.path, workingDirectory: workingDirectory.path
+        )
+        snapshot.uniConnect = .init(kind: .local, localRoot: missingDefault.path)
+        snapshot.panels[0].terminal = SessionTerminalPanelSnapshot(
+            workingDirectory: record.workingDirectory,
+            wasAgentRunning: false,
+            uniConnectLocalWindow: record
+        )
+
+        _ = workspace.restoreSessionSnapshot(snapshot)
+
+        let restored = try #require(workspace.terminalPanel(for: savedID))
+        #expect(restored.requestedWorkingDirectory == record.workingDirectory)
+        #expect(workspace.uniConnectLocalWindowsByPanelId[savedID]?.workingDirectory == record.workingDirectory)
+        #expect(workspace.uniConnectLocalWindowsByPanelId[savedID]?.boxRoot == record.boxRoot)
+        #expect(restored.surface.debugInitialInputForTesting() == nil)
+    }
+
+    @Test
+    func sshLaunchClearsCopiedGhosttyCwdWithoutChangingOtherInheritedConfiguration() throws {
+        var inherited = CmuxSurfaceConfigTemplate()
+        inherited.workingDirectory = "/srv/remote-only"
+        inherited.fontSize = 17
+        inherited.command = "/usr/bin/false"
+        inherited.environmentVariables = ["TERM": "xterm-256color"]
+        inherited.waitAfterCommand = true
+
+        let sshConfig = try #require(Workspace.terminalConfigForWorkspaceLaunch(
+            inherited, suppressInheritedWorkingDirectory: true
+        ))
+        let localConfig = try #require(Workspace.terminalConfigForWorkspaceLaunch(
+            inherited, suppressInheritedWorkingDirectory: false
+        ))
+
+        #expect(sshConfig.workingDirectory == nil)
+        #expect(sshConfig.fontSize == inherited.fontSize)
+        #expect(sshConfig.command == inherited.command)
+        #expect(sshConfig.environmentVariables == inherited.environmentVariables)
+        #expect(sshConfig.waitAfterCommand == inherited.waitAfterCommand)
+        #expect(localConfig.workingDirectory == "/srv/remote-only")
+        #expect(inherited.workingDirectory == "/srv/remote-only")
+    }
+
+    @Test
+    func confirmedSSHSplitKeepsPreparedIdentityAndNeverUsesRemoteCwdLocally() throws {
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        let source = try #require(workspace.focusedPanelId)
+        workspace.uniConnectProfile = .init(kind: .ssh)
+        workspace.panelDirectories[source] = "/srv/remote-only"
+        workspace.currentDirectory = "/srv/remote-workspace"
+        let expectedID = UUID()
+        let placement = UniConnectNewWindowPlacement.split(
+            sourcePanelID: source, orientation: .horizontal, insertFirst: false
+        )
+        let panel = try #require(placement.createPanel(
+            in: workspace, panelID: expectedID, focus: false,
+            initialCommand: "/usr/bin/false", tmuxStartCommand: "/usr/bin/false",
+            suppressWorkspaceRemoteStartupCommand: true
+        ))
+
+        #expect(panel.id == expectedID)
+        #expect(panel.requestedWorkingDirectory == nil)
+        #expect(panel.surface.debugInitialCommand() == "/usr/bin/false")
+        #expect(panel.surface.debugTmuxStartCommand() == "/usr/bin/false")
+        #expect(panel.surface.debugInitialInputForTesting() == nil)
+    }
+
+    @Test
+    func confirmedLocalSplitRetainsChosenDirectoryAndAgentInput() throws {
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        let source = try #require(workspace.focusedPanelId)
+        let expectedID = UUID()
+        let panel = try #require(workspace.newTerminalSplit(
+            from: source, orientation: .vertical, focus: false,
+            workingDirectory: NSTemporaryDirectory(), newPanelID: expectedID,
+            initialInput: "codex resume saved-session --yolo\n"
+        ))
+
+        #expect(panel.id == expectedID)
+        #expect(panel.requestedWorkingDirectory == NSTemporaryDirectory())
+        #expect(panel.surface.debugInitialInputForTesting() == "codex resume saved-session --yolo\n")
+    }
+}
+#endif
 
 private func firstWorkspaceDescendant<ViewType: NSView>(
     ofType type: ViewType.Type,

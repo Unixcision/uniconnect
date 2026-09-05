@@ -1,10 +1,166 @@
 import Darwin
 import XCTest
+import Testing
 
 #if canImport(cmux_DEV)
 @testable import cmux_DEV
 #elseif canImport(cmux)
 @testable import cmux
+#endif
+
+#if DEBUG
+@MainActor
+@Suite
+struct UniConnectSnapshotAutosaveFeedbackTests {
+    @Test(arguments: [RestorableAgentKind.codex, .claude])
+    func repeatedCaptureDoesNotRewriteLiveDirectoryOrRequestAnotherSave(kind: RestorableAgentKind) throws {
+        let isolatedHome = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-snapshot-feedback-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: isolatedHome, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: isolatedHome) }
+        let liveDirectory = isolatedHome.appendingPathComponent("current-project").path
+        let agentDirectory = isolatedHome.appendingPathComponent("historical-project").path
+        let manager = TabManager(initialWorkingDirectory: liveDirectory, autoWelcomeIfNeeded: false)
+        let workspace = try #require(manager.tabs.first)
+        defer { workspace.teardownAllPanels() }
+        let panelID = try #require(workspace.focusedPanelId)
+        workspace.uniConnectProfile = .init(kind: .local, localRoot: isolatedHome.path)
+        workspace.panelCustomTitles[panelID] = "Saved window"
+        workspace.panelDirectories[panelID] = liveDirectory
+        let agent = SessionRestorableAgentSnapshot(
+            kind: kind,
+            sessionId: UUID().uuidString.lowercased(),
+            workingDirectory: agentDirectory
+        )
+        let index = RestorableAgentSessionIndex.load(
+            homeDirectory: isolatedHome.path,
+            fileManager: .default,
+            registry: CmuxVaultAgentRegistry(registrations: []),
+            detectedSnapshots: [
+                .init(workspaceId: workspace.id, panelId: panelID): (
+                    snapshot: agent, updatedAt: 1, processIDs: []
+                ),
+            ],
+            processArgumentsProvider: { _ in nil }
+        )
+        // The first capture may legitimately discover a conversation. Subsequent captures
+        // must be read-stable even if that conversation started in a different directory.
+        _ = workspace.sessionSnapshot(includeScrollback: false, restorableAgentIndex: index)
+        let settled = try #require(workspace.uniConnectLocalWindowsByPanelId[panelID])
+        var saveRequests: [String] = []
+        let observer = UniConnectSessionPersistenceObserver(tabManager: manager) {
+            saveRequests.append($0)
+        }
+        defer { withExtendedLifetime(observer) {} }
+
+        for _ in 0..<3 {
+            let snapshot = workspace.sessionSnapshot(includeScrollback: false, restorableAgentIndex: index)
+            let persisted = try #require(snapshot.panels.first { $0.id == panelID }?.terminal?.uniConnectLocalWindow)
+            #expect(persisted == settled)
+            #expect(persisted.workingDirectory == liveDirectory)
+            #expect(persisted.latestConversation?.resumeWorkingDirectory == agentDirectory)
+            #expect(persisted.latestConversation?.sessionID == agent.sessionId)
+        }
+
+        #expect(workspace.uniConnectLocalWindowsByPanelId[panelID] == settled)
+        #expect(saveRequests.isEmpty)
+
+        // Do not solve feedback by disabling the actual autosave observer: a later real
+        // directory change must still request persistence and appear in the next snapshot.
+        let nextDirectory = isolatedHome.appendingPathComponent("next-project").path
+        workspace.panelDirectories[panelID] = nextDirectory
+        #expect(saveRequests.contains("window-directory"))
+        _ = workspace.sessionSnapshot(includeScrollback: false, restorableAgentIndex: index)
+        #expect(workspace.uniConnectLocalWindowsByPanelId[panelID]?.workingDirectory == nextDirectory)
+        #expect(workspace.uniConnectLocalWindowsByPanelId[panelID]?.latestConversation?.resumeWorkingDirectory == agentDirectory)
+    }
+}
+
+@MainActor
+@Suite
+struct SessionGeometryDefaultsThreadingTests {
+    @MainActor
+    private final class Events {
+        private var recorded: [(String, Bool)] = []
+
+        func record(_ name: String) {
+            recorded.append((name, Thread.isMainThread))
+        }
+
+        var snapshot: [(String, Bool)] { recorded }
+        func reset() { recorded.removeAll() }
+    }
+
+    private final class RecordingDefaults: UserDefaults, @unchecked Sendable {
+        private let recordMutation: @Sendable (String) -> Void
+        let notificationCenter = NotificationCenter()
+
+        init?(suiteName: String, recordMutation: @escaping @Sendable (String) -> Void) {
+            self.recordMutation = recordMutation
+            super.init(suiteName: suiteName)
+        }
+
+        override func set(_ value: Any?, forKey defaultName: String) {
+            super.set(value, forKey: defaultName)
+            recordMutation("set:\(defaultName)")
+            // Reproduce the synchronous notification/main-operation relationship from
+            // the hang sample without relying on Foundation's coalescing behavior.
+            notificationCenter.post(name: UserDefaults.didChangeNotification, object: self)
+        }
+
+        override func removeObject(forKey defaultName: String) {
+            super.removeObject(forKey: defaultName)
+            recordMutation("remove:\(defaultName)")
+            notificationCenter.post(name: UserDefaults.didChangeNotification, object: self)
+        }
+    }
+
+    @Test
+    func geometryWritesAndLegacyRemovalNotifyMainAndIdenticalSaveIsSilent() throws {
+        let suite = "SessionGeometryDefaultsThreadingTests.\(UUID().uuidString)"
+        let events = Events()
+        let defaults = try #require(RecordingDefaults(suiteName: suite) { name in
+            MainActor.assumeIsolated { events.record(name) }
+        })
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let legacyKey = "cmux.session.lastWindowGeometry.v1"
+        let geometryKey = AppDelegate.debugPersistedWindowGeometryDefaultsKey
+        defaults.set(Data([1]), forKey: legacyKey)
+        events.reset()
+        let received = Events()
+        let observer = defaults.notificationCenter.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: defaults,
+            queue: .main
+        ) { _ in MainActor.assumeIsolated { received.record("notified") } }
+        defer { defaults.notificationCenter.removeObserver(observer) }
+        let geometry = Data([2, 3, 4])
+
+        AppDelegate.persistSessionWindowGeometryDefaults(geometry, defaults: defaults)
+
+        #expect(defaults.object(forKey: legacyKey) == nil)
+        #expect(defaults.data(forKey: geometryKey) == geometry)
+        #expect(events.snapshot.map { $0.0 } == ["remove:\(legacyKey)", "set:\(geometryKey)"])
+        #expect(events.snapshot.allSatisfy { $0.1 })
+        #expect(received.snapshot.count == 2)
+        #expect(received.snapshot.allSatisfy { $0.1 })
+        events.reset()
+        received.reset()
+
+        AppDelegate.persistSessionWindowGeometryDefaults(geometry, defaults: defaults)
+        AppDelegate.persistSessionWindowGeometryDefaults(nil, defaults: defaults)
+
+        #expect(events.snapshot.isEmpty)
+        #expect(received.snapshot.isEmpty)
+        #expect(defaults.data(forKey: geometryKey) == geometry)
+
+        let changedGeometry = Data([5, 6])
+        AppDelegate.persistSessionWindowGeometryDefaults(changedGeometry, defaults: defaults)
+        #expect(events.snapshot.map { $0.0 } == ["set:\(geometryKey)"])
+        #expect(received.snapshot.count == 1)
+        #expect(defaults.data(forKey: geometryKey) == changedGeometry)
+    }
+}
 #endif
 
 final class SessionPersistenceTests: XCTestCase {
@@ -828,6 +984,58 @@ final class SessionPersistenceTests: XCTestCase {
                 currentFingerprint: 1234,
                 lastPersistedAt: now.addingTimeInterval(-1),
                 now: now
+            )
+        )
+    }
+
+    func testAutosaveStateAdvancesOnlyAfterSuccessfulPersistence() {
+        XCTAssertFalse(
+            AppDelegate.shouldAdvanceSessionAutosaveSaveState(
+                didSave: false,
+                isTerminatingApp: false,
+                includeScrollback: false
+            )
+        )
+        XCTAssertTrue(
+            AppDelegate.shouldAdvanceSessionAutosaveSaveState(
+                didSave: true,
+                isTerminatingApp: false,
+                includeScrollback: false
+            )
+        )
+        XCTAssertFalse(
+            AppDelegate.shouldAdvanceSessionAutosaveSaveState(
+                didSave: true,
+                isTerminatingApp: true,
+                includeScrollback: false
+            )
+        )
+        XCTAssertFalse(
+            AppDelegate.shouldAdvanceSessionAutosaveSaveState(
+                didSave: true,
+                isTerminatingApp: false,
+                includeScrollback: true
+            )
+        )
+    }
+
+    func testAutosaveCompletionGenerationRejectsLateOlderCallbacks() {
+        XCTAssertTrue(
+            AppDelegate.shouldHandleSessionAutosaveCompletion(
+                generation: 2,
+                lastHandledGeneration: 1
+            )
+        )
+        XCTAssertFalse(
+            AppDelegate.shouldHandleSessionAutosaveCompletion(
+                generation: 1,
+                lastHandledGeneration: 2
+            )
+        )
+        XCTAssertFalse(
+            AppDelegate.shouldHandleSessionAutosaveCompletion(
+                generation: 2,
+                lastHandledGeneration: 2
             )
         )
     }
@@ -3807,7 +4015,7 @@ extension SessionPersistenceTests {
 
         let binding = SurfaceResumeBindingSnapshot(
             kind: "codex",
-            command: "cd '\(deletedCwd.path)' && codex resume session-duplicate-turn --yolo",
+            command: "cd '\(deletedCwd.path)' && \(SurfaceResumeCommandCanonicalizer.shellQuoted(fakeCodex.path)) resume session-duplicate-turn --yolo",
             cwd: deletedCwd.path,
             checkpointId: "session-duplicate-turn",
             source: "agent-hook",
@@ -4276,6 +4484,7 @@ extension SessionPersistenceTests {
                 "NULL_BYTE": "bad\u{0}value",
                 "ANTHROPIC_API_KEY": "should-not-persist",
                 "SERVICE_TOKEN": "should-not-persist",
+                "SSHPASS": "should-not-persist",
             ]
         )
 
@@ -4286,6 +4495,339 @@ extension SessionPersistenceTests {
         XCTAssertNil(binding.environment?["NULL_BYTE"])
         XCTAssertNil(binding.environment?["ANTHROPIC_API_KEY"])
         XCTAssertNil(binding.environment?["SERVICE_TOKEN"])
+        XCTAssertNil(binding.environment?["SSHPASS"])
+    }
+
+    func testSurfaceResumeApprovalRejectsSSHConnectionCommandWithoutPersistingIt() throws {
+        let storeURL = try makeSurfaceResumeApprovalStoreURL()
+        let signingSecret = Data("approval-signing-fixture".utf8)
+        let passwordSentinel = "resume-password-fixture"
+        let binding = SurfaceResumeBindingSnapshot(
+            name: "remote connection",
+            kind: "custom",
+            command: "sshpass -p '\(passwordSentinel)' ssh fixture@example.test",
+            source: "cli"
+        )
+
+        XCTAssertNil(SurfaceResumeApprovalStore.approve(
+            binding: binding,
+            policy: .auto,
+            fileURL: storeURL,
+            signingSecret: signingSecret
+        ))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: storeURL.path))
+    }
+
+    func testSSHConnectionMaterialDetectorRejectsAssignmentsAndWrapperOptions() {
+        let remoteCommands = [
+            "ssh fixture@example.test",
+            "s\\sh fixture@example.test",
+            "s''sh fixture@example.test",
+            "/usr/bin/scp file fixture@example.test:/tmp/file",
+            "FOO=1 ssh fixture@example.test",
+            "env -i ssh fixture@example.test",
+            "sudo -u deploy ssh fixture@example.test",
+            "PATH=/usr/bin command env -i /usr/bin/scp file fixture@example.test:/tmp/file",
+            "sh -c 'FOO=1 ssh fixture@example.test'",
+            "bash -lc 'sudo -u deploy ssh fixture@example.test'",
+            "bash --norc -lc 'ssh fixture@example.test'",
+            "bash --rcfile /tmp/bashrc -c 'ssh fixture@example.test'",
+            "zsh -c 'env -i /usr/bin/scp a fixture@example.test:/b'",
+            "if ssh fixture@example.test; then true; fi",
+            "if false; then true; else ssh fixture@example.test; fi",
+            "{ ssh fixture@example.test; }",
+            "eval ssh fixture@example.test",
+            "echo $(ssh fixture@example.test)",
+            "echo \"$(ssh fixture@example.test)\"",
+            "echo 'x\\' \"$(ssh fixture@example.test)\"",
+            "echo 'x\\' \"$(sshpass -p top-secret ssh fixture@example.test)\"",
+            "> /tmp/ssh-log ssh fixture@example.test",
+            "<<< payload ssh fixture@example.test",
+            "autossh fixture@example.test",
+            "GIT_SSH_COMMAND='ssh -i /tmp/key' git fetch",
+            "RSYNC_RSH='ssh -i /tmp/key' rsync a fixture@example.test:/b",
+            "rsync -e 'ssh -i /tmp/key' a fixture@example.test:/b",
+            "env -S 'ssh fixture@example.test'",
+            "env -P /usr/bin -S 'ssh fixture@example.test'",
+            "env -P /usr/bin ssh fixture@example.test",
+            "sudo -a pam ssh fixture@example.test",
+            "command env sudo nohup ssh fixture@example.test",
+            "timeout 30 sshpass -p top-secret ssh fixture@example.test",
+            "timeout 30 env SSHPASS=top-secret ssh fixture@example.test",
+            "gtimeout --signal=KILL 30 ssh fixture@example.test",
+            "SSHPASS=private-value echo guarded",
+            "REMOTE_COMMAND='sshpass -p top-secret ssh fixture@example.test' echo ok",
+            "CMD='sshpass -p top-secret ssh fixture@example.test'; eval \"$CMD\"",
+            "echo 'sshpass -p top-secret ssh fixture@example.test'",
+            "echo 'ssh://user:top-secret@host.example'",
+            "REMOTE_URL='ssh://user:top-secret@host.example' echo ok",
+            "ssh 'unterminated",
+            "sh -c 'ssh fixture@example.test",
+        ]
+        for command in remoteCommands {
+            XCTAssertTrue(
+                SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterial(command),
+                "Expected remote command to be excluded from readable persistence: \(command)"
+            )
+        }
+
+        let ordinaryText = [
+            "Remember that SSH access is documented in the runbook.",
+            "echo ssh is a protocol name",
+            "printf %s ssh",
+            "sudo -u deploy echo ssh",
+            "env -i printf %s ssh",
+            "command -v ssh",
+            "command echo /usr/bin/ssh",
+            "env -P ssh echo local",
+            "sudo -a ssh echo local",
+            "sudo -U ssh -l",
+            "nice --help ssh",
+            "timeout --help ssh",
+            "timeout 30 echo ssh",
+            "echo 'ssh'",
+            "printf '%s' 'ssh'",
+            "echo hi > ssh",
+            "cat > ./ssh",
+            "cat <<< ssh",
+            "echo 'a;b' ssh",
+            "echo $(printf ssh)",
+            "echo '$(ssh fixture@example.test)'",
+            "eval echo ssh",
+            "ssh-keygen -l -f key",
+            "ssh-agent -s",
+            "git config core.sshCommand",
+            "GIT_SSH_COMMAND='echo ssh' git fetch",
+            "RSYNC_RSH='printf ssh' rsync a b",
+            "# ssh is documentation",
+            "I wrote 'use SSH carefully",
+        ]
+        for text in ordinaryText {
+            XCTAssertFalse(
+                SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterial(text),
+                "Expected prose/local command to remain readable: \(text)"
+            )
+        }
+    }
+
+    func testSSHConnectionMaterialFreeTextScannerPreservesProseAndHeredocs() {
+        XCTAssertFalse(
+            SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterialInFreeText(
+                "ssh access is documented in the runbook."
+            )
+        )
+        XCTAssertFalse(
+            SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterialInFreeText(
+                "cat <<'EOF'\nssh fixture@example.test\nEOF"
+            )
+        )
+        XCTAssertTrue(
+            SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterialInFreeText(
+                "cat <<EOF\nsshpass -p top-secret ssh fixture@example.test\nEOF"
+            )
+        )
+        XCTAssertTrue(
+            SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterialInFreeText(
+                "sh <<EOF\nssh fixture@example.test\nEOF"
+            )
+        )
+        XCTAssertTrue(
+            SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterialInFreeText(
+                "<<EOF sh\nssh fixture@example.test\nEOF"
+            )
+        )
+        XCTAssertTrue(
+            SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterialInFreeText(
+                "env -i <<EOF sh\nssh fixture@example.test\nEOF"
+            )
+        )
+        XCTAssertTrue(
+            SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterialInFreeText(
+                "0<<EOF sh\nssh fixture@example.test\nEOF"
+            )
+        )
+        XCTAssertTrue(
+            SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterialInFreeText(
+                "echo '<<EOF'\nsshpass -p top-secret ssh fixture@example.test\nEOF"
+            )
+        )
+        XCTAssertTrue(
+            SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterialInFreeText(
+                "root@fixture:~# ssh fixture@example.test"
+            )
+        )
+        XCTAssertTrue(
+            SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterialInFreeText(
+                "sshpass -p private-value ssh fixture@example.test"
+            )
+        )
+        XCTAssertTrue(
+            SurfaceResumeCommandCanonicalizer.containsSSHConnectionMaterialInFreeText(
+                "ssh://user:private-value@host.example"
+            )
+        )
+        XCTAssertTrue(
+            SurfaceResumeCommandCanonicalizer.containsSensitiveEnvironmentMaterial([
+                "REMOTE_URL": "ssh://user:private-value@host.example",
+            ])
+        )
+    }
+
+    func testProcessDetectedSSHResumeBindingIsClearedAndNeverAutoRuns() {
+        let binding = SurfaceResumeBindingSnapshot(
+            command: "/usr/bin/ssh fixture@example.test",
+            source: "process-detected",
+            autoResume: true
+        )
+
+        let effective = SurfaceResumeApprovalStore.applyingStoredApproval(
+            to: binding,
+            fileURL: URL(fileURLWithPath: "/tmp/uniconnect-missing-\(UUID().uuidString).json"),
+            signingSecret: Data("approval-signing-fixture".utf8)
+        )
+
+        XCTAssertEqual(effective.command, "")
+        XCTAssertEqual(effective.approvalPolicy, .manual)
+        XCTAssertFalse(effective.allowsAutomaticResume)
+        XCTAssertNil(effective.approvalRecordId)
+        XCTAssertNil(effective.inlineStartupInput)
+    }
+
+    func testLoadingLegacySSHApprovalScrubsItBeforeReturningRecords() throws {
+        let storeURL = try makeSurfaceResumeApprovalStoreURL()
+        let signingSecret = Data("approval-signing-fixture".utf8)
+        let passwordSentinel = "legacy-resume-password-fixture"
+        let unsafeRecord = SurfaceResumeApprovalRecord(
+            commandPrefix: ["sshpass", "-p", passwordSentinel, "ssh", "fixture@example.test"],
+            source: "cli",
+            policy: .auto
+        ).signed(secret: signingSecret)
+        let data = try JSONEncoder().encode(
+            SurfaceResumeApprovalStore.StoredFile(version: 1, records: [unsafeRecord])
+        )
+        try data.write(to: storeURL, options: .atomic)
+
+        XCTAssertTrue(SurfaceResumeApprovalStore.loadRecords(
+            fileURL: storeURL
+        ).isEmpty)
+        XCTAssertTrue(SurfaceResumeApprovalStore.validRecords(
+            fileURL: storeURL,
+            signingSecret: signingSecret
+        ).isEmpty)
+        let scrubbedText = String(decoding: try Data(contentsOf: storeURL), as: UTF8.self)
+        XCTAssertFalse(scrubbedText.contains(passwordSentinel))
+        XCTAssertFalse(scrubbedText.localizedCaseInsensitiveContains("sshpass"))
+    }
+
+    func testLoadingGenericSessionSurgicallyScrubsSSHConnectionMaterial() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-session-secret-scrub-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fileURL = root.appendingPathComponent("session.json")
+        let panelID = UUID()
+        let passwordSentinel = "generic-session-password-fixture"
+        let terminal = SessionTerminalPanelSnapshot(
+            workingDirectory: "/tmp/project",
+            scrollback: "sshpass -p '\(passwordSentinel)' ssh fixture@example.test",
+            agent: SessionRestorableAgentSnapshot(
+                kind: .claude,
+                sessionId: "safe-session-id",
+                workingDirectory: "/tmp/project",
+                launchCommand: AgentLaunchCommandSnapshot(
+                    launcher: nil,
+                    executablePath: "sshpass",
+                    arguments: ["sshpass", "-p", passwordSentinel, "ssh", "fixture@example.test"],
+                    workingDirectory: "/tmp/project",
+                    environment: ["SSHPASS": passwordSentinel],
+                    capturedAt: 10,
+                    source: "process-detected"
+                )
+            ),
+            tmuxStartCommand: "/usr/bin/ssh fixture@example.test",
+            hibernation: SessionAgentHibernationSnapshot(hibernatedAt: 8, lastActivityAt: 9),
+            resumeBinding: SurfaceResumeBindingSnapshot(
+                command: "sshpass -p '\(passwordSentinel)' ssh fixture@example.test",
+                source: "process-detected",
+                autoResume: true
+            ),
+            textBoxDraft: SessionTextBoxInputDraftSnapshot(
+                isActive: true,
+                parts: [.text("ssh fixture@example.test")]
+            )
+        )
+        let panel = SessionPanelSnapshot(
+            id: panelID,
+            type: .terminal,
+            title: "Keep this title",
+            customTitle: "Keep this title",
+            directory: "/tmp/project",
+            isPinned: true,
+            isManuallyUnread: false,
+            gitBranch: nil,
+            listeningPorts: [],
+            ttyName: nil,
+            terminal: terminal,
+            browser: nil,
+            markdown: nil,
+            filePreview: nil,
+            rightSidebarTool: nil,
+            project: nil
+        )
+        let workspace = SessionWorkspaceSnapshot(
+            workspaceId: UUID(),
+            processTitle: "Generic workspace",
+            customTitle: "Generic workspace",
+            customDescription: nil,
+            customColor: nil,
+            isPinned: false,
+            currentDirectory: "/tmp/project",
+            focusedPanelId: panelID,
+            layout: .pane(SessionPaneLayoutSnapshot(panelIds: [panelID], selectedPanelId: panelID)),
+            panels: [panel],
+            statusEntries: [],
+            logEntries: [],
+            progress: nil,
+            gitBranch: nil,
+            remote: nil,
+            uniConnect: nil
+        )
+        let snapshot = AppSessionSnapshot(
+            version: SessionSnapshotSchema.currentVersion,
+            createdAt: 10,
+            windows: [SessionWindowSnapshot(
+                frame: nil,
+                display: nil,
+                tabManager: SessionTabManagerSnapshot(
+                    selectedWorkspaceIndex: 0,
+                    workspaces: [workspace]
+                ),
+                sidebar: SessionSidebarSnapshot(
+                    isVisible: true,
+                    selection: .tabs,
+                    width: 248,
+                    uniConnectCompact: false
+                )
+            )]
+        )
+        try JSONEncoder().encode(snapshot).write(to: fileURL, options: .atomic)
+
+        let restored = try XCTUnwrap(SessionPersistenceStore.load(fileURL: fileURL))
+        let restoredPanel = try XCTUnwrap(
+            restored.windows.first?.tabManager.workspaces.first?.panels.first
+        )
+        XCTAssertEqual(restoredPanel.customTitle, "Keep this title")
+        XCTAssertTrue(restoredPanel.isPinned)
+        XCTAssertNotNil(restoredPanel.terminal?.hibernation)
+        XCTAssertEqual(restoredPanel.terminal?.agent?.sessionId, "safe-session-id")
+        XCTAssertNil(restoredPanel.terminal?.agent?.launchCommand)
+        XCTAssertNil(restoredPanel.terminal?.scrollback)
+        XCTAssertNil(restoredPanel.terminal?.tmuxStartCommand)
+        XCTAssertNil(restoredPanel.terminal?.resumeBinding)
+        XCTAssertNil(restoredPanel.terminal?.textBoxDraft)
+        let scrubbedText = String(decoding: try Data(contentsOf: fileURL), as: UTF8.self)
+        XCTAssertFalse(scrubbedText.contains(passwordSentinel))
+        XCTAssertFalse(scrubbedText.localizedCaseInsensitiveContains("sshpass"))
     }
 
     func testSurfaceResumeApprovalAutoPolicyAppliesSignedPrefix() throws {
@@ -4491,6 +5033,40 @@ extension SessionPersistenceTests {
         )
         XCTAssertEqual(validRecords.map(\.id), [record.id])
         XCTAssertEqual(validRecords.first?.policy, .auto)
+    }
+
+    func testSurfaceResumeApprovalLoadScrubsSSHRecordFromCmuxJSON() throws {
+        let settingsURL = try makeSurfaceResumeApprovalCmuxSettingsURL()
+        let signingSecret = Data("approval-signing-fixture".utf8)
+        let passwordSentinel = "settings-resume-password-fixture"
+        let unsafeRecord = SurfaceResumeApprovalRecord(
+            commandPrefix: ["sshpass", "-p", passwordSentinel, "ssh", "fixture@example.test"],
+            source: "cli",
+            policy: .auto
+        ).signed(secret: signingSecret)
+        let recordsData = try JSONEncoder().encode([unsafeRecord])
+        let records = try JSONSerialization.jsonObject(with: recordsData)
+        let root: [String: Any] = [
+            "schemaVersion": 1,
+            "terminal": [
+                "showScrollBar": false,
+                "resumeCommands": records,
+            ],
+        ]
+        try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
+            .write(to: settingsURL, options: .atomic)
+
+        XCTAssertTrue(SurfaceResumeApprovalStore.loadRecords(
+            fileURL: settingsURL,
+            defaultSettingsURL: settingsURL
+        ).isEmpty)
+        let scrubbedRoot = try jsonObject(at: settingsURL)
+        let terminal = try XCTUnwrap(scrubbedRoot["terminal"] as? [String: Any])
+        XCTAssertEqual(terminal["showScrollBar"] as? Bool, false)
+        XCTAssertEqual((terminal["resumeCommands"] as? [[String: Any]])?.count, 0)
+        let scrubbedText = String(decoding: try Data(contentsOf: settingsURL), as: UTF8.self)
+        XCTAssertFalse(scrubbedText.contains(passwordSentinel))
+        XCTAssertFalse(scrubbedText.localizedCaseInsensitiveContains("sshpass"))
     }
 
     func testSurfaceResumeApprovalWritesNonUTF8CmuxJSON() throws {
@@ -4785,14 +5361,17 @@ extension SessionPersistenceTests {
             autoResumeAgentSessions: true,
             promptForApproval: false
         ))
+        let launchedCommand = try XCTUnwrap(
+            SurfaceResumeCommandCanonicalizer.tokens(from: input)?.last
+        )
 
-        XCTAssertTrue(input.contains("config set model.provider"))
-        XCTAssertTrue(input.contains("config set model.base_url"))
-        XCTAssertTrue(input.contains("config set model.api_mode"))
-        XCTAssertTrue(input.contains("codex_responses"))
-        XCTAssertTrue(input.contains("gpt-5.5"))
-        XCTAssertTrue(input.contains("'--provider' '\\''custom'\\'''") || input.contains("'--provider' 'custom'"))
-        XCTAssertFalse(input.contains("openai-codex"))
+        XCTAssertTrue(launchedCommand.contains("config set model.provider"))
+        XCTAssertTrue(launchedCommand.contains("config set model.base_url"))
+        XCTAssertTrue(launchedCommand.contains("config set model.api_mode"))
+        XCTAssertTrue(launchedCommand.contains("codex_responses"))
+        XCTAssertTrue(launchedCommand.contains("gpt-5.5"))
+        XCTAssertTrue(launchedCommand.contains("'--provider' 'custom'"))
+        XCTAssertFalse(launchedCommand.contains("openai-codex"))
     }
 
     func testHermesAgentHookSurfaceResumeBootstrapUsesCapturedExecutable() throws {
@@ -4812,9 +5391,12 @@ extension SessionPersistenceTests {
             autoResumeAgentSessions: true,
             promptForApproval: false
         ))
+        let launchedCommand = try XCTUnwrap(
+            SurfaceResumeCommandCanonicalizer.tokens(from: input)?.last
+        )
 
-        XCTAssertTrue(input.contains("'/opt/homebrew/bin/hermes' config set model.provider"))
-        XCTAssertTrue(input.contains("'/opt/homebrew/bin/hermes' config set model.base_url"))
+        XCTAssertTrue(launchedCommand.contains("'/opt/homebrew/bin/hermes' config set model.provider"))
+        XCTAssertTrue(launchedCommand.contains("'/opt/homebrew/bin/hermes' config set model.base_url"))
     }
 
     func testHermesAgentHookSurfaceResumeBootstrapStaysInsideCwdGuard() throws {
@@ -4834,12 +5416,15 @@ extension SessionPersistenceTests {
             autoResumeAgentSessions: true,
             promptForApproval: false
         ))
+        let launchedCommand = try XCTUnwrap(
+            SurfaceResumeCommandCanonicalizer.tokens(from: input)?.last
+        )
 
-        let cdRange = try XCTUnwrap(input.range(of: "cd --"))
-        let bootstrapRange = try XCTUnwrap(input.range(of: "config set model.provider"))
+        let cdRange = try XCTUnwrap(launchedCommand.range(of: "cd --"))
+        let bootstrapRange = try XCTUnwrap(launchedCommand.range(of: "config set model.provider"))
         XCTAssertLessThan(cdRange.lowerBound, bootstrapRange.lowerBound)
-        XCTAssertTrue(input.contains("'./hermes' config set model.provider"))
-        XCTAssertTrue(input.contains("'./hermes' '--provider' 'custom' '--resume'"))
+        XCTAssertTrue(launchedCommand.contains("'./hermes' config set model.provider"))
+        XCTAssertTrue(launchedCommand.contains("'./hermes' '--provider' 'custom' '--resume'"))
     }
 
     func testHermesAgentHookSurfaceResumeReplacesExistingBootstrap() throws {
@@ -4903,9 +5488,12 @@ extension SessionPersistenceTests {
             autoResumeAgentSessions: true,
             promptForApproval: false
         ))
+        let launchedCommand = try XCTUnwrap(
+            SurfaceResumeCommandCanonicalizer.tokens(from: input)?.last
+        )
 
-        XCTAssertFalse(input.contains("config set model.provider"))
-        XCTAssertTrue(input.contains("'--provider' '\\''anthropic'\\'''") || input.contains("'--provider' 'anthropic'"))
+        XCTAssertFalse(launchedCommand.contains("config set model.provider"))
+        XCTAssertTrue(launchedCommand.contains("'--provider' 'anthropic'"))
     }
 
     private func makeSurfaceResumeApprovalStoreURL() throws -> URL {

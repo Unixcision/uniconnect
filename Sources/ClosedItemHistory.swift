@@ -661,19 +661,31 @@ final class ClosedItemHistoryStore: ObservableObject {
             let entry: ClosedItemHistoryEntry
             switch record.entry {
             case .panel(let panelEntry):
+                let connectionSafePanel = SessionPersistenceStore
+                    .sanitizedPanelConnectionMaterialForPersistence(panelEntry.snapshot)
                 guard let unsafeProfile = panelEntry.uniConnectProfile
-                    ?? inferredUniConnectProfile(for: panelEntry.snapshot) else {
-                    return record
+                    ?? inferredUniConnectProfile(for: connectionSafePanel) else {
+                    entry = .panel(ClosedPanelHistoryEntry(
+                        workspaceId: panelEntry.workspaceId,
+                        paneId: panelEntry.paneId,
+                        paneAnchorPanelId: panelEntry.paneAnchorPanelId,
+                        restoreInOriginalPane: panelEntry.restoreInOriginalPane,
+                        tabIndex: panelEntry.tabIndex,
+                        snapshot: connectionSafePanel,
+                        uniConnectProfile: nil,
+                        fallbackSplitPlacement: panelEntry.fallbackSplitPlacement
+                    ))
+                    break
                 }
-                let rootCandidate = panelEntry.snapshot.terminal?.uniConnectLocalWindow?.boxRoot
-                    ?? panelEntry.snapshot.terminal?.workingDirectory
-                    ?? panelEntry.snapshot.directory
+                let rootCandidate = connectionSafePanel.terminal?.uniConnectLocalWindow?.boxRoot
+                    ?? connectionSafePanel.terminal?.workingDirectory
+                    ?? connectionSafePanel.directory
                 let profile = SessionPersistenceStore.sanitizedProfileForPersistence(
                     unsafeProfile,
                     localRootCandidate: rootCandidate
                 )
                 let sanitizedPanel = SessionPersistenceStore.sanitizedPanelForPersistence(
-                    panelEntry.snapshot,
+                    connectionSafePanel,
                     profile: profile,
                     authoritativeLocalRoot: profile.isSSH ? nil : profile.localRoot,
                     fallbackCreatedAt: timestamp

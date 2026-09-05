@@ -23,7 +23,7 @@ public enum ShortcutAction: String, CaseIterable, Sendable, Hashable, SettingCod
     case lockApp
     /// Writes the current UniConnect session snapshot immediately.
     case persistNow
-    /// Reconnects all disconnected UniConnect remote windows.
+    /// Immediately reconnects every open UniConnect SSH/tmux window, including hung connections.
     case reconnectDroppedWindows
     /// Immediately reconnects the focused UniConnect SSH/tmux window.
     case reconnectFocusedSSHWindow
@@ -193,7 +193,11 @@ extension ShortcutAction {
         case .toggleFullScreen: return "Toggle Full Screen"
         case .lockApp: return String(localized: "shortcut.lockApp.label", defaultValue: "Lock UniConnect")
         case .persistNow: return String(localized: "shortcut.persistNow.label", defaultValue: "Save Now")
-        case .reconnectDroppedWindows: return String(localized: "shortcut.reconnectDroppedWindows.label", defaultValue: "Reconnect Dropped Windows")
+        case .reconnectDroppedWindows:
+            return String(
+                localized: "uniconnect.reconnect.all.now",
+                defaultValue: "Reconnect All SSH Windows"
+            )
         case .reconnectFocusedSSHWindow:
             return String(
                 localized: "shortcut.reconnectFocusedSSHWindow.label",

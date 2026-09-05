@@ -6519,6 +6519,8 @@ class TerminalController {
         if v2HasNonNullParam(params, "surface_id"), requestedSurfaceId == nil {
             return .err(code: "invalid_params", message: "Missing or invalid surface_id", data: nil)
         }
+        let reportedSurfaceGeneration = v2UUID(params, "surface_generation")
+            ?? v2UUID(params, "generation")
         let rawState = v2RawString(params, "state")
             ?? v2RawString(params, "shell_state")
             ?? v2RawString(params, "activity")
@@ -6531,6 +6533,7 @@ class TerminalController {
             let shouldPublish = socketFastPathState.shouldPublishShellActivity(
                 workspaceId: workspaceId,
                 panelId: requestedSurfaceId,
+                surfaceGeneration: reportedSurfaceGeneration,
                 state: state.rawValue
             )
             if shouldPublish {
@@ -6539,7 +6542,8 @@ class TerminalController {
                     tabManager.updateSurfaceShellActivity(
                         tabId: workspaceId,
                         surfaceId: requestedSurfaceId,
-                        state: state
+                        state: state,
+                        reportedSurfaceGeneration: reportedSurfaceGeneration
                     )
                 }
             }
@@ -6573,7 +6577,12 @@ class TerminalController {
             guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: tab.id) else {
                 return
             }
-            tabManager.updateSurfaceShellActivity(tabId: tab.id, surfaceId: surfaceId, state: state)
+            tabManager.updateSurfaceShellActivity(
+                tabId: tab.id,
+                surfaceId: surfaceId,
+                state: state,
+                reportedSurfaceGeneration: reportedSurfaceGeneration
+            )
         }
 
         return .ok([
@@ -8202,6 +8211,17 @@ class TerminalController {
                 return
             }
 
+            guard sourceWorkspace.canTransferSurface(
+                panelId: surfaceId,
+                to: targetWorkspace
+            ) else {
+                result = .err(
+                    code: "internal_error",
+                    message: "Failed to attach surface to destination",
+                    data: nil
+                )
+                return
+            }
             guard let transfer = sourceWorkspace.detachSurface(panelId: surfaceId) else {
                 result = .err(code: "internal_error", message: "Failed to detach surface", data: nil)
                 return
@@ -8218,6 +8238,7 @@ class TerminalController {
                 result = .err(code: "internal_error", message: "Failed to attach surface to destination", data: nil)
                 return
             }
+            sourceWorkspace.completeDetachedSurfaceTransfer(transfer)
 
             if focus {
                 _ = app.focusMainWindow(windowId: targetWindowId)
@@ -9727,6 +9748,16 @@ class TerminalController {
             let sourceIndex = sourceWorkspace.indexInPane(forPanelId: surfaceId)
             let sourcePaneForRollback = sourceWorkspace.paneId(forPanelId: surfaceId)
 
+            guard sourceWorkspace.canMoveSurfaceToNewUniConnectWorkspace(
+                panelId: surfaceId
+            ) else {
+                result = .err(
+                    code: "internal_error",
+                    message: "Failed to create workspace for detached surface",
+                    data: nil
+                )
+                return
+            }
             guard let detached = sourceWorkspace.detachSurface(panelId: surfaceId) else {
                 result = .err(code: "internal_error", message: "Failed to detach source surface", data: nil)
                 return
@@ -9758,6 +9789,7 @@ class TerminalController {
                 )
                 return
             }
+            sourceWorkspace.completeDetachedSurfaceTransfer(detached)
             let windowId = v2ResolveWindowId(tabManager: tabManager)
             result = .ok([
                 "window_id": v2OrNull(windowId?.uuidString),
@@ -19494,6 +19526,9 @@ class TerminalController {
     /// Usage: set_agent_lifecycle <key> <unknown|running|idle|needsInput> [--tab=<id>] [--panel=<id>]
     private func setAgentLifecycle(_ args: String) -> String {
         let parsed = parseOptions(args)
+        let reportedSurfaceGeneration = parsed.options["generation"].flatMap { rawValue in
+            UUID(uuidString: rawValue.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
         let usage = "set_agent_lifecycle <key> <unknown|running|idle|needsInput> [--tab=<id>] [--panel=<id>]"
         guard parsed.positional.count >= 2 else {
             return "ERROR: Usage: \(usage)"
@@ -19522,7 +19557,12 @@ class TerminalController {
             if let panelId = panelResolution.panelId, !tab.panels.keys.contains(panelId) {
                 return
             }
-            tab.setAgentLifecycle(key: key, panelId: panelResolution.panelId, lifecycle: lifecycle)
+            tab.setAgentLifecycle(
+                key: key,
+                panelId: panelResolution.panelId,
+                lifecycle: lifecycle,
+                reportedSurfaceGeneration: reportedSurfaceGeneration
+            )
         }
         return "OK"
     }
@@ -20172,6 +20212,9 @@ class TerminalController {
 
     private func reportShellState(_ args: String) -> String {
         let parsed = parseOptions(args)
+        let reportedSurfaceGeneration = parsed.options["generation"].flatMap { rawValue in
+            UUID(uuidString: rawValue.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
         guard let rawState = parsed.positional.first, !rawState.isEmpty else {
             return "ERROR: Missing shell state — usage: report_shell_state <prompt|running> [--tab=X] [--panel=Y]"
         }
@@ -20183,13 +20226,19 @@ class TerminalController {
             guard socketFastPathState.shouldPublishShellActivity(
                 workspaceId: scope.workspaceId,
                 panelId: scope.panelId,
+                surfaceGeneration: reportedSurfaceGeneration,
                 state: state.rawValue
             ) else {
                 return "OK"
             }
             TerminalMutationBus.shared.enqueueMainActorMutation {
                 guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId) else { return }
-                tabManager.updateSurfaceShellActivity(tabId: scope.workspaceId, surfaceId: scope.panelId, state: state)
+                tabManager.updateSurfaceShellActivity(
+                    tabId: scope.workspaceId,
+                    surfaceId: scope.panelId,
+                    state: state,
+                    reportedSurfaceGeneration: reportedSurfaceGeneration
+                )
             }
             return "OK"
         }
@@ -20231,7 +20280,12 @@ class TerminalController {
                 return
             }
 
-            tabManager.updateSurfaceShellActivity(tabId: tab.id, surfaceId: surfaceId, state: state)
+            tabManager.updateSurfaceShellActivity(
+                tabId: tab.id,
+                surfaceId: surfaceId,
+                state: state,
+                reportedSurfaceGeneration: reportedSurfaceGeneration
+            )
         }
         return result
     }
@@ -21633,10 +21687,9 @@ class TerminalController {
     }
 
     /// Handle `terminal.paste_image`: a paired client (the iOS app) forwards an
-    /// image it pasted as base64 bytes. We materialize it to a temp file on the
-    /// Mac and inject the shell-escaped path as terminal input, exactly the way a
-    /// local clipboard-image paste does, so the running TUI (e.g. Claude Code)
-    /// attaches the image from the path.
+    /// image it pasted as base64 bytes. Profile-aware routing inserts the planned
+    /// local path with the mobile API's detailed delivery result, or uses the shared
+    /// desktop upload route for SSH; an SSH terminal can never receive the Mac path.
     private func v2MobileTerminalPasteImage(params: [String: Any]) -> V2CallResult {
         guard let base64 = v2RawString(params, "image_base64"),
               let imageData = Data(base64Encoded: base64), !imageData.isEmpty else {
@@ -21657,32 +21710,86 @@ class TerminalController {
 
         applyMobileViewportReport(params: params, terminalPanel: terminalPanel)
 
-        guard let escapedPath = GhosttyPasteboardHelper.saveImageData(imageData, fileExtension: format) else {
+        guard let imageURL = GhosttyPasteboardHelper.saveImageDataFileURL(
+            imageData,
+            fileExtension: format
+        ) else {
             return .err(code: "invalid_params", message: "Image payload was empty or exceeded the size limit", data: nil)
         }
 
-        let sendResult = terminalPanel.surface.sendInputResult(escapedPath)
-        switch sendResult {
-        case .sent:
-            terminalPanel.surface.forceRefresh(reason: "mobileHost.terminalPasteImage")
-        case .queued:
-            break
-        case .inputQueueFull:
-            return .err(code: "input_queue_full", message: Self.terminalInputQueueFullMessage, data: ["surface_id": surfaceId.uuidString])
-        case .surfaceUnavailable:
-            return .err(code: "surface_unavailable", message: Self.terminalSurfaceUnavailableMessage, data: ["surface_id": surfaceId.uuidString])
-        case .processExited:
-            return .err(code: "process_exited", message: Self.terminalProcessExitedMessage, data: ["surface_id": surfaceId.uuidString])
+        let target = terminalPanel.surface.resolvedImageTransferTarget()
+        if case .unavailable(let reason) = target {
+            GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles([imageURL])
+            return .err(
+                code: "image_transfer_unavailable",
+                message: reason.localizedDescription,
+                data: ["surface_id": surfaceId.uuidString]
+            )
         }
-        #if DEBUG
+
+        if case .local = target {
+            let escapedPath = TerminalImageTransferPlanner.insertedText(
+                forFileURLs: [imageURL]
+            )
+            let sendResult = terminalPanel.sendInputResult(escapedPath)
+            switch sendResult {
+            case .sent:
+                terminalPanel.surface.forceRefresh(reason: "mobileHost.terminalPasteImage")
+            case .queued:
+                break
+            case .inputQueueFull:
+                GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles([imageURL])
+                return .err(
+                    code: "input_queue_full",
+                    message: Self.terminalInputQueueFullMessage,
+                    data: ["surface_id": surfaceId.uuidString]
+                )
+            case .surfaceUnavailable:
+                GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles([imageURL])
+                return .err(
+                    code: "surface_unavailable",
+                    message: Self.terminalSurfaceUnavailableMessage,
+                    data: ["surface_id": surfaceId.uuidString]
+                )
+            case .processExited:
+                GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles([imageURL])
+                return .err(
+                    code: "process_exited",
+                    message: Self.terminalProcessExitedMessage,
+                    data: ["surface_id": surfaceId.uuidString]
+                )
+            }
+#if DEBUG
+            cmuxDebugLog(
+                "mobile.terminal.paste_image workspace=\(resolved.workspace.id.uuidString.prefix(8)) surface=\(surfaceId.uuidString.prefix(8)) bytes=\(imageData.count) format=\(format) target=local queued=\(sendResult == .queued ? 1 : 0)"
+            )
+#endif
+            return .ok([
+                "workspace_id": resolved.workspace.id.uuidString,
+                "surface_id": terminalPanel.id.uuidString,
+                "queued": sendResult == .queued,
+                "upload_pending": false,
+            ])
+        }
+
+        guard terminalPanel.hostedView.handleDroppedURLs([imageURL]) else {
+            GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles([imageURL])
+            return .err(
+                code: "image_transfer_failed",
+                message: TerminalImageTransferExecutionError.rejectedContent.localizedDescription,
+                data: ["surface_id": surfaceId.uuidString]
+            )
+        }
+#if DEBUG
         cmuxDebugLog(
-            "mobile.terminal.paste_image workspace=\(resolved.workspace.id.uuidString.prefix(8)) surface=\(surfaceId.uuidString.prefix(8)) bytes=\(imageData.count) format=\(format)"
+            "mobile.terminal.paste_image workspace=\(resolved.workspace.id.uuidString.prefix(8)) surface=\(surfaceId.uuidString.prefix(8)) bytes=\(imageData.count) format=\(format) target=ssh"
         )
-        #endif
+#endif
         return .ok([
             "workspace_id": resolved.workspace.id.uuidString,
             "surface_id": terminalPanel.id.uuidString,
-            "queued": sendResult == .queued,
+            "queued": true,
+            "upload_pending": true,
         ])
     }
 

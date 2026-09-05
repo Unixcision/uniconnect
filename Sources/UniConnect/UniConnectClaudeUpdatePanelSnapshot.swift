@@ -4,6 +4,8 @@ import Foundation
 struct UniConnectClaudeUpdatePanelSnapshot: Sendable {
     let id: UUID
     let workspaceID: UUID
+    /// Runtime identity that changes when this stable panel ID is rebound during respawn.
+    let surfaceGeneration: UUID?
     let displayName: String
     let directory: String?
     let persistedClaudeSessionID: String?

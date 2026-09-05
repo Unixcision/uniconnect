@@ -3586,6 +3586,8 @@ final class TextBoxInputTextView: NSTextView, FileURLDropInsertingTextView {
         .rtfd,
         NSPasteboard.PasteboardType(UTType.jpeg.identifier),
         NSPasteboard.PasteboardType(UTType.gif.identifier),
+        NSPasteboard.PasteboardType(UTType.webP.identifier),
+        NSPasteboard.PasteboardType(UTType.bmp.identifier),
         NSPasteboard.PasteboardType(UTType.heic.identifier),
         NSPasteboard.PasteboardType(UTType.heif.identifier),
     ]

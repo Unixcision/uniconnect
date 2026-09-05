@@ -198,7 +198,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         let stableSocketPath = stableSocketURL.path
         let caseVariantStablePath = stableSocketURL
             .deletingLastPathComponent()
-            .appendingPathComponent("CMUX.sock", isDirectory: false)
+            .appendingPathComponent("UNICONNECT.sock", isDirectory: false)
             .path
 
         let stableResponder = try UnixSocketResponder(path: stableSocketPath, response: "OK STABLE")
@@ -290,7 +290,7 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixedHomeURL) }
         let stableSocketURL = fixedHomeURL
             .appendingPathComponent(".local/state/uniconnect", isDirectory: true)
-            .appendingPathComponent("cmux-\(getuid()).sock", isDirectory: false)
+            .appendingPathComponent("uniconnect-\(getuid()).sock", isDirectory: false)
         let stableSocketPath = stableSocketURL.path
         try FileManager.default.createDirectory(
             at: stableSocketURL.deletingLastPathComponent(),
@@ -300,12 +300,12 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
             stableSocketPath,
             stableSocketURL
                 .deletingLastPathComponent()
-                .appendingPathComponent("CMUX-\(getuid()).sock", isDirectory: false)
+                .appendingPathComponent("UNICONNECT-\(getuid()).sock", isDirectory: false)
                 .path,
         ]
 
         if FileManager.default.fileExists(atPath: stableSocketPath) {
-            throw XCTSkip("User-scoped stable cmux socket already exists at \(stableSocketPath)")
+            throw XCTSkip("User-scoped stable UniConnect socket already exists at \(stableSocketPath)")
         }
 
         for alias in aliases {
@@ -363,10 +363,10 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
             .appendingPathComponent("uniconnect.sock", isDirectory: false)
             .path
         let userScopedStableSocketPath = socketDirectoryURL
-            .appendingPathComponent("cmux-\(getuid()).sock", isDirectory: false)
+            .appendingPathComponent("uniconnect-\(getuid()).sock", isDirectory: false)
             .path
         if FileManager.default.fileExists(atPath: userScopedStableSocketPath) {
-            throw XCTSkip("User-scoped stable cmux socket already exists at \(userScopedStableSocketPath)")
+            throw XCTSkip("User-scoped stable UniConnect socket already exists at \(userScopedStableSocketPath)")
         }
 
         let fakeStableCLIPath = try fakeTaggedBundledCLIPath(
@@ -429,10 +429,10 @@ final class CMUXCLIErrorOutputRegressionTests: XCTestCase {
             .appendingPathComponent("uniconnect.sock", isDirectory: false)
             .path
         let userScopedStableSocketPath = socketDirectoryURL
-            .appendingPathComponent("cmux-\(getuid()).sock", isDirectory: false)
+            .appendingPathComponent("uniconnect-\(getuid()).sock", isDirectory: false)
             .path
         if FileManager.default.fileExists(atPath: userScopedStableSocketPath) {
-            throw XCTSkip("User-scoped stable cmux socket already exists at \(userScopedStableSocketPath)")
+            throw XCTSkip("User-scoped stable UniConnect socket already exists at \(userScopedStableSocketPath)")
         }
 
         let fakeStableCLIPath = try fakeTaggedBundledCLIPath(

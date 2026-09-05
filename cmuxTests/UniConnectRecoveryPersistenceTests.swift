@@ -1,6 +1,8 @@
-import Foundation
 import CryptoKit
+import Darwin
+import Foundation
 import XCTest
+import Testing
 
 #if canImport(cmux_DEV)
 @testable import cmux_DEV
@@ -82,6 +84,37 @@ final class UniConnectRecoveryPersistenceTests: XCTestCase {
         let symlinkURL = directory.appendingPathComponent("vault-link.uc")
         try FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: fileURL)
         XCTAssertThrowsError(try UniConnectAtomicFileWriter.readPrivateFile(at: symlinkURL))
+    }
+
+    func testAtomicFileOperationsRejectIntermediateDirectorySymlinkWithoutTouchingOutside() throws {
+        let fixture = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-atomic-symlink-\(UUID().uuidString)", isDirectory: true)
+        let outside = fixture.appendingPathComponent("outside", isDirectory: true)
+        let link = fixture.appendingPathComponent("private-link", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        let outsideFile = outside.appendingPathComponent("must-remain.json")
+        try UniConnectAtomicFileWriter.write(Data("outside".utf8), to: outsideFile)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: outside)
+
+        let escapedDirectory = link.appendingPathComponent("created-through-link", isDirectory: true)
+        let escapedFile = escapedDirectory.appendingPathComponent("session.json")
+        XCTAssertThrowsError(
+            try UniConnectAtomicFileWriter.write(Data("must-not-escape".utf8), to: escapedFile)
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: outside.appendingPathComponent("created-through-link").path
+            )
+        )
+        let escapedExistingFile = link.appendingPathComponent("must-remain.json")
+        XCTAssertThrowsError(
+            try UniConnectAtomicFileWriter.readPrivateFile(at: escapedExistingFile)
+        )
+        XCTAssertThrowsError(
+            try UniConnectAtomicFileWriter.removeIfPresent(at: escapedExistingFile)
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outsideFile.path))
     }
 
     func testSSHReadableSnapshotContainsOnlyOpaqueCredentialAndRecoveryFields() throws {
@@ -601,6 +634,35 @@ final class UniConnectRecoveryPersistenceTests: XCTestCase {
         XCTAssertEqual(snapshotMode & 0o777, 0o600)
     }
 
+    func testRecoveryRepositoryRejectsManagedRootSymlinkBeforeCreatingAnythingOutside() async throws {
+        let fixture = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-recovery-root-symlink-\(UUID().uuidString)", isDirectory: true)
+        let outside = fixture.appendingPathComponent("outside", isDirectory: true)
+        let managedRoot = fixture.appendingPathComponent(".uniconnect", isDirectory: true)
+        let backups = managedRoot.appendingPathComponent("backups", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: managedRoot, withDestinationURL: outside)
+        let repository = UniConnectRecoveryBackupRepository(rootDirectory: backups)
+
+        do {
+            _ = try await repository.archive(
+                snapshot: makeSnapshot(),
+                encryptedVault: nil,
+                reason: .scheduled
+            )
+            XCTFail("Expected a managed-root symlink to fail closed")
+        } catch {
+            // The important invariant is checked below: no traversal happened first.
+        }
+
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: outside.appendingPathComponent("backups", isDirectory: true).path
+            )
+        )
+    }
+
     func testFutureDatedBackupDoesNotSuppressCurrentCadence() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("uniconnect-clock-rollback-\(UUID().uuidString)", isDirectory: true)
@@ -690,6 +752,60 @@ final class UniConnectRecoveryPersistenceTests: XCTestCase {
         XCTAssertTrue(backups.isEmpty)
     }
 
+    func testPruneKeepsEncryptedCompanionWhenReadableSnapshotDeletionFails() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-retention-failure-\(UUID().uuidString)", isDirectory: true)
+        var protectedSnapshotURL: URL?
+        defer {
+            if let protectedSnapshotURL {
+                _ = chflags(protectedSnapshotURL.path, 0)
+            }
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let policy = UniConnectRecoveryBackupPolicy(
+            interval: 1,
+            retention: 1_000,
+            maximumCount: 1
+        )
+        let repository = UniConnectRecoveryBackupRepository(
+            rootDirectory: directory,
+            policy: policy
+        )
+        let snapshot = makeSnapshot(profile: UniConnectWorkspaceProfile(
+            kind: .ssh,
+            credentialId: UUID(),
+            hostLabel: "root@example.test",
+            tmuxReady: true
+        ))
+        let firstVault = Data("first-encrypted-vault".utf8)
+        let first = try await repository.archive(
+            snapshot: snapshot,
+            encryptedVault: firstVault,
+            reason: .scheduled,
+            now: Date(timeIntervalSince1970: 2_000_000)
+        )
+        protectedSnapshotURL = first.snapshotURL
+        XCTAssertEqual(chflags(first.snapshotURL.path, UInt32(UF_IMMUTABLE)), 0)
+        _ = try await repository.archive(
+            snapshot: snapshot,
+            encryptedVault: Data("second-encrypted-vault".utf8),
+            reason: .scheduled,
+            now: Date(timeIntervalSince1970: 2_000_001)
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: first.snapshotURL.path))
+        let firstVaultURL = try XCTUnwrap(first.encryptedVaultURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: firstVaultURL.path))
+        XCTAssertEqual(
+            try UniConnectAtomicFileWriter.readPrivateFile(at: firstVaultURL),
+            firstVault
+        )
+        let backups = try await repository.availableBackups(
+            now: Date(timeIntervalSince1970: 2_000_001)
+        )
+        XCTAssertEqual(backups.count, 2)
+    }
+
     func testBeforeRestoreBackupsCannotEvictScheduledRecoveryHistory() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("uniconnect-separated-retention-\(UUID().uuidString)", isDirectory: true)
@@ -728,6 +844,31 @@ final class UniConnectRecoveryPersistenceTests: XCTestCase {
         XCTAssertEqual(backups.filter { $0.reason == .scheduled }.count, 4)
         XCTAssertEqual(backups.filter { $0.reason == .beforeRestore }.count, 2)
         XCTAssertEqual(backups.count, 6)
+    }
+
+    func testSSHRecoveryArchiveRejectsWorkspaceWithoutOpaqueCredentialReference() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-recovery-missing-reference-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repository = UniConnectRecoveryBackupRepository(rootDirectory: directory)
+        let snapshot = makeSnapshot(profile: UniConnectWorkspaceProfile(
+            kind: .ssh,
+            credentialId: nil,
+            hostLabel: "root@example.test",
+            tmuxReady: true
+        ))
+
+        do {
+            _ = try await repository.archive(
+                snapshot: snapshot,
+                encryptedVault: nil,
+                reason: .scheduled
+            )
+            XCTFail("Expected an SSH archive without a credential reference to fail closed")
+        } catch {
+            XCTAssertTrue(error is UniConnectError)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
     }
 
     func testSSHRecoveryArchiveNeverCommitsReadableSnapshotWithoutVaultCompanion() async throws {
@@ -794,12 +935,14 @@ final class UniConnectRecoveryPersistenceTests: XCTestCase {
 
         let backups = try await repository.availableBackups()
         let recovered = try XCTUnwrap(backups.first)
+        let recoveredVault = try await repository.loadEncryptedVault(for: recovered.snapshotURL)
         XCTAssertEqual(backups.count, 1)
-        XCTAssertNotNil(recovered.encryptedVaultURL)
         XCTAssertEqual(
-            try await repository.loadEncryptedVault(for: recovered.snapshotURL),
-            Data("encrypted-vault".utf8)
+            recovered.snapshotURL.deletingLastPathComponent().path,
+            directory.standardizedFileURL.path
         )
+        XCTAssertNotNil(recovered.encryptedVaultURL)
+        XCTAssertEqual(recoveredVault, Data("encrypted-vault".utf8))
     }
 
     func testRecoveryRepositoryWritesTheAlreadyCapturedVaultRevision() async throws {
@@ -817,6 +960,51 @@ final class UniConnectRecoveryPersistenceTests: XCTestCase {
 
         let companion = try XCTUnwrap(entry.encryptedVaultURL)
         XCTAssertEqual(try Data(contentsOf: companion), captured)
+    }
+
+    func testRecoverySnapshotRejectsAReplacedEncryptedCompanion() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-recovery-bound-pair-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repository = UniConnectRecoveryBackupRepository(rootDirectory: directory)
+        let snapshot = makeSnapshot(profile: UniConnectWorkspaceProfile(
+            kind: .ssh,
+            credentialId: UUID(),
+            hostLabel: "root@example.test",
+            tmuxReady: true
+        ))
+        let entry = try await repository.archive(
+            snapshot: snapshot,
+            encryptedVault: Data("expected-encrypted-vault".utf8),
+            reason: .scheduled
+        )
+        let companion = try XCTUnwrap(entry.encryptedVaultURL)
+        try UniConnectAtomicFileWriter.write(
+            Data("different-encrypted-vault".utf8),
+            to: companion
+        )
+
+        let loaded = await repository.loadSnapshot(from: entry.snapshotURL)
+        XCTAssertNil(loaded)
+    }
+
+    func testLegacySSHRecoverySnapshotWithoutCompanionIsNotReportedAsLoadable() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-recovery-legacy-unbound-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repository = UniConnectRecoveryBackupRepository(rootDirectory: directory)
+        let filename = "session-2000000000-scheduled-\(UUID().uuidString.lowercased()).json"
+        let snapshotURL = directory.appendingPathComponent(filename)
+        let snapshot = makeSnapshot(profile: UniConnectWorkspaceProfile(
+            kind: .ssh,
+            credentialId: UUID(),
+            hostLabel: "root@example.test",
+            tmuxReady: true
+        ))
+        XCTAssertTrue(SessionPersistenceStore.save(snapshot, fileURL: snapshotURL))
+
+        let loaded = await repository.loadSnapshot(from: snapshotURL)
+        XCTAssertNil(loaded)
     }
 
     @MainActor
@@ -852,6 +1040,43 @@ final class UniConnectRecoveryPersistenceTests: XCTestCase {
             XCTAssertEqual(fixture.current.connectCommand(for: fixture.credentialID), fixture.currentCommand)
             XCTAssertEqual(fixture.current.allIds(), [fixture.credentialID])
         }
+    }
+
+    @MainActor
+    func testRecoveryRejectsSSHWorkspaceWithoutCredentialBeforeRestoringAnything() async throws {
+        let recoveredSnapshot = makeSnapshot(profile: UniConnectWorkspaceProfile(
+            kind: .ssh,
+            credentialId: nil,
+            hostLabel: "root@example.test",
+            tmuxReady: true
+        ))
+        var didArchiveCurrentSnapshot = false
+        var didRestoreSnapshot = false
+        let transaction = UniConnectRecoveryRestoreTransaction(
+            snapshotProvider: { nil },
+            snapshotRestorer: { _ in
+                didRestoreSnapshot = true
+                return true
+            },
+            currentSnapshotArchiver: { _, _ in
+                didArchiveCurrentSnapshot = true
+            },
+            vaultSnapshotProvider: { _ in nil },
+            vaultMerger: { _ in [:] },
+            vaultRestorer: { _ in }
+        )
+
+        do {
+            try await transaction.execute(
+                recoveredSnapshot: recoveredSnapshot,
+                recoveredVault: nil
+            )
+            XCTFail("Expected incomplete SSH recovery metadata to be rejected")
+        } catch {
+            XCTAssertTrue(error is UniConnectError)
+        }
+        XCTAssertFalse(didArchiveCurrentSnapshot)
+        XCTAssertFalse(didRestoreSnapshot)
     }
 
     @MainActor
@@ -965,6 +1190,13 @@ final class UniConnectRecoveryPersistenceTests: XCTestCase {
             workspace.panelCustomTitles[panelID] = "Claude"
             workspace.uniConnectTmuxSessionsByPanelId[panelID] = "uc-claude"
             workspace.uniConnectClaudeSessionsByPanelId[panelID] = UUID().uuidString
+            workspace.uniConnectLocalWindowsByPanelId[panelID] = UniConnectLocalWindowRecord(
+                id: panelID,
+                visibleName: "Claude",
+                boxRoot: "/tmp",
+                createdAt: 1,
+                updatedAt: 1
+            )
             NotificationCenter.default.post(
                 name: .uniConnectClaudeSessionSignal,
                 object: UniConnectClaudeSessionSignal(
@@ -985,6 +1217,7 @@ final class UniConnectRecoveryPersistenceTests: XCTestCase {
         XCTAssertTrue(reasons.contains("window-custom-name"))
         XCTAssertTrue(reasons.contains("window-tmux-binding"))
         XCTAssertTrue(reasons.contains("window-claude-session"))
+        XCTAssertTrue(reasons.contains("window-local-history"))
         XCTAssertTrue(reasons.contains("window-claude-runtime-state"))
         XCTAssertTrue(reasons.contains("selected-workspace"))
         _ = observer
@@ -1102,5 +1335,76 @@ final class UniConnectRecoveryPersistenceTests: XCTestCase {
             backupBytes: backupBytes,
             recoveredSnapshot: recoveredSnapshot
         )
+    }
+}
+
+@MainActor
+@Suite
+struct UniConnectSSHRestoreRetentionTests {
+    @Test(arguments: [1, 3, 17])
+    func missingCredentialKeepsEverySavedWindowThroughRestoreAndResave(windowCount: Int) throws {
+        let manager = TabManager(autoWelcomeIfNeeded: false)
+        let workspace = try #require(manager.tabs.first)
+        let scaffoldIDs = Set(workspace.panels.keys)
+        var snapshot = workspace.sessionSnapshot(includeScrollback: false)
+        let template = try #require(snapshot.panels.first)
+        snapshot.uniConnect = UniConnectWorkspaceProfile(
+            kind: .ssh,
+            credentialId: nil,
+            hostLabel: "unavailable.example",
+            tmuxReady: true
+        )
+        snapshot.panels = (0..<windowCount).map { index in
+            var panel = template
+            panel.id = UUID()
+            panel.title = "Remote task \(index)"
+            panel.customTitle = "Saved task \(index)"
+            panel.isPinned = index == 0
+            panel.terminal = SessionTerminalPanelSnapshot(
+                resumeBinding: SurfaceResumeBindingSnapshot(
+                    name: "Saved resume \(index)",
+                    command: "/usr/bin/true",
+                    checkpointId: "checkpoint-\(index)",
+                    source: "cli",
+                    autoResume: false
+                ),
+                wasAgentRunning: false,
+                uniConnectTmuxSession: "saved-tmux-\(index)",
+                uniConnectClaudeSession: "saved-conversation-\(index)"
+            )
+            return panel
+        }
+        let savedIDs = snapshot.panels.map(\.id)
+        snapshot.focusedPanelId = savedIDs.first
+        snapshot.layout = .pane(SessionPaneLayoutSnapshot(
+            panelIds: savedIDs,
+            selectedPanelId: savedIDs.first
+        ))
+
+        let restoredIDs = workspace.restoreSessionSnapshot(snapshot)
+
+        #expect(Set(workspace.panels.keys) == Set(savedIDs))
+        #expect(Set(workspace.panels.keys).isDisjoint(with: scaffoldIDs))
+        #expect(workspace.uniConnectDisconnectedPanelIds == Set(savedIDs))
+        for saved in snapshot.panels {
+            #expect(restoredIDs[saved.id] == saved.id)
+            let terminal = try #require(workspace.panels[saved.id] as? TerminalPanel)
+            #expect(terminal.surface.initialCommand == "/usr/bin/false")
+            #expect(workspace.panelCustomTitles[saved.id] == saved.customTitle)
+            #expect(workspace.pinnedPanelIds.contains(saved.id) == saved.isPinned)
+            #expect(workspace.uniConnectTmuxSessionsByPanelId[saved.id] == saved.terminal?.uniConnectTmuxSession)
+            #expect(workspace.uniConnectClaudeSessionsByPanelId[saved.id] == saved.terminal?.uniConnectClaudeSession)
+            #expect(workspace.surfaceResumeBindingsByPanelId[saved.id] == saved.terminal?.resumeBinding)
+        }
+
+        let resaved = workspace.sessionSnapshot(includeScrollback: false)
+        #expect(Set(resaved.panels.map(\.id)) == Set(savedIDs))
+        for saved in snapshot.panels {
+            let panel = try #require(resaved.panels.first { $0.id == saved.id })
+            #expect(panel.customTitle == saved.customTitle)
+            #expect(panel.terminal?.uniConnectTmuxSession == saved.terminal?.uniConnectTmuxSession)
+            #expect(panel.terminal?.uniConnectClaudeSession == saved.terminal?.uniConnectClaudeSession)
+            #expect(panel.terminal?.resumeBinding == saved.terminal?.resumeBinding)
+        }
     }
 }

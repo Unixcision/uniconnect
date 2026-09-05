@@ -895,8 +895,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     let updateLog = UpdateLogStore()
     let focusLog = FocusLogStore()
     private lazy var updateController = UpdateController(log: updateLog)
-    private lazy var titlebarAccessoryController = UpdateTitlebarAccessoryController(updateLog: updateLog)
-    private let windowDecorationsController = WindowDecorationsController()
+    private lazy var titlebarAccessoryController = UpdateTitlebarAccessoryController(
+        updateLog: updateLog,
+        // Both sidebar presentations carry their own bell and plus: the expanded
+        // header row and the compact rail's footer. Whenever either is on screen
+        // the AppKit accessory would be a second copy of both controls — and in
+        // compact it lands on top of the window title. Visibility alone decides.
+        usesEmbeddedUniConnectSidebarHeader: { [weak self] window in
+            guard UniConnectCoordinator.isEnabled,
+                  let context = self?.contextForMainTerminalWindow(window, reindex: false) else {
+                return false
+            }
+            return context.sidebarState.isVisible
+        }
+    )
+    private lazy var windowDecorationsController = WindowDecorationsController(
+        uniConnectSidebarPresentation: { [weak self] window in
+            guard UniConnectCoordinator.isEnabled,
+                  let context = self?.contextForMainTerminalWindow(window, reindex: false) else {
+                return nil
+            }
+            return (
+                isVisible: context.sidebarState.isVisible,
+                isCompact: context.isUniConnectSidebarCompact?() ?? true
+            )
+        }
+    )
     private var menuBarExtraController: MenuBarExtraController?
     private var transientGlobalSearchMenuBarExtraController: MenuBarExtraController?
     private var lastMenuBarExtraShouldInstall: Bool?
@@ -1108,6 +1132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
     private var lastSessionAutosaveFingerprint: Int?
     private var lastSessionAutosavePersistedAt: Date = .distantPast
+    private var lastHandledSessionAutosaveCompletionGeneration: UInt64 = 0
     private var lastTypingActivityAt: TimeInterval = 0
     var didHandleExplicitOpenIntentAtStartup = false
     private var didScheduleInitialMainWindowBootstrap = false
@@ -3022,11 +3047,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         display: SessionDisplaySnapshot?,
         defaults: UserDefaults = .standard
     ) {
-        Self.removeLegacyPersistedWindowGeometry(defaults: defaults)
-        guard let data = Self.encodedPersistedWindowGeometryData(frame: frame, display: display) else {
-            return
-        }
-        defaults.set(data, forKey: Self.persistedWindowGeometryDefaultsKey)
+        Self.persistSessionWindowGeometryDefaults(
+            Self.encodedPersistedWindowGeometryData(frame: frame, display: display),
+            defaults: defaults
+        )
     }
 
     private nonisolated static func encodedPersistedWindowGeometryData(
@@ -3050,10 +3074,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return payload
     }
 
-    private nonisolated static func removeLegacyPersistedWindowGeometry(
+    /// Defaults can synchronously notify main-queue observers; never call from the file-writing queue.
+    static func persistSessionWindowGeometryDefaults(
+        _ data: Data?,
         defaults: UserDefaults = .standard
     ) {
-        legacyPersistedWindowGeometryDefaultsKeys.forEach { defaults.removeObject(forKey: $0) }
+        removeLegacyPersistedWindowGeometry(defaults: defaults)
+        guard let data, defaults.data(forKey: persistedWindowGeometryDefaultsKey) != data else { return }
+        defaults.set(data, forKey: persistedWindowGeometryDefaultsKey)
+    }
+
+    private static func removeLegacyPersistedWindowGeometry(
+        defaults: UserDefaults = .standard
+    ) {
+        for key in legacyPersistedWindowGeometryDefaultsKeys where defaults.object(forKey: key) != nil {
+            defaults.removeObject(forKey: key)
+        }
     }
 
     private func persistWindowGeometry(from window: NSWindow?) {
@@ -3875,8 +3911,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @discardableResult
-    func uniConnectPersistSessionNow() -> Bool {
-        saveSessionSnapshot(includeScrollback: true, forceSynchronous: true)
+    func uniConnectPersistSessionNow(resumeIndexes: ProcessDetectedResumeIndexes? = nil) -> Bool {
+        if resumeIndexes != nil {
+            // An older in-flight autoscan must not overwrite this explicit save.
+            _ = nextProcessDetectedSessionSaveGeneration()
+        }
+        return saveSessionSnapshot(
+            includeScrollback: true,
+            restorableAgentIndex: resumeIndexes?.restorableAgentIndex,
+            surfaceResumeBindingIndex: resumeIndexes?.surfaceResumeBindingIndex,
+            forceSynchronous: true
+        )
     }
 
     func uniConnectRequestSessionSave() {
@@ -3892,15 +3937,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Coalesces mutations from the same main-run-loop transaction, then captures
     /// their final coherent state before the next user event can run.
     func uniConnectRequestCriticalSessionSave(reason: String) {
-        guard UniConnectCoordinator.isEnabled else { return }
+        guard UniConnectCoordinator.isEnabled, !isTerminatingApp else { return }
 #if DEBUG
         cmuxDebugLog("session.criticalSave.request reason=\(reason)")
 #endif
         guard !uniConnectCriticalSaveScheduled else { return }
         uniConnectCriticalSaveScheduled = true
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.uniConnectCriticalSaveScheduled = false
+            guard let self, !self.isTerminatingApp else { return }
+            // Snapshot reconciliation can publish metadata that this very snapshot captures.
+            // Keep those synchronous mutations in the current save, rather than recursively
+            // scheduling another save before the main run loop can process a user event.
+            defer { self.uniConnectCriticalSaveScheduled = false }
             _ = self.saveSessionSnapshot(includeScrollback: false, removeWhenEmpty: false)
         }
     }
@@ -3921,7 +3969,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         removeWhenEmpty: Bool = false,
         restorableAgentIndex: RestorableAgentSessionIndex? = nil,
         surfaceResumeBindingIndex: SurfaceResumeBindingIndex? = nil,
-        forceSynchronous: Bool = false
+        forceSynchronous: Bool = false,
+        persistenceCompletion: (@MainActor @Sendable (Bool) -> Void)? = nil
     ) -> Bool {
         if Self.shouldSkipSessionSaveDuringRestore(
             isApplyingSessionRestore: isApplyingSessionRestore,
@@ -3930,6 +3979,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #if DEBUG
             cmuxDebugLog("session.save.skipped reason=session_restore_in_progress includeScrollback=0")
 #endif
+            persistenceCompletion?(false)
             return false
         }
         let writeSynchronously = forceSynchronous || Self.shouldWriteSessionSnapshotSynchronously(
@@ -3959,7 +4009,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 nil,
                 removeWhenEmpty: removeWhenEmpty,
                 persistedGeometryData: nil,
-                synchronously: writeSynchronously
+                synchronously: writeSynchronously,
+                persistenceCompletion: persistenceCompletion
             )
             return false
         }
@@ -3978,7 +4029,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             snapshot,
             removeWhenEmpty: false,
             persistedGeometryData: persistedGeometryData,
-            synchronously: writeSynchronously
+            synchronously: writeSynchronously,
+            persistenceCompletion: persistenceCompletion
         )
     }
 
@@ -4176,16 +4228,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         _ = saveSessionSnapshot(
             includeScrollback: false,
             restorableAgentIndex: resumeIndexes.restorableAgentIndex,
-            surfaceResumeBindingIndex: resumeIndexes.surfaceResumeBindingIndex
+            surfaceResumeBindingIndex: resumeIndexes.surfaceResumeBindingIndex,
+            persistenceCompletion: { [weak self] didSave in
+                self?.updateSessionAutosaveSaveState(
+                    didSave: didSave,
+                    includeScrollback: false,
+                    persistedAt: now,
+                    fingerprint: autosaveFingerprint,
+                    generation: generation
+                )
+            }
         )
 #if DEBUG
         saveMs = (ProcessInfo.processInfo.systemUptime - saveStart) * 1000.0
 #endif
-        updateSessionAutosaveSaveState(
-            includeScrollback: false,
-            persistedAt: now,
-            fingerprint: autosaveFingerprint
-        )
     }
 
     @discardableResult
@@ -4263,13 +4319,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func updateSessionAutosaveSaveState(
+        didSave: Bool,
         includeScrollback: Bool,
         persistedAt: Date,
-        fingerprint: Int?
+        fingerprint: Int?,
+        generation: UInt64
     ) {
-        guard !isTerminatingApp, !includeScrollback else { return }
+        guard Self.shouldHandleSessionAutosaveCompletion(
+            generation: generation,
+            lastHandledGeneration: lastHandledSessionAutosaveCompletionGeneration
+        ) else { return }
+        // Failed completions advance this gate too. Otherwise an older success
+        // arriving afterward could describe obsolete disk state and suppress a
+        // retry of the current snapshot.
+        lastHandledSessionAutosaveCompletionGeneration = generation
+        guard Self.shouldAdvanceSessionAutosaveSaveState(
+            didSave: didSave,
+            isTerminatingApp: isTerminatingApp,
+            includeScrollback: includeScrollback
+        ) else { return }
         lastSessionAutosaveFingerprint = fingerprint
         lastSessionAutosavePersistedAt = persistedAt
+    }
+
+    nonisolated static func shouldHandleSessionAutosaveCompletion(
+        generation: UInt64,
+        lastHandledGeneration: UInt64
+    ) -> Bool {
+        generation > lastHandledGeneration
+    }
+
+    nonisolated static func shouldAdvanceSessionAutosaveSaveState(
+        didSave: Bool,
+        isTerminatingApp: Bool,
+        includeScrollback: Bool
+    ) -> Bool {
+        didSave && !isTerminatingApp && !includeScrollback
     }
 
     private nonisolated static func hashFrame(_ frame: NSRect, into hasher: inout Hasher) {
@@ -4287,9 +4372,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         _ snapshot: AppSessionSnapshot?,
         removeWhenEmpty: Bool,
         persistedGeometryData: Data?,
-        synchronously: Bool
+        synchronously: Bool,
+        persistenceCompletion: (@MainActor @Sendable (Bool) -> Void)? = nil
     ) -> Bool {
-        guard snapshot != nil || removeWhenEmpty || persistedGeometryData != nil else { return false }
+        guard snapshot != nil || removeWhenEmpty || persistedGeometryData != nil else {
+            persistenceCompletion?(false)
+            return false
+        }
         let recoveryRepository = uniConnectRecoveryRepository
         let shouldArchiveRecovery = UniConnectCoordinator.isEnabled
         let recoveryVaultResult: Result<Data?, Error>? = snapshot.flatMap { snapshot in
@@ -4303,14 +4392,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
 
-        let writeBlock = {
-            Self.removeLegacyPersistedWindowGeometry()
-            if let persistedGeometryData {
-                UserDefaults.standard.set(
-                    persistedGeometryData,
-                    forKey: Self.persistedWindowGeometryDefaultsKey
-                )
-            }
+        // A final save waits for this serial queue. Posting UserDefaults notifications
+        // from an older queued write can wait for main and deadlock that final drain.
+        Self.persistSessionWindowGeometryDefaults(persistedGeometryData)
+
+        let writeBlock: @Sendable () -> Bool = {
             if let snapshot {
                 let didSave = SessionPersistenceStore.save(snapshot)
                 if didSave, shouldArchiveRecovery {
@@ -4341,10 +4427,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         if synchronously {
-            return writeBlock()
+            // Drain older async snapshots first so a stale queued write cannot
+            // overwrite the final termination/update snapshot afterward.
+            let didPersist = sessionPersistenceQueue.sync(execute: writeBlock)
+            persistenceCompletion?(didPersist)
+            return didPersist
         } else {
             sessionPersistenceQueue.async {
-                _ = writeBlock()
+                let didPersist = writeBlock()
+                guard let persistenceCompletion else { return }
+                DispatchQueue.main.async {
+                    persistenceCompletion(didPersist)
+                }
             }
             return true
         }
@@ -4612,6 +4706,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
             installUniConnectPersistenceObserverIfNeeded(for: registeredContext)
         }
+        refreshTitlebarAccessoryVisibility(for: window)
+        // Registration is the first point at which window-scoped sidebar state is
+        // authoritative. Re-apply now so expanded UniConnect chrome can align the
+        // native traffic lights even when the pre-registration pass saw no context.
+        applyWindowDecorations(to: window)
         if Self.shouldSaveSessionSnapshotAfterMainWindowRegistration(
             isTerminatingApp: isTerminatingApp,
             didApplyStartupSessionRestore: didApplyStartupSessionRestore,
@@ -4914,6 +5013,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return moved
         }
 
+        guard sourceWorkspace.canTransferSurface(
+            panelId: panelId,
+            to: destinationWorkspace
+        ) else {
+#if DEBUG
+            cmuxDebugLog(
+                "surface.move.fail panel=\(panelId.uuidString.prefix(5)) " +
+                "reason=incompatibleUniConnectTarget elapsedMs=\(elapsedMs(since: moveStart))"
+            )
+#endif
+            return false
+        }
         let sourcePane = sourceWorkspace.paneId(forPanelId: panelId)
         let sourceIndex = sourceWorkspace.indexInPane(forPanelId: panelId)
 #if DEBUG
@@ -4992,6 +5103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #endif
         }
 
+        sourceWorkspace.completeDetachedSurfaceTransfer(detached)
 #if DEBUG
         let cleanupStart = ProcessInfo.processInfo.systemUptime
 #endif
@@ -5794,24 +5906,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return trimmed.isEmpty ? String(localized: "workspace.displayName.fallback", defaultValue: "Workspace") : trimmed
     }
 
+    @discardableResult
     func rollbackDetachedSurface(
         _ detached: Workspace.DetachedSurfaceTransfer,
         to workspace: Workspace,
         sourcePane: PaneID?,
         sourceIndex: Int?,
         focus: Bool
-    ) {
+    ) -> Bool {
+        let detachedSourceWorkspace = workspaceFor(tabId: detached.sourceWorkspaceId)
         let rollbackPane = sourcePane.flatMap { pane in
             workspace.bonsplitController.allPaneIds.first(where: { $0 == pane })
         } ?? workspace.bonsplitController.focusedPaneId
             ?? workspace.bonsplitController.allPaneIds.first
-        guard let rollbackPane else { return }
-        _ = workspace.attachDetachedSurface(
+        guard let rollbackPane,
+              workspace.attachDetachedSurface(
             detached,
             inPane: rollbackPane,
             atIndex: sourceIndex,
             focus: focus
-        )
+        ) != nil else {
+            return false
+        }
+        if let detachedSourceWorkspace, detachedSourceWorkspace !== workspace {
+            detachedSourceWorkspace.completeDetachedSurfaceTransfer(detached)
+        }
+        return true
     }
 
     func cleanupEmptySourceWorkspaceAfterSurfaceMove(
@@ -8357,6 +8477,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         window.title = ""
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        // UniConnect draws its own chrome rule under the header. AppKit's automatic
+        // separator adds a second one that only shows up in full screen, where the
+        // sliding titlebar strip renders it against the window backdrop.
+        window.titlebarSeparatorStyle = .none
         // cmux persists and restores main windows itself. Disable AppKit window
         // restoration so the OS cannot resurrect stale duplicate main windows.
         window.isRestorable = false
@@ -11941,12 +12065,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         titlebarAccessoryController.attach(to: window)
     }
 
+    func refreshTitlebarAccessoryVisibility(
+        for window: NSWindow,
+        isFullScreenOverride: Bool? = nil,
+        uniConnectEmbeddedHeaderVisibleOverride: Bool? = nil
+    ) {
+        titlebarAccessoryController.refreshVisibility(
+            for: window,
+            isFullScreenOverride: isFullScreenOverride,
+            uniConnectEmbeddedHeaderVisibleOverride: uniConnectEmbeddedHeaderVisibleOverride
+        )
+        // Accessory reconciliation is complete before decorations run. This keeps
+        // the native controls hidden while the SwiftUI header owns the row and
+        // avoids leaving an accessory clip view above the embedded buttons.
+        applyWindowDecorations(to: window)
+    }
+
     func applyWindowDecorations(to window: NSWindow) {
         windowDecorationsController.apply(to: window)
     }
 
-    func toggleNotificationsPopover(animated: Bool = true, anchorView: NSView? = nil) {
-        titlebarAccessoryController.toggleNotificationsPopover(animated: animated, anchorView: anchorView)
+    func toggleNotificationsPopover(
+        animated: Bool = true,
+        anchorView: NSView? = nil,
+        preferredEdge: NSRectEdge = .maxY
+    ) {
+        titlebarAccessoryController.toggleNotificationsPopover(
+            animated: animated,
+            anchorView: anchorView,
+            preferredEdge: preferredEdge
+        )
     }
 
     @discardableResult
@@ -12672,6 +12820,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             clearConfiguredShortcutChordState()
             return false
         }
+        if UniConnectAppLock.shared.handleShortcutIfLocked(event) {
+            clearConfiguredShortcutChordState()
+            return true
+        }
         guard !KeyboardShortcutRecorderActivity.isAnyRecorderActive else {
             clearConfiguredShortcutChordState()
             return false
@@ -13191,7 +13343,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             reloadConfiguration(source: "shortcut.reloadConfiguration")
             return true
         }
-
         if matchConfiguredShortcut(event: event, action: .toggleFullScreen) {
             guard let targetWindow = mainWindowForShortcutEvent(event) else {
                 return false
@@ -13794,7 +13945,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         if matchConfiguredShortcut(event: event, action: .toggleReactGrab) {
-            let didHandle = tabManager?.toggleReactGrabFromCurrentFocus() ?? false
+            let routedManager = preferredMainWindowContextForShortcutRouting(event: event)?.tabManager ?? tabManager
+            let didHandle = routedManager?.toggleReactGrabFromCurrentFocus() ?? false
             if !didHandle { NSSound.beep() }
             return true
         }
@@ -13871,6 +14023,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if matchConfiguredShortcut(event: event, action: .reopenClosedBrowserPanel) {
             let routedManager = preferredMainWindowContextForShortcutRouting(event: event)?.tabManager ?? tabManager
             _ = reopenMostRecentlyClosedItem(preferredTabManager: routedManager)
+            return true
+        }
+
+        // Keep this application-wide fallback after panel- and workspace-specific
+        // actions. If users intentionally configure the same stroke for more than one
+        // command, the action that owns the focused context must retain priority.
+        if matchConfiguredShortcut(event: event, action: .reconnectDroppedWindows) {
+            UniConnectCoordinator.shared.reconnectAllSSHWindowsNow()
             return true
         }
 
@@ -14611,13 +14771,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         prepareFocusedBrowserDevToolsForSplit(directionLabel: directionLabel)
         let didCreateSplit: Bool = {
             if let terminalContext {
-                return terminalContext.tabManager.createSplit(
+                return terminalContext.tabManager.requestNewTerminalSplit(
                     tabId: terminalContext.workspaceId,
                     surfaceId: terminalContext.panelId,
                     direction: direction
-                ) != nil
+                )
             }
-            return tabManager?.createSplit(direction: direction) != nil
+            return tabManager?.requestNewTerminalSplit(direction: direction) ?? false
         }()
 #if DEBUG
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
@@ -15538,6 +15698,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if UniConnectAppLock.shared.shouldConsumeApplicationAction(
+            item.action,
+            target: item.target,
+            sender: item
+        ) {
+            return false
+        }
         if UniConnectCoordinator.shared.importMutationGate?.allowsMutation == false {
             return false
         }
@@ -16657,6 +16824,10 @@ private extension NSApplication {
     }
 
     @objc func cmux_applicationSendEvent(_ event: NSEvent) {
+        if event.type == .keyDown,
+           UniConnectAppLock.shared.handleShortcutIfLocked(event) {
+            return
+        }
 #if DEBUG
         let typingTimingStart = event.type == .keyDown ? CmuxTypingTiming.start() : nil
         let phaseTotalStart = event.type == .keyDown ? ProcessInfo.processInfo.systemUptime : 0
@@ -16717,6 +16888,13 @@ private extension NSApplication {
     }
 
     @objc func cmux_sendAction(_ action: Selector, to target: Any?, from sender: Any?) -> Bool {
+        if UniConnectAppLock.shared.shouldConsumeApplicationAction(
+            action,
+            target: target,
+            sender: sender
+        ) {
+            return true
+        }
         if AppDelegate.shared?.handleDetachedInspectorWindowCloseAction(
             action: action,
             target: target,
@@ -17250,6 +17428,9 @@ private extension NSWindow {
     }
 
     @objc func cmux_performKeyEquivalent(with event: NSEvent) -> Bool {
+        if UniConnectAppLock.shared.handleShortcutIfLocked(event) {
+            return true
+        }
         let importAllowsMutation = UniConnectCoordinator.shared.importMutationGate?.allowsMutation ?? true
         if UniConnectImportMutationGate.shouldConsumeShortcut(allowsMutation: importAllowsMutation) {
             return true

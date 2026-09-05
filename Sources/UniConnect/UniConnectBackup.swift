@@ -1,6 +1,7 @@
-import Foundation
 import AppKit
 import CryptoKit
+import Darwin
+import Foundation
 
 // MARK: - Export container
 //
@@ -48,9 +49,10 @@ enum UniConnectBackup {
 
     static func buildDocument(
         tabManagers: [TabManager],
-        reconcileLiveState: Bool = true
+        reconcileLiveState: Bool = true,
+        restorableAgentIndex: RestorableAgentSessionIndex? = nil
     ) -> UniConnectDocument {
-        let agentIndex = RestorableAgentSessionIndex.load()
+        let agentIndex = restorableAgentIndex ?? RestorableAgentSessionIndex.load()
         var workspaces: [UniConnectDocument.Workspace] = []
         for tabManager in tabManagers {
             let groupNames = Dictionary(uniqueKeysWithValues: tabManager.workspaceGroups.map { ($0.id, $0.name) })
@@ -102,9 +104,15 @@ enum UniConnectBackup {
                     detectedAgent: detectedAgent
                 )
             }
-            let claude = localWindow?.legacyClaudeSession
-                ?? detectedAgent.flatMap { $0.kind == .claude ? $0.sessionId : nil }
-                ?? workspace.uniConnectClaudeSessionsByPanelId[panelId]
+            // A typed local record owns the provider selection. A nil Claude bridge
+            // means the latest conversation is another agent, not "use stale Claude".
+            let claude: String?
+            if let localWindow {
+                claude = localWindow.legacyClaudeSession
+            } else {
+                claude = detectedAgent.flatMap { $0.kind == .claude ? $0.sessionId : nil }
+                    ?? workspace.uniConnectClaudeSessionsByPanelId[panelId]
+            }
             let cwd = localWindow?.workingDirectory
                 ?? workspace.panelDirectories[panelId]
                 ?? (workspace.panels[panelId] as? TerminalPanel)?.requestedWorkingDirectory
@@ -175,11 +183,13 @@ enum UniConnectBackup {
     @discardableResult
     static func persistNow(
         tabManagers: [TabManager],
-        reconcileLiveState: Bool = true
+        reconcileLiveState: Bool = true,
+        restorableAgentIndex: RestorableAgentSessionIndex? = nil
     ) throws -> URL {
         let document = buildDocument(
             tabManagers: tabManagers,
-            reconcileLiveState: reconcileLiveState
+            reconcileLiveState: reconcileLiveState,
+            restorableAgentIndex: restorableAgentIndex
         )
         let credentialIDs = referencedCredentialIDs(in: document)
         let encryptedVault = try UniConnectVault.shared.encryptedSnapshot(
@@ -297,8 +307,13 @@ enum UniConnectBackup {
             )
             return try readReadableBackup(at: readableURL, vault: vault)
         } catch {
-            removeReadableBackupPair(at: readableURL)
-            removeObsoletePrimaryVaultCopies(beside: readableURL, keeping: nil)
+            if removeReadableBackupPair(at: readableURL) {
+                removeObsoletePrimaryVaultCopies(
+                    beside: readableURL,
+                    keeping: nil,
+                    requiresAbsentMarker: true
+                )
+            }
             NSLog("[UniConnect] legacy backup migration deferred: \(error)")
             return legacyDocument
         }
@@ -308,9 +323,18 @@ enum UniConnectBackup {
         at url: URL,
         vault: UniConnectVault
     ) throws -> UniConnectDocument {
+        try readReadableBackupSource(at: url, vault: vault).document
+    }
+
+    /// Opens a readable manifest without degrading complete encrypted credentials to strings.
+    static func readReadableBackupSource(
+        at url: URL,
+        vault: UniConnectVault
+    ) throws -> UniConnectImportSourceDocument {
         let data = try UniConnectAtomicFileWriter.readPrivateFile(
             at: url,
-            repairPermissions: true
+            repairPermissions: true,
+            requirePrivateDirectory: false
         )
         let manifest = try JSONDecoder().decode(LocalBackupManifest.self, from: data)
         guard manifest.format == LocalBackupManifest.formatName,
@@ -330,7 +354,8 @@ enum UniConnectBackup {
             }
             encryptedVault = try UniConnectAtomicFileWriter.readPrivateFile(
                 at: url.deletingLastPathComponent().appendingPathComponent(vaultFile),
-                repairPermissions: true
+                repairPermissions: true,
+                requirePrivateDirectory: false
             )
             guard manifest.vaultSHA256 == encryptedVault.map(sha256Hex) else {
                 throw unrecognizedLocalBackupError()
@@ -341,10 +366,11 @@ enum UniConnectBackup {
 
         var restored = manifest.document
         let credentialIDs = referencedCredentialIDs(in: restored)
-        let commands = try vault.connectCommands(
+        let records = try vault.credentialRecords(
             fromEncryptedSnapshot: encryptedVault,
             requiring: credentialIDs
         )
+        var recordsByWorkspaceIndex: [Int: UniConnectSSHCredentialRecord] = [:]
         for index in restored.workspaces.indices {
             if restored.workspaces[index].kind == .ssh {
                 guard let credentialID = restored.workspaces[index].credentialId else {
@@ -353,15 +379,20 @@ enum UniConnectBackup {
                     }
                     throw UniConnectError.missingCredential
                 }
-                guard let connect = commands[credentialID] else {
+                guard let record = records[credentialID] else {
                     throw UniConnectError.missingCredential
                 }
-                restored.workspaces[index].connect = connect
+                restored.workspaces[index].connect = record.connectCommand
+                recordsByWorkspaceIndex[index] = record
             } else {
                 restored.workspaces[index].credentialId = nil
             }
         }
-        return restored
+        return UniConnectImportSourceDocument(
+            document: restored,
+            sourceMap: .empty,
+            sshCredentialRecordsByWorkspaceIndex: recordsByWorkspaceIndex
+        )
     }
 
     /// Replaces an app-owned plaintext startup seed with the same readable split format.
@@ -371,11 +402,13 @@ enum UniConnectBackup {
     static func securePlainStartupSeed(
         document: UniConnectDocument,
         at target: URL,
-        vault: UniConnectVault
+        vault: UniConnectVault,
+        sourceCredentialRecords: [UUID: UniConnectSSHCredentialRecord] = [:]
     ) throws -> Data {
         let migration = try migratedLegacyBackup(
             document: document,
             vault: vault,
+            sourceCredentialRecords: sourceCredentialRecords,
             allowMissingSSHCommands: true
         )
         let readableDocument = try sanitizedReadableDocument(
@@ -402,6 +435,88 @@ enum UniConnectBackup {
             at: target,
             repairPermissions: true
         )
+    }
+
+    /// Rewrites recognized app-owned `seed*.json` files so SSH commands live only
+    /// in an encrypted companion. Links, unreadable JSON, and already-split
+    /// manifests are deliberately left untouched.
+    @discardableResult
+    static func secureAppOwnedStartupSeeds(
+        in directory: URL,
+        vault: UniConnectVault,
+        fileManager: FileManager = .default
+    ) -> Int {
+        guard (try? UniConnectAtomicFileWriter.verifyPrivateDirectory(
+            at: directory,
+            fileManager: fileManager
+        )) != nil,
+        let candidates = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return 0
+        }
+
+        var securedCount = 0
+        for candidate in candidates {
+            let name = candidate.lastPathComponent.lowercased()
+            guard name.hasPrefix("seed"), candidate.pathExtension.lowercased() == "json" else {
+                continue
+            }
+            var metadata = stat()
+            guard lstat(candidate.path, &metadata) == 0,
+                  metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
+                  let data = try? UniConnectAtomicFileWriter.readPrivateFile(
+                      at: candidate,
+                      repairPermissions: true
+                  ) else {
+                continue
+            }
+            let document: UniConnectDocument
+            let sourceCredentialRecords: [UUID: UniConnectSSHCredentialRecord]
+            if let manifest = try? JSONDecoder().decode(LocalBackupManifest.self, from: data),
+               manifest.format == LocalBackupManifest.formatName {
+                // A valid split marker has no plaintext command. If an older or
+                // malformed marker does, rewrite its embedded document too.
+                guard manifest.document.workspaces.contains(where: { $0.connect != nil }) else {
+                    continue
+                }
+                document = manifest.document
+                guard let resolvedRecords = try? credentialRecordsForStartupSeedMigration(
+                    manifest: manifest,
+                    at: candidate,
+                    vault: vault
+                ) else {
+                    continue
+                }
+                sourceCredentialRecords = resolvedRecords
+            } else if let source = try? UniConnectJSONImportParser.parseDetailed(data) {
+                document = source.document
+                sourceCredentialRecords = [:]
+            } else {
+                continue
+            }
+            // A legacy readable seed may already have been scrubbed and retain only
+            // immutable credential references. Rewriting that document through the
+            // plaintext migrator would clear those references because no command is
+            // available to bind again. Only files that still contain plaintext SSH
+            // material need this migration.
+            guard document.workspaces.contains(where: { $0.connect != nil }) else {
+                continue
+            }
+            guard
+                  (try? securePlainStartupSeed(
+                      document: document,
+                      at: candidate,
+                      vault: vault,
+                      sourceCredentialRecords: sourceCredentialRecords
+                  )) != nil else {
+                continue
+            }
+            securedCount += 1
+        }
+        return securedCount
     }
 
     static func isReadableLocalBackupManifest(_ data: Data) -> Bool {
@@ -440,7 +555,7 @@ enum UniConnectBackup {
                 readable.workspaces[index].credentialId = nil
             }
         }
-        _ = try vault.connectCommands(
+        _ = try vault.credentialRecords(
             fromEncryptedSnapshot: encryptedVault,
             requiring: referencedCredentialIDs(in: readable)
         )
@@ -484,11 +599,36 @@ enum UniConnectBackup {
     private static func migratedLegacyBackup(
         document: UniConnectDocument,
         vault: UniConnectVault,
+        sourceCredentialRecords: [UUID: UniConnectSSHCredentialRecord] = [:],
         allowMissingSSHCommands: Bool = false
     ) throws -> (document: UniConnectDocument, encryptedVault: Data?) {
         var migrated = document
         var idByCommand: [String: UUID] = [:]
-        var additionalEntries: [UUID: String] = [:]
+        var additionalRecords: [UUID: UniConnectSSHCredentialRecord] = [:]
+
+        func sourceRecord(for credentialID: UUID) -> UniConnectSSHCredentialRecord? {
+            sourceCredentialRecords[credentialID] ?? vault.credentialRecord(for: credentialID)
+        }
+
+        func addRecord(
+            _ rawRecord: UniConnectSSHCredentialRecord,
+            for credentialID: UUID
+        ) throws {
+            let record = UniConnectSSHCredentialRecord(
+                connectCommand: rawRecord.connectCommand.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                ),
+                effectiveTarget: rawRecord.effectiveTarget
+            )
+            guard !record.connectCommand.isEmpty else {
+                throw UniConnectError.missingCredential
+            }
+            if let existing = additionalRecords[credentialID], existing != record {
+                throw unrecognizedLocalBackupError()
+            }
+            additionalRecords[credentialID] = record
+        }
+
         for index in migrated.workspaces.indices {
             guard migrated.workspaces[index].kind == .ssh else {
                 migrated.workspaces[index].credentialId = nil
@@ -496,7 +636,13 @@ enum UniConnectBackup {
             }
             guard let rawCommand = migrated.workspaces[index].connect else {
                 if allowMissingSSHCommands {
-                    migrated.workspaces[index].credentialId = nil
+                    guard let credentialID = migrated.workspaces[index].credentialId else {
+                        continue
+                    }
+                    guard let record = sourceRecord(for: credentialID) else {
+                        throw UniConnectError.missingCredential
+                    }
+                    try addRecord(record, for: credentialID)
                     continue
                 }
                 throw UniConnectError.missingCredential
@@ -504,24 +650,117 @@ enum UniConnectBackup {
             let command = rawCommand.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !command.isEmpty else {
                 if allowMissingSSHCommands {
-                    migrated.workspaces[index].credentialId = nil
+                    guard let credentialID = migrated.workspaces[index].credentialId else {
+                        continue
+                    }
+                    guard let record = sourceRecord(for: credentialID) else {
+                        throw UniConnectError.missingCredential
+                    }
+                    try addRecord(record, for: credentialID)
                     continue
                 }
                 throw UniConnectError.missingCredential
             }
-            let credentialID = migrated.workspaces[index].credentialId
+
+            let declaredCredentialID = migrated.workspaces[index].credentialId
+            let declaredRecord = declaredCredentialID.flatMap(sourceRecord)
+            if let declaredRecord,
+               declaredRecord.connectCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+                != command {
+                throw unrecognizedLocalBackupError()
+            }
+            let credentialID = declaredCredentialID
                 ?? idByCommand[command]
                 ?? vault.credentialID(matching: command, excluding: nil)
                 ?? UUID()
-            if let existing = additionalEntries[credentialID], existing != command {
+            let record = declaredRecord
+                ?? additionalRecords[credentialID]
+                ?? vault.credentialRecord(for: credentialID)
+                ?? UniConnectSSHCredentialRecord(
+                    connectCommand: command,
+                    effectiveTarget: nil
+                )
+            guard record.connectCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+                    == command else {
                 throw unrecognizedLocalBackupError()
             }
             migrated.workspaces[index].credentialId = credentialID
             idByCommand[command] = credentialID
-            additionalEntries[credentialID] = command
+            try addRecord(record, for: credentialID)
         }
-        let encryptedVault = try vault.encryptedSnapshot(including: additionalEntries)
+        let encryptedVault = try vault.encryptedSnapshot(including: additionalRecords)
+        _ = try vault.credentialRecords(
+            fromEncryptedSnapshot: encryptedVault,
+            requiring: referencedCredentialIDs(in: migrated)
+        )
         return (migrated, encryptedVault)
+    }
+
+    /// Resolves every opaque credential referenced by a mixed startup manifest.
+    ///
+    /// A hash-bound companion is trusted only after the vault authenticates it. Individual
+    /// records may fall back to the live vault, but a missing reference aborts migration before
+    /// the readable marker is replaced.
+    private static func credentialRecordsForStartupSeedMigration(
+        manifest: LocalBackupManifest,
+        at manifestURL: URL,
+        vault: UniConnectVault
+    ) throws -> [UUID: UniConnectSSHCredentialRecord] {
+        let credentialIDs = referencedCredentialIDs(in: manifest.document)
+        guard !credentialIDs.isEmpty else { return [:] }
+        let opaqueOnlyCredentialIDs: Set<UUID> = Set(
+            manifest.document.workspaces.compactMap { workspace -> UUID? in
+                guard workspace.kind == .ssh,
+                      let credentialID = workspace.credentialId,
+                      (workspace.connect?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+                        .isEmpty else {
+                    return nil
+                }
+                return credentialID
+            }
+        )
+
+        let authenticatedCompanion: Data? = {
+            guard let vaultFile = manifest.vaultFile,
+                  let expectedHash = manifest.vaultSHA256,
+                  isSafeCompanionFileName(vaultFile),
+                  let data = try? UniConnectAtomicFileWriter.readPrivateFile(
+                      at: manifestURL.deletingLastPathComponent()
+                          .appendingPathComponent(vaultFile),
+                      repairPermissions: true
+                  ),
+                  sha256Hex(data) == expectedHash else {
+                return nil
+            }
+            return data
+        }()
+
+        if let authenticatedCompanion,
+           let records = try? vault.credentialRecords(
+               fromEncryptedSnapshot: authenticatedCompanion,
+               requiring: credentialIDs
+           ) {
+            return records
+        }
+
+        var resolved: [UUID: UniConnectSSHCredentialRecord] = [:]
+        resolved.reserveCapacity(credentialIDs.count)
+        for credentialID in credentialIDs {
+            let companionRecord = authenticatedCompanion.flatMap { companion in
+                try? vault.credentialRecords(
+                    fromEncryptedSnapshot: companion,
+                    requiring: [credentialID]
+                )[credentialID]
+            }
+            if let record = companionRecord ?? vault.credentialRecord(for: credentialID) {
+                resolved[credentialID] = record
+                continue
+            }
+            guard !opaqueOnlyCredentialIDs.contains(credentialID) else {
+                throw UniConnectError.missingCredential
+            }
+        }
+        return resolved
     }
 
     private static func referencedCredentialIDs(
@@ -552,7 +791,8 @@ enum UniConnectBackup {
         ))
     }
 
-    private static func removeReadableBackupPair(at manifestURL: URL) {
+    @discardableResult
+    private static func removeReadableBackupPair(at manifestURL: URL) -> Bool {
         let manifest: LocalBackupManifest?
         if let data = try? UniConnectAtomicFileWriter.readPrivateFile(
             at: manifestURL,
@@ -562,20 +802,58 @@ enum UniConnectBackup {
         } else {
             manifest = nil
         }
-        try? UniConnectAtomicFileWriter.removeIfPresent(at: manifestURL)
+        do {
+            try UniConnectAtomicFileWriter.removeIfPresent(at: manifestURL)
+        } catch {
+            // The manifest is the pair's commit marker. Keep its companion when
+            // the marker's durable removal could not be established.
+            return false
+        }
         guard let companionName = manifest?.vaultFile,
-              isSafeCompanionFileName(companionName) else { return }
+              isSafeCompanionFileName(companionName) else { return true }
         try? UniConnectAtomicFileWriter.removeIfPresent(
             at: manifestURL.deletingLastPathComponent().appendingPathComponent(companionName)
         )
+        return true
     }
 
     private static func removeObsoletePrimaryVaultCopies(
         beside target: URL,
-        keeping retainedName: String?
+        keeping retainedName: String?,
+        requiresAbsentMarker: Bool = false
     ) {
         let fileManager = FileManager.default
         let directory = target.deletingLastPathComponent()
+        if requiresAbsentMarker {
+            // Only ENOENT proves there is no marker generation whose companion
+            // could be destroyed by this cleanup.
+            guard !pathEntryExistsWithoutFollowingSymbolicLinks(target) else { return }
+            guard (try? UniConnectAtomicFileWriter.synchronizePrivateDirectory(at: directory)) != nil else {
+                return
+            }
+        } else {
+            guard let data = try? UniConnectAtomicFileWriter.readPrivateFile(
+                at: target,
+                repairPermissions: true
+            ),
+            let manifest = try? JSONDecoder().decode(LocalBackupManifest.self, from: data),
+            manifest.format == LocalBackupManifest.formatName,
+            manifest.version == LocalBackupManifest.currentVersion,
+            manifest.vaultFile == retainedName,
+            (manifest.vaultFile == nil) == (manifest.vaultSHA256 == nil) else {
+                return
+            }
+            if let retainedName,
+               let expectedHash = manifest.vaultSHA256 {
+                let retainedURL = directory.appendingPathComponent(retainedName)
+                guard let retainedData = try? UniConnectAtomicFileWriter.readPrivateFile(
+                    at: retainedURL,
+                    repairPermissions: true
+                ), sha256Hex(retainedData) == expectedHash else {
+                    return
+                }
+            }
+        }
         let prefix = target.deletingPathExtension().lastPathComponent + "-"
         guard let items = try? fileManager.contentsOfDirectory(
             at: directory,
@@ -644,6 +922,11 @@ enum UniConnectBackup {
 
     private static func removeOrphanedHistoryVaultCopies(at historyDirectory: URL) {
         let fileManager = FileManager.default
+        // Establish durable marker absence first. If syncing fails, retaining an
+        // encrypted orphan is safer than risking a readable marker after reboot.
+        guard (try? UniConnectAtomicFileWriter.synchronizePrivateDirectory(
+            at: historyDirectory
+        )) != nil else { return }
         guard let items = try? fileManager.contentsOfDirectory(
             at: historyDirectory,
             includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]
@@ -654,10 +937,17 @@ enum UniConnectBackup {
                   values.isSymbolicLink != true else { continue }
             let stem = String(item.lastPathComponent.dropLast(".vault.uc".count))
             let manifest = historyDirectory.appendingPathComponent("\(stem).json")
-            if !fileManager.fileExists(atPath: manifest.path) {
+            if !pathEntryExistsWithoutFollowingSymbolicLinks(manifest) {
                 try? UniConnectAtomicFileWriter.removeIfPresent(at: item)
             }
         }
+    }
+
+    /// Returns false only when `lstat` proves the directory entry is absent.
+    private static func pathEntryExistsWithoutFollowingSymbolicLinks(_ url: URL) -> Bool {
+        var metadata = stat()
+        if lstat(url.path, &metadata) == 0 { return true }
+        return errno != ENOENT
     }
 
     // MARK: Export / import with passphrase
@@ -751,10 +1041,7 @@ enum UniConnectBackup {
     ) throws -> DetailedImportSource {
         let data = try Data(contentsOf: url)
         if isReadableLocalBackupManifest(data) {
-            return .plain(UniConnectImportSourceDocument(
-                document: try readReadableBackup(at: url, vault: vault),
-                sourceMap: .empty
-            ))
+            return .plain(try readReadableBackupSource(at: url, vault: vault))
         }
         return try inspectDetailed(data: data)
     }

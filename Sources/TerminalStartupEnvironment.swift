@@ -70,7 +70,8 @@ extension TerminalSurface {
             "CMUX_WORKSPACE_ID": context.workspaceId.uuidString,
             "CMUX_PANEL_ID": context.surfaceId.uuidString,
             "CMUX_TAB_ID": context.workspaceId.uuidString,
-            "CMUX_SOCKET_PATH": context.socketPath
+            "CMUX_SOCKET_PATH": context.socketPath,
+            "UNICONNECT_SURFACE_GENERATION": context.surfaceGeneration.uuidString
         ]
 
         for (key, value) in values {

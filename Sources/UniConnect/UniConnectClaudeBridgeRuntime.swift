@@ -16,12 +16,13 @@ final class UniConnectClaudeBridgeRuntime {
     }
 
     private let listener: ClaudeBridgeLoopbackListener
-    private let service: ClaudeBridgeService
+    private nonisolated let service: ClaudeBridgeService
     private let installationID: String
     private let statusDelivery: @MainActor @Sendable (ClaudeBridgeRoute, ClaudeBridgeStatus) -> Void
     nonisolated let sessionSignals: AsyncStream<ClaudeBridgeSessionSignal>
     private var statusTask: Task<Void, Never>?
     private var registrationTasks: [UUID: Task<Void, Never>] = [:]
+    private var routeRebindTasks: [UUID: Task<Void, Never>] = [:]
     private(set) var statuses: [UUID: ClaudeBridgeStatus] = [:]
     private(set) var routes: [UUID: ClaudeBridgeRoute] = [:]
 
@@ -66,18 +67,25 @@ final class UniConnectClaudeBridgeRuntime {
     }
 
     func connectionPlan(for route: ClaudeBridgeRoute) -> ClaudeBridgeConnectionPlan {
-        registrationTasks.removeValue(forKey: route.id)?.cancel()
+        let previousOperation = registrationTasks[route.id]
+        // Serialize unregister/register for a stable panel UUID. Cancelling a task
+        // alone cannot revoke actor work that has already crossed an await.
+        routeRebindTasks.removeValue(forKey: route.id)?.cancel()
         routes[route.id] = route
         statuses[route.id] = .reconnecting
         statusDelivery(route, .reconnecting)
+        let connectionID = UUID()
         let registration = Task { [service] in
-            await service.register(route: route)
+            if let previousOperation { await previousOperation.value }
+            guard !Task.isCancelled else { return }
+            await service.register(route: route, connectionID: connectionID)
         }
         registrationTasks[route.id] = registration
         return ClaudeBridgeRemoteIntegration.connectionPlan(
             route: route,
             installationID: installationID,
-            localListenerPort: listener.port
+            localListenerPort: listener.port,
+            connectionID: connectionID
         )
     }
 
@@ -94,16 +102,56 @@ final class UniConnectClaudeBridgeRuntime {
         statuses[routeID] ?? .inactive
     }
 
+    /// Rebinds a live route to the workspace that adopted its stable terminal panel.
+    func rebindRoute(
+        _ routeID: UUID,
+        workspaceID: UUID,
+        workspaceName: String?,
+        windowName: String?
+    ) {
+        guard let current = routes[routeID] else { return }
+        let normalizedWorkspaceName = workspaceName?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedWindowName = windowName?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let reboundWorkspaceName = normalizedWorkspaceName.flatMap { $0.isEmpty ? nil : $0 }
+            ?? current.workspaceName
+        let reboundWindowName = normalizedWindowName.flatMap { $0.isEmpty ? nil : $0 }
+            ?? current.windowName
+        let rebound = ClaudeBridgeRoute(
+            id: current.id,
+            workspaceID: workspaceID,
+            surfaceID: current.surfaceID,
+            credentialID: current.credentialID,
+            hostLabel: current.hostLabel,
+            workspaceName: reboundWorkspaceName,
+            windowName: reboundWindowName,
+            tmuxSession: current.tmuxSession
+        )
+        routes[routeID] = rebound
+        let registration = registrationTasks[routeID]
+        routeRebindTasks.removeValue(forKey: routeID)?.cancel()
+        routeRebindTasks[routeID] = Task { [service] in
+            if let registration {
+                await registration.value
+            }
+            guard !Task.isCancelled else { return }
+            _ = await service.rebind(route: rebound)
+        }
+    }
+
     func unregister(routeID: UUID, removeToken: Bool) {
-        let registration = registrationTasks.removeValue(forKey: routeID)
-        registration?.cancel()
+        let registration = registrationTasks[routeID]
+        routeRebindTasks.removeValue(forKey: routeID)?.cancel()
         let route = routes.removeValue(forKey: routeID)
         statuses.removeValue(forKey: routeID)
         if let route { statusDelivery(route, .inactive) }
-        Task { [service] in
+        let removal = Task { [service] in
             if let registration { await registration.value }
+            guard !Task.isCancelled else { return }
             await service.unregister(routeID: routeID, removeToken: removeToken)
         }
+        registrationTasks[routeID] = removal
     }
 
     func shutdown() {
@@ -111,6 +159,8 @@ final class UniConnectClaudeBridgeRuntime {
         statusTask = nil
         for task in registrationTasks.values { task.cancel() }
         registrationTasks.removeAll()
+        for task in routeRebindTasks.values { task.cancel() }
+        routeRebindTasks.removeAll()
         statuses.removeAll()
         routes.removeAll()
         Task { [listener, service] in
@@ -119,11 +169,16 @@ final class UniConnectClaudeBridgeRuntime {
         }
     }
 
-    private func ingest(_ frame: Data) async -> Data {
+    private nonisolated func ingest(_ frame: Data) async -> Data {
         if let envelope = try? JSONDecoder().decode(RouteEnvelope.self, from: frame),
-           let registration = registrationTasks[envelope.routeID] {
+           let registration = await registrationTask(for: envelope.routeID) {
             await registration.value
         }
         return await service.ingest(frame)
+    }
+
+    /// Snapshots the ordering barrier; waiting and replying never depend on UI scheduling.
+    private func registrationTask(for routeID: UUID) -> Task<Void, Never>? {
+        registrationTasks[routeID]
     }
 }

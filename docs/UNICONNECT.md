@@ -36,10 +36,10 @@ panel identity, visible name, order, selection, timestamps and runtime metadata.
 
 LOCAL state includes:
 
-- trusted box root and window cwd;
+- the workspace's default folder and an independently chosen local folder for each window;
 - shell/agent/stopped runtime state;
 - append-only conversation records for Claude, Codex, Agy and Grok;
-- native session ID, agent kind and last activity;
+- detected native session ID, agent kind, conversation-specific resume folder and last activity;
 - reconstructed launch policy, never captured arbitrary argv or environment.
 
 SSH state includes:
@@ -57,10 +57,23 @@ Snapshot writes use a private temporary file, `fsync`, atomic rename and directo
 
 ## Local window lifecycle
 
-**New Window** offers Terminal, Claude, Codex, Agy, Grok and a custom command. Agent
-launches always trust the box root chosen by the user. Claude and Agy use their
-required dangerous-permission switch, while Codex uses `--yolo`; resume syntax comes
-from the shared agent-launch policy.
+Every user-facing **New Terminal / New Window** entry point uses the same creation
+flow for the selected box, including the keyboard shortcut, tab plus button,
+command palette and context menus. LOCAL opens the local-window chooser; SSH keeps
+the visible-name and tmux-session dialog instead of creating a local shell.
+
+The local chooser offers Terminal, Claude, Codex, Agy, Grok and a custom command,
+with a visible name and editable **Window Folder**. The folder initially uses the
+workspace default, but may be any existing local directory selected with an
+absolute path or the folder picker; it need not be inside the workspace's default
+folder. Choosing it changes only the new window, not the workspace default or
+other windows. Name and folder are saved with the window's durable identity.
+
+Agent launches use that window's selected folder. Claude and Agy use their required
+dangerous-permission switch, while Codex uses `--yolo`; resume syntax comes from the
+shared agent-launch policy. Each saved conversation retains its own resume folder,
+so switching agents or changing the current shell directory does not silently
+redirect an older conversation to a different project.
 
 Running `/exit` in an agent returns to the same shell. Exiting the shell marks the
 window stopped but does not discard its conversation history or box. From the shared
@@ -72,10 +85,23 @@ Duplicate imports/restores remain named, persisted shell windows with manual res
 available. UUID-like IDs compare canonically; opaque provider IDs retain the case
 semantics of their provider.
 
-If a saved local root disappears, UniConnect does not silently run an agent under a
-different project. It opens a safe recoverable shell, explains the missing path and
-offers reassignment. The new root is persisted immediately across every affected
-record.
+If a required saved folder disappears, UniConnect does not silently run an agent
+under a different project. Recovery retains the saved conversation and explains
+the missing path; selecting a replacement must not rewrite other windows' folders.
+
+### ローカルウインドウの作成と保存
+
+ショートカット、タブの追加ボタン、コマンドパレット、コンテキストメニューの
+「新規ターミナル／新規ウインドウ」は、同じ作成フローを使用します。LOCALでは名前と
+フォルダー、Terminal・Claude・Codex・Agy・Grok・カスタムコマンドを選択します。
+SSHでは表示名とtmuxセッションを指定し、ローカルシェルは作成しません。
+フォルダーの初期値はワークスペースのデフォルトですが、絶対パスまたはフォルダー選択で
+Mac上の任意の既存フォルダーに変更できます。他のウインドウやワークスペースの
+デフォルトフォルダーは変更されません。名前とフォルダーはウインドウの永続IDと共に保存されます。
+ClaudeとAgyは所定の権限スキップオプション、Codexは`--yolo`を使用します。
+各会話には固有の再開用フォルダーを保持するため、エージェントや現在の作業フォルダーを
+変更しても、過去の会話を別のプロジェクトで再開しません。必要なフォルダーがない場合も
+保存済みの会話を保持し、他のウインドウのフォルダーを変更せずに復旧します。
 
 ## SSH and tmux lifecycle
 
@@ -84,16 +110,26 @@ accepts an effective `ssh` command or `sshpass` that really invokes `ssh`; it re
 shell chaining, pipes, substitutions and arbitrary payloads. Passwords are never
 copied into previews, snapshots, logs or argv for file transfer.
 
-There are two deliberately different remote operations:
+Remote operations distinguish creation, recovery and strict attachment:
 
 - explicit new-window creation may run `tmux new-session -A` for its chosen name;
-- restore, history reopen, import and reconnect first run `tmux has-session` and then
-  `tmux attach-session` against the saved name.
+- normal startup, saved-snapshot reconstruction (including archive recovery and
+  history reopen), reconnect and credential-revision respawn first look for the
+  exact saved tmux name. If it has disappeared, they recreate that same name and
+  attach automatically, without detaching any other client;
+- explicit existing-only imports still require their remote preflight to find
+  the saved session. A missing session fails that check; recovery does not bypass
+  it. If the session disappears after a successful preflight, subsequent snapshot
+  reconstruction follows the recovery rule above.
 
-The second path cannot create an empty replacement and never detaches another client.
 Attachment enables tmux mouse support and a 50,000-line history limit. Canonical
 ownership is based on user, host, port and tmux, not credential UUID, so two aliases
 to the same destination cannot start competing clients unnoticed.
+
+Recreating a missing tmux restores its shell, not a killed AI process or its
+conversation. Resuming an AI requires the canonical saved native conversation ID
+and its recorded resume folder; recovery never guesses with `--continue` or a
+"latest conversation" fallback.
 
 A forced refresh terminates only UniConnect's local foreground SSH process group and
 respawns the same terminal surface in place. It preserves panel UUID, pane, ordering,
@@ -105,6 +141,21 @@ Automatic retries use a bounded outage budget. Single-flight ownership remains h
 through child readiness and a stability interval; a stale callback cannot release a
 new generation. Programmatic tab selection during reconstruction never counts as a
 human reconnect request.
+
+### SSHとtmuxの再接続
+
+通常の起動、保存済みスナップショットの再構築（アーカイブ復元と履歴からの再表示を含む）、
+再接続、認証情報リビジョン変更に伴う再生成では、保存済みの正確なtmux名を
+確認します。セッションが消えていれば同じ名前で自動的に再作成して接続し、他のクライアントは
+切断しません。既存セッション限定のインポートでは従来どおりリモートの事前存在確認が必須で、
+見つからなければその段階で失敗します。事前確認に成功した後でセッションが消えた場合、
+後続のスナップショット再構築には上記の復旧ルールが適用されます。
+
+tmuxの再作成で戻るのはシェルであり、終了したAIプロセスや会話そのものではありません。
+AIの再開には保存された正規のネイティブ会話IDと会話固有の再開フォルダーが必要です。
+`--continue`や「最新の会話」を使って推測しません。`⌘R`は選択中のSSHウインドウを、
+`⌃⌘R`は対象の全SSHウインドウを即座に再接続します。パネルID、配置、名前、保存済みtmuxを
+保持し、通常のSSHタイムアウトを待たず、`tmux kill-*`も他クライアントの切断も行いません。
 
 ## Credentials and endpoint edits
 

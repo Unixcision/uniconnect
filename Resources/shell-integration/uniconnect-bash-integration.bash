@@ -330,6 +330,7 @@ _CMUX_TMUX_SYNC_KEYS=(
 _CMUX_TMUX_SURFACE_SCOPED_KEYS=(
     CMUX_PANEL_ID
     CMUX_SURFACE_ID
+    UNICONNECT_SURFACE_GENERATION
 )
 
 _cmux_tmux_sync_key_is_managed() {
@@ -566,7 +567,7 @@ _cmux_report_shell_activity_state() {
     [[ -n "$CMUX_PANEL_ID" ]] || return 0
     [[ "$_CMUX_SHELL_ACTIVITY_LAST" == "$state" ]] && return 0
     _CMUX_SHELL_ACTIVITY_LAST="$state"
-    _cmux_send_bg "report_shell_state $state --tab=$CMUX_TAB_ID --panel=$CMUX_PANEL_ID"
+    _cmux_send_bg "report_shell_state $state --tab=$CMUX_TAB_ID --panel=$CMUX_PANEL_ID --generation=${UNICONNECT_SURFACE_GENERATION:-}"
 }
 
 _cmux_reset_terminal_keyboard_protocols() {

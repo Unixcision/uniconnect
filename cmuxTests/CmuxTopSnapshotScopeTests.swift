@@ -447,6 +447,63 @@ final class CmuxTopSnapshotScopeTests: XCTestCase {
         XCTAssertEqual(scope?.surfaceID, panelID)
     }
 
+    func testCMUXScopeCacheMemoizesUnattributedProcessForItsLifetime() {
+        let cacheKey = CmuxTopProcessScopeCacheKey(
+            pid: 991_001,
+            startSeconds: 1_725_000_001,
+            startMicroseconds: 101
+        )
+        var resolverCalls = 0
+
+        let firstScope = CmuxTopProcessSnapshot.cachedCMUXScope(cacheKey: cacheKey) {
+            resolverCalls += 1
+            return nil
+        }
+        let secondScope = CmuxTopProcessSnapshot.cachedCMUXScope(cacheKey: cacheKey) {
+            resolverCalls += 1
+            return nil
+        }
+
+        XCTAssertNil(firstScope)
+        XCTAssertNil(secondScope)
+        XCTAssertEqual(resolverCalls, 1)
+    }
+
+    func testCMUXScopeCacheRechecksReusedPIDWithDifferentStartTime() throws {
+        let pid = 991_002
+        let originalKey = CmuxTopProcessScopeCacheKey(
+            pid: pid,
+            startSeconds: 1_725_000_002,
+            startMicroseconds: 102
+        )
+        let replacementKey = CmuxTopProcessScopeCacheKey(
+            pid: pid,
+            startSeconds: 1_725_000_003,
+            startMicroseconds: 103
+        )
+        let replacementWorkspaceID = UUID(uuidString: "77777777-7777-7777-7777-777777777777")!
+        var resolverCalls = 0
+
+        XCTAssertNil(CmuxTopProcessSnapshot.cachedCMUXScope(cacheKey: originalKey) {
+            resolverCalls += 1
+            return nil
+        })
+        let replacementScope = try XCTUnwrap(
+            CmuxTopProcessSnapshot.cachedCMUXScope(cacheKey: replacementKey) {
+                resolverCalls += 1
+                return CmuxTopProcessScope(
+                    workspaceID: replacementWorkspaceID,
+                    surfaceID: nil,
+                    attributionReason: "test-replacement-process"
+                )
+            }
+        )
+
+        XCTAssertEqual(resolverCalls, 2)
+        XCTAssertEqual(replacementScope.workspaceID, replacementWorkspaceID)
+        XCTAssertEqual(replacementScope.attributionReason, "test-replacement-process")
+    }
+
     func testCodexMonitorArgumentsSupportJoinedUUIDOptions() throws {
         let workspaceID = UUID(uuidString: "55555555-5555-5555-5555-555555555555")!
         let surfaceID = UUID(uuidString: "66666666-6666-6666-6666-666666666666")!

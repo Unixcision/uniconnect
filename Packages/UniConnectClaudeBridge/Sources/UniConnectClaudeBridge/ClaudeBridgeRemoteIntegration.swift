@@ -11,20 +11,26 @@ public struct ClaudeBridgeRemoteIntegration: Sendable {
     ///   - route: Trusted, privacy-minimized route metadata.
     ///   - installationID: Stable non-secret identifier derived by UniConnect.
     ///   - localListenerPort: Ephemeral port bound only to Mac loopback.
+    ///   - connectionID: Fresh transport identity for this SSH attempt, injectable for tests.
     /// - Returns: SSH options plus idempotent setup and cleanup commands.
     public static func connectionPlan(
         route: ClaudeBridgeRoute,
         installationID: String,
-        localListenerPort: UInt16
+        localListenerPort: UInt16,
+        connectionID: UUID = UUID()
     ) -> ClaudeBridgeConnectionPlan {
-        let remotePort = remoteForwardPort(for: route.id)
+        let remoteSocketPath = remoteForwardSocketPath(
+            for: route.id,
+            installationID: installationID,
+            connectionID: connectionID
+        )
         let scriptPath = "$HOME/.uniconnect/claude-bridge/v1/notify.py"
         let scriptTemporaryPath = "$HOME/.uniconnect/claude-bridge/v1/.notify.py.tmp.$$"
         let setupArguments = [
             "register",
             "--installation-id", installationID,
             "--route-id", route.id.uuidString.lowercased(),
-            "--port", String(remotePort),
+            "--connection-id", connectionID.uuidString.lowercased(),
             "--workspace-id", route.workspaceID.uuidString.lowercased(),
             "--surface-id", route.surfaceID.uuidString.lowercased(),
             "--host-id", boundedIdentifier(route.hostLabel),
@@ -37,8 +43,13 @@ public struct ClaudeBridgeRemoteIntegration: Sendable {
         return ClaudeBridgeConnectionPlan(
             routeID: route.id,
             sshOptions: [
-                "-o", "ExitOnForwardFailure=yes",
-                "-R", "127.0.0.1:\(remotePort):127.0.0.1:\(localListenerPort)",
+                // Notification delivery is optional: a server without stream-local
+                // forwarding must still open the terminal and attach its tmux session.
+                "-o", "ExitOnForwardFailure=no",
+                "-o", "ClearAllForwardings=no",
+                "-o", "StreamLocalBindMask=0177",
+                "-o", "StreamLocalBindUnlink=yes",
+                "-R", "\(remoteSocketPath):127.0.0.1:\(localListenerPort)",
             ],
             remoteSetupCommand: setup,
             remoteCleanupCommand: remoteCleanupCommand(
@@ -86,17 +97,27 @@ public struct ClaudeBridgeRemoteIntegration: Sendable {
         return "{ umask 077; command -v python3 >/dev/null 2>&1 && mkdir -p \"$HOME/.uniconnect/claude-bridge/v1\" && printf '%s' \(shellQuote(pythonScript)) > \"\(temporaryPath)\" && chmod 700 \"\(temporaryPath)\" && mv -f \"\(temporaryPath)\" \"\(scriptPath)\" && \(removals); } >/dev/null 2>&1"
     }
 
-    /// Chooses a stable high remote port from a route UUID.
+    /// Chooses an owner-private remote Unix socket path for one SSH connection.
     ///
-    /// The route UUID is unique per terminal window, avoiding clashes between boxes
-    /// and hosts while keeping reconnection deterministic.
+    /// Both identifiers retain their full 128 bits while the path remains below the
+    /// shortest commonly deployed `sockaddr_un.sun_path` limit.
     ///
-    /// - Parameter routeID: Stable route UUID.
-    /// - Returns: A port in the unprivileged range `42000...61999`.
-    public static func remoteForwardPort(for routeID: UUID) -> UInt16 {
-        let bytes = withUnsafeBytes(of: routeID.uuid) { Array($0) }
-        let value = UInt16(bytes[0]) << 8 | UInt16(bytes[1])
-        return 42_000 + value % 20_000
+    /// - Parameters:
+    ///   - routeID: Stable route UUID, used only for legacy sockets without a connection ID.
+    ///   - installationID: Stable 32-character installation identity.
+    ///   - connectionID: Per-attempt UUID, or nil to resolve a legacy route's socket.
+    /// - Returns: A deterministic absolute path under `/tmp`, at most 79 UTF-8 bytes.
+    public static func remoteForwardSocketPath(
+        for routeID: UUID,
+        installationID: String,
+        connectionID: UUID? = nil
+    ) -> String {
+        // sshd may leave a remote Unix socket behind after disconnect. Never bind
+        // the next attempt to that path: client StreamLocalBindUnlink cannot fix it.
+        let compactRouteID = (connectionID ?? routeID).uuidString
+            .replacingOccurrences(of: "-", with: "")
+            .lowercased()
+        return "/tmp/ucb-\(installationID.lowercased())-\(compactRouteID).sock"
     }
 
     private static func boundedIdentifier(_ value: String) -> String {
@@ -121,6 +142,8 @@ public struct ClaudeBridgeRemoteIntegration: Sendable {
 #!/usr/bin/env python3
 import argparse
 import base64
+import contextlib
+import errno
 import fcntl
 import hashlib
 import hmac
@@ -130,6 +153,7 @@ import re
 import secrets
 import shlex
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -142,6 +166,7 @@ BACKUPS = os.path.join(ROOT, "backups")
 SETTINGS_STATE = os.path.join(ROOT, "settings-state.json")
 SETTINGS = os.path.expanduser("~/.claude/settings.json")
 SCRIPT = os.path.join(ROOT, "notify.py")
+LIFECYCLE_LOCK = os.path.join(ROOT, "lifecycle.lock")
 MAX_HOOK_INPUT = 65536
 MAX_FRAME = 16384
 MAX_SETTINGS = 4 * 1024 * 1024
@@ -150,6 +175,7 @@ ID_RE = UUID_RE
 CORRELATION_RE = re.compile(r"^[0-9a-f]{64}$")
 INSTALL_RE = re.compile(r"^[0-9a-f]{32}$")
 PANE_RE = re.compile(r"^%[0-9]{1,12}$")
+SOCKET_RE = re.compile(r"^/tmp/ucb-[0-9a-f]{32}-[0-9a-f]{32}\.sock$")
 
 
 def atomic_write(path, data, mode):
@@ -177,6 +203,55 @@ def bounded_read(path, maximum):
     if len(data) > maximum:
         raise ValueError("file_too_large")
     return data
+
+
+def forward_socket_path(installation_id, route_id, connection_id=None):
+    compact_route_id = (connection_id or route_id).replace("-", "").lower()
+    return "/tmp/ucb-" + installation_id.lower() + "-" + compact_route_id + ".sock"
+
+
+def validated_route_socket(route, installation_id, route_id):
+    connection_id = route.get("connection_id")
+    if connection_id is not None and (not isinstance(connection_id, str) or not ID_RE.fullmatch(connection_id)):
+        return None
+    expected = forward_socket_path(installation_id, route_id, connection_id)
+    return expected if route.get("socket_path") == expected and SOCKET_RE.fullmatch(expected) else None
+
+
+def reap_replaced_socket(path):
+    # Reclamation is not needed to connect: each attempt binds a fresh UUID path.
+    # Only the exact previous route's dead, owner-owned socket is eligible, never
+    # an active listener, symlink, ordinary file, or unknown path from /tmp.
+    if not path or not SOCKET_RE.fullmatch(path):
+        return
+    try:
+        before = os.lstat(path)
+        if not stat.S_ISSOCK(before.st_mode) or before.st_uid != os.getuid():
+            return
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
+            probe.settimeout(0.1)
+            try:
+                probe.connect(path)
+                return
+            except OSError as error:
+                if error.errno != errno.ECONNREFUSED:
+                    return
+        after = os.lstat(path)
+        if (before.st_dev, before.st_ino) == (after.st_dev, after.st_ino):
+            os.unlink(path)
+    except OSError:
+        pass
+
+
+@contextlib.contextmanager
+def lifecycle_lock():
+    os.makedirs(ROOT, mode=0o700, exist_ok=True)
+    os.chmod(ROOT, 0o700)
+    descriptor = os.open(LIFECYCLE_LOCK, os.O_RDWR | os.O_CREAT, 0o600)
+    with os.fdopen(descriptor, "a+b") as lock:
+        os.chmod(LIFECYCLE_LOCK, 0o600)
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        yield
 
 
 def hook_command(kind):
@@ -307,7 +382,20 @@ def parsed_layout(text):
     root = JsonLayoutParser(text).parse()
     if not isinstance(decoded, dict) or root.kind != "object":
         raise ValueError("settings_root")
+    validate_unique_object_keys(root)
     return decoded, root
+
+
+def validate_unique_object_keys(node):
+    if node.kind == "object":
+        keys = [member[0] for member in node.members]
+        if len(keys) != len(set(keys)):
+            raise ValueError("duplicate_key")
+        for _, value, _, _ in node.members:
+            validate_unique_object_keys(value)
+    elif node.kind == "array":
+        for value in node.elements:
+            validate_unique_object_keys(value)
 
 
 def unique_member(node, key):
@@ -315,6 +403,38 @@ def unique_member(node, key):
     if len(matches) > 1:
         raise ValueError("duplicate_key")
     return matches[0] if matches else None
+
+
+def validate_hooks_layout(document, root):
+    hooks_member = unique_member(root, "hooks")
+    if hooks_member is None:
+        return
+    hooks_document = document.get("hooks")
+    hooks_node = hooks_member[1]
+    if not isinstance(hooks_document, dict) or hooks_node.kind != "object":
+        raise ValueError("invalid_hooks")
+    for event_name, groups in hooks_document.items():
+        event_member = unique_member(hooks_node, event_name)
+        if event_member is None:
+            raise ValueError("invalid_hook_event")
+        groups_node = event_member[1]
+        if (not isinstance(groups, list) or groups_node.kind != "array"
+                or len(groups) != len(groups_node.elements)):
+            raise ValueError("invalid_hook_groups")
+        for group_index, group in enumerate(groups):
+            group_node = groups_node.elements[group_index]
+            if not isinstance(group, dict) or group_node.kind != "object":
+                raise ValueError("invalid_hook_group")
+            commands_member = unique_member(group_node, "hooks")
+            commands = group.get("hooks")
+            if (commands_member is None or not isinstance(commands, list)
+                    or commands_member[1].kind != "array"
+                    or len(commands) != len(commands_member[1].elements)):
+                raise ValueError("invalid_hook_commands")
+            for command_index, command in enumerate(commands):
+                if (not isinstance(command, dict)
+                        or commands_member[1].elements[command_index].kind != "object"):
+                    raise ValueError("invalid_hook_command")
 
 
 def insertion_style(text, node):
@@ -395,8 +515,20 @@ def first_owned_hook_removal(text):
         if not isinstance(groups, list) or groups_node.kind != "array" or len(groups) != len(groups_node.elements):
             raise ValueError("invalid_hook_groups")
         for group_index, group in enumerate(groups):
-            if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
-                continue
+            group_node = groups_node.elements[group_index]
+            if not isinstance(group, dict) or group_node.kind != "object":
+                raise ValueError("invalid_hook_group")
+            commands_member = unique_member(group_node, "hooks")
+            commands = group.get("hooks")
+            if (commands_member is None or not isinstance(commands, list)
+                    or commands_member[1].kind != "array"):
+                raise ValueError("invalid_hook_commands")
+            commands_node = commands_member[1]
+            if len(commands) != len(commands_node.elements):
+                raise ValueError("invalid_hook_commands")
+            for command_index, command in enumerate(commands):
+                if not isinstance(command, dict) or commands_node.elements[command_index].kind != "object":
+                    raise ValueError("invalid_hook_command")
             commands = group["hooks"]
             owned_indexes = [
                 index for index, command in enumerate(commands)
@@ -406,20 +538,13 @@ def first_owned_hook_removal(text):
                 continue
             if len(owned_indexes) == len(commands) and group == expected_hook_group(event_name):
                 return array_element_removal(text, groups_node, group_index)
-            group_node = groups_node.elements[group_index]
-            if group_node.kind != "object":
-                raise ValueError("invalid_hook_group")
-            commands_member = unique_member(group_node, "hooks")
-            if commands_member is None or commands_member[1].kind != "array":
-                raise ValueError("invalid_hook_commands")
-            commands_node = commands_member[1]
-            if len(commands) != len(commands_node.elements):
-                raise ValueError("invalid_hook_commands")
             return array_element_removal(text, commands_node, owned_indexes[0])
     return None
 
 
 def remove_owned_hooks(text):
+    document, root = parsed_layout(text)
+    validate_hooks_layout(document, root)
     changed = False
     while True:
         edit = first_owned_hook_removal(text)
@@ -531,6 +656,7 @@ def settings_mode():
 
 def backup_settings(original):
     os.makedirs(BACKUPS, mode=0o700, exist_ok=True)
+    os.chmod(BACKUPS, 0o700)
     if original:
         digest = hashlib.sha256(original).hexdigest()
         backup = os.path.join(BACKUPS, "settings-" + digest + ".json")
@@ -561,7 +687,8 @@ def install_hooks():
         settings_existed = os.path.exists(SETTINGS)
         original = read_settings_bytes()
         original_text = original.decode("utf-8") if settings_existed else "{}\n"
-        document, _ = parsed_layout(original_text)
+        document, original_root = parsed_layout(original_text)
+        validate_hooks_layout(document, original_root)
         state = load_settings_state()
         original_digest = hashlib.sha256(original).hexdigest()
         if (state and state.get("installed_sha256") != original_digest
@@ -667,6 +794,20 @@ def session_lock_path(installation_id, route_id):
     return os.path.join(route_directory(installation_id), route_id + ".session.lock")
 
 
+@contextlib.contextmanager
+def registration_lock(installation_id, route_id):
+    directory = route_directory(installation_id)
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    os.chmod(directory, 0o700)
+    path = os.path.join(directory, route_id + ".registration.lock")
+    descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    with os.fdopen(descriptor, "a+b") as lock:
+        os.fchmod(lock.fileno(), 0o600)
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        yield
+    # Keep the inode: unlinking a lock can split concurrent waiters across files.
+
+
 def canonical(message):
     fields = [
         message.get("protocol", ""),
@@ -682,18 +823,28 @@ def canonical(message):
         "1" if message.get("integration_ready") is True else ("0" if message.get("integration_ready") is False else ""),
         message.get("integration_error") or "",
     ]
+    if message.get("connection_id") is not None:
+        fields.append(message["connection_id"].lower())
     return "\n".join(fields).encode("utf-8")
 
 
-def send_message(port, message, token=None):
+def exchange_message(endpoint, message, token=None, timeout=0.75):
     if token is not None:
         message["signature"] = hmac.new(token, canonical(message), hashlib.sha256).hexdigest()
     payload = json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"
     if len(payload) > MAX_FRAME:
-        return False
+        return None
     try:
-        with socket.create_connection(("127.0.0.1", port), timeout=0.75) as connection:
-            connection.settimeout(0.75)
+        if isinstance(endpoint, int):
+            connection = socket.create_connection(("127.0.0.1", endpoint), timeout=timeout)
+        elif isinstance(endpoint, str) and SOCKET_RE.fullmatch(endpoint):
+            connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            connection.settimeout(timeout)
+            connection.connect(endpoint)
+        else:
+            return None
+        with connection:
+            connection.settimeout(timeout)
             connection.sendall(payload)
             response = b""
             while len(response) <= 4096 and not response.endswith(b"\n"):
@@ -702,51 +853,102 @@ def send_message(port, message, token=None):
                     break
                 response += chunk
         parsed = json.loads(response.decode("utf-8"))
-        return parsed.get("accepted") is True or parsed.get("duplicate") is True
+        return parsed if isinstance(parsed, dict) else None
     except Exception:
-        return False
+        return None
+
+
+def send_message(endpoint, message, token=None):
+    response = exchange_message(endpoint, message, token)
+    return response is not None and (response.get("accepted") is True or response.get("duplicate") is True)
 
 
 def register(args):
     if not INSTALL_RE.fullmatch(args.installation_id) or not ID_RE.fullmatch(args.route_id):
         return 0
-    ready, error_code = install_hooks()
-    directory = route_directory(args.installation_id)
-    os.makedirs(directory, mode=0o700, exist_ok=True)
-    route_path, token_path = route_paths(args.installation_id, args.route_id)
+    connection_id = getattr(args, "connection_id", None)
+    if connection_id is not None and not ID_RE.fullmatch(connection_id):
+        return 0
+    endpoint = forward_socket_path(args.installation_id, args.route_id, connection_id)
     try:
-        token = bounded_read(token_path, 32) if os.path.exists(token_path) else secrets.token_bytes(32)
-        if len(token) != 32:
-            token = secrets.token_bytes(32)
-        atomic_write(token_path, token, 0o600)
-        route = {
-            "installation_id": args.installation_id,
-            "route_id": args.route_id.lower(),
-            "port": args.port,
-            "workspace_id": args.workspace_id.lower(),
-            "surface_id": args.surface_id.lower(),
-            "host_id": args.host_id[:160],
-            "tmux_session": args.tmux_session[:160],
-            "updated_at_ms": int(time.time() * 1000),
-        }
-        atomic_write(
-            route_path,
-            (json.dumps(route, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8"),
-            0o600,
-        )
-        enrollment = {
-            "protocol": PROTOCOL,
-            "version": VERSION,
-            "message": "enroll",
-            "route_id": args.route_id.lower(),
-            "event_id": secrets.token_hex(32),
-            "timestamp_ms": int(time.time() * 1000),
-            "token": base64.b64encode(token).decode("ascii"),
-            "integration_ready": ready,
-        }
-        if error_code:
-            enrollment["integration_error"] = error_code
-        send_message(args.port, enrollment)
+        with registration_lock(args.installation_id, args.route_id):
+            with lifecycle_lock():
+                ready, error_code = install_hooks()
+                route_path, token_path = route_paths(args.installation_id, args.route_id)
+                previous = None
+                if os.path.exists(route_path):
+                    previous = json.loads(bounded_read(route_path, 16 * 1024).decode("utf-8"))
+                token = bounded_read(token_path, 32) if os.path.exists(token_path) else secrets.token_bytes(32)
+                if len(token) != 32:
+                    token = secrets.token_bytes(32)
+                atomic_write(token_path, token, 0o600)
+            route = {
+                "installation_id": args.installation_id,
+                "route_id": args.route_id.lower(),
+                "socket_path": endpoint,
+                "workspace_id": args.workspace_id.lower(),
+                "surface_id": args.surface_id.lower(),
+                "host_id": args.host_id[:160],
+                "tmux_session": args.tmux_session[:160],
+                "updated_at_ms": int(time.time() * 1000),
+            }
+            enrollment = {
+                "protocol": PROTOCOL,
+                "version": VERSION,
+                "message": "enroll",
+                "route_id": args.route_id.lower(),
+                "event_id": secrets.token_hex(32),
+                "timestamp_ms": int(time.time() * 1000),
+                "token": base64.b64encode(token).decode("ascii"),
+                "integration_ready": ready,
+            }
+            if connection_id is not None:
+                route["connection_id"] = connection_id.lower()
+                enrollment["connection_id"] = connection_id.lower()
+            if error_code:
+                enrollment["integration_error"] = error_code
+            # Serialize attempts for this route, but never hold the global lifecycle
+            # lock across network I/O: other terminals' hooks must remain prompt.
+            # Enrollment may persist a token while the Mac restores many terminals.
+            # Give that handshake its own budget; interactive hooks remain at 0.75s.
+            response = exchange_message(endpoint, enrollment, timeout=5.0)
+            if response is None:
+                # One immediate, bounded retry of the identical frame also handles
+                # a lost ACK: the Mac recognizes the event ID as an accepted duplicate.
+                response = exchange_message(endpoint, enrollment, timeout=5.0)
+            accepted = response is not None and (response.get("accepted") is True or response.get("duplicate") is True)
+            same_generation = previous is None or previous.get("connection_id") == route.get("connection_id")
+            if not accepted and not (response is None and same_generation):
+                return 0
+            with lifecycle_lock():
+                # An unregister during the exchange revokes publication. Do not
+                # resurrect its route after it has removed/replaced the token.
+                if not os.path.exists(token_path) or bounded_read(token_path, 32) != token:
+                    return 0
+                atomic_write(
+                    route_path,
+                    (json.dumps(route, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8"),
+                    0o600,
+                )
+            if accepted and ready and connection_id is not None:
+                # The Mac must not show active until the hook route is actually
+                # published. This signed confirmation follows the atomic write.
+                hello = {
+                    "protocol": PROTOCOL,
+                    "version": VERSION,
+                    "message": "hello",
+                    "route_id": args.route_id.lower(),
+                    "connection_id": connection_id.lower(),
+                    "event_id": secrets.token_hex(32),
+                    "timestamp_ms": int(time.time() * 1000),
+                }
+                confirmation = exchange_message(endpoint, hello, token, timeout=5.0)
+                if confirmation is None:
+                    exchange_message(endpoint, hello, token, timeout=5.0)
+            if accepted and previous is not None:
+                old_endpoint = validated_route_socket(previous, args.installation_id, args.route_id)
+                if old_endpoint != endpoint:
+                    reap_replaced_socket(old_endpoint)
     except Exception:
         pass
     return 0
@@ -757,33 +959,49 @@ def unregister(args):
         return 2
     route_path, token_path = route_paths(args.installation_id, args.route_id)
     lock_path = session_lock_path(args.installation_id, args.route_id)
+    socket_path = None
     failed = False
     try:
-        os.makedirs(route_directory(args.installation_id), mode=0o700, exist_ok=True)
-        descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
-        with os.fdopen(descriptor, "a+b") as lock:
-            os.chmod(lock_path, 0o600)
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-            for path in (route_path, token_path, session_path(args.installation_id, args.route_id)):
-                try:
-                    os.unlink(path)
-                except FileNotFoundError:
-                    pass
-                except Exception:
-                    failed = True
+        with lifecycle_lock():
+            try:
+                if os.path.exists(route_path):
+                    current_route = json.loads(bounded_read(route_path, 16 * 1024).decode("utf-8"))
+                    socket_path = validated_route_socket(current_route, args.installation_id, args.route_id)
+                os.makedirs(route_directory(args.installation_id), mode=0o700, exist_ok=True)
+                os.chmod(route_directory(args.installation_id), 0o700)
+                descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+                with os.fdopen(descriptor, "a+b") as lock:
+                    os.chmod(lock_path, 0o600)
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+                    for path in (
+                        route_path,
+                        token_path,
+                        session_path(args.installation_id, args.route_id),
+                        socket_path,
+                    ):
+                        if path is None:
+                            continue
+                        try:
+                            os.unlink(path)
+                        except FileNotFoundError:
+                            pass
+                        except Exception:
+                            failed = True
+            except Exception:
+                failed = True
+            try:
+                os.unlink(lock_path)
+            except FileNotFoundError:
+                pass
+            except Exception:
+                failed = True
+            try:
+                os.rmdir(route_directory(args.installation_id))
+            except OSError:
+                pass
+            if not uninstall_hooks_if_unused():
+                failed = True
     except Exception:
-        failed = True
-    try:
-        os.unlink(lock_path)
-    except FileNotFoundError:
-        pass
-    except Exception:
-        failed = True
-    try:
-        os.rmdir(route_directory(args.installation_id))
-    except OSError:
-        pass
-    if not uninstall_hooks_if_unused():
         failed = True
     return 1 if failed else 0
 
@@ -797,7 +1015,10 @@ def current_tmux_session(pane):
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            timeout=0.5,
+            # Leave headroom for transient process-start contention while keeping
+            # tmux discovery plus the 0.75-second relay deadline well below the
+            # five-second Claude hook timeout.
+            timeout=1.0,
             check=False,
             text=True,
         )
@@ -827,10 +1048,21 @@ def candidate_routes(tmux_session):
                     token = bounded_read(token_path, 32)
                     if len(token) != 32:
                         continue
-                    port = int(route.get("port", 0))
-                    if port < 1 or port > 65535:
+                    socket_path = route.get("socket_path")
+                    if validated_route_socket(route, installation.name, route_id) is not None:
+                        endpoint = socket_path
+                    elif socket_path is None and route.get("connection_id") is None:
+                        # Read-only migration path for TCP routes created by an older
+                        # already-running UniConnect connection. New routes never use it.
+                        legacy_port = int(route.get("port", 0))
+                        if legacy_port < 1 or legacy_port > 65535:
+                            continue
+                        endpoint = legacy_port
+                    else:
+                        # A malformed or mismatched stream-local path cannot downgrade
+                        # itself into the legacy TCP compatibility branch.
                         continue
-                    candidates.append((int(route.get("updated_at_ms", 0)), route, token))
+                    candidates.append((int(route.get("updated_at_ms", 0)), route, token, endpoint))
                 except Exception:
                     continue
     except Exception:
@@ -873,6 +1105,7 @@ def persist_session_record(
         path = session_path(installation_id, route_id)
         lock_path = session_lock_path(installation_id, route_id)
         os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        os.chmod(os.path.dirname(path), 0o700)
         descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
         with os.fdopen(descriptor, "a+b") as lock:
             os.chmod(lock_path, 0o600)
@@ -958,19 +1191,24 @@ def hook(kind):
         session_id = normalized_session_id(source.get("session_id"), pane, cwd)
         prompt_correlation = normalized_prompt_correlation(source.get("prompt_id"))
         timestamp_ms = int(time.time() * 1000)
-        candidates = candidate_routes(tmux_session)
-        if not candidates:
-            return 0
-        _, route, token = candidates[0]
-        if not persist_session_record(
-            route,
-            session_id,
-            cwd,
-            pane,
-            activity_state,
-            prompt_correlation,
-            timestamp_ms,
-        ):
+        # Select and journal one route atomically with registration/removal. This
+        # prevents a reconnect from pairing an old route snapshot with a new token.
+        with lifecycle_lock():
+            candidates = candidate_routes(tmux_session)
+            if not candidates:
+                return 0
+            _, route, token, endpoint = candidates[0]
+            if not persist_session_record(
+                route,
+                session_id,
+                cwd,
+                pane,
+                activity_state,
+                prompt_correlation,
+                timestamp_ms,
+            ):
+                return 0
+        if kind == "prompt":
             return 0
         message = {
             "protocol": PROTOCOL,
@@ -984,7 +1222,9 @@ def hook(kind):
             "cwd": cwd,
             "tmux_pane": pane,
         }
-        send_message(route["port"], message, token=token)
+        if route.get("connection_id") is not None:
+            message["connection_id"] = route["connection_id"]
+        send_message(endpoint, message, token=token)
     except Exception:
         pass
     return 0
@@ -996,7 +1236,7 @@ def parser():
     registration = commands.add_parser("register", add_help=False)
     registration.add_argument("--installation-id", required=True)
     registration.add_argument("--route-id", required=True)
-    registration.add_argument("--port", required=True, type=int)
+    registration.add_argument("--connection-id")
     registration.add_argument("--workspace-id", required=True)
     registration.add_argument("--surface-id", required=True)
     registration.add_argument("--host-id", required=True)
@@ -1013,8 +1253,6 @@ def main():
     try:
         args = parser().parse_args()
         if args.command == "register":
-            if args.port < 1 or args.port > 65535:
-                return 0
             return register(args)
         if args.command == "unregister":
             return unregister(args)

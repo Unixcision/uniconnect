@@ -2,6 +2,21 @@ import Foundation
 
 /// Pure retry-budget policy shared by delayed and immediate tmux reconnection entry points.
 enum UniConnectSSHReconnectPolicy {
+    /// Permanent bootstrap failures need user intervention, not another network retry.
+    static func shouldAutomaticallyReconnect(afterChildExitCode exitCode: UInt32?) -> Bool {
+        switch exitCode {
+        case 72, 127:
+            // 72 is the legacy saved-tmux-session-missing exit; 127 means a required
+            // executable is absent. Repeating the same launcher cannot repair either.
+            return false
+        default:
+            // Preserve unknown and zero exits: Ghostty documents that Darwin's login(1)
+            // wrapper can obscure the actual child status. Do not mistake a lost SSH
+            // connection for an intentional successful detach and disable recovery.
+            return true
+        }
+    }
+
     struct Owner: Equatable, Hashable, Sendable {
         let workspaceID: UUID
         let panelID: UUID

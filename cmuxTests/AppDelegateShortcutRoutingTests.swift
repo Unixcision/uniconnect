@@ -4114,7 +4114,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         }
     }
 
-    func testConfiguredCmdPhysicalOWithDvorakCharactersTriggersRenameTabShortcut() {
+    func testCustomCmdRPhysicalOWithDvorakCharactersTriggersRenameTabShortcut() {
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("Expected AppDelegate.shared")
             return
@@ -4128,7 +4128,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             return
         }
 
-        let renameTabExpectation = expectation(description: "Expected rename tab request for semantic Cmd+R")
+        let renameTabExpectation = expectation(description: "Expected rename tab request for custom semantic Cmd+R")
         var observedRenameTabWindow: NSWindow?
         let renameTabToken = NotificationCenter.default.addObserver(
             forName: .commandPaletteRenameTabRequested,
@@ -4151,9 +4151,18 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         }
         defer { NotificationCenter.default.removeObserver(switcherToken) }
 
-        withTemporaryShortcut(action: .renameTab) {
+        withTemporaryShortcut(
+            action: .renameTab,
+            shortcut: StoredShortcut(
+                key: "r",
+                command: true,
+                shift: false,
+                option: false,
+                control: false
+            )
+        ) {
             // Dvorak: physical ANSI "O" key can produce "r".
-            // This should behave as semantic Cmd+R (rename tab), not Cmd+P.
+            // This custom binding should behave as semantic Cmd+R (rename tab), not Cmd+P.
             guard let event = NSEvent.keyEvent(
                 with: .keyDown,
                 location: .zero,

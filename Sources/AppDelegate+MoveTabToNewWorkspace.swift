@@ -18,6 +18,7 @@ extension AppDelegate {
             return false
         }
         return sourceWorkspace.panels.count > 1
+            && sourceWorkspace.canMoveSurfaceToNewUniConnectWorkspace(panelId: panelId)
     }
 
     func canMoveBonsplitTabToNewWorkspace(tabId: UUID) -> Bool {
@@ -30,10 +31,15 @@ extension AppDelegate {
               let sourceWorkspace = located.tabManager.tabs.first(where: { $0.id == located.workspaceId }),
               sourceWorkspace.panels[located.panelId] != nil,
               let destinationManager = tabManagerFor(tabId: targetWorkspaceId),
-              destinationManager.tabs.contains(where: { $0.id == targetWorkspaceId }) else {
+              let destinationWorkspace = destinationManager.tabs.first(where: {
+                  $0.id == targetWorkspaceId
+              }) else {
             return false
         }
-        return true
+        return sourceWorkspace.canTransferSurface(
+            panelId: located.panelId,
+            to: destinationWorkspace
+        )
     }
 
     func workspaceMoveTargets(forSurface panelId: UUID) -> [WorkspaceMoveTarget] {
@@ -41,15 +47,21 @@ extension AppDelegate {
         return workspaceMoveTargets(
             excludingWorkspaceId: source.workspaceId,
             referenceWindowId: source.windowId
-        )
+        ).filter { target in
+            guard let sourceWorkspace = source.tabManager.tabs.first(where: {
+                $0.id == source.workspaceId
+            }), let destination = target.tabManager.tabs.first(where: {
+                $0.id == target.workspaceId
+            }) else {
+                return false
+            }
+            return sourceWorkspace.canTransferSurface(panelId: panelId, to: destination)
+        }
     }
 
     func workspaceMoveTargets(forBonsplitTab tabId: UUID) -> [WorkspaceMoveTarget] {
         guard let located = locateBonsplitSurface(tabId: tabId) else { return [] }
-        return workspaceMoveTargets(
-            excludingWorkspaceId: located.workspaceId,
-            referenceWindowId: located.windowId
-        )
+        return workspaceMoveTargets(forSurface: located.panelId)
     }
 
     @discardableResult
@@ -101,6 +113,9 @@ extension AppDelegate {
         let sourcePane = sourceWorkspace.paneId(forPanelId: panelId)
         let sourceIndex = sourceWorkspace.indexInPane(forPanelId: panelId)
         let activationIntent = focusIntentForNewWorkspaceMove(panel: sourcePanel)
+        guard sourceWorkspace.canMoveSurfaceToNewUniConnectWorkspace(panelId: panelId) else {
+            return nil
+        }
         guard let detached = sourceWorkspace.detachSurface(panelId: panelId) else { return nil }
 
         guard let destinationWorkspace = targetManager.addWorkspace(
@@ -120,6 +135,7 @@ extension AppDelegate {
             )
             return nil
         }
+        sourceWorkspace.completeDetachedSurfaceTransfer(detached)
 
         cleanupEmptySourceWorkspaceAfterSurfaceMove(
             sourceWorkspace: sourceWorkspace,

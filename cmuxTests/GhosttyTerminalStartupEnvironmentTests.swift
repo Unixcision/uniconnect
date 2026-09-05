@@ -15,7 +15,13 @@ struct GhosttyTerminalStartupEnvironmentTests {
         let surface = TerminalSurface(
             tabId: workspaceId,
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
-            configTemplate: nil
+            configTemplate: nil,
+            initialEnvironmentOverrides: [
+                "UNICONNECT_SURFACE_GENERATION": UUID().uuidString,
+            ],
+            additionalEnvironment: [
+                "UNICONNECT_SURFACE_GENERATION": UUID().uuidString,
+            ]
         )
         defer { TerminalSurfaceRegistry.shared.unregister(surface) }
 
@@ -24,6 +30,7 @@ struct GhosttyTerminalStartupEnvironmentTests {
             "CMUX_SURFACE_ID": surface.id.uuidString,
             "CMUX_TAB_ID": workspaceId.uuidString,
             "CMUX_PANEL_ID": surface.id.uuidString,
+            "UNICONNECT_SURFACE_GENERATION": surface.uniConnectSurfaceGeneration.uuidString,
         ]
 
         for (key, expectedValue) in expectedContextValues {

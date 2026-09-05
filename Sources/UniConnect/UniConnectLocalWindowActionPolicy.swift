@@ -90,12 +90,13 @@ enum UniConnectLocalWindowActionPolicy {
         }
 
         let forgetActions = record.conversations.reversed().map { conversation in
-            descriptor(
+            let title = String(
+                localized: "uniconnect.localWindow.action.forgetConversation",
+                defaultValue: "Forget \(conversation.displayName) Conversation…"
+            )
+            return descriptor(
                 action: .forgetConversation(conversation.id),
-                title: String(
-                    localized: "uniconnect.localWindow.action.forgetConversation",
-                    defaultValue: "Forget \(conversation.displayName) Conversation…"
-                ),
+                title: title + " · " + sessionIdentifierPreview(conversation),
                 subtitle: sessionSubtitle(conversation),
                 systemImageName: "trash",
                 role: .destructive,
@@ -131,7 +132,7 @@ enum UniConnectLocalWindowActionPolicy {
             )
         return descriptor(
             action: .resumeConversation(conversation.id),
-            title: title,
+            title: title + " · " + sessionIdentifierPreview(conversation),
             subtitle: sessionSubtitle(conversation),
             systemImageName: isLatest ? "arrow.clockwise.circle.fill" : "clock.arrow.circlepath",
             isEnabled: isEnabled
@@ -141,13 +142,19 @@ enum UniConnectLocalWindowActionPolicy {
     private static func sessionSubtitle(
         _ conversation: UniConnectLocalAgentConversation
     ) -> String {
-        let maximumLength = 14
-        let prefix = String(conversation.sessionID.prefix(maximumLength))
-        let abbreviated = conversation.sessionID.count > maximumLength ? prefix + "…" : prefix
+        let abbreviated = sessionIdentifierPreview(conversation)
         return String(
             localized: "uniconnect.localWindow.sessionIdentifier",
             defaultValue: "Session \(abbreviated)"
         )
+    }
+
+    private static func sessionIdentifierPreview(
+        _ conversation: UniConnectLocalAgentConversation
+    ) -> String {
+        let maximumLength = 14
+        let prefix = String(conversation.sessionID.prefix(maximumLength))
+        return conversation.sessionID.count > maximumLength ? prefix + "…" : prefix
     }
 
     private static func runtimePresentation(

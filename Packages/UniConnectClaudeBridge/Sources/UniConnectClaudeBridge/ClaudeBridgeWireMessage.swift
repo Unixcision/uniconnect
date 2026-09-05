@@ -22,6 +22,7 @@ struct ClaudeBridgeWireMessage: Codable, Sendable, Equatable {
     let signature: String?
     let integrationReady: Bool?
     let integrationError: String?
+    var connectionID: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case protocolName = "protocol"
@@ -38,13 +39,14 @@ struct ClaudeBridgeWireMessage: Codable, Sendable, Equatable {
         case signature
         case integrationReady = "integration_ready"
         case integrationError = "integration_error"
+        case connectionID = "connection_id"
     }
 
     static let protocolName = "uniconnect-claude-bridge"
     static let currentVersion = 1
 
     func canonicalAuthenticationData() -> Data {
-        let fields = [
+        var fields = [
             protocolName,
             String(version),
             message.rawValue,
@@ -58,6 +60,8 @@ struct ClaudeBridgeWireMessage: Codable, Sendable, Equatable {
             integrationReady.map { $0 ? "1" : "0" } ?? "",
             integrationError ?? "",
         ]
+        // Legacy live routes keep their original signature format during migration.
+        if let connectionID { fields.append(connectionID.lowercased()) }
         return Data(fields.joined(separator: "\n").utf8)
     }
 

@@ -33,6 +33,7 @@ struct UniConnectImportPlanner {
         let workspace: UniConnectDocument.Workspace
         let normalizedName: String
         let hostIdentity: String?
+        let effectiveTarget: UniConnectSSHEffectiveTarget?
         let windows: [WindowMetadata]
         let validationIssues: [UniConnectImportPlan.Issue]
 
@@ -55,8 +56,14 @@ struct UniConnectImportPlanner {
         let isPinned: Bool
         let localWindowID: UUID?
         let runtimeState: UniConnectLocalWindowRuntimeState?
-        let localConversationKeys: [String]
+        let localConversations: [CanonicalLocalConversation]
         let latestLocalConversationKey: String?
+    }
+
+    private struct CanonicalLocalConversation: Equatable {
+        let identityKey: String
+        let resumeWorkingDirectory: String?
+        let customAgentDescriptor: UniConnectLocalAgentConversation.CustomAgentDescriptor?
     }
 
     private struct CanonicalWorkspaceProperties: Equatable {
@@ -67,27 +74,43 @@ struct UniConnectImportPlanner {
         let isPinned: Bool
         let cwd: String?
         let connect: String?
+        let sshEndpointIdentity: String?
     }
 
     /// Plans an imported document against a snapshot of the current UniConnect document.
     func plan(
         importing document: UniConnectDocument,
         against existingDocument: UniConnectDocument,
-        sourceMap: UniConnectImportSourceMap = .empty
+        sourceMap: UniConnectImportSourceMap = .empty,
+        sshCredentialRecordsByWorkspaceIndex: [Int: UniConnectSSHCredentialRecord] = [:],
+        existingSSHCredentialRecordsByWorkspaceIndex: [Int: UniConnectSSHCredentialRecord] = [:]
     ) -> UniConnectImportPlan {
         let duplicateResolution = resolveDuplicateAgentBindings(in: document)
         let effectiveDocument = duplicateResolution.effectiveDocument
         let imported = effectiveDocument.workspaces.enumerated().map {
-            metadata(for: $0.element, index: $0.offset, validate: true, sourceMap: sourceMap)
+            metadata(
+                for: $0.element,
+                index: $0.offset,
+                credentialRecord: sshCredentialRecordsByWorkspaceIndex[$0.offset],
+                validate: true,
+                sourceMap: sourceMap
+            )
         }
         let existing = existingDocument.workspaces.enumerated().map {
-            metadata(for: $0.element, index: $0.offset, validate: false, sourceMap: .empty)
+            metadata(
+                for: $0.element,
+                index: $0.offset,
+                credentialRecord: existingSSHCredentialRecordsByWorkspaceIndex[$0.offset],
+                validate: false,
+                sourceMap: .empty
+            )
         }
         var issuesByImportedIndex = imported.map(\.validationIssues)
 
         var importedWorkspaceIDs: [UUID: [Int]] = [:]
         var importedNames: [String: [Int]] = [:]
         var importedTmuxTargets: [TmuxTarget: [Int]] = [:]
+        var importedLocalWindowIDs: [UUID: [Int]] = [:]
         for item in imported {
             if let id = item.workspace.id {
                 importedWorkspaceIDs[id, default: []].append(item.index)
@@ -97,6 +120,13 @@ struct UniConnectImportPlanner {
             }
             for target in item.tmuxTargets {
                 importedTmuxTargets[target, default: []].append(item.index)
+            }
+            if item.workspace.kind == .local {
+                for window in item.windows {
+                    if let id = window.window.localWindow?.id {
+                        importedLocalWindowIDs[id, default: []].append(item.index)
+                    }
+                }
             }
         }
 
@@ -108,6 +138,13 @@ struct UniConnectImportPlanner {
         for indexes in importedNames.values where indexes.count > 1 {
             for index in Set(indexes).sorted() {
                 append(.duplicateWorkspaceName, to: &issuesByImportedIndex[index])
+            }
+        }
+        // A local-window UUID is a stable matching key. Two source declarations owning
+        // it cannot be reconciled by order without risking history being applied twice.
+        for indexes in importedLocalWindowIDs.values where indexes.count > 1 {
+            for index in Set(indexes).sorted() {
+                append(.ambiguousStableIdentity, to: &issuesByImportedIndex[index])
             }
         }
         for (target, indexes) in importedTmuxTargets where indexes.count > 1 {
@@ -247,8 +284,11 @@ struct UniConnectImportPlanner {
             }
 
             let connectionChanged = item.workspace.kind == .ssh
-                && normalizedOptional(item.workspace.connect)
-                    != normalizedOptional(existingItem.workspace.connect)
+                && (
+                    normalizedOptional(item.workspace.connect)
+                        != normalizedOptional(existingItem.workspace.connect)
+                    || item.hostIdentity != existingItem.hostIdentity
+                )
             let windowRows = makeWindowRows(
                 imported: item,
                 existing: existingItem,
@@ -273,8 +313,13 @@ struct UniConnectImportPlanner {
                     precomputedWindowRows: windowRows
                 )
             }
-            let metadataChanged = canonicalProperties(item.workspace)
-                != canonicalProperties(existingItem.workspace)
+            let metadataChanged = canonicalProperties(
+                item.workspace,
+                sshEndpointIdentity: item.hostIdentity
+            ) != canonicalProperties(
+                existingItem.workspace,
+                sshEndpointIdentity: existingItem.hostIdentity
+            )
             let windowsChanged = windowRows.contains(where: \.requiresMutation)
             let outcome: UniConnectImportPlan.Outcome = metadataChanged || windowsChanged ? .update : .unchanged
             return row(
@@ -299,12 +344,16 @@ struct UniConnectImportPlanner {
     /// Plans a detailed Markdown result while retaining line-level diagnostics.
     func plan(
         importing parsed: UniConnectMarkdownParseResult,
-        against existingDocument: UniConnectDocument
+        against existingDocument: UniConnectDocument,
+        existingSSHCredentialRecordsByWorkspaceIndex: [Int: UniConnectSSHCredentialRecord] = [:]
     ) -> UniConnectImportPlan {
         plan(
             importing: parsed.document,
             against: existingDocument,
-            sourceMap: parsed.sourceMap
+            sourceMap: parsed.sourceMap,
+            sshCredentialRecordsByWorkspaceIndex: parsed.sshCredentialRecordsByWorkspaceIndex,
+            existingSSHCredentialRecordsByWorkspaceIndex:
+                existingSSHCredentialRecordsByWorkspaceIndex
         )
     }
 
@@ -312,16 +361,22 @@ struct UniConnectImportPlanner {
     func prepare(
         importing document: UniConnectDocument,
         against existingDocument: UniConnectDocument,
-        sourceMap: UniConnectImportSourceMap = .empty
+        sourceMap: UniConnectImportSourceMap = .empty,
+        sshCredentialRecordsByWorkspaceIndex: [Int: UniConnectSSHCredentialRecord] = [:],
+        existingSSHCredentialRecordsByWorkspaceIndex: [Int: UniConnectSSHCredentialRecord] = [:]
     ) -> UniConnectPreparedImport {
         let plan = plan(
             importing: document,
             against: existingDocument,
-            sourceMap: sourceMap
+            sourceMap: sourceMap,
+            sshCredentialRecordsByWorkspaceIndex: sshCredentialRecordsByWorkspaceIndex,
+            existingSSHCredentialRecordsByWorkspaceIndex:
+                existingSSHCredentialRecordsByWorkspaceIndex
         )
         return UniConnectPreparedImport(
             sourceDocument: document,
             sourceMap: sourceMap,
+            sshCredentialRecordsByWorkspaceIndex: sshCredentialRecordsByWorkspaceIndex,
             plan: plan
         )
     }
@@ -329,18 +384,23 @@ struct UniConnectImportPlanner {
     /// Prepares a parsed Markdown import with all source diagnostics attached.
     func prepare(
         importing parsed: UniConnectMarkdownParseResult,
-        against existingDocument: UniConnectDocument
+        against existingDocument: UniConnectDocument,
+        existingSSHCredentialRecordsByWorkspaceIndex: [Int: UniConnectSSHCredentialRecord] = [:]
     ) -> UniConnectPreparedImport {
         prepare(
             importing: parsed.document,
             against: existingDocument,
-            sourceMap: parsed.sourceMap
+            sourceMap: parsed.sourceMap,
+            sshCredentialRecordsByWorkspaceIndex: parsed.sshCredentialRecordsByWorkspaceIndex,
+            existingSSHCredentialRecordsByWorkspaceIndex:
+                existingSSHCredentialRecordsByWorkspaceIndex
         )
     }
 
     private func metadata(
         for workspace: UniConnectDocument.Workspace,
         index: Int,
+        credentialRecord: UniConnectSSHCredentialRecord?,
         validate: Bool,
         sourceMap: UniConnectImportSourceMap
     ) -> WorkspaceMetadata {
@@ -362,9 +422,11 @@ struct UniConnectImportPlanner {
 
         let connect = normalizedOptional(workspace.connect)
         let hostIdentity: String?
+        let effectiveTarget: UniConnectSSHEffectiveTarget?
         switch workspace.kind {
         case .local:
             hostIdentity = nil
+            effectiveTarget = nil
             if validate, connect != nil {
                 append(.unexpectedSSHConnection, to: &issues)
             }
@@ -380,9 +442,18 @@ struct UniConnectImportPlanner {
                 if validate, UniConnectSSH.validateConnectCommand(connect) != nil {
                     append(.invalidSSHConnection, to: &issues)
                 }
-                hostIdentity = connectionIdentity(for: connect)
+                let normalizedRecordCommand = normalizedOptional(credentialRecord?.connectCommand)
+                let recordMatches = credentialRecord == nil
+                    || normalizedRecordCommand == connect
+                if validate, !recordMatches {
+                    append(.invalidSSHConnection, to: &issues)
+                }
+                effectiveTarget = recordMatches ? credentialRecord?.effectiveTarget : nil
+                hostIdentity = effectiveTarget.map(connectionIdentity(for:))
+                    ?? connectionIdentity(for: connect)
             } else {
                 hostIdentity = nil
+                effectiveTarget = nil
                 if validate { append(.missingSSHConnection, to: &issues) }
             }
         }
@@ -397,6 +468,7 @@ struct UniConnectImportPlanner {
                     ? UniConnectLocalWindowRecord.validatedBoxRoot(workspace.cwd ?? "~")
                     : nil,
                 sshSession: connect.flatMap(detectedSSHSession(for:)),
+                effectiveTarget: effectiveTarget,
                 validate: validate,
                 sourceMap: sourceMap
             )
@@ -412,6 +484,7 @@ struct UniConnectImportPlanner {
             workspace: workspace,
             normalizedName: name,
             hostIdentity: hostIdentity,
+            effectiveTarget: effectiveTarget,
             windows: windows,
             validationIssues: issues
         )
@@ -424,6 +497,7 @@ struct UniConnectImportPlanner {
         workspaceKind: UniConnectWorkspaceKind,
         localBoxRoot: String?,
         sshSession: DetectedSSHSession?,
+        effectiveTarget: UniConnectSSHEffectiveTarget?,
         validate: Bool,
         sourceMap: UniConnectImportSourceMap
     ) -> WindowMetadata {
@@ -484,7 +558,9 @@ struct UniConnectImportPlanner {
                 tmuxTarget = nil
                 break
             }
-            tmuxTarget = sshSession.flatMap {
+            tmuxTarget = effectiveTarget.flatMap {
+                TmuxTarget(effectiveTarget: $0, tmuxSession: tmux)
+            } ?? sshSession.flatMap {
                 TmuxTarget(session: $0, tmuxSession: tmux)
             }
         }
@@ -962,6 +1038,15 @@ struct UniConnectImportPlanner {
         return connectionIdentity(for: target)
     }
 
+    private func connectionIdentity(
+        for effectiveTarget: UniConnectSSHEffectiveTarget
+    ) -> String {
+        let host = effectiveTarget.host.contains(":")
+            ? "[\(effectiveTarget.host)]"
+            : effectiveTarget.host
+        return "\(effectiveTarget.user)@\(host)#\(effectiveTarget.port)"
+    }
+
     private func detectedSSHSession(for connect: String) -> DetectedSSHSession? {
         guard UniConnectSSH.validateConnectCommand(connect) == nil,
               let validated = UniConnectSSHConnectCommandValidator().validatedCommand(connect) else {
@@ -1038,7 +1123,8 @@ struct UniConnectImportPlanner {
     }
 
     private func canonicalProperties(
-        _ workspace: UniConnectDocument.Workspace
+        _ workspace: UniConnectDocument.Workspace,
+        sshEndpointIdentity: String?
     ) -> CanonicalWorkspaceProperties {
         CanonicalWorkspaceProperties(
             name: workspace.name.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1047,7 +1133,8 @@ struct UniConnectImportPlanner {
             group: normalizedOptional(workspace.group),
             isPinned: workspace.isPinned ?? false,
             cwd: workspace.kind == .local ? normalizedPath(workspace.cwd ?? "~") : nil,
-            connect: normalizedOptional(workspace.connect)
+            connect: normalizedOptional(workspace.connect),
+            sshEndpointIdentity: workspace.kind == .ssh ? sshEndpointIdentity : nil
         )
     }
 
@@ -1062,14 +1149,26 @@ struct UniConnectImportPlanner {
         let legacyClaudeKey = normalizedOptional(window.claudeSession).flatMap {
             UniConnectLocalAgentRestoreClaimPolicy.canonicalKey(kind: .claude, sessionID: $0)
         }
-        var localConversationKeys = localConversations.compactMap {
+        var canonicalLocalConversations = localConversations.compactMap { conversation in
             UniConnectLocalAgentRestoreClaimPolicy.canonicalKey(
-                kind: $0.kind,
-                sessionID: $0.sessionID
-            )
+                kind: conversation.kind,
+                sessionID: conversation.sessionID
+            ).map {
+                CanonicalLocalConversation(
+                    identityKey: $0,
+                    resumeWorkingDirectory: conversation.resumeWorkingDirectory,
+                    customAgentDescriptor: conversation.customAgentDescriptor
+                )
+            }
         }
-        if localConversationKeys.isEmpty, let legacyClaudeKey {
-            localConversationKeys = [legacyClaudeKey]
+        if canonicalLocalConversations.isEmpty, let legacyClaudeKey {
+            canonicalLocalConversations = [CanonicalLocalConversation(
+                identityKey: legacyClaudeKey,
+                resumeWorkingDirectory: window.localWindow?.workingDirectory
+                    ?? window.cwd
+                    ?? localCWD,
+                customAgentDescriptor: nil
+            )]
         }
         let latestLocalConversationKey = window.localWindow?.latestConversation.flatMap {
             UniConnectLocalAgentRestoreClaimPolicy.canonicalKey(
@@ -1089,7 +1188,7 @@ struct UniConnectImportPlanner {
             isPinned: window.isPinned ?? false,
             localWindowID: window.localWindow?.id,
             runtimeState: window.localWindow?.runtimeState,
-            localConversationKeys: localConversationKeys,
+            localConversations: canonicalLocalConversations,
             latestLocalConversationKey: latestLocalConversationKey
         )
     }

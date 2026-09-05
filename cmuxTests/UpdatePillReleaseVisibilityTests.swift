@@ -223,8 +223,55 @@ final class TitlebarControlsSizingPolicyTests: XCTestCase {
         XCTAssertEqual(classic.height, WindowChromeMetrics.appTitlebarHeight, accuracy: 0.001)
 
         let compact = TitlebarControlsLayoutMetrics.contentSize(config: TitlebarControlsStyle.compact.config)
-        XCTAssertEqual(compact.width, 126, accuracy: 0.001)
+        XCTAssertEqual(compact.width, 122, accuracy: 0.001)
         XCTAssertEqual(compact.height, WindowChromeMetrics.appTitlebarHeight, accuracy: 0.001)
+    }
+
+    func testCompactUniConnectRailSuppressesAccessoryInFavorOfRailActions() {
+        XCTAssertTrue(
+            titlebarControlsShouldHide(
+                presentationMode: .standard,
+                isFullScreen: false,
+                usesEmbeddedUniConnectSidebarHeader: true
+            )
+        )
+    }
+
+    func testExpandedUniConnectSidebarSuppressesAccessoryInFavorOfEmbeddedHeader() {
+        XCTAssertTrue(
+            titlebarControlsShouldHide(
+                presentationMode: .standard,
+                isFullScreen: false,
+                usesEmbeddedUniConnectSidebarHeader: true
+            )
+        )
+    }
+
+    func testHiddenUniConnectSidebarKeepsAppKitControls() {
+        XCTAssertFalse(
+            titlebarControlsShouldHide(
+                presentationMode: .standard,
+                isFullScreen: false,
+                usesEmbeddedUniConnectSidebarHeader: false
+            )
+        )
+    }
+
+    func testMinimalAndFullScreenModesStillHideAppKitControls() {
+        XCTAssertTrue(
+            titlebarControlsShouldHide(
+                presentationMode: .minimal,
+                isFullScreen: false,
+                usesEmbeddedUniConnectSidebarHeader: false
+            )
+        )
+        XCTAssertTrue(
+            titlebarControlsShouldHide(
+                presentationMode: .standard,
+                isFullScreen: true,
+                usesEmbeddedUniConnectSidebarHeader: false
+            )
+        )
     }
 
     func testTitlebarControlsLeadingOffsetDoesNotDoubleApplyTrafficLightPosition() {
@@ -276,7 +323,7 @@ final class TitlebarControlsSizingPolicyTests: XCTestCase {
         XCTAssertEqual(yOffset, 0, accuracy: 0.001)
     }
 
-    func testTitlebarControlsBalanceTopAndBottomAgainstTrafficLights() {
+    func testTitlebarControlsClampToTopEdgeWhenFullHeightCannotCenterOnTrafficLights() {
         let snapshot = MinimalModeTitlebarDebugSettings.snapshot()
         let trafficLightFrame = NSRect(x: 20, y: 7, width: 14, height: 14)
         let contentHeight = WindowChromeMetrics.appTitlebarHeight
@@ -288,12 +335,9 @@ final class TitlebarControlsSizingPolicyTests: XCTestCase {
         )
         let contentFrame = NSRect(x: 0, y: yOffset, width: 100, height: contentHeight)
 
-        XCTAssertEqual(contentFrame.midY, trafficLightFrame.midY, accuracy: 0.001)
-        XCTAssertEqual(
-            trafficLightFrame.minY - contentFrame.minY,
-            contentFrame.maxY - trafficLightFrame.maxY,
-            accuracy: 0.001
-        )
+        XCTAssertEqual(contentFrame.minY, 0, accuracy: 0.001)
+        XCTAssertTrue(contentFrame.contains(trafficLightFrame))
+        XCTAssertGreaterThan(contentFrame.midY, trafficLightFrame.midY)
     }
 
     func testTitlebarControlsVerticalOffsetFallsBackToTitlebarCenter() {
@@ -305,7 +349,7 @@ final class TitlebarControlsSizingPolicyTests: XCTestCase {
             debugSnapshot: snapshot
         )
 
-        XCTAssertEqual(yOffset, 2, accuracy: 0.001)
+        XCTAssertEqual(yOffset, 0, accuracy: 0.001)
     }
 
     func testNotificationBadgeIsSmallAndShiftedUpRight() {
@@ -560,6 +604,55 @@ final class NotificationsPopoverAnchorPolicyTests: XCTestCase {
         XCTAssertTrue(
             NotificationsAnchorRegistry.shared.closestAnchor(in: window, to: pointNearBell) === plusAnchor
         )
+    }
+
+    func testDetachedPopoverClosesWhenItsSidebarWindowReturnsToAppKitChrome() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 260, height: 100),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.orderOut(nil) }
+
+        XCTAssertTrue(shouldDismissDetachedNotificationsPopover(
+            isShown: true,
+            anchorWindow: window,
+            reconciledWindow: window,
+            usesEmbeddedHeader: false
+        ))
+        XCTAssertFalse(shouldDismissDetachedNotificationsPopover(
+            isShown: true,
+            anchorWindow: window,
+            reconciledWindow: window,
+            usesEmbeddedHeader: true
+        ))
+    }
+
+    func testDetachedPopoverFromAnotherWindowSurvivesAccessoryReconciliation() {
+        let anchorWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 260, height: 100),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        let reconciledWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 260, height: 100),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            anchorWindow.orderOut(nil)
+            reconciledWindow.orderOut(nil)
+        }
+
+        XCTAssertFalse(shouldDismissDetachedNotificationsPopover(
+            isShown: true,
+            anchorWindow: anchorWindow,
+            reconciledWindow: reconciledWindow,
+            usesEmbeddedHeader: false
+        ))
     }
 }
 

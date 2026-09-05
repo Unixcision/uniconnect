@@ -307,6 +307,7 @@ extension Workspace {
                 object: UniConnectClaudeSessionSignal(
                     workspaceID: id,
                     panelID: panelId,
+                    surfaceGeneration: (panel as? TerminalPanel)?.surface.uniConnectSurfaceGeneration,
                     kind: .panelClosed,
                     lifecycle: nil,
                     shellActivity: nil

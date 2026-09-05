@@ -52,6 +52,7 @@ struct UniConnectLocalWindowActionPolicyTests {
         )
         #expect(request.visibleName == "Terminal")
         #expect(request.boxRoot == "/Users/test/repository")
+        #expect(request.workingDirectory == nil)
         #expect(request.startupInput == nil)
         #expect(
             UniConnectNewLocalWindowRequest(
@@ -59,6 +60,106 @@ struct UniConnectLocalWindowActionPolicyTests {
                 boxRoot: "   ",
                 launchTarget: .terminal
             ) == nil
+        )
+    }
+
+    @Test("An explicit new-window folder is independent of the workspace default")
+    func newWindowRequestKeepsIndependentFolder() throws {
+        let request = try #require(UniConnectNewLocalWindowRequest(
+            visibleName: "Other project",
+            boxRoot: "/Users/test/repository",
+            workingDirectory: "/Users/test/Other Project/api/..",
+            launchTarget: .codex
+        ))
+        #expect(request.boxRoot == "/Users/test/repository")
+        #expect(request.workingDirectory == "/Users/test/Other Project")
+        #expect(request.startupInput == "cd -- '/Users/test/Other Project' && 'codex' '--yolo'\n")
+
+        let shell = try #require(UniConnectNewLocalWindowRequest(
+            visibleName: "Shell",
+            boxRoot: "/Users/test/repository",
+            workingDirectory: "/Volumes/Work/Independent",
+            launchTarget: .terminal
+        ))
+        #expect(shell.workingDirectory == "/Volumes/Work/Independent")
+        #expect(shell.startupInput == nil)
+    }
+
+    @Test("Per-window folders reject relative, empty, oversized and control-character paths")
+    func newWindowRequestRejectsInvalidFolders() {
+        let invalid = ["", "relative/project", "/tmp/bad\npath", "/tmp/bad\u{0}path",
+                       "/" + String(repeating: "p", count: UniConnectLocalWindowRecord.maximumWorkingDirectoryUTF8Bytes)]
+        for folder in invalid {
+            #expect(UniConnectNewLocalWindowRequest(
+                visibleName: "Shell",
+                boxRoot: "/repo",
+                workingDirectory: folder,
+                launchTarget: .terminal
+            ) == nil)
+        }
+    }
+
+    @Test("An independent live folder stays launchable when the workspace default is missing")
+    func independentFolderDoesNotRequireAvailableWorkspaceDefault() throws {
+        let fixture = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-independent-folder-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        try FileManager.default.createDirectory(at: fixture, withIntermediateDirectories: true)
+        let missingDefault = fixture.appendingPathComponent("missing-default", isDirectory: true).path
+        #expect(UniConnectLocalBoxRootPolicy.hasAvailableLaunchDirectory(
+            savedWorkingDirectory: fixture.path,
+            boxRoot: missingDefault
+        ))
+        #expect(UniConnectLocalBoxRootPolicy.terminalWorkingDirectory(
+            savedWorkingDirectory: fixture.path,
+            boxRoot: missingDefault
+        ) == fixture.path)
+        #expect(!UniConnectLocalBoxRootPolicy.hasAvailableLaunchDirectory(
+            savedWorkingDirectory: fixture.appendingPathComponent("missing-window").path,
+            boxRoot: missingDefault
+        ))
+    }
+
+    @Test("A one-off executable is a shell command, not a resumable custom agent")
+    func oneOffCommandHasNoAgentIdentity() throws {
+        let command = try #require(
+            UniConnectLocalWindowLaunchTarget.oneOffCommand(
+                name: "Database Console",
+                executable: "psql"
+            )
+        )
+        let startup = try #require(
+            command.startupCommand(boxRoot: "/Users/test/repository")
+        )
+
+        #expect(command.displayName == "Database Console")
+        #expect(command.restorableAgentKind == nil)
+        #expect(startup == "cd -- '/Users/test/repository' && 'psql'")
+        #expect(
+            UniConnectLocalWindowLaunchTarget.oneOffCommand(
+                name: "Invalid",
+                executable: "bad\ncommand"
+            ) == nil
+        )
+
+        let configured = try #require(
+            UniConnectLocalWindowLaunchTarget.makeCustom(
+                id: "configured-agent",
+                name: "  Configured Agent  ",
+                executable: "configured-agent",
+                iconAssetName: "   "
+            )
+        )
+        #expect(configured.restorableAgentKind == .custom("configured-agent"))
+        // Returning the enum case, not re-entering the factory: the factory used to
+        // be named for its own case, so this call recursed until the stack overflowed.
+        #expect(
+            configured == .custom(
+                id: "configured-agent",
+                name: "Configured Agent",
+                executable: "configured-agent",
+                iconAssetName: nil
+            )
         )
     }
 
@@ -127,6 +228,15 @@ struct UniConnectLocalWindowActionPolicyTests {
         #expect(resumeCommand.contains("cd -- '\(root.path)'"))
         #expect(!resumeCommand.contains(missing))
         #expect(resumeCommand.contains("'codex' 'resume' 'codex-fallback-thread' '--yolo'"))
+        let resolvedResume = try #require(
+            UniConnectLocalWindowAction.resumeConversation(conversationID)
+                .resolvedResumeSnapshot(
+                    record: record,
+                    registry: emptyRegistry
+                )
+        )
+        #expect(resolvedResume.workingDirectory == root.path)
+        #expect(resolvedResume.resumeCommand?.contains(missing) != true)
 
         let startPlan = try #require(
             UniConnectLocalWindowAction.startAgent(.agy)
@@ -139,6 +249,34 @@ struct UniConnectLocalWindowActionPolicyTests {
         #expect(startPlan.workingDirectory == root.path)
         #expect(startCommand == "cd -- '\(root.path)' && 'agy' '--dangerously-skip-permissions'")
         #expect(record.workingDirectory == missing)
+    }
+
+    @Test("A missing historical cwd blocks directory-namespaced resume")
+    func missingHistoricalDirectoryDoesNotRedirectClaude() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-claude-cwd-\(UUID().uuidString)", isDirectory: true)
+        let historical = root.appendingPathComponent("deleted", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: historical, withIntermediateDirectories: true)
+
+        var record = localRecord(root: root.path, workingDirectory: historical.path)
+        _ = record.record(
+            SessionRestorableAgentSnapshot(
+                kind: .claude,
+                sessionId: "claude-directory-namespaced",
+                workingDirectory: historical.path,
+                launchCommand: nil
+            ),
+            at: 13
+        )
+        _ = record.transitionToShell(at: 14)
+        let conversationID = try #require(record.latestConversationID)
+        try FileManager.default.removeItem(at: historical)
+
+        let action = UniConnectLocalWindowAction.resumeConversation(conversationID)
+        #expect(action.resolvedResumeSnapshot(record: record, registry: emptyRegistry) == nil)
+        #expect(action.terminalLaunchPlan(record: record, registry: emptyRegistry) == nil)
+        #expect(record.latestConversation?.resumeWorkingDirectory == historical.path)
     }
 
     @Test("A missing saved root exposes reassignment and disables every agent launch")
@@ -199,9 +337,9 @@ struct UniConnectLocalWindowActionPolicyTests {
         )
     }
 
-    @Test("Live directory reports update only the per-window cwd, never the trusted root")
+    @Test("Live directory reports accept independent folders without changing the workspace default")
     @MainActor
-    func liveDirectoryReportTracksBoundedWindowWorkingDirectory() throws {
+    func liveDirectoryReportTracksIndependentWindowWorkingDirectory() throws {
         let fixture = FileManager.default.temporaryDirectory
             .appendingPathComponent("uniconnect-live-cwd-\(UUID().uuidString)", isDirectory: true)
         let root = fixture.appendingPathComponent("repo", isDirectory: true)
@@ -225,7 +363,8 @@ struct UniConnectLocalWindowActionPolicyTests {
 
         #expect(workspace.updatePanelDirectory(panelId: panelID, directory: outside.path))
         #expect(workspace.uniConnectLocalWindowsByPanelId[panelID]?.boxRoot == root.path)
-        #expect(workspace.uniConnectLocalWindowsByPanelId[panelID]?.workingDirectory == api.path)
+        #expect(workspace.uniConnectLocalWindowsByPanelId[panelID]?.workingDirectory == outside.path)
+        #expect(workspace.uniConnectProfile?.localRoot == root.path)
     }
 
     @Test("Declining auto-resume leaves the latest conversation visible and resumable")
@@ -270,7 +409,11 @@ struct UniConnectLocalWindowActionPolicyTests {
         let menu = UniConnectLocalWindowActionPolicy.menuSnapshot(record: record)
 
         #expect(menu.historyActions.map(\.action) == [.resumeConversation(claudeID)])
+        #expect(menu.historyActions.first?.title.contains("claude-session") == true)
         #expect(menu.forgetActions.count == 2)
+        #expect(Set(menu.forgetActions.map(\.title)).count == 2)
+        #expect(menu.forgetActions.contains { $0.title.contains("agy-conversati") })
+        #expect(menu.forgetActions.contains { $0.title.contains("claude-session") })
         #expect(record.conversations.map(\.kind) == [.claude, .antigravity])
     }
 
@@ -442,6 +585,125 @@ struct UniConnectLocalWindowActionPolicyTests {
         ))
     }
 
+    @Test("A delayed shell report cannot mutate the replacement surface generation")
+    @MainActor
+    func staleShellActivityGenerationIsRejectedAfterRespawn() throws {
+        let root = NSTemporaryDirectory()
+        let workspace = Workspace(workingDirectory: root)
+        workspace.uniConnectProfile = UniConnectWorkspaceProfile(
+            kind: .local,
+            importIdentity: UUID(),
+            localRoot: root
+        )
+        workspace.uniConnectConfigureLocalRoot(root)
+        let panelID = try #require(workspace.focusedPanelId)
+        let originalGeneration = try #require(
+            workspace.terminalPanel(for: panelID)?.surface.uniConnectSurfaceGeneration
+        )
+
+        let replacement = try #require(workspace.respawnTerminalSurface(
+            panelId: panelID,
+            command: "/bin/zsh -l",
+            workingDirectory: root,
+            focus: false
+        ))
+        #expect(replacement.surface.uniConnectSurfaceGeneration != originalGeneration)
+
+        workspace.updatePanelShellActivityState(
+            panelId: panelID,
+            state: .promptIdle,
+            reportedSurfaceGeneration: originalGeneration
+        )
+        #expect(workspace.panelShellActivityStates[panelID] == nil)
+
+        workspace.updatePanelShellActivityState(
+            panelId: panelID,
+            state: .promptIdle,
+            reportedSurfaceGeneration: nil
+        )
+        #expect(workspace.panelShellActivityStates[panelID] == nil)
+
+        workspace.updatePanelShellActivityState(
+            panelId: panelID,
+            state: .promptIdle,
+            reportedSurfaceGeneration: replacement.surface.uniConnectSurfaceGeneration
+        )
+        #expect(workspace.panelShellActivityStates[panelID] == .promptIdle)
+
+        let genericWorkspace = Workspace(workingDirectory: root)
+        let genericPanelID = try #require(genericWorkspace.focusedPanelId)
+        genericWorkspace.updatePanelShellActivityState(
+            panelId: genericPanelID,
+            state: .commandRunning,
+            reportedSurfaceGeneration: nil
+        )
+        #expect(genericWorkspace.panelShellActivityStates[genericPanelID] == .commandRunning)
+    }
+
+    @Test("An old SSH child exit cannot disconnect the replacement with the same panel identity")
+    @MainActor
+    func staleSSHChildExitIsRejectedAfterRespawn() throws {
+        let manager = TabManager()
+        let workspace = try #require(manager.selectedWorkspace)
+        // No credential or hosted terminal is provided: this exercise cannot launch SSH.
+        workspace.uniConnectProfile = UniConnectWorkspaceProfile(kind: .ssh, tmuxReady: true)
+        let panelID = try #require(workspace.focusedPanelId)
+        let original = try #require(workspace.terminalPanel(for: panelID))
+        workspace.uniConnectTmuxSessionsByPanelId[panelID] = "retained-session"
+        workspace.setPanelCustomTitle(panelId: panelID, title: "Retained window")
+        let paneID = try #require(workspace.paneId(forPanelId: panelID))
+        let tabID = try #require(workspace.surfaceIdFromPanelId(panelID))
+        let replacement = try #require(workspace.respawnTerminalSurface(
+            panelId: panelID,
+            command: "/bin/zsh -l",
+            inheritExistingWorkingDirectory: false,
+            focus: false
+        ))
+        #expect(replacement.id == original.id)
+        #expect(replacement.surface !== original.surface)
+
+        #expect(!GhosttyApp.routeChildExit(
+            callbackSurface: original.surface,
+            tabID: workspace.id,
+            manager: manager
+        ))
+        #expect(!workspace.uniConnectDisconnectedPanelIds.contains(panelID))
+        #expect(workspace.terminalPanel(for: panelID) === replacement)
+        #expect(workspace.panelCustomTitles[panelID] == "Retained window")
+        #expect(workspace.uniConnectTmuxSessionsByPanelId[panelID] == "retained-session")
+        #expect(workspace.paneId(forPanelId: panelID) == paneID)
+        #expect(workspace.surfaceIdFromPanelId(panelID) == tabID)
+
+        // The generation check must not hide a genuine exit from the current SSH.
+        #expect(GhosttyApp.routeChildExit(
+            callbackSurface: replacement.surface,
+            tabID: workspace.id,
+            manager: manager
+        ))
+        #expect(workspace.uniConnectDisconnectedPanelIds.contains(panelID))
+        #expect(workspace.terminalPanel(for: panelID) === replacement)
+        #expect(workspace.uniConnectTmuxSessionsByPanelId[panelID] == "retained-session")
+        #expect(workspace.paneId(forPanelId: panelID) == paneID)
+        #expect(workspace.surfaceIdFromPanelId(panelID) == tabID)
+    }
+
+    @Test("A deferred child exit with no surviving source cannot mutate its workspace")
+    @MainActor
+    func missingChildExitSourceIsIgnored() throws {
+        let manager = TabManager()
+        let workspace = try #require(manager.selectedWorkspace)
+        let panelID = try #require(workspace.focusedPanelId)
+        let original = try #require(workspace.terminalPanel(for: panelID))
+
+        #expect(!GhosttyApp.routeChildExit(
+            callbackSurface: nil,
+            tabID: workspace.id,
+            manager: manager
+        ))
+        #expect(manager.tabs.contains { $0.id == workspace.id })
+        #expect(workspace.terminalPanel(for: panelID) === original)
+    }
+
     @Test("Forced SSH reconnect bypasses stale disconnected state and resets its budget")
     func forcedReconnectPolicyHandlesHungConnections() {
         #expect(
@@ -453,6 +715,58 @@ struct UniConnectLocalWindowActionPolicyTests {
                 hasReconnectInFlight: false
             ) == 1
         )
+    }
+
+    @Test("Missing saved tmux or executable is not retried as a network outage", arguments: [UInt32(72), 127])
+    func permanentSSHBootstrapExitStopsAutomaticRecovery(exitCode: UInt32) {
+        #expect(!UniConnectSSHReconnectPolicy.shouldAutomaticallyReconnect(afterChildExitCode: exitCode))
+        #expect(UniConnectSSHReconnectPolicy.nextAttempt(
+            trigger: .automatic,
+            isDisconnected: true,
+            attemptsSpent: 3,
+            maximumAutomaticAttempts: 3,
+            hasReconnectInFlight: false
+        ) == nil)
+        #expect(UniConnectSSHReconnectPolicy.nextAttempt(
+            trigger: .userForced,
+            isDisconnected: true,
+            attemptsSpent: 3,
+            maximumAutomaticAttempts: 3,
+            hasReconnectInFlight: false
+        ) == 1)
+    }
+
+    @Test("SSH network, signal, and Darwin-ambiguous zero exits keep bounded recovery")
+    func recoverableSSHExitClassificationPreservesLegacyBehavior() {
+        for exitCode: UInt32? in [nil, 0, 1, 129, 130, 137, 143, 254, 255] {
+            #expect(UniConnectSSHReconnectPolicy.shouldAutomaticallyReconnect(afterChildExitCode: exitCode))
+        }
+    }
+
+    @Test("A permanent SSH child exit retains the same tmux window", arguments: [UInt32(72), 127])
+    @MainActor
+    func permanentSSHExitKeepsSavedWindow(exitCode: UInt32) throws {
+        let manager = TabManager()
+        let workspace = try #require(manager.selectedWorkspace)
+        // No credential or hosted terminal: this regression cannot launch SSH.
+        workspace.uniConnectProfile = UniConnectWorkspaceProfile(kind: .ssh, tmuxReady: true)
+        let panelID = try #require(workspace.focusedPanelId)
+        let original = try #require(workspace.terminalPanel(for: panelID))
+        workspace.uniConnectTmuxSessionsByPanelId[panelID] = "saved-session"
+        let paneID = try #require(workspace.paneId(forPanelId: panelID))
+        let tabID = try #require(workspace.surfaceIdFromPanelId(panelID))
+
+        #expect(GhosttyApp.routeChildExit(
+            callbackSurface: original.surface,
+            tabID: workspace.id,
+            manager: manager,
+            exitCode: exitCode
+        ))
+        #expect(workspace.uniConnectDisconnectedPanelIds.contains(panelID))
+        #expect(workspace.terminalPanel(for: panelID) === original)
+        #expect(workspace.uniConnectTmuxSessionsByPanelId[panelID] == "saved-session")
+        #expect(workspace.paneId(forPanelId: panelID) == paneID)
+        #expect(workspace.surfaceIdFromPanelId(panelID) == tabID)
     }
 
     @Test("Forced SSH teardown targets only the terminal foreground process group")
@@ -791,11 +1105,87 @@ struct UniConnectLocalWindowActionPolicyTests {
         )
     }
 
+    @Test("Manual SSH creation resolves a complete credential before mutation")
+    @MainActor
+    func manualSSHCreationPreparesPinnedCredentialRecord() async throws {
+        let target = try #require(UniConnectSSHEffectiveTarget(
+            user: "deploy",
+            host: "server-a.example",
+            port: 2204
+        ))
+        let resolver = SSHCredentialEditTargetResolverStub(outcome: .resolved(target))
+        let transaction = UniConnectSSHWorkspaceCreationTransaction(
+            targetResolver: resolver
+        )
+
+        let record = try await transaction.prepare(
+            connectCommand: "  ssh production  ",
+            isCurrentSubmission: { true }
+        )
+
+        #expect(record == UniConnectSSHCredentialRecord(
+            connectCommand: "ssh production",
+            effectiveTarget: target
+        ))
+        #expect(await resolver.receivedRequests() == [
+            UniConnectSSHTargetResolutionRequest(originalHost: "production"),
+        ])
+    }
+
+    @Test("Manual SSH creation fails before publishing an indeterminate endpoint")
+    @MainActor
+    func manualSSHCreationRejectsIndeterminateTarget() async {
+        let resolver = SSHCredentialEditTargetResolverStub(outcome: .indeterminate)
+        let transaction = UniConnectSSHWorkspaceCreationTransaction(
+            targetResolver: resolver
+        )
+
+        await #expect(throws: UniConnectSSHWorkspaceCreationTransaction.Failure.invalidConnection) {
+            _ = try await transaction.prepare(
+                connectCommand: "ssh production",
+                isCurrentSubmission: { true }
+            )
+        }
+        #expect(await resolver.receivedRequests().count == 1)
+    }
+
+    @Test("Manual SSH creation rejects state changed while target resolution was pending")
+    @MainActor
+    func manualSSHCreationRejectsStaleSubmission() async {
+        let resolver = SSHCredentialEditTargetResolverStub.resolvingDefaultTarget()
+        let transaction = UniConnectSSHWorkspaceCreationTransaction(
+            targetResolver: resolver
+        )
+        var checks = 0
+
+        await #expect(throws: UniConnectSSHWorkspaceCreationTransaction.Failure.staleSubmission) {
+            _ = try await transaction.prepare(
+                connectCommand: "ssh production",
+                isCurrentSubmission: {
+                    checks += 1
+                    return checks == 1
+                }
+            )
+        }
+        #expect(checks == 2)
+    }
+
     @Test("SSH credential edit preflights all windows and leaves closed history on revision A")
     @MainActor
     func credentialEditUsesImmutableRevisionAndCommitsAllWindowsTogether() async throws {
         let executor = SSHCredentialEditExecutorStub()
-        let transaction = UniConnectSSHCredentialEditTransaction(executor: executor)
+        let effectiveTarget = try #require(UniConnectSSHEffectiveTarget(
+            user: "deploy",
+            host: "resolved-b.example",
+            port: 2207
+        ))
+        let targetResolver = SSHCredentialEditTargetResolverStub(
+            outcome: .resolved(effectiveTarget)
+        )
+        let transaction = UniConnectSSHCredentialEditTransaction(
+            executor: executor,
+            targetResolver: targetResolver
+        )
         let workspaceID = UUID()
         let oldID = UUID()
         let newID = UUID()
@@ -817,6 +1207,8 @@ struct UniConnectLocalWindowActionPolicyTests {
         var liveCredentialIDs = [firstPanelID: oldID, secondPanelID: oldID]
         let closedHistoryCredentialID = oldID
         var stored = [oldID: "ssh deploy@a.example"]
+        var storedTarget: UniConnectSSHEffectiveTarget?
+        var committedTarget: UniConnectSSHEffectiveTarget?
         var persistCount = 0
 
         let result = try await transaction.execute(
@@ -824,12 +1216,14 @@ struct UniConnectLocalWindowActionPolicyTests {
             newConnectCommand: "ssh deploy@b.example",
             windows: windows,
             conflictingTarget: { _, _ in nil },
-            createCredentialRevision: { command in
+            createCredentialRevision: { command, target in
                 stored[newID] = command
+                storedTarget = target
                 return newID
             },
             removeCredentialRevision: { stored.removeValue(forKey: $0) },
-            commit: { credentialID, _, editedWindows in
+            commit: { credentialID, target, editedWindows in
+                committedTarget = target
                 profileCredentialID = credentialID
                 for window in editedWindows {
                     liveCredentialIDs[window.panelID] = credentialID
@@ -852,16 +1246,39 @@ struct UniConnectLocalWindowActionPolicyTests {
         #expect(closedHistoryCredentialID == oldID)
         #expect(stored[oldID] == "ssh deploy@a.example")
         #expect(stored[newID] == "ssh deploy@b.example")
+        #expect(storedTarget == effectiveTarget)
+        #expect(committedTarget == effectiveTarget)
         #expect(persistCount == 1)
+        #expect(await targetResolver.receivedRequests() == [
+            UniConnectSSHTargetResolutionRequest(
+                originalHost: "b.example",
+                explicitUser: "deploy"
+            ),
+        ])
         let checkedSessions = await executor.checkedTmuxSessions()
         #expect(checkedSessions == ["app", "logs"])
+        let invocations = await executor.receivedInvocations()
+        #expect(invocations.count == 2)
+        for invocation in invocations {
+            #expect(invocation.arguments.contains("CanonicalizeHostname=no"))
+            #expect(invocation.arguments.contains("HostName=resolved-b.example"))
+            #expect(invocation.arguments.contains("User=deploy"))
+            #expect(invocation.arguments.contains("Port=2207"))
+            #expect(invocation.arguments.contains("ControlMaster=no"))
+            #expect(invocation.arguments.contains("ControlPath=none"))
+            #expect(invocation.arguments.contains("StrictHostKeyChecking=accept-new"))
+        }
     }
 
     @Test("A partial SSH credential edit rolls every window and vault reference back to A")
     @MainActor
     func credentialEditFailureRollsBackProfileWindowsAndNewRevision() async throws {
         let executor = SSHCredentialEditExecutorStub()
-        let transaction = UniConnectSSHCredentialEditTransaction(executor: executor)
+        let targetResolver = SSHCredentialEditTargetResolverStub.resolvingDefaultTarget()
+        let transaction = UniConnectSSHCredentialEditTransaction(
+            executor: executor,
+            targetResolver: targetResolver
+        )
         let workspaceID = UUID()
         let oldID = UUID()
         let newID = UUID()
@@ -890,7 +1307,7 @@ struct UniConnectLocalWindowActionPolicyTests {
                 newConnectCommand: "ssh deploy@b.example",
                 windows: windows,
                 conflictingTarget: { _, _ in nil },
-                createCredentialRevision: { command in
+                createCredentialRevision: { command, _ in
                     stored[newID] = command
                     return newID
                 },
@@ -924,7 +1341,8 @@ struct UniConnectLocalWindowActionPolicyTests {
     @MainActor
     func credentialEditRollbackFailureRetainsNewCredentialRevision() async throws {
         let transaction = UniConnectSSHCredentialEditTransaction(
-            executor: SSHCredentialEditExecutorStub()
+            executor: SSHCredentialEditExecutorStub(),
+            targetResolver: SSHCredentialEditTargetResolverStub.resolvingDefaultTarget()
         )
         let oldID = UUID()
         let newID = UUID()
@@ -945,7 +1363,7 @@ struct UniConnectLocalWindowActionPolicyTests {
                 newConnectCommand: "ssh deploy@b.example",
                 windows: [window],
                 conflictingTarget: { _, _ in nil },
-                createCredentialRevision: { command in
+                createCredentialRevision: { command, _ in
                     stored[newID] = command
                     return newID
                 },
@@ -976,7 +1394,8 @@ struct UniConnectLocalWindowActionPolicyTests {
     @MainActor
     func credentialEditRollbackPersistenceFailureRetainsNewCredentialRevision() async throws {
         let transaction = UniConnectSSHCredentialEditTransaction(
-            executor: SSHCredentialEditExecutorStub()
+            executor: SSHCredentialEditExecutorStub(),
+            targetResolver: SSHCredentialEditTargetResolverStub.resolvingDefaultTarget()
         )
         let oldID = UUID()
         let newID = UUID()
@@ -997,7 +1416,7 @@ struct UniConnectLocalWindowActionPolicyTests {
                 newConnectCommand: "ssh deploy@b.example",
                 windows: [window],
                 conflictingTarget: { _, _ in nil },
-                createCredentialRevision: { command in
+                createCredentialRevision: { command, _ in
                     stored[newID] = command
                     return newID
                 },
@@ -1034,7 +1453,11 @@ struct UniConnectLocalWindowActionPolicyTests {
     @MainActor
     func credentialEditRejectsCrossBoxTargetConflict() async throws {
         let executor = SSHCredentialEditExecutorStub()
-        let transaction = UniConnectSSHCredentialEditTransaction(executor: executor)
+        let targetResolver = SSHCredentialEditTargetResolverStub.resolvingDefaultTarget()
+        let transaction = UniConnectSSHCredentialEditTransaction(
+            executor: executor,
+            targetResolver: targetResolver
+        )
         let window = UniConnectSSHCredentialEditTransaction.Window(
             workspaceID: UUID(),
             panelID: UUID(),
@@ -1048,7 +1471,7 @@ struct UniConnectLocalWindowActionPolicyTests {
                 newConnectCommand: "ssh deploy@example.test",
                 windows: [window],
                 conflictingTarget: { targets, _ in targets.first },
-                createCredentialRevision: { _ in
+                createCredentialRevision: { _, _ in
                     didCreateCredential = true
                     return UUID()
                 },
@@ -1072,6 +1495,60 @@ struct UniConnectLocalWindowActionPolicyTests {
         #expect(!didCreateCredential)
         let checkedSessions = await executor.checkedTmuxSessions()
         #expect(checkedSessions.isEmpty)
+    }
+
+    @Test("An indeterminate SSH endpoint stops an edit before dedupe, preflight, or vault mutation")
+    @MainActor
+    func credentialEditFailsClosedWhenTargetResolutionIsIndeterminate() async throws {
+        let executor = SSHCredentialEditExecutorStub()
+        let targetResolver = SSHCredentialEditTargetResolverStub(outcome: .indeterminate)
+        let transaction = UniConnectSSHCredentialEditTransaction(
+            executor: executor,
+            targetResolver: targetResolver
+        )
+        var checkedForConflict = false
+        var createdCredential = false
+        var committed = false
+
+        do {
+            _ = try await transaction.execute(
+                oldCredentialID: UUID(),
+                newConnectCommand: "ssh deployment-alias",
+                windows: [
+                    .init(
+                        workspaceID: UUID(),
+                        panelID: UUID(),
+                        tmuxSession: "main"
+                    ),
+                ],
+                conflictingTarget: { _, _ in
+                    checkedForConflict = true
+                    return nil
+                },
+                createCredentialRevision: { _, _ in
+                    createdCredential = true
+                    return UUID()
+                },
+                removeCredentialRevision: { _ in },
+                commit: { _, _, _ in
+                    committed = true
+                    return true
+                },
+                rollback: { _, _ in true },
+                persist: {}
+            )
+            Issue.record("Expected indeterminate endpoint resolution to fail closed")
+        } catch let failure as UniConnectSSHCredentialEditTransaction.Failure {
+            #expect(failure == .invalidConnection)
+        }
+
+        #expect(await targetResolver.receivedRequests() == [
+            UniConnectSSHTargetResolutionRequest(originalHost: "deployment-alias"),
+        ])
+        #expect(!checkedForConflict)
+        #expect(!createdCredential)
+        #expect(!committed)
+        #expect(await executor.receivedInvocations().isEmpty)
     }
 
     @Test("SSH credential edit rejects a stale window snapshot after async preflight")
@@ -1621,14 +2098,47 @@ struct UniConnectLocalWindowActionPolicyTests {
         )
     }
 
+    private actor SSHCredentialEditTargetResolverStub: UniConnectSSHTargetResolving {
+        private let outcome: UniConnectSSHTargetResolutionOutcome
+        private var requests: [UniConnectSSHTargetResolutionRequest] = []
+
+        init(outcome: UniConnectSSHTargetResolutionOutcome) {
+            self.outcome = outcome
+        }
+
+        static func resolvingDefaultTarget() -> SSHCredentialEditTargetResolverStub {
+            guard let target = UniConnectSSHEffectiveTarget(
+                user: "deploy",
+                host: "example.test",
+                port: 22
+            ) else {
+                preconditionFailure("The fixed SSH credential edit target must be valid")
+            }
+            return SSHCredentialEditTargetResolverStub(outcome: .resolved(target))
+        }
+
+        func resolve(
+            _ requests: [UniConnectSSHTargetResolutionRequest]
+        ) async -> [UniConnectSSHTargetResolutionOutcome] {
+            self.requests.append(contentsOf: requests)
+            return Array(repeating: outcome, count: requests.count)
+        }
+
+        func receivedRequests() -> [UniConnectSSHTargetResolutionRequest] {
+            requests
+        }
+    }
+
     private actor SSHCredentialEditExecutorStub: UniConnectSSHCommandExecuting {
         private var sessions: [String] = []
+        private var invocations: [UniConnectSSHProcessInvocation] = []
 
         func execute(
             _ invocation: UniConnectSSHProcessInvocation,
             timeout: Duration
         ) async throws {
             _ = timeout
+            invocations.append(invocation)
             if let remoteCommand = invocation.arguments.last,
                let marker = remoteCommand.range(of: "tmux has-session -t '") {
                 let suffix = remoteCommand[marker.upperBound...]
@@ -1640,6 +2150,10 @@ struct UniConnectLocalWindowActionPolicyTests {
 
         func checkedTmuxSessions() -> [String] {
             sessions
+        }
+
+        func receivedInvocations() -> [UniConnectSSHProcessInvocation] {
+            invocations
         }
     }
 }

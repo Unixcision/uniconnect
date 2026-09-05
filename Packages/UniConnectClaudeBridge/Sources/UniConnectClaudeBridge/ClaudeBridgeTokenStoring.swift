@@ -2,12 +2,14 @@ import Foundation
 
 /// Persists per-route HMAC tokens in an encrypted application-owned vault.
 public protocol ClaudeBridgeTokenStoring: Sendable {
-    /// Loads the token previously enrolled for a route.
+    /// Loads the token previously enrolled for a route and SSH credential.
     ///
-    /// - Parameter routeID: Stable bridge route UUID.
+    /// - Parameters:
+    ///   - routeID: Stable bridge route UUID.
+    ///   - credentialID: Current encrypted-vault SSH credential UUID.
     /// - Returns: A 32-byte token, or `nil` before first enrollment.
     /// - Throws: A repository error when encrypted storage cannot be read.
-    func token(for routeID: UUID) async throws -> Data?
+    func token(for routeID: UUID, credentialID: UUID) async throws -> Data?
 
     /// Persists an enrolled token and its cleanup grouping identity.
     ///

@@ -2,28 +2,12 @@ import SwiftUI
 
 extension TabItemView {
     @ViewBuilder
-    func workspaceGroupContextMenuSection(
-        targetIds: [UUID],
-        isMulti: Bool
-    ) -> some View {
-        let targetWorkspaces = targetIds.compactMap { id in
-            tabManager.tabs.first(where: { $0.id == id })
-        }
-        let eligibleTargets = targetWorkspaces.filter { !$0.isPinned }
-        let eligibleTargetIds = eligibleTargets.map(\.id)
-        if !eligibleTargetIds.isEmpty {
-            let groups = workspaceGroupMenuSnapshot.items
-            let allTargetsInSameGroup: UUID? = {
-                let groupIds = eligibleTargets.map(\.groupId)
-                guard let first = groupIds.first, groupIds.allSatisfy({ $0 == first }) else {
-                    return nil
-                }
-                return first
-            }()
-            let hasAnyGroupedTarget = eligibleTargets.contains { $0.groupId != nil }
-
+    var workspaceGroupContextMenuSection: some View {
+        let menu = snapshot.contextMenu
+        if menu.eligibleForGrouping {
+            let groups = menu.groupMenu.items
             let groupSelectedShortcut = KeyboardShortcutSettings.shortcut(for: .groupSelectedWorkspaces)
-            let groupSelectedLabel = isMulti
+            let groupSelectedLabel = menu.isMultiSelection
                 ? String(
                     localized: "contextMenu.workspaceGroup.newFromSelection",
                     defaultValue: "New Group from Selection"
@@ -34,14 +18,14 @@ extension TabItemView {
                 )
             if let key = groupSelectedShortcut.keyEquivalent {
                 Button {
-                    promptNewWorkspaceGroup(workspaceIds: eligibleTargetIds)
+                    actions.perform(.createWorkspaceGroup)
                 } label: {
                     Label(groupSelectedLabel, systemImage: "rectangle.3.group")
                 }
                 .keyboardShortcut(key, modifiers: groupSelectedShortcut.eventModifiers)
             } else {
                 Button {
-                    promptNewWorkspaceGroup(workspaceIds: eligibleTargetIds)
+                    actions.perform(.createWorkspaceGroup)
                 } label: {
                     Label(groupSelectedLabel, systemImage: "rectangle.3.group")
                 }
@@ -50,11 +34,9 @@ extension TabItemView {
             Menu {
                 ForEach(groups) { group in
                     Button(group.name) {
-                        for id in eligibleTargetIds {
-                            tabManager.addWorkspaceToGroup(workspaceId: id, groupId: group.id)
-                        }
+                        actions.perform(.addToWorkspaceGroup(group.id))
                     }
-                    .disabled(allTargetsInSameGroup == group.id)
+                    .disabled(menu.allEligibleTargetsGroupId == group.id)
                 }
             } label: {
                 Label(
@@ -64,11 +46,9 @@ extension TabItemView {
             }
             .disabled(groups.isEmpty)
 
-            if hasAnyGroupedTarget {
+            if menu.hasAnyGroupedEligibleTarget {
                 Button {
-                    for id in eligibleTargetIds {
-                        tabManager.removeWorkspaceFromGroup(workspaceId: id)
-                    }
+                    actions.perform(.removeFromWorkspaceGroup)
                 } label: {
                     Label(
                         String(localized: "contextMenu.workspaceGroup.remove", defaultValue: "Remove from Group"),
@@ -77,10 +57,5 @@ extension TabItemView {
                 }
             }
         }
-    }
-
-    func promptNewWorkspaceGroup(workspaceIds: [UUID]) {
-        guard !workspaceIds.isEmpty else { return }
-        tabManager.createWorkspaceGroup(name: "", childWorkspaceIds: workspaceIds)
     }
 }

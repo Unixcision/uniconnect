@@ -18,6 +18,54 @@ enum MinimalModeChromeMetrics {
     static let titlebarHeight: CGFloat = WindowChromeMetrics.appTitlebarHeight
 }
 
+/// Geometry shared by the two UniConnect sidebar presentations.
+enum UniConnectSidebarChromeMetrics {
+    /// The compact floating panel's breathing room from the window edges.
+    static let panelInset: CGFloat = 10
+    /// The expanded sidebar emulates the symmetric card inset of a native
+    /// macOS 26 split-view sidebar while the root backdrop still fills the window.
+    static let expandedPanelInset: CGFloat = 8
+    static let expandedLeadingInset: CGFloat = expandedPanelInset
+    /// The expanded card keeps the same breathing room on every window edge.
+    /// Its complete header moves with the card, keeping traffic lights and actions
+    /// on one internally aligned row.
+    static let expandedTopInset: CGFloat = expandedPanelInset
+    static let expandedBottomInset: CGFloat = expandedPanelInset
+    static let expandedTrailingInset: CGFloat = expandedPanelInset
+    /// The compact rail deliberately begins below the native titlebar controls.
+    static let compactTopInset: CGFloat = WindowChromeMetrics.appTitlebarHeight + panelInset
+    /// Root-level compact controls use the expanded card's top breathing room,
+    /// so both presentations share one global centre line.
+    static let compactWindowControlsTopInset: CGFloat = expandedTopInset
+    static let compactBottomInset: CGFloat = panelInset
+    static var expandedHeaderHeight: CGFloat { UniConnectSidebarHeaderMetrics.rowHeight }
+    static var globalWindowControlCenterY: CGFloat {
+        expandedTopInset + UniConnectSidebarHeaderMetrics.controlCenterY
+    }
+
+    static func panelTopInset(isCompact: Bool) -> CGFloat {
+        isCompact ? compactTopInset : expandedTopInset
+    }
+
+    static func panelLeadingInset(isCompact: Bool) -> CGFloat {
+        isCompact ? panelInset : expandedLeadingInset
+    }
+
+    static func panelTrailingInset(isCompact: Bool) -> CGFloat {
+        isCompact ? panelInset : expandedTrailingInset
+    }
+
+    static func panelBottomInset(isCompact: Bool) -> CGFloat {
+        isCompact ? compactBottomInset : expandedBottomInset
+    }
+
+    /// Compact mode reveals the shared full-window backdrop instead of
+    /// compositing a second material surface with a slightly different tone.
+    static func usesDistinctPanelSurface(isCompact: Bool) -> Bool {
+        !isCompact
+    }
+}
+
 enum HeaderChromeControlMetrics {
     static let buttonSize: CGFloat = 20
     static let iconSize: CGFloat = 12
@@ -60,6 +108,11 @@ enum SidebarWorkspaceListMetrics {
 struct SidebarWorkspaceScrollInsets: Equatable {
     static let workspaceList = SidebarWorkspaceScrollInsets(
         top: SidebarWorkspaceListMetrics.scrollTopInset,
+        bottom: SidebarWorkspaceListMetrics.bottomScrimHeight
+    )
+
+    static let uniConnectWorkspaceList = SidebarWorkspaceScrollInsets(
+        top: UniConnectSidebarHeaderMetrics.rowHeight + 6,
         bottom: SidebarWorkspaceListMetrics.bottomScrimHeight
     )
 

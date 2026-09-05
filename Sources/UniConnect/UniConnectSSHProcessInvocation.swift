@@ -34,7 +34,8 @@ struct UniConnectSSHProcessInvocation: Sendable {
             return nil
         }
 
-        var sshArguments = [
+        var sshArguments = session.uniConnectEffectiveTarget?.sshPinningOptions ?? []
+        sshArguments += [
             "-T",
             "-o", "ConnectTimeout=12",
             "-o", "ServerAliveInterval=20",

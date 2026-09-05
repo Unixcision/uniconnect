@@ -1,5 +1,8 @@
 import XCTest
+import Testing
+import Combine
 import Foundation
+import AppKit
 import CryptoKit
 import LocalAuthentication
 import UniConnectClaudeBridge
@@ -11,6 +14,27 @@ import UniConnectClaudeBridge
 #endif
 
 final class UniConnectTests: XCTestCase {
+
+    private final class LockMenuActionProbe: NSObject {
+        private(set) var invocationCount = 0
+
+        @objc func invoke(_ sender: Any?) {
+            invocationCount += 1
+        }
+    }
+
+    private final class LockNotificationProbe: @unchecked Sendable {
+        var count = 0
+    }
+
+    private final class LockWindowDismissalProbe: NSPanel {
+        private(set) var orderOutCount = 0
+
+        override func orderOut(_ sender: Any?) {
+            orderOutCount += 1
+            super.orderOut(sender)
+        }
+    }
 
     // MARK: - tmux IDs
 
@@ -87,10 +111,17 @@ final class UniConnectTests: XCTestCase {
         XCTAssertFalse(line?.contains("kill") == true)
     }
 
-    func testAttachCommandLineKeepsGeneratedMultilineBridgePayloadInOneArgument() {
+    func testAttachCommandLineKeepsPrivateUnixBridgeAndMultilinePayloadInOneArgument() {
+        let remoteSocket = "/tmp/ucb-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-123456781234423492341234567890ab.sock"
         let bridge = ClaudeBridgeConnectionPlan(
             routeID: UUID(),
-            sshOptions: ["-o", "ExitOnForwardFailure=yes", "-R", "127.0.0.1:45000:127.0.0.1:46000"],
+            sshOptions: [
+                "-o", "ExitOnForwardFailure=no",
+                "-o", "ClearAllForwardings=no",
+                "-o", "StreamLocalBindMask=0177",
+                "-o", "StreamLocalBindUnlink=yes",
+                "-R", "\(remoteSocket):127.0.0.1:46000",
+            ],
             remoteSetupCommand: "printf '%s' 'line one\nline two' >/dev/null",
             remoteCleanupCommand: "true"
         )
@@ -102,8 +133,11 @@ final class UniConnectTests: XCTestCase {
         )
 
         XCTAssertNotNil(line)
-        XCTAssertTrue(line?.contains("ExitOnForwardFailure=yes") == true)
-        XCTAssertTrue(line?.contains("127.0.0.1:45000:127.0.0.1:46000") == true)
+        XCTAssertTrue(line?.contains("ExitOnForwardFailure=no") == true)
+        XCTAssertTrue(line?.contains("StreamLocalBindMask=0177") == true)
+        XCTAssertTrue(line?.contains("StreamLocalBindUnlink=yes") == true)
+        XCTAssertTrue(line?.contains("\(remoteSocket):127.0.0.1:46000") == true)
+        XCTAssertFalse(line?.contains("ExitOnForwardFailure=yes") == true)
         XCTAssertTrue(line?.contains("line one\nline two") == true)
     }
 
@@ -117,8 +151,8 @@ final class UniConnectTests: XCTestCase {
     func testExistingTmuxCommandChecksThenAttachesWithoutCreatingReplacement() {
         let cmd = UniConnectSSH.remoteExistingTmuxCommand(session: "saved-session")
 
-        XCTAssertTrue(cmd.contains("tmux has-session -t 'saved-session'"))
-        XCTAssertTrue(cmd.contains("exec tmux attach-session -t 'saved-session'"))
+        XCTAssertTrue(cmd.contains("tmux has-session -t '=saved-session'"))
+        XCTAssertTrue(cmd.contains("exec tmux attach-session -t '=saved-session'"))
         XCTAssertTrue(cmd.contains("set-option -g mouse on"))
         XCTAssertTrue(cmd.contains("history-limit 50000"))
         XCTAssertFalse(cmd.contains("new-session"))
@@ -187,44 +221,264 @@ final class UniConnectTests: XCTestCase {
         XCTAssertNil(legacy.createdAt)
     }
 
-    func testAuthPolicyPrefersBiometricsAndFallsBackExplicitly() {
-        XCTAssertEqual(UniConnectAuthPolicy.resolve(biometricsAvailable: true, errorCode: nil).0, .deviceOwnerAuthenticationWithBiometrics)
-        XCTAssertNil(UniConnectAuthPolicy.resolve(biometricsAvailable: true, errorCode: nil).1)
-        let fallbackCases: [(LAError.Code?, String)] = [
-            (
-                .biometryLockout,
-                String(
-                    localized: "uniconnect.lock.fallback.lockout",
-                    defaultValue: "Touch ID is locked after too many attempts. Enter your Mac password."
-                )
+    @MainActor
+    func testReleaseLockPolicyIgnoresEnvironmentAndDefaultsDisableEscapes() {
+        XCTAssertTrue(
+            UniConnectAppLock.resolvedIsEnabled(
+                allowsDevelopmentOverrides: false,
+                environment: [
+                    "UNICONNECT_DISABLE_LOCK": "1",
+                    "XCTestConfigurationFilePath": "/tmp/fake.xctestconfiguration",
+                ],
+                persistedOverride: false
             ),
-            (
-                .biometryNotEnrolled,
-                String(
-                    localized: "uniconnect.lock.fallback.notEnrolled",
-                    defaultValue: "No fingerprints are enrolled. Enter your Mac password."
-                )
-            ),
-            (
-                .biometryNotAvailable,
-                String(
-                    localized: "uniconnect.lock.fallback.notAvailable",
-                    defaultValue: "This Mac does not have Touch ID. Enter your Mac password."
-                )
-            ),
-            (
-                nil,
-                String(
-                    localized: "uniconnect.lock.fallback.unavailable",
-                    defaultValue: "Touch ID is unavailable. Enter your Mac password."
-                )
-            ),
+            "Release must remain locked even when development escape values are present"
+        )
+        XCTAssertFalse(
+            UniConnectAppLock.resolvedIsEnabled(
+                allowsDevelopmentOverrides: true,
+                environment: ["UNICONNECT_DISABLE_LOCK": "1"],
+                persistedOverride: true
+            )
+        )
+        XCTAssertFalse(
+            UniConnectAppLock.resolvedIsEnabled(
+                allowsDevelopmentOverrides: true,
+                environment: [:],
+                persistedOverride: false
+            )
+        )
+    }
+
+    @MainActor
+    func testLockedShortcutGateConsumesNewBoxCommandPaletteAndReconnect() throws {
+        let quitShortcut = KeyboardShortcutSettings.Action.quit.defaultShortcut
+        let cases: [(NSEvent.ModifierFlags, String, UInt16)] = [
+            ([.command], "n", 45),
+            ([.command, .shift], "p", 35),
+            ([.command], "r", 15),
         ]
-        for (code, expectedReason) in fallbackCases {
-            let (policy, reason) = UniConnectAuthPolicy.resolve(biometricsAvailable: false, errorCode: code)
-            XCTAssertEqual(policy, .deviceOwnerAuthentication, "no silent bypass: password path must be explicit")
-            XCTAssertEqual(reason, expectedReason)
+
+        for (flags, characters, keyCode) in cases {
+            let event = try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: flags,
+                timestamp: 0,
+                windowNumber: 0,
+                context: nil,
+                characters: characters,
+                charactersIgnoringModifiers: characters,
+                isARepeat: false,
+                keyCode: keyCode
+            ))
+            XCTAssertEqual(
+                UniConnectAppLock.lockedShortcutDecision(
+                    isLocked: true,
+                    event: event,
+                    quitShortcut: quitShortcut
+                ),
+                .consume,
+                "\(flags.rawValue)+\(characters) must not reach its mutating shortcut while locked"
+            )
+            XCTAssertEqual(
+                UniConnectAppLock.lockedShortcutDecision(
+                    isLocked: false,
+                    event: event,
+                    quitShortcut: quitShortcut
+                ),
+                .passThrough
+            )
         }
+    }
+
+    @MainActor
+    func testLockedShortcutGateKeepsOnlyUnlockAndQuitAvailable() throws {
+        func event(flags: NSEvent.ModifierFlags, characters: String, keyCode: UInt16) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: flags,
+                timestamp: 0,
+                windowNumber: 0,
+                context: nil,
+                characters: characters,
+                charactersIgnoringModifiers: characters,
+                isARepeat: false,
+                keyCode: keyCode
+            ))
+        }
+        let quitShortcut = KeyboardShortcutSettings.Action.quit.defaultShortcut
+
+        XCTAssertEqual(
+            UniConnectAppLock.lockedShortcutDecision(
+                isLocked: true,
+                event: try event(flags: [], characters: "\r", keyCode: 36),
+                quitShortcut: quitShortcut
+            ),
+            .authenticate
+        )
+        XCTAssertEqual(
+            UniConnectAppLock.lockedShortcutDecision(
+                isLocked: true,
+                event: try event(flags: [.command], characters: "q", keyCode: 12),
+                quitShortcut: quitShortcut
+            ),
+            .terminate
+        )
+    }
+
+    @MainActor
+    func testLockedTargetActionPolicyRejectsMutationAndAllowsOnlyExitOrLockSurface() {
+        XCTAssertTrue(
+            UniConnectAppLock.shouldConsumeApplicationAction(
+                isLocked: true,
+                isTerminationAction: false,
+                isQuitMenuItem: false,
+                originatesInLockSurface: false
+            )
+        )
+        XCTAssertFalse(
+            UniConnectAppLock.shouldConsumeApplicationAction(
+                isLocked: true,
+                isTerminationAction: true,
+                isQuitMenuItem: false,
+                originatesInLockSurface: false
+            )
+        )
+        XCTAssertFalse(
+            UniConnectAppLock.shouldConsumeApplicationAction(
+                isLocked: true,
+                isTerminationAction: false,
+                isQuitMenuItem: true,
+                originatesInLockSurface: false
+            )
+        )
+        XCTAssertFalse(
+            UniConnectAppLock.shouldConsumeApplicationAction(
+                isLocked: true,
+                isTerminationAction: false,
+                isQuitMenuItem: false,
+                originatesInLockSurface: true
+            )
+        )
+    }
+
+#if DEBUG
+    @MainActor
+    func testLockedApplicationSendActionBlocksMenuClickButAllowsQuitMenuClick() {
+        AppDelegate.installWindowResponderSwizzlesForTesting()
+        let lock = UniConnectAppLock.shared
+        lock.resetForTesting()
+        lock.presentsWindows = false
+        lock.enabledOverride = true
+        lock.lock()
+        defer { lock.resetForTesting() }
+
+        let probe = LockMenuActionProbe()
+        let mutationItem = NSMenuItem(title: "mutation", action: #selector(LockMenuActionProbe.invoke(_:)), keyEquivalent: "")
+        mutationItem.target = probe
+        XCTAssertTrue(NSApp.sendAction(mutationItem.action!, to: probe, from: mutationItem))
+        XCTAssertEqual(probe.invocationCount, 0, "a menu click must be consumed before its mutation runs")
+
+        let quitItem = NSMenuItem(
+            title: String(localized: "menu.app.quitUniConnect", defaultValue: "Quit UniConnect"),
+            action: #selector(LockMenuActionProbe.invoke(_:)),
+            keyEquivalent: "q"
+        )
+        quitItem.target = probe
+        XCTAssertTrue(NSApp.sendAction(quitItem.action!, to: probe, from: quitItem))
+        XCTAssertEqual(probe.invocationCount, 1, "the explicit Quit menu action remains available")
+    }
+
+    @MainActor
+    func testLockedShortcutMonitorStopsMutationBeforeAppRouting() throws {
+        let appDelegate = try XCTUnwrap(AppDelegate.shared)
+        let originalTabManager = appDelegate.tabManager
+        let tabManager = TabManager()
+        appDelegate.tabManager = tabManager
+
+        let lock = UniConnectAppLock.shared
+        lock.resetForTesting()
+        lock.presentsWindows = false
+        lock.enabledOverride = true
+        lock.lock()
+
+        let paletteRequests = LockNotificationProbe()
+        let paletteObserver = NotificationCenter.default.addObserver(
+            forName: .commandPaletteRequested,
+            object: nil,
+            queue: .main
+        ) { _ in
+            paletteRequests.count += 1
+        }
+        defer {
+            NotificationCenter.default.removeObserver(paletteObserver)
+            appDelegate.tabManager = originalTabManager
+            lock.resetForTesting()
+        }
+
+        let initialWorkspaceCount = tabManager.tabs.count
+        let shortcuts: [(NSEvent.ModifierFlags, String, UInt16)] = [
+            ([.command], "n", 45),
+            ([.command, .shift], "p", 35),
+            ([.command], "r", 15),
+        ]
+        for (flags, characters, keyCode) in shortcuts {
+            let event = try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: flags,
+                timestamp: 0,
+                windowNumber: 0,
+                context: nil,
+                characters: characters,
+                charactersIgnoringModifiers: characters,
+                isARepeat: false,
+                keyCode: keyCode
+            ))
+            XCTAssertTrue(appDelegate.debugHandleShortcutMonitorEvent(event: event))
+        }
+
+        XCTAssertEqual(tabManager.tabs.count, initialWorkspaceCount)
+        XCTAssertEqual(paletteRequests.count, 0)
+    }
+#endif
+
+    @MainActor
+    func testLockDismissesPopUpMenuPanelsBeforeShowingCover() {
+        let normalWindow = LockWindowDismissalProbe(
+            contentRect: NSRect(x: 0, y: 0, width: 20, height: 20),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        let popUpWindow = LockWindowDismissalProbe(
+            contentRect: NSRect(x: 0, y: 0, width: 20, height: 20),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        normalWindow.level = .floating
+        popUpWindow.level = .popUpMenu
+        popUpWindow.isFloatingPanel = true
+        popUpWindow.collectionBehavior = [.transient]
+        normalWindow.addChildWindow(popUpWindow, ordered: .above)
+        defer {
+            if popUpWindow.parent === normalWindow {
+                normalWindow.removeChildWindow(popUpWindow)
+            }
+            popUpWindow.close()
+            normalWindow.close()
+        }
+
+        XCTAssertEqual(
+            UniConnectAppLock.dismissTransientPopUpWindows([normalWindow, popUpWindow]),
+            1
+        )
+        XCTAssertEqual(normalWindow.orderOutCount, 0)
+        XCTAssertEqual(popUpWindow.orderOutCount, 1)
+        XCTAssertNil(popUpWindow.parent)
     }
 
     /// Mocked LAContext (THE_BIG_GOAL §14): drives the real lock flow without hardware.
@@ -413,7 +667,16 @@ final class UniConnectTests: XCTestCase {
         let vault = UniConnectVault(storageURL: vaultURL, keyProvider: { key })
         let credentialID = UUID()
         let firstCommand = "sshpass -p 'first-secret' ssh ops@first.example.test"
-        try vault.storeOrThrow(connectCommand: firstCommand, id: credentialID)
+        let firstTarget = try XCTUnwrap(UniConnectSSHEffectiveTarget(
+            user: "ops",
+            host: "203.0.113.10",
+            port: 2201
+        ))
+        try vault.storeOrThrow(
+            connectCommand: firstCommand,
+            effectiveTarget: firstTarget,
+            id: credentialID
+        )
         let firstVault = try XCTUnwrap(
             vault.encryptedSnapshot(requiring: Set([credentialID]))
         )
@@ -513,7 +776,16 @@ final class UniConnectTests: XCTestCase {
         )
 
         let secondCommand = "sshpass -p 'second-secret' ssh ops@second.example.test"
-        try vault.storeOrThrow(connectCommand: secondCommand, id: credentialID)
+        let secondTarget = try XCTUnwrap(UniConnectSSHEffectiveTarget(
+            user: "ops",
+            host: "203.0.113.20",
+            port: 2202
+        ))
+        try vault.storeOrThrow(
+            connectCommand: secondCommand,
+            effectiveTarget: secondTarget,
+            id: credentialID
+        )
         let secondVault = try XCTUnwrap(
             vault.encryptedSnapshot(requiring: Set([credentialID]))
         )
@@ -544,6 +816,17 @@ final class UniConnectTests: XCTestCase {
             return XCTFail("expected readable backup import source")
         }
         XCTAssertEqual(importSource.document, historical)
+        XCTAssertEqual(
+            importSource.sshCredentialRecordsByWorkspaceIndex[0],
+            UniConnectSSHCredentialRecord(
+                connectCommand: firstCommand,
+                effectiveTarget: firstTarget
+            )
+        )
+        XCTAssertNotEqual(
+            importSource.sshCredentialRecordsByWorkspaceIndex[0]?.effectiveTarget,
+            secondTarget
+        )
 
         let currentManifest = try JSONDecoder().decode(
             UniConnectBackup.LocalBackupManifest.self,
@@ -605,6 +888,40 @@ final class UniConnectTests: XCTestCase {
             vault: vault
         ))
         XCTAssertFalse(FileManager.default.fileExists(atPath: backupURL.path))
+    }
+
+    @MainActor
+    func testHistoryCleanupKeepsVaultWhenMarkerIsADanglingSymlink() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-history-dangling-marker-\(UUID().uuidString)", isDirectory: true)
+        let historyDirectory = directory.appendingPathComponent("history", isDirectory: true)
+        let target = directory.appendingPathComponent("backup.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let stem = "backup-protected"
+        let companion = historyDirectory.appendingPathComponent("\(stem).vault.uc")
+        let marker = historyDirectory.appendingPathComponent("\(stem).json")
+        try UniConnectAtomicFileWriter.write(Data("encrypted-vault".utf8), to: companion)
+        try FileManager.default.createSymbolicLink(
+            at: marker,
+            withDestinationURL: historyDirectory.appendingPathComponent("missing.json")
+        )
+        let vault = UniConnectVault(
+            storageURL: directory.appendingPathComponent("live-vault.uc"),
+            keyProvider: { SymmetricKey(size: .bits256) }
+        )
+
+        _ = try UniConnectBackup.persistLocalBackup(
+            document: UniConnectDocument(workspaces: []),
+            encryptedVault: nil,
+            to: target,
+            historyDirectory: historyDirectory,
+            vault: vault,
+            now: Date(timeIntervalSince1970: 2_000_000)
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: companion.path))
+        XCTAssertNoThrow(try FileManager.default.destinationOfSymbolicLink(atPath: marker.path))
     }
 
     @MainActor
@@ -753,6 +1070,300 @@ final class UniConnectTests: XCTestCase {
         XCTAssertEqual(restored.workspaces[0].windows[0].cwd, "/srv/project/app")
         XCTAssertNil(restored.workspaces[1].connect)
         XCTAssertNil(restored.workspaces[1].credentialId)
+    }
+
+    @MainActor
+    func testHistoricalAppOwnedSeedFilesAreSecuredOnceWithoutFollowingLinks() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-historical-seeds-\(UUID().uuidString)", isDirectory: true)
+        let historicalSeed = directory.appendingPathComponent("seed-inicial-2026.json")
+        let alreadyScrubbedSeed = directory.appendingPathComponent("seed-scrubbed.json")
+        let outsideDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-outside-seed-\(UUID().uuidString)", isDirectory: true)
+        let outsideSeed = outsideDirectory.appendingPathComponent("outside.json")
+        let linkedSeed = directory.appendingPathComponent("seed-linked.json")
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: outsideDirectory)
+        }
+
+        let credentialPattern = "sshpass -p 'private-value' ssh root@example.test"
+        let document = UniConnectDocument(workspaces: [
+            .init(
+                name: "Historical VPS",
+                kind: .ssh,
+                color: nil,
+                group: nil,
+                isPinned: nil,
+                cwd: nil,
+                connect: credentialPattern,
+                windows: []
+            ),
+        ])
+        let plaintext = try JSONEncoder().encode(document)
+        let scrubbedCredentialID = UUID()
+        let scrubbedDocument = UniConnectDocument(workspaces: [
+            .init(
+                name: "Already scrubbed VPS",
+                kind: .ssh,
+                color: nil,
+                group: nil,
+                isPinned: nil,
+                cwd: nil,
+                connect: nil,
+                credentialId: scrubbedCredentialID,
+                windows: []
+            ),
+        ])
+        let scrubbedData = try JSONEncoder().encode(scrubbedDocument)
+        try UniConnectAtomicFileWriter.write(plaintext, to: historicalSeed)
+        try UniConnectAtomicFileWriter.write(scrubbedData, to: alreadyScrubbedSeed)
+        try UniConnectAtomicFileWriter.write(plaintext, to: outsideSeed)
+        try FileManager.default.createSymbolicLink(at: linkedSeed, withDestinationURL: outsideSeed)
+        let vault = UniConnectVault(
+            storageURL: directory.appendingPathComponent("live-vault.uc"),
+            keyProvider: { SymmetricKey(data: Data(repeating: 7, count: 32)) }
+        )
+
+        XCTAssertEqual(
+            UniConnectBackup.secureAppOwnedStartupSeeds(in: directory, vault: vault),
+            1
+        )
+        let securedData = try UniConnectAtomicFileWriter.readPrivateFile(at: historicalSeed)
+        let securedText = String(decoding: securedData, as: UTF8.self)
+        XCTAssertFalse(securedText.contains(credentialPattern))
+        let manifest = try JSONDecoder().decode(
+            UniConnectBackup.LocalBackupManifest.self,
+            from: securedData
+        )
+        let companionName = try XCTUnwrap(manifest.vaultFile)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent(companionName).path
+            )
+        )
+
+        XCTAssertEqual(
+            UniConnectBackup.secureAppOwnedStartupSeeds(in: directory, vault: vault),
+            0
+        )
+        XCTAssertEqual(
+            try UniConnectAtomicFileWriter.readPrivateFile(at: alreadyScrubbedSeed),
+            scrubbedData
+        )
+        let preservedScrubbedDocument = try JSONDecoder().decode(
+            UniConnectDocument.self,
+            from: scrubbedData
+        )
+        XCTAssertEqual(
+            preservedScrubbedDocument.workspaces.first?.credentialId,
+            scrubbedCredentialID
+        )
+        XCTAssertEqual(try Data(contentsOf: outsideSeed), plaintext)
+        XCTAssertNoThrow(try FileManager.default.destinationOfSymbolicLink(atPath: linkedSeed.path))
+    }
+
+    @MainActor
+    func testMixedStartupManifestPreservesOpaqueCredentialAndEffectiveTarget() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-mixed-seed-\(UUID().uuidString)", isDirectory: true)
+        let seedURL = directory.appendingPathComponent("seed-mixed.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let key = SymmetricKey(size: .bits256)
+        let migrationVault = UniConnectVault(
+            storageURL: directory.appendingPathComponent("live-vault.uc"),
+            keyProvider: { key }
+        )
+        let sourceVault = UniConnectVault(
+            storageURL: directory.appendingPathComponent("source-vault.uc"),
+            keyProvider: { key }
+        )
+        let preservedCredentialID = UUID()
+        let preservedTarget = try XCTUnwrap(UniConnectSSHEffectiveTarget(
+            user: "deploy",
+            host: "198.51.100.42",
+            port: 2_222
+        ))
+        let preservedRecord = UniConnectSSHCredentialRecord(
+            connectCommand: "ssh deployment-alias",
+            effectiveTarget: preservedTarget
+        )
+        let sourceCompanion = try XCTUnwrap(sourceVault.encryptedSnapshot(
+            including: [preservedCredentialID: preservedRecord]
+        ))
+        let sourceCompanionName = "seed-mixed-\(UUID().uuidString.lowercased()).vault.uc"
+        try UniConnectAtomicFileWriter.write(
+            sourceCompanion,
+            to: directory.appendingPathComponent(sourceCompanionName)
+        )
+
+        let plaintextCommand = "sshpass -p 'new-private-value' ssh ops@new.example.test"
+        let document = UniConnectDocument(workspaces: [
+            .init(
+                name: "Plaintext VPS",
+                kind: .ssh,
+                color: nil,
+                group: nil,
+                isPinned: nil,
+                cwd: nil,
+                connect: plaintextCommand,
+                windows: []
+            ),
+            .init(
+                name: "Already secured VPS",
+                kind: .ssh,
+                color: nil,
+                group: nil,
+                isPinned: nil,
+                cwd: nil,
+                connect: nil,
+                credentialId: preservedCredentialID,
+                windows: []
+            ),
+        ])
+        let sourceHash = SHA256.hash(data: sourceCompanion)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let sourceManifest = UniConnectBackup.LocalBackupManifest(
+            format: UniConnectBackup.LocalBackupManifest.formatName,
+            version: UniConnectBackup.LocalBackupManifest.currentVersion,
+            purpose: UniConnectBackup.LocalBackupManifest.startupSeedPurpose,
+            vaultFile: sourceCompanionName,
+            vaultSHA256: sourceHash,
+            document: document
+        )
+        try UniConnectAtomicFileWriter.write(
+            try JSONEncoder().encode(sourceManifest),
+            to: seedURL
+        )
+
+        XCTAssertEqual(
+            UniConnectBackup.secureAppOwnedStartupSeeds(
+                in: directory,
+                vault: migrationVault
+            ),
+            1
+        )
+
+        let securedData = try UniConnectAtomicFileWriter.readPrivateFile(at: seedURL)
+        let securedText = String(decoding: securedData, as: UTF8.self)
+        XCTAssertFalse(securedText.contains(plaintextCommand))
+        XCTAssertFalse(securedText.contains(preservedRecord.connectCommand))
+        XCTAssertFalse(securedText.contains(preservedTarget.host))
+        let securedManifest = try JSONDecoder().decode(
+            UniConnectBackup.LocalBackupManifest.self,
+            from: securedData
+        )
+        XCTAssertNotNil(securedManifest.document.workspaces[0].credentialId)
+        XCTAssertEqual(
+            securedManifest.document.workspaces[1].credentialId,
+            preservedCredentialID
+        )
+
+        let restored = try UniConnectBackup.readReadableBackupSource(
+            at: seedURL,
+            vault: migrationVault
+        )
+        XCTAssertEqual(restored.document.workspaces[0].connect, plaintextCommand)
+        XCTAssertEqual(
+            restored.document.workspaces[1].connect,
+            preservedRecord.connectCommand
+        )
+        XCTAssertEqual(
+            restored.sshCredentialRecordsByWorkspaceIndex[1],
+            preservedRecord
+        )
+    }
+
+    @MainActor
+    func testMixedStartupManifestWithMissingOpaqueCredentialRemainsByteIdentical() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uniconnect-missing-mixed-seed-\(UUID().uuidString)", isDirectory: true)
+        let seedURL = directory.appendingPathComponent("seed-missing.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let key = SymmetricKey(size: .bits256)
+        let migrationVault = UniConnectVault(
+            storageURL: directory.appendingPathComponent("live-vault.uc"),
+            keyProvider: { key }
+        )
+        let sourceVault = UniConnectVault(
+            storageURL: directory.appendingPathComponent("source-vault.uc"),
+            keyProvider: { key }
+        )
+        let unrelatedCredentialID = UUID()
+        let unrelatedRecord = UniConnectSSHCredentialRecord(
+            connectCommand: "ssh unrelated-alias",
+            effectiveTarget: try XCTUnwrap(UniConnectSSHEffectiveTarget(
+                user: "other",
+                host: "203.0.113.9",
+                port: 22
+            ))
+        )
+        let sourceCompanion = try XCTUnwrap(sourceVault.encryptedSnapshot(
+            including: [unrelatedCredentialID: unrelatedRecord]
+        ))
+        let sourceCompanionName = "seed-missing-\(UUID().uuidString.lowercased()).vault.uc"
+        try UniConnectAtomicFileWriter.write(
+            sourceCompanion,
+            to: directory.appendingPathComponent(sourceCompanionName)
+        )
+
+        let missingCredentialID = UUID()
+        let document = UniConnectDocument(workspaces: [
+            .init(
+                name: "Plaintext VPS",
+                kind: .ssh,
+                color: nil,
+                group: nil,
+                isPinned: nil,
+                cwd: nil,
+                connect: "ssh ops@plain.example.test",
+                windows: []
+            ),
+            .init(
+                name: "Missing secured VPS",
+                kind: .ssh,
+                color: nil,
+                group: nil,
+                isPinned: nil,
+                cwd: nil,
+                connect: nil,
+                credentialId: missingCredentialID,
+                windows: []
+            ),
+        ])
+        let sourceHash = SHA256.hash(data: sourceCompanion)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let sourceManifest = UniConnectBackup.LocalBackupManifest(
+            format: UniConnectBackup.LocalBackupManifest.formatName,
+            version: UniConnectBackup.LocalBackupManifest.currentVersion,
+            purpose: UniConnectBackup.LocalBackupManifest.startupSeedPurpose,
+            vaultFile: sourceCompanionName,
+            vaultSHA256: sourceHash,
+            document: document
+        )
+        let originalData = try JSONEncoder().encode(sourceManifest)
+        try UniConnectAtomicFileWriter.write(originalData, to: seedURL)
+        let originalNames = Set(try FileManager.default.contentsOfDirectory(atPath: directory.path))
+
+        XCTAssertEqual(
+            UniConnectBackup.secureAppOwnedStartupSeeds(
+                in: directory,
+                vault: migrationVault
+            ),
+            0
+        )
+        XCTAssertEqual(
+            try UniConnectAtomicFileWriter.readPrivateFile(at: seedURL),
+            originalData
+        )
+        XCTAssertEqual(
+            Set(try FileManager.default.contentsOfDirectory(atPath: directory.path)),
+            originalNames
+        )
     }
 
     @MainActor
@@ -1001,3 +1612,144 @@ final class UniConnectTests: XCTestCase {
         ]
     }
 }
+
+#if DEBUG
+@MainActor
+@Suite(.serialized, .timeLimit(.minutes(1)))
+struct UniConnectNativePasswordFallbackTests {
+    private final class PendingAuthenticator: UniConnectAuthenticating {
+        private(set) var evaluatedPolicies: [LAPolicy] = []
+        private var pendingCompletion: ((Bool, Error?) -> Void)?
+
+        func canEvaluate(_ policy: LAPolicy) -> (Bool, LAError.Code?) {
+            // The regression requires working Touch ID, not forced biometric lockout.
+            (true, nil)
+        }
+
+        func evaluate(_ policy: LAPolicy, reason: String, completion: @escaping (Bool, Error?) -> Void) {
+            evaluatedPolicies.append(policy)
+            pendingCompletion = completion
+        }
+
+        func complete(success: Bool, errorCode: LAError.Code? = nil) {
+            let completion = pendingCompletion
+            pendingCompletion = nil
+            completion?(success, errorCode.map { LAError($0) })
+        }
+    }
+
+    @Test
+    func ownerAuthenticationOffersNativePasswordWithAvailableBiometricsAndExplicitFallbacks() {
+        let available = UniConnectAuthPolicy.resolve(biometricsAvailable: true, errorCode: nil)
+        #expect(available.0 == .deviceOwnerAuthentication)
+        #expect(available.1 == nil)
+        let fallbackCases: [(LAError.Code?, String)] = [
+            (.biometryLockout, String(
+                localized: "uniconnect.lock.fallback.lockout",
+                defaultValue: "Touch ID is locked after too many attempts. Enter your Mac password."
+            )),
+            (.biometryNotEnrolled, String(
+                localized: "uniconnect.lock.fallback.notEnrolled",
+                defaultValue: "No fingerprints are enrolled. Enter your Mac password."
+            )),
+            (.biometryNotAvailable, String(
+                localized: "uniconnect.lock.fallback.notAvailable",
+                defaultValue: "This Mac does not have Touch ID. Enter your Mac password."
+            )),
+            (nil, String(
+                localized: "uniconnect.lock.fallback.unavailable",
+                defaultValue: "Touch ID is unavailable. Enter your Mac password."
+            )),
+        ]
+        for (code, expectedReason) in fallbackCases {
+            let (policy, reason) = UniConnectAuthPolicy.resolve(biometricsAvailable: false, errorCode: code)
+            #expect(policy == .deviceOwnerAuthentication)
+            #expect(reason == expectedReason)
+        }
+    }
+
+    @Test
+    func successfulOwnerAuthenticationUnlocksOnlyCurrentGate() async {
+        let (lock, authenticator) = makeLock()
+        defer { lock.resetForTesting() }
+        lock.lock()
+        lock.authenticate()
+        #expect(lock.isLocked)
+        #expect(lock.isAuthenticating)
+        #expect(authenticator.evaluatedPolicies == [.deviceOwnerAuthentication])
+
+        authenticator.complete(success: true)
+        await waitForEvaluationCompletion(lock)
+        #expect(!lock.isLocked)
+        #expect(lock.lastError == nil)
+
+        lock.lock()
+        #expect(lock.isLocked)
+        #expect(UniConnectAppLock.resolvedIsEnabled(
+            allowsDevelopmentOverrides: false,
+            environment: ["UNICONNECT_DISABLE_LOCK": "1"],
+            persistedOverride: false
+        ))
+        lock.authenticate()
+        #expect(lock.isLocked)
+        #expect(authenticator.evaluatedPolicies == [.deviceOwnerAuthentication, .deviceOwnerAuthentication])
+        authenticator.complete(success: true)
+        await waitForEvaluationCompletion(lock)
+        #expect(!lock.isLocked)
+    }
+
+    @Test(arguments: [LAError.Code.userCancel, .systemCancel, .authenticationFailed])
+    func cancellationOrFailureKeepsGateLockedAndAllowsAuthenticatedRetry(errorCode: LAError.Code) async {
+        let (lock, authenticator) = makeLock()
+        defer { lock.resetForTesting() }
+        lock.lock()
+        lock.authenticate()
+        #expect(authenticator.evaluatedPolicies == [.deviceOwnerAuthentication])
+
+        authenticator.complete(success: false, errorCode: errorCode)
+        await waitForEvaluationCompletion(lock)
+        #expect(lock.isLocked)
+        #expect(!lock.isAuthenticating)
+        #expect(lock.lastError != nil)
+
+        lock.authenticate()
+        #expect(lock.isLocked)
+        authenticator.complete(success: true)
+        await waitForEvaluationCompletion(lock)
+        #expect(!lock.isLocked)
+        #expect(authenticator.evaluatedPolicies.count == 2)
+    }
+
+    @Test
+    func sensitiveActionUsesSameOwnerPolicyAndRejectsCancellation() async {
+        let (lock, authenticator) = makeLock()
+        defer { lock.resetForTesting() }
+        let outcome: Bool = await withCheckedContinuation { continuation in
+            lock.authenticateForSensitiveAction(reason: "Synthetic sensitive-action authentication") {
+                continuation.resume(returning: $0)
+            }
+            #expect(authenticator.evaluatedPolicies == [.deviceOwnerAuthentication])
+            authenticator.complete(success: false, errorCode: .userCancel)
+        }
+        #expect(!outcome)
+    }
+
+    private func makeLock() -> (UniConnectAppLock, PendingAuthenticator) {
+        let lock = UniConnectAppLock.shared
+        lock.resetForTesting()
+        let authenticator = PendingAuthenticator()
+        lock.authenticator = authenticator
+        lock.presentsWindows = false
+        lock.enabledOverride = true
+        return (lock, authenticator)
+    }
+
+    private func waitForEvaluationCompletion(_ lock: UniConnectAppLock) async {
+        // Observe the existing legacy publisher as an AsyncSequence; no sleeps or polling.
+        // The MainActor evaluation callback finishes its synchronous unlock before resuming us.
+        for await authenticating in lock.$isAuthenticating.values {
+            if !authenticating { return }
+        }
+    }
+}
+#endif

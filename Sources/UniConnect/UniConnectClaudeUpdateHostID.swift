@@ -34,10 +34,25 @@ enum UniConnectClaudeUpdateHostID {
     }
 
     static func endpointFingerprint(for session: DetectedSSHSession) -> String {
+        if let effectiveTarget = session.uniConnectEffectiveTarget {
+            return endpointFingerprint(for: effectiveTarget)
+        }
         let normalized = [
             session.destination.lowercased(),
             String(session.port ?? 22),
             session.jumpHost?.lowercased() ?? "",
+        ].joined(separator: "\0")
+        return SHA256.hash(data: Data(normalized.utf8))
+            .prefix(12)
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    static func endpointFingerprint(for target: UniConnectSSHEffectiveTarget) -> String {
+        let normalized = [
+            target.user,
+            target.host.lowercased(),
+            String(target.port),
         ].joined(separator: "\0")
         return SHA256.hash(data: Data(normalized.utf8))
             .prefix(12)

@@ -8,6 +8,8 @@ struct UniConnectSidebarFlyoutAnchor: NSViewRepresentable {
     let isFocused: Bool
     let reduceMotion: Bool
     let reduceTransparency: Bool
+    let colorScheme: ColorScheme
+    let colorSchemeContrast: ColorSchemeContrast
 
     func makeNSView(context: Context) -> UniConnectSidebarFlyoutAnchorView {
         let view = UniConnectSidebarFlyoutAnchorView()
@@ -28,6 +30,8 @@ struct UniConnectSidebarFlyoutAnchor: NSViewRepresentable {
         view.actions = actions
         view.reduceMotion = reduceMotion
         view.reduceTransparency = reduceTransparency
+        view.colorScheme = colorScheme
+        view.colorSchemeContrast = colorSchemeContrast
         view.setFocused(isFocused)
         view.publishContextIfPossible()
     }

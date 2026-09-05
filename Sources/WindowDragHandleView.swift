@@ -955,6 +955,12 @@ func isMinimalModeSidebarChromeHoverCandidate(
         return true
     }
 
+    // UniConnect places its real controls at the trailing edge of the expanded
+    // sidebar header. Never revive cmux's legacy leading hover lane as a fallback.
+    if UniConnectCoordinator.isEnabled {
+        return false
+    }
+
     guard isPointInMinimalModeTitlebarBand(
         isEnabled: true,
         point: locationInWindow,
@@ -998,6 +1004,12 @@ func minimalModeSidebarControlActionSlot(
         in: window
     ) {
         return registeredSlot
+    }
+
+    // The registered intrinsic-width header above is the sole UniConnect hit source.
+    // Falling through would create invisible actions at cmux's legacy leading x-offset.
+    if UniConnectCoordinator.isEnabled {
+        return nil
     }
 
     guard isPointInMinimalModeTitlebarBand(
@@ -1376,6 +1388,10 @@ private func titlebarDoubleClickMonitorShouldDeferToRegisteredControl(
 struct TitlebarDoubleClickMonitorView: NSViewRepresentable {
     var doubleClickBehavior: TitlebarDoubleClickBehavior = .standardAction
 
+    private final class PassthroughView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
     final class Coordinator {
         weak var view: NSView?
         var monitor: Any?
@@ -1392,7 +1408,7 @@ struct TitlebarDoubleClickMonitorView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
+        let view = PassthroughView(frame: .zero)
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.clear.cgColor
 

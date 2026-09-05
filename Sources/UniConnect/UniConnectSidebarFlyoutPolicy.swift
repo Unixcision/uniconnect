@@ -9,10 +9,12 @@ struct UniConnectSidebarFlyoutPolicy {
         case pointerEntered(UUID)
         case pointerExited(UUID)
         case focusChanged(UUID, isFocused: Bool)
+        case presentPersistently(UUID)
         case corridorChanged(isInside: Bool)
         case showDelayElapsed(UUID)
         case closeDelayElapsed
         case sourceRemoved(UUID)
+        case outsideClick
         case escape
     }
 
@@ -28,12 +30,16 @@ struct UniConnectSidebarFlyoutPolicy {
     private(set) var visibleSourceID: UUID?
     private(set) var hoveredSourceID: UUID?
     private(set) var focusedSourceID: UUID?
+    private(set) var persistentSourceID: UUID?
     private(set) var isInsideCorridor = false
 
     mutating func reduce(_ event: Event) -> Effect {
         switch event {
         case .pointerEntered(let id):
             hoveredSourceID = id
+            if let persistentSourceID {
+                return persistentSourceID == id ? .cancelScheduledHide : .none
+            }
             if visibleSourceID != nil {
                 visibleSourceID = id
                 return .showNow(id)
@@ -43,6 +49,9 @@ struct UniConnectSidebarFlyoutPolicy {
         case .pointerExited(let id):
             if hoveredSourceID == id {
                 hoveredSourceID = nil
+            }
+            if persistentSourceID != nil {
+                return .none
             }
             if let focusedSourceID, visibleSourceID != focusedSourceID {
                 visibleSourceID = focusedSourceID
@@ -55,11 +64,19 @@ struct UniConnectSidebarFlyoutPolicy {
         case .focusChanged(let id, let isFocused):
             if isFocused {
                 focusedSourceID = id
+                if persistentSourceID != nil {
+                    persistentSourceID = id
+                    visibleSourceID = id
+                    return .showNow(id)
+                }
                 visibleSourceID = id
                 return .showNow(id)
             }
             if focusedSourceID == id {
                 focusedSourceID = nil
+            }
+            if persistentSourceID != nil {
+                return .none
             }
             if let hoveredSourceID {
                 visibleSourceID = hoveredSourceID
@@ -69,6 +86,12 @@ struct UniConnectSidebarFlyoutPolicy {
                 ? .none
                 : .scheduleHide(milliseconds: Self.closeDelayMilliseconds)
 
+        case .presentPersistently(let id):
+            let wasAlreadyVisible = visibleSourceID == id
+            persistentSourceID = id
+            visibleSourceID = id
+            return wasAlreadyVisible ? .cancelScheduledHide : .showNow(id)
+
         case .corridorChanged(let isInside):
             isInsideCorridor = isInside
             return isInside
@@ -76,6 +99,7 @@ struct UniConnectSidebarFlyoutPolicy {
                 : (shouldRemainVisible ? .none : .scheduleHide(milliseconds: Self.closeDelayMilliseconds))
 
         case .showDelayElapsed(let id):
+            guard persistentSourceID == nil else { return .none }
             guard hoveredSourceID == id || focusedSourceID == id else { return .none }
             visibleSourceID = id
             return .showNow(id)
@@ -88,21 +112,26 @@ struct UniConnectSidebarFlyoutPolicy {
         case .sourceRemoved(let id):
             if hoveredSourceID == id { hoveredSourceID = nil }
             if focusedSourceID == id { focusedSourceID = nil }
+            if persistentSourceID == id { persistentSourceID = nil }
             guard visibleSourceID == id else { return .none }
             visibleSourceID = nil
             isInsideCorridor = false
             return .hideNow
 
-        case .escape:
+        case .outsideClick, .escape:
             visibleSourceID = nil
             hoveredSourceID = nil
             focusedSourceID = nil
+            persistentSourceID = nil
             isInsideCorridor = false
             return .hideNow
         }
     }
 
     private var shouldRemainVisible: Bool {
-        hoveredSourceID != nil || focusedSourceID != nil || isInsideCorridor
+        hoveredSourceID != nil
+            || focusedSourceID != nil
+            || persistentSourceID != nil
+            || isInsideCorridor
     }
 }

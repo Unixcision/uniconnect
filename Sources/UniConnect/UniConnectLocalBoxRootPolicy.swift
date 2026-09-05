@@ -1,6 +1,6 @@
 import Foundation
 
-/// Enforces that local-agent commands can run only inside an available trusted box folder.
+/// Validates local folders and requires an explicit successful `cd` before agent commands run.
 enum UniConnectLocalBoxRootPolicy {
     static func allowsAutomaticResume(
         settingEnabled: Bool,
@@ -22,7 +22,21 @@ enum UniConnectLocalBoxRootPolicy {
             && isDirectory.boolValue
     }
 
-    /// Chooses the saved cwd when it still exists, otherwise the existing trusted root.
+    /// An independent window folder remains usable when the workspace default disappears.
+    static func hasAvailableLaunchDirectory(
+        savedWorkingDirectory: String,
+        boxRoot: String,
+        fileManager: FileManager = .default
+    ) -> Bool {
+        guard let workingDirectory = UniConnectLocalWindowRecord.validatedWorkingDirectory(
+            savedWorkingDirectory,
+            within: boxRoot
+        ) else { return false }
+        return isAvailableDirectory(workingDirectory, fileManager: fileManager)
+            || isAvailableDirectory(boxRoot, fileManager: fileManager)
+    }
+
+    /// Chooses the independent saved cwd when it exists, otherwise the workspace default.
     static func terminalWorkingDirectory(
         savedWorkingDirectory: String,
         boxRoot: String,
@@ -57,7 +71,7 @@ enum UniConnectLocalBoxRootPolicy {
         return "cd -- \(TerminalStartupShellQuoting.singleQuoted(normalized)) && \(command)"
     }
 
-    /// Requires a window cwd to stay inside its immutable trusted box boundary.
+    /// Requires a valid independent window folder without changing the workspace default.
     static func commandRequiringWorkingDirectory(
         _ command: String,
         workingDirectory: String,

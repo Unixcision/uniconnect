@@ -1095,6 +1095,8 @@
               "newWindow",
               "closeWindow",
               "toggleFullScreen",
+              "reconnectDroppedWindows",
+              "reconnectFocusedSSHWindow",
               "quit",
               "toggleSidebar",
               "newTab",

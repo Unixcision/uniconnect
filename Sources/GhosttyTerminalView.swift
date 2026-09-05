@@ -953,15 +953,8 @@ enum GhosttyPasteboardHelper {
             .map { escapeForShell($0.path) }
     }
 
-    /// Writes raw image bytes forwarded from a remote client (e.g. an image
-    /// pasted on the paired iOS app) to a temporary file and returns its
-    /// shell-escaped path, ready to inject as terminal input exactly the way
-    /// ``saveClipboardImageIfNeeded(from:assumeNoText:)`` does for a local paste.
-    ///
-    /// Returns `nil` when the payload is empty, exceeds the 10 MB clipboard-image
-    /// cap, or cannot be written. The temp file is registered as owned so the
-    /// usual cleanup paths reclaim it.
-    static func saveImageData(_ data: Data, fileExtension: String) -> String? {
+    /// Writes forwarded raw image bytes to an app-owned temporary file.
+    static func saveImageDataFileURL(_ data: Data, fileExtension: String) -> URL? {
         // Mirrors the cap in materializeImageFileURLs(from:).
         let maxClipboardImageSize = 10 * 1024 * 1024  // 10 MB
         guard !data.isEmpty, data.count <= maxClipboardImageSize else { return nil }
@@ -974,7 +967,13 @@ enum GhosttyPasteboardHelper {
             return nil
         }
         registerOwnedTemporaryImageFile(fileURL)
-        return escapeForShell(fileURL.path)
+        return fileURL
+    }
+
+    /// Writes raw image bytes and returns a shell-escaped local path.
+    static func saveImageData(_ data: Data, fileExtension: String) -> String? {
+        saveImageDataFileURL(data, fileExtension: fileExtension)
+            .map { escapeForShell($0.path) }
     }
 
     /// Constrains a client-supplied image extension to a known-good lowercase
@@ -1912,6 +1911,7 @@ class GhosttyApp {
                 if plan.uploadedFileURLs != nil {
                     let uploadOperation = TerminalImageTransferOperation()
                     operation = uploadOperation
+                    uploadOperation.installTemporarySourceImageCleanup(fileURLs)
                     MainActor.assumeIsolated {
                         callbackContext.terminalSurface?.hostedView.beginImageTransferIndicator(
                             for: uploadOperation,
@@ -4420,6 +4420,31 @@ class GhosttyApp {
         return Unmanaged<GhosttySurfaceCallbackContext>.fromOpaque(userdata).takeUnretainedValue()
     }
 
+    /// Routes a deferred child exit only while its originating surface still owns the panel.
+    @MainActor
+    @discardableResult
+    static func routeChildExit(
+        callbackSurface: TerminalSurface?,
+        tabID: UUID,
+        manager: TabManager,
+        exitCode: UInt32? = nil
+    ) -> Bool {
+        guard let callbackSurface,
+              let workspace = manager.tabs.first(where: { $0.id == tabID }),
+              let livePanel = workspace.terminalPanel(for: callbackSurface.id),
+              livePanel.surface === callbackSurface else {
+            return false
+        }
+        // A reconnect reuses the panel UUID, but never the TerminalSurface instance.
+        // An old SSH exit must not disconnect or close its already-running replacement.
+        manager.closePanelAfterChildExited(
+            tabId: tabID,
+            surfaceId: callbackSurface.id,
+            exitCode: exitCode
+        )
+        return true
+    }
+
     private static func runtimeApp(from userdata: UnsafeMutableRawPointer?) -> GhosttyApp? {
         guard let userdata else { return nil }
         return Unmanaged<GhosttyApp>.fromOpaque(userdata).takeUnretainedValue()
@@ -4546,6 +4571,7 @@ class GhosttyApp {
         let callbackSurfaceId = callbackContext?.surfaceId
 
         if action.tag == GHOSTTY_ACTION_SHOW_CHILD_EXITED {
+            let childExitCode = action.action.child_exited.exit_code
             // The child (shell) exited. Ghostty will fall back to printing
             // "Process exited. Press any key..." into the terminal unless the host
             // handles this action. For cmux, the correct behavior is to close
@@ -4570,11 +4596,13 @@ class GhosttyApp {
             DispatchQueue.main.async {
                 guard let app = AppDelegate.shared else { return }
                 if let callbackTabId,
-                   let callbackSurfaceId,
-                   let manager = app.tabManagerFor(tabId: callbackTabId) ?? app.tabManager,
-                   let workspace = manager.tabs.first(where: { $0.id == callbackTabId }),
-                   workspace.panels[callbackSurfaceId] != nil {
-                    manager.closePanelAfterChildExited(tabId: callbackTabId, surfaceId: callbackSurfaceId)
+                   let manager = app.tabManagerFor(tabId: callbackTabId) ?? app.tabManager {
+                    Self.routeChildExit(
+                        callbackSurface: callbackContext?.terminalSurface,
+                        tabID: callbackTabId,
+                        manager: manager,
+                        exitCode: childExitCode
+                    )
                 }
             }
             // Always report handled so Ghostty doesn't print the fallback prompt.
@@ -4605,7 +4633,7 @@ class GhosttyApp {
                       let tabManager = app.tabManagerFor(tabId: tabId) ?? app.tabManager else {
                     return false
                 }
-                return tabManager.createSplit(tabId: tabId, surfaceId: surfaceId, direction: direction) != nil
+                return tabManager.requestNewTerminalSplit(tabId: tabId, surfaceId: surfaceId, direction: direction)
             }
         case GHOSTTY_ACTION_RING_BELL:
             performOnMain {
@@ -5453,6 +5481,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
         return window === headlessStartupWindow
     }
     let id: UUID
+    /// Immutable process-generation token. Unlike `id`, this changes when a stable panel
+    /// identity is rebound to a replacement terminal during respawn.
+    let uniConnectSurfaceGeneration = UUID()
     private(set) var tabId: UUID
     /// Port ordinal for CMUX_PORT range assignment. Captured at construction so
     /// every runtime startup path uses the same immutable workspace port range.
@@ -5596,11 +5627,13 @@ final class TerminalSurface: Identifiable, ObservableObject {
     private static func cmuxContextEnvironment(
         workspaceId: UUID,
         surfaceId: UUID,
+        surfaceGeneration: UUID,
         socketPath: String
     ) -> CmuxContextEnvironment {
         CmuxContextEnvironment(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
+            surfaceGeneration: surfaceGeneration,
             socketPath: socketPath
         )
     }
@@ -5619,6 +5652,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             Self.cmuxContextEnvironment(
                 workspaceId: tabId,
                 surfaceId: id,
+                surfaceGeneration: uniConnectSurfaceGeneration,
                 socketPath: socketPath
             ),
             to: &environment,
@@ -6574,6 +6608,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             Self.cmuxContextEnvironment(
                 workspaceId: tabId,
                 surfaceId: id,
+                surfaceGeneration: uniConnectSurfaceGeneration,
                 socketPath: socketPath
             ),
             to: &env,
@@ -8282,6 +8317,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         .tiff,
         NSPasteboard.PasteboardType(UTType.jpeg.identifier),
         NSPasteboard.PasteboardType(UTType.gif.identifier),
+        NSPasteboard.PasteboardType(UTType.webP.identifier),
+        NSPasteboard.PasteboardType(UTType.bmp.identifier),
         NSPasteboard.PasteboardType(UTType.heic.identifier),
         NSPasteboard.PasteboardType(UTType.heif.identifier)
     ])
@@ -9637,17 +9674,6 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         guard prepareSurfaceForPaste(reason: "pasteAsPlainText.missingSurface") else { return }
         recordDirectAgentHibernationTerminalInput()
         _ = performBindingAction("paste_from_clipboard")
-    }
-
-    private func applyConfiguredMenuShortcut(_ shortcut: StoredShortcut, to item: NSMenuItem) {
-        guard let keyEquivalent = shortcut.menuItemKeyEquivalent else {
-            item.keyEquivalent = ""
-            item.keyEquivalentModifierMask = []
-            return
-        }
-
-        item.keyEquivalent = keyEquivalent
-        item.keyEquivalentModifierMask = shortcut.modifierFlags
     }
 
     /// Validates whether edit menu items (copy, paste, split) should be enabled.
@@ -11642,7 +11668,6 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             title: String(localized: "terminalContextMenu.copy", defaultValue: "Copy"),
             action: #selector(copy(_:)),
             systemImage: "doc.on.doc",
-            shortcut: StoredShortcut(key: "c", command: true, shift: false, option: false, control: false),
             enabled: ghostty_surface_has_selection(surface)
         )
         addTerminalMenuItem(
@@ -11650,47 +11675,42 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             title: String(localized: "terminalContextMenu.paste", defaultValue: "Paste"),
             action: #selector(paste(_:)),
             systemImage: "doc.on.clipboard",
-            shortcut: StoredShortcut(key: "v", command: true, shift: false, option: false, control: false),
             enabled: GhosttyPasteboardHelper.hasString(for: GHOSTTY_CLIPBOARD_STANDARD)
         )
 
         addTerminalMenuSeparatorIfNeeded(to: menu)
 
-        addTerminalMenuItem(
-            to: menu,
-            title: String(localized: "menu.file.newTabInBox", defaultValue: "New Tab"),
-            action: #selector(newTabFromTerminalContextMenu(_:)),
-            systemImage: "plus.rectangle.on.rectangle",
-            shortcut: KeyboardShortcutSettings.menuShortcut(for: .newSurface),
-            enabled: context != nil
-        )
-        addTerminalMenuItem(
-            to: menu,
-            title: String(localized: "menu.box.renameWindow", defaultValue: "Rename Window…"),
-            action: #selector(renameWindowFromTerminalContextMenu(_:)),
-            systemImage: "pencil",
-            shortcut: KeyboardShortcutSettings.menuShortcut(for: .renameTab),
-            enabled: context != nil
-        )
+        if context != nil {
+            addTerminalMenuItem(
+                to: menu,
+                title: String(localized: "menu.file.newTabInBox", defaultValue: "New Window"),
+                action: #selector(newTabFromTerminalContextMenu(_:)),
+                systemImage: "plus.rectangle.on.rectangle"
+            )
+            addTerminalMenuItem(
+                to: menu,
+                title: String(localized: "menu.box.renameWindow", defaultValue: "Rename Window…"),
+                action: #selector(renameWindowFromTerminalContextMenu(_:)),
+                systemImage: "pencil"
+            )
+        }
 
         addTerminalMenuSeparatorIfNeeded(to: menu)
 
-        addTerminalMenuItem(
-            to: menu,
-            title: String(localized: "menu.view.splitRight", defaultValue: "Split Right"),
-            action: #selector(splitVertically(_:)),
-            systemImage: "rectangle.split.2x1",
-            shortcut: KeyboardShortcutSettings.menuShortcut(for: .splitRight),
-            enabled: canSplitCurrentSurface()
-        )
-        addTerminalMenuItem(
-            to: menu,
-            title: String(localized: "menu.view.splitDown", defaultValue: "Split Down"),
-            action: #selector(splitHorizontally(_:)),
-            systemImage: "rectangle.split.1x2",
-            shortcut: KeyboardShortcutSettings.menuShortcut(for: .splitDown),
-            enabled: canSplitCurrentSurface()
-        )
+        if canSplitCurrentSurface() {
+            addTerminalMenuItem(
+                to: menu,
+                title: String(localized: "menu.view.splitRight", defaultValue: "Split Right"),
+                action: #selector(splitVertically(_:)),
+                systemImage: "rectangle.split.2x1"
+            )
+            addTerminalMenuItem(
+                to: menu,
+                title: String(localized: "menu.view.splitDown", defaultValue: "Split Down"),
+                action: #selector(splitHorizontally(_:)),
+                systemImage: "rectangle.split.1x2"
+            )
+        }
         addTerminalMenuItem(
             to: menu,
             title: String(localized: "terminalContextMenu.resetTerminal", defaultValue: "Reset Terminal"),
@@ -11704,8 +11724,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                 to: menu,
                 title: String(localized: "shortcut.updateClaudeInWindow.label", defaultValue: "Update Claude in This Window"),
                 action: #selector(updateClaudeFromTerminalContextMenu(_:)),
-                systemImage: "arrow.down.app",
-                shortcut: KeyboardShortcutSettings.menuShortcut(for: .updateClaudeInWindow)
+                systemImage: "arrow.down.app"
             )
         }
         if let context, canReconnectSSHFromTerminalMenu(context) {
@@ -11723,28 +11742,27 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
            let localMenu = UniConnectCoordinator.shared.localWindowActionMenuSnapshot(
                panelID: context.panelId,
                workspace: context.workspace
-           ) {
+           ), localMenu.hasEnabledActions {
             addTerminalMenuSeparatorIfNeeded(to: menu)
             appendLocalWindowActions(localMenu, to: menu)
         }
 
-        addTerminalMenuSeparatorIfNeeded(to: menu)
-
-        addTerminalMenuItem(
-            to: menu,
-            title: String(localized: "menu.file.closeWindowInBox", defaultValue: "Close Window"),
-            action: #selector(closeWindowFromTerminalContextMenu(_:)),
-            systemImage: "xmark",
-            shortcut: KeyboardShortcutSettings.menuShortcut(for: .closeTab),
-            enabled: context != nil
-        )
-        if let context, canEndRemoteTmuxFromTerminalMenu(context) {
+        if let context {
+            addTerminalMenuSeparatorIfNeeded(to: menu)
             addTerminalMenuItem(
                 to: menu,
-                title: String(localized: "menu.box.terminateRemoteTmux", defaultValue: "End Remote tmux Session…"),
-                action: #selector(endRemoteTmuxFromTerminalContextMenu(_:)),
-                systemImage: "xmark.octagon.fill"
+                title: String(localized: "menu.file.closeWindowInBox", defaultValue: "Close Window"),
+                action: #selector(closeWindowFromTerminalContextMenu(_:)),
+                systemImage: "xmark"
             )
+            if canEndRemoteTmuxFromTerminalMenu(context) {
+                addTerminalMenuItem(
+                    to: menu,
+                    title: String(localized: "menu.box.terminateRemoteTmux", defaultValue: "End Remote tmux Session…"),
+                    action: #selector(endRemoteTmuxFromTerminalContextMenu(_:)),
+                    systemImage: "xmark.octagon.fill"
+                )
+            }
         }
         return menu
     }
@@ -11784,12 +11802,12 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         _ snapshot: UniConnectLocalWindowActionMenuSnapshot,
         to menu: NSMenu
     ) {
-        for descriptor in snapshot.recoveryActions {
+        for descriptor in snapshot.enabledRecoveryActions {
             addLocalWindowAction(descriptor, to: menu)
         }
 
         appendLocalWindowActionSubmenu(
-            descriptors: snapshot.historyActions,
+            descriptors: snapshot.enabledHistoryActions,
             title: String(
                 localized: "uniconnect.localWindow.menu.history",
                 defaultValue: "Previous Conversations"
@@ -11798,7 +11816,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             to: menu
         )
         appendLocalWindowActionSubmenu(
-            descriptors: snapshot.agentActions,
+            descriptors: snapshot.enabledAgentActions,
             title: String(
                 localized: "uniconnect.localWindow.menu.agents",
                 defaultValue: "Start or Switch Agent"
@@ -11807,10 +11825,10 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             to: menu
         )
 
-        if !snapshot.forgetActions.isEmpty {
+        if !snapshot.enabledForgetActions.isEmpty {
             addTerminalMenuSeparatorIfNeeded(to: menu)
             appendLocalWindowActionSubmenu(
-                descriptors: snapshot.forgetActions,
+                descriptors: snapshot.enabledForgetActions,
                 title: String(
                     localized: "uniconnect.localWindow.menu.forget",
                     defaultValue: "Forget Saved Conversation"
@@ -11847,8 +11865,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             to: menu,
             title: descriptor.title,
             action: #selector(performLocalWindowActionFromTerminalContextMenu(_:)),
-            systemImage: descriptor.systemImageName,
-            enabled: descriptor.isEnabled
+            systemImage: descriptor.systemImageName
         )
         item.representedObject = descriptor.action.id
         item.toolTip = descriptor.subtitle
@@ -11861,14 +11878,12 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         title: String,
         action: Selector,
         systemImage: String,
-        shortcut: StoredShortcut = .unbound,
         enabled: Bool = true
     ) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = self
         item.image = NSImage(systemSymbolName: systemImage, accessibilityDescription: nil)
         item.isEnabled = enabled
-        applyConfiguredMenuShortcut(shortcut, to: item)
         menu.addItem(item)
         return item
     }
@@ -11905,7 +11920,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
               let manager = app.tabManagerFor(tabId: tabId) ?? app.tabManager else {
             return false
         }
-        return manager.createSplit(tabId: tabId, surfaceId: surfaceId, direction: direction) != nil
+        return manager.requestNewTerminalSplit(tabId: tabId, surfaceId: surfaceId, direction: direction)
     }
 
     @objc private func newTabFromTerminalContextMenu(_ sender: Any?) {
@@ -12356,6 +12371,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         }
 
         if let operation {
+            operation.installTemporarySourceImageCleanup(sourceFileURLs)
             terminalSurface?.hostedView.beginImageTransferIndicator(
                 for: operation,
                 isDestinationAvailable: destinationIsAvailable,
@@ -12723,6 +12739,14 @@ final class GhosttySurfaceScrollView: NSView {
 
     static func imageTransferHUDAlpha(reduceTransparency: Bool) -> CGFloat {
         reduceTransparency ? 1 : 0.95
+    }
+
+    /// The transfer HUD stays dark even when a test host or system window uses a light appearance.
+    static let imageTransferHUDAppearanceName: NSAppearance.Name = .darkAqua
+
+    static func imageTransferPercentage(for fraction: Double) -> Int {
+        let clampedFraction = min(1, max(0, fraction))
+        return Int((clampedFraction * 100).rounded(.down))
     }
 
     private static func flashPresentation(for style: FlashStyle) -> WorkspaceAttentionFlashPresentation {
@@ -13159,6 +13183,9 @@ final class GhosttySurfaceScrollView: NSView {
         imageTransferIndicatorContainerView.layer?.shadowOffset = CGSize(width: 0, height: 2)
         imageTransferIndicatorView.translatesAutoresizingMaskIntoConstraints = false
         imageTransferIndicatorView.wantsLayer = true
+        imageTransferIndicatorView.appearance = NSAppearance(
+            named: Self.imageTransferHUDAppearanceName
+        )
         imageTransferIndicatorView.material = .hudWindow
         imageTransferIndicatorView.blendingMode = .withinWindow
         imageTransferIndicatorView.state = .active
@@ -14005,7 +14032,7 @@ final class GhosttySurfaceScrollView: NSView {
                 imageTransferIndicatorProgressBar.startAnimation(nil)
                 break
             }
-            let percentage = Int((fraction * 100).rounded(.down))
+            let percentage = Self.imageTransferPercentage(for: fraction)
             imageTransferIndicatorLabel.stringValue = String.localizedStringWithFormat(
                 String(
                     localized: "terminal.imageTransfer.progress.uploading",

@@ -25,6 +25,37 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
         XCTAssertEqual(GhosttySurfaceScrollView.imageTransferHUDAlpha(reduceTransparency: true), 1)
     }
 
+    func testImageTransferHUDAlwaysUsesDarkAppearance() {
+        XCTAssertEqual(GhosttySurfaceScrollView.imageTransferHUDAppearanceName, .darkAqua)
+    }
+
+    func testImageTransferHUDShowsRealClampedWholePercentage() {
+        XCTAssertEqual(GhosttySurfaceScrollView.imageTransferPercentage(for: 0), 0)
+        XCTAssertEqual(GhosttySurfaceScrollView.imageTransferPercentage(for: 0.375), 37)
+        XCTAssertEqual(GhosttySurfaceScrollView.imageTransferPercentage(for: 0.929), 92)
+        XCTAssertEqual(GhosttySurfaceScrollView.imageTransferPercentage(for: 1), 100)
+        XCTAssertEqual(GhosttySurfaceScrollView.imageTransferPercentage(for: 1.5), 100)
+    }
+
+    func testTerminalRegistersCommonRawImageDragTypes() {
+        let terminal = GhosttyNSView(frame: .zero)
+        let registeredTypes = Set(terminal.registeredDraggedTypes ?? [])
+
+        XCTAssertTrue(registeredTypes.contains(.png))
+        XCTAssertTrue(registeredTypes.contains(NSPasteboard.PasteboardType(UTType.jpeg.identifier)))
+        XCTAssertTrue(registeredTypes.contains(NSPasteboard.PasteboardType(UTType.webP.identifier)))
+        XCTAssertTrue(registeredTypes.contains(NSPasteboard.PasteboardType(UTType.bmp.identifier)))
+    }
+
+    func testTextBoxRegistersCommonRawImageDragTypes() {
+        let registeredTypes = Set(TextBoxInputTextView.attachmentDropTypes)
+
+        XCTAssertTrue(registeredTypes.contains(.png))
+        XCTAssertTrue(registeredTypes.contains(NSPasteboard.PasteboardType(UTType.jpeg.identifier)))
+        XCTAssertTrue(registeredTypes.contains(NSPasteboard.PasteboardType(UTType.webP.identifier)))
+        XCTAssertTrue(registeredTypes.contains(NSPasteboard.PasteboardType(UTType.bmp.identifier)))
+    }
+
     private func make1x1PNG(color: NSColor) throws -> Data {
         let image = NSImage(size: NSSize(width: 1, height: 1))
         image.lockFocus()
@@ -604,6 +635,24 @@ final class GhosttyPasteboardHelperTests: XCTestCase {
         GhosttyPasteboardHelper.cleanupTransferredTemporaryImageFiles([fileURL])
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
+    }
+
+    func testImageTransferCancellationBeforeUploadCleansOwnedTemporarySource() throws {
+        let pasteboard = NSPasteboard(name: .init("cmux-test-cancelled-image-source-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        pasteboard.setData(try make1x1PNG(color: .purple), forType: .png)
+
+        let fileURL = try XCTUnwrap(cmuxPasteboardImageFileURLForTesting(pasteboard))
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
+        XCTAssertTrue(GhosttyPasteboardHelper.isOwnedTemporaryImageFile(fileURL))
+
+        let operation = TerminalImageTransferOperation()
+        operation.installTemporarySourceImageCleanup([fileURL])
+
+        XCTAssertTrue(operation.cancel())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
+        XCTAssertFalse(GhosttyPasteboardHelper.isOwnedTemporaryImageFile(fileURL))
     }
 
     func testRemoteImageDropPlanUploadsMaterializedFile() throws {
@@ -2038,6 +2087,47 @@ final class TerminalOffscreenStartupTests: XCTestCase {
             return
         }
         XCTAssertEqual(error.code, "surface_unavailable")
+    }
+
+    func testMobileImagePasteFailsClosedWithoutEverQueueingAMacPathForSSH() async throws {
+        let previousManager = TerminalController.shared.activeTabManagerForCallerNotification()
+        let manager = TabManager()
+        TerminalController.shared.setActiveTabManager(manager)
+        defer {
+            TerminalController.shared.setActiveTabManager(previousManager)
+        }
+
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        workspace.uniConnectProfile = UniConnectWorkspaceProfile(
+            kind: .ssh,
+            credentialId: UUID(),
+            hostLabel: "ssh.example.test"
+        )
+        let panel = try XCTUnwrap(workspace.focusedTerminalPanel)
+        panel.surface.releaseSurfaceForTesting()
+        let pendingBefore = panel.surface.debugPendingSocketInputForTesting()
+
+        let response = await TerminalController.shared.mobileHostHandleRPC(
+            MobileHostRPCRequest(
+                id: "paste-image-ssh-without-credential",
+                method: "terminal.paste_image",
+                params: [
+                    "workspace_id": workspace.id.uuidString,
+                    "surface_id": panel.id.uuidString,
+                    "image_base64": Data("not-a-local-path".utf8).base64EncodedString(),
+                    "image_format": "png",
+                ],
+                auth: nil
+            )
+        )
+
+        guard case let .failure(error) = response else {
+            XCTFail("An SSH image paste without a usable vault connection must fail closed")
+            return
+        }
+        XCTAssertEqual(error.code, "image_transfer_unavailable")
+        XCTAssertEqual(panel.surface.debugPendingSocketInputForTesting().items, pendingBefore.items)
+        XCTAssertEqual(panel.surface.debugPendingSocketInputForTesting().bytes, pendingBefore.bytes)
     }
 
     func testMobileHostNetworkStatusDoesNotExposePrivateMetadata() async throws {

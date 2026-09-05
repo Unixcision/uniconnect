@@ -7,7 +7,7 @@ actor UniConnectClaudeRemoteTargetResolver:
     UniConnectClaudeRemoteTargetResolving,
     UniConnectClaudeRemoteSessionControlling
 {
-    typealias CredentialResolver = @Sendable (UUID) async -> String?
+    typealias CredentialResolver = @Sendable (UUID) async -> UniConnectSSHCredentialRecord?
     typealias SignalProvider = @Sendable (UUID) async -> ClaudeBridgeSessionSignal?
     typealias EventProvider = @Sendable (UUID, UUID) async -> AsyncStream<UniConnectClaudeSessionEvent>
 
@@ -353,15 +353,17 @@ actor UniConnectClaudeRemoteTargetResolver:
         timeout: Duration,
         expectedEndpointFingerprint: String?
     ) async throws -> UniConnectProcessResult {
-        guard let connectCommand = await credentialResolver(credentialID) else {
+        guard let credentialRecord = await credentialResolver(credentialID) else {
             throw ResolutionError.missingCredential
         }
-        guard UniConnectSSH.validateConnectCommand(connectCommand) == nil,
-              let sshSession = UniConnectSSH.detectedSession(fromConnectCommand: connectCommand) else {
+        guard let effectiveTarget = credentialRecord.effectiveTarget,
+              let sshSession = UniConnectSSH.detectedSession(
+                  fromCredentialRecord: credentialRecord
+              ) else {
             throw ResolutionError.invalidSSH
         }
         if let expectedEndpointFingerprint,
-           UniConnectClaudeUpdateHostID.endpointFingerprint(for: sshSession)
+           UniConnectClaudeUpdateHostID.endpointFingerprint(for: effectiveTarget)
             != expectedEndpointFingerprint {
             throw ResolutionError.identityMismatch
         }

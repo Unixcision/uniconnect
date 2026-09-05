@@ -44,6 +44,9 @@ struct UniConnectClaudeRemoteTargetResolverTests {
         )
         #expect(resolution?.binding.sessionID == fixture.sessionID)
         #expect(resolution?.pane.paneID == "%7")
+        let arguments = await fixture.runner.lastArguments()
+        #expect(arguments?.starts(with: fixture.effectiveTarget.sshPinningOptions) == true)
+        #expect(arguments?.contains(where: { $0.contains("server-b.example") }) == false)
     }
 
     @Test("Accepts authenticated prompt state without misclassifying it as idle")
@@ -96,11 +99,21 @@ struct UniConnectClaudeRemoteTargetResolverTests {
         ]
         let data = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
         let runner = ResolverProcessRunner(output: data)
+        let effectiveTarget = try! #require(UniConnectSSHEffectiveTarget(
+            user: "test",
+            host: "server-a.example",
+            port: 2209
+        ))
         let resolver = UniConnectClaudeRemoteTargetResolver(
             processRunner: runner,
             binaryUpdater: ResolverBinaryUpdater(),
             credentialResolver: { requestedID in
-                requestedID == credentialID ? "ssh test@example.invalid" : nil
+                requestedID == credentialID
+                    ? UniConnectSSHCredentialRecord(
+                        connectCommand: "ssh production",
+                        effectiveTarget: effectiveTarget
+                    )
+                    : nil
             },
             installationID: String(repeating: "a", count: 32),
             signalProvider: { requestedRoute in
@@ -120,6 +133,7 @@ struct UniConnectClaudeRemoteTargetResolverTests {
         let panel = UniConnectClaudeUpdatePanelSnapshot(
             id: panelID,
             workspaceID: workspaceID,
+            surfaceGeneration: nil,
             displayName: "Claude",
             directory: "/srv/app",
             persistedClaudeSessionID: nil,
@@ -133,7 +147,9 @@ struct UniConnectClaudeRemoteTargetResolverTests {
             resolver: resolver,
             workspace: workspace,
             panel: panel,
-            sessionID: sessionID
+            sessionID: sessionID,
+            runner: runner,
+            effectiveTarget: effectiveTarget
         )
     }
 }
@@ -143,10 +159,13 @@ private struct ResolverFixture {
     let workspace: UniConnectClaudeUpdateWorkspaceSnapshot
     let panel: UniConnectClaudeUpdatePanelSnapshot
     let sessionID: UUID
+    let runner: ResolverProcessRunner
+    let effectiveTarget: UniConnectSSHEffectiveTarget
 }
 
 private actor ResolverProcessRunner: UniConnectProcessRunning {
     let output: Data
+    private var arguments: [String]?
 
     init(output: Data) {
         self.output = output
@@ -159,12 +178,17 @@ private actor ResolverProcessRunner: UniConnectProcessRunning {
         standardInput: Data?,
         timeout: Duration
     ) async throws -> UniConnectProcessResult {
-        UniConnectProcessResult(
+        self.arguments = arguments
+        return UniConnectProcessResult(
             terminationStatus: 0,
             standardOutput: output,
             standardError: Data(),
             outputWasTruncated: false
         )
+    }
+
+    func lastArguments() -> [String]? {
+        arguments
     }
 }
 

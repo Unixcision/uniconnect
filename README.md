@@ -142,7 +142,7 @@ Closing a tab only ends the local SSH client; the tmux session and whatever runs
 | Session snapshot | `session-*.json` | Contains no secrets: only a credential id and tmux names |
 | Portable export | `*.uniconnect` | AES-256-GCM, key from PBKDF2-HMAC-SHA256 (600 000 iterations), random 16-byte salt and 12-byte nonce, KDF parameters in the header, passphrase never stored |
 
-**Authentication.** Touch ID via `LocalAuthentication` at launch, after crash or reboot, on *Lock*, and before export, import or revealing a connect command. On Macs without Touch ID, with no enrolled fingers, or after biometric lockout, the same system dialog falls back to the account password and the lock screen says so. There is no silent bypass; the only way to disable the gate is the `UNICONNECT_DISABLE_LOCK=1` environment variable meant for automated tests.
+**Authentication.** Touch ID via `LocalAuthentication` at launch, after crash or reboot, on *Lock*, and before export, import or revealing a connect command. On Macs without Touch ID, with no enrolled fingers, or after biometric lockout, the same system dialog falls back to the account password and the lock screen says so. There is no silent bypass in Release builds; Debug/XCTest builds keep the explicit `UNICONNECT_DISABLE_LOCK=1` automation seam.
 
 <img src="docs/assets/lock-screen.png" alt="UniConnect lock screen: Touch ID icon, app name and Unlock / Quit buttons over a dark full-screen cover" width="900">
 
