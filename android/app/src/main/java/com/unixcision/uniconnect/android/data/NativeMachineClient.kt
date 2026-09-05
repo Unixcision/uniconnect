@@ -18,7 +18,7 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
         rpc.open(machine.endpoint).use { session ->
             val streamID = UUID.randomUUID().toString()
             val topics = JSONArray().put("workspace.updated")
-            if (terminal != null) topics.put("terminal.render_grid")
+            if (terminal != null) topics.put("terminal.render_grid").put("terminal.updated")
             val subscribed = session.call("mobile.events.subscribe", JSONObject().put("stream_id", streamID).put("topics", topics))
             require(subscribed.value.getJSONObject("result").getString("stream_id") == streamID)
             emit(MachineUpdate.Workspaces(decodeMachine(machine, session.call("mobile.workspace.list", JSONObject()).value.getJSONObject("result"))))
@@ -31,28 +31,38 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
                 emit(MachineUpdate.Terminal(screen))
             }
             while (true) {
-                val event = session.nextEventOrHeartbeat(15_000)
+                val first = session.nextEventOrHeartbeat(15_000)
+                val events = if (first == null) emptyList() else listOf(first) + session.drainQueuedEvents()
                 // A bounded RPC heartbeat detects silent network loss even when the desktop is idle.
-                if (event == null || event.value.optString("topic") == "workspace.updated") {
+                if (first == null || events.any { it.value.optString("topic") == "workspace.updated" }) {
                     emit(MachineUpdate.Workspaces(decodeMachine(machine, session.call("mobile.workspace.list", JSONObject()).value.getJSONObject("result"))))
-                    continue
                 }
-                if (terminal == null || event.value.optString("topic") != "terminal.render_grid") continue
-                val payload = event.value.getJSONObject("payload")
-                val grid = payload.optJSONObject("render_grid") ?: payload
-                if (!grid.optString("surface_id").equals(terminal.windowID, ignoreCase = true)) continue
-                val frame = decoder.decode(grid, terminal.windowID)
-                // Versioned full events may have been captured after replay but enqueued before its response.
-                // Compare visual revisions; only legacy, unversioned frames use the receive-order barrier.
-                if (frame.snapshot.revision == null && event.ordinal <= replayOrdinal) continue
-                screen = try {
-                    frame.applyingTo(screen)
-                } catch (_: TerminalFrame.FullReplayRequired) {
+                if (terminal == null) continue
+                var needsReplay = false
+                for (event in events) {
+                    if (event.value.optString("topic") == "terminal.updated") {
+                        // Linux invalidates globally. Reading the selected surface never creates or attaches a tmux.
+                        val changedID = event.value.optJSONObject("payload")?.optString("surface_id").orEmpty()
+                        if (changedID.isEmpty() || changedID.equals(terminal.windowID, ignoreCase = true)) needsReplay = true
+                        continue
+                    }
+                    if (event.value.optString("topic") != "terminal.render_grid") continue
+                    val payload = event.value.getJSONObject("payload")
+                    val grid = payload.optJSONObject("render_grid") ?: payload
+                    if (!grid.optString("surface_id").equals(terminal.windowID, ignoreCase = true)) continue
+                    val frame = decoder.decode(grid, terminal.windowID)
+                    // A revision supersedes response order: event 3 can precede the response for replay 2.
+                    if (frame.snapshot.revision == null && event.ordinal <= replayOrdinal) continue
+                    screen = try { frame.applyingTo(screen).also { if (frame.full) needsReplay = false } }
+                    catch (_: TerminalFrame.FullReplayRequired) { needsReplay = true; screen }
+                }
+                if (needsReplay) {
                     val replay = session.call("mobile.terminal.replay", target(terminal.workspaceID, terminal.windowID))
                     replayOrdinal = replay.ordinal
-                    decodeReplay(replay.value.getJSONObject("result"), terminal.windowID)
+                    val full = decodeReplay(replay.value.getJSONObject("result"), terminal.windowID)
+                    screen = TerminalFrame(full, true, emptySet()).applyingTo(screen)
                 }
-                emit(MachineUpdate.Terminal(requireNotNull(screen)))
+                if (events.isNotEmpty()) emit(MachineUpdate.Terminal(requireNotNull(screen)))
             }
         }
     }.catch { failure ->

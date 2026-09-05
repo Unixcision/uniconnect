@@ -199,7 +199,7 @@ public struct MobileSection: View {
                 Label(
                     String(
                         localized: "settings.mobile.port.apply.inUse",
-                        defaultValue: "Port \(requested) is in use. Still listening on \(status.current?.boundPort ?? requested)."
+                        defaultValue: "El puerto \(requested) está en uso. Se sigue escuchando en \(status.current?.boundPort ?? requested)."
                     ),
                     systemImage: "exclamationmark.triangle.fill"
                 )
@@ -210,7 +210,7 @@ public struct MobileSection: View {
             // the actual listening port instead of this saved-for-later note.
             statusCaption {
                 Label(
-                    String(localized: "settings.mobile.port.apply.saved", defaultValue: "Saved. Will use port \(saved) when iOS Pairing is on."),
+                    String(localized: "settings.mobile.port.apply.saved", defaultValue: "Guardado. Se usará el puerto \(saved) cuando el acceso remoto esté activo."),
                     systemImage: "checkmark.circle.fill"
                 )
                 .foregroundStyle(.secondary)
@@ -238,7 +238,7 @@ public struct MobileSection: View {
             Label(
                 String(
                     localized: "settings.mobile.port.status.fallback",
-                    defaultValue: "Port \(snapshot.configuredPort) is in use. Listening on \(bound) instead."
+                    defaultValue: "El puerto \(snapshot.configuredPort) está en uso. Se escucha en \(bound)."
                 ),
                 systemImage: "exclamationmark.triangle.fill"
             )

@@ -20,11 +20,12 @@ dirección Tailscale y puerto (58465 inicialmente).
   UniConnect, en la máquina. No hay contraseñas ni cuentas externas en Android.
 - Lectura de pantalla completa `cmux.render-grid.v1` con lienzo Android nativo,
   colores y estilos básicos, y entrada explícita en la terminal seleccionada.
-  Suscripción continua a eventos de pantalla y de espacios de trabajo, con
+  Suscripción continua a eventos de pantalla, invalidaciones Linux y espacios de trabajo, con
   heartbeat de 15 segundos, espera progresiva de reconexión de 1 a 15 segundos
   y nuevo replay completo. Las revisiones visuales antiguas no revierten la pantalla.
   Los deltas compatibles sustituyen filas sin recolorear estilos de filas intactas.
-  Todavía no ajusta el tamaño del terminal remoto: faltan selección, ratón,
+  Ajusta la escala de lectura al ancho del móvil y permite ampliarla con scroll
+  horizontal, sin cambiar el tamaño de la terminal del escritorio. Faltan selección, ratón,
   historial remoto y soporte completo de atributos tipográficos/modos de terminal.
 - Guardar una máquina **no** conecta al servidor, no ejecuta comandos y no crea
   terminales. Conectar, leer y enviar texto son acciones separadas. Un envío cuya
@@ -34,6 +35,9 @@ dirección Tailscale y puerto (58465 inicialmente).
   El inicio de nuevas ventanas es Terminal, sin lanzar IA por su cuenta. La
   selección de agentes espera al catálogo autorizado del host; no inventa IDs.
   Las respuestas del servidor reconcilian el árbol sin inserciones optimistas.
+- Avisos privados opcionales con conexión visible al ordenador, permiso contextual,
+  deduplicación persistente y enlaces a la ventana original. Sin Google/FCM ni
+  contenidos sensibles en la notificación. [Activación y límites reales](NOTIFICATIONS.md).
 
 Las direcciones numéricas se limitan a `100.64.0.0/10` y
 `fd7a:115c:a1e0::/48`. Se aceptan nombres MagicDNS; el transporte comprueba además
@@ -70,6 +74,8 @@ aceptadas/rechazadas, puertos, formularios de creación, reemplazo de pantalla,
 deltas de filas/estilos y revisiones antiguas, sin red ni datos del usuario.
 También diferencian plazo de red y cancelación del propietario para que un timeout
 no deje estados de conexión o envío bloqueados.
+También cubren entregas de avisos y confirmación de input inmediato o en cola:
+`queued:false` en una respuesta correcta significa enviado, no rechazado.
 Compilar sin ejecutarlas: `./gradlew :app:compileDebugUnitTestKotlin`.
 
 ## Referencias oficiales
@@ -79,5 +85,7 @@ Compilar sin ejecutarlas: `./gradlew :app:compileDebugUnitTestKotlin`.
 - [SplashScreen nativo](https://developer.android.com/develop/ui/views/launch/splash-screen/migrate).
 
 La instalación y revisión visual en el Pixel han sido autorizadas por el usuario.
-La compilación por sí sola no demuestra conexión, autorización ni control remoto;
-esos flujos se validan contra la máquina real al estar listo su listener.
+Se verificaron aprobación en la UI del Mac Debug, listado real, pantalla en directo
+y envío de un eco inocuo desde los botones del Pixel, sin modificar producción.
+Las notificaciones en reposo y la equivalencia Linux requieren sus propias pruebas;
+la compilación por sí sola no demuestra esos comportamientos.

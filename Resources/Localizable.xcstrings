@@ -35502,7 +35502,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Guardado. Se usará el puerto %lld cuando el enlace con iOS esté activo."
+            "value": "Guardado. Se usará el puerto %lld cuando el acceso remoto esté activo."
           }
         }
       }

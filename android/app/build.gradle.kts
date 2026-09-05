@@ -49,4 +49,6 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.7")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
+    // Real JVM JSON for protocol fixtures; Android's local-unit-test android.jar contains stubs.
+    testImplementation("org.json:json:20260814")
 }

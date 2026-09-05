@@ -100,4 +100,6 @@
     <string name="notice_permission_denied">Los avisos no se han activado. Permite las notificaciones de UniConnect en los ajustes de Android si quieres recibirlos.</string>
     <string name="notice_target_missing">La ventana de este aviso ya no está disponible. No se ha abierto ni creado otra sesión.</string>
     <string name="approval_pending_title">Pendiente de autorización</string>
+    <string name="screen_fit_width">Ajustar al ancho</string>
+    <string name="screen_actual_size">Ampliar lectura</string>
 </resources>

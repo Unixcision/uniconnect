@@ -7415,9 +7415,15 @@ final class TerminalSurface: Identifiable, ObservableObject {
         guard let ptr = exported.ptr, exported.len > 0 else { return nil }
 
         let data = Data(bytes: ptr, count: Int(exported.len))
-        guard let fullFrame = try? JSONDecoder().decode(MobileTerminalRenderGridFrame.self, from: data) else {
+        guard var fullFrame = try? JSONDecoder().decode(MobileTerminalRenderGridFrame.self, from: data) else {
             return nil
         }
+        // The native export can omit the terminal defaults. Fill from the same
+        // surface appearance used by AppKit, never from an ANSI-colored span.
+        fullFrame.terminalBackground = fullFrame.terminalBackground
+            ?? (surfaceView.backgroundColor ?? GhosttyApp.shared.defaultBackgroundColor).hexString()
+        fullFrame.terminalForeground = fullFrame.terminalForeground
+            ?? GhosttyApp.shared.defaultForegroundColor.hexString()
         let frame: MobileTerminalRenderGridFrame
         if full, changedRows == nil {
             frame = fullFrame

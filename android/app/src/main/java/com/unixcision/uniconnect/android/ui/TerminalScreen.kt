@@ -23,9 +23,13 @@ import com.unixcision.uniconnect.android.domain.TerminalSnapshot
 @Composable
 fun TerminalScreen(snapshot: TerminalSnapshot?, loading: Boolean, error: Int?, sending: Boolean, connected: Boolean, onRefresh: () -> Unit, onSend: (String) -> Unit) {
     var input by rememberSaveable { mutableStateOf("") }
+    var fitWidth by rememberSaveable { mutableStateOf(true) }
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = onRefresh, enabled = !loading) { Text(stringResource(R.string.screen_refresh)) }
+            if (snapshot != null) TextButton(onClick = { fitWidth = !fitWidth }) {
+                Text(stringResource(if (fitWidth) R.string.screen_actual_size else R.string.screen_fit_width))
+            }
             if (loading) CircularProgressIndicator(Modifier.padding(8.dp).size(20.dp), strokeWidth = 2.dp)
         }
         error?.let { Text(stringResource(it), Modifier.padding(horizontal = 20.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.error) }
@@ -33,7 +37,12 @@ fun TerminalScreen(snapshot: TerminalSnapshot?, loading: Boolean, error: Int?, s
             Box(Modifier.weight(1f).padding(24.dp)) { Text(stringResource(if (loading) R.string.screen_loading else R.string.screen_unavailable), color = Brand.Muted) }
         } else {
             Surface(Modifier.weight(1f).fillMaxWidth(), color = Brand.Night) {
-                Box(Modifier.horizontalScroll(rememberScrollState()).verticalScroll(rememberScrollState())) { TerminalGrid(snapshot) }
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val availableWidth = constraints.maxWidth.toFloat()
+                    Box(Modifier.horizontalScroll(rememberScrollState()).verticalScroll(rememberScrollState())) {
+                        TerminalGrid(snapshot, if (fitWidth) availableWidth else null)
+                    }
+                }
             }
         }
         Text(stringResource(if (connected) R.string.screen_live_note else R.string.screen_offline_note), Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.labelSmall, color = if (connected) Brand.Cyan else Brand.Muted)
@@ -50,9 +59,15 @@ fun TerminalScreen(snapshot: TerminalSnapshot?, loading: Boolean, error: Int?, s
 }
 
 @Composable
-private fun TerminalGrid(snapshot: TerminalSnapshot) {
+private fun TerminalGrid(snapshot: TerminalSnapshot, fitWidthPx: Float?) {
     val density = LocalDensity.current
-    val fontSize = with(density) { 13.sp.toPx() }
+    val normalFontSize = with(density) { 13.sp.toPx() }
+    val normalCellWidth = remember(normalFontSize) {
+        Paint().apply { textSize = normalFontSize; typeface = Typeface.MONOSPACE }.measureText("M")
+    }
+    // Reading scale belongs to this device; never resize the desktop PTY just to fit a phone.
+    val scale = fitWidthPx?.let { ((it - 16).coerceAtLeast(1f) / (snapshot.columns * normalCellWidth)).coerceAtMost(1f) } ?: 1f
+    val fontSize = normalFontSize * scale
     val paint = remember(fontSize) { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = fontSize; typeface = Typeface.MONOSPACE } }
     val typefaces = remember { listOf(Typeface.NORMAL, Typeface.BOLD, Typeface.ITALIC, Typeface.BOLD_ITALIC).associateWith { Typeface.create(Typeface.MONOSPACE, it) } }
     val cellWidth = paint.measureText("M")

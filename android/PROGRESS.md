@@ -63,7 +63,20 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
 - Capturas privadas: `/private/tmp/uniconnect-android-visual.9gD4ut/`.
 - Máquina real guardada desde el formulario en Pixel; primera conexión con el
   listener del Mac apagado rechazada y mostrada como error/reintento, sin inventar
-  árbol ni estado online. Pendientes aprobación y terminal reales en host aislado.
+  árbol ni estado online. Después se verificó `approval_required` y se autorizó
+  exactamente la IP del Pixel en la UI «Acceso remoto» del Mac Debug aislado.
+- E2E real: listado, pantalla de la terminal existente y eco desde el campo/botones
+  Android. La primera prueba detectó interpretación errónea de `queued:false`:
+  significa envío inmediato, no fallo. Corregido y vuelto a probar sin aviso falso.
+  Evidencia: `pixel-echo-ack-fixed.png` en la carpeta privada de capturas.
+- Diecinueve pruebas de comportamiento compiladas, sin ejecución local. Nuevas:
+  deduplicación de avisos y confirmaciones de input inmediato/en cola.
+- Avisos privados implementados y compilados: servicio visible opt-in, permiso
+  contextual, registro de IDs, enlace a destino exacto y límites documentados en
+  NOTIFICATIONS.md. Pendiente prueba de entrega contra el host recién compilado.
+- Ajuste de lectura al ancho disponible, sin modificar la geometría del Mac;
+  botón para ampliar y desplazar horizontalmente. Linux invalida con
+  terminal.updated; el cliente agrupa una tanda acotada y pide un único replay.
 - No se ha abierto ningún emulador ni cambiado configuración del Mac desde Android.
 - No se han hecho commits ni cambios fuera de `android/`.
 
@@ -75,6 +88,6 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
 - El transporte valida IP/DNS de tailnet; sigue pendiente decidir y comprobar
   requisito de VPN activa/ruta local tailnet antes de abrir el socket. Un prefijo
   CGNAT por sí solo no identifica criptográficamente al proveedor de VPN.
-- No afirmar E2E hasta aprobar el Pixel en el host real y verificar árbol, pantalla,
-  entrada, interrupción de red y revocación. Hasta aquí: cliente compilado, instalado
-  y revisado visualmente; servidor aún no disponible para esa prueba.
+- E2E Mac de aprobación, árbol, pantalla e input ya demostrado. Faltan interrupción
+  de red, revocación, entrega de avisos y prueba real Linux. No confundir esos
+  pendientes con la prueba de eco que sí se ha realizado.

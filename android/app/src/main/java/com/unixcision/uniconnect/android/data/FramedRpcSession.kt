@@ -117,6 +117,15 @@ class FramedRpcSession(private val socket: Socket, private val scope: CoroutineS
         }
     }
 
+    /** One consumer drains a bounded batch so repeated invalidations need only one full replay. */
+    fun drainQueuedEvents(): List<RpcEnvelope> = buildList {
+        repeat(63) {
+            val event = events.tryReceive().getOrNull() ?: return@buildList
+            bufferedBytes.addAndGet(-event.byteCount)
+            add(event)
+        }
+    }
+
     private fun fail(failure: Exception) {
         if (!closed.compareAndSet(false, true)) return
         runCatching { socket.close() }
