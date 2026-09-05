@@ -215,7 +215,7 @@ class MobileRenderGridTests(unittest.TestCase):
                          [(0, "H4998"), (1, "H4999")])
         self.assertEqual(frame["row_spans"][0]["text"], "Visible")
         self.assertEqual((frame["rows"], frame["cursor"]["row"], frame["cursor"]["column"]), (2, 1, 3))
-        self.assertLessEqual(readers.call_count, 15)
+        self.assertLessEqual(readers.call_count, 16)
 
     def test_style_budget_rehydrates_inherited_rendition_and_reindexes_only_retained_styles(self):
         source = "\x1b[31mAntigua\n\x1b[34mIntermedia\n\x1b[32mReciente\nVisible\n"
@@ -238,6 +238,63 @@ class MobileRenderGridTests(unittest.TestCase):
             frame = capture("\n".join(history + ["Visible", ""]), scrollback_rows=10)
         self.assertEqual(frame, expected)
         self.assertLessEqual(len(json.dumps(frame, ensure_ascii=False, separators=(",", ":")).encode()), byte_limit)
+
+    def test_json_budget_style_renumbering_keeps_the_maximum_fitting_history(self):
+        repeated = "\x1b[38;2;1;1;200m"
+        history = ["O" * 1000, repeated + "B"] + [f"\x1b[38;2;{i};20;30mH" for i in range(1, 10)]
+        viewport = (repeated + "X\x1b[0mY") * 400
+
+        def render(retained):
+            return capture("\n".join(history[len(history) - retained:] + [viewport]),
+                           scrollback_rows=retained, columns=1000, rows=1, cursor_row=0, cursor_column=800)
+
+        def encoded_size(frame):
+            return len(json.dumps(frame, ensure_ascii=False, separators=(",", ":")).encode())
+
+        def canonical_colors(frame):
+            # This fixture varies only foreground RGB: the expected canonical
+            # order is independently known, with the default kept at zero.
+            ordered = sorted(frame["styles"], key=lambda style: (style["id"] != 0, style["foreground"] or ""))
+            identifiers = {style["id"]: index for index, style in enumerate(ordered)}
+            return {**frame,
+                    "styles": [{**style, "id": index} for index, style in enumerate(ordered)],
+                    **{field: [{**span, "style_id": identifiers[span["style_id"]]} for span in frame[field]]
+                       for field in ("row_spans", "scrollback_spans")}}
+
+        originals = [render(retained) for retained in range(12)]
+        expected = [canonical_colors(frame) for frame in originals]
+        # Appearance-order IDs assign the heavily used viewport color 10 at
+        # nine rows, but 1 at ten: more history actually takes fewer bytes.
+        self.assertGreater(encoded_size(originals[9]), encoded_size(originals[10]))
+        self.assertEqual([span["style_id"] for span in originals[9]["row_spans"][:2]], [10, 0])
+        sizes = [encoded_size(frame) for frame in expected]
+        self.assertEqual(sizes, sorted(sizes))
+        for requested, maximum in ((11, 10), (9, 9)):
+            with self.subTest(requested=requested):
+                limit = sizes[maximum]
+                self.assertGreater(encoded_size(originals[requested]), limit)
+                self.assertEqual(max(n for n in range(requested + 1) if sizes[n] <= limit), maximum)
+                with patch("uniconnect.mobile_render_grid.MAX_GRID_BYTES", limit):
+                    actual = render(requested)
+                self.assertEqual(actual, expected[maximum])
+                self.assertEqual(actual["cursor"], originals[requested]["cursor"])
+                self.assertEqual((actual["rows"], actual["columns"]), (1, 1000))
+                self.assertEqual(style_for(actual, actual["row_spans"][0])["foreground"], "#0101c8")
+                self.assertLessEqual(encoded_size(actual), limit)
+
+    def test_canonical_budget_never_discards_a_valid_original_viewport(self):
+        repeated = "\x1b[38;2;200;1;1m"
+        viewport = (repeated + "X\x1b[0mY") * 400
+        viewport += "".join(f"\x1b[38;2;{i};20;30mH" for i in range(1, 10))
+        options = dict(columns=1000, rows=1, cursor_row=0, cursor_column=809)
+        expected = capture(viewport, **options)
+        limit = len(json.dumps(expected, ensure_ascii=False, separators=(",", ":")).encode())
+        self.assertEqual(expected["row_spans"][0]["style_id"], 1)
+        # Canonical RGB order moves this frequently used style from ID 1 to 10,
+        # enlarging the viewport itself; original IDs still fit without history.
+        with patch("uniconnect.mobile_render_grid.MAX_GRID_BYTES", limit):
+            actual = capture("O" * 1000 + "\n" + viewport, scrollback_rows=1, **options)
+        self.assertEqual(actual, expected)
 
     def test_history_that_cannot_fit_never_invalidates_a_valid_viewport(self):
         with patch("uniconnect.mobile_render_grid.MAX_SPANS", 1):

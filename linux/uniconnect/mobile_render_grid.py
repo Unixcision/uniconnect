@@ -323,20 +323,31 @@ def render_grid_from_tmux_capture(screen, *, surface_id, columns, rows,
     colors = _palette(palette)
     foreground, background = _rgb(default_foreground), _rgb(default_background)
     width = _width_function()
-    def materialize(retained_rows):
+    def materialize(retained_rows, *, canonical=False):
         first_row = scrollback_rows - retained_rows
         reader = _CaptureReader(screen, columns, rows + scrollback_rows, colors, width, first_row=first_row)
         reader.parse()
+        styles, spans = reader.styles, reader.spans
+        if canonical:
+            # Adding older rows can only insert styles before existing ones in
+            # this order, never lower their IDs or their encoded decimal width.
+            # Appearance order lacks that invariant and breaks JSON bisection.
+            ordered = sorted((style for style, identifier in styles.items() if identifier != 0),
+                             key=lambda style: json.dumps(asdict(style), sort_keys=True, separators=(",", ":")))
+            canonical_styles = {_Style(): 0, **{style: index for index, style in enumerate(ordered, 1)}}
+            identifiers = {identifier: canonical_styles[style] for style, identifier in styles.items()}
+            spans = [{**span, "style_id": identifiers[span["style_id"]]} for span in spans]
+            styles = canonical_styles
         history_spans = [{**span, "row": span["row"] - first_row}
-                         for span in reader.spans if span["row"] < scrollback_rows]
+                         for span in spans if span["row"] < scrollback_rows]
         viewport_spans = [{**span, "row": span["row"] - scrollback_rows}
-                          for span in reader.spans if span["row"] >= scrollback_rows]
+                          for span in spans if span["row"] >= scrollback_rows]
         frame = {"format": "cmux.render-grid.v1", "surface_id": surface_id,
                  "state_seq": revision, "revision": revision, "columns": columns, "rows": rows,
                  "cursor": {"row": cursor_row, "column": cursor_column, "visible": cursor_visible,
                             "shape": "block", "blinking": False},
                  "full": True, "cleared_rows": [], "active_screen": "alternate" if alternate_screen else "primary",
-                 "styles": [{"id": identifier, **asdict(style)} for style, identifier in reader.styles.items()],
+                 "styles": [{"id": identifier, **asdict(style)} for style, identifier in styles.items()],
                  "row_spans": viewport_spans, "modes": [],
                  "scrollback_rows": retained_rows, "scrollback_spans": history_spans,
                  "terminal_foreground": foreground, "terminal_background": background}
@@ -350,15 +361,26 @@ def render_grid_from_tmux_capture(screen, *, surface_id, columns, rows,
     except _CaptureBudgetError:
         if not requested:
             raise
+    # Canonical IDs may make the entire frame fit without dropping any history.
+    try:
+        return materialize(requested, canonical=True)
+    except _CaptureBudgetError:
+        pass
     # Keep a known-valid viewport even if no history can fit. Bisection takes
-    # at most 15 captures for 5000 rows, rather than reparsing once per old row.
-    # Each attempt rebuilds only retained styles, preserving inherited SGR/ACS.
-    best = materialize(0)
+    # at most 16 parses for 5000 rows, rather than reparsing once per old row.
+    # Every candidate uses canonical IDs, preserving monotonic byte budgets as
+    # well as inherited SGR/ACS and the complete viewport.
+    try:
+        best = materialize(0, canonical=True)
+    except _CaptureBudgetError:
+        # Canonical IDs can cost more than appearance IDs. If no canonical
+        # candidate fits, still preserve a valid viewport in its original form.
+        return materialize(0)
     lower, upper = 0, requested
     while upper - lower > 1:
         retained = (lower + upper) // 2
         try:
-            candidate = materialize(retained)
+            candidate = materialize(retained, canonical=True)
         except _CaptureBudgetError:
             upper = retained
         else:

@@ -304,6 +304,18 @@ class TmuxCommand:
         return shlex.join(["tmux", "-L", TmuxCommand.validate_name(socket_name)])
 
     @staticmethod
+    def _creation_prefix(socket_name: str | None) -> tuple[str, str]:
+        """Set the dedicated server's default before its first pane is allocated."""
+        binary = TmuxCommand._binary(socket_name)
+        if socket_name not in ("uniconnect", "uniconnect-local"):
+            return "", binary
+        # A separate set-option cannot start an empty server. Queue it in the
+        # same tmux invocation as new-session; do not lower a larger user limit.
+        setup = (f"uc_history_limit=$({binary} show-options -gv history-limit 2>/dev/null) || uc_history_limit=50000; "
+                 '[ "$uc_history_limit" -ge 50000 ] 2>/dev/null || uc_history_limit=50000; ')
+        return setup, f'{binary} set-option -g history-limit "$uc_history_limit" \\;'
+
+    @staticmethod
     def attach(window: Mapping, *, create: bool = False, socket_name: str | None = None) -> str:
         window = TmuxCommand.validate_window(window)
         socket_name = window.get("tmuxSocket", socket_name)
@@ -316,14 +328,17 @@ class TmuxCommand:
         option_target = shlex.quote("=" + window["tmux"] + ":")
         if create:
             # -A passes the initial command only on creation, never into an existing pane.
-            return (f"test -d {shlex.quote(window['cwd'])} || exit 72; exec {binary} new-session -A -s {name} "
-                    f"-c {shlex.quote(window['cwd'])} {shlex.quote(TmuxCommand.pane_command(window))} "
-                    f"\\; set-option -t {option_target} mouse on \\; set-option -t {option_target} history-limit 50000"
-                    + (f" \\; {clipboard}" if clipboard else ""))
+            creation = (f"new-session -A -s {name} -c {shlex.quote(window['cwd'])} "
+                        f"{shlex.quote(TmuxCommand.pane_command(window))} "
+                        f"\\; set-option -t {option_target} mouse on"
+                        + (f" \\; {clipboard}" if clipboard else ""))
+            setup, creator = TmuxCommand._creation_prefix(socket_name)
+            existing = (f"if {binary} has-session -t {target} 2>/dev/null; then exec {binary} {creation}; fi; "
+                        if setup else "")
+            return f"test -d {shlex.quote(window['cwd'])} || exit 72; {existing}{setup}exec {creator} {creation}"
         return (f"command -v tmux >/dev/null 2>&1 || exit 127; "
                 f"{binary} has-session -t {target} 2>/dev/null || exit 72; "
                 f"{binary} set-option -t {option_target} mouse on; "
-                f"{binary} set-option -t {option_target} history-limit 50000; "
                 + (f"{binary} {clipboard}; " if clipboard else "") +
                 f"exec {binary} attach-session -t {target}")
 
@@ -463,10 +478,11 @@ class Transport:
             body += (f"uc_owner={owner}; "
                      f"if {binary} list-sessions -F '#{{@uniconnect_agent_owner}}' 2>/dev/null | "
                      "grep -Fx -- \"$uc_owner\" >/dev/null; then exit 73; fi; ")
-        body += (f"if {binary} new-session -d -s {name} -c {shlex.quote(window['cwd'])} "
+        setup, creator = TmuxCommand._creation_prefix(socket_name)
+        body += setup
+        body += (f"if {creator} new-session -d -s {name} -c {shlex.quote(window['cwd'])} "
                  f"{shlex.quote(TmuxCommand.pane_command(window))}; then "
-                 f"{binary} set-option -t {option_target} mouse on; "
-                 f"{binary} set-option -t {option_target} history-limit 50000; ")
+                 f"{binary} set-option -t {option_target} mouse on; ")
         if socket_name in ("uniconnect", "uniconnect-local"):
             body += f"{binary} set-option -s set-clipboard off; "
         if session_id:

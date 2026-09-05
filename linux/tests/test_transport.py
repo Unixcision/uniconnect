@@ -2,6 +2,7 @@
 
 import os
 import pty
+import select
 import shlex
 import shutil
 import subprocess
@@ -140,6 +141,126 @@ class TmuxBehaviorTests(unittest.TestCase):
         process.wait(timeout=5)
         os.close(master)
         self.assertEqual(before, self.pane_identity())
+
+
+@unittest.skipUnless(shutil.which("tmux"), "tmux unavailable")
+class TmuxHistoryBehaviorTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory(prefix="uc-history-policy-")
+        self.root = Path(self.directory.name)
+        self.sockets = set()
+        self.environment = dict(os.environ, TERM="xterm-256color")
+        for name in ("TMUX", "TMUX_PANE", "BASH_ENV", "ENV", "PROMPT_COMMAND"):
+            self.environment.pop(name, None)
+        # Logical dedicated names still select production policy, but every
+        # executable call goes to an absolute private socket and ignores configs.
+        self.binary_patch = mock.patch.object(TmuxCommand, "_binary", side_effect=self.binary)
+        self.pane_patch = mock.patch.object(TmuxCommand, "pane_command", return_value="/bin/bash --noprofile --norc")
+        self.binary_patch.start()
+        self.pane_patch.start()
+
+    def tearDown(self):
+        self.pane_patch.stop()
+        self.binary_patch.stop()
+        for socket in self.sockets:
+            subprocess.run(["tmux", "-S", str(socket), "kill-server"], capture_output=True, timeout=3)
+        self.directory.cleanup()
+
+    def binary(self, name):
+        socket = self.root / ((name or "default") + ".sock")
+        self.sockets.add(socket)
+        return shlex.join(["tmux", "-S", str(socket), "-f", "/dev/null"])
+
+    def run_shell(self, script, **_):
+        # Isolate creation-lock storage and login-profile effects, not the tmux
+        # commands or their ordering under test. No real app state is accessed.
+        script = script.replace("$HOME/.local/state/uniconnect", str(self.root / "locks"))
+        script = script.replace("/bin/bash -lc ", "/bin/bash --noprofile --norc -c ")
+        return subprocess.run(["/bin/bash", "--noprofile", "--norc", "-c", script],
+                              env=self.environment, capture_output=True, text=True, timeout=8)
+
+    def tmux(self, socket, *args):
+        result = subprocess.run([*shlex.split(self.binary(socket)), *args], env=self.environment,
+                                capture_output=True, text=True, timeout=8)
+        self.assertEqual(0, result.returncode, result.stderr)
+        return result.stdout.strip()
+
+    def create(self, socket, route, name="subject", create=True):
+        window = {"tmux": name, "cwd": str(self.root), "agent": "terminal", "tmuxSocket": socket}
+        if route == "ensure":
+            transport = Transport(socket_name=socket)
+            transport.run = self.run_shell
+            return transport.ensure_session(window)
+        command = TmuxCommand.attach(window, socket_name=socket, create=create)
+        master, slave = pty.openpty()
+        process = subprocess.Popen(["/bin/bash", "--noprofile", "--norc", "-c", command],
+                                   stdin=slave, stdout=slave, stderr=slave, env=self.environment,
+                                   start_new_session=True)
+        os.close(slave)
+        try:
+            self.assertTrue(select.select([master], [], [], 5)[0], "tmux client produced no startup output")
+            os.read(master, 65536)
+            self.tmux(socket, "has-session", "-t", "=" + name)
+        finally:
+            if process.poll() is None:
+                process.terminate()
+            process.wait(timeout=3)
+            os.close(master)
+
+    def identity(self, socket, name="subject"):
+        return self.tmux(socket, "display-message", "-p", "-t", "=" + name + ":", "#{pane_pid}:#{history_limit}")
+
+    def test_dedicated_first_panes_keep_5100_lines_in_both_creation_routes(self):
+        for socket in ("uniconnect", "uniconnect-local"):
+            for route in ("ensure", "attach"):
+                with self.subTest(socket=socket, route=route):
+                    self.create(socket, route)
+                    self.assertEqual("50000", self.identity(socket).split(":")[1])
+                    signal = self.binary(socket) + " wait-for -S complete"
+                    script = 'for ((i=1;i<=5100;i++)); do printf "UC_LINE_%04d\\n" "$i"; done; ' + signal
+                    self.tmux(socket, "send-keys", "-l", "-t", "=subject:", script)
+                    self.tmux(socket, "send-keys", "-t", "=subject:", "Enter")
+                    self.tmux(socket, "wait-for", "complete")
+                    lines = self.tmux(socket, "capture-pane", "-p", "-S", "-", "-t", "=subject:").splitlines()
+                    self.assertEqual([f"UC_LINE_{i:04d}" for i in range(1, 5101)],
+                                     [line for line in lines if line.startswith("UC_LINE_")])
+                    self.tmux(socket, "kill-server")
+
+    def test_existing_dedicated_panes_and_limits_are_not_changed(self):
+        socket = "uniconnect"
+        self.tmux(socket, "set-option", "-g", "history-limit", "1234", ";", "new-session", "-d", "-s", "subject",
+                  "/bin/bash --noprofile --norc")
+        before = self.identity(socket)
+        for route in ("ensure", "attach"):
+            self.create(socket, route)
+            self.assertEqual(before, self.identity(socket))
+            self.assertEqual("1234", self.tmux(socket, "show-options", "-gv", "history-limit"))
+        self.create(socket, "attach", create=False)
+        self.assertEqual(before, self.identity(socket))
+        self.assertEqual("", self.tmux(socket, "show-options", "-v", "-t", "=subject:", "history-limit"))
+
+    def test_larger_dedicated_global_limit_is_preserved(self):
+        socket = "uniconnect"
+        self.tmux(socket, "set-option", "-g", "history-limit", "70000", ";", "new-session", "-d", "-s", "keeper",
+                  "/bin/bash --noprofile --norc")
+        before = self.identity(socket, "keeper")
+        for route in ("ensure", "attach"):
+            self.create(socket, route, name=route)
+            self.assertEqual("70000", self.identity(socket, route).split(":")[1])
+            self.assertEqual("70000", self.tmux(socket, "show-options", "-gv", "history-limit"))
+            self.assertEqual(before, self.identity(socket, "keeper"))
+
+    def test_custom_and_default_servers_keep_their_own_history_policy(self):
+        for socket in ("custom", None):
+            self.tmux(socket, "set-option", "-g", "history-limit", "9000", ";", "new-session", "-d", "-s", "keeper",
+                      "/bin/bash --noprofile --norc")
+            for route in ("ensure", "attach"):
+                with self.subTest(socket=socket, route=route):
+                    self.create(socket, route, name=route)
+                    self.assertEqual("9000", self.identity(socket, route).split(":")[1])
+                    self.assertEqual("9000", self.tmux(socket, "show-options", "-gv", "history-limit"))
+                    # No per-session override is introduced on another server.
+                    self.assertEqual("", self.tmux(socket, "show-options", "-v", "-t", "=" + route + ":", "history-limit"))
 
 
 class LocalSFTPCommand:
