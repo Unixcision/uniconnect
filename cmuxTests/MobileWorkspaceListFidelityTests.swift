@@ -17,6 +17,103 @@ import Bonsplit
 @MainActor
 @Suite(.serialized)
 struct MobileWorkspaceListFidelityTests {
+    @Test("A generic local workspace honors the advertised agent, name and folder without replacing its existing terminal")
+    func genericLocalMobileCreationHonorsExplicitLaunchIntent() async throws {
+        let previousManager = TerminalController.shared.activeTabManagerForCallerNotification()
+        let manager = TabManager()
+        TerminalController.shared.setActiveTabManager(manager)
+        defer { TerminalController.shared.setActiveTabManager(previousManager) }
+        let workspace = try #require(manager.selectedWorkspace)
+        #expect(workspace.uniConnectProfile == nil)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("UniConnectMobileGeneric-\(UUID().uuidString)", isDirectory: true)
+        let chosenFolder = root.appendingPathComponent("chosen-folder", isDirectory: true)
+        try FileManager.default.createDirectory(at: chosenFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        workspace.currentDirectory = root.path
+        let selectedPanel = try #require(workspace.focusedPanelId)
+        let existing = try #require(workspace.terminalPanel(for: selectedPanel))
+        let existingSurface = existing.surface
+        let before = Set(workspace.panels.keys)
+        defer {
+            for id in Set(workspace.panels.keys).subtracting(before) {
+                workspace.terminalPanel(for: id)?.surface.teardownSurface()
+            }
+        }
+
+        let response = await TerminalController.shared.mobileHostHandleRPC(.init(
+            id: "generic-local-agent-create", method: "terminal.create",
+            params: [
+                "workspace_id": workspace.id.uuidString,
+                "name": "Revisión desde Android",
+                "directory": chosenFolder.path,
+                "agent": "codex"
+            ], auth: nil
+        ))
+        guard case let .ok(rawPayload) = response,
+              let payload = rawPayload as? [String: Any],
+              let rawID = payload["created_terminal_id"] as? String,
+              let panelID = UUID(uuidString: rawID) else {
+            Issue.record("Expected the chosen agent to be created in the existing generic workspace")
+            return
+        }
+        let record = try #require(workspace.uniConnectLocalWindowsByPanelId[panelID])
+        let binding = try #require(record.tmuxBinding)
+        let panel = try #require(workspace.terminalPanel(for: panelID))
+        let expectedRoot = try #require(UniConnectLocalWindowRecord.validatedBoxRoot(root.path))
+        let expectedFolder = try #require(UniConnectLocalWindowRecord.validatedBoxRoot(chosenFolder.path))
+        let agentCommand = try #require(UniConnectLocalWindowLaunchTarget.codex.startupCommand(
+            boxRoot: expectedRoot, workingDirectory: expectedFolder
+        ))
+        let launch = UniConnectLocalTmuxLaunchPlan(
+            binding: binding, workingDirectory: expectedFolder, initialCommand: agentCommand
+        )
+        #expect(panel.surface.initialCommand == launch.startupCommand())
+        #expect(record.visibleName == "Revisión desde Android")
+        #expect(record.workingDirectory == expectedFolder)
+        #expect(record.boxRoot == expectedRoot)
+        #expect(workspace.uniConnectProfile?.kind == .local)
+        #expect(workspace.uniConnectLocalBoxRoot == expectedRoot)
+        #expect(Set(workspace.panels.keys) == before.union([panelID]))
+        #expect(workspace.terminalPanel(for: selectedPanel)?.surface === existingSurface)
+        #expect(workspace.focusedPanelId == selectedPanel)
+        #expect(manager.selectedTabId == workspace.id)
+        #expect(workspace.currentDirectory == root.path)
+    }
+
+    @Test("An invalid explicit agent does not create a plain fallback or adopt a generic workspace")
+    func genericLocalInvalidAgentDoesNotMutateWorkspace() async throws {
+        let previousManager = TerminalController.shared.activeTabManagerForCallerNotification()
+        let manager = TabManager()
+        TerminalController.shared.setActiveTabManager(manager)
+        defer { TerminalController.shared.setActiveTabManager(previousManager) }
+        let workspace = try #require(manager.selectedWorkspace)
+        #expect(workspace.uniConnectProfile == nil)
+        let before = Set(workspace.panels.keys)
+        let selectedPanel = workspace.focusedPanelId
+        defer {
+            for id in Set(workspace.panels.keys).subtracting(before) {
+                workspace.terminalPanel(for: id)?.surface.teardownSurface()
+            }
+        }
+        let response = await TerminalController.shared.mobileHostHandleRPC(.init(
+            id: "generic-invalid-agent", method: "terminal.create",
+            params: [
+                "workspace_id": workspace.id.uuidString,
+                "name": "No crear otra consola",
+                "directory": FileManager.default.temporaryDirectory.path,
+                "agent": "unadvertised-agent"
+            ], auth: nil
+        ))
+        guard case .failure = response else {
+            Issue.record("An unsupported explicit agent must fail instead of creating a plain terminal")
+            return
+        }
+        #expect(workspace.uniConnectProfile == nil)
+        #expect(Set(workspace.panels.keys) == before)
+        #expect(workspace.focusedPanelId == selectedPanel)
+    }
+
     @Test("A remote local-window request uses the same durable tmux path without selecting it")
     func mobileCreationPreservesDesktopFocusAndUsesTmux() async throws {
         let previousManager = TerminalController.shared.activeTabManagerForCallerNotification()
