@@ -68,7 +68,8 @@ struct UniConnectLocalTmuxTests {
         )
         // Exec.zig wraps embedded shell commands in `exec -l <command>` on Darwin.
         // A plain `/bin/sh -c` fixture misses an accidental second outer `exec`.
-        try #require(fixture.run(first, darwinLoginWrapper: true) == 0)
+        let initialStatus = try fixture.run(first, darwinLoginWrapper: true)
+        try #require(initialStatus == 0)
         #expect(try fixture.run(restored, darwinLoginWrapper: true) == 0)
         #expect(try fixture.read("agents") == "initial-command\n")
         #expect(try fixture.read("cwd") == directory.path + "\n")

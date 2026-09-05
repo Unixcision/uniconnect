@@ -64,7 +64,9 @@ struct UniConnectLocalTmuxLaunchPlan: Equatable, Sendable {
         printf '%s\\n' \(quote(failedAttach)) >&2
         exec "${SHELL:-/bin/zsh}" -l
         """
-        return "exec /bin/sh -c " + quote(script)
+        // Ghostty's Darwin launcher already wraps this in `exec -l <command>`.
+        // A second outer `exec` would be treated as an executable, not a shell builtin.
+        return "/bin/sh -c " + quote(script)
     }
 
     private static let paneEnvironmentKeys = [
