@@ -42,4 +42,6 @@ jobs:
         run: swift test --package-path Packages/CMUXAgentVault --jobs 2
       - name: Adaptador Linux y transacciones GTK aisladas
         if: runner.os == 'Linux'
+        env:
+          PYTHONPATH: ${{ github.workspace }}/linux
         run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -v
