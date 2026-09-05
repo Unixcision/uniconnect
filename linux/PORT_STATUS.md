@@ -1,6 +1,6 @@
 # Estado de compatibilidad de UniConnect en Linux
 
-Corte de auditoría: 2026-09-05. El port funciona como aplicación GTK/VTE con
+Corte de auditoría: 2026-09-05. La edición Linux funciona como aplicación GTK/VTE con
 espacios de trabajo persistentes, pero **la paridad 1:1 con macOS no está
 demostrada y quedan funciones del contrato sin implementar**.
 
@@ -8,10 +8,16 @@ UniConnect es un solo producto Mac/Linux dentro de este repositorio; véase
 [el desarrollo compartido](../docs/CROSS-PLATFORM.md). La lógica Python existente
 todavía necesita converger con los servicios portables del original. Los textos
 ya usan únicamente `Resources/Localizable.xcstrings`, sin diccionario Linux aparte.
-Español es el idioma predeterminado de esta instalación personal; no se han
-eliminado los idiomas originales ni traducido todos los textos nuevos a ellos.
+El cambio de principal `29a8edec3e` deja el producto únicamente en español;
+las preferencias antiguas se normalizan sin cambiar el idioma de las sesiones.
 
-Actualización antes de publicar: gate completo **63 pruebas correctas, 37,885 s**.
+Gate actual: **107 pruebas Linux correctas, 72,554 s**, con errores críticos GTK
+tratados como fallos. Incluye cinco escenarios MainWindow aislados, dos de VTE
+real y once del coordinador de transacciones, además de cifrado/arranque sin
+contraseña, importación, transporte, reconexión y menús. No equivale a un build
+completo macOS ni a una matriz SSH remota de todas las acciones.
+
+Gate histórico antes de la primera publicación: **63 pruebas correctas, 37,885 s**.
 Incluye nueve pruebas transaccionales con fallo/cierre inesperado y recuperación
 del par estado/vault, más reconexión ante una caída real de tmux en una fixture.
 El fallo de copiar selección de tmux 3.2a con ncurses 6.6 se reprodujo en un socket
@@ -92,8 +98,8 @@ con contraseña es una acción separada del arranque.
 | Caja/ventana y cierre | Identidades, orden, selección, registros de historial importados y reapertura persistidos. Cerrar el cliente conserva tmux. | No hay interfaz completa de historial de conversaciones ni límites/acciones del menú de cerradas del original. |
 | SSH y tmux exactos | Parser SSH/sshpass, separación de secretos, target guardado, `has-session` antes de attach, socket aislado, mouse e historial. Seis reintentos automáticos acotados a 60 s para salida 255; presupuesto restablecido tras un minuto estable, con seis pruebas. | Falta la matriz de caída de red real sobre el servidor de trabajo; las salidas y timers se ejercitan de forma determinista en GTK/VTE. |
 | Reconexión forzada | Superficie VTE conservada; generaciones y espera de salida del hijo anterior; prueba de ráfaga de reconexiones. | Falta matriz de caída de red real, reapertura de importaciones y alias/credenciales concurrentes en GUI. |
-| Revisiones de credenciales | IDs de vault inmutables y revisiones antiguas conservadas; pruebas de integridad y exportación cifrada. La GUI rechaza endpoint cuando falla existencia de tmux o directorio. | Editar endpoint todavía no tiene una transacción completa de readiness y rollback de todos los clientes. |
-| Copias automáticas | Seis horas, siete días, máximo 28 programadas; snapshot y vault compañero con hash. Transacción con diario privado, cápsula cifrada, rollback byte-exacto y recuperación al arrancar; nueve pruebas de fallo y crash. | Readiness y rollback de procesos GUI todavía necesitan integración; la transacción de archivos no los sustituye. |
+| Revisiones de credenciales | IDs de vault inmutables; edición GUI prepara todos los reemplazos y exige cliente tmux vivo con nonce antes de guardar/retirar originales. Cancelación y rollback conservan los clientes, referencias, estado y vault originales. | La matriz del cambio de endpoint SSH sobre red real sigue pendiente; las pruebas GUI usan clientes tmux locales aislados. La política debe converger con Mac. |
+| Copias automáticas | Seis horas, siete días, máximo 28 programadas; snapshot y vault compañero con hash. Diario privado, cápsula cifrada, rollback byte-exacto y recuperación al arrancar. Importación/edición SSH añaden verificación de clientes y rollback GUI. | Restaurar una copia desde su menú aún usa la transacción de archivos, sin preparación equivalente de clientes. |
 | JSON de configuración | Preview sin ejecutar comandos, identidades estables, reimportación idempotente, JSON Linux/macOS y exportación AES-GCM. JSON real aplicado. | Preview inmutable no basta para el contrato completo CONNECT.md; ver fila específica debajo. |
 | Archivos arrastrados/subidos | Drop de URI; SFTP con bytes confirmados, cancelación, timeout y limpieza. Imágenes del portapapeles convertidas a PNG privado, con routing Local/SSH y caché acotada; seis pruebas de GTK con píxeles y bytes originales. | Falta matriz GUI completa de imagen, cancelación y fallo de la conexión SSH de trabajo. |
 | Terminal y paneles básicos | VTE, copiar/pegar texto, búsqueda básica, fuente, pestañas reordenables y división horizontal/vertical. | La estructura actual usa ejes y paneles más simples; no acredita las operaciones Bonsplit completas ni paridad visual/teclado/IME/Ghostty. |
@@ -105,18 +111,18 @@ con contraseña es una acción separada del arranque.
 | Ciclo local de agentes | El selector ofrece shell/Codex/Claude/Agy/Grok; no expone comando personalizado aunque el transporte acepta argv explícito. No hay acciones completas de seleccionar una conversación histórica, comenzar otra, cambiar agente ni bifurcar. No se descubren y añaden de forma continua los IDs nuevos generados por cada cliente. Los flags de permisos/trust del original tampoco están reproducidos ni verificados. |
 | Reanudación Agy genérica | El bootstrap importado y la política genérica ya usan `agy --conversation`; Gemini está reanudado con su UUID y se ha renderizado en la app real. Falta ampliar la matriz del selector genérico local. |
 | Duplicados y raíz local ausente | Hay ownership por endpoint/tmux/sesión y rechazo de duplicados; falta conservar el duplicado como shell recuperable con reanudación manual. Una raíz ausente ya abre una consola segura sin agente ni perfiles; falta la reasignación persistida de todos los registros afectados. |
-| CONNECT.md | Parser Markdown, selección/exclusión y preflight con ocho pruebas. La GUI preflighta en worker, deshabilita conflictos/rechazos, vuelve a comprobar los destinos seleccionados y aplica sin crear tmux. No está demostrado el contrato completo de diario privado, readiness y rollback coordinado de procesos. |
+| CONNECT.md | Parser, selección y preflight con once pruebas; un guardado periódico no invalida el plan, una edición real sí. La GUI aplica mediante preparación de clientes tmux, diario cifrado y rollback de procesos. Faltan la matriz completa Markdown→diálogo→SSH real y la convergencia del mismo contrato con Mac. Un registro local sin tmux existente se rechaza antes de ejecutar agentes. |
 | Actualizar Claude | No hay orquestador recuperable por ventana/caja/host, inspección de versiones, actualización única por host ni restauración tras éxito/fallo. No existe la familia de acciones original. |
 | Bridge de notificaciones | Las notificaciones actuales proceden de la campana VTE. No está integrado el hook remoto autenticado, correlación estable, transporte loopback, deduplicación durable ni navegación del clic de una notificación de escritorio a su destino exacto. La lista del centro vive en memoria. |
 | Notificaciones: acciones | El centro puede abrir una ventana. Faltan marcar todo, última no leída, alternar leído/no leído por ámbito, descartar y menú de estado equivalente. |
 | Raíl y grupos | El modo compacto muestra iniciales y tooltip. No tiene flyout horizontal con elección individual de ventanas, grupos jerárquicos, plegado, fijado, multiselección ni badges completos del bridge/desconexión. |
 | Menús compartidos | Catálogo común de menú/paleta/contextuales con iconos, atajos visibles y habilitación según el contexto. El inventario de `MENUS.md` aún no está completo; familias de agentes, grupos y bridge siguen pendientes. |
 | Archivo | Reabrir la última cerrada, cerrar otras/izquierda/derecha y confirmaciones ya están presentes. Faltan eliminar/vaciar cerradas, migración explícita autenticada desde cmux y guardar plantilla inicial. |
-| Edición y paneles | Faltan la familia completa Buscar, usar selección, enviar Ctrl-F y modo copia por teclado; igualar/ampliar/restaurar panel, navegación direccional y movimientos de ventana entre paneles. |
+| Edición y paneles | Búsqueda siguiente/anterior, selección, Ctrl-F, igualar/ampliar/restaurar y navegación direccional tienen acciones. Faltan modo copia por teclado, movimiento entre paneles y la matriz completa de equivalencia con Bonsplit. |
 | Caja y pestañas | Fijado, movimiento por posición, navegación anterior/siguiente y numérica, reset del nombre y contextual de pestaña presentes. Faltan grupos y la matriz completa de selección múltiple. |
-| Ajustes y ayuda | Hay tema/fuente/idioma/atajos configurables; no hay configuración terminal equivalente a Ghostty, recarga/configuración propia completa, Acerca de ni updater de aplicación. El menú Ayuda todavía no presenta las cuatro rutas canónicas. Los defaults de teclado están adaptados a Ctrl y difieren del inventario original. |
+| Ajustes y ayuda | Hay tema/fuente/atajos configurables, idioma español fijo y rutas de ayuda. No hay configuración terminal equivalente a Ghostty ni updater de aplicación. Los defaults de teclado están adaptados a Ctrl; falta la matriz completa de estos menús y contextos. |
 | Escritorio Linux | Lanzador y `.desktop` propios presentes. No hay superficie equivalente completa del Dock/menú de estado, atajo global de mostrar/ocultar ni registro demostrado de `uniconnect://`. Firma Apple y AppKit son específicos de macOS; no se atribuye esa verificación a Linux. |
-| Idiomas y apariencia | Reutilización del catálogo original cuando hay equivalencia, más textos del port en en/es/ja. No se ha demostrado cobertura de las veinte localizaciones originales. Claro/oscuro/sistema, accesibilidad y tamaños necesitan matriz completa; VTE trata sistema como oscuro actualmente. |
+| Idioma y apariencia | Catálogo español compartido y pruebas de resolución/menús. No se mantienen veinte idiomas por decisión del usuario. Claro/oscuro/sistema, accesibilidad y tamaños necesitan matriz completa; VTE trata sistema como oscuro actualmente. |
 | CLI/API | `uniconnect-cli`/`cmux` ofrece list/select/focus/send/read-screen/reconnect/close/persist y está integrado y probado contra GTK real. Eso no acredita todos los protocolos/comandos del original. |
 
 ## Criterio de cierre

@@ -184,7 +184,7 @@ class AutomaticReconnectTests(unittest.TestCase):
         self.timer.advance(1)
         self.until(lambda: len(self.calls) == 2 and self.surface.status == "Disconnected")
         self.assertEqual(self.calls, [False, False])
-        self.assertIn("exit 72", self.surface.status_label.get_text())
+        self.assertIn(self.surface.owner._("Exit {code}").format(code=72), self.surface.status_label.get_text())
         result = subprocess.run(command + ["has-session", "-t", "=fixture"], capture_output=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.timer.pending)

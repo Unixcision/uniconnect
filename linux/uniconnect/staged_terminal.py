@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from gi.repository import GLib
 
 from .terminal import TerminalSurface
-from .transport import SSHCommand, Transport
+from .transport import SSHCommand, TmuxCommand, Transport, TransportError
 
 
 class StagedTerminal:
@@ -48,9 +48,15 @@ class StagedTerminal:
         return self.surface.pid
 
     def _prepare(self, workspace, record, connection, create):
+        # Reject legacy direct-agent windows before preparing any process. A
+        # missing tmux target must never turn staging into a new conversation.
+        TmuxCommand.validate_name(record.get("tmux"))
+        if workspace["kind"] == "ssh" and not connection:
+            raise TransportError("missing_ssh_connection")
         launch, keys = TerminalSurface._build_launch(workspace, record, connection, False)
         if workspace["kind"] == "ssh":
-            launch.argv[-1] = "env UNICONNECT_ATTACH_TOKEN=" + self.readiness_token + " " + launch.argv[-1]
+            remote = "env UNICONNECT_ATTACH_TOKEN=" + self.readiness_token + " " + launch.argv[-1]
+            launch.argv = SSHCommand.parse(connection).argv(remote, tty=True, batch=True)
         else:
             launch.env["UNICONNECT_ATTACH_TOKEN"] = self.readiness_token
         return launch, keys
@@ -112,16 +118,11 @@ class StagedTerminal:
 
     def adopt(self, workspace, record):
         """Switch only ownership/model references; keep the proven VTE child alive."""
-        command = SSHCommand.parse(self._connection) if self._connection else None
-        endpoint = command.endpoint_key() if command else ("local",)
-        keys = [("tmux", endpoint, record.get("tmuxSocket", "uniconnect" if command else "uniconnect-local"), record["tmux"])]
-        if record.get("sessionId"):
-            session = record["sessionId"]
-            try:
-                session = str(uuid.UUID(session))
-            except ValueError:
-                pass
-            keys.append(("agent", endpoint, record.get("agent"), session))
+        # The launch worker already resolved ssh -G and canonical identities.
+        # Publication must not run blocking endpoint lookups on GTK's thread.
+        keys = list(self.surface._ownership_keys)
+        if not keys or any(record.get(key) != self.record.get(key) for key in ("tmux", "agent", "sessionId")):
+            raise RuntimeError("candidate-identity-changed")
         registry = getattr(self._owner, "_terminal_owners", None)
         if registry is None:
             registry = self._owner._terminal_owners = {}
@@ -142,6 +143,7 @@ class StagedTerminal:
 
     def stop_candidate(self):
         self._cancel.set()
+        self._connection = None
         self._unsubscribe()
         if self._adopted:
             # Late VTE signals must never mutate committed/restored model records.

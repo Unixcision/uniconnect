@@ -47,6 +47,14 @@ class ImportPreview:
     def window_count(self) -> int:
         return sum(len(item["windows"]) for item in self.workspaces)
 
+    @staticmethod
+    def _state_baseline(data: dict) -> dict:
+        baseline = StateStore._clean(copy.deepcopy(data))
+        # A periodic checkpoint is not a model change. Keep nested timestamps and
+        # every other state field in the compare-and-swap fingerprint.
+        baseline.pop("savedAt", None)
+        return baseline
+
     def select_workspace_ids(self, ids) -> "ImportPreview":
         """Copy selected complete workspaces without mutating this pending preview."""
         if self._fingerprint != Importer.fingerprint(self.workspaces):
@@ -95,7 +103,7 @@ class ImportPreview:
         """
         if self._fingerprint != Importer.fingerprint(self.workspaces):
             raise ImportError("Import preview changed; create a new preview")
-        baseline = StateStore._clean(copy.deepcopy(store.data))
+        baseline = self._state_baseline(store.data)
         self._base_state_fingerprint = Importer.fingerprint(baseline)
         existing = {item["id"]: item for item in baseline["workspaces"]}
         agent_owners, ssh_owners = {}, {}
@@ -233,7 +241,7 @@ class ImportPreview:
             store.vault = self._vault
         with store.transaction("import", source_fingerprint=self._source_fingerprint,
                                plan_fingerprint=self._fingerprint) as transaction:
-            if self._base_state_fingerprint is not None and self._base_state_fingerprint != Importer.fingerprint(StateStore._clean(store.data)):
+            if self._base_state_fingerprint is not None and self._base_state_fingerprint != Importer.fingerprint(self._state_baseline(store.data)):
                 raise ImportError("Workspace state changed after import preflight; preview again")
             store.checkpoint("before-import")
             with transaction.step("vault"):

@@ -35,6 +35,14 @@ contains session IDs but no connection. Repo metadata and the original resume
 working directory are kept separately. Provider IDs keep their original agent:
 Codex, Claude and Antigravity histories are not interchangeable.
 
+GUI imports and SSH endpoint edits keep existing clients alive while provisional
+clients attach to every exact saved tmux target. The new configuration is committed
+only after client-correlated attachment proof; cancel, timeout or failed persistence
+discards the provisional clients and restores the original state/vault pair.
+This path does not create missing sessions or run direct agent commands from an
+import. Legacy local windows without an existing tmux target cannot be activated
+through this transactional import path. Automatic startup remains password-free.
+
 An explicit first import can be launched with:
 
 ```bash

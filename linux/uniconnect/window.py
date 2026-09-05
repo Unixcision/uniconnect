@@ -13,11 +13,14 @@ from pathlib import Path
 import gi
 
 gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango
 
 from .actions import ACTIONS
 from .i18n import Translator
 from .imports import Importer
+from .runtime_transaction import RuntimeTransactionCoordinator
+from .staged_terminal import StagedTerminal
 from .terminal import TerminalSurface
 from .transport import SSHCommand, Transport
 from .window_commands import WindowCommands
@@ -36,6 +39,8 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         self._sidebar_refresh = 0
         self._building_workspace = 0
         self._closed = False
+        self._runtime_rendering = False
+        self._runtime_operation = None
         self.last_input, self.last_saved = time.monotonic(), 0
         self.notifications = []
         self.locked = False
@@ -379,6 +384,8 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         return False
 
     def on_split_position(self, paned, _, workspace):
+        if self._building_workspace:
+            return
         workspace["splitPosition"] = paned.get_position()
 
     def on_tab_selected(self, notebook, surface, page, workspace):
@@ -405,6 +412,8 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         return self.vault.get(workspace["credentialId"])
 
     def persist(self):
+        if self._runtime_rendering:
+            return
         try:
             self.store.save()
             self.last_saved = time.time()
@@ -595,6 +604,128 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
             if workspace["id"] in self.pages:
                 self.build_workspace(workspace)
         self.select_workspace(self.store.data.get("selectedWorkspaceId"))
+
+    def stage_runtime(self, workspaces, connections, mutate, *, reason, on_complete=None, timeout=20):
+        """Publish an import/endpoint change only after every replacement attaches.
+
+        All provisional clients are attach-only and use private model copies.
+        The old widgets/clients remain available until the durable transaction
+        commits; a failed partial widget swap restores the same original objects.
+        """
+        if self._runtime_operation and self._runtime_operation.active:
+            raise ValueError("Ya hay una conexión en preparación; espera o cancélala.")
+        if self._closed:
+            raise ValueError("La aplicación se está cerrando.")
+        workspaces = copy.deepcopy(workspaces)
+        affected = {workspace["id"] for workspace in workspaces}
+        identifiers = [record["id"] for workspace in workspaces for record in workspace["windows"]]
+        if len(set(identifiers)) != len(identifiers):
+            raise ValueError("La configuración contiene ventanas duplicadas.")
+        registry = {key: surface for key, surface in getattr(self, "_terminal_owners", {}).items()
+                    if surface.record["id"] not in identifiers}
+        candidates = []
+        try:
+            for workspace in workspaces:
+                for record in workspace["windows"]:
+                    candidate = StagedTerminal(self, workspace, record,
+                                               connection=connections.get(workspace["id"]), registry=registry)
+                    previous = self.surfaces.get(record["id"])
+                    if previous:
+                        candidate.surface.terminal.set_size(max(1, previous.terminal.get_column_count()),
+                                                            max(1, previous.terminal.get_row_count()))
+                    candidates.append(candidate)
+        except Exception:
+            for candidate in candidates:
+                candidate.stop_candidate()
+            raise
+        snapshot = {}
+        progress = Gtk.Dialog(title="Comprobando conexiones", transient_for=self, modal=True)
+        progress.add_button(self._("Cancel"), Gtk.ResponseType.CANCEL)
+        progress.get_content_area().add(Gtk.Label(
+            label="Las sesiones actuales seguirán abiertas hasta verificar todas las conexiones.", margin=20))
+        operation = RuntimeTransactionCoordinator(
+            self.store, schedule=lambda delay, callback: GLib.timeout_add(max(1, int(delay * 1000)), callback),
+            cancel_timer=GLib.source_remove, defer=GLib.idle_add)
+        self._runtime_operation = operation
+
+        def render(callback):
+            self._runtime_rendering = True
+            self._building_workspace += 1
+            try:
+                callback()
+            finally:
+                self._building_workspace -= 1
+                self._runtime_rendering = False
+
+        def publish(prepared, value):
+            snapshot.update(surfaces=dict(self.surfaces), pages=set(self.pages),
+                            registry=dict(getattr(self, "_terminal_owners", {})), focused=self.focused_surface)
+            def swap():
+                for candidate in prepared:
+                    workspace = self.store.workspace(candidate.workspace["id"])
+                    record = next(item for item in workspace["windows"] if item["id"] == candidate.record["id"])
+                    if record.get("tmux") != candidate.record.get("tmux"):
+                        raise ValueError("La sesión propuesta cambió durante la preparación.")
+                    surface = candidate.adopt(workspace, record)
+                    surface.update_status(surface.status)
+                    self.surfaces[record["id"]] = surface
+                for workspace in self.store.workspaces:
+                    if workspace["id"] in affected:
+                        self.build_workspace(workspace)
+                self.select_workspace(self.store.data.get("selectedWorkspaceId"))
+            render(swap)
+
+        def restore():
+            def undo():
+                for identifier in list(self.pages):
+                    if identifier in affected or identifier not in snapshot["pages"]:
+                        page = self.pages.pop(identifier)
+                        self._detach_terminals(page)
+                        self.workspace_stack.remove(page)
+                        page.destroy()
+                        for key in list(self.notebooks):
+                            if key[0] == identifier:
+                                del self.notebooks[key]
+                self.surfaces = snapshot["surfaces"]
+                self._terminal_owners = snapshot["registry"]
+                for workspace in self.store.workspaces:
+                    if workspace["id"] in affected and workspace["id"] in snapshot["pages"]:
+                        self.build_workspace(workspace)
+                self.select_workspace(self.store.data.get("selectedWorkspaceId"))
+                self.focused_surface = snapshot["focused"]
+            render(undo)
+
+        def retire():
+            for identifier in identifiers:
+                original = snapshot["surfaces"].get(identifier)
+                if original:
+                    original.dispose()
+            for candidate in candidates:
+                candidate.release()
+
+        def completed(result):
+            progress.destroy()
+            if on_complete:
+                on_complete(result)
+            elif not result.success and result.code != "cancelled" and not self._closed:
+                detail = ("El estado cambió durante la comprobación. Repite la operación."
+                          if result.code == "runtime-state-changed" else
+                          "No se pudo completar la conexión. Se han conservado las sesiones anteriores.")
+                if result.cleanup_errors:
+                    detail += " Hay una recuperación pendiente; revisa el estado antes de continuar."
+                self.error(detail)
+
+        progress.connect("response", lambda *_: operation.cancel() if operation.active else None)
+        progress.show_all()
+        try:
+            operation.start(candidates, mutate=mutate, publish=publish, restore_runtime=restore,
+                            retire_originals=retire, on_complete=completed, timeout=timeout, reason=reason)
+        except Exception:
+            progress.destroy()
+            for candidate in candidates:
+                candidate.stop_candidate()
+            raise
+        return operation
 
     def action_save(self):
         self.persist()
@@ -854,8 +985,11 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
             def apply(verified):
                 if any(row["action"] in ("conflict", "rejected") for row in verified):
                     raise ValueError(self._("Import targets changed; preview again"))
-                chosen.apply(self.store)
-                self.reload_workspaces()
+                connections = {workspace["id"]: (chosen._commands.get(workspace.get("credentialId"))
+                               or self.connection(workspace)) for workspace in chosen.workspaces
+                               if workspace["kind"] == "ssh"}
+                self.stage_runtime(chosen.workspaces, connections, lambda: chosen.apply(self.store),
+                                   reason="runtime-import")
             self.background(lambda: chosen.preflight(self.store, self.import_remote_check), apply)
 
     def action_export_config(self):
@@ -882,18 +1016,21 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         if not result:
             return
         parsed = SSHCommand.parse(result["connect"])
-        transport = Transport(parsed, socket_name="uniconnect")
+        proposed = copy.deepcopy(workspace)
         def check():
-            for window in workspace["windows"]:
+            for window in proposed["windows"]:
+                transport = Transport(parsed, socket_name=window.get("tmuxSocket", "uniconnect"))
                 result = transport.preflight(window)
                 if not (result["sessionExists"] and result["directoryExists"] and result["tmuxInstalled"]):
                     raise ValueError(self._("The saved remote tmux session is unavailable") + " · " + window["name"])
         def apply(_):
-            workspace["credentialId"] = self.vault.put(result["connect"])
-            self.persist()
-            for window in workspace["windows"]:
-                if window["id"] in self.surfaces:
-                    self.surfaces[window["id"]].launch()
+            if self.store.workspace(workspace["id"]) is not workspace or workspace != proposed:
+                raise ValueError("El espacio cambió durante la comprobación. Repite la operación.")
+            def mutate():
+                workspace["credentialId"] = self.vault.put(result["connect"])
+                return workspace["credentialId"]
+            self.stage_runtime([proposed], {workspace["id"]: result["connect"]}, mutate,
+                               reason="runtime-endpoint-edit")
         self.background(check, apply)
 
     def action_upload(self):
@@ -978,6 +1115,8 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         if self._closed:
             return False
         self._closed = True
+        if self._runtime_operation and self._runtime_operation.active:
+            self._runtime_operation.cancel()
         if self._sidebar_refresh:
             GLib.source_remove(self._sidebar_refresh)
             self._sidebar_refresh = 0

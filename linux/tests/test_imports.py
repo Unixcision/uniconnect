@@ -77,6 +77,43 @@ class ImportWorkflowTests(unittest.TestCase):
         rows = self.importer.preview(document).preflight(self.store)
         self.assertEqual([row["action"] for row in rows], ["create", "conflict"])
 
+    def test_periodic_save_after_preflight_does_not_invalidate_import(self):
+        self.store.clock = lambda: 100.0
+        self.store.save()
+        preview = self.importer.preview(self.document())
+        preview.preflight(self.store)
+        before = copy.deepcopy(self.store.data)
+        self.store.clock = lambda: 108.0
+        self.store.save()
+        self.assertNotEqual(self.store.data["savedAt"], before["savedAt"])
+        before["savedAt"] = self.store.data["savedAt"]
+        self.assertEqual(self.store.data, before)
+        self.assertEqual(len(preview.apply(self.store)), 2)
+
+    def test_real_model_change_after_preflight_still_aborts_import(self):
+        self.importer.preview(self.document()).apply(self.store)
+        preview = self.importer.preview(self.document())
+        preview.preflight(self.store)
+        self.store.workspaces[0]["name"] = "User edit while staging"
+        self.store.save()
+        before = self.persisted_bytes()
+        with self.assertRaisesRegex(ImportError, "state changed after import preflight"):
+            preview.apply(self.store)
+        self.assertEqual(self.store.workspaces[0]["name"], "User edit while staging")
+        self.assertEqual(self.persisted_bytes(), before)
+
+    def test_nested_saved_at_is_not_ignored_by_preflight_baseline(self):
+        self.importer.preview(self.document()).apply(self.store)
+        self.store.workspaces[0]["savedAt"] = 100.0
+        preview = self.importer.preview(self.document())
+        preview.preflight(self.store)
+        self.store.workspaces[0]["savedAt"] = 108.0
+        self.store.save()
+        before = self.persisted_bytes()
+        with self.assertRaisesRegex(ImportError, "state changed after import preflight"):
+            preview.apply(self.store)
+        self.assertEqual(self.persisted_bytes(), before)
+
     def test_connection_conflict_fails_before_checkpoint_or_vault_mutation(self):
         document = self.document()
         self.importer.preview(document).apply(self.store)

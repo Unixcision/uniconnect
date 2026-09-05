@@ -305,4 +305,8 @@ class RuntimeTransactionCoordinator:
         self.state = "committed" if result.success else result.code
         if getattr(self.store, "_runtime_transaction_owner", None) is self:
             self.store._runtime_transaction_owner = None
-        self._on_complete(result)
+        callback = self._on_complete
+        # Completed operations may remain available for diagnostics. Do not keep
+        # import previews or endpoint credentials alive through callback closures.
+        self._mutate = self._publish = self._restore_runtime = self._retire_originals = self._on_complete = None
+        callback(result)
