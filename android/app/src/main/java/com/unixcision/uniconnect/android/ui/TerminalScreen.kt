@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -119,18 +120,15 @@ fun TerminalScreen(
                 when {
                     // With exported history the whole canvas scrolls locally, newest lines at the bottom.
                     viewMode == ViewMode.FIT && history -> {
-                        val scrollState = rememberScrollState(Int.MAX_VALUE)
-                        LaunchedEffect(snapshot.scrollbackRows, snapshot.rows, snapshot.revision) {
-                            if (scrollState.value >= scrollState.maxValue - metrics.lineHeight * 2) scrollState.scrollTo(scrollState.maxValue)
-                        }
+                        val scrollState = rememberPinnedScrollState(snapshot, metrics.lineHeight)
                         Box(Modifier.fillMaxSize().verticalScroll(scrollState), contentAlignment = Alignment.TopCenter) { TerminalGrid(snapshot, metrics) }
                     }
                     viewMode == ViewMode.WRAP -> {
                         // Readable size; long desktop rows wrap at the inner width instead of scrolling sideways.
                         val wrapColumns = ((viewport.width - 16f) / metrics.cellWidth).toInt().coerceAtLeast(8)
-                        Box(Modifier.verticalScroll(rememberScrollState())) { TerminalGrid(snapshot, metrics, wrapColumns.takeIf { it < snapshot.columns }) }
+                        Box(Modifier.verticalScroll(rememberPinnedScrollState(snapshot, metrics.lineHeight))) { TerminalGrid(snapshot, metrics, wrapColumns.takeIf { it < snapshot.columns }) }
                     }
-                    viewMode == ViewMode.PAN -> Box(Modifier.horizontalScroll(rememberScrollState()).verticalScroll(rememberScrollState())) { TerminalGrid(snapshot, metrics) }
+                    viewMode == ViewMode.PAN -> Box(Modifier.horizontalScroll(rememberScrollState()).verticalScroll(rememberPinnedScrollState(snapshot, metrics.lineHeight))) { TerminalGrid(snapshot, metrics) }
                     else -> Box(
                     Modifier.fillMaxSize()
                         .semantics { contentDescription = "" }
@@ -164,6 +162,19 @@ fun TerminalScreen(
             onSend = { text, onDelivered -> onSend(text, onDelivered); consumeModifiers() },
         )
     }
+}
+
+/**
+ * Vertical scroll that opens on the live screen (bottom) and follows new output while the user
+ * is at the bottom; history above stays reachable by pulling down, never shown first.
+ */
+@Composable
+private fun rememberPinnedScrollState(snapshot: TerminalSnapshot, lineHeight: Float): ScrollState {
+    val scrollState = rememberScrollState(Int.MAX_VALUE)
+    LaunchedEffect(snapshot.scrollbackRows, snapshot.rows, snapshot.revision, scrollState.maxValue) {
+        if (scrollState.value >= scrollState.maxValue - lineHeight * 2) scrollState.scrollTo(scrollState.maxValue)
+    }
+    return scrollState
 }
 
 /** How the desktop grid is shown on the phone; none of these change the desktop PTY size. */
