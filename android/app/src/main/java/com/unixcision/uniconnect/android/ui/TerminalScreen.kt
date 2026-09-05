@@ -1,0 +1,112 @@
+package com.unixcision.uniconnect.android.ui
+
+import android.graphics.Paint
+import android.graphics.Typeface
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.unixcision.uniconnect.android.R
+import com.unixcision.uniconnect.android.domain.TerminalSnapshot
+
+@Composable
+fun TerminalScreen(snapshot: TerminalSnapshot?, loading: Boolean, error: Int?, sending: Boolean, connected: Boolean, onRefresh: () -> Unit, onSend: (String) -> Unit) {
+    var input by rememberSaveable { mutableStateOf("") }
+    Column(Modifier.fillMaxSize().imePadding()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton(onClick = onRefresh, enabled = !loading) { Text(stringResource(R.string.screen_refresh)) }
+            if (loading) CircularProgressIndicator(Modifier.padding(8.dp).size(20.dp), strokeWidth = 2.dp)
+        }
+        error?.let { Text(stringResource(it), Modifier.padding(horizontal = 20.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.error) }
+        if (snapshot == null) {
+            Box(Modifier.weight(1f).padding(24.dp)) { Text(stringResource(if (loading) R.string.screen_loading else R.string.screen_unavailable), color = Brand.Muted) }
+        } else {
+            Surface(Modifier.weight(1f).fillMaxWidth(), color = Brand.Night) {
+                Box(Modifier.horizontalScroll(rememberScrollState()).verticalScroll(rememberScrollState())) { TerminalGrid(snapshot) }
+            }
+        }
+        Text(stringResource(if (connected) R.string.screen_live_note else R.string.screen_offline_note), Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.labelSmall, color = if (connected) Brand.Cyan else Brand.Muted)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(input, { input = it }, Modifier.weight(1f), label = { Text(stringResource(R.string.terminal_input)) }, enabled = !sending, maxLines = 3)
+            TextButton(onClick = { onSend(input) }, enabled = input.isNotEmpty() && !sending && connected && snapshot != null) { Text(stringResource(R.string.terminal_send)) }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = { onSend("\r") }, enabled = !sending && connected && snapshot != null) { Text(stringResource(R.string.terminal_enter)) }
+            OutlinedButton(onClick = { onSend("\t") }, enabled = !sending && connected && snapshot != null) { Text(stringResource(R.string.terminal_tab)) }
+            OutlinedButton(onClick = { onSend("\u0003") }, enabled = !sending && connected && snapshot != null) { Text(stringResource(R.string.terminal_interrupt)) }
+        }
+    }
+}
+
+@Composable
+private fun TerminalGrid(snapshot: TerminalSnapshot) {
+    val density = LocalDensity.current
+    val fontSize = with(density) { 13.sp.toPx() }
+    val paint = remember(fontSize) { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = fontSize; typeface = Typeface.MONOSPACE } }
+    val typefaces = remember { listOf(Typeface.NORMAL, Typeface.BOLD, Typeface.ITALIC, Typeface.BOLD_ITALIC).associateWith { Typeface.create(Typeface.MONOSPACE, it) } }
+    val cellWidth = paint.measureText("M")
+    val lineHeight = fontSize * 1.35f
+    val width = with(density) { (snapshot.columns * cellWidth + 16).toDp() }
+    val height = with(density) { (snapshot.rows * lineHeight + 16).toDp() }
+    val defaultForeground = parseColor(snapshot.foreground, android.graphics.Color.rgb(238, 243, 255))
+    val defaultBackground = parseColor(snapshot.background, android.graphics.Color.rgb(7, 13, 32))
+    Canvas(Modifier.requiredSize(width, height)) {
+        drawIntoCanvas { target ->
+            val canvas = target.nativeCanvas
+            canvas.drawColor(defaultBackground)
+            snapshot.spans.forEach { span ->
+                val style = span.style
+                var foreground = parseColor(style?.foreground, defaultForeground)
+                var background = parseColor(style?.background, defaultBackground)
+                if (style?.inverse == true) { val old = foreground; foreground = background; background = old }
+                val x = 8 + span.column * cellWidth
+                val y = 8 + span.row * lineHeight
+                paint.style = Paint.Style.FILL
+                paint.color = background
+                canvas.drawRect(x, y, x + span.cellWidth * cellWidth, y + lineHeight, paint)
+                if (style?.invisible != true) {
+                    paint.color = foreground
+                    paint.typeface = typefaces[when {
+                        style?.bold == true && style.italic -> Typeface.BOLD_ITALIC
+                        style?.bold == true -> Typeface.BOLD
+                        style?.italic == true -> Typeface.ITALIC
+                        else -> Typeface.NORMAL
+                    }]
+                    paint.isUnderlineText = style?.underline == true
+                    paint.isStrikeThruText = style.strikethrough
+                    paint.alpha = if (style.faint) 150 else 255
+                    canvas.drawText(span.text, x, y + lineHeight - paint.fontMetrics.descent, paint)
+                    if (style.overline) canvas.drawRect(x, y + 1, x + span.cellWidth * cellWidth, y + 2, paint)
+                    paint.alpha = 255
+                }
+            }
+            snapshot.cursor?.takeIf { it.visible && it.row in 0 until snapshot.rows && it.column in 0 until snapshot.columns }?.let { cursor ->
+                paint.isUnderlineText = false
+                paint.isStrikeThruText = false
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 1.5f
+                paint.color = defaultForeground
+                val x = 8 + cursor.column * cellWidth
+                val y = 8 + cursor.row * lineHeight
+                canvas.drawRect(x, y, x + cellWidth, y + lineHeight, paint)
+                paint.style = Paint.Style.FILL
+            }
+        }
+    }
+}
+
+private fun parseColor(value: String?, fallback: Int): Int {
+    if (value == null || !Regex("#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?").matches(value)) return fallback
+    return runCatching { android.graphics.Color.parseColor(value) }.getOrDefault(fallback)
+}

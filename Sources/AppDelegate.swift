@@ -1886,9 +1886,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         stopSessionAutosaveTimer()
         CloudVMActionLauncher.shared.terminateAll()
         CmuxSSHURLProcessLauncher.shared.terminateAll()
-        if auth != nil {
-            MobileHostService.shared.stop()
-        }
+        MobileHostService.shared.stop()
         TerminalController.shared.stop()
         GhosttyPasteboardHelper.cleanupAllOwnedTemporaryImageFiles()
         VSCodeServeWebController.shared.stop()
@@ -1939,16 +1937,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 auth: auth.coordinator,
                 baseURL: auth.configuration.vmAPIBaseURL
             )
-            MobileHostService.shared.configure(auth: auth.coordinator)
             TerminalController.shared.attachAuth(
                 coordinator: auth.coordinator,
                 browserSignIn: auth.browserSignIn
             )
             auth.start()
-            ensureMobileWorkspaceListObserver(for: tabManager)
-            MobileTerminalRenderObserver.shared.start()
-            installMobileHostSettingsObserver()
         }
+        // Direct Tailscale access has its own local authorization. It must not
+        // depend on cloud account bootstrap or activate any hosted service.
+        ensureMobileWorkspaceListObserver(for: tabManager)
+        MobileTerminalRenderObserver.shared.start()
+        installMobileHostSettingsObserver()
         scheduleGhosttyCrashBreadcrumbIfNeeded(notificationStore: notificationStore)
         disableSuddenTerminationIfNeeded()
         installLifecycleSnapshotObserversIfNeeded()
@@ -7284,9 +7283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 tabManager: manager,
                 source: "bootstrapInitialMainWindow.\(debugSource)"
             )
-            if auth != nil {
-                MobileHostService.shared.start()
-            }
+            MobileHostService.shared.start()
         }
         guard !didBootstrapInitialMainWindow else { return windowId }
 

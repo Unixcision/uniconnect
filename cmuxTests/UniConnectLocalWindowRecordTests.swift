@@ -255,12 +255,12 @@ struct UniConnectLocalWindowRecordTests {
 
         let record = try JSONDecoder().decode(UniConnectLocalWindowRecord.self, from: data)
 
-        #expect(record.version == 3)
+        #expect(record.version == UniConnectLocalWindowRecord.currentVersion)
         #expect(record.boxRoot == "/repo")
         #expect(record.workingDirectory == "/repo")
         let encoded = try JSONEncoder().encode(record)
         let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        #expect(object["version"] as? Int == 3)
+        #expect(object["version"] as? Int == UniConnectLocalWindowRecord.currentVersion)
         #expect(object["workingDirectory"] as? String == "/repo")
     }
 
@@ -272,7 +272,7 @@ struct UniConnectLocalWindowRecordTests {
 
         let record = try JSONDecoder().decode(UniConnectLocalWindowRecord.self, from: data)
 
-        #expect(record.version == 3)
+        #expect(record.version == UniConnectLocalWindowRecord.currentVersion)
         #expect(record.latestConversation?.resumeWorkingDirectory == "/repo/api")
         let encoded = try #require(
             JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any]
@@ -1255,6 +1255,7 @@ struct UniConnectLocalWindowRecordTests {
             visibleName: "Mixed agents",
             boxRoot: "/Users/test/repository",
             workingDirectory: "/Users/test/repository/api",
+            tmuxBinding: UniConnectLocalTmuxBinding(name: "uc-test-history", socketName: "uniconnect-local"),
             createdAt: 600,
             updatedAt: 600
         )
@@ -1278,6 +1279,33 @@ struct UniConnectLocalWindowRecordTests {
         #expect(decoded.uniConnectLocalWindow?.runtimeState == .shell)
         #expect(decoded.workingDirectory == "/Users/test/repository/api")
         #expect(decoded.agent?.workingDirectory == "/Users/test/repository/api")
+        #expect(decoded.uniConnectLocalWindow?.tmuxBinding == record.tmuxBinding)
+    }
+
+    @Test("Legacy direct PTYs stay unbound when decoded and saved again")
+    func legacyPTYDoesNotBecomeTmuxOnSave() throws {
+        let data = Data(#"{"version":3,"boxRoot":"/repo","runtimeState":"shell","conversations":[]}"#.utf8)
+        let legacy = try JSONDecoder().decode(UniConnectLocalWindowRecord.self, from: data)
+        #expect(legacy.tmuxBinding == nil)
+        let restored = try JSONDecoder().decode(
+            UniConnectLocalWindowRecord.self, from: JSONEncoder().encode(legacy)
+        )
+        #expect(restored.tmuxBinding == nil)
+        #expect(restored.id == legacy.id)
+    }
+
+    @Test("Merging imported history cannot redirect an existing host-local tmux binding")
+    func importedHistoryDoesNotReplaceLiveTmuxIdentity() throws {
+        let binding = try #require(UniConnectLocalTmuxBinding(name: "live-pane", socketName: "uniconnect-local"))
+        var local = UniConnectLocalWindowRecord(boxRoot: "/repo", tmuxBinding: binding)
+        var imported = UniConnectLocalWindowRecord(
+            boxRoot: "/other-host",
+            tmuxBinding: UniConnectLocalTmuxBinding(name: "other-pane", socketName: "foreign")
+        )
+        _ = imported.record(agent(.codex, sessionID: "thread-to-preserve"))
+        _ = local.mergeImportedStatePreservingHistory(imported)
+        #expect(local.tmuxBinding == binding)
+        #expect(local.latestConversation?.sessionID == "thread-to-preserve")
     }
 
     private func agent(

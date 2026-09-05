@@ -346,6 +346,12 @@ extension CmuxEventBus {
                 "replaced_notification_ids": replacedNotificationIds
             ]
         )
+        // Forward the authoritative store event, retaining the same durable ID
+        // used by session snapshots and mobile list replay. Approved subscribed
+        // peers use the existing bounded private transport; no external push.
+        if MobileHostService.hasEventSubscribers(topic: "notification.created") {
+            MobileHostService.emitEvent(topic: "notification.created", payload: notification.mobileNotificationRecord.jsonObject())
+        }
     }
 
     func publishNotificationRead(ids: [String], workspaceId: UUID?, surfaceId: UUID?) {

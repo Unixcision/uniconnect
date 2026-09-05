@@ -1,0 +1,217 @@
+/* GTK 3.24: geometría nativa; colores oscuros solo con la clase uc-dark.
+ * Referencia de identidad: UniConnectSidebarHeaderPalette.swift.
+ * No aplicar opacidad al árbol de widgets ni a VTE: el texto sigue opaco.
+ */
+@define-color uc_night #020a33;
+@define-color uc_raised #05144e;
+@define-color uc_cyan #0be4fa;
+@define-color uc_violet #5a1fe5;
+@define-color uc_ink #e6edff;
+@define-color uc_muted #a5b4d4;
+
+.uniconnect .uc-headerbar {
+    padding: 8px 12px;
+    border-bottom-width: 0;
+    box-shadow: none;
+}
+
+.uniconnect .uc-headerbar button,
+.uniconnect .uc-sidebar button {
+    min-width: 24px;
+    min-height: 24px;
+    padding: 5px;
+    border-radius: 8px;
+}
+
+/* El margen exterior pertenece al Gtk.Box: no duplicarlo también en CSS. */
+.uniconnect .uc-sidebar {
+    padding: 8px;
+    border: 1px solid alpha(@theme_fg_color, 0.10);
+    border-radius: 16px;
+}
+
+.uniconnect .uc-workspaces {
+    padding: 2px;
+    background-color: transparent;
+    background-image: none;
+}
+
+.uniconnect .uc-workspace {
+    margin: 3px 0;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 10px;
+}
+
+.uniconnect .uc-workspace:focus {
+    outline-width: 2px;
+    outline-style: solid;
+    outline-color: @theme_selected_bg_color;
+    outline-offset: -2px;
+}
+
+.uniconnect .uc-workspace-header {
+    padding: 2px 4px;
+    border-bottom: 1px solid alpha(@theme_fg_color, 0.08);
+}
+
+.uniconnect .uc-terminal-tabs {
+    border-width: 0;
+}
+
+.uniconnect .uc-terminal-tabs > header {
+    padding: 4px 6px 0;
+    border-width: 0;
+    box-shadow: none;
+}
+
+.uniconnect .uc-terminal-tabs > header tab {
+    min-height: 26px;
+    margin: 0 3px;
+    padding: 4px 10px;
+    border-radius: 8px 8px 0 0;
+    border-width: 0 0 2px;
+    border-style: solid;
+    border-color: transparent;
+    box-shadow: none;
+}
+
+.uniconnect .uc-terminal-tabs > header tab button {
+    min-width: 16px;
+    min-height: 16px;
+    padding: 2px;
+    border-radius: 5px;
+}
+
+.uniconnect .uc-terminal-status,
+.uniconnect .uc-status {
+    padding: 3px 8px;
+    font-size: 0.92em;
+    border-width: 0;
+}
+
+/* Fondo común; el tema claro conserva sus colores nativos y el mismo espaciado. */
+window.uniconnect.uc-dark {
+    color: @uc_ink;
+    background-color: @uc_night;
+    background-image: linear-gradient(135deg, @uc_raised, @uc_night);
+}
+
+.uniconnect.uc-dark .uc-headerbar {
+    color: @uc_ink;
+    background-color: transparent;
+    background-image: none;
+}
+
+.uniconnect.uc-dark .uc-sidebar {
+    color: @uc_ink;
+    background-color: @uc_raised;
+    background-image: linear-gradient(160deg, @uc_raised, @uc_night);
+    border-color: alpha(@uc_cyan, 0.12);
+}
+
+.uniconnect.uc-dark .uc-workspace {
+    color: @uc_ink;
+    background-color: transparent;
+    background-image: none;
+}
+
+.uniconnect.uc-dark .uc-workspace:hover {
+    background-color: alpha(@uc_cyan, 0.06);
+}
+
+.uniconnect.uc-dark .uc-workspace:selected {
+    color: @uc_ink;
+    background-color: alpha(@uc_violet, 0.24);
+    border-color: alpha(@uc_cyan, 0.22);
+}
+
+.uniconnect.uc-dark .uc-workspace:focus {
+    outline-color: @uc_cyan;
+}
+
+.uniconnect.uc-dark .uc-workspace:selected:backdrop {
+    background-color: alpha(@uc_violet, 0.16);
+    border-color: alpha(@uc_cyan, 0.14);
+}
+
+.uniconnect.uc-dark .uc-sidebar .dim-label,
+.uniconnect.uc-dark .uc-terminal-status,
+.uniconnect.uc-dark .uc-status {
+    color: @uc_muted;
+}
+
+.uniconnect.uc-dark .uc-sidebar entry {
+    color: @uc_ink;
+    background-color: alpha(@uc_night, 0.75);
+    background-image: none;
+    border-color: alpha(@uc_ink, 0.14);
+    border-radius: 9px;
+    box-shadow: none;
+}
+
+.uniconnect.uc-dark .uc-sidebar entry:focus {
+    border-color: @uc_cyan;
+}
+
+.uniconnect.uc-dark .uc-headerbar button,
+.uniconnect.uc-dark .uc-sidebar button {
+    color: @uc_ink;
+    background-color: transparent;
+    background-image: none;
+    border-color: transparent;
+    box-shadow: none;
+}
+
+.uniconnect.uc-dark .uc-headerbar button:hover,
+.uniconnect.uc-dark .uc-sidebar button:hover {
+    color: @uc_cyan;
+    background-color: alpha(@uc_cyan, 0.09);
+}
+
+.uniconnect.uc-dark .uc-headerbar button:active,
+.uniconnect.uc-dark .uc-sidebar button:active {
+    background-color: alpha(@uc_violet, 0.25);
+}
+
+.uniconnect.uc-dark .uc-headerbar button:disabled,
+.uniconnect.uc-dark .uc-sidebar button:disabled {
+    color: alpha(@uc_ink, 0.40);
+}
+
+.uniconnect.uc-dark .uc-headerbar button.suggested-action {
+    color: @uc_night;
+    background-color: @uc_cyan;
+}
+
+.uniconnect.uc-dark .uc-terminal-tabs,
+.uniconnect.uc-dark .uc-terminal-tabs > header {
+    color: @uc_ink;
+    background-color: @uc_night;
+    background-image: none;
+}
+
+.uniconnect.uc-dark .uc-terminal-tabs > header tab {
+    color: @uc_muted;
+    background-color: transparent;
+    background-image: none;
+}
+
+.uniconnect.uc-dark .uc-terminal-tabs > header tab:hover {
+    color: @uc_ink;
+    background-color: alpha(@uc_cyan, 0.05);
+}
+
+.uniconnect.uc-dark .uc-terminal-tabs > header tab:checked {
+    color: @uc_ink;
+    background-color: @uc_raised;
+    border-bottom-color: @uc_violet;
+}
+
+.uniconnect.uc-dark .uc-workspace-header,
+.uniconnect.uc-dark .uc-terminal-status,
+.uniconnect.uc-dark .uc-status {
+    background-color: transparent;
+    background-image: none;
+    border-color: alpha(@uc_ink, 0.08);
+}

@@ -295,6 +295,7 @@ extension Workspace {
         restoredAgentResumeStatesByPanelId.removeAll(keepingCapacity: false)
         invalidatedRestoredAgentFingerprintsByPanelId.removeAll(keepingCapacity: false)
         uniConnectLocalWindowsByPanelId.removeAll(keepingCapacity: false)
+        localTmuxReportTokens.removeAll(keepingCapacity: false)
         surfaceResumeBindingsByPanelId.removeAll(keepingCapacity: false)
         restoredGuardedWorkingDirectoriesByPanelId.removeAll(keepingCapacity: false)
 
@@ -1805,6 +1806,7 @@ extension Workspace {
                     && localResumeWorkingDirectoryIsAvailable
             )
             let resumeBindingForStartup =
+                persistedLocalWindow?.tmuxBinding != nil ||
                 restoredHibernation != nil ||
                 (resumeBinding?.isProcessDetected == true && resumeBinding?.autoResume != true)
                     ? nil
@@ -1868,6 +1870,7 @@ extension Workspace {
             let restoredTmuxStartCommand = restoredTmuxStartupScript == nil ? nil : restorableTmuxStartCommand
             var restoredAgentResumeLaunch: SurfaceResumeStartupLaunch? =
                 if shouldAutoResumeAgent
+                    && persistedLocalWindow?.tmuxBinding == nil
                     && !localAgentHookResumeWasDeclined
                     && restoredHibernation == nil
                     && restoredBindingLaunch == nil {
@@ -1887,10 +1890,20 @@ extension Workspace {
                 } else {
                     nil
                 }
+            var localTmuxInitialCommand = persistedLocalWindow?.tmuxBinding != nil
+                && shouldAutoResumeAgent && restoredHibernation == nil
+                ? restorableAgent.flatMap { agent in
+                    guard let command = agent.resumeCommand,
+                          let directory = agent.workingDirectory,
+                          let root = persistedLocalWindow?.boxRoot else { return nil as String? }
+                    return UniConnectLocalBoxRootPolicy.commandRequiringWorkingDirectory(
+                        command, workingDirectory: directory, boxRoot: root
+                    )
+                } : nil
             let reservedAutomaticLocalAgentLaunch: Bool
             if UniConnectCoordinator.isEnabled,
                persistedLocalWindow != nil,
-               restoredAgentResumeLaunch != nil,
+               (restoredAgentResumeLaunch != nil || localTmuxInitialCommand != nil),
                let restorableAgent {
                 reservedAutomaticLocalAgentLaunch = UniConnectCoordinator.shared
                     .prepareAutomaticLocalAgentLaunch(
@@ -1902,6 +1915,7 @@ extension Workspace {
                     // Another live/pending window owns this exact conversation. Keep this
                     // logical window and its history, but restore it as a normal shell.
                     restoredAgentResumeLaunch = nil
+                    localTmuxInitialCommand = nil
                 }
             } else {
                 reservedAutomaticLocalAgentLaunch = false
@@ -1942,13 +1956,24 @@ extension Workspace {
             // and tmux binding, never a local shell or a replacement bootstrap panel.
             let uniConnectStartupCommand = resolvedUniConnectStartupCommand
                 ?? (uniConnectSSHRestoreUnavailable ? "/usr/bin/false" : nil)
+            let localTmuxStartupCommand = persistedLocalWindow.flatMap { record in
+                record.tmuxBinding.map { binding in
+                    UniConnectLocalTmuxLaunchPlan(
+                        binding: binding,
+                        workingDirectory: record.workingDirectory,
+                        initialCommand: localTmuxInitialCommand
+                    ).startupCommand()
+                }
+            }
             let restoredStartupCommand =
                 uniConnectStartupCommand
+                ?? localTmuxStartupCommand
                 ?? restoredRemotePTYAttachCommand
                 ?? restoredTmuxStartupScript?.path
                 ?? restoredBindingLaunch?.initialCommand
                 ?? restoredAgentResumeLaunch?.initialCommand
-            let restoredStartupInput = (restoredRemotePTYAttachCommand == nil && uniConnectStartupCommand == nil)
+            let restoredStartupInput = (restoredRemotePTYAttachCommand == nil
+                && uniConnectStartupCommand == nil && localTmuxStartupCommand == nil)
                 ? (restoredBindingLaunch?.initialInput ?? restoredAgentResumeLaunch?.initialInput)
                 : nil
             let startupHandlesWorkingDirectory =
@@ -2007,7 +2032,8 @@ extension Workspace {
                 )
             }
 #endif
-            let shouldReplayLocalScrollback = restoredRemotePTYAttachCommand == nil
+            let shouldReplayLocalScrollback = localTmuxStartupCommand == nil
+                && restoredRemotePTYAttachCommand == nil
                 && uniConnectStartupCommand == nil && shouldReplayScrollback
             let restoredScrollback = shouldReplayLocalScrollback ? snapshot.terminal?.scrollback : nil
             let replayEnvironment = SessionScrollbackReplayStore.replayEnvironment(for: restoredScrollback)
@@ -2034,6 +2060,7 @@ extension Workspace {
             if var persistedLocalWindow {
                 let restoredAsLiveShell = persistedLocalWindow.runtimeState == .stopped
                     || (persistedLocalWindow.runtimeState == .agent
+                        && localTmuxStartupCommand == nil
                         && restoredHibernation == nil
                         && !restoredAgentWillRunStartupCommand
                         && !restoredAgentWillRunStartupInput)
@@ -10935,6 +10962,8 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var uniConnectClaudeSessionsByPanelId: [UUID: String] = [:]
     /// Durable local windows. Agent history is independent from the current shell/process state.
     @Published var uniConnectLocalWindowsByPanelId: [UUID: UniConnectLocalWindowRecord] = [:]
+    private enum LocalTmuxReportKind: Hashable { case shell, lifecycle(String) }
+    private var localTmuxReportTokens: [UUID: [LocalTmuxReportKind: UUID]] = [:]
     @Published var uniConnectPlaceholderPanelIds: Set<UUID> = []
     /// UniConnect: tmux windows whose ssh client died. They keep their tmux binding and
     /// can be re-attached (automatically, on click, or from the menu).
@@ -13153,11 +13182,19 @@ final class Workspace: Identifiable, ObservableObject {
         let currentGeneration = uniConnectSurfaceGeneration(panelId: panelId)
         if let reportedSurfaceGeneration {
             guard reportedSurfaceGeneration == currentGeneration else {
+                verifyLocalTmuxReport(
+                    panelId: panelId, kind: .shell, reportedGeneration: reportedSurfaceGeneration
+                ) { workspace, generation in
+                    _ = workspace.applyPanelShellActivityState(
+                        panelId: panelId, state: state, signalGeneration: generation
+                    )
+                }
                 return false
             }
         } else if uniConnectProfile?.kind == .local {
             return false
         }
+        localTmuxReportTokens[panelId]?.removeValue(forKey: .shell)
         return applyPanelShellActivityState(
             panelId: panelId,
             state: state,
@@ -13167,6 +13204,34 @@ final class Workspace: Identifiable, ObservableObject {
 
     func uniConnectSurfaceGeneration(panelId: UUID) -> UUID? {
         terminalPanel(for: panelId)?.surface.uniConnectSurfaceGeneration
+    }
+
+    /// A surviving tmux pane has its original shell generation, not the new Ghostty client's.
+    /// Trust that old generation only after verifying its exact live pane and CMUX ownership.
+    private func verifyLocalTmuxReport(
+        panelId: UUID,
+        kind: LocalTmuxReportKind,
+        reportedGeneration: UUID,
+        apply: @escaping @MainActor (Workspace, UUID) -> Void
+    ) {
+        guard uniConnectProfile?.kind == .local,
+              let binding = uniConnectLocalWindowsByPanelId[panelId]?.tmuxBinding,
+              let surfaceGeneration = uniConnectSurfaceGeneration(panelId: panelId) else { return }
+        let token = UUID()
+        localTmuxReportTokens[panelId, default: [:]][kind] = token
+        let workspaceID = id
+        Task { @MainActor [weak self] in
+            let verifiedGeneration = await UniConnectCoordinator.shared.localTmuxGeneration(
+                binding: binding, workspaceID: workspaceID, panelID: panelId
+            )
+            guard let self,
+                  self.localTmuxReportTokens[panelId]?[kind] == token,
+                  self.uniConnectSurfaceGeneration(panelId: panelId) == surfaceGeneration,
+                  self.uniConnectLocalWindowsByPanelId[panelId]?.tmuxBinding == binding else { return }
+            self.localTmuxReportTokens[panelId]?.removeValue(forKey: kind)
+            guard verifiedGeneration == reportedGeneration else { return }
+            apply(self, surfaceGeneration)
+        }
     }
 
     private func applyPanelShellActivityState(
@@ -13236,11 +13301,20 @@ final class Workspace: Identifiable, ObservableObject {
         let currentGeneration = uniConnectSurfaceGeneration(panelId: targetPanelId)
         if let reportedSurfaceGeneration {
             guard reportedSurfaceGeneration == currentGeneration else {
+                verifyLocalTmuxReport(
+                    panelId: targetPanelId, kind: .lifecycle(key), reportedGeneration: reportedSurfaceGeneration
+                ) { workspace, generation in
+                    _ = workspace.applyAgentLifecycle(
+                        key: key, targetPanelId: targetPanelId, lifecycle: lifecycle,
+                        signalGeneration: generation
+                    )
+                }
                 return false
             }
         } else if uniConnectProfile?.kind == .local {
             return false
         }
+        localTmuxReportTokens[targetPanelId]?.removeValue(forKey: .lifecycle(key))
         return applyAgentLifecycle(
             key: key,
             targetPanelId: targetPanelId,
@@ -13820,6 +13894,7 @@ final class Workspace: Identifiable, ObservableObject {
         uniConnectLocalWindowsByPanelId = uniConnectLocalWindowsByPanelId.filter {
             validSurfaceIds.contains($0.key)
         }
+        localTmuxReportTokens = localTmuxReportTokens.filter { validSurfaceIds.contains($0.key) }
         uniConnectDisconnectedPanelIds = uniConnectDisconnectedPanelIds.filter {
             validSurfaceIds.contains($0)
         }
@@ -15748,7 +15823,8 @@ final class Workspace: Identifiable, ObservableObject {
         inheritExistingWorkingDirectory: Bool = true,
         tmuxStartCommand: String? = nil,
         focus: Bool? = nil,
-        forceTerminateForegroundProcess: Bool = false
+        forceTerminateForegroundProcess: Bool = false,
+        preservesPreparedLocalAgentLaunch: Bool = false
     ) -> TerminalPanel? {
         guard permitsImportSensitiveMutation() else { return nil }
         guard let oldPanel = terminalPanel(for: panelId),
@@ -15757,8 +15833,19 @@ final class Workspace: Identifiable, ObservableObject {
             return nil
         }
 
-        let trimmedCommand = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmedCommand = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedCommand.isEmpty else { return nil }
+        let durableLocalRecord = uniConnectLocalWindowsByPanelId[panelId]
+        // All existing shell-only respawn callers attach the binding instead of losing it.
+        // Explicit agent startup commands are built by the shared local action path above.
+        if let record = durableLocalRecord, let binding = record.tmuxBinding,
+           trimmedCommand == #"exec "${SHELL:-/bin/zsh}" -l"# {
+            trimmedCommand = UniConnectLocalTmuxLaunchPlan(
+                binding: binding,
+                workingDirectory: workingDirectory ?? record.workingDirectory,
+                initialCommand: nil
+            ).startupCommand()
+        }
 
         let inheritedConfig = inheritedTerminalConfig(preferredPanelId: panelId, inPane: paneId)
         let permitsInheritedWorkingDirectory = inheritExistingWorkingDirectory
@@ -15782,7 +15869,7 @@ final class Workspace: Identifiable, ObservableObject {
         let initialEnvironmentOverrides = oldPanel.surface.respawnInitialEnvironmentOverrides
         let additionalEnvironment = oldPanel.surface.respawnAdditionalEnvironment
 
-        if uniConnectProfile?.kind == .local {
+        if uniConnectProfile?.kind == .local && !preservesPreparedLocalAgentLaunch {
             // A panel UUID intentionally survives respawn, but its process generation does
             // not. Retire any pending/observed agent ownership synchronously so the delayed
             // close notification from the old surface cannot affect the replacement.
@@ -15831,6 +15918,9 @@ final class Workspace: Identifiable, ObservableObject {
         )
         configureNewTerminalPanel(replacementPanel)
         panels[panelId] = replacementPanel
+        if let record = durableLocalRecord, record.tmuxBinding != nil {
+            uniConnectInstallLocalWindowRecord(record, panelId: panelId, visibleName: record.visibleName)
+        }
         panelTitles[panelId] = replacementPanel.displayTitle
         if let customTitle {
             panelCustomTitles[panelId] = customTitle

@@ -462,7 +462,7 @@ public struct SettingsWindowRoot: View {
             defaultsStore: defaultsStore,
             catalog: catalog,
             hostActions: hostActions,
-            hostedServicesAvailable: hostedServicesAvailable
+            privateNetworkAccessAvailable: runtime.privateNetworkAccessAvailable
         )
             .id(anchorID(for: .mobile))
 

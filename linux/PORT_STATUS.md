@@ -8,8 +8,10 @@ UniConnect es un solo producto Mac/Linux dentro de este repositorio; véase
 [el desarrollo compartido](../docs/CROSS-PLATFORM.md). La lógica Python existente
 todavía necesita converger con los servicios portables del original. Los textos
 ya usan únicamente `Resources/Localizable.xcstrings`, sin diccionario Linux aparte.
-El cambio de principal `29a8edec3e` deja el producto únicamente en español;
-las preferencias antiguas se normalizan sin cambiar el idioma de las sesiones.
+Español es el único idioma del producto desde `29a8edec3`. El traductor de Linux
+consume el catálogo español compartido; los ajustes y CLI ya no ofrecen otros
+idiomas y normalizan las preferencias antiguas. No se cambia el idioma del
+sistema ni de las herramientas del terminal.
 
 Gate actual: **107 pruebas Linux correctas, 72,554 s**, con errores críticos GTK
 tratados como fallos. Incluye cinco escenarios MainWindow aislados, dos de VTE
@@ -122,7 +124,7 @@ con contraseña es una acción separada del arranque.
 | Caja y pestañas | Fijado, movimiento por posición, navegación anterior/siguiente y numérica, reset del nombre y contextual de pestaña presentes. Faltan grupos y la matriz completa de selección múltiple. |
 | Ajustes y ayuda | Hay tema/fuente/atajos configurables, idioma español fijo y rutas de ayuda. No hay configuración terminal equivalente a Ghostty ni updater de aplicación. Los defaults de teclado están adaptados a Ctrl; falta la matriz completa de estos menús y contextos. |
 | Escritorio Linux | Lanzador y `.desktop` propios presentes. No hay superficie equivalente completa del Dock/menú de estado, atajo global de mostrar/ocultar ni registro demostrado de `uniconnect://`. Firma Apple y AppKit son específicos de macOS; no se atribuye esa verificación a Linux. |
-| Idioma y apariencia | Catálogo español compartido y pruebas de resolución/menús. No se mantienen veinte idiomas por decisión del usuario. Claro/oscuro/sistema, accesibilidad y tamaños necesitan matriz completa; VTE trata sistema como oscuro actualmente. |
+| Idiomas y apariencia | Catálogo compartido únicamente en español; preferencias antiguas normalizadas. CI verifica traducción, CLI y menús GTK reales. Queda revisar mensajes de error menos frecuentes y la matriz claro/oscuro/sistema, accesibilidad y tamaños; VTE trata sistema como oscuro actualmente. |
 | CLI/API | `uniconnect-cli`/`cmux` ofrece list/select/focus/send/read-screen/reconnect/close/persist y está integrado y probado contra GTK real. Eso no acredita todos los protocolos/comandos del original. |
 
 ## Criterio de cierre

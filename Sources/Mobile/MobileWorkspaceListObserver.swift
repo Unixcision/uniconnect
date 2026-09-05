@@ -86,6 +86,9 @@ final class MobileWorkspaceListObserver {
                 workspace.$isPinned.map { _ in () }.eraseToAnyPublisher(),
                 workspace.$currentDirectory.map { _ in () }.eraseToAnyPublisher(),
                 workspace.$panelDirectories.map { _ in () }.eraseToAnyPublisher(),
+                workspace.$uniConnectProfile.map { _ in () }.eraseToAnyPublisher(),
+                workspace.$uniConnectTmuxSessionsByPanelId.map { _ in () }.eraseToAnyPublisher(),
+                workspace.$uniConnectLocalWindowsByPanelId.map { _ in () }.eraseToAnyPublisher(),
                 // Pure drag-reorders change spatial order without changing the panel
                 // set; bonsplit selection state is not `@Published`, so this counter
                 // is the only signal the observer gets for a reorder.
@@ -135,6 +138,8 @@ final class MobileWorkspaceListObserver {
             hasher.combine(workspace.id)
             hasher.combine(workspace.title)
             hasher.combine(workspace.isPinned)
+            hasher.combine(workspace.uniConnectProfile?.isSSH == true)
+            hasher.combine(workspace.uniConnectLocalBoxRoot)
             // Spatial order is significant: hash the ordered id sequence so a
             // reorder of the same panel set changes the hash.
             let panelIDs = workspace.orderedPanelIds
@@ -142,6 +147,11 @@ final class MobileWorkspaceListObserver {
             for id in panelIDs {
                 hasher.combine(workspace.panelTitle(panelId: id))
                 hasher.combine(workspace.panelDirectories[id])
+                let localRecord = workspace.uniConnectLocalWindowsByPanelId[id]
+                hasher.combine(localRecord?.tmuxBinding)
+                hasher.combine(localRecord?.runtimeState.rawValue)
+                hasher.combine(localRecord?.activeConversation?.kind.rawValue)
+                hasher.combine(workspace.uniConnectTmuxSessionsByPanelId[id])
             }
             hasher.combine(workspace.currentDirectory)
             // Hash every panelDirectories entry (including ids not yet in

@@ -1,19 +1,19 @@
 import Foundation
 
-/// Mobile integration settings for pairing and syncing with cmux on iOS.
+/// Direct Tailscale access settings for authorized UniConnect devices.
 public struct MobileCatalogSection: SettingCatalogSection {
-    /// Mac-side iOS pairing host. Defaults off so macOS never asks for Local
-    /// Network permission until the user opts in from Settings.
+    /// Private-network listener, disabled until the user explicitly enables it.
+    /// The historical storage key is retained for migration compatibility.
     public let iOSPairingHost = DefaultsKey<Bool>(
         id: "mobile.iOSPairingHost.enabled",
         defaultValue: false,
         userDefaultsKey: "mobile.iOSPairingHost.enabled"
     )
 
-    /// TCP port the Mac-side iOS pairing listener prefers to bind.
+    /// TCP port the private-network listener prefers to bind.
     ///
     /// This is a *preference*: if the port is already in use the listener
-    /// falls back to an OS-assigned ephemeral port, and the iOS app is always
+    /// falls back to an OS-assigned ephemeral port, and the client is always
     /// handed the actual bound port (so pairing still works). Configure a fixed
     /// port when you need predictable firewall rules or to avoid a conflict.
     /// The default mirrors `CmxMobileDefaults.defaultHostPort`, the protocol
@@ -24,7 +24,7 @@ public struct MobileCatalogSection: SettingCatalogSection {
         userDefaultsKey: "mobile.iOSPairingHost.port"
     )
 
-    /// Optional override for the name the iOS app shows for this Mac during
+    /// Optional override for the name the Android app shows for this Mac during
     /// pairing. Empty means use the Mac's name from System Settings
     /// (`Host.current().localizedName`). Useful when pairing against several
     /// Macs that would otherwise share a name.

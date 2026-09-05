@@ -16,6 +16,7 @@ private let hostSettingsLogger = Logger(subsystem: "com.unixcision.uniconnect", 
 final class HostSettingsActions: SettingsHostActions {
     private let configFileURL: URL
     private let hostedServicesAvailable: Bool
+    private let mobileAccessWindow: UniConnectMobileAccessWindowController?
 
     /// Serializes font-size config writes so rapid slider saves persist in order.
     private let fontConfigWriter = FontConfigWriter()
@@ -41,9 +42,14 @@ final class HostSettingsActions: SettingsHostActions {
     /// window instead of stacking duplicates.
     private weak var configWindow: NSWindow?
 
-    init(configFileURL: URL, hostedServicesAvailable: Bool) {
+    init(
+        configFileURL: URL,
+        hostedServicesAvailable: Bool,
+        mobileAccessWindow: UniConnectMobileAccessWindowController? = nil
+    ) {
         self.configFileURL = configFileURL
         self.hostedServicesAvailable = hostedServicesAvailable
+        self.mobileAccessWindow = mobileAccessWindow
         startObservingAppIconMode()
     }
 
@@ -143,8 +149,7 @@ final class HostSettingsActions: SettingsHostActions {
     }
 
     func openMobilePairingWindow() {
-        guard hostedServicesAvailable else { return }
-        MobilePairingWindowController.shared.show()
+        mobileAccessWindow?.show()
     }
 
     private func existingConfigWindow() -> NSWindow? {
@@ -207,14 +212,10 @@ final class HostSettingsActions: SettingsHostActions {
     }
 
     func mobilePairingStatus() -> MobilePairingStatusSnapshot? {
-        guard hostedServicesAvailable else { return nil }
         return Self.mobilePairingSnapshot(from: MobileHostService.shared.statusSnapshot())
     }
 
     func mobilePairingStatusUpdates() -> AsyncStream<MobilePairingStatusSnapshot> {
-        guard hostedServicesAvailable else {
-            return AsyncStream { $0.finish() }
-        }
         return AsyncStream { continuation in
             // Bridge the notification through a Sendable `Void` signal stream so
             // the non-Sendable `Notification` never crosses into the MainActor
@@ -278,11 +279,6 @@ final class HostSettingsActions: SettingsHostActions {
     }
 
     func applyMobilePairingPort(_ port: Int) async -> MobilePairingPortApplyResult {
-        guard hostedServicesAvailable else {
-            return (1...65535).contains(port)
-                ? .savedForLater(port: port)
-                : .invalid(requestedPort: port)
-        }
         switch await MobileHostService.shared.applyConfiguredPort(port) {
         case .applied(let bound):
             return .applied(port: bound)

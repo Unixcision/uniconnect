@@ -20,15 +20,15 @@ struct SettingsSearchIndexTests {
 
     @Test func tokenizedQueryFiltersBothSectionsAndSettings() {
         let index = SettingsSearchIndex(catalog: SettingCatalog())
-        let result = index.match("automation")
-        // At minimum the Automation section itself should match.
-        #expect(result.contains(where: { $0.title == "Automation" }))
+        let result = index.match("automatizacion")
+        // Search and navigation share the product's Spanish section title.
+        #expect(result.contains(where: { $0.id == "section:automation" && $0.title == "Automatización" }))
     }
 
     @Test func diacriticInsensitiveMatch() {
         let index = SettingsSearchIndex(catalog: SettingCatalog())
-        let plain = index.match("automation")
-        let withDiacritics = index.match("autómation")
+        let plain = index.match("automatizacion")
+        let withDiacritics = index.match("automatización")
         #expect(plain.count == withDiacritics.count)
     }
 

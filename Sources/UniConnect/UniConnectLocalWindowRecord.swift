@@ -12,6 +12,7 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         case visibleName
         case boxRoot
         case workingDirectory
+        case tmuxBinding
         case runtimeState
         case conversations
         case latestConversationID
@@ -25,6 +26,8 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
     private(set) var visibleName: String?
     private(set) var boxRoot: String
     private(set) var workingDirectory: String
+    /// Nil identifies an existing direct PTY; saving it must not silently migrate its live process.
+    private(set) var tmuxBinding: UniConnectLocalTmuxBinding?
     private(set) var runtimeState: UniConnectLocalWindowRuntimeState
     private(set) var conversations: [UniConnectLocalAgentConversation]
     private(set) var latestConversationID: UUID?
@@ -32,13 +35,14 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
     let createdAt: TimeInterval
     private(set) var updatedAt: TimeInterval
 
-    static let currentVersion = 3
+    static let currentVersion = 4
 
     init(
         id: UUID = UUID(),
         visibleName: String? = nil,
         boxRoot: String,
         workingDirectory: String? = nil,
+        tmuxBinding: UniConnectLocalTmuxBinding? = nil,
         runtimeState: UniConnectLocalWindowRuntimeState = .shell,
         conversations: [UniConnectLocalAgentConversation] = [],
         latestConversationID: UUID? = nil,
@@ -57,6 +61,7 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         self.visibleName = Self.normalizedVisibleName(visibleName)
         self.boxRoot = normalizedBoxRoot
         self.workingDirectory = normalizedWorkingDirectory
+        self.tmuxBinding = tmuxBinding
         self.runtimeState = runtimeState
         self.conversations = Self.uniqueConversations(
             conversations.map {
@@ -119,6 +124,7 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
             )
         }
         self.workingDirectory = validatedWorkingDirectory
+        self.tmuxBinding = try container.decodeIfPresent(UniConnectLocalTmuxBinding.self, forKey: .tmuxBinding)
         self.runtimeState = try container.decodeIfPresent(
             UniConnectLocalWindowRuntimeState.self,
             forKey: .runtimeState

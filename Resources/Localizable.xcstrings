@@ -33687,7 +33687,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Móvil"
+            "value": "Acceso remoto"
           }
         }
       }
@@ -33698,7 +33698,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enlace con iOS"
+            "value": "Acceso por Tailscale"
           }
         }
       }
@@ -33709,7 +33709,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mantiene desactivado el servicio de enlace con iOS en el Mac hasta que lo actives aquí."
+            "value": "El acceso remoto permanece apagado hasta que lo actives aquí."
           }
         }
       }
@@ -33720,7 +33720,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Permite que la app de iOS encuentre este Mac y se sincronice con él en tu red local."
+            "value": "Permite conectar los dispositivos autorizados de tu red Tailscale."
           }
         }
       }
@@ -35051,7 +35051,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enlazar un dispositivo"
+            "value": "Dispositivos autorizados"
           }
         }
       }
@@ -35062,7 +35062,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Muestra un código QR para enlazar tu iPhone o iPad con este Mac."
+            "value": "Conecta por IP de Tailscale y autoriza los dispositivos dentro de UniConnect."
           }
         }
       }
@@ -35073,7 +35073,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enlazar…"
+            "value": "Gestionar…"
           }
         }
       }
@@ -35260,7 +35260,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Puerto de enlace"
+            "value": "Puerto del acceso remoto"
           }
         }
       }
@@ -35271,7 +35271,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Puerto TCP preferido para el servicio de enlace con iOS (1–65535)."
+            "value": "Puerto TCP de la conexión privada de UniConnect (1–65535)."
           }
         }
       }
@@ -35282,7 +35282,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pulsa Aplicar para cambiar el puerto. UniConnect comprueba primero si está libre: si está en uso, el servicio actual sigue funcionando sin cambios; si está libre, cambia de puerto y los dispositivos conectados se reconectan al nuevo."
+            "value": "Pulsa Aplicar para cambiar el puerto. Si está ocupado, se mantiene el acceso actual. Si está libre, los dispositivos deberán volver a conectar al nuevo puerto."
           }
         }
       }
@@ -35293,7 +35293,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Iniciando el servicio de enlace…"
+            "value": "Acceso privado no disponible todavía. Comprueba Tailscale y el puerto."
           }
         }
       }
@@ -35326,7 +35326,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nombre visible"
+            "value": "Nombre de la máquina"
           }
         }
       }
@@ -35337,7 +35337,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nombre que muestra la app de iOS para este Mac al enlazarlo. Si está vacío, usa el nombre de este Mac."
+            "value": "Nombre mostrado en Android. Si lo dejas vacío, se usa el nombre de este Mac."
           }
         }
       }
@@ -35359,7 +35359,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Dispositivos conectados"
+            "value": "Conexiones activas"
           }
         }
       }
@@ -35370,7 +35370,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Dispositivos iOS conectados actualmente a este Mac."
+            "value": "Conexiones de dispositivos al acceso privado de este Mac."
           }
         }
       }
@@ -35381,7 +35381,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Todavía no hay direcciones accesibles. El enlace por red requiere que Tailscale esté activo en este Mac."
+            "value": "No hay ninguna dirección disponible. Conecta Tailscale en este Mac."
           }
         }
       }
@@ -35392,7 +35392,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Accesible en"
+            "value": "Direcciones privadas"
           }
         }
       }
@@ -40924,7 +40924,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "El emparejamiento móvil y la sincronización del teléfono permanecen desactivados hasta que se configure el servicio propio de UniConnect."
+            "value": "Esta edición no dispone de acceso privado remoto."
           }
         }
       }
@@ -41398,6 +41398,853 @@
           "stringUnit": {
             "state": "translated",
             "value": "SSH"
+          }
+        }
+      }
+    },
+    "settings.section.browserImport": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importar datos del navegador"
+          }
+        }
+      }
+    },
+    "uniconnect.localWindow.tmux.attachFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo recuperar la sesión tmux. Esta consola de recuperación no inicia ninguna IA automáticamente."
+          }
+        }
+      }
+    },
+    "uniconnect.localWindow.tmux.directoryMissing": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La carpeta guardada ya no existe. Se intentará recuperar la sesión existente sin iniciar otra IA."
+          }
+        }
+      }
+    },
+    "uniconnect.localWindow.tmux.missing": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux no está disponible. Esta consola no es recuperable; instala tmux para conservarla al cerrar UniConnect."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.approvalRequired": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autoriza este dispositivo en UniConnect en el equipo al que quieres acceder."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.approve": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorizar dispositivo"
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.approved": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dispositivos autorizados"
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.enable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activar acceso por Tailscale"
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.explanation": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conecta UniConnect en Android a la IP de Tailscale de este Mac. Autoriza aquí el dispositivo: no necesitas otra cuenta."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.loadFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudieron leer los dispositivos autorizados. El acceso permanece bloqueado."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.noApproved": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todavía no has autorizado ningún dispositivo."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.noPending": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuando un dispositivo intente conectar, su solicitud aparecerá aquí."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.notListening": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido abrir el acceso privado. Comprueba que Tailscale está conectado y que el puerto está libre."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.notReady": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El acceso remoto todavía no está preparado en este equipo."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.pending": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solicitudes pendientes"
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.ready": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acceso privado activo"
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.reject": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechazar"
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.revoke": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revocar"
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.revokeFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El dispositivo está desconectado, pero no se pudo guardar la revocación. Puede recuperar el permiso al reiniciar."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.saveFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo guardar el cambio de permisos. Revisa el acceso al almacenamiento."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.scope": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La autorización permite controlar los espacios y terminales desde esa máquina de Tailscale. Revocarla desconecta su acceso. No se comparte la contraseña del Mac ni las claves SSH."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.tailscaleUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activa Tailscale para permitir el acceso desde otros dispositivos."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.access.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acceso remoto"
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.createFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo crear la ventana. Comprueba la carpeta, la conexión y que esa sesión tmux no esté abierta en otra ventana."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.explicitTerminalRequired": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Especifica el espacio de trabajo y la ventana existentes."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.importBusy": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hay una importación en curso. Espera a que termine antes de modificar las ventanas."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.invalidCreation": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indica un nombre válido y una carpeta absoluta. Para SSH, especifica la sesión tmux; para una caja SSH nueva, el espacio de trabajo del que heredar la conexión."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.legacyTerminal": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta consola antigua no usa tmux. No se reiniciará su proceso activo; crea una ventana recuperable para usar esta acción."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.notifications.invalidPagination": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usa un límite entre 1 y 200 y un cursor de notificaciones válido."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.reconnectUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se puede reconectar ahora. Comprueba que la conexión guardada esté disponible y que no haya otra reconexión en curso."
+          }
+        }
+      }
+    },
+    "uniconnect.shared.agente.no.v.lido.para.este.espacio.de.trabajo": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agente no válido para este espacio de trabajo"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.approve": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorizar"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.approved.devices.can.control.your.terminals.only.approve.your.own.tailscale.devices": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los dispositivos autorizados pueden controlar tus terminales. Autoriza únicamente tus propios dispositivos de Tailscale."
+          }
+        }
+      }
+    },
+    "uniconnect.shared.autoriza.este.dispositivo.en.uniconnect.en.el.equipo.al.que.quieres.acceder": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autoriza este dispositivo en UniConnect en el equipo al que quieres acceder."
+          }
+        }
+      }
+    },
+    "uniconnect.shared.carpeta.no.v.lida": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Carpeta no válida"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.could.not.load.mobile.access.permissions": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudieron leer los permisos de acceso móvil. El acceso permanece bloqueado."
+          }
+        }
+      }
+    },
+    "uniconnect.shared.could.not.save.mobile.access.permissions": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudieron guardar los permisos de acceso móvil."
+          }
+        }
+      }
+    },
+    "uniconnect.shared.cursor.de.notificaciones.no.v.lido": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cursor de notificaciones no válido"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.demasiados.tama.os.de.terminal.activos": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demasiados tamaños de terminal activos"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.desplazamiento.no.v.lido": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desplazamiento no válido"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.el.acceso.a.la.terminal.est.bloqueado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El acceso a la terminal está bloqueado"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.el.escritorio.est.ocupado.vuelve.a.intentarlo": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El escritorio está ocupado; vuelve a intentarlo"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.el.permiso.de.este.dispositivo.ha.sido.revocado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El permiso de este dispositivo ha sido revocado"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.elige.un.espacio.ssh.existente.del.que.heredar.la.conexi.n": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige un espacio SSH existente del que heredar la conexión"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.enable.mobile.access.over.tailscale": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activar acceso móvil por Tailscale"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.esta.consola.antigua.no.ofrece.una.pantalla.tmux.recuperable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta consola antigua no ofrece una pantalla tmux recuperable"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.esta.consola.antigua.no.tiene.una.sesi.n.tmux.recuperable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta consola antigua no tiene una sesión tmux recuperable"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.esta.operaci.n.no.est.disponible": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta operación no está disponible"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.esta.terminal.no.est.abierta.en.el.escritorio": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta terminal no está abierta en el escritorio"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.hay.una.conexi.n.en.preparaci.n.espera.a.que.termine": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hay una conexión en preparación; espera a que termine"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.identificador.de.cliente.no.v.lido": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Identificador de cliente no válido"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.identificadores.de.terminal.contradictorios": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Identificadores de terminal contradictorios"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.importaci.n.en.curso": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importación en curso"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.indica.el.espacio.de.trabajo.expl.citamente": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indica el espacio de trabajo explícitamente"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.indica.una.terminal.sin.identificadores.contradictorios": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indica una terminal sin identificadores contradictorios"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.l.mite.de.notificaciones.no.v.lido": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Límite de notificaciones no válido"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.la.entrada.de.terminal.no.es.v.lida": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La entrada de terminal no es válida"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.la.terminal.est.desconectada": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La terminal está desconectada"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.la.terminal.ha.cambiado.durante.la.captura.vuelve.a.intentarlo": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La terminal ha cambiado durante la captura; vuelve a intentarlo"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.mobile.access": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acceso móvil"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.mobile.access.is.disabled": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acceso móvil desactivado"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.no.se.encontr.el.espacio.de.trabajo": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se encontró el espacio de trabajo"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.no.se.encontr.la.terminal": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se encontró la terminal"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.no.se.pudo.abrir.el.acceso.m.vil.comprueba.tailscale.y.el.puerto.58465": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo abrir el acceso móvil. Comprueba Tailscale y el puerto 58465."
+          }
+        }
+      }
+    },
+    "uniconnect.shared.no.se.pudo.completar.la.operaci.n.remota": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo completar la operación remota"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.no.se.pudo.leer.la.pantalla.de.la.sesi.n.existente": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer la pantalla de la sesión existente"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.nombre.de.espacio.de.trabajo.no.v.lido": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nombre de espacio de trabajo no válido"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.nombre.de.sesi.n.tmux.no.v.lido": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nombre de sesión tmux no válido"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.nombre.de.ventana.no.v.lido": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nombre de ventana no válido"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.pending.mobile.access.requests": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solicitudes de acceso móvil pendientes"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.petici.n.no.v.lida": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Petición no válida"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.reject": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechazar"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.revoke.access": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revocar acceso"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.suscripci.n.no.v.lida": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suscripción no válida"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.tama.o.de.terminal.no.v.lido": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tamaño de terminal no válido"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.tipo.de.espacio.de.trabajo.no.v.lido": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tipo de espacio de trabajo no válido"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.uniconnect.est.bloqueado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UniConnect está bloqueado"
           }
         }
       }

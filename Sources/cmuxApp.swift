@@ -2,6 +2,7 @@ import AppKit
 import CmuxSidebarInterpreterClient
 import CmuxSidebarRemoteRender
 import CmuxSocketControl
+import CmuxProcess
 import CmuxSettings
 import CmuxSettingsUI
 import CmuxUpdater
@@ -138,20 +139,40 @@ struct cmuxApp: App {
         } else {
             accountFlow = nil
         }
+        let settingsStore = UserDefaultsSettingsStore(
+            defaults: .standard,
+            migrating: settingsCatalog.all
+        )
+        let mobileAccess = UniConnectMobileAccessModel(
+            repository: UniConnectMobileAccessFileRepository(
+                fileURL: secretBaseDirectory
+                    .appendingPathComponent("mobile-access", isDirectory: true)
+                    .appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.unixcision.uniconnect", isDirectory: true)
+                    .appendingPathComponent("approved-peers.json")
+            )
+        )
+        MobileHostService.shared.configure(access: mobileAccess)
+        let mobileAccessWindow = UniConnectMobileAccessWindowController(
+            model: UniConnectMobileAccessViewModel(
+                access: mobileAccess,
+                host: MobileHostService.shared,
+                settings: settingsStore,
+                enabledKey: settingsCatalog.mobile.iOSPairingHost
+            )
+        )
         self.settingsRuntime = SettingsRuntime(
             catalog: settingsCatalog,
-            userDefaultsStore: UserDefaultsSettingsStore(
-                defaults: .standard,
-                migrating: settingsCatalog.all
-            ),
+            userDefaultsStore: settingsStore,
             jsonStore: JSONConfigStore(fileURL: configFileURL),
             secretStore: secretStore,
             errorLog: SettingsErrorLog(),
             accountFlow: accountFlow,
             hostedServicesAvailable: hostedServicesConfiguration != nil,
+            privateNetworkAccessAvailable: true,
             hostActions: HostSettingsActions(
                 configFileURL: configFileURL,
-                hostedServicesAvailable: hostedServicesConfiguration != nil
+                hostedServicesAvailable: hostedServicesConfiguration != nil,
+                mobileAccessWindow: mobileAccessWindow
             )
         )
 
@@ -264,6 +285,12 @@ struct cmuxApp: App {
         UniConnectCoordinator.shared.configureSSHCommandExecutor(
             UniConnectSSHCommandService(),
             targetResolver: sshTargetResolver
+        )
+        UniConnectCoordinator.shared.configureLocalTmuxInspector(
+            UniConnectLocalTmuxService(
+                commands: CommandRunner(),
+                processEnvironment: { CmuxTopProcessSnapshot.processArgumentsAndEnvironment(for: $0)?.environment }
+            )
         )
         UniConnectCoordinator.shared.configureImportRuntime(
             transaction: UniConnectImportTransaction(

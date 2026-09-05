@@ -20,6 +20,8 @@ public struct SettingsRuntime: @unchecked Sendable {
     public let accountFlow: AccountFlow?
     /// Whether the host has a complete, explicitly enabled online-services configuration.
     public let hostedServicesAvailable: Bool
+    /// Whether this host provides direct private-network access without online accounts.
+    public let privateNetworkAccessAvailable: Bool
     public let hostActions: SettingsHostActions
 
     /// Creates the dependency bundle consumed by the Settings scene.
@@ -31,8 +33,9 @@ public struct SettingsRuntime: @unchecked Sendable {
     ///   - secretStore: The protected secret repository.
     ///   - errorLog: The settings error sink.
     ///   - accountFlow: The host account adapter, when online services exist.
-    ///   - hostedServicesAvailable: Whether auth, cloud, push, and pairing are
+    ///   - hostedServicesAvailable: Whether auth, cloud, and push are
     ///     completely configured and safe to present as interactive.
+    ///   - privateNetworkAccessAvailable: Whether the host implements direct Tailscale access.
     ///   - hostActions: Host-only actions invoked by settings rows.
     @MainActor
     public init(
@@ -43,6 +46,7 @@ public struct SettingsRuntime: @unchecked Sendable {
         errorLog: SettingsErrorLog,
         accountFlow: AccountFlow? = nil,
         hostedServicesAvailable: Bool = false,
+        privateNetworkAccessAvailable: Bool = false,
         hostActions: SettingsHostActions = NoopSettingsHostActions()
     ) {
         self.catalog = catalog
@@ -52,6 +56,7 @@ public struct SettingsRuntime: @unchecked Sendable {
         self.errorLog = errorLog
         self.accountFlow = accountFlow
         self.hostedServicesAvailable = hostedServicesAvailable
+        self.privateNetworkAccessAvailable = privateNetworkAccessAvailable
         self.hostActions = hostActions
     }
 }

@@ -39,6 +39,7 @@ final class UniConnectCoordinator: ObservableObject {
     private var localAgentObservers: [NSObjectProtocol] = []
     private var sshCommandExecutor: (any UniConnectSSHCommandExecuting)?
     private var sshTargetResolver: (any UniConnectSSHTargetResolving)?
+    private var localTmuxInspector: (any UniConnectLocalTmuxInspecting)?
     private var sshWorkspaceCreationTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private var sshWorkspaceCreationTokens: [ObjectIdentifier: UUID] = [:]
     private var sshCredentialEditTasks: [UUID: Task<Void, Never>] = [:]
@@ -131,6 +132,17 @@ final class UniConnectCoordinator: ObservableObject {
     ) {
         sshCommandExecutor = executor
         sshTargetResolver = targetResolver
+    }
+
+    /// Receives the read-only local tmux inspector from the executable composition root.
+    func configureLocalTmuxInspector(_ inspector: any UniConnectLocalTmuxInspecting) {
+        localTmuxInspector = inspector
+    }
+
+    func localTmuxGeneration(
+        binding: UniConnectLocalTmuxBinding, workspaceID: UUID, panelID: UUID
+    ) async -> UUID? {
+        await localTmuxInspector?.generation(for: binding, workspaceID: workspaceID, panelID: panelID)
     }
 
     /// Receives the direct-SSH bridge graph from the executable composition root.
@@ -362,6 +374,7 @@ final class UniConnectCoordinator: ObservableObject {
         let workspace = tabManager.addWorkspace(
             title: name,
             workingDirectory: folder,
+            initialTerminalCommand: UniConnectLocalBoxRootPolicy.isAvailableDirectory(folder) ? "/usr/bin/false" : nil,
             inheritWorkingDirectory: false,
             select: select,
             autoWelcomeIfNeeded: false
@@ -373,6 +386,15 @@ final class UniConnectCoordinator: ObservableObject {
         )
         workspace.uniConnectConfigureLocalRoot(folder)
         workspace.setCustomColor(color)
+        if UniConnectLocalBoxRootPolicy.isAvailableDirectory(folder),
+           let request = UniConnectNewLocalWindowRequest(
+               visibleName: nil, boxRoot: folder, launchTarget: .terminal
+           ) {
+            installPlaceholder(in: workspace)
+            _ = createLocalWindow(
+                in: workspace, request: request, focus: select, requestPersistence: false
+            )
+        }
         if (workspace.customDescription ?? "").isEmpty {
             workspace.setCustomDescription("Local · \((folder as NSString).abbreviatingWithTildeInPath)")
         }
@@ -451,6 +473,24 @@ final class UniConnectCoordinator: ObservableObject {
             finalizeCreation: finalizeCreation,
             stableIdentity: stableIdentity
         )
+    }
+
+    /// Creates a new box using an already configured host; connection secrets never leave the desktop.
+    func createSSHWorkspace(
+        name: String, inheriting source: Workspace, in tabManager: TabManager, select: Bool = false
+    ) -> Workspace? {
+        guard permitsImportSensitiveMutation(), let profile = source.uniConnectProfile, profile.isSSH,
+              let credentialID = profile.credentialId,
+              let record = UniConnectVault.shared.credentialRecord(for: credentialID),
+              record.effectiveTarget != nil else { return nil }
+        let workspace = installSSHWorkspace(
+            name: name, color: source.customColor, connectCommand: record.connectCommand,
+            credentialID: credentialID, in: tabManager, select: select, probeImmediately: false,
+            finalizeCreation: false, stableIdentity: nil
+        )
+        workspace.uniConnectProfile?.tmuxReady = profile.tmuxReady
+        requestSave()
+        return workspace
     }
 
     private func installSSHWorkspace(
@@ -1092,12 +1132,20 @@ final class UniConnectCoordinator: ObservableObject {
         }
 
         // Preserve the authoritative workspace identity, while launching in this window's folder.
-        let startupInput = request.launchTarget
+        let initialAgentCommand = request.launchTarget
             .startupCommand(boxRoot: boxRoot, workingDirectory: workingDirectory)
-            .map { $0 + "\n" }
         let panelID = UUID()
+        let tmuxBinding = UniConnectLocalTmuxBinding.newWindow(
+            panelID: panelID,
+            bundleIdentifier: Bundle.main.bundleIdentifier ?? "uniconnect-development"
+        )
+        let tmuxLaunch = UniConnectLocalTmuxLaunchPlan(
+            binding: tmuxBinding,
+            workingDirectory: workingDirectory,
+            initialCommand: initialAgentCommand
+        )
         let launchAttempt: LocalAgentLaunchAttempt?
-        if startupInput != nil {
+        if initialAgentCommand != nil {
             guard let attempt = beginLocalAgentLaunch(
                 owner: .init(workspaceID: workspace.id, panelID: panelID),
                 snapshot: nil,
@@ -1114,7 +1162,7 @@ final class UniConnectCoordinator: ObservableObject {
             panelID: panelID,
             focus: focus,
             workingDirectory: workingDirectory,
-            initialInput: startupInput
+            initialCommand: tmuxLaunch.startupCommand()
         ) else {
             if let launchAttempt {
                 failLocalAgentLaunch(launchAttempt, workspace: workspace)
@@ -1128,10 +1176,18 @@ final class UniConnectCoordinator: ObservableObject {
             return nil
         }
         workspace.setPanelCustomTitle(panelId: panel.id, title: request.visibleName)
-        _ = workspace.uniConnectEnsureLocalWindowRecord(
+        workspace.uniConnectInstallLocalWindowRecord(
+            UniConnectLocalWindowRecord(
+                id: panel.id,
+                visibleName: request.visibleName,
+                boxRoot: boxRoot,
+                workingDirectory: workingDirectory,
+                tmuxBinding: tmuxBinding
+            ),
             panelId: panel.id,
             visibleName: request.visibleName
         )
+        removePlaceholders(from: workspace, keeping: panel.id)
         workspace.uniConnectProfile?.touch()
         if requestPersistence { requestSave() }
         return panel
@@ -1166,6 +1222,11 @@ final class UniConnectCoordinator: ObservableObject {
         guard permitsImportSensitiveMutation() else { return }
         guard workspace.uniConnectProfile?.isSSH == false,
               let originalRecord = workspace.uniConnectLocalWindowsByPanelId[panelID] else {
+            return
+        }
+
+        if action == .reopenTerminal, originalRecord.tmuxBinding != nil {
+            _ = reconnectLocalWindow(panelID: panelID, in: workspace)
             return
         }
 
@@ -1259,16 +1320,39 @@ final class UniConnectCoordinator: ObservableObject {
             }
         }
         let recordToRestore = workspace.uniConnectLocalWindowsByPanelId[panelID] ?? originalRecord
+        let tmuxReopen = wasStopped ? recordToRestore.tmuxBinding.map {
+            UniConnectLocalTmuxLaunchPlan(
+                binding: $0,
+                workingDirectory: plan.workingDirectory,
+                initialCommand: plan.startupInput?.trimmingCharacters(in: .newlines)
+            )
+        } : nil
+        let tmuxLaunchAttempt: LocalAgentLaunchAttempt?
+        if tmuxReopen?.initialCommand != nil {
+            guard let attempt = beginLocalAgentLaunch(
+                owner: .init(workspaceID: workspace.id, panelID: panelID),
+                snapshot: resumeSnapshot,
+                hasPreparedResume: resumeSnapshot != nil
+            ) else {
+                presentConversationAlreadyRunningError()
+                return
+            }
+            tmuxLaunchAttempt = attempt
+        } else {
+            tmuxLaunchAttempt = nil
+        }
 
         let terminal: TerminalPanel?
         if wasStopped {
             terminal = workspace.respawnTerminalSurface(
                 panelId: panelID,
-                command: Self.localLoginShellCommand,
+                command: tmuxReopen?.startupCommand() ?? Self.localLoginShellCommand,
                 workingDirectory: plan.workingDirectory,
-                focus: true
+                focus: true,
+                preservesPreparedLocalAgentLaunch: tmuxLaunchAttempt != nil
             )
             guard terminal != nil else {
+                if let tmuxLaunchAttempt { failLocalAgentLaunch(tmuxLaunchAttempt, workspace: workspace) }
                 presentError(
                     String(
                         localized: "uniconnect.localWindow.error.reopenFailed",
@@ -1290,7 +1374,7 @@ final class UniConnectCoordinator: ObservableObject {
         }
 
         guard let terminal else { return }
-        if let startupInput = plan.startupInput {
+        if tmuxReopen == nil, let startupInput = plan.startupInput {
             let owner = LocalAgentOwner(workspaceID: workspace.id, panelID: panelID)
             guard let attempt = beginLocalAgentLaunch(
                 owner: owner,
@@ -1339,6 +1423,43 @@ final class UniConnectCoordinator: ObservableObject {
                 defaultValue: "That conversation is already running in another local window. Exit it there before resuming it here."
             )
         )
+    }
+
+    /// Replaces only the tmux client; an existing pane and its foreground agent stay alive.
+    @discardableResult
+    func reconnectLocalWindow(
+        panelID: UUID, in workspace: Workspace, focus: Bool = true
+    ) -> TerminalPanel? {
+        guard permitsImportSensitiveMutation(), workspace.uniConnectProfile?.kind == .local,
+              let record = workspace.uniConnectLocalWindowsByPanelId[panelID],
+              let binding = record.tmuxBinding else { return nil }
+        let registry = CmuxVaultAgentRegistry.load(workingDirectory: record.workingDirectory)
+        let snapshot = record.runtimeState == .agent ? record.latestRestorableSnapshot(registry: registry) : nil
+        reconcileActiveLocalAgentClaims()
+        let resume = snapshot.flatMap { snapshot in
+            guard snapshot.workingDirectory.map({ UniConnectLocalBoxRootPolicy.isAvailableDirectory($0) }) == true,
+                  let claim = UniConnectLocalAgentRestoreClaimPolicy.claim(for: snapshot),
+                  localAgentClaimRegistry.conflictingOwner(
+                      for: claim, requester: .init(workspaceID: workspace.id, panelID: panelID)
+                  ) == nil else { return nil as String? }
+            guard let command = snapshot.resumeCommand, let directory = snapshot.workingDirectory else { return nil }
+            return UniConnectLocalBoxRootPolicy.commandRequiringWorkingDirectory(
+                command, workingDirectory: directory, boxRoot: record.boxRoot
+            )
+        }
+        let command = UniConnectLocalTmuxLaunchPlan(
+            binding: binding, workingDirectory: record.workingDirectory, initialCommand: resume
+        ).startupCommand()
+        let localDirectory = UniConnectLocalBoxRootPolicy.isAvailableDirectory(record.workingDirectory)
+            ? record.workingDirectory : UniConnectLocalBoxRootPolicy.safeShellFallbackDirectory(
+                currentDirectory: nil, missingRoot: record.workingDirectory
+            )
+        guard let panel = workspace.respawnTerminalSurface(
+            panelId: panelID, command: command, workingDirectory: localDirectory, focus: focus
+        ) else { return nil }
+        workspace.uniConnectInstallLocalWindowRecord(record, panelId: panelID, visibleName: record.visibleName)
+        requestSave()
+        return panel
     }
 
     private func beginLocalAgentLaunch(
@@ -2205,16 +2326,17 @@ final class UniConnectCoordinator: ObservableObject {
 
     /// Reconnects one SSH/tmux window. A user-forced call also replaces a hung connection
     /// that macOS has not reported as disconnected yet, while automatic calls stay bounded.
-    func reconnectNow(panelId: UUID, in workspace: Workspace, userInitiated: Bool = true) {
-        guard permitsImportSensitiveMutation() else { return }
+    @discardableResult
+    func reconnectNow(panelId: UUID, in workspace: Workspace, userInitiated: Bool = true) -> Bool {
+        guard permitsImportSensitiveMutation() else { return false }
         guard Self.isEnabled, !isReconnecting,
               workspace.uniConnectTmuxSessionsByPanelId[panelId] != nil,
-              let key = sshTargetKey(panelID: panelId, in: workspace) else { return }
+              let key = sshTargetKey(panelID: panelId, in: workspace) else { return false }
         guard !hasConflictingLiveSSHTarget(
             key,
             workspaceID: workspace.id,
             panelID: panelId
-        ) else { return }
+        ) else { return false }
         let trigger: UniConnectSSHReconnectTrigger = userInitiated ? .userForced : .automatic
         if userInitiated {
             reconnectTasks.removeValue(forKey: key)?.cancel()
@@ -2227,9 +2349,10 @@ final class UniConnectCoordinator: ObservableObject {
             attemptsSpent: reconnectAttempts[key] ?? 0,
             maximumAutomaticAttempts: Self.maxReconnectAttempts,
             hasReconnectInFlight: reconnectFlights.contains(key)
-        ) else { return }
+        ) else { return false }
         reconnectAttempts[key] = attempt
         reconnect(panelId: panelId, in: workspace, attempt: attempt, key: key)
+        return true
     }
 
     /// Force-reconnects every open SSH/tmux window, including connections that are merely hung.

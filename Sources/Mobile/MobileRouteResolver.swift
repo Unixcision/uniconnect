@@ -96,12 +96,13 @@ final class MobileRouteResolver: @unchecked Sendable {
         cacheLock.unlock()
     }
 
-    private static var includesDebugLoopbackRoute: Bool {
-        #if DEBUG
-        true
-        #else
-        false
-        #endif
+    private static var includesDebugLoopbackRoute: Bool { false }
+
+    /// A current numeric address on an up, confirmed Tailscale interface.
+    /// Never returns a cached DNS name, a wildcard, or an unconfirmed LAN/CGNAT
+    /// interface. Both listener creation paths use this before binding.
+    static func tailscaleBindAddress() -> String? {
+        preferredTailscaleAddressCandidate(resolveDNS: false)?.address
     }
 
     private func resolvedTailscaleRouteHosts(
@@ -266,7 +267,10 @@ final class MobileRouteResolver: @unchecked Sendable {
             tailscaleInterfaceNames.contains(candidate.interfaceName) ||
                 isTailscaleInterfaceName(candidate.interfaceName)
         }
-        return confirmedCandidates.isEmpty ? cgnatCandidates : confirmedCandidates
+        // CGNAT alone is not evidence of Tailscale: carrier/Wi-Fi interfaces can
+        // legitimately use 100.64/10 too. Fail closed unless the same interface
+        // has Tailscale's ULA or an explicit Tailscale interface name.
+        return confirmedCandidates
     }
 
     private static func numericHost(for address: UnsafeMutablePointer<sockaddr>) -> String? {

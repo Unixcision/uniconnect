@@ -221,7 +221,7 @@ final class MobileHostAuthorizationTests: XCTestCase {
         } else {
             XCTFail("Expected immediate snapshot to include a numeric Tailscale route")
         }
-        XCTAssertEqual(snapshot.routes.filter { $0.kind == .debugLoopback }.count, 1)
+        XCTAssertEqual(snapshot.routes.filter { $0.kind == .debugLoopback }.count, 0)
     }
 
     func testMobileRouteResolverAwaitsMagicDNSForPublicStatusRoutes() async throws {

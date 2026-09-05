@@ -22,13 +22,14 @@ from .imports import Importer
 from .runtime_transaction import RuntimeTransactionCoordinator
 from .staged_terminal import StagedTerminal
 from .terminal import TerminalSurface
-from .transport import SSHCommand, Transport
+from .transport import SSHCommand, Transport, TmuxCommand
 from .window_commands import WindowCommands
 
 
 class MainWindow(WindowCommands, Gtk.ApplicationWindow):
     def __init__(self, application, store, vault):
         super().__init__(application=application, title="UniConnect")
+        self.get_style_context().add_class("uniconnect")
         self.store, self.vault = store, vault
         self._ = Translator(store.data.get("settings", {}).get("locale"))
         self.pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="uniconnect")
@@ -42,7 +43,6 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         self._runtime_rendering = False
         self._runtime_operation = None
         self.last_input, self.last_saved = time.monotonic(), 0
-        self.notifications = []
         self.locked = False
         self.fullscreened = False
         self.set_default_size(1350, 840)
@@ -61,6 +61,7 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         self.apply_shortcuts()
         self.apply_theme()
         header = Gtk.HeaderBar(title="UniConnect", show_close_button=True)
+        header.get_style_context().add_class("uc-headerbar")
         header.set_subtitle("Linux")
         self.set_titlebar(header)
         for icon_name, action in (("view-sidebar-symbolic", "sidebar"), ("list-add-symbolic", "new_workspace")):
@@ -69,6 +70,16 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         header.pack_end(self.action_button("open-menu-symbolic", "palette"))
         header.pack_end(self.action_button("changes-prevent-symbolic", "lock"))
         header.pack_end(self.action_button("preferences-system-symbolic", "settings"))
+        from .mobile_desktop import MobileDesktop
+        try:
+            self.mobile = MobileDesktop(self, header)
+        except Exception:
+            # A corrupt approval file blocks networking, never the user's desktop.
+            self.mobile_access_error = self._("Could not load mobile access permissions")
+            failed_mobile = Gtk.Button.new_from_icon_name("smartphone-symbolic", Gtk.IconSize.BUTTON)
+            failed_mobile.set_tooltip_text(self.mobile_access_error)
+            failed_mobile.connect("clicked", lambda *_: self.error(self.mobile_access_error))
+            header.pack_end(failed_mobile)
         self.overlay = Gtk.Stack()
         self.add(self.overlay)
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -77,12 +88,14 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         self.body = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         self.body.set_position(store.data.get("settings", {}).get("sidebarWidth", 255))
         content.pack_start(self.body, True, True, 0)
-        sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin=10)
+        sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin=12)
+        sidebar.get_style_context().add_class("uc-sidebar")
         self.sidebar_search = Gtk.SearchEntry()
         self.sidebar_search.set_placeholder_text(self._("Find"))
         self.sidebar_search.connect("search-changed", lambda *_: self.refresh_sidebar())
         sidebar.pack_start(self.sidebar_search, False, False, 0)
         self.workspace_list = Gtk.ListBox()
+        self.workspace_list.get_style_context().add_class("uc-workspaces")
         self.workspace_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self.workspace_list.connect("row-selected", self.on_workspace_selected)
         scroll = Gtk.ScrolledWindow()
@@ -101,6 +114,7 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         empty = self.empty_panel("Create your first workspace", "Local terminals and SSH sessions, ready when you return.", "new_workspace")
         self.workspace_stack.add_named(empty, "empty")
         status = Gtk.Box(margin=5, spacing=12)
+        status.get_style_context().add_class("uc-status")
         self.status_label = Gtk.Label(xalign=0)
         status.pack_start(self.status_label, True, True, 6)
         content.pack_end(status, False, False, 0)
@@ -206,6 +220,8 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         # Removing a focused row from its own focus/selection signal can crash GTK.
         if not self._closed and not self._sidebar_refresh:
             self._sidebar_refresh = GLib.idle_add(self._render_sidebar)
+        if hasattr(self, "mobile"):
+            self.mobile.workspace_changed()
 
     def _render_sidebar(self):
         self._sidebar_refresh = 0
@@ -220,6 +236,7 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
             if query and query not in (workspace["name"] + " " + " ".join(w["name"] for w in workspace.get("windows", []))).lower():
                 continue
             row = Gtk.ListBoxRow()
+            row.get_style_context().add_class("uc-workspace")
             row.workspace_id = workspace["id"]
             body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5, margin=10)
             title = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END)
@@ -319,6 +336,7 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
                 del self.notebooks[key]
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         top = Gtk.Box(spacing=8, margin=8)
+        top.get_style_context().add_class("uc-workspace-header")
         title = Gtk.Label(label=workspace["name"], xalign=0)
         top.pack_start(title, True, True, 5)
         top.pack_end(self.action_button("list-add-symbolic", "new_window"), False, False, 0)
@@ -331,6 +349,7 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
             notebooks = []
             for pane_id in pane_ids:
                 notebook = Gtk.Notebook()
+                notebook.get_style_context().add_class("uc-terminal-tabs")
                 notebook.set_scrollable(True)
                 notebook.set_group_name(f'uc-{workspace["id"]}')
                 notebook.connect("switch-page", self.on_tab_selected, workspace)
@@ -522,9 +541,97 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
             workspace["hostLabel"] = str(command.endpoint_key())
         elif not Path(workspace["cwd"]).expanduser().is_dir():
             raise ValueError(self._("The folder does not exist"))
+        self.commit_new_workspace(workspace, select=True)
+
+    def commit_new_workspace(self, workspace, *, select=False):
+        """Single creation mutation for desktop dialogs and explicit mobile RPCs."""
         self.store.workspaces.append(workspace)
-        self.persist()
-        self.select_workspace(workspace["id"])
+        try:
+            self.store.save()
+        except Exception:
+            self.store.workspaces.remove(workspace)
+            raise
+        self.refresh_sidebar()
+        if select:
+            self.select_workspace(workspace["id"])
+        return workspace
+
+    def create_mobile_workspace(self, params):
+        from .mobile_protocol import RPCError
+        if (self.store._active_transaction is not None or self.store.journal_path.exists()
+                or self._runtime_operation and self._runtime_operation.active):
+            raise RPCError("busy", self._("Importación en curso"))
+        name, kind = params.get("name"), params.get("kind", "local")
+        if not isinstance(name, str) or not name.strip() or len(name.encode()) > 512 or not name.isprintable():
+            raise RPCError("invalid_params", self._("Nombre de espacio de trabajo no válido"))
+        workspace = {"id": str(uuid.uuid4()), "name": name.strip(), "kind": kind, "windows": []}
+        if kind == "ssh":
+            source = next((item for item in self.store.workspaces
+                           if item["id"] == params.get("source_workspace_id") and item["kind"] == "ssh"), None)
+            if source is None:
+                raise RPCError("invalid_params", self._("Elige un espacio SSH existente del que heredar la conexión"))
+            for key in ("credentialId", "hostLabel", "cwd", "color"):
+                if key in source:
+                    workspace[key] = source[key]
+        elif kind == "local":
+            directory = params.get("directory")
+            if not isinstance(directory, str) or not directory.startswith("/") or not Path(directory).is_dir():
+                raise RPCError("invalid_params", self._("The folder does not exist"))
+            workspace["cwd"] = directory
+        else:
+            raise RPCError("invalid_params", self._("Tipo de espacio de trabajo no válido"))
+        return self.commit_new_workspace(workspace)
+
+    def create_mobile_window(self, workspace, params):
+        from .mobile_protocol import RPCError
+        if (self.store._active_transaction is not None or self.store.journal_path.exists()
+                or self._runtime_operation and self._runtime_operation.active):
+            raise RPCError("busy", self._("Importación en curso"))
+        name, agent = params.get("name"), params.get("agent", "terminal")
+        if not isinstance(name, str) or not name.strip() or len(name.encode()) > 512 or not name.isprintable():
+            raise RPCError("invalid_params", self._("Nombre de ventana no válido"))
+        if agent not in ("terminal", "claude", "codex", "agy", "grok") or workspace["kind"] == "ssh" and agent != "terminal":
+            raise RPCError("invalid_params", self._("Agente no válido para este espacio de trabajo"))
+        identifier = str(uuid.uuid4())
+        directory = params.get("directory") or workspace.get("cwd") or str(Path.home())
+        if not isinstance(directory, str) or not directory.startswith("/") or not directory.isprintable() or len(directory) > 4096:
+            raise RPCError("invalid_params", self._("Carpeta no válida"))
+        if workspace["kind"] == "local" and (params.get("tmux_session") is not None or not Path(directory).is_dir()):
+            raise RPCError("invalid_params", self._("The folder does not exist"))
+        session = params.get("tmux_session") if workspace["kind"] == "ssh" else "uc-" + identifier.replace("-", "")
+        try:
+            TmuxCommand.validate_name(session)
+        except Exception as error:
+            raise RPCError("invalid_params", self._("Nombre de sesión tmux no válido")) from error
+        socket_name = (next((item.get("tmuxSocket") for item in workspace["windows"] if item.get("tmuxSocket")), "uniconnect")
+                       if workspace["kind"] == "ssh" else "uniconnect-local")
+        if any(item.get("tmux") == session and (item.get("tmuxSocket") or socket_name) == socket_name
+               for item in workspace["windows"]):
+            raise RPCError("conflict", self._("This session is already open in another window"))
+        record = {"id": identifier, "name": name.strip(), "agent": "shell" if agent == "terminal" else agent,
+                  "cwd": directory, "tmux": session, "tmuxSocket": socket_name, "paneId": "main"}
+        self.commit_new_window(workspace, record, select=False)
+        return record
+
+    def commit_new_window(self, workspace, record, *, select=True):
+        """Persist one named window before asynchronously preparing its durable client."""
+        previous_selected = workspace.get("selectedWindowId")
+        workspace["windows"].append(record)
+        if select:
+            workspace["selectedWindowId"] = record["id"]
+        try:
+            self.store.save()
+        except Exception:
+            workspace["windows"].remove(record)
+            if previous_selected is None:
+                workspace.pop("selectedWindowId", None)
+            else:
+                workspace["selectedWindowId"] = previous_selected
+            raise
+        self.build_workspace(workspace, create_ids=(record["id"],))
+        self.refresh_sidebar()
+        if select:
+            self.select_workspace(workspace["id"])
 
     def action_new_window(self, pane_id=None):
         workspace = self.current_workspace()
@@ -540,15 +647,11 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         result.update(id=str(uuid.uuid4()), paneId=pane_id or (self.focused_surface.record.get("paneId", "main") if self.focused_surface else "main"), tmuxSocket="uniconnect")
         if workspace["kind"] == "local":
             result["tmuxSocket"] = "uniconnect-local"
-            result["tmux"] = "ucl-" + uuid.uuid4().hex[:20]
+            result["tmux"] = "uc-" + result["id"].replace("-", "")
         if not result["sessionId"]:
             result.pop("sessionId")
         def created(_=None):
-            workspace["windows"].append(result)
-            workspace["selectedWindowId"] = result["id"]
-            self.persist()
-            self.build_workspace(workspace, create_ids=(result["id"],))
-            self.select_workspace(workspace["id"])
+            self.commit_new_window(workspace, result)
         if workspace["kind"] == "ssh":
             transport = Transport(SSHCommand.parse(self.connection(workspace)), socket_name="uniconnect")
             self.background(lambda: transport.ensure_session(result), created)
@@ -870,7 +973,21 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
 
     def apply_theme(self):
         theme = self.store.data.get("settings", {}).get("theme", "dark")
-        Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", theme == "dark")
+        settings = Gtk.Settings.get_default()
+        settings.set_property("gtk-application-prefer-dark-theme", theme == "dark")
+        effective_dark = theme == "dark" or (theme == "system" and "dark" in str(settings.get_property("gtk-theme-name")).lower())
+        context = self.get_style_context()
+        if effective_dark:
+            context.add_class("uc-dark")
+        else:
+            context.remove_class("uc-dark")
+        if not hasattr(self, "_appearance_provider"):
+            path = Path(__file__).with_name("appearance.css")
+            if path.is_file():
+                provider = Gtk.CssProvider()
+                provider.load_from_path(str(path))
+                Gtk.StyleContext.add_provider_for_screen(self.get_screen(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+                self._appearance_provider = provider
 
     def apply_shortcuts(self):
         custom = self.store.data.get("settings", {}).get("shortcuts", {})
@@ -904,10 +1021,26 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
             self.apply_shortcuts()
             self.refresh_appearance()
 
+    @property
+    def notifications(self):
+        return self.store.data.setdefault("notificationHistory", [])
+
+    def mark_notifications_read(self, window_id):
+        for notification in self.notifications:
+            if notification["surface_id"] == window_id:
+                notification["is_read"] = True
+
     def notify_window(self, workspace, window):
         window["unread"] = True
-        self.notifications.append((workspace["id"], window["id"], window["name"], time.time()))
-        self.notifications = self.notifications[-100:]
+        from .mobile_rpc import notification_record
+        item = notification_record(workspace, window, time.time(), str(uuid.uuid4()))
+        item["body"] = self._("Session needs attention")
+        history = self.notifications
+        history.append(item)
+        del history[:-1000]
+        self.persist()
+        if hasattr(self, "mobile"):
+            self.mobile.notification_created(item)
         notification = Gio.Notification.new(window["name"])
         notification.set_body(workspace["name"] + " · " + self._("Session needs attention"))
         self.get_application().send_notification(window["id"], notification)
@@ -916,7 +1049,9 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
     def action_notifications(self):
         dialog = Gtk.Dialog(title=self._("Notifications"), transient_for=self, modal=True)
         dialog.add_button(self._("Close"), Gtk.ResponseType.CLOSE)
-        for workspace_id, window_id, name, stamp in reversed(self.notifications):
+        for item in reversed(self.notifications):
+            workspace_id, window_id = item["workspace_id"], item["surface_id"]
+            name, stamp = item["title"], item["created_at_ms"] / 1000
             button = Gtk.Button(label=time.strftime("%H:%M", time.localtime(stamp)) + "  " + name)
             def select(_, wid=workspace_id, pid=window_id):
                 self.select_workspace(wid)
@@ -1124,6 +1259,10 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
             GLib.source_remove(self._tick_source)
             self._tick_source = 0
         self.persist()
+        if hasattr(self, "mobile"):
+            self.mobile.close()
+        if hasattr(self, "_appearance_provider"):
+            Gtk.StyleContext.remove_provider_for_screen(self.get_screen(), self._appearance_provider)
         for surface in self.surfaces.values():
             surface.dispose()
         if hasattr(self, "clipboard_images"):

@@ -147,6 +147,12 @@ private final class MobileHostConnectionRegistry: @unchecked Sendable {
         defer { lock.unlock() }
         return Array(connections.values)
     }
+
+    func connection(id: UUID) -> MobileHostConnection? {
+        lock.lock()
+        defer { lock.unlock() }
+        return connections[id]
+    }
 }
 
 private enum MobileHostPublicStatusCache {
@@ -309,6 +315,7 @@ final class MobileHostService {
             "terminal.replay.v1",
             "terminal.viewport.v1",
             "workspace.actions.v1",
+            "notifications.v1",
         ]
         #if DEBUG
         capabilities.append("dogfood.v1")
@@ -329,6 +336,9 @@ final class MobileHostService {
     private var appliedPreferredPort: Int?
     private var activeConnections: [UUID: MobileHostConnection] = [:]
     private var clientIDsByConnectionID: [UUID: Set<String>] = [:]
+    private var peerAddressesByConnectionID: [UUID: String] = [:]
+    private var access: UniConnectMobileAccessModel?
+    private var accessRevocationTask: Task<Void, Never>?
     private var lastErrorDescription: String?
     /// Injected once via `configure(auth:)` at app startup, before the
     /// listener starts accepting connections.
@@ -340,6 +350,21 @@ final class MobileHostService {
     #endif
 
     private init() {}
+
+    /// The composition root injects local, device/IP approvals before startup.
+    /// Account auth and fields in RPC JSON never authorize this transport.
+    func configure(access: UniConnectMobileAccessModel) {
+        self.access = access
+        accessRevocationTask?.cancel()
+        let revocations = access.revocations()
+        accessRevocationTask = Task { [weak self] in
+            for await address in revocations {
+                guard !Task.isCancelled else { break }
+                await self?.disconnectPeer(address: address)
+            }
+        }
+        Task { await access.load() }
+    }
 
     /// Inject the auth dependency. Call once at the composition root.
     func configure(auth: AuthCoordinator) {
@@ -375,12 +400,9 @@ final class MobileHostService {
         cmuxDebugLog("mobile.emit topic=\(topic) connections=\(connections.count)")
         #endif
         for connection in connections {
-            Task {
-                let delivered = await connection.sendEvent(topic: topic, payload: payload)
-                #if DEBUG
-                cmuxDebugLog("mobile.emit -> connection delivered=\(delivered) topic=\(topic)")
-                #endif
-            }
+            // Enqueue synchronously at the capture boundary. A Task per event
+            // can reorder frames before they even reach the connection actor.
+            connection.enqueueEvent(topic: topic, payload: payload)
         }
     }
 
@@ -546,7 +568,8 @@ final class MobileHostService {
         tcpOptions.noDelay = true
         let candidate: NWListener
         do {
-            candidate = try NWListener(using: NWParameters(tls: nil, tcp: tcpOptions), on: endpointPort)
+            let parameters = try tailnetListenerParameters(tcpOptions: tcpOptions, port: endpointPort)
+            candidate = try NWListener(using: parameters)
         } catch {
             return nil
         }
@@ -621,7 +644,9 @@ final class MobileHostService {
             Task { await connection.close(reason: "pairing port changed") }
         }
         activeConnections.removeAll()
-        clientIDsByConnectionID.removeAll()
+        peerAddressesByConnectionID.removeAll()
+        // Closing each connection still owns its viewport cleanup; clearing its
+        // client IDs here would make the close callback unable to release them.
 
         listener = candidate
         listenerGeneration = generation
@@ -709,6 +734,11 @@ final class MobileHostService {
             listenerPort = nil
             nextListener.start(queue: callbackQueue)
         } catch {
+            if error is TailnetListenerError {
+                lastErrorDescription = String(localized: "uniconnect.mobile.access.tailscaleUnavailable", defaultValue: "Activa Tailscale para permitir el acceso desde otros dispositivos.")
+                drainReadinessWaiters()
+                return
+            }
             if usePreferredPort {
                 mobileHostLog.info("mobile host preferred port unavailable before listener start, falling back to an ephemeral port")
                 startListener(usePreferredPort: false)
@@ -727,13 +757,29 @@ final class MobileHostService {
         usePreferredPort: Bool,
         port: Int
     ) throws -> NWListener {
+        guard access != nil, let address = MobileRouteResolver.tailscaleBindAddress(),
+              TailnetPeerAddress(address) != nil else { throw TailnetListenerError.unavailable }
+        let endpointPort: NWEndpoint.Port
         if usePreferredPort,
            let rawPort = UInt16(exactly: port),
-           let endpointPort = NWEndpoint.Port(rawValue: rawPort) {
-            return try NWListener(using: parameters, on: endpointPort)
+           let preferredPort = NWEndpoint.Port(rawValue: rawPort) {
+            endpointPort = preferredPort
+        } else {
+            endpointPort = .any
         }
-        return try NWListener(using: parameters, on: .any)
+        parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(address), port: endpointPort)
+        return try NWListener(using: parameters)
     }
+
+    private func tailnetListenerParameters(tcpOptions: NWProtocolTCP.Options, port: NWEndpoint.Port) throws -> NWParameters {
+        guard access != nil, let address = MobileRouteResolver.tailscaleBindAddress(),
+              TailnetPeerAddress(address) != nil else { throw TailnetListenerError.unavailable }
+        let parameters = NWParameters(tls: nil, tcp: tcpOptions)
+        parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(address), port: port)
+        return parameters
+    }
+
+    private enum TailnetListenerError: Error { case unavailable }
 
     func stop() {
         listenerGeneration = UUID()
@@ -751,6 +797,7 @@ final class MobileHostService {
             Task { await connection.close(reason: "service stopped") }
         }
         activeConnections.removeAll()
+        peerAddressesByConnectionID.removeAll()
         clientIDsByConnectionID.removeAll()
         MobileHostEventSubscriptionTracker.reset()
         MobileHostPublicStatusCache.update(routes: [])
@@ -931,31 +978,21 @@ final class MobileHostService {
                 return
             }
 
-            #if !DEBUG
-            // Release builds never advertise a loopback route (the 127.0.0.1
-            // `debugLoopback` route is DEBUG-only, see `MobileRouteResolver`), so a
-            // legitimate phone always reaches the Mac over the Tailscale interface.
-            // A connection arriving on loopback in release can only be a local
-            // process (or a browser that somehow framed the binary protocol), never
-            // the real client, so refuse it outright. DEBUG keeps loopback so the
-            // iOS Simulator (which reaches the Mac via 127.0.0.1) can still pair.
-            if Self.isLoopbackConnection(connection) {
-                mobileHostLog.error("mobile host rejected loopback connection in release build")
+            guard let peerAddress = Self.observedTailnetPeerAddress(connection) else {
+                mobileHostLog.error("mobile host rejected a non-Tailscale or non-numeric peer")
                 connection.cancel()
                 MobileHostRequestActivity.endConnection()
                 return
             }
-            #endif
 
             let id = UUID()
             let session = MobileHostConnection(
                 id: id,
                 connection: connection,
                 authorizeRequest: { request in
-                    if !Self.requiresAuthorization(method: request.method) {
-                        return nil
-                    }
-                    return await MobileHostService.shared.authorizationError(for: request)
+                    await MobileHostService.shared.authorizationError(
+                        for: request, trustedPeerAddress: peerAddress
+                    )
                 },
                 onAuthorizedRequest: { request in
                     guard let clientID = Self.clientID(from: request.params) else {
@@ -989,12 +1026,38 @@ final class MobileHostService {
                 MobileHostRequestActivity.endConnection()
                 return
             }
+            guard await MobileHostService.shared.registerAcceptedPeer(
+                address: peerAddress, connectionID: id, generation: generation
+            ) else {
+                await session.close(reason: "listener generation changed")
+                return
+            }
             await session.start()
         }
     }
 
     private func canAcceptConnection(generation: UUID) -> Bool {
-        listener != nil && generation == listenerGeneration
+        listener != nil && generation == listenerGeneration && access != nil
+    }
+
+    private func registerAcceptedPeer(address: String, connectionID: UUID, generation: UUID) -> Bool {
+        guard canAcceptConnection(generation: generation) else { return false }
+        peerAddressesByConnectionID[connectionID] = address
+        return true
+    }
+
+    private func disconnectPeer(address: String) async {
+        let ids = peerAddressesByConnectionID.compactMap { $0.value == address ? $0.key : nil }
+        for id in ids {
+            // Release the mobile size constraint before awaiting network teardown.
+            let clientIDs = clientIDsByConnectionID.removeValue(forKey: id) ?? []
+            if !clientIDs.isEmpty {
+                TerminalController.shared.clearMobileViewportReports(clientIDs: clientIDs, reason: "mobile.access.revoked")
+            }
+            if let connection = MobileHostConnectionRegistry.shared.connection(id: id) ?? activeConnections[id] {
+                await connection.close(reason: "local device approval revoked")
+            }
+        }
     }
 
     func createAttachTicket(
@@ -1053,47 +1116,20 @@ final class MobileHostService {
     }
 
     private func accept(_ connection: NWConnection, generation: UUID) {
-        guard listener != nil, generation == listenerGeneration else {
-            connection.cancel()
-            MobileHostRequestActivity.endConnection()
-            return
-        }
-        guard activeConnections.count < Self.maximumActiveConnectionCount else {
-            mobileHostLog.error("mobile host rejected connection because active connection limit was reached")
-            connection.cancel()
-            MobileHostRequestActivity.endConnection()
-            return
-        }
+        // Legacy/main-actor callers share the exact same endpoint authorization,
+        // connection cap, revocation tracking and viewport cleanup as the listener.
+        Self.acceptConnectionOffMain(connection, generation: generation)
+    }
 
-        let id = UUID()
-        let session = MobileHostConnection(
-            id: id,
-            connection: connection,
-            authorizeRequest: { request in
-                await MobileHostService.shared.authorizationError(for: request)
-            },
-            onAuthorizedRequest: { request in
-                if let clientID = Self.clientID(from: request.params) {
-                    await MobileHostService.shared.recordClientID(clientID, for: id)
-                }
-            },
-            handleRequest: { request in
-                if request.method == "mobile.host.status" {
-                    return await MobileHostService.shared.publicHostStatusResult()
-                }
-                let result = await TerminalController.shared.mobileHostHandleRPC(request)
-                await MobileHostService.shared.recordCreatedResourcesIfNeeded(
-                    request: request,
-                    result: result
-                )
-                return result
-            },
-            onClose: { id in
-                await MobileHostService.shared.removeConnection(id: id)
-            }
-        )
-        activeConnections[id] = session
-        Task { await session.start() }
+    nonisolated private static func observedTailnetPeerAddress(_ connection: NWConnection) -> String? {
+        tailnetPeerAddress(from: connection.currentPath?.remoteEndpoint)
+            ?? tailnetPeerAddress(from: connection.endpoint)
+    }
+
+    /// Numeric Network.framework endpoints are authoritative; DNS/JSON names are
+    /// deliberately rejected rather than resolved or treated as approval keys.
+    nonisolated static func tailnetPeerAddress(from endpoint: NWEndpoint?) -> String? {
+        UniConnectMobilePeerEndpoint.tailnetAddress(from: endpoint)
     }
 
     /// Whether an incoming connection's remote peer is on the loopback interface.
@@ -1130,6 +1166,7 @@ final class MobileHostService {
     private func removeConnection(id: UUID) {
         MobileHostConnectionRegistry.shared.remove(id: id)
         activeConnections.removeValue(forKey: id)
+        peerAddressesByConnectionID.removeValue(forKey: id)
         // Drop this connection's sticky viewport reports so a disconnected
         // device stops pinning the shared grid (and its macOS viewport border
         // clears) even though it never sent an explicit clear.
@@ -1157,6 +1194,15 @@ final class MobileHostService {
 
     func debugAuthorizationError(for request: MobileHostRPCRequest) async -> MobileHostRPCResult? {
         await authorizationError(for: request)
+    }
+
+    private func authorizationError(for request: MobileHostRPCRequest, trustedPeerAddress: String) async -> MobileHostRPCResult? {
+        guard let access, let peer = TailnetPeerAddress(trustedPeerAddress) else {
+            return UniConnectMobileRequestAuthorizer.unavailable
+        }
+        return await UniConnectMobileRequestAuthorizer(access: access).authorizationError(
+            for: request, observedPeer: peer
+        )
     }
 
     private func authorizationError(for request: MobileHostRPCRequest) async -> MobileHostRPCResult? {
@@ -1755,6 +1801,8 @@ actor MobileHostConnection {
     private static let maximumReceiveBufferByteCount = MobileSyncFrameCodec.defaultMaximumFrameByteCount + MobileSyncFrameCodec.headerByteCount
     private static let defaultFirstFrameTimeoutNanoseconds: UInt64 = 15 * 1_000_000_000
     private static let defaultIdleTimeoutNanoseconds: UInt64 = 30 * 1_000_000_000
+    private static let maximumInFlightRequestCount = 32
+    private static let maximumInFlightRequestBytes = 8 * 1024 * 1024
 
     private let id: UUID
     private let connection: NWConnection
@@ -1769,6 +1817,9 @@ actor MobileHostConnection {
     private var firstFrameTimeoutTask: Task<Void, Never>?
     private var idleTimeoutTask: Task<Void, Never>?
     private var responseTasks: [UUID: Task<Void, Never>] = [:]
+    private var responseFrameByteCounts: [UUID: Int] = [:]
+    private var inFlightRequestBytes = 0
+    private nonisolated let outboundQueue = MobileHostOutboundQueue()
     private var didDecodeFirstFrame = false
     private var isClosed = false
     /// stream_id → set of topics this connection is subscribed to.
@@ -1811,12 +1862,15 @@ actor MobileHostConnection {
             return
         }
         isClosed = true
+        outboundQueue.close()
         firstFrameTimeoutTask?.cancel()
         firstFrameTimeoutTask = nil
         idleTimeoutTask?.cancel()
         idleTimeoutTask = nil
         let tasks = responseTasks.values
         responseTasks.removeAll()
+        responseFrameByteCounts.removeAll()
+        inFlightRequestBytes = 0
         for task in tasks {
             task.cancel()
         }
@@ -1920,7 +1974,14 @@ actor MobileHostConnection {
         guard !isClosed else {
             return
         }
+        guard responseTasks.count < Self.maximumInFlightRequestCount,
+              frame.count <= Self.maximumInFlightRequestBytes - inFlightRequestBytes else {
+            close(reason: "in-flight request limit exceeded; reconnect and replay")
+            return
+        }
         let taskID = UUID()
+        responseFrameByteCounts[taskID] = frame.count
+        inFlightRequestBytes += frame.count
         let task = Task { [weak self] in
             await self?.respond(to: frame)
             await self?.finishResponseTask(taskID)
@@ -1930,6 +1991,7 @@ actor MobileHostConnection {
 
     private func finishResponseTask(_ taskID: UUID) {
         responseTasks[taskID] = nil
+        inFlightRequestBytes -= responseFrameByteCounts.removeValue(forKey: taskID) ?? 0
         if responseTasks.isEmpty {
             startIdleTimeout()
         }
@@ -2034,7 +2096,9 @@ actor MobileHostConnection {
             let streamID = (request.params["stream_id"] as? String) ?? UUID().uuidString
             let topicsArray = (request.params["topics"] as? [String]) ?? []
             let topics = Set(topicsArray.filter { !$0.isEmpty })
-            guard !topics.isEmpty else {
+            guard !topics.isEmpty, topics.count <= 16, topics.allSatisfy({ $0.utf8.count <= 128 }),
+                  !streamID.isEmpty, streamID.utf8.count <= 128,
+                  subscriptions[streamID] != nil || subscriptions.count < 8 else {
                 return .failure(MobileHostRPCError(code: "invalid_params", message: "topics is required"))
             }
             subscribe(streamID: streamID, topics: topics)
@@ -2126,6 +2190,30 @@ actor MobileHostConnection {
         return await sendResponse(data)
     }
 
+    /// Preserves producer order without spawning a Task per event. Acceptance
+    /// means queued, not network delivery. Overflow closes the entire connection
+    /// so clients resubscribe and replay instead of silently losing a delta.
+    @discardableResult
+    nonisolated func enqueueEvent(topic: String, payload: [String: Any]) -> Bool {
+        guard !outboundQueue.isClosed else { return false }
+        do {
+            let envelope: [String: Any] = ["kind": "event", "topic": topic, "payload": payload]
+            let data = try JSONSerialization.data(withJSONObject: envelope)
+            let frame = try MobileSyncFrameCodec.encodeFrame(data)
+            startOutboundConsumer()
+            switch outboundQueue.enqueue(frame, topic: topic) {
+            case .queued: return true
+            case .closed: return false
+            case .overflow:
+                Task { await close(reason: "outbound queue limit exceeded; reconnect and replay") }
+                return false
+            }
+        } catch {
+            closeFromProducer(reason: "event frame encode failed; reconnect and replay")
+            return false
+        }
+    }
+
     private func sendResponse(_ response: Data) async -> Bool {
         guard !isClosed else {
             return false
@@ -2138,25 +2226,44 @@ actor MobileHostConnection {
             return false
         }
 
-        return await withCheckedContinuation { continuation in
-            connection.send(
-                content: frame,
-                contentContext: .defaultMessage,
-                isComplete: false,
-                completion: .contentProcessed { [weak self] error in
-                    guard let self else {
-                        continuation.resume(returning: false)
-                        return
+        startOutboundConsumer()
+        let succeeded = await outboundQueue.send(frame)
+        if !succeeded, outboundQueue.isClosed { close(reason: "outbound queue closed; reconnect and replay") }
+        return succeeded
+    }
+
+    nonisolated private func startOutboundConsumer() {
+        if outboundQueue.claimConsumer() { Task { await drainOutboundQueue() } }
+    }
+
+    nonisolated private func closeFromProducer(reason: String) {
+        if outboundQueue.close() { Task { await close(reason: reason) } }
+    }
+
+    private func drainOutboundQueue() async {
+        for await frame in outboundQueue.frames {
+            if isClosed || outboundQueue.isClosed || frame.topic.map({ !isSubscribed(to: $0) }) == true {
+                outboundQueue.complete(frame, succeeded: false)
+                continue
+            }
+            // Only this pump calls NWConnection.send, and the allowance for the
+            // in-flight frame remains charged until contentProcessed completes.
+            let succeeded = await withCheckedContinuation { continuation in
+                connection.send(
+                    content: frame.data,
+                    contentContext: .defaultMessage,
+                    isComplete: false,
+                    completion: .contentProcessed { error in
+                        continuation.resume(returning: error == nil)
                     }
-                    if let error {
-                        Task { await self.close(reason: String(describing: error)) }
-                        continuation.resume(returning: false)
-                    } else {
-                        continuation.resume(returning: true)
-                    }
-                }
-            )
+                )
+            }
+            outboundQueue.complete(frame, succeeded: succeeded)
+            if !succeeded {
+                close(reason: "network send failed")
+            }
         }
+        if !isClosed { close(reason: "outbound queue closed; reconnect and replay") }
     }
 
     private func handleState(_ state: NWConnection.State, connectionID: UUID) {

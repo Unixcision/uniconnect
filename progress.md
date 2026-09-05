@@ -6,10 +6,12 @@ de conexión, UUID de conversaciones ni capturas privadas.
 ## Ramas y coordinación
 
 - Repositorio: `Unixcision/uniconnect`. Principal: `uniconnect`.
-- Desarrollo conjunto: `desarrollo/multiplataforma`, no una línea Linux separada.
-- Trabajo funcional publicado: `25eec3eb13`; incluye el cambio de español
-  `29a8edec3e` de principal. Principal no contiene aún estas mejoras de
-  desarrollo; su integración sería un avance directo.
+- Rama única de entrega: `uniconnect`. El 2026-09-05 se incorporó por avance
+  directo y se publicó `fa91daa4c` desde `desarrollo/multiplataforma`, incluidos
+  todos los cambios Linux, el catálogo compartido y español `29a8edec3e`.
+- El usuario ha pedido retirar `desarrollo/multiplataforma` tras esa integración;
+  la eliminación se realiza condicionada a su SHA incorporado para no borrar
+  trabajo remoto nuevo. Los commits permanecen en la principal.
 - Inventario remoto: 1.818 ramas vigentes, ninguna contenía `progress.md`
   antes de crear este documento. No se han encontrado estados publicados de
   otros equipos. Sus cambios locales no pueden darse por incorporados.
@@ -33,14 +35,18 @@ de conexión, UUID de conversaciones ni capturas privadas.
 
 ## Validación e integración pendientes
 
-- La ejecución de CI `33973077181` falló solo en seis subcasos Python de Ubuntu:
-  los procesos de prueba hijos no recibían `PYTHONPATH`. Este bloque añade la
-  ruta explícita a la tarea; queda comprobar la nueva ejecución remota.
+- El fallo de `PYTHONPATH` en `33973077181` está resuelto: la ejecución
+  [33981170986](https://github.com/Unixcision/uniconnect/actions/runs/33981170986)
+  de `fa91daa4c` terminó correctamente en macOS y Ubuntu.
 - No se ha validado la aplicación macOS completa con Xcode. El núcleo portable
   en verde no demuestra esa compilación ni la paridad completa de interfaces.
 - El proceso GUI Linux ya abierto no fue reiniciado con los últimos commits.
-- Falta conocer/publicar el progreso local de los otros equipos antes de afirmar
-  que está todo unificado. Principal no se ha adelantado en esta revisión.
+- En curso en el Mac: Android nativo, autorización propia por IP Tailscale,
+  terminales locales durables y notificaciones móviles. Primera APK instalada
+  en Pixel físico; no confundir esta base en desarrollo con la Release instalada.
+- Nuevos encargos: mantener el diseño aprobado del Mac, modernizar Linux con
+  esa identidad visual y consolidar cambios revisados en la principal.
+  Detalle y criterios de cierre: [MULTIPLATAFORMA_PLAN.md](docs/MULTIPLATAFORMA_PLAN.md).
 - Continúan pendientes la convergencia del coordinador de transacciones con Mac,
   ciclo completo de agentes, bridge autenticado y otras diferencias documentadas
   en `linux/PORT_STATUS.md` y `docs/CROSS-PLATFORM.md`.

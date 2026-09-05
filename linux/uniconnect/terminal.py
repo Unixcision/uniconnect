@@ -55,6 +55,8 @@ class TerminalSurface(Gtk.Box):
         self.terminal.connect("focus-in-event", self.on_focus)
         self.terminal.connect("button-press-event", self.on_button)
         self.terminal.connect("notify::current-directory-uri", self.on_directory)
+        self.terminal.connect("contents-changed", self.on_mobile_content_changed)
+        self.terminal.connect("cursor-moved", self.on_mobile_content_changed)
         self.terminal.drag_dest_set(Gtk.DestDefaults.ALL, [], Gdk.DragAction.COPY)
         self.terminal.drag_dest_add_uri_targets()
         self.terminal.connect("drag-data-received", self.on_drop)
@@ -72,6 +74,7 @@ class TerminalSurface(Gtk.Box):
                                        adjustment=self.terminal.get_vadjustment()), False, False, 0)
         self.pack_start(scroll, True, True, 0)
         self.footer = Gtk.Box(spacing=8, margin_start=10, margin_end=8, margin_top=3, margin_bottom=3)
+        self.footer.get_style_context().add_class("uc-terminal-status")
         self.status_label = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.MIDDLE)
         self.footer.pack_start(self.status_label, True, True, 0)
         self.retry = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.MENU)
@@ -101,11 +104,20 @@ class TerminalSurface(Gtk.Box):
         settings = self.owner.store.data.get("settings", {})
         self.terminal.set_font(Pango.FontDescription(settings.get("font", "Monospace 11")))
         self.terminal.set_font_scale(self.owner.font_scale)
-        dark = settings.get("theme", "dark") != "light"
+        context = self.owner.get_style_context() if hasattr(self.owner, "get_style_context") else None
+        dark = context.has_class("uc-dark") if context else settings.get("theme", "dark") != "light"
         fg, bg = Gdk.RGBA(), Gdk.RGBA()
         fg.parse("#dce2ed" if dark else "#20242d")
         bg.parse("#11151c" if dark else "#ffffff")
+        if dark and context:
+            found, shared_background = context.lookup_color("uc_night")
+            if found:
+                bg = shared_background
         self.terminal.set_colors(fg, bg, [])
+
+    def on_mobile_content_changed(self, *_):
+        if not self.disposed and hasattr(self.owner, "mobile"):
+            self.owner.mobile.terminal_changed(self.record["id"])
 
     def update_status(self, status, detail=""):
         self.status = status
@@ -397,6 +409,8 @@ class TerminalSurface(Gtk.Box):
         self.owner.focused_surface = self
         self.workspace["selectedWindowId"] = self.record["id"]
         self.record["unread"] = False
+        if hasattr(self.owner, "mark_notifications_read"):
+            self.owner.mark_notifications_read(self.record["id"])
         self.owner.refresh_sidebar()
         return False
 

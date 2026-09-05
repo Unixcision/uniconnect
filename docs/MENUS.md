@@ -267,6 +267,6 @@ Cobertura determinista asociada:
 
 ## Localización
 
-Las cadenas de la app están en `Resources/Localizable.xcstrings`. Las claves tocadas por esta superficie tienen las 20 localizaciones del catálogo: `ar`, `bs`, `da`, `de`, `en`, `es`, `fr`, `it`, `ja`, `km`, `ko`, `nb`, `pl`, `pt-BR`, `ru`, `th`, `tr`, `uk`, `zh-Hans` y `zh-Hant`. El paquete Bonsplit mantiene sus catálogos `en`, `es` y `ja`.
+Las cadenas de UniConnect están en `Resources/Localizable.xcstrings`, únicamente en español (`sourceLanguage: es`, `localizations.es`). macOS y Linux comparten ese catálogo; Android mantiene recursos españoles nativos. Las traducciones internas de dependencias como Bonsplit no cambian el idioma del producto. Las preferencias de idioma antiguas se normalizan a español sin modificar el idioma del sistema o de las sesiones.
 
 Los títulos procedentes de configuración personalizada son datos del usuario y se muestran literalmente; todos los títulos propiedad de UniConnect usan claves localizadas.

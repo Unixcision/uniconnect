@@ -7,6 +7,10 @@ remaining differences are recorded in [PORT_STATUS.md](PORT_STATUS.md).
 This is the Linux edition of the same UniConnect product, not a separate fork.
 Both platforms follow the [shared development policy](../docs/CROSS-PLATFORM.md).
 
+El adaptador móvil personal y sus límites están documentados en
+[Acceso móvil por Tailscale](MOBILE_ACCESS.md). No implica paridad visual completa
+con macOS ni validación de Android en Linux.
+
 ## Install and open
 
 On Ubuntu 24.04:

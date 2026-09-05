@@ -1,5 +1,9 @@
 # UniConnect finalisation plan
 
+Contrato multiplataforma vigente y evidencias:
+[docs/MULTIPLATAFORMA_PLAN.md](docs/MULTIPLATAFORMA_PLAN.md).
+Las listas históricas siguientes no acreditan por sí solas ese objetivo.
+
 Updated: 2026-09-03
 
 This is the live execution checklist for the current candidate. Historical builds,

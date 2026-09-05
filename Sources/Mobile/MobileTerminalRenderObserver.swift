@@ -8,23 +8,13 @@ import Foundation
 final class MobileTerminalRenderObserver {
     static let shared = MobileTerminalRenderObserver()
 
-    private struct RenderGridState {
-        var columns: Int
-        var rows: Int
-        var stateSeq: UInt64
-        /// Per-row signatures of text *and* resolved styling, so a style-only
-        /// change (e.g. typing over a dimmed shell autosuggestion) still marks
-        /// the row dirty. See `MobileTerminalRenderGridFrame.rowSignatures()`.
-        var rowSignatures: [String]
-    }
-
     private var releaseFrameDemand: (() -> Void)?
     private var releaseTickDemand: (() -> Void)?
     private var observers: [NSObjectProtocol] = []
     private var pendingSurfaceIDs = Set<UUID>()
     private var hasPendingGlobalUpdate = false
     private var isEmitFlushScheduled = false
-    private var renderGridStatesBySurfaceID: [UUID: RenderGridState] = [:]
+    private var renderUpdates = MobileTerminalRenderUpdateState()
 
     private init() {}
 
@@ -81,7 +71,7 @@ final class MobileTerminalRenderObserver {
         pendingSurfaceIDs.removeAll()
         hasPendingGlobalUpdate = false
         isEmitFlushScheduled = false
-        renderGridStatesBySurfaceID.removeAll()
+        renderUpdates.removeAll()
     }
 
     func noteTerminalBytes(surfaceID: UUID) {
@@ -124,7 +114,7 @@ final class MobileTerminalRenderObserver {
             pendingSurfaceIDs.removeAll()
             hasPendingGlobalUpdate = false
             isEmitFlushScheduled = false
-            renderGridStatesBySurfaceID.removeAll()
+            renderUpdates.removeAll()
         }
     }
 
@@ -185,54 +175,17 @@ final class MobileTerminalRenderObserver {
         let stateSeq = MobileTerminalByteTee.shared.currentSequence(surfaceID: surfaceID) ?? 0
         guard let surface = TerminalSurfaceRegistry.shared.surface(id: surfaceID),
               let snapshot = surface.mobileRenderGridFrame(stateSeq: stateSeq, full: true) else {
-            renderGridStatesBySurfaceID.removeValue(forKey: surfaceID)
+            renderUpdates.remove(surfaceID: surfaceID.uuidString)
             return
         }
 
-        let previous = renderGridStatesBySurfaceID[surfaceID]
-        let nextSignatures = snapshot.frame.rowSignatures()
-        let frame: MobileTerminalRenderGridFrame
-        if let previous,
-           previous.columns == snapshot.frame.columns,
-           previous.rows == snapshot.frame.rows {
-            var changedRows = Set<Int>()
-            let count = min(previous.rowSignatures.count, nextSignatures.count)
-            for index in 0..<count where previous.rowSignatures[index] != nextSignatures[index] {
-                changedRows.insert(index)
-            }
-
-            if changedRows.isEmpty {
-                guard previous.stateSeq != snapshot.frame.stateSeq else { return }
-                guard let emptyFrame = try? MobileTerminalRenderGridFrame(
-                    surfaceID: snapshot.frame.surfaceID,
-                    stateSeq: snapshot.frame.stateSeq,
-                    columns: snapshot.frame.columns,
-                    rows: snapshot.frame.rows,
-                    cursor: snapshot.frame.cursor,
-                    full: false,
-                    styles: snapshot.frame.styles,
-                    rowSpans: []
-                ) else {
-                    return
-                }
-                frame = emptyFrame
-            } else {
-                guard let deltaFrame = try? snapshot.frame.filteredRows(changedRows, full: false) else {
-                    return
-                }
-                frame = deltaFrame
-            }
-        } else {
-            frame = snapshot.frame
-        }
-
-        renderGridStatesBySurfaceID[surfaceID] = RenderGridState(
-            columns: frame.columns,
-            rows: frame.rows,
-            stateSeq: frame.stateSeq,
-            rowSignatures: nextSignatures
-        )
-        guard let payload = try? frame.jsonObject() else { return }
+        // Publish complete screens: a new client or a dropped connection must not
+        // inherit another subscriber's delta baseline. The frame comparison also
+        // notices cursor/mode/color changes without a new PTY byte sequence.
+        let frame = snapshot.frame
+        guard let revision = renderUpdates.nextRevision(forFullFrame: frame),
+              var payload = try? frame.jsonObject() else { return }
+        payload["revision"] = revision
         MobileHostService.emitEvent(topic: "terminal.render_grid", payload: payload)
         #if DEBUG
         cmuxDebugLog(
@@ -242,13 +195,19 @@ final class MobileTerminalRenderObserver {
         #endif
     }
 
+    /// Replay and live rendering share this main-actor publisher. Recording a
+    /// replay never marks it as broadcast, so other clients still get the change.
+    func snapshotRecord(forFullFrame frame: MobileTerminalRenderGridFrame) -> MobileTerminalRenderRecord? {
+        renderUpdates.snapshotRecord(forFullFrame: frame)
+    }
+
     #if DEBUG
     func debugResetRenderGridCacheForTesting() {
-        renderGridStatesBySurfaceID.removeAll()
+        renderUpdates.removeAll()
     }
 
     var debugRenderGridCacheCountForTesting: Int {
-        renderGridStatesBySurfaceID.count
+        renderUpdates.count
     }
 
     var debugIsRetainingNotificationDemandForTesting: Bool {

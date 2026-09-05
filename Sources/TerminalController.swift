@@ -1767,8 +1767,12 @@ class TerminalController {
             return v2Result(id: id, self.v2MobileHostStatus(params: params))
         case "mobile.workspace.list":
             return v2Result(id: id, self.v2MobileWorkspaceList(params: params))
+        case "mobile.notifications.list":
+            return v2Result(id: id, self.v2MobileNotificationsList(params: params))
         case "mobile.terminal.create", "terminal.create":
             return v2Result(id: id, self.v2MobileTerminalCreate(params: params))
+        case "mobile.terminal.reconnect", "terminal.reconnect", "mobile.terminal.reset", "terminal.reset":
+            return v2Result(id: id, self.v2MobileTerminalReconnect(params: params))
         case "mobile.terminal.input", "terminal.input":
             return v2Result(id: id, self.v2MobileTerminalInput(params: params))
         case "mobile.terminal.replay", "terminal.replay":
@@ -2310,11 +2314,16 @@ class TerminalController {
             "mobile.host.status",
             "mobile.attach_ticket.create",
             "mobile.workspace.list",
+            "mobile.notifications.list",
             "mobile.terminal.create",
+            "mobile.terminal.reconnect",
+            "mobile.terminal.reset",
             "mobile.terminal.input",
             "mobile.terminal.replay",
             "mobile.terminal.viewport",
             "terminal.create",
+            "terminal.reconnect",
+            "terminal.reset",
             "terminal.input",
             "terminal.replay",
             "terminal.viewport",
@@ -20834,10 +20843,14 @@ class TerminalController {
             result = await v2MobileAttachTicketCreate(params: request.params)
         case "mobile.workspace.list", "workspace.list":
             result = v2MobileWorkspaceList(params: request.params)
+        case "mobile.notifications.list":
+            result = v2MobileNotificationsList(params: request.params)
         case "workspace.create":
             result = v2MobileWorkspaceCreate(params: request.params)
         case "mobile.terminal.create", "terminal.create":
             result = v2MobileTerminalCreate(params: request.params)
+        case "mobile.terminal.reconnect", "terminal.reconnect", "mobile.terminal.reset", "terminal.reset":
+            result = v2MobileTerminalReconnect(params: request.params)
         case "mobile.terminal.input", "terminal.input":
             result = v2MobileTerminalInput(params: request.params)
         case "mobile.terminal.paste_image", "terminal.paste_image":
@@ -21245,6 +21258,12 @@ class TerminalController {
             return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
         }
 
+        var managers = [tabManager]
+        for candidate in UniConnectCoordinator.shared.allTabManagers()
+        where !managers.contains(where: { $0 === candidate }) {
+            managers.append(candidate)
+        }
+
         let requestedWorkspaceID = v2UUID(params, "workspace_id")
         if v2HasNonNullParam(params, "workspace_id"), requestedWorkspaceID == nil {
             return .err(code: "invalid_params", message: "Missing or invalid workspace_id", data: nil)
@@ -21260,9 +21279,11 @@ class TerminalController {
         case .conflict:
             return .err(code: "invalid_params", message: "Conflicting terminal identifiers", data: nil)
         }
+        var seenWorkspaces: Set<UUID> = []
+        let machineWorkspaces = managers.flatMap(\.tabs).filter { seenWorkspaces.insert($0.id).inserted }
         let visibleWorkspaces = requestedWorkspaceID.map { workspaceID in
-            tabManager.tabs.filter { $0.id == workspaceID }
-        } ?? tabManager.tabs
+            machineWorkspaces.filter { $0.id == workspaceID }
+        } ?? machineWorkspaces
         if let requestedWorkspaceID, visibleWorkspaces.isEmpty {
             return .err(
                 code: "not_found",
@@ -21271,11 +21292,34 @@ class TerminalController {
             )
         }
 
+        var targetsByRoot: [String: [[String: String]]] = [:]
         let workspaces = visibleWorkspaces.enumerated().map { _, workspace in
+            let availableTargets: [[String: String]]
+            if workspace.uniConnectProfile?.isSSH == true {
+                availableTargets = [["id": "terminal", "title": UniConnectLocalWindowLaunchTarget.terminal.displayName]]
+            } else {
+                let root = workspace.uniConnectLocalBoxRoot ?? workspace.currentDirectory
+                if let cached = targetsByRoot[root] {
+                    availableTargets = cached
+                } else {
+                    let registry = CmuxVaultAgentRegistry.load(workingDirectory: root)
+                    availableTargets = ([.terminal] + UniConnectLocalWindowLaunchTarget.builtInAgents
+                        + UniConnectLocalWindowLaunchTarget.customTargets(from: registry)).map {
+                        ["id": $0.id, "title": $0.displayName]
+                    }
+                    targetsByRoot[root] = availableTargets
+                }
+            }
             let terminals = mobileTerminalPanels(in: workspace).compactMap { terminal -> [String: Any]? in
                 if let requestedTerminalID, terminal.id != requestedTerminalID {
                     return nil
                 }
+                let localRecord = workspace.uniConnectLocalWindowsByPanelId[terminal.id]
+                let tmuxBinding: Any = if let binding = localRecord?.tmuxBinding {
+                    ["name": binding.name, "socketName": binding.socketName]
+                } else if let name = workspace.uniConnectTmuxSessionsByPanelId[terminal.id] {
+                    ["name": name, "socketName": "default"]
+                } else { NSNull() }
                 return [
                     "id": terminal.id.uuidString,
                     "title": workspace.panelTitle(panelId: terminal.id) ?? terminal.displayTitle,
@@ -21285,7 +21329,10 @@ class TerminalController {
                             ?? mobileNonEmpty(terminal.requestedWorkingDirectory)
                     ),
                     "is_ready": terminal.surface.surface != nil,
-                    "is_focused": terminal.id == workspace.focusedPanelId
+                    "is_focused": terminal.id == workspace.focusedPanelId,
+                    "tmux_binding": tmuxBinding,
+                    "runtime_state": v2OrNull(localRecord?.runtimeState.rawValue),
+                    "agent": v2OrNull(localRecord?.activeConversation?.kind.rawValue)
                 ]
             }
 
@@ -21293,8 +21340,10 @@ class TerminalController {
                 "id": workspace.id.uuidString,
                 "title": workspace.title,
                 "current_directory": v2OrNull(mobileNonEmpty(workspace.currentDirectory)),
-                "is_selected": workspace.id == tabManager.selectedTabId,
+                "is_selected": managers.contains(where: { $0.selectedTabId == workspace.id }),
                 "is_pinned": workspace.isPinned,
+                "kind": workspace.uniConnectProfile?.isSSH == true ? "ssh" : "local",
+                "available_agent_targets": availableTargets,
                 "terminals": terminals
             ]
         }
@@ -21426,8 +21475,45 @@ class TerminalController {
     }
 
     private func v2MobileWorkspaceCreate(params: [String: Any]) -> V2CallResult {
+        if let error = mobileMutationUnavailable() { return error }
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
+        }
+        if UniConnectCoordinator.isEnabled {
+            guard let name = (v2RawString(params, "name") ?? v2RawString(params, "title"))?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !name.isEmpty, name.utf8.count <= 512,
+                  !name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
+                return mobileCreationInvalidParameters()
+            }
+            let kind = v2RawString(params, "kind") ?? "local"
+            let workspace: Workspace
+            if kind == "local" {
+                guard let rawDirectory = v2RawString(params, "directory"),
+                      let directory = UniConnectLocalWindowRecord.validatedBoxRoot(rawDirectory),
+                      UniConnectLocalBoxRootPolicy.isAvailableDirectory(directory) else {
+                    return mobileCreationInvalidParameters()
+                }
+                workspace = UniConnectCoordinator.shared.createLocalWorkspace(
+                    name: name, folder: directory, color: nil, in: tabManager,
+                    select: false, finalizeCreation: false
+                )
+                UniConnectCoordinator.shared.requestSave()
+            } else if kind == "ssh" {
+                guard let sourceID = v2UUID(params, "source_workspace_id"),
+                      let source = ([tabManager] + UniConnectCoordinator.shared.allTabManagers())
+                        .flatMap(\.tabs).first(where: { $0.id == sourceID }),
+                      let created = UniConnectCoordinator.shared.createSSHWorkspace(
+                          name: name, inheriting: source, in: tabManager, select: false
+                      ) else { return mobileCreationInvalidParameters() }
+                workspace = created
+            } else {
+                return mobileCreationInvalidParameters()
+            }
+            return v2MobileWorkspaceList(
+                params: ["workspace_id": workspace.id.uuidString], tabManager: tabManager,
+                createdWorkspaceID: workspace.id.uuidString
+            )
         }
         var createParams = params
         createParams["focus"] = false
@@ -21453,6 +21539,7 @@ class TerminalController {
     }
 
     private func v2MobileTerminalCreate(params: [String: Any]) -> V2CallResult {
+        if let error = mobileMutationUnavailable() { return error }
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
         }
@@ -21464,6 +21551,48 @@ class TerminalController {
         }
         guard let paneId = workspace.bonsplitController.focusedPaneId ?? workspace.bonsplitController.allPaneIds.first else {
             return .err(code: "not_found", message: "Pane not found", data: nil)
+        }
+        if let profile = workspace.uniConnectProfile {
+            guard v2UUID(params, "workspace_id") != nil,
+                  let creation = UniConnectMobileTerminalCreation(
+                      name: v2RawString(params, "name"), tmuxSession: v2RawString(params, "tmux_session"),
+                      directory: v2RawString(params, "directory"), agentID: v2RawString(params, "agent"),
+                      isSSH: profile.isSSH
+                  ) else { return mobileCreationInvalidParameters() }
+            let terminal: TerminalPanel?
+            if profile.isSSH {
+                terminal = UniConnectCoordinator.shared.createSSHWindow(
+                    in: workspace, name: creation.name, tmuxSession: creation.tmuxSession!,
+                    directory: creation.directory, focus: false, showErrors: false,
+                    placement: .tab(paneID: paneId, afterTabID: nil)
+                )
+            } else {
+                guard let boxRoot = workspace.uniConnectLocalBoxRoot else { return mobileCreationInvalidParameters() }
+                let directory = creation.directory ?? boxRoot
+                guard UniConnectLocalBoxRootPolicy.isAvailableDirectory(directory) else {
+                    return mobileCreationInvalidParameters()
+                }
+                let registry = CmuxVaultAgentRegistry.load(workingDirectory: directory)
+                let targets = UniConnectLocalWindowLaunchTarget.builtInAgents
+                    + UniConnectLocalWindowLaunchTarget.customTargets(from: registry)
+                guard let request = creation.localRequest(boxRoot: boxRoot, availableTargets: targets) else {
+                    return mobileCreationInvalidParameters()
+                }
+                terminal = UniConnectCoordinator.shared.createLocalWindow(
+                    in: workspace, request: request, focus: false,
+                    placement: .tab(paneID: paneId, afterTabID: nil)
+                )
+            }
+            guard let terminal else {
+                return .err(code: "create_failed", message: String(
+                    localized: "uniconnect.mobile.createFailed",
+                    defaultValue: "No se pudo crear la ventana. Comprueba la carpeta, la conexión y que esa sesión tmux no esté abierta en otra ventana."
+                ), data: nil)
+            }
+            return v2MobileWorkspaceList(
+                params: ["workspace_id": workspace.id.uuidString], tabManager: tabManager,
+                createdTerminalID: terminal.id.uuidString
+            )
         }
         guard let terminal = workspace.newTerminalSurface(
             inPane: paneId,
@@ -21479,6 +21608,83 @@ class TerminalController {
             tabManager: tabManager,
             createdTerminalID: terminal.id.uuidString
         )
+    }
+
+    private func mobileCreationInvalidParameters() -> V2CallResult {
+        .err(code: "invalid_params", message: String(
+            localized: "uniconnect.mobile.invalidCreation",
+            defaultValue: "Indica un nombre válido y una carpeta absoluta. Para SSH, especifica la sesión tmux; para una caja SSH nueva, el espacio de trabajo del que heredar la conexión."
+        ), data: nil)
+    }
+
+    private func mobileMutationUnavailable() -> V2CallResult? {
+        guard UniConnectCoordinator.shared.importMutationGate?.allowsMutation == false else { return nil }
+        return .err(code: "busy", message: String(
+            localized: "uniconnect.mobile.importBusy",
+            defaultValue: "Hay una importación en curso. Espera a que termine antes de modificar las ventanas."
+        ), data: nil)
+    }
+
+    /// Reset/reconnect reuse the desktop's durable identity, without clearing a pane or starting another agent.
+    private func v2MobileTerminalReconnect(params: [String: Any]) -> V2CallResult {
+        if let error = mobileMutationUnavailable() { return error }
+        guard v2UUID(params, "workspace_id") != nil,
+              case let .value(surfaceID) = mobileTerminalAliasUUID(params: params),
+              let resolved = mobileResolveWorkspaceAndSurface(params: params, requireTerminal: false),
+              resolved.workspace.panels[surfaceID] is TerminalPanel else {
+            return .err(code: "invalid_params", message: String(
+                localized: "uniconnect.mobile.explicitTerminalRequired",
+                defaultValue: "Especifica el espacio de trabajo y la ventana existentes."
+            ), data: nil)
+        }
+        let workspace = resolved.workspace
+        if workspace.uniConnectProfile?.isSSH == true,
+           workspace.uniConnectTmuxSessionsByPanelId[surfaceID] != nil {
+            guard UniConnectCoordinator.shared.reconnectNow(panelId: surfaceID, in: workspace) else {
+                return .err(code: "unavailable", message: String(
+                    localized: "uniconnect.mobile.reconnectUnavailable",
+                    defaultValue: "No se puede reconectar ahora. Comprueba que la conexión guardada esté disponible y que no haya otra reconexión en curso."
+                ), data: nil)
+            }
+        } else if workspace.uniConnectLocalWindowsByPanelId[surfaceID]?.tmuxBinding != nil {
+            guard UniConnectCoordinator.shared.reconnectLocalWindow(
+                panelID: surfaceID, in: workspace, focus: false
+            ) != nil else {
+                return .err(code: "unavailable", message: String(
+                    localized: "uniconnect.localWindow.error.reopenFailed",
+                    defaultValue: "No se pudo volver a abrir la ventana guardada."
+                ), data: nil)
+            }
+        } else {
+            return .err(code: "not_durable", message: String(
+                localized: "uniconnect.mobile.legacyTerminal",
+                defaultValue: "Esta consola antigua no usa tmux. No se reiniciará su proceso activo; crea una ventana recuperable para usar esta acción."
+            ), data: nil)
+        }
+        return .ok(["workspace_id": workspace.id.uuidString, "surface_id": surfaceID.uuidString, "queued": true])
+    }
+
+    private func v2MobileNotificationsList(params: [String: Any]) -> V2CallResult {
+        do {
+            let limit: Int
+            if v2HasNonNullParam(params, "limit") {
+                guard let value = v2Int(params, "limit") else { throw MobileNotificationPageError.invalidLimit }
+                limit = value
+            } else { limit = 100 }
+            let before: String?
+            if v2HasNonNullParam(params, "before") {
+                guard let value = params["before"] as? String else { throw MobileNotificationPageError.invalidCursor }
+                before = value
+            } else { before = nil }
+            let records = TerminalNotificationStore.shared.notifications.map(\.mobileNotificationRecord)
+            return .ok(try MobileNotificationPage(records: records, limit: limit, before: before).jsonObject())
+        } catch {
+            return .err(
+                code: "invalid_params",
+                message: String(localized: "uniconnect.mobile.notifications.invalidPagination", defaultValue: "Usa un límite entre 1 y 200 y un cursor de notificaciones válido."),
+                data: nil
+            )
+        }
     }
 
     private func v2MobileTerminalReplay(params: [String: Any]) -> V2CallResult {
@@ -21512,7 +21718,10 @@ class TerminalController {
             "seq": seq,
         ]
         if let renderGrid,
-           let renderGridObject = try? renderGrid.jsonObject() {
+           let record = MobileTerminalRenderObserver.shared.snapshotRecord(forFullFrame: renderGrid),
+           var renderGridObject = try? record.frame.jsonObject() {
+            renderGridObject["revision"] = record.revision
+            payload["revision"] = record.revision
             payload["columns"] = renderGrid.columns
             payload["rows"] = renderGrid.rows
             payload["render_grid"] = renderGridObject

@@ -1,0 +1,53 @@
+name: UniConnect acceso privado y sesiones
+
+on:
+  push:
+    branches: [uniconnect, desarrollo/multiplataforma]
+    paths:
+      - Sources/Mobile/**
+      - Sources/UniConnect/**
+      - Sources/TerminalStartupShellQuoting.swift
+      - Packages/CMUXMobileCore/**
+      - Packages/CmuxSettingsUI/**
+      - cmuxTests/UniConnect*Tests.swift
+      - scripts/ci/*uniconnect-mobile*
+      - scripts/ci/uniconnect-mobile-harness/**
+      - .github/workflows/uniconnect-mobile.yml
+      - android/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dominio-y-protocolo:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Protocolo portable y pantallas completas
+        run: swift test --package-path Packages/CMUXMobileCore --jobs 2
+      - name: Acceso privado independiente de las cuentas
+        run: swift test --package-path Packages/CmuxSettingsUI --jobs 2
+      - name: Autorizaciones y recuperación local con código de producción
+        shell: bash
+        run: |
+          command -v tmux >/dev/null || brew install tmux
+          export UNICONNECT_TEST_REPO="$GITHUB_WORKSPACE"
+          harness_path="$(bash scripts/ci/prepare-uniconnect-mobile-harness.sh)"
+          swift test --package-path "$harness_path" --jobs 2
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
+      - name: SDK Android del producto
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Pruebas de comportamiento y APK nativa
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --max-workers 2

@@ -1,10 +1,7 @@
 import CmuxSettings
 import SwiftUI
 
-/// **Mobile** section — Mac-side controls for pairing and syncing with
-/// cmux on iOS: the pairing-host toggle, the preferred listener port (with a
-/// live bound-port indicator), an optional display-name override, and
-/// connection/route diagnostics.
+/// Direct private-network access settings, independent of hosted account services.
 @MainActor
 public struct MobileSection: View {
     @State private var iOSPairingHost: DefaultsValueModel<Bool>
@@ -26,7 +23,7 @@ public struct MobileSection: View {
     /// Host bridge: opens the pairing window, applies the port (availability
     /// checked), and supplies the live pairing status and default display name.
     private let hostActions: SettingsHostActions
-    private let hostedServicesAvailable: Bool
+    private let privateNetworkAccessAvailable: Bool
 
     private static let columnWidth: CGFloat = 196
 
@@ -37,19 +34,19 @@ public struct MobileSection: View {
     ///   - catalog: The settings catalog defining the mobile keys.
     ///   - hostActions: Host bridge for the pairing window, port apply, and the
     ///     live pairing status the package can't produce itself.
-    ///   - hostedServicesAvailable: Whether pairing/sync infrastructure is configured.
+    ///   - privateNetworkAccessAvailable: Whether the host provides direct Tailscale access.
     public init(
         defaultsStore: UserDefaultsSettingsStore,
         catalog: SettingCatalog,
         hostActions: SettingsHostActions,
-        hostedServicesAvailable: Bool = false
+        privateNetworkAccessAvailable: Bool = false
     ) {
         _iOSPairingHost = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.mobile.iOSPairingHost))
         _port = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.mobile.iOSPairingPort))
         _displayName = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.mobile.iOSPairingDisplayName))
         _status = State(initialValue: MobilePairingStatusModel(hostActions: hostActions))
         self.hostActions = hostActions
-        self.hostedServicesAvailable = hostedServicesAvailable
+        self.privateNetworkAccessAvailable = privateNetworkAccessAvailable
     }
 
     /// The value shown in the field: the user's edit if any, otherwise the
@@ -71,8 +68,8 @@ public struct MobileSection: View {
     /// The Mobile settings section content.
     public var body: some View {
         Group {
-            SettingsSectionHeader(String(localized: "settings.section.mobile", defaultValue: "Mobile"), section: .mobile)
-            if hostedServicesAvailable {
+            SettingsSectionHeader(String(localized: "settings.section.mobile", defaultValue: "Acceso remoto"), section: .mobile)
+            if privateNetworkAccessAvailable {
                 SettingsCard {
                     pairDeviceRow
                     SettingsCardDivider()
@@ -88,14 +85,14 @@ public struct MobileSection: View {
                     }
                     SettingsCardNote(String(
                         localized: "settings.mobile.port.note",
-                        defaultValue: "Click Apply to change the port. UniConnect checks the port is free first: if it's in use, the current listener keeps running untouched; if it's free, it rebinds and connected devices reconnect on the new port."
+                        defaultValue: "Pulsa Aplicar para cambiar el puerto. Si está ocupado, se mantiene el acceso actual. Si está libre, los dispositivos deberán volver a conectar al nuevo puerto."
                     ))
                 }
             } else {
                 SettingsCard {
                     SettingsCardNote(String(
                         localized: "settings.mobile.unavailable",
-                        defaultValue: "Mobile pairing and phone sync stay off until UniConnect's own service is configured."
+                        defaultValue: "Esta edición no dispone de acceso privado remoto."
                     ))
                 }
             }
@@ -107,10 +104,10 @@ public struct MobileSection: View {
         SettingsCardRow(
             configurationReview: .action,
             searchAnchorID: "setting:mobile:pairDevice",
-            String(localized: "settings.mobile.pairDevice", defaultValue: "Pair a Device"),
-            subtitle: String(localized: "settings.mobile.pairDevice.subtitle", defaultValue: "Show a QR code to pair your iPhone or iPad with this Mac.")
+            String(localized: "settings.mobile.pairDevice", defaultValue: "Dispositivos autorizados"),
+            subtitle: String(localized: "settings.mobile.pairDevice.subtitle", defaultValue: "Conecta por IP de Tailscale y autoriza los dispositivos dentro de UniConnect.")
         ) {
-            Button(String(localized: "settings.mobile.pairDevice.button", defaultValue: "Pair…")) {
+            Button(String(localized: "settings.mobile.pairDevice.button", defaultValue: "Gestionar…")) {
                 hostActions.openMobilePairingWindow()
             }
             .buttonStyle(.bordered)
@@ -124,10 +121,10 @@ public struct MobileSection: View {
         SettingsCardRow(
             configurationReview: .settingsOnly,
             searchAnchorID: "setting:mobile:iOSPairingHost",
-            String(localized: "settings.mobile.iOSPairingHost", defaultValue: "iOS Pairing"),
+            String(localized: "settings.mobile.iOSPairingHost", defaultValue: "Acceso por Tailscale"),
             subtitle: iOSPairingHost.current
-                ? String(localized: "settings.mobile.iOSPairingHost.subtitleOn", defaultValue: "Allows the iOS app to discover and sync with this Mac on your local network.")
-                : String(localized: "settings.mobile.iOSPairingHost.subtitleOff", defaultValue: "Keeps the Mac-side iOS pairing listener off until you enable it here.")
+                ? String(localized: "settings.mobile.iOSPairingHost.subtitleOn", defaultValue: "Permite conectar los dispositivos autorizados de tu red Tailscale.")
+                : String(localized: "settings.mobile.iOSPairingHost.subtitleOff", defaultValue: "El acceso remoto permanece apagado hasta que lo actives aquí.")
         ) {
             Toggle("", isOn: Binding(get: { iOSPairingHost.current }, set: { iOSPairingHost.set($0) }))
                 .labelsHidden()
@@ -141,8 +138,8 @@ public struct MobileSection: View {
         SettingsCardRow(
             configurationReview: .settingsOnly,
             searchAnchorID: "setting:mobile:iOSPairingPort",
-            String(localized: "settings.mobile.port", defaultValue: "Pairing Port"),
-            subtitle: String(localized: "settings.mobile.port.subtitle", defaultValue: "Preferred TCP port for the iOS pairing listener (1–65535).")
+            String(localized: "settings.mobile.port", defaultValue: "Puerto del acceso remoto"),
+            subtitle: String(localized: "settings.mobile.port.subtitle", defaultValue: "Puerto TCP de la conexión privada de UniConnect (1–65535).")
         ) {
             HStack(spacing: 8) {
                 TextField(
@@ -157,7 +154,7 @@ public struct MobileSection: View {
                 .onSubmit { applyDraftPort() }
                 .accessibilityIdentifier("SettingsMobilePairingPortField")
 
-                Button(String(localized: "settings.mobile.port.apply", defaultValue: "Apply")) {
+                Button(String(localized: "settings.mobile.port.apply", defaultValue: "Aplicar")) {
                     applyDraftPort()
                 }
                 .buttonStyle(.bordered)
@@ -190,7 +187,7 @@ public struct MobileSection: View {
         if !isDraftValid {
             statusCaption {
                 Label(
-                    String(localized: "settings.mobile.port.status.invalid", defaultValue: "Port must be between 1 and 65535."),
+                    String(localized: "settings.mobile.port.status.invalid", defaultValue: "El puerto debe estar entre 1 y 65535."),
                     systemImage: "exclamationmark.triangle.fill"
                 )
                 .foregroundStyle(.orange)
@@ -235,7 +232,7 @@ public struct MobileSection: View {
     @ViewBuilder
     private func boundPortStatusText(_ snapshot: MobilePairingStatusSnapshot) -> some View {
         if !snapshot.isRunning {
-            Text(String(localized: "settings.mobile.port.status.starting", defaultValue: "Starting the pairing listener…"))
+            Text(String(localized: "settings.mobile.port.status.starting", defaultValue: "Acceso privado no disponible todavía. Comprueba Tailscale y el puerto."))
                 .foregroundStyle(.secondary)
         } else if snapshot.usesEphemeralFallback, let bound = snapshot.boundPort {
             Label(
@@ -261,13 +258,13 @@ public struct MobileSection: View {
         // actual default that applies when the override is empty.
         let resolvedName = hostActions.mobilePairingDefaultDisplayName()
         let placeholder = resolvedName.isEmpty
-            ? String(localized: "settings.mobile.displayName.placeholder", defaultValue: "This Mac's name")
+            ? String(localized: "settings.mobile.displayName.placeholder", defaultValue: "Nombre de este Mac")
             : resolvedName
         SettingsCardRow(
             configurationReview: .settingsOnly,
             searchAnchorID: "setting:mobile:iOSPairingDisplayName",
-            String(localized: "settings.mobile.displayName", defaultValue: "Display Name"),
-            subtitle: String(localized: "settings.mobile.displayName.subtitle", defaultValue: "Name the iOS app shows for this Mac when pairing. Empty uses this Mac's name."),
+            String(localized: "settings.mobile.displayName", defaultValue: "Nombre de la máquina"),
+            subtitle: String(localized: "settings.mobile.displayName.subtitle", defaultValue: "Nombre mostrado en Android. Si lo dejas vacío, se usa el nombre de este Mac."),
             controlWidth: Self.columnWidth
         ) {
             TextField(
@@ -286,8 +283,8 @@ public struct MobileSection: View {
         SettingsCardRow(
             configurationReview: .settingsOnly,
             searchAnchorID: "setting:mobile:connections",
-            String(localized: "settings.mobile.connections", defaultValue: "Connected Devices"),
-            subtitle: String(localized: "settings.mobile.connections.subtitle", defaultValue: "iOS devices currently attached to this Mac.")
+            String(localized: "settings.mobile.connections", defaultValue: "Conexiones activas"),
+            subtitle: String(localized: "settings.mobile.connections.subtitle", defaultValue: "Conexiones de dispositivos al acceso privado de este Mac.")
         ) {
             Text("\(snapshot?.activeConnectionCount ?? 0)")
                 .font(.system(size: 13, weight: .medium))
@@ -303,11 +300,11 @@ public struct MobileSection: View {
             if snapshot.routes.isEmpty {
                 SettingsCardNote(String(
                     localized: "settings.mobile.routes.empty",
-                    defaultValue: "No reachable addresses yet. Pairing over the network needs Tailscale running on this Mac."
+                    defaultValue: "No hay ninguna dirección disponible. Conecta Tailscale en este Mac."
                 ))
             } else {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(String(localized: "settings.mobile.routes.title", defaultValue: "Reachable at"))
+                    Text(String(localized: "settings.mobile.routes.title", defaultValue: "Direcciones privadas"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(snapshot.routes) { route in

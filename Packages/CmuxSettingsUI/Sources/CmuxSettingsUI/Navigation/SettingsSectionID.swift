@@ -32,21 +32,21 @@ public enum SettingsSectionID: String, CaseIterable, Identifiable, Sendable, Has
     /// User-facing section title shown in the sidebar.
     public var title: String {
         switch self {
-        case .account: return "Account"
-        case .app: return "App"
-        case .terminal: return "Terminal"
-        case .textBox: return String(localized: "settings.section.textBox", defaultValue: "TextBox (Beta)")
-        case .mobile: return String(localized: "settings.section.mobile", defaultValue: "Mobile")
-        case .sidebarAppearance: return "Sidebar"
-        case .betaFeatures: return "Beta Features"
-        case .automation: return "Automation"
-        case .browser: return "Browser"
-        case .browserImport: return "Import Browser Data"
-        case .globalHotkey: return "Global Hotkey"
-        case .keyboardShortcuts: return "Keyboard Shortcuts"
-        case .workspaceColors: return "Workspace Colors"
-        case .settingsJSON: return "uniconnect.json"
-        case .reset: return "Reset"
+        case .account: return String(localized: "settings.section.account", defaultValue: "Cuenta")
+        case .app: return String(localized: "settings.section.app", defaultValue: "Aplicación")
+        case .terminal: return String(localized: "settings.section.terminal", defaultValue: "Terminal")
+        case .textBox: return String(localized: "settings.section.textBox", defaultValue: "Cuadro de texto (beta)")
+        case .mobile: return String(localized: "settings.section.mobile", defaultValue: "Acceso remoto")
+        case .sidebarAppearance: return String(localized: "settings.section.sidebarAppearance", defaultValue: "Barra lateral")
+        case .betaFeatures: return String(localized: "settings.section.betaFeatures", defaultValue: "Funciones beta")
+        case .automation: return String(localized: "settings.section.automation", defaultValue: "Automatización")
+        case .browser: return String(localized: "settings.section.browser", defaultValue: "Navegador")
+        case .browserImport: return String(localized: "settings.section.browserImport", defaultValue: "Importar datos del navegador")
+        case .globalHotkey: return String(localized: "settings.section.globalHotkey", defaultValue: "Atajo global")
+        case .keyboardShortcuts: return String(localized: "settings.section.keyboardShortcuts", defaultValue: "Atajos de teclado")
+        case .workspaceColors: return String(localized: "settings.section.workspaceColors", defaultValue: "Colores de espacios de trabajo")
+        case .settingsJSON: return String(localized: "settings.section.settingsJSON", defaultValue: "uniconnect.json")
+        case .reset: return String(localized: "settings.section.reset", defaultValue: "Restablecer")
         }
     }
 
@@ -80,7 +80,7 @@ public enum SettingsSectionID: String, CaseIterable, Identifiable, Sendable, Has
         case .app: return "appearance language workspace notifications menu bar telemetry"
         case .terminal: return "scrollbar copy on select agent resume hibernation"
         case .textBox: return "textbox text box rich input prompt default new terminal workspace split tab focus show beta"
-        case .mobile: return "ios iphone ipad mobile pairing local network sync"
+        case .mobile: return "android móvil pixel tailscale ip acceso remoto autorizacion sincronización mobile"
         case .sidebarAppearance: return "sidebar details branches material terminal background"
         case .betaFeatures: return "beta experimental unstable feed dock right sidebar"
         case .automation: return "socket integrations hooks ports claude cursor gemini"
