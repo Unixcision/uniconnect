@@ -1,0 +1,11 @@
+[Unit]
+Description=Comprobar cambios en las ramas de UniConnect cada dos minutos
+
+[Timer]
+OnBootSec=45s
+OnUnitInactiveSec=2min
+AccuracySec=5s
+Unit=uniconnect-branch-monitor.service
+
+[Install]
+WantedBy=timers.target

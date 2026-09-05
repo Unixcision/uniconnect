@@ -8,8 +8,8 @@ de conexión, UUID de conversaciones ni capturas privadas.
 - Repositorio: `Unixcision/uniconnect`. Principal: `uniconnect`.
 - Desarrollo conjunto: `desarrollo/multiplataforma`, no una línea Linux separada.
 - Trabajo funcional publicado: `25eec3eb13`; incluye el cambio de español
-  `29a8edec3e` de principal. Principal no contiene aún estas mejoras de
-  desarrollo; su integración sería un avance directo.
+  `29a8edec3e`. Durante esta revisión, principal avanzó remotamente a
+  `fa91daa4c2`: ya contiene el trabajo funcional y el arreglo de CI de desarrollo.
 - Inventario remoto: 1.818 ramas vigentes, ninguna contenía `progress.md`
   antes de crear este documento. No se han encontrado estados publicados de
   otros equipos. Sus cambios locales no pueden darse por incorporados.
@@ -30,20 +30,30 @@ de conexión, UUID de conversaciones ni capturas privadas.
 - VM Linux: 107 pruebas correctas, incluidos los fallos/crashes y GTK/VTE real.
 - CI macOS y Ubuntu: 82 pruebas Launch y 8 Vault correctas en cada sistema,
   incluida una CLI real reubicada sin dependencia del directorio de compilación.
+- CI `33981170986` completamente verde: Linux ejecutó 107 pruebas, con cuatro
+  omisiones esperadas por necesitar el backend root `systemd-creds`.
 
 ## Validación e integración pendientes
 
-- La ejecución de CI `33973077181` falló solo en seis subcasos Python de Ubuntu:
-  los procesos de prueba hijos no recibían `PYTHONPATH`. Este bloque añade la
-  ruta explícita a la tarea; queda comprobar la nueva ejecución remota.
 - No se ha validado la aplicación macOS completa con Xcode. El núcleo portable
   en verde no demuestra esa compilación ni la paridad completa de interfaces.
 - El proceso GUI Linux ya abierto no fue reiniciado con los últimos commits.
 - Falta conocer/publicar el progreso local de los otros equipos antes de afirmar
-  que está todo unificado. Principal no se ha adelantado en esta revisión.
+  que todos sus cambios están unificados; principal sí incorporó nuestro bloque.
 - Continúan pendientes la convergencia del coordinador de transacciones con Mac,
   ciclo completo de agentes, bridge autenticado y otras diferencias documentadas
   en `linux/PORT_STATUS.md` y `docs/CROSS-PLATFORM.md`.
+
+## Monitor de coordinación
+
+Monitor de ramas instalado en el servidor: comprobaciones cada dos minutos,
+sin modelo cuando nada cambia, eventos privados y entrega mediante `codex queue`.
+La cola acepta los avisos; queda observar su ejecución al quedar libre la sesión.
+No se garantiza despertar una sesión cerrada. Alcance y operación en
+`docs/BRANCH-MONITOR.md`; no hace merges por sí mismo ni cambia principal.
+Validación: suite Linux de 126 pruebas correcta antes del endurecimiento final;
+24 pruebas aisladas del monitor/notificador verifican también rutas, recuperación
+tras caída, archivos privados y reintentos. Ninguna prueba unitaria envía avisos.
 
 ## Responsables de este bloque
 

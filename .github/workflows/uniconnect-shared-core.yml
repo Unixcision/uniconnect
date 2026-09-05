@@ -7,12 +7,16 @@ on:
       - Packages/CMUXAgentLaunch/**
       - Packages/CMUXAgentVault/**
       - linux/**
+      - scripts/uniconnect_branch_*.py
+      - scripts/systemd/uniconnect-branch-monitor.*
       - .github/workflows/uniconnect-shared-core.yml
   pull_request:
     paths:
       - Packages/CMUXAgentLaunch/**
       - Packages/CMUXAgentVault/**
       - linux/**
+      - scripts/uniconnect_branch_*.py
+      - scripts/systemd/uniconnect-branch-monitor.*
       - .github/workflows/uniconnect-shared-core.yml
   workflow_dispatch:
 
