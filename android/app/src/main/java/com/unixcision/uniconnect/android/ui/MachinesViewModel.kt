@@ -51,6 +51,8 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                 .collect { machines -> mutableState.update { it.copy(machines = machines, loading = false) }; openPendingNoticeMachine() }
         }
         viewModelScope.launch { notificationControl.states.collect { links -> mutableState.update { it.copy(notificationLinks = links) } } }
+        // The activity is in the foreground when this model is built, so re-arming the saved links is allowed.
+        notificationControl.restore()
     }
 
     fun showAdd() { mutableState.update { it.copy(adding = true, formError = null) } }

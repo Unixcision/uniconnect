@@ -26,7 +26,7 @@ class AppContainer(context: Context) {
     val machines: MachineRepository = StoredMachineRepository(store)
     val rpc = FramedRpcClient(ioScope)
     val machineClient: MachineClient = NativeMachineClient(rpc)
-    val notificationConnections = AndroidNotificationConnections(context)
+    val notificationConnections = AndroidNotificationConnections(context, store, ioScope)
     val noticeDeliveries: NoticeDeliveryRepository = StoredNoticeDeliveryRepository(store)
     val notificationClient: NotificationClient = NativeNotificationClient(rpc)
 }
