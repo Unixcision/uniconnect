@@ -37,10 +37,12 @@ val syncBrandArtwork by tasks.registering(Copy::class) {
 tasks.named("preBuild").configure { dependsOn(syncBrandArtwork) }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2025.05.01"))
+    implementation(platform("androidx.compose:compose-bom:2026.06.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
+    // The stable BOM still ships Material 3 1.4; the expressive components (MaterialExpressiveTheme,
+    // LoadingIndicator, MotionScheme) live in the 1.5 line, pinned explicitly.
+    implementation("androidx.compose.material3:material3:1.5.0-alpha18")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.1")

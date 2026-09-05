@@ -4,7 +4,13 @@ package com.unixcision.uniconnect.android.domain
 sealed interface ResourceCreation {
     val name: String
     val directory: String?
-    data class Workspace(override val name: String, override val directory: String?, val sourceWorkspaceID: String?) : ResourceCreation
+    /** [initialTerminal] false asks the host not to spawn a plain terminal, so the first window is chosen explicitly. */
+    data class Workspace(
+        override val name: String,
+        override val directory: String?,
+        val sourceWorkspaceID: String?,
+        val initialTerminal: Boolean = true,
+    ) : ResourceCreation
     data class Terminal(
         val workspaceID: String,
         override val name: String,

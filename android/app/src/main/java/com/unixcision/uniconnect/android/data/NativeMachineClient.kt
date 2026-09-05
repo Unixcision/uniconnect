@@ -111,6 +111,8 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
             is ResourceCreation.Workspace -> {
                 params.put("kind", if (request.sourceWorkspaceID == null) "local" else "ssh")
                 request.sourceWorkspaceID?.let { params.put("source_workspace_id", it) }
+                // Older hosts ignore the flag and still open one terminal; the reconciled tree tells us.
+                if (!request.initialTerminal) params.put("initial_terminal", false)
             }
             is ResourceCreation.Terminal -> {
                 params.put("workspace_id", request.workspaceID)
@@ -134,6 +136,20 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
         val result = call(machine, "mobile.terminal.input", target(workspaceID, windowID).put("text", text))
         val actual = TerminalTarget(result.getString("workspace_id"), result.getString("surface_id"))
         if (!TerminalInputReceipt.accepts(TerminalTarget(workspaceID, windowID), actual, result.opt("queued") as? Boolean)) throw MachineFailure.InputNotQueued()
+    }
+
+    override suspend fun reconnect(machine: Machine, workspaceID: String, windowID: String) {
+        val result = call(machine, "mobile.terminal.reconnect", target(workspaceID, windowID))
+        val actual = TerminalTarget(result.getString("workspace_id"), result.getString("surface_id"))
+        if (!TerminalInputReceipt.accepts(TerminalTarget(workspaceID, windowID), actual, result.opt("queued") as? Boolean)) throw MachineFailure.InputNotQueued()
+    }
+
+    override suspend fun scroll(machine: Machine, workspaceID: String, windowID: String, deltaLines: Int) {
+        require(deltaLines != 0 && deltaLines in -1000..1000)
+        // macOS reads delta_lines; Linux reads lines. Both identify the same explicit surface.
+        val params = target(workspaceID, windowID).put("delta_lines", deltaLines).put("lines", deltaLines)
+        val result = call(machine, "mobile.terminal.scroll", params)
+        require(result.getString("surface_id").equals(windowID, ignoreCase = true))
     }
 
     private fun decodeMachine(machine: Machine, result: JSONObject): MachineSnapshot {

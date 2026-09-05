@@ -77,7 +77,8 @@ class FramedRpcSession(private val socket: Socket, private val scope: CoroutineS
                 write(bytes)
                 val response = completion.await()
                 if (!response.value.optBoolean("ok", false)) {
-                    throw MachineFailure.Rejected(response.value.optJSONObject("error")?.optString("code").orEmpty())
+                    throw MachineFailure.Rejected(response.value.optJSONObject("error")?.optString("code").orEmpty(),
+                        response.value.optJSONObject("error")?.optString("message")?.takeIf { it.isNotBlank() })
                 }
                 response
             }

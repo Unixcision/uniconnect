@@ -7,6 +7,23 @@ dirección Tailscale y puerto (58465 inicialmente).
 ## Estado real
 
 - Splash nativo con el logo original de UniConnect, tema azul noche/cian/violeta.
+- Rediseño 2026 (5 de septiembre): tema Material 3 Expressive (`MaterialExpressiveTheme`,
+  `MotionScheme.expressive()`, `LoadingIndicator`), tarjetas de cristal, monogramas
+  deterministas por caja como el rail compacto del Mac, riel horizontal de espacios de
+  trabajo con sus ventanas debajo, hojas inferiores para alta de máquina y creación, y
+  transiciones entre niveles. Componentes en `ui/components/`.
+- Creación en dos pasos: «Nuevo espacio de trabajo» envía `initial_terminal:false`; si el
+  host confirma una caja vacía se abre al instante la hoja «Primera ventana de …» con el
+  catálogo de inicio de esa caja. «Ahora no» deja la caja sin ventanas; nunca se lanza una
+  terminal por defecto sin preguntar.
+- Terminal: barra de teclas extra tipo Termux (ESC, CTRL/ALT pegajosos con bloqueo por
+  pulsación larga, TAB, flechas, HOME/END, PgUp/PgDn, DEL, F1–F12 y símbolos) codificada
+  por `domain/TerminalKeyEncoder` con secuencias xterm propias (sin código de Termux);
+  modo «pantalla completa» donde arrastrar en vertical desplaza el scrollback del
+  escritorio (`mobile.terminal.scroll`, coalescido y acotado) y modo ampliado con
+  desplazamiento local; botón Reconectar (`mobile.terminal.reconnect`) que solo reataca la
+  sesión durable existente. Si el árbol autorizado deja de contener la ventana abierta, la
+  pantalla se cierra con aviso en vez de quedarse muerta.
 - Alta, validación, persistencia atómica y eliminación local de máquinas.
 - Jerarquía nativa Máquinas → Espacios de trabajo → Ventanas alimentada por
   respuestas autorizadas; no presenta sesiones ni conexiones inventadas.
@@ -74,7 +91,10 @@ está desactivada. No se guardan contraseñas en estos registros.
 
 Requiere JDK 17 o compatible, Android SDK 36 y conexión a los repositorios de
 dependencias. El wrapper fija Gradle 8.14.3; AGP 8.13.1 y Kotlin 2.2.20 están
-fijados en el proyecto. No requiere abrir Android Studio.
+fijados en el proyecto. Compose usa el BOM `2026.06.01` (el último compatible con
+`compileSdk 36` y AGP 8.13) y Material 3 `1.5.0-alpha18`, fijado aparte porque la línea
+estable 1.4 no incluye los componentes expresivos; las alphas posteriores exigen SDK 37
+y AGP 9.1. No requiere abrir Android Studio.
 
 ```sh
 cd android

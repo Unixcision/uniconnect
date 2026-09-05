@@ -34,7 +34,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         val selectedMachine: String? = null, val selectedWorkspace: String? = null, val selectedWindow: String? = null,
         val connections: Map<String, Connection> = emptyMap(),
         val terminal: TerminalSnapshot? = null, val terminalLoading: Boolean = false,
-        val terminalError: Int? = null, val inputSending: Boolean = false,
+        val terminalError: Int? = null, val terminalErrorDetail: String? = null, val inputSending: Boolean = false, val reconnecting: Boolean = false,
         val creation: CreationContext? = null, val creating: Boolean = false, val creationError: Int? = null,
         val notificationLinks: Map<String, NotificationLinkState> = emptyMap(),
     )
@@ -108,7 +108,16 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         viewModelScope.launch {
             try {
                 val result = client.create(machine, request)
-                mutableState.update { it.copy(creating = false, creation = null,
+                // Second step of "new workspace": the host confirmed an empty box, so ask how its
+                // first window opens instead of assuming a plain terminal. An older host that still
+                // spawned one terminal simply skips the question.
+                val created = result.snapshot.workspaces.firstOrNull { it.id == result.workspaceID }
+                val askFirstWindow = request is ResourceCreation.Workspace && !request.initialTerminal &&
+                    created != null && created.isSSH != null && created.windows.isEmpty()
+                val nextCreation = if (askFirstWindow) CreationContext(
+                    machine.id, created, result.snapshot.workspaces.filter { box -> box.isSSH == true }, firstWindow = true,
+                ) else null
+                mutableState.update { it.copy(creating = false, creation = nextCreation, creationError = null,
                     connections = it.connections + (machine.id to Connection(connected = true, snapshot = result.snapshot)),
                     selectedMachine = machine.id, selectedWorkspace = result.workspaceID, selectedWindow = result.windowID,
                     terminal = null, terminalError = null, terminalLoading = result.windowID != null,
@@ -130,7 +139,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     fun selectWindow(id: String) { mutableState.update { it.copy(selectedWindow = id, terminal = null) }; refreshTerminal() }
     fun back() { mutableState.update {
         when {
-            it.selectedWindow != null -> it.copy(selectedWindow = null, terminal = null, terminalLoading = false, terminalError = null)
+            it.selectedWindow != null -> it.copy(selectedWindow = null, terminal = null, terminalLoading = false, terminalError = null, terminalErrorDetail = null)
             it.selectedWorkspace != null -> it.copy(selectedWorkspace = null)
             else -> it.copy(selectedMachine = null)
         }
@@ -197,9 +206,22 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                                         update.snapshot.workspaces.firstOrNull { it.id == creation.workspace.id }
                                             ?.let { creation.copy(workspace = it) }
                                     } else creation
+                                    val workspaces = update.snapshot.workspaces
+                                    val selectedWorkspace = current.selectedWorkspace?.takeIf { id -> workspaces.any { it.id == id } }
+                                    val selectedWindow = current.selectedWindow?.takeIf { id ->
+                                        workspaces.firstOrNull { it.id == selectedWorkspace }?.windows?.any { it.id == id } == true
+                                    }
+                                    // The desktop tree is authoritative: a closed window must not keep a dead screen open.
+                                    val lostSelection = current.selectedMachine == machine.id &&
+                                        (selectedWorkspace != current.selectedWorkspace || selectedWindow != current.selectedWindow)
                                     current.copy(
                                         connections = current.connections + (machine.id to Connection(connected = true, snapshot = update.snapshot)),
                                         creation = refreshedCreation,
+                                        selectedWorkspace = if (lostSelection) selectedWorkspace else current.selectedWorkspace,
+                                        selectedWindow = if (lostSelection) selectedWindow else current.selectedWindow,
+                                        terminal = if (lostSelection) null else current.terminal,
+                                        terminalLoading = if (lostSelection) false else current.terminalLoading,
+                                        error = if (lostSelection) R.string.window_gone else current.error,
                                     )
                                 }
                                 val route = noticeRoute?.takeIf { it.machineID == machine.id }
@@ -218,7 +240,10 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                     break
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (failure: Exception) {
-                    val code = (failure as? MachineFailure.Rejected)?.code
+                    val rejected = failure as? MachineFailure.Rejected
+                    val code = rejected?.code
+                    // Keep the host's own code and message: a bare "could not connect" hides surface_unavailable etc.
+                    val detail = rejected?.let { listOfNotNull(it.code.takeIf(String::isNotBlank), it.detail).joinToString(" · ") }?.takeIf { it.isNotBlank() }
                     val incompatible = failure is MachineFailure.ProtocolMismatch || failure is MachineFailure.UnsupportedTerminal
                     val notReady = failure is MachineFailure.TerminalNotReady
                     val stop = notReady || incompatible || !wasConnected || code in setOf("approval_required", "unauthorized", "forbidden", "not_found", "process_exited")
@@ -226,6 +251,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                     mutableState.update { it.copy(
                         connections = it.connections + (machine.id to (it.connections[machine.id] ?: Connection()).copy(checking = !stop, connected = false, error = message)),
                         terminalLoading = false, terminalError = if (target != null) message else it.terminalError,
+                        terminalErrorDetail = if (target != null) detail else it.terminalErrorDetail,
                     ) }
                     if (stop) break
                     delay(minOf(1_000L shl retry.coerceAtMost(4), 15_000L))
@@ -246,8 +272,64 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         val machine = current.machines.firstOrNull { it.id == current.selectedMachine } ?: return
         current.selectedWorkspace ?: return
         current.selectedWindow ?: return
-        mutableState.update { it.copy(terminalLoading = true, terminalError = null) }
+        mutableState.update { it.copy(terminalLoading = true, terminalError = null, terminalErrorDetail = null) }
         startObserving(machine, force = true)
+    }
+
+    /** Reattaches the selected window's durable session on the desktop, then replays its screen. */
+    fun reconnectWindow() {
+        val current = state.value
+        if (current.reconnecting) return
+        val machine = current.machines.firstOrNull { it.id == current.selectedMachine } ?: return
+        val workspaceID = current.selectedWorkspace ?: return
+        val windowID = current.selectedWindow ?: return
+        // Allowed even after a failed replay: the request opens its own socket and reports its own outcome.
+        mutableState.update { it.copy(reconnecting = true, terminalError = null, terminalErrorDetail = null) }
+        viewModelScope.launch {
+            try {
+                client.reconnect(machine, workspaceID, windowID)
+                mutableState.update { it.copy(reconnecting = false, terminal = null, terminalLoading = true) }
+                startObserving(machine, force = true)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                val rejected = failure as? MachineFailure.Rejected
+                mutableState.update { it.copy(reconnecting = false,
+                    terminalError = if (rejected?.code == "not_durable") R.string.reconnect_not_durable else R.string.reconnect_failed,
+                    terminalErrorDetail = rejected?.let { listOfNotNull(it.code.takeIf(String::isNotBlank), it.detail).joinToString(" · ") }?.takeIf { it.isNotBlank() }) }
+            }
+        }
+    }
+
+    private var scrollAccumulator = 0
+    private var scrollJob: Job? = null
+
+    /** Scrolls the desktop viewport; gestures are coalesced so a fling becomes a few bounded requests. */
+    fun scrollTerminal(deltaLines: Int) {
+        if (deltaLines == 0) return
+        val current = state.value
+        val machine = current.machines.firstOrNull { it.id == current.selectedMachine } ?: return
+        val workspaceID = current.selectedWorkspace ?: return
+        val windowID = current.selectedWindow ?: return
+        if (current.connections[machine.id]?.connected != true || current.terminal == null) return
+        scrollAccumulator += deltaLines
+        if (scrollJob?.isActive == true) return
+        scrollJob = viewModelScope.launch {
+            while (scrollAccumulator != 0) {
+                val delta = scrollAccumulator.coerceIn(-1000, 1000)
+                scrollAccumulator -= delta
+                try { client.scroll(machine, workspaceID, windowID, delta) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) {
+                    scrollAccumulator = 0
+                    // A host rejection is worth one visible note; transport hiccups stay silent.
+                    (failure as? MachineFailure.Rejected)?.let { rejected ->
+                        mutableState.update { it.copy(terminalError = R.string.scroll_failed,
+                            terminalErrorDetail = listOfNotNull(rejected.code.takeIf(String::isNotBlank), rejected.detail).joinToString(" · ").takeIf { d -> d.isNotBlank() }) }
+                    }
+                    return@launch
+                }
+            }
+        }
     }
 
     fun sendInput(text: String, onDelivered: (Boolean) -> Unit) {
