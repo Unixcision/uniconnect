@@ -1,52 +1,58 @@
-# UniConnect recovery and backups
+# Recuperación y copias de seguridad de UniConnect
 
-UniConnect treats a box and every window inside it as durable state. Closing a
-window, leaving an agent, losing the network or quitting the app must not erase
-the information needed to reconstruct it.
+UniConnect trata cada caja y todas las ventanas que contiene como estado
+duradero. Cerrar una ventana, salir de un agente, perder la red o cerrar la
+aplicación no debe borrar la información necesaria para reconstruirlo.
 
-## What is persisted
+## Qué se conserva
 
-For every local window the readable session snapshot keeps:
+Para cada ventana local, la instantánea de sesión legible conserva:
 
-- the box and panel identifiers, visible names, colour, order and selection;
-- the workspace default folder and each window's independently selected local
-  working directory, which may be outside that default folder;
-- whether the runtime is a login shell, an agent or a stopped terminal;
-- append-only Claude, Codex, Agy and Grok conversation records, including the
-  agent kind, detected native session id, conversation-specific resume folder and timestamps;
-- only a reconstructed trusted executable name and its required permission
-  switch. Captured argv, API keys and captured environment variables are
-  removed before persistence.
+- los identificadores de caja y panel, los nombres visibles, el color, el orden y la selección;
+- la carpeta predeterminada del espacio de trabajo y el directorio de trabajo local
+  elegido de forma independiente para cada ventana, que puede estar fuera de esa
+  carpeta predeterminada;
+- si el entorno de ejecución es un shell de inicio de sesión, un agente o una terminal detenida;
+- los registros de conversación de Claude, Codex, Agy y Grok, a los que solo se
+  añaden entradas, incluidos el tipo de agente, el ID de sesión nativo detectado,
+  la carpeta de reanudación específica de cada conversación y las marcas de tiempo;
+- únicamente el nombre reconstruido de un ejecutable de confianza y su opción de
+  permisos obligatoria. Los argumentos argv capturados, las claves de API y las
+  variables de entorno capturadas se eliminan antes de guardar.
 
-For every SSH window it keeps:
+Para cada ventana SSH conserva:
 
-- the box and panel identifiers, names, colour, order and selection;
-- an opaque credential UUID;
-- the exact saved tmux name and window metadata;
-- the connection reference and disconnected state needed by the UI.
+- los identificadores de caja y panel, los nombres, el color, el orden y la selección;
+- un UUID de credencial opaco;
+- el nombre exacto de tmux guardado y los metadatos de la ventana;
+- la referencia de conexión y el estado de desconexión que necesita la interfaz.
 
-The SSH command itself—including an `sshpass` password or private-key
-location—exists only inside the encrypted vault. It is never copied into the
-readable session JSON, recently-closed history, preview, journal or logs.
+El propio comando SSH —incluida una contraseña de `sshpass` o la ubicación de
+una clave privada— existe solo dentro de la bóveda cifrada. Nunca se copia en
+el JSON de sesión legible, el historial de cierres recientes, la vista previa,
+el diario ni los registros.
 
-## Save triggers
+## Cuándo se guarda
 
-`UniConnectSessionPersistenceObserver` requests a save after every
-recovery-relevant model mutation: box membership/order, groups, selection,
-names, colour, pinning, folder, panel membership/layout/order, profile,
-credential reference, tmux binding, local-agent history and runtime or
-connection state. Requests from one main-run-loop transaction are coalesced so
-the saved snapshot is coherent.
+`UniConnectSessionPersistenceObserver` solicita un guardado tras cada
+modificación del modelo relevante para la recuperación: pertenencia y orden de
+cajas, grupos, selección, nombres, color, fijación, carpeta, pertenencia,
+disposición y orden de paneles, perfil, referencia de credencial, vinculación
+de tmux, historial del agente local y estado de ejecución o de conexión. Las
+solicitudes de una misma transacción del bucle principal de eventos se agrupan
+para que la instantánea guardada sea coherente.
 
-An independent autosave tick runs every eight seconds. Identical fingerprints
-may avoid redundant writes briefly, but a save is forced at least once per
-minute. Writes use a private temporary file, `fsync`, atomic rename and a
-directory `fsync`; directories are mode `0700` and files mode `0600`.
+Un autoguardado independiente se ejecuta cada ocho segundos. Las huellas
+idénticas pueden evitar brevemente escrituras redundantes, pero se fuerza un
+guardado al menos una vez por minuto. Las escrituras usan un archivo temporal
+privado, `fsync`, un renombrado atómico y un `fsync` del directorio; los
+directorios tienen modo `0700` y los archivos modo `0600`.
 
-## Rolling archive
+## Historial rotatorio de copias
 
-After a successful session save, `UniConnectRecoveryBackupRepository` creates
-a scheduled recovery point when six hours have elapsed since the previous one:
+Tras un guardado de sesión correcto, `UniConnectRecoveryBackupRepository` crea
+un punto de recuperación programado cuando han transcurrido seis horas desde el
+anterior:
 
 ```text
 ~/.uniconnect/backups/
@@ -54,140 +60,138 @@ a scheduled recovery point when six hours have elapsed since the previous one:
 └── session-<milliseconds>-scheduled-<uuid>.vault.uc
 ```
 
-That is four recovery opportunities per day while the app is running and able
-to save. Entries older than seven days are pruned and the archive is bounded to
-28 entries. The `.json` is deliberately readable local work state; the matching
-`.vault.uc`, when present, remains encrypted. Debug builds use an isolated
-`~/.uniconnect/debug/<bundle-id>/backups/` directory and cannot consume the
-Release archive accidentally.
+Eso supone cuatro oportunidades de recuperación al día mientras la aplicación
+está en ejecución y puede guardar. Las entradas con más de siete días se
+eliminan y el historial se limita a 28 entradas. El `.json` contiene,
+deliberadamente, estado de trabajo local legible; el `.vault.uc`
+correspondiente, cuando existe, permanece cifrado. Las compilaciones Debug usan
+un directorio aislado `~/.uniconnect/debug/<bundle-id>/backups/` y no pueden
+utilizar accidentalmente el historial de Release.
 
-Before a recovery snapshot is applied, the current state is archived with the
-reason `before-restore`. This makes a mistaken restore reversible too.
+Antes de aplicar una instantánea de recuperación, el estado actual se archiva
+con el motivo `before-restore`. Esto también permite revertir una restauración
+equivocada.
 
-## Restoring an automatic point
+## Restaurar un punto automático
 
-Use **File → Restore Backup…** and choose a JSON shown from UniConnect's own
-archive. The picker rejects files outside that directory, symbolic links,
-damaged JSON and unsupported snapshots. After confirmation:
+Usa **Archivo → Restaurar copia de seguridad…** y elige un JSON del historial
+propio de UniConnect. El selector rechaza archivos fuera de ese directorio,
+enlaces simbólicos, JSON dañados e instantáneas no compatibles. Tras confirmar:
 
-1. UniConnect archives the current state.
-2. Missing credentials are merged from the encrypted companion vault; an
-   existing current credential is never overwritten silently.
-3. Recovered boxes and windows open alongside the current ones.
-4. Local session claims are reconciled so one native agent session has at most
-   one active owner.
-5. An SSH window checks the exact saved tmux name and attaches to it. If that
-   session has disappeared, snapshot reconstruction recreates the same name and
-   attaches without detaching another client. A recreated shell is not a resumed
-   AI conversation.
+1. UniConnect archiva el estado actual.
+2. Las credenciales que faltan se incorporan desde la bóveda cifrada asociada;
+   nunca se sobrescribe silenciosamente una credencial actual existente.
+3. Las cajas y ventanas recuperadas se abren junto a las actuales.
+4. Las asignaciones de propiedad de las sesiones locales se concilian para que
+   una sesión nativa de agente tenga como máximo un propietario activo.
+5. Una ventana SSH comprueba el nombre exacto de tmux guardado y se conecta a
+   esa sesión. Si ha desaparecido, la reconstrucción de la instantánea vuelve a
+   crear el mismo nombre y se conecta sin desconectar a otro cliente. Un shell
+   recreado no es una conversación de IA reanudada.
 
-A missing required local folder does not launch an agent in an unintended
-directory. Saved conversation links remain available, and choosing a replacement
-for one window must not rewrite other windows or the workspace default. Each
-conversation retains its own resume folder. Explicit existing-only imports still
-require their remote preflight to find the saved tmux; missing sessions fail that
-check. Recovery never bypasses this preflight. A session that disappears after
-successful validation can be recreated during subsequent snapshot reconstruction.
+Si falta una carpeta local obligatoria, no se lanza un agente en un directorio
+no previsto. Los enlaces a las conversaciones guardadas siguen disponibles, y
+elegir una carpeta de sustitución para una ventana no debe modificar otras
+ventanas ni la carpeta predeterminada del espacio de trabajo. Cada conversación
+conserva su propia carpeta de reanudación. Las importaciones explícitas
+limitadas a sesiones existentes siguen requiriendo que su comprobación previa
+remota encuentre el tmux guardado; las sesiones ausentes no superan esa
+comprobación. La recuperación nunca omite esta comprobación previa. Una sesión
+que desaparece después de una validación correcta puede recrearse durante una
+reconstrucción posterior de la instantánea.
 
-## Manual backup and portable export
+## Copia de seguridad manual y exportación portátil
 
-**Persist Now** (`⌘S`, **Guardar** in Spanish) requests a fresh asynchronous scan of
-supported local agents before forcing a confirmed live-session write. Detection
-is best-effort: a conversation is resumable only when its actual native session ID
-is available from the supported integration. UniConnect never invents an ID,
-infers one from a window name or discards previously saved conversations when a
-scan finds nothing. The window name and local folder remain durable even when no
-resumable AI session is detected, including ordinary shells and one-off commands.
+Cada ventana local guarda su nombre y una carpeta de trabajo independiente.
+Elegir una carpeta fuera de la predeterminada del espacio de trabajo no modifica
+otras ventanas ni la configuración predeterminada. Cada conversación conserva
+su propia carpeta de reanudación.
 
-After the confirmed session write, it writes the readable, secret-free
-`backup.json` plus its authenticated encrypted credential
-companion and a bounded history of matching pairs. The JSON is committed only
-after its uniquely named vault companion is durable, so a crash cannot combine
-state from one generation with credentials from another. Legacy whole-document
-`backup.uc` files are read and migrated without deleting the original rollback
-source. A failed live-session write is reported as an error, never as **Saved** or
-a confirmed complete backup. This is useful before a large manual change.
+**Guardar ahora** (`⌘S`) solicita un nuevo análisis asíncrono de los agentes
+locales compatibles antes de forzar y confirmar la escritura de la sesión
+activa en disco. La detección se intenta con la información disponible: una
+conversación solo se puede reanudar cuando la integración compatible permite
+obtener su ID de sesión nativo real. UniConnect nunca inventa un ID, lo deduce
+del nombre de una ventana ni descarta conversaciones guardadas previamente
+cuando un análisis no encuentra nada. El nombre de la ventana y la carpeta
+local siguen guardados aunque no se detecte ninguna sesión de IA reanudable,
+incluidos los shells ordinarios y los comandos puntuales.
 
-### ウインドウごとのフォルダーと手動保存
+Tras confirmar la escritura de la sesión, escribe el `backup.json` legible y
+sin secretos junto con su archivo asociado de credenciales cifrado y
+autenticado, además de un historial acotado de pares correspondientes. El JSON
+solo se confirma después de que su archivo de bóveda asociado, con nombre
+único, esté guardado de forma duradera, para que un fallo no combine el estado
+de una generación con las credenciales de otra. Los archivos heredados
+`backup.uc`, que contienen el documento completo, se leen y migran sin
+eliminar el original que permite revertir la operación. Un fallo al escribir la
+sesión activa se notifica como error, nunca como **Guardado** ni como una copia
+de seguridad completa confirmada. Esto resulta útil antes de un cambio manual
+importante.
 
-各ローカルウインドウには名前と独立した作業フォルダーを保存します。ワークスペースの
-デフォルトフォルダーの外も選択でき、他のウインドウやデフォルト設定は変更されません。
-各会話には固有の再開用フォルダーを保持します。必要なフォルダーが存在しない場合、
-意図しないプロジェクトでエージェントを起動せず、保存済みの会話を保持して復旧します。
+Las exportaciones portátiles y los puntos de control temporales de importación
+siguen siendo documentos cifrados íntegramente de forma deliberada. Una
+exportación portátil es un archivo de transporte protegido por una frase de
+contraseña; un punto de control de importación es una unidad interna de
+reversión atómica que debe restaurar el documento, la instantánea de sesión
+exacta y la revisión exacta de la bóveda como una sola unidad autenticada.
+Ninguno de los dos es un archivo de configuración activo o legible.
 
-「今すぐ保存」（`⌘S`）は対応エージェントの状態を非同期で再検出してから、セッションの
-ディスク書き込み完了を確認し、機密情報を含まないJSONと暗号化された認証情報のペアを
-保存します。検出はベストエフォートで、実際のネイティブセッションIDを取得できた会話
-のみ再開可能です。IDを捏造したりウインドウ名から推測したりせず、検出結果がなくても
-以前の会話を消しません。通常のシェルや単発コマンドも名前とフォルダーを保存します。
-セッションを書き込めなかった場合はエラーを表示し、保存成功や完全なバックアップの
-完了を表示しません。
+**Exportar configuración…** crea un contenedor portátil `.uniconnect`
+protegido por una frase de contraseña del usuario (PBKDF2-HMAC-SHA256 más
+AES-256-GCM). A diferencia del JSON automático legible, el contenido exportado
+puede incluir datos de conexión porque todo el contenido está autenticado y
+cifrado. Las frases de contraseña incorrectas, los archivos truncados y la
+manipulación de su contenido se rechazan antes de modificar el estado.
 
-Portable exports and short-lived import checkpoints intentionally remain
-whole-document ciphertexts. A portable export is a passphrase-protected
-transport artifact; an import checkpoint is an internal atomic rollback
-capsule that must restore the document, exact session snapshot and exact vault
-revision as one authenticated unit. Neither is a live/readable configuration
-file.
+La recuperación automática, **Guardar ahora** y la exportación portátil se
+complementan:
 
-**Export Configuration…** creates a portable `.uniconnect` container protected
-by a user passphrase (PBKDF2-HMAC-SHA256 plus AES-256-GCM). Unlike the readable
-automatic JSON, the exported payload can include connection material because
-the whole payload is authenticated and encrypted. Wrong passphrases,
-truncation and tampering are rejected before mutation.
-
-Automatic recovery, Persist Now and portable export are complementary:
-
-| Mechanism | Purpose | Secret handling |
+| Mecanismo | Propósito | Tratamiento de secretos |
 |---|---|---|
-| Live snapshot | Exact next-launch reconstruction | Readable state; opaque credential ids only |
-| Six-hour archive | Recover accidental deletion or corruption for seven days | Readable state plus separate encrypted vault copy |
-| Persist Now | User-requested local checkpoint | Readable state plus generation-bound encrypted vault companion |
-| Portable export | Transfer or offline disaster recovery | Passphrase-authenticated encrypted container |
+| Instantánea activa | Reconstrucción exacta en el siguiente inicio | Estado legible; solo identificadores de credencial opacos |
+| Historial de seis horas | Recuperar borrados accidentales o corrupción durante siete días | Estado legible más copia cifrada separada de la bóveda |
+| Guardar ahora | Punto de control local solicitado por el usuario | Estado legible más archivo de bóveda cifrado asociado a la misma generación |
+| Exportación portátil | Transferencia o recuperación ante desastres sin conexión | Contenedor cifrado autenticado mediante una frase de contraseña |
 
-## Operational recovery checklist
+## Lista de comprobación para la recuperación operativa
 
-If a connection hangs after changing network, use **Reconnect Now** (`⌘R`) for
-the focused SSH/tmux window, or `⌃⌘R` for every eligible SSH window. UniConnect
-terminates only its local SSH process group and reconstructs each panel against
-the same saved tmux; it does not wait for the ordinary SSH timeout and never
-sends `tmux kill-*`.
+Si una conexión se queda bloqueada tras cambiar de red, usa **Volver a conectar
+ahora esta ventana SSH** (`⌘R`) para la ventana SSH/tmux seleccionada, o
+`⌃⌘R` para todas las ventanas SSH que correspondan. UniConnect termina
+únicamente su grupo local de procesos SSH y reconstruye cada panel con el mismo
+tmux guardado; conserva los paneles y los nombres de tmux, no espera al tiempo
+de espera habitual de SSH y nunca envía `tmux kill-*`.
 
-Normal startup, saved-snapshot reconstruction (including archive recovery and
-history reopen), reconnect and credential-revision respawn attach to the exact
-saved tmux name when it exists, or recreate that same name automatically when it
-does not. They never detach another client. Explicit existing-only import
-preflights remain strict and do not create a replacement during validation.
+El inicio normal, la reconstrucción de instantáneas guardadas —incluidas la
+recuperación desde el historial de copias y la reapertura desde el historial de
+cierres—, la reconexión y el reinicio por cambio de revisión de credenciales se
+conectan al nombre exacto de tmux guardado cuando existe, o recrean
+automáticamente ese mismo nombre cuando no existe. Nunca desconectan a otro
+cliente. Las comprobaciones previas de las importaciones explícitas limitadas a
+sesiones existentes siguen siendo estrictas: la comprobación previa remota de
+existencia es obligatoria y no crea una sesión de sustitución durante la
+validación. Si la sesión desaparece después de superar esa comprobación, puede
+recrearse en una reconstrucción posterior de la instantánea.
 
-A recreated tmux restores a shell, not a killed AI process. An AI conversation
-can only be resumed from its canonical saved native conversation ID and recorded
-resume folder; UniConnect never substitutes `--continue` or guesses the latest
-conversation. Missing identity must not be reported as a recovered AI session.
+Un tmux recreado restaura un shell, no un proceso de IA terminado ni su
+conversación. Una conversación de IA solo puede reanudarse a partir de su ID
+nativo canónico guardado y de su carpeta de reanudación registrada; UniConnect
+nunca los sustituye por `--continue` ni adivina la conversación más reciente.
+La ausencia de identidad no debe notificarse como una sesión de IA recuperada.
 
-### SSH復旧時のセッションの扱い
+Si un agente local termina, permanece en el shell y usa el menú de acciones de
+la ventana para reanudar una conversación registrada o iniciar otro agente. No
+elimines la conversación salvo que confirmes explícitamente **Olvidar la
+conversación guardada**.
 
-通常の起動、保存済みスナップショットの再構築（アーカイブ復元と履歴からの再表示を含む）、
-再接続、認証情報リビジョン変更による再生成では、保存済みの正確なtmux名に
-接続します。既に消えている場合は同じ名前で自動的に再作成し、他のクライアントを切断しません。
-一方、既存セッション限定のインポートではリモートの事前存在確認が必須で、その確認中に
-セッションを作成しません。事前確認に成功した後でセッションが消えた場合は、後続の
-スナップショット再構築で再作成できます。`⌘R`は選択中のSSHウインドウ、`⌃⌘R`は
-対象の全SSHウインドウを即座に再接続し、通常のタイムアウトを待ったり`tmux kill-*`を実行したり
-せず、パネルと保存済みtmux名を保持します。
+Si falla una actualización firmada, el instalador conserva la aplicación
+anterior en `~/.uniconnect/backups/install/<timestamp>/UniConnect.app`.
+Restaurar ese paquete también restaura su identidad estable de firma de código;
+no elimines la copia de seguridad hasta haber comprobado manualmente la
+aplicación actualizada.
 
-tmuxの再作成で復旧するのはシェルで、終了したAIプロセスや会話ではありません。AIの再開には
-保存された正規のネイティブ会話IDと固有の再開フォルダーが必要です。`--continue`や最新の会話の
-推測で代用せず、会話IDがない状態をAIセッションの復旧成功として表示しません。
-
-If a local agent exits, stay in the shell and use the window action menu to
-resume a recorded conversation or start another agent. Do not delete the
-conversation unless **Forget Conversation…** is explicitly confirmed.
-
-If a signed update fails, the installer preserves the previous app under
-`~/.uniconnect/backups/install/<timestamp>/UniConnect.app`. Restoring that
-bundle also restores its stable code-signing identity; do not delete the
-backup until the updated app has been checked manually.
-
-Never repair a vault by overwriting it with an empty file. Preserve the current
-session JSON, vault and install backup, then restore the last known-good signed
-app or import a verified portable export.
+Nunca repares una bóveda sobrescribiéndola con un archivo vacío. Conserva el
+JSON de sesión actual, la bóveda y la copia de seguridad de instalación, y
+después restaura la última aplicación firmada que sepas que funciona o importa
+una exportación portátil verificada.

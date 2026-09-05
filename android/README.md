@@ -52,6 +52,18 @@ ni cambia la configuración de macOS/Linux por su cuenta.
 
 ## Arquitectura
 
+El usuario asume el diseño y frontend Android desde el 5 de septiembre de 2026.
+Los siguientes cambios de esta consola se limitan a backend, sesiones y despliegue;
+coordinar cualquier modificación de `ui/` antes de editar esos archivos.
+
+El compositor publicado en `9f8365fc9` envía el texto y `Intro` en una única
+petición explícita. `MachinesViewModel.sendInput(text, onDelivered)` confirma
+aceptación inmediata o en cola por el host, no que el comando haya terminado.
+Solo esa confirmación borra el borrador; una entrega incierta conserva el texto
+y nunca se reintenta automáticamente. Las teclas y «Solo texto» siguen siendo
+acciones separadas. La vista de chat real aún no tiene API implementada: una
+cuadrícula del terminal no debe transformarse en mensajes de IA inventados.
+
 `domain/` contiene valores e interfaces. `data/` implementa persistencia y
 transporte. `ui/` recibe instantáneas y acciones de un ViewModel. `AppContainer`
 compone e inyecta las dependencias en el arranque; las filas no conocen servicios.
