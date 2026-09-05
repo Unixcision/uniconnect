@@ -1052,12 +1052,84 @@ class TerminalController {
     }
 
     private nonisolated func spawnClientHandler(socket clientSocket: Int32, peerPid: pid_t?) {
-        Thread.detachNewThread { [weak self] in
+        let accessMode = socketServer.accessMode
+        let listenerGeneration = socketServer.authorizationGeneration
+        let pid = peerPid ?? transport.peerProcessID(of: clientSocket)
+        // One bounded kernel read at acceptance binds the PID to its start identity before
+        // the asynchronous tmux inspection can yield. No subprocess runs on the accept queue.
+        let peer = pid.flatMap { UniConnectLocalTmuxProcessIdentity(processID: Int($0)) }
+        let hasSameUID = transport.peerHasSameUID(clientSocket)
+        Task.detached { [weak self] in
             guard let self else {
                 close(clientSocket)
                 return
             }
-            self.handleClient(clientSocket, peerPid: peerPid)
+            var allowed = accessMode != .cmuxOnly
+            if accessMode == .cmuxOnly {
+                if pid == nil {
+                    // Preserve the existing short-lived-client fallback; do not infer tmux
+                    // ownership from a missing PID or an environment supplied on the wire.
+                    allowed = hasSameUID
+                } else if hasSameUID, let peer, peer.userID == getuid(),
+                          UniConnectLocalTmuxProcessIdentity(processID: peer.pid) == peer {
+                    allowed = self.isDescendant(pid_t(peer.pid))
+                    if !allowed {
+                        allowed = await self.authorizeLocalTmuxSocketPeer(peer)
+                    }
+                    allowed = allowed && UniConnectLocalTmuxProcessIdentity(processID: peer.pid) == peer
+                }
+            }
+            guard !Task.isCancelled, self.socketServer.isRunning,
+                  self.socketServer.authorizationGeneration == listenerGeneration,
+                  self.socketServer.accessMode == accessMode else {
+                close(clientSocket)
+                return
+            }
+            let denial = allowed ? nil : (pid == nil
+                ? "ERROR: Unable to verify client process"
+                : "ERROR: Access denied — only processes started inside cmux can connect")
+            // Blocking socket reads/writes remain on the existing dedicated client thread,
+            // never on MainActor, the accept queue or Swift's cooperative executor.
+            Thread.detachNewThread { [weak self] in
+                guard let self else {
+                    close(clientSocket)
+                    return
+                }
+                self.handleClient(
+                    clientSocket, accessMode: accessMode,
+                    listenerGeneration: listenerGeneration, denial: denial
+                )
+            }
+        }
+    }
+
+    /// Captures and revalidates only app-owned local panes; the inspector performs all I/O.
+    private func authorizeLocalTmuxSocketPeer(_ peer: UniConnectLocalTmuxProcessIdentity) async -> Bool {
+        let owners = localTmuxSocketOwners()
+        guard let owner = await UniConnectCoordinator.shared.verifiedLocalTmuxSocketOwner(
+            peer: peer, owners: owners
+        ), !Task.isCancelled else { return false }
+        return localTmuxSocketOwners().filter {
+            $0.workspaceID == owner.workspaceID && $0.panelID == owner.panelID
+        } == [owner]
+    }
+
+    private func localTmuxSocketOwners() -> [UniConnectLocalTmuxOwner] {
+        var managers = [tabManager].compactMap { $0 }
+        for candidate in UniConnectCoordinator.shared.allTabManagers()
+        where !managers.contains(where: { $0 === candidate }) {
+            managers.append(candidate)
+        }
+        return managers.flatMap(\.tabs).flatMap { workspace -> [UniConnectLocalTmuxOwner] in
+            guard workspace.uniConnectProfile?.kind == .local else { return [] }
+            return workspace.uniConnectLocalWindowsByPanelId.compactMap { panelID, record in
+                guard let binding = record.tmuxBinding,
+                      let panel = workspace.terminalPanel(for: panelID) else { return nil }
+                return UniConnectLocalTmuxOwner(
+                    workspaceID: workspace.id, panelID: panelID, binding: binding,
+                    surfaceGeneration: panel.surface.uniConnectSurfaceGeneration
+                )
+            }
         }
     }
 
@@ -1092,40 +1164,18 @@ class TerminalController {
         }
     }
 
-    private nonisolated func handleClient(_ socket: Int32, peerPid: pid_t? = nil) {
+    private nonisolated func handleClient(
+        _ socket: Int32,
+        accessMode: SocketControlMode,
+        listenerGeneration: UInt64,
+        denial: String?
+    ) {
         defer { close(socket) }
-
-        // In cmuxOnly mode, verify the connecting process is a descendant of cmux.
-        // In allowAll mode (env-var only), skip the ancestry check.
-        if socketServer.accessMode == .cmuxOnly {
-            // Use pre-captured peer PID if available (captured in accept loop before
-            // the peer can disconnect), falling back to live lookup.
-            let pid = peerPid ?? transport.peerProcessID(of: socket)
-            if let pid {
-                guard isDescendant(pid) else {
-                    _ = writeSocketResponse(
-                        "ERROR: Access denied — only processes started inside cmux can connect",
-                        to: socket
-                    )
-                    return
-                }
-            }
-            // If pid is nil, LOCAL_PEERPID failed (peer disconnected before we
-            // could read it — common with ncat --send-only). We still verify the
-            // peer runs as the same user via LOCAL_PEERCRED. This is the same
-            // security boundary as the socket file permissions (0600), so it does
-            // not widen the attack surface. We also require that the peer actually
-            // sent data (checked in the read loop below) — a connect-only probe
-            // with no data is harmless.
-            if pid == nil {
-                guard transport.peerHasSameUID(socket) else {
-                    _ = writeSocketResponse(
-                        "ERROR: Unable to verify client process",
-                        to: socket
-                    )
-                    return
-                }
-            }
+        guard socketServer.isRunning, socketServer.accessMode == accessMode,
+              socketServer.authorizationGeneration == listenerGeneration else { return }
+        if let denial {
+            _ = writeSocketResponse(denial, to: socket)
+            return
         }
 
         var buffer = [UInt8](repeating: 0, count: 4096)
@@ -1140,6 +1190,8 @@ class TerminalController {
             pending.append(chunk)
 
             while let newlineIndex = pending.firstIndex(of: "\n") {
+                guard socketServer.isRunning, socketServer.accessMode == accessMode,
+                      socketServer.authorizationGeneration == listenerGeneration else { return }
                 let line = String(pending[..<newlineIndex])
                 pending = String(pending[pending.index(after: newlineIndex)...])
                 let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -7,4 +7,10 @@ protocol UniConnectLocalTmuxInspecting: Sendable {
         workspaceID: UUID,
         panelID: UUID
     ) async -> UUID?
+
+    /// Verifies that the kernel-observed peer belongs to a pane still owned by one supplied window.
+    func verifiedOwner(
+        of peer: UniConnectLocalTmuxProcessIdentity,
+        among owners: [UniConnectLocalTmuxOwner]
+    ) async -> UniConnectLocalTmuxOwner?
 }

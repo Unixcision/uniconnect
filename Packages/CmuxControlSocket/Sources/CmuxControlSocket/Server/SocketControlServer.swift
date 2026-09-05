@@ -127,6 +127,13 @@ public final class SocketControlServer: Sendable {
         withListenerState { $0.accessMode }
     }
 
+    /// The existing listener generation used to invalidate an in-flight client authorization.
+    ///
+    /// Capture this when accepting a client and compare it again after any asynchronous checks.
+    public var authorizationGeneration: UInt64 {
+        withListenerState { $0.activeAcceptLoopGeneration }
+    }
+
     /// The listener's current socket path, regardless of lifecycle phase.
     public var currentSocketPath: String {
         withListenerState { $0.socketPath }

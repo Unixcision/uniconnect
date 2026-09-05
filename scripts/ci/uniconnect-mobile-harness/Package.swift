@@ -11,9 +11,10 @@ let package = Package(
     dependencies: [
         .package(path: repository + "/Packages/CMUXMobileCore"),
         .package(path: repository + "/Packages/CmuxProcess"),
+        .package(path: repository + "/Packages/CmuxControlSocket"),
     ],
     targets: [
-        .target(name: "cmux", dependencies: ["CMUXMobileCore", "CmuxProcess"]),
+        .target(name: "cmux", dependencies: ["CMUXMobileCore", "CmuxProcess", "CmuxControlSocket"]),
         .testTarget(name: "UniConnectMobileBehaviorTests", dependencies: ["cmux", "CMUXMobileCore", "CmuxProcess"]),
     ]
 )

@@ -142,6 +142,105 @@ struct UniConnectLocalTmuxTests {
         #expect(await foreign.generation(for: binding, workspaceID: workspace, panelID: panel) == nil)
     }
 
+    @Test("Socket ownership permits a reattached pane, not a foreign, dead or replaced pane", arguments: [
+        "reattached", "foreignUID", "foreignProcess", "deadPane", "replacedPane",
+    ])
+    func verifiesExactLiveSocketOwner(_ scenario: String) async throws {
+        let workspace = UUID(), panel = UUID(), oldGeneration = UUID(), currentGeneration = UUID()
+        let binding = try #require(UniConnectLocalTmuxBinding(name: "owned", socketName: "test-local"))
+        let owner = UniConnectLocalTmuxOwner(
+            workspaceID: workspace, panelID: panel, binding: binding, surfaceGeneration: currentGeneration
+        )
+        let peer = UniConnectLocalTmuxProcessIdentity(
+            pid: 234, parentPID: 123, userID: 501, startSeconds: 20, startMicroseconds: 30
+        )
+        let pane = UniConnectLocalTmuxProcessIdentity(
+            pid: 123, parentPID: 1, userID: scenario == "foreignUID" ? 502 : 501,
+            startSeconds: 10, startMicroseconds: 20
+        )
+        let before = "$1\t%2\t123\t\(scenario == "deadPane" ? "1" : "0")\towned\n"
+        let after = scenario == "replacedPane" ? "$1\t%3\t124\t0\towned\n" : before
+        let commands = InspectionCommands(outputs: [before, after])
+        let inspector = UniConnectLocalTmuxService(
+            commands: commands,
+            processEnvironment: { pid in
+                guard pid == peer.pid || pid == pane.pid else { return nil }
+                return ["CMUX_WORKSPACE_ID": workspace.uuidString, "CMUX_SURFACE_ID": panel.uuidString,
+                        "UNICONNECT_SURFACE_GENERATION": oldGeneration.uuidString]
+            },
+            processIdentity: { pid in pid == peer.pid ? peer : (pid == pane.pid ? pane : nil) },
+            isProcessDescendant: { child, ancestor in
+                scenario != "foreignProcess" && child == peer.pid && ancestor == pane.pid
+            }
+        )
+        #expect(oldGeneration != currentGeneration)
+        let result = await inspector.verifiedOwner(of: peer, among: [owner])
+        #expect(result == (scenario == "reattached" ? owner : nil))
+        #expect(await commands.targets().allSatisfy { $0 == "=owned:" })
+    }
+
+    @Test("Socket ownership rejects recycled process identities and changing pane generations", arguments: [
+        "recycledAtAccept", "recycledPeer", "recycledPane", "changedGeneration",
+    ])
+    func rejectsIdentityChangesDuringSocketVerification(_ scenario: String) async throws {
+        let workspace = UUID(), panel = UUID(), generation = UUID()
+        let binding = try #require(UniConnectLocalTmuxBinding(name: "owned", socketName: "test-local"))
+        let owner = UniConnectLocalTmuxOwner(
+            workspaceID: workspace, panelID: panel, binding: binding, surfaceGeneration: UUID()
+        )
+        let peer = UniConnectLocalTmuxProcessIdentity(
+            pid: 234, parentPID: 123, userID: 501, startSeconds: 20, startMicroseconds: 30
+        )
+        let pane = UniConnectLocalTmuxProcessIdentity(
+            pid: 123, parentPID: 1, userID: 501, startSeconds: 10, startMicroseconds: 20
+        )
+        // The numeric PID, parent and UID still match: only native start identity changes.
+        let recycledPeer = UniConnectLocalTmuxProcessIdentity(
+            pid: peer.pid, parentPID: peer.parentPID, userID: peer.userID,
+            startSeconds: peer.startSeconds, startMicroseconds: peer.startMicroseconds + 1
+        )
+        let recycledPane = UniConnectLocalTmuxProcessIdentity(
+            pid: pane.pid, parentPID: pane.parentPID, userID: pane.userID,
+            startSeconds: pane.startSeconds + 1, startMicroseconds: pane.startMicroseconds
+        )
+        let identities = InspectionReadSequence([
+            peer.pid: scenario == "recycledAtAccept" ? [recycledPeer]
+                : (scenario == "recycledPeer" ? [peer, peer, recycledPeer] : [peer]),
+            pane.pid: scenario == "recycledPane" ? [pane, recycledPane] : [pane],
+        ])
+        let environment = ["CMUX_WORKSPACE_ID": workspace.uuidString, "CMUX_SURFACE_ID": panel.uuidString,
+                           "UNICONNECT_SURFACE_GENERATION": generation.uuidString]
+        var changedEnvironment = environment
+        changedEnvironment["UNICONNECT_SURFACE_GENERATION"] = UUID().uuidString
+        let environments = InspectionReadSequence([
+            peer.pid: [environment],
+            pane.pid: scenario == "changedGeneration" ? [environment, changedEnvironment] : [environment],
+        ])
+        let commands = InspectionCommands(outputs: ["$1\t%2\t123\t0\towned\n", "$1\t%2\t123\t0\towned\n"])
+        let inspector = UniConnectLocalTmuxService(
+            commands: commands,
+            processEnvironment: { environments.read($0) },
+            processIdentity: { identities.read($0) },
+            isProcessDescendant: { $0 == peer.pid && $1 == pane.pid }
+        )
+        #expect(await inspector.verifiedOwner(of: peer, among: [owner]) == nil)
+    }
+
+    private final class InspectionReadSequence<Value: Sendable>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [Int: [Value]]
+
+        init(_ values: [Int: [Value]]) { self.values = values }
+
+        func read(_ pid: Int) -> Value? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard let first = values[pid]?.first else { return nil }
+            if let count = values[pid]?.count, count > 1 { values[pid]?.removeFirst() }
+            return first
+        }
+    }
+
     private actor InspectionCommands: CommandRunning {
         var outputs: [String]
         var requests: [[String]] = []

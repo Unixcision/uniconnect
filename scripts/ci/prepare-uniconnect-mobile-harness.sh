@@ -12,6 +12,9 @@ for filename in \
     Sources/UniConnect/UniConnectLocalTmuxBinding.swift \
     Sources/UniConnect/UniConnectLocalTmuxLaunchPlan.swift \
     Sources/UniConnect/UniConnectLocalTmuxInspecting.swift \
+    Sources/UniConnect/UniConnectLocalTmuxOwner.swift \
+    Sources/UniConnect/UniConnectLocalTmuxProcessIdentity.swift \
+    Sources/UniConnect/UniConnectLocalTmuxProcessIdentity+Darwin.swift \
     Sources/UniConnect/UniConnectLocalTmuxService.swift \
     Sources/UniConnect/UniConnectMobileApprovedPeer.swift \
     Sources/UniConnect/UniConnectMobilePendingPeer.swift \

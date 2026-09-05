@@ -2,6 +2,7 @@ import AppKit
 import CmuxSidebarInterpreterClient
 import CmuxSidebarRemoteRender
 import CmuxSocketControl
+import CmuxControlSocket
 import CmuxProcess
 import CmuxSettings
 import CmuxSettingsUI
@@ -289,7 +290,12 @@ struct cmuxApp: App {
         UniConnectCoordinator.shared.configureLocalTmuxInspector(
             UniConnectLocalTmuxService(
                 commands: CommandRunner(),
-                processEnvironment: { CmuxTopProcessSnapshot.processArgumentsAndEnvironment(for: $0)?.environment }
+                processEnvironment: { CmuxTopProcessSnapshot.processArgumentsAndEnvironment(for: $0)?.environment },
+                processIdentity: { UniConnectLocalTmuxProcessIdentity(processID: $0) },
+                isProcessDescendant: {
+                    guard let peer = pid_t(exactly: $0), let ancestor = pid_t(exactly: $1) else { return false }
+                    return SocketTransport().isProcessDescendant(peer, of: ancestor)
+                }
             )
         )
         UniConnectCoordinator.shared.configureImportRuntime(

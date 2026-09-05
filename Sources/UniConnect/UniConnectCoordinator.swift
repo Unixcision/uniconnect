@@ -145,6 +145,14 @@ final class UniConnectCoordinator: ObservableObject {
         await localTmuxInspector?.generation(for: binding, workspaceID: workspaceID, panelID: panelID)
     }
 
+    /// Reuses the injected inspector before a durable pane's socket client is dispatched.
+    func verifiedLocalTmuxSocketOwner(
+        peer: UniConnectLocalTmuxProcessIdentity,
+        owners: [UniConnectLocalTmuxOwner]
+    ) async -> UniConnectLocalTmuxOwner? {
+        await localTmuxInspector?.verifiedOwner(of: peer, among: owners)
+    }
+
     /// Receives the direct-SSH bridge graph from the executable composition root.
     func configureClaudeBridge(
         _ runtime: UniConnectClaudeBridgeRuntime?,
