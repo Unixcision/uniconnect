@@ -2,7 +2,9 @@ import Foundation
 import Testing
 @testable import UniConnectClaudeBridge
 
-@Suite("Claude bridge remote script execution")
+// Timing smoke checks must not benchmark eleven simultaneous Python startups on
+// a shared runner. Concurrency regressions still run parallel routes inside each fixture.
+@Suite("Claude bridge remote script execution", .serialized)
 struct ClaudeBridgeRemoteScriptExecutionTests {
     @Test("Registration is idempotent and cleanup restores foreign settings byte for byte")
     func registerTwiceThenUnregister() async throws {
