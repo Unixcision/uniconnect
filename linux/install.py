@@ -6,8 +6,11 @@ import shutil
 import stat
 import time
 
+from uniconnect.i18n import Translator
+
 
 def main():
+    translate = Translator()
     source = Path(__file__).resolve().parent
     binary = Path.home() / ".local/bin/uniconnect"
     applications = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share"))) / "applications"
@@ -33,8 +36,7 @@ def main():
     icon = source.parent / "docs/assets/logo-256.png"
     desktop.write_text("\n".join([
         "[Desktop Entry]", "Type=Application", "Name=UniConnect",
-        "Comment=Persistent local and SSH workspaces", "Comment[es]=Cajas locales y SSH persistentes",
-        "Comment[ja]=永続的なローカルと SSH ワークスペース", f'Exec="{launcher}"', f"Icon={icon}",
+        "Comment=" + translate("Durable local and SSH workspaces"), f'Exec="{launcher}"', f"Icon={icon}",
         "Terminal=false", "Categories=System;TerminalEmulator;Development;",
         "StartupWMClass=UniConnect", "StartupNotify=true", "",
     ]))

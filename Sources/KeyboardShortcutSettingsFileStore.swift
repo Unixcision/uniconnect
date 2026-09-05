@@ -390,7 +390,7 @@ final class CmuxSettingsFileStore {
                 logInvalid("app.language", sourcePath: sourcePath)
                 return
             }
-            snapshot.managedUserDefaults[LanguageSettings.languageKey] = .string(language.rawValue)
+            snapshot.managedUserDefaults[LanguageSettings.languageKey] = .string(language.effectiveLanguage.rawValue)
         }
         if let raw = jsonString(section["appearance"]) {
             let normalized = AppearanceSettings.mode(for: raw).rawValue
@@ -1641,7 +1641,7 @@ final class CmuxSettingsFileStore {
 
                 if change.defaultsKey == LanguageSettings.languageKey {
                     let rawValue = UserDefaults.standard.string(forKey: change.defaultsKey) ?? ""
-                    LanguageSettings.apply(AppLanguage(rawValue: rawValue) ?? .system)
+                    LanguageSettings.apply(AppLanguage(rawValue: rawValue) ?? .es)
                 } else if change.defaultsKey == AppearanceSettings.appearanceModeKey {
                     AppearanceSettings.applyStoredMode(
                         rawValue: UserDefaults.standard.string(forKey: change.defaultsKey),

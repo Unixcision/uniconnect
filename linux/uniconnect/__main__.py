@@ -7,15 +7,25 @@ import os
 import sys
 from pathlib import Path
 
+from .i18n import Translator
 
-def main():
+
+def argument_parser():
+    translate = Translator()
     parser = argparse.ArgumentParser(description="UniConnect Linux")
     parser.add_argument("--state-dir", type=Path)
     parser.add_argument("--import-file", type=Path)
-    parser.add_argument("--connect", help="SSH command used for an explicit JSON import")
-    parser.add_argument("--locale", choices=("en", "es", "ja"))
-    parser.add_argument("--validate", action="store_true", help="Check the stored snapshot without launching terminals")
-    options = parser.parse_args()
+    parser.add_argument("--connect", help=translate("SSH command used for an explicit JSON import"))
+    parser.add_argument("--locale", choices=("es",), default="es",
+                        help=translate("Interface language (Spanish only)"))
+    parser.add_argument("--validate", action="store_true",
+                        help=translate("Check the stored snapshot without launching terminals"))
+    return parser
+
+
+def main():
+    translate = Translator()
+    options = argument_parser().parse_args()
     from .state import StateStore
     from .vault import Vault, default_root
     root = options.state_dir or default_root()
@@ -24,7 +34,7 @@ def main():
     try:
         fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        print("UniConnect is already running for this state directory.", file=sys.stderr)
+        print(translate("UniConnect is already running for this state directory."), file=sys.stderr)
         return 1
     vault = Vault(root)
     store = StateStore(root, vault=vault)

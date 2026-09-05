@@ -19,15 +19,10 @@ import Testing
 @Suite("SettingsRowAnchorResolution")
 struct SettingsRowAnchorResolutionTests {
     @MainActor
-    @Test func languagePickerMatchesTheTwentyShippedCatalogs() {
+    @Test func languageRowOnlyOffersSpanish() {
         let selectable = AppSection.supportedLanguageCases
 
-        #expect(selectable.first == .system)
-        #expect(selectable.count == 21)
-        #expect(Set(selectable.dropFirst()).count == 20)
-        #expect(selectable.contains(.km))
-        #expect(selectable.contains(.uk))
-        #expect(!selectable.contains(.vi))
+        #expect(selectable == [.es])
     }
 
     /// Every singular uniconnect.json path declared by an *unconditionally

@@ -195,7 +195,8 @@ class WindowCommands:
 
     def confirm(self, title, detail):
         dialog = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.QUESTION,
-                                   buttons=Gtk.ButtonsType.OK_CANCEL, text=self._(title))
+                                   buttons=Gtk.ButtonsType.NONE, text=self._(title))
+        dialog.add_buttons(self._("Cancel"), Gtk.ResponseType.CANCEL, self._("Apply"), Gtk.ResponseType.OK)
         dialog.format_secondary_text(detail)
         accepted = dialog.run() == Gtk.ResponseType.OK
         dialog.destroy()

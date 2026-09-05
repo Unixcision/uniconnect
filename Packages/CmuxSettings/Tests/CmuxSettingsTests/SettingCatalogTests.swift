@@ -4,15 +4,15 @@ import Testing
 
 @Suite("SettingCatalog")
 struct SettingCatalogTests {
-    @Test func appLanguagesCoverEveryShippedCatalogAndPreserveVietnameseCompatibility() {
-        let shipped: Set<AppLanguage> = [
-            .en, .ar, .bs, .zhHans, .zhHant, .da, .de, .es, .fr, .it,
-            .ja, .km, .ko, .nb, .pl, .ptBR, .ru, .th, .tr, .uk,
-        ]
+    @Test func spanishIsTheOnlySupportedAndDefaultLanguage() {
+        #expect(AppLanguage.allCases == [.es])
+        #expect(SettingCatalog().app.language.defaultValue == .es)
+    }
 
-        #expect(shipped.count == 20)
-        #expect(shipped.isSubset(of: Set(AppLanguage.allCases)))
-        #expect(AppLanguage(rawValue: "vi") == .vi)
+    @Test(arguments: ["system", "en", "ar", "bs", "zh-Hans", "zh-Hant", "da", "de", "es", "fr", "it", "ja", "km", "ko", "nb", "pl", "pt-BR", "ru", "th", "tr", "uk", "vi"])
+    func legacyLanguagePreferencesResolveToSpanish(rawValue: String) throws {
+        let imported = try #require(AppLanguage(rawValue: rawValue))
+        #expect(imported.effectiveLanguage == .es)
     }
 
     @Test func eachKeyHasUniqueId() {

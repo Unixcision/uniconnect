@@ -1,0 +1,64 @@
+name: UniConnect en español
+
+on:
+  push:
+    branches: [uniconnect, desarrollo/multiplataforma]
+    paths:
+      - Resources/**.xcstrings
+      - Resources/Info.plist
+      - cmux.xcodeproj/project.pbxproj
+      - Sources/cmuxApp.swift
+      - Sources/KeyboardShortcutSettingsFileStore.swift
+      - Packages/CmuxSettings/**
+      - Packages/CmuxSettingsUI/**
+      - linux/**
+      - scripts/verify-spanish-bundle.swift
+      - .github/workflows/uniconnect-spanish.yml
+  pull_request:
+    paths:
+      - Resources/**.xcstrings
+      - Resources/Info.plist
+      - cmux.xcodeproj/project.pbxproj
+      - Sources/cmuxApp.swift
+      - Sources/KeyboardShortcutSettingsFileStore.swift
+      - Packages/CmuxSettings/**
+      - Packages/CmuxSettingsUI/**
+      - linux/**
+      - scripts/verify-spanish-bundle.swift
+      - .github/workflows/uniconnect-spanish.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preferencias-y-catalogos:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Preferencias de idioma y ajustes
+        run: swift test --package-path Packages/CmuxSettings --jobs 2
+      - name: Compilar y comprobar el catálogo distribuido
+        shell: bash
+        run: |
+          bundle="$RUNNER_TEMP/UniConnectSpanish.bundle"
+          mkdir -p "$bundle/Contents/Resources"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleIdentifier string com.unixcision.uniconnect.spanish.validation' "$bundle/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleDevelopmentRegion string es' "$bundle/Contents/Info.plist"
+          xcrun xcstringstool compile Resources/Localizable.xcstrings --output-directory "$bundle/Contents/Resources"
+          xcrun xcstringstool compile Resources/InfoPlist.xcstrings --output-directory "$bundle/Contents/Resources"
+          swift scripts/verify-spanish-bundle.swift "$bundle"
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Resolución de textos y menús en español
+        run: python3 -m unittest discover -s linux/tests -p 'test_i18n.py' -v
+      - name: Preparar GTK nativo en una pantalla aislada
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi gir1.2-gtk-3.0 gir1.2-vte-2.91 xvfb tmux
+      - name: Menús y ciclo de ventanas GTK
+        run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -p 'test_window.py' -v

@@ -1,19 +1,13 @@
 {
-  "sourceLanguage": "en",
+  "sourceLanguage": "es",
   "strings": {
     "sidebar.custom.error": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
+        "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sidebar error"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サイドバーエラー"
+            "value": "Error de la barra lateral"
           }
         }
       }
@@ -21,16 +15,10 @@
     "sidebar.custom.missing": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
+        "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sidebar file is empty or missing."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サイドバーファイルが空か見つかりません。"
+            "value": "El archivo de la barra lateral está vacío o no existe."
           }
         }
       }
@@ -38,16 +26,10 @@
     "sidebar.custom.noView": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
+        "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "No supported SwiftUI view found."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "対応するSwiftUIビューが見つかりません。"
+            "value": "No se ha encontrado ninguna vista SwiftUI compatible."
           }
         }
       }
