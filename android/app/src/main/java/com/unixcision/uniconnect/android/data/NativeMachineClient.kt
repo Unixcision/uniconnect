@@ -5,6 +5,7 @@ import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import org.json.JSONArray
@@ -16,6 +17,14 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
 
     override fun observe(machine: Machine, terminal: TerminalTarget?): Flow<MachineUpdate> = flow {
         rpc.open(machine.endpoint).use { session ->
+            emitAll(observeSession(session, machine, terminal))
+        }
+    }.catch { failure ->
+        if (failure is org.json.JSONException || failure is IllegalArgumentException) throw MachineFailure.ProtocolMismatch()
+        throw failure
+    }.flowOn(Dispatchers.Default)
+
+    internal fun observeSession(session: FramedRpcSession, machine: Machine, terminal: TerminalTarget?): Flow<MachineUpdate> = flow {
             subscribe(session, terminal)
             val updateWorkspaces: suspend () -> Unit = {
                 emit(MachineUpdate.Workspaces(decodeMachine(machine, session.call("mobile.workspace.list", JSONObject()).value.getJSONObject("result"))))
@@ -62,11 +71,7 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
                 }
                 if (events.isNotEmpty()) emit(MachineUpdate.Terminal(requireNotNull(screen)))
             }
-        }
-    }.catch { failure ->
-        if (failure is org.json.JSONException || failure is IllegalArgumentException) throw MachineFailure.ProtocolMismatch()
-        throw failure
-    }.flowOn(Dispatchers.Default)
+    }
 
     override suspend fun inspect(machine: Machine): MachineSnapshot = decodeMachine(machine, call(machine, "mobile.workspace.list", JSONObject()))
 
