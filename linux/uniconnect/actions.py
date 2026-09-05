@@ -13,6 +13,7 @@ class Action:
 ACTIONS = (
     Action("new_workspace", "New workspace", "<Primary><Shift>n"),
     Action("new_window", "New window", "<Primary><Shift>t"),
+    Action("new_conversation_window", "Nueva conversación en otra ventana"),
     Action("close_window", "Close window", "<Primary><Shift>w"),
     Action("close_workspace", "Close workspace", "<Primary><Alt>w"),
     Action("reopen", "Reopen closed", "<Primary><Alt>t"),

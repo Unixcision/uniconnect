@@ -157,7 +157,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         self.menu_items = []
         groups = {
             "UniConnect": ["about", "settings", "lock", "quit"],
-            "File": ["new_workspace", "new_window", "reopen_last", "reopen", "close_window", "close_other_windows", "close_workspace", "save", "import_config", "export_config", "restore_backup"],
+            "File": ["new_workspace", "new_window", "new_conversation_window", "reopen_last", "reopen", "close_window", "close_other_windows", "close_workspace", "save", "import_config", "export_config", "restore_backup"],
             "Edit": ["copy", "paste", "find", "find_next", "find_previous", "hide_find", "find_selection", "send_ctrl_f"],
             "View": ["sidebar", "palette", "notifications", "notifications_latest_unread", "notifications_mark_all_read", "notifications_dismiss_all", "font_larger", "font_smaller", "font_reset", "split_right", "split_down", "equalize_panes", "maximize_pane", "focus_left", "focus_right", "focus_up", "focus_down", "fullscreen"],
             "Workspace": ["rename_workspace", "pin_workspace", "edit_ssh", "workspace_previous", "workspace_next", "workspace_up", "workspace_down", "workspace_first", "window_previous", "window_next", "rename_window", "reconnect", "reconnect_all", "notifications_toggle_workspace", "notifications_toggle_window", "upload", "kill_tmux"],
@@ -412,7 +412,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                 self._notification_preserve_focus_id = surface.record["id"]
             finally:
                 self._notification_context_selection = False
-            self.context_menu(["rename_window", "reset_window_name", "pin_window", "move_window_left", "move_window_right",
+            self.context_menu(["new_conversation_window", "rename_window", "reset_window_name", "pin_window", "move_window_left", "move_window_right",
                                "maximize_pane", "notifications_toggle_window", "close_window", "close_left_windows", "close_right_windows",
                                "close_other_windows", "kill_tmux"], event)
             return True
@@ -649,27 +649,55 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         if select:
             self.select_workspace(workspace["id"])
 
-    def action_new_window(self, pane_id=None):
+    def action_new_window(self, pane_id=None, *, conversation=False):
         workspace = self.current_workspace()
         if workspace is None:
             return self.action_new_workspace()
-        fields = [("name", "Name", "Terminal", "text"), ("agent", "Terminal", "shell", ["shell", "codex", "claude", "agy", "grok"]),
-                  ("cwd", "Folder", workspace.get("cwd") or str(Path.home()), "text"), ("sessionId", "Session ID", "", "text")]
+        source = (self.focused_surface.record if self.focused_surface
+                  and self.focused_surface.workspace is workspace else {})
+        agent = source.get("agent") if conversation else "shell"
+        if agent not in ("shell", "codex", "claude", "agy", "grok", "custom") or (conversation and agent == "shell"):
+            agent = "claude"
+        directory = source.get("cwd") or workspace.get("cwd") or str(Path.home())
+        fields = [("name", "Name", self._("Conversación") if conversation else "Terminal", "text"),
+                  ("agent", "Terminal", agent, ["shell", "codex", "claude", "agy", "grok", "custom"]),
+                  ("cwd", "Folder", directory, "text")]
+        if not conversation:
+            fields.append(("sessionId", "Session ID", "", "text"))
         if workspace["kind"] == "ssh":
             fields.append(("tmux", "tmux session", "uc-" + uuid.uuid4().hex[:12], "text"))
-        result = self.fields_dialog("New window", fields, "Create")
+        # Never copy a custom launch: it may contain --resume for the current conversation.
+        fields.append(("customCommand", "Comando personalizado (ejecutable y argumentos)", "", "text"))
+        title = "Nueva conversación en otra ventana" if conversation else "New window"
+        result = self.fields_dialog(title, fields, "Create")
         if not result:
             return
-        result.update(id=str(uuid.uuid4()), paneId=pane_id or (self.focused_surface.record.get("paneId", "main") if self.focused_surface else "main"), tmuxSocket="uniconnect")
+        result.update(id=str(uuid.uuid4()), paneId=pane_id or source.get("paneId", "main"),
+                      tmuxSocket=source.get("tmuxSocket") or "uniconnect")
         if workspace["kind"] == "local":
             result["tmuxSocket"] = "uniconnect-local"
             result["tmux"] = "uc-" + result["id"].replace("-", "")
-        if not result["sessionId"]:
-            result.pop("sessionId")
-        def created(_=None):
+        if conversation or not result.get("sessionId"):
+            result.pop("sessionId", None)
+        custom_command = result.pop("customCommand", "")
+        if result["agent"] == "custom":
+            try:
+                result["commandArgv"] = shlex.split(custom_command)
+            except ValueError as exc:
+                raise ValueError(self._("Revisa las comillas del comando personalizado.")) from exc
+            if not result["commandArgv"]:
+                raise ValueError(self._("Indica el ejecutable y los argumentos del comando personalizado."))
+        TmuxCommand.agent_argv(result)  # Validate before persisting or opening a terminal.
+        if conversation and any(item.get("tmux") == result["tmux"]
+                                and (item.get("tmuxSocket") or "uniconnect") == result["tmuxSocket"]
+                                for item in workspace["windows"]):
+            raise ValueError(self._("Elige una sesión tmux nueva para conservar la conversación actual."))
+        def created(prepared=None):
+            if conversation and prepared is not None and not prepared["created"]:
+                raise ValueError(self._("La sesión tmux ya existe. Elige otro nombre para una conversación nueva."))
             self.commit_new_window(workspace, result)
         if workspace["kind"] == "ssh":
-            transport = Transport(SSHCommand.parse(self.connection(workspace)), socket_name="uniconnect")
+            transport = Transport(SSHCommand.parse(self.connection(workspace)), socket_name=result["tmuxSocket"])
             self.background(lambda: transport.ensure_session(result), created)
         else:
             created()

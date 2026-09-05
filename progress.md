@@ -113,12 +113,34 @@ duplicar ese arreglo. Para `3dec8ef137`, español y dominio/protocolo pasan; And
 seguía ejecutándose en CI `33983039150` durante esta revisión. No atribuir al
 nuevo HEAD resultados de commits anteriores. Ambos hallazgos están reconocidos
 por el equipo principal: pruebas rojas publicadas en `a845ee06b` (consentimiento)
-y `080dfddd8` (replay), correcciones acotadas en curso. `progress.md` reconciliado.
+y `080dfddd8` (replay), corregidas en `b5455fdcd` y `be867fea0` respectivamente.
+CI de núcleo compartido `33985149672` y móvil `33985212249` correctos.
+`progress.md` reconciliado.
 Continuar sobre `uniconnect`; no crear otra línea de entrega Linux. Antes de
 cambiar el checkout del Linux activo, conservar sus procesos/estado y comprobar
 que no haya nuevos cambios locales ni remotos.
 
 ## Responsables de este bloque
+
+Actualización Mac, 2026-09-05 21:05 CEST:
+
+- El usuario asume el frontend/diseño Android. No seguir retocándolo desde esta
+  consola. `9f8365fc9` publica el selector del catálogo real de agentes y el
+  compositor que ya estaba terminado (texto + Intro en una petición, borrado
+  solo tras confirmación). APK y fuentes de pruebas compilan; no se ha instalado
+  esta APK. Recursos Android españoles parseados, sin referencias ausentes.
+- Release universal del Mac compilada y firmada con la misma identidad instalada;
+  dry-run del instalador correcto. **No instalada**, producción y sesiones intactas.
+- Debug aislado: primera lectura fría `is_ready:false`, después cuadrícula real
+  lista sin crear otra terminal. No confundirlo con migración local ya validada.
+- Linux real: monitor systemd habilitado/activo y última ejecución correcta a las
+  20:54:26 CEST. Checkout limpio en `702f05309`, rama `desarrollo/monitor-ramas`;
+  todo su código está integrado en principal. GUI PID8997 y estado
+  `/root/.local/state/uniconnect` conservados; falta actualizar ese runtime.
+- Siguiente trabajo de esta consola: instalación protegida, recuperación local
+  tmux y Android contra Linux real. Chat real propuesto, **no implementado**;
+  requiere historial por identidad de conversación, no convertir texto de la
+  consola en mensajes ni arrancar una segunda IA.
 
 - Coordinación principal: inventario, integración Git y estado compartido.
 - `linux_state`: inventario de todas las ramas y pruebas transaccionales.

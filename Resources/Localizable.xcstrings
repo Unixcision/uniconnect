@@ -2,6 +2,94 @@
   "sourceLanguage": "es",
   "version": "1.0",
   "strings": {
+    "uniconnect.shared.nueva.conversaci.n.en.otra.ventana": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nueva conversación en otra ventana"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.conversaci.n": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversación"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.custom": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comando personalizado"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.comando.personalizado.ejecutable.y.argumentos": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comando personalizado (ejecutable y argumentos)"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.revisa.las.comillas.del.comando.personalizado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revisa las comillas del comando personalizado."
+          }
+        }
+      }
+    },
+    "uniconnect.shared.indica.el.ejecutable.y.los.argumentos.del.comando.personalizado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indica el ejecutable y los argumentos del comando personalizado."
+          }
+        }
+      }
+    },
+    "uniconnect.shared.elige.una.sesi.n.tmux.nueva.para.conservar.la.conversaci.n.actual": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige una sesión tmux nueva para conservar la conversación actual."
+          }
+        }
+      }
+    },
+    "uniconnect.shared.la.sesi.n.tmux.ya.existe.elige.otro.nombre.para.una.conversaci.n.nueva": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La sesión tmux ya existe. Elige otro nombre para una conversación nueva."
+          }
+        }
+      }
+    },
     "uniconnect.shared.help": {
       "extractionState": "manual",
       "localizations": {

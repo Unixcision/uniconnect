@@ -28,6 +28,8 @@ class WindowCommands:
             return name in ("lock", "quit")
         workspace, surface = self.current_workspace(), self.focused_surface
         windows = workspace.get("windows", []) if workspace else []
+        if name == "new_conversation_window":
+            return bool(workspace and surface and surface.workspace is workspace)
         if name == "notifications_latest_unread":
             return self.latest_unread_notification() is not None
         if name == "notifications_mark_all_read":
@@ -129,6 +131,9 @@ class WindowCommands:
 
     def action_window_next(self):
         self.cycle_window(1)
+
+    def action_new_conversation_window(self):
+        self.action_new_window(conversation=True)
 
     def move_workspace(self, destination):
         workspace = self.current_workspace()
