@@ -58,6 +58,7 @@ class TerminalSurface(Gtk.Box):
         self.terminal.connect("drag-data-received", self.on_drop)
         self.search = Gtk.SearchBar()
         self.search_entry = Gtk.SearchEntry()
+        self.search_entry.set_placeholder_text(self.owner._("Find"))
         self.search_entry.connect("search-changed", self.find)
         self.search_entry.connect("activate", lambda *_: self.terminal.search_find_next())
         self.search.connect_entry(self.search_entry)
@@ -93,7 +94,7 @@ class TerminalSurface(Gtk.Box):
     def update_status(self, status, detail=""):
         self.status = status
         self.record["status"] = status.lower()
-        suffix = detail or self.record.get("repo") or self.record.get("cwd") or self.workspace.get("cwd", "")
+        suffix = self.owner._(detail) if detail else self.record.get("repo") or self.record.get("cwd") or self.workspace.get("cwd", "")
         self.status_label.set_text(f'{self.owner._(status)}  ·  {suffix}')
         self.owner.refresh_sidebar()
 
@@ -262,7 +263,7 @@ class TerminalSurface(Gtk.Box):
                 return
             detail = self.owner._("Reconnect attempts exhausted")
         else:
-            detail = f"exit {code}"
+            detail = self.owner._("Exit {code}").format(code=code)
             self._cancel_reconnect(reset=True)
         self._release_ownership()
         self.update_status("Disconnected", detail)

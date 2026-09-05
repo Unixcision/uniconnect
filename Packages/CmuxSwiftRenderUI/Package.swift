@@ -4,7 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "CmuxSwiftRenderUI",
-    defaultLocalization: "en",
+    defaultLocalization: "es",
     platforms: [
         .macOS(.v14),
     ],

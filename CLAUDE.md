@@ -1,5 +1,17 @@
 # UniConnect agent notes
 
+## Idioma del producto (decisión del usuario, 2026-09-05)
+
+UniConnect para macOS y Linux, y la futura app Android, se mantienen únicamente
+en español. Esta decisión sustituye las obligaciones heredadas de mantener otros
+idiomas para estas superficies. Los catálogos compartidos usan `sourceLanguage: es`
+y solo `localizations.es`. Mantener claves estables y textos de reserva en español
+en código nuevo; comprobar formatos, plurales y menús de ambos escritorios.
+Las preferencias de idioma antiguas se aceptan por compatibilidad y se normalizan
+a español. No cambiar el idioma del sistema ni el de las sesiones de terminal.
+No borrar recursos de traducción de dependencias, ejemplos, la web o el proyecto
+iOS por extensión de esta decisión sobre el producto de escritorio y Android.
+
 UniConnect is a fork of cmux (upstream: manaflow-ai/cmux). The product, app bundle
 and executable are named **UniConnect** (`UniConnect.app`, Debug: `UniConnect DEV`),
 the bundle id is `com.unixcision.uniconnect` (own Application Support folder and socket, cmux stays untouched), and the CLI keeps its `cmux` name. The

@@ -95,6 +95,7 @@ class MainWindowLifecycleTests(unittest.TestCase):
             vault = Vault(root)
             vault.initialize("only-this-isolated-test-vault")
             store = StateStore(root, vault=vault)
+            store.data.setdefault("settings", {})["locale"] = "ja"
             transport = Transport(socket_name=socket)
             for index in range(6):
                 record = {"id": f"window-{index}", "name": f"Terminal {index}", "cwd": directory,
@@ -113,6 +114,13 @@ class MainWindowLifecycleTests(unittest.TestCase):
             try:
                 window = MainWindow(app, store, vault)
                 window.present()
+                self.assertEqual(window._.language, "es")
+                menu_labels = {name: item.get_label() for name, item in window.menu_items}
+                self.assertEqual(menu_labels["new_workspace"], "Nueva caja")
+                self.assertEqual(menu_labels["new_window"], "Nueva ventana")
+                self.assertEqual(menu_labels["settings"], "Ajustes")
+                self.assertEqual(window.action_label("workspace_1"), "Caja 1")
+                self.assertEqual(window.action_label("window_9"), "Ventana 9")
                 for round in range(4):
                     for workspace in list(store.workspaces):
                         window.select_workspace(workspace["id"])
@@ -191,11 +199,12 @@ class MainWindowLifecycleTests(unittest.TestCase):
                 self.assertTrue(store.data["settings"]["compactSidebar"])
                 self.assertFalse(window.sidebar_search.get_visible())
                 self.assertEqual(len(window.workspace_list.get_children()), 6)
-                self.fields_response({0: "light", 1: "en", 2: "Monospace 13", 3: "0"})
+                self.fields_response({0: "light", 1: "Monospace 13", 2: "0"})
                 window.action_settings()
                 loaded = StateStore(root, vault=vault)
                 self.assertEqual(loaded.data["settings"]["font"], "Monospace 13")
                 self.assertEqual(loaded.data["settings"]["theme"], "light")
+                self.assertEqual(loaded.data["settings"]["locale"], "es")
                 self.assertTrue(loaded.data["settings"]["compactSidebar"])
                 self.assertEqual(len(loaded.workspaces), 6)
                 self.assertEqual(loaded.window("workspace-0", "window-0")["tmux"], closed_tmux)

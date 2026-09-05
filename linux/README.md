@@ -69,7 +69,7 @@ also creates a checkpoint. Imports and restores checkpoint the current state.
 ## Shortcuts and local control
 
 The Linux terminal uses Ctrl+Shift combinations so Ctrl+C remains available to
-shell programs. Settings exposes editable shortcuts, font, appearance, language
+shell programs. Settings exposes editable shortcuts, font, appearance
 and optional idle locking. Defaults include:
 
 | Action | Linux shortcut |
@@ -115,6 +115,7 @@ The tests cover authenticated encryption, import identity, state and backup
 recovery, SSH parsing, actual tmux ownership and reconnect lifecycle, and actual
 SFTP byte transfer/cancellation. Exact current results belong in PORT_STATUS.md.
 
-Linux interface strings support English, Spanish and Japanese and reuse the
-macOS catalogue where applicable. Translation of all internal diagnostic details
-and the complete upstream locale set remains part of the parity work.
+The Linux interface is Spanish-only and reads the same Spanish catalogue as macOS.
+Older imported language preferences are accepted but do not change the interface.
+`--locale` accepts only `es`; Settings no longer offers a language selector. Stable
+shared keys resolve labels without depending on an English translation dictionary.

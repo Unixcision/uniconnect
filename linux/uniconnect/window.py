@@ -74,6 +74,7 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         content.pack_start(self.body, True, True, 0)
         sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin=10)
         self.sidebar_search = Gtk.SearchEntry()
+        self.sidebar_search.set_placeholder_text(self._("Find"))
         self.sidebar_search.connect("search-changed", lambda *_: self.refresh_sidebar())
         sidebar.pack_start(self.sidebar_search, False, False, 0)
         self.workspace_list = Gtk.ListBox()
@@ -412,7 +413,7 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
                 self.status_label.set_text(f'{self._("Saved")} {time.strftime("%H:%M:%S")}  ·  {len(self.store.workspaces)} / {count}')
         except Exception as error:
             if hasattr(self, "status_label"):
-                self.status_label.set_text(str(error))
+                self.status_label.set_text(self._(str(error)))
 
     def tick(self):
         if self._closed:
@@ -443,8 +444,9 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
 
     def error(self, error):
         dialog = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.ERROR,
-                                   buttons=Gtk.ButtonsType.CLOSE, text=self._("Error"))
-        dialog.format_secondary_text(str(error))
+                                   buttons=Gtk.ButtonsType.NONE, text=self._("Error"))
+        dialog.add_button(self._("Close"), Gtk.ResponseType.CLOSE)
+        dialog.format_secondary_text(self._(str(error)))
         dialog.run()
         dialog.destroy()
 
@@ -685,6 +687,7 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         dialog = Gtk.Dialog(title=self._("Command palette"), transient_for=self, modal=True)
         dialog.set_default_size(520, 560)
         search = Gtk.SearchEntry()
+        search.set_placeholder_text(self._("Find"))
         listing = Gtk.ListBox()
         listing.set_filter_func(lambda row: search.get_text().lower() in row.search_text)
         search.connect("search-changed", lambda *_: listing.invalidate_filter())
@@ -747,7 +750,6 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
     def action_settings(self):
         settings = self.store.data.setdefault("settings", {})
         fields = [("theme", "Theme", settings.get("theme", "dark"), ["system", "light", "dark"]),
-                  ("locale", "Language", settings.get("locale", "es"), ["en", "es", "ja"]),
                   ("font", "Font", settings.get("font", "Monospace 11"), "text"),
                   ("autoLockMinutes", "Auto-lock minutes (0 = off)", settings.get("autoLockMinutes", 0), "text")]
         shortcuts = settings.get("shortcuts", {})
@@ -764,6 +766,7 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
                         raise ValueError(self._("Invalid keyboard shortcut") + ": " + binding)
                     changed[name.removeprefix("shortcut:")] = binding
             result["shortcuts"] = changed
+            result["locale"] = "es"
             settings.update(result)
             self.persist()
             self.apply_theme()
@@ -954,7 +957,8 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         if not surface or surface.workspace["kind"] != "ssh":
             return
         dialog = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.WARNING,
-                                   buttons=Gtk.ButtonsType.OK_CANCEL, text=self._("Terminate remote tmux session"))
+                                   buttons=Gtk.ButtonsType.NONE, text=self._("Terminate remote tmux session"))
+        dialog.add_buttons(self._("Cancel"), Gtk.ResponseType.CANCEL, self._("Apply"), Gtk.ResponseType.OK)
         dialog.format_secondary_text(surface.record.get("tmux", "") + "\n" + self._("This stops the remote process. The saved window remains recoverable."))
         confirmed = dialog.run() == Gtk.ResponseType.OK
         dialog.destroy()

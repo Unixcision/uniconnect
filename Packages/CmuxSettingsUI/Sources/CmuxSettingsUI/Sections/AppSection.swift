@@ -23,7 +23,6 @@ public struct AppSection: View {
     // Every bound value-model lives here as view state, constructed once
     // and persisted across renders so the @Observable change tracking
     // actually drives invalidation.
-    @State private var language: DefaultsValueModel<AppLanguage>
     @State private var appearance: DefaultsValueModel<AppearanceMode>
     @State private var appIcon: DefaultsValueModel<AppIconMode>
     @State private var placement: DefaultsValueModel<WorkspacePlacement>
@@ -56,7 +55,6 @@ public struct AppSection: View {
     @State private var renameSelects: DefaultsValueModel<Bool>
     @State private var paletteAllSurfaces: DefaultsValueModel<Bool>
 
-    @State private var languageAtAppear: AppLanguage?
 
     public init(
         defaultsStore: UserDefaultsSettingsStore,
@@ -65,7 +63,6 @@ public struct AppSection: View {
     ) {
         self.catalog = catalog
         self.hostActions = hostActions
-        _language = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.app.language))
         _appearance = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.app.appearance))
         _appIcon = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.app.appIcon))
         _placement = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.app.newWorkspacePlacement))
@@ -102,22 +99,14 @@ public struct AppSection: View {
     private static let columnWidth: CGFloat = 196
     private static let notificationSoundControlWidth: CGFloat = 280
 
-    /// Languages backed by catalogs in the current app bundle. Vietnamese stays
-    /// decodable in ``AppLanguage`` for compatibility but is not offered until
-    /// its catalog ships.
-    static let supportedLanguageCases: [AppLanguage] = [
-        .system, .en, .ar, .bs, .zhHans, .zhHant, .da, .de, .es, .fr,
-        .it, .ja, .km, .ko, .nb, .pl, .ptBR, .ru, .th, .tr, .uk,
-    ]
+    /// Legacy preferences are accepted on import, but the UI supports only Spanish.
+    static let supportedLanguageCases = AppLanguage.allCases
 
     public var body: some View {
         Group {
             SettingsSectionHeader(String(localized: "settings.section.app", defaultValue: "App"), section: .app)
                 .accessibilityIdentifier("SettingsAppSection")
             mainCard
-        }
-        .task {
-            if languageAtAppear == nil { languageAtAppear = language.current }
         }
     }
 
@@ -127,19 +116,11 @@ public struct AppSection: View {
             // Language
             SettingsCardRow(
                 configurationReview: .json("app.language"),
-                String(localized: "settings.app.language", defaultValue: "Language"),
-                subtitle: languageAtAppear != nil && language.current != languageAtAppear
-                    ? String(localized: "settings.app.language.restartSubtitle", defaultValue: "Restart UniConnect to apply")
-                    : nil,
+                String(localized: "settings.app.language", defaultValue: "Idioma"),
                 controlWidth: Self.columnWidth
             ) {
-                Picker("", selection: Binding(get: { language.current }, set: { language.set($0) })) {
-                    ForEach(Self.supportedLanguageCases, id: \.self) { lang in
-                        Text(languageDisplayName(lang)).tag(lang)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
+                Text(String(localized: "language.spanish", defaultValue: "Español"))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
             SettingsCardDivider()
 
@@ -711,38 +692,6 @@ public struct AppSection: View {
         panel.title = String(localized: "settings.notifications.sound.custom.panelTitle", defaultValue: "Choose Notification Sound")
         if panel.runModal() == .OK, let url = panel.url {
             model.set(url.path)
-        }
-    }
-
-    private func languageDisplayName(_ language: AppLanguage) -> String {
-        // Mirrors legacy AppLanguage.displayName: native name plus an
-        // English suffix in parentheses, except for English and
-        // Portuguese (Brasil) which already carry the locale name.
-        switch language {
-        case .system: return String(localized: "language.system", defaultValue: "System")
-        case .en: return "English"
-        case .ar: return "\u{200E}العربية (Arabic)"
-        case .bs: return "Bosanski (Bosnian)"
-        case .zhHans: return "简体中文 (Chinese Simplified)"
-        case .zhHant: return "繁體中文 (Chinese Traditional)"
-        case .da: return "Dansk (Danish)"
-        case .de: return "Deutsch (German)"
-        case .es: return "Español (Spanish)"
-        case .fr: return "Français (French)"
-        case .it: return "Italiano (Italian)"
-        case .ja: return "日本語 (Japanese)"
-        case .km:
-            return String(localized: "language.khmer.displayName", defaultValue: "ខ្មែរ (Khmer)")
-        case .ko: return "한국어 (Korean)"
-        case .nb: return "Norsk (Norwegian)"
-        case .pl: return "Polski (Polish)"
-        case .ptBR: return "Português (Brasil)"
-        case .ru: return "Русский (Russian)"
-        case .th: return "ไทย (Thai)"
-        case .tr: return "Türkçe (Turkish)"
-        case .uk:
-            return String(localized: "language.ukrainian.displayName", defaultValue: "Українська (Ukrainian)")
-        case .vi: return "Tiếng Việt (Vietnamese)"
         }
     }
 

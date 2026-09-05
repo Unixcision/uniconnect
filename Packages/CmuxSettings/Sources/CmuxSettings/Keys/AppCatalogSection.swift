@@ -10,7 +10,7 @@ public struct AppCatalogSection: SettingCatalogSection {
 
     public let language = DefaultsKey<AppLanguage>(
         id: "app.language",
-        defaultValue: .system,
+        defaultValue: .es,
         userDefaultsKey: "appLanguage"
     )
 

@@ -4,6 +4,10 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>es</string>
+	</array>
 	<key>CFBundleDisplayName</key>
 	<string>UniConnect</string>
 	<key>CFBundleExecutable</key>
@@ -75,13 +79,13 @@
 	<key>NSMainStoryboardFile</key>
 	<string></string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>A program running within UniConnect would like to use your microphone.</string>
+	<string>Un programa en ejecución dentro de UniConnect desea usar tu micrófono.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>A program running within UniConnect would like to use your camera.</string>
+	<string>Un programa en ejecución dentro de UniConnect desea usar tu cámara.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>A program running within UniConnect would like to use Bluetooth to discover passkeys and security keys.</string>
+	<string>Un programa en ejecución dentro de UniConnect desea usar Bluetooth para detectar claves de acceso y llaves de seguridad.</string>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>A program running within UniConnect would like to use AppleScript.</string>
+	<string>Un programa en ejecución dentro de UniConnect desea usar AppleScript.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

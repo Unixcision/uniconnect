@@ -2964,30 +2964,11 @@
 			};
 			buildConfigurationList = A5001071 /* Build configuration list for PBXProject "cmux" */;
 			compatibilityVersion = "Xcode 14.0";
-			developmentRegion = en;
+			developmentRegion = es;
 			hasScannedForEncodings = 0;
 			knownRegions = (
-				en,
 				Base,
-				ja,
-				ar,
-				bs,
-				da,
-				de,
 				es,
-				fr,
-				it,
-				km,
-				ko,
-				nb,
-				pl,
-				"pt-BR",
-				ru,
-				th,
-				tr,
-				uk,
-				"zh-Hans",
-				"zh-Hant",
 			);
 			mainGroup = A5001040;
 			packageReferences = (
