@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.ZoomIn
@@ -61,8 +62,8 @@ fun TerminalScreen(
     onScroll: (Int) -> Unit,
     onSend: (String, (Boolean) -> Unit) -> Unit,
 ) {
-    var fitScreen by rememberSaveable { mutableStateOf(true) }
-    var keysVisible by rememberSaveable { mutableStateOf(true) }
+    var viewMode by rememberSaveable { mutableStateOf(ViewMode.FIT) }
+    var keysVisible by rememberSaveable { mutableStateOf(false) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
     var alt by rememberSaveable { mutableStateOf(ModifierState.OFF) }
     val modifiers = TerminalModifiers(ctrl = ctrl != ModifierState.OFF, alt = alt != ModifierState.OFF)
@@ -79,9 +80,13 @@ fun TerminalScreen(
                 if (reconnecting) LoadingIndicator(Modifier.size(20.dp), color = Brand.Cyan)
                 else Icon(Icons.Rounded.Sync, stringResource(R.string.terminal_reconnect), tint = Brand.Muted)
             }
-            if (snapshot != null) IconButton(onClick = { fitScreen = !fitScreen }) {
-                Icon(if (fitScreen) Icons.Rounded.ZoomIn else Icons.Rounded.ZoomOutMap,
-                    stringResource(if (fitScreen) R.string.screen_actual_size else R.string.screen_fit_width), tint = Brand.Muted)
+            if (snapshot != null) IconButton(onClick = { viewMode = viewMode.next }) {
+                // The icon announces the mode the tap switches to.
+                Icon(
+                    when (viewMode) { ViewMode.FIT -> Icons.Rounded.ZoomIn; ViewMode.WRAP -> Icons.Rounded.OpenInFull; ViewMode.PAN -> Icons.Rounded.ZoomOutMap },
+                    stringResource(when (viewMode) { ViewMode.FIT -> R.string.screen_actual_size; ViewMode.WRAP -> R.string.screen_pan; ViewMode.PAN -> R.string.screen_fit_width }),
+                    tint = Brand.Muted,
+                )
             }
             IconButton(onClick = onRefresh, enabled = !loading) {
                 if (loading) LoadingIndicator(Modifier.size(20.dp), color = Brand.Cyan)
@@ -108,9 +113,16 @@ fun TerminalScreen(
                 }
             } else BoxWithConstraints(Modifier.fillMaxSize()) {
                 val viewport = IntSize(constraints.maxWidth, constraints.maxHeight)
-                val metrics = rememberTerminalMetrics(snapshot, if (fitScreen) viewport else null)
+                val metrics = rememberTerminalMetrics(snapshot, if (viewMode == ViewMode.FIT) viewport else null)
                 val scroll by rememberUpdatedState(onScroll)
-                if (fitScreen) Box(
+                when (viewMode) {
+                    ViewMode.WRAP -> {
+                        // Readable size; long desktop rows wrap at the inner width instead of scrolling sideways.
+                        val wrapColumns = ((viewport.width - 16f) / metrics.cellWidth).toInt().coerceAtLeast(8)
+                        Box(Modifier.verticalScroll(rememberScrollState())) { TerminalGrid(snapshot, metrics, wrapColumns.takeIf { it < snapshot.columns }) }
+                    }
+                    ViewMode.PAN -> Box(Modifier.horizontalScroll(rememberScrollState()).verticalScroll(rememberScrollState())) { TerminalGrid(snapshot, metrics) }
+                    ViewMode.FIT -> Box(
                     Modifier.fillMaxSize()
                         .semantics { contentDescription = "" }
                         .pointerInput(metrics.lineHeight, connected) {
@@ -129,7 +141,7 @@ fun TerminalScreen(
                         },
                     contentAlignment = Alignment.Center,
                 ) { TerminalGrid(snapshot, metrics) }
-                else Box(Modifier.horizontalScroll(rememberScrollState()).verticalScroll(rememberScrollState())) { TerminalGrid(snapshot, metrics) }
+                }
             }
         }
         if (keysVisible) TerminalExtraKeys(
@@ -143,6 +155,18 @@ fun TerminalScreen(
             onSend = { text, onDelivered -> onSend(text, onDelivered); consumeModifiers() },
         )
     }
+}
+
+/** How the desktop grid is shown on the phone; none of these change the desktop PTY size. */
+enum class ViewMode {
+    /** Whole desktop screen scaled down; vertical drag scrolls the desktop scrollback. */
+    FIT,
+    /** Readable font, rows wrapped at the inner width, local vertical scroll. */
+    WRAP,
+    /** Readable font at true geometry with local horizontal and vertical panning. */
+    PAN;
+
+    val next: ViewMode get() = entries[(ordinal + 1) % entries.size]
 }
 
 /** Reading geometry for this device. The desktop PTY keeps its own columns and rows. */
@@ -169,17 +193,26 @@ private fun rememberTerminalMetrics(snapshot: TerminalSnapshot, fit: IntSize?): 
     }
 }
 
+/**
+ * Draws the desktop grid. With [wrapColumns] every desktop row is folded into
+ * `ceil(columns / wrapColumns)` visual lines so nothing is cut off at the phone's width.
+ */
 @Composable
-private fun TerminalGrid(snapshot: TerminalSnapshot, metrics: TerminalMetrics) {
+private fun TerminalGrid(snapshot: TerminalSnapshot, metrics: TerminalMetrics, wrapColumns: Int? = null) {
     val density = LocalDensity.current
     val paint = remember(metrics.fontSize) { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = metrics.fontSize; typeface = Typeface.MONOSPACE } }
     val typefaces = remember { listOf(Typeface.NORMAL, Typeface.BOLD, Typeface.ITALIC, Typeface.BOLD_ITALIC).associateWith { Typeface.create(Typeface.MONOSPACE, it) } }
     val cellWidth = metrics.cellWidth
     val lineHeight = metrics.lineHeight
-    val width = with(density) { metrics.widthPx.toDp() }
-    val height = with(density) { metrics.heightPx.toDp() }
+    val wrap = wrapColumns ?: snapshot.columns
+    val linesPerRow = (snapshot.columns + wrap - 1) / wrap
+    val width = with(density) { (wrap * cellWidth + 16f).toDp() }
+    val height = with(density) { (snapshot.rows * linesPerRow * lineHeight + 16f).toDp() }
     val defaultForeground = parseColor(snapshot.foreground, android.graphics.Color.rgb(238, 243, 255))
     val defaultBackground = parseColor(snapshot.background, android.graphics.Color.rgb(7, 13, 32))
+    // Cell → pixel origin, folding wide rows when wrapping.
+    fun originX(column: Int) = 8 + (column % wrap) * cellWidth
+    fun originY(row: Int, column: Int) = 8 + (row * linesPerRow + column / wrap) * lineHeight
     Canvas(Modifier.requiredSize(width, height)) {
         drawIntoCanvas { target ->
             val canvas = target.nativeCanvas
@@ -189,25 +222,35 @@ private fun TerminalGrid(snapshot: TerminalSnapshot, metrics: TerminalMetrics) {
                 var foreground = parseColor(style.foreground, defaultForeground)
                 var background = parseColor(style.background, defaultBackground)
                 if (style.inverse) { val old = foreground; foreground = background; background = old }
-                val x = 8 + span.column * cellWidth
-                val y = 8 + span.row * lineHeight
-                paint.style = Paint.Style.FILL
-                paint.color = background
-                canvas.drawRect(x, y, x + span.cellWidth * cellWidth, y + lineHeight, paint)
-                if (!style.invisible) {
-                    paint.color = foreground
-                    paint.typeface = typefaces[when {
-                        style.bold && style.italic -> Typeface.BOLD_ITALIC
-                        style.bold -> Typeface.BOLD
-                        style.italic -> Typeface.ITALIC
-                        else -> Typeface.NORMAL
-                    }]
-                    paint.isUnderlineText = style.underline
-                    paint.isStrikeThruText = style.strikethrough
-                    paint.alpha = if (style.faint) 150 else 255
-                    canvas.drawText(span.text, x, y + lineHeight - paint.fontMetrics.descent, paint)
-                    if (style.overline) canvas.drawRect(x, y + 1, x + span.cellWidth * cellWidth, y + 2, paint)
-                    paint.alpha = 255
+                paint.typeface = typefaces[when {
+                    style.bold && style.italic -> Typeface.BOLD_ITALIC
+                    style.bold -> Typeface.BOLD
+                    style.italic -> Typeface.ITALIC
+                    else -> Typeface.NORMAL
+                }]
+                paint.isUnderlineText = style.underline
+                paint.isStrikeThruText = style.strikethrough
+                val baseline = lineHeight - paint.fontMetrics.descent
+                // A span stays one draw call unless wrapping splits it across visual lines.
+                val pieces: List<Triple<Int, String, Int>> = if (wrapColumns == null || span.column / wrap == (span.column + span.cellWidth - 1) / wrap) {
+                    listOf(Triple(span.column, span.text, span.cellWidth))
+                } else {
+                    val unit = if (span.text.isEmpty()) 1 else (span.cellWidth / span.text.length).coerceAtLeast(1)
+                    span.text.mapIndexed { index, char -> Triple(span.column + index * unit, char.toString(), unit) }
+                }
+                pieces.forEach { (column, text, cells) ->
+                    val x = originX(column)
+                    val y = originY(span.row, column)
+                    paint.style = Paint.Style.FILL
+                    paint.color = background
+                    canvas.drawRect(x, y, x + cells * cellWidth, y + lineHeight, paint)
+                    if (!style.invisible) {
+                        paint.color = foreground
+                        paint.alpha = if (style.faint) 150 else 255
+                        canvas.drawText(text, x, y + baseline, paint)
+                        if (style.overline) canvas.drawRect(x, y + 1, x + cells * cellWidth, y + 2, paint)
+                        paint.alpha = 255
+                    }
                 }
             }
             snapshot.cursor?.takeIf { it.visible && it.row in 0 until snapshot.rows && it.column in 0 until snapshot.columns }?.let { cursor ->
@@ -216,8 +259,8 @@ private fun TerminalGrid(snapshot: TerminalSnapshot, metrics: TerminalMetrics) {
                 paint.style = Paint.Style.STROKE
                 paint.strokeWidth = 1.5f
                 paint.color = defaultForeground
-                val x = 8 + cursor.column * cellWidth
-                val y = 8 + cursor.row * lineHeight
+                val x = originX(cursor.column)
+                val y = originY(cursor.row, cursor.column)
                 canvas.drawRect(x, y, x + cellWidth, y + lineHeight, paint)
                 paint.style = Paint.Style.FILL
             }

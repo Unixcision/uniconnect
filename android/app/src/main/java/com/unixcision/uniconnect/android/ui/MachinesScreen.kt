@@ -76,7 +76,8 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
         drawCircle(Brush.radialGradient(listOf(Brand.Cyan.copy(alpha = .12f), Color.Transparent), center = Offset(0f, size.height * .35f), radius = size.width * .6f),
             radius = size.width * .6f, center = Offset(0f, size.height * .35f))
     }) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding().widthIn(max = 840.dp).align(Alignment.TopCenter)) {
+        // System bars and cutout only: the IME is padded once, by the screen that hosts the composer.
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)).widthIn(max = 840.dp).align(Alignment.TopCenter)) {
             AppHeader(
                 compact = level == Level.TERMINAL,
                 title = window?.name ?: machine?.name ?: stringResource(R.string.app_name),
