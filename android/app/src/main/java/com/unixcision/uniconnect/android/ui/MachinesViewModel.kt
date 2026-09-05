@@ -97,7 +97,9 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         val current = state.value
         val context = current.creation ?: return
         if (current.creating) return
-        if (!request.isValid() || (request is ResourceCreation.Terminal && request.workspaceID != context.workspace?.id)) {
+        val latestWorkspace = current.connections[context.machineID]?.snapshot?.workspaces?.firstOrNull { it.id == context.workspace?.id }
+        if (!request.isValid() || (request is ResourceCreation.Terminal &&
+                    (latestWorkspace == null || !request.isAllowedIn(latestWorkspace)))) {
             mutableState.update { it.copy(creationError = R.string.creation_invalid) }; return
         }
         val machine = current.machines.firstOrNull { it.id == context.machineID } ?: return
@@ -189,7 +191,17 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                         if (target == null || update is MachineUpdate.Terminal) { wasConnected = true; retry = 0 }
                         when (update) {
                             is MachineUpdate.Workspaces -> {
-                                mutableState.update { it.copy(connections = it.connections + (machine.id to Connection(connected = true, snapshot = update.snapshot))) }
+                                mutableState.update { current ->
+                                    val creation = current.creation
+                                    val refreshedCreation = if (creation?.machineID == machine.id && creation.workspace != null) {
+                                        update.snapshot.workspaces.firstOrNull { it.id == creation.workspace.id }
+                                            ?.let { creation.copy(workspace = it) }
+                                    } else creation
+                                    current.copy(
+                                        connections = current.connections + (machine.id to Connection(connected = true, snapshot = update.snapshot)),
+                                        creation = refreshedCreation,
+                                    )
+                                }
                                 val route = noticeRoute?.takeIf { it.machineID == machine.id }
                                 if (route != null) {
                                     noticeRoute = null
@@ -238,7 +250,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         startObserving(machine, force = true)
     }
 
-    fun sendInput(text: String) {
+    fun sendInput(text: String, onDelivered: (Boolean) -> Unit) {
         val current = state.value
         if (text.isEmpty() || current.inputSending) return
         val machine = current.machines.firstOrNull { it.id == current.selectedMachine } ?: return
@@ -251,8 +263,12 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
             try {
                 client.sendInput(machine, workspaceID, windowID, text)
                 mutableState.update { it.copy(inputSending = false) }
+                onDelivered(true)
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { mutableState.update { it.copy(inputSending = false, error = R.string.input_failed) } }
+            catch (_: Exception) {
+                mutableState.update { it.copy(inputSending = false, error = R.string.input_failed) }
+                onDelivered(false)
+            }
         }
     }
 }

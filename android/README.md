@@ -35,8 +35,11 @@ dirección Tailscale y puerto (58465 inicialmente).
   entrega no se confirma se avisa y nunca se repite automáticamente.
 - Creación explícita mediante formularios: caja local con carpeta absoluta o caja
   SSH heredada de otra; ventana local con carpeta opcional o SSH con nombre tmux.
-  El inicio de nuevas ventanas es Terminal, sin lanzar IA por su cuenta. La
-  selección de agentes espera al catálogo autorizado del host; no inventa IDs.
+  El inicio predeterminado es Terminal cuando el host lo anuncia. El selector usa
+  el catálogo `available_agent_targets` de esa caja, incluidos los agentes propios
+  del host, y envía el ID elegido sin comandos ni credenciales. SSH solo ofrece
+  las opciones permitidas por el servidor. Un catálogo ausente o una opción retirada
+  impide crear la ventana hasta elegir una opción vigente; nunca lanza otra IA por su cuenta.
   Las respuestas del servidor reconcilian el árbol sin inserciones optimistas.
 - Avisos privados opcionales con conexión visible al ordenador, permiso contextual,
   deduplicación persistente y enlaces a la ventana original. Sin Google/FCM ni

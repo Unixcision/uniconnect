@@ -3,14 +3,20 @@ package com.unixcision.uniconnect.android.ui
 import android.graphics.Paint
 import android.graphics.Typeface
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.ZoomIn
+import androidx.compose.material.icons.rounded.ZoomOutMap
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalDensity
@@ -21,16 +27,20 @@ import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.TerminalSnapshot
 
 @Composable
-fun TerminalScreen(snapshot: TerminalSnapshot?, loading: Boolean, error: Int?, sending: Boolean, connected: Boolean, onRefresh: () -> Unit, onSend: (String) -> Unit) {
-    var input by rememberSaveable { mutableStateOf("") }
+fun TerminalScreen(snapshot: TerminalSnapshot?, loading: Boolean, error: Int?, sending: Boolean, connected: Boolean, onRefresh: () -> Unit, onSend: (String, (Boolean) -> Unit) -> Unit) {
     var fitWidth by rememberSaveable { mutableStateOf(true) }
     Column(Modifier.fillMaxSize().imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = onRefresh, enabled = !loading) { Text(stringResource(R.string.screen_refresh)) }
-            if (snapshot != null) TextButton(onClick = { fitWidth = !fitWidth }) {
-                Text(stringResource(if (fitWidth) R.string.screen_actual_size else R.string.screen_fit_width))
+        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(if (connected) R.string.terminal_live else R.string.terminal_offline), style = MaterialTheme.typography.labelMedium, color = if (connected) Brand.Cyan else Brand.Muted)
+            Spacer(Modifier.weight(1f))
+            if (snapshot != null) IconButton(onClick = { fitWidth = !fitWidth }) {
+                Icon(if (fitWidth) Icons.Rounded.ZoomIn else Icons.Rounded.ZoomOutMap,
+                    stringResource(if (fitWidth) R.string.screen_actual_size else R.string.screen_fit_width), tint = Brand.Muted)
             }
-            if (loading) CircularProgressIndicator(Modifier.padding(8.dp).size(20.dp), strokeWidth = 2.dp)
+            IconButton(onClick = onRefresh, enabled = !loading) {
+                if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                else Icon(Icons.Rounded.Refresh, stringResource(R.string.screen_refresh), tint = Brand.Muted)
+            }
         }
         error?.let { Text(stringResource(it), Modifier.padding(horizontal = 20.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.error) }
         if (snapshot == null) {
@@ -45,16 +55,7 @@ fun TerminalScreen(snapshot: TerminalSnapshot?, loading: Boolean, error: Int?, s
                 }
             }
         }
-        Text(stringResource(if (connected) R.string.screen_live_note else R.string.screen_offline_note), Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.labelSmall, color = if (connected) Brand.Cyan else Brand.Muted)
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(input, { input = it }, Modifier.weight(1f), label = { Text(stringResource(R.string.terminal_input)) }, enabled = !sending, maxLines = 3)
-            TextButton(onClick = { onSend(input) }, enabled = input.isNotEmpty() && !sending && connected && snapshot != null) { Text(stringResource(R.string.terminal_send)) }
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = { onSend("\r") }, enabled = !sending && connected && snapshot != null) { Text(stringResource(R.string.terminal_enter)) }
-            OutlinedButton(onClick = { onSend("\t") }, enabled = !sending && connected && snapshot != null) { Text(stringResource(R.string.terminal_tab)) }
-            OutlinedButton(onClick = { onSend("\u0003") }, enabled = !sending && connected && snapshot != null) { Text(stringResource(R.string.terminal_interrupt)) }
-        }
+        TerminalComposer(connected && snapshot != null, sending, onSend)
     }
 }
 

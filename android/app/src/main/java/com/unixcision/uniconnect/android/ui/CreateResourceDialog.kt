@@ -22,7 +22,10 @@ fun CreateResourceDialog(context: CreationContext, saving: Boolean, error: Int?,
     var useSSH by rememberSaveable { mutableStateOf(context.workspace?.isSSH == true) }
     var sourceID by rememberSaveable { mutableStateOf(context.sshSources.firstOrNull()?.id) }
     var sourceMenu by remember { mutableStateOf(false) }
+    var agentID by rememberSaveable(context.machineID, context.workspace?.id) { mutableStateOf("terminal") }
+    var agentMenu by remember { mutableStateOf(false) }
     val existing = context.workspace
+    val selectedAgent = existing?.availableAgentTargets?.firstOrNull { it.id == agentID }
     Dialog(onDismissRequest = { if (!saving) onDismiss() }) {
         Surface(shape = RoundedCornerShape(28.dp), color = Brand.Surface) {
             Column(Modifier.padding(24.dp).verticalScroll(rememberScrollState()).imePadding(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -47,14 +50,36 @@ fun CreateResourceDialog(context: CreationContext, saving: Boolean, error: Int?,
                 if (existing != null || !useSSH) OutlinedTextField(directory, { directory = it },
                     label = { Text(stringResource(if (existing == null) R.string.working_directory else R.string.optional_directory)) },
                     supportingText = { Text(stringResource(R.string.directory_hint)) }, singleLine = true, enabled = !saving)
-                if (existing != null) Text(stringResource(R.string.creation_terminal_agent), style = MaterialTheme.typography.bodySmall, color = Brand.Muted)
+                if (existing != null) {
+                    Text(stringResource(R.string.creation_agent_label), style = MaterialTheme.typography.labelLarge)
+                    Box {
+                        OutlinedButton(onClick = { agentMenu = true }, enabled = !saving && existing.availableAgentTargets.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
+                            Text(selectedAgent?.title ?: stringResource(R.string.creation_agent_select))
+                        }
+                        DropdownMenu(expanded = agentMenu, onDismissRequest = { agentMenu = false }) {
+                            existing.availableAgentTargets.forEach { agent ->
+                                DropdownMenuItem(text = { Text(agent.title) }, enabled = !saving, onClick = { agentID = agent.id; agentMenu = false })
+                            }
+                        }
+                    }
+                    Text(
+                        when {
+                            existing.availableAgentTargets.isEmpty() -> stringResource(R.string.creation_agents_unavailable)
+                            selectedAgent == null -> stringResource(R.string.creation_agent_select)
+                            selectedAgent.id == "terminal" -> stringResource(R.string.creation_terminal_agent)
+                            else -> stringResource(R.string.creation_agent_note, selectedAgent.title)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Brand.Muted,
+                    )
+                }
                 if (useSSH) Text(stringResource(R.string.ssh_inherit_note), style = MaterialTheme.typography.bodySmall, color = Brand.Violet)
                 error?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
                 Button(onClick = {
                     val folder = directory.trim().takeIf { it.isNotEmpty() }
                     onCreate(if (existing == null) ResourceCreation.Workspace(name.trim(), if (useSSH) null else folder, if (useSSH) sourceID else null)
-                    else ResourceCreation.Terminal(existing.id, name.trim(), folder, if (useSSH) tmux.trim() else null))
-                }, enabled = !saving, modifier = Modifier.fillMaxWidth()) {
+                    else ResourceCreation.Terminal(existing.id, name.trim(), folder, if (useSSH) tmux.trim() else null, requireNotNull(selectedAgent).id))
+                }, enabled = !saving && (existing == null || selectedAgent != null), modifier = Modifier.fillMaxWidth()) {
                     if (saving) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     else Text(stringResource(R.string.create))
                 }

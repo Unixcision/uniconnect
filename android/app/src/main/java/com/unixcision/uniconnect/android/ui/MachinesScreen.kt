@@ -53,7 +53,7 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
 
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Brand.DeepBlue, Brand.Night, Brand.Night)))) {
         Column(Modifier.fillMaxSize().safeDrawingPadding().widthIn(max = 840.dp).align(Alignment.TopCenter)) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = if (window == null) 16.dp else 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (machine != null) IconButton(onClick = model::back) {
                     Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.back))
                 } else Image(painterResource(R.drawable.uniconnect_mark), null, Modifier.size(46.dp))
@@ -61,7 +61,7 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
                     Text(window?.name ?: workspace?.name ?: machine?.name ?: stringResource(R.string.app_name),
                         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(when {
-                        window != null -> stringResource(R.string.windows)
+                        window != null -> "${machine?.name.orEmpty()} · ${workspace?.name.orEmpty()}"
                         workspace != null -> stringResource(R.string.workspaces)
                         machine != null -> machine.endpoint.displayAddress
                         else -> stringResource(R.string.private_network)
@@ -69,14 +69,16 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
                 }
                 if (machine == null) IconButton(onClick = model::showAdd) {
                     Icon(Icons.Rounded.Add, stringResource(R.string.add_machine), tint = Brand.Cyan)
-                } else IconButton(onClick = { removing = machine }) {
+                } else if (workspace == null) IconButton(onClick = { removing = machine }) {
                     Icon(Icons.Rounded.DeleteOutline, stringResource(R.string.remove), tint = Brand.Muted)
                 }
             }
             state.error?.let { ErrorNotice(it, model::dismissError) }
             when {
                 state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                window != null -> TerminalScreen(state.terminal, state.terminalLoading, state.terminalError, state.inputSending, connection?.connected == true, model::refreshTerminal, model::sendInput)
+                window != null -> key(machine?.id, workspace?.id, window.id) {
+                    TerminalScreen(state.terminal, state.terminalLoading, state.terminalError, state.inputSending, connection?.connected == true, model::refreshTerminal, model::sendInput)
+                }
                 workspace != null -> WorkspaceWindows(workspace, connection?.connected == true, { model.showCreate(true) }, model::selectWindow)
                 machine != null -> MachineWorkspaces(machine, connection ?: MachinesViewModel.Connection(), state.notificationLinks[machine.id], { onEnableNotifications(machine.id) }, { model.disableNotifications(machine.id) }, { model.connect(machine) }, { model.showCreate(false) }, model::selectWorkspace)
                 else -> MachineList(state.machines, state.connections, model::showAdd, model::selectMachine)

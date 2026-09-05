@@ -92,21 +92,8 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
     override suspend fun inspect(machine: Machine): MachineSnapshot = decodeMachine(machine, call(machine, "mobile.workspace.list", JSONObject()))
 
     override suspend fun create(machine: Machine, request: ResourceCreation): CreationResult {
-        require(request.isValid())
-        val params = JSONObject().put("name", request.name)
-        request.directory?.let { params.put("directory", it) }
-        val method = when (request) {
-            is ResourceCreation.Workspace -> {
-                params.put("kind", if (request.sourceWorkspaceID == null) "local" else "ssh")
-                request.sourceWorkspaceID?.let { params.put("source_workspace_id", it) }
-                "workspace.create"
-            }
-            is ResourceCreation.Terminal -> {
-                params.put("workspace_id", request.workspaceID)
-                request.tmuxSession?.let { params.put("tmux_session", it) }
-                "mobile.terminal.create"
-            }
-        }
+        val params = creationParameters(request)
+        val method = if (request is ResourceCreation.Workspace) "workspace.create" else "mobile.terminal.create"
         val result = call(machine, method, params)
         val workspaceID = when (request) {
             is ResourceCreation.Workspace -> result.getString("created_workspace_id")
@@ -114,6 +101,24 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
         }
         val windowID = if (request is ResourceCreation.Terminal) result.getString("created_terminal_id") else null
         return CreationResult(decodeMachine(machine, result), workspaceID, windowID)
+    }
+
+    internal fun creationParameters(request: ResourceCreation): JSONObject {
+        require(request.isValid())
+        val params = JSONObject().put("name", request.name)
+        request.directory?.let { params.put("directory", it) }
+        when (request) {
+            is ResourceCreation.Workspace -> {
+                params.put("kind", if (request.sourceWorkspaceID == null) "local" else "ssh")
+                request.sourceWorkspaceID?.let { params.put("source_workspace_id", it) }
+            }
+            is ResourceCreation.Terminal -> {
+                params.put("workspace_id", request.workspaceID)
+                params.put("agent", request.agentID)
+                request.tmuxSession?.let { params.put("tmux_session", it) }
+            }
+        }
+        return params
     }
 
     override suspend fun replay(machine: Machine, workspaceID: String, windowID: String): TerminalSnapshot =
@@ -138,7 +143,11 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
             }
             require(terminals.map { it.id }.distinct().size == terminals.size)
             val kind = when (workspace.optString("kind")) { "ssh" -> true; "local" -> false; else -> null }
-            RemoteWorkspace(workspace.getString("id"), workspace.getString("title"), kind, terminals)
+            val targets = (workspace.optJSONArray("available_agent_targets") ?: JSONArray()).objects().map {
+                RemoteAgentTarget(it.getString("id"), it.getString("title"))
+            }
+            require(targets.map { it.id }.distinct().size == targets.size)
+            RemoteWorkspace(workspace.getString("id"), workspace.getString("title"), kind, terminals, targets)
         }
         require(workspaces.map { it.id }.distinct().size == workspaces.size)
         return MachineSnapshot(result.optString("display_name", machine.name), workspaces)
