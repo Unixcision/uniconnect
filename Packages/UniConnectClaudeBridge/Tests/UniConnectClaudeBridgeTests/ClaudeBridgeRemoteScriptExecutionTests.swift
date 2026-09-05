@@ -5,7 +5,7 @@ import Testing
 @Suite("Claude bridge remote script execution")
 struct ClaudeBridgeRemoteScriptExecutionTests {
     @Test("Registration is idempotent and cleanup restores foreign settings byte for byte")
-    func registerTwiceThenUnregister() throws {
+    func registerTwiceThenUnregister() async throws {
         let fileManager = FileManager.default
         let home = fileManager.temporaryDirectory
             .appendingPathComponent("uniconnect-bridge-script-\(UUID().uuidString)", isDirectory: true)
@@ -52,7 +52,7 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
             connectionID: connectionID
         )
 
-        try runRemoteShell(plan.remoteSetupCommand, home: home)
+        try await runRemoteShell(plan.remoteSetupCommand, home: home)
         let firstRegistration = try Data(contentsOf: settingsURL)
         let lifecycleLockURL = home
             .appendingPathComponent(".uniconnect/claude-bridge/v1/lifecycle.lock")
@@ -70,7 +70,7 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
         #expect((hooks["SessionStart"] as? [[String: Any]])?.count == 1)
         #expect(firstRegistration.range(of: Data("printf foreign".utf8)) != nil)
 
-        try runRemoteShell(plan.remoteSetupCommand, home: home)
+        try await runRemoteShell(plan.remoteSetupCommand, home: home)
         #expect(try Data(contentsOf: settingsURL) == firstRegistration)
 
         let routeFile = home
@@ -89,7 +89,7 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
         #expect(routeDocument["port"] == nil)
         let notify = home.appendingPathComponent(".uniconnect/claude-bridge/v1/notify.py")
         #expect(
-            try candidateEndpoint(
+            try await candidateEndpoint(
                 notify: notify,
                 home: home,
                 tmuxSession: route.tmuxSession
@@ -103,7 +103,7 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
         routeDocument["port"] = 49_321
         try JSONSerialization.data(withJSONObject: routeDocument).write(to: routeFile)
         #expect(
-            try candidateEndpoint(
+            try await candidateEndpoint(
                 notify: notify,
                 home: home,
                 tmuxSession: route.tmuxSession
@@ -119,7 +119,7 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
         ].joined()
         try JSONSerialization.data(withJSONObject: routeDocument).write(to: routeFile)
         #expect(
-            try candidateEndpoint(
+            try await candidateEndpoint(
                 notify: notify,
                 home: home,
                 tmuxSession: route.tmuxSession
@@ -135,21 +135,21 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
         routeDocument["socket_path"] = legacySocket
         try JSONSerialization.data(withJSONObject: routeDocument).write(to: routeFile)
         #expect(
-            try candidateEndpoint(notify: notify, home: home, tmuxSession: route.tmuxSession)
+            try await candidateEndpoint(notify: notify, home: home, tmuxSession: route.tmuxSession)
                 == legacySocket
         )
         routeDocument["connection_id"] = "invalid-generation"
         routeDocument.removeValue(forKey: "socket_path")
         try JSONSerialization.data(withJSONObject: routeDocument).write(to: routeFile)
         #expect(
-            try candidateEndpoint(notify: notify, home: home, tmuxSession: route.tmuxSession)
+            try await candidateEndpoint(notify: notify, home: home, tmuxSession: route.tmuxSession)
                 == "invalid"
         )
         routeDocument["connection_id"] = connectionID.uuidString.lowercased()
         routeDocument["socket_path"] = legacySocket
         try JSONSerialization.data(withJSONObject: routeDocument).write(to: routeFile)
         #expect(
-            try candidateEndpoint(notify: notify, home: home, tmuxSession: route.tmuxSession)
+            try await candidateEndpoint(notify: notify, home: home, tmuxSession: route.tmuxSession)
                 == "invalid"
         )
         routeDocument["socket_path"] = expectedSocket
@@ -159,14 +159,14 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
         let remoteSocketURL = URL(fileURLWithPath: expectedSocket)
         defer { try? fileManager.removeItem(at: remoteSocketURL) }
         try Data("stale socket placeholder".utf8).write(to: remoteSocketURL)
-        try runRemoteShell(plan.remoteCleanupCommand, home: home)
+        try await runRemoteShell(plan.remoteCleanupCommand, home: home)
         #expect(try Data(contentsOf: settingsURL) == original)
         #expect(!fileManager.fileExists(atPath: routeFile.path))
         #expect(!fileManager.fileExists(atPath: remoteSocketURL.path))
     }
 
     @Test("Invalid or ambiguous hook settings remain byte-for-byte untouched")
-    func invalidHookSettingsAreNeverMutated() throws {
+    func invalidHookSettingsAreNeverMutated() async throws {
         let fixtures = [
             Data(#"{"hooks":{"Stop":[{"matcher":"","hooks":"not-an-array"}]}}"#.utf8),
             Data(#"{"theme":"dark","theme":"light"}"#.utf8),
@@ -191,14 +191,14 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
                 localListenerPort: 49_323
             )
 
-            try runRemoteShell(plan.remoteSetupCommand, home: home)
+            try await runRemoteShell(plan.remoteSetupCommand, home: home)
 
             #expect(try Data(contentsOf: settingsURL) == original)
         }
     }
 
     @Test("A completion hook remains non-blocking when the Mac app is closed")
-    func hookWithoutLoopbackListenerReturnsSuccessQuickly() throws {
+    func hookWithoutLoopbackListenerReturnsSuccessQuickly() async throws {
         let fileManager = FileManager.default
         let home = fileManager.temporaryDirectory
             .appendingPathComponent("uniconnect-bridge-offline-\(UUID().uuidString)", isDirectory: true)
@@ -229,7 +229,7 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
             installationID: String(repeating: "a", count: 32),
             localListenerPort: 49_321
         )
-        try runRemoteShell(plan.remoteSetupCommand, home: home)
+        try await runRemoteShell(plan.remoteSetupCommand, home: home)
 
         let notify = home.appendingPathComponent(".uniconnect/claude-bridge/v1/notify.py")
         let process = Process()
@@ -246,10 +246,10 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
         process.standardError = FileHandle.nullDevice
 
         let startedAt = Date()
-        try process.run()
-        input.fileHandleForWriting.write(Data(#"{"hook_event_name":"Stop","session_id":"55555555-5555-4555-8555-555555555555","cwd":"/srv/app"}"#.utf8))
-        try input.fileHandleForWriting.close()
-        process.waitUntilExit()
+        _ = try await Self.runFixtureProcess(
+            process,
+            input: Data(#"{"hook_event_name":"Stop","session_id":"55555555-5555-4555-8555-555555555555","cwd":"/srv/app"}"#.utf8)
+        )
 
         #expect(process.terminationStatus == 0)
         #expect(Date().timeIntervalSince(startedAt) < 2.5)
@@ -265,7 +265,7 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
     }
 
     @Test("A submitted prompt updates only the private journal")
-    func promptHookDoesNotPersistOrRelayPromptContent() throws {
+    func promptHookDoesNotPersistOrRelayPromptContent() async throws {
         let fileManager = FileManager.default
         let home = fileManager.temporaryDirectory
             .appendingPathComponent("uniconnect-bridge-prompt-\(UUID().uuidString)", isDirectory: true)
@@ -297,7 +297,7 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
             installationID: installationID,
             localListenerPort: 49_321
         )
-        try runRemoteShell(plan.remoteSetupCommand, home: home)
+        try await runRemoteShell(plan.remoteSetupCommand, home: home)
 
         let notify = home.appendingPathComponent(".uniconnect/claude-bridge/v1/notify.py")
         let process = Process()
@@ -313,10 +313,10 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
 
-        try process.run()
-        input.fileHandleForWriting.write(Data(#"{"hook_event_name":"UserPromptSubmit","session_id":"55555555-5555-4555-8555-555555555555","cwd":"/srv/app","prompt":"do not persist this private prompt"}"#.utf8))
-        try input.fileHandleForWriting.close()
-        process.waitUntilExit()
+        _ = try await Self.runFixtureProcess(
+            process,
+            input: Data(#"{"hook_event_name":"UserPromptSubmit","session_id":"55555555-5555-4555-8555-555555555555","cwd":"/srv/app","prompt":"do not persist this private prompt"}"#.utf8)
+        )
 
         #expect(process.terminationStatus == 0)
         let journalURL = home
@@ -334,8 +334,8 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
     }
 
     @Test("The first replacement forward works with an orphaned socket and retains the Claude identity")
-    func replacementForwardWithOrphanedSocket() throws {
-        let result = try runForwardReplacementFixture(keepPreviousConnectionAlive: false)
+    func replacementForwardWithOrphanedSocket() async throws {
+        let result = try await runForwardReplacementFixture(keepPreviousConnectionAlive: false)
         #expect(result["replacement_bound_first_time"] == true)
         #expect(result["previous_socket_was_orphaned"] == true)
         #expect(result["replacement_enrolled"] == true)
@@ -345,8 +345,8 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
     }
 
     @Test("An overlapping replacement preserves the old live socket and routes hooks to the new connection")
-    func replacementForwardWhilePreviousConnectionIsAlive() throws {
-        let result = try runForwardReplacementFixture(keepPreviousConnectionAlive: true)
+    func replacementForwardWhilePreviousConnectionIsAlive() async throws {
+        let result = try await runForwardReplacementFixture(keepPreviousConnectionAlive: true)
         #expect(result["replacement_bound_first_time"] == true)
         #expect(result["previous_socket_still_live"] == true)
         #expect(result["replacement_enrolled"] == true)
@@ -359,8 +359,8 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
     }
 
     @Test("A lost enrollment acknowledgement is retried idempotently without another SSH connection")
-    func replacementForwardRetriesLostEnrollmentAcknowledgement() throws {
-        let result = try runForwardReplacementFixture(
+    func replacementForwardRetriesLostEnrollmentAcknowledgement() async throws {
+        let result = try await runForwardReplacementFixture(
             keepPreviousConnectionAlive: true,
             dropFirstReplacementAcknowledgement: true
         )
@@ -371,8 +371,8 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
     }
 
     @Test("Enrollment tolerates startup latency beyond the short completion-hook deadline")
-    func replacementWaitsForSlowEnrollmentAcknowledgement() throws {
-        let result = try runForwardReplacementFixture(
+    func replacementWaitsForSlowEnrollmentAcknowledgement() async throws {
+        let result = try await runForwardReplacementFixture(
             keepPreviousConnectionAlive: true,
             enrollmentAcknowledgementDelay: 1.2
         )
@@ -382,8 +382,8 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
     }
 
     @Test("Invalid hook settings never produce a ready confirmation even when enrollment is accepted")
-    func unavailableIntegrationDoesNotSendReadyHello() throws {
-        let result = try runForwardReplacementFixture(
+    func unavailableIntegrationDoesNotSendReadyHello() async throws {
+        let result = try await runForwardReplacementFixture(
             keepPreviousConnectionAlive: true,
             invalidateSettingsAfterReplacement: true
         )
@@ -392,8 +392,8 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
     }
 
     @Test("An enrollment waiting for its ACK does not block another route's hooks or registration")
-    func slowRegistrationDoesNotBlockOtherRoutes() throws {
-        let result = try runForwardReplacementFixture(
+    func slowRegistrationDoesNotBlockOtherRoutes() async throws {
+        let result = try await runForwardReplacementFixture(
             keepPreviousConnectionAlive: true,
             verifyParallelRouteProgress: true
         )
@@ -403,8 +403,8 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
     }
 
     @Test("Unregistering during an enrollment ACK prevents route and token resurrection")
-    func unregisterDuringEnrollmentDoesNotResurrectRoute() throws {
-        let result = try runForwardReplacementFixture(
+    func unregisterDuringEnrollmentDoesNotResurrectRoute() async throws {
+        let result = try await runForwardReplacementFixture(
             keepPreviousConnectionAlive: true,
             unregisterDuringEnrollment: true
         )
@@ -421,7 +421,7 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
         invalidateSettingsAfterReplacement: Bool = false,
         verifyParallelRouteProgress: Bool = false,
         unregisterDuringEnrollment: Bool = false
-    ) throws -> [String: Bool] {
+    ) async throws -> [String: Bool] {
         let fileManager = FileManager.default
         let home = fileManager.temporaryDirectory.appendingPathComponent(
             "uniconnect-bridge-replacement-\(UUID().uuidString)", isDirectory: true
@@ -502,9 +502,7 @@ struct ClaudeBridgeRemoteScriptExecutionTests {
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.standardError
-        try process.run()
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+        let data = try await Self.runFixtureProcess(process)
         try #require(process.terminationStatus == 0)
         return try #require(JSONSerialization.jsonObject(with: data) as? [String: Bool])
     }
@@ -793,7 +791,7 @@ finally:
         parallel.close()
 """#
 
-    private func runRemoteShell(_ command: String, home: URL) throws {
+    private func runRemoteShell(_ command: String, home: URL) async throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", command]
@@ -804,8 +802,7 @@ finally:
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        try process.run()
-        process.waitUntilExit()
+        _ = try await Self.runFixtureProcess(process)
         #expect(process.terminationStatus == 0)
     }
 
@@ -813,7 +810,7 @@ finally:
         notify: URL,
         home: URL,
         tmuxSession: String
-    ) throws -> String {
+    ) async throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
         process.arguments = [
@@ -834,11 +831,35 @@ finally:
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
-        try process.run()
-        process.waitUntilExit()
-        let data = output.fileHandleForReading.readDataToEndOfFile()
+        let data = try await Self.runFixtureProcess(process)
         #expect(process.terminationStatus == 0)
         return String(decoding: data, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Subprocess waits and pipe reads are blocking I/O. Keep them off Swift's
+    /// cooperative pool so parallel fixtures cannot starve the async socket listener.
+    private static func runFixtureProcess(_ process: Process, input: Data? = nil) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(with: Result {
+                    try process.run()
+                    if let pipe = process.standardInput as? Pipe {
+                        if let input {
+                            try pipe.fileHandleForWriting.write(contentsOf: input)
+                        }
+                        try pipe.fileHandleForWriting.close()
+                    }
+                    let output: Data
+                    if let pipe = process.standardOutput as? Pipe {
+                        output = pipe.fileHandleForReading.readDataToEndOfFile()
+                    } else {
+                        output = Data()
+                    }
+                    process.waitUntilExit()
+                    return output
+                })
+            }
+        }
     }
 }
