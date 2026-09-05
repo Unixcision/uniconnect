@@ -85,6 +85,7 @@ jobs:
           baseline=3bcb335d7ac95c8d87874d2ffa64930fa4b745a4
           mkdir -p "$RUNNER_TEMP/uniconnect-command-click/baseline" "$RUNNER_TEMP/uniconnect-command-click/fix"
           cp cmuxUITests/TerminalCmdClickUITests.swift "$RUNNER_TEMP/uniconnect-command-click/fixture.swift"
+          cp Sources/AppDelegate.swift "$RUNNER_TEMP/uniconnect-command-click/AppDelegate.swift"
           # The required submodule revisions are already checked out and compared
           # below; fetching unrelated historical submodule commits can fail.
           git -c fetch.recurseSubmodules=false fetch --no-recurse-submodules --depth=1 --no-tags origin "$baseline"
@@ -92,10 +93,28 @@ jobs:
           git diff --exit-code "$baseline" "$FIX_REVISION" -- \
             ghostty vendor/bonsplit .xcode-version scripts/ghosttykit-checksums.txt \
             cmux.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          # El host de la fixture DEBUG también debe ser idéntico en ambas pruebas.
+          # No se permite backportar ningún cambio de producto de AppDelegate.
+          BASELINE_REVISION="$baseline" python3 - <<'PY'
+          import os, pathlib, subprocess
+          path = "Sources/AppDelegate.swift"
+          before = subprocess.check_output(["git", "show", os.environ["BASELINE_REVISION"] + ":" + path], text=True)
+          current = pathlib.Path(path).read_text()
+          start = "#if DEBUG\n    private func setupTerminalCmdClickUITestIfNeeded() {"
+          end = "    private func writeTerminalCmdClickUITestData(at path: String, updates: [String: Any]) {"
+          def outside_fixture(source):
+              assert source.count(start) == 1 and source.count(end) == 1, "Fixture boundaries changed"
+              prefix, body = source.split(start, 1)
+              fixture, suffix = body.split(end, 1)
+              assert "#endif" not in fixture, "Fixture must remain inside DEBUG"
+              return prefix, suffix
+          assert outside_fixture(before) == outside_fixture(current), "AppDelegate changed outside the DEBUG fixture; review the baseline"
+          PY
           git switch --detach "$baseline"
           cp "$RUNNER_TEMP/uniconnect-command-click/fixture.swift" cmuxUITests/TerminalCmdClickUITests.swift
+          cp "$RUNNER_TEMP/uniconnect-command-click/AppDelegate.swift" Sources/AppDelegate.swift
           git rev-parse HEAD > "$RUNNER_TEMP/uniconnect-command-click/baseline/revision.txt"
-          shasum -a 256 cmuxUITests/TerminalCmdClickUITests.swift > "$RUNNER_TEMP/uniconnect-command-click/baseline/fixture.sha256"
+          shasum -a 256 cmuxUITests/TerminalCmdClickUITests.swift Sources/AppDelegate.swift > "$RUNNER_TEMP/uniconnect-command-click/baseline/fixture.sha256"
 
       - name: Baseline — PNG normal pasa y ruta partida reproduce el fallo
         id: baseline
@@ -143,11 +162,12 @@ jobs:
         run: |
           set -euo pipefail
           # Solo se retira el backport temporal; su copia y hash están guardados.
-          git restore --worktree -- cmuxUITests/TerminalCmdClickUITests.swift
+          git restore --worktree -- cmuxUITests/TerminalCmdClickUITests.swift Sources/AppDelegate.swift
           git switch --detach "$FIX_REVISION"
           cp "$RUNNER_TEMP/uniconnect-command-click/fixture.swift" cmuxUITests/TerminalCmdClickUITests.swift
+          cp "$RUNNER_TEMP/uniconnect-command-click/AppDelegate.swift" Sources/AppDelegate.swift
           git rev-parse HEAD > "$RUNNER_TEMP/uniconnect-command-click/fix/revision.txt"
-          shasum -a 256 cmuxUITests/TerminalCmdClickUITests.swift > "$RUNNER_TEMP/uniconnect-command-click/fix/fixture.sha256"
+          shasum -a 256 cmuxUITests/TerminalCmdClickUITests.swift Sources/AppDelegate.swift > "$RUNNER_TEMP/uniconnect-command-click/fix/fixture.sha256"
           cmp "$RUNNER_TEMP/uniconnect-command-click/baseline/fixture.sha256" "$RUNNER_TEMP/uniconnect-command-click/fix/fixture.sha256"
           scripts/ci/xcodebuild_noninteractive.py \
             xcodebuild -project cmux.xcodeproj -scheme cmux -configuration Debug \

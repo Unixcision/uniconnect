@@ -374,6 +374,9 @@ final class TerminalCmdClickUITests: XCTestCase {
         defer { app.terminate() }
 
         let setup = try waitForReadySetup()
+        XCTAssertEqual(setup.payload["expectedRenderedTokenCount"] as? Int, 1)
+        XCTAssertEqual(setup.payload["renderedTokenCount"] as? Int, 1,
+                       "The wrapped fixture must render its single complete path before clicking")
         let result = try runCommand(action: "cmd_click_token")
         let details = try XCTUnwrap(result["lastCommandResult"] as? [String: Any])
         XCTAssertEqual(details["releaseConsumed"] as? String, "1",

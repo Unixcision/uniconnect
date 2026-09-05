@@ -2698,7 +2698,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 lineLimit: 200
             ) ?? ""
             let renderedTokenCount = max(0, visibleText.components(separatedBy: displayToken).count - 1)
-            let hasRenderedToken = renderedTokenCount >= 6
+            // The wrapped mouse fixture deliberately prints one path, not the repeated grid.
+            let expectedRenderedTokenCount = resolvedLineFormat == "wrapped_mouse" ? 1 : 6
+            let hasRenderedToken = resolvedLineFormat == "wrapped_mouse"
+                ? renderedTokenCount == expectedRenderedTokenCount
+                : renderedTokenCount >= expectedRenderedTokenCount
             if hasRenderedToken,
                (tokenPointPayload?["tokenLayoutMatch"] as? String) != "1" {
                 tokenPointPayload = tokenPoints(in: terminalPanel, visibleText: visibleText)
@@ -2712,6 +2716,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 additionalPayload: [
                     "seeded": seeded ? "1" : "0",
                     "hasRenderedToken": hasRenderedToken ? "1" : "0",
+                    "expectedRenderedTokenCount": expectedRenderedTokenCount,
                     "renderedTokenCount": renderedTokenCount,
                     "visibleTextTail": String(visibleText.suffix(1200))
                 ]
