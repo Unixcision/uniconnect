@@ -236,7 +236,7 @@ class ExistingDesktopTests(unittest.TestCase):
         self.assertEqual((grid["rows"], grid["cursor"]["row"]), (2, 1))
         self.assertEqual(len(self.commands), 1)
         arguments = shlex.split(self.commands[0])
-        self.assertEqual(arguments[arguments.index("-S") + 1], "-300")
+        self.assertEqual(arguments[arguments.index("-S") + 1], "-5000")
         self.assertEqual(arguments.count("capture-pane"), 1)
         self.assertNotIn("attach-session", arguments)
         self.assertNotIn("new-session", arguments)
@@ -260,6 +260,56 @@ class ExistingDesktopTests(unittest.TestCase):
         self.assertEqual(grid["scrollback_rows"], 0)
         self.assertEqual(grid["scrollback_spans"], [])
         self.assertEqual([(span["row"], span["text"]) for span in grid["row_spans"]], [(0, "Visible")])
+
+    def test_oversize_history_recaptures_only_viewport_once_with_bounded_output(self):
+        from unittest.mock import patch
+        for truncated_utf8 in (False, True):
+            with self.subTest(truncated_utf8=truncated_utf8):
+                self.commands.clear()
+                def run(script, **options):
+                    self.commands.append(script)
+                    if len(self.commands) == 1:
+                        if truncated_utf8:
+                            raise UnicodeDecodeError("utf-8", b"\xe7", 0, 1, "truncated fixture")
+                        return types.SimpleNamespace(stdout="X" * 513)
+                    return capture_output(script, "Visible\n", metadata="80\t2\t2\t1\t1\t0")
+                self.rpc.transport_factory = lambda *args, **kwargs: types.SimpleNamespace(run=run)
+                self.rpc.invalidate_terminal("window")
+                with patch("uniconnect.mobile_rpc.MAX_CAPTURE_BYTES", 512):
+                    grid = self.rpc.replay(self.params)["render_grid"]
+                self.assertEqual(len(self.commands), 2)
+                for command, start in zip(self.commands, ("-5000", "0")):
+                    arguments = shlex.split(command)
+                    self.assertEqual(arguments[arguments.index("-S") + 1], start)
+                    self.assertEqual(arguments[-4:], ["|", "head", "-c", "513"])
+                self.assertEqual(grid["scrollback_rows"], 0)
+                self.assertEqual(grid["row_spans"][0]["text"], "Visible")
+                self.assertEqual((grid["rows"], grid["cursor"]["row"]), (2, 1))
+                self.assertEqual(self.sent, [])
+                self.assertEqual(self.launched, [])
+
+    def test_oversize_viewport_stops_after_one_history_fallback(self):
+        from unittest.mock import patch
+        def run(script, **options):
+            self.commands.append(script)
+            return types.SimpleNamespace(stdout="X" * 513)
+        self.rpc.transport_factory = lambda *args, **kwargs: types.SimpleNamespace(run=run)
+        with patch("uniconnect.mobile_rpc.MAX_CAPTURE_BYTES", 512), self.assertRaises(RPCError) as error:
+            self.rpc.replay(self.params)
+        self.assertEqual(error.exception.code, "snapshot_unavailable")
+        self.assertEqual(len(self.commands), 2)
+
+    def test_revocation_between_oversize_history_and_fallback_prevents_second_read(self):
+        from unittest.mock import patch
+        allowed = [True]
+        def run(script, **options):
+            self.commands.append(script)
+            allowed[0] = False
+            return types.SimpleNamespace(stdout="X" * 513)
+        self.rpc.transport_factory = lambda *args, **kwargs: types.SimpleNamespace(run=run)
+        with patch("uniconnect.mobile_rpc.MAX_CAPTURE_BYTES", 512), self.assertRaises(RPCError):
+            self.rpc.replay(self.params, authorized=lambda: allowed[0])
+        self.assertEqual(len(self.commands), 1)
 
     def test_disconnected_input_is_rejected_not_queued_or_auto_restarted(self):
         self.surface.pid = 0
@@ -416,11 +466,13 @@ class ExistingDesktopTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("CI") == "true" and shutil.which("tmux"), "Real tmux runs only in CI")
 class RealTmuxReplayTests(unittest.TestCase):
-    def test_full_replay_carries_last_300_styled_history_rows_without_moving_the_pane(self):
+    def test_full_replay_carries_last_5000_styled_history_rows_without_moving_the_pane(self):
         socket_name = "uc-scrollback-ci-" + uuid.uuid4().hex[:12]
         with tempfile.TemporaryDirectory(prefix="uc-mobile-history-") as folder:
-            args = ["tmux", "-f", "/dev/null", "-L", socket_name]
-            program = "import sys,time; [print('\\x1b[31mHISTORIA-%03d\\x1b[0m' % i) for i in range(400)]; print('UC_SCROLL_READY', flush=True); time.sleep(30)"
+            configuration = Path(folder) / "tmux.conf"
+            configuration.write_text("set-option -g history-limit 6000\n")
+            args = ["tmux", "-f", str(configuration), "-L", socket_name]
+            program = "import sys,time; [print('\\x1b[31mHISTORIA-%05d\\x1b[0m' % i) for i in range(5200)]; print('UC_SCROLL_READY', flush=True); time.sleep(30)"
             try:
                 subprocess.run(args + ["new-session", "-d", "-s", "fixture", "-x", "80", "-y", "12",
                                        shlex.join([sys.executable, "-c", program])], check=True, timeout=5)
@@ -441,11 +493,11 @@ class RealTmuxReplayTests(unittest.TestCase):
                     time.sleep(0.04)
                 grid = result["render_grid"]
                 self.assertTrue(grid["full"])
-                self.assertEqual(grid["scrollback_rows"], 300)
+                self.assertEqual(grid["scrollback_rows"], 5000)
                 lines = [""] * grid["scrollback_rows"]
                 for span in grid["scrollback_spans"]:
                     self.assertGreaterEqual(span["row"], 0)
-                    self.assertLess(span["row"], 300)
+                    self.assertLess(span["row"], 5000)
                     self.assertEqual(span["column"], len(lines[span["row"]]))
                     self.assertEqual(span["cell_width"], len(span["text"]))
                     lines[span["row"]] += span["text"]
@@ -458,10 +510,10 @@ class RealTmuxReplayTests(unittest.TestCase):
                     else:
                         self.assertEqual(style["foreground"], fixture_profile()["palette"][1])
                 for line in lines:
-                    self.assertRegex(line.rstrip(" "), r"^HISTORIA-[0-9]{3}$")
-                expected = subprocess.check_output(args + ["capture-pane", "-p", "-N", "-S", "-300", "-E", "-1", "-t", "=fixture:"], text=True).splitlines()
+                    self.assertRegex(line.rstrip(" "), r"^HISTORIA-[0-9]{5}$")
+                expected = subprocess.check_output(args + ["capture-pane", "-p", "-N", "-S", "-5000", "-E", "-1", "-t", "=fixture:"], text=True).splitlines()
                 self.assertEqual(lines, expected)
-                self.assertNotIn("HISTORIA-000", lines)
+                self.assertNotIn("HISTORIA-00000", [line.rstrip(" ") for line in lines])
                 self.assertEqual(pid, subprocess.check_output(args + ["display-message", "-p", "-t", "=fixture:", "#{pane_pid}"], text=True).strip())
                 self.assertEqual(window.store.data["selectedWorkspaceId"], "other")
                 self.assertIsNone(window.focused_surface)

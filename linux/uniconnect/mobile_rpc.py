@@ -13,7 +13,8 @@ from collections import OrderedDict
 from concurrent.futures import Future, TimeoutError
 
 from .mobile_protocol import RPCError
-from .mobile_render_grid import MAX_SCROLLBACK_ROWS, capture_dependencies_ready, render_grid_from_tmux_capture
+from .mobile_render_grid import (MAX_CAPTURE_BYTES, MAX_SCROLLBACK_ROWS, capture_dependencies_ready,
+                                 render_grid_from_tmux_capture)
 from .transport import SSHCommand, Transport
 
 
@@ -241,12 +242,28 @@ class MobileRPC:
             marker = "UC_CAPTURE_" + uuid.uuid4().hex
             # One read-only tmux command group; the nonce excludes login banners.
             # No attach, ensure_session, second PTY reader or terminal input.
-            arguments = ["tmux", "-L", socket_name, "display-message", "-p", "-t", target, marker,
-                         ";", "capture-pane", "-p", "-e", "-N", "-S", str(-MAX_SCROLLBACK_ROWS), "-t", target,
-                         ";", "display-message", "-p", "-t", target,
-                         "UC_META\t#{pane_width}\t#{pane_height}\t#{cursor_x}\t#{cursor_y}\t#{cursor_flag}\t#{alternate_on}"]
+            def bounded_capture(history_limit):
+                arguments = ["tmux", "-L", socket_name, "display-message", "-p", "-t", target, marker,
+                             ";", "capture-pane", "-p", "-e", "-N", "-S", str(-history_limit), "-t", target,
+                             ";", "display-message", "-p", "-t", target,
+                             "UC_META\t#{pane_width}\t#{pane_height}\t#{cursor_x}\t#{cursor_y}\t#{cursor_flag}\t#{alternate_on}"]
+                # Bound the generated capture on its host, before SSH/subprocess
+                # buffers it locally. The extra byte distinguishes truncation.
+                script = shlex.join(arguments) + " | head -c " + str(MAX_CAPTURE_BYTES + 1)
+                return self.transport_factory(command, socket_name=socket_name).run(script, timeout=5).stdout
             try:
-                output = self.transport_factory(command, socket_name=socket_name).run(shlex.join(arguments), timeout=5).stdout
+                try:
+                    output = bounded_capture(MAX_SCROLLBACK_ROWS)
+                    oversize = len(output.encode("utf-8")) > MAX_CAPTURE_BYTES
+                except UnicodeDecodeError:
+                    # head may stop inside a multi-byte character. Never decode
+                    # or present this partial history as a valid frame.
+                    oversize = True
+                if oversize:
+                    self.on_main(still_current)
+                    output = bounded_capture(0)
+                if len(output.encode("utf-8")) > MAX_CAPTURE_BYTES:
+                    raise ValueError("capture byte limit")
                 prefix, separator, capture = output.partition(marker + "\n")
                 if not separator or (prefix and not prefix.endswith("\n")):
                     raise ValueError("capture marker")

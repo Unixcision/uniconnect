@@ -1,7 +1,7 @@
 """A bounded tmux capture adapter, not a VT stream emulator.
 
 Input is ONLY ``capture-pane -p -e -N`` for the visible screen and optionally
-the last 300 history rows (``-S -300``), without ``-J`` or ``-C``. tmux has
+the last 5000 history rows (``-S -5000``), without ``-J`` or ``-C``. tmux has
 already executed cursor movement, erasure and scrolling.
 We decode its remaining rendition/ACS metadata into CMUXMobileCore's existing
 ``cmux.render-grid.v1`` snapshot. Unknown controls are errors, not stripped text.
@@ -26,7 +26,7 @@ MAX_GRID_BYTES = 2 * 1024 * 1024 - 4096  # Leave room for the existing RPC envel
 MAX_SPANS = 16384
 MAX_STYLES = 1024
 MAX_CONTROL_BYTES = 4096
-MAX_SCROLLBACK_ROWS = 300
+MAX_SCROLLBACK_ROWS = 5000
 UNICODE_VERSION = "15.1.0"
 
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
@@ -46,6 +46,10 @@ _CLEAR_FLAGS = {23: "italic", 24: "underline", 25: "blink", 27: "inverse", 28: "
 
 class CaptureRenderError(ValueError):
     """The capture cannot be represented safely by this snapshot adapter."""
+
+
+class _CaptureBudgetError(CaptureRenderError):
+    """A valid capture may fit after omitting its oldest history rows."""
 
 
 @dataclass(frozen=True)
@@ -189,8 +193,9 @@ def _sgr(style, parameters, palette):
 
 
 class _CaptureReader:
-    def __init__(self, screen, columns, rows, palette, width):
+    def __init__(self, screen, columns, rows, palette, width, *, first_row=0):
         self.screen, self.columns, self.rows = screen, columns, rows
+        self.first_row = first_row
         self.palette, self.width = palette, width
         self.row, self.column, self.acs = 0, 0, False
         self.style = _Style()
@@ -202,15 +207,19 @@ class _CaptureReader:
         self.pending.clear()
         if not text:
             return
+        # Skipped history still passes through the SGR/ACS state machine, but
+        # never occupies the retained style registry or span/JSON budgets.
+        if self.row < self.first_row:
+            return
         width = self.width(text)
         if width <= 0 or self.row >= self.rows or self.column + width > self.columns:
             raise CaptureRenderError("La geometría Unicode de la captura no coincide con la cuadrícula")
         if self.style not in self.styles:
             if len(self.styles) >= MAX_STYLES:
-                raise CaptureRenderError("La captura contiene demasiados estilos")
+                raise _CaptureBudgetError("La captura contiene demasiados estilos")
             self.styles[self.style] = len(self.styles)
         if len(self.spans) >= MAX_SPANS:
-            raise CaptureRenderError("La captura contiene demasiados fragmentos")
+            raise _CaptureBudgetError("La captura contiene demasiados fragmentos")
         self.spans.append({"row": self.row, "column": self.column, "style_id": self.styles[self.style],
                            "text": text, "cell_width": width})
         self.column += width
@@ -286,9 +295,12 @@ def render_grid_from_tmux_capture(screen, *, surface_id, columns, rows,
     ``CaptureRenderError``. No partial frame is returned. Underline variants
     retain the shared DTO's boolean underline; link targets, underline color,
     and modes other than the active screen are not represented. ``scrollback_rows``
-    counts the capture's leading history lines, oldest first (at most 300).
+    counts the capture's leading history lines, oldest first (at most 5000).
     They share the viewport style registry and only appear on primary FULL frames;
     switching to the alternate screen never invents alternate-screen history.
+    History exceeding the existing style/span/JSON limits is reduced oldest-first;
+    viewport dimensions and cursor never change. ``scrollback_rows`` in the
+    returned frame is the number actually retained, not the requested maximum.
     """
     if (not isinstance(screen, str) or not isinstance(surface_id, str) or not surface_id
             or len(surface_id) > 128 or _CONTROL.search(surface_id)):
@@ -310,21 +322,45 @@ def render_grid_from_tmux_capture(screen, *, surface_id, columns, rows,
         raise CaptureRenderError("La captura no contiene Unicode válido") from error
     colors = _palette(palette)
     foreground, background = _rgb(default_foreground), _rgb(default_background)
-    reader = _CaptureReader(screen, columns, rows + scrollback_rows, colors, _width_function())
-    reader.parse()
-    history_spans = [span for span in reader.spans if span["row"] < scrollback_rows]
-    viewport_spans = [{**span, "row": span["row"] - scrollback_rows}
-                      for span in reader.spans if span["row"] >= scrollback_rows]
-    frame = {"format": "cmux.render-grid.v1", "surface_id": surface_id,
-             "state_seq": revision, "revision": revision, "columns": columns, "rows": rows,
-             "cursor": {"row": cursor_row, "column": cursor_column, "visible": cursor_visible,
-                        "shape": "block", "blinking": False},
-             "full": True, "cleared_rows": [], "active_screen": "alternate" if alternate_screen else "primary",
-             "styles": [{"id": identifier, **asdict(style)} for style, identifier in reader.styles.items()],
-             "row_spans": viewport_spans, "modes": [],
-             "scrollback_rows": 0 if alternate_screen else scrollback_rows,
-             "scrollback_spans": [] if alternate_screen else history_spans,
-             "terminal_foreground": foreground, "terminal_background": background}
-    if len(json.dumps(frame, ensure_ascii=False, separators=(",", ":")).encode()) > MAX_GRID_BYTES:
-        raise CaptureRenderError("La cuadrícula supera el límite permitido")
-    return frame
+    width = _width_function()
+    def materialize(retained_rows):
+        first_row = scrollback_rows - retained_rows
+        reader = _CaptureReader(screen, columns, rows + scrollback_rows, colors, width, first_row=first_row)
+        reader.parse()
+        history_spans = [{**span, "row": span["row"] - first_row}
+                         for span in reader.spans if span["row"] < scrollback_rows]
+        viewport_spans = [{**span, "row": span["row"] - scrollback_rows}
+                          for span in reader.spans if span["row"] >= scrollback_rows]
+        frame = {"format": "cmux.render-grid.v1", "surface_id": surface_id,
+                 "state_seq": revision, "revision": revision, "columns": columns, "rows": rows,
+                 "cursor": {"row": cursor_row, "column": cursor_column, "visible": cursor_visible,
+                            "shape": "block", "blinking": False},
+                 "full": True, "cleared_rows": [], "active_screen": "alternate" if alternate_screen else "primary",
+                 "styles": [{"id": identifier, **asdict(style)} for style, identifier in reader.styles.items()],
+                 "row_spans": viewport_spans, "modes": [],
+                 "scrollback_rows": retained_rows, "scrollback_spans": history_spans,
+                 "terminal_foreground": foreground, "terminal_background": background}
+        if len(json.dumps(frame, ensure_ascii=False, separators=(",", ":")).encode()) > MAX_GRID_BYTES:
+            raise _CaptureBudgetError("La cuadrícula supera el límite permitido")
+        return frame
+
+    requested = 0 if alternate_screen else scrollback_rows
+    try:
+        return materialize(requested)
+    except _CaptureBudgetError:
+        if not requested:
+            raise
+    # Keep a known-valid viewport even if no history can fit. Bisection takes
+    # at most 15 captures for 5000 rows, rather than reparsing once per old row.
+    # Each attempt rebuilds only retained styles, preserving inherited SGR/ACS.
+    best = materialize(0)
+    lower, upper = 0, requested
+    while upper - lower > 1:
+        retained = (lower + upper) // 2
+        try:
+            candidate = materialize(retained)
+        except _CaptureBudgetError:
+            upper = retained
+        else:
+            lower, best = retained, candidate
+    return best
