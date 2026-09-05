@@ -42490,6 +42490,50 @@
           }
         }
       }
+    },
+    "uniconnect.localWindow.first.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Primera ventana"
+          }
+        }
+      }
+    },
+    "uniconnect.localWindow.first.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ya está creada. Elige cómo se abre su primera ventana."
+          }
+        }
+      }
+    },
+    "uniconnect.localWindow.first.skip": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir terminal normal"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.first.window": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Primera ventana"
+          }
+        }
+      }
     }
   }
 }

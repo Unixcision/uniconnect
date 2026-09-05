@@ -592,6 +592,9 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         elif not Path(workspace["cwd"]).expanduser().is_dir():
             raise ValueError(self._("The folder does not exist"))
         self.commit_new_workspace(workspace, select=True)
+        # Two-step creation: the box is durable now; the first window is an explicit
+        # choice (name, terminal or agent, folder) instead of an automatic terminal.
+        self.action_new_window(first_window=True)
 
     def commit_new_workspace(self, workspace, *, select=False):
         """Single creation mutation for desktop dialogs and explicit mobile RPCs."""
@@ -683,7 +686,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         if select:
             self.select_workspace(workspace["id"])
 
-    def action_new_window(self, pane_id=None, *, conversation=False):
+    def action_new_window(self, pane_id=None, *, conversation=False, first_window=False):
         workspace = self.current_workspace()
         if workspace is None:
             return self.action_new_workspace()
@@ -702,7 +705,8 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             fields.append(("tmux", "tmux session", "uc-" + uuid.uuid4().hex[:12], "text"))
         # Never copy a custom launch: it may contain --resume for the current conversation.
         fields.append(("customCommand", "Comando personalizado (ejecutable y argumentos)", "", "text"))
-        title = "Nueva conversación en otra ventana" if conversation else "New window"
+        title = ("Nueva conversación en otra ventana" if conversation
+                 else "First window" if first_window else "New window")
         result = self.fields_dialog(title, fields, "Create")
         if not result:
             return
