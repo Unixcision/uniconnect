@@ -1254,6 +1254,14 @@ private func cmuxUnescapeShellToken(_ token: String) -> String {
     return String(output)
 }
 
+private func cmuxVisibleTerminalLines(from text: String, rows: Int) -> [String] {
+    let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    if lines.count > rows {
+        return Array(lines.suffix(rows))
+    }
+    return lines
+}
+
 private func cmuxShellEscapedTokenContainingColumn(
     in line: String,
     column: Int
@@ -11282,7 +11290,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         workspace: Workspace,
         terminalSurface: TerminalSurface
     ) -> WordPathResolution? {
-        guard workspace.terminalPanel(for: terminalSurface.id) != nil,
+        guard let panel = workspace.terminalPanel(for: terminalSurface.id),
               let surface else {
             return nil
         }
@@ -11290,9 +11298,30 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         let size = ghostty_surface_size(surface)
         let rows = max(Int(size.rows), 1)
         let cols = max(Int(size.columns), 1)
+        let visibleText = TerminalController.shared.readTerminalTextForSnapshot(
+            terminalPanel: panel,
+            lineLimit: max(200, rows * 4)
+        ) ?? ""
+        let visibleLines = cmuxVisibleTerminalLines(from: visibleText, rows: rows)
+        let rowOffset = max(0, rows - visibleLines.count)
         let rowFromTop = max(0, min(rows - 1, viewportOffsetStart / cols))
+        let visibleRow = rowFromTop - rowOffset
+        guard visibleRow >= 0, visibleRow < visibleLines.count else { return nil }
+
         let column = max(0, min(cols - 1, viewportOffsetStart % cols))
-        return resolvePhysicalRowPath(surface: surface, row: rowFromTop, column: column, columns: cols, cwd: cwd)
+        guard let resolution = cmuxResolveVisibleLinePath(
+            visibleLines[visibleRow],
+            column: column,
+            cwd: cwd
+        ) else {
+            return nil
+        }
+
+        return makeWordPathResolution(
+            path: resolution.path,
+            source: .snapshot,
+            rawToken: resolution.rawToken
+        )
     }
 
     private func resolveVisibleWordPath(
@@ -11301,7 +11330,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         workspace: Workspace,
         terminalSurface: TerminalSurface
     ) -> WordPathResolution? {
-        guard workspace.terminalPanel(for: terminalSurface.id) != nil,
+        guard let panel = workspace.terminalPanel(for: terminalSurface.id),
               let surface else {
             return nil
         }
@@ -11313,34 +11342,28 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         let resolvedCellHeight = cellSize.height > 0 ? cellSize.height : CGFloat(size.cell_height_px)
         guard resolvedCellWidth > 0, resolvedCellHeight > 0 else { return nil }
 
+        let visibleText = TerminalController.shared.readTerminalTextForSnapshot(
+            terminalPanel: panel,
+            lineLimit: max(200, rows * 4)
+        ) ?? ""
+        let visibleLines = cmuxVisibleTerminalLines(from: visibleText, rows: rows)
+        let rowOffset = max(0, rows - visibleLines.count)
         let xInset = max(0, (bounds.width - (CGFloat(cols) * resolvedCellWidth)) / 2)
         let yInset = max(0, (bounds.height - (CGFloat(rows) * resolvedCellHeight)) / 2)
 
         let yFromTop = bounds.height - point.y
         let rowFromTop = max(0, min(rows - 1, Int((yFromTop - yInset) / resolvedCellHeight)))
-        let column = max(0, min(cols - 1, Int((point.x - xInset) / resolvedCellWidth)))
-        return resolvePhysicalRowPath(surface: surface, row: rowFromTop, column: column, columns: cols, cwd: cwd)
-    }
+        let visibleRow = rowFromTop - rowOffset
+        guard visibleRow >= 0, visibleRow < visibleLines.count else { return nil }
 
-    private func resolvePhysicalRowPath(
-        surface: ghostty_surface_t, row: Int, column: Int, columns: Int, cwd: String
-    ) -> WordPathResolution? {
-        // The shared text snapshot unwraps soft wraps, so its line numbers are
-        // not physical viewport rows. Read only the row under this pointer;
-        // this does not change snapshots, selection, scrollback or the typing path.
-        let selection = ghostty_selection_s(
-            top_left: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT,
-                                     x: 0, y: UInt32(row)),
-            bottom_right: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT,
-                                         x: UInt32(columns - 1), y: UInt32(row)),
-            rectangle: false
-        )
-        var text = ghostty_text_s()
-        guard ghostty_surface_read_text(surface, selection, &text) else { return nil }
-        defer { ghostty_surface_free_text(surface, &text) }
-        guard let pointer = text.text, text.text_len > 0,
-              let line = String(bytes: Data(bytes: pointer, count: Int(text.text_len)), encoding: .utf8),
-              let resolution = cmuxResolveVisibleLinePath(line, column: column, cwd: cwd) else { return nil }
+        let column = max(0, min(cols - 1, Int((point.x - xInset) / resolvedCellWidth)))
+        guard let resolution = cmuxResolveVisibleLinePath(
+            visibleLines[visibleRow],
+            column: column,
+            cwd: cwd
+        ) else {
+            return nil
+        }
 
         return makeWordPathResolution(
             path: resolution.path,
