@@ -51,6 +51,31 @@ struct UniConnectLocalTmuxTests {
         #expect(!FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("fallback").path))
     }
 
+    @Test("Ghostty's Darwin login wrapper starts the local session and reattaches without rerunning its command")
+    func ghosttyDarwinLoginWrapperLaunchesAndReattaches() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let directory = fixture.root.appendingPathComponent("project 'quoted'", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let binding = try #require(UniConnectLocalTmuxBinding(name: "window-darwin", socketName: "test-local"))
+        let first = UniConnectLocalTmuxLaunchPlan(
+            binding: binding, workingDirectory: directory.path,
+            initialCommand: #"printf 'initial-command\n' >> "$UC_TEST_ROOT/agents""#
+        )
+        let restored = UniConnectLocalTmuxLaunchPlan(
+            binding: binding, workingDirectory: fixture.root.path,
+            initialCommand: #"printf 'must-not-run-again\n' >> "$UC_TEST_ROOT/agents""#
+        )
+        // Exec.zig wraps embedded shell commands in `exec -l <command>` on Darwin.
+        // A plain `/bin/sh -c` fixture misses an accidental second outer `exec`.
+        try #require(fixture.run(first, darwinLoginWrapper: true) == 0)
+        #expect(try fixture.run(restored, darwinLoginWrapper: true) == 0)
+        #expect(try fixture.read("agents") == "initial-command\n")
+        #expect(try fixture.read("cwd") == directory.path + "\n")
+        #expect(try fixture.read("context") == fixture.panelID.uuidString + "\n")
+        #expect(!FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("fallback").path))
+    }
+
     @Test("Missing tmux or failed creation gives a recovery shell without starting an agent")
     func unavailableTmuxDoesNotStartAgent() throws {
         let fixture = try Fixture()
@@ -184,12 +209,20 @@ struct UniConnectLocalTmuxTests {
         func read(_ name: String) throws -> String {
             try String(contentsOf: root.appendingPathComponent(name), encoding: .utf8)
         }
-        func run(_ plan: UniConnectLocalTmuxLaunchPlan, executable: String? = nil, failCreation: Bool = false) throws -> Int32 {
+        func run(
+            _ plan: UniConnectLocalTmuxLaunchPlan,
+            executable: String? = nil,
+            failCreation: Bool = false,
+            darwinLoginWrapper: Bool = false
+        ) throws -> Int32 {
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/bin/sh")
-            process.arguments = ["-c", plan.startupCommand(tmuxExecutable: executable ?? root.appendingPathComponent("tmux").path)]
+            let command = plan.startupCommand(tmuxExecutable: executable ?? root.appendingPathComponent("tmux").path)
+            process.executableURL = URL(fileURLWithPath: darwinLoginWrapper ? "/bin/bash" : "/bin/sh")
+            process.arguments = darwinLoginWrapper
+                ? ["--noprofile", "--norc", "-c", "exec -l " + command]
+                : ["-c", command]
             process.environment = [
-                "PATH": "/usr/bin:/bin", "SHELL": root.appendingPathComponent("shell").path,
+                "HOME": root.path, "PATH": "/usr/bin:/bin", "SHELL": root.appendingPathComponent("shell").path,
                 "UC_TEST_ROOT": root.path, "UC_TEST_FAIL": failCreation ? "1" : "0",
                 "CMUX_SURFACE_ID": panelID.uuidString,
             ]
