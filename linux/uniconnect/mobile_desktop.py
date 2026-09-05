@@ -119,6 +119,7 @@ class MobileDesktop:
             self.host.emit("notification.created", item)
 
     def terminal_changed(self, panel_id):
+        self.rpc.invalidate_terminal(panel_id)
         self.dirty_terminals.add(panel_id)
         if self.terminal_source is None:
             self.terminal_source = GLib.timeout_add(100, self.flush_terminals)

@@ -49,9 +49,9 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
   actualizado a «Solo tus máquinas. Conexión privada mediante Tailscale.».
 - APK con streaming y pruebas de reducer/endpoint compiladas de nuevo en 18 s,
   reinstalada en Pixel. Las pruebas NO se han ejecutado localmente.
-- Última compilación conjunta APK + fuentes de tests: éxito en 16 s. Trece pruebas
-  de comportamiento escritas (endpoint, reducer, formularios y plazos), compiladas sin
-  ejecución local. Auditoría XML: 76 recursos de producto en español, 76 claves
+- Última compilación conjunta APK + fuentes de tests: éxito en 14 s. Veinte pruebas
+  de comportamiento escritas, compiladas sin ejecución local.
+  Auditoría XML: 99 recursos de producto en español, 99 claves
   usadas, ninguna referencia ausente; singular/plural de ventanas correcto.
 - Conexión de pantalla se pausa al pasar la app a segundo plano y hace replay al
   volver; la entrada pendiente no se repite automáticamente.
@@ -69,11 +69,15 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
   Android. La primera prueba detectó interpretación errónea de `queued:false`:
   significa envío inmediato, no fallo. Corregido y vuelto a probar sin aviso falso.
   Evidencia: `pixel-echo-ack-fixed.png` en la carpeta privada de capturas.
-- Diecinueve pruebas de comportamiento compiladas, sin ejecución local. Nuevas:
-  deduplicación de avisos y confirmaciones de input inmediato/en cola.
+- Veinte pruebas de comportamiento compiladas, sin ejecución local. Nuevas:
+  deduplicación de avisos, confirmaciones de input inmediato/en cola y fixture JSON
+  real compartida con Linux (celdas anchas, color, inversión, cursor y revisión).
 - Avisos privados implementados y compilados: servicio visible opt-in, permiso
   contextual, registro de IDs, enlace a destino exacto y límites documentados en
-  NOTIFICATIONS.md. Pendiente prueba de entrega contra el host recién compilado.
+  NOTIFICATIONS.md. Verificados en Pixel: permiso contextual, servicio visible,
+  entrega real en primer plano y tras Home, deduplicación tras desactivar/reactivar,
+  tap que abre la ventana exacta. No se marca leído el aviso del host. No se ha
+  forzado Doze ni cambiado la VPN; no se ha medido entrega con pantalla apagada.
 - Ajuste de lectura al ancho disponible, sin modificar la geometría del Mac;
   botón para ampliar y desplazar horizontalmente. Linux invalida con
   terminal.updated; el cliente agrupa una tanda acotada y pide un único replay.
@@ -88,6 +92,6 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
 - El transporte valida IP/DNS de tailnet; sigue pendiente decidir y comprobar
   requisito de VPN activa/ruta local tailnet antes de abrir el socket. Un prefijo
   CGNAT por sí solo no identifica criptográficamente al proveedor de VPN.
-- E2E Mac de aprobación, árbol, pantalla e input ya demostrado. Faltan interrupción
-  de red, revocación, entrega de avisos y prueba real Linux. No confundir esos
+- E2E Mac de aprobación, árbol, pantalla, input y avisos ya demostrado. Faltan
+  interrupción de red, revocación, reposo profundo y prueba real Linux. No confundir esos
   pendientes con la prueba de eco que sí se ha realizado.

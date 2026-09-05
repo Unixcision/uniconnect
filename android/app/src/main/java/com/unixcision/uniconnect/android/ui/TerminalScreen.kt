@@ -36,7 +36,7 @@ fun TerminalScreen(snapshot: TerminalSnapshot?, loading: Boolean, error: Int?, s
         if (snapshot == null) {
             Box(Modifier.weight(1f).padding(24.dp)) { Text(stringResource(if (loading) R.string.screen_loading else R.string.screen_unavailable), color = Brand.Muted) }
         } else {
-            Surface(Modifier.weight(1f).fillMaxWidth(), color = Brand.Night) {
+            Surface(Modifier.weight(1f).fillMaxWidth(), color = androidx.compose.ui.graphics.Color(parseColor(snapshot.background, 0xFF070D20.toInt()))) {
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val availableWidth = constraints.maxWidth.toFloat()
                     Box(Modifier.horizontalScroll(rememberScrollState()).verticalScroll(rememberScrollState())) {

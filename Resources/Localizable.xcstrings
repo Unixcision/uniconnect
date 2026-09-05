@@ -42238,6 +42238,28 @@
         }
       }
     },
+    "uniconnect.shared.falta.la.dependencia.unicode.del.acceso.m.vil.ejecuta.linux.install.sh": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falta la dependencia Unicode del acceso móvil; ejecuta linux/install.sh"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.no.se.pudo.representar.la.pantalla.de.la.sesi.n.existente": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo representar la pantalla de la sesión existente"
+          }
+        }
+      }
+    },
     "uniconnect.shared.uniconnect.est.bloqueado": {
       "extractionState": "manual",
       "localizations": {

@@ -102,11 +102,11 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scroll.add(self.workspace_list)
         sidebar.pack_start(scroll, True, True, 0)
-        bottom = Gtk.Box(spacing=4)
+        self.sidebar_actions = Gtk.Box(spacing=4)
         for icon_name, action in (("list-add-symbolic", "new_workspace"), ("document-open-symbolic", "import_config"),
                                   ("document-revert-symbolic", "reopen"), ("preferences-system-notifications-symbolic", "notifications")):
-            bottom.pack_start(self.action_button(icon_name, action), False, False, 0)
-        sidebar.pack_end(bottom, False, False, 0)
+            self.sidebar_actions.pack_start(self.action_button(icon_name, action), False, False, 0)
+        sidebar.pack_end(self.sidebar_actions, False, False, 0)
         self.body.pack1(sidebar, resize=False, shrink=False)
         self.workspace_stack = Gtk.Stack()
         self.workspace_stack.set_transition_type(Gtk.StackTransitionType.NONE)
@@ -126,6 +126,7 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         self.overlay.set_visible_child_name("content")
         self.refresh_sidebar()
         self.show_all()
+        self.apply_sidebar_mode()
         self.select_workspace(self.store.data.get("selectedWorkspaceId"))
         # Cadence is product behavior; immediate mutations also persist synchronously.
         self._tick_source = GLib.timeout_add_seconds(8, self.tick)
@@ -880,10 +881,16 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
         settings = self.store.data.setdefault("settings", {})
         compact = not settings.get("compactSidebar", False)
         settings["compactSidebar"] = compact
-        self.body.set_position(78 if compact else 255)
-        self.sidebar_search.set_visible(not compact)
+        self.apply_sidebar_mode()
         self.refresh_sidebar()
         self.persist()
+
+    def apply_sidebar_mode(self):
+        settings = self.store.data.get("settings", {})
+        compact = settings.get("compactSidebar", False)
+        self.sidebar_actions.set_orientation(Gtk.Orientation.VERTICAL if compact else Gtk.Orientation.HORIZONTAL)
+        self.sidebar_search.set_visible(not compact)
+        self.body.set_position(78 if compact else settings.get("sidebarWidth", 255))
 
     def action_copy(self):
         if self.focused_surface:

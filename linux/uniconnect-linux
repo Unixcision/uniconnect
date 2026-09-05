@@ -2,4 +2,10 @@
 set -euo pipefail
 uniconnect_source_dir="$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")"
 export PYTHONPATH="${uniconnect_source_dir}${PYTHONPATH:+:${PYTHONPATH}}"
+uniconnect_private_python="${uniconnect_source_dir}/.venv/bin/python"
+# A partial environment must not break the existing desktop launcher.
+if [[ -x "${uniconnect_private_python}" ]] && "${uniconnect_private_python}" -c \
+    'from uniconnect.mobile_render_grid import capture_dependencies_ready; raise SystemExit(0 if capture_dependencies_ready() else 1)' >/dev/null 2>&1; then
+    exec "${uniconnect_private_python}" -m uniconnect "$@"
+fi
 exec /usr/bin/python3 -m uniconnect "$@"

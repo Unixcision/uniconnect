@@ -120,7 +120,7 @@ sockets and real GTK/VTE in Xvfb. These do not reuse live user sessions as test
 fixtures:
 
 ```bash
-xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -v
+xvfb-run -a linux/.venv/bin/python -m unittest discover -s linux/tests -v
 ```
 
 The tests cover authenticated encryption, import identity, state and backup

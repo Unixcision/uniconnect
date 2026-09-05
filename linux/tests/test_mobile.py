@@ -5,10 +5,12 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import types
 import unittest
@@ -20,6 +22,22 @@ from uniconnect.mobile_access import MobileAccess, tailnet_address
 from uniconnect.mobile_host import MobileHost, _Client, verified_tailscale_address
 from uniconnect.mobile_protocol import FrameDecoder, RPCError, encode_frame
 from uniconnect.mobile_rpc import MobileRPC
+
+
+def fixture_profile():
+    return {"palette": ("#000000", "#c11c22", "#26a269", "#a2734c", "#12488b", "#a347ba", "#2aa1b3", "#d0cfcc",
+                        "#5e5c64", "#f66151", "#33d17a", "#e9ad0c", "#2a7bde", "#c061cb", "#33c7de", "#ffffff"),
+            "foreground": "#dce2ed", "background": "#020a33"}
+
+
+def capture_output(script, screen, *, metadata="80\t24\t2\t1\t1\t0"):
+    marker = next(value for value in shlex.split(script) if value.startswith("UC_CAPTURE_"))
+    return types.SimpleNamespace(stdout="Mensaje del shell, no de la pantalla\n" + marker + "\n" + screen
+                                 + "\nUC_META\t" + metadata + "\n")
+
+
+def grid_text(result):
+    return "".join(span["text"] for span in result["render_grid"]["row_spans"])
 
 
 class ProtocolTests(unittest.TestCase):
@@ -112,6 +130,37 @@ class FixtureTerminal:
         self.sizes.append((columns, rows))
 
 
+class DesktopPaletteTests(unittest.TestCase):
+    def test_desktop_color_application_and_mobile_profile_share_actual_rgba_values(self):
+        try:
+            import gi
+            gi.require_version("Gdk", "3.0")
+            from gi.repository import Gdk
+            from uniconnect.terminal import TerminalSurface
+        except (ImportError, ValueError):
+            self.skipTest("GTK/VTE is required for the desktop color adapter")
+        applied, changed = [], []
+        background = Gdk.RGBA()
+        background.parse("#020a33")
+        context = types.SimpleNamespace(has_class=lambda name: name == "uc-dark",
+                                         lookup_color=lambda name: (True, background))
+        owner = types.SimpleNamespace(store=types.SimpleNamespace(data={"settings": {}}), font_scale=1,
+                                      get_style_context=lambda: context)
+        terminal = types.SimpleNamespace(set_font=lambda value: None, set_font_scale=lambda value: None,
+                                         set_colors=lambda *values: applied.append(values))
+        surface = types.SimpleNamespace(owner=owner, terminal=terminal,
+                                         on_mobile_content_changed=lambda: changed.append(True))
+        TerminalSurface.apply_appearance(surface)
+        def rgb(color):
+            return "#" + "".join(f"{round(value * 255):02x}" for value in (color.red, color.green, color.blue))
+        foreground, background, colors = applied[0]
+        self.assertEqual(surface.mobile_color_profile["foreground"], rgb(foreground))
+        self.assertEqual(surface.mobile_color_profile["background"], rgb(background))
+        self.assertEqual(surface.mobile_color_profile["palette"], tuple(map(rgb, colors)))
+        self.assertEqual(len(colors), 16)
+        self.assertEqual(changed, [True])
+
+
 class ExistingDesktopTests(unittest.TestCase):
     def setUp(self):
         self.record = {"id": "window", "name": "Existente", "tmux": "fixture", "tmuxSocket": "uc-fixture",
@@ -119,17 +168,24 @@ class ExistingDesktopTests(unittest.TestCase):
         self.workspace = {"id": "workspace", "name": "Trabajo", "kind": "local", "cwd": "/tmp", "windows": [self.record]}
         self.sent, self.launched = [], []
         self.surface = types.SimpleNamespace(record=self.record, pid=42, disposed=False, terminal=FixtureTerminal(),
-                                             send=self.sent.append, launch=lambda: self.launched.append(True))
+                                             send=self.sent.append, launch=lambda: self.launched.append(True),
+                                             mobile_color_profile=fixture_profile())
         self.window = types.SimpleNamespace(
             store=types.SimpleNamespace(workspaces=[self.workspace], data={"selectedWorkspaceId": "other"}),
             locked=False, surfaces={"window": self.surface}, focused_surface=None)
         self.commands = []
+        self.screen = "\x1b[31mExistente\x1b[0m\n"
+        self.now, self.delays = 100.0, []
+        def wait(delay):
+            self.delays.append(delay)
+            self.now += delay
         def transport(*args, **kwargs):
             def run(script, **options):
                 self.commands.append(script)
-                return types.SimpleNamespace(stdout="\x1b[31mExistente\x1b[0m\n\nUC_META\t80\t24\t2\t1\t1\t0\n")
+                return capture_output(script, self.screen)
             return types.SimpleNamespace(run=run)
-        self.rpc = MobileRPC(self.window, None, lambda callback: callback(), transport_factory=transport)
+        self.rpc = MobileRPC(self.window, None, lambda callback: callback(), transport_factory=transport,
+                             clock=lambda: self.now, wait=wait)
         self.params = {"workspace_id": "workspace", "surface_id": "window"}
 
     def test_list_replay_and_input_preserve_identity_and_desktop_selection(self):
@@ -138,9 +194,15 @@ class ExistingDesktopTests(unittest.TestCase):
         self.assertFalse(boxes["workspaces"][0]["is_selected"])
         self.assertEqual(boxes["workspaces"][0]["terminals"][0]["tmux_binding"]["name"], "fixture")
         replay = self.rpc.dispatch("mobile.terminal.replay", self.params, "peer")
-        self.assertEqual(replay["snapshot_format"], "tmux.active.vt")
-        self.assertIn(b"\x1b[31mExistente", base64.b64decode(replay["snapshot_data_b64"]))
+        grid = replay["render_grid"]
+        self.assertEqual(grid["format"], "cmux.render-grid.v1")
+        self.assertEqual(grid["surface_id"], self.record["id"])
+        self.assertEqual(grid_text(replay), "Existente")  # The login banner is excluded.
+        self.assertEqual(grid["styles"][1]["foreground"], self.surface.mobile_color_profile["palette"][1])
+        self.assertEqual((grid["cursor"]["column"], grid["cursor"]["row"]), (2, 1))
+        self.assertEqual(grid["revision"], replay["revision"])
         self.assertEqual(self.rpc.dispatch("mobile.terminal.replay", self.params, "peer")["seq"], replay["seq"])
+        self.assertEqual(len(self.commands), 1)
         result = self.rpc.dispatch("mobile.terminal.input", {**self.params, "text": "hola\r"}, "peer")
         self.assertTrue(result["queued"])
         self.assertEqual(self.sent, ["hola\r"])
@@ -178,13 +240,118 @@ class ExistingDesktopTests(unittest.TestCase):
             self.window.locked = False
             self.record["tmux"] = "fixture"
             def transport(*args, **kwargs):
-                def run(*args, **kwargs):
+                def run(script, **kwargs):
                     mutation()
-                    return types.SimpleNamespace(stdout="private\nUC_META\t80\t24\t0\t0\t1\t0\n")
+                    return capture_output(script, "private")
                 return types.SimpleNamespace(run=run)
             self.rpc.transport_factory = transport
             with self.assertRaises(RPCError):
                 self.rpc.dispatch("mobile.terminal.replay", self.params, "peer")
+
+    def test_dirty_bursts_wait_for_one_fresh_capture_instead_of_returning_stale_cache(self):
+        first = self.rpc.replay(self.params)
+        self.screen = "Actualizada"
+        for _ in range(100):
+            self.rpc.invalidate_terminal(self.record["id"])
+        updated = self.rpc.replay(self.params)
+        self.assertEqual(grid_text(updated), "Actualizada")
+        self.assertEqual(updated["revision"], first["revision"] + 1)
+        self.assertEqual(self.delays, [0.25])
+        self.assertEqual(len(self.commands), 2)
+        self.rpc.replay(self.params)
+        self.assertEqual(len(self.commands), 2)
+        self.now += 0.25
+        self.assertEqual(self.rpc.replay(self.params)["revision"], updated["revision"])
+        self.assertEqual(len(self.commands), 3)  # Bounded refresh if VTE misses a notification.
+
+    def test_ssh_capture_cadence_is_bounded_and_profile_changes_invalidate_colors(self):
+        self.workspace["kind"] = "ssh"
+        self.window.connection = lambda workspace: "ssh fixture.invalid"
+        original = self.rpc.replay(self.params)
+        profile = self.surface.mobile_color_profile
+        self.surface.mobile_color_profile = {**profile, "palette": (profile["palette"][0], "#123456") + profile["palette"][2:]}
+        current = self.rpc.replay(self.params)
+        self.assertEqual(self.delays, [0.75])
+        self.assertEqual(current["render_grid"]["styles"][1]["foreground"], "#123456")
+        self.assertEqual(current["revision"], original["revision"] + 1)
+
+    def test_cached_frame_still_rechecks_permission_and_never_creates_missing_surface(self):
+        self.rpc.replay(self.params)
+        self.window.locked = True
+        with self.assertRaises(RPCError):
+            self.rpc.replay(self.params)
+        self.window.locked = False
+        with self.assertRaises(RPCError):
+            self.rpc.replay(self.params, authorized=lambda: False)
+        self.window.surfaces.clear()
+        with self.assertRaises(RPCError) as issue:
+            self.rpc.replay(self.params)
+        self.assertEqual(issue.exception.code, "surface_unavailable")
+        self.assertEqual(len(self.commands), 1)
+        self.assertEqual(self.launched, [])
+
+    def test_unknown_capture_controls_fail_explicitly_and_pending_wrap_cursor_is_clamped(self):
+        self.screen = "tab\tindeterminada"
+        with self.assertRaises(RPCError) as issue:
+            self.rpc.replay(self.params)
+        self.assertEqual(issue.exception.code, "snapshot_unavailable")
+        self.rpc.transport_factory = lambda *args, **kwargs: types.SimpleNamespace(
+            run=lambda script, **options: capture_output(script, "borde", metadata="80\t24\t80\t-1\t1\t1"))
+        frame = self.rpc.replay(self.params)["render_grid"]
+        self.assertEqual((frame["cursor"]["column"], frame["cursor"]["row"]), (79, 0))
+        self.assertEqual(frame["active_screen"], "alternate")
+
+    def test_absent_unicode_dependency_never_advertises_a_working_renderer(self):
+        from unittest.mock import patch
+        self.rpc.access = types.SimpleNamespace(machine_id="fixture")
+        self.rpc.host = types.SimpleNamespace(address="100.64.0.1", port=58465)
+        with patch("uniconnect.mobile_rpc.capture_dependencies_ready", return_value=False):
+            status = self.rpc.dispatch("mobile.host.status", {}, "peer")
+            self.assertEqual(status["terminal_fidelity"], "unavailable")
+            self.assertNotIn("terminal.render_grid.v1", status["capabilities"])
+            with self.assertRaises(RPCError):
+                self.rpc.replay(self.params)
+        self.assertEqual(self.commands, [])
+        status = self.rpc.dispatch("mobile.host.status", {}, "peer")
+        self.assertEqual(status["terminal_fidelity"], "render_grid")
+        self.assertIn("terminal.render_grid.v1", status["capabilities"])
+
+    def test_concurrent_captures_cannot_publish_an_old_screen_with_a_newer_revision(self):
+        entered, release = threading.Event(), threading.Event()
+        requests, results, failures = [], {}, []
+        def run(script, **kwargs):
+            requests.append(script)
+            if len(requests) == 1:
+                screen = self.screen
+                entered.set()
+                if not release.wait(2):
+                    raise TimeoutError("Fixture release deadline")
+                return capture_output(script, screen)
+            return capture_output(script, self.screen)
+        self.rpc.transport_factory = lambda *args, **kwargs: types.SimpleNamespace(run=run)
+        def replay(key):
+            try:
+                results[key] = self.rpc.replay(self.params)
+            except Exception as error:
+                failures.append(error)
+        first = threading.Thread(target=replay, args=("first",), daemon=True)
+        second = threading.Thread(target=replay, args=("second",), daemon=True)
+        try:
+            first.start()
+            self.assertTrue(entered.wait(2))
+            second.start()
+            self.screen = "Más reciente"
+            self.rpc.invalidate_terminal(self.record["id"])
+        finally:
+            release.set()
+            first.join(3)
+            if second.ident is not None:
+                second.join(3)
+        self.assertFalse(first.is_alive() or second.is_alive())
+        self.assertEqual(failures, [])
+        self.assertEqual(grid_text(results["first"]), "Existente")
+        self.assertEqual(grid_text(results["second"]), "Más reciente")
+        self.assertLess(results["first"]["revision"], results["second"]["revision"])
 
     def test_disconnect_releases_only_that_peers_viewport_and_final_peer_restores_size(self):
         for peer, columns in (("first", 80), ("second", 60)):
@@ -218,12 +385,14 @@ class RealTmuxReplayTests(unittest.TestCase):
                 pid = subprocess.check_output(args + ["display-message", "-p", "-t", "=fixture:", "#{pane_pid}"], text=True).strip()
                 record = {"id": "window", "name": "Prueba", "tmux": "fixture", "tmuxSocket": socket_name, "cwd": folder}
                 workspace = {"id": "workspace", "name": "Fixture", "kind": "local", "windows": [record]}
-                window = types.SimpleNamespace(locked=False, store=types.SimpleNamespace(workspaces=[workspace]), surfaces={})
+                surface = types.SimpleNamespace(disposed=False, mobile_color_profile=fixture_profile())
+                window = types.SimpleNamespace(locked=False, store=types.SimpleNamespace(workspaces=[workspace]),
+                                               surfaces={"window": surface})
                 rpc = MobileRPC(window, None, lambda callback: callback())
                 deadline = time.monotonic() + 5
                 while True:
                     result = rpc.dispatch("mobile.terminal.replay", {"workspace_id": "workspace", "surface_id": "window"}, "peer")
-                    if "UC_EXISTING" in base64.b64decode(result["snapshot_data_b64"]).decode():
+                    if "UC_EXISTING" in grid_text(result):
                         break
                     self.assertLess(time.monotonic(), deadline)
                     time.sleep(0.04)

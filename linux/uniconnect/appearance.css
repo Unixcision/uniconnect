@@ -99,7 +99,7 @@ window.uniconnect.uc-dark {
 
 .uniconnect.uc-dark .uc-headerbar {
     color: @uc_ink;
-    background-color: transparent;
+    background-color: @uc_night;
     background-image: none;
 }
 
@@ -209,9 +209,14 @@ window.uniconnect.uc-dark {
 }
 
 .uniconnect.uc-dark .uc-workspace-header,
-.uniconnect.uc-dark .uc-terminal-status,
 .uniconnect.uc-dark .uc-status {
     background-color: transparent;
+    background-image: none;
+    border-color: alpha(@uc_ink, 0.08);
+}
+
+.uniconnect.uc-dark .uc-terminal-status {
+    background-color: @uc_night;
     background-image: none;
     border-color: alpha(@uc_ink, 0.08);
 }

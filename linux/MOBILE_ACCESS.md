@@ -36,11 +36,18 @@ contraseñas SSH. Una aprobación no se activa si falla su escritura.
   El resultado identifica la ventana creada, no afirma que su proceso ya esté
   preparado. El montaje del cliente sigue el flujo asíncrono existente.
 - Replay captura con colores la pantalla del tmux **ya existente**, local o SSH,
-  mediante `capture-pane`. Devuelve un snapshot completo `tmux.active.vt`, cursor,
-  tamaño y pantalla alternativa. No se adjunta, no crea otra sesión y no roba
-  bytes a VTE. La lectura SSH puede requerir una conexión de control breve.
+  mediante `capture-pane -e -N`. Devuelve una cuadrícula completa
+  `cmux.render-grid.v1` en `render_grid`, el mismo DTO que recibe Android de Mac,
+  con estilos, cursor, tamaño y pantalla alternativa. No se adjunta, no crea
+  otra sesión y no roba bytes a VTE. La lectura SSH puede requerir una conexión
+  de control breve, limitada a una captura cada 750 ms por terminal; local, 250 ms.
+  Las peticiones concurrentes se serializan antes de capturar y asignar revisión.
+  Una caché de hasta ocho pantallas comparte las respuestas inmediatas entre
+  clientes; un cambio de contenido o perfil de color obliga a una captura nueva.
 - `terminal.updated` invalida la pantalla; Android debe pedir otro replay. No se
-  anuncian render-grid ni deltas de bytes. Tampoco se anuncia el conjunto de
+  publican deltas ni se emula una terminal Android a partir de escapes. Se anuncia
+  `terminal.render_grid.v1` solo cuando está disponible la dependencia Unicode.
+  Tampoco se anuncia el conjunto de
   acciones de caja `workspace.actions.v1`, todavía no implementado en este adaptador.
 - Los informes `terminal.viewport` pertenecen a cada conexión/cliente y se
   eliminan al desconectar. Su efecto geométrico real depende de VTE/GTK y necesita
@@ -54,12 +61,32 @@ contraseñas SSH. Una aprobación no se activa si falla su escritura.
 Esta implementación **no demuestra paridad visual completa con Ghostty**:
 no serializa todo el estado interno de VTE, imágenes inline, enlaces ni todos los
 modos de entrada de una TUI. Las consolas antiguas sin tmux no ofrecen este replay.
+La paleta ANSI de 16 colores se aplica explícitamente a VTE y se comparte con el
+adaptador de captura; no se adivina la paleta predeterminada de la distribución.
+Los cambios posteriores de paleta mediante OSC, anchos de celda decididos por una
+versión de tmux diferente de Unicode 15.1, tabuladores personalizados, cursor con
+otra forma y variantes de subrayado no se recuperan con fidelidad completa desde
+`capture-pane`. El adaptador rechaza capturas con controles desconocidos o fuera
+de límites: no inventa una pantalla ni usa una segunda sesión como alternativa.
+Exige una superficie del escritorio abierta con su perfil de color conocido.
 No cambia la política de recuperación del transporte Linux: una sesión guardada
 ausente sigue el contrato de `transport.py`, no el de la implementación macOS.
 
+`bash linux/install.sh --dependencies` instala GTK/VTE mediante los paquetes del
+sistema y crea `linux/.venv` con `--system-site-packages`, donde instala únicamente
+`wcwidth==0.2.13`. Ubuntu 24.04 distribuye una versión anterior que no cubre este
+contrato Unicode. No modifica Python global ni necesita `--break-system-packages`.
+Ejecuta el instalador como tu usuario: solo la instalación de paquetes usa `sudo`.
+Si ya tienes los paquetes, `bash linux/install.sh` prepara el entorno privado y
+los lanzadores. Si el entorno queda incompleto, el lanzador conserva el escritorio
+con Python del sistema y el host no anuncia un renderer que no puede proporcionar.
+
 Las pruebas en `tests/test_mobile.py` cubren framing fragmentado, aprobación,
 fallos de persistencia, revocación, IDs explícitos, entrada en la superficie
-existente, viewport por cliente, paginación y lectura de un tmux real aislado.
+existente, viewport por cliente, paginación, serialización de revisiones, cadencia,
+paleta compartida y lectura de un tmux real aislado. `test_mobile_render_grid.py`
+cubre SGR, colores indexados/RGB, caracteres anchos y combinados, ZWJ/VS16,
+dibujos DEC y límites del DTO; Android usa la misma muestra de cuadrícula.
 El caso real está limitado a CI y a un socket temporal exclusivo; nunca utiliza
 sesiones del usuario. En esta entrega se ha comprobado la sintaxis Python, **no
 se han ejecutado las pruebas localmente ni se ha validado Android contra Linux**.

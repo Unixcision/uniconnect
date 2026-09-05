@@ -59,7 +59,13 @@ Un heartbeat de 30 segundos detecta conexiones silenciosamente caídas; la esper
 progresiva de reconexión llega a 30 segundos. Revocación y falta de autorización
 detienen la conexión, no provocan una sucesión ilimitada de solicitudes.
 
-## Comprobación manual pendiente
+## Comprobación manual
+
+Verificado en Pixel 8 Pro/Android 17 contra Mac Debug aislado: aceptación del permiso,
+servicio visible, aviso real con app abierta y tras pulsar Home, deduplicación al
+desactivar/reactivar el enlace, tap que vuelve a la ventana original sin marcar el
+aviso del host como leído. La prueba en segundo plano se hizo con pantalla encendida;
+no equivale a una prueba de Doze. Revocación y ahorro profundo siguen pendientes.
 
 Usar solo la máquina y terminal de pruebas aisladas. Sin desactivar Tailscale
 ni forzar Doze mientras ADB sea la única vía de acceso remoto:

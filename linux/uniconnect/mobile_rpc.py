@@ -7,20 +7,31 @@ import json
 import shlex
 import socket
 import threading
+import time
+import uuid
+from collections import OrderedDict
 from concurrent.futures import Future, TimeoutError
 
 from .mobile_protocol import RPCError
+from .mobile_render_grid import capture_dependencies_ready, render_grid_from_tmux_capture
 from .transport import SSHCommand, Transport
 
 
 class MobileRPC:
-    def __init__(self, window, access, schedule, *, transport_factory=Transport):
+    def __init__(self, window, access, schedule, *, transport_factory=Transport,
+                 clock=time.monotonic, wait=time.sleep):
         self.window, self.access, self.schedule = window, access, schedule
         self.transport_factory = transport_factory
+        self.clock, self.wait = clock, wait
         self.host = None
         self.viewports, self.original_sizes = {}, {}
         self.revisions = {}
         self.revision_lock = threading.Lock()
+        # Serialize capture AND revision assignment for a pane, including across
+        # devices. A fixed number of locks bounds memory without retaining IDs.
+        self.capture_locks = tuple(threading.Lock() for _ in range(16))
+        self.capture_cache = OrderedDict()
+        self.capture_versions, self.capture_started = {}, {}
 
     def on_main(self, action):
         future = Future()
@@ -45,9 +56,13 @@ class MobileRPC:
                 raise RPCError("approval_required", "El permiso de este dispositivo ha sido revocado")
             return action()
         if method == "mobile.host.status":
+            ready = capture_dependencies_ready()
+            capabilities = ["events.v1", "terminal.viewport.v1", "notifications.v1"]
+            if ready:
+                capabilities += ["terminal.replay.v1", "terminal.render_grid.v1"]
             return {"machine_id": self.access.machine_id, "display_name": socket.gethostname(), "platform": "linux",
-                    "terminal_fidelity": "tmux.active.vt",
-                    "capabilities": ["events.v1", "terminal.replay.v1", "terminal.viewport.v1", "notifications.v1"],
+                    "terminal_fidelity": "render_grid" if ready else "unavailable",
+                    "capabilities": capabilities,
                     "routes": [{"id": "tailscale", "kind": "tailscale", "priority": 0,
                                 "endpoint": {"type": "host_port", "host": self.host.address, "port": self.host.port}}]}
         operation = method.removeprefix("mobile.")
@@ -153,10 +168,18 @@ class MobileRPC:
             raise RPCError("not_found", "No se encontró la terminal")
         return {"workspaces": boxes}
 
+    def invalidate_terminal(self, panel_id):
+        with self.revision_lock:
+            self.capture_versions[panel_id] = self.capture_versions.get(panel_id, 0) + 1
+
     def replay(self, params, *, authorized=lambda: True):
+        if not capture_dependencies_ready():
+            raise RPCError("snapshot_unavailable", "Falta la dependencia Unicode del acceso móvil; ejecuta linux/install.sh")
         def identity(workspace, record, surface):
+            profile = getattr(surface, "mobile_color_profile", {})
             return (id(workspace), id(record), workspace.get("credentialId"), workspace["kind"],
-                    record.get("tmux"), record.get("tmuxSocket"), getattr(surface, "generation", None))
+                    record.get("tmux"), record.get("tmuxSocket"), id(surface), getattr(surface, "generation", None),
+                    tuple(profile.get("palette", ())), profile.get("foreground"), profile.get("background"))
         def prepare():
             if not authorized():
                 raise RPCError("approval_required", "El permiso de este dispositivo ha sido revocado")
@@ -165,45 +188,87 @@ class MobileRPC:
             workspace, record, surface = self.target(params)
             if not record.get("tmux"):
                 raise RPCError("snapshot_unavailable", "Esta consola antigua no ofrece una pantalla tmux recuperable")
+            if surface is None or surface.disposed or not getattr(surface, "mobile_color_profile", None):
+                raise RPCError("surface_unavailable", "Esta terminal no está abierta en el escritorio")
             command = SSHCommand.parse(self.window.connection(workspace)) if workspace["kind"] == "ssh" else None
-            return workspace["id"], dict(record), command, identity(workspace, record, surface)
-        workspace_id, record, command, original_identity = self.on_main(prepare)
-        socket_name = record.get("tmuxSocket") or ("uniconnect" if command else "uniconnect-local")
-        # A read-only command against the existing pane. No ensure_session, attach,
-        # second PTY consumer or synthetic terminal input is involved in replay.
-        arguments = ["tmux", "-L", socket_name, "capture-pane", "-p", "-e", "-N", "-t", "=" + record["tmux"] + ":",
-                     ";", "display-message", "-p", "-t", "=" + record["tmux"] + ":",
-                     "UC_META\t#{pane_width}\t#{pane_height}\t#{cursor_x}\t#{cursor_y}\t#{cursor_flag}\t#{alternate_on}"]
+            return (workspace["id"], dict(record), command, identity(workspace, record, surface),
+                    dict(surface.mobile_color_profile))
+        prepared = self.on_main(prepare)
+        panel_id = prepared[1]["id"]
+        lock = self.capture_locks[hash(panel_id) % len(self.capture_locks)]
+        if not lock.acquire(timeout=5):
+            raise RPCError("busy", "El escritorio está ocupado; vuelve a intentarlo")
         try:
-            output = self.transport_factory(command, socket_name=socket_name).run(shlex.join(arguments), timeout=5).stdout
-            screen, metadata = output.rstrip("\n").rsplit("\n", 1)
-            marker, columns, rows, x, y, visible, alternate = metadata.split("\t")
-            columns, rows, x, y = map(int, (columns, rows, x, y))
-            if marker != "UC_META" or not 1 <= columns <= 1000 or not 1 <= rows <= 1000:
-                raise ValueError("dimensions")
-            # Explicit row positions preserve trailing spaces and line wrapping.
-            vt = "\x1b[?1049" + ("h" if alternate == "1" else "l") + "\x1b[0m\x1b[2J\x1b[H"
-            for index, line in enumerate(screen.split("\n")[:rows]):
-                vt += f"\x1b[{index + 1};1H" + line.rstrip("\r")
-            vt += f"\x1b[{max(0, min(y, rows - 1)) + 1};{max(0, min(x, columns - 1)) + 1}H"
-            vt += "\x1b[?25" + ("h" if visible == "1" else "l")
-        except Exception as error:
-            raise RPCError("snapshot_unavailable", "No se pudo leer la pantalla de la sesión existente") from error
-        def still_current():
-            if not authorized() or self.window.locked:
-                raise RPCError("locked", "El acceso a la terminal está bloqueado")
-            if identity(*self.target(params)) != original_identity:
-                raise RPCError("snapshot_unavailable", "La terminal ha cambiado durante la captura; vuelve a intentarlo")
-        self.on_main(still_current)
-        digest = hashlib.sha256(f"{columns}:{rows}:".encode() + vt.encode()).digest()
-        with self.revision_lock:
-            prior_digest, revision = self.revisions.get(record["id"], (None, 0))
-            if digest != prior_digest:
-                revision += 1
-                self.revisions[record["id"]] = (digest, revision)
-        return {"workspace_id": workspace_id, "surface_id": record["id"], "seq": revision,
-                "columns": columns, "rows": rows, "snapshot_format": "tmux.active.vt",
-                "snapshot_data_b64": base64.b64encode(vt.encode()).decode()}
+            # Re-resolve after waiting: never use a replaced surface's credentials.
+            workspace_id, record, command, original_identity, profile = self.on_main(prepare)
+            interval = 0.75 if command else 0.25
+            with self.revision_lock:
+                version = self.capture_versions.get(panel_id, 0)
+                cached = self.capture_cache.get(panel_id)
+                started = self.capture_started.get(panel_id, -float("inf"))
+            def still_current():
+                if not authorized() or self.window.locked:
+                    raise RPCError("locked", "El acceso a la terminal está bloqueado")
+                target = self.target(params)
+                if identity(*target) != original_identity or target[2].disposed:
+                    raise RPCError("snapshot_unavailable", "La terminal ha cambiado durante la captura; vuelve a intentarlo")
+            if (cached and cached[0] == original_identity and cached[1] == version
+                    and self.clock() - started < interval):
+                self.on_main(still_current)
+                return cached[2]
+            # Coalesce bursts on a worker, never GTK. A dirty frame waits then
+            # captures; returning a stale cached frame would lose the last event.
+            delay = interval - (self.clock() - started)
+            if delay > 0:
+                self.wait(delay)
+            self.on_main(still_current)
+            with self.revision_lock:
+                version = self.capture_versions.get(panel_id, 0)
+                self.capture_started[panel_id] = self.clock()
+            socket_name = record.get("tmuxSocket") or ("uniconnect" if command else "uniconnect-local")
+            target = "=" + record["tmux"] + ":"
+            marker = "UC_CAPTURE_" + uuid.uuid4().hex
+            # One read-only tmux command group; the nonce excludes login banners.
+            # No attach, ensure_session, second PTY reader or terminal input.
+            arguments = ["tmux", "-L", socket_name, "display-message", "-p", "-t", target, marker,
+                         ";", "capture-pane", "-p", "-e", "-N", "-t", target,
+                         ";", "display-message", "-p", "-t", target,
+                         "UC_META\t#{pane_width}\t#{pane_height}\t#{cursor_x}\t#{cursor_y}\t#{cursor_flag}\t#{alternate_on}"]
+            try:
+                output = self.transport_factory(command, socket_name=socket_name).run(shlex.join(arguments), timeout=5).stdout
+                prefix, separator, capture = output.partition(marker + "\n")
+                if not separator or (prefix and not prefix.endswith("\n")):
+                    raise ValueError("capture marker")
+                screen, metadata = capture.rstrip("\n").rsplit("\n", 1)
+                meta, columns, rows, x, y, visible, alternate = metadata.split("\t")
+                columns, rows, x, y = map(int, (columns, rows, x, y))
+                if meta != "UC_META" or visible not in ("0", "1") or alternate not in ("0", "1"):
+                    raise ValueError("capture metadata")
+                frame = render_grid_from_tmux_capture(
+                    screen, surface_id=panel_id, columns=columns, rows=rows,
+                    cursor_column=max(0, min(x, columns - 1)), cursor_row=max(0, min(y, rows - 1)),
+                    cursor_visible=visible == "1", alternate_screen=alternate == "1", revision=0,
+                    palette=profile["palette"], default_foreground=profile["foreground"],
+                    default_background=profile["background"])
+            except Exception as error:
+                raise RPCError("snapshot_unavailable", "No se pudo representar la pantalla de la sesión existente") from error
+            digest = hashlib.sha256(json.dumps(frame, sort_keys=True, ensure_ascii=False).encode()).digest()
+            self.on_main(still_current)
+            with self.revision_lock:
+                prior_digest, revision = self.revisions.get(panel_id, (None, 0))
+                if digest != prior_digest:
+                    revision += 1
+                self.revisions[panel_id] = (digest, revision)
+                frame["state_seq"] = frame["revision"] = revision
+                payload = {"workspace_id": workspace_id, "surface_id": panel_id, "seq": revision,
+                           "revision": revision, "columns": columns, "rows": rows, "render_grid": frame}
+                self.capture_cache[panel_id] = (original_identity, version, payload)
+                self.capture_cache.move_to_end(panel_id)
+                while len(self.capture_cache) > 8:
+                    self.capture_cache.popitem(last=False)
+            return payload
+        finally:
+            lock.release()
 
     def viewport(self, surface, params, connection_id):
         client_id = params.get("client_id")

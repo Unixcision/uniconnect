@@ -113,7 +113,21 @@ class TerminalSurface(Gtk.Box):
             found, shared_background = context.lookup_color("uc_night")
             if found:
                 bg = shared_background
-        self.terminal.set_colors(fg, bg, [])
+        # Both VTE and mobile snapshots consume this explicit ANSI palette. We
+        # cannot read back arbitrary per-session OSC palette changes from VTE.
+        palette = ("#000000", "#c11c22", "#26a269", "#a2734c", "#12488b", "#a347ba", "#2aa1b3", "#d0cfcc",
+                   "#5e5c64", "#f66151", "#33d17a", "#e9ad0c", "#2a7bde", "#c061cb", "#33c7de", "#ffffff")
+        colors = []
+        for value in palette:
+            color = Gdk.RGBA()
+            color.parse(value)
+            colors.append(color)
+        self.terminal.set_colors(fg, bg, colors)
+        def rgb(color):
+            return "#" + "".join(f"{max(0, min(255, round(channel * 255))):02x}"
+                                  for channel in (color.red, color.green, color.blue))
+        self.mobile_color_profile = {"palette": palette, "foreground": rgb(fg), "background": rgb(bg)}
+        self.on_mobile_content_changed()
 
     def on_mobile_content_changed(self, *_):
         if not self.disposed and hasattr(self.owner, "mobile"):

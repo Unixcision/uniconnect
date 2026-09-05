@@ -1,0 +1,2 @@
+# Unicode 15.1, sin modificar el Python de la distribución.
+wcwidth==0.2.13

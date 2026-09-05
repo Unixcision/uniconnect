@@ -43,19 +43,19 @@ terminada porque exista una pantalla, un DTO o una compilación correcta.
 | --- | --- |
 | Español macOS/Linux | Publicado en `29a8edec3`; CI [33971595499](https://github.com/Unixcision/uniconnect/actions/runs/33971595499): 42 pruebas de ajustes, 4 de traducción/CLI, 1 GTK real y comprobación del catálogo compilado. Release instalada aún anterior. |
 | Ramas de desarrollo | `fa91daa4c` incorporado y publicado en `uniconnect`; retirada `desarrollo/multiplataforma` después de comprobar el SHA. Se conservan sus commits y el histórico upstream ajeno. |
-| Android nativo | APK y 17 pruebas compiladas, instalada en Pixel físico. Aprobación y listado Mac observados; terminal, entrada y reconexión en validación. |
+| Android nativo | APK instalada y 20 pruebas compiladas; CI móvil `33983039150` correcto. Pixel: aprobación, listado, pantalla, texto e Intro en la misma terminal Mac comprobados. |
 | Acceso propio Mac | Listener activo exclusivamente en la IP Tailscale. Pixel rechazado antes de aprobarlo y autorizado desde la propia interfaz. No usa login externo. Falta comprobar revocación y recuperación completas. |
-| Acceso propio Linux | Adaptador TCP propio implementado sobre el estado/superficies existentes; aprobación local, creación explícita y avisos. Falta adaptar captura tmux al render-grid móvil; no hay control visual Android/Linux demostrado todavía. |
+| Acceso propio Linux | Adaptador TCP propio sobre estado/superficies existentes; captura tmux convertida al render-grid compartido, con paleta VTE explícita. Pruebas listas para CI; control visual Android/Linux real aún pendiente. |
 | Árbol completo | Agregar todas las ventanas nativas del host; actualizar altas/bajas/nombres sin listas paralelas divergentes. Selección móvil independiente. |
 | Terminal móvil | Entrada, teclas, salida, colores/TUI, tamaño, scroll, teclado y reconexión contra sesiones reales en las dos plataformas. No crear un shell por conectar o seleccionar. |
-| tmux local Mac | En implementación: binding persistido, creación/recuperación, no duplicar IA, atribución de hooks a la superficie reenganchada y fallback explícito. |
+| tmux local Mac | Binding, creación/recuperación y no duplicación implementados; tmux real aislado en CI correcto. Las consolas antiguas activas no se han migrado ni reiniciado. |
 | tmux local Linux | Backend existente; comprobar equivalencia de recuperación, metadatos/IA y sesión compartida con Android. |
 | Modales y acciones | Crear/editar/cerrar/restablecer local y SSH por camino compartido desde todos los menús. Nombres, tmux, ruta y conversación coherentes. |
 | Paridad funcional | Auditar y cerrar deudas reales de [PORT_STATUS.md](../linux/PORT_STATUS.md), no inferir paridad de un protocolo compartido. |
 | Persistencia | Reinicios de app/red sin perder tmux ni duplicar PID/UUID de agente; proteger estado vivo y copia previa a instalar. |
 | Robustez | Límites de colas/frames, cliente lento, red interrumpida, deltas perdidos, revocación y ausencia de interfaces Tailscale. |
-| Notificaciones Android | Añadido por el usuario: eventos de sesiones de las máquinas autorizadas, abrir la ventana exacta, permiso nativo, deduplicación y recuperación tras cortes; validar con pantalla apagada/Doze, no solo con la app abierta. Sin proveedor cloud añadido por defecto. |
-| Diseño Linux | Hoja CSS GTK nativa incorporada y conectada: paleta azul noche/cian/violeta, radios, estados y márgenes. Mantiene VTE y sus acciones. Validación visual Linux real pendiente. |
+| Notificaciones Android | Pixel físico: permiso nativo, avisos con app en segundo plano, deduplicación al reconectar y apertura de ventana exacta comprobados. Sin proveedor cloud. Pantalla apagada/Doze pendiente; no se garantiza entrega instantánea. |
+| Diseño Linux | Capturas GTK/VTE reales en CI `33983331665`: paleta y márgenes verificados; detectados y corregidos footer compacto ancho y fondos heredados. Falta captura final y aceptación en el escritorio Linux del usuario. |
 | Vigilancia del repo | Monitor de lectura activo cada 45 s durante esta sesión; el avance `fa91daa4c` se revisó e integró. Auditoría de paquetes compartidos delegada a Claude Code; CI macOS/Ubuntu `33981170986` correcto. |
 | Entrega | CI relevante por plataforma, builds nativos, aceptación en Pixel/Mac/Linux, consolidación y Release instalada sin copias de desarrollo sobrantes del agente. |
 
@@ -70,8 +70,10 @@ No volcar contraseñas, claves, comandos SSH privados o transcripciones en Git.
 Checkpoint actual: `cmux-unit build-for-testing` correcto con directorio aislado,
 incluidos los archivos nuevos de pruebas; `CMUXMobileCore --build-tests` correcto.
 Son compilaciones, no ejecuciones de pruebas. El workflow
-`uniconnect-mobile.yml` ejecutará en CI protocolo, autorizaciones, tmux aislado
-y pruebas Android. La última Release de uso diario sigue intacta.
+`uniconnect-mobile.yml` completó correctamente el protocolo, autorizaciones,
+tmux aislado y Android en `33983039150`. La última Release de uso diario sigue
+intacta. Pendiente manejar como transitoria la ausencia de cuadrícula de una
+superficie Mac que todavía está arrancando, en lugar de mostrar incompatibilidad.
 
 El código de red conserva los identificadores y la representación de pantalla
 existentes; no depende de los nombres históricos internos de paquetes o del CLI.
