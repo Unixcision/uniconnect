@@ -174,7 +174,11 @@ final class MobileTerminalRenderObserver {
     private func emitRenderGrid(surfaceID: UUID) {
         let stateSeq = MobileTerminalByteTee.shared.currentSequence(surfaceID: surfaceID) ?? 0
         guard let surface = TerminalSurfaceRegistry.shared.surface(id: surfaceID),
-              let snapshot = surface.mobileRenderGridFrame(stateSeq: stateSeq, full: true) else {
+              let snapshot = surface.mobileRenderGridFrame(
+                stateSeq: stateSeq,
+                full: true,
+                scrollbackLines: TerminalController.mobileReplayScrollbackLineBudget
+              ) else {
             renderUpdates.remove(surfaceID: surfaceID.uuidString)
             return
         }
