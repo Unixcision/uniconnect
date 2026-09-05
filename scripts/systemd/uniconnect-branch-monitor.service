@@ -1,0 +1,15 @@
+[Unit]
+Description=Monitor de ramas y CI de UniConnect
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/apps/UniConnect
+ExecStart=/usr/bin/python3 /root/.local/lib/uniconnect-branch-monitor/uniconnect_branch_monitor.py --config /root/.config/uniconnect-branch-monitor/config.json --once
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+UMask=0077
+TimeoutStartSec=180
+NoNewPrivileges=true
+PrivateTmp=true
