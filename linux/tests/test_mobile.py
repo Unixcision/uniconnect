@@ -446,9 +446,19 @@ class RealTmuxReplayTests(unittest.TestCase):
                 for span in grid["scrollback_spans"]:
                     self.assertGreaterEqual(span["row"], 0)
                     self.assertLess(span["row"], 300)
+                    self.assertEqual(span["column"], len(lines[span["row"]]))
+                    self.assertEqual(span["cell_width"], len(span["text"]))
                     lines[span["row"]] += span["text"]
                     style = next(item for item in grid["styles"] if item["id"] == span["style_id"])
-                    self.assertEqual(style["foreground"], fixture_profile()["palette"][1])
+                    # tmux 3.4 -N retains allocated blank cells after SGR 39.
+                    # HISTORIA text must stay red; those exact trailing spaces
+                    # keep their default color and remain in the comparison.
+                    if span["text"].isspace():
+                        self.assertIsNone(style["foreground"])
+                    else:
+                        self.assertEqual(style["foreground"], fixture_profile()["palette"][1])
+                for line in lines:
+                    self.assertRegex(line.rstrip(" "), r"^HISTORIA-[0-9]{3}$")
                 expected = subprocess.check_output(args + ["capture-pane", "-p", "-N", "-S", "-300", "-E", "-1", "-t", "=fixture:"], text=True).splitlines()
                 self.assertEqual(lines, expected)
                 self.assertNotIn("HISTORIA-000", lines)

@@ -174,6 +174,19 @@ class MobileRenderGridTests(unittest.TestCase):
             with self.subTest(count=count), self.assertRaises(CaptureRenderError):
                 capture("", scrollback_rows=count)
 
+    def test_real_tmux_34_history_padding_keeps_reset_color_and_exact_width(self):
+        # Observed bytes from an isolated tmux 3.4 capture-pane -p -e -N.
+        # Its allocated blank cells are not part of the red HISTORIA text.
+        frame = capture("\x1b[31mHISTORIA-000\x1b[39m        \nVisible\n", columns=80, scrollback_rows=1)
+        self.assertEqual(frame["scrollback_spans"], [
+            {"row": 0, "column": 0, "style_id": 1, "text": "HISTORIA-000", "cell_width": 12},
+            {"row": 0, "column": 12, "style_id": 0, "text": "        ", "cell_width": 8},
+        ])
+        self.assertEqual(style_for(frame, frame["scrollback_spans"][0])["foreground"], PALETTE[1])
+        self.assertIsNone(style_for(frame, frame["scrollback_spans"][1])["foreground"])
+        self.assertEqual(frame["row_spans"][0]["text"], "Visible")
+        self.assertIsNone(style_for(frame, frame["row_spans"][0])["foreground"])
+
     def test_alternate_frame_omits_history_without_losing_visible_rendition(self):
         frame = capture("\x1b[31mAnterior\nVisible\x1b[0mX\n", scrollback_rows=1, alternate_screen=True)
         self.assertEqual(frame["active_screen"], "alternate")
