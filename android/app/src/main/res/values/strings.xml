@@ -164,4 +164,11 @@
     <string name="host_error_code">Respuesta de la máquina: %1$s</string>
     <string name="scroll_failed">La máquina ha rechazado el desplazamiento remoto. La pantalla sigue en directo.</string>
     <string name="screen_pan">Tamaño real con desplazamiento lateral</string>
+    <string name="real_terminal_start">Terminal real (tmux)</string>
+    <string name="real_terminal_stop">Volver a la pantalla espejo</string>
+    <string name="real_terminal_pill">tmux</string>
+    <string name="real_terminal_connecting">Adjuntando a la sesión tmux…</string>
+    <string name="real_terminal_unavailable">Esta máquina aún no admite la terminal real. Actualiza UniConnect en el escritorio.</string>
+    <string name="real_terminal_failed">No se ha podido adjuntar a la sesión tmux. No se ha creado ni reiniciado nada.</string>
+    <string name="real_terminal_ended">La sesión adjunta ha terminado en la máquina.</string>
 </resources>

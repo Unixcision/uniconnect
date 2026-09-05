@@ -13,6 +13,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.LinkOff
 import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Sync
@@ -29,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -62,6 +65,106 @@ fun TerminalScreen(
     onReconnect: () -> Unit,
     onScroll: (Int) -> Unit,
     onSend: (String, (Boolean) -> Unit) -> Unit,
+    real: MachinesViewModel.RealTerminal? = null,
+    onStartReal: (Int, Int) -> Unit = { _, _ -> },
+    onStopReal: () -> Unit = {},
+    onPty: (String) -> Unit = {},
+    onPtyWheel: (Boolean, Int) -> Unit = { _, _ -> },
+    onPtyResize: (Int, Int) -> Unit = { _, _ -> },
+) {
+    var realRequested by rememberSaveable { mutableStateOf(false) }
+    if (real != null) {
+        RealTerminalScreen(real, connected, sending, onStopReal = { realRequested = false; onStopReal() }, onPty = onPty, onPtyWheel = onPtyWheel, onPtyResize = onPtyResize)
+        return
+    }
+    if (realRequested) realRequested = false
+    MirrorTerminalScreen(snapshot, loading, error, errorDetail, sending, reconnecting, connected, onRefresh, onReconnect, onScroll, onSend,
+        onRequestReal = { columns, rows -> realRequested = true; onStartReal(columns, rows) })
+}
+
+/** The attached tmux client: the phone owns a real PTY of its own size; tmux keeps the desktop's. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun RealTerminalScreen(
+    real: MachinesViewModel.RealTerminal, connected: Boolean, sending: Boolean,
+    onStopReal: () -> Unit, onPty: (String) -> Unit, onPtyWheel: (Boolean, Int) -> Unit, onPtyResize: (Int, Int) -> Unit,
+) {
+    var keysVisible by rememberSaveable { mutableStateOf(false) }
+    var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
+    var alt by rememberSaveable { mutableStateOf(ModifierState.OFF) }
+    val modifiers = TerminalModifiers(ctrl = ctrl != ModifierState.OFF, alt = alt != ModifierState.OFF)
+    val consumeModifiers = {
+        if (ctrl == ModifierState.ARMED) ctrl = ModifierState.OFF
+        if (alt == ModifierState.ARMED) alt = ModifierState.OFF
+    }
+    val ready = real.snapshot != null && !real.ended && real.error == null
+    Column(Modifier.fillMaxSize().imePadding()) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            StatusPill(stringResource(R.string.real_terminal_pill), if (ready) PillTone.Busy else PillTone.Idle)
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onStopReal) { Icon(Icons.Rounded.LinkOff, stringResource(R.string.real_terminal_stop), tint = Brand.Muted) }
+        }
+        real.error?.let {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
+                Text(stringResource(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                real.errorDetail?.let { detail -> Text(stringResource(R.string.host_error_code, detail), color = Brand.Muted, style = MaterialTheme.typography.labelSmall) }
+            }
+        }
+        if (real.ended) Text(stringResource(R.string.real_terminal_ended), Modifier.padding(horizontal = 20.dp, vertical = 6.dp), color = Brand.Amber, style = MaterialTheme.typography.bodySmall)
+        val frameShape = RoundedCornerShape(20.dp)
+        Box(
+            Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp).clip(frameShape)
+                .background(Color(parseColor(real.snapshot?.background, 0xFF070D20.toInt())))
+                .border(1.dp, Brush.verticalGradient(listOf(Brand.GlassTop, Brand.GlassBottom)), frameShape),
+        ) {
+            val snapshot = real.snapshot
+            if (snapshot == null) {
+                Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (real.connecting) {
+                        LoadingIndicator(color = Brand.Cyan)
+                        Text(stringResource(R.string.real_terminal_connecting), Modifier.padding(top = 16.dp), color = Brand.Muted, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            } else BoxWithConstraints(Modifier.fillMaxSize()) {
+                val metrics = rememberTerminalMetrics(snapshot, null)
+                val columns = ((constraints.maxWidth - 16f) / metrics.cellWidth).toInt().coerceIn(10, 500)
+                val rows = ((constraints.maxHeight - 16f) / metrics.lineHeight).toInt().coerceIn(3, 200)
+                // Keyboard or rotation changed the viewport: the phone's own client follows, tmux keeps the desktop.
+                LaunchedEffect(columns, rows) { if (columns != snapshot.columns || rows != snapshot.rows) onPtyResize(columns, rows) }
+                val wheel by rememberUpdatedState(onPtyWheel)
+                Box(
+                    Modifier.fillMaxSize().pointerInput(metrics.lineHeight) {
+                        var accumulated = 0f
+                        detectVerticalDragGestures(onDragEnd = { accumulated = 0f }, onDragCancel = { accumulated = 0f }) { change, dragAmount ->
+                            change.consume()
+                            accumulated += dragAmount
+                            val lines = (accumulated / metrics.lineHeight).toInt()
+                            if (lines != 0) { accumulated -= lines * metrics.lineHeight; wheel(lines > 0, kotlin.math.abs(lines)) }
+                        }
+                    },
+                    contentAlignment = Alignment.TopStart,
+                ) { TerminalGrid(snapshot, metrics) }
+            }
+        }
+        if (keysVisible) TerminalExtraKeys(
+            ctrl = ctrl, alt = alt, onCtrl = { ctrl = it }, onAlt = { alt = it }, enabled = ready && connected,
+            onKey = { key -> onPty(TerminalKeyEncoder.encode(key, modifiers, cursorApplicationMode = real.applicationCursorKeys)); consumeModifiers() },
+            onText = { text -> onPty(TerminalKeyEncoder.encodeText(text, modifiers)); consumeModifiers() },
+        )
+        TerminalComposer(
+            enabled = ready && connected, sending = sending, modifiers = modifiers, keysVisible = keysVisible,
+            onToggleKeys = { keysVisible = !keysVisible },
+            onSend = { text, onDelivered -> onPty(text); onDelivered(true); consumeModifiers() },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun MirrorTerminalScreen(
+    snapshot: TerminalSnapshot?, loading: Boolean, error: Int?, errorDetail: String?, sending: Boolean, reconnecting: Boolean, connected: Boolean,
+    onRefresh: () -> Unit, onReconnect: () -> Unit, onScroll: (Int) -> Unit, onSend: (String, (Boolean) -> Unit) -> Unit,
+    onRequestReal: (Int, Int) -> Unit,
 ) {
     var viewMode by rememberSaveable { mutableStateOf(ViewMode.FIT) }
     var keysVisible by rememberSaveable { mutableStateOf(false) }
@@ -81,6 +184,13 @@ fun TerminalScreen(
                 if (reconnecting) LoadingIndicator(Modifier.size(20.dp), color = Brand.Cyan)
                 else Icon(Icons.Rounded.Sync, stringResource(R.string.terminal_reconnect), tint = Brand.Muted)
             }
+            // Real terminal: a tmux client of the phone's size. The readable geometry is measured
+            // here so the attach asks the host for exactly the size this screen can draw.
+            var armReal by remember { mutableStateOf(false) }
+            IconButton(onClick = { armReal = true }, enabled = connected) {
+                Icon(Icons.Rounded.Link, stringResource(R.string.real_terminal_start), tint = Brand.Muted)
+            }
+            RealTerminalStarter(armReal) { columns, rows -> armReal = false; onRequestReal(columns, rows) }
             if (snapshot != null) IconButton(onClick = { viewMode = viewMode.next }) {
                 // The icon announces the mode the tap switches to.
                 Icon(
@@ -175,6 +285,21 @@ private fun rememberPinnedScrollState(snapshot: TerminalSnapshot, lineHeight: Fl
         if (scrollState.value >= scrollState.maxValue - lineHeight * 2) scrollState.scrollTo(scrollState.maxValue)
     }
     return scrollState
+}
+
+/** Measures the phone's readable geometry once the user asks for the real terminal, then starts it. */
+@Composable
+private fun RealTerminalStarter(armed: Boolean, onStart: (Int, Int) -> Unit) {
+    if (!armed) return
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    LaunchedEffect(armed) {
+        val fontSize = with(density) { 13.sp.toPx() }
+        val cell = Paint().apply { textSize = fontSize; typeface = Typeface.MONOSPACE }.measureText("M")
+        val widthPx = with(density) { configuration.screenWidthDp.dp.toPx() } - 36f
+        val heightPx = with(density) { configuration.screenHeightDp.dp.toPx() } * 0.55f
+        onStart((widthPx / cell).toInt().coerceIn(20, 500), (heightPx / (fontSize * 1.35f)).toInt().coerceIn(8, 200))
+    }
 }
 
 /** How the desktop grid is shown on the phone; none of these change the desktop PTY size. */

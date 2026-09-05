@@ -16,6 +16,9 @@ import com.unixcision.uniconnect.android.domain.ResourceCreation
 import com.unixcision.uniconnect.android.domain.NotificationConnectionControl
 import com.unixcision.uniconnect.android.domain.NotificationLinkState
 import com.unixcision.uniconnect.android.domain.NoticeRoute
+import com.unixcision.uniconnect.android.domain.PtyEvent
+import com.unixcision.uniconnect.android.domain.TerminalAttachment
+import com.unixcision.uniconnect.android.domain.vt.TerminalEmulator
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -28,6 +31,11 @@ import kotlinx.coroutines.launch
 
 class MachinesViewModel(private val repository: MachineRepository, private val client: MachineClient, private val notificationControl: NotificationConnectionControl) : ViewModel() {
     data class Connection(val checking: Boolean = false, val connected: Boolean = false, val snapshot: MachineSnapshot? = null, val error: Int? = null)
+    /** A phone-sized tmux client attached to the selected window; the emulator lives in the model. */
+    data class RealTerminal(
+        val snapshot: TerminalSnapshot? = null, val applicationCursorKeys: Boolean = false,
+        val connecting: Boolean = true, val ended: Boolean = false, val error: Int? = null, val errorDetail: String? = null,
+    )
     data class State(
         val machines: List<Machine> = emptyList(), val loading: Boolean = true, val error: Int? = null,
         val adding: Boolean = false, val saving: Boolean = false, val formError: Int? = null,
@@ -37,6 +45,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         val terminalError: Int? = null, val terminalErrorDetail: String? = null, val inputSending: Boolean = false, val reconnecting: Boolean = false,
         val creation: CreationContext? = null, val creating: Boolean = false, val creationError: Int? = null,
         val notificationLinks: Map<String, NotificationLinkState> = emptyMap(),
+        val realTerminal: RealTerminal? = null,
     )
     private val mutableState = MutableStateFlow(State())
     val state = mutableState.asStateFlow()
@@ -76,6 +85,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     }
     fun pauseLiveConnection() {
         foreground = false
+        stopRealTerminal()
         resumeMachineID = state.value.selectedMachine?.takeIf { requests[it]?.isActive == true }
         stopObserving()
     }
@@ -138,8 +148,8 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         if (state.value.connections[id]?.snapshot != null) state.value.machines.firstOrNull { it.id == id }?.let(::connect)
     }
     fun selectWorkspace(id: String) { mutableState.update { it.copy(selectedWorkspace = id, selectedWindow = null) } }
-    fun selectWindow(id: String) { mutableState.update { it.copy(selectedWindow = id, terminal = null) }; refreshTerminal() }
-    fun back() { mutableState.update {
+    fun selectWindow(id: String) { stopRealTerminal(); mutableState.update { it.copy(selectedWindow = id, terminal = null) }; refreshTerminal() }
+    fun back() { stopRealTerminal(); mutableState.update {
         when {
             it.selectedWindow != null -> it.copy(selectedWindow = null, terminal = null, terminalLoading = false, terminalError = null, terminalErrorDetail = null)
             it.selectedWorkspace != null -> it.copy(selectedWorkspace = null)
@@ -333,6 +343,92 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
             }
         }
     }
+
+    private var attachment: TerminalAttachment? = null
+    private var attachJob: Job? = null
+    private var emulator: TerminalEmulator? = null
+
+    /** Attaches a phone-sized tmux client to the selected window and mirrors it through the local emulator. */
+    fun startRealTerminal(columns: Int, rows: Int) {
+        val current = state.value
+        if (current.realTerminal != null) return
+        val machine = current.machines.firstOrNull { it.id == current.selectedMachine } ?: return
+        val workspaceID = current.selectedWorkspace ?: return
+        val windowID = current.selectedWindow ?: return
+        if (current.connections[machine.id]?.connected != true) { mutableState.update { it.copy(error = R.string.connection_error) }; return }
+        val terminal = TerminalEmulator(columns, rows)
+        emulator = terminal
+        mutableState.update { it.copy(realTerminal = RealTerminal(connecting = true)) }
+        attachJob = viewModelScope.launch {
+            var live: TerminalAttachment? = null
+            try {
+                live = client.attach(machine, workspaceID, windowID, columns, rows)
+                attachment = live
+                if (live.columns != columns || live.rows != rows) terminal.resize(live.columns, live.rows)
+                mutableState.update { it.copy(realTerminal = RealTerminal(snapshot = terminal.snapshot(), connecting = false)) }
+                live.events.collect { event ->
+                    when (event) {
+                        is PtyEvent.Output -> {
+                            terminal.feed(event.bytes)
+                            // Answer the program's queries (cursor position, device attributes) right away.
+                            val answer = terminal.drainResponses()
+                            if (answer.isNotEmpty()) runCatching { live.send(answer.toByteArray(Charsets.UTF_8)) }
+                            mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = terminal.snapshot(), applicationCursorKeys = terminal.applicationCursorKeys)) }
+                        }
+                        PtyEvent.Exit -> mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(ended = true, connecting = false)) }
+                    }
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                val rejected = failure as? MachineFailure.Rejected
+                val message = when (rejected?.code) {
+                    "method_not_found", "unknown_method", "not_supported", "unsupported" -> R.string.real_terminal_unavailable
+                    "not_durable" -> R.string.reconnect_not_durable
+                    else -> R.string.real_terminal_failed
+                }
+                val detail = rejected?.let { listOfNotNull(it.code.takeIf(String::isNotBlank), it.detail).joinToString(" · ") }?.takeIf { it.isNotBlank() }
+                mutableState.update { it.copy(realTerminal = RealTerminal(connecting = false, error = message, errorDetail = detail)) }
+            } finally {
+                live?.close()
+                if (attachment === live) attachment = null
+            }
+        }
+    }
+
+    fun stopRealTerminal() {
+        attachJob?.cancel(); attachJob = null
+        attachment?.close(); attachment = null
+        emulator = null
+        if (state.value.realTerminal != null) mutableState.update { it.copy(realTerminal = null) }
+    }
+
+    /** Raw bytes to the attached client: keys, typed text, pasted text. */
+    fun sendPty(text: String) {
+        val live = attachment ?: return
+        if (text.isEmpty()) return
+        viewModelScope.launch {
+            try { live.send(text.toByteArray(Charsets.UTF_8)) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { mutableState.update { it.copy(error = R.string.input_failed) } }
+        }
+    }
+
+    /** Wheel steps as the attached program expects them; tmux turns them into copy-mode scrolling. */
+    fun wheelPty(up: Boolean, steps: Int, column: Int = 0, row: Int = 0) {
+        val sequence = emulator?.encodeWheel(up, column, row) ?: return
+        sendPty(sequence.repeat(steps.coerceIn(1, 20)))
+    }
+
+    fun resizePty(columns: Int, rows: Int) {
+        val terminal = emulator ?: return
+        if (terminal.screen.columns == columns && terminal.screen.rows == rows) return
+        terminal.resize(columns, rows)
+        mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = terminal.snapshot())) }
+        val live = attachment ?: return
+        viewModelScope.launch { runCatching { live.resize(columns, rows) } }
+    }
+
+    override fun onCleared() { stopRealTerminal(); super.onCleared() }
 
     fun sendInput(text: String, onDelivered: (Boolean) -> Unit) {
         val current = state.value

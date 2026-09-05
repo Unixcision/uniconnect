@@ -152,6 +152,9 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
         require(result.getString("surface_id").equals(windowID, ignoreCase = true))
     }
 
+    override suspend fun attach(machine: Machine, workspaceID: String, windowID: String, columns: Int, rows: Int): TerminalAttachment =
+        NativeTerminalAttachment.open(rpc.open(machine.endpoint), workspaceID, windowID, columns.coerceIn(1, 1000), rows.coerceIn(1, 1000))
+
     private fun decodeMachine(machine: Machine, result: JSONObject): MachineSnapshot {
         val workspaces = result.getJSONArray("workspaces").objects().map { workspace ->
             val terminals = workspace.getJSONArray("terminals").objects().map { terminal ->

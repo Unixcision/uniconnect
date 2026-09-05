@@ -13,4 +13,6 @@ interface MachineClient {
     suspend fun reconnect(machine: Machine, workspaceID: String, windowID: String)
     /** Scrolls the desktop viewport by whole lines; the phone never resizes the desktop terminal. */
     suspend fun scroll(machine: Machine, workspaceID: String, windowID: String, deltaLines: Int)
+    /** Attaches a phone-sized tmux client to the window's session; raw bytes flow both ways. */
+    suspend fun attach(machine: Machine, workspaceID: String, windowID: String, columns: Int, rows: Int): TerminalAttachment
 }
