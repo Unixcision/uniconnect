@@ -19,7 +19,7 @@ from .transport import SSHCommand, Transport, TransportError, terminal_launch
 
 class TerminalSurface(Gtk.Box):
     def __init__(self, owner, workspace, window, create=False, *, clock=time.monotonic,
-                 schedule=None, cancel_timer=None, launch_preparer=None):
+                 schedule=None, cancel_timer=None, launch_preparer=None, auto_launch=True):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.owner, self.workspace, self.record = owner, workspace, window
         self.pid, self.generation, self.disposed = 0, 0, False
@@ -27,6 +27,7 @@ class TerminalSurface(Gtk.Box):
         self._preparing = False
         self._spawning = False
         self._ownership_keys = []
+        self._lifecycle_observers = []
         self._exit_during_spawn = None
         self._launch_notice = None
         self._launch_crash_markers = 0
@@ -78,7 +79,21 @@ class TerminalSurface(Gtk.Box):
         self.footer.pack_end(self.retry, False, False, 0)
         self.pack_end(self.footer, False, False, 0)
         self.show_all()
-        GLib.idle_add(self.launch, create)
+        if auto_launch:
+            GLib.idle_add(self.launch, create)
+
+    def subscribe_lifecycle(self, callback):
+        """Observe actual child events; spawning alone never proves attachment."""
+        self._lifecycle_observers.append(callback)
+        def unsubscribe():
+            if callback in self._lifecycle_observers:
+                self._lifecycle_observers.remove(callback)
+        return unsubscribe
+
+    def _emit_lifecycle(self, kind, **details):
+        event = {"kind": kind, "generation": self.generation, "pid": self.pid, **details}
+        for callback in tuple(self._lifecycle_observers):
+            callback(event)
 
     def apply_appearance(self):
         settings = self.owner.store.data.get("settings", {})
@@ -127,6 +142,7 @@ class TerminalSurface(Gtk.Box):
         except Exception as error:
             self._preparing = False
             self.update_status("Disconnected", str(error))
+            self._emit_lifecycle("failed", reason="connection-unavailable")
             return False
 
         def prepare():
@@ -170,6 +186,7 @@ class TerminalSurface(Gtk.Box):
             self._cancel_reconnect(reset=True)
             self._release_ownership()
             self.update_status("Disconnected", str(error))
+            self._emit_lifecycle("failed", reason="launch-unavailable")
             return False
         registry = getattr(self.owner, "_terminal_owners", None)
         if registry is None:
@@ -178,6 +195,7 @@ class TerminalSurface(Gtk.Box):
             self._cancel_reconnect(reset=True)
             self._release_ownership()
             self.update_status("Disconnected", self.owner._("This session is already open in another window"))
+            self._emit_lifecycle("failed", reason="duplicate-owner")
             return False
         self._release_ownership()
         self._ownership_keys = keys
@@ -212,6 +230,7 @@ class TerminalSurface(Gtk.Box):
             self._spawning = False
             self._release_ownership()
             self.update_status("Disconnected", str(error))
+            self._emit_lifecycle("failed", reason="spawn-unavailable")
         return False
 
     def on_spawn(self, terminal, pid, error, generation):
@@ -230,11 +249,13 @@ class TerminalSurface(Gtk.Box):
         if error:
             self._release_ownership()
             self.update_status("Disconnected", str(error))
+            self._emit_lifecycle("failed", reason="spawn-unavailable")
         elif already_exited:
             self.on_exit(terminal, early_exit)
         else:
             self.pid = pid
             self.update_status("Folder missing" if self._launch_notice else "Running", self._launch_notice or "")
+            self._emit_lifecycle("spawned")
             self._watch_stability(generation, pid)
             self.owner.persist()
 
@@ -242,13 +263,15 @@ class TerminalSurface(Gtk.Box):
         if self._spawning:
             self._exit_during_spawn = status
             return
+        previous_pid = self.pid
         self.pid = 0
-        if self.workspace["kind"] == "local":
-            self.record["runtimeState"] = "stopped"
+        self._emit_lifecycle("exited", pid=previous_pid, status=os.waitstatus_to_exitcode(status))
         self._clear_timer("_stable_source")
         if self.disposed:
             self._release_ownership()
             return
+        if self.workspace["kind"] == "local":
+            self.record["runtimeState"] = "stopped"
         if self._pending_launch is not None:
             # Do not start another VTE child until the old child's exit signal has
             # been consumed: child-exited carries no PID/generation identifier.
@@ -376,6 +399,8 @@ class TerminalSurface(Gtk.Box):
         return False
 
     def on_directory(self, *_):
+        if self.disposed:
+            return
         uri = self.terminal.get_current_directory_uri()
         if uri and self.workspace["kind"] == "local":
             path = unquote(urlparse(uri).path)
