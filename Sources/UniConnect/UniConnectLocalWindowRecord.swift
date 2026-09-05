@@ -161,6 +161,15 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         conversation(id: latestConversationID)
     }
 
+    /// Prepares a saved window for a new runtime without changing its conversation or folder.
+    /// Only restoration calls this: decoding or saving an active legacy PTY must not rebind it.
+    func preparingRestoredRuntime(panelID: UUID, bundleIdentifier: String) -> Self {
+        guard tmuxBinding == nil else { return self }
+        var restored = self
+        restored.tmuxBinding = .newWindow(panelID: panelID, bundleIdentifier: bundleIdentifier)
+        return restored
+    }
+
     var activeConversation: UniConnectLocalAgentConversation? {
         conversation(id: activeConversationID)
     }

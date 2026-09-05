@@ -24,9 +24,10 @@ from .staged_terminal import StagedTerminal
 from .terminal import TerminalSurface
 from .transport import SSHCommand, Transport, TmuxCommand
 from .window_commands import WindowCommands
+from .window_notifications import WindowNotifications
 
 
-class MainWindow(WindowCommands, Gtk.ApplicationWindow):
+class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
     def __init__(self, application, store, vault):
         super().__init__(application=application, title="UniConnect")
         self.get_style_context().add_class("uniconnect")
@@ -158,8 +159,8 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
             "UniConnect": ["about", "settings", "lock", "quit"],
             "File": ["new_workspace", "new_window", "reopen_last", "reopen", "close_window", "close_other_windows", "close_workspace", "save", "import_config", "export_config", "restore_backup"],
             "Edit": ["copy", "paste", "find", "find_next", "find_previous", "hide_find", "find_selection", "send_ctrl_f"],
-            "View": ["sidebar", "palette", "notifications", "font_larger", "font_smaller", "font_reset", "split_right", "split_down", "equalize_panes", "maximize_pane", "focus_left", "focus_right", "focus_up", "focus_down", "fullscreen"],
-            "Workspace": ["rename_workspace", "pin_workspace", "edit_ssh", "workspace_previous", "workspace_next", "workspace_up", "workspace_down", "workspace_first", "window_previous", "window_next", "rename_window", "reconnect", "reconnect_all", "upload", "kill_tmux"],
+            "View": ["sidebar", "palette", "notifications", "notifications_latest_unread", "notifications_mark_all_read", "notifications_dismiss_all", "font_larger", "font_smaller", "font_reset", "split_right", "split_down", "equalize_panes", "maximize_pane", "focus_left", "focus_right", "focus_up", "focus_down", "fullscreen"],
+            "Workspace": ["rename_workspace", "pin_workspace", "edit_ssh", "workspace_previous", "workspace_next", "workspace_up", "workspace_down", "workspace_first", "window_previous", "window_next", "rename_window", "reconnect", "reconnect_all", "notifications_toggle_workspace", "notifications_toggle_window", "upload", "kill_tmux"],
             "Help": ["help", "help_shortcuts", "help_settings", "report_issue"],
         }
         for label, names in groups.items():
@@ -177,7 +178,10 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
 
     def command_menu_item(self, name):
         item = Gtk.ImageMenuItem.new_with_label(self.action_label(name))
-        icon = ("edit-delete-symbolic" if name.startswith("close") or name == "kill_tmux" else
+        icon = ("edit-delete-symbolic" if name.startswith("close") or name in ("kill_tmux", "notifications_dismiss_all") else
+                "mail-mark-read-symbolic" if name == "notifications_mark_all_read" else
+                "mail-mark-unread-symbolic" if name.startswith("notifications_toggle") else
+                "go-jump-symbolic" if name == "notifications_latest_unread" else
                 "list-add-symbolic" if name.startswith("new") else
                 "view-refresh-symbolic" if name.startswith("reconnect") else
                 "document-save-symbolic" if name in ("save", "export_config") else
@@ -269,8 +273,14 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
 
     def workspace_context(self, _, event, workspace):
         if event.button == 3:
-            self.select_workspace(workspace["id"])
-            self.context_menu(["new_window", "rename_workspace", "pin_workspace", "edit_ssh", "workspace_up", "workspace_down", "workspace_first", "reconnect_all", "close_workspace"], event)
+            self._notification_context_selection = True
+            try:
+                self.select_workspace(workspace["id"])
+                if self.focused_surface:
+                    self._notification_preserve_focus_id = self.focused_surface.record["id"]
+            finally:
+                self._notification_context_selection = False
+            self.context_menu(["new_window", "rename_workspace", "pin_workspace", "edit_ssh", "workspace_up", "workspace_down", "workspace_first", "reconnect_all", "notifications_toggle_workspace", "close_workspace"], event)
             return True
         return False
 
@@ -396,9 +406,14 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
 
     def tab_context(self, _, event, surface):
         if event.button == 3:
-            self.select_surface(surface)
+            self._notification_context_selection = True
+            try:
+                self.select_surface(surface)
+                self._notification_preserve_focus_id = surface.record["id"]
+            finally:
+                self._notification_context_selection = False
             self.context_menu(["rename_window", "reset_window_name", "pin_window", "move_window_left", "move_window_right",
-                               "maximize_pane", "close_window", "close_left_windows", "close_right_windows",
+                               "maximize_pane", "notifications_toggle_window", "close_window", "close_left_windows", "close_right_windows",
                                "close_other_windows", "kill_tmux"], event)
             return True
         return False
@@ -1027,53 +1042,6 @@ class MainWindow(WindowCommands, Gtk.ApplicationWindow):
             self.apply_theme()
             self.apply_shortcuts()
             self.refresh_appearance()
-
-    @property
-    def notifications(self):
-        return self.store.data.setdefault("notificationHistory", [])
-
-    def mark_notifications_read(self, window_id):
-        for notification in self.notifications:
-            if notification["surface_id"] == window_id:
-                notification["is_read"] = True
-
-    def notify_window(self, workspace, window):
-        window["unread"] = True
-        from .mobile_rpc import notification_record
-        item = notification_record(workspace, window, time.time(), str(uuid.uuid4()))
-        item["body"] = self._("Session needs attention")
-        history = self.notifications
-        history.append(item)
-        del history[:-1000]
-        self.persist()
-        if hasattr(self, "mobile"):
-            self.mobile.notification_created(item)
-        notification = Gio.Notification.new(window["name"])
-        notification.set_body(workspace["name"] + " · " + self._("Session needs attention"))
-        self.get_application().send_notification(window["id"], notification)
-        self.refresh_sidebar()
-
-    def action_notifications(self):
-        dialog = Gtk.Dialog(title=self._("Notifications"), transient_for=self, modal=True)
-        dialog.add_button(self._("Close"), Gtk.ResponseType.CLOSE)
-        for item in reversed(self.notifications):
-            workspace_id, window_id = item["workspace_id"], item["surface_id"]
-            name, stamp = item["title"], item["created_at_ms"] / 1000
-            button = Gtk.Button(label=time.strftime("%H:%M", time.localtime(stamp)) + "  " + name)
-            def select(_, wid=workspace_id, pid=window_id):
-                self.select_workspace(wid)
-                surface = self.surfaces.get(pid)
-                if surface:
-                    surface.get_parent().set_current_page(surface.get_parent().page_num(surface))
-                    surface.terminal.grab_focus()
-                dialog.response(Gtk.ResponseType.CLOSE)
-            button.connect("clicked", select)
-            dialog.get_content_area().pack_start(button, False, False, 4)
-        if not self.notifications:
-            dialog.get_content_area().add(Gtk.Label(label=self._("No notifications"), margin=20))
-        dialog.show_all()
-        dialog.run()
-        dialog.destroy()
 
     def action_import_config(self):
         path = self.choose_file("Import configuration")

@@ -422,9 +422,10 @@ class TerminalSurface(Gtk.Box):
             return False
         self.owner.focused_surface = self
         self.workspace["selectedWindowId"] = self.record["id"]
-        self.record["unread"] = False
         if hasattr(self.owner, "mark_notifications_read"):
             self.owner.mark_notifications_read(self.record["id"])
+        else:
+            self.record["unread"] = False
         self.owner.refresh_sidebar()
         return False
 

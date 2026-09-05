@@ -56,6 +56,32 @@ contraseñas SSH. Una aprobación no se activa si falla su escritura.
   persistente que la lista de notificaciones del escritorio, con cursor opaco,
   IDs estables, hasta 1000 entradas y lectura sin cambios de selección.
 
+## Acciones del centro de notificaciones
+
+El escritorio y `mobile.notifications.list` leen el mismo `notificationHistory`:
+marcar o descartar no crea otro historial ni modifica sesiones tmux. Las acciones
+globales pertenecen al catálogo `ACTIONS`, compartido por menús, paleta y Ajustes.
+
+| Acción Linux | Atajo inicial | Ámbito |
+|---|---|---|
+| Ir a la última no leída | `Ctrl+Mayús+U` | Abre el destino exacto de la última notificación no leída cuya ventana sigue existiendo. |
+| Marcar caja como leída/no leída | `Ctrl+Alt+U` | Caja activa; también en su menú contextual. |
+| Marcar ventana como leída/no leída | Sin asignar | Terminal activa; también en el contextual de su pestaña. |
+| Marcar todo como leído | Sin asignar | Historial y marcadores de todas las cajas. |
+| Descartar todas las notificaciones | Sin asignar | Solo elimina el historial y sus marcadores; no cierra terminales. |
+
+Los atajos se pueden cambiar en Ajustes (`settings.shortcuts`), igual que las
+demás acciones Linux. Las etiquetas reflejan el estado real y los comandos sin
+destino o sin elementos correspondientes quedan deshabilitados. Cada fila ofrece
+Abrir, marcar leída/no leída y Descartar, en ese orden. Un destino cerrado no abre
+otra caja como alternativa. La selección contextual no consume la notificación;
+una marca manual de no leída se conserva al volver del menú hasta cambiar de
+terminal. Si falla el guardado, se restauran historial y marcadores anteriores.
+
+Esta adaptación completa las acciones ya existentes en macOS descritas en
+`docs/MENUS.md`; no modifica el store ni los menús de Mac. Las pruebas esenciales
+Linux están en `tests/test_notifications.py` y se ejecutan únicamente en CI.
+
 ## Límites y validación pendiente
 
 Esta implementación **no demuestra paridad visual completa con Ghostty**:

@@ -1294,6 +1294,31 @@ struct UniConnectLocalWindowRecordTests {
         #expect(restored.id == legacy.id)
     }
 
+    @Test("Restoring an old runtime adopts tmux without losing agent history or identity")
+    func restoredLegacyRuntimePreservesItsConversation() throws {
+        let panelID = UUID(uuidString: "60000000-0000-0000-0000-000000000012")!
+        var saved = UniConnectLocalWindowRecord(
+            id: panelID, visibleName: "APP 4", boxRoot: "/repo",
+            workingDirectory: "/repo/app", createdAt: 10, updatedAt: 10
+        )
+        _ = saved.record(agent(.claude, sessionID: "60000000-0000-0000-0000-000000000013"), at: 11)
+        let restored = saved.preparingRestoredRuntime(
+            panelID: panelID, bundleIdentifier: "com.unixcision.uniconnect"
+        )
+        #expect(saved.tmuxBinding == nil)
+        #expect(restored.tmuxBinding == .newWindow(panelID: panelID, bundleIdentifier: "com.unixcision.uniconnect"))
+        #expect(restored.id == saved.id)
+        #expect(restored.workingDirectory == saved.workingDirectory)
+        #expect(restored.conversations == saved.conversations)
+        #expect(restored.activeConversationID == saved.activeConversationID)
+        #expect(restored.latestConversationID == saved.latestConversationID)
+        #expect(restored.runtimeState == saved.runtimeState)
+        #expect(restored.updatedAt == saved.updatedAt)
+        let roundTrip = try JSONDecoder().decode(UniConnectLocalWindowRecord.self, from: JSONEncoder().encode(restored))
+        #expect(roundTrip == restored)
+        #expect(restored.preparingRestoredRuntime(panelID: panelID, bundleIdentifier: "debug.other") == restored)
+    }
+
     @Test("Merging imported history cannot redirect an existing host-local tmux binding")
     func importedHistoryDoesNotReplaceLiveTmuxIdentity() throws {
         let binding = try #require(UniConnectLocalTmuxBinding(name: "live-pane", socketName: "uniconnect-local"))

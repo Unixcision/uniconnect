@@ -42270,6 +42270,127 @@
           }
         }
       }
+    },
+    "uniconnect.shared.descartar": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descartar"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.descartar.todas.las.notificaciones": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descartar todas las notificaciones"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.ir.a.la.ltima.no.le.da": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ir a la última no leída"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.marcar.caja.como.le.da": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcar caja como leída"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.marcar.caja.como.no.le.da": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcar caja como no leída"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.marcar.como.le.da": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcar como leída"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.marcar.como.no.le.da": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcar como no leída"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.marcar.todo.como.le.do": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcar todo como leído"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.marcar.ventana.como.le.da": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcar ventana como leída"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.marcar.ventana.como.no.le.da": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcar ventana como no leída"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.no.se.pudieron.guardar.los.cambios.de.notificaciones": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudieron guardar los cambios de notificaciones"
+          }
+        }
+      }
     }
   }
 }

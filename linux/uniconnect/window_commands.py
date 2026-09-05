@@ -14,6 +14,10 @@ class WindowCommands:
             return self._("Unpin window")
         if name == "maximize_pane" and workspace and workspace.get("maximizedPaneId"):
             return self._("Restore pane")
+        if name == "notifications_toggle_workspace" and workspace and self.notifications_unread(workspace["id"]):
+            return self._("Marcar caja como leída")
+        if name == "notifications_toggle_window" and surface and self.notifications_unread(surface_id=surface.record["id"]):
+            return self._("Marcar ventana como leída")
         for prefix, label in (("workspace_", "Workspace {number}"), ("window_", "Window {number}")):
             if name.startswith(prefix) and name[len(prefix):].isdigit():
                 return self._(label).format(number=name[len(prefix):])
@@ -24,6 +28,16 @@ class WindowCommands:
             return name in ("lock", "quit")
         workspace, surface = self.current_workspace(), self.focused_surface
         windows = workspace.get("windows", []) if workspace else []
+        if name == "notifications_latest_unread":
+            return self.latest_unread_notification() is not None
+        if name == "notifications_mark_all_read":
+            return self.notifications_unread()
+        if name == "notifications_dismiss_all":
+            return bool(self.notifications)
+        if name == "notifications_toggle_workspace":
+            return bool(workspace and windows)
+        if name == "notifications_toggle_window":
+            return surface is not None
         for prefix, values in (("workspace_", self.store.workspaces), ("window_", windows)):
             if name.startswith(prefix) and name[len(prefix):].isdigit():
                 index = int(name[len(prefix):])

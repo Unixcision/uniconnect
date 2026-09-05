@@ -1733,7 +1733,7 @@ extension Workspace {
         switch snapshot.type {
         case .terminal:
             let resumeBinding = snapshot.terminal?.resumeBinding
-            let persistedLocalWindow: UniConnectLocalWindowRecord? = {
+            let savedLocalWindow: UniConnectLocalWindowRecord? = {
                 guard uniConnectProfile?.isSSH == false else { return nil }
                 let boxRoot = uniConnectLocalBoxRoot
                     ?? snapshot.terminal?.workingDirectory
@@ -1759,6 +1759,13 @@ extension Workspace {
                     timestamp: uniConnectProfile?.createdAt ?? Date().timeIntervalSince1970
                 )
             }()
+            // A saved direct PTY has no live runtime here. Restore it through tmux
+            // with the same resume record; saving an already running PTY never
+            // takes this path and cannot silently move or terminate its process.
+            let persistedLocalWindow = savedLocalWindow?.preparingRestoredRuntime(
+                panelID: snapshot.id,
+                bundleIdentifier: Bundle.main.bundleIdentifier ?? "com.unixcision.uniconnect"
+            )
             let restorableAgent: SessionRestorableAgentSnapshot? = {
                 guard let persistedLocalWindow else { return snapshot.terminal?.agent }
                 let registry = CmuxVaultAgentRegistry.load(
@@ -1806,7 +1813,7 @@ extension Workspace {
                     && localResumeWorkingDirectoryIsAvailable
             )
             let resumeBindingForStartup =
-                persistedLocalWindow?.tmuxBinding != nil ||
+                savedLocalWindow?.tmuxBinding != nil ||
                 restoredHibernation != nil ||
                 (resumeBinding?.isProcessDetected == true && resumeBinding?.autoResume != true)
                     ? nil
@@ -1891,7 +1898,8 @@ extension Workspace {
                     nil
                 }
             var localTmuxInitialCommand = persistedLocalWindow?.tmuxBinding != nil
-                && shouldAutoResumeAgent && restoredHibernation == nil
+                && shouldAutoResumeAgent && !localAgentHookResumeWasDeclined
+                && restoredHibernation == nil
                 ? restorableAgent.flatMap { agent in
                     guard let command = agent.resumeCommand,
                           let directory = agent.workingDirectory,
