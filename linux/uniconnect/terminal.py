@@ -137,6 +137,8 @@ class TerminalSurface(Gtk.Box):
         self.status = status
         self.record["status"] = status.lower()
         suffix = self.owner._(detail) if detail else self.record.get("repo") or self.record.get("cwd") or self.workspace.get("cwd", "")
+        if not detail and self.record.get("agent") in ("claude", "codex") and not self.record.get("sessionId"):
+            suffix += " · " + self.owner._("ID nativo pendiente de la señal del agente")
         self.status_label.set_text(f'{self.owner._(status)}  ·  {suffix}')
         self.owner.refresh_sidebar()
 

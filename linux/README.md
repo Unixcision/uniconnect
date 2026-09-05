@@ -131,3 +131,35 @@ The Linux interface is Spanish-only and reads the same Spanish catalogue as macO
 Older imported language preferences are accepted but do not change the interface.
 `--locale` accepts only `es`; Settings no longer offers a language selector. Stable
 shared keys resolve labels without depending on an English translation dictionary.
+
+## Identidad de conversaciones Claude/Codex
+
+Al crear un pane gestionado de Claude o Codex, UniConnect añade un hook limitado
+a ese lanzamiento. Obtiene `session_id` de `SessionStart` en Claude y `thread-id`
+de `agent-turn-complete` en Codex. Son identificadores emitidos por el agente,
+no UUID de conversación inventados ni búsquedas de la conversación más reciente.
+El ID y el historial se guardan juntos, conservando las entradas importadas y la
+conversación anterior cuando cambia el ID. La consulta de metadatos usa el ciclo
+de guardado (8 segundos), agrupada por conexión/socket, no por tecla o byte.
+
+La señal se vincula al pane tmux, ventana, PID/generación del proceso y nonce de
+lanzamiento. Un hook tardío o de otro pane no puede sustituir esa identidad. No
+se guardan prompts, respuestas ni rutas de transcripciones. Un ID conservado
+después de salir del agente es histórico: **no demuestra que la IA siga activa
+ni autoriza enviarle texto como chat**.
+
+Hasta recibir la señal se muestra «ID nativo pendiente de la señal del agente».
+En Codex esto puede durar hasta finalizar el primer turno; también ocurre si el
+hook está desactivado, falta Python o el proceso ya estaba abierto sin esta
+integración. No se reinicia ni se mata ese proceso para conseguir un ID.
+Si falla la preparación del hook, se ejecuta el agente original sin cambiar sus
+argumentos. No se instalan archivos ni se reescriben configuraciones globales.
+La opción `notify` de Codex es por invocación y prevalece sobre un `notify`
+configurado previamente para ese lanzamiento; no se encadenan comandos ajenos
+leyendo configuración o argumentos capturados. Los comandos personalizados no
+se interceptan. macOS mantiene su bridge nativo existente; este es el adaptador
+de identidad del transporte Linux, no una segunda base de conversaciones.
+
+Contratos oficiales: [hooks de Claude](https://code.claude.com/docs/en/hooks),
+[opción `--settings` de Claude](https://code.claude.com/docs/en/cli-reference) y
+[notificaciones de Codex](https://learn.chatgpt.com/docs/config-file/config-advanced).

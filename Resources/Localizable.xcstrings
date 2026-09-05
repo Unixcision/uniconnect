@@ -2,6 +2,17 @@
   "sourceLanguage": "es",
   "version": "1.0",
   "strings": {
+    "uniconnect.shared.id.nativo.pendiente.de.la.se.al.del.agente": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ID nativo pendiente de la señal del agente"
+          }
+        }
+      }
+    },
     "uniconnect.shared.nueva.conversaci.n.en.otra.ventana": {
       "extractionState": "manual",
       "localizations": {

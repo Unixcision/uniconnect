@@ -7,7 +7,9 @@ Reconnection is attach-only; session creation is an explicit, idempotent operati
 from __future__ import annotations
 
 import dataclasses
+import base64
 import getpass
+import json
 import os
 import re
 import shlex
@@ -283,7 +285,15 @@ class TmuxCommand:
         script = "cd -- " + shlex.quote(window["cwd"]) + " || exit 72; "
         # Running the agent as a child leaves a usable shell when the agent exits.
         if args:
-            script += shlex.join(args) + "; "
+            if window["agent"] in ("claude", "codex") and window.get("id"):
+                from .agent_identity_hook import BOOTSTRAP
+                source = Path(__file__).with_name("agent_identity_hook.py").read_bytes()
+                encoded = base64.b64encode(source).decode("ascii")
+                request = json.dumps({"argv": args, "agent": window["agent"], "window_id": window["id"]})
+                tracked = "UNICONNECT_NATIVE_HELPER=" + shlex.quote(encoded) + " " + shlex.join(["python3", "-c", BOOTSTRAP, "launch", request])
+                script += "if command -v python3 >/dev/null 2>&1; then " + tracked + "; else " + shlex.join(args) + "; fi; "
+            else:
+                script += shlex.join(args) + "; "
         script += 'exec "${SHELL:-/bin/sh}" -l'
         return shlex.join(["/bin/bash", "-lc", script])
 

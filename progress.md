@@ -173,3 +173,35 @@ Actualización Mac, 2026-09-05 21:05 CEST:
 
 Los estados históricos privados de cada equipo no sustituyen este resumen.
 Al terminar un bloque, publicar el commit y actualizar solo su estado vigente.
+
+## Coordinación Mac/Linux · 2026-09-05 21:38 CEST
+
+- Astra/root publica la observación de IDs nativos Claude/Codex en los nuevos
+  lanzamientos Linux: señal del agente → metadatos del pane → registro e historial
+  existentes. No se reinician agentes antiguos para obtener un ID. Hasta recibir
+  la señal se muestra el estado pendiente; en Codex puede tardar un primer turno.
+  Pruebas de integración preparadas para CI, no ejecutadas localmente. El `notify`
+  de Codex se limita a esa invocación y sustituye uno personalizado previo;
+  no cambia configuraciones globales ni las notificaciones integradas de la TUI.
+- Se reserva a Huygens la activación y aprobación móvil del Linux actual por la
+  interfaz local, únicamente para el Pixel ya conocido en Tailscale. De momento
+  está en inspección: acceso móvil desactivado, cero dispositivos aprobados.
+  No cambiar checkout, reiniciar GUI/tmux, reimportar estados ni abrir las quince
+  ventanas como prueba. El otro equipo debe registrar cualquier intervención en
+  este mismo apartado antes de modificar ese runtime.
+- El Linux actualizado fue verificado independientemente: quince panes remotos
+  conservan todos sus PIDs; seis espacios y quince registros mantienen IDs,
+  agentes, tmux e historial. Solo dos superficies GUI están abiertas y las otras
+  trece siguen guardadas. No confundir este resultado con Android/Linux validado.
+- La instalación Mac abortó antes de sustituir `/Applications/UniConnect.app`
+  porque la aplicación seguía abierta con un formulario «Nueva ventana». Hay
+  copia privada de estado y aplicación. No se canceló el formulario ni se forzó
+  el cierre. Pendiente completar esa interacción y coordinar el código actual.
+- Otra consola modifica primera ventana Mac/Linux y frontend/teclas Android.
+  Esos cambios se dejan intactos y fuera del commit de identidad. Galileo preparó
+  dos pruebas del RPC Mac para el fallo de agente/nombre/carpeta ignorados en un
+  espacio genérico; sin fix de producción ni ejecución todavía. Confirmar dueño
+  antes de editar los mismos tres Swift. El usuario conserva el frontend Android.
+- La APK recién compilada sigue sin instalar; no reemplazar la que usa el usuario
+  mientras trabaja en el diseño. El chat real continúa pendiente, no se simula a
+  partir de la salida de terminal ni se inicia otra IA para representarlo.

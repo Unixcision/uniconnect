@@ -25,6 +25,7 @@ from .terminal import TerminalSurface
 from .transport import SSHCommand, Transport, TmuxCommand
 from .window_commands import WindowCommands
 from .window_notifications import WindowNotifications
+from .native_sessions import NativeSessions
 
 
 class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
@@ -45,6 +46,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         self._runtime_operation = None
         self.last_input, self.last_saved = time.monotonic(), 0
         self.locked = False
+        self.native_sessions = NativeSessions(self)
         self.fullscreened = False
         self.set_default_size(1350, 840)
         self.set_wmclass("uniconnect", "UniConnect")
@@ -463,6 +465,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         if self._closed:
             return False
         self.persist()
+        self.native_sessions.poll()
         auto = self.store.data.get("settings", {}).get("autoLockMinutes", 0)
         if auto and not self.locked and time.monotonic() - self.last_input >= auto * 60:
             self.action_lock()
