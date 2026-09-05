@@ -144,6 +144,53 @@ class MobileRenderGridTests(unittest.TestCase):
         self.assertEqual(frame["scrollback_rows"], 0)
         self.assertEqual(frame["modes"], [])
 
+    def test_full_history_shares_styles_preserves_blank_rows_and_viewport_coordinates(self):
+        frame = capture("\x1b[31;7m界\n\n\x0elqk\x0f\x1b[0mX\n", scrollback_rows=2)
+        self.assertEqual(frame["scrollback_rows"], 2)
+        self.assertEqual(frame["scrollback_spans"], [
+            {"row": 0, "column": 0, "style_id": 1, "text": "界", "cell_width": 2},
+        ])
+        self.assertEqual(frame["row_spans"], [
+            {"row": 0, "column": 0, "style_id": 1, "text": "┌─┐", "cell_width": 3},
+            {"row": 0, "column": 3, "style_id": 0, "text": "X", "cell_width": 1},
+        ])
+        self.assertEqual(len(frame["styles"]), 2)
+        self.assertEqual(frame["styles"][1]["foreground"], PALETTE[1])
+        self.assertTrue(frame["styles"][1]["inverse"])
+        self.assertEqual((frame["rows"], frame["cursor"]["row"], frame["cursor"]["column"]), (2, 1, 3))
+        self.assertTrue(frame["full"])
+        self.assertEqual(frame["cleared_rows"], [])
+
+    def test_history_is_oldest_first_and_bounded_to_300_physical_rows(self):
+        history = [f"H{number:03d}" for number in range(300)]
+        frame = capture("\n".join(history + ["Visible", ""]), scrollback_rows=300)
+        self.assertEqual(frame["scrollback_rows"], 300)
+        self.assertEqual([span["row"] for span in frame["scrollback_spans"]], list(range(300)))
+        self.assertEqual([span["text"] for span in frame["scrollback_spans"]], history)
+        self.assertEqual(frame["row_spans"], [
+            {"row": 0, "column": 0, "style_id": 0, "text": "Visible", "cell_width": 7},
+        ])
+        for count in (-1, 301, True, 1.5):
+            with self.subTest(count=count), self.assertRaises(CaptureRenderError):
+                capture("", scrollback_rows=count)
+
+    def test_alternate_frame_omits_history_without_losing_visible_rendition(self):
+        frame = capture("\x1b[31mAnterior\nVisible\x1b[0mX\n", scrollback_rows=1, alternate_screen=True)
+        self.assertEqual(frame["active_screen"], "alternate")
+        self.assertEqual(frame["scrollback_rows"], 0)
+        self.assertEqual(frame["scrollback_spans"], [])
+        self.assertEqual([span["text"] for span in frame["row_spans"]], ["Visible", "X"])
+        self.assertEqual(style_for(frame, frame["row_spans"][0])["foreground"], PALETTE[1])
+        self.assertEqual(frame["row_spans"][1]["style_id"], 0)
+        self.assertTrue(all(span["row"] == 0 for span in frame["row_spans"]))
+
+    def test_history_and_viewport_share_existing_memory_limits(self):
+        for name, limit in (("MAX_SPANS", 1), ("MAX_STYLES", 1), ("MAX_CAPTURE_BYTES", 5),
+                            ("MAX_GRID_BYTES", 64)):
+            with self.subTest(name=name), patch(f"uniconnect.mobile_render_grid.{name}", limit):
+                with self.assertRaises(CaptureRenderError):
+                    capture("\x1b[31mH\nV\n", scrollback_rows=1)
+
     def test_hyperlinks_are_bounded_metadata_never_retained_or_opened(self):
         for terminator in ("\x07", "\x1b\\"):
             with self.subTest(terminator=terminator):

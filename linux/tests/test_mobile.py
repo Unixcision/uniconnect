@@ -220,6 +220,47 @@ class ExistingDesktopTests(unittest.TestCase):
         self.assertEqual(self.sent, [])
         self.assertEqual(self.launched, [])
 
+    def test_replay_keeps_blank_history_and_viewport_rows_and_revises_history_only_changes(self):
+        self.screen = "\x1b[31mAnterior A\n\nVisible\x1b[0m\n"
+        def run(script, **options):
+            self.commands.append(script)
+            return capture_output(script, self.screen, metadata="80\t2\t2\t1\t1\t0")
+        self.rpc.transport_factory = lambda *args, **kwargs: types.SimpleNamespace(run=run)
+        first = self.rpc.replay(self.params)
+        grid = first["render_grid"]
+        self.assertEqual(grid["scrollback_rows"], 2)
+        self.assertEqual([span["text"] for span in grid["scrollback_spans"]], ["Anterior A"])
+        self.assertEqual([span["row"] for span in grid["scrollback_spans"]], [0])
+        self.assertEqual([(span["row"], span["text"]) for span in grid["row_spans"]], [(0, "Visible")])
+        self.assertEqual(grid["scrollback_spans"][0]["style_id"], grid["row_spans"][0]["style_id"])
+        self.assertEqual((grid["rows"], grid["cursor"]["row"]), (2, 1))
+        self.assertEqual(len(self.commands), 1)
+        arguments = shlex.split(self.commands[0])
+        self.assertEqual(arguments[arguments.index("-S") + 1], "-300")
+        self.assertEqual(arguments.count("capture-pane"), 1)
+        self.assertNotIn("attach-session", arguments)
+        self.assertNotIn("new-session", arguments)
+        self.screen = self.screen.replace("Anterior A", "Anterior B")
+        self.rpc.invalidate_terminal("window")
+        second = self.rpc.replay(self.params)
+        self.assertEqual(second["revision"], first["revision"] + 1)
+        self.assertEqual(second["render_grid"]["row_spans"], first["render_grid"]["row_spans"])
+        self.rpc.invalidate_terminal("window")
+        self.assertEqual(self.rpc.replay(self.params)["revision"], second["revision"])
+        self.assertEqual(self.sent, [])
+        self.assertEqual(self.launched, [])
+        self.assertEqual(self.window.store.data["selectedWorkspaceId"], "other")
+        self.assertIsNone(self.window.focused_surface)
+
+    def test_replay_never_exposes_primary_history_as_alternate_screen_history(self):
+        self.rpc.transport_factory = lambda *args, **kwargs: types.SimpleNamespace(
+            run=lambda script, **options: capture_output(script, "Anterior\nVisible\n", metadata="80\t2\t2\t1\t1\t1"))
+        grid = self.rpc.replay(self.params)["render_grid"]
+        self.assertEqual(grid["active_screen"], "alternate")
+        self.assertEqual(grid["scrollback_rows"], 0)
+        self.assertEqual(grid["scrollback_spans"], [])
+        self.assertEqual([(span["row"], span["text"]) for span in grid["row_spans"]], [(0, "Visible")])
+
     def test_disconnected_input_is_rejected_not_queued_or_auto_restarted(self):
         self.surface.pid = 0
         with self.assertRaises(RPCError) as issue:

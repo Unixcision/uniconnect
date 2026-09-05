@@ -1,7 +1,8 @@
 """A bounded tmux capture adapter, not a VT stream emulator.
 
-Input is ONLY ``capture-pane -p -e -N`` for the visible screen, without ``-J``
-or ``-C``. tmux has already executed cursor movement, erasure and scrolling.
+Input is ONLY ``capture-pane -p -e -N`` for the visible screen and optionally
+the last 300 history rows (``-S -300``), without ``-J`` or ``-C``. tmux has
+already executed cursor movement, erasure and scrolling.
 We decode its remaining rendition/ACS metadata into CMUXMobileCore's existing
 ``cmux.render-grid.v1`` snapshot. Unknown controls are errors, not stripped text.
 
@@ -25,6 +26,7 @@ MAX_GRID_BYTES = 2 * 1024 * 1024 - 4096  # Leave room for the existing RPC envel
 MAX_SPANS = 16384
 MAX_STYLES = 1024
 MAX_CONTROL_BYTES = 4096
+MAX_SCROLLBACK_ROWS = 300
 UNICODE_VERSION = "15.1.0"
 
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
@@ -271,7 +273,8 @@ class _CaptureReader:
 
 def render_grid_from_tmux_capture(screen, *, surface_id, columns, rows,
                                   cursor_column, cursor_row, cursor_visible, alternate_screen,
-                                  revision, palette, default_foreground, default_background):
+                                  revision, palette, default_foreground, default_background,
+                                  scrollback_rows=0):
     """Return one full render-grid DTO without I/O, input or session mutation.
 
     ``palette`` is the desktop's 16 ANSI colors (plus the standard 6³/gray
@@ -282,17 +285,21 @@ def render_grid_from_tmux_capture(screen, *, surface_id, columns, rows,
     Unsupported controls, invalid geometry and resource limits raise
     ``CaptureRenderError``. No partial frame is returned. Underline variants
     retain the shared DTO's boolean underline; link targets, underline color,
-    scrollback, and modes other than the active screen are not represented.
+    and modes other than the active screen are not represented. ``scrollback_rows``
+    counts the capture's leading history lines, oldest first (at most 300).
+    They share the viewport style registry and only appear on primary FULL frames;
+    switching to the alternate screen never invents alternate-screen history.
     """
     if (not isinstance(screen, str) or not isinstance(surface_id, str) or not surface_id
             or len(surface_id) > 128 or _CONTROL.search(surface_id)):
         raise CaptureRenderError("Identidad o captura no válida")
-    for value in (columns, rows, cursor_column, cursor_row, revision):
+    for value in (columns, rows, cursor_column, cursor_row, revision, scrollback_rows):
         if type(value) is not int:
             raise CaptureRenderError("Las dimensiones y la revisión deben ser enteros")
     if (not 1 <= columns <= 1000 or not 1 <= rows <= 1000
             or not 0 <= cursor_column < columns or not 0 <= cursor_row < rows
             or not 0 <= revision <= 2**64 - 1
+            or not 0 <= scrollback_rows <= MAX_SCROLLBACK_ROWS
             or type(cursor_visible) is not bool or type(alternate_screen) is not bool):
         raise CaptureRenderError("Dimensiones, cursor o revisión no válidos")
     try:
@@ -303,15 +310,20 @@ def render_grid_from_tmux_capture(screen, *, surface_id, columns, rows,
         raise CaptureRenderError("La captura no contiene Unicode válido") from error
     colors = _palette(palette)
     foreground, background = _rgb(default_foreground), _rgb(default_background)
-    reader = _CaptureReader(screen, columns, rows, colors, _width_function())
+    reader = _CaptureReader(screen, columns, rows + scrollback_rows, colors, _width_function())
     reader.parse()
+    history_spans = [span for span in reader.spans if span["row"] < scrollback_rows]
+    viewport_spans = [{**span, "row": span["row"] - scrollback_rows}
+                      for span in reader.spans if span["row"] >= scrollback_rows]
     frame = {"format": "cmux.render-grid.v1", "surface_id": surface_id,
              "state_seq": revision, "revision": revision, "columns": columns, "rows": rows,
              "cursor": {"row": cursor_row, "column": cursor_column, "visible": cursor_visible,
                         "shape": "block", "blinking": False},
              "full": True, "cleared_rows": [], "active_screen": "alternate" if alternate_screen else "primary",
              "styles": [{"id": identifier, **asdict(style)} for style, identifier in reader.styles.items()],
-             "row_spans": reader.spans, "modes": [], "scrollback_rows": 0, "scrollback_spans": [],
+             "row_spans": viewport_spans, "modes": [],
+             "scrollback_rows": 0 if alternate_screen else scrollback_rows,
+             "scrollback_spans": [] if alternate_screen else history_spans,
              "terminal_foreground": foreground, "terminal_background": background}
     if len(json.dumps(frame, ensure_ascii=False, separators=(",", ":")).encode()) > MAX_GRID_BYTES:
         raise CaptureRenderError("La cuadrícula supera el límite permitido")

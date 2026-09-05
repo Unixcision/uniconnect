@@ -13,7 +13,7 @@ from collections import OrderedDict
 from concurrent.futures import Future, TimeoutError
 
 from .mobile_protocol import RPCError
-from .mobile_render_grid import capture_dependencies_ready, render_grid_from_tmux_capture
+from .mobile_render_grid import MAX_SCROLLBACK_ROWS, capture_dependencies_ready, render_grid_from_tmux_capture
 from .transport import SSHCommand, Transport
 
 
@@ -242,7 +242,7 @@ class MobileRPC:
             # One read-only tmux command group; the nonce excludes login banners.
             # No attach, ensure_session, second PTY reader or terminal input.
             arguments = ["tmux", "-L", socket_name, "display-message", "-p", "-t", target, marker,
-                         ";", "capture-pane", "-p", "-e", "-N", "-t", target,
+                         ";", "capture-pane", "-p", "-e", "-N", "-S", str(-MAX_SCROLLBACK_ROWS), "-t", target,
                          ";", "display-message", "-p", "-t", target,
                          "UC_META\t#{pane_width}\t#{pane_height}\t#{cursor_x}\t#{cursor_y}\t#{cursor_flag}\t#{alternate_on}"]
             try:
@@ -255,12 +255,16 @@ class MobileRPC:
                 columns, rows, x, y = map(int, (columns, rows, x, y))
                 if meta != "UC_META" or visible not in ("0", "1") or alternate not in ("0", "1"):
                     raise ValueError("capture metadata")
+                # capture-pane prints one line per physical row, including blank
+                # viewport rows. Keep one capture so styles continue correctly
+                # across the history/viewport boundary, without another SSH read.
+                history_rows = max(0, screen.count("\n") + 1 - rows)
                 frame = render_grid_from_tmux_capture(
                     screen, surface_id=panel_id, columns=columns, rows=rows,
                     cursor_column=max(0, min(x, columns - 1)), cursor_row=max(0, min(y, rows - 1)),
                     cursor_visible=visible == "1", alternate_screen=alternate == "1", revision=0,
                     palette=profile["palette"], default_foreground=profile["foreground"],
-                    default_background=profile["background"])
+                    default_background=profile["background"], scrollback_rows=history_rows)
             except Exception as error:
                 raise RPCError("snapshot_unavailable", "No se pudo representar la pantalla de la sesión existente") from error
             digest = hashlib.sha256(json.dumps(frame, sort_keys=True, ensure_ascii=False).encode()).digest()
