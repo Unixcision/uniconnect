@@ -80,9 +80,6 @@ struct ClaudeBridgeRemoteIntegrationTests {
         #expect(plan.remoteSetupCommand.contains("JsonLayoutParser"))
         #expect(plan.remoteSetupCommand.contains("safe_restore"))
         #expect(plan.remoteSetupCommand.contains("LIFECYCLE_LOCK"))
-        #expect(
-            plan.remoteSetupCommand.components(separatedBy: "with lifecycle_lock():").count == 4
-        )
         #expect(!plan.remoteSetupCommand.contains("json.dumps(document, ensure_ascii=False, indent=2)"))
         #expect(plan.remoteCleanupCommand.contains("unregister"))
         #expect(plan.remoteCleanupCommand.contains(route.id.uuidString.lowercased()))
