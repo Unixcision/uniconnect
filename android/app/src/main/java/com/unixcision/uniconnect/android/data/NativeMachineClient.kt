@@ -47,6 +47,7 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
                 }
                 if (terminal == null) continue
                 var needsReplay = false
+                var requiredRevision: ULong? = null
                 for (event in events) {
                     if (event.value.optString("topic") == "terminal.updated") {
                         // Linux invalidates globally. Reading the selected surface never creates or attaches a tmux.
@@ -61,11 +62,26 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
                     val frame = decoder.decode(grid, terminal.windowID)
                     // A revision supersedes response order: event 3 can precede the response for replay 2.
                     if (frame.snapshot.revision == null && event.ordinal <= replayOrdinal) continue
-                    screen = try { frame.applyingTo(screen).also { if (frame.full) needsReplay = false } }
-                    catch (_: TerminalFrame.FullReplayRequired) { needsReplay = true; screen }
+                    if (needsReplay && !frame.full) {
+                        frame.snapshot.revision?.let { requiredRevision = maxOf(requiredRevision ?: it, it) }
+                        continue
+                    }
+                    screen = try {
+                        frame.applyingTo(screen).also { applied ->
+                            // A rejected full frame cannot erase a newer delta's missing baseline.
+                            if (frame.full && applied === frame.snapshot && applied.coversRevision(requiredRevision)) {
+                                needsReplay = false
+                                requiredRevision = null
+                            }
+                        }
+                    } catch (_: TerminalFrame.FullReplayRequired) {
+                        needsReplay = true
+                        frame.snapshot.revision?.let { requiredRevision = maxOf(requiredRevision ?: it, it) }
+                        screen
+                    }
                 }
                 if (needsReplay) {
-                    val replay = requestReplay(session, terminal, updateWorkspaces)
+                    val replay = requestReplay(session, terminal, updateWorkspaces, minimumRevision = requiredRevision)
                     replayOrdinal = replay.ordinal
                     screen = TerminalFrame(replay.snapshot, true, emptySet()).applyingTo(screen)
                 }
@@ -149,14 +165,17 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
         session: FramedRpcSession,
         terminal: TerminalTarget,
         updateWorkspaces: suspend () -> Unit = {},
+        minimumRevision: ULong? = null,
     ): ReplayScreen {
         var waitingForSurface = false
+        var requiredRevision = minimumRevision
         return try {
             transportDeadline(12_000) {
                 val reply = session.call("mobile.terminal.replay", target(terminal.workspaceID, terminal.windowID))
                 val result = reply.value.getJSONObject("result")
                 require(result.getString("workspace_id").equals(terminal.workspaceID, ignoreCase = true))
-                decodeReplay(result, terminal.windowID)?.let { return@transportDeadline ReplayScreen(it, reply.ordinal) }
+                decodeReplay(result, terminal.windowID)?.takeIf { it.coversRevision(requiredRevision) }
+                    ?.let { return@transportDeadline ReplayScreen(it, reply.ordinal) }
                 waitingForSurface = true
                 var ready: ReplayScreen? = null
                 while (ready == null) {
@@ -168,7 +187,11 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
                             val grid = payload.optJSONObject("render_grid") ?: payload
                             if (!grid.optString("surface_id").equals(terminal.windowID, ignoreCase = true)) continue
                             val frame = decoder.decode(grid, terminal.windowID)
-                            if (frame.full) ready = ReplayScreen(frame.snapshot, event.ordinal)
+                            if (!frame.full) {
+                                frame.snapshot.revision?.let { requiredRevision = maxOf(requiredRevision ?: it, it) }
+                            } else if (frame.snapshot.coversRevision(requiredRevision)) {
+                                ready = ReplayScreen(frame.snapshot, event.ordinal)
+                            }
                         }
                     }
                 }
@@ -181,6 +204,9 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
     }
 
     internal data class ReplayScreen(val snapshot: TerminalSnapshot, val ordinal: Long)
+
+    private fun TerminalSnapshot.coversRevision(minimum: ULong?): Boolean =
+        minimum == null || (revision != null && revision >= minimum)
 
     private suspend fun call(machine: Machine, method: String, params: JSONObject): JSONObject =
         rpc.call(machine.endpoint, method, params).getJSONObject("result")
