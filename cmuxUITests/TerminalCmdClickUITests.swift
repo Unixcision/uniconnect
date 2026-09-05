@@ -11,6 +11,7 @@ final class TerminalCmdClickUITests: XCTestCase {
         case grid
         case log
         case altScreenLog = "alt_screen_log"
+        case wrappedMouse = "wrapped_mouse"
     }
 
     private struct SetupData {
@@ -349,6 +350,40 @@ final class TerminalCmdClickUITests: XCTestCase {
             waitForOpenCountToStay(0, timeout: 0.75),
             "Expected cmux file preview routing to avoid the external opener. opened=\(loadCapturedOpenPaths())"
         )
+    }
+
+    func testCmdClickWrappedPngWithMouseReportingOpensExactFileOnce() throws {
+        let fileName = String(repeating: "a", count: 180) + "_v2_term.png"
+        let configRoot = fixtureDirectoryURL.appendingPathComponent("config", isDirectory: true)
+        let ghosttyDirectory = configRoot.appendingPathComponent("ghostty", isDirectory: true)
+        try FileManager.default.createDirectory(at: ghosttyDirectory, withIntermediateDirectories: true)
+        // Exercise the real bare-path fallback independently of Ghostty's URL matcher.
+        // This is an isolated ordinary config file, not an injected consumed result.
+        try "link-url = false\n".write(to: ghosttyDirectory.appendingPathComponent("config.ghostty"),
+                                      atomically: true, encoding: .utf8)
+        let app = launchApp(
+            displayMode: .raw,
+            lineFormat: .wrappedMouse,
+            fileName: fileName,
+            displayAsAbsolutePath: true,
+            captureOpenPaths: true,
+            captureHoverDiagnostics: false,
+            openSupportedFilesInCmux: true,
+            configRoot: configRoot.path
+        )
+        defer { app.terminate() }
+
+        let setup = try waitForReadySetup()
+        let result = try runCommand(action: "cmd_click_token")
+        let details = try XCTUnwrap(result["lastCommandResult"] as? [String: Any])
+        XCTAssertEqual(details["releaseConsumed"] as? String, "1",
+                       "The fixture must exercise real Ghostty mouse reporting, not a simulated handled flag")
+        XCTAssertEqual(result["lastCommandOpenedPath"] as? String, setup.expectedPath,
+                       "Clicking the wrapped suffix must recover the complete PNG path")
+        XCTAssertEqual(result["lastCommandOpenedInFilePreview"] as? String, "1")
+        XCTAssertEqual(result["lastCommandFilePreviewCount"] as? Int, 1)
+        XCTAssertTrue(waitForOpenCountToStay(0, timeout: 0.75),
+                      "A consumed mouse report must not route the image to an external app")
     }
 
     func testCmdClickMarketingSkillMarkdownPathWithTrailingPeriodOpensMarkdownViewer() throws {
@@ -757,7 +792,8 @@ final class TerminalCmdClickUITests: XCTestCase {
         openSupportedFilesInCmux: Bool = false,
         openMarkdownInCmuxViewer: Bool? = nil,
         quicklookOverride: String? = nil,
-        viewportOffsetDelta: Int? = nil
+        viewportOffsetDelta: Int? = nil,
+        configRoot: String? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["CMUX_TAG"] = "ui-test-terminal-cmd-click"
@@ -798,6 +834,9 @@ final class TerminalCmdClickUITests: XCTestCase {
         }
         if let viewportOffsetDelta {
             app.launchEnvironment["CMUX_UI_TEST_TERMINAL_CMD_CLICK_VIEWPORT_OFFSET_DELTA"] = String(viewportOffsetDelta)
+        }
+        if let configRoot {
+            app.launchEnvironment["XDG_CONFIG_HOME"] = configRoot
         }
         launchAndEnsureForeground(app)
         return app

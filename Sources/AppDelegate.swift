@@ -2073,6 +2073,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             resolvedLineFormat = "log"
         case "alt_screen_log":
             resolvedLineFormat = "alt_screen_log"
+        case "wrapped_mouse":
+            resolvedLineFormat = "wrapped_mouse"
         default:
             resolvedLineFormat = "grid"
         }
@@ -2088,6 +2090,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let displayToken: String
         let shellCommand: String
         switch resolvedLineFormat {
+        case "wrapped_mouse":
+            displayToken = "\(baseDisplayToken)\(displaySuffix)"
+            let shellToken = singleQuotedShellLiteral(displayToken)
+            // The private fixture prints one long path at a known physical row.
+            // Real mouse reporting makes Ghostty consume the release without opening a URL.
+            shellCommand = "clear\rprintf '\\033[?1049h\\033[2J\\033[2;1H\\033[?1000h\\033[?1006h%s' '\(shellToken)'; sleep 60\r"
         case "log":
             displayToken = "\(baseDisplayToken)\(displaySuffix)"
             let blockLine = "\(linePrefix)\(displayToken)"
@@ -2219,6 +2227,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
             let pointClampY: (CGFloat) -> CGFloat = { y in
                 min(bounds.height - 4, max(4, y))
+            }
+
+            if resolvedLineFormat == "wrapped_mouse" {
+                // Derive the click from physical grid coordinates, not the same
+                // unwrapped-snapshot mapper whose regression this fixture exercises.
+                let offset = displayToken.count - 6
+                let row = 1 + offset / cols
+                guard offset >= cols, row < rows, visibleText.contains(displayToken) else {
+                    return ["tokenLayoutMatch": "0"]
+                }
+                let hit = pointPayload(
+                    x: xInset + (CGFloat(offset % cols) + 0.5) * cellWidth,
+                    yFromTop: yInset + (CGFloat(row) + 0.5) * cellHeight
+                )
+                return ["tokenHitPointInTerminal": hit, "tokenLayoutMatch": "1"]
             }
 
             let rawVisibleLines = visibleText.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
@@ -2473,6 +2496,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
                 let result = terminalPanel.hostedView.debugSimulateCommandClick(at: hitPoint)
                 payload["lastCommandResult"] = result
+                payload["lastCommandFilePreviewCount"] = workspace.panels.values.filter { $0 is FilePreviewPanel }.count
                 if let openedPath = result["openedPath"] as? String {
                     payload["lastCommandOpenedPath"] = openedPath
                     let canonicalOpenedPath = (openedPath as NSString).resolvingSymlinksInPath

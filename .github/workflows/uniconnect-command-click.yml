@@ -1,0 +1,103 @@
+name: UniConnect enlaces y visor lateral
+
+on:
+  push:
+    branches: [uniconnect, desarrollo/multiplataforma]
+    paths:
+      - Sources/GhosttyTerminalView.swift
+      - Sources/CommandClickFileOpenRouter.swift
+      - cmuxUITests/TerminalCmdClickUITests.swift
+      - .github/workflows/uniconnect-command-click.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Conserva ambos resultados de la secuencia de regresión: prueba roja y arreglo verde.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  enlaces-en-terminal-real:
+    runs-on: macos-26
+    timeout-minutes: 50
+    env:
+      CMUX_SKIP_ZIG_BUILD: "1"
+      SWIFT_BACKTRACE: "interactive=no,timeout=0s,symbolicate=off,color=no"
+      GHOSTTYKIT_DOWNLOAD_RETRIES: "3"
+      GHOSTTYKIT_DOWNLOAD_RETRY_DELAY: "5"
+    steps:
+      - name: Código y submódulos
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Comprobar la versión mayor de Xcode del proyecto
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_major="$(cut -d. -f1 .xcode-version)"
+          actual_major="$(xcodebuild -version | awk 'NR == 1 { split($2, version, "."); print version[1] }')"
+          xcodebuild -version
+          test "$actual_major" = "$expected_major"
+
+      - name: Revisión de Ghostty
+        id: ghostty-revision
+        run: echo "sha=$(git -C ghostty rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Caché del framework verificado
+        id: cache-ghosttykit
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: GhosttyKit.xcframework
+          key: uniconnect-ui-ghosttykit-${{ steps.ghostty-revision.outputs.sha }}-${{ hashFiles('scripts/ghosttykit-checksums.txt') }}
+
+      - name: Descargar GhosttyKit con su suma fijada
+        if: steps.cache-ghosttykit.outputs.cache-hit != 'true'
+        run: ./scripts/download-prebuilt-ghosttykit.sh
+
+      - name: Herramientas nativas del proyecto
+        run: |
+          ./scripts/install-zig-ci.sh
+          ./scripts/install-rust-ci.sh
+
+      - name: Caché de dependencias Swift
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: .ci-source-packages
+          key: uniconnect-ui-spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('cmux.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: uniconnect-ui-spm-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Habilitar automatización en la máquina de CI
+        run: |
+          if command -v automationmodetool >/dev/null 2>&1; then
+            sudo -n automationmodetool enable-automationmode-without-authentication
+          fi
+
+      - name: Ejecutar clics reales sobre enlaces y archivos
+        timeout-minutes: 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/ci/xcodebuild_noninteractive.py \
+            xcodebuild -project cmux.xcodeproj -scheme cmux -configuration Debug \
+            -derivedDataPath "$RUNNER_TEMP/uniconnect-command-click-dd" \
+            -clonedSourcePackagesDirPath "$GITHUB_WORKSPACE/.ci-source-packages" \
+            -destination 'platform=macOS' \
+            -jobs 2 -parallel-testing-enabled NO \
+            -only-testing:cmuxUITests/TerminalCmdClickUITests \
+            -resultBundlePath "$RUNNER_TEMP/uniconnect-command-click.xcresult" \
+            CMUX_SKIP_ZIG_BUILD=1 \
+            test 2>&1 | tee "$RUNNER_TEMP/uniconnect-command-click.log"
+
+      - name: Conservar resultados y registro de la ejecución
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: uniconnect-command-click-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/uniconnect-command-click.xcresult
+            ${{ runner.temp }}/uniconnect-command-click.log
+          if-no-files-found: warn
+          retention-days: 7
