@@ -1,0 +1,51 @@
+name: UniConnect Linux · capturas DEMO
+
+on:
+  push:
+    branches: [uniconnect, desarrollo/multiplataforma]
+    paths:
+      - linux/uniconnect/window.py
+      - linux/uniconnect/terminal.py
+      - linux/uniconnect/appearance.css
+      - linux/scripts/capture-design.py
+      - Resources/Localizable.xcstrings
+      - .github/workflows/uniconnect-linux-visual.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-visual-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capturas-gtk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: GTK 3, VTE y pantalla virtual aislada
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi python3-cryptography gir1.2-gtk-3.0 gir1.2-vte-2.91 gir1.2-secret-1 xvfb xauth dbus-x11 adwaita-icon-theme fonts-dejavu-core
+      - name: Dibujar la ventana real con datos DEMO sin conexiones
+        env:
+          G_DEBUG: fatal-criticals
+          GDK_BACKEND: x11
+          GDK_SCALE: '1'
+          GDK_DPI_SCALE: '1'
+          NO_AT_BRIDGE: '1'
+        run: |
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' \
+            /usr/bin/python3 linux/scripts/capture-design.py --output "$RUNNER_TEMP/uniconnect-linux-visual"
+      - name: Publicar las imágenes y sus medidas
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: uniconnect-linux-demo-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/uniconnect-linux-visual/*.png
+            ${{ runner.temp }}/uniconnect-linux-visual/capturas-demo.json
+          if-no-files-found: error
+          retention-days: 7
