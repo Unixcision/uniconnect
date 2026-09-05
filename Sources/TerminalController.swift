@@ -21494,9 +21494,12 @@ class TerminalController {
                       UniConnectLocalBoxRootPolicy.isAvailableDirectory(directory) else {
                     return mobileCreationInvalidParameters()
                 }
+                // A client that asks how the first window opens sends `initial_terminal: false`
+                // and follows up with mobile.terminal.create; older clients keep one terminal.
                 workspace = UniConnectCoordinator.shared.createLocalWorkspace(
                     name: name, folder: directory, color: nil, in: tabManager,
-                    select: false, finalizeCreation: false
+                    select: false, finalizeCreation: false,
+                    initialTerminal: v2Bool(params, "initial_terminal") ?? true
                 )
                 UniConnectCoordinator.shared.requestSave()
             } else if kind == "ssh" {

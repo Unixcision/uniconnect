@@ -19,6 +19,8 @@ struct UniConnectNewLocalWindowView: View {
     let workspaceName: String
     let boxRoot: String
     let availableCustomTargets: [UniConnectLocalWindowLaunchTarget]
+    /// True when this chooser decides the first window of a box that was just created.
+    let isFirstWindow: Bool
     let onCreate: (UniConnectNewLocalWindowRequest) -> Void
     let onCancel: () -> Void
 
@@ -34,12 +36,14 @@ struct UniConnectNewLocalWindowView: View {
         workspaceName: String,
         boxRoot: String,
         availableCustomTargets: [UniConnectLocalWindowLaunchTarget] = [],
+        isFirstWindow: Bool = false,
         onCreate: @escaping (UniConnectNewLocalWindowRequest) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.workspaceName = workspaceName
         self.boxRoot = boxRoot
         self.availableCustomTargets = availableCustomTargets
+        self.isFirstWindow = isFirstWindow
         self.onCreate = onCreate
         self.onCancel = onCancel
         _workingDirectory = State(initialValue: boxRoot)
@@ -131,13 +135,28 @@ struct UniConnectNewLocalWindowView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(
-                    String(
-                        localized: "uniconnect.localWindow.new.title",
-                        defaultValue: "New Window"
-                    )
+                    isFirstWindow
+                        ? String(
+                            localized: "uniconnect.localWindow.first.title",
+                            defaultValue: "First Window"
+                        )
+                        : String(
+                            localized: "uniconnect.localWindow.new.title",
+                            defaultValue: "New Window"
+                        )
                 )
                 .font(.system(size: 19, weight: .bold, design: .rounded))
-                Text(workspaceName)
+                Text(
+                    isFirstWindow
+                        ? String.localizedStringWithFormat(
+                            String(
+                                localized: "uniconnect.localWindow.first.subtitle",
+                                defaultValue: "%@ was created. Choose how its first window opens."
+                            ),
+                            workspaceName
+                        )
+                        : workspaceName
+                )
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -370,10 +389,16 @@ struct UniConnectNewLocalWindowView: View {
 
             Spacer(minLength: 10)
             Button(
-                String(localized: "common.cancel", defaultValue: "Cancel"),
+                isFirstWindow
+                    ? String(
+                        localized: "uniconnect.localWindow.first.skip",
+                        defaultValue: "Open a plain terminal"
+                    )
+                    : String(localized: "common.cancel", defaultValue: "Cancel"),
                 action: onCancel
             )
             .keyboardShortcut(.cancelAction)
+            .accessibilityIdentifier("UniConnectLocalWindowCancel")
             Button(
                 String(localized: "uniconnect.localWindow.new.create", defaultValue: "Create Window")
             ) {

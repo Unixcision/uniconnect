@@ -62,6 +62,20 @@ flow for the selected box, including the keyboard shortcut, tab plus button,
 command palette and context menus. LOCAL opens the local-window chooser; SSH keeps
 the visible-name and tmux-session dialog instead of creating a local shell.
 
+**Two-step box creation.** *New box* never spawns a plain terminal on its own. The
+first sheet asks for the box (name, folder or SSH connection command, colour); once a
+LOCAL box exists, the same local-window chooser opens immediately as a second sheet
+titled *First window* so the user decides name, folder and Terminal/agent for that
+window. Dismissing that second sheet opens the plain terminal the box used to get
+automatically, so a box is never left without a usable window. SSH boxes keep their
+welcome page, which already asks for the first window once tmux is verified. The
+mobile `workspace.create` RPC accepts `initial_terminal: false` for the same two-step
+flow; without the flag it keeps creating one terminal for older clients. The Linux
+desktop applies the same rule: the *New workspace* dialog is followed by the
+*First window* dialog, and cancelling it leaves the box empty (its existing
+"create a window to start" state). Android sends `initial_terminal: false` and shows
+its *Primera ventana* sheet when the host confirms an empty box.
+
 The local chooser offers Terminal, Claude, Codex, Agy, Grok and a custom command,
 with a visible name and editable **Window Folder**. The folder initially uses the
 workspace default, but may be any existing local directory selected with an

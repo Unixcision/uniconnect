@@ -258,12 +258,16 @@ final class UniConnectCoordinator: ObservableObject {
                 onLocal: { [weak self, weak tabManager] result in
                     dismiss()
                     guard let self, let tabManager else { return }
-                    self.createLocalWorkspace(
+                    // Two-step creation: the box first, then an explicit choice for its
+                    // first window instead of a silently spawned plain terminal.
+                    let workspace = self.createLocalWorkspace(
                         name: result.name,
                         folder: result.folder,
                         color: result.color,
-                        in: tabManager
+                        in: tabManager,
+                        initialTerminal: false
                     )
+                    self.presentFirstLocalWindowChooser(for: workspace, boxRoot: result.folder)
                 },
                 onSSH: { [weak self, weak tabManager] result in
                     dismiss()
@@ -279,6 +283,46 @@ final class UniConnectCoordinator: ObservableObject {
             )
         }
         return true
+    }
+
+    /// Second step of "New box": asks how the first window should open. Dismissing the
+    /// chooser falls back to the plain terminal the box used to receive automatically,
+    /// so a local box is never left without a usable window.
+    func presentFirstLocalWindowChooser(for workspace: Workspace, boxRoot: String) {
+        guard UniConnectLocalBoxRootPolicy.isAvailableDirectory(boxRoot) else { return }
+        let title = workspace.customTitle ?? workspace.title
+        let registry = CmuxVaultAgentRegistry.load(workingDirectory: boxRoot)
+        let customTargets = UniConnectLocalWindowLaunchTarget.customTargets(from: registry)
+        let window = hostWindow(for: workspace.owningTabManager)
+        let openPlainTerminal: (Workspace) -> Void = { [weak self] workspace in
+            guard let self,
+                  let request = UniConnectNewLocalWindowRequest(
+                      visibleName: nil, boxRoot: boxRoot, launchTarget: .terminal
+                  ) else { return }
+            _ = self.createLocalWindow(in: workspace, request: request)
+        }
+        // Let the first sheet finish ending before the same parent begins another one.
+        Task { @MainActor [weak self, weak workspace] in
+            guard self != nil, let workspace else { return }
+            UniConnectSheet.present(on: window, size: CGSize(width: 620, height: 700)) { dismiss in
+                UniConnectNewLocalWindowView(
+                    workspaceName: title,
+                    boxRoot: boxRoot,
+                    availableCustomTargets: customTargets,
+                    isFirstWindow: true,
+                    onCreate: { [weak self, weak workspace] request in
+                        dismiss()
+                        guard let self, let workspace else { return }
+                        _ = self.createLocalWindow(in: workspace, request: request)
+                    },
+                    onCancel: { [weak workspace] in
+                        dismiss()
+                        guard let workspace else { return }
+                        openPlainTerminal(workspace)
+                    }
+                )
+            }
+        }
     }
 
     private func beginSSHWorkspaceCreation(
@@ -359,6 +403,9 @@ final class UniConnectCoordinator: ObservableObject {
     }
 
     @discardableResult
+    /// Creates a local box. With `initialTerminal == false` the box keeps only its
+    /// placeholder so the caller can ask how the first window should open; every
+    /// other caller keeps the historical behaviour of one plain terminal window.
     func createLocalWorkspace(
         name: String,
         folder: String,
@@ -366,7 +413,8 @@ final class UniConnectCoordinator: ObservableObject {
         in tabManager: TabManager,
         select: Bool = true,
         finalizeCreation: Bool = true,
-        stableIdentity: UUID? = nil
+        stableIdentity: UUID? = nil,
+        initialTerminal: Bool = true
     ) -> Workspace {
         guard permitsImportSensitiveMutation() else {
             return tabManager.selectedWorkspace ?? tabManager.tabs[0]
@@ -386,14 +434,16 @@ final class UniConnectCoordinator: ObservableObject {
         )
         workspace.uniConnectConfigureLocalRoot(folder)
         workspace.setCustomColor(color)
-        if UniConnectLocalBoxRootPolicy.isAvailableDirectory(folder),
-           let request = UniConnectNewLocalWindowRequest(
-               visibleName: nil, boxRoot: folder, launchTarget: .terminal
-           ) {
+        if UniConnectLocalBoxRootPolicy.isAvailableDirectory(folder) {
             installPlaceholder(in: workspace)
-            _ = createLocalWindow(
-                in: workspace, request: request, focus: select, requestPersistence: false
-            )
+            if initialTerminal,
+               let request = UniConnectNewLocalWindowRequest(
+                   visibleName: nil, boxRoot: folder, launchTarget: .terminal
+               ) {
+                _ = createLocalWindow(
+                    in: workspace, request: request, focus: select, requestPersistence: false
+                )
+            }
         }
         if (workspace.customDescription ?? "").isEmpty {
             workspace.setCustomDescription("Local · \((folder as NSString).abbreviatingWithTildeInPath)")
