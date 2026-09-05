@@ -85,7 +85,9 @@ jobs:
           baseline=3bcb335d7ac95c8d87874d2ffa64930fa4b745a4
           mkdir -p "$RUNNER_TEMP/uniconnect-command-click/baseline" "$RUNNER_TEMP/uniconnect-command-click/fix"
           cp cmuxUITests/TerminalCmdClickUITests.swift "$RUNNER_TEMP/uniconnect-command-click/fixture.swift"
-          git fetch --no-tags origin "$baseline"
+          # The required submodule revisions are already checked out and compared
+          # below; fetching unrelated historical submodule commits can fail.
+          git -c fetch.recurseSubmodules=false fetch --no-recurse-submodules --depth=1 --no-tags origin "$baseline"
           # Estos insumos deben ser idénticos para compartir framework y cachés.
           git diff --exit-code "$baseline" "$FIX_REVISION" -- \
             ghostty vendor/bonsplit .xcode-version scripts/ghosttykit-checksums.txt \
