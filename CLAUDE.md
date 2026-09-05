@@ -8,6 +8,22 @@ UniConnect layer lives in `Sources/UniConnect/` and is documented in
 below is the inherited cmux workflow and still applies (replace `cmux DEV` with
 `UniConnect DEV` in app names).
 
+## One product, macOS and Linux (user requirement)
+
+UniConnect's macOS and Linux editions live and evolve in this **same repository**.
+For every requested product change, assess both editions and implement their
+corresponding behavior unless the user explicitly scopes it to one platform.
+Prefer a single shared implementation, resource, format and test contract over
+duplicated policies. Keep OS-specific UI, terminal bindings, credential stores and
+installation behind small adapters. Reuse existing portable `Packages/` and
+`Resources/` before creating a Linux-only equivalent. Never create a separate
+Linux repository or a permanently independent feature branch/release history.
+See `docs/CROSS-PLATFORM.md` for ownership, current boundaries and remaining debt.
+Do not describe shared specifications as shared executable code, or claim macOS
+validation based only on Linux tests. A platform-only fix must document why the
+other platform is unaffected. The authorized Linux setting is encryption without
+a startup password prompt; preserve that choice.
+
 # cmux agent notes (inherited)
 
 ## Initial setup

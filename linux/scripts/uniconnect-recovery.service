@@ -1,0 +1,16 @@
+[Unit]
+Description=UniConnect persistent agent workspaces
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash -lc 'exec /usr/bin/python3 "%h/.uniconnect/recovery/recovery.py" --manifest "%h/.uniconnect/recovery/manifest.json" supervise'
+Restart=on-failure
+RestartSec=10
+# Stopping the supervisor must leave the user's detached tmux work intact.
+KillMode=process
+UMask=0077
+
+[Install]
+WantedBy=default.target

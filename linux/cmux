@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+uniconnect_source_dir="$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")"
+export PYTHONPATH="${uniconnect_source_dir}${PYTHONPATH:+:${PYTHONPATH}}"
+exec /usr/bin/python3 -m uniconnect.cli "$@"
