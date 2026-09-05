@@ -16,17 +16,16 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
 
     override fun observe(machine: Machine, terminal: TerminalTarget?): Flow<MachineUpdate> = flow {
         rpc.open(machine.endpoint).use { session ->
-            val streamID = UUID.randomUUID().toString()
-            val topics = JSONArray().put("workspace.updated")
-            if (terminal != null) topics.put("terminal.render_grid").put("terminal.updated")
-            val subscribed = session.call("mobile.events.subscribe", JSONObject().put("stream_id", streamID).put("topics", topics))
-            require(subscribed.value.getJSONObject("result").getString("stream_id") == streamID)
-            emit(MachineUpdate.Workspaces(decodeMachine(machine, session.call("mobile.workspace.list", JSONObject()).value.getJSONObject("result"))))
+            subscribe(session, terminal)
+            val updateWorkspaces: suspend () -> Unit = {
+                emit(MachineUpdate.Workspaces(decodeMachine(machine, session.call("mobile.workspace.list", JSONObject()).value.getJSONObject("result"))))
+            }
+            updateWorkspaces()
             var screen: TerminalSnapshot? = null
             var replayOrdinal = 0L
             if (terminal != null) {
-                val replay = session.call("mobile.terminal.replay", target(terminal.workspaceID, terminal.windowID))
-                screen = decodeReplay(replay.value.getJSONObject("result"), terminal.windowID)
+                val replay = requestReplay(session, terminal, updateWorkspaces)
+                screen = replay.snapshot
                 replayOrdinal = replay.ordinal
                 emit(MachineUpdate.Terminal(screen))
             }
@@ -35,7 +34,7 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
                 val events = if (first == null) emptyList() else listOf(first) + session.drainQueuedEvents()
                 // A bounded RPC heartbeat detects silent network loss even when the desktop is idle.
                 if (first == null || events.any { it.value.optString("topic") == "workspace.updated" }) {
-                    emit(MachineUpdate.Workspaces(decodeMachine(machine, session.call("mobile.workspace.list", JSONObject()).value.getJSONObject("result"))))
+                    updateWorkspaces()
                 }
                 if (terminal == null) continue
                 var needsReplay = false
@@ -57,10 +56,9 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
                     catch (_: TerminalFrame.FullReplayRequired) { needsReplay = true; screen }
                 }
                 if (needsReplay) {
-                    val replay = session.call("mobile.terminal.replay", target(terminal.workspaceID, terminal.windowID))
+                    val replay = requestReplay(session, terminal, updateWorkspaces)
                     replayOrdinal = replay.ordinal
-                    val full = decodeReplay(replay.value.getJSONObject("result"), terminal.windowID)
-                    screen = TerminalFrame(full, true, emptySet()).applyingTo(screen)
+                    screen = TerminalFrame(replay.snapshot, true, emptySet()).applyingTo(screen)
                 }
                 if (events.isNotEmpty()) emit(MachineUpdate.Terminal(requireNotNull(screen)))
             }
@@ -98,7 +96,11 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
     }
 
     override suspend fun replay(machine: Machine, workspaceID: String, windowID: String): TerminalSnapshot =
-        decodeReplay(call(machine, "mobile.terminal.replay", target(workspaceID, windowID)), windowID)
+        rpc.open(machine.endpoint).use { session ->
+            val terminal = TerminalTarget(workspaceID, windowID)
+            subscribe(session, terminal)
+            requestReplay(session, terminal).snapshot
+        }
 
     override suspend fun sendInput(machine: Machine, workspaceID: String, windowID: String, text: String) {
         require(text.isNotEmpty())
@@ -121,12 +123,59 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
         return MachineSnapshot(result.optString("display_name", machine.name), workspaces)
     }
 
-    private fun decodeReplay(result: JSONObject, windowID: String): TerminalSnapshot {
+    private fun decodeReplay(result: JSONObject, windowID: String): TerminalSnapshot? {
         require(result.getString("surface_id").equals(windowID, ignoreCase = true))
+        if (result.opt("is_ready") == false) return null
         val frame = decoder.decode(result.optJSONObject("render_grid") ?: throw MachineFailure.UnsupportedTerminal(), windowID)
         if (!frame.full) throw MachineFailure.UnsupportedTerminal()
         return frame.snapshot
     }
+
+    private suspend fun subscribe(session: FramedRpcSession, terminal: TerminalTarget?) {
+        val streamID = UUID.randomUUID().toString()
+        val topics = JSONArray().put("workspace.updated")
+        if (terminal != null) topics.put("terminal.render_grid").put("terminal.updated")
+        val subscribed = session.call("mobile.events.subscribe", JSONObject().put("stream_id", streamID).put("topics", topics))
+        require(subscribed.value.getJSONObject("result").getString("stream_id") == streamID)
+    }
+
+    /** Cold surfaces complete through their existing subscription, never another create/attach or replay poll. */
+    internal suspend fun requestReplay(
+        session: FramedRpcSession,
+        terminal: TerminalTarget,
+        updateWorkspaces: suspend () -> Unit = {},
+    ): ReplayScreen {
+        var waitingForSurface = false
+        return try {
+            transportDeadline(12_000) {
+                val reply = session.call("mobile.terminal.replay", target(terminal.workspaceID, terminal.windowID))
+                val result = reply.value.getJSONObject("result")
+                require(result.getString("workspace_id").equals(terminal.workspaceID, ignoreCase = true))
+                decodeReplay(result, terminal.windowID)?.let { return@transportDeadline ReplayScreen(it, reply.ordinal) }
+                waitingForSurface = true
+                var ready: ReplayScreen? = null
+                while (ready == null) {
+                    val event = session.nextEventOrHeartbeat(12_000) ?: throw MachineFailure.DeadlineExceeded()
+                    when (event.value.optString("topic")) {
+                        "workspace.updated" -> updateWorkspaces()
+                        "terminal.render_grid" -> {
+                            val payload = event.value.getJSONObject("payload")
+                            val grid = payload.optJSONObject("render_grid") ?: payload
+                            if (!grid.optString("surface_id").equals(terminal.windowID, ignoreCase = true)) continue
+                            val frame = decoder.decode(grid, terminal.windowID)
+                            if (frame.full) ready = ReplayScreen(frame.snapshot, event.ordinal)
+                        }
+                    }
+                }
+                ready
+            }
+        } catch (failure: MachineFailure.DeadlineExceeded) {
+            if (waitingForSurface) throw MachineFailure.TerminalNotReady()
+            throw failure
+        }
+    }
+
+    internal data class ReplayScreen(val snapshot: TerminalSnapshot, val ordinal: Long)
 
     private suspend fun call(machine: Machine, method: String, params: JSONObject): JSONObject =
         rpc.call(machine.endpoint, method, params).getJSONObject("result")

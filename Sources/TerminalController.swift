@@ -21704,6 +21704,17 @@ class TerminalController {
         }
         let state = MobileTerminalByteTee.shared.replayState(surfaceID: surfaceId)
         let seq = state?.seq ?? 0
+        // Resolving the terminal already requested its lazy runtime. The first
+        // render event will provide the grid; absence during startup is not an
+        // incompatible terminal format and must not stop the mobile subscription.
+        guard terminalPanel.surface.liveSurfaceForGhosttyAccess(reason: "mobileTerminalReplayReadiness") != nil else {
+            return .ok([
+                "workspace_id": resolved.workspace.id.uuidString,
+                "surface_id": surfaceId.uuidString,
+                "seq": seq,
+                "is_ready": false,
+            ])
+        }
         let renderGrid = mobileTerminalRenderGridFrame(
             terminalPanel: terminalPanel,
             surfaceID: surfaceId,
@@ -21716,6 +21727,7 @@ class TerminalController {
             "workspace_id": resolved.workspace.id.uuidString,
             "surface_id": surfaceId.uuidString,
             "seq": seq,
+            "is_ready": true,
         ]
         if let renderGrid,
            let record = MobileTerminalRenderObserver.shared.snapshotRecord(forFullFrame: renderGrid),

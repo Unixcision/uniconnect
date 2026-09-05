@@ -208,8 +208,9 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                 catch (failure: Exception) {
                     val code = (failure as? MachineFailure.Rejected)?.code
                     val incompatible = failure is MachineFailure.ProtocolMismatch || failure is MachineFailure.UnsupportedTerminal
-                    val stop = incompatible || !wasConnected || code in setOf("approval_required", "unauthorized", "forbidden", "not_found", "process_exited")
-                    val message = if (incompatible) R.string.incompatible_terminal else if (code == "approval_required") R.string.approval_required else if (stop) R.string.connection_error else R.string.connection_reconnecting
+                    val notReady = failure is MachineFailure.TerminalNotReady
+                    val stop = notReady || incompatible || !wasConnected || code in setOf("approval_required", "unauthorized", "forbidden", "not_found", "process_exited")
+                    val message = if (notReady) R.string.terminal_not_ready else if (incompatible) R.string.incompatible_terminal else if (code == "approval_required") R.string.approval_required else if (stop) R.string.connection_error else R.string.connection_reconnecting
                     mutableState.update { it.copy(
                         connections = it.connections + (machine.id to (it.connections[machine.id] ?: Connection()).copy(checking = !stop, connected = false, error = message)),
                         terminalLoading = false, terminalError = if (target != null) message else it.terminalError,

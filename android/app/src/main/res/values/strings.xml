@@ -102,4 +102,5 @@
     <string name="approval_pending_title">Pendiente de autorización</string>
     <string name="screen_fit_width">Ajustar al ancho</string>
     <string name="screen_actual_size">Ampliar lectura</string>
+    <string name="terminal_not_ready">La terminal aún no ha enviado su pantalla. Puedes pulsar Actualizar pantalla para volver a esperar. No se ha creado ni reiniciado ninguna sesión.</string>
 </resources>

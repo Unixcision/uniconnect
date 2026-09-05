@@ -24,6 +24,9 @@ dirección Tailscale y puerto (58465 inicialmente).
   heartbeat de 15 segundos, espera progresiva de reconexión de 1 a 15 segundos
   y nuevo replay completo. Las revisiones visuales antiguas no revierten la pantalla.
   Los deltas compatibles sustituyen filas sin recolorear estilos de filas intactas.
+  Si el host indica `is_ready:false`, el replay espera hasta 12 segundos al primer
+  evento full de esa superficie, sin polling ni crear otra terminal. Agotado el
+  plazo se ofrece reintento manual; no se confunde con un formato incompatible.
   Ajusta la escala de lectura al ancho del móvil y permite ampliarla con scroll
   horizontal, sin cambiar el tamaño de la terminal del escritorio. Faltan selección, ratón,
   historial remoto y soporte completo de atributos tipográficos/modos de terminal.

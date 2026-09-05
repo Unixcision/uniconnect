@@ -7,5 +7,6 @@ sealed class MachineFailure : Exception() {
     class Rejected(val code: String) : MachineFailure()
     class ProtocolMismatch : MachineFailure()
     class UnsupportedTerminal : MachineFailure()
+    class TerminalNotReady : MachineFailure()
     class InputNotQueued : MachineFailure()
 }
