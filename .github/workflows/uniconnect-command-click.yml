@@ -15,14 +15,14 @@ permissions:
 
 # Conserva ambos resultados de la secuencia de regresión: prueba roja y arreglo verde.
 concurrency:
-  # Cada revisión usa su propio Mac de CI: rojo y arreglo no se cancelan ni se bloquean.
+  # Cada ejecución conserva baseline y arreglo juntos; no cancela otra regresión.
   group: ${{ github.workflow }}-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
   enlaces-en-terminal-real:
     runs-on: macos-26
-    timeout-minutes: 50
+    timeout-minutes: 60
     env:
       CMUX_SKIP_ZIG_BUILD: "1"
       SWIFT_BACKTRACE: "interactive=no,timeout=0s,symbolicate=off,color=no"
@@ -76,29 +76,112 @@ jobs:
             sudo -n automationmodetool enable-automationmode-without-authentication
           fi
 
-      - name: Ejecutar clics reales sobre enlaces y archivos
+      - name: Preparar las dos revisiones con la misma fixture
+        shell: bash
+        env:
+          FIX_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          baseline=3bcb335d7ac95c8d87874d2ffa64930fa4b745a4
+          mkdir -p "$RUNNER_TEMP/uniconnect-command-click/baseline" "$RUNNER_TEMP/uniconnect-command-click/fix"
+          cp cmuxUITests/TerminalCmdClickUITests.swift "$RUNNER_TEMP/uniconnect-command-click/fixture.swift"
+          git fetch --no-tags origin "$baseline"
+          # Estos insumos deben ser idénticos para compartir framework y cachés.
+          git diff --exit-code "$baseline" "$FIX_REVISION" -- \
+            ghostty vendor/bonsplit .xcode-version scripts/ghosttykit-checksums.txt \
+            cmux.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          git switch --detach "$baseline"
+          cp "$RUNNER_TEMP/uniconnect-command-click/fixture.swift" cmuxUITests/TerminalCmdClickUITests.swift
+          git rev-parse HEAD > "$RUNNER_TEMP/uniconnect-command-click/baseline/revision.txt"
+          shasum -a 256 cmuxUITests/TerminalCmdClickUITests.swift > "$RUNNER_TEMP/uniconnect-command-click/baseline/fixture.sha256"
+
+      - name: Baseline — PNG normal pasa y ruta partida reproduce el fallo
+        id: baseline
         timeout-minutes: 35
         shell: bash
         run: |
           set -euo pipefail
+          set +e
           scripts/ci/xcodebuild_noninteractive.py \
             xcodebuild -project cmux.xcodeproj -scheme cmux -configuration Debug \
             -derivedDataPath "$RUNNER_TEMP/uniconnect-command-click-dd" \
             -clonedSourcePackagesDirPath "$GITHUB_WORKSPACE/.ci-source-packages" \
             -destination 'platform=macOS' \
             -jobs 2 -parallel-testing-enabled NO \
-            -only-testing:cmuxUITests/TerminalCmdClickUITests \
-            -resultBundlePath "$RUNNER_TEMP/uniconnect-command-click.xcresult" \
+            -only-testing:cmuxUITests/TerminalCmdClickUITests/testCmdClickPngOpensInCmuxFilePreviewWhenEnabled \
+            -only-testing:cmuxUITests/TerminalCmdClickUITests/testCmdClickWrappedPngWithMouseReportingOpensExactFileOnce \
+            -resultBundlePath "$RUNNER_TEMP/uniconnect-command-click/baseline/result.xcresult" \
             CMUX_SKIP_ZIG_BUILD=1 \
-            test 2>&1 | tee "$RUNNER_TEMP/uniconnect-command-click.log"
+            test 2>&1 | tee "$RUNNER_TEMP/uniconnect-command-click/baseline/run.log"
+          statuses=("${PIPESTATUS[@]}")
+          set -e
+          echo "finished=true" >> "$GITHUB_OUTPUT"
+          test "${statuses[0]}" -eq 65
+          test "${statuses[1]}" -eq 0
+          python3 - <<'PY'
+          import os, pathlib, re
+          log = (pathlib.Path(os.environ["RUNNER_TEMP"]) / "uniconnect-command-click/baseline/run.log").read_text()
+          normal = "testCmdClickPngOpensInCmuxFilePreviewWhenEnabled"
+          wrapped = "testCmdClickWrappedPngWithMouseReportingOpensExactFileOnce"
+          outcomes = re.findall(r"^Test Case '-\[cmuxUITests\.TerminalCmdClickUITests (\w+)\]' (passed|failed) \(", log, re.M)
+          assert len(outcomes) == 2 and dict(outcomes) == {normal: "passed", wrapped: "failed"}, outcomes
+          failures = [line for line in log.splitlines() if "error:" in line]
+          assert not any("setupError" in line or "Expected terminal cmd-click setup data" in line for line in failures), failures
+          assert any(wrapped in line and "XCTAssertEqual failed" in line and
+                     "Clicking the wrapped suffix must recover the complete PNG path" in line for line in failures), failures
+          print("Baseline válido: fixture preparada, PNG normal correcto y fallo real de ruta partida.")
+          PY
 
-      - name: Conservar resultados y registro de la ejecución
+      - name: Arreglo — ambos PNG pasan con recompilación incremental
+        if: ${{ !cancelled() && steps.baseline.outputs.finished == 'true' }}
+        timeout-minutes: 35
+        shell: bash
+        env:
+          FIX_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Solo se retira el backport temporal; su copia y hash están guardados.
+          git restore --worktree -- cmuxUITests/TerminalCmdClickUITests.swift
+          git switch --detach "$FIX_REVISION"
+          cp "$RUNNER_TEMP/uniconnect-command-click/fixture.swift" cmuxUITests/TerminalCmdClickUITests.swift
+          git rev-parse HEAD > "$RUNNER_TEMP/uniconnect-command-click/fix/revision.txt"
+          shasum -a 256 cmuxUITests/TerminalCmdClickUITests.swift > "$RUNNER_TEMP/uniconnect-command-click/fix/fixture.sha256"
+          cmp "$RUNNER_TEMP/uniconnect-command-click/baseline/fixture.sha256" "$RUNNER_TEMP/uniconnect-command-click/fix/fixture.sha256"
+          scripts/ci/xcodebuild_noninteractive.py \
+            xcodebuild -project cmux.xcodeproj -scheme cmux -configuration Debug \
+            -derivedDataPath "$RUNNER_TEMP/uniconnect-command-click-dd" \
+            -clonedSourcePackagesDirPath "$GITHUB_WORKSPACE/.ci-source-packages" \
+            -destination 'platform=macOS' \
+            -jobs 2 -parallel-testing-enabled NO \
+            -only-testing:cmuxUITests/TerminalCmdClickUITests/testCmdClickPngOpensInCmuxFilePreviewWhenEnabled \
+            -only-testing:cmuxUITests/TerminalCmdClickUITests/testCmdClickWrappedPngWithMouseReportingOpensExactFileOnce \
+            -resultBundlePath "$RUNNER_TEMP/uniconnect-command-click/fix/result.xcresult" \
+            CMUX_SKIP_ZIG_BUILD=1 \
+            test 2>&1 | tee "$RUNNER_TEMP/uniconnect-command-click/fix/run.log"
+          python3 - <<'PY'
+          import os, pathlib, re
+          log = (pathlib.Path(os.environ["RUNNER_TEMP"]) / "uniconnect-command-click/fix/run.log").read_text()
+          outcomes = re.findall(r"^Test Case '-\[cmuxUITests\.TerminalCmdClickUITests (\w+)\]' (passed|failed) \(", log, re.M)
+          expected = {"testCmdClickPngOpensInCmuxFilePreviewWhenEnabled": "passed",
+                      "testCmdClickWrappedPngWithMouseReportingOpensExactFileOnce": "passed"}
+          assert len(outcomes) == 2 and dict(outcomes) == expected, outcomes
+          print("Arreglo validado: los dos clics reales abren el visor correcto.")
+          PY
+
+      - name: Conservar evidencia del baseline
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: uniconnect-command-click-${{ github.sha }}
-          path: |
-            ${{ runner.temp }}/uniconnect-command-click.xcresult
-            ${{ runner.temp }}/uniconnect-command-click.log
+          name: uniconnect-command-click-baseline-${{ github.sha }}
+          path: ${{ runner.temp }}/uniconnect-command-click/baseline/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Conservar evidencia del arreglo
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: uniconnect-command-click-fix-${{ github.sha }}
+          path: ${{ runner.temp }}/uniconnect-command-click/fix/
           if-no-files-found: warn
           retention-days: 7
