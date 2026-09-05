@@ -43,7 +43,7 @@ struct UniConnectLocalTmuxIntegrationTests {
             let secondPane = try await fixture.attachedPane(binding)
             #expect(secondPane.sessionID == firstPane.sessionID)
             #expect(secondPane.pid == firstPane.pid)
-            #expect(secondPane.directory == firstDirectory.path)
+            #expect(try fixture.canonicalPath(secondPane.directory) == fixture.canonicalPath(firstDirectory.path))
             #expect(try await fixture.environment("UNICONNECT_SURFACE_GENERATION", binding) == firstGeneration.uuidString)
             #expect(try fixture.launchCount(counter) == 1)
             try await fixture.detach(binding, client: secondClient)
@@ -60,7 +60,7 @@ struct UniConnectLocalTmuxIntegrationTests {
             // A server may reuse session numbers after its final session exits, so pane
             // process identity is the durable proof of replacement across that boundary.
             #expect(thirdPane.pid != firstPane.pid)
-            #expect(thirdPane.directory == secondDirectory.path)
+            #expect(try fixture.canonicalPath(thirdPane.directory) == fixture.canonicalPath(secondDirectory.path))
             #expect(try await fixture.environment("UNICONNECT_SURFACE_GENERATION", binding) == nextGeneration.uuidString)
             try await fixture.detach(binding, client: thirdClient)
             #expect(try await fixture.pane(binding).pid == thirdPane.pid)
@@ -151,6 +151,17 @@ struct UniConnectLocalTmuxIntegrationTests {
             let directory = root.appendingPathComponent(name)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             return directory
+        }
+
+        func canonicalPath(_ path: String) throws -> String {
+            // On macOS 15 Foundation can spell this fixture as /var while tmux
+            // reports /private/var. Compare existing directories through POSIX,
+            // not Foundation's OS-version-dependent URL normalization.
+            guard let resolved = path.withCString({ Darwin.realpath($0, nil) }) else {
+                throw FixtureError.invalidOutput
+            }
+            defer { Darwin.free(resolved) }
+            return String(cString: resolved)
         }
 
         func agentCommand(counter: URL) -> String {
