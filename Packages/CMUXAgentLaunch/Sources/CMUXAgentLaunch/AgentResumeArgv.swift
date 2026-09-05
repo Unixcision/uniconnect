@@ -7,16 +7,28 @@ import Foundation
 /// publisher (`agentSurfaceResumeCommand`), so both emit identical resume commands. It is pure value
 /// logic over primitives (no `AppKit`, `Process`, or socket), so it is testable in isolation.
 ///
-/// The type is a stateless value; construct one at the call site (`AgentResumeArgv()`) rather than
-/// reaching through a static namespace, per the package design discipline.
+/// Command syntax comes from the package resource also consumed by Linux. This value keeps
+/// captured-argument sanitization, cmux wrappers and the existing macOS trust policy in Swift.
 ///
 /// Resolution order mirrors the historical app builder: a cmux wrapper launcher
 /// (``launcherResolution(launcher:sessionId:executablePath:arguments:)``) is checked first, then the
 /// per-kind verb (``builtInKind(kind:sessionId:executablePath:arguments:)``). Callers that also
 /// support custom Vault agents slot that resolution between the two.
 public struct AgentResumeArgv: Sendable, Equatable {
-    /// Creates a resume-argv builder. The type holds no state.
-    public init() {}
+    private let catalog: AgentResumeCatalog?
+
+    /// Creates a resume-argv builder using the bundled cross-platform command catalogue.
+    public init() {
+        catalog = try? AgentResumeCatalog()
+    }
+
+    /// Creates a resume-argv builder from an explicit command catalogue for isolated tests.
+    ///
+    /// - Parameter catalogData: Versioned JSON command syntax, with no approval policy.
+    /// - Throws: A decoding or schema error when the catalogue is invalid.
+    public init(catalogData: Data) throws {
+        catalog = try AgentResumeCatalog(data: catalogData)
+    }
 
     /// The result of resolving a cmux wrapper launcher (the `claude-teams` / `codex-teams` / `omo`
     /// style launchers cmux injects), checked before the per-kind verb.
@@ -50,10 +62,13 @@ public struct AgentResumeArgv: Sendable, Equatable {
             guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: "claude", args: tail) else {
                 return .resolved(nil)
             }
+            guard let argv = catalog?.argv(kind: "claude", sessionId: sessionId, executable: parts.executable, arguments: preserved) else {
+                return .resolved(nil)
+            }
             return .resolved(
                 appendingRequiredOption(
                     "--dangerously-skip-permissions",
-                    to: [parts.executable, "claude-teams", "--resume", sessionId] + preserved
+                    to: [parts.executable, "claude-teams"] + argv.dropFirst()
                 )
             )
         case "codexTeams":
@@ -63,10 +78,13 @@ public struct AgentResumeArgv: Sendable, Equatable {
             guard let preserved = AgentLaunchSanitizer.preservedCodexForkArguments(args: tail) else {
                 return .resolved(nil)
             }
+            guard let argv = catalog?.argv(kind: "codex", sessionId: sessionId, executable: parts.executable, arguments: preserved) else {
+                return .resolved(nil)
+            }
             return .resolved(
                 appendingRequiredOption(
                     "--yolo",
-                    to: [parts.executable, "codex-teams", "resume", sessionId] + preserved
+                    to: [parts.executable, "codex-teams"] + argv.dropFirst()
                 )
             )
         case "omo":
@@ -76,7 +94,10 @@ public struct AgentResumeArgv: Sendable, Equatable {
             guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: "opencode", args: tail) else {
                 return .resolved(nil)
             }
-            return .resolved([parts.executable, "omo", "--session", sessionId] + preserved)
+            guard let argv = catalog?.argv(kind: "opencode", sessionId: sessionId, executable: parts.executable, arguments: preserved) else {
+                return .resolved(nil)
+            }
+            return .resolved([parts.executable, "omo"] + argv.dropFirst())
         case "omx", "omc":
             return .resolved(nil)
         default:
@@ -98,68 +119,20 @@ public struct AgentResumeArgv: Sendable, Equatable {
         executablePath: String?,
         arguments: [String]
     ) -> [String]? {
-        switch kind {
-        case "claude":
+        guard let catalog, let kind = catalog.canonicalKind(kind), let provider = catalog.providers[kind] else { return nil }
+        if kind == "claude" {
             return claudeResumeArgv(sessionId: sessionId, executablePath: executablePath, arguments: arguments)
-        case "codex":
-            let parts = commandParts(executablePath: executablePath, arguments: arguments, fallbackExecutable: "codex")
-            guard let preserved = AgentLaunchSanitizer.preservedCodexForkArguments(args: parts.tail) else { return nil }
-            return appendingRequiredOption(
-                "--yolo",
-                to: [parts.executable, "resume", sessionId] + preserved
-            )
-        case "grok":
-            return withOption("grok", executable: "grok", option: "-r", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
-        case "pi":
-            return withOption("pi", executable: "pi", option: "--session", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
-        case "omp":
-            return withOption("omp", executable: "omp", option: "--session", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
-        case "amp":
-            let parts = commandParts(executablePath: executablePath, arguments: arguments, fallbackExecutable: "amp")
-            guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: "amp", args: parts.tail) else { return nil }
-            return [parts.executable, "threads", "continue"] + preserved + [sessionId]
-        case "cursor":
-            return withOption("cursor", executable: "cursor-agent", option: "--resume", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
-        case "gemini":
-            return withOption("gemini", executable: "gemini", option: "--resume", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
-        case "kiro":
-            let parts = commandParts(executablePath: executablePath, arguments: arguments, fallbackExecutable: "kiro-cli")
-            guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: "kiro", args: parts.tail) else { return nil }
-            return [parts.executable, "chat", "--resume-id", sessionId] + preserved
-        case "antigravity":
-            guard let argv = withOption(
-                "antigravity",
-                executable: "agy",
-                option: "--conversation",
-                sessionId: sessionId,
-                executablePath: executablePath,
-                arguments: arguments
-            ) else {
-                return nil
-            }
-            return appendingRequiredOption("--dangerously-skip-permissions", to: argv)
-        case "opencode":
-            let parts = commandParts(executablePath: executablePath, arguments: arguments, fallbackExecutable: "opencode")
-            guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: "opencode", args: parts.tail) else { return nil }
-            return [parts.executable, "--session", sessionId] + preserved
-        case "rovodev":
-            let parts = commandParts(executablePath: executablePath, arguments: arguments, fallbackExecutable: "acli")
-            guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: "rovodev", args: parts.tail) else { return nil }
-            return [parts.executable, "rovodev", "run", "--restore", sessionId] + preserved
-        case "hermes-agent":
-            let parts = commandParts(executablePath: executablePath, arguments: arguments, fallbackExecutable: "hermes")
-            guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: "hermes-agent", args: parts.tail) else { return nil }
-            return [parts.executable] + preserved + ["--resume", sessionId]
-        case "copilot":
-            return withOption("copilot", executable: "copilot", option: "--resume", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
-        case "codebuddy":
-            return withOption("codebuddy", executable: "codebuddy", option: "--resume", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
-        case "factory":
-            return withOption("factory", executable: "droid", option: "--resume", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
-        case "qoder":
-            return withOption("qoder", executable: "qodercli", option: "--resume", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
-        default:
-            return nil
+        }
+        let parts = commandParts(executablePath: executablePath, arguments: arguments, fallbackExecutable: provider.executable)
+        let preserved = kind == "codex"
+            ? AgentLaunchSanitizer.preservedCodexForkArguments(args: parts.tail)
+            : AgentLaunchSanitizer.preservedArguments(kind: kind, args: parts.tail)
+        guard let preserved,
+              let argv = catalog.argv(kind: kind, sessionId: sessionId, executable: parts.executable, arguments: preserved) else { return nil }
+        switch kind {
+        case "codex": return appendingRequiredOption("--yolo", to: argv)
+        case "antigravity": return appendingRequiredOption("--dangerously-skip-permissions", to: argv)
+        default: return argv
         }
     }
 
@@ -190,10 +163,13 @@ public struct AgentResumeArgv: Sendable, Equatable {
         guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: "claude", args: parts.tail) else {
             return nil
         }
+        guard let argv = catalog?.argv(kind: "claude", sessionId: sessionId, executable: "claude", arguments: preserved) else {
+            return nil
+        }
         // UniConnect: restored sessions must never stop on a permission prompt.
         return appendingRequiredOption(
             "--dangerously-skip-permissions",
-            to: ["claude", "--resume", sessionId] + preserved
+            to: argv
         )
     }
 
@@ -201,19 +177,6 @@ public struct AgentResumeArgv: Sendable, Equatable {
     private func appendingRequiredOption(_ option: String, to argv: [String]) -> [String] {
         guard !argv.contains(option) else { return argv }
         return argv + [option]
-    }
-
-    private func withOption(
-        _ kind: String,
-        executable fallbackExecutable: String,
-        option: String,
-        sessionId: String,
-        executablePath: String?,
-        arguments: [String]
-    ) -> [String]? {
-        let parts = commandParts(executablePath: executablePath, arguments: arguments, fallbackExecutable: fallbackExecutable)
-        guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: kind, args: parts.tail) else { return nil }
-        return [parts.executable, option, sessionId] + preserved
     }
 
     private func commandParts(

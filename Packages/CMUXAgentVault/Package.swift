@@ -13,15 +13,21 @@ let package = Package(
         ),
     ],
     targets: [
+        .systemLibrary(
+            name: "CSQLite3",
+            pkgConfig: "sqlite3",
+            providers: [.apt(["libsqlite3-dev"])]
+        ),
         .target(
             name: "CMUXAgentVault",
+            dependencies: [.target(name: "CSQLite3", condition: .when(platforms: [.linux]))],
             linkerSettings: [
                 .linkedLibrary("sqlite3"),
             ]
         ),
         .testTarget(
             name: "CMUXAgentVaultTests",
-            dependencies: ["CMUXAgentVault"],
+            dependencies: ["CMUXAgentVault", .target(name: "CSQLite3", condition: .when(platforms: [.linux]))],
             linkerSettings: [
                 .linkedLibrary("sqlite3"),
             ]

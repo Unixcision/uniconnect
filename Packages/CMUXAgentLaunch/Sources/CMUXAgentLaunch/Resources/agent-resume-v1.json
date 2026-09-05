@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "claude": {
+      "executable": "claude",
+      "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"],
+      "windowOptions": [{"field": "model", "option": "--model"}]
+    },
+    "codex": {
+      "executable": "codex",
+      "resume": ["{executable}", "resume", "{sessionId}", "{arguments}"],
+      "windowOptions": [{"field": "cwd", "option": "-C"}, {"field": "model", "option": "-m"}]
+    },
+    "grok": {
+      "executable": "grok",
+      "resume": ["{executable}", "-r", "{sessionId}", "{arguments}"],
+      "windowOptions": [{"field": "model", "option": "--model"}]
+    },
+    "pi": {"executable": "pi", "resume": ["{executable}", "--session", "{sessionId}", "{arguments}"]},
+    "omp": {"executable": "omp", "resume": ["{executable}", "--session", "{sessionId}", "{arguments}"]},
+    "amp": {"executable": "amp", "resume": ["{executable}", "threads", "continue", "{arguments}", "{sessionId}"]},
+    "cursor": {"executable": "cursor-agent", "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"]},
+    "gemini": {"executable": "gemini", "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"]},
+    "kiro": {"executable": "kiro-cli", "resume": ["{executable}", "chat", "--resume-id", "{sessionId}", "{arguments}"]},
+    "antigravity": {"aliases": ["agy"], "executable": "agy", "resume": ["{executable}", "--conversation", "{sessionId}", "{arguments}"]},
+    "opencode": {"executable": "opencode", "resume": ["{executable}", "--session", "{sessionId}", "{arguments}"]},
+    "rovodev": {"executable": "acli", "resume": ["{executable}", "rovodev", "run", "--restore", "{sessionId}", "{arguments}"]},
+    "hermes-agent": {"executable": "hermes", "resume": ["{executable}", "{arguments}", "--resume", "{sessionId}"]},
+    "copilot": {"executable": "copilot", "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"]},
+    "codebuddy": {"executable": "codebuddy", "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"]},
+    "factory": {"executable": "droid", "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"]},
+    "qoder": {"executable": "qodercli", "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"]}
+  }
+}

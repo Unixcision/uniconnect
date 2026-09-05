@@ -1,6 +1,10 @@
 import CMUXAgentVault
 import Foundation
+#if os(Linux)
+import CSQLite3
+#else
 import SQLite3
+#endif
 import Testing
 
 @Suite("HermesAgentIndex")

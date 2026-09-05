@@ -17,6 +17,8 @@ import uuid
 from pathlib import Path
 from typing import Mapping
 
+from .resume_catalog import AgentResumeCatalog
+
 
 class TransportError(RuntimeError):
     """A transport operation failed; code is stable and suitable for UI translation."""
@@ -260,7 +262,7 @@ class TmuxCommand:
     @staticmethod
     def agent_argv(window: Mapping) -> list[str]:
         window = TmuxCommand.validate_window(window)
-        agent, session, model = window["agent"], window.get("sessionId"), window.get("model")
+        agent = window["agent"]
         if agent in ("terminal", "shell"):
             return []
         if agent == "custom":
@@ -268,18 +270,11 @@ class TmuxCommand:
             if not isinstance(args, list) or not args or not all(isinstance(arg, str) and "\0" not in arg for arg in args):
                 raise TransportError("invalid_custom_command")
             return list(args)
-        if agent == "codex":
-            args = ["codex"] + (["resume", session] if session else []) + ["-C", window["cwd"]]
-            if model:
-                args += ["-m", model]
-            return args
-        option = {"claude": "--resume", "agy": "--conversation", "grok": "-r"}[agent]
-        args = [agent] + ([option, session] if session else [])
-        if model:
-            if agent == "agy":
-                raise TransportError("unsupported_agent_model", agent)
-            args += ["--model", model]
-        return args
+        try:
+            return AgentResumeCatalog().window_argv(window)
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            code = "unsupported_agent_model" if str(error) == "unsupported_agent_model" else "invalid_agent_catalog"
+            raise TransportError(code, agent) from error
 
     @staticmethod
     def pane_command(window: Mapping) -> str:

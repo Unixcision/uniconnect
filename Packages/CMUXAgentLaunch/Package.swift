@@ -18,7 +18,8 @@ let package = Package(
     targets: [
         .target(
             name: "CMUXAgentLaunch",
-            dependencies: ["CMUXAgentVault"]
+            dependencies: ["CMUXAgentVault"],
+            resources: [.copy("Resources/agent-resume-v1.json")]
         ),
         .testTarget(
             name: "CMUXAgentLaunchTests",

@@ -1,0 +1,45 @@
+name: UniConnect · núcleo compartido
+
+on:
+  push:
+    branches: [uniconnect, desarrollo/multiplataforma]
+    paths:
+      - Packages/CMUXAgentLaunch/**
+      - Packages/CMUXAgentVault/**
+      - linux/**
+      - .github/workflows/uniconnect-shared-core.yml
+  pull_request:
+    paths:
+      - Packages/CMUXAgentLaunch/**
+      - Packages/CMUXAgentVault/**
+      - linux/**
+      - .github/workflows/uniconnect-shared-core.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contratos:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Dependencias nativas de Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlite3-dev python3-gi python3-cryptography gir1.2-gtk-3.0 gir1.2-vte-2.91 xvfb tmux openssh-client
+      - name: Registrar compilador
+        run: swift --version
+      - name: Catálogo, sanitización y recurso distribuido
+        run: swift test --package-path Packages/CMUXAgentLaunch --jobs 2
+      - name: Índice portable de conversaciones
+        run: swift test --package-path Packages/CMUXAgentVault --jobs 2
+      - name: Adaptador Linux y transacciones GTK aisladas
+        if: runner.os == 'Linux'
+        run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -v
