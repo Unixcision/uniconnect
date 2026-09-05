@@ -1,0 +1,25 @@
+name: UniConnect bridge tests
+
+on:
+  push:
+    branches: [uniconnect, main]
+    paths:
+      - Packages/UniConnectClaudeBridge/**
+      - .github/workflows/uniconnect-bridge-tests.yml
+  pull_request:
+    paths:
+      - Packages/UniConnectClaudeBridge/**
+      - .github/workflows/uniconnect-bridge-tests.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bridge:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Build and exercise the notification bridge
+        run: swift test --package-path Packages/UniConnectClaudeBridge --jobs 2
