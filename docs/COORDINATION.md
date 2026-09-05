@@ -30,11 +30,12 @@ Se retiraron sus unidades `uniconnect-branch-monitor.timer` y `.service`, tanto
 del repositorio como de systemd en el MINIPC. No volver a instalarlas.
 La retirada del host tiene copia recuperable fuera del repositorio.
 
-Algunos scripts históricos de `scripts/uniconnect_branch_*.py` proporcionan
-utilidades que reutiliza la instalación del monitor de coordinación de Linux.
-No borrar esa biblioteca, su configuración ni la cola compartida sin separar
-primero esas dependencias. Su presencia no significa que haya sondeo de ramas
-activo. CODEX VPS coordina esa separación; nunca borrar el directorio entero.
+CODEX VPS separó después las utilidades del monitor de coordinación y retiró
+las dos copias instaladas de los scripts de ramas. El repositorio retira también
+esos scripts y sus pruebas específicas. El historial Git conserva el código.
+El nombre de un directorio antiguo no autoriza borrar su contenido: la cola,
+los recibos y la configuración de coordinación siguen siendo independientes
+del sondeo retirado. Nunca borrar esos directorios completos por su nombre.
 
 Los antiguos `progress.md` y `/tmp/conver.txt` se retiraron, conservando su
 historial y copia privada recuperable. No son instrucciones ni estado vigente.
