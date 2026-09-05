@@ -9110,7 +9110,9 @@ class TerminalController {
     /// A full frame replaces the client's history as well as its viewport; sending
     /// zero rows on the next update would erase the history supplied at attach.
     /// Alternate screens remain history-free according to the native exporter.
-    nonisolated static let mobileReplayScrollbackLineBudget = 300
+    /// The exported tail is reduced further only when the mobile frame exceeds
+    /// its transport, style or span limits; the visible screen is never cropped.
+    nonisolated static let mobileReplayScrollbackLineBudget = 5000
 
     private func mobileTerminalRenderGridFrame(
         terminalPanel: TerminalPanel,

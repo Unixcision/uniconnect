@@ -46,7 +46,9 @@ struct UniConnectLocalTmuxLaunchPlan: Equatable, Sendable {
         fi
         set -- -f /dev/null -L \(quote(binding.socketName))
         if cd -- \(quote(workingDirectory)); then
-            set -- "$@" new-session -A -s \(quote(binding.name))
+            # The grid takes its history limit at creation; configure it in the same
+            # tmux command queue before new-session, including on a fresh server.
+            set -- "$@" set-option -g history-limit 50000 ';' new-session -A -s \(quote(binding.name))
             \(environment)
             "$uc_tmux" "$@" \(quote(paneCommand)) \\; \
                 set-option -t \(quote("=" + binding.name + ":")) destroy-unattached off \\; \

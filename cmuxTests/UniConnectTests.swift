@@ -105,7 +105,7 @@ final class UniConnectTests: XCTestCase {
         XCTAssertTrue(line?.hasPrefix("'/usr/bin/ssh' ") == true)
         // The remote command is single-quoted for the local shell, so inner quotes are
         // escaped as '\'' — check the unescaped pieces instead of the literal string.
-        XCTAssertTrue(line?.contains("tmux new-session -A -s ") == true)
+        XCTAssertTrue(line?.contains("tmux set-option -g history-limit 50000 \\; new-session -A -s ") == true)
         XCTAssertTrue(line?.contains("uc-claude-1a2b") == true)
         XCTAssertTrue(line?.contains("/srv/app") == true)
         XCTAssertFalse(line?.contains("kill") == true)
@@ -143,7 +143,7 @@ final class UniConnectTests: XCTestCase {
 
     func testRemoteTmuxCommandEscapesDirectoryQuotes() {
         let cmd = UniConnectSSH.remoteTmuxCommand(session: "s1", directory: "/it's/here")
-        XCTAssertTrue(cmd.hasPrefix("tmux new-session -A -s 's1' -c '/it'\\''s/here'"))
+        XCTAssertTrue(cmd.hasPrefix("tmux set-option -g history-limit 50000 \\; new-session -A -s 's1' -c '/it'\\''s/here'"))
         XCTAssertTrue(cmd.contains("set-option -g mouse on"), "wheel scrolling inside tmux")
         XCTAssertTrue(cmd.contains("history-limit 50000"))
     }

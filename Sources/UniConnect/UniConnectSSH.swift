@@ -92,13 +92,14 @@ enum UniConnectSSH {
     static func remoteTmuxCommand(session: String, directory: String?) -> String {
         // Do not pass `-D`: detaching another client would disrupt terminals outside
         // UniConnect. Restore and reconnect use `remoteRecoverableTmuxCommand` instead.
-        var parts = ["tmux", "new-session", "-A", "-s", shellQuote(session)]
+        // A pane snapshots history-limit when its grid is created. Setting it first
+        // in this same command queue also works when new-session starts the server.
+        var parts = ["tmux", "set-option", "-g", "history-limit", "50000", "\\;", "new-session", "-A", "-s", shellQuote(session)]
         if let directory = directory?.trimmingCharacters(in: .whitespacesAndNewlines), !directory.isEmpty {
             parts += ["-c", shellQuote(directory)]
         }
-        // Wheel scrolling inside tmux needs mouse mode; a generous history keeps the
-        // scrollback useful. Chained with `\;` so it applies on attach as well as create.
-        parts += ["\\;", "set-option", "-g", "mouse", "on", "\\;", "set-option", "-g", "history-limit", "50000"]
+        // Wheel scrolling inside tmux needs mouse mode on attach as well as create.
+        parts += ["\\;", "set-option", "-g", "mouse", "on"]
         return parts.joined(separator: " ")
     }
 

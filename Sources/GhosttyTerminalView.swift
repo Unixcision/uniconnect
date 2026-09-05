@@ -7436,7 +7436,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
             }
             frame = filtered
         }
-        return (frame, frame.plainRows())
+        // Both replay and live FULL frames use this path. Keep the newest history
+        // that fits the mobile transport without sacrificing the current screen.
+        guard let boundedFrame = frame.boundedHistory() else { return nil }
+        return (boundedFrame, boundedFrame.plainRows())
     }
 
     /// Send text with control characters (Return, Tab, etc.) delivered as key

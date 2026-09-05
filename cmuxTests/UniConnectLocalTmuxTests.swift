@@ -149,6 +149,11 @@ struct UniConnectLocalTmuxTests {
             [ "$1" = -L ] || exit 82
             shift 2
             action=$1; shift
+            if [ "$action" = set-option ]; then
+                [ "$1" = -g ] && [ "$2" = history-limit ] && [ "$3" = 50000 ] && [ "$4" = ';' ] || exit 88
+                shift 4
+                action=$1; shift
+            fi
             if [ "$action" = attach-session ]; then
                 [ "$1" = -t ] || exit 83
                 printf '%s\n' "$2" >> "$UC_TEST_ROOT/attached"

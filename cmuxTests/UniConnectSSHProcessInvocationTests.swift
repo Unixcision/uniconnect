@@ -418,6 +418,12 @@ struct UniConnectSSHProcessInvocationTests {
             #!/bin/sh
             action=$1
             shift
+            if [ "$action" = set-option ] && [ "$#" -ge 5 ]; then
+                [ "$1" = -g ] && [ "$2" = history-limit ] && [ "$3" = 50000 ] && [ "$4" = ';' ] || exit 65
+                shift 4
+                action=$1
+                shift
+            fi
             printf 'call:%s\n' "$action" >> "$UC_TRACE"
             printf 'arg:%s\n' "$@" >> "$UC_TRACE"
             case "$action" in
