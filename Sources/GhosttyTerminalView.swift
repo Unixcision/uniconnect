@@ -1254,14 +1254,6 @@ private func cmuxUnescapeShellToken(_ token: String) -> String {
     return String(output)
 }
 
-private func cmuxVisibleTerminalLines(from text: String, rows: Int) -> [String] {
-    let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-    if lines.count > rows {
-        return Array(lines.suffix(rows))
-    }
-    return lines
-}
-
 private func cmuxShellEscapedTokenContainingColumn(
     in line: String,
     column: Int
@@ -4884,204 +4876,214 @@ class GhosttyApp {
                 return true
             }
         case GHOSTTY_ACTION_OPEN_URL:
-            let openUrl = action.action.open_url
-            guard let cstr = openUrl.url else { return false }
-            let urlString = String(
-                data: Data(bytes: cstr, count: Int(openUrl.len)),
-                encoding: .utf8
-            ) ?? ""
-            #if DEBUG
-            cmuxDebugLog("link.openURL raw=\(urlString)")
-            #endif
-
-            // Try file-path resolution before URL classification.
-            // Ghostty's link detection can match file paths that contain
-            // slashes or dots (e.g. "docs/spec.md." or "/tmp/spec.md.") as URLs.
-            // Attempt to resolve the raw string as a local file first
-            // (with trailing-punctuation trimming via cmuxResolveQuicklookPath).
-            // If the file exists and cmux can handle it, route through the
-            // file viewer instead of the browser.
-            let trimmedUrlString = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
-            var normalizedOpenURLString = urlString
-            if !trimmedUrlString.isEmpty {
-                let filePathResolution: (routed: Bool, fallbackPath: String?) = performOnMain {
-                    guard let termSurface = surfaceView.terminalSurface,
-                          let workspace = termSurface.owningWorkspace(),
-                          !workspace.isRemoteTerminalSurface(termSurface.id) else {
-                        return (false, nil)
-                    }
-                    let cwd = CommandClickFileOpenRouter.resolveWorkingDirectory(
-                        workspace: workspace,
-                        surfaceId: termSurface.id
-                    )
-                    guard let resolvedPath = cmuxResolveTerminalOpenURLFilePath(trimmedUrlString, cwd: cwd) else {
-                        return (false, nil)
-                    }
-                    guard CommandClickFileOpenRouter.shouldRouteInCmux(path: resolvedPath) else {
-                        return (false, resolvedPath)
-                    }
-                    #if DEBUG
-                    cmuxDebugLog("link.openURL resolvedAsFilePath=\(resolvedPath)")
-                    #endif
-                    let fileURL = URL(fileURLWithPath: resolvedPath)
-                    CommandClickFileOpenRouter.deferredOpenFileInCmux(
-                        workspace: workspace,
-                        preferredWorkspaceId: workspace.id,
-                        surfaceId: termSurface.id,
-                        filePath: resolvedPath
-                    ) {
-                        NSWorkspace.shared.open(fileURL)
-                    }
-                    return (true, resolvedPath)
-                }
-                if let fallbackPath = filePathResolution.fallbackPath {
-                    normalizedOpenURLString = fallbackPath
-                }
-                if filePathResolution.routed {
-                    return true
-                }
-            }
-
-            guard let target = resolveTerminalOpenURLTarget(normalizedOpenURLString) else {
+            return trackHandledOpenURL(in: surfaceView) {
+                let openUrl = action.action.open_url
+                guard let cstr = openUrl.url else { return false }
+                let urlString = String(
+                    data: Data(bytes: cstr, count: Int(openUrl.len)),
+                    encoding: .utf8
+                ) ?? ""
                 #if DEBUG
-                cmuxDebugLog("link.openURL resolve failed, returning false")
+                cmuxDebugLog("link.openURL raw=\(urlString)")
                 #endif
-                return false
-            }
-            // Route local file URLs into cmux when the file-routing toggle is on.
-            // URL fragments/queries are stripped (the panel only needs the file
-            // path), so links emitted by tools like Claude Code (`foo.md#L42`)
-            // still route into the viewer. Anything else (toggle off, hosted
-            // file URL, remote workspace, unreadable file, split creation
-            // failure) falls through to the existing NSWorkspace path below so
-            // URL semantics are preserved.
-            let fileURLHost = target.url.host
-            if target.url.isFileURL,
-               fileURLHost == nil || fileURLHost?.isEmpty == true || fileURLHost == "localhost" {
-                let fileURL = target.url
-                let routed: Bool = performOnMain {
-                    guard let termSurface = surfaceView.terminalSurface,
-                          let workspace = termSurface.owningWorkspace(),
-                          !workspace.isRemoteTerminalSurface(termSurface.id),
-                          CommandClickFileOpenRouter.shouldRouteInCmux(path: fileURL.path) else {
-                        return false
-                    }
-                    CommandClickFileOpenRouter.deferredOpenFileInCmux(
-                        workspace: workspace,
-                        preferredWorkspaceId: workspace.id,
-                        surfaceId: termSurface.id,
-                        filePath: fileURL.path
-                    ) {
-                        NSWorkspace.shared.open(fileURL)
-                    }
-                    return true
-                }
-                if routed {
-                    return true
-                }
-                // Fall through to the existing NSWorkspace path below.
-            }
 
-            if !BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowser() {
-                #if DEBUG
-                cmuxDebugLog("link.openURL cmuxBrowser=disabled, opening externally url=\(target.url)")
-                #endif
-                return performOnMain {
-                    NSWorkspace.shared.open(target.url)
-                }
-            }
-            switch target {
-            case let .external(url):
-                #if DEBUG
-                cmuxDebugLog("link.openURL target=external, opening externally url=\(url)")
-                #endif
-                return performOnMain {
-                    NSWorkspace.shared.open(url)
-                }
-            case let .embeddedBrowser(url):
-                if BrowserLinkOpenSettings.shouldOpenExternally(url) {
-                    #if DEBUG
-                    cmuxDebugLog("link.openURL target=embedded but shouldOpenExternally=true url=\(url)")
-                    #endif
-                    return performOnMain {
-                        NSWorkspace.shared.open(url)
+                // Try file-path resolution before URL classification.
+                // Ghostty's link detection can match file paths that contain
+                // slashes or dots (e.g. "docs/spec.md." or "/tmp/spec.md.") as URLs.
+                // Attempt to resolve the raw string as a local file first
+                // (with trailing-punctuation trimming via cmuxResolveQuicklookPath).
+                // If the file exists and cmux can handle it, route through the
+                // file viewer instead of the browser.
+                let trimmedUrlString = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+                var normalizedOpenURLString = urlString
+                if !trimmedUrlString.isEmpty {
+                    let filePathResolution: (routed: Bool, fallbackPath: String?) = performOnMain {
+                        guard let termSurface = surfaceView.terminalSurface,
+                              let workspace = termSurface.owningWorkspace(),
+                              !workspace.isRemoteTerminalSurface(termSurface.id) else {
+                            return (false, nil)
+                        }
+                        let cwd = CommandClickFileOpenRouter.resolveWorkingDirectory(
+                            workspace: workspace,
+                            surfaceId: termSurface.id
+                        )
+                        guard let resolvedPath = cmuxResolveTerminalOpenURLFilePath(trimmedUrlString, cwd: cwd) else {
+                            return (false, nil)
+                        }
+                        guard CommandClickFileOpenRouter.shouldRouteInCmux(path: resolvedPath) else {
+                            return (false, resolvedPath)
+                        }
+                        #if DEBUG
+                        cmuxDebugLog("link.openURL resolvedAsFilePath=\(resolvedPath)")
+                        #endif
+                        let fileURL = URL(fileURLWithPath: resolvedPath)
+                        CommandClickFileOpenRouter.deferredOpenFileInCmux(
+                            workspace: workspace,
+                            preferredWorkspaceId: workspace.id,
+                            surfaceId: termSurface.id,
+                            filePath: resolvedPath
+                        ) {
+                            NSWorkspace.shared.open(fileURL)
+                        }
+                        return (true, resolvedPath)
                     }
-                }
-                guard let host = BrowserInsecureHTTPSettings.normalizeHost(url.host ?? "") else {
-                    #if DEBUG
-                    cmuxDebugLog("link.openURL target=embedded but normalizeHost=nil host=\(url.host ?? "nil") url=\(url)")
-                    #endif
-                    return performOnMain {
-                        NSWorkspace.shared.open(url)
+                    if let fallbackPath = filePathResolution.fallbackPath {
+                        normalizedOpenURLString = fallbackPath
+                    }
+                    if filePathResolution.routed {
+                        return true
                     }
                 }
 
-                // If a host whitelist is configured and this host isn't in it, open externally.
-                if !BrowserLinkOpenSettings.hostMatchesWhitelist(host) {
+                guard let target = resolveTerminalOpenURLTarget(normalizedOpenURLString) else {
                     #if DEBUG
-                    cmuxDebugLog("link.openURL target=embedded but hostWhitelist miss host=\(host) url=\(url)")
-                    #endif
-                    return performOnMain {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-                let sourceWorkspaceId = callbackTabId ?? surfaceView.tabId
-                let sourcePanelId = callbackSurfaceId ?? surfaceView.terminalSurface?.id
-                guard let sourceWorkspaceId,
-                      let sourcePanelId else {
-                    #if DEBUG
-                    cmuxDebugLog("link.openURL target=embedded but tabId/surfaceId=nil")
+                    cmuxDebugLog("link.openURL resolve failed, returning false")
                     #endif
                     return false
                 }
-                #if DEBUG
-                cmuxDebugLog(
-                    "link.openURL target=embedded, opening in browser pane " +
-                    "host=\(host) url=\(url) tabId=\(sourceWorkspaceId) surfaceId=\(sourcePanelId)"
-                )
-                #endif
-                let canAttemptEmbeddedOpen = performOnMain {
-                    BrowserAvailabilitySettings.isEnabled() &&
-                    AppDelegate.shared?.workspaceContainingPanel(
-                        panelId: sourcePanelId,
-                        preferredWorkspaceId: sourceWorkspaceId
-                    ) != nil
+                // Route local file URLs into cmux when the file-routing toggle is on.
+                // URL fragments/queries are stripped (the panel only needs the file
+                // path), so links emitted by tools like Claude Code (`foo.md#L42`)
+                // still route into the viewer. Anything else (toggle off, hosted
+                // file URL, remote workspace, unreadable file, split creation
+                // failure) falls through to the existing NSWorkspace path below so
+                // URL semantics are preserved.
+                let fileURLHost = target.url.host
+                if target.url.isFileURL,
+                   fileURLHost == nil || fileURLHost?.isEmpty == true || fileURLHost == "localhost" {
+                    let fileURL = target.url
+                    let routed: Bool = performOnMain {
+                        guard let termSurface = surfaceView.terminalSurface,
+                              let workspace = termSurface.owningWorkspace(),
+                              !workspace.isRemoteTerminalSurface(termSurface.id),
+                              CommandClickFileOpenRouter.shouldRouteInCmux(path: fileURL.path) else {
+                            return false
+                        }
+                        CommandClickFileOpenRouter.deferredOpenFileInCmux(
+                            workspace: workspace,
+                            preferredWorkspaceId: workspace.id,
+                            surfaceId: termSurface.id,
+                            filePath: fileURL.path
+                        ) {
+                            NSWorkspace.shared.open(fileURL)
+                        }
+                        return true
+                    }
+                    if routed {
+                        return true
+                    }
+                    // Fall through to the existing NSWorkspace path below.
                 }
-                guard canAttemptEmbeddedOpen else {
+
+                if !BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowser() {
                     #if DEBUG
-                    cmuxDebugLog(
-                        "link.openURL embedded preflight failed, opening externally " +
-                        "tabId=\(sourceWorkspaceId) surfaceId=\(sourcePanelId) url=\(url)"
-                    )
+                    cmuxDebugLog("link.openURL cmuxBrowser=disabled, opening externally url=\(target.url)")
+                    #endif
+                    return performOnMain {
+                        NSWorkspace.shared.open(target.url)
+                    }
+                }
+                switch target {
+                case let .external(url):
+                    #if DEBUG
+                    cmuxDebugLog("link.openURL target=external, opening externally url=\(url)")
                     #endif
                     return performOnMain {
                         NSWorkspace.shared.open(url)
                     }
-                }
-
-                // Browser split creation changes focus, which unfocuses the source terminal and
-                // calls back into Ghostty. Defer that work until this open_url callback returns.
-                // From here cmux owns the open attempt and the deferred path falls back externally.
-                Task { @MainActor [url, sourceWorkspaceId, sourcePanelId, host] in
-                    let didOpen = Self.openEmbeddedBrowserLink(
-                        url: url,
-                        sourceWorkspaceId: sourceWorkspaceId,
-                        sourcePanelId: sourcePanelId,
-                        host: host
-                    )
-                    guard didOpen else {
+                case let .embeddedBrowser(url):
+                    if BrowserLinkOpenSettings.shouldOpenExternally(url) {
                         #if DEBUG
-                        cmuxDebugLog("link.openURL deferred open failed url=\(url)")
+                        cmuxDebugLog("link.openURL target=embedded but shouldOpenExternally=true url=\(url)")
                         #endif
-                        NSSound.beep()
-                        return
+                        return performOnMain {
+                            NSWorkspace.shared.open(url)
+                        }
                     }
+                    guard let host = BrowserInsecureHTTPSettings.normalizeHost(url.host ?? "") else {
+                        #if DEBUG
+                        cmuxDebugLog("link.openURL target=embedded but normalizeHost=nil host=\(url.host ?? "nil") url=\(url)")
+                        #endif
+                        return performOnMain {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+
+                    // If a host whitelist is configured and this host isn't in it, open externally.
+                    if !BrowserLinkOpenSettings.hostMatchesWhitelist(host) {
+                        #if DEBUG
+                        cmuxDebugLog("link.openURL target=embedded but hostWhitelist miss host=\(host) url=\(url)")
+                        #endif
+                        return performOnMain {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    let sourceWorkspaceId = callbackTabId ?? surfaceView.tabId
+                    let sourcePanelId = callbackSurfaceId ?? surfaceView.terminalSurface?.id
+                    guard let sourceWorkspaceId,
+                          let sourcePanelId else {
+                        #if DEBUG
+                        cmuxDebugLog("link.openURL target=embedded but tabId/surfaceId=nil")
+                        #endif
+                        return false
+                    }
+                    #if DEBUG
+                    cmuxDebugLog(
+                        "link.openURL target=embedded, opening in browser pane " +
+                        "host=\(host) url=\(url) tabId=\(sourceWorkspaceId) surfaceId=\(sourcePanelId)"
+                    )
+                    #endif
+                    let canAttemptEmbeddedOpen = performOnMain {
+                        BrowserAvailabilitySettings.isEnabled() &&
+                        AppDelegate.shared?.workspaceContainingPanel(
+                            panelId: sourcePanelId,
+                            preferredWorkspaceId: sourceWorkspaceId
+                        ) != nil
+                    }
+                    guard canAttemptEmbeddedOpen else {
+                        #if DEBUG
+                        cmuxDebugLog(
+                            "link.openURL embedded preflight failed, opening externally " +
+                            "tabId=\(sourceWorkspaceId) surfaceId=\(sourcePanelId) url=\(url)"
+                        )
+                        #endif
+                        return performOnMain {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+
+                    // Browser split creation changes focus, which unfocuses the source terminal and
+                    // calls back into Ghostty. Defer that work until this open_url callback returns.
+                    // From here cmux owns the open attempt and the deferred path falls back externally.
+                    Task { @MainActor [url, sourceWorkspaceId, sourcePanelId, host] in
+                        let didOpen = Self.openEmbeddedBrowserLink(
+                            url: url,
+                            sourceWorkspaceId: sourceWorkspaceId,
+                            sourcePanelId: sourcePanelId,
+                            host: host
+                        )
+                        guard didOpen else {
+                            #if DEBUG
+                            cmuxDebugLog("link.openURL deferred open failed url=\(url)")
+                            #endif
+                            NSSound.beep()
+                            return
+                        }
+                    }
+                    return true
                 }
-                return true
             }
         default:
             return false
         }
+    }
+
+    private func trackHandledOpenURL(in view: GhosttyNSView, action: () -> Bool) -> Bool {
+        let handled = action()
+        if handled {
+            performOnMain { view.recordHandledOpenURL() }
+        }
+        return handled
     }
 
     private func applyBackgroundToKeyWindow() {
@@ -8514,6 +8516,12 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     private var lastDrawableSize: CGSize = .zero
     private var isFindEscapeSuppressionArmed = false
     private var hasPendingLeftMouseRelease = false
+    private var pendingLeftMouseDragged = false
+    private var handledOpenURLSequence: UInt64 = 0
+
+    fileprivate func recordHandledOpenURL() {
+        handledOpenURLSequence &+= 1
+    }
 #if DEBUG
     private var lastSizeSkipSignature: String?
 #endif
@@ -11002,6 +11010,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         }
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, modsFromEvent(event))
         hasPendingLeftMouseRelease = true
+        pendingLeftMouseDragged = false
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -11014,6 +11023,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     @discardableResult
     func forwardPendingLeftMouseDrag(with event: NSEvent) -> Bool {
         guard hasPendingLeftMouseRelease, let surface else { return false }
+        pendingLeftMouseDragged = true
         let eventPoint = convert(event.locationInWindow, from: nil)
         trackMousePointIfUsable(eventPoint)
         ghostty_surface_mouse_pos(surface, eventPoint.x, bounds.height - eventPoint.y, modsFromEvent(event))
@@ -11026,8 +11036,15 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         hasPendingLeftMouseRelease = false
         guard let surface else { return false }
         let point = convert(event.locationInWindow, from: nil)
+        let openURLSequence = handledOpenURLSequence
         let consumed = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, modsFromEvent(event))
-        _ = handleCommandClickRelease(at: point, modifierFlags: event.modifierFlags, ghosttyConsumed: consumed)
+        if !pendingLeftMouseDragged {
+            _ = handleCommandClickRelease(
+                at: point, modifierFlags: event.modifierFlags, ghosttyConsumed: consumed,
+                ghosttyOpenedURL: handledOpenURLSequence != openURLSequence
+            )
+        }
+        pendingLeftMouseDragged = false
         return true
     }
 
@@ -11262,7 +11279,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         workspace: Workspace,
         terminalSurface: TerminalSurface
     ) -> WordPathResolution? {
-        guard let panel = workspace.terminalPanel(for: terminalSurface.id),
+        guard workspace.terminalPanel(for: terminalSurface.id) != nil,
               let surface else {
             return nil
         }
@@ -11270,30 +11287,9 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         let size = ghostty_surface_size(surface)
         let rows = max(Int(size.rows), 1)
         let cols = max(Int(size.columns), 1)
-        let visibleText = TerminalController.shared.readTerminalTextForSnapshot(
-            terminalPanel: panel,
-            lineLimit: max(200, rows * 4)
-        ) ?? ""
-        let visibleLines = cmuxVisibleTerminalLines(from: visibleText, rows: rows)
-        let rowOffset = max(0, rows - visibleLines.count)
         let rowFromTop = max(0, min(rows - 1, viewportOffsetStart / cols))
-        let visibleRow = rowFromTop - rowOffset
-        guard visibleRow >= 0, visibleRow < visibleLines.count else { return nil }
-
         let column = max(0, min(cols - 1, viewportOffsetStart % cols))
-        guard let resolution = cmuxResolveVisibleLinePath(
-            visibleLines[visibleRow],
-            column: column,
-            cwd: cwd
-        ) else {
-            return nil
-        }
-
-        return makeWordPathResolution(
-            path: resolution.path,
-            source: .snapshot,
-            rawToken: resolution.rawToken
-        )
+        return resolvePhysicalRowPath(surface: surface, row: rowFromTop, column: column, columns: cols, cwd: cwd)
     }
 
     private func resolveVisibleWordPath(
@@ -11302,7 +11298,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         workspace: Workspace,
         terminalSurface: TerminalSurface
     ) -> WordPathResolution? {
-        guard let panel = workspace.terminalPanel(for: terminalSurface.id),
+        guard workspace.terminalPanel(for: terminalSurface.id) != nil,
               let surface else {
             return nil
         }
@@ -11314,28 +11310,34 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         let resolvedCellHeight = cellSize.height > 0 ? cellSize.height : CGFloat(size.cell_height_px)
         guard resolvedCellWidth > 0, resolvedCellHeight > 0 else { return nil }
 
-        let visibleText = TerminalController.shared.readTerminalTextForSnapshot(
-            terminalPanel: panel,
-            lineLimit: max(200, rows * 4)
-        ) ?? ""
-        let visibleLines = cmuxVisibleTerminalLines(from: visibleText, rows: rows)
-        let rowOffset = max(0, rows - visibleLines.count)
         let xInset = max(0, (bounds.width - (CGFloat(cols) * resolvedCellWidth)) / 2)
         let yInset = max(0, (bounds.height - (CGFloat(rows) * resolvedCellHeight)) / 2)
 
         let yFromTop = bounds.height - point.y
         let rowFromTop = max(0, min(rows - 1, Int((yFromTop - yInset) / resolvedCellHeight)))
-        let visibleRow = rowFromTop - rowOffset
-        guard visibleRow >= 0, visibleRow < visibleLines.count else { return nil }
-
         let column = max(0, min(cols - 1, Int((point.x - xInset) / resolvedCellWidth)))
-        guard let resolution = cmuxResolveVisibleLinePath(
-            visibleLines[visibleRow],
-            column: column,
-            cwd: cwd
-        ) else {
-            return nil
-        }
+        return resolvePhysicalRowPath(surface: surface, row: rowFromTop, column: column, columns: cols, cwd: cwd)
+    }
+
+    private func resolvePhysicalRowPath(
+        surface: ghostty_surface_t, row: Int, column: Int, columns: Int, cwd: String
+    ) -> WordPathResolution? {
+        // The shared text snapshot unwraps soft wraps, so its line numbers are
+        // not physical viewport rows. Read only the row under this pointer;
+        // this does not change snapshots, selection, scrollback or the typing path.
+        let selection = ghostty_selection_s(
+            top_left: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT,
+                                     x: 0, y: UInt32(row)),
+            bottom_right: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT,
+                                         x: UInt32(columns - 1), y: UInt32(row)),
+            rectangle: false
+        )
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_text(surface, selection, &text) else { return nil }
+        defer { ghostty_surface_free_text(surface, &text) }
+        guard let pointer = text.text, text.text_len > 0,
+              let line = String(bytes: Data(bytes: pointer, count: Int(text.text_len)), encoding: .utf8),
+              let resolution = cmuxResolveVisibleLinePath(line, column: column, cwd: cwd) else { return nil }
 
         return makeWordPathResolution(
             path: resolution.path,
@@ -11348,7 +11350,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     private func handleCommandClickRelease(
         at point: NSPoint,
         modifierFlags: NSEvent.ModifierFlags,
-        ghosttyConsumed: Bool
+        ghosttyConsumed: Bool,
+        ghosttyOpenedURL: Bool
     ) -> WordPathResolution? {
         guard let surface else { return nil }
         let suppressCommandPathHover = shouldSuppressCommandPathHover(for: modifierFlags)
@@ -11407,7 +11410,11 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 #endif
             return nil
         }
-        guard !ghosttyConsumed || resolution.source == .snapshot else {
+        // Mouse reporting also returns consumed=true. Only a successful OPEN_URL
+        // callback during this release proves the native path handled a link.
+        // Keep the existing pointer-snapshot correction; the file router reuses
+        // an already-open canonical file instead of creating another preview.
+        guard !ghosttyOpenedURL || resolution.source == .snapshot else {
 #if DEBUG
             var payload: [String: Any] = [
                 "flags": debugModifierString(modifierFlags),
@@ -11424,8 +11431,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             runtimeDebugLog(
                 hypothesisID: "h3",
                 name: "command_click_release",
-                expected: "ghostty-consumed clicks should only skip fallback for real ghostty targets",
-                actual: "consumed_quicklook_resolution_skipped",
+                expected: "only a handled native URL skips the quicklook fallback",
+                actual: "handled_url_quicklook_resolution_skipped",
                 data: payload
             )
 #endif
@@ -11587,11 +11594,13 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         window?.makeFirstResponder(self)
         ghostty_surface_mouse_pos(surface, clampedPoint.x, bounds.height - clampedPoint.y, mods)
         let pressHandled = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, mods)
+        let openURLSequence = handledOpenURLSequence
         let releaseConsumed = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mods)
         let resolution = handleCommandClickRelease(
             at: clampedPoint,
             modifierFlags: flags,
-            ghosttyConsumed: releaseConsumed
+            ghosttyConsumed: releaseConsumed,
+            ghosttyOpenedURL: handledOpenURLSequence != openURLSequence
         )
 
         var payload: [String: Any] = [
@@ -12104,6 +12113,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     override func mouseDragged(with event: NSEvent) {
         guard let surface = surface else { return }
+        if hasPendingLeftMouseRelease { pendingLeftMouseDragged = true }
         let eventPoint = convert(event.locationInWindow, from: nil)
         trackMousePointIfUsable(eventPoint)
         // Forward the raw drag coordinates, including out-of-bounds positions.
