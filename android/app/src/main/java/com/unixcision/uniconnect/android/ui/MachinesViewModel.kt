@@ -18,6 +18,7 @@ import com.unixcision.uniconnect.android.domain.NotificationLinkState
 import com.unixcision.uniconnect.android.domain.NoticeRoute
 import com.unixcision.uniconnect.android.domain.PtyEvent
 import com.unixcision.uniconnect.android.domain.TerminalAttachment
+import com.unixcision.uniconnect.android.domain.vt.GeometryFollower
 import com.unixcision.uniconnect.android.domain.vt.TerminalEmulator
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
@@ -408,53 +409,32 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     private var attachment: TerminalAttachment? = null
     private var attachJob: Job? = null
     private var emulator: TerminalEmulator? = null
-    /** Timestamps of recent automatic resizes; a burst means host and client are feeding each other. */
-    private val recentResizes = ArrayDeque<Long>()
-
-    private var pendingGeometry: Pair<Int, Int>? = null
+    private val geometry = GeometryFollower()
     private var pendingGeometryJob: Job? = null
 
-    private fun applyGeometry(terminal: TerminalEmulator, live: TerminalAttachment, size: Pair<Int, Int>) {
-        terminal.resize(size.first, size.second)
-        viewModelScope.launch { runCatching { live.resize(size.first, size.second) } }
+    /** Resizes this attachment's emulator and its host PTY; the call dies with the attachment. */
+    private fun applyGeometry(terminal: TerminalEmulator, live: TerminalAttachment, columns: Int, rows: Int) {
+        pendingGeometryJob?.cancel()
+        terminal.resize(columns, rows)
         mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = terminal.snapshot())) }
-    }
-
-    /**
-     * Remembers a size dropped as part of a burst and applies it once the burst is over.
-     *
-     * The host does not repeat a size it already published, so dropping one without this would
-     * leave the canvas stale until something else changed. Only the newest pending size survives,
-     * and closing or reattaching cancels it.
-     */
-    private fun deferGeometry(terminal: TerminalEmulator, live: TerminalAttachment, size: Pair<Int, Int>) {
-        pendingGeometry = size
-        if (pendingGeometryJob?.isActive == true) return
         pendingGeometryJob = viewModelScope.launch {
-            // A bounded, intended wait: after the burst window there is, by definition, no burst.
-            delay(RESIZE_WINDOW_NANOS / 1_000_000)
-            val wanted = pendingGeometry ?: return@launch
-            pendingGeometry = null
-            recentResizes.clear()
-            if (attachment === live && (terminal.screen.columns != wanted.first || terminal.screen.rows != wanted.second)) {
-                applyGeometry(terminal, live, wanted)
-            }
+            if (attachment === live) runCatching { live.resize(columns, rows) }
         }
     }
 
-    /**
-     * True while automatic resizes are not a burst. Rate, not value, is what separates a loop from a
-     * person resizing the desktop window: vetoing sizes already seen would also block going back to
-     * one of them, and a fixed budget would block the fifth honest resize of the session.
-     */
-    private fun allowsResizeNow(): Boolean {
-        val now = System.nanoTime()
-        while (recentResizes.isNotEmpty() && now - recentResizes.first() > RESIZE_WINDOW_NANOS) recentResizes.removeFirst()
-        if (recentResizes.size >= MAX_RESIZES_PER_WINDOW) return false
-        recentResizes.addLast(now)
-        return true
+    /** Wakes up after the burst window to apply whatever the follower kept pending. */
+    private fun scheduleGeometry(terminal: TerminalEmulator, live: TerminalAttachment, afterNanos: Long) {
+        pendingGeometryJob?.cancel()
+        pendingGeometryJob = viewModelScope.launch {
+            // Bounded, intended delay: after the burst window there is, by definition, no burst.
+            delay(afterNanos / 1_000_000 + 1)
+            if (attachment !== live) return@launch
+            val decision = geometry.onDeadline(terminal.screen.columns, terminal.screen.rows, System.nanoTime())
+            if (decision is GeometryFollower.Decision.Apply) applyGeometry(terminal, live, decision.columns, decision.rows)
+        }
     }
 
+    /** Attaches a phone-sized tmux client to the selected window and mirrors it through the local emulator. */
     /** Attaches a phone-sized tmux client to the selected window and mirrors it through the local emulator. */
     fun startRealTerminal(columns: Int, rows: Int, automatic: Boolean = false) {
         val current = state.value
@@ -468,7 +448,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         if (current.connections[machine.id]?.connected != true) { mutableState.update { it.copy(error = R.string.connection_error) }; return }
         val terminal = TerminalEmulator(columns, rows)
         emulator = terminal
-        recentResizes.clear(); pendingGeometry = null
+        geometry.reset()
         mutableState.update { it.copy(realTerminal = RealTerminal(connecting = true)) }
         attachJob = viewModelScope.launch {
             var live: TerminalAttachment? = null
@@ -489,14 +469,15 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                         is PtyEvent.Geometry -> {
                             // The host owns the geometry: match the phone's PTY to the canvas it
                             // reports so tmux stops padding rows the window does not have.
-                            val wanted = event.presentationColumns to event.presentationRows
-                            val changed = terminal.screen.columns != wanted.first || terminal.screen.rows != wanted.second
-                            // A resize can make the host recompute and report again, so a burst is
-                            // treated as a loop and paused. Legitimate desktop resizes keep working:
-                            // nothing is vetoed by value, and going back to an earlier size is fine.
-                            if (changed) {
-                                if (allowsResizeNow()) applyGeometry(terminal, live, wanted)
-                                else deferGeometry(terminal, live, wanted)
+                            // GeometryFollower owns the burst and staleness rules and is unit-tested;
+                            // here we only carry out its decision for this attachment.
+                            when (val decision = geometry.onReport(
+                                event.presentationColumns, event.presentationRows,
+                                terminal.screen.columns, terminal.screen.rows, System.nanoTime(),
+                            )) {
+                                is GeometryFollower.Decision.Apply -> applyGeometry(terminal, live, decision.columns, decision.rows)
+                                is GeometryFollower.Decision.Defer -> scheduleGeometry(terminal, live, decision.afterNanos)
+                                GeometryFollower.Decision.Ignore -> pendingGeometryJob?.cancel()
                             }
                         }
                         PtyEvent.Exit -> mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(ended = true, connecting = false)) }
@@ -529,7 +510,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     }
 
     fun stopRealTerminal() {
-        pendingGeometryJob?.cancel(); pendingGeometryJob = null; pendingGeometry = null
+        pendingGeometryJob?.cancel(); pendingGeometryJob = null; geometry.reset()
         attachJob?.cancel(); attachJob = null
         attachment?.close(); attachment = null
         emulator = null
@@ -607,9 +588,5 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         const val ENTER_GAP_MILLIS = 80L
         /** Retries allowed before a first connection is reported as failed. */
         const val INITIAL_ATTEMPTS = 3
-        /** Automatic resizes allowed inside [RESIZE_WINDOW_NANOS] before the client stops following. */
-        const val MAX_RESIZES_PER_WINDOW = 5
-        /** Window used to tell a resize burst from ordinary desktop resizing. */
-        const val RESIZE_WINDOW_NANOS = 3_000_000_000L
     }
 }
