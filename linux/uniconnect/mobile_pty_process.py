@@ -56,21 +56,30 @@ class MobilePTYProcess:
         target = "=" + name + ":." + pane
         auxiliary = "uc-mobile-" + token
         # active-pane alone does not isolate session window selection. A
-        # grouped presentation session links the SAME windows/panes, without
-        # launching a shell, and keeps only this client's current window apart.
-        # The native conditional and new-session must share one tmux queue:
-        # new-session -t with a missing session would otherwise create a shell.
+        # presentation session links the SAME target window/panes and keeps
+        # this client's selection apart. Grouped new-session briefly launches
+        # default-command, even when it subsequently replaces its initial pane.
+        # Two explicit argv launch only our bounded sleep placeholder (no shell
+        # or IA); link-window -k replaces only that privately named placeholder.
         guard = ("#{&&:#{==:#{session_name}," + name + "},#{==:#{pane_id}," + pane + "}}")
         # display-message -p after attach enters view-mode and consumes input;
         # write the nonce directly to this client's TTY instead (no pane input).
-        ready = "printf '\\036UCPTY_READY_" + token + "\\037' > '#{client_tty}'"
-        commands = [["new-session", "-E", "-f", "ignore-size,active-pane", "-s", auxiliary, "-t", name],
+        ready = "printf '\\036UCPTY_READY_" + token + "\\037' > '##{client_tty}'"
+        commands = [["new-session", "-E", "-f", "ignore-size,active-pane", "-s", auxiliary,
+                     "-n", "uc-placeholder", "/bin/sleep", "60"],
                     ["set-option", "-t", auxiliary, "destroy-unattached", "on"],
+                    ["set-option", "-t", auxiliary, "detach-on-destroy", "on"],
+                    ["link-window", "-k", "-s", "#{window_id}", "-t", "=" + auxiliary + ":uc-placeholder"],
                     ["select-window", "-t", "=" + auxiliary + ":." + pane],
                     ["select-pane", "-t", "=" + auxiliary + ":." + pane],
                     ["run-shell", "-b", ready]]
+        # -C expands the exact original @window ID in the validated pane
+        # context, then queues native tmux commands, not another shell. The
+        # doubled # defers the readiness TTY expansion until after attachment.
+        native = ["run-shell", "-C", "-t", target,
+                  " ; ".join(shlex.join(command) for command in commands)]
         attach = binary + ["if-shell", "-F", "-t", target, guard,
-                           " ; ".join(shlex.join(command) for command in commands)]
+                           shlex.join(native)]
         script = "printf '\\036UCPTY_BEGIN_" + token + "\\037'; exec " + shlex.join(attach)
         argv = ["/bin/sh", "-c", script]
         if kind == "ssh":

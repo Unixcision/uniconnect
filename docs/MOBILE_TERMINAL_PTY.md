@@ -11,10 +11,13 @@ que ese código Python sea una implementación ejecutable compartida con Mac.
 Se usa la conexión enmarcada y aprobada de Tailscale existente. Android no recibe
 credenciales. Local conecta al tmux guardado; SSH abre otro cliente hacia el mismo
 usuario/host/socket/sesión/pane con la revisión de credenciales del host.
-Linux crea una sesión auxiliar agrupada, enlazada a las mismas ventanas/panes:
-no crea shell, pane ni IA y no escribe en la VTE del escritorio. Esta referencia
-de presentación permite seleccionar ventanas sin cambiar las del PC. Sólo la
-auxiliar lleva `destroy-unattached`; tmux la elimina al cerrar su cliente.
+Linux crea una sesión auxiliar de presentación y enlaza la ventana original,
+con sus mismos panes y procesos. Su placeholder ejecuta directamente `/bin/sleep`
+con argumento `60` (sin shell/default-command) y se reemplaza al enlazar: no
+crea ni relanza una IA ni escribe en la VTE del escritorio. Esta referencia
+permite seleccionar ventanas sin cambiar las del PC. Sólo la auxiliar lleva
+`destroy-unattached`; tmux la elimina al cerrar su cliente. No se usa una sesión
+agrupada porque tmux puede ejecutar el shell por defecto antes de formar el grupo.
 Una ventana sin destino durable devuelve `not_durable`; un arranque fallido,
 `attach_failed`. No existe alternativa implícita a otro destino o shell.
 
