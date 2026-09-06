@@ -56,6 +56,11 @@ class MainWindowCopyTests(unittest.TestCase):
         self.window.error = self.errors.append
         self.surface = self.window.focused_surface
         self.wait_for(lambda: self.surface.status == "Running" and not self.window._sidebar_refresh)
+        # Spawn completion is not the first tmux resize. That resize clears a
+        # selection, so select only after the real VTE geometry reaches tmux.
+        self.wait_for(lambda: self.tmux("display-message", "-p", "-t", "=subject:",
+                                       "#{session_attached}:#{window_width}:#{window_height}")
+                      == f"1:{self.surface.terminal.get_column_count()}:{self.surface.terminal.get_row_count() - 1}")
 
     def tearDown(self):
         self.window.on_delete()
@@ -80,7 +85,12 @@ class MainWindowCopyTests(unittest.TestCase):
                         event.keyval = Gdk.KEY_c
                         event.state = Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK
                         event.window = self.surface.terminal.get_window()
-                        self.assertTrue(self.window.activate_key(event))
+                        keymap = Gdk.Keymap.get_for_display(self.window.get_display())
+                        success, keys = keymap.get_entries_for_keyval(Gdk.KEY_c)
+                        self.assertTrue(success)
+                        event.hardware_keycode = keys[0].keycode
+                        event.group = keys[0].group
+                        self.assertTrue(self.window.activate_key(event.key))
                 else:
                     action = lambda: self.window.run_action("copy")
                 self.copy_and_wait("COPIA_ñ", action)
