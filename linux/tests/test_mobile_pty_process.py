@@ -3,6 +3,7 @@
 import dataclasses
 import os
 import select
+import shlex
 import shutil
 import subprocess
 import sys
@@ -217,6 +218,18 @@ class MobilePTYTmuxTests(_PTYFixture):
         self.assertNotIn(marker.decode(), self.tmux("capture-pane", "-p", "-t", self.first))
         self.assertIn(marker.decode(), self.tmux("capture-pane", "-p", "-t", self.second))
         self.assertEqual(before, self.identities())
+
+    def test_attachment_never_runs_configured_default_command(self):
+        marker = self.root / "unexpected-default-command"
+        self.tmux("set-option", "-g", "default-shell", "/bin/sh")
+        self.tmux("set-option", "-g", "default-command",
+                  "printf unexpected > " + shlex.quote(str(marker)) + "; exec /bin/sleep 60")
+        for _ in range(12):
+            mobile = self.mobile()
+            mobile.wait_ready()
+            mobile.close()
+            self.assertFalse(marker.exists(), "El attach ejecutó el default-command del usuario")
+        self.assertEqual(["fixture"], self.sessions())
 
     def test_desktop_window_change_never_redirects_mobile_input(self):
         mobile = self.mobile(size=(100, 30))
