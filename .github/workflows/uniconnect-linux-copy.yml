@@ -1,0 +1,30 @@
+name: UniConnect copia Linux
+on:
+  push:
+    branches: [uniconnect, fix/linux-tmux-copy]
+    paths:
+      - linux/uniconnect/terminal.py
+      - linux/uniconnect/terminal_copy.py
+      - linux/tests/test_terminal_copy.py
+      - .github/workflows/uniconnect-linux-copy.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: linux-copy-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  copia-real:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y tmux python3-gi python3-cryptography gir1.2-gtk-3.0 gir1.2-vte-2.91 xvfb xauth
+          tmux -V
+      - run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -p test_terminal_copy.py -v
