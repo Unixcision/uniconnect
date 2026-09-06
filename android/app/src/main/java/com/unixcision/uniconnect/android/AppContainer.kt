@@ -9,10 +9,12 @@ import com.unixcision.uniconnect.android.data.StoredMachineRepository
 import com.unixcision.uniconnect.android.data.AndroidNotificationConnections
 import com.unixcision.uniconnect.android.data.NativeNotificationClient
 import com.unixcision.uniconnect.android.data.StoredNoticeDeliveryRepository
+import com.unixcision.uniconnect.android.data.StoredSettingsRepository
 import com.unixcision.uniconnect.android.domain.NotificationClient
 import com.unixcision.uniconnect.android.domain.NoticeDeliveryRepository
 import com.unixcision.uniconnect.android.domain.MachineClient
 import com.unixcision.uniconnect.android.domain.MachineRepository
+import com.unixcision.uniconnect.android.domain.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,6 +26,7 @@ class AppContainer(context: Context) {
         context.preferencesDataStoreFile("uniconnect_machines")
     }
     val machines: MachineRepository = StoredMachineRepository(store)
+    val settings: SettingsRepository = StoredSettingsRepository(store)
     val rpc = FramedRpcClient(ioScope)
     val machineClient: MachineClient = NativeMachineClient(rpc)
     val notificationConnections = AndroidNotificationConnections(context, store, ioScope)

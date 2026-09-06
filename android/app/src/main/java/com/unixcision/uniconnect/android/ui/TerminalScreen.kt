@@ -52,7 +52,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.unixcision.uniconnect.android.R
+import com.unixcision.uniconnect.android.domain.AppSettings
 import com.unixcision.uniconnect.android.domain.TerminalKeyEncoder
+import com.unixcision.uniconnect.android.domain.TerminalView
 import com.unixcision.uniconnect.android.domain.TerminalModifiers
 import com.unixcision.uniconnect.android.domain.TerminalSnapshot
 import com.unixcision.uniconnect.android.ui.components.PillTone
@@ -86,6 +88,7 @@ fun TerminalScreen(
     onPtyWheel: (Boolean, Int) -> Unit = { _, _ -> },
     onPtyResize: (Int, Int) -> Unit = { _, _ -> },
     onLeaveCopyMode: () -> Unit = {},
+    settings: AppSettings = AppSettings(),
 ) {
     var realRequested by rememberSaveable { mutableStateOf(false) }
     // Default way in: attach to the window's own tmux session. Only a host without the attach RPC,
@@ -93,7 +96,7 @@ fun TerminalScreen(
     var autoTried by rememberSaveable { mutableStateOf(false) }
     var manuallyLeft by rememberSaveable { mutableStateOf(false) }
     if (real != null) {
-        RealTerminalScreen(real, connected, sending, onStopReal = { realRequested = false; manuallyLeft = true; onStopReal() }, onPty = onPty, onPtyWheel = onPtyWheel, onPtyResize = onPtyResize, onLeaveCopyMode = onLeaveCopyMode)
+        RealTerminalScreen(real, connected, sending, settings, onStopReal = { realRequested = false; manuallyLeft = true; onStopReal() }, onPty = onPty, onPtyWheel = onPtyWheel, onPtyResize = onPtyResize, onLeaveCopyMode = onLeaveCopyMode)
         return
     }
     if (realRequested) realRequested = false
@@ -109,20 +112,20 @@ fun TerminalScreen(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun RealTerminalScreen(
-    real: MachinesViewModel.RealTerminal, connected: Boolean, sending: Boolean,
+    real: MachinesViewModel.RealTerminal, connected: Boolean, sending: Boolean, settings: AppSettings,
     onStopReal: () -> Unit, onPty: (String, Boolean) -> Unit, onPtyWheel: (Boolean, Int) -> Unit, onPtyResize: (Int, Int) -> Unit,
     onLeaveCopyMode: () -> Unit,
 ) {
-    var keysVisible by rememberSaveable { mutableStateOf(false) }
+    var keysVisible by rememberSaveable { mutableStateOf(settings.showExtraKeys) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
     var alt by rememberSaveable { mutableStateOf(ModifierState.OFF) }
     // The desktop window is often far shorter than the phone is tall, so reading it at the fitted
     // size wastes most of the screen. Zoom is the reader's, and never resizes the shared window.
     var zoom by rememberSaveable { mutableStateOf(1f) }
-    // Same three readings as the mirror, but this one opens wrapped: a desktop window is a wide
-    // rectangle and fitting it to the phone's width leaves most of a tall screen empty, while
-    // wrapping fills it at a readable size without resizing the window the desktop shares.
-    var viewMode by rememberSaveable { mutableStateOf(ViewMode.WRAP) }
+    // Same three readings as the mirror, opening at true geometry: fitting a wide desktop window
+    // to the phone's width leaves most of a tall screen empty, and reflowing rearranges lines the
+    // desktop drew deliberately. Panning keeps the layout intact and fills the height.
+    var viewMode by rememberSaveable { mutableStateOf(settings.terminalView) }
     val modifiers = TerminalModifiers(ctrl = ctrl != ModifierState.OFF, alt = alt != ModifierState.OFF)
     val consumeModifiers = {
         if (ctrl == ModifierState.ARMED) ctrl = ModifierState.OFF
@@ -140,8 +143,8 @@ private fun RealTerminalScreen(
             }
             if (real.snapshot != null) IconButton(onClick = { viewMode = viewMode.next; zoom = 1f }) {
                 Icon(
-                    when (viewMode) { ViewMode.FIT -> Icons.Rounded.ZoomIn; ViewMode.WRAP -> Icons.Rounded.OpenInFull; ViewMode.PAN -> Icons.Rounded.ZoomOutMap },
-                    stringResource(when (viewMode) { ViewMode.FIT -> R.string.screen_actual_size; ViewMode.WRAP -> R.string.screen_pan; ViewMode.PAN -> R.string.screen_fit_width }),
+                    when (viewMode) { TerminalView.FIT -> Icons.Rounded.ZoomIn; TerminalView.WRAP -> Icons.Rounded.OpenInFull; TerminalView.PAN -> Icons.Rounded.ZoomOutMap },
+                    stringResource(when (viewMode) { TerminalView.FIT -> R.string.screen_actual_size; TerminalView.WRAP -> R.string.screen_pan; TerminalView.PAN -> R.string.screen_fit_width }),
                     tint = Brand.Muted,
                 )
             }
@@ -173,7 +176,7 @@ private fun RealTerminalScreen(
                 // window scaled to the phone's width. Asking for the phone's own size only made
                 // tmux pad the rows the desktop does not have with dots.
                 val viewport = IntSize(constraints.maxWidth, constraints.maxHeight)
-                val metrics = rememberTerminalMetrics(snapshot, viewport.takeIf { viewMode == ViewMode.FIT }, zoom)
+                val metrics = rememberTerminalMetrics(snapshot, viewport.takeIf { viewMode == TerminalView.FIT }, zoom)
                 val wheel by rememberUpdatedState(onPtyWheel)
                 // Two fingers are always the reader's: pinch resizes the text without ever
                 // touching the shared window. One finger is left alone here so the scrolling
@@ -215,7 +218,7 @@ private fun RealTerminalScreen(
                 when (viewMode) {
                     // Fitted: one finger scrolls tmux itself, which is what makes this the session
                     // and not a picture of it.
-                    ViewMode.FIT -> Box(
+                    TerminalView.FIT -> Box(
                         Modifier.fillMaxSize().then(pinch).pointerInput(metrics.lineHeight) {
                             awaitEachGesture {
                                 awaitFirstDown(requireUnconsumed = false)
@@ -240,7 +243,7 @@ private fun RealTerminalScreen(
                     ) { TerminalGrid(snapshot, metrics) }
                     // Readable size, long rows folded at the phone's width, local vertical scroll
                     // that continues into tmux's own history once it reaches its end.
-                    ViewMode.WRAP -> {
+                    TerminalView.WRAP -> {
                         val wrapColumns = ((viewport.width - 16f) / metrics.cellWidth).toInt().coerceAtLeast(8)
                         val wrapScroll = rememberPinnedScrollState(snapshot, metrics.lineHeight)
                         Box(Modifier.fillMaxSize().then(pinch).nestedScroll(reachHistory)) {
@@ -251,7 +254,7 @@ private fun RealTerminalScreen(
                     }
                     // True geometry: nothing folded, the reader pans in both directions, and the
                     // vertical end of the canvas hands the drag over to tmux as well.
-                    ViewMode.PAN -> {
+                    TerminalView.PAN -> {
                         val panScroll = rememberPinnedScrollState(snapshot, metrics.lineHeight)
                         Box(Modifier.fillMaxSize().then(pinch).nestedScroll(reachHistory)) {
                             Box(Modifier.fillMaxSize().horizontalScroll(rememberScrollState()).verticalScroll(panScroll)) {
@@ -282,7 +285,7 @@ private fun MirrorTerminalScreen(
     onRefresh: () -> Unit, onReconnect: () -> Unit, onScroll: (Int) -> Unit, onSend: (String, Boolean, (Boolean) -> Unit) -> Unit,
     attachFallbackDetail: String?, onRequestReal: (Int, Int) -> Unit,
 ) {
-    var viewMode by rememberSaveable { mutableStateOf(ViewMode.FIT) }
+    var viewMode by rememberSaveable { mutableStateOf(TerminalView.FIT) }
     var keysVisible by rememberSaveable { mutableStateOf(false) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
     var alt by rememberSaveable { mutableStateOf(ModifierState.OFF) }
@@ -310,8 +313,8 @@ private fun MirrorTerminalScreen(
             if (snapshot != null) IconButton(onClick = { viewMode = viewMode.next }) {
                 // The icon announces the mode the tap switches to.
                 Icon(
-                    when (viewMode) { ViewMode.FIT -> Icons.Rounded.ZoomIn; ViewMode.WRAP -> Icons.Rounded.OpenInFull; ViewMode.PAN -> Icons.Rounded.ZoomOutMap },
-                    stringResource(when (viewMode) { ViewMode.FIT -> R.string.screen_actual_size; ViewMode.WRAP -> R.string.screen_pan; ViewMode.PAN -> R.string.screen_fit_width }),
+                    when (viewMode) { TerminalView.FIT -> Icons.Rounded.ZoomIn; TerminalView.WRAP -> Icons.Rounded.OpenInFull; TerminalView.PAN -> Icons.Rounded.ZoomOutMap },
+                    stringResource(when (viewMode) { TerminalView.FIT -> R.string.screen_actual_size; TerminalView.WRAP -> R.string.screen_pan; TerminalView.PAN -> R.string.screen_fit_width }),
                     tint = Brand.Muted,
                 )
             }
@@ -350,18 +353,18 @@ private fun MirrorTerminalScreen(
                 val viewport = IntSize(constraints.maxWidth, constraints.maxHeight)
                 // Captured here: the nested scroll boxes are outside BoxWithConstraints' scope.
                 val viewportHeight = viewport.height
-                val metrics = rememberTerminalMetrics(snapshot, if (viewMode == ViewMode.FIT) viewport else null)
+                val metrics = rememberTerminalMetrics(snapshot, if (viewMode == TerminalView.FIT) viewport else null)
                 val scroll by rememberUpdatedState(onScroll)
                 val history = snapshot.scrollbackRows > 0
                 when {
                     // With exported history the whole canvas scrolls locally, newest lines at the bottom.
-                    viewMode == ViewMode.FIT && history -> {
+                    viewMode == TerminalView.FIT && history -> {
                         val scrollState = rememberPinnedScrollState(snapshot, metrics.lineHeight)
                         Box(Modifier.fillMaxSize().verticalScroll(scrollState), contentAlignment = Alignment.TopCenter) {
                             TerminalGrid(snapshot, metrics, scroll = scrollState, viewportHeightPx = viewportHeight)
                         }
                     }
-                    viewMode == ViewMode.WRAP -> {
+                    viewMode == TerminalView.WRAP -> {
                         // Readable size; long desktop rows wrap at the inner width instead of scrolling sideways.
                         val wrapColumns = ((viewport.width - 16f) / metrics.cellWidth).toInt().coerceAtLeast(8)
                         val wrapScroll = rememberPinnedScrollState(snapshot, metrics.lineHeight)
@@ -369,7 +372,7 @@ private fun MirrorTerminalScreen(
                             TerminalGrid(snapshot, metrics, wrapColumns.takeIf { it < snapshot.columns }, scroll = wrapScroll, viewportHeightPx = viewportHeight)
                         }
                     }
-                    viewMode == ViewMode.PAN -> {
+                    viewMode == TerminalView.PAN -> {
                         val panScroll = rememberPinnedScrollState(snapshot, metrics.lineHeight)
                         Box(Modifier.horizontalScroll(rememberScrollState()).verticalScroll(panScroll)) {
                             TerminalGrid(snapshot, metrics, scroll = panScroll, viewportHeightPx = viewportHeight)
@@ -448,17 +451,6 @@ private fun RealTerminalStarter(armed: Boolean, onStart: (Int, Int) -> Unit) {
 }
 
 /** How the desktop grid is shown on the phone; none of these change the desktop PTY size. */
-enum class ViewMode {
-    /** Whole desktop screen scaled down; vertical drag scrolls the desktop scrollback. */
-    FIT,
-    /** Readable font, rows wrapped at the inner width, local vertical scroll. */
-    WRAP,
-    /** Readable font at true geometry with local horizontal and vertical panning. */
-    PAN;
-
-    val next: ViewMode get() = entries[(ordinal + 1) % entries.size]
-}
-
 /** Reading geometry for this device. The desktop PTY keeps its own columns and rows. */
 /** Reader-controlled zoom bounds: below 0.6 the text stops being legible, above 5 it is huge. */
 private const val MIN_ZOOM = 0.6f

@@ -6,9 +6,11 @@ import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.MachineFailure
 import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.domain.MachineClient
+import com.unixcision.uniconnect.android.domain.AppSettings
 import com.unixcision.uniconnect.android.domain.MachineDraft
 import com.unixcision.uniconnect.android.domain.MachineEndpoint
 import com.unixcision.uniconnect.android.domain.MachineRepository
+import com.unixcision.uniconnect.android.domain.SettingsRepository
 import com.unixcision.uniconnect.android.domain.MachineSnapshot
 import com.unixcision.uniconnect.android.domain.TerminalSnapshot
 import com.unixcision.uniconnect.android.domain.TerminalTarget
@@ -33,7 +35,12 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-class MachinesViewModel(private val repository: MachineRepository, private val client: MachineClient, private val notificationControl: NotificationConnectionControl) : ViewModel() {
+class MachinesViewModel(
+    private val repository: MachineRepository,
+    private val client: MachineClient,
+    private val notificationControl: NotificationConnectionControl,
+    private val settingsRepository: SettingsRepository,
+) : ViewModel() {
     data class Connection(val checking: Boolean = false, val connected: Boolean = false, val snapshot: MachineSnapshot? = null, val error: Int? = null)
     /** A phone-sized tmux client attached to the selected window; the emulator lives in the model. */
     data class RealTerminal(
@@ -49,6 +56,12 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         val editing: Machine? = null,
         val selectedMachine: String? = null, val selectedWorkspace: String? = null, val selectedWindow: String? = null,
         val connections: Map<String, Connection> = emptyMap(),
+        /** Whether the list is asking every machine whether it answers right now. */
+        val refreshing: Boolean = false,
+        /** The user's own preferences; defaults until the stored ones are read. */
+        val settings: AppSettings = AppSettings(),
+        /** Whether the settings sheet is open. */
+        val showingSettings: Boolean = false,
         val terminal: TerminalSnapshot? = null, val terminalLoading: Boolean = false,
         val terminalError: Int? = null, val terminalErrorDetail: String? = null, val inputSending: Boolean = false, val reconnecting: Boolean = false,
         val creation: CreationContext? = null, val creating: Boolean = false, val creationError: Int? = null,
@@ -76,6 +89,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                 }
         }
         viewModelScope.launch { notificationControl.states.collect { links -> mutableState.update { it.copy(notificationLinks = links) } } }
+        viewModelScope.launch { settingsRepository.settings.collect { stored -> mutableState.update { it.copy(settings = stored) } } }
         // The activity is in the foreground when this model is built, so re-arming the saved links is allowed.
         notificationControl.restore()
     }
@@ -87,17 +101,26 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
      * so the list shows connected/pending/offline instead of always "saved". Reading the tree
      * never creates a terminal or changes anything on the desktop.
      */
-    fun refreshMachineStates() {
+    fun refreshMachineStates(force: Boolean = false) {
         // List screen only: a probe must never race the live connection of an open machine.
-        if (!foreground || state.value.selectedMachine != null || probeJob?.isActive == true) return
+        if (!foreground || state.value.selectedMachine != null) return
+        // Asking every machine on its own is a preference; asking because the user asked is not.
+        if (!force && !state.value.settings.probeOnOpen) return
+        if (probeJob?.isActive == true) {
+            // Asking again on purpose replaces the round already in flight; without this an
+            // automatic probe would swallow the pull the user just made.
+            if (!force) return
+            probeJob?.cancel()
+        }
         val machines = state.value.machines.filter { requests[it.id]?.isActive != true }
         if (machines.isEmpty()) return
         mutableState.update { current ->
-            current.copy(connections = current.connections + machines.associate { machine ->
+            current.copy(refreshing = true, connections = current.connections + machines.associate { machine ->
                 machine.id to (current.connections[machine.id] ?: Connection()).copy(checking = true)
             })
         }
         probeJob = viewModelScope.launch {
+            try {
             machines.map { machine ->
                 async {
                     // A probe result is only ever applied while the list is still what the user sees.
@@ -116,8 +139,17 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                     }
                 }
             }.awaitAll()
+            } finally {
+                // Runs on cancellation too, so a replaced round never leaves the list spinning.
+                mutableState.update { it.copy(refreshing = false) }
+            }
         }
     }
+
+    fun showSettings() { mutableState.update { it.copy(showingSettings = true) } }
+    fun dismissSettings() { mutableState.update { it.copy(showingSettings = false) } }
+    /** Stores a changed preference; the screen re-reads it from the repository's own flow. */
+    fun updateSettings(settings: AppSettings) { viewModelScope.launch { settingsRepository.update(settings) } }
 
     fun showAdd() { mutableState.update { it.copy(adding = true, formError = null) } }
     fun dismissAdd() { if (!state.value.saving) mutableState.update { it.copy(adding = false, formError = null) } }
