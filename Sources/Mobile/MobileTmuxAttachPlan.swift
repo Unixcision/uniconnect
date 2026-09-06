@@ -118,6 +118,7 @@ struct MobileTmuxAttachPlan: Equatable, Sendable, CustomStringConvertible, Custo
             new-session -d -E -s "$uc_mobile_aux" /bin/sleep 60 \\; \\
             set-option -t "=$uc_mobile_aux:" destroy-unattached on \\; \\
             set-option -t "=$uc_mobile_aux:" detach-on-destroy on \\; \\
+            set-option -t "=$uc_mobile_aux:" mouse on \\; \\
             link-window -k -s "$uc_mobile_window" -t "=$uc_mobile_aux:^" \\; \\
             attach-session -E -f ignore-size,active-pane -t "=$uc_mobile_aux" \\; \\
             select-pane -t "=$uc_mobile_aux:.+" \\; \\
