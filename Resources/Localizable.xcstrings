@@ -2,6 +2,12 @@
   "sourceLanguage": "es",
   "version": "1.0",
   "strings": {
+    "uniconnect.shared.no.se.pudo.seleccionar.el.historial.del.terminal": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": { "stringUnit": { "state": "translated", "value": "No se pudo seleccionar el historial del terminal." } }
+      }
+    },
     "uniconnect.shared.salir.de.selecci.n": {
       "extractionState": "manual",
       "localizations": {
