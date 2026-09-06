@@ -15,9 +15,11 @@ class GeometryFollowerTest {
         var columns = 80
         var rows = 24
         // One resize every ten seconds, far more than any per-attachment budget would allow.
+        // Sizes start at 81 so every report is a real change; a report equal to the canvas is
+        // covered by its own test, where the right answer is Ignore.
         repeat(20) { index ->
             now += 10 * second
-            val wanted = 80 + index to 24
+            val wanted = 81 + index to 24
             val decision = follower.onReport(wanted.first, wanted.second, columns, rows, now)
             assertEquals(Decision.Apply(wanted.first, wanted.second), decision)
             columns = wanted.first; rows = wanted.second
