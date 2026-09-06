@@ -1984,6 +1984,12 @@ private struct MainWindowBootstrapView: View {
                 window.identifier = NSUserInterfaceItemIdentifier("cmux.bootstrap")
                 window.isRestorable = false
                 window.orderOut(nil)
+                // SwiftUI may order its new scene front after the accessor runs.
+                // Hide it after that creation transaction as well; do not leave
+                // a second, empty window next to the AppKit terminal window.
+                Task { @MainActor [weak window] in
+                    window?.orderOut(nil)
+                }
             })
     }
 }
