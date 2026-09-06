@@ -66,20 +66,28 @@ fun TerminalScreen(
     onScroll: (Int) -> Unit,
     onSend: (String, Boolean, (Boolean) -> Unit) -> Unit,
     real: MachinesViewModel.RealTerminal? = null,
-    onStartReal: (Int, Int) -> Unit = { _, _ -> },
+    attachUnsupported: Boolean = false,
+    onStartReal: (Int, Int, Boolean) -> Unit = { _, _, _ -> },
     onStopReal: () -> Unit = {},
     onPty: (String, Boolean) -> Unit = { _, _ -> },
     onPtyWheel: (Boolean, Int) -> Unit = { _, _ -> },
     onPtyResize: (Int, Int) -> Unit = { _, _ -> },
 ) {
     var realRequested by rememberSaveable { mutableStateOf(false) }
+    // Default way in: attach to the window's own tmux session. Only a host without the attach RPC,
+    // or leaving the mode by hand, falls back to the mirrored screen.
+    var autoTried by rememberSaveable { mutableStateOf(false) }
+    var manuallyLeft by rememberSaveable { mutableStateOf(false) }
     if (real != null) {
-        RealTerminalScreen(real, connected, sending, onStopReal = { realRequested = false; onStopReal() }, onPty = onPty, onPtyWheel = onPtyWheel, onPtyResize = onPtyResize)
+        RealTerminalScreen(real, connected, sending, onStopReal = { realRequested = false; manuallyLeft = true; onStopReal() }, onPty = onPty, onPtyWheel = onPtyWheel, onPtyResize = onPtyResize)
         return
     }
     if (realRequested) realRequested = false
+    if (!autoTried && !manuallyLeft && !attachUnsupported && connected) {
+        RealTerminalStarter(true) { columns, rows -> autoTried = true; onStartReal(columns, rows, true) }
+    }
     MirrorTerminalScreen(snapshot, loading, error, errorDetail, sending, reconnecting, connected, onRefresh, onReconnect, onScroll, onSend,
-        onRequestReal = { columns, rows -> realRequested = true; onStartReal(columns, rows) })
+        onRequestReal = { columns, rows -> realRequested = true; manuallyLeft = false; onStartReal(columns, rows, false) })
 }
 
 /** The attached tmux client: the phone owns a real PTY of its own size; tmux keeps the desktop's. */
@@ -224,6 +232,8 @@ private fun MirrorTerminalScreen(
                 }
             } else BoxWithConstraints(Modifier.fillMaxSize()) {
                 val viewport = IntSize(constraints.maxWidth, constraints.maxHeight)
+                // Captured here: the nested scroll boxes are outside BoxWithConstraints' scope.
+                val viewportHeight = viewport.height
                 val metrics = rememberTerminalMetrics(snapshot, if (viewMode == ViewMode.FIT) viewport else null)
                 val scroll by rememberUpdatedState(onScroll)
                 val history = snapshot.scrollbackRows > 0
@@ -231,14 +241,24 @@ private fun MirrorTerminalScreen(
                     // With exported history the whole canvas scrolls locally, newest lines at the bottom.
                     viewMode == ViewMode.FIT && history -> {
                         val scrollState = rememberPinnedScrollState(snapshot, metrics.lineHeight)
-                        Box(Modifier.fillMaxSize().verticalScroll(scrollState), contentAlignment = Alignment.TopCenter) { TerminalGrid(snapshot, metrics) }
+                        Box(Modifier.fillMaxSize().verticalScroll(scrollState), contentAlignment = Alignment.TopCenter) {
+                            TerminalGrid(snapshot, metrics, scroll = scrollState, viewportHeightPx = viewportHeight)
+                        }
                     }
                     viewMode == ViewMode.WRAP -> {
                         // Readable size; long desktop rows wrap at the inner width instead of scrolling sideways.
                         val wrapColumns = ((viewport.width - 16f) / metrics.cellWidth).toInt().coerceAtLeast(8)
-                        Box(Modifier.verticalScroll(rememberPinnedScrollState(snapshot, metrics.lineHeight))) { TerminalGrid(snapshot, metrics, wrapColumns.takeIf { it < snapshot.columns }) }
+                        val wrapScroll = rememberPinnedScrollState(snapshot, metrics.lineHeight)
+                        Box(Modifier.verticalScroll(wrapScroll)) {
+                            TerminalGrid(snapshot, metrics, wrapColumns.takeIf { it < snapshot.columns }, scroll = wrapScroll, viewportHeightPx = viewportHeight)
+                        }
                     }
-                    viewMode == ViewMode.PAN -> Box(Modifier.horizontalScroll(rememberScrollState()).verticalScroll(rememberPinnedScrollState(snapshot, metrics.lineHeight))) { TerminalGrid(snapshot, metrics) }
+                    viewMode == ViewMode.PAN -> {
+                        val panScroll = rememberPinnedScrollState(snapshot, metrics.lineHeight)
+                        Box(Modifier.horizontalScroll(rememberScrollState()).verticalScroll(panScroll)) {
+                            TerminalGrid(snapshot, metrics, scroll = panScroll, viewportHeightPx = viewportHeight)
+                        }
+                    }
                     else -> Box(
                     Modifier.fillMaxSize()
                         .semantics { contentDescription = "" }
@@ -352,7 +372,13 @@ private fun rememberTerminalMetrics(snapshot: TerminalSnapshot, fit: IntSize?): 
  * `ceil(columns / wrapColumns)` visual lines so nothing is cut off at the phone's width.
  */
 @Composable
-private fun TerminalGrid(snapshot: TerminalSnapshot, metrics: TerminalMetrics, wrapColumns: Int? = null) {
+private fun TerminalGrid(
+    snapshot: TerminalSnapshot,
+    metrics: TerminalMetrics,
+    wrapColumns: Int? = null,
+    scroll: ScrollState? = null,
+    viewportHeightPx: Int = 0,
+) {
     val density = LocalDensity.current
     val paint = remember(metrics.fontSize) { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = metrics.fontSize; typeface = Typeface.MONOSPACE } }
     val typefaces = remember { listOf(Typeface.NORMAL, Typeface.BOLD, Typeface.ITALIC, Typeface.BOLD_ITALIC).associateWith { Typeface.create(Typeface.MONOSPACE, it) } }
@@ -365,6 +391,15 @@ private fun TerminalGrid(snapshot: TerminalSnapshot, metrics: TerminalMetrics, w
     val height = with(density) { ((history + snapshot.rows) * linesPerRow * lineHeight + 16f).toDp() }
     val defaultForeground = parseColor(snapshot.foreground, android.graphics.Color.rgb(238, 243, 255))
     val defaultBackground = parseColor(snapshot.background, android.graphics.Color.rgb(7, 13, 32))
+    // History rows are indexed once per replay: a delta keeps the same list, so typing never
+    // rebuilds it. Thousands of exported lines must not cost anything until they scroll into view.
+    val historyByRow = remember(snapshot.scrollbackSpans, history) {
+        val index = HashMap<Int, MutableList<TerminalSnapshot.Span>>(minOf(history, 4096))
+        snapshot.scrollbackSpans.forEach { span ->
+            if (span.row in 0 until history) index.getOrPut(span.row) { ArrayList(4) }.add(span)
+        }
+        index
+    }
     // Cell → pixel origin, folding wide rows when wrapping.
     fun originX(column: Int) = 8 + (column % wrap) * cellWidth
     fun originY(row: Int, column: Int) = 8 + (row * linesPerRow + column / wrap) * lineHeight
@@ -372,9 +407,20 @@ private fun TerminalGrid(snapshot: TerminalSnapshot, metrics: TerminalMetrics, w
         drawIntoCanvas { target ->
             val canvas = target.nativeCanvas
             canvas.drawColor(defaultBackground)
-            // History first (rows 0 until scrollbackRows), then the live screen shifted below it.
-            val drawable = snapshot.scrollbackSpans.asSequence().map { it to it.row } +
-                snapshot.spans.asSequence().map { it to it.row + history }
+            // Only the rows the viewport can show are drawn; the canvas keeps its full height so
+            // scrolling still spans the whole history.
+            val rowHeight = lineHeight * linesPerRow
+            val offset = scroll?.value ?: 0
+            val viewport = if (viewportHeightPx > 0) viewportHeightPx else size.height.toInt()
+            val firstRow = if (scroll == null) 0 else (((offset - 8) / rowHeight).toInt() - 1).coerceAtLeast(0)
+            val lastRow = if (scroll == null) history + snapshot.rows - 1
+                else (((offset + viewport - 8) / rowHeight).toInt() + 1).coerceAtMost(history + snapshot.rows - 1)
+            val drawable = sequence {
+                for (row in firstRow..lastRow) {
+                    if (row < history) historyByRow[row]?.forEach { yield(it to row) }
+                    else snapshot.spans.forEach { if (it.row == row - history) yield(it to row) }
+                }
+            }
             drawable.forEach { (span, drawRow) ->
                 val style = span.style
                 var foreground = parseColor(style.foreground, defaultForeground)

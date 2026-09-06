@@ -48,6 +48,8 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         val creation: CreationContext? = null, val creating: Boolean = false, val creationError: Int? = null,
         val notificationLinks: Map<String, NotificationLinkState> = emptyMap(),
         val realTerminal: RealTerminal? = null,
+        /** Machines whose host has no attach RPC yet; the mirror is used without asking again. */
+        val attachUnsupported: Set<String> = emptySet(),
     )
     private val mutableState = MutableStateFlow(State())
     val state = mutableState.asStateFlow()
@@ -305,15 +307,27 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                     val detail = rejected?.let { listOfNotNull(it.code.takeIf(String::isNotBlank), it.detail).joinToString(" · ") }?.takeIf { it.isNotBlank() }
                     val incompatible = failure is MachineFailure.ProtocolMismatch || failure is MachineFailure.UnsupportedTerminal
                     val notReady = failure is MachineFailure.TerminalNotReady
-                    val stop = notReady || incompatible || !wasConnected || code in setOf("approval_required", "unauthorized", "forbidden", "not_found", "process_exited")
-                    val message = if (notReady) R.string.terminal_not_ready else if (incompatible) R.string.incompatible_terminal else if (code == "approval_required") R.string.approval_required else if (stop) R.string.connection_error else R.string.connection_reconnecting
+                    // Only an answer that cannot improve by asking again is final. Opening a window
+                    // races the previous stream's teardown on the host, so the first failures are
+                    // retried quietly instead of leaving a dead screen that needs a manual refresh.
+                    val fatal = incompatible || code in setOf("approval_required", "unauthorized", "forbidden", "not_found", "process_exited")
+                    val attemptsLeft = if (wasConnected) Int.MAX_VALUE else if (notReady) 1 else INITIAL_ATTEMPTS
+                    val stop = fatal || retry >= attemptsLeft
+                    val message = when {
+                        !stop -> R.string.connection_reconnecting
+                        notReady -> R.string.terminal_not_ready
+                        incompatible -> R.string.incompatible_terminal
+                        code == "approval_required" -> R.string.approval_required
+                        else -> R.string.connection_error
+                    }
                     mutableState.update { it.copy(
                         connections = it.connections + (machine.id to (it.connections[machine.id] ?: Connection()).copy(checking = !stop, connected = false, error = message)),
                         terminalLoading = false, terminalError = if (target != null) message else it.terminalError,
                         terminalErrorDetail = if (target != null) detail else it.terminalErrorDetail,
                     ) }
                     if (stop) break
-                    delay(minOf(1_000L shl retry.coerceAtMost(4), 15_000L))
+                    // Quick first retries so opening a window feels immediate; slower once it is a real outage.
+                    delay(if (wasConnected) minOf(1_000L shl retry.coerceAtMost(4), 15_000L) else 400L)
                     retry += 1
                 }
             }
@@ -396,9 +410,12 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     private var emulator: TerminalEmulator? = null
 
     /** Attaches a phone-sized tmux client to the selected window and mirrors it through the local emulator. */
-    fun startRealTerminal(columns: Int, rows: Int) {
+    fun startRealTerminal(columns: Int, rows: Int, automatic: Boolean = false) {
         val current = state.value
         if (current.realTerminal != null) return
+        // The real terminal is the default way in; a host without the attach RPC falls back to the
+        // mirror once and is not asked again for this machine.
+        if (automatic && current.selectedMachine in current.attachUnsupported) return
         val machine = current.machines.firstOrNull { it.id == current.selectedMachine } ?: return
         val workspaceID = current.selectedWorkspace ?: return
         val windowID = current.selectedWindow ?: return
@@ -428,13 +445,19 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
                 val rejected = failure as? MachineFailure.Rejected
-                val message = when (rejected?.code) {
-                    "method_not_found", "unknown_method", "not_supported", "unsupported" -> R.string.real_terminal_unavailable
-                    "not_durable" -> R.string.reconnect_not_durable
+                val unsupported = rejected?.code in setOf("method_not_found", "unknown_method", "not_supported", "unsupported")
+                val message = when {
+                    unsupported -> R.string.real_terminal_unavailable
+                    rejected?.code == "not_durable" -> R.string.reconnect_not_durable
                     else -> R.string.real_terminal_failed
                 }
                 val detail = rejected?.let { listOfNotNull(it.code.takeIf(String::isNotBlank), it.detail).joinToString(" · ") }?.takeIf { it.isNotBlank() }
-                mutableState.update { it.copy(realTerminal = RealTerminal(connecting = false, error = message, errorDetail = detail)) }
+                mutableState.update { current ->
+                    val remembered = if (unsupported && machine.id.isNotBlank()) current.attachUnsupported + machine.id else current.attachUnsupported
+                    // An automatic attempt that the host cannot serve returns to the mirror in silence.
+                    if (automatic && unsupported) current.copy(realTerminal = null, attachUnsupported = remembered)
+                    else current.copy(realTerminal = RealTerminal(connecting = false, error = message, errorDetail = detail), attachUnsupported = remembered)
+                }
             } finally {
                 live?.close()
                 if (attachment === live) attachment = null
@@ -518,5 +541,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     private companion object {
         /** Long enough for a TUI to close its paste window, short enough to feel immediate. */
         const val ENTER_GAP_MILLIS = 80L
+        /** Retries allowed before a first connection is reported as failed. */
+        const val INITIAL_ATTEMPTS = 3
     }
 }

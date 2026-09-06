@@ -131,7 +131,8 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
                             sending = state.inputSending, reconnecting = state.reconnecting, connected = connection?.connected == true,
                             onRefresh = model::refreshTerminal, onReconnect = model::reconnectWindow,
                             onScroll = model::scrollTerminal, onSend = model::sendInput,
-                            real = state.realTerminal, onStartReal = model::startRealTerminal, onStopReal = model::stopRealTerminal,
+                            real = state.realTerminal, attachUnsupported = machine?.id in state.attachUnsupported,
+                            onStartReal = model::startRealTerminal, onStopReal = model::stopRealTerminal,
                             onPty = model::sendPty, onPtyWheel = model::wheelPty, onPtyResize = model::resizePty,
                         )
                     }
