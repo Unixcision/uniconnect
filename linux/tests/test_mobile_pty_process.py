@@ -231,6 +231,28 @@ class MobilePTYTmuxTests(_PTYFixture):
             self.assertFalse(marker.exists(), "El attach ejecutó el default-command del usuario")
         self.assertEqual(["fixture"], self.sessions())
 
+    def test_layout_main_attaches_only_to_unambiguous_saved_session(self):
+        pane = self.tmux("new-session", "-d", "-s", "single", "-P", "-F", "#{pane_id}",
+                         "/bin/bash", "--noprofile", "--norc")
+        before = self.identities()
+        mobile = self.mobile(pane="main", name="single")
+        mobile.wait_ready()
+        marker = b"UC_LAYOUT_MAIN_TARGET"
+        mobile.write(b"echo " + marker + b"\r")
+        self.read_until(mobile, marker)
+        self.assertIn(marker.decode(), self.tmux("capture-pane", "-p", "-t", pane))
+        self.assertEqual(before, self.identities())
+        mobile.close()
+        self.tmux("new-window", "-d", "-t", "=single:", "/bin/bash", "--noprofile", "--norc")
+        panes = self.unique_panes()
+        for name in ("single", "fixture"):
+            with self.subTest(ambiguous=name):
+                mobile = self.mobile(pane="main", name=name)
+                with self.assertRaises(TransportError):
+                    mobile.wait_ready(timeout=1)
+                self.assertEqual(panes, self.unique_panes())
+                self.assertEqual(["fixture", "single"], self.sessions())
+
     def test_desktop_window_change_never_redirects_mobile_input(self):
         mobile = self.mobile(size=(100, 30))
         mobile.wait_ready()
