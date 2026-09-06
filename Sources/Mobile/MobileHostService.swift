@@ -352,10 +352,10 @@ final class MobileHostService {
 
     private init() {}
 
-    private var tmuxResolver: (@Sendable (UUID, UUID) async throws -> MobileTmuxAttachPlan)?
+    private var tmuxResolver: MobileTmuxAttachmentController.Resolver?
 
     /// The app composition root supplies the authoritative, read-only destination resolver.
-    func configureTmux(resolve: @escaping @Sendable (UUID, UUID) async throws -> MobileTmuxAttachPlan) {
+    func configureTmux(resolve: @escaping MobileTmuxAttachmentController.Resolver) {
         tmuxResolver = resolve
     }
 

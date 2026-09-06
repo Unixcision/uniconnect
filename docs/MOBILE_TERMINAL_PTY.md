@@ -146,6 +146,13 @@ Un callback tardío cuya tty ya se cerró termina sin salida ni error de `run-sh
 para que tmux no abra una vista de diagnóstico en un pane compartido. Un fallo
 del bootstrap no confirma `READY` y el attach falla de forma cerrada.
 
+Mac usa ese mismo marcador y los mismos hooks, con nonce propio por adjunto y
+filtrado en su controlador de conexión. Su primera medida llega como evento
+después del ACK (éste sigue acreditando el lanzamiento del cliente, no un
+handshake SSH). Los avisos siguientes se ordenan con los bytes y se deduplican;
+repetir attach puede incluir la última geometría conocida. La medición nunca
+se sustituye por las dimensiones solicitadas por el teléfono.
+
 No se cambia la ventana seleccionada del escritorio para alcanzar un pane
 oculto: se selecciona sólo en la auxiliar. La sesión auxiliar y `active-pane`
 aíslan las selecciones del PC. Después de conectar es un cliente tmux real:

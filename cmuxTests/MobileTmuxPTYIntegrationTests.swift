@@ -130,6 +130,34 @@ struct MobileTmuxPTYIntegrationTests {
             #expect(remaining.split(separator: "\n").count == 1)
             let sessions = try await tmux(executable, binding, environment, ["list-sessions", "-F", "#{session_name}"])
             #expect(sessions == binding.name)
+            // Exercise the production geometry-enabled command, not just synthetic
+            // markers. No hooks are installed on the original session or globally.
+            let metadataClient = MobilePTYProcess(environment: environment)
+            let nonce = UUID()
+            var decoder = MobileTmuxOutputDecoder(nonce: nonce)
+            var geometry: MobileTmuxGeometry?
+            do {
+                let metadataEvents = try await metadataClient.start(
+                    command: MobileTmuxAttachPlan.localCommand(
+                        binding: binding, tmuxExecutable: executable, geometryNonce: nonce
+                    ), columns: 300, rows: 100
+                )
+                metadata: for await output in metadataEvents {
+                    for decoded in decoder.decode(output) {
+                        if case .geometry(let value) = decoded {
+                            geometry = value
+                            break metadata
+                        }
+                    }
+                }
+                await metadataClient.close()
+            } catch {
+                await metadataClient.close()
+                throw error
+            }
+            #expect(geometry?.columns == 200)
+            #expect(geometry?.rows == 49)
+            #expect(geometry?.statusRows == 0)
         } catch {
             await mobile.close()
             await desktop.close()

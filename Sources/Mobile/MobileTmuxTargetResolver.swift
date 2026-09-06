@@ -31,7 +31,7 @@ final class MobileTmuxTargetResolver {
         self.isLocked = isLocked
     }
 
-    func resolve(workspaceID: UUID, surfaceID: UUID) throws -> MobileTmuxAttachPlan {
+    func resolve(workspaceID: UUID, surfaceID: UUID, geometryNonce: UUID? = nil) throws -> MobileTmuxAttachPlan {
         guard !isLocked() else { throw MobileTmuxAttachError.locked }
         var match: (TabManager, Workspace, TerminalPanel)?
         for manager in tabManagers() {
@@ -59,7 +59,7 @@ final class MobileTmuxTargetResolver {
                   let effectiveTarget = record.effectiveTarget else {
                 throw MobileTmuxAttachError.invalidSSHCredential
             }
-            command = try MobileTmuxAttachPlan.sshCommand(record: record, session: session)
+            command = try MobileTmuxAttachPlan.sshCommand(record: record, session: session, geometryNonce: geometryNonce)
             // Credential IDs represent revisions, but also detect accidental in-place
             // replacement without retaining a second plaintext credential in identity.
             let encoder = JSONEncoder()
@@ -77,13 +77,14 @@ final class MobileTmuxTargetResolver {
                   let binding = record.tmuxBinding else {
                 throw MobileTmuxAttachError.legacyTerminal
             }
-            command = MobileTmuxAttachPlan.localCommand(binding: binding)
+            command = MobileTmuxAttachPlan.localCommand(binding: binding, geometryNonce: geometryNonce)
             target = .local(recordID: record.id, binding: binding)
         }
         return MobileTmuxAttachPlan(
             workspaceID: workspaceID,
             surfaceID: surfaceID,
             command: command,
+            geometryNonce: geometryNonce,
             identity: .init(
                 tabManager: ObjectIdentifier(manager), workspace: ObjectIdentifier(workspace),
                 panel: ObjectIdentifier(panel), surface: ObjectIdentifier(panel.surface),
@@ -96,7 +97,7 @@ final class MobileTmuxTargetResolver {
 
     /// Call before forwarding input, resize or output to reject a retired binding.
     func validate(_ plan: MobileTmuxAttachPlan) throws {
-        guard try resolve(workspaceID: plan.workspaceID, surfaceID: plan.surfaceID) == plan else {
+        guard try resolve(workspaceID: plan.workspaceID, surfaceID: plan.surfaceID, geometryNonce: plan.geometryNonce) == plan else {
             throw MobileTmuxAttachError.targetChanged
         }
     }

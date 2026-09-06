@@ -18,6 +18,8 @@ struct MobileTmuxAttachmentEvent: Sendable {
         switch output {
         case .bytes(let data):
             payload["data"] = data.base64EncodedString()
+        case .geometry(let geometry):
+            payload.merge(geometry.jsonObject) { _, value in value }
         case .exited(let status):
             payload["exit"] = true
             payload["exit_code"] = status

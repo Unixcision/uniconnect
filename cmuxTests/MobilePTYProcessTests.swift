@@ -51,6 +51,7 @@ struct MobilePTYProcessTests {
                 }
             case .exited(let code): status = code
             case .failed(let error): Issue.record("Unexpected PTY failure: \(error)")
+            case .geometry: Issue.record("Raw PTY processes must not decode tmux metadata")
             }
         }
         await process.close()
@@ -98,6 +99,7 @@ struct MobilePTYProcessTests {
                 }
             case .exited(let code): status = code
             case .failed(let error): Issue.record("Unexpected PTY failure: \(error)")
+            case .geometry: Issue.record("Raw PTY processes must not decode tmux metadata")
             }
         }
         await process.close()
@@ -171,6 +173,7 @@ struct MobilePTYProcessTests {
             case .bytes(let data): bytes.append(data); largestChunk = max(largestChunk, data.count)
             case .exited(let code): status = code
             case .failed(let error): failures.append(error)
+            case .geometry: Issue.record("Raw PTY processes must not decode tmux metadata")
             }
         }
         return (bytes, String(decoding: bytes, as: UTF8.self), status, failures, largestChunk)

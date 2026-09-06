@@ -10,6 +10,29 @@ import Testing
 
 @Suite("Connection-owned mobile tmux attachments", .timeLimit(.minutes(1)))
 struct MobileTmuxAttachmentControllerTests {
+    @Test func fragmentedGeometryPreservesTerminalBytesAndIncompleteFrames() throws {
+        let nonce = UUID()
+        let token = nonce.uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        let marker = Data(("\u{001e}UCPTY_GEOMETRY_\(token):120:40:on\u{001f}").utf8)
+        let foreign = Data("\u{001e}UCPTY_GEOMETRY_foreign:80:24:on\u{001f}".utf8)
+        let suffix = Data(("\u{001e}UCPTY_GEOMETRY_\(token):12").utf8)
+        let original = Data([0x1b, 0x5b, 0x33, 0xc3]) + Data([0xa9]) + foreign + suffix
+        let wire = Data([0x1b, 0x5b, 0x33, 0xc3]) + marker + Data([0xa9]) + foreign + suffix
+        var decoder = MobileTmuxOutputDecoder(nonce: nonce)
+        var outputs = wire.flatMap { decoder.decode(.bytes(Data([$0]))) }
+        outputs += decoder.decode(.exited(0))
+        let bytes = outputs.reduce(into: Data()) { result, output in
+            if case .bytes(let data) = output { result.append(data) }
+        }
+        let geometries = outputs.compactMap { output -> MobileTmuxGeometry? in
+            if case .geometry(let value) = output { return value }
+            return nil
+        }
+        #expect(bytes == original)
+        #expect(geometries.count == 1)
+        #expect(geometries.first?.rows == 40)
+    }
+
     @Test(arguments: [("off", 0), ("on", 1), ("3", 3), ("5", 5)])
     func privateGeometryFramesBecomeOrderedMetadata(_ status: String, _ statusRows: Int) async throws {
         let routes = MobileAttachmentTestRoutes()
@@ -72,7 +95,7 @@ struct MobileTmuxAttachmentControllerTests {
         let gate = AsyncStream<Void>.makeStream()
         let routes = MobileAttachmentTestRoutes(holdCall: 1, gate: gate.stream)
         var calls = routes.observedCalls.makeAsyncIterator()
-        let controller = MobileTmuxAttachmentController(resolve: { try await routes.resolve($0, $1) }, makeProcess: { MobileAttachmentTestPTY() })
+        let controller = MobileTmuxAttachmentController(resolve: { workspace, surface, _ in try await routes.resolve(workspace, surface) }, makeProcess: { MobileAttachmentTestPTY() })
         let request = Self.attachRequest()
         let pending = Task { await controller.prepareAttach(request, subscribed: true) }
         #expect(await calls.next() == 1)
@@ -267,7 +290,7 @@ struct MobileTmuxAttachmentControllerTests {
     func resolverAndSpawnFailuresAreRedactedAndReleaseTheReservation(_ failResolution: Bool) async {
         let routes = MobileAttachmentTestRoutes()
         let process = MobileAttachmentTestPTY(failStart: true)
-        let controller = MobileTmuxAttachmentController(resolve: { workspaceID, surfaceID in
+        let controller = MobileTmuxAttachmentController(resolve: { workspaceID, surfaceID, _ in
             if failResolution {
                 throw MobileHostRPCError(code: "internal_error", message: "private-command")
             }
@@ -295,7 +318,7 @@ struct MobileTmuxAttachmentControllerTests {
     ])
     func knownResolutionErrorsKeepTheirSafeActionableMessage(_ error: MobileTmuxAttachError, _ expectedCode: String) async {
         let process = MobileAttachmentTestPTY()
-        let controller = MobileTmuxAttachmentController(resolve: { _, _ in throw error }, makeProcess: { process })
+        let controller = MobileTmuxAttachmentController(resolve: { _, _, _ in throw error }, makeProcess: { process })
         let result = await controller.prepareAttach(Self.attachRequest(), subscribed: true)
         #expect(Self.code(result) == expectedCode)
         if case .failure(let failure) = result {
@@ -399,7 +422,7 @@ struct MobileTmuxAttachmentControllerTests {
     }
 
     private static func controller(_ routes: MobileAttachmentTestRoutes, _ process: MobileAttachmentTestPTY) -> MobileTmuxAttachmentController {
-        MobileTmuxAttachmentController(resolve: { try await routes.resolve($0, $1) }, makeProcess: { process })
+        MobileTmuxAttachmentController(resolve: { workspace, surface, _ in try await routes.resolve(workspace, surface) }, makeProcess: { process })
     }
 
     private static func attachRequest() -> MobileHostRPCRequest {

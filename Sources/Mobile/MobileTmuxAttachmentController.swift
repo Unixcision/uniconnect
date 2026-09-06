@@ -4,7 +4,7 @@ import Foundation
 /// Owns the bounded tmux clients of one authenticated mobile connection.
 actor MobileTmuxAttachmentController {
     typealias Event = MobileTmuxAttachmentEvent
-    typealias Resolver = @Sendable (UUID, UUID) async throws -> MobileTmuxAttachPlan
+    typealias Resolver = @Sendable (UUID, UUID, UUID) async throws -> MobileTmuxAttachPlan
     typealias ProcessFactory = @Sendable () -> any MobilePTYRunning
 
     private struct Attachment {
@@ -12,6 +12,8 @@ actor MobileTmuxAttachmentController {
         let workspaceID: UUID
         let surfaceID: UUID
         let process: any MobilePTYRunning
+        var decoder: MobileTmuxOutputDecoder
+        var geometry: MobileTmuxGeometry?
         var columns: Int
         var rows: Int
         var plan: MobileTmuxAttachPlan?
@@ -73,7 +75,7 @@ actor MobileTmuxAttachmentController {
         // Reservation precedes the first await, so concurrent requests cannot duplicate a target.
         attachments[id] = Attachment(
             id: id, workspaceID: workspaceID, surfaceID: surfaceID,
-            process: makeProcess(), columns: columns, rows: rows
+            process: makeProcess(), decoder: MobileTmuxOutputDecoder(nonce: id), columns: columns, rows: rows
         )
         let preparation = Task { await self.start(id) }
         attachments[id]?.preparation = preparation
@@ -98,7 +100,9 @@ actor MobileTmuxAttachmentController {
         attachment.delivery = Task { [weak self] in
             for await output in stream {
                 guard !Task.isCancelled, let self else { break }
-                guard await self.deliver(output, id: attachID, send: send) else { break }
+                for decoded in await self.decode(output, id: attachID) {
+                    guard await self.deliver(decoded, id: attachID, send: send) else { return }
+                }
             }
             await self?.close(attachID)
         }
@@ -148,7 +152,7 @@ actor MobileTmuxAttachmentController {
     private func start(_ id: UUID) async -> MobileHostRPCResult {
         guard let initial = attachments[id] else { return Self.closed }
         do {
-            let plan = try await resolve(initial.workspaceID, initial.surfaceID)
+            let plan = try await resolve(initial.workspaceID, initial.surfaceID, id)
             try Task.checkCancellation()
             guard plan.workspaceID == initial.workspaceID, plan.surfaceID == initial.surfaceID,
                   attachments[id] != nil else {
@@ -224,7 +228,7 @@ actor MobileTmuxAttachmentController {
     private func validate(_ id: UUID) async -> Bool {
         guard let initial = attachments[id], let plan = initial.plan else { return false }
         do {
-            let currentPlan = try await resolve(initial.workspaceID, initial.surfaceID)
+            let currentPlan = try await resolve(initial.workspaceID, initial.surfaceID, id)
             guard attachments[id]?.plan == plan, currentPlan == plan else {
                 await close(id)
                 return false
@@ -236,8 +240,16 @@ actor MobileTmuxAttachmentController {
         }
     }
 
+    private func decode(_ output: MobilePTYOutput, id: UUID) -> [MobilePTYOutput] {
+        attachments[id]?.decoder.decode(output) ?? []
+    }
+
     private func deliver(_ output: MobilePTYOutput, id: UUID, send: @Sendable (Event) async -> Bool) async -> Bool {
         guard await validate(id), var attachment = attachments[id], !Task.isCancelled else { return false }
+        if case .geometry(let geometry) = output {
+            guard attachment.geometry != geometry else { return true }
+            attachment.geometry = geometry
+        }
         let event = Event(
             attachID: id, workspaceID: attachment.workspaceID, surfaceID: attachment.surfaceID,
             sequence: attachment.sequence, output: output
@@ -250,7 +262,7 @@ actor MobileTmuxAttachmentController {
             return false
         }
         switch output {
-        case .bytes:
+        case .bytes, .geometry:
             return true
         case .exited, .failed:
             await close(id)
@@ -279,13 +291,17 @@ actor MobileTmuxAttachmentController {
     }
 
     private static func attached(_ attachment: Attachment) -> MobileHostRPCResult {
-        .ok([
+        var payload: [String: Any] = [
             "attach_id": attachment.id.uuidString,
             "workspace_id": attachment.workspaceID.uuidString,
             "surface_id": attachment.surfaceID.uuidString,
             "columns": attachment.columns,
             "rows": attachment.rows,
-        ])
+        ]
+        if let geometry = attachment.geometry {
+            payload.merge(geometry.jsonObject) { _, value in value }
+        }
+        return .ok(payload)
     }
 
     private static func code(for error: MobileTmuxAttachError) -> String {

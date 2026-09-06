@@ -437,6 +437,8 @@
 		A6092606BB00000000000008 /* MobileTmuxAttachmentEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6092606AA00000000000008 /* MobileTmuxAttachmentEvent.swift */; };
 		A6092606BB00000000000006 /* MobileTmuxAttachPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6092606AA00000000000006 /* MobileTmuxAttachPlan.swift */; };
 		A6092606BB00000000000102 /* MobileTmuxAttachPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6092606AA00000000000102 /* MobileTmuxAttachPlanTests.swift */; };
+		A6092606BB0000000000000A /* MobileTmuxGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6092606AA0000000000000A /* MobileTmuxGeometry.swift */; };
+		A6092606BB0000000000000B /* MobileTmuxOutputDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6092606AA0000000000000B /* MobileTmuxOutputDecoder.swift */; };
 		A6092606BB00000000000104 /* MobileTmuxPTYIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6092606AA00000000000104 /* MobileTmuxPTYIntegrationTests.swift */; };
 		A6092606BB00000000000007 /* MobileTmuxTargetResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6092606AA00000000000007 /* MobileTmuxTargetResolver.swift */; };
 		F6448F377504F33956E7E03B /* MobileWorkspaceListFidelityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86544CEFA1CA33CA9225FB6E /* MobileWorkspaceListFidelityTests.swift */; };
@@ -1387,6 +1389,8 @@
 		A6092606AA00000000000008 /* MobileTmuxAttachmentEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTmuxAttachmentEvent.swift; sourceTree = "<group>"; };
 		A6092606AA00000000000006 /* MobileTmuxAttachPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTmuxAttachPlan.swift; sourceTree = "<group>"; };
 		A6092606AA00000000000102 /* MobileTmuxAttachPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTmuxAttachPlanTests.swift; sourceTree = "<group>"; };
+		A6092606AA0000000000000A /* MobileTmuxGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTmuxGeometry.swift; sourceTree = "<group>"; };
+		A6092606AA0000000000000B /* MobileTmuxOutputDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTmuxOutputDecoder.swift; sourceTree = "<group>"; };
 		A6092606AA00000000000104 /* MobileTmuxPTYIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTmuxPTYIntegrationTests.swift; sourceTree = "<group>"; };
 		A6092606AA00000000000007 /* MobileTmuxTargetResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTmuxTargetResolver.swift; sourceTree = "<group>"; };
 		86544CEFA1CA33CA9225FB6E /* MobileWorkspaceListFidelityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileWorkspaceListFidelityTests.swift; sourceTree = "<group>"; };
@@ -2210,6 +2214,8 @@
 				47BDC06F004C02A52B05E4A0 /* MobileHostRPC.swift */,
 				A6092606AA00000000000001 /* MobilePTYRunning.swift */,
 				A6092606AA00000000000002 /* MobilePTYOutput.swift */,
+				A6092606AA0000000000000A /* MobileTmuxGeometry.swift */,
+				A6092606AA0000000000000B /* MobileTmuxOutputDecoder.swift */,
 				A6092606AA00000000000003 /* MobilePTYProcessError.swift */,
 				A6092606AA00000000000004 /* MobilePTYProcess.swift */,
 				A6092606AA00000000000005 /* MobileTmuxAttachError.swift */,
@@ -3538,6 +3544,8 @@
 				A6092606BB00000000000009 /* MobileTmuxAttachmentController.swift in Sources */,
 				A6092606BB00000000000008 /* MobileTmuxAttachmentEvent.swift in Sources */,
 				A6092606BB00000000000006 /* MobileTmuxAttachPlan.swift in Sources */,
+				A6092606BB0000000000000A /* MobileTmuxGeometry.swift in Sources */,
+				A6092606BB0000000000000B /* MobileTmuxOutputDecoder.swift in Sources */,
 				A6092606BB00000000000007 /* MobileTmuxTargetResolver.swift in Sources */,
 				00C3AA443F6DA8D94E28CE17 /* MobileWorkspaceListObserver.swift in Sources */,
 				A5001094 /* NotificationsPage.swift in Sources */,

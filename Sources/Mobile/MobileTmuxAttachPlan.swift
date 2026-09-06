@@ -6,6 +6,7 @@ struct MobileTmuxAttachPlan: Equatable, Sendable, CustomStringConvertible, Custo
     let surfaceID: UUID
     /// Sensitive canonical shell text for the private PTY launcher. Never log or persist it.
     let command: String
+    var geometryNonce: UUID? = nil
     let identity: Identity
 
     struct Identity: Equatable, Sendable {
@@ -30,20 +31,21 @@ struct MobileTmuxAttachPlan: Equatable, Sendable, CustomStringConvertible, Custo
     var debugDescription: String { description }
 
     /// Links the existing window into an owned presentation session without restarting its panes.
-    static func localCommand(binding: UniConnectLocalTmuxBinding, tmuxExecutable: String? = nil) -> String {
+    static func localCommand(binding: UniConnectLocalTmuxBinding, tmuxExecutable: String? = nil, geometryNonce: UUID? = nil) -> String {
         attachScript(
-            session: binding.name, socketName: binding.socketName, tmuxExecutable: tmuxExecutable
+            session: binding.name, socketName: binding.socketName, tmuxExecutable: tmuxExecutable,
+            geometryNonce: geometryNonce
         )
     }
 
-    static func sshCommand(record: UniConnectSSHCredentialRecord, session: String) throws -> String {
+    static func sshCommand(record: UniConnectSSHCredentialRecord, session: String, geometryNonce: UUID? = nil) throws -> String {
         guard !session.isEmpty, UniConnectSSH.sanitizedTmuxName(session) == session,
               let target = record.effectiveTarget,
               let validated = UniConnectSSHConnectCommandValidator().validatedCommand(record.connectCommand),
               let command = validated.sensitiveCanonicalShellCommand(
                 injecting: ["-t", "-t"] + UniConnectSSH.baseClientOptions,
                 pinnedTo: target,
-                remoteCommand: "/bin/sh -c " + UniConnectSSH.singleQuoted(attachScript(session: session))
+                remoteCommand: "/bin/sh -c " + UniConnectSSH.singleQuoted(attachScript(session: session, geometryNonce: geometryNonce))
               ) else {
             throw MobileTmuxAttachError.invalidSSHCredential
         }
@@ -53,7 +55,8 @@ struct MobileTmuxAttachPlan: Equatable, Sendable, CustomStringConvertible, Custo
     private static func attachScript(
         session: String,
         socketName: String? = nil,
-        tmuxExecutable: String? = nil
+        tmuxExecutable: String? = nil,
+        geometryNonce: UUID? = nil
     ) -> String {
         let quote = UniConnectSSH.singleQuoted
         let resolveExecutable = tmuxExecutable.map { "uc_mobile_tmux=\(quote($0))" } ?? """
@@ -71,6 +74,26 @@ struct MobileTmuxAttachPlan: Equatable, Sendable, CustomStringConvertible, Custo
         let missing = quote(MobileTmuxAttachError.missingTmux.localizedDescription)
         let unsupported = quote(MobileTmuxAttachError.unsupportedTmux.localizedDescription)
         let sessionMissing = quote(MobileTmuxAttachError.missingSession.localizedDescription)
+        let geometryBootstrap = geometryNonce.map { nonce in
+            let token = nonce.uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+            // Capture this client's tty now. Hook contexts may later belong to the
+            // desktop client that resized the linked window; never use its tty.
+            return """
+            uc_mobile_tty=$(/usr/bin/tty 2>/dev/null) || exit 69
+            case "$uc_mobile_tty" in /dev/tty*|/dev/pts/*) ;; *) exit 69 ;; esac
+            case "$uc_mobile_tty" in *[!a-zA-Z0-9/_-]*) exit 69 ;; esac
+            uc_mobile_geometry_script="(printf '\\\\036UCPTY_GEOMETRY_\(token):%s:%s:%s\\\\037' '#{window_width}' '#{window_height}' '#{status}' > '$uc_mobile_tty') 2>/dev/null || :"
+            uc_mobile_geometry_hook="run-shell -b -t '=$uc_mobile_aux:' \\"$uc_mobile_geometry_script\\""
+            """
+        } ?? ""
+        let geometryHooks = geometryNonce == nil ? "" : """
+        set-hook -t "=$uc_mobile_aux:" window-resized "$uc_mobile_geometry_hook" \\; \\
+        set-hook -t "=$uc_mobile_aux:" client-resized "$uc_mobile_geometry_hook" \\; \\
+        set-hook -t "=$uc_mobile_aux:" after-set-option "$uc_mobile_geometry_hook" \\; \\
+        """ + "\n"
+        let geometryInitial = geometryNonce == nil ? "" : """
+        \\; run-shell -b -t "=$uc_mobile_aux:" "$uc_mobile_geometry_script"
+        """
         // tmux silently ignores unknown client flags. Both the executable and the
         // existing server must be known to support ignore-size and active-pane.
         // Released 3.2...3.7 (including 3.7c) support both; development HEAD does not
@@ -109,6 +132,7 @@ struct MobileTmuxAttachPlan: Equatable, Sendable, CustomStringConvertible, Custo
         case "$uc_mobile_nonce" in ''|*[!0-9a-f]*) exit 69 ;; esac
         [ "${#uc_mobile_nonce}" -eq 32 ] || exit 69
         uc_mobile_aux=uc-mobile-$uc_mobile_nonce
+        \(geometryBootstrap)
         # A grouped new-session briefly executes the server default command.
         # Two executable arguments bypass that shell entirely. The only new
         # process is an inert, bounded placeholder replaced by the existing window.
@@ -119,10 +143,10 @@ struct MobileTmuxAttachPlan: Equatable, Sendable, CustomStringConvertible, Custo
             set-option -t "=$uc_mobile_aux:" destroy-unattached on \\; \\
             set-option -t "=$uc_mobile_aux:" detach-on-destroy on \\; \\
             set-option -t "=$uc_mobile_aux:" mouse on \\; \\
-            link-window -k -s "$uc_mobile_window" -t "=$uc_mobile_aux:^" \\; \\
+            \(geometryHooks)link-window -k -s "$uc_mobile_window" -t "=$uc_mobile_aux:^" \\; \\
             attach-session -E -f ignore-size,active-pane -t "=$uc_mobile_aux" \\; \\
             select-pane -t "=$uc_mobile_aux:.+" \\; \\
-            select-pane -t "=$uc_mobile_aux:.$uc_mobile_pane"
+            select-pane -t "=$uc_mobile_aux:.$uc_mobile_pane" \(geometryInitial)
         """
     }
 }
