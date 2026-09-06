@@ -60,6 +60,7 @@ class TerminalSurface(Gtk.Box):
         self.terminal.connect("button-press-event", self.on_button)
         self.terminal.add_events(Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK)
         self.terminal.connect("motion-notify-event", self.on_selection_motion)
+        self.terminal.connect("grab-broken-event", self.on_selection_grab_broken)
         self.terminal.connect("button-release-event", self.on_selection_release)
         self.terminal.connect("key-press-event", self.on_selection_key)
         self.terminal.connect("notify::current-directory-uri", self.on_directory)
@@ -504,6 +505,11 @@ class TerminalSurface(Gtk.Box):
             self.selection_drag.motion(*self.selection_cell(event))
             self.selection_drag.finish()
             return True
+        return False
+
+    def on_selection_grab_broken(self, _, event):
+        if not event.keyboard and self.selection_drag.pressed:
+            self.selection_drag.finish()
         return False
 
     def on_selection_key(self, _, event):

@@ -8,7 +8,7 @@ import time
 import unittest
 
 import test_mainwindow_copy as window_fixture
-from gi.repository import GLib, Gtk
+from gi.repository import GLib, Gtk, Vte
 
 
 class ShiftHistoryTests(window_fixture.MainWindowCopyTests):
@@ -82,7 +82,11 @@ class ShiftHistoryTests(window_fixture.MainWindowCopyTests):
         self.tmux("respawn-pane", "-k", "-t", "=subject:", command)
         self.tmux("wait-for", "history-ready")
         self.before = self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_id}:#{pane_pid}")
-        self.wait_for(lambda: "ROW0119" in (self.surface.terminal.get_text(None, None)[0] or ""))
+        terminal = self.surface.terminal
+        def visible_text():
+            return (terminal.get_text_format(Vte.Format.TEXT) if hasattr(terminal, "get_text_format")
+                    else terminal.get_text(None, None)[0]) or ""
+        self.wait_for(lambda: "ROW0119" in visible_text())
 
     def start_drag(self):
         terminal = self.surface.terminal
@@ -101,6 +105,8 @@ class ShiftHistoryTests(window_fixture.MainWindowCopyTests):
         self.x11.XSync(self.display, False)
         self.wait_for(lambda: self.tmux("display-message", "-p", "-t", "=subject:",
                                        "#{selection_present}") == "1")
+        self.anchor = self.tmux("display-message", "-p", "-t", "=subject:",
+                                "#{copy_cursor_x}:#{copy_cursor_y}:#{scroll_position}")
 
     def test_held_shift_drag_autoscrolls_history_and_copies_then_accepts_input(self):
         self.seed_history()
@@ -117,8 +123,9 @@ class ShiftHistoryTests(window_fixture.MainWindowCopyTests):
         # Exercise Copy immediately after mouse release: its async export must
         # follow the final queued drag, not race it or an outstanding SSH call.
         self.window.run_action("copy")
-        self.wait_for(lambda: "ROW0119" in (self.clipboard.wait_for_text() or ""))
+        self.wait_for(lambda: (self.clipboard.wait_for_text() or "anterior") != "anterior")
         copied = self.clipboard.wait_for_text()
+        self.assertIn("ROW0119", copied, f"anchor={self.anchor}; copied={copied!r}")
         lines = [line.strip() for line in copied.splitlines() if line.strip()]
         self.assertGreater(len(lines), height)
         numbers = [int(line[3:7]) for line in lines]
