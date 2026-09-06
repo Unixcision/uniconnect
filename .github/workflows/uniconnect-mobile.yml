@@ -29,10 +29,11 @@ jobs:
         run: swift test --package-path Packages/CMUXMobileCore --jobs 2
       - name: Acceso privado independiente de las cuentas
         run: swift test --package-path Packages/CmuxSettingsUI --jobs 2
-      - name: Autorizaciones y recuperación local con código de producción
+      # Local recovery/tmux runs against cmux-unit in uniconnect-macos-rpc.yml,
+      # including its real process inspection, instead of a partial source copy.
+      - name: Autorizaciones y entrega con código de producción
         shell: bash
         run: |
-          command -v tmux >/dev/null || brew install tmux
           export UNICONNECT_TEST_REPO="$GITHUB_WORKSPACE"
           harness_path="$(bash scripts/ci/prepare-uniconnect-mobile-harness.sh)"
           swift test --package-path "$harness_path" --jobs 2

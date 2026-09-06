@@ -7,15 +7,10 @@ mkdir -p "$harness_path/Sources/cmux" "$harness_path/Tests/UniConnectMobileBehav
 cp "$repo_path/scripts/ci/uniconnect-mobile-harness/Package.swift" "$harness_path/Package.swift"
 
 # Copy complete production files, never reimplement behavior in a test shim.
+# The tmux suites run against the complete app in uniconnect-macos-rpc.yml.
+# Their process/runtime inspection now depends on app-domain types; copying a
+# partial dependency tree here would drift from that authoritative test target.
 for filename in \
-    Sources/TerminalStartupShellQuoting.swift \
-    Sources/UniConnect/UniConnectLocalTmuxBinding.swift \
-    Sources/UniConnect/UniConnectLocalTmuxLaunchPlan.swift \
-    Sources/UniConnect/UniConnectLocalTmuxInspecting.swift \
-    Sources/UniConnect/UniConnectLocalTmuxOwner.swift \
-    Sources/UniConnect/UniConnectLocalTmuxProcessIdentity.swift \
-    Sources/UniConnect/UniConnectLocalTmuxProcessIdentity+Darwin.swift \
-    Sources/UniConnect/UniConnectLocalTmuxService.swift \
     Sources/UniConnect/UniConnectMobileApprovedPeer.swift \
     Sources/UniConnect/UniConnectMobilePendingPeer.swift \
     Sources/UniConnect/UniConnectMobileAccessRepository.swift \
@@ -28,7 +23,7 @@ for filename in \
 do
     cp "$repo_path/$filename" "$harness_path/Sources/cmux/"
 done
-for filename in UniConnectLocalTmuxTests.swift UniConnectLocalTmuxIntegrationTests.swift UniConnectMobileAccessTests.swift MobileHostOutboundQueueTests.swift; do
+for filename in UniConnectMobileAccessTests.swift MobileHostOutboundQueueTests.swift; do
     cp "$repo_path/cmuxTests/$filename" "$harness_path/Tests/UniConnectMobileBehaviorTests/"
 done
 printf '%s\n' "$harness_path"
