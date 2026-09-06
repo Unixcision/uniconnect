@@ -17,10 +17,14 @@ struct MobileTmuxPTYIntegrationTests {
                 .first { FileManager.default.isExecutableFile(atPath: $0) },
             "This integration test requires tmux in the isolated CI runner."
         )
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-tmux-\(UUID().uuidString)")
+        // Darwin's sockaddr_un path is short; the runner's per-user temporary
+        // directory plus a second UUID can exceed it before tmux even starts.
+        let directory = URL(fileURLWithPath: "/tmp", isDirectory: true)
+            .appendingPathComponent("ucmt-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(at: directory) }
-        let binding = try #require(UniConnectLocalTmuxBinding(name: "fixture", socketName: "uc-mobile-" + UUID().uuidString))
+        // TMUX_TMPDIR is already unique per fixture, including its socket namespace.
+        let binding = try #require(UniConnectLocalTmuxBinding(name: "fixture", socketName: "mobile"))
         let environment = [
             "HOME": directory.path, "TMPDIR": directory.path, "TMUX_TMPDIR": directory.path,
             "PATH": "/usr/bin:/bin", "SHELL": "/bin/sh", "TERM": "xterm-256color",
