@@ -34,6 +34,7 @@ class MobilePTYProcess:
 
     _TOKEN_ENV = "UNICONNECT_MOBILE_PTY_TOKEN"
     _MAX_PREAMBLE = 1024 * 1024
+    _MAX_GEOMETRY_FRAME = 160
 
     @staticmethod
     def _tmux_argv(socket_name):
@@ -75,7 +76,25 @@ class MobilePTYProcess:
         guard = "#{&&:#{==:#{session_name}," + name + "}," + pane_guard + "}"
         # display-message -p after attach enters view-mode and consumes input;
         # write the nonce directly to this client's TTY instead (no pane input).
-        ready = "printf '\\036UCPTY_READY_" + token + "\\037' > '##{client_tty}'"
+        # Two format passes precede hook installation: run-shell -C below,
+        # then this bootstrap's run-shell. Freeze THIS client's TTY after the
+        # second pass; leave window/status formats for each later hook. A
+        # desktop-triggered resize must never redirect metadata to its TTY.
+        geometry = ("printf '\\036UCPTY_GEOMETRY_" + token + ":%s:%s:%s\\037' "
+                    "'####{window_width}' '####{window_height}' '####{status}' > '##{client_tty}'")
+        # A queued hook can outlive its TTY. Any stderr/nonzero run-shell exit
+        # otherwise opens tmux view-mode in a shared pane. Closing our client
+        # must silently discard its late notification, not disturb the desktop.
+        geometry = "(" + geometry + ") 2>/dev/null || :"
+        hook = shlex.join(["run-shell", "-b", "-t", "=" + auxiliary + ":", geometry])
+        setup = [shlex.join(binary + ["set-hook", "-t", "=" + auxiliary + ":", event, hook])
+                 for event in ("window-resized", "client-resized", "after-set-option")]
+        initial = ("printf '\\036UCPTY_GEOMETRY_" + token + ":%s:%s:%s\\037"
+                   "\\036UCPTY_READY_" + token + "\\037' "
+                   "'##{window_width}' '##{window_height}' '##{status}' > '##{client_tty}'")
+        # Failure still withholds READY, so wait_ready fails closed. Suppress
+        # diagnostics in shared panes when cancellation races with bootstrap.
+        ready = "(" + " && ".join([*setup, initial]) + ") >/dev/null 2>&1 || :"
         commands = [["new-session", "-E", "-f", "ignore-size,active-pane", "-s", auxiliary,
                      "-n", "uc-placeholder", "/bin/sleep", "60"],
                     ["set-option", "-t", auxiliary, "destroy-unattached", "on"],
@@ -121,6 +140,8 @@ class MobilePTYProcess:
         self._token = launch.env.get(self._TOKEN_ENV)
         self._lock = threading.Lock()
         self._buffer = bytearray()
+        self._geometry_pending = bytearray()
+        self._source_geometry = None
         self._ready = False
         self._closed = threading.Event()
         master, slave = pty.openpty()
@@ -147,6 +168,57 @@ class MobilePTYProcess:
     def fileno(self):
         return self._master
 
+    @property
+    def source_geometry(self):
+        with self._lock:
+            return dict(self._source_geometry) if self._source_geometry else None
+
+    def _terminal_bytes(self, chunk, *, eof=False):
+        """Strip only valid private geometry frames, including across reads.
+
+        Caller holds the lock. Unknown, invalid and incomplete-at-EOF markers
+        remain terminal bytes; neither UTF-8 nor VT sequences are interpreted.
+        Only a bounded possible marker prefix is retained between calls.
+        """
+        if not self._token:
+            return chunk
+        prefix = ("\x1eUCPTY_GEOMETRY_" + self._token + ":").encode("ascii")
+        pending = self._geometry_pending
+        pending.extend(chunk)
+        output = bytearray()
+        while pending:
+            position = pending.find(prefix)
+            if position < 0:
+                keep = 0
+                if not eof:
+                    for length in range(min(len(prefix) - 1, len(pending)), 0, -1):
+                        if pending.endswith(prefix[:length]):
+                            keep = length
+                            break
+                count = len(pending) - keep
+                output.extend(pending[:count])
+                del pending[:count]
+                break
+            output.extend(pending[:position])
+            del pending[:position]
+            end = pending.find(b"\x1f", len(prefix))
+            if end < 0 and len(pending) < self._MAX_GEOMETRY_FRAME and not eof:
+                break
+            match = re.fullmatch(rb"([0-9]{1,5}):([0-9]{1,5}):(off|on|[2-5])",
+                                 pending[len(prefix):end]) if 0 <= end < self._MAX_GEOMETRY_FRAME else None
+            if match:
+                columns, rows = int(match[1]), int(match[2])
+                status_rows = {b"off": 0, b"on": 1, b"2": 2, b"3": 3, b"4": 4, b"5": 5}[match[3]]
+                if 1 <= columns <= 65535 and 1 <= rows <= 65535 - status_rows:
+                    self._source_geometry = {"source_columns": columns, "source_rows": rows,
+                                             "presentation_columns": columns, "presentation_rows": rows + status_rows}
+                    del pending[:end + 1]
+                    continue
+            # Advance one byte so a later valid frame is still recognized.
+            output.append(pending[0])
+            del pending[0]
+        return bytes(output)
+
     def _read_raw(self, maximum):
         if self._master < 0:
             return b""
@@ -165,7 +237,16 @@ class MobilePTYProcess:
                 result = bytes(self._buffer[:max_bytes])
                 del self._buffer[:max_bytes]
                 return result
-            return self._read_raw(max_bytes)
+            chunk = self._read_raw(max_bytes)
+            self._buffer.extend(self._terminal_bytes(chunk, eof=not chunk))
+            if self._buffer:
+                result = bytes(self._buffer[:max_bytes])
+                del self._buffer[:max_bytes]
+                return result
+            if chunk:
+                # A metadata-only read updates source_geometry, not stream EOF.
+                raise BlockingIOError(errno.EAGAIN, "Sin bytes de terminal todavía")
+            return b""
 
     def wait_ready(self, timeout=5, cancelled=None):
         """Wait for this client's post-attach nonce; retain every terminal byte.
@@ -221,7 +302,7 @@ class MobilePTYProcess:
                     if self.poll() is not None or self._closed.is_set() or (cancelled and cancelled()):
                         raise TransportError("mobile_pty_attach_failed")
                     with self._lock:
-                        self._buffer.extend(pending)
+                        self._buffer.extend(self._terminal_bytes(pending))
                         self._ready = True
                     return True
         except (OSError, ValueError):
@@ -258,6 +339,7 @@ class MobilePTYProcess:
             os.close(self._master)
             self._master = -1
             self._buffer.clear()
+            self._geometry_pending.clear()
         for number in (signal.SIGTERM, signal.SIGKILL):
             if self._process.poll() is not None:
                 break

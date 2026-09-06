@@ -71,7 +71,7 @@ propiedad es el de la conexión autenticada del servidor, no `client_id` enviado
 
 | RPC | Petición | Respuesta |
 |---|---|---|
-| `mobile.terminal.attach` | `workspace_id`, `surface_id`, `client_id`, `columns`, `rows` | Los dos IDs de destino, `attach_id`, `columns`, `rows` |
+| `mobile.terminal.attach` | `workspace_id`, `surface_id`, `client_id`, `columns`, `rows` | Los dos IDs de destino, `attach_id`, `columns`, `rows`; geometría opcional descrita abajo |
 | `mobile.terminal.pty_input` | `attach_id`, `data` base64 | `attach_id`, `queued:true` |
 | `mobile.terminal.pty_resize` | `attach_id`, `columns`, `rows` | `attach_id`, `columns`, `rows` |
 | `mobile.terminal.detach` | `attach_id` | `ok:true` |
@@ -109,6 +109,42 @@ no al cálculo del tamaño del escritorio. Si no queda ningún cliente de escrit
 tmux puede usar el tamaño del móvil: no se bloquean esas sesiones guardadas.
 El programa dentro del pane sigue teniendo **una geometría compartida**: no se
 promete un reflujo independiente del mismo programa para cada cliente.
+
+### Geometría opcional de presentación
+
+`columns/rows` conservan el tamaño del PTY solicitado. La respuesta de attach y
+los eventos `terminal.pty` pueden añadir estos cuatro campos cuando el adaptador
+dispone de una lectura nativa, sin inventar tamaños:
+
+| Campos | Significado |
+|---|---|
+| `source_columns`, `source_rows` | Tamaño real de la **ventana tmux**, sin status; no el de un pane individual |
+| `presentation_columns`, `presentation_rows` | Canvas necesario para esa ventana y las filas de status de la auxiliar móvil |
+
+Los cambios usan el mismo `attach_id` y la misma secuencia `seq` del flujo PTY.
+Una geometría idéntica a la última publicada no se vuelve a emitir, aunque haya
+otro `client-resized`: ajustar el PTY móvil al canvas no genera un bucle de avisos.
+Un evento de geometría puede no contener `data`; no significa cierre. El cliente
+aplica primero la geometría y después los bytes del mismo evento. Puede ajustar
+su emulador y solicitar `pty_resize` al tamaño de presentación, sin cambiar la
+ventana original. No debe recortar simplemente el rectángulo superior: en un PTY
+demasiado alto tmux sitúa la barra de estado al final, tras las filas de relleno.
+Si faltan estos campos, se conserva el comportamiento anterior.
+
+Linux toma la geometría al confirmar el attach y mediante hooks `window-resized`,
+`client-resized` y `after-set-option` instalados sólo en la auxiliar. El transporte
+local/SSH existente recibe un marcador privado con nonce de 32 hexadecimales:
+`RS UCPTY_GEOMETRY_<nonce>:<ancho>:<alto>:<status> US`, sin espacios; `RS` es 0x1e
+y `US` es 0x1f. `status` es `off`, `on` o entre `2` y `5`. Los hooks capturan la tty
+del cliente móvil al conectar, no la del cliente que posteriormente provoca un
+resize. No se añaden hooks globales, conexiones SSH por evento ni órdenes al pane.
+El adaptador elimina sólo sus marcadores válidos con un buffer acotado que
+persiste entre lecturas, conserva íntegros los bytes VT/UTF-8 y publica los campos
+anteriores; Android nunca debe interpretar este marcador interno. Un marcador
+incompleto al cerrar, inválido o de otro nonce permanece como contenido original.
+Un callback tardío cuya tty ya se cerró termina sin salida ni error de `run-shell`,
+para que tmux no abra una vista de diagnóstico en un pane compartido. Un fallo
+del bootstrap no confirma `READY` y el attach falla de forma cerrada.
 
 No se cambia la ventana seleccionada del escritorio para alcanzar un pane
 oculto: se selecciona sólo en la auxiliar. La sesión auxiliar y `active-pane`

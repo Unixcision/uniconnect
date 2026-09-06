@@ -115,6 +115,56 @@ class MobilePTYProcessTests(_PTYFixture):
                 self.assertEqual(error.exception.code, expected)
                 self.assertIsNotNone(process.poll())
 
+    def test_geometry_frames_preserve_vt_and_foreign_markers_across_short_reads(self):
+        token = "d" * 32
+        ready = ("\x1eUCPTY_BEGIN_" + token + "\x1f\x1eUCPTY_READY_" + token + "\x1f").encode()
+        geometry = ("\x1eUCPTY_GEOMETRY_" + token + ":80:23:on\x1f").encode()
+        foreign = b"\x1eUCPTY_GEOMETRY_" + b"e" * 32 + b":90:30:off\x1f"
+        invalid = ("\x1eUCPTY_GEOMETRY_" + token + ":0:23:on\x1f").encode()
+        vt = "\x1b[31má\x1b[0m".encode()
+        payload = vt[:4] + geometry + vt[4:] + foreign + invalid + b"FIN"
+        script = ("import os,tty;tty.setraw(0);os.write(1," + repr(ready) + ");"
+                  "os.read(0,1);os.write(1," + repr(payload) + ");os.read(0,1)")
+        process = self.process(self.python_launch(script, {**self.env, MobilePTYProcess._TOKEN_ENV: token}))
+        process.wait_ready()
+        process.write(b"!")
+        output = bytearray()
+        deadline = time.monotonic() + 3
+        while not output.endswith(b"FIN"):
+            self.assertLess(time.monotonic(), deadline)
+            try:
+                output.extend(process.read(1))
+            except BlockingIOError:
+                select.select([process.fileno()], [], [], .1)
+        self.assertEqual(bytes(output), vt + foreign + invalid + b"FIN")
+        self.assertEqual(process.source_geometry, {"source_columns": 80, "source_rows": 23,
+                                                  "presentation_columns": 80, "presentation_rows": 24})
+
+    def test_incomplete_and_oversized_geometry_survive_eof(self):
+        token = "f" * 32
+        ready = ("\x1eUCPTY_BEGIN_" + token + "\x1f\x1eUCPTY_READY_" + token + "\x1f").encode()
+        prefix = ("\x1eUCPTY_GEOMETRY_" + token + ":").encode()
+        payload = prefix + b"1" * 256 + b"\x1f" + prefix + b"80:"
+        script = ("import os,tty;tty.setraw(0);os.write(1," + repr(ready) + ");"
+                  "os.read(0,1);os.write(1," + repr(payload) + ")")
+        process = self.process(self.python_launch(script, {**self.env, MobilePTYProcess._TOKEN_ENV: token}))
+        process.wait_ready()
+        process.write(b"!")
+        output = bytearray()
+        deadline = time.monotonic() + 3
+        while True:
+            self.assertLess(time.monotonic(), deadline)
+            try:
+                chunk = process.read(7)
+            except BlockingIOError:
+                select.select([process.fileno()], [], [], .1)
+                continue
+            if not chunk:
+                break
+            output.extend(chunk)
+        self.assertEqual(output, payload)
+        self.assertIsNone(process.source_geometry)
+
     def test_launch_validation_and_ssh_endpoint_credentials(self):
         record = {"tmux": "fixture", "tmuxSocket": "private", "paneId": "%1", "cwd": "/does-not-exist"}
         command = SSHCommand.parse("ssh -p2222 -i '/tmp/fixture key' -oStrictHostKeyChecking=yes user@fixture.invalid")
@@ -235,6 +285,53 @@ class MobilePTYTmuxTests(_PTYFixture):
         mobile.close()
         self.assertEqual(["fixture"], self.sessions())
 
+    def test_geometry_follows_pc_resize_and_auxiliary_status_without_global_hooks(self):
+        self.tmux("set-option", "-g", "status", "3")
+        self.tmux("set-option", "-t", "=fixture:", "status", "off")
+        panes = self.unique_panes()
+        hooks = [self.tmux("show-hooks", *args) for args in (("-g",), ("-t", "=fixture:"))]
+        options = self.tmux("show-options", "-t", "=fixture:")
+        mobile = self.mobile(size=(180, 60))
+        mobile.wait_ready()
+        self.assertEqual(mobile.source_geometry, {"source_columns": 100, "source_rows": 30,
+                                                 "presentation_columns": 100, "presentation_rows": 33})
+        auxiliary = next(name for name in self.sessions() if name.startswith("uc-mobile-"))
+
+        def receive_geometry(columns, rows, status_rows):
+            expected = {"source_columns": columns, "source_rows": rows,
+                        "presentation_columns": columns, "presentation_rows": rows + status_rows}
+            deadline = time.monotonic() + 3
+            while mobile.source_geometry != expected:
+                self.assertLess(time.monotonic(), deadline, repr(mobile.source_geometry))
+                try:
+                    mobile.read()
+                except BlockingIOError:
+                    select.select([mobile.fileno()], [], [], .1)
+
+        self.desktop.resize(120, 40)
+        receive_geometry(120, 40, 3)
+        mobile.resize(120, 43)
+        for status in ("off", "5"):
+            self.tmux("set-option", "-t", "=" + auxiliary + ":", "status", status)
+            receive_geometry(120, 40, 0 if status == "off" else 5)
+        self.assertEqual("120:40", self.tmux("display-message", "-p", "-t", "=fixture:", "#{window_width}:#{window_height}"))
+        self.assertEqual(panes, self.unique_panes())
+        self.assertEqual(options, self.tmux("show-options", "-t", "=fixture:"))
+        self.assertEqual(hooks, [self.tmux("show-hooks", *args) for args in (("-g",), ("-t", "=fixture:"))])
+        desktop_output = bytearray()
+        for _ in range(64):
+            try:
+                chunk = self.desktop.read()
+            except BlockingIOError:
+                break
+            self.assertTrue(chunk)
+            desktop_output.extend(chunk)
+        else:
+            self.fail("La salida del escritorio privado no se estabilizó")
+        self.assertNotIn(b"UCPTY_GEOMETRY_", desktop_output, "Un hook escribió metadatos en la tty del escritorio")
+        mobile.close()
+        self.assertEqual(["fixture"], self.sessions())
+
     def test_attachment_never_runs_configured_default_command(self):
         marker = self.root / "unexpected-default-command"
         self.tmux("set-option", "-g", "default-shell", "/bin/sh")
@@ -315,6 +412,20 @@ class MobilePTYTmuxTests(_PTYFixture):
         self.assertIsNone(self.desktop.poll())
         self.assertEqual(before, self.identities())
         self.assertEqual("1", self.tmux("display-message", "-p", "-t", self.first, "#{pane_in_mode}"))
+
+    def test_late_geometry_callback_is_silent_after_its_mobile_tty_closes(self):
+        mobile = self.mobile()
+        mobile.wait_ready()
+        auxiliary = next(name for name in self.sessions() if name.startswith("uc-mobile-"))
+        # Replay the callback actually installed in this private server, after
+        # its TTY is gone: deterministic version of resize racing with close.
+        hook = self.tmux("show-hooks", "-t", "=" + auxiliary + ":", "client-resized")
+        callback = shlex.split(hook)[-1]
+        mobile.close()
+        result = subprocess.run(["/bin/sh", "-c", callback], env=self.env, capture_output=True, timeout=3)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"", b""))
+        self.assertIsNone(self.desktop.poll())
+        self.assertEqual(["fixture"], self.sessions())
 
     def test_missing_targets_fail_and_other_window_attaches_without_selecting_desktop(self):
         other = self.tmux("new-window", "-d", "-t", "=fixture:", "-P", "-F", "#{pane_id}",
