@@ -11612,7 +11612,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     override func rightMouseDown(with event: NSEvent) {
         guard let surface = surface else { return }
-        if !ghostty_surface_mouse_captured(surface) {
+        if UniConnectCoordinator.isEnabled || !ghostty_surface_mouse_captured(surface) {
             requestPointerFocusRecovery()
             super.rightMouseDown(with: event)
             return
@@ -11627,7 +11627,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     override func rightMouseUp(with event: NSEvent) {
         guard let surface = surface else { return }
-        if !ghostty_surface_mouse_captured(surface) {
+        if UniConnectCoordinator.isEnabled || !ghostty_surface_mouse_captured(surface) {
             super.rightMouseUp(with: event)
             return
         }
@@ -11659,14 +11659,19 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         guard let surface = surface else { return nil }
-        if ghostty_surface_mouse_captured(surface) {
+        if !UniConnectCoordinator.isEnabled && ghostty_surface_mouse_captured(surface) {
             return nil
         }
 
         window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
         ghostty_surface_mouse_pos(surface, point.x, bounds.height - point.y, modsFromEvent(event))
-        _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, modsFromEvent(event))
+        // UniConnect owns the context menu, including in local and SSH tmux.
+        // Sending this press to the PTY as well opens tmux's textual menu and
+        // lets its release/focus handling interfere with the native menu.
+        if !UniConnectCoordinator.isEnabled {
+            _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, modsFromEvent(event))
+        }
 
         let menu = NSMenu()
         menu.autoenablesItems = false
