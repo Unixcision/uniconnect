@@ -4217,6 +4217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let fingerprintStart = ProcessInfo.processInfo.systemUptime
 #endif
         let resumeIndexes = await ProcessDetectedResumeIndexes.load()
+        await UniConnectCoordinator.shared.reconcileLocalTmuxRuntime()
         guard !isTerminatingApp,
               isCurrentProcessDetectedSessionSaveGeneration(generation) else {
 #if DEBUG
@@ -4293,6 +4294,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let generation = nextProcessDetectedSessionSaveGeneration()
         Task { @MainActor [weak self] in
             let resumeIndexes = await ProcessDetectedResumeIndexes.load()
+            await UniConnectCoordinator.shared.reconcileLocalTmuxRuntime()
             guard let self,
                   !self.isTerminatingApp,
                   self.isCurrentProcessDetectedSessionSaveGeneration(generation) else { return }

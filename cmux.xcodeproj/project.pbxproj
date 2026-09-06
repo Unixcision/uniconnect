@@ -771,6 +771,7 @@
 		A90620000000000000000007 /* UniConnectLocalTmuxProcessIdentity+Darwin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90610000000000000000007 /* UniConnectLocalTmuxProcessIdentity+Darwin.swift */; };
 		A90620000000000000000006 /* UniConnectLocalTmuxProcessIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90610000000000000000006 /* UniConnectLocalTmuxProcessIdentity.swift */; };
 		A6092606BB00000000000105 /* UniConnectLocalTmuxRestorePrimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6092606AA00000000000105 /* UniConnectLocalTmuxRestorePrimeTests.swift */; };
+		A6092606BB0000000000000A /* UniConnectLocalTmuxRuntimeObservation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6092606AA0000000000000A /* UniConnectLocalTmuxRuntimeObservation.swift */; };
 		A90620000000000000000004 /* UniConnectLocalTmuxService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90610000000000000000004 /* UniConnectLocalTmuxService.swift */; };
 		812D977F2346B10160E3C8CA /* UniConnectLocalTmuxSocketAccessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13EC33DB2A3A485401D825F1 /* UniConnectLocalTmuxSocketAccessTests.swift */; };
 		A90622000000000000000001 /* UniConnectLocalTmuxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90612000000000000000001 /* UniConnectLocalTmuxTests.swift */; };
@@ -1710,6 +1711,7 @@
 		A90610000000000000000007 /* UniConnectLocalTmuxProcessIdentity+Darwin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UniConnectLocalTmuxProcessIdentity+Darwin.swift"; sourceTree = "<group>"; };
 		A90610000000000000000006 /* UniConnectLocalTmuxProcessIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalTmuxProcessIdentity.swift; sourceTree = "<group>"; };
 		A6092606AA00000000000105 /* UniConnectLocalTmuxRestorePrimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalTmuxRestorePrimeTests.swift; sourceTree = "<group>"; };
+		A6092606AA0000000000000A /* UniConnectLocalTmuxRuntimeObservation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalTmuxRuntimeObservation.swift; sourceTree = "<group>"; };
 		A90610000000000000000004 /* UniConnectLocalTmuxService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalTmuxService.swift; sourceTree = "<group>"; };
 		13EC33DB2A3A485401D825F1 /* UniConnectLocalTmuxSocketAccessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalTmuxSocketAccessTests.swift; sourceTree = "<group>"; };
 		A90612000000000000000001 /* UniConnectLocalTmuxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalTmuxTests.swift; sourceTree = "<group>"; };
@@ -1996,6 +1998,7 @@
 				A90610000000000000000003 /* UniConnectLocalTmuxInspecting.swift */,
 				A90610000000000000000004 /* UniConnectLocalTmuxService.swift */,
 				A90610000000000000000005 /* UniConnectLocalTmuxOwner.swift */,
+				A6092606AA0000000000000A /* UniConnectLocalTmuxRuntimeObservation.swift */,
 				A90610000000000000000006 /* UniConnectLocalTmuxProcessIdentity.swift */,
 				A90610000000000000000007 /* UniConnectLocalTmuxProcessIdentity+Darwin.swift */,
 				D26E10000000000000000001 /* UniConnectLocalWindowRuntimeState.swift */,
@@ -3768,6 +3771,7 @@
 				A90620000000000000000005 /* UniConnectLocalTmuxOwner.swift in Sources */,
 				A90620000000000000000007 /* UniConnectLocalTmuxProcessIdentity+Darwin.swift in Sources */,
 				A90620000000000000000006 /* UniConnectLocalTmuxProcessIdentity.swift in Sources */,
+				A6092606BB0000000000000A /* UniConnectLocalTmuxRuntimeObservation.swift in Sources */,
 				A90620000000000000000004 /* UniConnectLocalTmuxService.swift in Sources */,
 				D26F20000000000000000005 /* UniConnectLocalWindowAction.swift in Sources */,
 				D26F20000000000000000006 /* UniConnectLocalWindowActionDescriptor.swift in Sources */,

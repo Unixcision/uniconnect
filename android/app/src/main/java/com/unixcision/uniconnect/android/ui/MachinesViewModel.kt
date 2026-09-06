@@ -453,9 +453,12 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                 }
                 val detail = rejected?.let { listOfNotNull(it.code.takeIf(String::isNotBlank), it.detail).joinToString(" · ") }?.takeIf { it.isNotBlank() }
                 mutableState.update { current ->
+                    // Only a missing method means "this machine cannot do it"; a window without a
+                    // durable target says nothing about the next one, so it is not remembered.
                     val remembered = if (unsupported && machine.id.isNotBlank()) current.attachUnsupported + machine.id else current.attachUnsupported
-                    // An automatic attempt that the host cannot serve returns to the mirror in silence.
-                    if (automatic && unsupported) current.copy(realTerminal = null, attachUnsupported = remembered)
+                    // An automatic attempt that fails returns to the mirror rather than leaving an
+                    // empty real-terminal screen; only a mode the user asked for reports the reason.
+                    if (automatic) current.copy(realTerminal = null, attachUnsupported = remembered)
                     else current.copy(realTerminal = RealTerminal(connecting = false, error = message, errorDetail = detail), attachUnsupported = remembered)
                 }
             } finally {

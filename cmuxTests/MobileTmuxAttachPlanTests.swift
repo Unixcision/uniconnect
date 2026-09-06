@@ -18,7 +18,8 @@ struct MobileTmuxAttachPlanTests {
         #expect(auxiliary.hasPrefix("uc-mobile-"))
         #expect(try fixture.read("attached") == "-E\n-f\nignore-size,active-pane\n-t\n=\(auxiliary)\n")
         #expect(try fixture.read("linked") == "$7:@11\n")
-        #expect(try fixture.read("calls") == "-V\nhas-session\ndisplay-message\ndisplay-message\nnew-session\nset-option\nset-option\nlink-window\nattach-session\nselect-pane\nselect-pane\n")
+        #expect(try fixture.read("calls") == "-V\nhas-session\ndisplay-message\ndisplay-message\nnew-session\nset-option\nset-option\nset-option\nlink-window\nattach-session\nselect-pane\nselect-pane\n")
+        #expect(fixture.exists("auxiliary-mouse-enabled"))
         #expect(!fixture.exists("unexpected"))
     }
 
@@ -128,7 +129,11 @@ struct MobileTmuxAttachPlanTests {
                     ;;
                 set-option)
                     [ "$2" = '-t' ] && [ "$3" = "=$auxiliary:" ] && [ "$5" = 'on' ] || exit 98
-                    case "$4" in destroy-unattached|detach-on-destroy) ;; *) exit 98 ;; esac
+                    case "$4" in
+                        destroy-unattached|detach-on-destroy) ;;
+                        mouse) touch "$UC_MOBILE_TEST_ROOT/auxiliary-mouse-enabled" ;;
+                        *) exit 98 ;;
+                    esac
                     shift 5
                     ;;
                 link-window)

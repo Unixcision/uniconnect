@@ -115,7 +115,7 @@ actor MobileTmuxAttachmentController {
             guard let id = Self.uuid(request.params["attach_id"]) else { return Self.invalidParams }
             guard attachments[id] != nil else { return Self.closed }
             await close(id)
-            return .ok(["attach_id": id.uuidString, "detached": true])
+            return .ok(["ok": true, "attach_id": id.uuidString, "detached": true])
         default:
             return .failure(MobileHostRPCError(
                 code: "method_not_found",

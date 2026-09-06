@@ -102,23 +102,25 @@ actor UniConnectClaudeLocalProcessInspector {
         return true
     }
 
-    private static func explicitSessionID(_ arguments: [String]) -> UUID? {
+    nonisolated static func explicitSessionID(_ arguments: [String]) -> UUID? {
         let options = ["--session-id", "--resume", "-r"]
-        for (index, argument) in arguments.enumerated() {
+        var found: Set<UUID> = []
+        for (index, argument) in arguments.enumerated().dropFirst() {
+            if argument == "--" { break }
             for option in options {
-                if argument == option,
-                   arguments.indices.contains(index + 1),
-                   let id = UUID(uuidString: arguments[index + 1]) {
-                    return id
+                if argument == option {
+                    guard arguments.indices.contains(index + 1),
+                          let id = UUID(uuidString: arguments[index + 1]) else { return nil }
+                    found.insert(id)
                 }
                 let prefix = option + "="
-                if argument.hasPrefix(prefix),
-                   let id = UUID(uuidString: String(argument.dropFirst(prefix.count))) {
-                    return id
+                if argument.hasPrefix(prefix) {
+                    guard let id = UUID(uuidString: String(argument.dropFirst(prefix.count))) else { return nil }
+                    found.insert(id)
                 }
             }
         }
-        return nil
+        return found.count == 1 ? found.first : nil
     }
 
     private static func standardized(_ value: String?) -> String? {

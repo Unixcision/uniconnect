@@ -514,6 +514,7 @@ extension Workspace {
             _ = uniConnectRecordLocalAgent(panelId: panelId, snapshot: restorableAgent)
         } else if uniConnectProfile?.isSSH == false,
                   panel is TerminalPanel,
+                  uniConnectLocalWindowsByPanelId[panelId]?.tmuxBinding == nil,
                   resumeBinding?.isAgentHookBinding == true,
                   let rawKind = resumeBinding?.kind,
                   let checkpointID = resumeBinding?.checkpointId,
@@ -13582,6 +13583,9 @@ final class Workspace: Identifiable, ObservableObject {
                     break
                 }
             case .promptIdle:
+                // An outer Ghostty attach shell cannot prove the inner durable pane is idle.
+                // The coordinator reconciles its verified native process before the next save.
+                if uniConnectLocalWindowsByPanelId[panelId]?.tmuxBinding != nil { break }
                 if restoredAgentResumeStatesByPanelId[panelId] != .awaitingAutoResumeCommand {
                     _ = uniConnectTransitionLocalWindowToShell(panelId: panelId)
                     restoredAgentResumeStatesByPanelId[panelId] = .manualResumeAvailable

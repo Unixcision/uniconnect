@@ -8,6 +8,9 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
     private let processEnvironment: @Sendable (Int) -> [String: String]?
     private let processIdentity: @Sendable (Int) -> UniConnectLocalTmuxProcessIdentity?
     private let isProcessDescendant: @Sendable (Int, Int) -> Bool
+    private let processSnapshot: @Sendable () -> CmuxTopProcessSnapshot
+    private let processArguments: @Sendable (Int) -> CmuxTopProcessArguments?
+    private let isForegroundWithoutChildren: @Sendable (Int) -> Bool
 
     init(
         commands: any CommandRunning,
@@ -18,12 +21,147 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
         isProcessDescendant: @escaping @Sendable (Int, Int) -> Bool = {
             guard let peer = pid_t(exactly: $0), let ancestor = pid_t(exactly: $1) else { return false }
             return SocketTransport().isProcessDescendant(peer, of: ancestor)
+        },
+        processSnapshot: @escaping @Sendable () -> CmuxTopProcessSnapshot = {
+            CmuxTopProcessSnapshot.capture(includeProcessDetails: false)
+        },
+        processArguments: @escaping @Sendable (Int) -> CmuxTopProcessArguments? = {
+            CmuxTopProcessSnapshot.processArgumentsAndEnvironment(for: $0)
+        },
+        isForegroundWithoutChildren: @escaping @Sendable (Int) -> Bool = {
+            UniConnectLocalTmuxProcessIdentity.isForegroundWithoutChildren(processID: $0)
         }
     ) {
         self.commands = commands
         self.processEnvironment = processEnvironment
         self.processIdentity = processIdentity
         self.isProcessDescendant = isProcessDescendant
+        self.processSnapshot = processSnapshot
+        self.processArguments = processArguments
+        self.isForegroundWithoutChildren = isForegroundWithoutChildren
+    }
+
+    func runtimeObservations(
+        for targets: [UniConnectLocalTmuxRuntimeObservation.Target]
+    ) async -> [UniConnectLocalTmuxRuntimeObservation] {
+        guard !targets.isEmpty, !Task.isCancelled else { return [] }
+        let processes = processSnapshot()
+        var observations: [UniConnectLocalTmuxRuntimeObservation] = []
+        for target in targets {
+            guard !Task.isCancelled else { break }
+            let owner = target.owner
+            let arguments = [
+                "-N", "-L", owner.binding.socketName, "display-message", "-p", "-t", "=" + owner.binding.name + ":",
+                "#{session_name}\t#{pane_id}\t#{pane_pid}\t#{pane_dead}\t#{pane_current_path}\t#{pane_current_command}",
+            ]
+            guard let before = await commands.runStandardOutput(
+                directory: "/", executable: "tmux", arguments: arguments, timeout: 2
+            ), before.utf8.count <= 8_192 else { continue }
+            let fields = before.trimmingCharacters(in: .newlines)
+                .split(separator: "\t", omittingEmptySubsequences: false)
+            guard fields.count == 6, fields[0] == owner.binding.name, fields[1].hasPrefix("%"),
+                  fields[3] == "0", let rootPID = Int(fields[2]),
+                  let rootIdentity = processIdentity(rootPID) else { continue }
+            let descendants = processes.expandedPIDs(rootPIDs: [rootPID])
+            let candidates = descendants.compactMap { pid -> (UniConnectLocalTmuxProcessIdentity, UUID)? in
+                guard let process = processes.process(pid: pid), process.isTerminalForegroundProcessGroup,
+                      process.cmuxWorkspaceID == owner.workspaceID, process.cmuxSurfaceID == owner.panelID,
+                      let identity = processIdentity(pid), let live = processArguments(pid),
+                      let conversationID = Self.knownClaudeConversation(
+                        arguments: live, target: target, currentDirectory: String(fields[4])
+                      ), processIdentity(pid) == identity else { return nil }
+                return (identity, conversationID)
+            }
+            let state: UniConnectLocalTmuxRuntimeObservation.State
+            let peer: UniConnectLocalTmuxProcessIdentity
+            if candidates.count == 1, let candidate = candidates.first {
+                peer = candidate.0
+                state = .agent(conversationID: candidate.1)
+            } else if candidates.isEmpty,
+                      let rootArguments = processArguments(rootPID),
+                      Self.isShell(rootArguments.arguments.first), Self.isShell(String(fields[5])),
+                      isForegroundWithoutChildren(rootPID) {
+                peer = rootIdentity
+                state = .shell
+            } else {
+                continue
+            }
+            // Old panes can predate the root-shell integration environment. Their scoped,
+            // known Claude descendant may repair persistence, but never authorize socket input.
+            let legacyGeneration: UUID?
+            if case .agent = state {
+                legacyGeneration = legacyRuntimePeerGeneration(root: rootIdentity, peer: peer, owner: owner)
+            } else {
+                legacyGeneration = nil
+            }
+            if legacyGeneration == nil {
+                guard await verifiedOwner(of: peer, among: [owner]) == owner else { continue }
+            }
+            guard let after = await commands.runStandardOutput(
+                    directory: "/", executable: "tmux", arguments: arguments, timeout: 2
+                  ), after == before, processIdentity(rootPID) == rootIdentity,
+                  processIdentity(peer.pid) == peer, !Task.isCancelled else { continue }
+            if let legacyGeneration {
+                guard legacyRuntimePeerGeneration(root: rootIdentity, peer: peer, owner: owner) == legacyGeneration else { continue }
+            }
+            // exec preserves the PID/start timestamp: re-read argv as well as kernel identity.
+            switch state {
+            case .agent(let id):
+                guard let live = processArguments(peer.pid),
+                      Self.knownClaudeConversation(arguments: live, target: target, currentDirectory: String(fields[4])) == id,
+                      processIdentity(peer.pid) == peer else { continue }
+            case .shell:
+                guard let live = processArguments(rootPID), Self.isShell(live.arguments.first),
+                      isForegroundWithoutChildren(rootPID), processIdentity(rootPID) == rootIdentity else { continue }
+            }
+            observations.append(.init(target: target, state: state))
+        }
+        return observations
+    }
+
+    /// Runtime-only compatibility for roots with no integration metadata whatsoever.
+    /// Partial, empty, or conflicting values remain an ownership failure, not a legacy pane.
+    private func legacyRuntimePeerGeneration(
+        root: UniConnectLocalTmuxProcessIdentity,
+        peer: UniConnectLocalTmuxProcessIdentity,
+        owner: UniConnectLocalTmuxOwner
+    ) -> UUID? {
+        guard let rootEnvironment = processEnvironment(root.pid),
+              ["CMUX_WORKSPACE_ID", "CMUX_SURFACE_ID", "UNICONNECT_SURFACE_GENERATION"].allSatisfy({
+                rootEnvironment[$0] == nil
+              }), root.userID == peer.userID, root.pid != peer.pid,
+              processIdentity(root.pid) == root, processIdentity(peer.pid) == peer,
+              let peerEnvironment = processEnvironment(peer.pid),
+              UUID(uuidString: peerEnvironment["CMUX_WORKSPACE_ID"] ?? "") == owner.workspaceID,
+              UUID(uuidString: peerEnvironment["CMUX_SURFACE_ID"] ?? "") == owner.panelID,
+              let generation = UUID(uuidString: peerEnvironment["UNICONNECT_SURFACE_GENERATION"] ?? ""),
+              isProcessDescendant(peer.pid, root.pid) else { return nil }
+        return generation
+    }
+
+    private static func knownClaudeConversation(
+        arguments: CmuxTopProcessArguments,
+        target: UniConnectLocalTmuxRuntimeObservation.Target,
+        currentDirectory: String
+    ) -> UUID? {
+        guard arguments.matchesCMUXScope(workspaceId: target.owner.workspaceID, surfaceId: target.owner.panelID),
+              arguments.arguments.first.map({ ($0 as NSString).lastPathComponent }) == "claude",
+              arguments.environment["CLAUDE_CONFIG_DIR"]?.isEmpty != false,
+              let sessionID = UniConnectClaudeLocalProcessInspector.explicitSessionID(arguments.arguments) else { return nil }
+        let matching = target.record.conversations.filter { conversation in
+            guard conversation.kind == .claude, UUID(uuidString: conversation.sessionID) == sessionID,
+                  let snapshot = target.record.restorableSnapshot(
+                    for: conversation.id, registry: CmuxVaultAgentRegistry(registrations: [])
+                  ), let cwd = snapshot.workingDirectory else { return false }
+            return (cwd as NSString).standardizingPath == (currentDirectory as NSString).standardizingPath
+        }
+        return matching.count == 1 ? matching.first?.id : nil
+    }
+
+    private static func isShell(_ executable: String?) -> Bool {
+        guard let executable else { return false }
+        let name = (executable as NSString).lastPathComponent.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return ["sh", "bash", "zsh", "fish", "dash", "ksh"].contains(name)
     }
 
     func generation(
@@ -71,7 +209,7 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
         let candidates = owners.filter { $0.workspaceID == workspaceID && $0.panelID == panelID }
         guard candidates.count == 1, let owner = candidates.first else { return nil }
         let arguments = [
-            "-L", owner.binding.socketName, "display-message", "-p", "-t", "=" + owner.binding.name + ":",
+            "-N", "-L", owner.binding.socketName, "display-message", "-p", "-t", "=" + owner.binding.name + ":",
             "#{session_id}\t#{pane_id}\t#{pane_pid}\t#{pane_dead}\t#{session_name}",
         ]
         guard let before = await commands.runStandardOutput(
@@ -88,7 +226,7 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
               UUID(uuidString: paneEnvironment["CMUX_SURFACE_ID"] ?? "") == owner.panelID,
               let paneGeneration = UUID(uuidString: paneEnvironment["UNICONNECT_SURFACE_GENERATION"] ?? ""),
               processIdentity(peer.pid) == peer,
-              isProcessDescendant(peer.pid, panePID) else { return nil }
+              (peer.pid == panePID || isProcessDescendant(peer.pid, panePID)) else { return nil }
         // The pane's original generation may predate a reattached Ghostty surface. Verify
         // that it is stable, not equal to the new surface generation in the model snapshot.
         guard let after = await commands.runStandardOutput(
@@ -100,7 +238,7 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
               UUID(uuidString: finalEnvironment["CMUX_WORKSPACE_ID"] ?? "") == owner.workspaceID,
               UUID(uuidString: finalEnvironment["CMUX_SURFACE_ID"] ?? "") == owner.panelID,
               UUID(uuidString: finalEnvironment["UNICONNECT_SURFACE_GENERATION"] ?? "") == paneGeneration,
-              isProcessDescendant(peer.pid, panePID) else { return nil }
+              (peer.pid == panePID || isProcessDescendant(peer.pid, panePID)) else { return nil }
         return owner
     }
 }

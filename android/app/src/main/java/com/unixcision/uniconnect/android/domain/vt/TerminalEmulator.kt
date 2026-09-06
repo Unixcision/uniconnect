@@ -36,11 +36,14 @@ class TerminalEmulator(columns: Int, rows: Int) {
 
     fun resize(columns: Int, rows: Int) { screen.resize(columns, rows); revision++ }
 
-    /** Wheel step as the program expects it; null when it did not ask for mouse events. */
-    fun encodeWheel(up: Boolean, column: Int, row: Int): String? {
-        if (screen.mouseMode == 0) return null
+    /**
+     * Wheel step. When the inner program asked for mouse events it gets its own encoding;
+     * otherwise an SGR step is still produced, because the reader may be tmux itself, whose
+     * copy-mode scrolls on wheel events the program never sees.
+     */
+    fun encodeWheel(up: Boolean, column: Int, row: Int): String {
         val button = if (up) 64 else 65
-        return if (screen.mouseSgr) "[<$button;${column + 1};${row + 1}M"
+        return if (screen.mouseSgr || screen.mouseMode == 0) "[<$button;${column + 1};${row + 1}M"
         else "[M${(32 + button).toChar()}${(32 + column + 1).coerceAtMost(255).toChar()}${(32 + row + 1).coerceAtMost(255).toChar()}"
     }
 

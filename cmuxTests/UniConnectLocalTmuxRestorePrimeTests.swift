@@ -11,6 +11,33 @@ import Testing
 @MainActor
 @Suite("Restore every durable local tmux window", .serialized)
 struct UniConnectLocalTmuxRestorePrimeTests {
+    @Test("An outer attach prompt cannot downgrade an observed durable agent before persistence")
+    func outerPromptPreservesVerifiedDurableConversation() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let saved = try snapshot(kind: .local, root: root)
+        let manager = TabManager(initialWorkspaceTitle: "Prueba", autoWelcomeIfNeeded: false)
+        defer { tearDown(manager) }
+        manager.restoreSessionSnapshot(.init(selectedWorkspaceIndex: 0, workspaces: [saved]))
+        let workspace = try #require(manager.selectedWorkspace)
+        let panelID = try #require(workspace.focusedPanelId)
+        let sessionID = UUID().uuidString
+        let observed = SessionRestorableAgentSnapshot(
+            kind: .claude, sessionId: sessionID, workingDirectory: root.path
+        )
+        _ = workspace.uniConnectRecordLocalAgent(panelId: panelID, snapshot: observed)
+        _ = workspace.updatePanelShellActivityState(panelId: panelID, state: .commandRunning)
+        _ = workspace.updatePanelShellActivityState(panelId: panelID, state: .promptIdle)
+
+        #expect(workspace.uniConnectLocalWindowsByPanelId[panelID]?.runtimeState == .agent)
+        #expect(workspace.uniConnectLocalWindowsByPanelId[panelID]?.activeConversation?.sessionID.lowercased() == sessionID.lowercased())
+        let persisted = workspace.sessionSnapshot(includeScrollback: false, restorableAgentIndex: .empty)
+        let terminal = try #require(persisted.panels.first { $0.id == panelID }?.terminal)
+        #expect(terminal.uniConnectLocalWindow?.runtimeState == .agent)
+        #expect(terminal.wasAgentRunning == true)
+        #expect(terminal.uniConnectLocalWindow?.tmuxBinding == saved.panels.first?.terminal?.uniConnectLocalWindow?.tmuxBinding)
+    }
+
     @Test("Selected and background local boxes enqueue every saved terminal without changing selection")
     func restorationQueuesSelectedAndHiddenLocalTerminals() throws {
         let root = try makeRoot()

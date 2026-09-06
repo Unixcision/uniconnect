@@ -11,7 +11,7 @@ on:
       - cmuxTests/MobileTmux*Tests.swift
       - Sources/UniConnect/**
       - cmuxTests/MobileWorkspaceListFidelityTests.swift
-      - cmuxTests/UniConnectLocalTmuxSocketAccessTests.swift
+      - cmuxTests/UniConnectLocalTmux*Tests.swift
       - cmux.xcodeproj/**
       - ghostty
       - scripts/download-prebuilt-ghosttykit.sh
@@ -25,7 +25,7 @@ permissions:
 
 # Conserva ambos resultados de la secuencia de regresión: prueba roja y arreglo verde.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -98,6 +98,8 @@ jobs:
             -only-testing:cmuxTests/MobileTmuxAttachmentControllerTests \
             -only-testing:cmuxTests/MobileTmuxPTYIntegrationTests \
             -only-testing:cmuxTests/UniConnectLocalTmuxRestorePrimeTests \
+            -only-testing:cmuxTests/UniConnectLocalTmuxTests \
+            -only-testing:cmuxTests/UniConnectLocalTmuxIntegrationTests \
             -resultBundlePath "$RUNNER_TEMP/uniconnect-mobile-rpc.xcresult" \
             CMUX_SKIP_ZIG_BUILD=1 \
             test 2>&1 | tee "$RUNNER_TEMP/uniconnect-mobile-rpc.log"
