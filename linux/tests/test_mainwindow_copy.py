@@ -95,15 +95,22 @@ class MainWindowCopyTests(unittest.TestCase):
                     action = lambda: self.window.run_action("copy")
                 self.copy_and_wait("COPIA_ñ", action)
                 self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}"), "0")
+        self.surface.send("UC_UI_TECLADO_OK\n")
+        self.tmux("wait-for", "typed")
+        self.assertIn("UC_UI_TECLADO_OK", self.tmux("capture-pane", "-p", "-t", "=subject:"))
 
     def test_cancel_selection_without_copy_is_accessible_and_preserves_clipboard(self):
+        self.tmux("new-session", "-d", "-s", "other", "sleep 90")
+        self.tmux("copy-mode", "-t", "=other:")
+        self.tmux("send-keys", "-t", "=other:", "-X", "begin-selection")
         self.select()
         self.window.refresh_actions()
         self.assertIn("cancel_selection", self.window.action_map)
         self.assertTrue(self.window.lookup_action("cancel_selection").get_enabled())
-        self.window.run_action("cancel_selection")
+        self.surface.exit_selection.clicked()
         self.wait_for(lambda: self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}") == "0")
         self.assertEqual(self.clipboard.wait_for_text(), "anterior")
+        self.assertEqual(self.tmux("display-message", "-p", "-t", "=other:", "#{pane_in_mode}:#{selection_present}"), "1:1")
         self.assertEqual(self.errors, [])
 
     def test_explicit_local_reconnect_cancels_copy_mode_without_restarting_pane(self):
