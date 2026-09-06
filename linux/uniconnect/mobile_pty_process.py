@@ -82,13 +82,19 @@ class MobilePTYProcess:
         # desktop-triggered resize must never redirect metadata to its TTY.
         geometry = ("printf '\\036UCPTY_GEOMETRY_" + token + ":%s:%s:%s\\037' "
                     "'####{window_width}' '####{window_height}' '####{status}' > '##{client_tty}'")
+        # A queued hook can outlive its TTY. Any stderr/nonzero run-shell exit
+        # otherwise opens tmux view-mode in a shared pane. Closing our client
+        # must silently discard its late notification, not disturb the desktop.
+        geometry = "(" + geometry + ") 2>/dev/null || :"
         hook = shlex.join(["run-shell", "-b", "-t", "=" + auxiliary + ":", geometry])
         setup = [shlex.join(binary + ["set-hook", "-t", "=" + auxiliary + ":", event, hook])
                  for event in ("window-resized", "client-resized", "after-set-option")]
         initial = ("printf '\\036UCPTY_GEOMETRY_" + token + ":%s:%s:%s\\037"
                    "\\036UCPTY_READY_" + token + "\\037' "
                    "'##{window_width}' '##{window_height}' '##{status}' > '##{client_tty}'")
-        ready = " && ".join([*setup, initial])
+        # Failure still withholds READY, so wait_ready fails closed. Suppress
+        # diagnostics in shared panes when cancellation races with bootstrap.
+        ready = "(" + " && ".join([*setup, initial]) + ") >/dev/null 2>&1 || :"
         commands = [["new-session", "-E", "-f", "ignore-size,active-pane", "-s", auxiliary,
                      "-n", "uc-placeholder", "/bin/sleep", "60"],
                     ["set-option", "-t", auxiliary, "destroy-unattached", "on"],

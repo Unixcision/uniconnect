@@ -122,6 +122,8 @@ dispone de una lectura nativa, sin inventar tamaños:
 | `presentation_columns`, `presentation_rows` | Canvas necesario para esa ventana y las filas de status de la auxiliar móvil |
 
 Los cambios usan el mismo `attach_id` y la misma secuencia `seq` del flujo PTY.
+Una geometría idéntica a la última publicada no se vuelve a emitir, aunque haya
+otro `client-resized`: ajustar el PTY móvil al canvas no genera un bucle de avisos.
 Un evento de geometría puede no contener `data`; no significa cierre. El cliente
 aplica primero la geometría y después los bytes del mismo evento. Puede ajustar
 su emulador y solicitar `pty_resize` al tamaño de presentación, sin cambiar la
@@ -140,6 +142,9 @@ El adaptador elimina sólo sus marcadores válidos con un buffer acotado que
 persiste entre lecturas, conserva íntegros los bytes VT/UTF-8 y publica los campos
 anteriores; Android nunca debe interpretar este marcador interno. Un marcador
 incompleto al cerrar, inválido o de otro nonce permanece como contenido original.
+Un callback tardío cuya tty ya se cerró termina sin salida ni error de `run-shell`,
+para que tmux no abra una vista de diagnóstico en un pane compartido. Un fallo
+del bootstrap no confirma `READY` y el attach falla de forma cerrada.
 
 No se cambia la ventana seleccionada del escritorio para alcanzar un pane
 oculto: se selecciona sólo en la auxiliar. La sesión auxiliar y `active-pane`
