@@ -1,5 +1,6 @@
 """Coordinate selection in the pane's real history, never in an agent's input."""
 
+import logging
 import re
 import shlex
 
@@ -20,10 +21,10 @@ class TerminalSelection:
         result = self.transport.run(f"{self.binary} display-message -p -t {target} {shlex.quote(fmt)}", timeout=15)
         fields = result.stdout.rstrip("\n").split("|")
         if len(fields) != 9 or not re.fullmatch(r"%[0-9]+", fields[0]) or fields[1] != name:
-            raise TransportError("No se pudo seleccionar el historial del terminal.")
+            raise TransportError("selection_metadata_invalid")
         pid, left, top, width, height = map(int, fields[2:7])
         if pid < 1 or not (1 <= width <= 4096 and 1 <= height <= 4096):
-            raise TransportError("No se pudo seleccionar el historial del terminal.")
+            raise TransportError("selection_geometry_invalid")
         status_rows = {"off": 0, "on": 1}.get(fields[8])
         if status_rows is None:
             status_rows = int(fields[8])
@@ -31,7 +32,9 @@ class TerminalSelection:
         pane = {"id": fields[0], "identity": "|".join(fields[1:7]),
                 "left": left, "top": top + offset, "width": width, "height": height}
         if not (left <= column < left + width and pane["top"] <= row < pane["top"] + height):
-            raise TransportError("No se pudo seleccionar el historial del terminal.")
+            logging.getLogger(__name__).warning("Selection outside pane cell=%s bounds=%s",
+                                               (column, row), (left, pane["top"], width, height))
+            raise TransportError("selection_outside_pane")
         script = self.guard(pane)
         script += (f'case "$({self.binary} display-message -p -t {pane["id"]} "#{{pane_mode}}")" in '
                    '""|copy-mode) ;; *) exit 73;; esac; ')
@@ -94,4 +97,5 @@ class TerminalSelection:
     def _run(self, script):
         result = self.transport.run(script, timeout=15, check=False)
         if result.returncode:
-            raise TransportError("No se pudo seleccionar el historial del terminal.")
+            logging.getLogger(__name__).warning("Selection command failed exit=%d", result.returncode)
+            raise TransportError("selection_command_failed")

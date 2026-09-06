@@ -478,8 +478,10 @@ class TerminalSurface(Gtk.Box):
                 connection = self.owner.connection(self.workspace) if self.workspace["kind"] == "ssh" else None
                 transport = Transport(connection, socket_name=self.record.get("tmuxSocket"))
                 self.selection_drag.begin(transport, self.record, *self.selection_cell(event), event)
-            except Exception:
+            except Exception as error:
                 self.selection_drag.reset()
+                import logging
+                logging.getLogger(__name__).warning("Selection gesture failed type=%s", type(error).__name__)
                 self.owner.error(self.owner._("No se pudo seleccionar el historial del terminal."))
             return True
         if event.button == 3:

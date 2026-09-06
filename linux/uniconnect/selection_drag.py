@@ -1,5 +1,6 @@
 """GTK-owned gesture state with one bounded worker and coalesced edge scrolling."""
 
+import logging
 import threading
 from collections import deque
 
@@ -151,6 +152,10 @@ class SelectionDrag:
             if kind == "action":
                 deliver(value, error)
             elif error:
+                logging.getLogger(__name__).warning(
+                    "Selection failed stage=%s type=%s code=%s point=%s bounds=%s",
+                    kind, type(error).__name__, getattr(error, "code", "none"), self.point,
+                    {key: self.pane[key] for key in ("left", "top", "width", "height")} if self.pane else None)
                 self.active = self.pressed = False
                 self.pending_begin = self.pending_move = None
                 self._stop_timer()
