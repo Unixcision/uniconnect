@@ -28,6 +28,7 @@ class SocketProcess:
         self.close_count = 0
         self.returncode = None
         self.source_geometry = source_geometry
+        self.next_geometry = None
         if not blocked_ready:
             self.ready.set()
 
@@ -47,7 +48,10 @@ class SocketProcess:
             return result
         if self.returncode is not None:
             return b""
-        return self.socket.recv(min(maximum, self.max_read))
+        data = self.socket.recv(min(maximum, self.max_read))
+        if data and self.next_geometry is not None:
+            self.source_geometry, self.next_geometry = self.next_geometry, None
+        return data
 
     def write(self, data):
         written = self.socket.send(data[:self.max_write])
@@ -169,6 +173,7 @@ class MobilePTYAttachmentTests(unittest.TestCase):
         self.assertEqual(len(self.processes), 4)
         other = self.attach("surface-0", "other")
         self.assertNotEqual(other["attach_id"], attached[0]["attach_id"])
+        self.assertEqual(len(self.processes), 5)
 
     def test_geometry_is_optional_and_does_not_redefine_requested_pty_size(self):
         geometry = {"source_columns": 80, "source_rows": 23,
@@ -183,13 +188,12 @@ class MobilePTYAttachmentTests(unittest.TestCase):
         self.assertNotIn("data", first)
         self.assertEqual({key: first[key] for key in geometry}, geometry)
         changed = {**geometry, "source_rows": 30, "presentation_rows": 33}
-        self.processes[0].source_geometry = changed
+        self.processes[0].next_geometry = changed
         self.processes[0].peer.sendall(b"\x1b[2JCONTENIDO")
         event = self.next_event()
         self.assertEqual(event["seq"], 1)
         self.assertEqual({key: event[key] for key in geometry}, changed)
         self.assertEqual(base64.b64decode(event["data"]), b"\x1b[2JCONTENIDO")
-        self.assertEqual(len(self.processes), 5)
 
     def test_foreign_owner_cannot_input_resize_detach_or_activate_with_claimed_client_id(self):
         attached = self.attach()

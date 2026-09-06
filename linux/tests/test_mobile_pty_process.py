@@ -140,6 +140,31 @@ class MobilePTYProcessTests(_PTYFixture):
         self.assertEqual(process.source_geometry, {"source_columns": 80, "source_rows": 23,
                                                   "presentation_columns": 80, "presentation_rows": 24})
 
+    def test_incomplete_and_oversized_geometry_survive_eof(self):
+        token = "f" * 32
+        ready = ("\x1eUCPTY_BEGIN_" + token + "\x1f\x1eUCPTY_READY_" + token + "\x1f").encode()
+        prefix = ("\x1eUCPTY_GEOMETRY_" + token + ":").encode()
+        payload = prefix + b"1" * 256 + b"\x1f" + prefix + b"80:"
+        script = ("import os,tty;tty.setraw(0);os.write(1," + repr(ready) + ");"
+                  "os.read(0,1);os.write(1," + repr(payload) + ")")
+        process = self.process(self.python_launch(script, {**self.env, MobilePTYProcess._TOKEN_ENV: token}))
+        process.wait_ready()
+        process.write(b"!")
+        output = bytearray()
+        deadline = time.monotonic() + 3
+        while True:
+            self.assertLess(time.monotonic(), deadline)
+            try:
+                chunk = process.read(7)
+            except BlockingIOError:
+                select.select([process.fileno()], [], [], .1)
+                continue
+            if not chunk:
+                break
+            output.extend(chunk)
+        self.assertEqual(output, payload)
+        self.assertIsNone(process.source_geometry)
+
     def test_launch_validation_and_ssh_endpoint_credentials(self):
         record = {"tmux": "fixture", "tmuxSocket": "private", "paneId": "%1", "cwd": "/does-not-exist"}
         command = SSHCommand.parse("ssh -p2222 -i '/tmp/fixture key' -oStrictHostKeyChecking=yes user@fixture.invalid")
@@ -293,6 +318,17 @@ class MobilePTYTmuxTests(_PTYFixture):
         self.assertEqual(panes, self.unique_panes())
         self.assertEqual(options, self.tmux("show-options", "-t", "=fixture:"))
         self.assertEqual(hooks, [self.tmux("show-hooks", *args) for args in (("-g",), ("-t", "=fixture:"))])
+        desktop_output = bytearray()
+        for _ in range(64):
+            try:
+                chunk = self.desktop.read()
+            except BlockingIOError:
+                break
+            self.assertTrue(chunk)
+            desktop_output.extend(chunk)
+        else:
+            self.fail("La salida del escritorio privado no se estabilizó")
+        self.assertNotIn(b"UCPTY_GEOMETRY_", desktop_output, "Un hook escribió metadatos en la tty del escritorio")
         mobile.close()
         self.assertEqual(["fixture"], self.sessions())
 
