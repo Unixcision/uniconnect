@@ -1,3 +1,4 @@
+import AppKit
 import CmuxProcess
 import Foundation
 import Testing
@@ -10,6 +11,49 @@ import Testing
 
 @Suite("Host-local durable tmux windows")
 struct UniConnectLocalTmuxTests {
+    @Test("El menú nativo sigue disponible cuando el PTY activa captura de ratón")
+    @MainActor
+    func nativeContextMenuWithMouseCapture() async throws {
+        let previous = ProcessInfo.processInfo.environment["UNICONNECT_TEST_ENABLE"]
+        setenv("UNICONNECT_TEST_ENABLE", "1", 1)
+        defer {
+            if let previous { setenv("UNICONNECT_TEST_ENABLE", previous, 1) }
+            else { unsetenv("UNICONNECT_TEST_ENABLE") }
+        }
+        // Exercise the same terminal reporting mode that a local or SSH tmux
+        // client enables, without attaching or writing to a user's session.
+        let terminal = TerminalSurface(
+            tabId: UUID(), context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            initialCommand: #"/bin/sh -c 'printf "\033[?1000h\033[?1006h"; read answer'"#
+        )
+        defer { terminal.releaseSurfaceForTesting() }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while ContinuousClock.now < deadline {
+            if let surface = terminal.surface, ghostty_surface_mouse_captured(surface) { break }
+            await Task.yield()
+        }
+        let surface = try #require(terminal.surface)
+        try #require(ghostty_surface_mouse_captured(surface), "El proceso debe activar captura real")
+        var pendingViews: [NSView] = [terminal.hostedView]
+        var terminalView: GhosttyNSView?
+        while let candidate = pendingViews.popLast() {
+            if let candidate = candidate as? GhosttyNSView { terminalView = candidate; break }
+            pendingViews.append(contentsOf: candidate.subviews)
+        }
+        let view = try #require(terminalView)
+        let event = try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: NSPoint(x: 20, y: 20), modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: view.window?.windowNumber ?? 0, context: nil,
+            eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        let menu = try #require(view.menu(for: event), "tmux no debe suprimir el menú de UniConnect")
+        #expect(menu.items.contains { $0.action == #selector(NSText.copy(_:)) })
+        #expect(menu.items.contains { $0.action == #selector(NSText.paste(_:)) })
+        #expect(ghostty_surface_mouse_captured(surface), "Abrir el menú no desactiva el ratón del PTY")
+    }
+
     @Test("Stable window identity is independent of agent selection and isolates tagged apps")
     func stableIdentityAndTagIsolation() throws {
         let id = UUID()
