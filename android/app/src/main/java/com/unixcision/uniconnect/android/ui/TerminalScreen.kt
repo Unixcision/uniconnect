@@ -89,6 +89,11 @@ fun TerminalScreen(
     onPtyResize: (Int, Int) -> Unit = { _, _ -> },
     onLeaveCopyMode: () -> Unit = {},
     settings: AppSettings = AppSettings(),
+    resumeReal: Boolean = false,
+    view: TerminalView? = null,
+    zoom: Float = 1f,
+    onView: (TerminalView) -> Unit = {},
+    onZoom: (Float) -> Unit = {},
 ) {
     var realRequested by rememberSaveable { mutableStateOf(false) }
     // Default way in: attach to the window's own tmux session. Only a host without the attach RPC,
@@ -96,11 +101,18 @@ fun TerminalScreen(
     var autoTried by rememberSaveable { mutableStateOf(false) }
     var manuallyLeft by rememberSaveable { mutableStateOf(false) }
     if (real != null) {
-        RealTerminalScreen(real, connected, sending, settings, onStopReal = { realRequested = false; manuallyLeft = true; onStopReal() }, onPty = onPty, onPtyWheel = onPtyWheel, onPtyResize = onPtyResize, onLeaveCopyMode = onLeaveCopyMode)
+        RealTerminalScreen(
+            real, connected, sending, view ?: settings.terminalView, zoom, settings.showExtraKeys,
+            onStopReal = { realRequested = false; manuallyLeft = true; onStopReal() },
+            onPty = onPty, onPtyWheel = onPtyWheel, onPtyResize = onPtyResize,
+            onLeaveCopyMode = onLeaveCopyMode, onView = onView, onZoom = onZoom,
+        )
         return
     }
     if (realRequested) realRequested = false
-    if (!autoTried && !manuallyLeft && !attachUnsupported && connected) {
+    // `resumeReal` says the app itself closed the attachment on the way to the background, so
+    // trying once is not the whole story: the reader never asked to be in the mirror.
+    if ((!autoTried || resumeReal) && !manuallyLeft && !attachUnsupported && connected) {
         RealTerminalStarter(true) { columns, rows -> autoTried = true; onStartReal(columns, rows, true) }
     }
     MirrorTerminalScreen(snapshot, loading, error, errorDetail, sending, reconnecting, connected, onRefresh, onReconnect, onScroll, onSend,
@@ -112,20 +124,14 @@ fun TerminalScreen(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun RealTerminalScreen(
-    real: MachinesViewModel.RealTerminal, connected: Boolean, sending: Boolean, settings: AppSettings,
+    real: MachinesViewModel.RealTerminal, connected: Boolean, sending: Boolean,
+    viewMode: TerminalView, zoom: Float, startWithKeys: Boolean,
     onStopReal: () -> Unit, onPty: (String, Boolean) -> Unit, onPtyWheel: (Boolean, Int) -> Unit, onPtyResize: (Int, Int) -> Unit,
-    onLeaveCopyMode: () -> Unit,
+    onLeaveCopyMode: () -> Unit, onView: (TerminalView) -> Unit, onZoom: (Float) -> Unit,
 ) {
-    var keysVisible by rememberSaveable { mutableStateOf(settings.showExtraKeys) }
+    var keysVisible by rememberSaveable { mutableStateOf(startWithKeys) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
     var alt by rememberSaveable { mutableStateOf(ModifierState.OFF) }
-    // The desktop window is often far shorter than the phone is tall, so reading it at the fitted
-    // size wastes most of the screen. Zoom is the reader's, and never resizes the shared window.
-    var zoom by rememberSaveable { mutableStateOf(1f) }
-    // Same three readings as the mirror, opening at true geometry: fitting a wide desktop window
-    // to the phone's width leaves most of a tall screen empty, and reflowing rearranges lines the
-    // desktop drew deliberately. Panning keeps the layout intact and fills the height.
-    var viewMode by rememberSaveable { mutableStateOf(settings.terminalView) }
     val modifiers = TerminalModifiers(ctrl = ctrl != ModifierState.OFF, alt = alt != ModifierState.OFF)
     val consumeModifiers = {
         if (ctrl == ModifierState.ARMED) ctrl = ModifierState.OFF
@@ -141,7 +147,7 @@ private fun RealTerminalScreen(
             if (real.copyMode) IconButton(onClick = onLeaveCopyMode) {
                 Icon(Icons.Rounded.KeyboardDoubleArrowDown, stringResource(R.string.terminal_leave_copy_mode), tint = Brand.Amber)
             }
-            if (real.snapshot != null) IconButton(onClick = { viewMode = viewMode.next; zoom = 1f }) {
+            if (real.snapshot != null) IconButton(onClick = { onView(viewMode.next) }) {
                 Icon(
                     when (viewMode) { TerminalView.FIT -> Icons.Rounded.ZoomIn; TerminalView.WRAP -> Icons.Rounded.OpenInFull; TerminalView.PAN -> Icons.Rounded.ZoomOutMap },
                     stringResource(when (viewMode) { TerminalView.FIT -> R.string.screen_actual_size; TerminalView.WRAP -> R.string.screen_pan; TerminalView.PAN -> R.string.screen_fit_width }),
@@ -181,6 +187,11 @@ private fun RealTerminalScreen(
                 // Two fingers are always the reader's: pinch resizes the text without ever
                 // touching the shared window. One finger is left alone here so the scrolling
                 // modes below still work; FIT consumes it itself to drive tmux.
+                //
+                // The gesture is installed once, so it reads the live zoom through these rather
+                // than the value captured when it was built.
+                val magnification by rememberUpdatedState(zoom)
+                val setZoom by rememberUpdatedState(onZoom)
                 val pinch = Modifier.pointerInput(Unit) {
                     awaitEachGesture {
                         awaitFirstDown(requireUnconsumed = false)
@@ -189,7 +200,7 @@ private fun RealTerminalScreen(
                             if (event.changes.size >= 2) {
                                 val change = event.calculateZoom()
                                 if (change != 1f) {
-                                    zoom = (zoom * change).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                                    setZoom((magnification * change).coerceIn(MIN_ZOOM, MAX_ZOOM))
                                     event.changes.forEach { it.consume() }
                                 }
                             }

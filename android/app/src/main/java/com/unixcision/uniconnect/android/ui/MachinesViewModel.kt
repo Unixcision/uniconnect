@@ -14,6 +14,7 @@ import com.unixcision.uniconnect.android.domain.SettingsRepository
 import com.unixcision.uniconnect.android.domain.MachineSnapshot
 import com.unixcision.uniconnect.android.domain.TerminalSnapshot
 import com.unixcision.uniconnect.android.domain.TerminalTarget
+import com.unixcision.uniconnect.android.domain.TerminalView
 import com.unixcision.uniconnect.android.domain.MachineUpdate
 import com.unixcision.uniconnect.android.domain.ResourceCreation
 import com.unixcision.uniconnect.android.domain.NotificationConnectionControl
@@ -62,6 +63,11 @@ class MachinesViewModel(
         val settings: AppSettings = AppSettings(),
         /** Whether the settings sheet is open. */
         val showingSettings: Boolean = false,
+        /** Set when going to the background closed a real terminal that should come back. */
+        val resumeRealTerminal: Boolean = false,
+        /** The reading and magnification in use, kept across a re-attach; null means the setting. */
+        val terminalView: TerminalView? = null,
+        val terminalZoom: Float = 1f,
         val terminal: TerminalSnapshot? = null, val terminalLoading: Boolean = false,
         val terminalError: Int? = null, val terminalErrorDetail: String? = null, val inputSending: Boolean = false, val reconnecting: Boolean = false,
         val creation: CreationContext? = null, val creating: Boolean = false, val creationError: Int? = null,
@@ -146,6 +152,10 @@ class MachinesViewModel(
         }
     }
 
+    /** Remembers how the reader is looking at this window, so a re-attach does not reset it. */
+    fun setTerminalView(view: TerminalView) { mutableState.update { it.copy(terminalView = view, terminalZoom = 1f) } }
+    fun setTerminalZoom(zoom: Float) { mutableState.update { it.copy(terminalZoom = zoom) } }
+
     fun showSettings() { mutableState.update { it.copy(showingSettings = true) } }
     fun dismissSettings() { mutableState.update { it.copy(showingSettings = false) } }
     /** Stores a changed preference; the screen re-reads it from the repository's own flow. */
@@ -175,7 +185,12 @@ class MachinesViewModel(
     }
     fun pauseLiveConnection() {
         foreground = false
+        // Leaving the app closes the attached client, but the intention to be attached survives:
+        // coming back used to drop the reader into the mirror because the screen had already
+        // recorded that it tried once.
+        val wasAttached = state.value.realTerminal != null
         stopRealTerminal()
+        if (wasAttached) mutableState.update { it.copy(resumeRealTerminal = true) }
         resumeMachineID = state.value.selectedMachine?.takeIf { requests[it]?.isActive == true }
         stopObserving()
     }
@@ -240,10 +255,15 @@ class MachinesViewModel(
         if (state.value.connections[id]?.snapshot != null) state.value.machines.firstOrNull { it.id == id }?.let(::connect)
     }
     fun selectWorkspace(id: String) { mutableState.update { it.copy(selectedWorkspace = id, selectedWindow = null) } }
-    fun selectWindow(id: String) { stopRealTerminal(); mutableState.update { it.copy(selectedWindow = id, terminal = null) }; refreshTerminal() }
+    /** Opens a window. The reading resets to the setting, since it belonged to the previous one. */
+    fun selectWindow(id: String) {
+        stopRealTerminal()
+        mutableState.update { it.copy(selectedWindow = id, terminal = null, terminalView = null, terminalZoom = 1f) }
+        refreshTerminal()
+    }
     fun back() { stopRealTerminal(); mutableState.update {
         when {
-            it.selectedWindow != null -> it.copy(selectedWindow = null, terminal = null, terminalLoading = false, terminalError = null, terminalErrorDetail = null, attachFallbackDetail = null)
+            it.selectedWindow != null -> it.copy(selectedWindow = null, terminal = null, terminalLoading = false, terminalError = null, terminalErrorDetail = null, attachFallbackDetail = null, terminalView = null, terminalZoom = 1f)
             it.selectedWorkspace != null -> it.copy(selectedWorkspace = null)
             else -> it.copy(selectedMachine = null)
         }
@@ -517,7 +537,7 @@ class MachinesViewModel(
         if (current.connections[machine.id]?.connected != true) { mutableState.update { it.copy(error = R.string.connection_error) }; return }
         val terminal = TerminalEmulator(columns, rows)
         emulator = terminal
-        mutableState.update { it.copy(attachFallbackDetail = null) }
+        mutableState.update { it.copy(attachFallbackDetail = null, resumeRealTerminal = false) }
         geometry.reset()
         mutableState.update { it.copy(realTerminal = RealTerminal(connecting = true)) }
         attachJob = viewModelScope.launch {
@@ -582,6 +602,8 @@ class MachinesViewModel(
     }
 
     fun stopRealTerminal() {
+        // Leaving on purpose cancels any intention to come back attached; pausing re-arms it after.
+        mutableState.update { it.copy(resumeRealTerminal = false) }
         leaveCopyModeJob?.cancel(); leaveCopyModeJob = null
         wheelJob?.cancel(); wheelJob = null
         pendingGeometryJob?.cancel(); pendingGeometryJob = null; geometry.reset()
