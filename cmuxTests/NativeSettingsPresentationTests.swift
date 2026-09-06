@@ -12,6 +12,21 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct NativeSettingsPresentationTests {
+    @Test("La apertura registrada tiene prioridad sobre un enlace antiguo a una escena")
+    func nativeOpenerTakesPrecedenceOverLegacyScene() {
+        SettingsWindowPresenter.resetForTests()
+        defer { SettingsWindowPresenter.resetForTests() }
+        var nativeOpens = 0
+        var legacyOpens = 0
+        SettingsWindowPresenter.configure(openWindow: { nativeOpens += 1 })
+        SettingsWindowPresenter.show(
+            navigationTarget: .browserImport,
+            openWindowOverride: { legacyOpens += 1 }
+        )
+        #expect(nativeOpens == 1)
+        #expect(legacyOpens == 0)
+    }
+
     @Test("Ajustes abre sin montar la escena bootstrap y reutiliza la ventana al cerrar")
     func opensWithoutBootstrapScene() throws {
         _ = NSApplication.shared
