@@ -510,6 +510,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     }
 
     fun stopRealTerminal() {
+        wheelJob?.cancel(); wheelJob = null
         pendingGeometryJob?.cancel(); pendingGeometryJob = null; geometry.reset()
         attachJob?.cancel(); attachJob = null
         attachment?.close(); attachment = null
@@ -532,10 +533,29 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         }
     }
 
-    /** Wheel steps as the attached program expects them; tmux turns them into copy-mode scrolling. */
+    private var wheelJob: Job? = null
+
+    /**
+     * Wheel steps for the attached client; tmux turns them into copy-mode scrolling.
+     *
+     * Each step is written on its own: a burst of steps in a single write reads as pasted input, so
+     * tmux acts on the first one (entering copy-mode) and ignores the rest, which is exactly how the
+     * view used to freeze at the top of the history.
+     */
     fun wheelPty(up: Boolean, steps: Int, column: Int = 0, row: Int = 0) {
-        val sequence = emulator?.encodeWheel(up, column, row) ?: return
-        sendPty(sequence.repeat(steps.coerceIn(1, 20)))
+        val live = attachment ?: return
+        val sequence = (emulator ?: return).encodeWheel(up, column, row).toByteArray(Charsets.UTF_8)
+        val count = steps.coerceIn(1, 20)
+        val previous = wheelJob
+        wheelJob = viewModelScope.launch {
+            previous?.join()
+            repeat(count) { index ->
+                if (attachment !== live) return@launch
+                if (runCatching { live.send(sequence) }.isFailure) return@launch
+                // Bounded, intended gap so each step is its own event rather than part of a paste.
+                if (index < count - 1) delay(WHEEL_GAP_MILLIS)
+            }
+        }
     }
 
     fun resizePty(columns: Int, rows: Int) {
@@ -586,6 +606,8 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     private companion object {
         /** Long enough for a TUI to close its paste window, short enough to feel immediate. */
         const val ENTER_GAP_MILLIS = 80L
+        /** Gap between wheel steps so tmux reads each one as a separate event. */
+        const val WHEEL_GAP_MILLIS = 16L
         /** Retries allowed before a first connection is reported as failed. */
         const val INITIAL_ATTEMPTS = 3
     }
