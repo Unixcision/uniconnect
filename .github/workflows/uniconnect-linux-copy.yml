@@ -28,3 +28,5 @@ jobs:
           sudo apt-get install -y tmux python3-gi python3-cryptography gir1.2-gtk-3.0 gir1.2-vte-2.91 xvfb xauth
           tmux -V
       - run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -p test_terminal_copy.py -v
+      - name: Conservar ciclo de vida y reconexiones de VTE
+        run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -p test_terminal.py -v
