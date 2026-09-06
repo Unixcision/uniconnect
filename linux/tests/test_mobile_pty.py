@@ -194,6 +194,12 @@ class MobilePTYAttachmentTests(unittest.TestCase):
         self.assertEqual(event["seq"], 1)
         self.assertEqual({key: event[key] for key in geometry}, changed)
         self.assertEqual(base64.b64decode(event["data"]), b"\x1b[2JCONTENIDO")
+        self.processes[0].next_geometry = dict(changed)
+        self.processes[0].peer.sendall(b"OTRA_SALIDA")
+        same = self.next_event()
+        self.assertEqual(same["seq"], 2)
+        self.assertTrue(all(key not in same for key in geometry), "Una geometría idéntica no debe provocar otro resize")
+        self.assertEqual(base64.b64decode(same["data"]), b"OTRA_SALIDA")
 
     def test_foreign_owner_cannot_input_resize_detach_or_activate_with_claimed_client_id(self):
         attached = self.attach()
