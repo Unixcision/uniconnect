@@ -47,6 +47,9 @@ struct NativeSettingsPresentationTests {
         defer {
             for window in NSApp.windows where window.identifier?.rawValue == SettingsWindowPresenter.windowIdentifier {
                 window.orderOut(nil)
+                // AppKit can retain a closed window until its autorelease pool
+                // drains. It must not act as the next test's settings window.
+                window.identifier = nil
             }
             delegate.settingsRuntime = nil
             SettingsWindowPresenter.resetForTests()
