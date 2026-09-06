@@ -10,6 +10,28 @@ import Testing
 
 @Suite("Connection-owned mobile tmux attachments", .timeLimit(.minutes(1)))
 struct MobileTmuxAttachmentControllerTests {
+    @Test(arguments: [("off", 0), ("on", 1), ("3", 3), ("5", 5)])
+    func privateGeometryFramesBecomeOrderedMetadata(_ status: String, _ statusRows: Int) async throws {
+        let routes = MobileAttachmentTestRoutes()
+        let process = MobileAttachmentTestPTY()
+        let controller = Self.controller(routes, process)
+        let id = try Self.attachID(await controller.prepareAttach(Self.attachRequest(), subscribed: true))
+        let receipts = AsyncStream<MobileTmuxAttachmentEvent>.makeStream()
+        await controller.activate(attachID: id) { receipts.continuation.yield($0); return true }
+        let nonce = id.uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        let marker = "\u{001e}UCPTY_GEOMETRY_\(nonce):120:40:\(status)\u{001f}"
+        await process.emit(.bytes(Data(marker.utf8)))
+        var events = receipts.stream.makeAsyncIterator()
+        let first = try #require(await events.next())
+        await controller.closeAll()
+        #expect(first.sequence == 0)
+        #expect(first.jsonObject["source_columns"] as? Int == 120)
+        #expect(first.jsonObject["source_rows"] as? Int == 40)
+        #expect(first.jsonObject["presentation_columns"] as? Int == 120)
+        #expect(first.jsonObject["presentation_rows"] as? Int == 40 + statusRows)
+        #expect(first.jsonObject["data"] == nil)
+    }
+
     @Test func repeatedAttachKeepsItsIDAndPhysicalClient() async throws {
         let routes = MobileAttachmentTestRoutes()
         let process = MobileAttachmentTestPTY()
