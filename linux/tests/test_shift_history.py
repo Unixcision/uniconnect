@@ -159,6 +159,29 @@ class ShiftHistoryTests(window_fixture.MainWindowCopyTests):
                                    "#{pane_id}:#{pane_pid}"), self.before)
         self.assertEqual(self.errors, [])
 
+    def test_copy_keeps_drag_pane_when_another_client_switches_tmux_window(self):
+        self.seed_history()
+        self.start_drag()
+        self.xtst.XTestFakeMotionEvent(self.display, -1, self.left, self.top - 55, 0)
+        self.x11.XSync(self.display, False)
+        self.wait_for(lambda: int(self.tmux("display-message", "-p", "-t", "=subject:",
+                                           "#{scroll_position}") or "0") > 3)
+        self.release_pointer()
+        self.wait_for(lambda: not self.surface.selection_drag.pressed and not self.surface.selection_drag.busy)
+        original = self.before.split(":")[0]
+        other = self.tmux("new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=subject:",
+                          "-n", "another", "sleep 90")
+        self.tmux("copy-mode", "-t", other)
+        self.tmux("send-keys", "-t", other, "-X", "begin-selection")
+        self.tmux("select-window", "-t", "=subject:another")
+        self.window.run_action("copy")
+        self.wait_for(lambda: (self.clipboard.wait_for_text() or "anterior") != "anterior")
+        self.assertIn("ROW0119 copia_ñ", self.clipboard.wait_for_text())
+        self.assertEqual(self.tmux("display-message", "-p", "-t", original, "#{pane_in_mode}"), "0")
+        self.assertEqual(self.tmux("display-message", "-p", "-t", other,
+                                   "#{pane_in_mode}:#{selection_present}"), "1:1")
+        self.assertEqual(self.errors, [])
+
 
 def load_tests(loader, tests, pattern):
     # The parent fixture's tests already run in test_mainwindow_copy.py; do not

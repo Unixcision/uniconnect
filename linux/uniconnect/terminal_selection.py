@@ -32,7 +32,7 @@ class TerminalSelection:
                 "left": left, "top": top + offset, "width": width, "height": height}
         if not (left <= column < left + width and pane["top"] <= row < pane["top"] + height):
             raise TransportError("No se pudo seleccionar el historial del terminal.")
-        script = self._guard(pane)
+        script = self.guard(pane)
         script += (f'case "$({self.binary} display-message -p -t {pane["id"]} "#{{pane_mode}}")" in '
                    '""|copy-mode) ;; *) exit 73;; esac; ')
         script += f"{self.binary} copy-mode -t {pane['id']} || exit 73; "
@@ -44,7 +44,7 @@ class TerminalSelection:
         return pane
 
     def move(self, pane, column, row, scroll=0):
-        script = self._guard(pane)
+        script = self.guard(pane)
         script += (f'test "$({self.binary} display-message -p -t {pane["id"]} '
                    '"#{pane_mode}|#{selection_present}")" = "copy-mode|1" || exit 73; ')
         if scroll:
@@ -52,7 +52,7 @@ class TerminalSelection:
             script += self._keys(pane, command, min(12, abs(scroll))) + "; "
         self._run(script + self._position(pane, column, row))
 
-    def _guard(self, pane):
+    def guard(self, pane):
         return (f'test "$({self.binary} display-message -p -t {pane["id"]} '
                 f'{shlex.quote(self.identity_format)})" = {shlex.quote(pane["identity"])} || exit 73; ')
 

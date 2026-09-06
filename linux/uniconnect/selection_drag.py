@@ -125,7 +125,11 @@ class SelectionDrag:
             kind, deliver = "move", None
             work = lambda: backend.move(pane, *arguments)
         elif self.actions:
-            work, deliver = self.actions.popleft()
+            action, deliver = self.actions.popleft()
+            # Begin may still have been resolving the pane when Copy was
+            # requested. Freeze its resolved identity after that worker ends.
+            pane = dict(self.pane) if self.pane else None
+            work = lambda: action(pane)
             kind = "action"
         else:
             return

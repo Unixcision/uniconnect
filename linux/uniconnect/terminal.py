@@ -163,7 +163,7 @@ class TerminalSurface(Gtk.Box):
             # An in-flight SSH selection must finish before reconnect cancels
             # copy-mode; otherwise its late begin could re-enter that mode.
             self.selection_drag.reset()
-            self.selection_drag.run_action(lambda: None, lambda *_: self._queue_launch(create),
+            self.selection_drag.run_action(lambda pane: None, lambda *_: self._queue_launch(create),
                                            discard_motion=True)
             return False
         return self._queue_launch(create)
@@ -576,7 +576,7 @@ class TerminalSurface(Gtk.Box):
                 clipboard.store()
             return False
 
-        self.selection_drag.run_action(lambda: TerminalCopy(transport).read_selection(record), deliver)
+        self.selection_drag.run_action(lambda pane: TerminalCopy(transport).read_selection(record, pane), deliver)
 
     def cancel_selection(self):
         if self.disposed:
@@ -601,7 +601,7 @@ class TerminalSurface(Gtk.Box):
             if error:
                 self.owner.error(self.owner._("No se pudo salir del modo selección."))
 
-        self.selection_drag.run_action(lambda: bridge.cancel_selection(record), completed, discard_motion=True)
+        self.selection_drag.run_action(lambda pane: bridge.cancel_selection(record, pane), completed, discard_motion=True)
 
     def paste(self):
         if hasattr(self.owner, "paste_clipboard"):
