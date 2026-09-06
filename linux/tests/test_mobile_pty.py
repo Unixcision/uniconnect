@@ -15,7 +15,7 @@ from uniconnect.mobile_pty import MobilePTYAttachments
 
 
 class SocketProcess:
-    def __init__(self, *, blocked_ready=False, max_read=65536, max_write=65536):
+    def __init__(self, *, blocked_ready=False, max_read=65536, max_write=65536, source_geometry=None):
         self.socket, self.peer = socket.socketpair()
         self.socket.setblocking(False)
         self.peer.settimeout(2)
@@ -27,6 +27,7 @@ class SocketProcess:
         self.buffered_output = bytearray()
         self.close_count = 0
         self.returncode = None
+        self.source_geometry = source_geometry
         if not blocked_ready:
             self.ready.set()
 
@@ -168,6 +169,26 @@ class MobilePTYAttachmentTests(unittest.TestCase):
         self.assertEqual(len(self.processes), 4)
         other = self.attach("surface-0", "other")
         self.assertNotEqual(other["attach_id"], attached[0]["attach_id"])
+
+    def test_geometry_is_optional_and_does_not_redefine_requested_pty_size(self):
+        geometry = {"source_columns": 80, "source_rows": 23,
+                    "presentation_columns": 80, "presentation_rows": 24}
+        self.process_options = {"source_geometry": geometry}
+        attached = self.attach(columns=120, rows=50)
+        self.assertEqual((attached["columns"], attached["rows"]), (120, 50))
+        self.assertEqual({key: attached[key] for key in geometry}, geometry)
+        self.manager.activate(attached["attach_id"], "owner")
+        first = self.next_event()
+        self.assertEqual(first["seq"], 0)
+        self.assertNotIn("data", first)
+        self.assertEqual({key: first[key] for key in geometry}, geometry)
+        changed = {**geometry, "source_rows": 30, "presentation_rows": 33}
+        self.processes[0].source_geometry = changed
+        self.processes[0].peer.sendall(b"\x1b[2JCONTENIDO")
+        event = self.next_event()
+        self.assertEqual(event["seq"], 1)
+        self.assertEqual({key: event[key] for key in geometry}, changed)
+        self.assertEqual(base64.b64decode(event["data"]), b"\x1b[2JCONTENIDO")
         self.assertEqual(len(self.processes), 5)
 
     def test_foreign_owner_cannot_input_resize_detach_or_activate_with_claimed_client_id(self):

@@ -115,6 +115,31 @@ class MobilePTYProcessTests(_PTYFixture):
                 self.assertEqual(error.exception.code, expected)
                 self.assertIsNotNone(process.poll())
 
+    def test_geometry_frames_preserve_vt_and_foreign_markers_across_short_reads(self):
+        token = "d" * 32
+        ready = ("\x1eUCPTY_BEGIN_" + token + "\x1f\x1eUCPTY_READY_" + token + "\x1f").encode()
+        geometry = ("\x1eUCPTY_GEOMETRY_" + token + ":80:23:on\x1f").encode()
+        foreign = b"\x1eUCPTY_GEOMETRY_" + b"e" * 32 + b":90:30:off\x1f"
+        invalid = ("\x1eUCPTY_GEOMETRY_" + token + ":0:23:on\x1f").encode()
+        vt = "\x1b[31má\x1b[0m".encode()
+        payload = vt[:4] + geometry + vt[4:] + foreign + invalid + b"FIN"
+        script = ("import os,tty;tty.setraw(0);os.write(1," + repr(ready) + ");"
+                  "os.read(0,1);os.write(1," + repr(payload) + ");os.read(0,1)")
+        process = self.process(self.python_launch(script, {**self.env, MobilePTYProcess._TOKEN_ENV: token}))
+        process.wait_ready()
+        process.write(b"!")
+        output = bytearray()
+        deadline = time.monotonic() + 3
+        while not output.endswith(b"FIN"):
+            self.assertLess(time.monotonic(), deadline)
+            try:
+                output.extend(process.read(1))
+            except BlockingIOError:
+                select.select([process.fileno()], [], [], .1)
+        self.assertEqual(bytes(output), vt + foreign + invalid + b"FIN")
+        self.assertEqual(process.source_geometry, {"source_columns": 80, "source_rows": 23,
+                                                  "presentation_columns": 80, "presentation_rows": 24})
+
     def test_launch_validation_and_ssh_endpoint_credentials(self):
         record = {"tmux": "fixture", "tmuxSocket": "private", "paneId": "%1", "cwd": "/does-not-exist"}
         command = SSHCommand.parse("ssh -p2222 -i '/tmp/fixture key' -oStrictHostKeyChecking=yes user@fixture.invalid")
@@ -232,6 +257,42 @@ class MobilePTYTmuxTests(_PTYFixture):
         self.assertEqual(original, self.tmux("show-options", "-t", "=fixture:"))
         self.assertEqual(global_options, self.tmux("show-options", "-g"))
         self.assertEqual(before, self.identities())
+        mobile.close()
+        self.assertEqual(["fixture"], self.sessions())
+
+    def test_geometry_follows_pc_resize_and_auxiliary_status_without_global_hooks(self):
+        self.tmux("set-option", "-g", "status", "3")
+        self.tmux("set-option", "-t", "=fixture:", "status", "off")
+        panes = self.unique_panes()
+        hooks = [self.tmux("show-hooks", *args) for args in (("-g",), ("-t", "=fixture:"))]
+        options = self.tmux("show-options", "-t", "=fixture:")
+        mobile = self.mobile(size=(180, 60))
+        mobile.wait_ready()
+        self.assertEqual(mobile.source_geometry, {"source_columns": 100, "source_rows": 30,
+                                                 "presentation_columns": 100, "presentation_rows": 33})
+        auxiliary = next(name for name in self.sessions() if name.startswith("uc-mobile-"))
+
+        def receive_geometry(columns, rows, status_rows):
+            expected = {"source_columns": columns, "source_rows": rows,
+                        "presentation_columns": columns, "presentation_rows": rows + status_rows}
+            deadline = time.monotonic() + 3
+            while mobile.source_geometry != expected:
+                self.assertLess(time.monotonic(), deadline, repr(mobile.source_geometry))
+                try:
+                    mobile.read()
+                except BlockingIOError:
+                    select.select([mobile.fileno()], [], [], .1)
+
+        self.desktop.resize(120, 40)
+        receive_geometry(120, 40, 3)
+        mobile.resize(120, 43)
+        for status in ("off", "5"):
+            self.tmux("set-option", "-t", "=" + auxiliary + ":", "status", status)
+            receive_geometry(120, 40, 0 if status == "off" else 5)
+        self.assertEqual("120:40", self.tmux("display-message", "-p", "-t", "=fixture:", "#{window_width}:#{window_height}"))
+        self.assertEqual(panes, self.unique_panes())
+        self.assertEqual(options, self.tmux("show-options", "-t", "=fixture:"))
+        self.assertEqual(hooks, [self.tmux("show-hooks", *args) for args in (("-g",), ("-t", "=fixture:"))])
         mobile.close()
         self.assertEqual(["fixture"], self.sessions())
 
