@@ -21,6 +21,11 @@ agrupada porque tmux puede ejecutar el shell por defecto antes de formar el grup
 Una ventana sin destino durable devuelve `not_durable`; un arranque fallido,
 `attach_failed`. No existe alternativa implícita a otro destino o shell.
 
+Los IDs de pane nativos (`%N`) se validan exactamente. Si Linux guarda un ID de
+layout (`main`, `pane-…`), sólo se resuelve dentro de la sesión guardada cuando
+contiene una única ventana y un único pane; un destino ambiguo se rechaza sin
+crear un adjunto. El ID de layout y la conversación persistida no se modifican.
+
 Antes de adjuntar, suscribir `terminal.pty` mediante `mobile.events.subscribe` en
 la misma conexión y comprobar que el host acepta ese topic. El identificador de
 propiedad es el de la conexión autenticada del servidor, no `client_id` enviado.
@@ -69,3 +74,10 @@ si se elimina un pane por fuera de UniConnect, tmux puede seleccionar otro;
 no se garantiza fijación perpetua a un pane eliminado. La rueda depende de los modos de ratón anunciados por tmux;
 se conserva su configuración. El modo copia pertenece a tmux, no al historial
 local del emulador ni a una nueva instancia del programa.
+
+El adaptador de escritorio Linux conserva la selección al copiar con tmux
+únicamente en sus servidores dedicados `uniconnect` y `uniconnect-local`: cambia
+`MouseDragEnd1Pane` a `copy-pipe-no-clear` sólo si conserva el binding original
+`copy-pipe-and-cancel`. Las tablas de teclas son del servidor; no se alteran
+personalizaciones ni sockets ajenos. Esto no convierte la selección de tmux en
+selección nativa de VTE ni resuelve por sí solo el menú contextual.

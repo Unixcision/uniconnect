@@ -316,6 +316,25 @@ class TmuxCommand:
         return setup, f'{binary} set-option -g history-limit "$uc_history_limit" \\;'
 
     @staticmethod
+    def selection_policy(socket_name: str | None) -> str:
+        """Preserve copy-mode selection on our servers, never overwrite user keys.
+
+        Key tables are server-wide, not per session. Only the two dedicated
+        UniConnect socket names opt in, and only an exact stock binding changes.
+        This does not turn tmux selection into a native VTE selection.
+        """
+        if socket_name not in ("uniconnect", "uniconnect-local"):
+            return ""
+        binary = TmuxCommand._binary(socket_name)
+        return (
+            "for uc_copy_table in copy-mode copy-mode-vi; do "
+            f'uc_copy_binding=$({binary} list-keys -T "$uc_copy_table" MouseDragEnd1Pane 2>/dev/null) || continue; '
+            'if [ "$uc_copy_binding" = "bind-key -T $uc_copy_table MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel" ]; then '
+            f'{binary} bind-key -T "$uc_copy_table" MouseDragEnd1Pane send-keys -X copy-pipe-no-clear; '
+            "fi; done; "
+        )
+
+    @staticmethod
     def attach(window: Mapping, *, create: bool = False, socket_name: str | None = None) -> str:
         window = TmuxCommand.validate_window(window)
         socket_name = window.get("tmuxSocket", socket_name)
@@ -323,6 +342,7 @@ class TmuxCommand:
         # OSC52 crashes tmux 3.2a with recent ncurses. Apply only to UniConnect's
         # dedicated servers, never to the user's default or custom tmux socket.
         clipboard = "set-option -s set-clipboard off" if socket_name in ("uniconnect", "uniconnect-local") else ""
+        selection = TmuxCommand.selection_policy(socket_name)
         name = shlex.quote(window["tmux"])
         target = shlex.quote("=" + window["tmux"])
         option_target = shlex.quote("=" + window["tmux"] + ":")
@@ -331,7 +351,8 @@ class TmuxCommand:
             creation = (f"new-session -A -s {name} -c {shlex.quote(window['cwd'])} "
                         f"{shlex.quote(TmuxCommand.pane_command(window))} "
                         f"\\; set-option -t {option_target} mouse on"
-                        + (f" \\; {clipboard}" if clipboard else ""))
+                        + (f" \\; {clipboard}" if clipboard else "")
+                        + (f" \\; run-shell {shlex.quote(selection)}" if selection else ""))
             setup, creator = TmuxCommand._creation_prefix(socket_name)
             existing = (f"if {binary} has-session -t {target} 2>/dev/null; then exec {binary} {creation}; fi; "
                         if setup else "")
@@ -340,6 +361,7 @@ class TmuxCommand:
                 f"{binary} has-session -t {target} 2>/dev/null || exit 72; "
                 f"{binary} set-option -t {option_target} mouse on; "
                 + (f"{binary} {clipboard}; " if clipboard else "") +
+                selection +
                 f"exec {binary} attach-session -t {target}")
 
 
@@ -471,7 +493,8 @@ class Transport:
         script = f"command -v tmux >/dev/null 2>&1 || exit 127; test -d {shlex.quote(window['cwd'])} || exit 72; "
         if args:
             script += f"command -v {shlex.quote(args[0])} >/dev/null 2>&1 || exit 127; "
-        body = (f"if {binary} has-session -t {target} 2>/dev/null; then "
+        selection = TmuxCommand.selection_policy(socket_name)
+        body = selection + (f"if {binary} has-session -t {target} 2>/dev/null; then "
                 "printf 'UC_EXISTS\\n'; exit 0; fi; ")
         if session_id:
             owner = shlex.quote(window["agent"] + ":" + session_id.lower())
@@ -485,6 +508,7 @@ class Transport:
                  f"{binary} set-option -t {option_target} mouse on; ")
         if socket_name in ("uniconnect", "uniconnect-local"):
             body += f"{binary} set-option -s set-clipboard off; "
+        body += selection
         if session_id:
             body += f"{binary} set-option -t {option_target} @uniconnect_agent_owner \"$uc_owner\"; "
         body += ("printf 'UC_CREATED\\n'; "
