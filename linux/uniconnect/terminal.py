@@ -508,7 +508,9 @@ class TerminalSurface(Gtk.Box):
         return False
 
     def on_selection_grab_broken(self, _, event):
-        if not event.keyboard and self.selection_drag.pressed:
+        # Taking our explicit seat grab replaces GDK's implicit button grab;
+        # that notification is not a loss of the new gesture's pointer.
+        if not event.keyboard and not event.implicit and self.selection_drag.pressed:
             self.selection_drag.finish()
         return False
 
