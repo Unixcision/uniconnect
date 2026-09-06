@@ -146,7 +146,7 @@ class TerminalSurface(Gtk.Box):
 
     def launch(self, create=False):
         """An explicit reconnect starts a new bounded recovery budget."""
-        self._reset_selection = bool(self.pid) and not create
+        self._reset_selection = self.generation > 0 and not create
         self._cancel_reconnect(reset=True)
         return self._queue_launch(create)
 

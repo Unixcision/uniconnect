@@ -36,7 +36,8 @@ class TerminalCopyTests(unittest.TestCase):
         self.clipboard.set_text("anterior", -1)
         self.tmux("new-session", "-d", "-s", "subject", "-x", "80", "-y", "24",
                   "printf 'COPIA_ñ\\nsegunda línea\\n'; tmux -L " + shlex.quote(self.socket)
-                  + " wait-for -S rendered; exec sleep 90")
+                  + " wait-for -S rendered; IFS= read -r uc_input; tmux -L " + shlex.quote(self.socket)
+                  + " wait-for -S typed; exec sleep 90")
         self.tmux("wait-for", "rendered")
         self.before = self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_id}:#{pane_pid}")
 
@@ -81,6 +82,10 @@ class TerminalCopyTests(unittest.TestCase):
         self.copy_and_wait("COPIA_ñ")
         self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}"), "0")
         self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_id}:#{pane_pid}"), self.before)
+        self.tmux("send-keys", "-t", "=subject:", "-l", "UC_TECLADO_OK")
+        self.tmux("send-keys", "-t", "=subject:", "Enter")
+        self.tmux("wait-for", "typed")
+        self.assertIn("UC_TECLADO_OK", self.tmux("capture-pane", "-p", "-t", "=subject:"))
 
     def test_native_vte_selection_still_copies(self):
         loop = GLib.MainLoop()
