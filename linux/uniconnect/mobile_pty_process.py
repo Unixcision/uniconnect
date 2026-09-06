@@ -87,8 +87,16 @@ class MobilePTYProcess:
         # must silently discard its late notification, not disturb the desktop.
         geometry = "(" + geometry + ") 2>/dev/null || :"
         hook = shlex.join(["run-shell", "-b", "-t", "=" + auxiliary + ":", geometry])
-        setup = [shlex.join(binary + ["set-hook", "-t", "=" + auxiliary + ":", event, hook])
-                 for event in ("window-resized", "client-resized", "after-set-option")]
+        # Probe the running server: 3.2 emits window-layout-changed for resizes
+        # and rejects window-resized. A rejected optional hook must not prevent
+        # READY; failure to install the supported replacement still fails closed.
+        probe = shlex.join(binary + ["show-hooks", "-t", "=" + auxiliary + ":", "window-resized"])
+        resize_hooks = [shlex.join(binary + ["set-hook", "-t", "=" + auxiliary + ":", event, hook])
+                        for event in ("window-resized", "window-layout-changed")]
+        resize_setup = (f"if {probe} >/dev/null 2>&1; then {resize_hooks[0]}; "
+                        f"else {resize_hooks[1]}; fi")
+        setup = [resize_setup, *[shlex.join(binary + ["set-hook", "-t", "=" + auxiliary + ":", event, hook])
+                                for event in ("client-resized", "after-set-option")]]
         initial = ("printf '\\036UCPTY_GEOMETRY_" + token + ":%s:%s:%s\\037"
                    "\\036UCPTY_READY_" + token + "\\037' "
                    "'##{window_width}' '##{window_height}' '##{status}' > '##{client_tty}'")

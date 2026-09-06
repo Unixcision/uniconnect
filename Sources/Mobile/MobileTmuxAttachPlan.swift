@@ -82,12 +82,18 @@ struct MobileTmuxAttachPlan: Equatable, Sendable, CustomStringConvertible, Custo
             uc_mobile_tty=$(/usr/bin/tty 2>/dev/null) || exit 69
             case "$uc_mobile_tty" in /dev/tty*|/dev/pts/*) ;; *) exit 69 ;; esac
             case "$uc_mobile_tty" in *[!a-zA-Z0-9/_-]*) exit 69 ;; esac
+            # tmux 3.2 reports window resizing through window-layout-changed.
+            # Probe the running server, which may differ from the client binary.
+            uc_mobile_resize_hook=window-layout-changed
+            if "$uc_mobile_tmux" "$@" show-hooks -t \(exactPaneTarget) window-resized >/dev/null 2>&1; then
+                uc_mobile_resize_hook=window-resized
+            fi
             uc_mobile_geometry_script="(printf '\\\\036UCPTY_GEOMETRY_\(token):%s:%s:%s\\\\037' '#{window_width}' '#{window_height}' '#{status}' > '$uc_mobile_tty') 2>/dev/null || :"
             uc_mobile_geometry_hook="run-shell -b -t '=$uc_mobile_aux:' \\"$uc_mobile_geometry_script\\""
             """
         } ?? ""
         let geometryHooks = geometryNonce == nil ? "" : """
-        set-hook -t "=$uc_mobile_aux:" window-resized "$uc_mobile_geometry_hook" \\; \\
+        set-hook -t "=$uc_mobile_aux:" "$uc_mobile_resize_hook" "$uc_mobile_geometry_hook" \\; \\
         set-hook -t "=$uc_mobile_aux:" client-resized "$uc_mobile_geometry_hook" \\; \\
         set-hook -t "=$uc_mobile_aux:" after-set-option "$uc_mobile_geometry_hook" \\; \\
         """ + "\n"
