@@ -408,6 +408,8 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     private var attachment: TerminalAttachment? = null
     private var attachJob: Job? = null
     private var emulator: TerminalEmulator? = null
+    /** Sizes already applied for the live attachment; guards against a resize/report loop. */
+    private val appliedGeometry = mutableSetOf<Pair<Int, Int>>()
 
     /** Attaches a phone-sized tmux client to the selected window and mirrors it through the local emulator. */
     fun startRealTerminal(columns: Int, rows: Int, automatic: Boolean = false) {
@@ -422,6 +424,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         if (current.connections[machine.id]?.connected != true) { mutableState.update { it.copy(error = R.string.connection_error) }; return }
         val terminal = TerminalEmulator(columns, rows)
         emulator = terminal
+        appliedGeometry.clear()
         mutableState.update { it.copy(realTerminal = RealTerminal(connecting = true)) }
         attachJob = viewModelScope.launch {
             var live: TerminalAttachment? = null
@@ -442,9 +445,14 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                         is PtyEvent.Geometry -> {
                             // The host owns the geometry: match the phone's PTY to the canvas it
                             // reports so tmux stops padding rows the window does not have.
-                            if (terminal.screen.columns != event.presentationColumns || terminal.screen.rows != event.presentationRows) {
-                                terminal.resize(event.presentationColumns, event.presentationRows)
-                                runCatching { live.resize(event.presentationColumns, event.presentationRows) }
+                            val wanted = event.presentationColumns to event.presentationRows
+                            val changed = terminal.screen.columns != wanted.first || terminal.screen.rows != wanted.second
+                            // A resize can make the host recompute and report again. If two sizes
+                            // alternate, obeying every report would loop forever, so each attachment
+                            // applies a bounded number of automatic resizes and then just draws.
+                            if (changed && appliedGeometry.size < MAX_AUTOMATIC_RESIZES && appliedGeometry.add(wanted)) {
+                                terminal.resize(wanted.first, wanted.second)
+                                runCatching { live.resize(wanted.first, wanted.second) }
                                 mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = terminal.snapshot())) }
                             }
                         }
@@ -555,5 +563,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         const val ENTER_GAP_MILLIS = 80L
         /** Retries allowed before a first connection is reported as failed. */
         const val INITIAL_ATTEMPTS = 3
+        /** Distinct host-reported sizes obeyed per attachment before the client stops resizing. */
+        const val MAX_AUTOMATIC_RESIZES = 4
     }
 }
