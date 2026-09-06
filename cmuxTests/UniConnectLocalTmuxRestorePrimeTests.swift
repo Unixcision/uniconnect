@@ -30,7 +30,7 @@ struct UniConnectLocalTmuxRestorePrimeTests {
         _ = workspace.updatePanelShellActivityState(panelId: panelID, state: .promptIdle)
 
         #expect(workspace.uniConnectLocalWindowsByPanelId[panelID]?.runtimeState == .agent)
-        #expect(workspace.uniConnectLocalWindowsByPanelId[panelID]?.activeConversation?.sessionID == sessionID.lowercased())
+        #expect(workspace.uniConnectLocalWindowsByPanelId[panelID]?.activeConversation?.sessionID.lowercased() == sessionID.lowercased())
         let persisted = workspace.sessionSnapshot(includeScrollback: false, restorableAgentIndex: .empty)
         let terminal = try #require(persisted.panels.first { $0.id == panelID }?.terminal)
         #expect(terminal.uniConnectLocalWindow?.runtimeState == .agent)
