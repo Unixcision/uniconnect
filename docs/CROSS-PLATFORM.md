@@ -93,8 +93,12 @@ UniConnect conserva el menú nativo con clic derecho aunque el terminal capture
 el ratón, tanto en tmux local como SSH. El mismo clic no se entrega también al
 PTY. Linux ya intercepta ese botón en su adaptador VTE; su incidencia de copia de
 la selección tmux es independiente y no queda resuelta por este cambio de AppKit.
-En Mac, la apertura de Ajustes obtiene su acción de la vista de arranque SwiftUI,
-que permanece oculta mientras AppKit gestiona las ventanas de terminal. El menú
+En Mac, Ajustes tiene una ventana AppKit retenida y se configura junto al runtime,
+antes de crear las ventanas de terminal. No depende de que aparezca una escena
+SwiftUI oculta: conserva el contenido y las acciones del paquete de ajustes,
+con navegación alojada por la ventana nativa. Linux presenta su ventana mediante
+GTK y no participa en ese ciclo de escenas; este arreglo no modifica su adaptador.
+El menú
 de la aplicación también ofrece Acceso remoto mediante la misma acción que
 Ajustes, sin modificar las autorizaciones del dispositivo ni el bloqueo.
 

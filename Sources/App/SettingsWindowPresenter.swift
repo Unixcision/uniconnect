@@ -51,7 +51,7 @@ enum SettingsWindowPresenter {
         openWindowOverride: (@MainActor () -> Void)? = nil
     ) {
 #if DEBUG
-        cmuxDebugLog("settings.window.show path=swiftuiWindow")
+        cmuxDebugLog("settings.window.show path=nativeWindow")
         _ = CmuxUITestCapture.mutateJSONObjectIfConfigured(
             envKey: "CMUX_UI_TEST_SETTINGS_OPEN_CAPTURE_PATH"
         ) { payload in
@@ -76,16 +76,13 @@ enum SettingsWindowPresenter {
             return
         }
 
-        if let openWindowOverride {
-            openWindowOverride()
-            return
-        }
-
-        guard let openWindow else {
+        // The composition root owns presentation. Legacy views may still pass
+        // a scene action, but it must not override the registered native host.
+        guard let action = openWindow ?? openWindowOverride else {
             shouldOpenWhenConfigured = true
             return
         }
-        openWindow()
+        action()
     }
 
     static func consumePendingNavigationTarget() -> SettingsNavigationTarget? {

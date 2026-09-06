@@ -7,6 +7,10 @@ on:
       - Sources/TerminalController.swift
       - Sources/GhosttyTerminalView.swift
       - Sources/cmuxApp.swift
+      - Sources/AppDelegate.swift
+      - Sources/App/SettingsWindow*.swift
+      - Packages/CmuxSettingsUI/**
+      - cmuxTests/NativeSettingsPresentationTests.swift
       - Sources/Workspace.swift
       - Sources/Mobile/**
       - cmuxTests/MobilePTYProcessTests.swift
@@ -120,6 +124,7 @@ jobs:
             -destination 'platform=macOS' \
             -parallel-testing-enabled NO \
             -only-testing:cmuxTests/UniConnectLocalTmuxSocketAccessTests \
+            -only-testing:cmuxTests/NativeSettingsPresentationTests \
             -resultBundlePath "$RUNNER_TEMP/uniconnect-tmux-socket-access.xcresult" \
             CMUX_SKIP_ZIG_BUILD=1 \
             test-without-building 2>&1 | tee "$RUNNER_TEMP/uniconnect-tmux-socket-access.log"

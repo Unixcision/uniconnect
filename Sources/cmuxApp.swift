@@ -1180,20 +1180,6 @@ struct cmuxApp: App {
             windowAndViewCommands
         }
 
-        Window(String(localized: "settings.title", defaultValue: "Settings"), id: SettingsWindowPresenter.windowID) {
-            SettingsWindowRoot(runtime: settingsRuntime)
-                .settingsRuntime(settingsRuntime)
-                .background(WindowAccessor(dedupeByWindow: false) { window in
-                    SettingsWindowPresenter.configure(window: window)
-                })
-                .cmuxAppearanceColorScheme(appearanceMode)
-        }
-        .defaultSize(width: 980, height: 680)
-        .windowResizability(.contentMinSize)
-        .commands {
-            SidebarCommands()
-        }
-
         Window(String(localized: "settings.config.windowTitle", defaultValue: "Config"), id: ConfigSettingsView.windowID) {
             ConfigSettingsView()
                 .settingsRuntime(settingsRuntime)
@@ -1963,23 +1949,9 @@ struct cmuxApp: App {
 }
 
 private struct MainWindowBootstrapView: View {
-    @Environment(\.openWindow) private var openWindow
-
     var body: some View {
         Color.clear
             .frame(width: 1, height: 1)
-            .onAppear {
-                // Read the scene action from an installed View, not App's
-                // default environment. Keep its hidden scene alive while the
-                // visible terminal windows are owned by AppKit.
-                let action = openWindow
-                SettingsWindowPresenter.configure(
-                    openWindow: { action(id: SettingsWindowPresenter.windowID) },
-                    parentWindowProvider: {
-                        AppDelegate.shared?.preferredMainWindowForSettingsPresentation()
-                    }
-                )
-            }
             .background(WindowAccessor { window in
                 window.identifier = NSUserInterfaceItemIdentifier("cmux.bootstrap")
                 window.isRestorable = false

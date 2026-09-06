@@ -444,6 +444,7 @@
 		F6448F377504F33956E7E03B /* MobileWorkspaceListFidelityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86544CEFA1CA33CA9225FB6E /* MobileWorkspaceListFidelityTests.swift */; };
 		00C3AA443F6DA8D94E28CE17 /* MobileWorkspaceListObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9F14137954A34DFFA05C88C /* MobileWorkspaceListObserver.swift */; };
 		B9000015A1B2C3D4E5F60719 /* MultiWindowNotificationsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000016A1B2C3D4E5F60719 /* MultiWindowNotificationsUITests.swift */; };
+		B798F5DBEEC044439B775ACA /* NativeSettingsPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCB1E7AA8AA34F09A08CB2D6 /* NativeSettingsPresentationTests.swift */; };
 		734F49D37E543DD01C2F4FEF /* NotificationAndMenuBarTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2C075029771815DD5DA1332 /* NotificationAndMenuBarTests.swift */; };
 		4E5F60720000000000000001 /* NotificationSoundSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E5F60720000000000000002 /* NotificationSoundSettingsTests.swift */; };
 		A5001094 /* NotificationsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001091 /* NotificationsPage.swift */; };
@@ -542,6 +543,8 @@
 		D10000000000000000A00016 /* SettingsSidebarBetaBehaviorUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000A00017 /* SettingsSidebarBetaBehaviorUITests.swift */; };
 		D10000000000000000A00014 /* SettingsTerminalBehaviorUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000A00015 /* SettingsTerminalBehaviorUITests.swift */; };
 		D10000000000000000A00010 /* SettingsUITestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000A00011 /* SettingsUITestSupport.swift */; };
+		A90613000000000000000005 /* SettingsWindowContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90613000000000000000006 /* SettingsWindowContent.swift */; };
+		A90613000000000000000003 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90613000000000000000004 /* SettingsWindowController.swift */; };
 		D36090010000000000000001 /* SettingsWindowPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D36090010000000000000002 /* SettingsWindowPresenter.swift */; };
 		D36090010000000000000003 /* SettingsWindowPresenterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D36090010000000000000004 /* SettingsWindowPresenterTests.swift */; };
 		D10000000000000000A0001E /* SettingsWorkspaceColorsBehaviorUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000A0001F /* SettingsWorkspaceColorsBehaviorUITests.swift */; };
@@ -1396,6 +1399,7 @@
 		86544CEFA1CA33CA9225FB6E /* MobileWorkspaceListFidelityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileWorkspaceListFidelityTests.swift; sourceTree = "<group>"; };
 		C9F14137954A34DFFA05C88C /* MobileWorkspaceListObserver.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileWorkspaceListObserver.swift; sourceTree = "<group>"; };
 		B9000016A1B2C3D4E5F60719 /* MultiWindowNotificationsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiWindowNotificationsUITests.swift; sourceTree = "<group>"; };
+		BCB1E7AA8AA34F09A08CB2D6 /* NativeSettingsPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSettingsPresentationTests.swift; sourceTree = "<group>"; };
 		D2C075029771815DD5DA1332 /* NotificationAndMenuBarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationAndMenuBarTests.swift; sourceTree = "<group>"; };
 		4E5F60720000000000000002 /* NotificationSoundSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSoundSettingsTests.swift; sourceTree = "<group>"; };
 		A5001091 /* NotificationsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsPage.swift; sourceTree = "<group>"; };
@@ -1489,6 +1493,8 @@
 		D10000000000000000A00017 /* SettingsSidebarBetaBehaviorUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSidebarBetaBehaviorUITests.swift; sourceTree = "<group>"; };
 		D10000000000000000A00015 /* SettingsTerminalBehaviorUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTerminalBehaviorUITests.swift; sourceTree = "<group>"; };
 		D10000000000000000A00011 /* SettingsUITestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsUITestSupport.swift; sourceTree = "<group>"; };
+		A90613000000000000000006 /* SettingsWindowContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/SettingsWindowContent.swift; sourceTree = "<group>"; };
+		A90613000000000000000004 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/SettingsWindowController.swift; sourceTree = "<group>"; };
 		D36090010000000000000002 /* SettingsWindowPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/SettingsWindowPresenter.swift; sourceTree = "<group>"; };
 		D36090010000000000000004 /* SettingsWindowPresenterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowPresenterTests.swift; sourceTree = "<group>"; };
 		D10000000000000000A0001F /* SettingsWorkspaceColorsBehaviorUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWorkspaceColorsBehaviorUITests.swift; sourceTree = "<group>"; };
@@ -2292,6 +2298,8 @@
 				A50019B1 /* SettingsSearchAliases.swift */,
 				D3610C010000000000000002 /* CmuxSettingsJSONPathSupport.swift */,
 				D36090010000000000000002 /* SettingsWindowPresenter.swift */,
+				A90613000000000000000004 /* SettingsWindowController.swift */,
+				A90613000000000000000006 /* SettingsWindowContent.swift */,
 				D36090020000000000000002 /* NSWindow+CmuxPeerWindow.swift */,
 				C0DE35860000000000000002 /* BackgroundWorkspacePrimeCoordinator.swift */,
 				A5001012 /* ContentView.swift */,
@@ -2787,6 +2795,7 @@
 				C0DEC0DE000000000000F203 /* CommandPaletteNucleoFixtures.swift */,
 				A50019B3 /* SettingsSearchIndexTests.swift */,
 				D36090010000000000000004 /* SettingsWindowPresenterTests.swift */,
+				BCB1E7AA8AA34F09A08CB2D6 /* NativeSettingsPresentationTests.swift */,
 				970226F3C99D0D937CD00539 /* BrowserConfigTests.swift */,
 				C0DE49870000000000000002 /* BrowserWebContentProcessTests.swift */,
 				43F90FAF3FD44F11BF547BE9 /* CmuxWebViewMouseNavigationButtonTests.swift */,
@@ -3605,6 +3614,8 @@
 				D9CCF002D9CCF002D9CCF002 /* SettingsLazyLoadHelpers.swift in Sources */,
 				A50019A0 /* SettingsNavigation.swift in Sources */,
 				A50019B0 /* SettingsSearchAliases.swift in Sources */,
+				A90613000000000000000005 /* SettingsWindowContent.swift in Sources */,
+				A90613000000000000000003 /* SettingsWindowController.swift in Sources */,
 				D36090010000000000000001 /* SettingsWindowPresenter.swift in Sources */,
 				76027A12C93B4538BF22C71E /* ShortcutBareStartRouting.swift in Sources */,
 				125BAEF2FE3B454547B964D1 /* ShortcutHintPill.swift in Sources */,
@@ -4089,6 +4100,7 @@
 				A6092606BB00000000000102 /* MobileTmuxAttachPlanTests.swift in Sources */,
 				A6092606BB00000000000104 /* MobileTmuxPTYIntegrationTests.swift in Sources */,
 				F6448F377504F33956E7E03B /* MobileWorkspaceListFidelityTests.swift in Sources */,
+				B798F5DBEEC044439B775ACA /* NativeSettingsPresentationTests.swift in Sources */,
 				734F49D37E543DD01C2F4FEF /* NotificationAndMenuBarTests.swift in Sources */,
 				4E5F60720000000000000001 /* NotificationSoundSettingsTests.swift in Sources */,
 				F500310A0000000000000001 /* NotificationsPopoverPlacementTests.swift in Sources */,

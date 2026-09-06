@@ -34,9 +34,23 @@ public struct SettingsWindowScene: Scene {
 @MainActor
 public struct SettingsWindowRoot: View {
     let runtime: SettingsRuntime
+    private let externalSection: Binding<String>?
+    private let externalSidebarEntry: Binding<String>?
 
-    public init(runtime: SettingsRuntime) {
+    /// Creates settings content for a SwiftUI scene or a native host.
+    ///
+    /// - Parameters:
+    ///   - runtime: The settings dependencies constructed by the application.
+    ///   - selectedSection: Native-host navigation storage; nil uses SceneStorage.
+    ///   - selectedSidebarEntry: Native-host sidebar storage; nil uses SceneStorage.
+    public init(
+        runtime: SettingsRuntime,
+        selectedSection: Binding<String>? = nil,
+        selectedSidebarEntry: Binding<String>? = nil
+    ) {
         self.runtime = runtime
+        externalSection = selectedSection
+        externalSidebarEntry = selectedSidebarEntry
     }
 
     @State private var searchText: String = ""
@@ -48,8 +62,24 @@ public struct SettingsWindowRoot: View {
     // because under search the user can click an individual setting
     // hit and we still want the section pane to follow, but two
     // sibling hits inside one section must each be selectable.
-    @SceneStorage("selectedSettingsSection") private var selectedSectionRaw: String = SettingsSectionID.account.rawValue
-    @SceneStorage("selectedSettingsSidebarEntry") private var selectedSidebarEntryID: String = "section:\(SettingsSectionID.account.rawValue)"
+    @SceneStorage("selectedSettingsSection") private var sceneSection: String = SettingsSectionID.account.rawValue
+    @SceneStorage("selectedSettingsSidebarEntry") private var sceneSidebarEntry: String = "section:\(SettingsSectionID.account.rawValue)"
+
+    private var selectedSectionRaw: String {
+        get { externalSection?.wrappedValue ?? sceneSection }
+        nonmutating set {
+            if let externalSection { externalSection.wrappedValue = newValue }
+            else { sceneSection = newValue }
+        }
+    }
+
+    private var selectedSidebarEntryID: String {
+        get { externalSidebarEntry?.wrappedValue ?? sceneSidebarEntry }
+        nonmutating set {
+            if let externalSidebarEntry { externalSidebarEntry.wrappedValue = newValue }
+            else { sceneSidebarEntry = newValue }
+        }
+    }
     // Legacy `SettingsRootView` binds `NavigationSplitView`'s
     // `columnVisibility` so the user can collapse the sidebar via the
     // toolbar button (or the SidebarCommands menu) and have that state
