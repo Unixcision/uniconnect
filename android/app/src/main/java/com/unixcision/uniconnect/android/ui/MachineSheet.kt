@@ -18,15 +18,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.unixcision.uniconnect.android.R
+import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.domain.MachineEndpoint
 
-/** Saves an address only; connecting, reading and sending stay separate explicit actions. */
+/**
+ * The machine form, used both to add and to edit.
+ *
+ * Saves an address only; connecting, reading and sending stay separate explicit actions. Passing
+ * [machine] fills the fields with what is stored today, so correcting a host that changed IP or
+ * port is an edit rather than a delete followed by a re-add.
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun AddMachineSheet(saving: Boolean, error: Int?, onDismiss: () -> Unit, onSave: (String, String, String) -> Unit) {
-    var name by rememberSaveable { mutableStateOf("") }
-    var address by rememberSaveable { mutableStateOf("") }
-    var port by rememberSaveable { mutableStateOf(MachineEndpoint.DEFAULT_PORT.toString()) }
+fun MachineSheet(
+    saving: Boolean, error: Int?, machine: Machine? = null,
+    onDismiss: () -> Unit, onSave: (String, String, String) -> Unit,
+) {
+    var name by rememberSaveable(machine?.id) { mutableStateOf(machine?.name.orEmpty()) }
+    var address by rememberSaveable(machine?.id) { mutableStateOf(machine?.endpoint?.host.orEmpty()) }
+    var port by rememberSaveable(machine?.id) { mutableStateOf((machine?.endpoint?.port ?: MachineEndpoint.DEFAULT_PORT).toString()) }
     ModalBottomSheet(
         onDismissRequest = { if (!saving) onDismiss() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -34,7 +44,11 @@ fun AddMachineSheet(saving: Boolean, error: Int?, onDismiss: () -> Unit, onSave:
         dragHandle = { BottomSheetDefaults.DragHandle(color = Brand.Outline) },
     ) {
         Column(Modifier.padding(horizontal = 24.dp).verticalScroll(rememberScrollState()).imePadding().navigationBarsPadding().padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            SheetHeader(icon = { Icon(Icons.Rounded.Computer, null, tint = Brand.Cyan) }, title = stringResource(R.string.add_machine), note = stringResource(R.string.machine_form_note), tone = Brand.Cyan)
+            SheetHeader(
+                icon = { Icon(Icons.Rounded.Computer, null, tint = Brand.Cyan) },
+                title = stringResource(if (machine != null) R.string.edit_machine else R.string.add_machine),
+                note = stringResource(R.string.machine_form_note), tone = Brand.Cyan,
+            )
             SheetField(name, { name = it }, stringResource(R.string.machine_name), enabled = !saving)
             SheetField(address, { address = it }, stringResource(R.string.machine_address), hint = stringResource(R.string.machine_address_hint), enabled = !saving, keyboard = KeyboardType.Uri)
             SheetField(port, { port = it }, stringResource(R.string.machine_port), enabled = !saving, keyboard = KeyboardType.Number)

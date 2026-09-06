@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.*
@@ -104,6 +105,11 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
                         IconButton(onClick = { menuOpen = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.machine_menu), tint = Brand.Muted) }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = Brand.SurfaceHigh) {
                             DropdownMenuItem(
+                                text = { Text(stringResource(R.string.edit_machine)) },
+                                leadingIcon = { Icon(Icons.Rounded.Edit, null, tint = Brand.Cyan) },
+                                onClick = { menuOpen = false; machine?.let(model::showEdit) },
+                            )
+                            DropdownMenuItem(
                                 text = { Text(stringResource(R.string.remove), color = Brand.Coral) },
                                 leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = Brand.Coral) },
                                 onClick = { menuOpen = false; removing = machine },
@@ -150,7 +156,10 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
             }
         }
     }
-    if (state.adding) AddMachineSheet(state.saving, state.formError, model::dismissAdd, model::saveMachine)
+    if (state.adding) MachineSheet(state.saving, state.formError, onDismiss = model::dismissAdd, onSave = model::saveMachine)
+    state.editing?.let { target ->
+        MachineSheet(state.saving, state.formError, machine = target, onDismiss = model::dismissEdit, onSave = model::saveMachine)
+    }
     state.creation?.let { CreateResourceSheet(it, state.creating, state.creationError, model::dismissCreate, model::create) }
     removing?.let { target ->
         AlertDialog(

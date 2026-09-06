@@ -6,6 +6,7 @@ import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.MachineFailure
 import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.domain.MachineClient
+import com.unixcision.uniconnect.android.domain.MachineDraft
 import com.unixcision.uniconnect.android.domain.MachineEndpoint
 import com.unixcision.uniconnect.android.domain.MachineRepository
 import com.unixcision.uniconnect.android.domain.MachineSnapshot
@@ -44,6 +45,8 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     data class State(
         val machines: List<Machine> = emptyList(), val loading: Boolean = true, val error: Int? = null,
         val adding: Boolean = false, val saving: Boolean = false, val formError: Int? = null,
+        /** The machine whose address is being edited, if any; the form is shared with adding. */
+        val editing: Machine? = null,
         val selectedMachine: String? = null, val selectedWorkspace: String? = null, val selectedWindow: String? = null,
         val connections: Map<String, Connection> = emptyMap(),
         val terminal: TerminalSnapshot? = null, val terminalLoading: Boolean = false,
@@ -118,6 +121,9 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
 
     fun showAdd() { mutableState.update { it.copy(adding = true, formError = null) } }
     fun dismissAdd() { if (!state.value.saving) mutableState.update { it.copy(adding = false, formError = null) } }
+    /** Opens the same form on an existing machine, so a moved host is corrected instead of re-added. */
+    fun showEdit(machine: Machine) { mutableState.update { it.copy(editing = machine, formError = null) } }
+    fun dismissEdit() { if (!state.value.saving) mutableState.update { it.copy(editing = null, formError = null) } }
     fun dismissError() { mutableState.update { it.copy(error = null) } }
     fun notificationPermissionDenied() { mutableState.update { it.copy(error = R.string.notice_permission_denied) } }
     fun enableNotifications(machineID: String) {
@@ -211,22 +217,48 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         }
     }; state.value.selectedMachine?.let { id -> state.value.machines.firstOrNull { it.id == id }?.let { startObserving(it, force = true) } } ?: run { stopObserving(); refreshMachineStates() } }
 
+    /**
+     * Saves the form, either as a new machine or over the one being edited.
+     *
+     * Editing keeps the machine's id, so its notification link, selection and history survive a
+     * change of address; only the address itself decides whether the live connection is rebuilt.
+     */
     fun saveMachine(name: String, address: String, port: String) {
         if (state.value.saving) return
-        val endpoint = MachineEndpoint.parse(address, port)
-        val error = when {
-            name.trim().length !in 1..80 || name.any { it.isISOControl() } -> R.string.name_required
-            port.trim().toIntOrNull() !in 1..65535 -> R.string.port_invalid
-            endpoint == null -> R.string.address_invalid
-            state.value.machines.any { it.endpoint == endpoint } -> R.string.duplicate_machine
-            else -> null
+        val edited = state.value.editing
+        val draft = MachineDraft(name, address, port)
+        val problem = draft.problem(state.value.machines, edited?.id)
+        if (problem != null) {
+            val error = when (problem) {
+                MachineDraft.Problem.NAME -> R.string.name_required
+                MachineDraft.Problem.PORT -> R.string.port_invalid
+                MachineDraft.Problem.ADDRESS -> R.string.address_invalid
+                MachineDraft.Problem.DUPLICATE -> R.string.duplicate_machine
+            }
+            mutableState.update { it.copy(formError = error) }
+            return
         }
-        if (error != null) { mutableState.update { it.copy(formError = error) }; return }
         mutableState.update { it.copy(saving = true, formError = null) }
         viewModelScope.launch {
             try {
-                repository.save(Machine(UUID.randomUUID().toString(), name.trim(), requireNotNull(endpoint)))
-                mutableState.update { it.copy(saving = false, adding = false) }
+                val machine = draft.machine(edited?.id ?: UUID.randomUUID().toString())
+                repository.save(machine)
+                // A renamed machine is the same host: nothing about the connection changes. A moved
+                // one is not, so anything read from the old address has to go.
+                val moved = edited != null && edited.endpoint != machine.endpoint
+                mutableState.update {
+                    it.copy(
+                        saving = false, adding = false, editing = null,
+                        selectedWorkspace = if (moved) null else it.selectedWorkspace,
+                        selectedWindow = if (moved) null else it.selectedWindow,
+                        connections = if (moved) it.connections - machine.id else it.connections,
+                    )
+                }
+                if (moved) {
+                    requests.remove(machine.id)?.cancel()
+                    if (state.value.selectedMachine == machine.id) { stopRealTerminal(); startObserving(machine, force = true) }
+                    else refreshMachineStates()
+                }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { mutableState.update { it.copy(saving = false, formError = R.string.save_error) } }
         }

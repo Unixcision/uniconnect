@@ -9,6 +9,7 @@
     <string name="machine_address_hint">Nombre MagicDNS o IP de tu red privada</string>
     <string name="machine_port">Puerto</string>
     <string name="machine_form_note">Guarda la dirección de tu Mac o Linux. Esto no activa ningún servicio remoto ni cambia su configuración.</string>
+    <string name="edit_machine">Editar máquina</string>
     <string name="save_machine">Guardar máquina</string>
     <string name="cancel">Cancelar</string>
     <string name="back">Volver</string>
