@@ -5,6 +5,8 @@ on:
     branches: [uniconnect, desarrollo/multiplataforma]
     paths:
       - Sources/TerminalController.swift
+      - Sources/GhosttyTerminalView.swift
+      - Sources/cmuxApp.swift
       - Sources/Workspace.swift
       - Sources/Mobile/**
       - cmuxTests/MobilePTYProcessTests.swift

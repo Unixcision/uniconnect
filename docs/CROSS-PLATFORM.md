@@ -87,6 +87,17 @@ not build the complete macOS application or assert full feature parity.
 
 ## Resumen
 
+### Menú contextual y Ajustes de macOS
+
+UniConnect conserva el menú nativo con clic derecho aunque el terminal capture
+el ratón, tanto en tmux local como SSH. El mismo clic no se entrega también al
+PTY. Linux ya intercepta ese botón en su adaptador VTE; su incidencia de copia de
+la selección tmux es independiente y no queda resuelta por este cambio de AppKit.
+En Mac, la apertura de Ajustes obtiene su acción de la vista de arranque SwiftUI,
+que permanece oculta mientras AppKit gestiona las ventanas de terminal. El menú
+de la aplicación también ofrece Acceso remoto mediante la misma acción que
+Ajustes, sin modificar las autorizaciones del dispositivo ni el bloqueo.
+
 Un repositorio y un producto: los cambios se revisan para Mac y Linux. Se comparte
 la lógica y los recursos, y se separa solo lo que depende del sistema. El port
 actual aún tiene lógica duplicada; su convergencia es trabajo pendiente explícito.

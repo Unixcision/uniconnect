@@ -70,7 +70,6 @@ struct cmuxApp: App {
     @AppStorage(BrowserToolbarAccessorySpacingDebugSettings.key) private var browserToolbarAccessorySpacingRaw = BrowserToolbarAccessorySpacingDebugSettings.defaultSpacing
     @StateObject var focusHistoryMenuInvalidator = FocusHistoryMenuInvalidator()
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @Environment(\.openWindow) private var openWindow
 
     private var browserToolbarAccessorySpacing: Int {
         BrowserToolbarAccessorySpacingDebugSettings.resolved(browserToolbarAccessorySpacingRaw)
@@ -653,14 +652,6 @@ struct cmuxApp: App {
                 .settingsRuntime(settingsRuntime)
                 .cmuxAppearanceColorScheme(appearanceMode)
                 .onAppear {
-                    SettingsWindowPresenter.configure(
-                        openWindow: {
-                            openWindow(id: SettingsWindowPresenter.windowID)
-                        },
-                        parentWindowProvider: {
-                            AppDelegate.shared?.preferredMainWindowForSettingsPresentation()
-                        }
-                    )
 #if DEBUG
                     if ProcessInfo.processInfo.environment["CMUX_UI_TEST_MODE"] == "1" {
                         AppDelegate.shared?.updateLog.append("ui test: cmuxApp onAppear")
@@ -684,6 +675,14 @@ struct cmuxApp: App {
                     shortcut: menuShortcut(for: .openSettings)
                 ) {
                     appDelegate.openPreferencesWindow(debugSource: "menu.cmdComma")
+                }
+                Button {
+                    settingsRuntime.hostActions.openMobilePairingWindow()
+                } label: {
+                    Label(
+                        String(localized: "uniconnect.mobile.access.title", defaultValue: "Acceso remoto"),
+                        systemImage: "iphone"
+                    )
                 }
                 Button {
                     openCmuxSettingsFileInEditor()
@@ -1964,17 +1963,27 @@ struct cmuxApp: App {
 }
 
 private struct MainWindowBootstrapView: View {
+    @Environment(\.openWindow) private var openWindow
+
     var body: some View {
         Color.clear
             .frame(width: 1, height: 1)
+            .onAppear {
+                // Read the scene action from an installed View, not App's
+                // default environment. Keep its hidden scene alive while the
+                // visible terminal windows are owned by AppKit.
+                let action = openWindow
+                SettingsWindowPresenter.configure(
+                    openWindow: { action(id: SettingsWindowPresenter.windowID) },
+                    parentWindowProvider: {
+                        AppDelegate.shared?.preferredMainWindowForSettingsPresentation()
+                    }
+                )
+            }
             .background(WindowAccessor { window in
                 window.identifier = NSUserInterfaceItemIdentifier("cmux.bootstrap")
                 window.isRestorable = false
                 window.orderOut(nil)
-                Task { @MainActor [weak window] in
-                    window?.orderOut(nil)
-                    window?.close()
-                }
             })
     }
 }
