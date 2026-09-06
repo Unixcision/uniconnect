@@ -411,6 +411,37 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     /** Timestamps of recent automatic resizes; a burst means host and client are feeding each other. */
     private val recentResizes = ArrayDeque<Long>()
 
+    private var pendingGeometry: Pair<Int, Int>? = null
+    private var pendingGeometryJob: Job? = null
+
+    private fun applyGeometry(terminal: TerminalEmulator, live: TerminalAttachment, size: Pair<Int, Int>) {
+        terminal.resize(size.first, size.second)
+        viewModelScope.launch { runCatching { live.resize(size.first, size.second) } }
+        mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = terminal.snapshot())) }
+    }
+
+    /**
+     * Remembers a size dropped as part of a burst and applies it once the burst is over.
+     *
+     * The host does not repeat a size it already published, so dropping one without this would
+     * leave the canvas stale until something else changed. Only the newest pending size survives,
+     * and closing or reattaching cancels it.
+     */
+    private fun deferGeometry(terminal: TerminalEmulator, live: TerminalAttachment, size: Pair<Int, Int>) {
+        pendingGeometry = size
+        if (pendingGeometryJob?.isActive == true) return
+        pendingGeometryJob = viewModelScope.launch {
+            // A bounded, intended wait: after the burst window there is, by definition, no burst.
+            delay(RESIZE_WINDOW_NANOS / 1_000_000)
+            val wanted = pendingGeometry ?: return@launch
+            pendingGeometry = null
+            recentResizes.clear()
+            if (attachment === live && (terminal.screen.columns != wanted.first || terminal.screen.rows != wanted.second)) {
+                applyGeometry(terminal, live, wanted)
+            }
+        }
+    }
+
     /**
      * True while automatic resizes are not a burst. Rate, not value, is what separates a loop from a
      * person resizing the desktop window: vetoing sizes already seen would also block going back to
@@ -437,7 +468,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         if (current.connections[machine.id]?.connected != true) { mutableState.update { it.copy(error = R.string.connection_error) }; return }
         val terminal = TerminalEmulator(columns, rows)
         emulator = terminal
-        recentResizes.clear()
+        recentResizes.clear(); pendingGeometry = null
         mutableState.update { it.copy(realTerminal = RealTerminal(connecting = true)) }
         attachJob = viewModelScope.launch {
             var live: TerminalAttachment? = null
@@ -463,10 +494,9 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                             // A resize can make the host recompute and report again, so a burst is
                             // treated as a loop and paused. Legitimate desktop resizes keep working:
                             // nothing is vetoed by value, and going back to an earlier size is fine.
-                            if (changed && allowsResizeNow()) {
-                                terminal.resize(wanted.first, wanted.second)
-                                runCatching { live.resize(wanted.first, wanted.second) }
-                                mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = terminal.snapshot())) }
+                            if (changed) {
+                                if (allowsResizeNow()) applyGeometry(terminal, live, wanted)
+                                else deferGeometry(terminal, live, wanted)
                             }
                         }
                         PtyEvent.Exit -> mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(ended = true, connecting = false)) }
@@ -499,6 +529,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     }
 
     fun stopRealTerminal() {
+        pendingGeometryJob?.cancel(); pendingGeometryJob = null; pendingGeometry = null
         attachJob?.cancel(); attachJob = null
         attachment?.close(); attachment = null
         emulator = null
