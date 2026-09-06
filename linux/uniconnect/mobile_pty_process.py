@@ -49,11 +49,22 @@ class MobilePTYProcess:
         socket_name = TmuxCommand.validate_name(record.get("tmuxSocket") or
                                                 ("uniconnect" if kind == "ssh" else "uniconnect-local"))
         pane = record.get("paneId")
-        if not isinstance(pane, str) or re.fullmatch(r"%[0-9]{1,20}", pane) is None:
+        if not isinstance(pane, str):
+            raise TransportError("mobile_pty_invalid_pane")
+        explicit_pane = re.fullmatch(r"%[0-9]{1,20}", pane) is not None
+        if not explicit_pane and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", pane) is None:
             raise TransportError("mobile_pty_invalid_pane")
         token = uuid.uuid4().hex
         binary = cls._tmux_argv(socket_name)
-        target = "=" + name + ":." + pane
+        target = "=" + name + (":." + pane if explicit_pane else ":")
+        if explicit_pane:
+            pane_guard = "#{==:#{pane_id}," + pane + "}"
+        else:
+            # Local records keep GTK layout IDs such as main, not tmux %IDs.
+            # Resolve only an unambiguous exact session, in the native queue;
+            # never choose the currently selected pane among several windows.
+            pane_guard = "#{&&:#{==:#{session_windows},1},#{==:#{window_panes},1}}"
+            pane = "#{pane_id}"
         auxiliary = "uc-mobile-" + token
         # active-pane alone does not isolate session window selection. A
         # presentation session links the SAME target window/panes and keeps
@@ -61,7 +72,7 @@ class MobilePTYProcess:
         # default-command, even when it subsequently replaces its initial pane.
         # Two explicit argv launch only our bounded sleep placeholder (no shell
         # or IA); link-window -k replaces only that privately named placeholder.
-        guard = ("#{&&:#{==:#{session_name}," + name + "},#{==:#{pane_id}," + pane + "}}")
+        guard = "#{&&:#{==:#{session_name}," + name + "}," + pane_guard + "}"
         # display-message -p after attach enters view-mode and consumes input;
         # write the nonce directly to this client's TTY instead (no pane input).
         ready = "printf '\\036UCPTY_READY_" + token + "\\037' > '##{client_tty}'"

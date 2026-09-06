@@ -262,6 +262,32 @@ class TmuxHistoryBehaviorTests(unittest.TestCase):
                     # No per-session override is introduced on another server.
                     self.assertEqual("", self.tmux(socket, "show-options", "-v", "-t", "=" + route + ":", "history-limit"))
 
+    def test_selection_copy_only_changes_default_bindings_on_dedicated_servers(self):
+        for socket in ("uniconnect", "uniconnect-local", "custom", None):
+            self.create(socket, "ensure")
+            dedicated = socket in ("uniconnect", "uniconnect-local")
+            command = "copy-pipe-no-clear" if dedicated else "copy-pipe-and-cancel"
+            for route, create in (("ensure", True), ("attach", True), ("attach", False)):
+                self.create(socket, route, create=create)
+                for table in ("copy-mode", "copy-mode-vi"):
+                    self.assertEqual(f"bind-key -T {table} MouseDragEnd1Pane send-keys -X {command}",
+                                     self.tmux(socket, "list-keys", "-T", table, "MouseDragEnd1Pane"))
+            if dedicated:
+                self.tmux(socket, "copy-mode", "-t", "=subject:")
+                self.tmux(socket, "send-keys", "-t", "=subject:", "-X", "begin-selection")
+                self.assertEqual("1:1", self.tmux(socket, "display-message", "-p", "-t", "=subject:", "#{pane_in_mode}:#{selection_present}"))
+                self.tmux(socket, "send-keys", "-t", "=subject:", "-X", command)
+                self.assertEqual("1:1", self.tmux(socket, "display-message", "-p", "-t", "=subject:", "#{pane_in_mode}:#{selection_present}"))
+                self.tmux(socket, "send-keys", "-t", "=subject:", "-X", "cancel")
+            # A user's customized table is never replaced, even on our server.
+            for table in ("copy-mode", "copy-mode-vi"):
+                self.tmux(socket, "bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "cancel")
+            for route, create in (("ensure", True), ("attach", True), ("attach", False)):
+                self.create(socket, route, create=create)
+                for table in ("copy-mode", "copy-mode-vi"):
+                    self.assertEqual(f"bind-key -T {table} MouseDragEnd1Pane send-keys -X cancel",
+                                     self.tmux(socket, "list-keys", "-T", table, "MouseDragEnd1Pane"))
+
 
 class LocalSFTPCommand:
     def argv(self, *args, **kwargs):
