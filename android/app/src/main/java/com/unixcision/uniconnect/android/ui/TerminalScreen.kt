@@ -5,7 +5,12 @@ import android.graphics.Typeface
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.ScrollState
@@ -13,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CloseFullscreen
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.LinkOff
 import androidx.compose.material.icons.rounded.OpenInFull
@@ -23,6 +29,7 @@ import androidx.compose.material.icons.rounded.ZoomOutMap
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -102,6 +109,11 @@ private fun RealTerminalScreen(
     var keysVisible by rememberSaveable { mutableStateOf(false) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
     var alt by rememberSaveable { mutableStateOf(ModifierState.OFF) }
+    // The desktop window is often far shorter than the phone is tall, so reading it at the fitted
+    // size wastes most of the screen. Zoom is the reader's, and never resizes the shared window.
+    var zoom by rememberSaveable { mutableStateOf(1f) }
+    // Same three readings as the mirror: fitted whole screen, wrapped lines, or true geometry.
+    var viewMode by rememberSaveable { mutableStateOf(ViewMode.FIT) }
     val modifiers = TerminalModifiers(ctrl = ctrl != ModifierState.OFF, alt = alt != ModifierState.OFF)
     val consumeModifiers = {
         if (ctrl == ModifierState.ARMED) ctrl = ModifierState.OFF
@@ -112,6 +124,13 @@ private fun RealTerminalScreen(
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             StatusPill(stringResource(R.string.real_terminal_pill), if (ready) PillTone.Busy else PillTone.Idle)
             Spacer(Modifier.weight(1f))
+            if (real.snapshot != null) IconButton(onClick = { viewMode = viewMode.next; zoom = 1f }) {
+                Icon(
+                    when (viewMode) { ViewMode.FIT -> Icons.Rounded.ZoomIn; ViewMode.WRAP -> Icons.Rounded.OpenInFull; ViewMode.PAN -> Icons.Rounded.ZoomOutMap },
+                    stringResource(when (viewMode) { ViewMode.FIT -> R.string.screen_actual_size; ViewMode.WRAP -> R.string.screen_pan; ViewMode.PAN -> R.string.screen_fit_width }),
+                    tint = Brand.Muted,
+                )
+            }
             IconButton(onClick = onStopReal) { Icon(Icons.Rounded.LinkOff, stringResource(R.string.real_terminal_stop), tint = Brand.Muted) }
         }
         real.error?.let {
@@ -136,23 +155,72 @@ private fun RealTerminalScreen(
                     }
                 }
             } else BoxWithConstraints(Modifier.fillMaxSize()) {
-                // The host keeps the desktop's geometry (tmux ignore-size), so the phone shows that
-                // window scaled to fit. Asking for the phone's own size only made tmux pad the
-                // rows the desktop does not have with dots.
-                val metrics = rememberTerminalMetrics(snapshot, IntSize(constraints.maxWidth, constraints.maxHeight))
+                // The host keeps the desktop's geometry (tmux ignore-size), so FIT shows that
+                // window scaled to the phone's width. Asking for the phone's own size only made
+                // tmux pad the rows the desktop does not have with dots.
+                val viewport = IntSize(constraints.maxWidth, constraints.maxHeight)
+                val metrics = rememberTerminalMetrics(snapshot, viewport.takeIf { viewMode == ViewMode.FIT }, zoom)
                 val wheel by rememberUpdatedState(onPtyWheel)
-                Box(
-                    Modifier.fillMaxSize().pointerInput(metrics.lineHeight) {
-                        var accumulated = 0f
-                        detectVerticalDragGestures(onDragEnd = { accumulated = 0f }, onDragCancel = { accumulated = 0f }) { change, dragAmount ->
-                            change.consume()
-                            accumulated += dragAmount
-                            val lines = (accumulated / metrics.lineHeight).toInt()
-                            if (lines != 0) { accumulated -= lines * metrics.lineHeight; wheel(lines > 0, kotlin.math.abs(lines)) }
+                // Two fingers are always the reader's: pinch resizes the text without ever
+                // touching the shared window. One finger is left alone here so the scrolling
+                // modes below still work; FIT consumes it itself to drive tmux.
+                val pinch = Modifier.pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        do {
+                            val event = awaitPointerEvent()
+                            if (event.changes.size >= 2) {
+                                val change = event.calculateZoom()
+                                if (change != 1f) {
+                                    zoom = (zoom * change).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                                    event.changes.forEach { it.consume() }
+                                }
+                            }
+                        } while (event.changes.any { it.pressed })
+                    }
+                }
+                when (viewMode) {
+                    // Fitted: one finger scrolls tmux itself, which is what makes this the session
+                    // and not a picture of it.
+                    ViewMode.FIT -> Box(
+                        Modifier.fillMaxSize().then(pinch).pointerInput(metrics.lineHeight) {
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                var accumulated = 0f
+                                var multitouch = false
+                                do {
+                                    val event = awaitPointerEvent()
+                                    if (event.changes.size >= 2) multitouch = true
+                                    else if (!multitouch) {
+                                        accumulated += event.calculatePan().y
+                                        val lines = (accumulated / metrics.lineHeight).toInt()
+                                        if (lines != 0) {
+                                            accumulated -= lines * metrics.lineHeight
+                                            wheel(lines > 0, kotlin.math.abs(lines))
+                                        }
+                                        event.changes.forEach { it.consume() }
+                                    }
+                                } while (event.changes.any { it.pressed })
+                            }
+                        },
+                        contentAlignment = Alignment.Center,
+                    ) { TerminalGrid(snapshot, metrics) }
+                    // Readable size, long rows folded at the phone's width, local vertical scroll.
+                    ViewMode.WRAP -> {
+                        val wrapColumns = ((viewport.width - 16f) / metrics.cellWidth).toInt().coerceAtLeast(8)
+                        Box(Modifier.fillMaxSize().then(pinch)) {
+                            Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                                TerminalGrid(snapshot, metrics, wrapColumns.takeIf { it < snapshot.columns })
+                            }
                         }
-                    },
-                    contentAlignment = Alignment.Center,
-                ) { TerminalGrid(snapshot, metrics) }
+                    }
+                    // True geometry: nothing folded, the reader pans in both directions.
+                    ViewMode.PAN -> Box(Modifier.fillMaxSize().then(pinch)) {
+                        Box(Modifier.fillMaxSize().horizontalScroll(rememberScrollState()).verticalScroll(rememberScrollState())) {
+                            TerminalGrid(snapshot, metrics)
+                        }
+                    }
+                }
             }
         }
         if (keysVisible) TerminalExtraKeys(
@@ -353,16 +421,20 @@ enum class ViewMode {
 }
 
 /** Reading geometry for this device. The desktop PTY keeps its own columns and rows. */
+/** Reader-controlled zoom bounds: below 0.6 the text stops being legible, above 5 it is huge. */
+private const val MIN_ZOOM = 0.6f
+private const val MAX_ZOOM = 5f
+
 private class TerminalMetrics(val fontSize: Float, val cellWidth: Float, val lineHeight: Float, val columns: Int, val rows: Int) {
     val widthPx: Float get() = columns * cellWidth + 16f
     val heightPx: Float get() = rows * lineHeight + 16f
 }
 
 @Composable
-private fun rememberTerminalMetrics(snapshot: TerminalSnapshot, fit: IntSize?): TerminalMetrics {
+private fun rememberTerminalMetrics(snapshot: TerminalSnapshot, fit: IntSize?, zoom: Float = 1f): TerminalMetrics {
     val density = LocalDensity.current
     val normalFontSize = with(density) { 13.sp.toPx() }
-    return remember(snapshot.columns, snapshot.rows, fit, normalFontSize) {
+    return remember(snapshot.columns, snapshot.rows, fit, normalFontSize, zoom) {
         val normalCell = Paint().apply { textSize = normalFontSize; typeface = Typeface.MONOSPACE }.measureText("M")
         val normalLine = normalFontSize * 1.35f
         val scale = if (fit == null) 1f else minOf(
@@ -370,7 +442,9 @@ private fun rememberTerminalMetrics(snapshot: TerminalSnapshot, fit: IntSize?): 
             (fit.height - 16f).coerceAtLeast(1f) / (snapshot.rows * normalLine),
             1f,
         )
-        val fontSize = normalFontSize * scale
+        // The fitted scale never magnifies on its own; `zoom` is the reader's own decision and is
+        // free to go past 1, which is what makes an 80x23 window usable on a tall phone screen.
+        val fontSize = normalFontSize * scale * zoom
         val cell = Paint().apply { textSize = fontSize; typeface = Typeface.MONOSPACE }.measureText("M")
         TerminalMetrics(fontSize, cell, fontSize * 1.35f, snapshot.columns, snapshot.rows)
     }
@@ -456,7 +530,13 @@ private fun TerminalGrid(
                     val y = originY(drawRow, column)
                     paint.style = Paint.Style.FILL
                     paint.color = background
-                    canvas.drawRect(x, y, x + cells * cellWidth, y + lineHeight, paint)
+                    // Snapped outwards: at readable font sizes, cell edges that fall between
+                    // pixels leave hairline gaps that turn a solid tmux selection into stripes.
+                    canvas.drawRect(
+                        kotlin.math.floor(x), kotlin.math.floor(y),
+                        kotlin.math.ceil(x + cells * cellWidth), kotlin.math.ceil(y + lineHeight),
+                        paint,
+                    )
                     if (!style.invisible) {
                         paint.color = foreground
                         paint.alpha = if (style.faint) 150 else 255
