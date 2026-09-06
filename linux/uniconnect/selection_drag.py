@@ -38,6 +38,9 @@ class SelectionDrag:
         if status != Gdk.GrabStatus.SUCCESS:
             raise RuntimeError("Pointer unavailable")
         self.grabbed_seat = seat
+        # VTE's GdkWindow is not enough for GTK's widget-level dispatch when
+        # the pointer leaves the terminal and crosses sibling controls.
+        self.surface.terminal.grab_add()
         self.active = self.pressed = True
         self.backend = TerminalSelection(transport)
         self.point = (column, row)
@@ -77,6 +80,7 @@ class SelectionDrag:
         if self.grabbed_seat is not None:
             self.grabbed_seat.ungrab()
             self.grabbed_seat = None
+            self.surface.terminal.grab_remove()
 
     def _edge(self):
         if not self.pane:

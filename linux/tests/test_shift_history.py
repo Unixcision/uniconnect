@@ -82,7 +82,7 @@ class ShiftHistoryTests(window_fixture.MainWindowCopyTests):
         self.tmux("respawn-pane", "-k", "-t", "=subject:", command)
         self.tmux("wait-for", "history-ready")
         self.before = self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_id}:#{pane_pid}")
-        self.wait_for(lambda: "ROW0119" in self.surface.terminal.get_text(None, None)[0])
+        self.wait_for(lambda: "ROW0119" in (self.surface.terminal.get_text(None, None)[0] or ""))
 
     def start_drag(self):
         terminal = self.surface.terminal
