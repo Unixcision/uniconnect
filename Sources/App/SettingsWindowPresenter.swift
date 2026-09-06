@@ -51,7 +51,7 @@ enum SettingsWindowPresenter {
         openWindowOverride: (@MainActor () -> Void)? = nil
     ) {
 #if DEBUG
-        cmuxDebugLog("settings.window.show path=swiftuiWindow")
+        cmuxDebugLog("settings.window.show path=nativeWindow")
         _ = CmuxUITestCapture.mutateJSONObjectIfConfigured(
             envKey: "CMUX_UI_TEST_SETTINGS_OPEN_CAPTURE_PATH"
         ) { payload in
