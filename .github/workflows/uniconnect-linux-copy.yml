@@ -5,11 +5,14 @@ on:
     paths:
       - linux/uniconnect/terminal.py
       - linux/uniconnect/terminal_copy.py
+      - linux/uniconnect/terminal_selection.py
+      - linux/uniconnect/selection_drag.py
       - linux/uniconnect/window_commands.py
       - linux/uniconnect/window.py
       - linux/uniconnect/actions.py
       - linux/tests/test_terminal_copy.py
       - linux/tests/test_mainwindow_copy.py
+      - linux/tests/test_shift_history.py
       - .github/workflows/uniconnect-linux-copy.yml
   workflow_dispatch:
 permissions:
@@ -29,10 +32,12 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - run: |
           sudo apt-get update
-          sudo apt-get install -y tmux python3-gi python3-cryptography gir1.2-gtk-3.0 gir1.2-vte-2.91 xvfb xauth
+          sudo apt-get install -y tmux python3-gi python3-cryptography gir1.2-gtk-3.0 gir1.2-vte-2.91 xvfb xauth libxtst6
           tmux -V
       - run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -p test_terminal_copy.py -v
       - name: Conservar ciclo de vida y reconexiones de VTE
         run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -p test_terminal.py -v
       - name: Copiar desde la ventana y acciones reales
         run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -p test_mainwindow_copy.py -v
+      - name: Mayús y arrastre real por varias pantallas de historial
+        run: xvfb-run -a -s '-screen 0 1600x1200x24' /usr/bin/python3 -m unittest discover -s linux/tests -p test_shift_history.py -v
