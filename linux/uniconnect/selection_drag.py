@@ -3,7 +3,7 @@
 import threading
 from collections import deque
 
-from gi.repository import GLib
+from gi.repository import Gdk, GLib
 
 from .terminal_selection import TerminalSelection
 
@@ -19,6 +19,7 @@ class SelectionDrag:
         self.actions = deque()
         self.timer = None
         self.point = (0, 0)
+        self.grabbed_seat = None
 
     def reset(self):
         self.epoch += 1
@@ -27,9 +28,16 @@ class SelectionDrag:
         self.pending_begin = self.pending_move = None
         self.actions.clear()
         self._stop_timer()
+        self._release_pointer()
 
-    def begin(self, transport, record, column, row):
+    def begin(self, transport, record, column, row, event):
         self.reset()
+        seat = event.get_device().get_seat()
+        status = seat.grab(self.surface.terminal.get_window(), Gdk.SeatCapabilities.POINTER,
+                           False, None, event, None, None)
+        if status != Gdk.GrabStatus.SUCCESS:
+            raise RuntimeError("Pointer unavailable")
+        self.grabbed_seat = seat
         self.active = self.pressed = True
         self.backend = TerminalSelection(transport)
         self.point = (column, row)
@@ -50,6 +58,7 @@ class SelectionDrag:
             self.pending_move = (*self.point, 0)
         self.pressed = False
         self._stop_timer()
+        self._release_pointer()
         self._pump()
 
     def run_action(self, work, deliver, *, discard_motion=False):
@@ -63,6 +72,11 @@ class SelectionDrag:
         if self.timer is not None:
             GLib.source_remove(self.timer)
             self.timer = None
+
+    def _release_pointer(self):
+        if self.grabbed_seat is not None:
+            self.grabbed_seat.ungrab()
+            self.grabbed_seat = None
 
     def _edge(self):
         if not self.pane:
@@ -132,6 +146,7 @@ class SelectionDrag:
                 self.active = self.pressed = False
                 self.pending_begin = self.pending_move = None
                 self._stop_timer()
+                self._release_pointer()
                 self.surface.owner.error(self.surface.owner._("No se pudo seleccionar el historial del terminal."))
             elif kind == "begin":
                 self.pane = value

@@ -3,6 +3,7 @@
 import ctypes
 import ctypes.util
 import shlex
+import unittest
 
 import test_mainwindow_copy as window_fixture
 from gi.repository import Gtk
@@ -14,6 +15,9 @@ class ShiftHistoryTests(window_fixture.MainWindowCopyTests):
         self.window.resize(1000, 600)
         self.window.move(30, 180)
         self.window.present()
+        self.wait_for(lambda: self.tmux("display-message", "-p", "-t", "=subject:",
+                                       "#{window_width}:#{window_height}")
+                      == f"{self.surface.terminal.get_column_count()}:{self.surface.terminal.get_row_count() - 1}")
         self.x11 = ctypes.CDLL(ctypes.util.find_library("X11"))
         self.xtst = ctypes.CDLL(ctypes.util.find_library("Xtst"))
         self.x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
@@ -100,3 +104,10 @@ class ShiftHistoryTests(window_fixture.MainWindowCopyTests):
         self.tmux("wait-for", "typed")
         self.assertIn("ENTRADA:UC_HISTORY_TECLADO_OK", self.tmux("capture-pane", "-p", "-t", "=subject:"))
         self.assertEqual(self.errors, [])
+
+
+def load_tests(loader, tests, pattern):
+    # The parent fixture's tests already run in test_mainwindow_copy.py; do not
+    # rerun them while this pointer fixture is deliberately changing geometry.
+    return unittest.TestSuite(ShiftHistoryTests(name) for name in ShiftHistoryTests.__dict__
+                              if name.startswith("test_"))

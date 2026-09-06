@@ -469,7 +469,7 @@ class TerminalSurface(Gtk.Box):
             try:
                 connection = self.owner.connection(self.workspace) if self.workspace["kind"] == "ssh" else None
                 transport = Transport(connection, socket_name=self.record.get("tmuxSocket"))
-                self.selection_drag.begin(transport, self.record, *self.selection_cell(event))
+                self.selection_drag.begin(transport, self.record, *self.selection_cell(event), event)
             except Exception:
                 self.owner.error(self.owner._("No se pudo seleccionar el historial del terminal."))
             return True
@@ -482,8 +482,9 @@ class TerminalSurface(Gtk.Box):
 
     def selection_cell(self, event):
         padding = self.terminal.get_style_context().get_padding(Gtk.StateFlags.NORMAL)
-        return (int((event.x - padding.left) // max(1, self.terminal.get_char_width())),
-                int((event.y - padding.top) // max(1, self.terminal.get_char_height())))
+        origin_x, origin_y = self.terminal.get_window().get_origin()[-2:]
+        return (int((event.x_root - origin_x - padding.left) // max(1, self.terminal.get_char_width())),
+                int((event.y_root - origin_y - padding.top) // max(1, self.terminal.get_char_height())))
 
     def on_selection_motion(self, _, event):
         return self.selection_drag.motion(*self.selection_cell(event))
