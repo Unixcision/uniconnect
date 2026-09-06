@@ -28,6 +28,7 @@ class _Attachment:
     reader_started: bool = False
     cleanup_started: bool = False
     failure: object = None
+    geometry: object = None
 
 
 class MobilePTYAttachments:
@@ -143,7 +144,8 @@ class MobilePTYAttachments:
     @staticmethod
     def reply(attachment):
         return {"workspace_id": attachment.target["workspace_id"], "surface_id": attachment.target["surface_id"],
-                "attach_id": attachment.identifier, "columns": attachment.columns, "rows": attachment.rows}
+                "attach_id": attachment.identifier, "columns": attachment.columns, "rows": attachment.rows,
+                **(getattr(attachment.process, "source_geometry", None) or {})}
 
     @staticmethod
     def require_live(attachment):
@@ -205,8 +207,16 @@ class MobilePTYAttachments:
                 if data == b"":
                     exited = True
                     break
-                if data and not self.send_event(attachment, data=base64.b64encode(data).decode("ascii")):
-                    break
+                geometry = getattr(process, "source_geometry", None)
+                payload = {}
+                if geometry and geometry != attachment.geometry:
+                    payload.update(geometry)
+                if data:
+                    payload["data"] = base64.b64encode(data).decode("ascii")
+                if payload:
+                    if not self.send_event(attachment, **payload):
+                        break
+                    attachment.geometry = dict(geometry) if geometry else None
                 with attachment.lock:
                     pending = bool(attachment.pending)
                 _, writable, _ = select.select([process.fileno()], [process.fileno()] if pending else [], [], 0.1)
