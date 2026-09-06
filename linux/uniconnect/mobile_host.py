@@ -7,6 +7,7 @@ import socket
 import subprocess
 import threading
 import time
+import uuid
 from collections import deque
 
 from .mobile_access import tailnet_address
@@ -85,12 +86,14 @@ class MobileHost:
                     self.clients.add(client)
                 threading.Thread(target=client.run, name="uc-mobile-peer", daemon=True).start()
         except Exception:
+            clients = []
             with self.lock:
                 if generation == self.generation:
                     self.error = "No se pudo abrir el acceso móvil. Comprueba Tailscale y el puerto 58465."
                     self.listener, self.address = None, None
-                    for client in list(self.clients):
-                        client.close()
+                    clients = list(self.clients)
+            for client in clients:
+                client.close()
             self.on_change()
         finally:
             if listener:
@@ -102,22 +105,62 @@ class MobileHost:
             if self.listener:
                 self.listener.close()
             self.listener, self.address = None, None
-            for client in list(self.clients):
-                client.close()
+            clients = list(self.clients)
+        for client in clients:
+            client.close()
 
     def revoke(self, address):
         with self.lock:
-            for client in list(self.clients):
-                if client.peer == address:
-                    client.close()
+            clients = [client for client in self.clients if client.peer == address]
+        for client in clients:
+            client.close()
+
+    def disconnect_clients(self):
+        """Discard queued output and disconnect peers, preserving listener/approvals."""
+        with self.lock:
+            clients = list(self.clients)
+        for client in clients:
+            client.close()  # Cleanup callbacks must run outside the host lock.
+
+    def disconnect_client(self, connection_id):
+        """Close only the live connection owner; never revoke its peer's approval."""
+        client = self._client(connection_id)
+        if client is not None:
+            client.close()
 
     def emit(self, topic, payload=None):
+        if topic == "terminal.pty":
+            return  # Raw terminal output is never a broadcast topic.
         event = {"kind": "event", "topic": topic, "payload": payload or {}}
         with self.lock:
             clients = list(self.clients)
         for client in clients:
             if topic in client.topics and self.access.authorize(client.peer):
                 client.enqueue(event, coalesce=topic in ("terminal.updated", "workspace.updated"))
+
+    def _client(self, connection_id):
+        with self.lock:
+            return next((client for client in self.clients if client.identifier == connection_id), None)
+
+    def has_topic(self, connection_id, topic):
+        """Check a live owner's subscription without requesting new approval."""
+        client = self._client(connection_id)
+        if client is None:
+            return False
+        # Approval revocation takes this same lock before closing the client.
+        with self.access.lock:
+            if not self.access.is_approved(client.peer):
+                return False
+            with client.lock:
+                return not client.closed and topic in client.topics
+
+    def emit_private(self, connection_id, topic, payload):
+        """Queue an event only for its approved, subscribed connection owner."""
+        client = self._client(connection_id)
+        if client is None:
+            return False
+        return client.enqueue({"kind": "event", "topic": topic, "payload": payload},
+                              required_topic=topic)
 
 
 class _Client:
@@ -129,33 +172,71 @@ class _Client:
         self.queue, self.queue_bytes = deque(), 0
         self.lock = threading.RLock()
         self.closed = False
-        self.identifier = str(id(self))
+        self.identifier = str(uuid.uuid4())
 
-    def enqueue(self, message, *, coalesce=False):
-        data = encode_frame(message)
+    def enqueue(self, message, *, coalesce=False, required_topic=None):
+        try:
+            data = encode_frame(message)
+        except (TypeError, ValueError, OverflowError):
+            self.close()
+            return False
         key = message.get("topic") if coalesce else None
+        if required_topic is None:
+            accepted = self._enqueue_frame(data, key)
+        else:
+            with self.host.access.lock:
+                if not self.host.access.is_approved(self.peer):
+                    return False
+                accepted = self._enqueue_frame(data, key, required_topic)
+        if accepted is None:
+            self._finish_close()
+        return accepted is True
+
+    def _enqueue_frame(self, data, key, required_topic=None):
         with self.lock:
-            if self.closed:
-                return
+            if self.closed or required_topic is not None and required_topic not in self.topics:
+                return False
             if key:
                 retained = deque((old_key, old_data) for old_key, old_data in self.queue if old_key != key)
                 self.queue, self.queue_bytes = retained, sum(len(item[1]) for item in retained)
             if self.queue_bytes + len(data) > 2 * 1024 * 1024 or len(self.queue) >= 128:
-                self.close()  # Never silently lose input acknowledgements or screen deltas.
-                return
+                self._close_locked()  # Claim cleanup before another producer can enqueue.
+                return None
             self.queue.append((key, data))
             self.queue_bytes += len(data)
+            return True
 
     def close(self):
         with self.lock:
-            if self.closed:
-                return
-            self.closed = True
+            changed = self._close_locked()
+        if changed:
+            self._finish_close()
+
+    def _close_locked(self):
+        if self.closed:
+            return False
+        self.closed = True
+        self.queue.clear()
+        self.queue_bytes = 0
+        self.streams.clear()
+        self.topics.clear()
+        try:
+            self.socket.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        self.socket.close()
+        return True
+
+    def _finish_close(self):
+        # Neither host nor client locks may cover domain cleanup callbacks.
+        with self.host.lock:
+            self.host.clients.discard(self)
+        callback = getattr(self.host.rpc, "disconnected", None)
+        if callable(callback):
             try:
-                self.socket.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
-            self.socket.close()
+                callback(self.identifier)
+            except Exception:
+                pass  # A failed cleanup must not leave other clients connected.
 
     def run(self):
         activity, first = time.monotonic(), True
@@ -177,6 +258,8 @@ class _Client:
                     if len(requests) > 64:
                         raise ValueError("Demasiadas peticiones en una lectura")
                     for request in requests:
+                        if self.closed:
+                            break
                         first = False
                         self.handle(request)
                 if time.monotonic() - activity > (15 if first else 30) and not self.streams:
@@ -185,11 +268,10 @@ class _Client:
             pass
         finally:
             self.close()
-            with self.host.lock:
-                self.host.clients.discard(self)
-            self.host.rpc.disconnected(self.identifier)
 
     def handle(self, request):
+        if self.closed:
+            return
         identifier = request.get("id")
         try:
             method, params = request.get("method"), request.get("params", {})
@@ -199,26 +281,38 @@ class _Client:
                 raise RPCError("approval_required", "Autoriza este dispositivo en UniConnect en el equipo al que quieres acceder.")
             if method == "mobile.events.subscribe":
                 stream, topics = params.get("stream_id"), params.get("topics")
-                allowed = {"workspace.updated", "terminal.updated", "notification.created"}
+                allowed = {"workspace.updated", "terminal.updated", "terminal.pty", "notification.created"}
                 if not isinstance(stream, str) or len(stream) > 128 or not isinstance(topics, list) or len(topics) > 16:
                     raise RPCError("invalid_params", "Suscripción no válida")
-                if not all(isinstance(topic, str) for topic in topics) or len(self.streams) >= 8 and stream not in self.streams:
+                if not all(isinstance(topic, str) for topic in topics):
                     raise RPCError("invalid_params", "Suscripción no válida")
-                self.streams[stream] = set(topics) & allowed
-                self.topics = set().union(*self.streams.values())
-                result = {"stream_id": stream, "topics": sorted(self.streams[stream])}
+                with self.lock:
+                    if self.closed:
+                        return
+                    if len(self.streams) >= 8 and stream not in self.streams:
+                        raise RPCError("invalid_params", "Suscripción no válida")
+                    self.streams[stream] = set(topics) & allowed
+                    self.topics = set().union(*self.streams.values())
+                    result = {"stream_id": stream, "topics": sorted(self.streams[stream])}
             elif method == "mobile.events.unsubscribe":
                 stream = params.get("stream_id")
                 if not isinstance(stream, str):
                     raise RPCError("invalid_params", "Suscripción no válida")
-                removed = self.streams.pop(stream, None) is not None
-                self.topics = set().union(*self.streams.values()) if self.streams else set()
+                with self.lock:
+                    removed = self.streams.pop(stream, None) is not None
+                    self.topics = set().union(*self.streams.values()) if self.streams else set()
                 result = {"stream_id": stream, "removed": removed}
             else:
                 result = self.host.rpc.dispatch(
                     method, params, self.identifier,
                     authorized=lambda: not self.closed and self.host.access.is_approved(self.peer))
-            self.enqueue({"id": identifier, "ok": True, "result": result})
+            if self.enqueue({"id": identifier, "ok": True, "result": result}):
+                callback = getattr(self.host.rpc, "response_enqueued", None)
+                if callable(callback):
+                    try:
+                        callback(method, result, self.identifier)
+                    except Exception:
+                        self.close()  # The ACK already exists; never send a second response.
         except RPCError as error:
             self.enqueue(error.response(identifier, self.host.translate))
         except Exception:

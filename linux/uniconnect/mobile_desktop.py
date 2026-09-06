@@ -141,6 +141,7 @@ class MobileDesktop:
 
     def close(self):
         self.close_dialog()
+        self.rpc.close_attachments()
         if self.terminal_source:
             GLib.source_remove(self.terminal_source)
             self.terminal_source = None

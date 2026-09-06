@@ -28,6 +28,11 @@ autorizados de `mobile-access.json` no se importan con los espacios de trabajo.
 
 ## Qué comparte y qué no
 
+El modo adicional **Terminal real** adjunta un cliente PTY al mismo tmux sin
+materializar otra VTE. Su contrato, propiedad, límites y diferencias respecto al
+espejo se describen en [Terminal real móvil](../docs/MOBILE_TERMINAL_PTY.md).
+El espejo y sus RPC siguen disponibles; no se cambia el permiso móvil guardado.
+
 - Usa el encuadre de `CMUXMobileCore`: longitud UInt32 big-endian y JSON UTF-8.
   No expone a la red el socket Unix privado de `control.py`.
 - `mobile.workspace.list` lee los espacios y ventanas del modelo real, sin

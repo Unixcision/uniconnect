@@ -2,6 +2,226 @@
   "sourceLanguage": "es",
   "version": "1.0",
   "strings": {
+    "uniconnect.shared.sin.ventanas": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin ventanas"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.no.le.das": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No leídas"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.guardada": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardada"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.mostrar.ventanas": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar ventanas"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.el.tama.o.de.la.terminal.no.es.v.lido": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El tamaño de la terminal no es válido"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.los.bytes.de.entrada.no.son.v.lidos": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los bytes de entrada no son válidos"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.la.terminal.todav.a.est.procesando.la.entrada.anterior": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La terminal todavía está procesando la entrada anterior"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.el.identificador.del.cliente.no.es.v.lido": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El identificador del cliente no es válido"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.suscr.bete.a.la.salida.de.la.terminal.antes.de.conectar": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suscríbete a la salida de la terminal antes de conectar"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.hay.demasiadas.terminales.m.viles.abiertas": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hay demasiadas terminales móviles abiertas"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.la.terminal.todav.a.est.conectando": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La terminal todavía está conectando"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.la.conexi.n.m.vil.se.ha.cerrado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La conexión móvil se ha cerrado"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.no.se.pudo.adjuntar.a.la.sesi.n.tmux.existente": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo adjuntar a la sesión tmux existente"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.el.cliente.de.la.terminal.se.ha.desconectado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El cliente de la terminal se ha desconectado"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.el.identificador.de.la.terminal.no.es.v.lido": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El identificador de la terminal no es válido"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.no.se.encontr.la.terminal.de.esta.conexi.n": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se encontró la terminal de esta conexión"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.esta.terminal.no.tiene.una.sesi.n.tmux.existente": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta terminal no tiene una sesión tmux existente"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.el.destino.tmux.guardado.no.es.v.lido": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El destino tmux guardado no es válido"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.hay.un.cambio.de.conexi.n.en.preparaci.n": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hay un cambio de conexión en preparación"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.la.identidad.de.esta.terminal.ha.cambiado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La identidad de esta terminal ha cambiado"
+          }
+        }
+      }
+    },
     "uniconnect.shared.id.nativo.pendiente.de.la.se.al.del.agente": {
       "extractionState": "manual",
       "localizations": {

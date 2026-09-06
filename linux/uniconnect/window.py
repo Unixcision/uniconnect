@@ -26,6 +26,7 @@ from .transport import SSHCommand, Transport, TmuxCommand
 from .window_commands import WindowCommands
 from .window_notifications import WindowNotifications
 from .native_sessions import NativeSessions
+from .sidebar import WorkspaceSidebar
 
 
 class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
@@ -101,6 +102,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         self.workspace_list.get_style_context().add_class("uc-workspaces")
         self.workspace_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self.workspace_list.connect("row-selected", self.on_workspace_selected)
+        self.sidebar_flyout = WorkspaceSidebar(self, self._, self.select_sidebar_surface, self.sidebar_surface_context)
         scroll = Gtk.ScrolledWindow()
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scroll.add(self.workspace_list)
@@ -237,41 +239,69 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         self.refreshing = True
         selected = self.store.data.get("selectedWorkspaceId")
         query = self.sidebar_search.get_text().lower()
-        for row in self.workspace_list.get_children():
-            self.workspace_list.remove(row)
+        snapshots = []
         for workspace in self.store.workspaces:
             if query and query not in (workspace["name"] + " " + " ".join(w["name"] for w in workspace.get("windows", []))).lower():
                 continue
-            row = Gtk.ListBoxRow()
-            row.get_style_context().add_class("uc-workspace")
-            row.workspace_id = workspace["id"]
-            body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5, margin=10)
-            title = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END)
-            color = workspace.get("color") or "#66b9ff"
-            if not color.startswith("#") or len(color) not in (4, 7, 9):
-                color = "#66b9ff"
-            unread = any(w.get("unread") for w in workspace.get("windows", []))
-            compact = self.store.data.get("settings", {}).get("compactSidebar", False)
-            name = workspace["name"][:2].upper() if compact else workspace["name"]
-            title.set_markup(f'<span foreground="{color}">●</span> <b>{GLib.markup_escape_text(name)}</b>' + ("  ●" if unread else ""))
-            body.pack_start(title, False, False, 0)
-            if not compact:
-                detail = f'{workspace["kind"].upper()}  ·  {len(workspace.get("windows", []))}'
-                body.pack_start(Gtk.Label(label=detail, xalign=0), False, False, 0)
-                for window in workspace.get("windows", []):
-                    label = Gtk.Label(label="  " + window["name"], xalign=0, ellipsize=Pango.EllipsizeMode.END)
-                    label.get_style_context().add_class("dim-label")
-                    body.pack_start(label, False, False, 0)
-            row.set_tooltip_text(workspace["name"] + "\n" + "\n".join(w["name"] for w in workspace.get("windows", [])))
-            row.add(body)
-            row.connect("button-press-event", self.workspace_context, workspace)
-            self.workspace_list.add(row)
-            if workspace["id"] == selected:
+            snapshots.append({"id": workspace["id"], "name": workspace["name"],
+                              "kind": workspace["kind"], "color": workspace.get("color") or "#66b9ff",
+                              "selected": workspace.get("selectedWindowId"),
+                              "windows": tuple({"id": record["id"], "name": record["name"],
+                                                "unread": bool(record.get("unread")),
+                                                "status": self.surfaces[record["id"]].status if record["id"] in self.surfaces else "Guardada",
+                                                "reconnect": workspace["kind"] == "ssh" and bool(record.get("tmux"))}
+                                               for record in workspace.get("windows", []))})
+        self.sidebar_flyout.update(self.workspace_list, snapshots, self.store.data.get("settings", {}).get("compactSidebar", False))
+        for row in self.workspace_list.get_children():
+            if not getattr(row, "context_connected", False):
+                row.connect("button-press-event", self.sidebar_workspace_context)
+                row.context_connected = True
+            if row.workspace_id == selected:
                 self.workspace_list.select_row(row)
         self.workspace_list.show_all()
         self.refreshing = False
         self.refresh_actions()
         return False
+
+    def sidebar_workspace_context(self, row, event):
+        workspace = next((value for value in self.store.workspaces if value["id"] == row.workspace_id), None)
+        if workspace:
+            if event.button == 3:
+                self.sidebar_flyout.hide()
+            return self.workspace_context(row, event, workspace)
+        return False
+
+    def select_sidebar_surface(self, workspace_id, surface_id):
+        if self.locked:
+            return False
+        workspace = next((value for value in self.store.workspaces if value["id"] == workspace_id), None)
+        if workspace is None or not any(value["id"] == surface_id for value in workspace.get("windows", [])):
+            return False
+        # Explicit selection shares the existing notebook/focus action. Hover never
+        # enters this path and never materializes a saved terminal.
+        if workspace_id not in self.pages:
+            self.build_workspace(workspace)
+        surface = self.surfaces.get(surface_id)
+        if surface is None:
+            return False
+        self.select_surface(surface)
+        self.refresh_sidebar()
+        return True
+
+    def sidebar_surface_context(self, workspace_id, surface_id, event, action):
+        self._notification_context_selection = True
+        try:
+            selected = self.select_sidebar_surface(workspace_id, surface_id)
+            if selected:
+                self._notification_preserve_focus_id = surface_id
+        finally:
+            self._notification_context_selection = False
+        if not selected:
+            return
+        if action:
+            self.run_action(action)
+        else:
+            self.context_menu(["rename_window", "pin_window", "notifications_toggle_window", "reconnect", "close_window"], event)
 
     def workspace_context(self, _, event, workspace):
         if event.button == 3:
@@ -295,6 +325,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         return next((w for w in self.store.workspaces if w["id"] == selected), None)
 
     def select_workspace(self, workspace_id=None):
+        self.sidebar_flyout.hide()
         workspace = next((w for w in self.store.workspaces if w["id"] == workspace_id), None)
         if workspace is None and self.store.workspaces:
             workspace = self.store.workspaces[0]
@@ -543,7 +574,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                     widget.append(option, self._(option))
                 widget.set_active_id(value)
             else:
-                widget = Gtk.Entry(text=str(value or ""), width_chars=48)
+                widget = Gtk.Entry(text="" if value is None else str(value), width_chars=48)
                 widget.set_activates_default(True)
                 if kind == "password":
                     widget.set_visibility(False)
@@ -967,11 +998,12 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         self.persist()
 
     def apply_sidebar_mode(self):
+        self.sidebar_flyout.hide()
         settings = self.store.data.get("settings", {})
         compact = settings.get("compactSidebar", False)
         self.sidebar_actions.set_orientation(Gtk.Orientation.VERTICAL if compact else Gtk.Orientation.HORIZONTAL)
         self.sidebar_search.set_visible(not compact)
-        self.body.set_position(78 if compact else settings.get("sidebarWidth", 255))
+        self.body.set_position(112 if compact else settings.get("sidebarWidth", 255))
 
     def action_copy(self):
         if self.focused_surface:
@@ -1039,6 +1071,9 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
 
     def action_lock(self):
         self.locked = True
+        self.sidebar_flyout.hide()
+        if hasattr(self, "mobile"):
+            self.mobile.rpc.close_attachments()
         self.vault.lock()
         self.overlay.set_visible_child_name("locked")
 
@@ -1291,6 +1326,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         if self._closed:
             return False
         self._closed = True
+        self.sidebar_flyout.close()
         if self._runtime_operation and self._runtime_operation.active:
             self._runtime_operation.cancel()
         if self._sidebar_refresh:
