@@ -29,6 +29,9 @@ class TerminalCopyTests(unittest.TestCase):
         self.record = {"id": "copy-test", "tmux": "subject", "tmuxSocket": self.socket,
                        "cwd": "/tmp", "agent": "terminal"}
         self.surface = TerminalSurface(self.owner, {"kind": "local"}, self.record, auto_launch=False)
+        self.window = Gtk.Window()
+        self.window.add(self.surface)
+        self.window.show_all()
         self.clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
         self.clipboard.set_text("anterior", -1)
         self.tmux("new-session", "-d", "-s", "subject", "-x", "80", "-y", "24",
@@ -40,6 +43,7 @@ class TerminalCopyTests(unittest.TestCase):
     def tearDown(self):
         self.surface.dispose()
         self.surface.destroy()
+        self.window.destroy()
         self.clipboard.clear()
         self.tmux("kill-server")
 
@@ -79,8 +83,14 @@ class TerminalCopyTests(unittest.TestCase):
         self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_id}:#{pane_pid}"), self.before)
 
     def test_native_vte_selection_still_copies(self):
+        loop = GLib.MainLoop()
+        signal = self.surface.terminal.connect("contents-changed", lambda *_: loop.quit())
         self.surface.terminal.feed(b"NATIVO")
+        deadline = GLib.timeout_add_seconds(3, lambda: (loop.quit(), False)[1])
+        loop.run()
+        if GLib.MainContext.default().find_source_by_id(deadline):
+            GLib.source_remove(deadline)
+        self.surface.terminal.disconnect(signal)
         self.surface.terminal.select_all()
         self.assertTrue(self.surface.terminal.get_has_selection())
         self.copy_and_wait("NATIVO\n")
-
