@@ -13,6 +13,8 @@ from collections import OrderedDict
 from concurrent.futures import Future, TimeoutError
 
 from .mobile_protocol import RPCError
+from .mobile_pty import MobilePTYAttachments
+from .mobile_pty_process import MobilePTYProcess
 from .mobile_render_grid import (MAX_CAPTURE_BYTES, MAX_SCROLLBACK_ROWS, capture_dependencies_ready,
                                  render_grid_from_tmux_capture)
 from .transport import SSHCommand, Transport
@@ -20,7 +22,7 @@ from .transport import SSHCommand, Transport
 
 class MobileRPC:
     def __init__(self, window, access, schedule, *, transport_factory=Transport,
-                 clock=time.monotonic, wait=time.sleep):
+                 clock=time.monotonic, wait=time.sleep, pty_factory=MobilePTYProcess):
         self.window, self.access, self.schedule = window, access, schedule
         self.transport_factory = transport_factory
         self.clock, self.wait = clock, wait
@@ -33,6 +35,12 @@ class MobileRPC:
         self.capture_locks = tuple(threading.Lock() for _ in range(16))
         self.capture_cache = OrderedDict()
         self.capture_versions, self.capture_started = {}, {}
+        self.attachments = MobilePTYAttachments(
+            prepare=self.prepare_pty, validate=self.validate_pty,
+            has_topic=lambda connection, topic: bool(self.host and self.host.has_topic(connection, topic)),
+            emit=lambda connection, topic, payload: bool(self.host and self.host.emit_private(connection, topic, payload)),
+            disconnect=lambda connection: self.host and self.host.disconnect_client(connection),
+            process_factory=pty_factory)
 
     def on_main(self, action):
         future = Future()
@@ -58,7 +66,7 @@ class MobileRPC:
             return action()
         if method == "mobile.host.status":
             ready = capture_dependencies_ready()
-            capabilities = ["events.v1", "terminal.viewport.v1", "notifications.v1"]
+            capabilities = ["events.v1", "terminal.viewport.v1", "notifications.v1", "terminal.pty.v1"]
             if ready:
                 capabilities += ["terminal.replay.v1", "terminal.render_grid.v1"]
             return {"machine_id": self.access.machine_id, "display_name": socket.gethostname(), "platform": "linux",
@@ -67,9 +75,63 @@ class MobileRPC:
                     "routes": [{"id": "tailscale", "kind": "tailscale", "priority": 0,
                                 "endpoint": {"type": "host_port", "host": self.host.address, "port": self.host.port}}]}
         operation = method.removeprefix("mobile.")
+        if operation in ("terminal.attach", "terminal.pty_input", "terminal.pty_resize", "terminal.detach"):
+            # PTY spawn/readiness and stream I/O stay off GTK. Only durable
+            # identity/approval snapshots are checked on the UI model owner.
+            return self.attachments.dispatch(operation, params, connection_id, authorized)
         if operation == "terminal.replay":
             return self.replay(params, authorized=authorized)
         return self.on_main(lambda: checked(lambda: self._dispatch_main(operation, params, connection_id)))
+
+    @staticmethod
+    def pty_identity(workspace, record):
+        return (id(workspace), id(record), workspace["id"], workspace["kind"], workspace.get("credentialId"),
+                record["id"], record.get("tmux"), record.get("tmuxSocket"), record.get("paneId"),
+                record.get("sessionId"), record.get("cwd"), workspace.get("cwd"))
+
+    def prepare_pty(self, params, authorized):
+        def prepare():
+            self.check_pty_access(authorized)
+            workspace, record, _ = self.target(params)
+            if not record.get("tmux"):
+                raise RPCError("not_durable", "Esta terminal no tiene una sesión tmux existente")
+            connection = SSHCommand.parse(self.window.connection(workspace)) if workspace["kind"] == "ssh" else None
+            try:
+                launch = MobilePTYProcess.build_launch(dict(workspace), dict(record), connection)
+            except Exception:
+                raise RPCError("not_durable", "El destino tmux guardado no es válido") from None
+            return launch, {"workspace_id": workspace["id"], "surface_id": record["id"],
+                            "identity": self.pty_identity(workspace, record)}
+        return self.on_main(prepare)
+
+    def check_pty_access(self, authorized):
+        if not authorized():
+            raise RPCError("approval_required", "El permiso de este dispositivo ha sido revocado")
+        if self.window.locked:
+            raise RPCError("locked", "UniConnect está bloqueado")
+        operation = getattr(self.window, "_runtime_operation", None)
+        if operation is not None and operation.active:
+            raise RPCError("busy", "Hay un cambio de conexión en preparación")
+
+    def validate_pty(self, target, authorized):
+        def validate():
+            self.check_pty_access(authorized)
+            workspace, record, _ = self.target(target)
+            if self.pty_identity(workspace, record) != target["identity"]:
+                raise RPCError("target_changed", "La identidad de esta terminal ha cambiado")
+        return self.on_main(validate)
+
+    def response_enqueued(self, method, result, connection_id):
+        if method == "mobile.terminal.attach":
+            self.attachments.activate(result.get("attach_id"), connection_id)
+
+    def close_attachments(self):
+        try:
+            disconnect = getattr(self.host, "disconnect_clients", None)
+            if callable(disconnect):
+                disconnect()  # Discard queued PTY frames and give peers EOF first.
+        finally:
+            self.attachments.close()
 
     def _dispatch_main(self, operation, params, connection_id):
         if self.window.locked:
@@ -332,6 +394,7 @@ class MobileRPC:
             self.original_sizes.pop(panel_id, None)
 
     def disconnected(self, connection_id):
+        self.attachments.disconnected(connection_id)
         def clear():
             panels = {key[2] for key in self.viewports if key[0] == connection_id}
             self.viewports = {key: value for key, value in self.viewports.items() if key[0] != connection_id}

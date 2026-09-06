@@ -43,6 +43,50 @@
     border-radius: 10px;
 }
 
+.uniconnect .uc-workspace:hover {
+    background-color: alpha(@theme_selected_bg_color, 0.08);
+}
+
+.uniconnect .uc-workspace:selected {
+    background-color: alpha(@theme_selected_bg_color, 0.15);
+    color: @theme_fg_color;
+    border-color: alpha(@theme_selected_bg_color, 0.40);
+}
+
+.uniconnect .uc-workspace-title {
+    font-size: 1.05em;
+}
+
+.uc-sidebar-flyout {
+    border-radius: 14px;
+    padding: 2px;
+}
+
+.uc-sidebar-flyout button {
+    padding: 5px 8px;
+    border-radius: 7px;
+}
+
+.uc-sidebar-flyout.uc-dark,
+.uc-sidebar-flyout.uc-dark contents {
+    color: @uc_ink;
+    background-color: @uc_raised;
+    background-image: none;
+    border-color: alpha(@uc_cyan, 0.22);
+}
+
+.uc-sidebar-flyout.uc-dark button {
+    color: @uc_ink;
+    background-image: none;
+    background-color: transparent;
+    border-color: transparent;
+    box-shadow: none;
+}
+
+.uc-sidebar-flyout.uc-dark button:hover {
+    background-color: alpha(@uc_cyan, 0.09);
+}
+
 .uniconnect .uc-workspace:focus {
     outline-width: 2px;
     outline-style: solid;

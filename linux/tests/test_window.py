@@ -121,6 +121,21 @@ class MainWindowLifecycleTests(unittest.TestCase):
                 self.assertEqual(menu_labels["settings"], "Ajustes")
                 self.assertEqual(window.action_label("workspace_1"), "Caja 1")
                 self.assertEqual(window.action_label("window_9"), "Ventana 9")
+                self.wait_for(lambda: window._sidebar_refresh == 0)
+                # A flyout over a saved workspace is presentation only: no lazy
+                # terminal attach, selection, focus, or tmux process change.
+                focus_before = window.get_focus()
+                surfaces_before = set(window.surfaces)
+                panes_before_hover = subprocess.check_output(["tmux", "-L", socket, "list-panes", "-a", "-F", "#{pane_id}:#{pane_pid}"], text=True)
+                window.sidebar_flyout.show("workspace-5")
+                self.assertEqual(set(window.surfaces), surfaces_before)
+                self.assertEqual(store.data["selectedWorkspaceId"], "workspace-0")
+                self.assertIs(window.get_focus(), focus_before)
+                self.assertEqual(subprocess.check_output(["tmux", "-L", socket, "list-panes", "-a", "-F", "#{pane_id}:#{pane_pid}"], text=True), panes_before_hover)
+                window.sidebar_flyout.window_buttons["window-5"].clicked()
+                self.assertEqual(store.data["selectedWorkspaceId"], "workspace-5")
+                self.assertEqual(window.focused_surface.record["id"], "window-5")
+                self.assertFalse(window.sidebar_flyout.popover.get_visible())
                 for round in range(4):
                     for workspace in list(store.workspaces):
                         window.select_workspace(workspace["id"])
@@ -199,11 +214,13 @@ class MainWindowLifecycleTests(unittest.TestCase):
                 self.assertTrue(store.data["settings"]["compactSidebar"])
                 self.assertFalse(window.sidebar_search.get_visible())
                 self.assertEqual(len(window.workspace_list.get_children()), 6)
-                self.fields_response({0: "light", 1: "Monospace 13", 2: "0"})
+                # Leave the default numeric zero untouched in the actual GTK form.
+                self.fields_response({0: "light", 1: "Monospace 13"})
                 window.action_settings()
                 loaded = StateStore(root, vault=vault)
                 self.assertEqual(loaded.data["settings"]["font"], "Monospace 13")
                 self.assertEqual(loaded.data["settings"]["theme"], "light")
+                self.assertEqual(loaded.data["settings"]["autoLockMinutes"], 0)
                 self.assertEqual(loaded.data["settings"]["locale"], "es")
                 self.assertTrue(loaded.data["settings"]["compactSidebar"])
                 self.assertEqual(len(loaded.workspaces), 6)
