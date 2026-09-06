@@ -219,6 +219,22 @@ class MobilePTYTmuxTests(_PTYFixture):
         self.assertIn(marker.decode(), self.tmux("capture-pane", "-p", "-t", self.second))
         self.assertEqual(before, self.identities())
 
+    def test_mobile_mouse_is_enabled_only_in_its_presentation_session(self):
+        self.tmux("set-option", "-g", "mouse", "off")
+        self.tmux("set-option", "-t", "=fixture:", "mouse", "off")
+        original = self.tmux("show-options", "-t", "=fixture:")
+        global_options = self.tmux("show-options", "-g")
+        before = self.identities()
+        mobile = self.mobile(size=(100, 30))
+        mobile.wait_ready()
+        auxiliary = next(name for name in self.sessions() if name.startswith("uc-mobile-"))
+        self.assertEqual("on", self.tmux("show-options", "-A", "-v", "-t", "=" + auxiliary + ":", "mouse"))
+        self.assertEqual(original, self.tmux("show-options", "-t", "=fixture:"))
+        self.assertEqual(global_options, self.tmux("show-options", "-g"))
+        self.assertEqual(before, self.identities())
+        mobile.close()
+        self.assertEqual(["fixture"], self.sessions())
+
     def test_attachment_never_runs_configured_default_command(self):
         marker = self.root / "unexpected-default-command"
         self.tmux("set-option", "-g", "default-shell", "/bin/sh")
