@@ -84,6 +84,10 @@ class TerminalSurface(Gtk.Box):
         self.retry.set_tooltip_text(self.owner._("Reconnect"))
         self.retry.connect("clicked", lambda *_: self.launch())
         self.footer.pack_end(self.retry, False, False, 0)
+        self.exit_selection = Gtk.Button(label=self.owner._("Salir de selección"))
+        self.exit_selection.set_relief(Gtk.ReliefStyle.NONE)
+        self.exit_selection.connect("clicked", lambda *_: (self.on_focus(), self.owner.run_action("cancel_selection")))
+        self.footer.pack_end(self.exit_selection, False, False, 0)
         self.pack_end(self.footer, False, False, 0)
         self.show_all()
         if auto_launch:
@@ -451,7 +455,7 @@ class TerminalSurface(Gtk.Box):
     def on_button(self, _, event):
         if event.button == 3:
             self.on_focus()
-            self.owner.context_menu(["copy", "paste", "find", "new_window", "rename_window",
+            self.owner.context_menu(["copy", "cancel_selection", "paste", "find", "new_window", "rename_window",
                                      "split_right", "split_down", "reconnect", "upload", "close_window"], event)
             return True
         return False
@@ -519,6 +523,35 @@ class TerminalSurface(Gtk.Box):
                 GLib.idle_add(deliver, None, message)
 
         threading.Thread(target=read, name="uniconnect-copy", daemon=True).start()
+
+    def cancel_selection(self):
+        if self.disposed:
+            return
+        self.owner._clipboard_copy_request = object()
+        self.terminal.unselect_all()
+        if not self.record.get("tmux"):
+            return
+        generation = self.generation
+        try:
+            connection = self.owner.connection(self.workspace) if self.workspace["kind"] == "ssh" else None
+            bridge = TerminalCopy(Transport(connection, socket_name=self.record.get("tmuxSocket")))
+            record = dict(self.record)
+        except Exception:
+            self.owner.error(self.owner._("No se pudo salir del modo selección."))
+            return
+
+        def failed():
+            if not self.disposed and generation == self.generation:
+                self.owner.error(self.owner._("No se pudo salir del modo selección."))
+            return False
+
+        def cancel():
+            try:
+                bridge.cancel_selection(record)
+            except Exception:
+                GLib.idle_add(failed)
+
+        threading.Thread(target=cancel, name="uniconnect-exit-selection", daemon=True).start()
 
     def paste(self):
         if hasattr(self.owner, "paste_clipboard"):

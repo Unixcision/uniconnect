@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 
 import test_terminal_copy as terminal_fixture
-from gi.repository import Gio, GLib, Gtk
+from gi.repository import Gdk, Gio, GLib, Gtk
 from uniconnect.state import StateStore
 from uniconnect.vault import Vault
 from uniconnect.window import MainWindow
@@ -17,6 +17,12 @@ class MainWindowCopyTests(unittest.TestCase):
     tmux = terminal_fixture.TerminalCopyTests.tmux
     select = terminal_fixture.TerminalCopyTests.select
     copy_and_wait = terminal_fixture.TerminalCopyTests.copy_and_wait
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = Gtk.Application(application_id="com.unixcision.uniconnect.copytest" + uuid.uuid4().hex,
+                                  flags=Gio.ApplicationFlags.NON_UNIQUE)
+        cls.app.register(None)
 
     def wait_for(self, predicate):
         deadline = time.monotonic() + 8
@@ -45,9 +51,6 @@ class MainWindowCopyTests(unittest.TestCase):
                                  "selectedWindowId": self.record["id"]})
         store.data['selectedWorkspaceId'] = "qa-copy"
         store.save()
-        self.app = Gtk.Application(application_id="com.unixcision.uniconnect.copytest" + uuid.uuid4().hex,
-                                   flags=Gio.ApplicationFlags.NON_UNIQUE)
-        self.app.register(None)
         self.window = MainWindow(self.app, store, vault)
         self.owner = self.window
         self.window.error = self.errors.append
@@ -72,7 +75,12 @@ class MainWindowCopyTests(unittest.TestCase):
                 if entry == "menu":
                     action = menu.activate
                 elif entry == "shortcut":
-                    action = lambda: self.window.lookup_action("copy").activate(None)
+                    def action():
+                        event = Gdk.Event.new(Gdk.EventType.KEY_PRESS)
+                        event.keyval = Gdk.KEY_c
+                        event.state = Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK
+                        event.window = self.surface.terminal.get_window()
+                        self.assertTrue(self.window.activate_key(event))
                 else:
                     action = lambda: self.window.run_action("copy")
                 self.copy_and_wait("COPIA_ñ", action)
@@ -88,3 +96,11 @@ class MainWindowCopyTests(unittest.TestCase):
         self.assertEqual(self.clipboard.wait_for_text(), "anterior")
         self.assertEqual(self.errors, [])
 
+    def test_explicit_local_reconnect_cancels_copy_mode_without_restarting_pane(self):
+        self.select()
+        self.assertTrue(self.window.action_enabled("reconnect"))
+        generation = self.surface.generation
+        self.window.run_action("reconnect")
+        self.wait_for(lambda: self.surface.generation > generation and self.surface.status == "Running")
+        self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}"), "0")
+        self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_id}:#{pane_pid}"), self.before)

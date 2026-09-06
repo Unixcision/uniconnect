@@ -29,6 +29,7 @@ ACTIONS = (
     Action("lock", "Lock", "<Primary><Shift>l"),
     Action("quit", "Quit", "<Primary><Shift>q"),
     Action("copy", "Copy", "<Primary><Shift>c"),
+    Action("cancel_selection", "Salir de selección", "<Primary><Shift>Escape"),
     Action("paste", "Paste", "<Primary><Shift>v"),
     Action("find", "Find", "<Primary><Shift>f"),
     Action("find_next", "Find next", "<Primary><Shift>g"),

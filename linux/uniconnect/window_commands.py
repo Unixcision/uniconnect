@@ -50,11 +50,17 @@ class WindowCommands:
             return bool(self.store.closed)
         if name == "edit_ssh":
             return bool(workspace and workspace["kind"] == "ssh")
-        if name in ("reconnect", "kill_tmux"):
+        if name == "reconnect":
+            return bool(surface and surface.record.get("tmux"))
+        if name == "kill_tmux":
             return bool(surface and surface.workspace["kind"] == "ssh" and surface.record.get("tmux"))
         if name == "reconnect_all":
             return any(w["kind"] == "ssh" and w["windows"] for w in self.store.workspaces)
-        if name == "copy" or name == "find_selection":
+        if name in ("copy", "cancel_selection"):
+            # tmux owns mouse selections: VTE cannot report them. Check on
+            # invocation off-thread; never disable the only route to copy/exit.
+            return bool(surface and (surface.record.get("tmux") or surface.terminal.get_has_selection()))
+        if name == "find_selection":
             return bool(surface and surface.terminal.get_has_selection())
         if name == "hide_find":
             return bool(surface and surface.search.get_search_mode())
