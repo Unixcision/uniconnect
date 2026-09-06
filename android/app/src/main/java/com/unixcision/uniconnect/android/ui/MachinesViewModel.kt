@@ -37,6 +37,8 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     /** A phone-sized tmux client attached to the selected window; the emulator lives in the model. */
     data class RealTerminal(
         val snapshot: TerminalSnapshot? = null, val applicationCursorKeys: Boolean = false,
+        /** Whether tmux is showing its copy-mode indicator, i.e. the pane ignores typing. */
+        val copyMode: Boolean = false,
         val connecting: Boolean = true, val ended: Boolean = false, val error: Int? = null, val errorDetail: String? = null,
     )
     data class State(
@@ -418,7 +420,8 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     private fun applyGeometry(terminal: TerminalEmulator, live: TerminalAttachment, columns: Int, rows: Int) {
         pendingGeometryJob?.cancel()
         terminal.resize(columns, rows)
-        mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = terminal.snapshot())) }
+        val frame = terminal.snapshot()
+        mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = frame, copyMode = frame.inCopyMode)) }
         pendingGeometryJob = viewModelScope.launch {
             if (attachment === live) runCatching { live.resize(columns, rows) }
         }
@@ -467,7 +470,8 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                             // Answer the program's queries (cursor position, device attributes) right away.
                             val answer = terminal.drainResponses()
                             if (answer.isNotEmpty()) runCatching { live.send(answer.toByteArray(Charsets.UTF_8)) }
-                            mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = terminal.snapshot(), applicationCursorKeys = terminal.applicationCursorKeys)) }
+                            val frame = terminal.snapshot()
+                            mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = frame, copyMode = frame.inCopyMode, applicationCursorKeys = terminal.applicationCursorKeys)) }
                         }
                         is PtyEvent.Geometry -> {
                             // The host owns the geometry: match the phone's PTY to the canvas it
@@ -514,6 +518,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     }
 
     fun stopRealTerminal() {
+        leaveCopyModeJob?.cancel(); leaveCopyModeJob = null
         wheelJob?.cancel(); wheelJob = null
         pendingGeometryJob?.cancel(); pendingGeometryJob = null; geometry.reset()
         attachJob?.cancel(); attachJob = null
@@ -538,6 +543,43 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     }
 
     private var wheelJob: Job? = null
+    private var leaveCopyModeJob: Job? = null
+
+    /**
+     * Walks the attached pane out of tmux's copy mode and back to the live screen.
+     *
+     * tmux leaves copy mode by itself once the wheel reaches the bottom, so this sends wheel steps
+     * rather than a key. Reading the indicator cannot rule out that another client leaves the mode
+     * first, and what arrives late is then handled by tmux's mouse handling and by the program
+     * inside. Neither outcome is guaranteed, but a stray mouse event is the smaller of the two: a
+     * stray `q` quits `less` or `top` on its own, with no Enter needed.
+     *
+     * This is provisional and frame-based. It is not a semantic cancellation, and the indicator
+     * clearing is the only confirmation it has.
+     *
+     * It goes in short bursts and stops as soon as the indicator clears, so a shallow history
+     * costs one burst instead of the deepest one imaginable, and it cancels any queued wheel work
+     * first — otherwise the tap would wait behind every step a drag had already scheduled.
+     */
+    fun leaveCopyMode() {
+        val live = attachment ?: return
+        val terminal = emulator ?: return
+        leaveCopyModeJob?.cancel()
+        wheelJob?.cancel(); wheelJob = null
+        val sequence = terminal.encodeWheel(up = false, column = 0, row = 0).toByteArray(Charsets.UTF_8)
+        leaveCopyModeJob = viewModelScope.launch {
+            repeat(COPY_MODE_EXIT_BURSTS) {
+                if (attachment !== live || !terminal.snapshot().inCopyMode) return@launch
+                repeat(COPY_MODE_EXIT_STEPS) { step ->
+                    if (attachment !== live) return@launch
+                    runCatching { live.send(sequence) }.onFailure { return@launch }
+                    if (step < COPY_MODE_EXIT_STEPS - 1) delay(WHEEL_GAP_MILLIS)
+                }
+                // Bounded, intended pause: tmux has to redraw before its indicator can be believed.
+                delay(COPY_MODE_SETTLE_MILLIS)
+            }
+        }
+    }
 
     /**
      * Wheel steps for the attached client; tmux turns them into copy-mode scrolling.
@@ -549,7 +591,9 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     fun wheelPty(up: Boolean, steps: Int, column: Int = 0, row: Int = 0) {
         val live = attachment ?: return
         val sequence = (emulator ?: return).encodeWheel(up, column, row).toByteArray(Charsets.UTF_8)
-        val count = steps.coerceIn(1, 20)
+        // A drag asks for a handful of steps; leaving copy mode asks for as many as the history
+        // is deep, so the cap is generous rather than gesture-sized.
+        val count = steps.coerceIn(1, 400)
         val previous = wheelJob
         wheelJob = viewModelScope.launch {
             previous?.join()
@@ -612,6 +656,11 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         const val ENTER_GAP_MILLIS = 80L
         /** Gap between wheel steps so tmux reads each one as a separate event. */
         const val WHEEL_GAP_MILLIS = 16L
+        /** Wheel steps per burst while leaving copy mode, and how many bursts at most. */
+        const val COPY_MODE_EXIT_STEPS = 12
+        const val COPY_MODE_EXIT_BURSTS = 40
+        /** Time given to tmux to redraw before its indicator is read again. */
+        const val COPY_MODE_SETTLE_MILLIS = 110L
         /** Retries allowed before a first connection is reported as failed. */
         const val INITIAL_ATTEMPTS = 3
     }

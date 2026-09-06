@@ -135,6 +135,7 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
                             attachFallbackDetail = state.attachFallbackDetail,
                             onStartReal = model::startRealTerminal, onStopReal = model::stopRealTerminal,
                             onPty = model::sendPty, onPtyWheel = model::wheelPty, onPtyResize = model::resizePty,
+                            onLeaveCopyMode = model::leaveCopyMode,
                         )
                     }
                     Level.MACHINE -> if (machine != null) MachineBoxesScreen(

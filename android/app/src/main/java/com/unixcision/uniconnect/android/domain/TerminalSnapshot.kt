@@ -16,4 +16,15 @@ data class TerminalSnapshot(
         val underline: Boolean = false, val faint: Boolean = false, val strikethrough: Boolean = false,
         val overline: Boolean = false)
     data class Cursor(val row: Int, val column: Int, val visible: Boolean)
+
+    /**
+     * Whether tmux is showing the copy-mode position indicator, e.g. `[1013/1013]`, which it draws
+     * in the top-right corner of a pane that is in that mode. A pane in copy mode ignores typing,
+     * so this is what tells a reader the window is not dead, only paused.
+     */
+    val inCopyMode: Boolean get() = spans.any { it.row == 0 && COPY_MODE_INDICATOR.containsMatchIn(it.text) }
+
+    private companion object {
+        val COPY_MODE_INDICATOR = Regex("\\[\\d+/\\d+]")
+    }
 }

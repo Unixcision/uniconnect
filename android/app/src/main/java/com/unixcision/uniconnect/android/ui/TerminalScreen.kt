@@ -85,6 +85,7 @@ fun TerminalScreen(
     onPty: (String, Boolean) -> Unit = { _, _ -> },
     onPtyWheel: (Boolean, Int) -> Unit = { _, _ -> },
     onPtyResize: (Int, Int) -> Unit = { _, _ -> },
+    onLeaveCopyMode: () -> Unit = {},
 ) {
     var realRequested by rememberSaveable { mutableStateOf(false) }
     // Default way in: attach to the window's own tmux session. Only a host without the attach RPC,
@@ -92,7 +93,7 @@ fun TerminalScreen(
     var autoTried by rememberSaveable { mutableStateOf(false) }
     var manuallyLeft by rememberSaveable { mutableStateOf(false) }
     if (real != null) {
-        RealTerminalScreen(real, connected, sending, onStopReal = { realRequested = false; manuallyLeft = true; onStopReal() }, onPty = onPty, onPtyWheel = onPtyWheel, onPtyResize = onPtyResize)
+        RealTerminalScreen(real, connected, sending, onStopReal = { realRequested = false; manuallyLeft = true; onStopReal() }, onPty = onPty, onPtyWheel = onPtyWheel, onPtyResize = onPtyResize, onLeaveCopyMode = onLeaveCopyMode)
         return
     }
     if (realRequested) realRequested = false
@@ -110,6 +111,7 @@ fun TerminalScreen(
 private fun RealTerminalScreen(
     real: MachinesViewModel.RealTerminal, connected: Boolean, sending: Boolean,
     onStopReal: () -> Unit, onPty: (String, Boolean) -> Unit, onPtyWheel: (Boolean, Int) -> Unit, onPtyResize: (Int, Int) -> Unit,
+    onLeaveCopyMode: () -> Unit,
 ) {
     var keysVisible by rememberSaveable { mutableStateOf(false) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
@@ -127,26 +129,13 @@ private fun RealTerminalScreen(
         if (alt == ModifierState.ARMED) alt = ModifierState.OFF
     }
     val ready = real.snapshot != null && !real.ended && real.error == null
-    // tmux draws "[position/total]" in the top-right corner of a pane that is in copy mode, which
-    // is also what a selection leaves behind. Reading it back is how the phone knows to offer a
-    // way out: a pane left in that state ignores typing, and Dani kept arriving to a dead window.
-    val copyMode = real.snapshot?.let { snapshot ->
-        snapshot.spans.any { it.row == 0 && COPY_MODE_INDICATOR.containsMatchIn(it.text) }
-    } == true
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             StatusPill(stringResource(R.string.real_terminal_pill), if (ready) PillTone.Busy else PillTone.Idle)
             Spacer(Modifier.weight(1f))
-            // One tap out of copy mode: `q` is what cancels it in both of tmux's key tables, and
-            // it is only sent while the indicator says the pane is in that mode.
-            //
-            // That check narrows the window but does not close it: another client can leave copy
-            // mode between the frame this state was read from and the key arriving, and then the
-            // `q` lands in whatever is running inside. No Enter follows it, so the damage is one
-            // stray character in a prompt, never an executed command. Closing the race needs the
-            // host to cancel the resolved pane itself (send-keys -X cancel); when that RPC exists,
-            // this should call it instead of sending a key.
-            if (copyMode) IconButton(onClick = { onPty("q", false) }) {
+            // One tap back to the live screen, handled by the model: it walks the pane out with
+            // wheel steps and stops as soon as tmux's indicator clears.
+            if (real.copyMode) IconButton(onClick = onLeaveCopyMode) {
                 Icon(Icons.Rounded.KeyboardDoubleArrowDown, stringResource(R.string.terminal_leave_copy_mode), tint = Brand.Amber)
             }
             if (real.snapshot != null) IconButton(onClick = { viewMode = viewMode.next; zoom = 1f }) {
@@ -471,9 +460,6 @@ enum class ViewMode {
 }
 
 /** Reading geometry for this device. The desktop PTY keeps its own columns and rows. */
-/** tmux's copy-mode position indicator, e.g. `[1013/1013]`, drawn in the pane's top-right corner. */
-private val COPY_MODE_INDICATOR = Regex("\\[\\d+/\\d+]")
-
 /** Reader-controlled zoom bounds: below 0.6 the text stops being legible, above 5 it is huge. */
 private const val MIN_ZOOM = 0.6f
 private const val MAX_ZOOM = 5f
