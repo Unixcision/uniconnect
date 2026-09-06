@@ -11,7 +11,7 @@ on:
       - cmuxTests/MobileTmux*Tests.swift
       - Sources/UniConnect/**
       - cmuxTests/MobileWorkspaceListFidelityTests.swift
-      - cmuxTests/UniConnectLocalTmuxSocketAccessTests.swift
+      - cmuxTests/UniConnectLocalTmux*Tests.swift
       - cmux.xcodeproj/**
       - ghostty
       - scripts/download-prebuilt-ghosttykit.sh

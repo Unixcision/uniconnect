@@ -32,6 +32,11 @@ con su proceso real, propietario y UUID conocido; un hook con PID antiguo o el
 prompt del shell exterior no acreditan que esa IA terminó. La recuperación
 adicional implementada reconoce Claude con UUID explícito en argv. Si falta
 evidencia, conserva el registro: no inventa una sesión ni relanza otra IA.
+Los tmux antiguos cuyo shell raíz carece por completo de metadatos de integración
+pueden reconciliar una IA conocida mediante su descendiente Claude verificado
+(propietario, árbol de procesos, generación, UUID y carpeta). Esta compatibilidad
+sólo repara el estado guardado: no amplía la autorización de comandos del socket.
+Metadatos parciales o contradictorios no se aceptan como una raíz antigua.
 No se recuperan los PID ni la memoria del proceso anterior. Las pruebas de
 recreación aislada no equivalen a haber reiniciado el Mac de producción.
 

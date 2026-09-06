@@ -76,11 +76,34 @@ struct MobileTmuxPTYIntegrationTests {
             let auxiliary = String(mobileFields[2])
             #expect(auxiliary.hasPrefix("uc-mobile-"))
             #expect(auxiliary != binding.name)
-            let mobileBefore = try await tmux(executable, binding, environment, ["display-message", "-p", "-c", mobileTTY, "#{client_active_pane}"])
+            // tmux has no client_active_pane format. A binding runs with the
+            // receiving client's pane context; an external display-message -c
+            // does not select that client's private active pane as its target.
+            _ = try await tmux(executable, binding, environment, [
+                "bind-key", "-n", "C-g",
+                "set-option -gF @mobile-test-observed '#{client_tty}|#{session_name}|#{window_id}|#{pane_id}'; wait-for -S mobile-probed",
+            ])
+            let sourcePaneIDs = Set(panesBefore.split(separator: "\n").compactMap { $0.split(separator: " ").first.map(String.init) })
+            func observeMobilePane() async throws -> String {
+                // One ordinary key avoids terminal-specific function-key maps.
+                try await mobile.write(Data([0x07]))
+                _ = try await tmux(executable, binding, environment, ["wait-for", "mobile-probed"])
+                let observation = try await tmux(executable, binding, environment, ["show-options", "-gv", "@mobile-test-observed"])
+                let fields = observation.split(separator: "|", omittingEmptySubsequences: false)
+                try #require(fields.count == 4 && fields.allSatisfy { !$0.isEmpty })
+                #expect(String(fields[0]) == mobileTTY)
+                #expect(String(fields[1]) == auxiliary)
+                #expect(String(fields[2]) == sourceWindow)
+                let pane = String(fields[3])
+                try #require(sourcePaneIDs.contains(pane))
+                return pane
+            }
+            let mobileBefore = try await observeMobilePane()
+            #expect(mobileBefore == before.split(separator: " ").last.map(String.init))
             _ = try await tmux(executable, binding, environment, ["set-hook", "-g", "after-select-pane", "wait-for -S mobile-selected"])
             try await mobile.write(Data([0x02, 0x6f]))
             _ = try await tmux(executable, binding, environment, ["wait-for", "mobile-selected"])
-            let mobileAfter = try await tmux(executable, binding, environment, ["display-message", "-p", "-c", mobileTTY, "#{client_active_pane}"])
+            let mobileAfter = try await observeMobilePane()
             let panesAfter = try await tmux(executable, binding, environment, ["list-panes", "-t", "=fixture:", "-F", "#{pane_id} #{pane_active}"])
             #expect(mobileAfter != mobileBefore)
             #expect(panesAfter == panesBefore)
@@ -88,7 +111,7 @@ struct MobileTmuxPTYIntegrationTests {
             _ = try await tmux(executable, binding, environment, ["select-window", "-t", "=fixture:" + otherWindow])
             let desktopWindowAfter = try await tmux(executable, binding, environment, ["display-message", "-p", "-t", "=fixture:", "#{window_id}"])
             let mobileWindowAfter = try await tmux(executable, binding, environment, ["display-message", "-p", "-t", "=" + auxiliary + ":", "#{window_id}"])
-            let mobilePaneAfterSwitch = try await tmux(executable, binding, environment, ["display-message", "-p", "-c", mobileTTY, "#{client_active_pane}"])
+            let mobilePaneAfterSwitch = try await observeMobilePane()
             #expect(desktopWindowAfter == otherWindow)
             #expect(mobileWindowAfter == sourceWindow)
             #expect(mobilePaneAfterSwitch == mobileAfter)
