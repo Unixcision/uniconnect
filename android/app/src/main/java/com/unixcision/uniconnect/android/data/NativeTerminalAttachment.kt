@@ -39,6 +39,19 @@ class NativeTerminalAttachment private constructor(
                 if (seq >= 0 && seq <= lastSeq) continue
                 if (seq >= 0) lastSeq = seq
                 if (payload.optBoolean("exit", false)) { emit(PtyEvent.Exit); return@flow }
+                // Geometry travels in the same event and must be applied before its bytes, so the
+                // emulator is already the right size when the redraw that follows arrives.
+                val presentationColumns = payload.optInt("presentation_columns", 0)
+                val presentationRows = payload.optInt("presentation_rows", 0)
+                if (presentationColumns in 1..1000 && presentationRows in 1..1000) {
+                    emit(
+                        PtyEvent.Geometry(
+                            presentationColumns, presentationRows,
+                            payload.optInt("source_columns", presentationColumns).coerceIn(1, 1000),
+                            payload.optInt("source_rows", presentationRows).coerceIn(1, 1000),
+                        )
+                    )
+                }
                 val data = payload.optString("data")
                 if (data.isNotEmpty()) emit(PtyEvent.Output(Base64.decode(data, Base64.NO_WRAP)))
             }

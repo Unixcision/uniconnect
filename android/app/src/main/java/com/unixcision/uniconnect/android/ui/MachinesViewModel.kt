@@ -439,6 +439,15 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                             if (answer.isNotEmpty()) runCatching { live.send(answer.toByteArray(Charsets.UTF_8)) }
                             mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = terminal.snapshot(), applicationCursorKeys = terminal.applicationCursorKeys)) }
                         }
+                        is PtyEvent.Geometry -> {
+                            // The host owns the geometry: match the phone's PTY to the canvas it
+                            // reports so tmux stops padding rows the window does not have.
+                            if (terminal.screen.columns != event.presentationColumns || terminal.screen.rows != event.presentationRows) {
+                                terminal.resize(event.presentationColumns, event.presentationRows)
+                                runCatching { live.resize(event.presentationColumns, event.presentationRows) }
+                                mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = terminal.snapshot())) }
+                            }
+                        }
                         PtyEvent.Exit -> mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(ended = true, connecting = false)) }
                     }
                 }

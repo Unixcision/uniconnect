@@ -5,6 +5,21 @@ import kotlinx.coroutines.flow.Flow
 /** Raw PTY traffic from one attached tmux client on the host. */
 sealed interface PtyEvent {
     data class Output(val bytes: ByteArray) : PtyEvent
+
+    /**
+     * The host reported the geometry of the attached window.
+     *
+     * [presentationColumns]/[presentationRows] is the canvas needed to present it, status rows
+     * included; [sourceColumns]/[sourceRows] is the window itself. Matching the client's PTY to the
+     * presentation size is what stops tmux from padding the extra rows.
+     */
+    data class Geometry(
+        val presentationColumns: Int,
+        val presentationRows: Int,
+        val sourceColumns: Int,
+        val sourceRows: Int,
+    ) : PtyEvent
+
     /** The attached client exited (session gone, host detached, or process died). */
     data object Exit : PtyEvent
 }
