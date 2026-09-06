@@ -16,6 +16,7 @@ gi.require_version("Vte", "2.91")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango, Vte
 
 from .transport import SSHCommand, Transport, TransportError, terminal_launch
+from .terminal_copy import TerminalCopy
 
 
 class TerminalSurface(Gtk.Box):
@@ -25,6 +26,7 @@ class TerminalSurface(Gtk.Box):
         self.owner, self.workspace, self.record = owner, workspace, window
         self.pid, self.generation, self.disposed = 0, 0, False
         self._pending_launch = None
+        self._reset_selection = False
         self._preparing = False
         self._spawning = False
         self._ownership_keys = []
@@ -144,6 +146,7 @@ class TerminalSurface(Gtk.Box):
 
     def launch(self, create=False):
         """An explicit reconnect starts a new bounded recovery budget."""
+        self._reset_selection = bool(self.pid) and not create
         self._cancel_reconnect(reset=True)
         return self._queue_launch(create)
 
@@ -164,6 +167,8 @@ class TerminalSurface(Gtk.Box):
         if self.disposed or self._pending_launch is None or self.pid or self._spawning or self._preparing:
             return False
         generation, create = self._pending_launch
+        reset_selection = self._reset_selection
+        self._reset_selection = False
         self._pending_launch = None
         self._preparing = True
         try:
@@ -177,6 +182,8 @@ class TerminalSurface(Gtk.Box):
 
         def prepare():
             try:
+                if reset_selection and record.get("tmux"):
+                    TerminalCopy(Transport(connect, socket_name=record.get("tmuxSocket"))).cancel_selection(record)
                 launch, keys = self._launch_preparer(workspace, record, connect, create)
                 GLib.idle_add(self._prepared, generation, launch, keys, None)
             except Exception as error:
@@ -474,7 +481,44 @@ class TerminalSurface(Gtk.Box):
         self.terminal.feed_child(text.encode())
 
     def copy(self):
-        self.terminal.copy_clipboard_format(Vte.Format.TEXT)
+        if self.disposed:
+            return
+        request = object()
+        self.owner._clipboard_copy_request = request
+        if self.terminal.get_has_selection():
+            self.terminal.copy_clipboard_format(Vte.Format.TEXT)
+            return
+        generation = self.generation
+        try:
+            connection = self.owner.connection(self.workspace) if self.workspace["kind"] == "ssh" else None
+            transport = Transport(connection, socket_name=self.record.get("tmuxSocket"))
+            record = dict(self.record)
+        except Exception:
+            self.owner.error(self.owner._("No se pudo copiar la selección del terminal."))
+            return
+
+        def deliver(text, error):
+            if (self.disposed or generation != self.generation
+                    or self.owner._clipboard_copy_request is not request):
+                return False
+            if error:
+                self.owner.error(self.owner._(error))
+            elif text:
+                clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+                clipboard.set_text(text, -1)
+                clipboard.store()
+            return False
+
+        def read():
+            try:
+                text = TerminalCopy(transport).read_selection(record)
+                GLib.idle_add(deliver, text, None)
+            except Exception as error:
+                message = (error.code if isinstance(error, TransportError) and error.code.startswith("Selecciona")
+                           else "No se pudo copiar la selección del terminal.")
+                GLib.idle_add(deliver, None, message)
+
+        threading.Thread(target=read, name="uniconnect-copy", daemon=True).start()
 
     def paste(self):
         if hasattr(self.owner, "paste_clipboard"):

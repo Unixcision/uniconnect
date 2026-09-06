@@ -94,3 +94,22 @@ class TerminalCopyTests(unittest.TestCase):
         self.surface.terminal.select_all()
         self.assertTrue(self.surface.terminal.get_has_selection())
         self.copy_and_wait("NATIVO\n")
+
+    def test_no_selection_never_uses_another_panes_buffer(self):
+        from uniconnect.terminal_copy import TerminalCopy
+        from uniconnect.transport import Transport, TransportError
+        self.tmux("set-buffer", "TEXTO DE OTRA VENTANA")
+        with self.assertRaises(TransportError):
+            TerminalCopy(Transport(socket_name=self.socket)).read_selection(self.record)
+        self.assertEqual(self.clipboard.wait_for_text(), "anterior")
+        self.assertEqual(self.tmux("show-buffer"), "TEXTO DE OTRA VENTANA")
+
+    def test_cancel_for_explicit_reconnect_releases_only_copy_mode(self):
+        from uniconnect.terminal_copy import TerminalCopy
+        from uniconnect.transport import Transport
+        self.select()
+        bridge = TerminalCopy(Transport(socket_name=self.socket))
+        bridge.cancel_selection(self.record)
+        bridge.cancel_selection(self.record)
+        self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}"), "0")
+        self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_id}:#{pane_pid}"), self.before)

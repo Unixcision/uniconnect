@@ -2,6 +2,18 @@
   "sourceLanguage": "es",
   "version": "1.0",
   "strings": {
+    "Selecciona texto antes de copiar.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": { "stringUnit": { "state": "translated", "value": "Selecciona texto antes de copiar." } }
+      }
+    },
+    "No se pudo copiar la selección del terminal.": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": { "stringUnit": { "state": "translated", "value": "No se pudo copiar la selección del terminal." } }
+      }
+    },
     "uniconnect.shared.sin.ventanas": {
       "extractionState": "manual",
       "localizations": {
