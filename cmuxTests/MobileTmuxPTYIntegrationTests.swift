@@ -40,6 +40,7 @@ struct MobileTmuxPTYIntegrationTests {
             let sourceWindow = try await tmux(executable, binding, environment, ["display-message", "-p", "-t", "=fixture:", "#{window_id}"])
             let otherWindow = try await tmux(executable, binding, environment, ["new-window", "-d", "-P", "-F", "#{window_id}", "-t", "=fixture:", "exec /bin/cat"])
             _ = try await tmux(executable, binding, environment, ["set-option", "-g", "status", "off"])
+            _ = try await tmux(executable, binding, environment, ["set-option", "-g", "mouse", "off"])
             _ = try await tmux(executable, binding, environment, ["set-option", "-g", "base-index", "4"])
             let accidentalLaunch = directory.appendingPathComponent("unexpected-default-command")
             _ = try await tmux(executable, binding, environment, ["set-option", "-g", "default-command", "printf unexpected > " + UniConnectSSH.singleQuoted(accidentalLaunch.path)])
@@ -76,6 +77,9 @@ struct MobileTmuxPTYIntegrationTests {
             let auxiliary = String(mobileFields[2])
             #expect(auxiliary.hasPrefix("uc-mobile-"))
             #expect(auxiliary != binding.name)
+            #expect(try await tmux(executable, binding, environment, ["show-options", "-v", "-t", "=" + auxiliary + ":", "mouse"]) == "on")
+            #expect(try await tmux(executable, binding, environment, ["show-options", "-gv", "mouse"]) == "off")
+            #expect(try await tmux(executable, binding, environment, ["show-options", "-Av", "-t", "=fixture:", "mouse"]) == "off")
             // tmux has no client_active_pane format. A binding runs with the
             // receiving client's pane context; an external display-message -c
             // does not select that client's private active pane as its target.
