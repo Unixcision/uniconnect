@@ -134,11 +134,10 @@ private fun RealTerminalScreen(
                     }
                 }
             } else BoxWithConstraints(Modifier.fillMaxSize()) {
-                val metrics = rememberTerminalMetrics(snapshot, null)
-                val columns = ((constraints.maxWidth - 16f) / metrics.cellWidth).toInt().coerceIn(10, 500)
-                val rows = ((constraints.maxHeight - 16f) / metrics.lineHeight).toInt().coerceIn(3, 200)
-                // Keyboard or rotation changed the viewport: the phone's own client follows, tmux keeps the desktop.
-                LaunchedEffect(columns, rows) { if (columns != snapshot.columns || rows != snapshot.rows) onPtyResize(columns, rows) }
+                // The host keeps the desktop's geometry (tmux ignore-size), so the phone shows that
+                // window scaled to fit. Asking for the phone's own size only made tmux pad the
+                // rows the desktop does not have with dots.
+                val metrics = rememberTerminalMetrics(snapshot, IntSize(constraints.maxWidth, constraints.maxHeight))
                 val wheel by rememberUpdatedState(onPtyWheel)
                 Box(
                     Modifier.fillMaxSize().pointerInput(metrics.lineHeight) {
@@ -150,7 +149,7 @@ private fun RealTerminalScreen(
                             if (lines != 0) { accumulated -= lines * metrics.lineHeight; wheel(lines > 0, kotlin.math.abs(lines)) }
                         }
                     },
-                    contentAlignment = Alignment.TopStart,
+                    contentAlignment = Alignment.Center,
                 ) { TerminalGrid(snapshot, metrics) }
             }
         }
