@@ -98,6 +98,8 @@ jobs:
             -only-testing:cmuxTests/MobileTmuxAttachmentControllerTests \
             -only-testing:cmuxTests/MobileTmuxPTYIntegrationTests \
             -only-testing:cmuxTests/UniConnectLocalTmuxRestorePrimeTests \
+            -only-testing:cmuxTests/UniConnectLocalTmuxTests \
+            -only-testing:cmuxTests/UniConnectLocalTmuxIntegrationTests \
             -resultBundlePath "$RUNNER_TEMP/uniconnect-mobile-rpc.xcresult" \
             CMUX_SKIP_ZIG_BUILD=1 \
             test 2>&1 | tee "$RUNNER_TEMP/uniconnect-mobile-rpc.log"

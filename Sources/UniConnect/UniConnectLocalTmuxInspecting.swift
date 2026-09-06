@@ -2,6 +2,11 @@ import Foundation
 
 /// Verifies the live pane behind a saved binding before trusting its pre-reattach hook generation.
 protocol UniConnectLocalTmuxInspecting: Sendable {
+    /// Missing or ambiguous evidence yields no observation and must preserve durable state.
+    func runtimeObservations(
+        for targets: [UniConnectLocalTmuxRuntimeObservation.Target]
+    ) async -> [UniConnectLocalTmuxRuntimeObservation]
+
     func generation(
         for binding: UniConnectLocalTmuxBinding,
         workspaceID: UUID,

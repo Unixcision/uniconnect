@@ -40,6 +40,7 @@ final class UniConnectCoordinator: ObservableObject {
     private var sshCommandExecutor: (any UniConnectSSHCommandExecuting)?
     private var sshTargetResolver: (any UniConnectSSHTargetResolving)?
     private var localTmuxInspector: (any UniConnectLocalTmuxInspecting)?
+    private var localTmuxReconciliationTask: Task<Void, Never>?
     private var sshWorkspaceCreationTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private var sshWorkspaceCreationTokens: [ObjectIdentifier: UUID] = [:]
     private var sshCredentialEditTasks: [UUID: Task<Void, Never>] = [:]
@@ -143,6 +144,68 @@ final class UniConnectCoordinator: ObservableObject {
         binding: UniConnectLocalTmuxBinding, workspaceID: UUID, panelID: UUID
     ) async -> UUID? {
         await localTmuxInspector?.generation(for: binding, workspaceID: workspaceID, panelID: panelID)
+    }
+
+    /// Repairs durable runtime state from existing panes without focusing, launching, or sending input.
+    func reconcileLocalTmuxRuntime() async {
+        if let task = localTmuxReconciliationTask {
+            await task.value
+            return
+        }
+        guard Self.isEnabled, let inspector = localTmuxInspector else { return }
+        var workspaces: [UUID: Workspace] = [:]
+        var targets: [UniConnectLocalTmuxRuntimeObservation.Target] = []
+        for manager in allTabManagers() {
+            for workspace in manager.tabs where workspace.uniConnectProfile?.kind == .local
+                && workspace.remoteConfiguration == nil {
+                workspaces[workspace.id] = workspace
+                for (panelID, record) in workspace.uniConnectLocalWindowsByPanelId {
+                    guard let binding = record.tmuxBinding, record.runtimeState != .stopped,
+                          let panel = workspace.panels[panelID] as? TerminalPanel, !panel.isAgentHibernated,
+                          panel.surface.canAcceptPortalBinding(expectedSurfaceId: panelID, expectedGeneration: nil),
+                          let generation = workspace.uniConnectSurfaceGeneration(panelId: panelID) else { continue }
+                    targets.append(.init(owner: .init(
+                        workspaceID: workspace.id, panelID: panelID, binding: binding,
+                        surfaceGeneration: generation
+                    ), record: record))
+                }
+            }
+        }
+        guard !targets.isEmpty else { return }
+        let task = Task { @MainActor [weak self, workspaces, targets] in
+            let observations = await inspector.runtimeObservations(for: targets)
+            guard let self, !Task.isCancelled else { return }
+            for observation in observations {
+                let target = observation.target, owner = target.owner
+                guard let workspace = workspaces[owner.workspaceID],
+                      self.workspace(for: owner.workspaceID) === workspace,
+                      workspace.uniConnectProfile?.kind == .local, workspace.remoteConfiguration == nil,
+                      workspace.uniConnectLocalWindowsByPanelId[owner.panelID] == target.record,
+                      workspace.uniConnectSurfaceGeneration(panelId: owner.panelID) == owner.surfaceGeneration,
+                      let panel = workspace.panels[owner.panelID] as? TerminalPanel, !panel.isAgentHibernated,
+                      panel.surface.canAcceptPortalBinding(expectedSurfaceId: owner.panelID, expectedGeneration: nil) else {
+                    continue
+                }
+                switch observation.state {
+                case .agent(let conversationID):
+                    guard let snapshot = target.record.restorableSnapshot(
+                        for: conversationID, registry: CmuxVaultAgentRegistry(registrations: [])
+                    ) else { continue }
+                    _ = workspace.uniConnectRecordLocalAgent(panelId: owner.panelID, snapshot: snapshot)
+                case .shell:
+                    // A pending auto-resume may not have reached its pane yet.
+                    guard self.localAgentLaunchAttempts[.init(workspaceID: owner.workspaceID, panelID: owner.panelID)] == nil else { continue }
+                    _ = workspace.uniConnectTransitionLocalWindowToShell(panelId: owner.panelID)
+                }
+            }
+        }
+        localTmuxReconciliationTask = task
+        await task.value
+        localTmuxReconciliationTask = nil
+    }
+
+    private func scheduleLocalTmuxRuntimeReconciliation() {
+        Task { @MainActor [weak self] in await self?.reconcileLocalTmuxRuntime() }
     }
 
     /// Reuses the injected inspector before a durable pane's socket client is dispatched.
@@ -1669,6 +1732,15 @@ final class UniConnectCoordinator: ObservableObject {
             return
         }
         guard signal.kind == .shellActivityChanged else { return }
+        if signal.shellActivity == Workspace.PanelShellActivityState.promptIdle.rawValue,
+           let currentWorkspace = workspace(for: owner.workspaceID),
+           currentWorkspace.uniConnectProfile?.kind == .local,
+           currentWorkspace.uniConnectLocalWindowsByPanelId[owner.panelID]?.tmuxBinding != nil,
+           signal.surfaceGeneration == currentWorkspace.uniConnectSurfaceGeneration(panelId: owner.panelID) {
+            // The outer attach shell is not proof that the durable pane's agent exited.
+            scheduleLocalTmuxRuntimeReconciliation()
+            return
+        }
         guard let currentWorkspace = workspace(for: owner.workspaceID),
               let signalGeneration = signal.surfaceGeneration,
               signalGeneration == currentWorkspace.uniConnectSurfaceGeneration(panelId: owner.panelID),
@@ -1742,6 +1814,10 @@ final class UniConnectCoordinator: ObservableObject {
                     continue
                 }
                 let owner = LocalAgentOwner(workspaceID: workspace.id, panelID: panelID)
+                if workspace.uniConnectProfile?.kind == .local,
+                   workspace.uniConnectLocalWindowsByPanelId[panelID]?.tmuxBinding != nil {
+                    scheduleLocalTmuxRuntimeReconciliation()
+                }
                 guard let attempt = localAgentLaunchAttempts[owner] else { return }
                 handleLocalAgentDelivery(attempt, delivered: true, workspace: workspace)
                 return

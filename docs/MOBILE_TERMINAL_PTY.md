@@ -6,6 +6,40 @@ host implementa este modo; anunciarlo no garantiza que una ventana tenga tmux.
 La implementación Linux usa sus adaptadores nativos de PTY/OpenSSH; no implica
 que ese código Python sea una implementación ejecutable compartida con Mac.
 
+macOS implementa el mismo protocolo con `MobilePTYProcess` (PTY Darwin),
+`MobileTmuxTargetResolver` (identidades guardadas) y un controlador por conexión.
+El comando local pasa por un descriptor privado; no se registra ni se escribe en
+disco. Las credenciales SSH permanecen en el host. Ambas plataformas usan una
+sesión auxiliar de presentación enlazada a los procesos originales, no otra IA.
+
+En Mac, el ACK de attach acredita que se lanzó el cliente, no que una conexión
+SSH haya terminado de autenticarse. Un fallo posterior del comando termina el
+flujo con `exit:true`, `exit_code` y `error`; no se cambia de destino. El cliente
+debe observar ese cierre. La cola PTY Mac conserva hasta 64 fragmentos de 64 KiB;
+si se desborda se cierra explícitamente, sin continuar con bytes omitidos.
+
+## Cerrar la app no es reiniciar el equipo
+
+Cerrar UniConnect sólo desconecta clientes: el servidor tmux y las IA existentes
+siguen vivos. Reiniciar el equipo sí destruye esos procesos. En macOS, la
+restauración reconstruye los modelos con sus UUID, socket y nombre tmux guardados;
+las pestañas locales ocultas también se encolan para arrancar sin seleccionarlas.
+`new-session -A` reanuda la conversación guardada únicamente al crear una sesión
+ausente, respetando la preferencia de autorreanudar y la disponibilidad del cwd.
+
+El estado «IA activa» de un pane local se reconcilia antes del guardado asíncrono
+con su proceso real, propietario y UUID conocido; un hook con PID antiguo o el
+prompt del shell exterior no acreditan que esa IA terminó. La recuperación
+adicional implementada reconoce Claude con UUID explícito en argv. Si falta
+evidencia, conserva el registro: no inventa una sesión ni relanza otra IA.
+No se recuperan los PID ni la memoria del proceso anterior. Las pruebas de
+recreación aislada no equivalen a haber reiniciado el Mac de producción.
+
+El arranque en frío Linux requiere su propia validación y no queda acreditado
+por el adaptador Mac. Tampoco el protocolo PTY corrige por sí solo la selección,
+los menús o los enlaces del escritorio; su operativa debe seguir siendo la de
+UniConnect, no exigir gestos adicionales de tmux.
+
 ## Conexión e identidad
 
 Se usa la conexión enmarcada y aprobada de Tailscale existente. Android no recibe

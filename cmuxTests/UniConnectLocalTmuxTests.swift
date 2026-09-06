@@ -226,6 +226,85 @@ struct UniConnectLocalTmuxTests {
         #expect(await inspector.verifiedOwner(of: peer, among: [owner]) == nil)
     }
 
+    @Test("Current native argv repairs stale hook state only for the exact known pane conversation", arguments: [
+        "matching", "differentUUID", "differentCWD", "foreignScope", "recycledPID", "changedArgv",
+        "missingArgv", "ambiguousAgents", "ambiguousUUID", "afterTerminator", "shell", "shellWithChildren", "missingTmux", "replacedPane",
+    ])
+    func reconcilesKnownLiveRuntimeWithoutHookPID(_ scenario: String) async throws {
+        let workspace = UUID(), panel = UUID(), generation = UUID(), sessionID = UUID()
+        let binding = try #require(UniConnectLocalTmuxBinding(name: "owned", socketName: "test-local"))
+        var record = UniConnectLocalWindowRecord(id: panel, boxRoot: "/tmp", tmuxBinding: binding)
+        _ = record.record(.init(kind: .claude, sessionId: sessionID.uuidString, workingDirectory: "/tmp"))
+        _ = record.transitionToShell() // Reproduces a stale hook PID after an app-only restart.
+        let conversationID = try #require(record.latestConversationID)
+        let target = UniConnectLocalTmuxRuntimeObservation.Target(owner: .init(
+            workspaceID: workspace, panelID: panel, binding: binding, surfaceGeneration: UUID()
+        ), record: record)
+        let shell = scenario == "shell" || scenario == "shellWithChildren"
+        let environment = ["CMUX_WORKSPACE_ID": workspace.uuidString, "CMUX_SURFACE_ID": panel.uuidString,
+                           "UNICONNECT_SURFACE_GENERATION": generation.uuidString]
+        var peerEnvironment = environment
+        if scenario == "foreignScope" { peerEnvironment["CMUX_SURFACE_ID"] = UUID().uuidString }
+        let argv = ["claude"] + (scenario == "afterTerminator" ? ["--"] : [])
+            + ["--resume", scenario == "differentUUID" ? UUID().uuidString : sessionID.uuidString]
+            + (scenario == "ambiguousUUID" ? ["--session-id", UUID().uuidString] : [])
+        let peerArguments = CmuxTopProcessArguments(arguments: argv, environment: peerEnvironment)
+        let rootArguments = CmuxTopProcessArguments(arguments: ["-zsh"], environment: environment)
+        let changedArguments = CmuxTopProcessArguments(arguments: ["claude", "--resume", UUID().uuidString], environment: environment)
+        let argumentReads = InspectionReadSequence([
+            123: [rootArguments],
+            234: scenario == "changedArgv" ? [peerArguments, changedArguments] : [peerArguments],
+            235: [peerArguments],
+        ])
+        let root = UniConnectLocalTmuxProcessIdentity(pid: 123, parentPID: 1, userID: 501, startSeconds: 10, startMicroseconds: 1)
+        let peer = UniConnectLocalTmuxProcessIdentity(pid: 234, parentPID: 123, userID: 501, startSeconds: 20, startMicroseconds: 1)
+        let other = UniConnectLocalTmuxProcessIdentity(pid: 235, parentPID: 123, userID: 501, startSeconds: 21, startMicroseconds: 1)
+        let recycled = UniConnectLocalTmuxProcessIdentity(pid: 234, parentPID: 123, userID: 501, startSeconds: 99, startMicroseconds: 1)
+        let identities = InspectionReadSequence([
+            123: [root], 234: scenario == "recycledPID" ? [peer, peer, recycled] : [peer], 235: [other],
+        ])
+        let processes = [runtimeProcess(pid: 123, parentPID: 1, workspace: workspace, panel: panel, foreground: shell)]
+            + (shell ? [] : [runtimeProcess(pid: 234, parentPID: 123, workspace: workspace, panel: panel, foreground: true)])
+            + (scenario == "ambiguousAgents" ? [runtimeProcess(pid: 235, parentPID: 123, workspace: workspace, panel: panel, foreground: true)] : [])
+        let snapshot = CmuxTopProcessSnapshot(processes: processes, sampledAt: Date(), includesProcessDetails: true)
+        let cwd = scenario == "differentCWD" ? "/different" : "/tmp"
+        let runtime = "owned\t%2\t123\t0\t\(cwd)\t\(shell ? "zsh" : "claude.exe")\n"
+        let owner = "$1\t%2\t123\t0\towned\n"
+        let commands = InspectionCommands(outputs: scenario == "missingTmux" ? [] : [
+            runtime, owner, scenario == "replacedPane" ? "$1\t%3\t123\t0\towned\n" : owner, runtime,
+        ])
+        let inspector = UniConnectLocalTmuxService(
+            commands: commands,
+            processEnvironment: { _ in environment },
+            processIdentity: { identities.read($0) },
+            isProcessDescendant: { ($0 == 234 || $0 == 235) && $1 == 123 },
+            processSnapshot: { snapshot },
+            processArguments: { pid in scenario == "missingArgv" && pid == 234 ? nil : argumentReads.read(pid) },
+            isForegroundWithoutChildren: { $0 == 123 && scenario == "shell" }
+        )
+        let observations = await inspector.runtimeObservations(for: [target])
+        switch scenario {
+        case "matching":
+            #expect(observations.map(\.state) == [.agent(conversationID: conversationID)])
+            #expect(observations.first?.target.record.runtimeState == .shell)
+        case "shell":
+            #expect(observations.map(\.state) == [.shell])
+        default:
+            #expect(observations.isEmpty)
+        }
+        #expect(await commands.targets().allSatisfy { $0 == "=owned:" })
+        #expect(await commands.usesOnlyExistingServers())
+    }
+
+    private func runtimeProcess(pid: Int, parentPID: Int, workspace: UUID, panel: UUID, foreground: Bool) -> CmuxTopProcessInfo {
+        CmuxTopProcessInfo(
+            pid: pid, parentPID: parentPID, name: pid == 123 ? "zsh" : "claude.exe", path: nil,
+            ttyDevice: 1, cmuxWorkspaceID: workspace, cmuxSurfaceID: panel, cmuxAttributionReason: "environment",
+            processGroupID: foreground ? 234 : 123, terminalProcessGroupID: 234,
+            cpuPercent: 0, residentBytes: 0, virtualBytes: 0, threadCount: 1
+        )
+    }
+
     private final class InspectionReadSequence<Value: Sendable>: @unchecked Sendable {
         private let lock = NSLock()
         private var values: [Int: [Value]]
@@ -253,6 +332,7 @@ struct UniConnectLocalTmuxTests {
         func targets() -> [String] {
             requests.compactMap { args in args.firstIndex(of: "-t").map { args[$0 + 1] } }
         }
+        func usesOnlyExistingServers() -> Bool { requests.allSatisfy { $0.first == "-N" } }
     }
 
     private struct Fixture {
