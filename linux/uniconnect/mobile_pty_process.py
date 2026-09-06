@@ -80,6 +80,7 @@ class MobilePTYProcess:
                      "-n", "uc-placeholder", "/bin/sleep", "60"],
                     ["set-option", "-t", auxiliary, "destroy-unattached", "on"],
                     ["set-option", "-t", auxiliary, "detach-on-destroy", "on"],
+                    ["set-option", "-t", auxiliary, "mouse", "on"],
                     ["link-window", "-k", "-s", "#{window_id}", "-t", "=" + auxiliary + ":uc-placeholder"],
                     ["select-window", "-t", "=" + auxiliary + ":." + pane],
                     ["select-pane", "-t", "=" + auxiliary + ":." + pane],

@@ -100,6 +100,10 @@ clientes propios y su referencia auxiliar, nunca la sesión original, sus panes 
 
 El cliente tmux usa `ignore-size,active-pane`, no `window-size largest`, y no
 modifica mouse, opciones compartidas ni entorno de la sesión original (`-E`).
+Mac y Linux activan `mouse on` únicamente en la auxiliar móvil que crea cada
+attach, para que reciba los eventos de rueda SGR del cliente. No cambian la
+opción global ni la de las sesiones existentes. La aplicación dentro del pane
+y los bindings de tmux siguen determinando cómo se trata esa rueda.
 Con un cliente de escritorio conectado, el tamaño del móvil afecta a su PTY,
 no al cálculo del tamaño del escritorio. Si no queda ningún cliente de escritorio,
 tmux puede usar el tamaño del móvil: no se bloquean esas sesiones guardadas.
@@ -110,8 +114,8 @@ No se cambia la ventana seleccionada del escritorio para alcanzar un pane
 oculto: se selecciona sólo en la auxiliar. La sesión auxiliar y `active-pane`
 aíslan las selecciones del PC. Después de conectar es un cliente tmux real:
 si se elimina un pane por fuera de UniConnect, tmux puede seleccionar otro;
-no se garantiza fijación perpetua a un pane eliminado. La rueda depende de los modos de ratón anunciados por tmux;
-se conserva su configuración. El modo copia pertenece a tmux, no al historial
+no se garantiza fijación perpetua a un pane eliminado. Se conserva la configuración
+de ratón del destino original. El modo copia pertenece a tmux, no al historial
 local del emulador ni a una nueva instancia del programa.
 
 El adaptador de escritorio Linux conserva la selección al copiar con tmux
