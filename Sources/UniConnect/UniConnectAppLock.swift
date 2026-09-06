@@ -63,6 +63,8 @@ final class UniConnectAppLock: ObservableObject {
     private var lockWindows: [NSWindow] = []
     private var isLaunchGate = false
     private var idleTimer: Timer?
+    /// The executable composition root disconnects private remote clients on lock.
+    var onLock: (@MainActor () -> Void)?
 
     /// Minutes of user inactivity (no keyboard/mouse events anywhere) before UniConnect locks
     /// itself. 0 disables the timer. Stored in UserDefaults `uniconnect.autoLockMinutes`.
@@ -139,6 +141,7 @@ final class UniConnectAppLock: ObservableObject {
     func lock(reason: String = "manual") {
         guard !isLocked else { return }
         isLocked = true
+        onLock?()
         lastError = nil
         // Keep terminal content out of screen recordings / captures while locked.
         for window in NSApp.windows where !(window is UniConnectLockWindow) {

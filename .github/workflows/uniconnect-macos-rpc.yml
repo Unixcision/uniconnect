@@ -6,6 +6,9 @@ on:
     paths:
       - Sources/TerminalController.swift
       - Sources/Workspace.swift
+      - Sources/Mobile/**
+      - cmuxTests/MobilePTYProcessTests.swift
+      - cmuxTests/MobileTmux*Tests.swift
       - Sources/UniConnect/**
       - cmuxTests/MobileWorkspaceListFidelityTests.swift
       - cmuxTests/UniConnectLocalTmuxSocketAccessTests.swift
@@ -89,6 +92,12 @@ jobs:
             -destination 'platform=macOS' \
             -jobs 2 -parallel-testing-enabled NO \
             -only-testing:cmuxTests/MobileWorkspaceListFidelityTests \
+            -only-testing:cmuxTests/MobilePTYProcessTests \
+            -only-testing:cmuxTests/MobileTmuxAttachPlanTests \
+            -only-testing:cmuxTests/MobileTmuxTargetResolverTests \
+            -only-testing:cmuxTests/MobileTmuxAttachmentControllerTests \
+            -only-testing:cmuxTests/MobileTmuxPTYIntegrationTests \
+            -only-testing:cmuxTests/UniConnectLocalTmuxRestorePrimeTests \
             -resultBundlePath "$RUNNER_TEMP/uniconnect-mobile-rpc.xcresult" \
             CMUX_SKIP_ZIG_BUILD=1 \
             test 2>&1 | tee "$RUNNER_TEMP/uniconnect-mobile-rpc.log"

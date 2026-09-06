@@ -2,6 +2,182 @@
   "sourceLanguage": "es",
   "version": "1.0",
   "strings": {
+    "uniconnect.mobile.tmux.locked": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desbloquea UniConnect para acceder a esta terminal."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.tmux.targetUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La terminal solicitada ya no está disponible."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.tmux.legacyTerminal": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta terminal no tiene una sesión tmux compartida. Crea una terminal nueva para acceder desde el móvil."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.tmux.invalidSSHCredential": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La conexión SSH guardada no tiene un destino válido. Revisa sus credenciales en UniConnect."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.tmux.targetChanged": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La terminal o sus credenciales han cambiado. Vuelve a conectarte desde el móvil."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.tmux.missing": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux no está disponible en el equipo de esta terminal."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.tmux.unsupportedVersion": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta versión de tmux no permite garantizar una conexión móvil independiente. Se requiere una versión estable entre 3.2 y 3.7."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.tmux.sessionMissing": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La sesión tmux guardada ya no existe. No se ha creado otra terminal ni reiniciado ninguna IA."
+          }
+        }
+      }
+    },
+    "mobile.tmux.subscriptionRequired": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suscríbete a los eventos de terminal antes de conectar."
+          }
+        }
+      }
+    },
+    "mobile.tmux.attachmentLimit": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta conexión ya tiene cuatro terminales adjuntas."
+          }
+        }
+      }
+    },
+    "mobile.tmux.unknownMethod": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La operación de terminal no está disponible."
+          }
+        }
+      }
+    },
+    "mobile.tmux.attachFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo conectar con la sesión de terminal existente."
+          }
+        }
+      }
+    },
+    "mobile.tmux.invalidParams": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los identificadores, dimensiones o datos de terminal no son válidos."
+          }
+        }
+      }
+    },
+    "mobile.tmux.attachmentNotFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La terminal adjunta ya no está disponible en esta conexión."
+          }
+        }
+      }
+    },
+    "mobile.tmux.ioFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La conexión con la terminal se ha cerrado."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.tmux.unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La terminal tmux móvil no está disponible en este equipo."
+          }
+        }
+      }
+    },
     "uniconnect.shared.id.nativo.pendiente.de.la.se.al.del.agente": {
       "extractionState": "manual",
       "localizations": {

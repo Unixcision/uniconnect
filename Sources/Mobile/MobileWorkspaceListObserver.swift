@@ -104,6 +104,7 @@ final class MobileWorkspaceListObserver {
 
     private func emitIfNeeded(force: Bool) {
         guard let tabManager else { return }
+        MobileHostService.shared.revalidateTmuxAttachments()
         let hash = Self.summaryHash(for: tabManager.tabs, selectedTabID: tabManager.selectedTabId)
         if !force, hash == lastSummaryHash {
             #if DEBUG

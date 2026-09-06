@@ -314,6 +314,7 @@ final class MobileHostService {
             "terminal.render_grid.v1",
             "terminal.replay.v1",
             "terminal.viewport.v1",
+            "terminal.pty.v1",
             "workspace.actions.v1",
             "notifications.v1",
         ]
@@ -350,6 +351,27 @@ final class MobileHostService {
     #endif
 
     private init() {}
+
+    private var tmuxResolver: (@Sendable (UUID, UUID) async throws -> MobileTmuxAttachPlan)?
+
+    /// The app composition root supplies the authoritative, read-only destination resolver.
+    func configureTmux(resolve: @escaping @Sendable (UUID, UUID) async throws -> MobileTmuxAttachPlan) {
+        tmuxResolver = resolve
+    }
+
+    /// A model change invalidates attachments independently of mobile list hash deduplication.
+    func revalidateTmuxAttachments() {
+        for connection in MobileHostConnectionRegistry.shared.snapshot() {
+            Task { await connection.revalidateTmuxAttachments() }
+        }
+    }
+
+    /// Locking the desktop ends mobile clients, never the underlying tmux sessions.
+    func closeTmuxAttachments() {
+        for connection in MobileHostConnectionRegistry.shared.snapshot() {
+            Task { await connection.closeTmuxAttachments() }
+        }
+    }
 
     /// The composition root injects local, device/IP approvals before startup.
     /// Account auth and fields in RPC JSON never authorize this transport.
@@ -986,9 +1008,14 @@ final class MobileHostService {
             }
 
             let id = UUID()
+            let tmuxResolver = await MobileHostService.shared.tmuxResolver
+            let tmux = tmuxResolver.map { resolve in
+                MobileTmuxAttachmentController(resolve: resolve, makeProcess: { MobilePTYProcess() })
+            }
             let session = MobileHostConnection(
                 id: id,
                 connection: connection,
+                tmux: tmux,
                 authorizeRequest: { request in
                     await MobileHostService.shared.authorizationError(
                         for: request, trustedPeerAddress: peerAddress
@@ -1813,10 +1840,12 @@ actor MobileHostConnection {
     private let onAuthorizedRequest: @Sendable (MobileHostRPCRequest) async -> Void
     private let handleRequest: @Sendable (MobileHostRPCRequest) async -> MobileHostRPCResult
     private let onClose: @Sendable (UUID) async -> Void
+    private let tmux: MobileTmuxAttachmentController?
     private var receiveBuffer = Data()
     private var firstFrameTimeoutTask: Task<Void, Never>?
     private var idleTimeoutTask: Task<Void, Never>?
     private var responseTasks: [UUID: Task<Void, Never>] = [:]
+    private var orderedTmuxResponse: Task<Void, Never>?
     private var responseFrameByteCounts: [UUID: Int] = [:]
     private var inFlightRequestBytes = 0
     private nonisolated let outboundQueue = MobileHostOutboundQueue()
@@ -1829,6 +1858,7 @@ actor MobileHostConnection {
     init(
         id: UUID,
         connection: NWConnection,
+        tmux: MobileTmuxAttachmentController? = nil,
         firstFrameTimeoutNanoseconds: UInt64 = MobileHostConnection.defaultFirstFrameTimeoutNanoseconds,
         idleTimeoutNanoseconds: UInt64 = MobileHostConnection.defaultIdleTimeoutNanoseconds,
         authorizeRequest: @escaping @Sendable (MobileHostRPCRequest) async -> MobileHostRPCResult?,
@@ -1838,6 +1868,7 @@ actor MobileHostConnection {
     ) {
         self.id = id
         self.connection = connection
+        self.tmux = tmux
         self.callbackQueue = DispatchQueue(label: "com.unixcision.uniconnect.mobile.host-connection.\(id.uuidString)")
         self.firstFrameTimeoutNanoseconds = firstFrameTimeoutNanoseconds
         self.idleTimeoutNanoseconds = idleTimeoutNanoseconds
@@ -1862,6 +1893,7 @@ actor MobileHostConnection {
             return
         }
         isClosed = true
+        if let tmux { Task { await tmux.closeAll() } }
         outboundQueue.close()
         firstFrameTimeoutTask?.cancel()
         firstFrameTimeoutTask = nil
@@ -1869,6 +1901,7 @@ actor MobileHostConnection {
         idleTimeoutTask = nil
         let tasks = responseTasks.values
         responseTasks.removeAll()
+        orderedTmuxResponse = nil
         responseFrameByteCounts.removeAll()
         inFlightRequestBytes = 0
         for task in tasks {
@@ -1982,10 +2015,27 @@ actor MobileHostConnection {
         let taskID = UUID()
         responseFrameByteCounts[taskID] = frame.count
         inFlightRequestBytes += frame.count
+        let ordersTmux: Bool
+        if case let .success(request) = MobileHostRPCEnvelope.decodeRequest(frame) {
+            ordersTmux = ["mobile.terminal.attach", "mobile.terminal.pty_input",
+                          "mobile.terminal.pty_resize", "mobile.terminal.detach",
+                          "mobile.events.subscribe", "mobile.events.unsubscribe"].contains(request.method)
+        } else {
+            ordersTmux = false
+        }
+        let previousTmuxResponse = ordersTmux ? orderedTmuxResponse : nil
         let task = Task { [weak self] in
+            // Preserve wire order across actor suspension in destination validation.
+            // The existing in-flight budget bounds this chain as well as ordinary RPCs.
+            await previousTmuxResponse?.value
+            guard !Task.isCancelled else {
+                await self?.finishResponseTask(taskID)
+                return
+            }
             await self?.respond(to: frame)
             await self?.finishResponseTask(taskID)
         }
+        if ordersTmux { orderedTmuxResponse = task }
         responseTasks[taskID] = task
     }
 
@@ -2068,7 +2118,8 @@ actor MobileHostConnection {
             guard !isClosed, !Task.isCancelled else {
                 return
             }
-            if let intercepted = handleSubscriptionRPC(request) {
+            if await handleTmuxRPC(request) { return }
+            if let intercepted = await handleSubscriptionRPC(request) {
                 _ = await sendResponse(MobileHostRPCEnvelope.encodeResponse(id: request.id, result: intercepted))
                 return
             }
@@ -2090,7 +2141,58 @@ actor MobileHostConnection {
         }
     }
 
-    private func handleSubscriptionRPC(_ request: MobileHostRPCRequest) -> MobileHostRPCResult? {
+    /// PTY state is owned by this authenticated connection, never a client-supplied ID.
+    private func handleTmuxRPC(_ request: MobileHostRPCRequest) async -> Bool {
+        guard ["mobile.terminal.attach", "mobile.terminal.pty_input",
+               "mobile.terminal.pty_resize", "mobile.terminal.detach"].contains(request.method) else {
+            return false
+        }
+        guard let tmux else {
+            _ = await sendResponse(MobileHostRPCEnvelope.encodeResponse(
+                id: request.id,
+                result: .failure(MobileHostRPCError(
+                    code: "not_supported",
+                    message: String(localized: "uniconnect.mobile.tmux.unavailable", defaultValue: "La terminal tmux móvil no está disponible en este equipo.")
+                ))
+            ))
+            return true
+        }
+        if request.method == "mobile.terminal.attach" {
+            let result = await tmux.prepareAttach(request, subscribed: isSubscribed(to: "terminal.pty"))
+            guard !isClosed, !Task.isCancelled else {
+                await tmux.closeAll()
+                return true
+            }
+            let acknowledged = await sendResponse(MobileHostRPCEnvelope.encodeResponse(id: request.id, result: result))
+            if acknowledged, !isClosed, !Task.isCancelled, isSubscribed(to: "terminal.pty"),
+               case let .ok(payload) = result,
+               let object = payload as? [String: Any],
+               let rawID = object["attach_id"] as? String, let attachID = UUID(uuidString: rawID) {
+                // No PTY event may precede the attach reply on the wire.
+                await tmux.activate(attachID: attachID) { [weak self] event in
+                    guard let self else { return false }
+                    return await self.sendEvent(topic: "terminal.pty", payload: event.jsonObject)
+                }
+            } else if !acknowledged || isClosed || Task.isCancelled || !isSubscribed(to: "terminal.pty") {
+                await tmux.closeAll()
+            }
+        } else {
+            let result = await tmux.handle(request)
+            guard !isClosed, !Task.isCancelled else { return true }
+            _ = await sendResponse(MobileHostRPCEnvelope.encodeResponse(id: request.id, result: result))
+        }
+        return true
+    }
+
+    func revalidateTmuxAttachments() async {
+        await tmux?.revalidateAll()
+    }
+
+    func closeTmuxAttachments() async {
+        await tmux?.closeAll()
+    }
+
+    private func handleSubscriptionRPC(_ request: MobileHostRPCRequest) async -> MobileHostRPCResult? {
         switch request.method {
         case "mobile.events.subscribe":
             let streamID = (request.params["stream_id"] as? String) ?? UUID().uuidString
@@ -2101,7 +2203,7 @@ actor MobileHostConnection {
                   subscriptions[streamID] != nil || subscriptions.count < 8 else {
                 return .failure(MobileHostRPCError(code: "invalid_params", message: "topics is required"))
             }
-            subscribe(streamID: streamID, topics: topics)
+            await subscribe(streamID: streamID, topics: topics)
             #if DEBUG
             cmuxDebugLog("mobile.subscribe streamID=\(streamID) topics=\(topics.sorted()) connID=\(self.id.uuidString)")
             #endif
@@ -2111,7 +2213,7 @@ actor MobileHostConnection {
             ])
         case "mobile.events.unsubscribe":
             let streamID = request.params["stream_id"] as? String ?? ""
-            let removed = unsubscribe(streamID: streamID)
+            let removed = await unsubscribe(streamID: streamID)
             return .ok([
                 "stream_id": streamID,
                 "removed": removed,
@@ -2131,7 +2233,8 @@ actor MobileHostConnection {
     }
 
     /// Add a subscription for this connection. Idempotent per stream_id.
-    func subscribe(streamID: String, topics: Set<String>) {
+    func subscribe(streamID: String, topics: Set<String>) async {
+        guard !isClosed else { return }
         let previousTopics = subscriptions[streamID]
         subscriptions[streamID] = topics
         MobileHostEventSubscriptionTracker.replace(
@@ -2140,11 +2243,14 @@ actor MobileHostConnection {
         )
         idleTimeoutTask?.cancel()
         idleTimeoutTask = nil
+        if !isSubscribed(to: "terminal.pty") {
+            await tmux?.closeAll()
+        }
     }
 
     /// Remove a subscription by id. Returns true if it existed.
     @discardableResult
-    func unsubscribe(streamID: String) -> Bool {
+    func unsubscribe(streamID: String) async -> Bool {
         let previousTopics = subscriptions.removeValue(forKey: streamID)
         let removed = previousTopics != nil
         if let previousTopics {
@@ -2152,6 +2258,9 @@ actor MobileHostConnection {
         }
         if subscriptions.isEmpty {
             startIdleTimeout()
+        }
+        if !isSubscribed(to: "terminal.pty") {
+            await tmux?.closeAll()
         }
         return removed
     }

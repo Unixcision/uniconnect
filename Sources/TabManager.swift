@@ -9961,6 +9961,11 @@ extension TabManager {
         selectedTabId = newSelectedId
         let existingIds = Set(newTabs.map(\.id))
         pruneBackgroundWorkspaceLoads(existingIds: existingIds)
+        for workspace in newTabs where workspace.hasDurableLocalTmuxSurfaceStartWork() {
+            // Publish the complete restored graph before its existing background
+            // coordinator starts local tmux clients, including hidden pane tabs.
+            requestBackgroundWorkspaceLoad(for: workspace.id)
+        }
         sidebarSelectedWorkspaceIds.formIntersection(existingIds)
         for workspace in previousTabs {
             releaseRestoredAwayWorkspace(workspace)

@@ -12749,9 +12749,44 @@ final class Workspace: Identifiable, ObservableObject {
     }
     private var backgroundPrimeTerminalPanels: [TerminalPanel] {
         var seenPanelIds = Set<UUID>()
-        return bonsplitController.allPaneIds.compactMap { paneId -> TerminalPanel? in
+        let selectedPanels = bonsplitController.allPaneIds.compactMap { paneId -> TerminalPanel? in
             guard let tabId = bonsplitController.selectedTab(inPane: paneId)?.id ?? bonsplitController.tabs(inPane: paneId).first?.id, let panelId = panelIdFromSurfaceId(tabId), seenPanelIds.insert(panelId).inserted else { return nil }
             return panels[panelId] as? TerminalPanel
+        }
+        // A reboot removes the local tmux server. Hidden durable windows must run
+        // their already-prepared restore command as well as the selected pane tab.
+        let durablePanels = durableLocalTmuxPanelsForBackgroundStart
+        let runnableSelectedPanels = uniConnectProfile?.kind == .local
+            ? selectedPanels.filter {
+                !$0.isAgentHibernated && $0.surface.canAcceptPortalBinding(expectedSurfaceId: $0.id, expectedGeneration: nil)
+            }
+            : selectedPanels
+        return runnableSelectedPanels + durablePanels.filter {
+            seenPanelIds.insert($0.id).inserted
+        }
+    }
+
+    private var durableLocalTmuxPanelsForBackgroundStart: [TerminalPanel] {
+        guard uniConnectProfile?.kind == .local, remoteConfiguration == nil else { return [] }
+        return orderedPanelIds.compactMap { panelID in
+            guard uniConnectLocalWindowsByPanelId[panelID]?.tmuxBinding != nil,
+                  let panel = panels[panelID] as? TerminalPanel,
+                  !panel.isAgentHibernated,
+                  panel.surface.canAcceptPortalBinding(expectedSurfaceId: panelID, expectedGeneration: nil) else {
+                return nil
+            }
+            return panel
+        }
+    }
+
+    /// The ordered runtime candidates used by the shared background-start coordinator.
+    var backgroundPrimeTerminalPanelIDs: [UUID] {
+        backgroundPrimeTerminalPanels.map(\.id)
+    }
+
+    func hasDurableLocalTmuxSurfaceStartWork() -> Bool {
+        durableLocalTmuxPanelsForBackgroundStart.contains {
+            $0.surface.surface == nil && hasBackgroundSurfaceStartWork(for: $0)
         }
     }
 
@@ -12773,6 +12808,13 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     func requestBackgroundPrimeTerminalSurfaceStartIfNeeded() {
+        if !durableLocalTmuxPanelsForBackgroundStart.isEmpty {
+            // The coordinator advances on surface readiness. Keep restored local
+            // tmux launches sequential even when a box contains many hidden tabs.
+            backgroundPrimeTerminalPanelsNeedingSurfaceStart.first?
+                .surface.requestBackgroundSurfaceStartIfNeeded()
+            return
+        }
         backgroundPrimeTerminalPanelsNeedingSurfaceStart.forEach {
             $0.surface.requestBackgroundSurfaceStartIfNeeded()
         }
