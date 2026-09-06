@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloseFullscreen
+import androidx.compose.material.icons.rounded.KeyboardDoubleArrowDown
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.LinkOff
 import androidx.compose.material.icons.rounded.OpenInFull
@@ -37,6 +38,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -112,18 +117,32 @@ private fun RealTerminalScreen(
     // The desktop window is often far shorter than the phone is tall, so reading it at the fitted
     // size wastes most of the screen. Zoom is the reader's, and never resizes the shared window.
     var zoom by rememberSaveable { mutableStateOf(1f) }
-    // Same three readings as the mirror: fitted whole screen, wrapped lines, or true geometry.
-    var viewMode by rememberSaveable { mutableStateOf(ViewMode.FIT) }
+    // Same three readings as the mirror, but this one opens wrapped: a desktop window is a wide
+    // rectangle and fitting it to the phone's width leaves most of a tall screen empty, while
+    // wrapping fills it at a readable size without resizing the window the desktop shares.
+    var viewMode by rememberSaveable { mutableStateOf(ViewMode.WRAP) }
     val modifiers = TerminalModifiers(ctrl = ctrl != ModifierState.OFF, alt = alt != ModifierState.OFF)
     val consumeModifiers = {
         if (ctrl == ModifierState.ARMED) ctrl = ModifierState.OFF
         if (alt == ModifierState.ARMED) alt = ModifierState.OFF
     }
     val ready = real.snapshot != null && !real.ended && real.error == null
+    // tmux draws "[position/total]" in the top-right corner of a pane that is in copy mode, which
+    // is also what a selection leaves behind. Reading it back is how the phone knows to offer a
+    // way out: a pane left in that state ignores typing, and Dani kept arriving to a dead window.
+    val copyMode = real.snapshot?.let { snapshot ->
+        snapshot.spans.any { it.row == 0 && COPY_MODE_INDICATOR.containsMatchIn(it.text) }
+    } == true
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             StatusPill(stringResource(R.string.real_terminal_pill), if (ready) PillTone.Busy else PillTone.Idle)
             Spacer(Modifier.weight(1f))
+            // One tap out of copy mode: `q` is what cancels it in both of tmux's key tables, and
+            // it is only ever sent while the indicator says the pane is in that mode, so it can
+            // never reach the program running inside as a stray keystroke.
+            if (copyMode) IconButton(onClick = { onPty("q", false) }) {
+                Icon(Icons.Rounded.KeyboardDoubleArrowDown, stringResource(R.string.terminal_leave_copy_mode), tint = Brand.Amber)
+            }
             if (real.snapshot != null) IconButton(onClick = { viewMode = viewMode.next; zoom = 1f }) {
                 Icon(
                     when (viewMode) { ViewMode.FIT -> Icons.Rounded.ZoomIn; ViewMode.WRAP -> Icons.Rounded.OpenInFull; ViewMode.PAN -> Icons.Rounded.ZoomOutMap },
@@ -179,6 +198,25 @@ private fun RealTerminalScreen(
                         } while (event.changes.any { it.pressed })
                     }
                 }
+                // Where a local canvas ends, the session begins: a drag past the top of the
+                // wrapped or panned canvas becomes wheel steps, which is how tmux is asked for
+                // its scrollback. Without this the zoomed readings could only show the last
+                // screenful, and history was reachable from the fitted reading alone.
+                val reachHistory = remember(metrics.lineHeight) {
+                    object : NestedScrollConnection {
+                        private var accumulated = 0f
+                        override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                            if (available.y == 0f) return Offset.Zero
+                            accumulated += available.y
+                            val lines = (accumulated / metrics.lineHeight).toInt()
+                            if (lines != 0) {
+                                accumulated -= lines * metrics.lineHeight
+                                wheel(lines > 0, kotlin.math.abs(lines))
+                            }
+                            return Offset(0f, available.y)
+                        }
+                    }
+                }
                 when (viewMode) {
                     // Fitted: one finger scrolls tmux itself, which is what makes this the session
                     // and not a picture of it.
@@ -205,19 +243,25 @@ private fun RealTerminalScreen(
                         },
                         contentAlignment = Alignment.Center,
                     ) { TerminalGrid(snapshot, metrics) }
-                    // Readable size, long rows folded at the phone's width, local vertical scroll.
+                    // Readable size, long rows folded at the phone's width, local vertical scroll
+                    // that continues into tmux's own history once it reaches its end.
                     ViewMode.WRAP -> {
                         val wrapColumns = ((viewport.width - 16f) / metrics.cellWidth).toInt().coerceAtLeast(8)
-                        Box(Modifier.fillMaxSize().then(pinch)) {
-                            Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                        val wrapScroll = rememberPinnedScrollState(snapshot, metrics.lineHeight)
+                        Box(Modifier.fillMaxSize().then(pinch).nestedScroll(reachHistory)) {
+                            Box(Modifier.fillMaxSize().verticalScroll(wrapScroll)) {
                                 TerminalGrid(snapshot, metrics, wrapColumns.takeIf { it < snapshot.columns })
                             }
                         }
                     }
-                    // True geometry: nothing folded, the reader pans in both directions.
-                    ViewMode.PAN -> Box(Modifier.fillMaxSize().then(pinch)) {
-                        Box(Modifier.fillMaxSize().horizontalScroll(rememberScrollState()).verticalScroll(rememberScrollState())) {
-                            TerminalGrid(snapshot, metrics)
+                    // True geometry: nothing folded, the reader pans in both directions, and the
+                    // vertical end of the canvas hands the drag over to tmux as well.
+                    ViewMode.PAN -> {
+                        val panScroll = rememberPinnedScrollState(snapshot, metrics.lineHeight)
+                        Box(Modifier.fillMaxSize().then(pinch).nestedScroll(reachHistory)) {
+                            Box(Modifier.fillMaxSize().horizontalScroll(rememberScrollState()).verticalScroll(panScroll)) {
+                                TerminalGrid(snapshot, metrics)
+                            }
                         }
                     }
                 }
@@ -421,6 +465,9 @@ enum class ViewMode {
 }
 
 /** Reading geometry for this device. The desktop PTY keeps its own columns and rows. */
+/** tmux's copy-mode position indicator, e.g. `[1013/1013]`, drawn in the pane's top-right corner. */
+private val COPY_MODE_INDICATOR = Regex("\\[\\d+/\\d+]")
+
 /** Reader-controlled zoom bounds: below 0.6 the text stops being legible, above 5 it is huge. */
 private const val MIN_ZOOM = 0.6f
 private const val MAX_ZOOM = 5f
