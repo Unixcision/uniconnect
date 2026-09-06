@@ -138,8 +138,14 @@ private fun RealTerminalScreen(
             StatusPill(stringResource(R.string.real_terminal_pill), if (ready) PillTone.Busy else PillTone.Idle)
             Spacer(Modifier.weight(1f))
             // One tap out of copy mode: `q` is what cancels it in both of tmux's key tables, and
-            // it is only ever sent while the indicator says the pane is in that mode, so it can
-            // never reach the program running inside as a stray keystroke.
+            // it is only sent while the indicator says the pane is in that mode.
+            //
+            // That check narrows the window but does not close it: another client can leave copy
+            // mode between the frame this state was read from and the key arriving, and then the
+            // `q` lands in whatever is running inside. No Enter follows it, so the damage is one
+            // stray character in a prompt, never an executed command. Closing the race needs the
+            // host to cancel the resolved pane itself (send-keys -X cancel); when that RPC exists,
+            // this should call it instead of sending a key.
             if (copyMode) IconButton(onClick = { onPty("q", false) }) {
                 Icon(Icons.Rounded.KeyboardDoubleArrowDown, stringResource(R.string.terminal_leave_copy_mode), tint = Brand.Amber)
             }
