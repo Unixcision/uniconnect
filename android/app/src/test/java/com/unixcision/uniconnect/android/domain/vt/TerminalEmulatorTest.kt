@@ -2,7 +2,6 @@ package com.unixcision.uniconnect.android.domain.vt
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -76,7 +75,9 @@ class TerminalEmulatorTest {
         t.feed("main[?1049h")
         assertEquals("", t.row(0))
         t.feed("alt")
-        assertEquals("alt", t.row(0))
+        // 1049 switches buffers and clears, but leaves the cursor where it was, as xterm does:
+        // the program is expected to home it itself, so "alt" lands in column 4.
+        assertEquals("    alt", t.row(0))
         t.feed("[?1049l")
         assertEquals("main", t.row(0))
         assertEquals(0 to 4, t.cursor())
@@ -112,7 +113,10 @@ class TerminalEmulatorTest {
         assertEquals("[<64;3;2M", t.encodeWheel(up = true, column = 2, row = 1))
         assertEquals("[200~x[201~", t.encodePaste("x"))
         t.feed("[?1000l")
-        assertNull(t.encodeWheel(true, 0, 0))
+        assertFalse(t.mouseReporting)
+        // With the program no longer asking for mouse events the step is still produced, because
+        // the reader may be tmux, whose copy-mode scrolls on wheel events the program never sees.
+        assertEquals("[<64;1;1M", t.encodeWheel(up = true, column = 0, row = 0))
         t.feed("[2;3H[6n[c")
         assertEquals("[2;3R[?62;22c", t.drainResponses())
         assertEquals("", t.drainResponses())

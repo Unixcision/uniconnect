@@ -287,7 +287,16 @@ class VtScreen(columns: Int, rows: Int) {
                     if (line[c].width > 0) { text.append(line[c].text); cells += line[c].width }
                     c++
                 }
-                val blank = text.isBlank() && runStyle.background == null && !runStyle.inverse && !runStyle.underline && !runStyle.strikethrough && !runStyle.overline
+                val decorated = runStyle.background != null || runStyle.inverse || runStyle.underline || runStyle.strikethrough || runStyle.overline
+                // An undecorated run that reaches the end of the line carries only padding after its
+                // last glyph: dropping it keeps spans honest about what the terminal actually shows.
+                if (!decorated && c == columns) {
+                    val trimmed = text.toString().trimEnd(' ')
+                    cells -= text.length - trimmed.length
+                    text.setLength(0)
+                    text.append(trimmed)
+                }
+                val blank = text.isBlank() && !decorated
                 if (!blank && cells > 0) spans += TerminalSnapshot.Span(r, start, text.toString(), cells, runStyle)
             }
         }
