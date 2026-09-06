@@ -75,8 +75,10 @@ class TerminalSelection:
                        '"#{copy_cursor_x}") || exit 73; '
                        'case "$uc_selection_end" in ""|*[!0-9]*) exit 73;; esac; ')
         script += self._keys(pane, "start-of-line") + " || exit 73; "
-        condition = (f'#{{&&:#{{<:#{{copy_cursor_x}},{x}}},'
-                     '#{<:#{copy_cursor_x},$uc_selection_end}}')
+        # Plain tmux < compares strings ("2" >= "16"); use arithmetic
+        # comparisons so selections after the ninth column remain exact.
+        condition = (f'#{{&&:#{{e|<:#{{copy_cursor_x}},{x}}},'
+                     '#{e|<:#{copy_cursor_x},$uc_selection_end}}')
         step = (f'if-shell -F -t {pane["id"]} "{condition}" '
                 f'{shlex.quote(self._keys(pane, "cursor-right").removeprefix(self.binary + " "))}')
         # A fixed-size conditional batch bounds the entire SSH argument too,

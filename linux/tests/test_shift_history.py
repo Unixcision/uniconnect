@@ -139,6 +139,26 @@ class ShiftHistoryTests(window_fixture.MainWindowCopyTests):
         self.assertIn("ENTRADA:UC_HISTORY_TECLADO_OK", self.tmux("capture-pane", "-p", "-t", "=subject:"))
         self.assertEqual(self.errors, [])
 
+    def test_escape_during_held_drag_releases_pointer_and_keyboard_without_copy(self):
+        self.seed_history()
+        self.start_drag()
+        escape = self.x11.XKeysymToKeycode(self.display, 0xff1b)
+        self.xtst.XTestFakeKeyEvent(self.display, escape, True, 0)
+        self.xtst.XTestFakeKeyEvent(self.display, escape, False, 0)
+        self.x11.XSync(self.display, False)
+        self.wait_for(lambda: self.tmux("display-message", "-p", "-t", "=subject:",
+                                       "#{pane_in_mode}") == "0")
+        self.release_pointer()
+        self.assertFalse(self.surface.terminal.has_grab())
+        self.assertFalse(self.surface.selection_drag.pressed)
+        self.assertEqual(self.clipboard.wait_for_text(), "anterior")
+        self.surface.send("UC_ESCAPE_TECLADO_OK\n")
+        self.tmux("wait-for", "typed")
+        self.assertIn("ENTRADA:UC_ESCAPE_TECLADO_OK", self.tmux("capture-pane", "-p", "-t", "=subject:"))
+        self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:",
+                                   "#{pane_id}:#{pane_pid}"), self.before)
+        self.assertEqual(self.errors, [])
+
 
 def load_tests(loader, tests, pattern):
     # The parent fixture's tests already run in test_mainwindow_copy.py; do not
