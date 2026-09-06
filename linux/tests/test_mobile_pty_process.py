@@ -413,6 +413,20 @@ class MobilePTYTmuxTests(_PTYFixture):
         self.assertEqual(before, self.identities())
         self.assertEqual("1", self.tmux("display-message", "-p", "-t", self.first, "#{pane_in_mode}"))
 
+    def test_late_geometry_callback_is_silent_after_its_mobile_tty_closes(self):
+        mobile = self.mobile()
+        mobile.wait_ready()
+        auxiliary = next(name for name in self.sessions() if name.startswith("uc-mobile-"))
+        # Replay the callback actually installed in this private server, after
+        # its TTY is gone: deterministic version of resize racing with close.
+        hook = self.tmux("show-hooks", "-t", "=" + auxiliary + ":", "client-resized")
+        callback = shlex.split(hook)[-1]
+        mobile.close()
+        result = subprocess.run(["/bin/sh", "-c", callback], env=self.env, capture_output=True, timeout=3)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"", b""))
+        self.assertIsNone(self.desktop.poll())
+        self.assertEqual(["fixture"], self.sessions())
+
     def test_missing_targets_fail_and_other_window_attaches_without_selecting_desktop(self):
         other = self.tmux("new-window", "-d", "-t", "=fixture:", "-P", "-F", "#{pane_id}",
                           "/bin/bash", "--noprofile", "--norc")
