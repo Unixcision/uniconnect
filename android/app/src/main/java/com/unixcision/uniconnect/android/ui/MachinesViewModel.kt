@@ -22,6 +22,8 @@ import com.unixcision.uniconnect.android.domain.vt.TerminalEmulator
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -57,11 +59,54 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     init {
         viewModelScope.launch {
             repository.machines.catch { mutableState.update { it.copy(loading = false, error = R.string.load_error) } }
-                .collect { machines -> mutableState.update { it.copy(machines = machines, loading = false) }; openPendingNoticeMachine() }
+                .collect { machines ->
+                    mutableState.update { it.copy(machines = machines, loading = false) }
+                    openPendingNoticeMachine()
+                    if (state.value.selectedMachine == null) refreshMachineStates()
+                }
         }
         viewModelScope.launch { notificationControl.states.collect { links -> mutableState.update { it.copy(notificationLinks = links) } } }
         // The activity is in the foreground when this model is built, so re-arming the saved links is allowed.
         notificationControl.restore()
+    }
+
+    private var probeJob: Job? = null
+
+    /**
+     * Refreshes the machine list's real state. Each saved machine is asked once, in parallel,
+     * so the list shows connected/pending/offline instead of always "saved". Reading the tree
+     * never creates a terminal or changes anything on the desktop.
+     */
+    fun refreshMachineStates() {
+        // List screen only: a probe must never race the live connection of an open machine.
+        if (!foreground || state.value.selectedMachine != null || probeJob?.isActive == true) return
+        val machines = state.value.machines.filter { requests[it.id]?.isActive != true }
+        if (machines.isEmpty()) return
+        mutableState.update { current ->
+            current.copy(connections = current.connections + machines.associate { machine ->
+                machine.id to (current.connections[machine.id] ?: Connection()).copy(checking = true)
+            })
+        }
+        probeJob = viewModelScope.launch {
+            machines.map { machine ->
+                async {
+                    // A probe result is only ever applied while the list is still what the user sees.
+                    fun stale() = state.value.selectedMachine != null || requests[machine.id]?.isActive == true
+                    try {
+                        val snapshot = client.probe(machine)
+                        mutableState.update { if (stale()) it else it.copy(connections = it.connections + (machine.id to Connection(connected = true, snapshot = snapshot))) }
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (failure: Exception) {
+                        val code = (failure as? MachineFailure.Rejected)?.code
+                        val message = if (code == "approval_required") R.string.approval_required else R.string.connection_error
+                        mutableState.update { current ->
+                            if (stale()) current
+                            else current.copy(connections = current.connections + (machine.id to Connection(snapshot = current.connections[machine.id]?.snapshot, error = message)))
+                        }
+                    }
+                }
+            }.awaitAll()
+        }
     }
 
     fun showAdd() { mutableState.update { it.copy(adding = true, formError = null) } }
@@ -91,6 +136,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     }
     fun resumeLiveConnection() {
         foreground = true
+        if (state.value.selectedMachine == null) refreshMachineStates()
         val id = resumeMachineID ?: return
         resumeMachineID = null
         if (state.value.selectedMachine == id) state.value.machines.firstOrNull { it.id == id }?.let(::connect)
@@ -143,6 +189,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         }
     }
     fun selectMachine(id: String) {
+        probeJob?.cancel()
         stopObserving()
         mutableState.update { it.copy(selectedMachine = id, selectedWorkspace = null, selectedWindow = null, terminal = null) }
         if (state.value.connections[id]?.snapshot != null) state.value.machines.firstOrNull { it.id == id }?.let(::connect)
@@ -155,7 +202,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
             it.selectedWorkspace != null -> it.copy(selectedWorkspace = null)
             else -> it.copy(selectedMachine = null)
         }
-    }; state.value.selectedMachine?.let { id -> state.value.machines.firstOrNull { it.id == id }?.let { startObserving(it, force = true) } } ?: stopObserving() }
+    }; state.value.selectedMachine?.let { id -> state.value.machines.firstOrNull { it.id == id }?.let { startObserving(it, force = true) } } ?: run { stopObserving(); refreshMachineStates() } }
 
     fun saveMachine(name: String, address: String, port: String) {
         if (state.value.saving) return
@@ -403,11 +450,15 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     }
 
     /** Raw bytes to the attached client: keys, typed text, pasted text. */
-    fun sendPty(text: String) {
+    fun sendPty(text: String, withEnter: Boolean = false) {
         val live = attachment ?: return
         if (text.isEmpty()) return
         viewModelScope.launch {
-            try { live.send(text.toByteArray(Charsets.UTF_8)) }
+            try {
+                live.send(text.toByteArray(Charsets.UTF_8))
+                // Same rule as the mirror: Return is a keypress of its own, never the tail of a paste.
+                if (withEnter) { delay(ENTER_GAP_MILLIS); live.send("\r".toByteArray(Charsets.UTF_8)) }
+            }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { mutableState.update { it.copy(error = R.string.input_failed) } }
         }
@@ -430,7 +481,14 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
 
     override fun onCleared() { stopRealTerminal(); super.onCleared() }
 
-    fun sendInput(text: String, onDelivered: (Boolean) -> Unit) {
+    /**
+     * Sends composed text and, with [withEnter], the Return key as a **separate** write.
+     *
+     * TUIs such as Codex or Claude Code treat a burst that ends in CR as pasted text and insert a
+     * line break instead of submitting. A human's Return arrives on its own, so the key is written
+     * after the text is acknowledged, with a short gap that closes the paste on the other side.
+     */
+    fun sendInput(text: String, withEnter: Boolean = false, onDelivered: (Boolean) -> Unit) {
         val current = state.value
         if (text.isEmpty() || current.inputSending) return
         val machine = current.machines.firstOrNull { it.id == current.selectedMachine } ?: return
@@ -442,6 +500,11 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         viewModelScope.launch {
             try {
                 client.sendInput(machine, workspaceID, windowID, text)
+                if (withEnter) {
+                    // Bounded, intended gap: it is the pause that makes Return a keypress, not a paste.
+                    delay(ENTER_GAP_MILLIS)
+                    client.sendInput(machine, workspaceID, windowID, "\r")
+                }
                 mutableState.update { it.copy(inputSending = false) }
                 onDelivered(true)
             } catch (cancelled: CancellationException) { throw cancelled }
@@ -450,5 +513,10 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                 onDelivered(false)
             }
         }
+    }
+
+    private companion object {
+        /** Long enough for a TUI to close its paste window, short enough to feel immediate. */
+        const val ENTER_GAP_MILLIS = 80L
     }
 }

@@ -152,6 +152,14 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
         require(result.getString("surface_id").equals(windowID, ignoreCase = true))
     }
 
+    override suspend fun probe(machine: Machine): MachineSnapshot =
+        // A short deadline keeps the list responsive when a machine is off; no events, no streams.
+        transportDeadline(6_000) {
+            rpc.open(machine.endpoint).use { session ->
+                decodeMachine(machine, session.call("mobile.workspace.list", JSONObject()).value.getJSONObject("result"))
+            }
+        }
+
     override suspend fun attach(machine: Machine, workspaceID: String, windowID: String, columns: Int, rows: Int): TerminalAttachment =
         NativeTerminalAttachment.open(rpc.open(machine.endpoint), workspaceID, windowID, columns.coerceIn(1, 1000), rows.coerceIn(1, 1000))
 

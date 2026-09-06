@@ -39,13 +39,14 @@ fun TerminalComposer(
     modifiers: TerminalModifiers,
     keysVisible: Boolean,
     onToggleKeys: () -> Unit,
-    onSend: (String, (Boolean) -> Unit) -> Unit,
+    onSend: (String, Boolean, (Boolean) -> Unit) -> Unit,
 ) {
     var draft by rememberSaveable { mutableStateOf("") }
     val send: (String, Boolean) -> Unit = { submitted, withEnter ->
         if (enabled && !sending && submitted.isNotEmpty()) {
-            // One request owns text plus Enter. Never replay it after an uncertain delivery.
-            onSend(TerminalKeyEncoder.encodeText(submitted, modifiers) + if (withEnter) "\r" else "") { delivered ->
+            // The text and the Return key travel as separate writes; a single burst ending in CR
+            // is read as a paste by TUIs and only inserts a line break. Never replayed on failure.
+            onSend(TerminalKeyEncoder.encodeText(submitted, modifiers), withEnter) { delivered ->
                 if (delivered && draft == submitted) draft = ""
             }
         }

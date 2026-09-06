@@ -64,11 +64,11 @@ fun TerminalScreen(
     onRefresh: () -> Unit,
     onReconnect: () -> Unit,
     onScroll: (Int) -> Unit,
-    onSend: (String, (Boolean) -> Unit) -> Unit,
+    onSend: (String, Boolean, (Boolean) -> Unit) -> Unit,
     real: MachinesViewModel.RealTerminal? = null,
     onStartReal: (Int, Int) -> Unit = { _, _ -> },
     onStopReal: () -> Unit = {},
-    onPty: (String) -> Unit = {},
+    onPty: (String, Boolean) -> Unit = { _, _ -> },
     onPtyWheel: (Boolean, Int) -> Unit = { _, _ -> },
     onPtyResize: (Int, Int) -> Unit = { _, _ -> },
 ) {
@@ -87,7 +87,7 @@ fun TerminalScreen(
 @Composable
 private fun RealTerminalScreen(
     real: MachinesViewModel.RealTerminal, connected: Boolean, sending: Boolean,
-    onStopReal: () -> Unit, onPty: (String) -> Unit, onPtyWheel: (Boolean, Int) -> Unit, onPtyResize: (Int, Int) -> Unit,
+    onStopReal: () -> Unit, onPty: (String, Boolean) -> Unit, onPtyWheel: (Boolean, Int) -> Unit, onPtyResize: (Int, Int) -> Unit,
 ) {
     var keysVisible by rememberSaveable { mutableStateOf(false) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
@@ -148,13 +148,13 @@ private fun RealTerminalScreen(
         }
         if (keysVisible) TerminalExtraKeys(
             ctrl = ctrl, alt = alt, onCtrl = { ctrl = it }, onAlt = { alt = it }, enabled = ready && connected,
-            onKey = { key -> onPty(TerminalKeyEncoder.encode(key, modifiers, cursorApplicationMode = real.applicationCursorKeys)); consumeModifiers() },
-            onText = { text -> onPty(TerminalKeyEncoder.encodeText(text, modifiers)); consumeModifiers() },
+            onKey = { key -> onPty(TerminalKeyEncoder.encode(key, modifiers, cursorApplicationMode = real.applicationCursorKeys), false); consumeModifiers() },
+            onText = { text -> onPty(TerminalKeyEncoder.encodeText(text, modifiers), false); consumeModifiers() },
         )
         TerminalComposer(
             enabled = ready && connected, sending = sending, modifiers = modifiers, keysVisible = keysVisible,
             onToggleKeys = { keysVisible = !keysVisible },
-            onSend = { text, onDelivered -> onPty(text); onDelivered(true); consumeModifiers() },
+            onSend = { text, withEnter, onDelivered -> onPty(text, withEnter); onDelivered(true); consumeModifiers() },
         )
     }
 }
@@ -163,7 +163,7 @@ private fun RealTerminalScreen(
 @Composable
 private fun MirrorTerminalScreen(
     snapshot: TerminalSnapshot?, loading: Boolean, error: Int?, errorDetail: String?, sending: Boolean, reconnecting: Boolean, connected: Boolean,
-    onRefresh: () -> Unit, onReconnect: () -> Unit, onScroll: (Int) -> Unit, onSend: (String, (Boolean) -> Unit) -> Unit,
+    onRefresh: () -> Unit, onReconnect: () -> Unit, onScroll: (Int) -> Unit, onSend: (String, Boolean, (Boolean) -> Unit) -> Unit,
     onRequestReal: (Int, Int) -> Unit,
 ) {
     var viewMode by rememberSaveable { mutableStateOf(ViewMode.FIT) }
@@ -263,13 +263,13 @@ private fun MirrorTerminalScreen(
         }
         if (keysVisible) TerminalExtraKeys(
             ctrl = ctrl, alt = alt, onCtrl = { ctrl = it }, onAlt = { alt = it }, enabled = ready && !sending,
-            onKey = { key -> onSend(TerminalKeyEncoder.encode(key, modifiers)) {}; consumeModifiers() },
-            onText = { text -> onSend(TerminalKeyEncoder.encodeText(text, modifiers)) {}; consumeModifiers() },
+            onKey = { key -> onSend(TerminalKeyEncoder.encode(key, modifiers), false) {}; consumeModifiers() },
+            onText = { text -> onSend(TerminalKeyEncoder.encodeText(text, modifiers), false) {}; consumeModifiers() },
         )
         TerminalComposer(
             enabled = ready, sending = sending, modifiers = modifiers, keysVisible = keysVisible,
             onToggleKeys = { keysVisible = !keysVisible },
-            onSend = { text, onDelivered -> onSend(text, onDelivered); consumeModifiers() },
+            onSend = { text, withEnter, onDelivered -> onSend(text, withEnter, onDelivered); consumeModifiers() },
         )
     }
 }
@@ -281,8 +281,17 @@ private fun MirrorTerminalScreen(
 @Composable
 private fun rememberPinnedScrollState(snapshot: TerminalSnapshot, lineHeight: Float): ScrollState {
     val scrollState = rememberScrollState(Int.MAX_VALUE)
-    LaunchedEffect(snapshot.scrollbackRows, snapshot.rows, snapshot.revision, scrollState.maxValue) {
-        if (scrollState.value >= scrollState.maxValue - lineHeight * 2) scrollState.scrollTo(scrollState.maxValue)
+    // Sticky by default: the live screen is what you see when you open a window, however much
+    // history the host exported. Reading history is an explicit drag, and releasing at the
+    // bottom sticks again. Without this a big history dump left the view on the oldest lines.
+    var stick by remember { mutableStateOf(true) }
+    LaunchedEffect(scrollState) {
+        snapshotFlow { scrollState.isScrollInProgress }.collect { scrolling ->
+            if (!scrolling) stick = scrollState.value >= scrollState.maxValue - (lineHeight * 2).toInt()
+        }
+    }
+    LaunchedEffect(snapshot, scrollState.maxValue) {
+        if (stick && !scrollState.isScrollInProgress && scrollState.maxValue > 0) scrollState.scrollTo(scrollState.maxValue)
     }
     return scrollState
 }
