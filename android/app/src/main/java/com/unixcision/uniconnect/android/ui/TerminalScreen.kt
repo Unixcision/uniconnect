@@ -67,6 +67,7 @@ fun TerminalScreen(
     onSend: (String, Boolean, (Boolean) -> Unit) -> Unit,
     real: MachinesViewModel.RealTerminal? = null,
     attachUnsupported: Boolean = false,
+    attachFallbackDetail: String? = null,
     onStartReal: (Int, Int, Boolean) -> Unit = { _, _, _ -> },
     onStopReal: () -> Unit = {},
     onPty: (String, Boolean) -> Unit = { _, _ -> },
@@ -87,6 +88,7 @@ fun TerminalScreen(
         RealTerminalStarter(true) { columns, rows -> autoTried = true; onStartReal(columns, rows, true) }
     }
     MirrorTerminalScreen(snapshot, loading, error, errorDetail, sending, reconnecting, connected, onRefresh, onReconnect, onScroll, onSend,
+        attachFallbackDetail = attachFallbackDetail,
         onRequestReal = { columns, rows -> realRequested = true; manuallyLeft = false; onStartReal(columns, rows, false) })
 }
 
@@ -171,7 +173,7 @@ private fun RealTerminalScreen(
 private fun MirrorTerminalScreen(
     snapshot: TerminalSnapshot?, loading: Boolean, error: Int?, errorDetail: String?, sending: Boolean, reconnecting: Boolean, connected: Boolean,
     onRefresh: () -> Unit, onReconnect: () -> Unit, onScroll: (Int) -> Unit, onSend: (String, Boolean, (Boolean) -> Unit) -> Unit,
-    onRequestReal: (Int, Int) -> Unit,
+    attachFallbackDetail: String?, onRequestReal: (Int, Int) -> Unit,
 ) {
     var viewMode by rememberSaveable { mutableStateOf(ViewMode.FIT) }
     var keysVisible by rememberSaveable { mutableStateOf(false) }
@@ -216,6 +218,14 @@ private fun MirrorTerminalScreen(
                 Text(stringResource(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 errorDetail?.let { detail -> Text(stringResource(R.string.host_error_code, detail), color = Brand.Muted, style = MaterialTheme.typography.labelSmall) }
             }
+        }
+        // A refused attach must say so: silence here reads as "the real terminal is broken".
+        if (error == null) attachFallbackDetail?.let { detail ->
+            Text(
+                stringResource(R.string.real_terminal_fell_back, detail),
+                Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                color = Brand.Amber, style = MaterialTheme.typography.labelSmall,
+            )
         }
         val frameShape = RoundedCornerShape(20.dp)
         Box(

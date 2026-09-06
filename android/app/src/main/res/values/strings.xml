@@ -171,4 +171,5 @@
     <string name="real_terminal_unavailable">Esta máquina aún no admite la terminal real. Actualiza UniConnect en el escritorio.</string>
     <string name="real_terminal_failed">No se ha podido adjuntar a la sesión tmux. No se ha creado ni reiniciado nada.</string>
     <string name="real_terminal_ended">La sesión adjunta ha terminado en la máquina.</string>
+    <string name="real_terminal_fell_back">Terminal real no disponible: %1$s. Se muestra la pantalla espejo.</string>
 </resources>

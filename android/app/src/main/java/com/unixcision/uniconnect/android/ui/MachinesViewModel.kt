@@ -51,6 +51,8 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         val realTerminal: RealTerminal? = null,
         /** Machines whose host has no attach RPC yet; the mirror is used without asking again. */
         val attachUnsupported: Set<String> = emptySet(),
+        /** Why the last automatic attach fell back to the mirror, shown so silence is not the answer. */
+        val attachFallbackDetail: String? = null,
     )
     private val mutableState = MutableStateFlow(State())
     val state = mutableState.asStateFlow()
@@ -201,7 +203,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     fun selectWindow(id: String) { stopRealTerminal(); mutableState.update { it.copy(selectedWindow = id, terminal = null) }; refreshTerminal() }
     fun back() { stopRealTerminal(); mutableState.update {
         when {
-            it.selectedWindow != null -> it.copy(selectedWindow = null, terminal = null, terminalLoading = false, terminalError = null, terminalErrorDetail = null)
+            it.selectedWindow != null -> it.copy(selectedWindow = null, terminal = null, terminalLoading = false, terminalError = null, terminalErrorDetail = null, attachFallbackDetail = null)
             it.selectedWorkspace != null -> it.copy(selectedWorkspace = null)
             else -> it.copy(selectedMachine = null)
         }
@@ -448,6 +450,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         if (current.connections[machine.id]?.connected != true) { mutableState.update { it.copy(error = R.string.connection_error) }; return }
         val terminal = TerminalEmulator(columns, rows)
         emulator = terminal
+        mutableState.update { it.copy(attachFallbackDetail = null) }
         geometry.reset()
         mutableState.update { it.copy(realTerminal = RealTerminal(connecting = true)) }
         attachJob = viewModelScope.launch {
@@ -499,7 +502,8 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                     val remembered = if (unsupported && machine.id.isNotBlank()) current.attachUnsupported + machine.id else current.attachUnsupported
                     // An automatic attempt that fails returns to the mirror rather than leaving an
                     // empty real-terminal screen; only a mode the user asked for reports the reason.
-                    if (automatic) current.copy(realTerminal = null, attachUnsupported = remembered)
+                    // Falling back without a word made a refused attach look like a broken mode.
+                    if (automatic) current.copy(realTerminal = null, attachUnsupported = remembered, attachFallbackDetail = detail ?: "attach")
                     else current.copy(realTerminal = RealTerminal(connecting = false, error = message, errorDetail = detail), attachUnsupported = remembered)
                 }
             } finally {
