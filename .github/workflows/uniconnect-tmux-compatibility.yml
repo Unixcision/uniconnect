@@ -1,0 +1,43 @@
+name: UniConnect compatibilidad tmux
+
+on:
+  push:
+    branches: [uniconnect]
+    paths:
+      - linux/uniconnect/mobile_pty*.py
+      - linux/tests/test_mobile_pty_process.py
+      - .github/workflows/uniconnect-tmux-compatibility.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Mantener ambas ejecuciones de la regresión: sin arreglo y con arreglo.
+concurrency:
+  group: tmux-compatibility-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  adjunto-real:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            tmux: 3.2a
+          - runner: ubuntu-24.04
+            tmux: '3.4'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Instalar y verificar la versión real de tmux
+        env:
+          EXPECTED_TMUX: ${{ matrix.tmux }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tmux python3-cryptography
+          tmux -V
+          test "$(tmux -V)" = "tmux $EXPECTED_TMUX"
+      - name: Adjuntar, redimensionar y cerrar sólo sesiones de prueba privadas
+        run: /usr/bin/python3 -m unittest discover -s linux/tests -p test_mobile_pty_process.py -v
