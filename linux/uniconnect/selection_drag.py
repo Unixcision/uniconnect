@@ -34,7 +34,7 @@ class SelectionDrag:
         self.reset()
         seat = event.get_device().get_seat()
         status = seat.grab(self.surface.terminal.get_window(), Gdk.SeatCapabilities.POINTER,
-                           False, None, event, None, None)
+                           False, None, None, None, None)
         if status != Gdk.GrabStatus.SUCCESS:
             raise RuntimeError("Pointer unavailable")
         self.grabbed_seat = seat

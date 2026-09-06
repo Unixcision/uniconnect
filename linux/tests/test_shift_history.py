@@ -2,15 +2,42 @@
 
 import ctypes
 import ctypes.util
+import faulthandler
 import shlex
+import time
 import unittest
 
 import test_mainwindow_copy as window_fixture
-from gi.repository import Gtk
+from gi.repository import GLib, Gtk
 
 
 class ShiftHistoryTests(window_fixture.MainWindowCopyTests):
+    def wait_for(self, predicate):
+        deadline = time.monotonic() + 8
+        loop = GLib.MainLoop()
+        errors = []
+        def observe():
+            try:
+                ready = predicate()
+            except Exception as error:
+                errors.append(error)
+                ready = True
+            if ready or time.monotonic() >= deadline:
+                loop.quit()
+                return False
+            return True
+        GLib.timeout_add(15, observe)
+        loop.run()
+        if errors:
+            raise errors[0]
+        drag = getattr(self.surface, "selection_drag", None)
+        state = {key: getattr(drag, key, None) for key in
+                 ("point", "pane", "busy", "pressed", "active", "pending_move", "timer")}
+        self.assertTrue(predicate(), f"GTK deadline: {state}; errors={self.errors}")
+
     def setUp(self):
+        faulthandler.dump_traceback_later(40, exit=True)
+        self.addCleanup(faulthandler.cancel_dump_traceback_later)
         super().setUp()
         self.window.resize(1000, 600)
         self.window.move(30, 180)

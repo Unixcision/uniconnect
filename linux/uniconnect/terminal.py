@@ -158,6 +158,13 @@ class TerminalSurface(Gtk.Box):
         """An explicit reconnect starts a new bounded recovery budget."""
         self._reset_selection = self.generation > 0 and not create
         self._cancel_reconnect(reset=True)
+        if self.selection_drag.busy:
+            # An in-flight SSH selection must finish before reconnect cancels
+            # copy-mode; otherwise its late begin could re-enter that mode.
+            self.selection_drag.reset()
+            self.selection_drag.run_action(lambda: None, lambda *_: self._queue_launch(create),
+                                           discard_motion=True)
+            return False
         return self._queue_launch(create)
 
     def _queue_launch(self, create=False):
@@ -471,6 +478,7 @@ class TerminalSurface(Gtk.Box):
                 transport = Transport(connection, socket_name=self.record.get("tmuxSocket"))
                 self.selection_drag.begin(transport, self.record, *self.selection_cell(event), event)
             except Exception:
+                self.selection_drag.reset()
                 self.owner.error(self.owner._("No se pudo seleccionar el historial del terminal."))
             return True
         if event.button == 3:
@@ -487,6 +495,8 @@ class TerminalSurface(Gtk.Box):
                 int((event.y_root - origin_y - padding.top) // max(1, self.terminal.get_char_height())))
 
     def on_selection_motion(self, _, event):
+        if not self.selection_drag.pressed:
+            return False
         return self.selection_drag.motion(*self.selection_cell(event))
 
     def on_selection_release(self, _, event):
