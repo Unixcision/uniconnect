@@ -5,7 +5,11 @@ on:
     paths:
       - linux/uniconnect/terminal.py
       - linux/uniconnect/terminal_copy.py
+      - linux/uniconnect/window_commands.py
+      - linux/uniconnect/window.py
+      - linux/uniconnect/actions.py
       - linux/tests/test_terminal_copy.py
+      - linux/tests/test_mainwindow_copy.py
       - .github/workflows/uniconnect-linux-copy.yml
   workflow_dispatch:
 permissions:
@@ -30,3 +34,5 @@ jobs:
       - run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -p test_terminal_copy.py -v
       - name: Conservar ciclo de vida y reconexiones de VTE
         run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -p test_terminal.py -v
+      - name: Copiar desde la ventana y acciones reales
+        run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -p test_mainwindow_copy.py -v

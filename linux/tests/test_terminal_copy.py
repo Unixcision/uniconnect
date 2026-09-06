@@ -62,13 +62,13 @@ class TerminalCopyTests(unittest.TestCase):
                                    "#{selection_present}"), "1")
         self.assertFalse(self.surface.terminal.get_has_selection())
 
-    def copy_and_wait(self, expected):
+    def copy_and_wait(self, expected, action=None):
         loop = GLib.MainLoop()
         def changed(*_):
             self.clipboard.request_text(lambda _, text, *__: loop.quit() if text == expected else None)
         signal = self.clipboard.connect("owner-change", changed)
         deadline = GLib.timeout_add_seconds(8, lambda: (loop.quit(), False)[1])
-        self.surface.copy()
+        (action or self.surface.copy)()
         loop.run()
         self.clipboard.disconnect(signal)
         # Removing an elapsed deadline only emits a warning, not a test failure.
