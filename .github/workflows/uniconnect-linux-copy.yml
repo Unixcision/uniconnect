@@ -13,6 +13,11 @@ on:
       - linux/tests/test_terminal_copy.py
       - linux/tests/test_mainwindow_copy.py
       - linux/tests/test_shift_history.py
+      - linux/tests/test_history_copy.py
+      - linux/tests/ssh_copy_fixture.py
+      - linux/uniconnect/terminal_history.py
+      - linux/uniconnect/history_view.py
+      - linux/uniconnect/clipboard_text.py
       - .github/workflows/uniconnect-linux-copy.yml
   workflow_dispatch:
 permissions:
@@ -32,7 +37,8 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - run: |
           sudo apt-get update
-          sudo apt-get install -y tmux python3-gi python3-cryptography gir1.2-gtk-3.0 gir1.2-vte-2.91 xvfb xauth libxtst6
+          sudo apt-get install -y tmux python3-gi python3-cryptography gir1.2-gtk-3.0 gir1.2-vte-2.91 xvfb xauth libxtst6 openssh-server openssh-client
+          sudo mkdir -p /run/sshd
           tmux -V
       - run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -p test_terminal_copy.py -v
       - name: Conservar ciclo de vida y reconexiones de VTE
@@ -41,3 +47,5 @@ jobs:
         run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -p test_mainwindow_copy.py -v
       - name: Mayús y arrastre real por varias pantallas de historial
         run: xvfb-run -a -s '-screen 0 1600x1200x24' /usr/bin/python3 -m unittest discover -s linux/tests -p test_shift_history.py -v
+      - name: Selección nativa y copiado de historial por SSH
+        run: xvfb-run -a -s '-screen 0 1600x1200x24' /usr/bin/python3 -m unittest discover -s linux/tests -p test_history_copy.py -v
