@@ -63,8 +63,11 @@ class AndroidNoticePublisher(private val context: Context, private val names: No
         val open = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val publicVersion = NotificationCompat.Builder(context, NOTICE_CHANNEL).setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(context.getString(R.string.app_name)).setContentText(context.getString(R.string.notice_private_public)).build()
+        val found = names.lookup(machine.id, notice)
         val notification = NotificationCompat.Builder(context, NOTICE_CHANNEL).setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(titleFor(names.lookup(machine.id, notice))).setContentText(context.getString(R.string.notice_machine, machine.name))
+            .setContentTitle(titleFor(found)).setContentText(context.getString(R.string.notice_machine, machine.name))
+            // The workspace's monogram, so the notice looks like the box it comes from.
+            .apply { found.workspace?.let { setLargeIcon(NoticeMonogram.bitmap(context, it)) } }
             .setContentIntent(open).setAutoCancel(true).setOnlyAlertOnce(true).setWhen(notice.createdAt)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setPublicVersion(publicVersion).build()
         // Stable tag + id replaces a pending notification if the process died between publish and journal commit.
