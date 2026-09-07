@@ -101,6 +101,8 @@
     <string name="stop_connections">Detener conexiones</string>
     <string name="notice_private_public">Tienes un aviso privado.</string>
     <string name="notice_title">Una ventana necesita tu atención</string>
+    <string name="notice_title_window">%1$s · %2$s</string>
+    <string name="notice_title_workspace">%1$s</string>
     <string name="notice_machine">Aviso de %1$s</string>
     <string name="mobile_notices">Avisos en este móvil</string>
     <string name="notices_connected">Conexión privada activa. Recibirás los avisos de esta máquina.</string>

@@ -17,10 +17,12 @@ import com.unixcision.uniconnect.android.MainActivity
 import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.domain.NoticePublisher
+import com.unixcision.uniconnect.android.domain.NoticeNameCatalog
+import com.unixcision.uniconnect.android.domain.NoticeNames
 import com.unixcision.uniconnect.android.domain.RemoteNotice
 
 /** Notifications contain no terminal output, agent prompt or remote notification body. */
-class AndroidNoticePublisher(private val context: Context) : NoticePublisher {
+class AndroidNoticePublisher(private val context: Context, private val names: NoticeNameCatalog) : NoticePublisher {
     init {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CONNECTION_CHANNEL, context.getString(R.string.connection_channel), NotificationManager.IMPORTANCE_LOW))
@@ -44,6 +46,13 @@ class AndroidNoticePublisher(private val context: Context) : NoticePublisher {
             .addAction(0, context.getString(R.string.stop_connections), stop).build()
     }
 
+    /** "Workspace · Window" when the phone knows them; the generic line when it does not yet. */
+    private fun titleFor(found: NoticeNames): String = when {
+        found.workspace != null && found.window != null -> context.getString(R.string.notice_title_window, found.workspace, found.window)
+        found.workspace != null -> context.getString(R.string.notice_title_workspace, found.workspace)
+        else -> context.getString(R.string.notice_title)
+    }
+
     override suspend fun publish(machine: Machine, notice: RemoteNotice): Boolean {
         if (!hasPermission()) return false
         if (context.getSystemService(NotificationManager::class.java).getNotificationChannel(NOTICE_CHANNEL)?.importance == NotificationManager.IMPORTANCE_NONE) return false
@@ -55,7 +64,7 @@ class AndroidNoticePublisher(private val context: Context) : NoticePublisher {
         val publicVersion = NotificationCompat.Builder(context, NOTICE_CHANNEL).setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(context.getString(R.string.app_name)).setContentText(context.getString(R.string.notice_private_public)).build()
         val notification = NotificationCompat.Builder(context, NOTICE_CHANNEL).setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(context.getString(R.string.notice_title)).setContentText(context.getString(R.string.notice_machine, machine.name))
+            .setContentTitle(titleFor(names.lookup(machine.id, notice))).setContentText(context.getString(R.string.notice_machine, machine.name))
             .setContentIntent(open).setAutoCancel(true).setOnlyAlertOnce(true).setWhen(notice.createdAt)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setPublicVersion(publicVersion).build()
         // Stable tag + id replaces a pending notification if the process died between publish and journal commit.

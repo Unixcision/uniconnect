@@ -10,6 +10,7 @@ import com.unixcision.uniconnect.android.domain.AppSettings
 import com.unixcision.uniconnect.android.domain.MachineDraft
 import com.unixcision.uniconnect.android.domain.MachineEndpoint
 import com.unixcision.uniconnect.android.domain.MachineRepository
+import com.unixcision.uniconnect.android.domain.NoticeNameCatalog
 import com.unixcision.uniconnect.android.domain.SettingsRepository
 import com.unixcision.uniconnect.android.domain.MachineSnapshot
 import com.unixcision.uniconnect.android.domain.TerminalSnapshot
@@ -41,6 +42,7 @@ class MachinesViewModel(
     private val client: MachineClient,
     private val notificationControl: NotificationConnectionControl,
     private val settingsRepository: SettingsRepository,
+    private val noticeNames: NoticeNameCatalog,
 ) : ViewModel() {
     data class Connection(val checking: Boolean = false, val connected: Boolean = false, val snapshot: MachineSnapshot? = null, val error: Int? = null)
     /** A phone-sized tmux client attached to the selected window; the emulator lives in the model. */
@@ -133,6 +135,7 @@ class MachinesViewModel(
                     fun stale() = state.value.selectedMachine != null || requests[machine.id]?.isActive == true
                     try {
                         val snapshot = client.probe(machine)
+                        noticeNames.remember(machine.id, snapshot)
                         mutableState.update { if (stale()) it else it.copy(connections = it.connections + (machine.id to Connection(connected = true, snapshot = snapshot))) }
                     } catch (cancelled: CancellationException) { throw cancelled }
                     catch (failure: Exception) {
@@ -235,6 +238,7 @@ class MachinesViewModel(
                 val nextCreation = if (askFirstWindow) CreationContext(
                     machine.id, created, result.snapshot.workspaces.filter { box -> box.isSSH == true }, firstWindow = true,
                 ) else null
+                noticeNames.remember(machine.id, result.snapshot)
                 mutableState.update { it.copy(creating = false, creation = nextCreation, creationError = null,
                     connections = it.connections + (machine.id to Connection(connected = true, snapshot = result.snapshot)),
                     selectedMachine = machine.id, selectedWorkspace = result.workspaceID, selectedWindow = result.windowID,
@@ -350,6 +354,7 @@ class MachinesViewModel(
                         if (target == null || update is MachineUpdate.Terminal) { wasConnected = true; retry = 0 }
                         when (update) {
                             is MachineUpdate.Workspaces -> {
+                                noticeNames.remember(machine.id, update.snapshot)
                                 mutableState.update { current ->
                                     val creation = current.creation
                                     val refreshedCreation = if (creation?.machineID == machine.id && creation.workspace != null) {

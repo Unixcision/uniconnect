@@ -9,9 +9,11 @@ import com.unixcision.uniconnect.android.data.StoredMachineRepository
 import com.unixcision.uniconnect.android.data.AndroidNotificationConnections
 import com.unixcision.uniconnect.android.data.NativeNotificationClient
 import com.unixcision.uniconnect.android.data.StoredNoticeDeliveryRepository
+import com.unixcision.uniconnect.android.data.StoredNoticeNameCatalog
 import com.unixcision.uniconnect.android.data.StoredSettingsRepository
 import com.unixcision.uniconnect.android.domain.NotificationClient
 import com.unixcision.uniconnect.android.domain.NoticeDeliveryRepository
+import com.unixcision.uniconnect.android.domain.NoticeNameCatalog
 import com.unixcision.uniconnect.android.domain.MachineClient
 import com.unixcision.uniconnect.android.domain.MachineRepository
 import com.unixcision.uniconnect.android.domain.SettingsRepository
@@ -31,5 +33,6 @@ class AppContainer(context: Context) {
     val machineClient: MachineClient = NativeMachineClient(rpc)
     val notificationConnections = AndroidNotificationConnections(context, store, ioScope)
     val noticeDeliveries: NoticeDeliveryRepository = StoredNoticeDeliveryRepository(store)
+    val noticeNames: NoticeNameCatalog = StoredNoticeNameCatalog(store)
     val notificationClient: NotificationClient = NativeNotificationClient(rpc)
 }
