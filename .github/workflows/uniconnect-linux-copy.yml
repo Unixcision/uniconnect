@@ -49,3 +49,10 @@ jobs:
         run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -p test_mainwindow_copy.py -v
       - name: Selección nativa y copiado de historial por SSH
         run: xvfb-run -a -s '-screen 0 1600x1200x24' /usr/bin/python3 -m unittest discover -s linux/tests -p test_history_copy.py -v
+      - name: Capturas de la pantalla aislada
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: copia-${{ matrix.os }}
+          path: ${{ runner.temp }}/test_*.png
+          if-no-files-found: ignore

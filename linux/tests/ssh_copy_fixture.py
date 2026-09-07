@@ -29,18 +29,18 @@ AuthorizedKeysFile {root / 'authorized_keys'}
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PubkeyAuthentication yes
-UsePAM no
+UsePAM yes
 PermitRootLogin prohibit-password
 AllowUsers {getpass.getuser()}
 LogLevel VERBOSE
 """)
-        self.server = subprocess.Popen(["/usr/sbin/sshd", "-D", "-e", "-f", str(config)], stderr=subprocess.PIPE, text=True)
+        self.server = subprocess.Popen(["sudo", "-n", "/usr/sbin/sshd", "-D", "-e", "-f", str(config)], stderr=subprocess.PIPE, text=True)
         # sshd reports readiness explicitly. CI has an outer job deadline.
         line = self.server.stderr.readline()
         if "Server listening" not in line:
             self.__exit__(None, None, None)
             raise RuntimeError("Isolated SSH server did not become ready: " + line)
-        self.command = shlex.join(["ssh", "-F", "/dev/null", "-p", str(port), "-i", str(root / "client"),
+        self.command = shlex.join(["ssh", "-p", str(port), "-i", str(root / "client"),
                                    "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes",
                                    "-o", "UserKnownHostsFile=" + str(root / "known_hosts"),
                                    getpass.getuser() + "@127.0.0.1"])

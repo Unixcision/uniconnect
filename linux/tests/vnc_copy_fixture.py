@@ -32,8 +32,12 @@ class VNCClipboardPeer:
             raise RuntimeError('CI VNC handshake failed')
         self.socket.sendall(b'\x01')  # Shared: never evict another connection.
         header = self._read(24)
+        self.pixel_bytes = header[4] // 8
         self._read(struct.unpack('!I', header[20:24])[0])
+        self.socket.sendall(b'\x02\0\0\x01' + struct.pack('!i', 0))
+        self.socket.sendall(b'\x03\0' + struct.pack('!HHHH', 0, 0, 1, 1))
         self.received, self.error = [], None
+        self.ready = False
         self.reader = threading.Thread(target=self._receive, daemon=True)
         self.reader.start()
         return self
@@ -51,6 +55,15 @@ class VNCClipboardPeer:
         try:
             while True:
                 kind = self._read(1)[0]
+                if kind == 0:
+                    header = self._read(3)
+                    for _ in range(struct.unpack('!H', header[1:])[0]):
+                        x, y, width, height, encoding = struct.unpack('!HHHHi', self._read(12))
+                        if encoding != 0:
+                            raise RuntimeError('Unexpected CI RFB encoding')
+                        self._read(width * height * self.pixel_bytes)
+                    self.ready = True
+                    continue
                 if kind == 2:  # Bell; no framebuffer updates are requested.
                     continue
                 if kind != 3:

@@ -3,12 +3,13 @@
 import ctypes
 import ctypes.util
 import faulthandler
+import os
 import shlex
 import time
 import unittest
 
 import test_mainwindow_copy as window_fixture
-from gi.repository import GLib, Gtk, Vte
+from gi.repository import Gdk, GLib, Gtk, Vte
 
 
 class PointerHistoryFixture(window_fixture.MainWindowCopyTests):
@@ -63,6 +64,10 @@ class PointerHistoryFixture(window_fixture.MainWindowCopyTests):
         self.shift = self.x11.XKeysymToKeycode(self.display, 0xffe1)
 
     def tearDown(self):
+        if os.environ.get('RUNNER_TEMP'):
+            root = Gdk.get_default_root_window()
+            pixbuf = Gdk.pixbuf_get_from_window(root, 0, 0, root.get_width(), root.get_height())
+            pixbuf.savev(os.path.join(os.environ['RUNNER_TEMP'], self._testMethodName + '.png'), 'png', [], [])
         if getattr(self, "display", None):
             self.release_pointer()
             self.x11.XCloseDisplay(self.display)

@@ -14,6 +14,7 @@ class HistoryCopyTests(PointerHistoryFixture):
         from uniconnect.clipboard_text import publish_text
         self.seed_history()
         with VNCClipboardPeer() as peer:
+            self.wait_for(lambda: peer.ready)
             publish_text('UC_VNC_COPIA_123')
             self.wait_for(lambda: 'UC_VNC_COPIA_123' in peer.received)
             peer.send('UC_VNC_PEGADO_456')
@@ -36,6 +37,10 @@ class HistoryCopyTests(PointerHistoryFixture):
         padding = terminal.get_style_context().get_padding(Gtk.StateFlags.NORMAL)
         x += padding.left + terminal.get_char_width() // 2
         y += padding.top + row * terminal.get_char_height() + terminal.get_char_height() // 2
+        print('Native pointer fixture', {'click': (x, y), 'row': row, 'char':
+              (terminal.get_char_width(), terminal.get_char_height()), 'origin':
+              terminal.get_window().get_origin()[-2:], 'offset': (offset_x, offset_y),
+              'size': (terminal.get_allocated_width(), terminal.get_allocated_height())}, flush=True)
         presses = []
         terminal.connect('event', lambda widget, event: (presses.append(True) or False)
                          if event.type == Gdk.EventType.BUTTON_PRESS else False)
