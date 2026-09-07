@@ -41,6 +41,8 @@ class AndroidNoticePublisher(private val context: Context, private val names: No
         return NotificationCompat.Builder(context, CONNECTION_CHANNEL).setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(context.getString(if (connected) R.string.connection_service_active else R.string.connection_service_connecting))
             .setContentText(context.getString(R.string.connection_service_detail)).setContentIntent(open)
+            // Head of the thread: every notice hangs from this one, which keeps the app's logo.
+            .setGroup(GROUP).setGroupSummary(true)
             .setOngoing(true).setOnlyAlertOnce(true).setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .addAction(0, context.getString(R.string.stop_connections), stop).build()
@@ -68,7 +70,7 @@ class AndroidNoticePublisher(private val context: Context, private val names: No
             .setContentTitle(titleFor(found)).setContentText(context.getString(R.string.notice_machine, machine.name))
             // The workspace's monogram, so the notice looks like the box it comes from.
             .apply { found.workspace?.let { setLargeIcon(NoticeMonogram.bitmap(context, it)) } }
-            .setContentIntent(open).setAutoCancel(true).setOnlyAlertOnce(true).setWhen(notice.createdAt)
+            .setContentIntent(open).setAutoCancel(true).setOnlyAlertOnce(true).setWhen(notice.createdAt).setGroup(GROUP)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setPublicVersion(publicVersion).build()
         // Stable tag + id replaces a pending notification if the process died between publish and journal commit.
         context.getSystemService(NotificationManager::class.java).notify("${machine.id}/${notice.id}", 1, notification)
@@ -78,6 +80,8 @@ class AndroidNoticePublisher(private val context: Context, private val names: No
     companion object {
         const val CONNECTION_CHANNEL = "private_connections"
         const val NOTICE_CHANNEL = "private_machine_notices"
+        /** One thread for everything UniConnect posts: the connection card on top, notices under it. */
+        const val GROUP = "com.unixcision.uniconnect.notices"
         const val MACHINE_ID = "notice_machine_id"
         const val WORKSPACE_ID = "notice_workspace_id"
         const val WINDOW_ID = "notice_window_id"
