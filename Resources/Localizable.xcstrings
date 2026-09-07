@@ -2,6 +2,16 @@
   "sourceLanguage": "es",
   "version": "1.0",
   "strings": {
+    "uniconnect.shared.historial.para.copiar": { "extractionState": "manual", "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Historial para copiar" } } } },
+    "uniconnect.shared.buscar.en.el.historial": { "extractionState": "manual", "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Buscar en el historial" } } } },
+    "uniconnect.shared.actualizar.historial": { "extractionState": "manual", "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Actualizar historial" } } } },
+    "uniconnect.shared.volver.al.terminal": { "extractionState": "manual", "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Volver al terminal" } } } },
+    "uniconnect.shared.cargando.historial.puedes.cerrar.esta.ventana.sin.interrumpir.la.sesi.n": { "extractionState": "manual", "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Cargando historial… Puedes cerrar esta ventana sin interrumpir la sesión." } } } },
+    "uniconnect.shared.selecciona.arrastrando.tambi.n.fuera.del.borde.copia.con.ctrl.c.o.el.bot.n.copiar.la.sesi.n.sigue.activa": { "extractionState": "manual", "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Selecciona arrastrando, también fuera del borde. Copia con Ctrl+C o el botón Copiar. La sesión sigue activa." } } } },
+    "uniconnect.shared.copiado.al.portapapeles": { "extractionState": "manual", "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Copiado al portapapeles." } } } },
+    "uniconnect.shared.copiado.si.realvnc.no.lo.transfiere.divide.la.selecci.n.su.l.mite.documentado.es.256.kib": { "extractionState": "manual", "localizations": { "es": { "stringUnit": { "state": "translated", "value": "Copiado. Si RealVNC no lo transfiere, divide la selección: su límite documentado es 256 KiB." } } } },
+    "uniconnect.shared.el.historial.supera.8.mib.reduce.el.historial.antes.de.abrirlo": { "extractionState": "manual", "localizations": { "es": { "stringUnit": { "state": "translated", "value": "El historial supera 8 MiB. Reduce el historial antes de abrirlo." } } } },
+    "uniconnect.shared.no.se.pudo.leer.el.historial.puedes.seguir.usando.el.terminal": { "extractionState": "manual", "localizations": { "es": { "stringUnit": { "state": "translated", "value": "No se pudo leer el historial. Puedes seguir usando el terminal." } } } },
     "uniconnect.shared.no.se.pudo.seleccionar.el.historial.del.terminal": {
       "extractionState": "manual",
       "localizations": {

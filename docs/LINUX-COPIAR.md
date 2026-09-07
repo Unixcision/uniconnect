@@ -1,44 +1,61 @@
-# Copiar texto en Linux
+# Copiar y pegar en Linux
 
-En una conexión tmux abierta, **Mayús + arrastrar con el botón izquierdo**
-selecciona ahora el historial real de esa ventana. Manteniendo el clic por encima
-o por debajo del terminal, la selección continúa desplazándose; al volver dentro
-o soltar, el desplazamiento se detiene. Después, `Ctrl+Mayús+C` copia el rango y
-devuelve el teclado al programa. `Esc` o **Salir de selección** cancelan sin copiar.
+## Selección rápida
 
-El historial de VTE no existe en la pantalla alternativa que usa tmux, aunque se
-configure un límite de 50.000 líneas. El gesto se convierte en comandos de
-selección dirigidos al pane resuelto, nunca en teclas o eventos de ratón para la
-IA. El destino queda fijado por sesión, PID y geometría; los movimientos se
-agrupan en un único trabajador local/SSH y Copiar espera al último movimiento.
-No se recrean sesiones ni se cambia su límite de historial. Una ventana
-desconectada conserva la selección local de su texto visible.
+Mayús + arrastrar vuelve a usar la selección azul nativa de VTE. `Ctrl+Mayús+C`
+copia y `Ctrl+Mayús+V` pega. Este gesto no activa el modo copia de tmux ni hace
+peticiones SSH por movimiento. Sirve para el texto que VTE tiene disponible;
+no puede recuperar por sí solo el historial remoto de la pantalla alternativa.
 
-La acción **Copiar** (menú, menú contextual o `Ctrl+Mayús+C`) usa primero la
-selección nativa de VTE. Cuando la selección pertenece a tmux, obtiene únicamente
-la selección actual del panel de esa ventana mediante el transporte local o SSH,
-la publica en el portapapeles de GTK y sale del modo copia para poder escribir.
-Nunca usa como alternativa el último búfer global de otra ventana.
+## Selecciones largas
 
-**Salir de selección** (`Ctrl+Mayús+Esc`, editable en Ajustes) cancela sin copiar
-ni enviar caracteres a la IA. Está en el pie del terminal, el menú Editar, el menú
-contextual y la paleta. Sólo afecta al panel de la ventana elegida. Como el modo
-copia pertenece al pane tmux compartido, salir también libera ese pane para el
-móvil; no cancela la selección de las demás ventanas.
+Pulsa **Historial para copiar** en el pie del terminal, menú Editar, menú contextual
+o paleta; también `Ctrl+Mayús+H`, configurable en Ajustes y `settings.shortcuts.show_history`.
+Se abre una vista local de solo lectura con el historial retenido por ese pane
+(hasta las últimas 50.000 líneas y 8 MiB). La lectura usa una sola operación SSH,
+no entra en copy-mode, no crea búferes tmux ni envía entrada a la sesión.
 
-La disponibilidad de Copiar no depende sólo de `VTE.get_has_selection()`: la
-selección tmux se comprueba al ejecutar la acción. Las pruebas de MainWindow
-verifican este paso por menú y acciones, además del adaptador de portapapeles.
+Dentro de la vista puedes arrastrar normalmente, sin Mayús, hacia fuera del borde
+superior o inferior para continuar la selección; también usar rueda, barra de
+scroll y Mayús + clic. Copia con el botón **Copiar**, `Ctrl+C`, el atajo configurado
+de Copiar o el menú contextual. La búsqueda se ejecuta con Intro. **Actualizar
+historial** obtiene otra instantánea; no se actualiza sola mientras seleccionas.
+**Volver al terminal** o `Esc` cierran la vista. La sesión sigue trabajando detrás.
+El contenido no se guarda en archivos ni logs; se descarta al cerrar la vista.
 
-Reconectar explícitamente un terminal ya abierto también abandona su modo copia;
-no reinicia tmux ni la IA. No se envían teclas al agente para cancelar la selección.
-Las operaciones SSH se ejecutan fuera del hilo gráfico.
+## Portapapeles y VNC
 
-Es una corrección del adaptador GTK/VTE de Linux solicitada específicamente para
-Linux; macOS usa Ghostty/AppKit y no ejecuta este código. No cambia las políticas
-globales de ratón, cifrado, geometría ni los identificadores de las conversaciones.
+Una copia explícita publica el texto en `CLIPBOARD` y `PRIMARY`, para consumidores
+Linux que usan cualquiera de los dos. No se instala un sincronizador global ni
+se copian automáticamente todas las salidas. VNC sigue encargándose del traslado
+entre equipos: sus permisos de transferencia deben estar habilitados.
 
-La regresión se prueba con portapapeles GTK real y tmux aislado en Ubuntu 22.04
-(tmux 3.2a) y 24.04 (tmux 3.4), sin usar el portapapeles ni las sesiones del usuario.
-Incluye un gesto XTest real de Mayús y clic mantenido a través de varias pantallas,
-copia Unicode, escritura posterior y preservación de la selección de otro pane.
+RealVNC documenta un límite de 256 KiB para copiar/pegar texto; por encima puede
+pegar el contenido anterior. La vista avisa cuando la selección supera ese tamaño,
+sin truncar el texto que sí se copia completo al portapapeles Linux. Si falla una
+copia pequeña entre equipos, hay que comprobar también Viewer/Server, no solo tmux.
+
+El pegado sigue usando `VTE.paste_text`, preservando bracketed paste cuando el
+programa lo solicita. No se añade Intro automáticamente. Las imágenes conservan
+su ruta de pegado/subida existente.
+
+## Compatibilidad y validación
+
+La selección naranja iniciada directamente en tmux conserva su exportación
+explícita por Copiar, fijada al pane; nunca se usa el último búfer de otra ventana.
+**Salir de selección** cancela ese modo sin enviar caracteres al agente. No hace
+falta entrar en él para usar la nueva vista de historial.
+
+Cambio específicamente Linux: macOS usa Ghostty/AppKit y no ejecuta este adaptador.
+Se conservan el repositorio compartido, español, cifrado y los UUID de las sesiones.
+Las pruebas se ejecutan en CI con GTK, portapapeles real, XTest y tmux; una SSH de
+prueba con claves efímeras verifica lectura, selección larga, pegado y preservación
+de pane/PID y del búfer ajeno. Nunca se usan sesiones ni portapapeles del usuario.
+
+## Fuentes de la decisión
+
+- [tmux: portapapeles, OSC 52 y limitaciones de VTE](https://github.com/tmux/tmux/wiki/Clipboard).
+- [VTE: la pantalla alternativa no tiene scrollback local](https://gnome.pages.gitlab.gnome.org/vte/gtk3/method.Terminal.set_scrollback_lines.html).
+- [tmux: capture-pane](https://man.openbsd.org/tmux.1#capture-pane).
+- [GTK: selección y texto nativos](https://docs.gtk.org/gtk3/text-widget-overview.html).
+- [RealVNC: transferencia de texto y límite documentado](https://help.realvnc.com/hc/en-us/articles/360002253738-Copying-and-Pasting-Text).

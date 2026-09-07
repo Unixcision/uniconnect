@@ -18,6 +18,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk, Pango, Vte
 from .transport import SSHCommand, Transport, TransportError, terminal_launch
 from .terminal_copy import TerminalCopy
 from .selection_drag import SelectionDrag
+from .clipboard_text import publish_text
 
 
 class TerminalSurface(Gtk.Box):
@@ -47,6 +48,7 @@ class TerminalSurface(Gtk.Box):
         self.status = "Connecting"
         self.terminal = Vte.Terminal()
         self.selection_drag = SelectionDrag(self)
+        self.history_view = None
         self.terminal.set_scrollback_lines(50000)
         self.terminal.set_mouse_autohide(True)
         self.terminal.set_allow_hyperlink(True)
@@ -95,6 +97,10 @@ class TerminalSurface(Gtk.Box):
         self.exit_selection.set_relief(Gtk.ReliefStyle.NONE)
         self.exit_selection.connect("clicked", lambda *_: (self.on_focus(), self.owner.run_action("cancel_selection")))
         self.footer.pack_end(self.exit_selection, False, False, 0)
+        self.history_button = Gtk.Button(label=self.owner._("Historial para copiar"))
+        self.history_button.set_relief(Gtk.ReliefStyle.NONE)
+        self.history_button.connect("clicked", lambda *_: (self.on_focus(), self.show_history()))
+        self.footer.pack_end(self.history_button, False, False, 0)
         self.pack_end(self.footer, False, False, 0)
         self.show_all()
         if auto_launch:
@@ -433,6 +439,8 @@ class TerminalSurface(Gtk.Box):
 
     def stop_client(self):
         self.selection_drag.reset()
+        if self.history_view is not None:
+            self.history_view.destroy()
         self._allow_auto_retry = False
         self._cancel_reconnect(reset=True)
         self.generation += 1
@@ -469,24 +477,11 @@ class TerminalSurface(Gtk.Box):
                 self.owner.persist()
 
     def on_button(self, _, event):
-        if (event.button == 1 and event.state & Gdk.ModifierType.SHIFT_MASK
-                and self.record.get("tmux") and self.status == "Running"):
-            self.on_focus()
-            self.owner._clipboard_copy_request = object()
-            self.terminal.unselect_all()
-            try:
-                connection = self.owner.connection(self.workspace) if self.workspace["kind"] == "ssh" else None
-                transport = Transport(connection, socket_name=self.record.get("tmuxSocket"))
-                self.selection_drag.begin(transport, self.record, *self.selection_cell(event), event)
-            except Exception as error:
-                self.selection_drag.reset()
-                import logging
-                logging.getLogger(__name__).warning("Selection gesture failed type=%s", type(error).__name__)
-                self.owner.error(self.owner._("No se pudo seleccionar el historial del terminal."))
-            return True
+        # Shift+drag belongs to VTE: immediate blue selection and PRIMARY,
+        # without remote copy-mode or a fresh SSH connection on every motion.
         if event.button == 3:
             self.on_focus()
-            self.owner.context_menu(["copy", "cancel_selection", "paste", "find", "new_window", "rename_window",
+            self.owner.context_menu(["copy", "show_history", "cancel_selection", "paste", "find", "new_window", "rename_window",
                                      "split_right", "split_down", "reconnect", "upload", "close_window"], event)
             return True
         return False
@@ -532,6 +527,21 @@ class TerminalSurface(Gtk.Box):
         self.search.set_search_mode(True)
         self.search_entry.grab_focus()
 
+    def show_history(self):
+        if self.disposed:
+            return
+        if self.history_view is not None:
+            self.history_view.present()
+            return
+        from .history_view import HistoryView
+        try:
+            connection = self.owner.connection(self.workspace) if self.workspace['kind'] == 'ssh' else None
+            transport = Transport(connection, socket_name=self.record.get('tmuxSocket'))
+            self.history_view = HistoryView(self, transport, self.record)
+            self.history_view.present()
+        except Exception:
+            self.owner.error(self.owner._('No se pudo leer el historial. Puedes seguir usando el terminal.'))
+
     def find(self, *_):
         import re
         query = self.search_entry.get_text()
@@ -553,6 +563,8 @@ class TerminalSurface(Gtk.Box):
         self.owner._clipboard_copy_request = request
         if self.terminal.get_has_selection():
             self.terminal.copy_clipboard_format(Vte.Format.TEXT)
+            self.terminal.copy_primary()
+            Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).store()
             return
         generation = self.generation
         try:
@@ -573,9 +585,7 @@ class TerminalSurface(Gtk.Box):
                 self.owner.error(self.owner._(message))
             elif text:
                 self.selection_drag.reset()
-                clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
-                clipboard.set_text(text, -1)
-                clipboard.store()
+                publish_text(text)
             return False
 
         self.selection_drag.run_action(lambda pane: TerminalCopy(transport).read_selection(record, pane), deliver)

@@ -52,6 +52,8 @@ class WindowCommands:
             return bool(workspace and workspace["kind"] == "ssh")
         if name == "reconnect":
             return bool(surface and surface.record.get("tmux"))
+        if name == "show_history":
+            return bool(surface and surface.record.get("tmux"))
         if name == "kill_tmux":
             return bool(surface and surface.workspace["kind"] == "ssh" and surface.record.get("tmux"))
         if name == "reconnect_all":

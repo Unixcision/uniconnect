@@ -3,12 +3,12 @@
 import unittest
 from unittest.mock import patch
 
+from history_copy_fixture import PointerHistoryFixture
 from gi.repository import Gdk, Gtk
-from test_shift_history import ShiftHistoryTests
 from ssh_copy_fixture import SSHCopyFixture
 
 
-class HistoryCopyTests(ShiftHistoryTests):
+class HistoryCopyTests(PointerHistoryFixture):
     def test_shift_drag_is_native_and_never_pauses_remote_input(self):
         self.seed_history()
         terminal = self.surface.terminal
@@ -18,10 +18,14 @@ class HistoryCopyTests(ShiftHistoryTests):
         padding = terminal.get_style_context().get_padding(Gtk.StateFlags.NORMAL)
         x += padding.left + terminal.get_char_width() // 2
         y += padding.top + row * terminal.get_char_height() + terminal.get_char_height() // 2
+        presses = []
+        terminal.connect('event', lambda widget, event: (presses.append(True) or False)
+                         if event.type == Gdk.EventType.BUTTON_PRESS else False)
         self.xtst.XTestFakeMotionEvent(self.display, -1, x, y, 0)
         self.xtst.XTestFakeKeyEvent(self.display, self.shift, True, 0)
         self.xtst.XTestFakeButtonEvent(self.display, 1, True, 0)
         self.x11.XSync(self.display, False)
+        self.wait_for(lambda: bool(presses))
         self.xtst.XTestFakeMotionEvent(self.display, -1, x + 16 * terminal.get_char_width(), y, 0)
         self.x11.XSync(self.display, False)
         self.wait_for(terminal.get_has_selection)
@@ -64,9 +68,13 @@ class HistoryCopyTests(ShiftHistoryTests):
             text_window = view.text.get_window(Gtk.TextWindowType.TEXT)
             x, y = text_window.get_origin()[-2:]
             # From the penultimate visible line to outside the top edge, held.
+            presses = []
+            view.text.connect('event', lambda widget, event: (presses.append(True) or False)
+                              if event.type == Gdk.EventType.BUTTON_PRESS else False)
             self.xtst.XTestFakeMotionEvent(self.display, -1, x + 180, y + visible.height - 35, 0)
             self.xtst.XTestFakeButtonEvent(self.display, 1, True, 0)
             self.x11.XSync(self.display, False)
+            self.wait_for(lambda: bool(presses))
             self.xtst.XTestFakeMotionEvent(self.display, -1, x + 5, y - 70, 0)
             self.x11.XSync(self.display, False)
             with patch("uniconnect.transport.Transport.run", side_effect=AssertionError("Dragging/copying must be local")):

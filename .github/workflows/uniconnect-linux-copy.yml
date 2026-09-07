@@ -13,6 +13,7 @@ on:
       - linux/tests/test_terminal_copy.py
       - linux/tests/test_mainwindow_copy.py
       - linux/tests/test_shift_history.py
+      - linux/tests/history_copy_fixture.py
       - linux/tests/test_history_copy.py
       - linux/tests/ssh_copy_fixture.py
       - linux/uniconnect/terminal_history.py
@@ -45,7 +46,5 @@ jobs:
         run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -p test_terminal.py -v
       - name: Copiar desde la ventana y acciones reales
         run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -p test_mainwindow_copy.py -v
-      - name: Mayús y arrastre real por varias pantallas de historial
-        run: xvfb-run -a -s '-screen 0 1600x1200x24' /usr/bin/python3 -m unittest discover -s linux/tests -p test_shift_history.py -v
       - name: Selección nativa y copiado de historial por SSH
         run: xvfb-run -a -s '-screen 0 1600x1200x24' /usr/bin/python3 -m unittest discover -s linux/tests -p test_history_copy.py -v

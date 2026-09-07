@@ -162,7 +162,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         groups = {
             "UniConnect": ["about", "settings", "lock", "quit"],
             "File": ["new_workspace", "new_window", "new_conversation_window", "reopen_last", "reopen", "close_window", "close_other_windows", "close_workspace", "save", "import_config", "export_config", "restore_backup"],
-            "Edit": ["copy", "cancel_selection", "paste", "find", "find_next", "find_previous", "hide_find", "find_selection", "send_ctrl_f"],
+            "Edit": ["copy", "show_history", "cancel_selection", "paste", "find", "find_next", "find_previous", "hide_find", "find_selection", "send_ctrl_f"],
             "View": ["sidebar", "palette", "notifications", "notifications_latest_unread", "notifications_mark_all_read", "notifications_dismiss_all", "font_larger", "font_smaller", "font_reset", "split_right", "split_down", "equalize_panes", "maximize_pane", "focus_left", "focus_right", "focus_up", "focus_down", "fullscreen"],
             "Workspace": ["rename_workspace", "pin_workspace", "edit_ssh", "workspace_previous", "workspace_next", "workspace_up", "workspace_down", "workspace_first", "window_previous", "window_next", "rename_window", "reconnect", "reconnect_all", "notifications_toggle_workspace", "notifications_toggle_window", "upload", "kill_tmux"],
             "Help": ["help", "help_shortcuts", "help_settings", "report_issue"],
@@ -1008,6 +1008,10 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
     def action_copy(self):
         if self.focused_surface:
             self.focused_surface.copy()
+
+    def action_show_history(self):
+        if self.focused_surface:
+            self.focused_surface.show_history()
 
     def action_cancel_selection(self):
         if self.focused_surface:
