@@ -190,4 +190,10 @@
     <string name="view_short_wrap">Reflujo</string>
     <string name="view_short_pan">Real</string>
     <string name="close">Cerrar</string>
+    <string name="key_enter">⏎ Intro</string>
+    <string name="key_enter_desc">Intro</string>
+    <string name="key_ctrl_c_desc">Control C: interrumpir</string>
+    <string name="key_ctrl_d_desc">Control D: fin de entrada</string>
+    <string name="key_ctrl_z_desc">Control Z: suspender</string>
+    <string name="key_ctrl_l_desc">Control L: limpiar pantalla</string>
 </resources>

@@ -51,11 +51,10 @@ fun TerminalExtraKeys(
             ModifierCap(stringResource(R.string.key_ctrl), ctrl, enabled, Modifier.weight(1f), onCtrl)
             ModifierCap(stringResource(R.string.key_alt), alt, enabled, Modifier.weight(1f), onAlt)
             KeyCap("TAB", stringResource(R.string.key_tab_desc), enabled, Modifier.weight(1f)) { onKey(TerminalKey.TAB) }
-            KeyCap("-", "-", enabled, Modifier.weight(.8f)) { onText("-") }
-            KeyCap("/", "/", enabled, Modifier.weight(.8f)) { onText("/") }
             KeyCap(stringResource(R.string.key_home), stringResource(R.string.key_home_desc), enabled, Modifier.weight(1f)) { onKey(TerminalKey.HOME) }
             KeyCap("↑", stringResource(R.string.key_up_desc), enabled, Modifier.weight(1f)) { onKey(TerminalKey.UP) }
             KeyCap(stringResource(R.string.key_end), stringResource(R.string.key_end_desc), enabled, Modifier.weight(1f)) { onKey(TerminalKey.END) }
+            KeyCap(stringResource(R.string.key_pgup), stringResource(R.string.key_pgup_desc), enabled, Modifier.weight(1f)) { onKey(TerminalKey.PAGE_UP) }
         }
         if (functions) LazyRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             item { ToggleCap(stringResource(R.string.keys_functions), true, enabled, Modifier.width(52.dp)) { functions = false } }
@@ -66,12 +65,22 @@ fun TerminalExtraKeys(
             ToggleCap(stringResource(R.string.keys_functions), false, enabled, Modifier.weight(1f)) { functions = true }
             KeyCap("~", "~", enabled, Modifier.weight(.8f)) { onText("~") }
             KeyCap("|", "|", enabled, Modifier.weight(.8f)) { onText("|") }
-            KeyCap(stringResource(R.string.key_pgup), stringResource(R.string.key_pgup_desc), enabled, Modifier.weight(1f)) { onKey(TerminalKey.PAGE_UP) }
+            KeyCap("-", "-", enabled, Modifier.weight(.8f)) { onText("-") }
+            KeyCap("/", "/", enabled, Modifier.weight(.8f)) { onText("/") }
             KeyCap("←", stringResource(R.string.key_left_desc), enabled, Modifier.weight(1f)) { onKey(TerminalKey.LEFT) }
             KeyCap("↓", stringResource(R.string.key_down_desc), enabled, Modifier.weight(1f)) { onKey(TerminalKey.DOWN) }
             KeyCap("→", stringResource(R.string.key_right_desc), enabled, Modifier.weight(1f)) { onKey(TerminalKey.RIGHT) }
             KeyCap(stringResource(R.string.key_pgdn), stringResource(R.string.key_pgdn_desc), enabled, Modifier.weight(1f)) { onKey(TerminalKey.PAGE_DOWN) }
+        }
+        // Third row: the control shortcuts a terminal lives on, sent as their control byte without
+        // arming Ctrl first, and Enter as a wide key of its own — the one thing the bar was missing.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            KeyCap("^C", stringResource(R.string.key_ctrl_c_desc), enabled, Modifier.weight(1f)) { onText("\u0003") }
+            KeyCap("^D", stringResource(R.string.key_ctrl_d_desc), enabled, Modifier.weight(1f)) { onText("\u0004") }
+            KeyCap("^Z", stringResource(R.string.key_ctrl_z_desc), enabled, Modifier.weight(1f)) { onText("\u001a") }
+            KeyCap("^L", stringResource(R.string.key_ctrl_l_desc), enabled, Modifier.weight(1f)) { onText("\u000c") }
             KeyCap(stringResource(R.string.key_del), stringResource(R.string.key_delete_desc), enabled, Modifier.weight(1f)) { onKey(TerminalKey.DELETE) }
+            KeyCap(stringResource(R.string.key_enter), stringResource(R.string.key_enter_desc), enabled, Modifier.weight(2f)) { onKey(TerminalKey.ENTER) }
         }
     }
 }
