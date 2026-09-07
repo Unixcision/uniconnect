@@ -6,15 +6,33 @@ from unittest.mock import patch
 from history_copy_fixture import PointerHistoryFixture
 from gi.repository import Gdk, Gtk
 from ssh_copy_fixture import SSHCopyFixture
+from vnc_copy_fixture import VNCClipboardPeer
 
 
 class HistoryCopyTests(PointerHistoryFixture):
+    def test_explicit_copy_crosses_vnc_and_viewer_text_can_be_pasted(self):
+        from uniconnect.clipboard_text import publish_text
+        self.seed_history()
+        with VNCClipboardPeer() as peer:
+            publish_text('UC_VNC_COPIA_123')
+            self.wait_for(lambda: 'UC_VNC_COPIA_123' in peer.received)
+            peer.send('UC_VNC_PEGADO_456')
+            self.wait_for(lambda: self.clipboard.wait_for_text() == 'UC_VNC_PEGADO_456')
+            self.window.run_action('paste')
+            self.wait_for(lambda: 'UC_VNC_PEGADO_456' in self.tmux('capture-pane', '-p', '-t', '=subject:'))
+            self.surface.send('\n')
+            self.tmux('wait-for', 'typed')
+            self.assertIn('ENTRADA:UC_VNC_PEGADO_456', self.tmux('capture-pane', '-p', '-t', '=subject:'))
+
     def test_shift_drag_is_native_and_never_pauses_remote_input(self):
         self.seed_history()
         terminal = self.surface.terminal
         rows = self.tmux("capture-pane", "-p", "-t", "=subject:").splitlines()
         row = next(i for i, text in enumerate(rows) if "ROW0119" in text)
-        x, y = terminal.get_window().get_origin()[-2:]
+        top = terminal.get_toplevel()
+        x, y = top.get_window().get_origin()[-2:]
+        offset_x, offset_y = terminal.translate_coordinates(top, 0, 0)[-2:]
+        x, y = x + offset_x, y + offset_y
         padding = terminal.get_style_context().get_padding(Gtk.StateFlags.NORMAL)
         x += padding.left + terminal.get_char_width() // 2
         y += padding.top + row * terminal.get_char_height() + terminal.get_char_height() // 2

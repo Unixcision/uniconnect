@@ -44,6 +44,10 @@ LogLevel VERBOSE
                                    "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes",
                                    "-o", "UserKnownHostsFile=" + str(root / "known_hosts"),
                                    getpass.getuser() + "@127.0.0.1"])
+        probe = subprocess.run(shlex.split(self.command) + ['true'], capture_output=True, text=True, timeout=8)
+        if probe.returncode:
+            self.__exit__(None, None, None)
+            raise RuntimeError('CI SSH authentication failed: ' + probe.stderr)
         return self
 
     def __exit__(self, *_):

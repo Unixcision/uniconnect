@@ -16,6 +16,7 @@ on:
       - linux/tests/history_copy_fixture.py
       - linux/tests/test_history_copy.py
       - linux/tests/ssh_copy_fixture.py
+      - linux/tests/vnc_copy_fixture.py
       - linux/uniconnect/terminal_history.py
       - linux/uniconnect/history_view.py
       - linux/uniconnect/clipboard_text.py
@@ -38,7 +39,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - run: |
           sudo apt-get update
-          sudo apt-get install -y tmux python3-gi python3-cryptography gir1.2-gtk-3.0 gir1.2-vte-2.91 xvfb xauth libxtst6 openssh-server openssh-client
+          sudo apt-get install -y tmux python3-gi python3-cryptography gir1.2-gtk-3.0 gir1.2-vte-2.91 xvfb xauth libxtst6 openssh-server openssh-client x11vnc
           sudo mkdir -p /run/sshd
           tmux -V
       - run: xvfb-run -a /usr/bin/python3 -m unittest discover -s linux/tests -p test_terminal_copy.py -v
