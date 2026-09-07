@@ -1,16 +1,15 @@
 [Unit]
-Description=UniConnect persistent agent workspaces
+Description=UniConnect recovery supervisor (tmux windows and their AI sessions)
 After=network-online.target
-Wants=network-online.target
 
 [Service]
 Type=simple
 ExecStart=/bin/bash -lc 'exec /usr/bin/python3 "%h/.uniconnect/recovery/recovery.py" --manifest "%h/.uniconnect/recovery/manifest.json" supervise'
+# Sessions the supervisor creates live under this unit; stopping it must kill only the
+# supervisor, never the tmux server and the AI sessions inside.
+KillMode=process
 Restart=on-failure
 RestartSec=10
-# Stopping the supervisor must leave the user's detached tmux work intact.
-KillMode=process
-UMask=0077
 
 [Install]
 WantedBy=default.target
