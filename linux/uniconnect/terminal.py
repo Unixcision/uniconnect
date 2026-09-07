@@ -16,6 +16,8 @@ gi.require_version("Vte", "2.91")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango, Vte
 
 from .transport import SSHCommand, Transport, TransportError, terminal_launch
+from .terminal_copy import TerminalCopy
+from .selection_drag import SelectionDrag
 
 
 class TerminalSurface(Gtk.Box):
@@ -25,6 +27,7 @@ class TerminalSurface(Gtk.Box):
         self.owner, self.workspace, self.record = owner, workspace, window
         self.pid, self.generation, self.disposed = 0, 0, False
         self._pending_launch = None
+        self._reset_selection = False
         self._preparing = False
         self._spawning = False
         self._ownership_keys = []
@@ -43,6 +46,7 @@ class TerminalSurface(Gtk.Box):
         self._allow_auto_retry = False
         self.status = "Connecting"
         self.terminal = Vte.Terminal()
+        self.selection_drag = SelectionDrag(self)
         self.terminal.set_scrollback_lines(50000)
         self.terminal.set_mouse_autohide(True)
         self.terminal.set_allow_hyperlink(True)
@@ -54,6 +58,11 @@ class TerminalSurface(Gtk.Box):
         self.terminal.connect("bell", lambda *_: self.owner.notify_window(self.workspace, self.record))
         self.terminal.connect("focus-in-event", self.on_focus)
         self.terminal.connect("button-press-event", self.on_button)
+        self.terminal.add_events(Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK)
+        self.terminal.connect("motion-notify-event", self.on_selection_motion)
+        self.terminal.connect("grab-broken-event", self.on_selection_grab_broken)
+        self.terminal.connect("button-release-event", self.on_selection_release)
+        self.terminal.connect("key-press-event", self.on_selection_key)
         self.terminal.connect("notify::current-directory-uri", self.on_directory)
         self.terminal.connect("contents-changed", self.on_mobile_content_changed)
         self.terminal.connect("cursor-moved", self.on_mobile_content_changed)
@@ -82,6 +91,10 @@ class TerminalSurface(Gtk.Box):
         self.retry.set_tooltip_text(self.owner._("Reconnect"))
         self.retry.connect("clicked", lambda *_: self.launch())
         self.footer.pack_end(self.retry, False, False, 0)
+        self.exit_selection = Gtk.Button(label=self.owner._("Salir de selección"))
+        self.exit_selection.set_relief(Gtk.ReliefStyle.NONE)
+        self.exit_selection.connect("clicked", lambda *_: (self.on_focus(), self.owner.run_action("cancel_selection")))
+        self.footer.pack_end(self.exit_selection, False, False, 0)
         self.pack_end(self.footer, False, False, 0)
         self.show_all()
         if auto_launch:
@@ -144,12 +157,21 @@ class TerminalSurface(Gtk.Box):
 
     def launch(self, create=False):
         """An explicit reconnect starts a new bounded recovery budget."""
+        self._reset_selection = self.generation > 0 and not create
         self._cancel_reconnect(reset=True)
+        if self.selection_drag.busy:
+            # An in-flight SSH selection must finish before reconnect cancels
+            # copy-mode; otherwise its late begin could re-enter that mode.
+            self.selection_drag.reset()
+            self.selection_drag.run_action(lambda pane: None, lambda *_: self._queue_launch(create),
+                                           discard_motion=True)
+            return False
         return self._queue_launch(create)
 
     def _queue_launch(self, create=False):
         if self.disposed:
             return False
+        self.selection_drag.reset()
         self._allow_auto_retry = True
         self.generation += 1
         self._pending_launch = (self.generation, create)
@@ -164,6 +186,8 @@ class TerminalSurface(Gtk.Box):
         if self.disposed or self._pending_launch is None or self.pid or self._spawning or self._preparing:
             return False
         generation, create = self._pending_launch
+        reset_selection = self._reset_selection
+        self._reset_selection = False
         self._pending_launch = None
         self._preparing = True
         try:
@@ -177,6 +201,8 @@ class TerminalSurface(Gtk.Box):
 
         def prepare():
             try:
+                if reset_selection and record.get("tmux"):
+                    TerminalCopy(Transport(connect, socket_name=record.get("tmuxSocket"))).cancel_selection(record)
                 launch, keys = self._launch_preparer(workspace, record, connect, create)
                 GLib.idle_add(self._prepared, generation, launch, keys, None)
             except Exception as error:
@@ -406,6 +432,7 @@ class TerminalSurface(Gtk.Box):
             pass
 
     def stop_client(self):
+        self.selection_drag.reset()
         self._allow_auto_retry = False
         self._cancel_reconnect(reset=True)
         self.generation += 1
@@ -442,10 +469,56 @@ class TerminalSurface(Gtk.Box):
                 self.owner.persist()
 
     def on_button(self, _, event):
+        if (event.button == 1 and event.state & Gdk.ModifierType.SHIFT_MASK
+                and self.record.get("tmux") and self.status == "Running"):
+            self.on_focus()
+            self.owner._clipboard_copy_request = object()
+            self.terminal.unselect_all()
+            try:
+                connection = self.owner.connection(self.workspace) if self.workspace["kind"] == "ssh" else None
+                transport = Transport(connection, socket_name=self.record.get("tmuxSocket"))
+                self.selection_drag.begin(transport, self.record, *self.selection_cell(event), event)
+            except Exception as error:
+                self.selection_drag.reset()
+                import logging
+                logging.getLogger(__name__).warning("Selection gesture failed type=%s", type(error).__name__)
+                self.owner.error(self.owner._("No se pudo seleccionar el historial del terminal."))
+            return True
         if event.button == 3:
             self.on_focus()
-            self.owner.context_menu(["copy", "paste", "find", "new_window", "rename_window",
+            self.owner.context_menu(["copy", "cancel_selection", "paste", "find", "new_window", "rename_window",
                                      "split_right", "split_down", "reconnect", "upload", "close_window"], event)
+            return True
+        return False
+
+    def selection_cell(self, event):
+        padding = self.terminal.get_style_context().get_padding(Gtk.StateFlags.NORMAL)
+        origin_x, origin_y = self.terminal.get_window().get_origin()[-2:]
+        return (int((event.x_root - origin_x - padding.left) // max(1, self.terminal.get_char_width())),
+                int((event.y_root - origin_y - padding.top) // max(1, self.terminal.get_char_height())))
+
+    def on_selection_motion(self, _, event):
+        if not self.selection_drag.pressed:
+            return False
+        return self.selection_drag.motion(*self.selection_cell(event))
+
+    def on_selection_release(self, _, event):
+        if event.button == 1 and self.selection_drag.active:
+            self.selection_drag.motion(*self.selection_cell(event))
+            self.selection_drag.finish()
+            return True
+        return False
+
+    def on_selection_grab_broken(self, _, event):
+        # Taking our explicit seat grab replaces GDK's implicit button grab;
+        # that notification is not a loss of the new gesture's pointer.
+        if not event.keyboard and not event.implicit and self.selection_drag.pressed:
+            self.selection_drag.finish()
+        return False
+
+    def on_selection_key(self, _, event):
+        if event.keyval == Gdk.KEY_Escape and self.selection_drag.active:
+            self.owner.run_action("cancel_selection")
             return True
         return False
 
@@ -474,7 +547,63 @@ class TerminalSurface(Gtk.Box):
         self.terminal.feed_child(text.encode())
 
     def copy(self):
-        self.terminal.copy_clipboard_format(Vte.Format.TEXT)
+        if self.disposed:
+            return
+        request = object()
+        self.owner._clipboard_copy_request = request
+        if self.terminal.get_has_selection():
+            self.terminal.copy_clipboard_format(Vte.Format.TEXT)
+            return
+        generation = self.generation
+        try:
+            connection = self.owner.connection(self.workspace) if self.workspace["kind"] == "ssh" else None
+            transport = Transport(connection, socket_name=self.record.get("tmuxSocket"))
+            record = dict(self.record)
+        except Exception:
+            self.owner.error(self.owner._("No se pudo copiar la selección del terminal."))
+            return
+
+        def deliver(text, error):
+            if (self.disposed or generation != self.generation
+                    or self.owner._clipboard_copy_request is not request):
+                return False
+            if error:
+                message = (error.code if isinstance(error, TransportError) and error.code.startswith("Selecciona")
+                           else "No se pudo copiar la selección del terminal.")
+                self.owner.error(self.owner._(message))
+            elif text:
+                self.selection_drag.reset()
+                clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+                clipboard.set_text(text, -1)
+                clipboard.store()
+            return False
+
+        self.selection_drag.run_action(lambda pane: TerminalCopy(transport).read_selection(record, pane), deliver)
+
+    def cancel_selection(self):
+        if self.disposed:
+            return
+        self.owner._clipboard_copy_request = object()
+        self.terminal.unselect_all()
+        if not self.record.get("tmux"):
+            return
+        generation = self.generation
+        try:
+            connection = self.owner.connection(self.workspace) if self.workspace["kind"] == "ssh" else None
+            bridge = TerminalCopy(Transport(connection, socket_name=self.record.get("tmuxSocket")))
+            record = dict(self.record)
+        except Exception:
+            self.owner.error(self.owner._("No se pudo salir del modo selección."))
+            return
+
+        def completed(_, error):
+            if self.disposed or generation != self.generation:
+                return
+            self.selection_drag.reset()
+            if error:
+                self.owner.error(self.owner._("No se pudo salir del modo selección."))
+
+        self.selection_drag.run_action(lambda pane: bridge.cancel_selection(record, pane), completed, discard_motion=True)
 
     def paste(self):
         if hasattr(self.owner, "paste_clipboard"):

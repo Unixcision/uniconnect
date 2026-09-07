@@ -2,6 +2,36 @@
   "sourceLanguage": "es",
   "version": "1.0",
   "strings": {
+    "uniconnect.shared.no.se.pudo.seleccionar.el.historial.del.terminal": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": { "stringUnit": { "state": "translated", "value": "No se pudo seleccionar el historial del terminal." } }
+      }
+    },
+    "uniconnect.shared.salir.de.selecci.n": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": { "stringUnit": { "state": "translated", "value": "Salir de selección" } }
+      }
+    },
+    "uniconnect.shared.no.se.pudo.salir.del.modo.selecci.n": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": { "stringUnit": { "state": "translated", "value": "No se pudo salir del modo selección." } }
+      }
+    },
+    "uniconnect.shared.selecciona.texto.antes.de.copiar": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": { "stringUnit": { "state": "translated", "value": "Selecciona texto antes de copiar." } }
+      }
+    },
+    "uniconnect.shared.no.se.pudo.copiar.la.selecci.n.del.terminal": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": { "stringUnit": { "state": "translated", "value": "No se pudo copiar la selección del terminal." } }
+      }
+    },
     "uniconnect.shared.sin.ventanas": {
       "extractionState": "manual",
       "localizations": {

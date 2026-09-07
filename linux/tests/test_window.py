@@ -159,7 +159,7 @@ class MainWindowLifecycleTests(unittest.TestCase):
                 self.assertEqual(store.workspace("workspace-0")["name"], "Renamed workspace")
                 self.assertEqual(surface.record["name"], "Renamed terminal")
                 self.assertFalse(window.action_enabled("edit_ssh"))
-                self.assertFalse(window.action_enabled("reconnect"))
+                self.assertTrue(window.action_enabled("reconnect"))
                 window.run_action("workspace_9")
                 self.assertEqual(window.current_workspace()["id"], "workspace-5")
                 window.run_action("workspace_1")

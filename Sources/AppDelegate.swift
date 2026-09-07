@@ -855,7 +855,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// main window's `NSHostingView` itself, so it injects this into the
     /// `ContentView` environment so `@LiveSetting` can resolve the stores it
     /// observes inside the sidebar.
-    var settingsRuntime: SettingsRuntime?
+    var settingsRuntime: SettingsRuntime? {
+        didSet {
+            guard let settingsRuntime else {
+                settingsWindowController = nil
+                return
+            }
+            let controller = SettingsWindowController(runtime: settingsRuntime)
+            settingsWindowController = controller
+            SettingsWindowPresenter.configure(
+                openWindow: { controller.show() },
+                parentWindowProvider: { [weak self] in
+                    self?.preferredMainWindowForSettingsPresentation()
+                }
+            )
+        }
+    }
+    private var settingsWindowController: SettingsWindowController?
     weak var fileExplorerState: FileExplorerState?
     weak var fullscreenControlsViewModel: TitlebarControlsViewModel?
     weak var sidebarSelectionState: SidebarSelectionState?
@@ -8897,7 +8913,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     ) {
 #if DEBUG
-        cmuxDebugLog("settings.open.present path=swiftuiWindow")
+        cmuxDebugLog("settings.open.present path=nativeWindow")
 #endif
         showFallbackSettingsWindow(navigationTarget)
         activateApplication()
