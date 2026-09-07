@@ -6,11 +6,15 @@ import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.MachineFailure
 import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.domain.MachineClient
+import com.unixcision.uniconnect.android.domain.AppSettings
+import com.unixcision.uniconnect.android.domain.MachineDraft
 import com.unixcision.uniconnect.android.domain.MachineEndpoint
 import com.unixcision.uniconnect.android.domain.MachineRepository
+import com.unixcision.uniconnect.android.domain.SettingsRepository
 import com.unixcision.uniconnect.android.domain.MachineSnapshot
 import com.unixcision.uniconnect.android.domain.TerminalSnapshot
 import com.unixcision.uniconnect.android.domain.TerminalTarget
+import com.unixcision.uniconnect.android.domain.TerminalView
 import com.unixcision.uniconnect.android.domain.MachineUpdate
 import com.unixcision.uniconnect.android.domain.ResourceCreation
 import com.unixcision.uniconnect.android.domain.NotificationConnectionControl
@@ -32,18 +36,38 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-class MachinesViewModel(private val repository: MachineRepository, private val client: MachineClient, private val notificationControl: NotificationConnectionControl) : ViewModel() {
+class MachinesViewModel(
+    private val repository: MachineRepository,
+    private val client: MachineClient,
+    private val notificationControl: NotificationConnectionControl,
+    private val settingsRepository: SettingsRepository,
+) : ViewModel() {
     data class Connection(val checking: Boolean = false, val connected: Boolean = false, val snapshot: MachineSnapshot? = null, val error: Int? = null)
     /** A phone-sized tmux client attached to the selected window; the emulator lives in the model. */
     data class RealTerminal(
         val snapshot: TerminalSnapshot? = null, val applicationCursorKeys: Boolean = false,
+        /** Whether tmux is showing its copy-mode indicator, i.e. the pane ignores typing. */
+        val copyMode: Boolean = false,
         val connecting: Boolean = true, val ended: Boolean = false, val error: Int? = null, val errorDetail: String? = null,
     )
     data class State(
         val machines: List<Machine> = emptyList(), val loading: Boolean = true, val error: Int? = null,
         val adding: Boolean = false, val saving: Boolean = false, val formError: Int? = null,
+        /** The machine whose address is being edited, if any; the form is shared with adding. */
+        val editing: Machine? = null,
         val selectedMachine: String? = null, val selectedWorkspace: String? = null, val selectedWindow: String? = null,
         val connections: Map<String, Connection> = emptyMap(),
+        /** Whether the list is asking every machine whether it answers right now. */
+        val refreshing: Boolean = false,
+        /** The user's own preferences; defaults until the stored ones are read. */
+        val settings: AppSettings = AppSettings(),
+        /** Whether the settings sheet is open. */
+        val showingSettings: Boolean = false,
+        /** Set when going to the background closed a real terminal that should come back. */
+        val resumeRealTerminal: Boolean = false,
+        /** The reading and magnification in use, kept across a re-attach; null means the setting. */
+        val terminalView: TerminalView? = null,
+        val terminalZoom: Float = 1f,
         val terminal: TerminalSnapshot? = null, val terminalLoading: Boolean = false,
         val terminalError: Int? = null, val terminalErrorDetail: String? = null, val inputSending: Boolean = false, val reconnecting: Boolean = false,
         val creation: CreationContext? = null, val creating: Boolean = false, val creationError: Int? = null,
@@ -71,6 +95,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                 }
         }
         viewModelScope.launch { notificationControl.states.collect { links -> mutableState.update { it.copy(notificationLinks = links) } } }
+        viewModelScope.launch { settingsRepository.settings.collect { stored -> mutableState.update { it.copy(settings = stored) } } }
         // The activity is in the foreground when this model is built, so re-arming the saved links is allowed.
         notificationControl.restore()
     }
@@ -82,17 +107,26 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
      * so the list shows connected/pending/offline instead of always "saved". Reading the tree
      * never creates a terminal or changes anything on the desktop.
      */
-    fun refreshMachineStates() {
+    fun refreshMachineStates(force: Boolean = false) {
         // List screen only: a probe must never race the live connection of an open machine.
-        if (!foreground || state.value.selectedMachine != null || probeJob?.isActive == true) return
+        if (!foreground || state.value.selectedMachine != null) return
+        // Asking every machine on its own is a preference; asking because the user asked is not.
+        if (!force && !state.value.settings.probeOnOpen) return
+        if (probeJob?.isActive == true) {
+            // Asking again on purpose replaces the round already in flight; without this an
+            // automatic probe would swallow the pull the user just made.
+            if (!force) return
+            probeJob?.cancel()
+        }
         val machines = state.value.machines.filter { requests[it.id]?.isActive != true }
         if (machines.isEmpty()) return
         mutableState.update { current ->
-            current.copy(connections = current.connections + machines.associate { machine ->
+            current.copy(refreshing = true, connections = current.connections + machines.associate { machine ->
                 machine.id to (current.connections[machine.id] ?: Connection()).copy(checking = true)
             })
         }
         probeJob = viewModelScope.launch {
+            try {
             machines.map { machine ->
                 async {
                     // A probe result is only ever applied while the list is still what the user sees.
@@ -111,11 +145,27 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                     }
                 }
             }.awaitAll()
+            } finally {
+                // Runs on cancellation too, so a replaced round never leaves the list spinning.
+                mutableState.update { it.copy(refreshing = false) }
+            }
         }
     }
 
+    /** Remembers how the reader is looking at this window, so a re-attach does not reset it. */
+    fun setTerminalView(view: TerminalView) { mutableState.update { it.copy(terminalView = view, terminalZoom = 1f) } }
+    fun setTerminalZoom(zoom: Float) { mutableState.update { it.copy(terminalZoom = zoom) } }
+
+    fun showSettings() { mutableState.update { it.copy(showingSettings = true) } }
+    fun dismissSettings() { mutableState.update { it.copy(showingSettings = false) } }
+    /** Stores a changed preference; the screen re-reads it from the repository's own flow. */
+    fun updateSettings(settings: AppSettings) { viewModelScope.launch { settingsRepository.update(settings) } }
+
     fun showAdd() { mutableState.update { it.copy(adding = true, formError = null) } }
     fun dismissAdd() { if (!state.value.saving) mutableState.update { it.copy(adding = false, formError = null) } }
+    /** Opens the same form on an existing machine, so a moved host is corrected instead of re-added. */
+    fun showEdit(machine: Machine) { mutableState.update { it.copy(editing = machine, formError = null) } }
+    fun dismissEdit() { if (!state.value.saving) mutableState.update { it.copy(editing = null, formError = null) } }
     fun dismissError() { mutableState.update { it.copy(error = null) } }
     fun notificationPermissionDenied() { mutableState.update { it.copy(error = R.string.notice_permission_denied) } }
     fun enableNotifications(machineID: String) {
@@ -135,7 +185,12 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     }
     fun pauseLiveConnection() {
         foreground = false
+        // Leaving the app closes the attached client, but the intention to be attached survives:
+        // coming back used to drop the reader into the mirror because the screen had already
+        // recorded that it tried once.
+        val wasAttached = state.value.realTerminal != null
         stopRealTerminal()
+        if (wasAttached) mutableState.update { it.copy(resumeRealTerminal = true) }
         resumeMachineID = state.value.selectedMachine?.takeIf { requests[it]?.isActive == true }
         stopObserving()
     }
@@ -200,31 +255,62 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         if (state.value.connections[id]?.snapshot != null) state.value.machines.firstOrNull { it.id == id }?.let(::connect)
     }
     fun selectWorkspace(id: String) { mutableState.update { it.copy(selectedWorkspace = id, selectedWindow = null) } }
-    fun selectWindow(id: String) { stopRealTerminal(); mutableState.update { it.copy(selectedWindow = id, terminal = null) }; refreshTerminal() }
+    /** Opens a window. The reading resets to the setting, since it belonged to the previous one. */
+    fun selectWindow(id: String) {
+        stopRealTerminal()
+        mutableState.update { it.copy(selectedWindow = id, terminal = null, terminalView = null, terminalZoom = 1f) }
+        refreshTerminal()
+    }
     fun back() { stopRealTerminal(); mutableState.update {
         when {
-            it.selectedWindow != null -> it.copy(selectedWindow = null, terminal = null, terminalLoading = false, terminalError = null, terminalErrorDetail = null, attachFallbackDetail = null)
+            it.selectedWindow != null -> it.copy(selectedWindow = null, terminal = null, terminalLoading = false, terminalError = null, terminalErrorDetail = null, attachFallbackDetail = null, terminalView = null, terminalZoom = 1f)
             it.selectedWorkspace != null -> it.copy(selectedWorkspace = null)
             else -> it.copy(selectedMachine = null)
         }
     }; state.value.selectedMachine?.let { id -> state.value.machines.firstOrNull { it.id == id }?.let { startObserving(it, force = true) } } ?: run { stopObserving(); refreshMachineStates() } }
 
+    /**
+     * Saves the form, either as a new machine or over the one being edited.
+     *
+     * Editing keeps the machine's id, so its notification link, selection and history survive a
+     * change of address; only the address itself decides whether the live connection is rebuilt.
+     */
     fun saveMachine(name: String, address: String, port: String) {
         if (state.value.saving) return
-        val endpoint = MachineEndpoint.parse(address, port)
-        val error = when {
-            name.trim().length !in 1..80 || name.any { it.isISOControl() } -> R.string.name_required
-            port.trim().toIntOrNull() !in 1..65535 -> R.string.port_invalid
-            endpoint == null -> R.string.address_invalid
-            state.value.machines.any { it.endpoint == endpoint } -> R.string.duplicate_machine
-            else -> null
+        val edited = state.value.editing
+        val draft = MachineDraft(name, address, port)
+        val problem = draft.problem(state.value.machines, edited?.id)
+        if (problem != null) {
+            val error = when (problem) {
+                MachineDraft.Problem.NAME -> R.string.name_required
+                MachineDraft.Problem.PORT -> R.string.port_invalid
+                MachineDraft.Problem.ADDRESS -> R.string.address_invalid
+                MachineDraft.Problem.DUPLICATE -> R.string.duplicate_machine
+            }
+            mutableState.update { it.copy(formError = error) }
+            return
         }
-        if (error != null) { mutableState.update { it.copy(formError = error) }; return }
         mutableState.update { it.copy(saving = true, formError = null) }
         viewModelScope.launch {
             try {
-                repository.save(Machine(UUID.randomUUID().toString(), name.trim(), requireNotNull(endpoint)))
-                mutableState.update { it.copy(saving = false, adding = false) }
+                val machine = draft.machine(edited?.id ?: UUID.randomUUID().toString())
+                repository.save(machine)
+                // A renamed machine is the same host: nothing about the connection changes. A moved
+                // one is not, so anything read from the old address has to go.
+                val moved = edited != null && edited.endpoint != machine.endpoint
+                mutableState.update {
+                    it.copy(
+                        saving = false, adding = false, editing = null,
+                        selectedWorkspace = if (moved) null else it.selectedWorkspace,
+                        selectedWindow = if (moved) null else it.selectedWindow,
+                        connections = if (moved) it.connections - machine.id else it.connections,
+                    )
+                }
+                if (moved) {
+                    requests.remove(machine.id)?.cancel()
+                    if (state.value.selectedMachine == machine.id) { stopRealTerminal(); startObserving(machine, force = true) }
+                    else refreshMachineStates()
+                }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { mutableState.update { it.copy(saving = false, formError = R.string.save_error) } }
         }
@@ -418,7 +504,8 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     private fun applyGeometry(terminal: TerminalEmulator, live: TerminalAttachment, columns: Int, rows: Int) {
         pendingGeometryJob?.cancel()
         terminal.resize(columns, rows)
-        mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = terminal.snapshot())) }
+        val frame = terminal.snapshot()
+        mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = frame, copyMode = frame.inCopyMode)) }
         pendingGeometryJob = viewModelScope.launch {
             if (attachment === live) runCatching { live.resize(columns, rows) }
         }
@@ -450,7 +537,7 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         if (current.connections[machine.id]?.connected != true) { mutableState.update { it.copy(error = R.string.connection_error) }; return }
         val terminal = TerminalEmulator(columns, rows)
         emulator = terminal
-        mutableState.update { it.copy(attachFallbackDetail = null) }
+        mutableState.update { it.copy(attachFallbackDetail = null, resumeRealTerminal = false) }
         geometry.reset()
         mutableState.update { it.copy(realTerminal = RealTerminal(connecting = true)) }
         attachJob = viewModelScope.launch {
@@ -467,7 +554,8 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
                             // Answer the program's queries (cursor position, device attributes) right away.
                             val answer = terminal.drainResponses()
                             if (answer.isNotEmpty()) runCatching { live.send(answer.toByteArray(Charsets.UTF_8)) }
-                            mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = terminal.snapshot(), applicationCursorKeys = terminal.applicationCursorKeys)) }
+                            val frame = terminal.snapshot()
+                            mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = frame, copyMode = frame.inCopyMode, applicationCursorKeys = terminal.applicationCursorKeys)) }
                         }
                         is PtyEvent.Geometry -> {
                             // The host owns the geometry: match the phone's PTY to the canvas it
@@ -514,6 +602,9 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     }
 
     fun stopRealTerminal() {
+        // Leaving on purpose cancels any intention to come back attached; pausing re-arms it after.
+        mutableState.update { it.copy(resumeRealTerminal = false) }
+        leaveCopyModeJob?.cancel(); leaveCopyModeJob = null
         wheelJob?.cancel(); wheelJob = null
         pendingGeometryJob?.cancel(); pendingGeometryJob = null; geometry.reset()
         attachJob?.cancel(); attachJob = null
@@ -538,6 +629,43 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     }
 
     private var wheelJob: Job? = null
+    private var leaveCopyModeJob: Job? = null
+
+    /**
+     * Walks the attached pane out of tmux's copy mode and back to the live screen.
+     *
+     * tmux leaves copy mode by itself once the wheel reaches the bottom, so this sends wheel steps
+     * rather than a key. Reading the indicator cannot rule out that another client leaves the mode
+     * first, and what arrives late is then handled by tmux's mouse handling and by the program
+     * inside. Neither outcome is guaranteed, but a stray mouse event is the smaller of the two: a
+     * stray `q` quits `less` or `top` on its own, with no Enter needed.
+     *
+     * This is provisional and frame-based. It is not a semantic cancellation, and the indicator
+     * clearing is the only confirmation it has.
+     *
+     * It goes in short bursts and stops as soon as the indicator clears, so a shallow history
+     * costs one burst instead of the deepest one imaginable, and it cancels any queued wheel work
+     * first — otherwise the tap would wait behind every step a drag had already scheduled.
+     */
+    fun leaveCopyMode() {
+        val live = attachment ?: return
+        val terminal = emulator ?: return
+        leaveCopyModeJob?.cancel()
+        wheelJob?.cancel(); wheelJob = null
+        val sequence = terminal.encodeWheel(up = false, column = 0, row = 0).toByteArray(Charsets.UTF_8)
+        leaveCopyModeJob = viewModelScope.launch {
+            repeat(COPY_MODE_EXIT_BURSTS) {
+                if (attachment !== live || !terminal.snapshot().inCopyMode) return@launch
+                repeat(COPY_MODE_EXIT_STEPS) { step ->
+                    if (attachment !== live) return@launch
+                    runCatching { live.send(sequence) }.onFailure { return@launch }
+                    if (step < COPY_MODE_EXIT_STEPS - 1) delay(WHEEL_GAP_MILLIS)
+                }
+                // Bounded, intended pause: tmux has to redraw before its indicator can be believed.
+                delay(COPY_MODE_SETTLE_MILLIS)
+            }
+        }
+    }
 
     /**
      * Wheel steps for the attached client; tmux turns them into copy-mode scrolling.
@@ -549,7 +677,9 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
     fun wheelPty(up: Boolean, steps: Int, column: Int = 0, row: Int = 0) {
         val live = attachment ?: return
         val sequence = (emulator ?: return).encodeWheel(up, column, row).toByteArray(Charsets.UTF_8)
-        val count = steps.coerceIn(1, 20)
+        // A drag asks for a handful of steps; leaving copy mode asks for as many as the history
+        // is deep, so the cap is generous rather than gesture-sized.
+        val count = steps.coerceIn(1, 400)
         val previous = wheelJob
         wheelJob = viewModelScope.launch {
             previous?.join()
@@ -612,6 +742,11 @@ class MachinesViewModel(private val repository: MachineRepository, private val c
         const val ENTER_GAP_MILLIS = 80L
         /** Gap between wheel steps so tmux reads each one as a separate event. */
         const val WHEEL_GAP_MILLIS = 16L
+        /** Wheel steps per burst while leaving copy mode, and how many bursts at most. */
+        const val COPY_MODE_EXIT_STEPS = 12
+        const val COPY_MODE_EXIT_BURSTS = 40
+        /** Time given to tmux to redraw before its indicator is read again. */
+        const val COPY_MODE_SETTLE_MILLIS = 110L
         /** Retries allowed before a first connection is reported as failed. */
         const val INITIAL_ATTEMPTS = 3
     }

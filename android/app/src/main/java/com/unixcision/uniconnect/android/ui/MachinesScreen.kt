@@ -20,9 +20,13 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -97,12 +101,26 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
                 },
             ) {
                 when (level) {
-                    Level.LIST -> FilledIconButton(onClick = model::showAdd, colors = IconButtonDefaults.filledIconButtonColors(containerColor = Brand.Cyan, contentColor = Brand.Night)) {
-                        Icon(Icons.Rounded.Add, stringResource(R.string.add_machine))
+                    Level.LIST -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = model::showSettings) {
+                            Icon(Icons.Rounded.Settings, stringResource(R.string.settings), tint = Brand.Muted)
+                        }
+                        IconButton(onClick = { model.refreshMachineStates(force = true) }, enabled = !state.refreshing) {
+                            if (state.refreshing) LoadingIndicator(Modifier.size(22.dp), color = Brand.Cyan)
+                            else Icon(Icons.Rounded.Refresh, stringResource(R.string.refresh_connections), tint = Brand.Muted)
+                        }
+                        FilledIconButton(onClick = model::showAdd, colors = IconButtonDefaults.filledIconButtonColors(containerColor = Brand.Cyan, contentColor = Brand.Night)) {
+                            Icon(Icons.Rounded.Add, stringResource(R.string.add_machine))
+                        }
                     }
                     Level.MACHINE -> Box {
                         IconButton(onClick = { menuOpen = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.machine_menu), tint = Brand.Muted) }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = Brand.SurfaceHigh) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.edit_machine)) },
+                                leadingIcon = { Icon(Icons.Rounded.Edit, null, tint = Brand.Cyan) },
+                                onClick = { menuOpen = false; machine?.let(model::showEdit) },
+                            )
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.remove), color = Brand.Coral) },
                                 leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = Brand.Coral) },
@@ -135,6 +153,9 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
                             attachFallbackDetail = state.attachFallbackDetail,
                             onStartReal = model::startRealTerminal, onStopReal = model::stopRealTerminal,
                             onPty = model::sendPty, onPtyWheel = model::wheelPty, onPtyResize = model::resizePty,
+                            onLeaveCopyMode = model::leaveCopyMode, settings = state.settings,
+                            resumeReal = state.resumeRealTerminal, view = state.terminalView, zoom = state.terminalZoom,
+                            onView = model::setTerminalView, onZoom = model::setTerminalZoom,
                         )
                     }
                     Level.MACHINE -> if (machine != null) MachineBoxesScreen(
@@ -144,12 +165,19 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
                         onConnect = { model.connect(machine) }, onCreateWorkspace = { model.showCreate(false) },
                         onCreateWindow = { model.showCreate(true) }, onSelectWorkspace = model::selectWorkspace, onSelectWindow = model::selectWindow,
                     )
-                    Level.LIST -> MachineList(state.machines, state.connections, model::showAdd, model::selectMachine)
+                    Level.LIST -> PullToRefreshBox(
+                        isRefreshing = state.refreshing,
+                        onRefresh = { model.refreshMachineStates(force = true) },
+                    ) { MachineList(state.machines, state.connections, model::showAdd, model::selectMachine) }
                 }
             }
         }
     }
-    if (state.adding) AddMachineSheet(state.saving, state.formError, model::dismissAdd, model::saveMachine)
+    if (state.showingSettings) SettingsSheet(state.settings, model::updateSettings, model::dismissSettings)
+    if (state.adding) MachineSheet(state.saving, state.formError, onDismiss = model::dismissAdd, onSave = model::saveMachine)
+    state.editing?.let { target ->
+        MachineSheet(state.saving, state.formError, machine = target, onDismiss = model::dismissEdit, onSave = model::saveMachine)
+    }
     state.creation?.let { CreateResourceSheet(it, state.creating, state.creationError, model::dismissCreate, model::create) }
     removing?.let { target ->
         AlertDialog(
