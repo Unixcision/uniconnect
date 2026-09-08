@@ -94,6 +94,7 @@ fun TerminalScreen(
     zoom: Float = 1f,
     onView: (TerminalView) -> Unit = {},
     onZoom: (Float) -> Unit = {},
+    onReconnectReal: () -> Unit = {},
 ) {
     var realRequested by rememberSaveable { mutableStateOf(false) }
     // Default way in: attach to the window's own tmux session. Only a host without the attach RPC,
@@ -105,7 +106,7 @@ fun TerminalScreen(
             real, connected, sending, view ?: settings.terminalView, zoom, settings.showExtraKeys,
             onStopReal = { realRequested = false; manuallyLeft = true; onStopReal() },
             onPty = onPty, onPtyWheel = onPtyWheel, onPtyResize = onPtyResize,
-            onLeaveCopyMode = onLeaveCopyMode, onView = onView, onZoom = onZoom,
+            onLeaveCopyMode = onLeaveCopyMode, onView = onView, onZoom = onZoom, onReconnect = onReconnectReal,
         )
         return
     }
@@ -127,7 +128,7 @@ private fun RealTerminalScreen(
     real: MachinesViewModel.RealTerminal, connected: Boolean, sending: Boolean,
     viewMode: TerminalView, zoom: Float, startWithKeys: Boolean,
     onStopReal: () -> Unit, onPty: (String, Boolean) -> Unit, onPtyWheel: (Boolean, Int) -> Unit, onPtyResize: (Int, Int) -> Unit,
-    onLeaveCopyMode: () -> Unit, onView: (TerminalView) -> Unit, onZoom: (Float) -> Unit,
+    onLeaveCopyMode: () -> Unit, onView: (TerminalView) -> Unit, onZoom: (Float) -> Unit, onReconnect: () -> Unit,
 ) {
     var keysVisible by rememberSaveable { mutableStateOf(startWithKeys) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
@@ -162,7 +163,15 @@ private fun RealTerminalScreen(
                 real.errorDetail?.let { detail -> Text(stringResource(R.string.host_error_code, detail), color = Brand.Muted, style = MaterialTheme.typography.labelSmall) }
             }
         }
-        if (real.ended) Text(stringResource(R.string.real_terminal_ended), Modifier.padding(horizontal = 20.dp, vertical = 6.dp), color = Brand.Amber, style = MaterialTheme.typography.bodySmall)
+        // The host ended or refused the session: say so and offer the way back in right here,
+        // instead of leaving a greyed-out composer and a detour through the mirror.
+        if (real.ended || real.error != null) Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (real.ended) Text(stringResource(R.string.real_terminal_ended), Modifier.weight(1f), color = Brand.Amber, style = MaterialTheme.typography.bodySmall)
+            else Spacer(Modifier.weight(1f))
+            Button(onClick = onReconnect, enabled = connected, shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+                Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.real_terminal_reconnect))
+            }
+        }
         val frameShape = RoundedCornerShape(20.dp)
         Box(
             Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp).clip(frameShape)

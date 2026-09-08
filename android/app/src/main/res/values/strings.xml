@@ -198,4 +198,5 @@
     <string name="key_ctrl_d_desc">Control D: fin de entrada</string>
     <string name="key_ctrl_z_desc">Control Z: suspender</string>
     <string name="key_ctrl_l_desc">Control L: limpiar pantalla</string>
+    <string name="real_terminal_reconnect">Reconectar</string>
 </resources>

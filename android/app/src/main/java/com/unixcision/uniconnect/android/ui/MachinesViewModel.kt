@@ -35,6 +35,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class MachinesViewModel(
@@ -501,6 +504,39 @@ class MachinesViewModel(
 
     private var attachment: TerminalAttachment? = null
     private var attachJob: Job? = null
+    private var reattachJob: Job? = null
+    private var attachedAtNanos = 0L
+    private var automaticReattaches = 0
+
+    /**
+     * Re-attaches the selected window at the size the emulator already has.
+     *
+     * Used by the Reconnect button and by the automatic retry: an attachment that the host ends
+     * on its own (a burst of output over a slow link, a dropped socket) is not the reader leaving.
+     */
+    fun reconnectRealTerminal() {
+        val columns = emulator?.screen?.columns ?: state.value.realTerminal?.snapshot?.columns ?: return
+        val rows = emulator?.screen?.rows ?: state.value.realTerminal?.snapshot?.rows ?: return
+        reattachJob?.cancel(); reattachJob = null
+        stopRealTerminal()
+        startRealTerminal(columns, rows, automatic = false)
+    }
+
+    /** Schedules one automatic re-attach after the host ended the session, up to a small limit. */
+    private fun scheduleReattach(live: TerminalAttachment) {
+        // A session that stayed up for a while earns fresh retries; a flapping one does not.
+        if (System.nanoTime() - attachedAtNanos > REATTACH_RESET_NANOS) automaticReattaches = 0
+        if (automaticReattaches >= MAX_AUTOMATIC_REATTACHES) return
+        val machineID = state.value.selectedMachine ?: return
+        if (state.value.connections[machineID]?.connected != true) return
+        automaticReattaches += 1
+        reattachJob?.cancel()
+        reattachJob = viewModelScope.launch {
+            // Bounded, intended pause: let the host settle before asking for the pane again.
+            delay(REATTACH_DELAY_MILLIS)
+            if (attachment === live && state.value.realTerminal?.let { it.ended || it.error != null } == true) reconnectRealTerminal()
+        }
+    }
     private var emulator: TerminalEmulator? = null
     private val geometry = GeometryFollower()
     private var pendingGeometryJob: Job? = null
@@ -550,17 +586,33 @@ class MachinesViewModel(
             try {
                 live = client.attach(machine, workspaceID, windowID, columns, rows)
                 attachment = live
+                attachedAtNanos = System.nanoTime()
                 if (live.columns != columns || live.rows != rows) terminal.resize(live.columns, live.rows)
                 mutableState.update { it.copy(realTerminal = RealTerminal(snapshot = terminal.snapshot(), connecting = false)) }
-                live.events.collect { event ->
+                // Rendering is decoupled from reading. A busy TUI (Codex redrawing with a spinner)
+                // pushes well over 100 KB/s; taking a full snapshot per chunk made this collector
+                // slower than the network, the socket reader stalled behind it, and the host saw
+                // its queue overflow and dropped the attachment. Now bytes are fed as they come and
+                // the screen is published at most once per frame.
+                var dirty = false
+                val painter = launch {
+                    while (isActive) {
+                        // Bounded, intended pacing: one snapshot per ~frame, only when bytes arrived.
+                        delay(RENDER_FRAME_MILLIS)
+                        if (!dirty || attachment !== live) continue
+                        dirty = false
+                        val frame = terminal.snapshot()
+                        mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = frame, copyMode = frame.inCopyMode, applicationCursorKeys = terminal.applicationCursorKeys)) }
+                    }
+                }
+                try { live.events.buffer(Channel.UNLIMITED).collect { event ->
                     when (event) {
                         is PtyEvent.Output -> {
                             terminal.feed(event.bytes)
                             // Answer the program's queries (cursor position, device attributes) right away.
                             val answer = terminal.drainResponses()
                             if (answer.isNotEmpty()) runCatching { live.send(answer.toByteArray(Charsets.UTF_8)) }
-                            val frame = terminal.snapshot()
-                            mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = frame, copyMode = frame.inCopyMode, applicationCursorKeys = terminal.applicationCursorKeys)) }
+                            dirty = true
                         }
                         is PtyEvent.Geometry -> {
                             // The host owns the geometry: match the phone's PTY to the canvas it
@@ -576,7 +628,17 @@ class MachinesViewModel(
                                 GeometryFollower.Decision.Ignore -> pendingGeometryJob?.cancel()
                             }
                         }
-                        PtyEvent.Exit -> mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(ended = true, connecting = false)) }
+                        PtyEvent.Exit -> {
+                            mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(ended = true, connecting = false)) }
+                            scheduleReattach(live)
+                        }
+                    }
+                } } finally {
+                    painter.cancel()
+                    // Whatever arrived after the last frame is shown before the screen goes quiet.
+                    if (attachment === live) {
+                        val frame = terminal.snapshot()
+                        mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = frame, copyMode = frame.inCopyMode, applicationCursorKeys = terminal.applicationCursorKeys)) }
                     }
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
@@ -609,6 +671,7 @@ class MachinesViewModel(
     fun stopRealTerminal() {
         // Leaving on purpose cancels any intention to come back attached; pausing re-arms it after.
         mutableState.update { it.copy(resumeRealTerminal = false) }
+        reattachJob?.cancel(); reattachJob = null
         leaveCopyModeJob?.cancel(); leaveCopyModeJob = null
         wheelJob?.cancel(); wheelJob = null
         pendingGeometryJob?.cancel(); pendingGeometryJob = null; geometry.reset()
@@ -747,6 +810,13 @@ class MachinesViewModel(
         const val ENTER_GAP_MILLIS = 80L
         /** Gap between wheel steps so tmux reads each one as a separate event. */
         const val WHEEL_GAP_MILLIS = 16L
+        /** How often the attached screen is published while bytes keep arriving (~40 fps). */
+        const val RENDER_FRAME_MILLIS = 24L
+        /** Automatic re-attach after the host ends a session: how long to wait, how many in a row. */
+        const val REATTACH_DELAY_MILLIS = 1500L
+        const val MAX_AUTOMATIC_REATTACHES = 2
+        /** An attachment that lasted this long resets the automatic retry budget. */
+        const val REATTACH_RESET_NANOS = 30_000_000_000L
         /** Wheel steps per burst while leaving copy mode, and how many bursts at most. */
         const val COPY_MODE_EXIT_STEPS = 12
         const val COPY_MODE_EXIT_BURSTS = 40

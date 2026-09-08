@@ -155,7 +155,7 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
                             onPty = model::sendPty, onPtyWheel = model::wheelPty, onPtyResize = model::resizePty,
                             onLeaveCopyMode = model::leaveCopyMode, settings = state.settings,
                             resumeReal = state.resumeRealTerminal, view = state.terminalView, zoom = state.terminalZoom,
-                            onView = model::setTerminalView, onZoom = model::setTerminalZoom,
+                            onView = model::setTerminalView, onZoom = model::setTerminalZoom, onReconnectReal = model::reconnectRealTerminal,
                         )
                     }
                     Level.MACHINE -> if (machine != null) MachineBoxesScreen(
