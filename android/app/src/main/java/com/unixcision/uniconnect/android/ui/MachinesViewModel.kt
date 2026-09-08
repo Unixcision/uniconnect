@@ -16,6 +16,7 @@ import com.unixcision.uniconnect.android.domain.MachineSnapshot
 import com.unixcision.uniconnect.android.domain.TerminalSnapshot
 import com.unixcision.uniconnect.android.domain.TerminalTarget
 import com.unixcision.uniconnect.android.domain.TerminalView
+import com.unixcision.uniconnect.android.domain.WheelBudget
 import com.unixcision.uniconnect.android.domain.MachineUpdate
 import com.unixcision.uniconnect.android.domain.ResourceCreation
 import com.unixcision.uniconnect.android.domain.NotificationConnectionControl
@@ -693,7 +694,7 @@ class MachinesViewModel(
         mutableState.update { it.copy(resumeRealTerminal = false) }
         reattachJob?.cancel(); reattachJob = null
         leaveCopyModeJob?.cancel(); leaveCopyModeJob = null
-        wheelJob?.cancel(); wheelJob = null
+        wheelJob?.cancel(); wheelJob = null; wheelBudget.clear()
         pendingGeometryJob?.cancel(); pendingGeometryJob = null; geometry.reset()
         attachJob?.cancel(); attachJob = null
         attachment?.close(); attachment = null
@@ -739,7 +740,7 @@ class MachinesViewModel(
         val live = attachment ?: return
         val terminal = emulator ?: return
         leaveCopyModeJob?.cancel()
-        wheelJob?.cancel(); wheelJob = null
+        wheelJob?.cancel(); wheelJob = null; wheelBudget.clear()
         val sequence = terminal.encodeWheel(up = false, column = 0, row = 0).toByteArray(Charsets.UTF_8)
         leaveCopyModeJob = viewModelScope.launch {
             repeat(COPY_MODE_EXIT_BURSTS) {
@@ -762,20 +763,27 @@ class MachinesViewModel(
      * tmux acts on the first one (entering copy-mode) and ignores the rest, which is exactly how the
      * view used to freeze at the top of the history.
      */
+    private val wheelBudget = WheelBudget()
+
+    /**
+     * Wheel steps for the attached client; tmux turns them into copy-mode scrolling.
+     *
+     * Requests only adjust a balance; a single drainer sends one step per gap while the balance
+     * is not zero. Each step is its own write, because a burst in one write reads as pasted input
+     * and tmux acts on the first step only.
+     */
     fun wheelPty(up: Boolean, steps: Int, column: Int = 0, row: Int = 0) {
         val live = attachment ?: return
-        val sequence = (emulator ?: return).encodeWheel(up, column, row).toByteArray(Charsets.UTF_8)
-        // A drag asks for a handful of steps; leaving copy mode asks for as many as the history
-        // is deep, so the cap is generous rather than gesture-sized.
-        val count = steps.coerceIn(1, 400)
-        val previous = wheelJob
+        val terminal = emulator ?: return
+        wheelBudget.add(up, steps.coerceAtLeast(1))
+        if (wheelJob?.isActive == true) return
         wheelJob = viewModelScope.launch {
-            previous?.join()
-            repeat(count) { index ->
-                if (attachment !== live) return@launch
-                if (runCatching { live.send(sequence) }.isFailure) return@launch
+            while (attachment === live) {
+                val direction = wheelBudget.next() ?: break
+                val sequence = terminal.encodeWheel(direction, column, row).toByteArray(Charsets.UTF_8)
+                if (runCatching { live.send(sequence) }.isFailure) { wheelBudget.clear(); break }
                 // Bounded, intended gap so each step is its own event rather than part of a paste.
-                if (index < count - 1) delay(WHEEL_GAP_MILLIS)
+                delay(WHEEL_GAP_MILLIS)
             }
         }
     }

@@ -42,6 +42,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -225,6 +226,10 @@ private fun RealTerminalScreen(
                         private var accumulated = 0f
                         override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                             if (available.y == 0f) return Offset.Zero
+                            // Only the finger drives tmux. Inertia arriving here frame after frame
+                            // used to become hundreds of wheel steps that scrolled for many seconds
+                            // after the finger was gone; it is swallowed below instead.
+                            if (source != NestedScrollSource.UserInput) return Offset(0f, available.y)
                             accumulated += available.y
                             val lines = (accumulated / metrics.lineHeight).toInt()
                             if (lines != 0) {
@@ -232,6 +237,14 @@ private fun RealTerminalScreen(
                                 wheel(lines > 0, kotlin.math.abs(lines))
                             }
                             return Offset(0f, available.y)
+                        }
+
+                        override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                            // A flick past the edge asks tmux for a short, bounded run, not a second per
+                            // pixel of velocity; then the fling is finished, whatever is left of it.
+                            val lines = (available.y / metrics.lineHeight * FLING_SECONDS).toInt().coerceIn(-FLING_MAX_LINES, FLING_MAX_LINES)
+                            if (lines != 0) wheel(lines > 0, kotlin.math.abs(lines))
+                            return available
                         }
                     }
                 }
@@ -472,6 +485,10 @@ private fun RealTerminalStarter(armed: Boolean, onStart: (Int, Int) -> Unit) {
 
 /** How the desktop grid is shown on the phone; none of these change the desktop PTY size. */
 /** Reading geometry for this device. The desktop PTY keeps its own columns and rows. */
+/** How much of a flick past the canvas edge reaches tmux: a fraction of a second of it, capped. */
+private const val FLING_SECONDS = 0.12f
+private const val FLING_MAX_LINES = 24
+
 /** Reader-controlled zoom bounds: below 0.6 the text stops being legible, above 5 it is huge. */
 private const val MIN_ZOOM = 0.6f
 private const val MAX_ZOOM = 5f
