@@ -523,7 +523,7 @@ class MachinesViewModel(
     }
 
     /** Schedules one automatic re-attach after the host ended the session, up to a small limit. */
-    private fun scheduleReattach(live: TerminalAttachment) {
+    private fun scheduleReattach() {
         // A session that stayed up for a while earns fresh retries; a flapping one does not.
         if (System.nanoTime() - attachedAtNanos > REATTACH_RESET_NANOS) automaticReattaches = 0
         if (automaticReattaches >= MAX_AUTOMATIC_REATTACHES) return
@@ -534,7 +534,9 @@ class MachinesViewModel(
         reattachJob = viewModelScope.launch {
             // Bounded, intended pause: let the host settle before asking for the pane again.
             delay(REATTACH_DELAY_MILLIS)
-            if (attachment === live && state.value.realTerminal?.let { it.ended || it.error != null } == true) reconnectRealTerminal()
+            // The finished attachment has already been cleared by then; what matters is that no
+            // newer one has started and the screen still shows the session as ended.
+            if (attachJob?.isActive != true && state.value.realTerminal?.let { it.ended || it.error != null } == true) reconnectRealTerminal()
         }
     }
     private var emulator: TerminalEmulator? = null
@@ -630,7 +632,7 @@ class MachinesViewModel(
                         }
                         PtyEvent.Exit -> {
                             mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(ended = true, connecting = false)) }
-                            scheduleReattach(live)
+                            scheduleReattach()
                         }
                     }
                 } } finally {
