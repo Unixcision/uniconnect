@@ -17,6 +17,7 @@ gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango
 
 from .actions import ACTIONS
+from .arrangement import WorkspaceArrangement
 from .i18n import Translator
 from .imports import Importer
 from .runtime_transaction import RuntimeTransactionCoordinator
@@ -164,7 +165,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             "File": ["new_workspace", "new_window", "new_conversation_window", "reopen_last", "reopen", "close_window", "close_other_windows", "close_workspace", "save", "import_config", "export_config", "restore_backup"],
             "Edit": ["copy", "show_history", "cancel_selection", "paste", "find", "find_next", "find_previous", "hide_find", "find_selection", "send_ctrl_f"],
             "View": ["sidebar", "palette", "notifications", "notifications_latest_unread", "notifications_mark_all_read", "notifications_dismiss_all", "font_larger", "font_smaller", "font_reset", "split_right", "split_down", "equalize_panes", "maximize_pane", "focus_left", "focus_right", "focus_up", "focus_down", "fullscreen"],
-            "Workspace": ["rename_workspace", "pin_workspace", "edit_ssh", "workspace_previous", "workspace_next", "workspace_up", "workspace_down", "workspace_first", "window_previous", "window_next", "rename_window", "reconnect", "reconnect_all", "notifications_toggle_workspace", "notifications_toggle_window", "upload", "kill_tmux"],
+            "Workspace": ["rename_workspace", "pin_workspace", "edit_ssh", "workspace_previous", "workspace_next", "workspace_up", "workspace_down", "workspace_first", "window_previous", "window_next", "rename_window", "pin_window", "window_up", "window_down", "window_first", "reconnect", "reconnect_all", "notifications_toggle_workspace", "notifications_toggle_window", "upload", "kill_tmux"],
             "Help": ["help", "help_shortcuts", "help_settings", "report_issue"],
         }
         for label, names in groups.items():
@@ -240,17 +241,19 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         selected = self.store.data.get("selectedWorkspaceId")
         query = self.sidebar_search.get_text().lower()
         snapshots = []
-        for workspace in self.store.workspaces:
+        for workspace in WorkspaceArrangement.ordered(self.store.workspaces):
             if query and query not in (workspace["name"] + " " + " ".join(w["name"] for w in workspace.get("windows", []))).lower():
                 continue
             snapshots.append({"id": workspace["id"], "name": workspace["name"],
+                              "pinned": bool(workspace.get("pinned")),
                               "kind": workspace["kind"], "color": workspace.get("color") or "#66b9ff",
                               "selected": workspace.get("selectedWindowId"),
                               "windows": tuple({"id": record["id"], "name": record["name"],
+                                                "pinned": bool(record.get("pinned")),
                                                 "unread": bool(record.get("unread")),
                                                 "status": self.surfaces[record["id"]].status if record["id"] in self.surfaces else "Guardada",
                                                 "reconnect": workspace["kind"] == "ssh" and bool(record.get("tmux"))}
-                                               for record in workspace.get("windows", []))})
+                                               for record in WorkspaceArrangement.ordered(workspace.get("windows", [])))})
         self.sidebar_flyout.update(self.workspace_list, snapshots, self.store.data.get("settings", {}).get("compactSidebar", False))
         for row in self.workspace_list.get_children():
             if not getattr(row, "context_connected", False):
@@ -301,7 +304,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         if action:
             self.run_action(action)
         else:
-            self.context_menu(["rename_window", "pin_window", "notifications_toggle_window", "reconnect", "close_window"], event)
+            self.context_menu(["rename_window", "pin_window", "window_up", "window_down", "window_first", "notifications_toggle_window", "reconnect", "close_window"], event)
 
     def workspace_context(self, _, event, workspace):
         if event.button == 3:
@@ -328,7 +331,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         self.sidebar_flyout.hide()
         workspace = next((w for w in self.store.workspaces if w["id"] == workspace_id), None)
         if workspace is None and self.store.workspaces:
-            workspace = self.store.workspaces[0]
+            workspace = WorkspaceArrangement.ordered(self.store.workspaces)[0]
         if workspace is None:
             self.workspace_stack.set_visible_child_name("empty")
             self.focused_surface = None
@@ -420,7 +423,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         if not workspace.get("windows"):
             box.pack_start(self.empty_panel("Create a window to start working", "", "new_window"), True, True, 0)
         else:
-            pane_ids = list(dict.fromkeys(w.setdefault("paneId", "main") for w in workspace["windows"]))
+            pane_ids = WorkspaceArrangement.pane_ids(workspace)
             notebooks = []
             for pane_id in pane_ids:
                 notebook = Gtk.Notebook()
@@ -430,7 +433,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                 notebook.connect("switch-page", self.on_tab_selected, workspace)
                 notebook.connect("page-reordered", self.on_tab_reordered, workspace)
                 self.notebooks[(workspace["id"], pane_id)] = notebook
-                for window in [w for w in workspace["windows"] if w["paneId"] == pane_id]:
+                for window in [w for w in WorkspaceArrangement.ordered(workspace["windows"]) if w.get("paneId", "main") == pane_id]:
                     surface = self.surfaces.get(window["id"])
                     if surface:
                         parent = surface.get_parent()
@@ -440,7 +443,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                         surface = TerminalSurface(self, workspace, window, window["id"] in create_ids)
                         self.surfaces[window["id"]] = surface
                     label = Gtk.Box(spacing=6)
-                    label.pack_start(Gtk.Label(label=("• " if window.get("pinned") else "") + window["name"]), True, True, 0)
+                    label.pack_start(Gtk.Label(label=("★ " if window.get("pinned") else "") + window["name"]), True, True, 0)
                     close = Gtk.Button.new_from_icon_name("window-close-symbolic", Gtk.IconSize.MENU)
                     close.set_relief(Gtk.ReliefStyle.NONE)
                     close.connect("clicked", lambda _, s=surface: self.close_surface(s))
@@ -476,7 +479,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                 self._notification_preserve_focus_id = surface.record["id"]
             finally:
                 self._notification_context_selection = False
-            self.context_menu(["new_conversation_window", "rename_window", "reset_window_name", "pin_window", "move_window_left", "move_window_right",
+            self.context_menu(["new_conversation_window", "rename_window", "reset_window_name", "pin_window", "window_up", "window_down", "window_first", "move_window_left", "move_window_right",
                                "maximize_pane", "notifications_toggle_window", "close_window", "close_left_windows", "close_right_windows",
                                "close_other_windows", "kill_tmux"], event)
             return True
@@ -497,12 +500,26 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
     def on_tab_reordered(self, notebook, child, page, workspace):
         if self._building_workspace:
             return
-        ordered = [notebook.get_nth_page(i).record["id"] for i in range(notebook.get_n_pages())]
-        original = workspace["windows"]
-        members = {wid: next(w for w in original if w["id"] == wid) for wid in ordered}
-        iterator = iter(ordered)
-        workspace["windows"] = [members[next(iterator)] if w["id"] in members else w for w in original]
-        self.persist()
+        record = child.record
+        group = self.arrangement_group(WorkspaceArrangement.ordered(workspace["windows"]), record)
+        peers = [notebook.get_nth_page(i).record for i in range(notebook.get_n_pages())
+                 if bool(notebook.get_nth_page(i).record.get("pinned")) == bool(record.get("pinned"))]
+        index = peers.index(record)
+        remaining = [r for r in group if r is not record]
+        if index > 0:
+            destination = remaining.index(peers[index - 1]) + 1
+        elif len(peers) > 1:
+            destination = remaining.index(peers[1])
+        else:
+            destination = group.index(record)
+        try:
+            self.update_arrangement(workspace["id"], record["id"], position=destination)
+        except Exception as error:
+            self.error(error)
+        finally:
+            # A drop beyond the favourite boundary is clamped. On save failure,
+            # restore the visual order from the rolled-back authoritative model.
+            self.sync_arrangement(workspace["id"])
 
     def connection(self, workspace):
         if self.vault.locked:

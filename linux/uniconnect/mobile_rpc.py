@@ -13,6 +13,7 @@ from collections import OrderedDict
 from concurrent.futures import Future, TimeoutError
 
 from .mobile_protocol import RPCError
+from .arrangement import WorkspaceArrangement
 from .mobile_pty import MobilePTYAttachments
 from .mobile_pty_process import MobilePTYProcess
 from .mobile_render_grid import (MAX_CAPTURE_BYTES, MAX_SCROLLBACK_ROWS, capture_dependencies_ready,
@@ -137,11 +138,24 @@ class MobileRPC:
         if self.window.locked:
             raise RPCError("locked", "UniConnect está bloqueado")
         operation_in_progress = getattr(self.window, "_runtime_operation", None)
-        if operation in ("workspace.create", "terminal.create", "terminal.reconnect", "terminal.reset") and (
+        if operation in ("workspace.create", "terminal.create", "terminal.reconnect", "terminal.reset",
+                         "workspace.update", "terminal.update") and (
                 operation_in_progress and operation_in_progress.active):
             raise RPCError("busy", "Hay una conexión en preparación; espera a que termine")
         if operation == "workspace.list":
             return self.workspace_list(params)
+        if operation in ("workspace.update", "terminal.update"):
+            if getattr(self.window.store, "_active_transaction", None) is not None:
+                raise RPCError("busy", "Hay un cambio de cajas en preparación; espera a que termine")
+            terminal_id = params.get("terminal_id") if operation == "terminal.update" else None
+            if operation == "terminal.update" and (not isinstance(terminal_id, str) or not terminal_id):
+                raise RPCError("invalid_params", "Indica la ventana explícitamente")
+            changes = {key: params[key] for key in ("is_pinned", "position") if key in params}
+            try:
+                self.window.update_arrangement(params.get("workspace_id"), terminal_id, **changes)
+            except ValueError as error:
+                raise RPCError("invalid_params", str(error)) from error
+            return self.workspace_list({})
         if operation == "notifications.list":
             return self.notifications(params)
         if operation == "workspace.create":
@@ -212,13 +226,14 @@ class MobileRPC:
         if terminals_filter and not all(isinstance(value, str) and value == terminals_filter[0] for value in terminals_filter):
             raise RPCError("invalid_params", "Identificadores de terminal contradictorios")
         boxes = []
-        for workspace in values:
+        for workspace in WorkspaceArrangement.ordered(values):
             terminals = []
-            for record in workspace["windows"]:
+            for record in WorkspaceArrangement.ordered(workspace["windows"]):
                 if terminals_filter and record["id"] != terminals_filter[0]:
                     continue
                 surface = self.window.surfaces.get(record["id"])
                 terminals.append({"id": record["id"], "title": record["name"],
+                                  "is_pinned": bool(record.get("pinned")),
                                   "current_directory": record.get("cwd") or workspace.get("cwd"),
                                   "is_ready": bool(surface and surface.pid and not surface.disposed),
                                   "is_focused": surface is self.window.focused_surface and surface is not None,
@@ -236,7 +251,7 @@ class MobileRPC:
                           "terminals": terminals})
         if terminals_filter and not any(box["terminals"] for box in boxes):
             raise RPCError("not_found", "No se encontró la terminal")
-        return {"workspaces": boxes}
+        return {"workspaces": boxes, "display_name": socket.gethostname(), "capabilities": ["box_update"]}
 
     def invalidate_terminal(self, panel_id):
         with self.revision_lock:

@@ -4,6 +4,8 @@ from pathlib import Path
 
 from gi.repository import Gdk, Gio, Gtk
 
+from .arrangement import WorkspaceArrangement
+
 
 class WindowCommands:
     def action_label(self, name):
@@ -27,7 +29,7 @@ class WindowCommands:
         if self.locked:
             return name in ("lock", "quit")
         workspace, surface = self.current_workspace(), self.focused_surface
-        windows = workspace.get("windows", []) if workspace else []
+        windows = WorkspaceArrangement.ordered(workspace.get("windows", [])) if workspace else []
         if name == "new_conversation_window":
             return bool(workspace and surface and surface.workspace is workspace)
         if name == "notifications_latest_unread":
@@ -40,7 +42,7 @@ class WindowCommands:
             return bool(workspace and windows)
         if name == "notifications_toggle_window":
             return surface is not None
-        for prefix, values in (("workspace_", self.store.workspaces), ("window_", windows)):
+        for prefix, values in (("workspace_", WorkspaceArrangement.ordered(self.store.workspaces)), ("window_", windows)):
             if name.startswith(prefix) and name[len(prefix):].isdigit():
                 index = int(name[len(prefix):])
                 return bool(values) if index == 9 else len(values) >= index
@@ -73,8 +75,15 @@ class WindowCommands:
         if name.startswith("workspace_") and name in ("workspace_up", "workspace_down", "workspace_first"):
             if not workspace:
                 return False
-            index = self.store.workspaces.index(workspace)
-            return index < len(self.store.workspaces) - 1 if name == "workspace_down" else index > 0
+            group = self.arrangement_group(self.store.workspaces, workspace)
+            index = group.index(workspace)
+            return index < len(group) - 1 if name == "workspace_down" else index > 0
+        if name in ("window_up", "window_down", "window_first"):
+            if not workspace or not surface or surface.workspace is not workspace:
+                return False
+            group = self.arrangement_group(windows, surface.record)
+            index = group.index(surface.record)
+            return index < len(group) - 1 if name == "window_down" else index > 0
         if name in ("workspace_previous", "workspace_next"):
             return len(self.store.workspaces) > 1
         if name in ("window_previous", "window_next"):
@@ -106,7 +115,7 @@ class WindowCommands:
         self.refresh_actions()
 
     def select_number(self, kind, number):
-        values = self.store.workspaces if kind == "workspace" else self.current_workspace()["windows"]
+        values = WorkspaceArrangement.ordered(self.store.workspaces if kind == "workspace" else self.current_workspace()["windows"])
         if not values or (number != 9 and number > len(values)):
             return
         target = values[-1 if number == 9 else number - 1]
@@ -116,7 +125,7 @@ class WindowCommands:
             self.select_surface(self.surfaces[target["id"]])
 
     def cycle_workspace(self, delta):
-        values = self.store.workspaces
+        values = WorkspaceArrangement.ordered(self.store.workspaces)
         current = self.current_workspace()
         if current and values:
             self.select_workspace(values[(values.index(current) + delta) % len(values)]["id"])
@@ -124,7 +133,7 @@ class WindowCommands:
     def cycle_window(self, delta):
         workspace, surface = self.current_workspace(), self.focused_surface
         if workspace and surface:
-            values = workspace["windows"]
+            values = WorkspaceArrangement.ordered(workspace["windows"])
             target = values[(values.index(surface.record) + delta) % len(values)]
             self.select_surface(self.surfaces[target["id"]])
 
@@ -143,42 +152,86 @@ class WindowCommands:
     def action_new_conversation_window(self):
         self.action_new_window(conversation=True)
 
+    @staticmethod
+    def arrangement_group(items, record):
+        return [value for value in items if bool(value.get("pinned")) == bool(record.get("pinned"))]
+
+    def update_arrangement(self, workspace_id, terminal_id=None, **changes):
+        from .mobile_protocol import RPCError
+        if self.locked:
+            raise RPCError("locked", "UniConnect está bloqueado")
+        operation = getattr(self, "_runtime_operation", None)
+        if (operation and operation.active) or getattr(self.store, "_active_transaction", None) is not None:
+            raise RPCError("busy", "Hay un cambio de cajas en preparación; espera a que termine")
+        changed = WorkspaceArrangement(self.store).update(workspace_id, terminal_id, **changes)
+        if changed:
+            self.sync_arrangement(workspace_id)
+            self.refresh_sidebar()
+            self.refresh_actions()
+        return changed
+
+    def sync_arrangement(self, workspace_id):
+        """Update existing tabs in place, without reparenting VTE or selecting panes."""
+        workspace = next((w for w in self.store.workspaces if w["id"] == workspace_id), None)
+        if workspace is None:
+            return
+        self._building_workspace += 1
+        try:
+            for (wid, pane_id), notebook in self.notebooks.items():
+                if wid != workspace_id:
+                    continue
+                records = [w for w in WorkspaceArrangement.ordered(workspace["windows"])
+                           if w.get("paneId", "main") == pane_id]
+                for index, record in enumerate(records):
+                    surface = self.surfaces.get(record["id"])
+                    if surface is None or surface.get_parent() is not notebook:
+                        continue
+                    notebook.reorder_child(surface, index)
+                    tab = notebook.get_tab_label(surface)
+                    title = tab.get_child().get_children()[0]
+                    title.set_text(("★ " if record.get("pinned") else "") + record["name"])
+        finally:
+            self._building_workspace -= 1
+
     def move_workspace(self, destination):
         workspace = self.current_workspace()
-        items = self.store.workspaces
-        if not workspace:
-            return
-        original = list(items)
-        items.remove(workspace)
-        items.insert(max(0, min(destination, len(items))), workspace)
-        try:
-            self.store.save()
-        except Exception:
-            items[:] = original
-            raise
-        self.refresh_sidebar()
+        if workspace:
+            self.update_arrangement(workspace["id"], position=destination)
 
     def action_workspace_up(self):
-        self.move_workspace(self.store.workspaces.index(self.current_workspace()) - 1)
+        workspace = self.current_workspace()
+        self.move_workspace(self.arrangement_group(self.store.workspaces, workspace).index(workspace) - 1)
 
     def action_workspace_down(self):
-        self.move_workspace(self.store.workspaces.index(self.current_workspace()) + 1)
+        workspace = self.current_workspace()
+        self.move_workspace(self.arrangement_group(self.store.workspaces, workspace).index(workspace) + 1)
 
     def action_workspace_first(self):
         self.move_workspace(0)
 
     def toggle_pin(self, record):
-        previous = record.get("pinned", False)
-        record["pinned"] = not previous
-        try:
-            self.store.save()
-        except Exception:
-            record["pinned"] = previous
-            raise
-        self.refresh_sidebar()
-        workspace = self.current_workspace()
-        self.build_workspace(workspace)
-        self.select_workspace(workspace["id"])
+        for workspace in self.store.workspaces:
+            if workspace is record:
+                return self.update_arrangement(workspace["id"], is_pinned=not bool(record.get("pinned")))
+            if any(window is record for window in workspace["windows"]):
+                return self.update_arrangement(workspace["id"], record["id"], is_pinned=not bool(record.get("pinned")))
+
+    def move_window_order(self, delta=None):
+        surface = self.focused_surface
+        if surface is None:
+            return
+        group = self.arrangement_group(surface.workspace["windows"], surface.record)
+        position = 0 if delta is None else group.index(surface.record) + delta
+        self.update_arrangement(surface.workspace["id"], surface.record["id"], position=position)
+
+    def action_window_up(self):
+        self.move_window_order(-1)
+
+    def action_window_down(self):
+        self.move_window_order(1)
+
+    def action_window_first(self):
+        self.move_window_order()
 
     def action_pin_workspace(self):
         self.toggle_pin(self.current_workspace())
