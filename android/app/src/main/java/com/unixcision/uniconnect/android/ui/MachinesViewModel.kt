@@ -38,6 +38,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 
 class MachinesViewModel(
@@ -517,9 +519,26 @@ class MachinesViewModel(
     fun reconnectRealTerminal() {
         val columns = emulator?.screen?.columns ?: state.value.realTerminal?.snapshot?.columns ?: return
         val rows = emulator?.screen?.rows ?: state.value.realTerminal?.snapshot?.rows ?: return
+        val machine = state.value.machines.firstOrNull { it.id == state.value.selectedMachine } ?: return
         reattachJob?.cancel(); reattachJob = null
         stopRealTerminal()
-        startRealTerminal(columns, rows, automatic = false)
+        // The host that ended the session often took the machine link down with it. Attaching on a
+        // dead link only produced "could not connect": bring the machine back first, then attach.
+        if (state.value.connections[machine.id]?.connected == true) {
+            startRealTerminal(columns, rows, automatic = false)
+            return
+        }
+        mutableState.update { it.copy(realTerminal = RealTerminal(connecting = true)) }
+        reattachJob = viewModelScope.launch {
+            connect(machine)
+            // Bounded, intended wait: the observer reports the link as soon as the host answers.
+            val linked = withTimeoutOrNull(RECONNECT_LINK_TIMEOUT_MILLIS) {
+                state.first { it.connections[machine.id]?.connected == true }
+            } != null
+            mutableState.update { it.copy(realTerminal = null) }
+            if (linked) startRealTerminal(columns, rows, automatic = false)
+            else mutableState.update { it.copy(error = R.string.connection_error) }
+        }
     }
 
     /** Schedules one automatic re-attach after the host ended the session, up to a small limit. */
@@ -527,8 +546,7 @@ class MachinesViewModel(
         // A session that stayed up for a while earns fresh retries; a flapping one does not.
         if (System.nanoTime() - attachedAtNanos > REATTACH_RESET_NANOS) automaticReattaches = 0
         if (automaticReattaches >= MAX_AUTOMATIC_REATTACHES) return
-        val machineID = state.value.selectedMachine ?: return
-        if (state.value.connections[machineID]?.connected != true) return
+        if (state.value.selectedMachine == null) return
         automaticReattaches += 1
         reattachJob?.cancel()
         reattachJob = viewModelScope.launch {
@@ -819,6 +837,8 @@ class MachinesViewModel(
         const val MAX_AUTOMATIC_REATTACHES = 2
         /** An attachment that lasted this long resets the automatic retry budget. */
         const val REATTACH_RESET_NANOS = 30_000_000_000L
+        /** How long a reconnect waits for the machine link before giving up. */
+        const val RECONNECT_LINK_TIMEOUT_MILLIS = 12_000L
         /** Wheel steps per burst while leaving copy mode, and how many bursts at most. */
         const val COPY_MODE_EXIT_STEPS = 12
         const val COPY_MODE_EXIT_BURSTS = 40
