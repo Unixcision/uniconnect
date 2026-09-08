@@ -21,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloseFullscreen
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowDown
 import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.LinkOff
 import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.Refresh
@@ -42,6 +44,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -94,6 +97,11 @@ fun TerminalScreen(
     zoom: Float = 1f,
     onView: (TerminalView) -> Unit = {},
     onZoom: (Float) -> Unit = {},
+    onReconnectReal: () -> Unit = {},
+    draft: String = "",
+    onDraftChange: (String) -> Unit = {},
+    windowPinned: Boolean = false,
+    onTogglePin: () -> Unit = {},
 ) {
     var realRequested by rememberSaveable { mutableStateOf(false) }
     // Default way in: attach to the window's own tmux session. Only a host without the attach RPC,
@@ -105,7 +113,8 @@ fun TerminalScreen(
             real, connected, sending, view ?: settings.terminalView, zoom, settings.showExtraKeys,
             onStopReal = { realRequested = false; manuallyLeft = true; onStopReal() },
             onPty = onPty, onPtyWheel = onPtyWheel, onPtyResize = onPtyResize,
-            onLeaveCopyMode = onLeaveCopyMode, onView = onView, onZoom = onZoom,
+            onLeaveCopyMode = onLeaveCopyMode, onView = onView, onZoom = onZoom, onReconnect = onReconnectReal,
+            draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin,
         )
         return
     }
@@ -117,7 +126,8 @@ fun TerminalScreen(
     }
     MirrorTerminalScreen(snapshot, loading, error, errorDetail, sending, reconnecting, connected, onRefresh, onReconnect, onScroll, onSend,
         attachFallbackDetail = attachFallbackDetail,
-        onRequestReal = { columns, rows -> realRequested = true; manuallyLeft = false; onStartReal(columns, rows, false) })
+        onRequestReal = { columns, rows -> realRequested = true; manuallyLeft = false; onStartReal(columns, rows, false) },
+        draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin)
 }
 
 /** The attached tmux client: the phone owns a real PTY of its own size; tmux keeps the desktop's. */
@@ -127,7 +137,8 @@ private fun RealTerminalScreen(
     real: MachinesViewModel.RealTerminal, connected: Boolean, sending: Boolean,
     viewMode: TerminalView, zoom: Float, startWithKeys: Boolean,
     onStopReal: () -> Unit, onPty: (String, Boolean) -> Unit, onPtyWheel: (Boolean, Int) -> Unit, onPtyResize: (Int, Int) -> Unit,
-    onLeaveCopyMode: () -> Unit, onView: (TerminalView) -> Unit, onZoom: (Float) -> Unit,
+    onLeaveCopyMode: () -> Unit, onView: (TerminalView) -> Unit, onZoom: (Float) -> Unit, onReconnect: () -> Unit,
+    draft: String, onDraftChange: (String) -> Unit, windowPinned: Boolean, onTogglePin: () -> Unit,
 ) {
     var keysVisible by rememberSaveable { mutableStateOf(startWithKeys) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
@@ -142,6 +153,9 @@ private fun RealTerminalScreen(
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             StatusPill(stringResource(R.string.real_terminal_pill), if (ready) PillTone.Busy else PillTone.Idle)
             Spacer(Modifier.weight(1f))
+            IconButton(onClick = onTogglePin) {
+                Icon(if (windowPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder, stringResource(if (windowPinned) R.string.box_unpin else R.string.box_pin), tint = if (windowPinned) Brand.Amber else Brand.Muted)
+            }
             // One tap back to the live screen, handled by the model: it walks the pane out with
             // wheel steps and stops as soon as tmux's indicator clears.
             if (real.copyMode) IconButton(onClick = onLeaveCopyMode) {
@@ -162,7 +176,15 @@ private fun RealTerminalScreen(
                 real.errorDetail?.let { detail -> Text(stringResource(R.string.host_error_code, detail), color = Brand.Muted, style = MaterialTheme.typography.labelSmall) }
             }
         }
-        if (real.ended) Text(stringResource(R.string.real_terminal_ended), Modifier.padding(horizontal = 20.dp, vertical = 6.dp), color = Brand.Amber, style = MaterialTheme.typography.bodySmall)
+        // The host ended or refused the session: say so and offer the way back in right here,
+        // instead of leaving a greyed-out composer and a detour through the mirror.
+        if (real.ended || real.error != null) Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (real.ended) Text(stringResource(R.string.real_terminal_ended), Modifier.weight(1f), color = Brand.Amber, style = MaterialTheme.typography.bodySmall)
+            else Spacer(Modifier.weight(1f))
+            Button(onClick = onReconnect, enabled = connected, shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+                Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.real_terminal_reconnect))
+            }
+        }
         val frameShape = RoundedCornerShape(20.dp)
         Box(
             Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp).clip(frameShape)
@@ -216,6 +238,10 @@ private fun RealTerminalScreen(
                         private var accumulated = 0f
                         override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                             if (available.y == 0f) return Offset.Zero
+                            // Only the finger drives tmux. Inertia arriving here frame after frame
+                            // used to become hundreds of wheel steps that scrolled for many seconds
+                            // after the finger was gone; it is swallowed below instead.
+                            if (source != NestedScrollSource.UserInput) return Offset(0f, available.y)
                             accumulated += available.y
                             val lines = (accumulated / metrics.lineHeight).toInt()
                             if (lines != 0) {
@@ -223,6 +249,14 @@ private fun RealTerminalScreen(
                                 wheel(lines > 0, kotlin.math.abs(lines))
                             }
                             return Offset(0f, available.y)
+                        }
+
+                        override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                            // A flick past the edge asks tmux for a short, bounded run, not a second per
+                            // pixel of velocity; then the fling is finished, whatever is left of it.
+                            val lines = (available.y / metrics.lineHeight * FLING_SECONDS).toInt().coerceIn(-FLING_MAX_LINES, FLING_MAX_LINES)
+                            if (lines != 0) wheel(lines > 0, kotlin.math.abs(lines))
+                            return available
                         }
                     }
                 }
@@ -285,6 +319,7 @@ private fun RealTerminalScreen(
             enabled = ready && connected, sending = sending, modifiers = modifiers, keysVisible = keysVisible,
             onToggleKeys = { keysVisible = !keysVisible },
             onSend = { text, withEnter, onDelivered -> onPty(text, withEnter); onDelivered(true); consumeModifiers() },
+            draft = draft, onDraftChange = onDraftChange,
         )
     }
 }
@@ -294,7 +329,8 @@ private fun RealTerminalScreen(
 private fun MirrorTerminalScreen(
     snapshot: TerminalSnapshot?, loading: Boolean, error: Int?, errorDetail: String?, sending: Boolean, reconnecting: Boolean, connected: Boolean,
     onRefresh: () -> Unit, onReconnect: () -> Unit, onScroll: (Int) -> Unit, onSend: (String, Boolean, (Boolean) -> Unit) -> Unit,
-    attachFallbackDetail: String?, onRequestReal: (Int, Int) -> Unit,
+    attachFallbackDetail: String?, onRequestReal: (Int, Int) -> Unit, draft: String, onDraftChange: (String) -> Unit,
+    windowPinned: Boolean, onTogglePin: () -> Unit,
 ) {
     var viewMode by rememberSaveable { mutableStateOf(TerminalView.FIT) }
     var keysVisible by rememberSaveable { mutableStateOf(false) }
@@ -310,6 +346,9 @@ private fun MirrorTerminalScreen(
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             StatusPill(stringResource(if (connected) R.string.terminal_live else R.string.terminal_offline), if (connected) PillTone.Live else PillTone.Idle)
             Spacer(Modifier.weight(1f))
+            IconButton(onClick = onTogglePin) {
+                Icon(if (windowPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder, stringResource(if (windowPinned) R.string.box_unpin else R.string.box_pin), tint = if (windowPinned) Brand.Amber else Brand.Muted)
+            }
             IconButton(onClick = onReconnect, enabled = (connected || error != null) && !reconnecting) {
                 if (reconnecting) LoadingIndicator(Modifier.size(20.dp), color = Brand.Cyan)
                 else Icon(Icons.Rounded.Sync, stringResource(R.string.terminal_reconnect), tint = Brand.Muted)
@@ -420,6 +459,7 @@ private fun MirrorTerminalScreen(
             enabled = ready, sending = sending, modifiers = modifiers, keysVisible = keysVisible,
             onToggleKeys = { keysVisible = !keysVisible },
             onSend = { text, withEnter, onDelivered -> onSend(text, withEnter, onDelivered); consumeModifiers() },
+            draft = draft, onDraftChange = onDraftChange,
         )
     }
 }
@@ -463,6 +503,10 @@ private fun RealTerminalStarter(armed: Boolean, onStart: (Int, Int) -> Unit) {
 
 /** How the desktop grid is shown on the phone; none of these change the desktop PTY size. */
 /** Reading geometry for this device. The desktop PTY keeps its own columns and rows. */
+/** How much of a flick past the canvas edge reaches tmux: a fraction of a second of it, capped. */
+private const val FLING_SECONDS = 0.12f
+private const val FLING_MAX_LINES = 24
+
 /** Reader-controlled zoom bounds: below 0.6 the text stops being legible, above 5 it is huge. */
 private const val MIN_ZOOM = 0.6f
 private const val MAX_ZOOM = 5f

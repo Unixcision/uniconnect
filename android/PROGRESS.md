@@ -36,6 +36,16 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
 - Destinos: IPv4 `100.64.0.0/10`, IPv6 `fd7a:115c:a1e0::/48`, MagicDNS.
 - No abrir direcciones públicas/LAN ni cambiar servicios de la máquina sin acción.
 - No afirmar conexión ni mostrar espacios inventados si no hay autorización.
+- Favoritos y orden (2026-09-08, cerrado en el canal de coordinación con CODEX VPS):
+  el host anuncia `capabilities: ["box_update"]` en `mobile.workspace.list` cuando
+  implementa `mobile.workspace.update {workspace_id, is_pinned?, position?}` y
+  `mobile.terminal.update {workspace_id, terminal_id, is_pinned?, position?}`.
+  Valores explícitos por ID (nunca toggle), sin tocar foco, selección ni splits;
+  primero `is_pinned`, después `position` base cero dentro de su grupo
+  (fijados / no fijados), fuera de rango se recorta; respuesta = el mismo objeto que
+  `workspace.list`. Android ya lo implementa (commits b32bd0cf9 y e3e96078c); Mac y
+  Linux pendientes. "Sincronizar" = el host comparte con todos sus clientes; Mac y
+  Linux son instalaciones distintas, no se fusionan.
 
 ## Validación pendiente
 
@@ -83,6 +93,13 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
   terminal.updated; el cliente agrupa una tanda acotada y pide un único replay.
 - No se ha abierto ningún emulador ni cambiado configuración del Mac desde Android.
 - No se han hecho commits ni cambios fuera de `android/`.
+
+- Favoritos y orden validados en el Pixel 8 Pro contra el MINIPC Linux (sin capacidad,
+  ruta local): marcar un espacio lo pone primero con estrella y aviso ámbar, quitarlo
+  lo devuelve a su sitio, la ventana se marca desde la lista y desde la barra abierta,
+  y todo sobrevive a matar el proceso. Corregido en la misma tanda: la fila perezosa
+  anclaba el scroll a la primera ficha y escondía el favorito que saltaba al principio.
+  Pendiente: repetir contra un host que anuncie `box_update` (ruta RPC).
 
 ## Riesgos de contrato comunicados al agente principal
 

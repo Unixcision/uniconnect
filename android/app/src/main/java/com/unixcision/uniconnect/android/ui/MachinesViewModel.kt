@@ -10,11 +10,19 @@ import com.unixcision.uniconnect.android.domain.AppSettings
 import com.unixcision.uniconnect.android.domain.MachineDraft
 import com.unixcision.uniconnect.android.domain.MachineEndpoint
 import com.unixcision.uniconnect.android.domain.MachineRepository
+import com.unixcision.uniconnect.android.domain.NoticeNameCatalog
+import com.unixcision.uniconnect.android.domain.DraftRepository
+import com.unixcision.uniconnect.android.domain.BoxOverrides
+import com.unixcision.uniconnect.android.domain.BoxOverridesRepository
+import com.unixcision.uniconnect.android.domain.BoxArrangement
+import com.unixcision.uniconnect.android.domain.RemoteWindow
+import com.unixcision.uniconnect.android.domain.RemoteWorkspace
 import com.unixcision.uniconnect.android.domain.SettingsRepository
 import com.unixcision.uniconnect.android.domain.MachineSnapshot
 import com.unixcision.uniconnect.android.domain.TerminalSnapshot
 import com.unixcision.uniconnect.android.domain.TerminalTarget
 import com.unixcision.uniconnect.android.domain.TerminalView
+import com.unixcision.uniconnect.android.domain.WheelBudget
 import com.unixcision.uniconnect.android.domain.MachineUpdate
 import com.unixcision.uniconnect.android.domain.ResourceCreation
 import com.unixcision.uniconnect.android.domain.NotificationConnectionControl
@@ -34,6 +42,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 
 class MachinesViewModel(
@@ -41,6 +54,9 @@ class MachinesViewModel(
     private val client: MachineClient,
     private val notificationControl: NotificationConnectionControl,
     private val settingsRepository: SettingsRepository,
+    private val noticeNames: NoticeNameCatalog,
+    private val drafts: DraftRepository,
+    private val boxOverrides: BoxOverridesRepository,
 ) : ViewModel() {
     data class Connection(val checking: Boolean = false, val connected: Boolean = false, val snapshot: MachineSnapshot? = null, val error: Int? = null)
     /** A phone-sized tmux client attached to the selected window; the emulator lives in the model. */
@@ -68,6 +84,12 @@ class MachinesViewModel(
         /** The reading and magnification in use, kept across a re-attach; null means the setting. */
         val terminalView: TerminalView? = null,
         val terminalZoom: Float = 1f,
+        /** What is typed in the composer of the selected window and not sent yet. */
+        val draft: String = "",
+        /** Favourites and order kept on the phone for hosts that cannot keep them yet, per machine. */
+        val overrides: Map<String, BoxOverrides> = emptyMap(),
+        /** Machines whose host answered that it has no update RPC; the notice is shown once. */
+        val hostKeepsOrder: Map<String, Boolean> = emptyMap(),
         val terminal: TerminalSnapshot? = null, val terminalLoading: Boolean = false,
         val terminalError: Int? = null, val terminalErrorDetail: String? = null, val inputSending: Boolean = false, val reconnecting: Boolean = false,
         val creation: CreationContext? = null, val creating: Boolean = false, val creationError: Int? = null,
@@ -89,7 +111,11 @@ class MachinesViewModel(
         viewModelScope.launch {
             repository.machines.catch { mutableState.update { it.copy(loading = false, error = R.string.load_error) } }
                 .collect { machines ->
-                    mutableState.update { it.copy(machines = machines, loading = false) }
+                    // Favourites and order kept on the phone go in with the machines, before any
+                    // box is drawn: a row that composes first and rearranges later would keep its
+                    // scroll anchored to the old first tile and hide the one that moved ahead of it.
+                    val kept = machines.associate { it.id to boxOverrides.load(it.id) }.filterValues { !it.isEmpty }
+                    mutableState.update { it.copy(machines = machines, loading = false, overrides = kept + it.overrides.filterKeys { id -> id !in kept }) }
                     openPendingNoticeMachine()
                     if (state.value.selectedMachine == null) refreshMachineStates()
                 }
@@ -133,6 +159,7 @@ class MachinesViewModel(
                     fun stale() = state.value.selectedMachine != null || requests[machine.id]?.isActive == true
                     try {
                         val snapshot = client.probe(machine)
+                        noticeNames.remember(machine.id, snapshot)
                         mutableState.update { if (stale()) it else it.copy(connections = it.connections + (machine.id to Connection(connected = true, snapshot = snapshot))) }
                     } catch (cancelled: CancellationException) { throw cancelled }
                     catch (failure: Exception) {
@@ -235,6 +262,7 @@ class MachinesViewModel(
                 val nextCreation = if (askFirstWindow) CreationContext(
                     machine.id, created, result.snapshot.workspaces.filter { box -> box.isSSH == true }, firstWindow = true,
                 ) else null
+                noticeNames.remember(machine.id, result.snapshot)
                 mutableState.update { it.copy(creating = false, creation = nextCreation, creationError = null,
                     connections = it.connections + (machine.id to Connection(connected = true, snapshot = result.snapshot)),
                     selectedMachine = machine.id, selectedWorkspace = result.workspaceID, selectedWindow = result.windowID,
@@ -258,8 +286,114 @@ class MachinesViewModel(
     /** Opens a window. The reading resets to the setting, since it belonged to the previous one. */
     fun selectWindow(id: String) {
         stopRealTerminal()
-        mutableState.update { it.copy(selectedWindow = id, terminal = null, terminalView = null, terminalZoom = 1f) }
+        draftJob?.cancel(); draftJob = null
+        mutableState.update { it.copy(selectedWindow = id, terminal = null, terminalView = null, terminalZoom = 1f, draft = "") }
+        val machineID = state.value.selectedMachine
+        if (machineID != null) viewModelScope.launch {
+            val stored = drafts.load(machineID, id)
+            // Only if the reader is still on this window and has not typed anything meanwhile.
+            mutableState.update { if (it.selectedWindow == id && it.draft.isEmpty()) it.copy(draft = stored) else it }
+        }
         refreshTerminal()
+    }
+
+    private var draftJob: Job? = null
+
+    /** Pins or unpins a workspace: the host if it can, the phone's own list otherwise. */
+    fun toggleWorkspacePinned(workspaceID: String) {
+        val machine = selectedMachineOrNull() ?: return
+        val snapshot = state.value.connections[machine.id]?.snapshot ?: return
+        val current = state.value.overrides[machine.id] ?: BoxOverrides()
+        val workspace = snapshot.workspaces.firstOrNull { it.id == workspaceID } ?: return
+        val pinned = !(workspace.isPinned || workspaceID in current.pinnedWorkspaces)
+        boxChange(machine, { client.updateWorkspace(machine, workspaceID, isPinned = pinned, position = null) }) {
+            it.copy(pinnedWorkspaces = if (pinned) it.pinnedWorkspaces + workspaceID else it.pinnedWorkspaces - workspaceID)
+        }
+    }
+
+    /** Pins or unpins a window of the selected workspace. */
+    fun toggleWindowPinned(windowID: String) {
+        val machine = selectedMachineOrNull() ?: return
+        val workspaceID = state.value.selectedWorkspace ?: return
+        val snapshot = state.value.connections[machine.id]?.snapshot ?: return
+        val current = state.value.overrides[machine.id] ?: BoxOverrides()
+        val window = snapshot.workspaces.firstOrNull { it.id == workspaceID }?.windows?.firstOrNull { it.id == windowID } ?: return
+        val pinned = !(window.isPinned || windowID in current.pinnedWindows)
+        boxChange(machine, { client.updateWindow(machine, workspaceID, windowID, isPinned = pinned, position = null) }) {
+            it.copy(pinnedWindows = if (pinned) it.pinnedWindows + windowID else it.pinnedWindows - windowID)
+        }
+    }
+
+    /** Moves a workspace [delta] places (negative = up); Int.MIN_VALUE means to the top. */
+    fun moveWorkspace(workspaceID: String, delta: Int) {
+        val machine = selectedMachineOrNull() ?: return
+        val snapshot = state.value.connections[machine.id]?.snapshot ?: return
+        val current = state.value.overrides[machine.id] ?: BoxOverrides()
+        val shown = BoxArrangement.workspaces(snapshot, current).map { it.id }
+        val order = if (delta == Int.MIN_VALUE) BoxArrangement.movedToTop(shown, workspaceID) else BoxArrangement.moved(shown, workspaceID, delta)
+        val pinned = order.filter { id -> snapshot.workspaces.first { it.id == id }.isPinned || id in current.pinnedWorkspaces }
+        val group = if (workspaceID in pinned) pinned else order - pinned.toSet()
+        boxChange(machine, { client.updateWorkspace(machine, workspaceID, isPinned = null, position = group.indexOf(workspaceID)) }) { it.copy(workspaceOrder = order) }
+    }
+
+    /** Moves a window of the selected workspace [delta] places; Int.MIN_VALUE means to the top. */
+    fun moveWindow(windowID: String, delta: Int) {
+        val machine = selectedMachineOrNull() ?: return
+        val workspaceID = state.value.selectedWorkspace ?: return
+        val snapshot = state.value.connections[machine.id]?.snapshot ?: return
+        val current = state.value.overrides[machine.id] ?: BoxOverrides()
+        val workspace = snapshot.workspaces.firstOrNull { it.id == workspaceID } ?: return
+        val shown = BoxArrangement.windows(workspace, current).map { it.id }
+        val order = if (delta == Int.MIN_VALUE) BoxArrangement.movedToTop(shown, windowID) else BoxArrangement.moved(shown, windowID, delta)
+        val pinned = order.filter { id -> workspace.windows.first { it.id == id }.isPinned || id in current.pinnedWindows }
+        val group = if (windowID in pinned) pinned else order - pinned.toSet()
+        boxChange(machine, { client.updateWindow(machine, workspaceID, windowID, isPinned = null, position = group.indexOf(windowID)) }) {
+            it.copy(windowOrder = it.windowOrder + (workspaceID to order))
+        }
+    }
+
+    /**
+     * Applies a favourite or order change. A host that announces ``MachineSnapshot.BOX_UPDATE``
+     * gets it over RPC, so every client of that host sees it, and its answer is what is shown;
+     * any failure there is a real error. A host without it never gets the call: the phone keeps
+     * the change on its own and says so once.
+     */
+    private fun boxChange(machine: Machine, onHost: suspend () -> MachineSnapshot, locally: (BoxOverrides) -> BoxOverrides) {
+        viewModelScope.launch {
+            val hostKeeps = state.value.connections[machine.id]?.snapshot?.keepsBoxes == true
+            if (!hostKeeps) {
+                val updated = locally(state.value.overrides[machine.id] ?: BoxOverrides())
+                mutableState.update { it.copy(overrides = it.overrides + (machine.id to updated), hostKeepsOrder = it.hostKeepsOrder + (machine.id to false)) }
+                boxOverrides.save(machine.id, updated)
+                return@launch
+            }
+            try {
+                val snapshot = onHost()
+                mutableState.update {
+                    it.copy(
+                        connections = it.connections + (machine.id to (it.connections[machine.id] ?: Connection()).copy(connected = true, snapshot = snapshot)),
+                        hostKeepsOrder = it.hostKeepsOrder + (machine.id to true),
+                    )
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { mutableState.update { it.copy(error = R.string.box_change_failed) } }
+        }
+    }
+
+    private fun selectedMachineOrNull(): Machine? = state.value.machines.firstOrNull { it.id == state.value.selectedMachine }
+
+
+    /** Mirrors the composer: the screen shows it at once, disk catches up a moment later. */
+    fun updateDraft(text: String) {
+        mutableState.update { it.copy(draft = text) }
+        val machineID = state.value.selectedMachine ?: return
+        val windowID = state.value.selectedWindow ?: return
+        draftJob?.cancel()
+        draftJob = viewModelScope.launch {
+            // Bounded, intended delay: one write per pause in typing instead of one per keystroke.
+            delay(DRAFT_SAVE_DELAY_MILLIS)
+            drafts.save(machineID, windowID, text)
+        }
     }
     fun back() { stopRealTerminal(); mutableState.update {
         when {
@@ -350,6 +484,7 @@ class MachinesViewModel(
                         if (target == null || update is MachineUpdate.Terminal) { wasConnected = true; retry = 0 }
                         when (update) {
                             is MachineUpdate.Workspaces -> {
+                                noticeNames.remember(machine.id, update.snapshot)
                                 mutableState.update { current ->
                                     val creation = current.creation
                                     val refreshedCreation = if (creation?.machineID == machine.id && creation.workspace != null) {
@@ -496,6 +631,57 @@ class MachinesViewModel(
 
     private var attachment: TerminalAttachment? = null
     private var attachJob: Job? = null
+    private var reattachJob: Job? = null
+    private var attachedAtNanos = 0L
+    private var automaticReattaches = 0
+
+    /**
+     * Re-attaches the selected window at the size the emulator already has.
+     *
+     * Used by the Reconnect button and by the automatic retry: an attachment that the host ends
+     * on its own (a burst of output over a slow link, a dropped socket) is not the reader leaving.
+     */
+    fun reconnectRealTerminal() {
+        val columns = emulator?.screen?.columns ?: state.value.realTerminal?.snapshot?.columns ?: return
+        val rows = emulator?.screen?.rows ?: state.value.realTerminal?.snapshot?.rows ?: return
+        val machine = state.value.machines.firstOrNull { it.id == state.value.selectedMachine } ?: return
+        reattachJob?.cancel(); reattachJob = null
+        stopRealTerminal()
+        // The host that ended the session often took the machine link down with it. Attaching on a
+        // dead link only produced "could not connect": bring the machine back first, then attach.
+        if (state.value.connections[machine.id]?.connected == true) {
+            startRealTerminal(columns, rows, automatic = false)
+            return
+        }
+        mutableState.update { it.copy(realTerminal = RealTerminal(connecting = true)) }
+        reattachJob = viewModelScope.launch {
+            connect(machine)
+            // Bounded, intended wait: the observer reports the link as soon as the host answers.
+            val linked = withTimeoutOrNull(RECONNECT_LINK_TIMEOUT_MILLIS) {
+                state.first { it.connections[machine.id]?.connected == true }
+            } != null
+            mutableState.update { it.copy(realTerminal = null) }
+            if (linked) startRealTerminal(columns, rows, automatic = false)
+            else mutableState.update { it.copy(error = R.string.connection_error) }
+        }
+    }
+
+    /** Schedules one automatic re-attach after the host ended the session, up to a small limit. */
+    private fun scheduleReattach() {
+        // A session that stayed up for a while earns fresh retries; a flapping one does not.
+        if (System.nanoTime() - attachedAtNanos > REATTACH_RESET_NANOS) automaticReattaches = 0
+        if (automaticReattaches >= MAX_AUTOMATIC_REATTACHES) return
+        if (state.value.selectedMachine == null) return
+        automaticReattaches += 1
+        reattachJob?.cancel()
+        reattachJob = viewModelScope.launch {
+            // Bounded, intended pause: let the host settle before asking for the pane again.
+            delay(REATTACH_DELAY_MILLIS)
+            // The finished attachment has already been cleared by then; what matters is that no
+            // newer one has started and the screen still shows the session as ended.
+            if (attachJob?.isActive != true && state.value.realTerminal?.let { it.ended || it.error != null } == true) reconnectRealTerminal()
+        }
+    }
     private var emulator: TerminalEmulator? = null
     private val geometry = GeometryFollower()
     private var pendingGeometryJob: Job? = null
@@ -545,17 +731,33 @@ class MachinesViewModel(
             try {
                 live = client.attach(machine, workspaceID, windowID, columns, rows)
                 attachment = live
+                attachedAtNanos = System.nanoTime()
                 if (live.columns != columns || live.rows != rows) terminal.resize(live.columns, live.rows)
                 mutableState.update { it.copy(realTerminal = RealTerminal(snapshot = terminal.snapshot(), connecting = false)) }
-                live.events.collect { event ->
+                // Rendering is decoupled from reading. A busy TUI (Codex redrawing with a spinner)
+                // pushes well over 100 KB/s; taking a full snapshot per chunk made this collector
+                // slower than the network, the socket reader stalled behind it, and the host saw
+                // its queue overflow and dropped the attachment. Now bytes are fed as they come and
+                // the screen is published at most once per frame.
+                var dirty = false
+                val painter = launch {
+                    while (isActive) {
+                        // Bounded, intended pacing: one snapshot per ~frame, only when bytes arrived.
+                        delay(RENDER_FRAME_MILLIS)
+                        if (!dirty || attachment !== live) continue
+                        dirty = false
+                        val frame = terminal.snapshot()
+                        mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = frame, copyMode = frame.inCopyMode, applicationCursorKeys = terminal.applicationCursorKeys)) }
+                    }
+                }
+                try { live.events.buffer(Channel.UNLIMITED).collect { event ->
                     when (event) {
                         is PtyEvent.Output -> {
                             terminal.feed(event.bytes)
                             // Answer the program's queries (cursor position, device attributes) right away.
                             val answer = terminal.drainResponses()
                             if (answer.isNotEmpty()) runCatching { live.send(answer.toByteArray(Charsets.UTF_8)) }
-                            val frame = terminal.snapshot()
-                            mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = frame, copyMode = frame.inCopyMode, applicationCursorKeys = terminal.applicationCursorKeys)) }
+                            dirty = true
                         }
                         is PtyEvent.Geometry -> {
                             // The host owns the geometry: match the phone's PTY to the canvas it
@@ -571,7 +773,17 @@ class MachinesViewModel(
                                 GeometryFollower.Decision.Ignore -> pendingGeometryJob?.cancel()
                             }
                         }
-                        PtyEvent.Exit -> mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(ended = true, connecting = false)) }
+                        PtyEvent.Exit -> {
+                            mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(ended = true, connecting = false)) }
+                            scheduleReattach()
+                        }
+                    }
+                } } finally {
+                    painter.cancel()
+                    // Whatever arrived after the last frame is shown before the screen goes quiet.
+                    if (attachment === live) {
+                        val frame = terminal.snapshot()
+                        mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = frame, copyMode = frame.inCopyMode, applicationCursorKeys = terminal.applicationCursorKeys)) }
                     }
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
@@ -604,8 +816,9 @@ class MachinesViewModel(
     fun stopRealTerminal() {
         // Leaving on purpose cancels any intention to come back attached; pausing re-arms it after.
         mutableState.update { it.copy(resumeRealTerminal = false) }
+        reattachJob?.cancel(); reattachJob = null
         leaveCopyModeJob?.cancel(); leaveCopyModeJob = null
-        wheelJob?.cancel(); wheelJob = null
+        wheelJob?.cancel(); wheelJob = null; wheelBudget.clear()
         pendingGeometryJob?.cancel(); pendingGeometryJob = null; geometry.reset()
         attachJob?.cancel(); attachJob = null
         attachment?.close(); attachment = null
@@ -651,7 +864,7 @@ class MachinesViewModel(
         val live = attachment ?: return
         val terminal = emulator ?: return
         leaveCopyModeJob?.cancel()
-        wheelJob?.cancel(); wheelJob = null
+        wheelJob?.cancel(); wheelJob = null; wheelBudget.clear()
         val sequence = terminal.encodeWheel(up = false, column = 0, row = 0).toByteArray(Charsets.UTF_8)
         leaveCopyModeJob = viewModelScope.launch {
             repeat(COPY_MODE_EXIT_BURSTS) {
@@ -674,20 +887,27 @@ class MachinesViewModel(
      * tmux acts on the first one (entering copy-mode) and ignores the rest, which is exactly how the
      * view used to freeze at the top of the history.
      */
+    private val wheelBudget = WheelBudget()
+
+    /**
+     * Wheel steps for the attached client; tmux turns them into copy-mode scrolling.
+     *
+     * Requests only adjust a balance; a single drainer sends one step per gap while the balance
+     * is not zero. Each step is its own write, because a burst in one write reads as pasted input
+     * and tmux acts on the first step only.
+     */
     fun wheelPty(up: Boolean, steps: Int, column: Int = 0, row: Int = 0) {
         val live = attachment ?: return
-        val sequence = (emulator ?: return).encodeWheel(up, column, row).toByteArray(Charsets.UTF_8)
-        // A drag asks for a handful of steps; leaving copy mode asks for as many as the history
-        // is deep, so the cap is generous rather than gesture-sized.
-        val count = steps.coerceIn(1, 400)
-        val previous = wheelJob
+        val terminal = emulator ?: return
+        wheelBudget.add(up, steps.coerceAtLeast(1))
+        if (wheelJob?.isActive == true) return
         wheelJob = viewModelScope.launch {
-            previous?.join()
-            repeat(count) { index ->
-                if (attachment !== live) return@launch
-                if (runCatching { live.send(sequence) }.isFailure) return@launch
+            while (attachment === live) {
+                val direction = wheelBudget.next() ?: break
+                val sequence = terminal.encodeWheel(direction, column, row).toByteArray(Charsets.UTF_8)
+                if (runCatching { live.send(sequence) }.isFailure) { wheelBudget.clear(); break }
                 // Bounded, intended gap so each step is its own event rather than part of a paste.
-                if (index < count - 1) delay(WHEEL_GAP_MILLIS)
+                delay(WHEEL_GAP_MILLIS)
             }
         }
     }
@@ -742,6 +962,17 @@ class MachinesViewModel(
         const val ENTER_GAP_MILLIS = 80L
         /** Gap between wheel steps so tmux reads each one as a separate event. */
         const val WHEEL_GAP_MILLIS = 16L
+        /** How often the attached screen is published while bytes keep arriving (~40 fps). */
+        const val RENDER_FRAME_MILLIS = 24L
+        /** Automatic re-attach after the host ends a session: how long to wait, how many in a row. */
+        const val REATTACH_DELAY_MILLIS = 1500L
+        const val MAX_AUTOMATIC_REATTACHES = 2
+        /** An attachment that lasted this long resets the automatic retry budget. */
+        const val REATTACH_RESET_NANOS = 30_000_000_000L
+        /** How long a reconnect waits for the machine link before giving up. */
+        const val RECONNECT_LINK_TIMEOUT_MILLIS = 12_000L
+        /** Pause in typing after which the draft is written to disk. */
+        const val DRAFT_SAVE_DELAY_MILLIS = 250L
         /** Wheel steps per burst while leaving copy mode, and how many bursts at most. */
         const val COPY_MODE_EXIT_STEPS = 12
         const val COPY_MODE_EXIT_BURSTS = 40

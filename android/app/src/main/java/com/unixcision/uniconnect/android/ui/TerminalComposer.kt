@@ -40,14 +40,15 @@ fun TerminalComposer(
     keysVisible: Boolean,
     onToggleKeys: () -> Unit,
     onSend: (String, Boolean, (Boolean) -> Unit) -> Unit,
+    draft: String,
+    onDraftChange: (String) -> Unit,
 ) {
-    var draft by rememberSaveable { mutableStateOf("") }
     val send: (String, Boolean) -> Unit = { submitted, withEnter ->
         if (enabled && !sending && submitted.isNotEmpty()) {
             // The text and the Return key travel as separate writes; a single burst ending in CR
             // is read as a paste by TUIs and only inserts a line break. Never replayed on failure.
             onSend(TerminalKeyEncoder.encodeText(submitted, modifiers), withEnter) { delivered ->
-                if (delivered && draft == submitted) draft = ""
+                if (delivered && draft == submitted) onDraftChange("")
             }
         }
     }
@@ -70,7 +71,7 @@ fun TerminalComposer(
                 BasicTextField(
                     value = draft,
                     // Keyboard Enter writes a line break into the draft; only the floating button sends.
-                    onValueChange = { draft = it },
+                    onValueChange = onDraftChange,
                     modifier = Modifier.weight(1f).padding(vertical = 10.dp),
                     enabled = !sending,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = Brand.Text, fontFamily = FontFamily.Monospace),

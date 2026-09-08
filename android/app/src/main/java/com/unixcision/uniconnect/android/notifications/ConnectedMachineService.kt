@@ -28,7 +28,7 @@ class ConnectedMachineService : Service() {
     private val container get() = (application as UniConnectApplication).container
     private lateinit var publisher: AndroidNoticePublisher
 
-    override fun onCreate() { super.onCreate(); publisher = AndroidNoticePublisher(this) }
+    override fun onCreate() { super.onCreate(); publisher = AndroidNoticePublisher(this, container.noticeNames) }
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

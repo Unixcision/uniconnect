@@ -24,6 +24,15 @@ dirección Tailscale y puerto (58465 inicialmente).
   desplazamiento local; botón Reconectar (`mobile.terminal.reconnect`) que solo reataca la
   sesión durable existente. Si el árbol autorizado deja de contener la ventana abierta, la
   pantalla se cierra con aviso en vez de quedarse muerta.
+- Favoritos y orden de espacios y ventanas: mantener pulsado abre una hoja con favorito,
+  mover al principio, subir y bajar; la cabecera del espacio y la barra de la ventana
+  abierta llevan la misma estrella. Los favoritos salen primero en su lista y el resto
+  conserva el orden del host (`domain/BoxArrangement`). El host es la fuente de verdad:
+  si `mobile.workspace.list` anuncia `capabilities: ["box_update"]`, el cambio va por
+  `mobile.workspace.update` / `mobile.terminal.update` y se muestra la respuesta; si no
+  la anuncia, no se llama al RPC y el móvil guarda el cambio por equipo
+  (`data/StoredBoxOverridesRepository`) avisando una vez. Nada se deduce de códigos de
+  error. Contrato completo en `docs/UNICONNECT.md` (apartado *Favourites and order*).
 - Alta, validación, persistencia atómica y eliminación local de máquinas.
 - Jerarquía nativa Máquinas → Espacios de trabajo → Ventanas alimentada por
   respuestas autorizadas; no presenta sesiones ni conexiones inventadas.

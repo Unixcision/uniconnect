@@ -91,6 +91,18 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
 
     override suspend fun inspect(machine: Machine): MachineSnapshot = decodeMachine(machine, call(machine, "mobile.workspace.list", JSONObject()))
 
+    override suspend fun updateWorkspace(machine: Machine, workspaceID: String, isPinned: Boolean?, position: Int?): MachineSnapshot {
+        val params = JSONObject().put("workspace_id", workspaceID)
+        isPinned?.let { params.put("is_pinned", it) }; position?.let { params.put("position", it) }
+        return decodeMachine(machine, call(machine, "mobile.workspace.update", params))
+    }
+
+    override suspend fun updateWindow(machine: Machine, workspaceID: String, windowID: String, isPinned: Boolean?, position: Int?): MachineSnapshot {
+        val params = JSONObject().put("workspace_id", workspaceID).put("terminal_id", windowID)
+        isPinned?.let { params.put("is_pinned", it) }; position?.let { params.put("position", it) }
+        return decodeMachine(machine, call(machine, "mobile.terminal.update", params))
+    }
+
     override suspend fun create(machine: Machine, request: ResourceCreation): CreationResult {
         val params = creationParameters(request)
         val method = if (request is ResourceCreation.Workspace) "workspace.create" else "mobile.terminal.create"
@@ -166,7 +178,7 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
     private fun decodeMachine(machine: Machine, result: JSONObject): MachineSnapshot {
         val workspaces = result.getJSONArray("workspaces").objects().map { workspace ->
             val terminals = workspace.getJSONArray("terminals").objects().map { terminal ->
-                RemoteWindow(terminal.getString("id"), terminal.getString("title"), "terminal")
+                RemoteWindow(terminal.getString("id"), terminal.getString("title"), "terminal", terminal.optBoolean("is_pinned", false))
             }
             require(terminals.map { it.id }.distinct().size == terminals.size)
             val kind = when (workspace.optString("kind")) { "ssh" -> true; "local" -> false; else -> null }
@@ -174,10 +186,11 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
                 RemoteAgentTarget(it.getString("id"), it.getString("title"))
             }
             require(targets.map { it.id }.distinct().size == targets.size)
-            RemoteWorkspace(workspace.getString("id"), workspace.getString("title"), kind, terminals, targets)
+            RemoteWorkspace(workspace.getString("id"), workspace.getString("title"), kind, terminals, targets, workspace.optBoolean("is_pinned", false))
         }
         require(workspaces.map { it.id }.distinct().size == workspaces.size)
-        return MachineSnapshot(result.optString("display_name", machine.name), workspaces)
+        val capabilities = (result.optJSONArray("capabilities") ?: JSONArray()).let { array -> List(array.length()) { array.optString(it) } }.filter { it.isNotEmpty() }.toSet()
+        return MachineSnapshot(result.optString("display_name", machine.name), workspaces, capabilities)
     }
 
     private fun decodeReplay(result: JSONObject, windowID: String): TerminalSnapshot? {
