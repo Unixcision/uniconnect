@@ -177,6 +177,16 @@
     <string name="real_terminal_ended">La sesión adjunta ha terminado en la máquina.</string>
     <string name="real_terminal_fell_back">Terminal real no disponible: %1$s. Se muestra la pantalla espejo.</string>
     <string name="terminal_leave_copy_mode">Salir del modo selección</string>
+    <string name="box_pin">Marcar como favorito</string>
+    <string name="box_unpin">Quitar de favoritos</string>
+    <string name="box_pinned">Favorito</string>
+    <string name="box_move_top">Mover al principio</string>
+    <string name="box_move_up">Subir</string>
+    <string name="box_move_down">Bajar</string>
+    <string name="box_actions_workspace">Espacio de trabajo</string>
+    <string name="box_actions_window">Ventana</string>
+    <string name="box_change_failed">No se ha podido guardar el cambio en el equipo</string>
+    <string name="box_local_only">Este equipo aún no sincroniza favoritos ni orden: se guardan solo en este móvil</string>
     <string name="settings">Ajustes</string>
     <string name="settings_note">Todo esto es de este móvil. No cambia nada en tus máquinas.</string>
     <string name="settings_terminal">Terminal</string>

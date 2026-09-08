@@ -44,6 +44,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.unixcision.uniconnect.android.R
+import com.unixcision.uniconnect.android.domain.BoxOverrides
 import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.ui.components.BoxMonogram
 import com.unixcision.uniconnect.android.ui.components.GlassCard
@@ -63,6 +64,7 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
     val connection = machine?.let { state.connections[it.id] }
     val workspace = connection?.snapshot?.workspaces?.firstOrNull { it.id == state.selectedWorkspace }
     val window = workspace?.windows?.firstOrNull { it.id == state.selectedWindow }
+    val overrides = machine?.let { state.overrides[it.id] } ?: BoxOverrides()
     var removing by remember { mutableStateOf<Machine?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     BackHandler(enabled = machine != null, onBack = model::back)
@@ -157,6 +159,8 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
                             resumeReal = state.resumeRealTerminal, view = state.terminalView, zoom = state.terminalZoom,
                             onView = model::setTerminalView, onZoom = model::setTerminalZoom, onReconnectReal = model::reconnectRealTerminal,
                             draft = state.draft, onDraftChange = model::updateDraft,
+                            windowPinned = window?.isPinned == true || window?.id in overrides.pinnedWindows,
+                            onTogglePin = { window?.let { model.toggleWindowPinned(it.id) } },
                         )
                     }
                     Level.MACHINE -> if (machine != null) MachineBoxesScreen(
@@ -165,6 +169,9 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
                         onEnableNotices = { onEnableNotifications(machine.id) }, onDisableNotices = { model.disableNotifications(machine.id) },
                         onConnect = { model.connect(machine) }, onCreateWorkspace = { model.showCreate(false) },
                         onCreateWindow = { model.showCreate(true) }, onSelectWorkspace = model::selectWorkspace, onSelectWindow = model::selectWindow,
+                        overrides = overrides, hostKeepsOrder = state.hostKeepsOrder[machine.id],
+                        onToggleWorkspacePin = model::toggleWorkspacePinned, onToggleWindowPin = model::toggleWindowPinned,
+                        onMoveWorkspace = model::moveWorkspace, onMoveWindow = model::moveWindow,
                     )
                     Level.LIST -> PullToRefreshBox(
                         isRefreshing = state.refreshing,

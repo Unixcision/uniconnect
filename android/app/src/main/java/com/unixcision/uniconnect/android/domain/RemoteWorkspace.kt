@@ -6,4 +6,5 @@ data class RemoteWorkspace(
     val isSSH: Boolean?,
     val windows: List<RemoteWindow>,
     val availableAgentTargets: List<RemoteAgentTarget> = emptyList(),
+    val isPinned: Boolean = false,
 )

@@ -12,6 +12,11 @@ import com.unixcision.uniconnect.android.domain.MachineEndpoint
 import com.unixcision.uniconnect.android.domain.MachineRepository
 import com.unixcision.uniconnect.android.domain.NoticeNameCatalog
 import com.unixcision.uniconnect.android.domain.DraftRepository
+import com.unixcision.uniconnect.android.domain.BoxOverrides
+import com.unixcision.uniconnect.android.domain.BoxOverridesRepository
+import com.unixcision.uniconnect.android.domain.BoxArrangement
+import com.unixcision.uniconnect.android.domain.RemoteWindow
+import com.unixcision.uniconnect.android.domain.RemoteWorkspace
 import com.unixcision.uniconnect.android.domain.SettingsRepository
 import com.unixcision.uniconnect.android.domain.MachineSnapshot
 import com.unixcision.uniconnect.android.domain.TerminalSnapshot
@@ -51,6 +56,7 @@ class MachinesViewModel(
     private val settingsRepository: SettingsRepository,
     private val noticeNames: NoticeNameCatalog,
     private val drafts: DraftRepository,
+    private val boxOverrides: BoxOverridesRepository,
 ) : ViewModel() {
     data class Connection(val checking: Boolean = false, val connected: Boolean = false, val snapshot: MachineSnapshot? = null, val error: Int? = null)
     /** A phone-sized tmux client attached to the selected window; the emulator lives in the model. */
@@ -80,6 +86,10 @@ class MachinesViewModel(
         val terminalZoom: Float = 1f,
         /** What is typed in the composer of the selected window and not sent yet. */
         val draft: String = "",
+        /** Favourites and order kept on the phone for hosts that cannot keep them yet, per machine. */
+        val overrides: Map<String, BoxOverrides> = emptyMap(),
+        /** Machines whose host answered that it has no update RPC; the notice is shown once. */
+        val hostKeepsOrder: Map<String, Boolean> = emptyMap(),
         val terminal: TerminalSnapshot? = null, val terminalLoading: Boolean = false,
         val terminalError: Int? = null, val terminalErrorDetail: String? = null, val inputSending: Boolean = false, val reconnecting: Boolean = false,
         val creation: CreationContext? = null, val creating: Boolean = false, val creationError: Int? = null,
@@ -263,6 +273,10 @@ class MachinesViewModel(
         }
     }
     fun selectMachine(id: String) {
+        viewModelScope.launch {
+            val stored = boxOverrides.load(id)
+            mutableState.update { it.copy(overrides = it.overrides + (id to stored)) }
+        }
         probeJob?.cancel()
         stopObserving()
         mutableState.update { it.copy(selectedMachine = id, selectedWorkspace = null, selectedWindow = null, terminal = null) }
@@ -284,6 +298,90 @@ class MachinesViewModel(
     }
 
     private var draftJob: Job? = null
+
+    /** Pins or unpins a workspace: the host if it can, the phone's own list otherwise. */
+    fun toggleWorkspacePinned(workspaceID: String) {
+        val machine = selectedMachineOrNull() ?: return
+        val snapshot = state.value.connections[machine.id]?.snapshot ?: return
+        val current = state.value.overrides[machine.id] ?: BoxOverrides()
+        val workspace = snapshot.workspaces.firstOrNull { it.id == workspaceID } ?: return
+        val pinned = !(workspace.isPinned || workspaceID in current.pinnedWorkspaces)
+        boxChange(machine, { client.updateWorkspace(machine, workspaceID, isPinned = pinned, position = null) }) {
+            it.copy(pinnedWorkspaces = if (pinned) it.pinnedWorkspaces + workspaceID else it.pinnedWorkspaces - workspaceID)
+        }
+    }
+
+    /** Pins or unpins a window of the selected workspace. */
+    fun toggleWindowPinned(windowID: String) {
+        val machine = selectedMachineOrNull() ?: return
+        val workspaceID = state.value.selectedWorkspace ?: return
+        val snapshot = state.value.connections[machine.id]?.snapshot ?: return
+        val current = state.value.overrides[machine.id] ?: BoxOverrides()
+        val window = snapshot.workspaces.firstOrNull { it.id == workspaceID }?.windows?.firstOrNull { it.id == windowID } ?: return
+        val pinned = !(window.isPinned || windowID in current.pinnedWindows)
+        boxChange(machine, { client.updateWindow(machine, workspaceID, windowID, isPinned = pinned, position = null) }) {
+            it.copy(pinnedWindows = if (pinned) it.pinnedWindows + windowID else it.pinnedWindows - windowID)
+        }
+    }
+
+    /** Moves a workspace [delta] places (negative = up); Int.MIN_VALUE means to the top. */
+    fun moveWorkspace(workspaceID: String, delta: Int) {
+        val machine = selectedMachineOrNull() ?: return
+        val snapshot = state.value.connections[machine.id]?.snapshot ?: return
+        val current = state.value.overrides[machine.id] ?: BoxOverrides()
+        val shown = BoxArrangement.workspaces(snapshot, current).map { it.id }
+        val order = if (delta == Int.MIN_VALUE) BoxArrangement.movedToTop(shown, workspaceID) else BoxArrangement.moved(shown, workspaceID, delta)
+        val pinned = order.filter { id -> snapshot.workspaces.first { it.id == id }.isPinned || id in current.pinnedWorkspaces }
+        val group = if (workspaceID in pinned) pinned else order - pinned.toSet()
+        boxChange(machine, { client.updateWorkspace(machine, workspaceID, isPinned = null, position = group.indexOf(workspaceID)) }) { it.copy(workspaceOrder = order) }
+    }
+
+    /** Moves a window of the selected workspace [delta] places; Int.MIN_VALUE means to the top. */
+    fun moveWindow(windowID: String, delta: Int) {
+        val machine = selectedMachineOrNull() ?: return
+        val workspaceID = state.value.selectedWorkspace ?: return
+        val snapshot = state.value.connections[machine.id]?.snapshot ?: return
+        val current = state.value.overrides[machine.id] ?: BoxOverrides()
+        val workspace = snapshot.workspaces.firstOrNull { it.id == workspaceID } ?: return
+        val shown = BoxArrangement.windows(workspace, current).map { it.id }
+        val order = if (delta == Int.MIN_VALUE) BoxArrangement.movedToTop(shown, windowID) else BoxArrangement.moved(shown, windowID, delta)
+        val pinned = order.filter { id -> workspace.windows.first { it.id == id }.isPinned || id in current.pinnedWindows }
+        val group = if (windowID in pinned) pinned else order - pinned.toSet()
+        boxChange(machine, { client.updateWindow(machine, workspaceID, windowID, isPinned = null, position = group.indexOf(windowID)) }) {
+            it.copy(windowOrder = it.windowOrder + (workspaceID to order))
+        }
+    }
+
+    /**
+     * Applies a favourite or order change. A host that announces ``MachineSnapshot.BOX_UPDATE``
+     * gets it over RPC, so every client of that host sees it, and its answer is what is shown;
+     * any failure there is a real error. A host without it never gets the call: the phone keeps
+     * the change on its own and says so once.
+     */
+    private fun boxChange(machine: Machine, onHost: suspend () -> MachineSnapshot, locally: (BoxOverrides) -> BoxOverrides) {
+        viewModelScope.launch {
+            val hostKeeps = state.value.connections[machine.id]?.snapshot?.keepsBoxes == true
+            if (!hostKeeps) {
+                val updated = locally(state.value.overrides[machine.id] ?: BoxOverrides())
+                mutableState.update { it.copy(overrides = it.overrides + (machine.id to updated), hostKeepsOrder = it.hostKeepsOrder + (machine.id to false)) }
+                boxOverrides.save(machine.id, updated)
+                return@launch
+            }
+            try {
+                val snapshot = onHost()
+                mutableState.update {
+                    it.copy(
+                        connections = it.connections + (machine.id to (it.connections[machine.id] ?: Connection()).copy(connected = true, snapshot = snapshot)),
+                        hostKeepsOrder = it.hostKeepsOrder + (machine.id to true),
+                    )
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { mutableState.update { it.copy(error = R.string.box_change_failed) } }
+        }
+    }
+
+    private fun selectedMachineOrNull(): Machine? = state.value.machines.firstOrNull { it.id == state.value.selectedMachine }
+
 
     /** Mirrors the composer: the screen shows it at once, disk catches up a moment later. */
     fun updateDraft(text: String) {

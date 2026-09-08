@@ -2,7 +2,9 @@ package com.unixcision.uniconnect.android.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -13,10 +15,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -27,6 +35,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.unixcision.uniconnect.android.R
+import com.unixcision.uniconnect.android.domain.BoxArrangement
+import com.unixcision.uniconnect.android.domain.BoxOverrides
 import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.domain.NotificationLinkState
 import com.unixcision.uniconnect.android.domain.RemoteWindow
@@ -40,7 +50,7 @@ import com.unixcision.uniconnect.android.ui.components.boxTone
  * One screen for a machine: a rail of workspace monograms (like the desktop's compact sidebar)
  * and, below it, the windows of the selected workspace. Selection is host-owned state only.
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun MachineBoxesScreen(
     machine: Machine,
@@ -54,9 +64,31 @@ fun MachineBoxesScreen(
     onCreateWindow: () -> Unit,
     onSelectWorkspace: (String) -> Unit,
     onSelectWindow: (String) -> Unit,
+    overrides: BoxOverrides = BoxOverrides(),
+    hostKeepsOrder: Boolean? = null,
+    onToggleWorkspacePin: (String) -> Unit = {},
+    onToggleWindowPin: (String) -> Unit = {},
+    onMoveWorkspace: (String, Int) -> Unit = { _, _ -> },
+    onMoveWindow: (String, Int) -> Unit = { _, _ -> },
 ) {
     val snapshot = connection.snapshot
     val selected = snapshot?.workspaces?.firstOrNull { it.id == selectedWorkspaceID }
+    val workspaces = snapshot?.let { BoxArrangement.workspaces(it, overrides) } ?: emptyList()
+    val windows = selected?.let { BoxArrangement.windows(it, overrides) } ?: emptyList()
+    val selectedPinned = selected != null && (selected.isPinned || selected.id in overrides.pinnedWorkspaces)
+    // A long press opens the same sheet for either kind; which one is held here.
+    var heldWorkspace by remember { mutableStateOf<RemoteWorkspace?>(null) }
+    var heldWindow by remember { mutableStateOf<RemoteWindow?>(null) }
+    heldWorkspace?.let { held ->
+        BoxActionsSheet(held.name, R.string.box_actions_workspace, held.isPinned || held.id in overrides.pinnedWorkspaces,
+            onTogglePin = { onToggleWorkspacePin(held.id) }, onMoveTop = { onMoveWorkspace(held.id, Int.MIN_VALUE) },
+            onMoveUp = { onMoveWorkspace(held.id, -1) }, onMoveDown = { onMoveWorkspace(held.id, 1) }, onDismiss = { heldWorkspace = null })
+    }
+    heldWindow?.let { held ->
+        BoxActionsSheet(held.name, R.string.box_actions_window, held.isPinned || held.id in overrides.pinnedWindows,
+            onTogglePin = { onToggleWindowPin(held.id) }, onMoveTop = { onMoveWindow(held.id, Int.MIN_VALUE) },
+            onMoveUp = { onMoveWindow(held.id, -1) }, onMoveDown = { onMoveWindow(held.id, 1) }, onDismiss = { heldWindow = null })
+    }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         if (snapshot == null) item { NotConnectedCard(connection, onConnect) }
         if (snapshot != null && !connection.connected) item {
@@ -77,8 +109,10 @@ fun MachineBoxesScreen(
             }
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
-                    items(snapshot.workspaces, key = { it.id }) { workspace ->
-                        WorkspaceTile(workspace, selected = workspace.id == selectedWorkspaceID, dimmed = !connection.connected) { onSelectWorkspace(workspace.id) }
+                    items(workspaces, key = { it.id }) { workspace ->
+                        WorkspaceTile(workspace, selected = workspace.id == selectedWorkspaceID, dimmed = !connection.connected,
+                            pinned = workspace.isPinned || workspace.id in overrides.pinnedWorkspaces,
+                            onClick = { onSelectWorkspace(workspace.id) }, onLongClick = { heldWorkspace = workspace })
                     }
                     if (connection.connected) item { NewWorkspaceTile(onCreateWorkspace) }
                 }
@@ -93,6 +127,9 @@ fun MachineBoxesScreen(
                     }
                 }
             }
+            if (hostKeepsOrder == false) item {
+                Text(stringResource(R.string.box_local_only), color = Brand.Amber, style = MaterialTheme.typography.labelSmall)
+            }
             if (selected == null && snapshot.workspaces.isNotEmpty()) item {
                 Text(stringResource(R.string.boxes_hint), Modifier.padding(top = 8.dp), color = Brand.Muted, style = MaterialTheme.typography.bodySmall)
             }
@@ -102,6 +139,10 @@ fun MachineBoxesScreen(
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(selected.name, Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             KindBadge(selected)
+                            IconButton(onClick = { onToggleWorkspacePin(selected.id) }, Modifier.size(36.dp)) {
+                                Icon(if (selectedPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder, stringResource(if (selectedPinned) R.string.box_unpin else R.string.box_pin),
+                                    tint = if (selectedPinned) Brand.Amber else Brand.Muted)
+                            }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(pluralStringResource(R.plurals.window_count, selected.windows.size, selected.windows.size), Modifier.weight(1f), color = Brand.Muted, style = MaterialTheme.typography.bodySmall)
@@ -112,17 +153,26 @@ fun MachineBoxesScreen(
                     }
                 }
                 if (selected.windows.isEmpty()) item { Text(stringResource(R.string.no_windows), color = Brand.Muted, style = MaterialTheme.typography.bodySmall) }
-                items(selected.windows, key = { it.id }) { window -> WindowRow(window, boxTone(selected.name)) { onSelectWindow(window.id) } }
+                items(windows, key = { it.id }) { window ->
+                    WindowRow(window, boxTone(selected.name), pinned = window.isPinned || window.id in overrides.pinnedWindows,
+                        onClick = { onSelectWindow(window.id) }, onLongClick = { heldWindow = window })
+                }
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun WorkspaceTile(workspace: RemoteWorkspace, selected: Boolean, dimmed: Boolean, onClick: () -> Unit) {
-    Column(Modifier.width(76.dp).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun WorkspaceTile(workspace: RemoteWorkspace, selected: Boolean, dimmed: Boolean, pinned: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
+    Column(Modifier.width(76.dp).combinedClickable(onClick = onClick, onLongClick = onLongClick), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Box {
             BoxMonogram(workspace.name, size = 64.dp, selected = selected, dimmed = dimmed)
+            if (pinned) Box(
+                Modifier.align(Alignment.TopStart).offset(x = (-4).dp, y = (-4).dp).size(20.dp)
+                    .background(Brand.Night, CircleShape).border(1.dp, Brand.Outline, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Rounded.Star, stringResource(R.string.box_pinned), Modifier.size(12.dp), tint = Brand.Amber) }
             if (workspace.windows.isNotEmpty()) Box(
                 Modifier.align(Alignment.BottomEnd).offset(x = 4.dp, y = 4.dp).size(22.dp)
                     .background(Brand.Night, CircleShape).border(1.dp, Brand.Outline, CircleShape),
@@ -155,14 +205,16 @@ fun KindBadge(workspace: RemoteWorkspace) {
         style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.Bold)
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun WindowRow(window: RemoteWindow, tone: Color, onClick: () -> Unit) {
-    GlassCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), onClick = onClick) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun WindowRow(window: RemoteWindow, tone: Color, pinned: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
+    GlassCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
+        Row(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(38.dp).background(tone.copy(alpha = .14f), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
                 Icon(Icons.Rounded.Terminal, null, Modifier.size(20.dp), tint = tone)
             }
             Text(window.name, Modifier.weight(1f).padding(horizontal = 14.dp), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (pinned) Icon(Icons.Rounded.Star, stringResource(R.string.box_pinned), Modifier.size(16.dp).padding(end = 2.dp), tint = Brand.Amber)
             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = Brand.Muted)
         }
     }

@@ -11,11 +11,13 @@ import com.unixcision.uniconnect.android.data.NativeNotificationClient
 import com.unixcision.uniconnect.android.data.StoredNoticeDeliveryRepository
 import com.unixcision.uniconnect.android.data.StoredNoticeNameCatalog
 import com.unixcision.uniconnect.android.data.StoredDraftRepository
+import com.unixcision.uniconnect.android.data.StoredBoxOverridesRepository
 import com.unixcision.uniconnect.android.data.StoredSettingsRepository
 import com.unixcision.uniconnect.android.domain.NotificationClient
 import com.unixcision.uniconnect.android.domain.NoticeDeliveryRepository
 import com.unixcision.uniconnect.android.domain.NoticeNameCatalog
 import com.unixcision.uniconnect.android.domain.DraftRepository
+import com.unixcision.uniconnect.android.domain.BoxOverridesRepository
 import com.unixcision.uniconnect.android.domain.MachineClient
 import com.unixcision.uniconnect.android.domain.MachineRepository
 import com.unixcision.uniconnect.android.domain.SettingsRepository
@@ -37,5 +39,6 @@ class AppContainer(context: Context) {
     val noticeDeliveries: NoticeDeliveryRepository = StoredNoticeDeliveryRepository(store)
     val noticeNames: NoticeNameCatalog = StoredNoticeNameCatalog(store)
     val drafts: DraftRepository = StoredDraftRepository(store)
+    val boxOverrides: BoxOverridesRepository = StoredBoxOverridesRepository(store)
     val notificationClient: NotificationClient = NativeNotificationClient(rpc)
 }

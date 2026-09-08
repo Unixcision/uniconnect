@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
             override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
                 require(modelClass == MachinesViewModel::class.java)
                 @Suppress("UNCHECKED_CAST")
-                return MachinesViewModel(container.machines, container.machineClient, container.notificationConnections, container.settings, container.noticeNames, container.drafts) as T
+                return MachinesViewModel(container.machines, container.machineClient, container.notificationConnections, container.settings, container.noticeNames, container.drafts, container.boxOverrides) as T
             }
         }
         model = ViewModelProvider(this, factory)[MachinesViewModel::class.java]
