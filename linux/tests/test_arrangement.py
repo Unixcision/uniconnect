@@ -54,6 +54,16 @@ class ArrangementTests(unittest.TestCase):
         self.assertEqual([b["id"] for b in result["workspaces"]], ["other", "pin", "box"])
         self.assertEqual(self.store.data["selectedWorkspaceId"], "other")
 
+    def test_cli_lists_follow_the_same_visible_order_without_mutating_state(self):
+        from uniconnect.control import ControlServer
+        server = types.SimpleNamespace(window=self.window)
+        before = copy.deepcopy(self.store.data)
+        boxes = ControlServer.dispatch(server, {"command": "list-workspaces"})
+        self.assertEqual([b["id"] for b in boxes], ["pin", "box", "other"])
+        terminals = ControlServer.dispatch(server, {"command": "list-surfaces", "workspace": "workspace:2"})
+        self.assertEqual([t["id"] for t in terminals], ["c", "a", "b", "d"])
+        self.assertEqual(before, self.store.data)
+
     def test_pin_then_group_position_clamps_and_retry_does_not_toggle(self):
         result = self.call("terminal.update", workspace_id="box", terminal_id="d", is_pinned=True, position=-20)
         boxes = result["workspaces"]
