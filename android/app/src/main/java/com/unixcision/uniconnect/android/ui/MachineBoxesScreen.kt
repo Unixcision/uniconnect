@@ -8,6 +8,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -79,10 +81,20 @@ fun MachineBoxesScreen(
     // A long press opens the same sheet for either kind; which one is held here.
     var heldWorkspace by remember { mutableStateOf<RemoteWorkspace?>(null) }
     var heldWindow by remember { mutableStateOf<RemoteWindow?>(null) }
+    // A lazy row keeps its scroll anchored to the first visible key, so a tile that jumps to the
+    // front would slide out of view: after a change, the row scrolls to where the tile went.
+    val workspaceRow = rememberLazyListState()
+    var reveal by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(reveal, workspaces) {
+        val id = reveal ?: return@LaunchedEffect
+        val index = workspaces.indexOfFirst { it.id == id }
+        // Near the start the whole head of the row fits, so show it from the first tile.
+        if (index >= 0) { workspaceRow.animateScrollToItem(if (index < 3) 0 else index - 1); reveal = null }
+    }
     heldWorkspace?.let { held ->
         BoxActionsSheet(held.name, R.string.box_actions_workspace, held.isPinned || held.id in overrides.pinnedWorkspaces,
-            onTogglePin = { onToggleWorkspacePin(held.id) }, onMoveTop = { onMoveWorkspace(held.id, Int.MIN_VALUE) },
-            onMoveUp = { onMoveWorkspace(held.id, -1) }, onMoveDown = { onMoveWorkspace(held.id, 1) }, onDismiss = { heldWorkspace = null })
+            onTogglePin = { reveal = held.id; onToggleWorkspacePin(held.id) }, onMoveTop = { reveal = held.id; onMoveWorkspace(held.id, Int.MIN_VALUE) },
+            onMoveUp = { reveal = held.id; onMoveWorkspace(held.id, -1) }, onMoveDown = { reveal = held.id; onMoveWorkspace(held.id, 1) }, onDismiss = { heldWorkspace = null })
     }
     heldWindow?.let { held ->
         BoxActionsSheet(held.name, R.string.box_actions_window, held.isPinned || held.id in overrides.pinnedWindows,
@@ -108,7 +120,7 @@ fun MachineBoxesScreen(
                 }
             }
             item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
+                LazyRow(state = workspaceRow, horizontalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
                     items(workspaces, key = { it.id }) { workspace ->
                         WorkspaceTile(workspace, selected = workspace.id == selectedWorkspaceID, dimmed = !connection.connected,
                             pinned = workspace.isPinned || workspace.id in overrides.pinnedWorkspaces,
@@ -139,7 +151,7 @@ fun MachineBoxesScreen(
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(selected.name, Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             KindBadge(selected)
-                            IconButton(onClick = { onToggleWorkspacePin(selected.id) }, Modifier.size(36.dp)) {
+                            IconButton(onClick = { reveal = selected.id; onToggleWorkspacePin(selected.id) }, Modifier.size(36.dp)) {
                                 Icon(if (selectedPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder, stringResource(if (selectedPinned) R.string.box_unpin else R.string.box_pin),
                                     tint = if (selectedPinned) Brand.Amber else Brand.Muted)
                             }

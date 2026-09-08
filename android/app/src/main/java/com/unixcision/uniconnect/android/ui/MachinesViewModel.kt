@@ -111,7 +111,11 @@ class MachinesViewModel(
         viewModelScope.launch {
             repository.machines.catch { mutableState.update { it.copy(loading = false, error = R.string.load_error) } }
                 .collect { machines ->
-                    mutableState.update { it.copy(machines = machines, loading = false) }
+                    // Favourites and order kept on the phone go in with the machines, before any
+                    // box is drawn: a row that composes first and rearranges later would keep its
+                    // scroll anchored to the old first tile and hide the one that moved ahead of it.
+                    val kept = machines.associate { it.id to boxOverrides.load(it.id) }.filterValues { !it.isEmpty }
+                    mutableState.update { it.copy(machines = machines, loading = false, overrides = kept + it.overrides.filterKeys { id -> id !in kept }) }
                     openPendingNoticeMachine()
                     if (state.value.selectedMachine == null) refreshMachineStates()
                 }
@@ -273,10 +277,6 @@ class MachinesViewModel(
         }
     }
     fun selectMachine(id: String) {
-        viewModelScope.launch {
-            val stored = boxOverrides.load(id)
-            mutableState.update { it.copy(overrides = it.overrides + (id to stored)) }
-        }
         probeJob?.cancel()
         stopObserving()
         mutableState.update { it.copy(selectedMachine = id, selectedWorkspace = null, selectedWindow = null, terminal = null) }
