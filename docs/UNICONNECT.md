@@ -76,6 +76,31 @@ desktop applies the same rule: the *New workspace* dialog is followed by the
 "create a window to start" state). Android sends `initial_terminal: false` and shows
 its *Primera ventana* sheet when the host confirms an empty box.
 
+### Favourites and order (mobile contract, 2026-09-08)
+
+Favourites are the existing *pin*: `Workspace.isPinned` on macOS, `record["pinned"]` on
+Linux. Android shows pinned workspaces and windows first within their list and keeps the
+host's sidebar order for the rest. The host is the source of truth. A host that keeps
+favourites and order for its clients advertises `"capabilities": ["box_update"]` in the
+`mobile.workspace.list` result and implements two RPCs:
+
+- `mobile.workspace.update {workspace_id, is_pinned?: bool, position?: int}`
+- `mobile.terminal.update {workspace_id, terminal_id, is_pinned?: bool, position?: int}`
+
+Rules: explicit values by ID (never a toggle); never change focus, selection, pane ids or
+the split layout; apply `is_pinned` first, then `position`, which is zero-based *within
+its group* (pinned / unpinned) and is clamped when out of range; persist as the host
+already persists (autosave on macOS, `store.save` on Linux) with rollback on failure;
+answer with the same full object as `mobile.workspace.list` (not the create-style filtered
+snapshot); `invalid_params` when an id is missing or unknown. The snapshot must also carry
+`is_pinned` on every terminal, not only on workspaces. Without the capability Android
+never calls these RPCs: it keeps favourites and order locally per machine and says so
+once, and switches to the RPC path on its own when the host starts advertising it.
+"Sync" means every client of one host sees the same; macOS and Linux are separate
+installations with separate boxes and nothing is merged between them. Status: Android
+done; macOS (panel pin, `sidebarOrderedPanelIds` reorder, both RPCs, capability) and
+Linux (window reorder across panes, both RPCs, capability) pending.
+
 The local chooser offers Terminal, Claude, Codex, Agy, Grok and a custom command,
 with a visible name and editable **Window Folder**. The folder initially uses the
 workspace default, but may be any existing local directory selected with an
