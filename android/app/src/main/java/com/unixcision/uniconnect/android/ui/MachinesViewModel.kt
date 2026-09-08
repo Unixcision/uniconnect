@@ -11,6 +11,7 @@ import com.unixcision.uniconnect.android.domain.MachineDraft
 import com.unixcision.uniconnect.android.domain.MachineEndpoint
 import com.unixcision.uniconnect.android.domain.MachineRepository
 import com.unixcision.uniconnect.android.domain.NoticeNameCatalog
+import com.unixcision.uniconnect.android.domain.DraftRepository
 import com.unixcision.uniconnect.android.domain.SettingsRepository
 import com.unixcision.uniconnect.android.domain.MachineSnapshot
 import com.unixcision.uniconnect.android.domain.TerminalSnapshot
@@ -49,6 +50,7 @@ class MachinesViewModel(
     private val notificationControl: NotificationConnectionControl,
     private val settingsRepository: SettingsRepository,
     private val noticeNames: NoticeNameCatalog,
+    private val drafts: DraftRepository,
 ) : ViewModel() {
     data class Connection(val checking: Boolean = false, val connected: Boolean = false, val snapshot: MachineSnapshot? = null, val error: Int? = null)
     /** A phone-sized tmux client attached to the selected window; the emulator lives in the model. */
@@ -76,6 +78,8 @@ class MachinesViewModel(
         /** The reading and magnification in use, kept across a re-attach; null means the setting. */
         val terminalView: TerminalView? = null,
         val terminalZoom: Float = 1f,
+        /** What is typed in the composer of the selected window and not sent yet. */
+        val draft: String = "",
         val terminal: TerminalSnapshot? = null, val terminalLoading: Boolean = false,
         val terminalError: Int? = null, val terminalErrorDetail: String? = null, val inputSending: Boolean = false, val reconnecting: Boolean = false,
         val creation: CreationContext? = null, val creating: Boolean = false, val creationError: Int? = null,
@@ -268,8 +272,30 @@ class MachinesViewModel(
     /** Opens a window. The reading resets to the setting, since it belonged to the previous one. */
     fun selectWindow(id: String) {
         stopRealTerminal()
-        mutableState.update { it.copy(selectedWindow = id, terminal = null, terminalView = null, terminalZoom = 1f) }
+        draftJob?.cancel(); draftJob = null
+        mutableState.update { it.copy(selectedWindow = id, terminal = null, terminalView = null, terminalZoom = 1f, draft = "") }
+        val machineID = state.value.selectedMachine
+        if (machineID != null) viewModelScope.launch {
+            val stored = drafts.load(machineID, id)
+            // Only if the reader is still on this window and has not typed anything meanwhile.
+            mutableState.update { if (it.selectedWindow == id && it.draft.isEmpty()) it.copy(draft = stored) else it }
+        }
         refreshTerminal()
+    }
+
+    private var draftJob: Job? = null
+
+    /** Mirrors the composer: the screen shows it at once, disk catches up a moment later. */
+    fun updateDraft(text: String) {
+        mutableState.update { it.copy(draft = text) }
+        val machineID = state.value.selectedMachine ?: return
+        val windowID = state.value.selectedWindow ?: return
+        draftJob?.cancel()
+        draftJob = viewModelScope.launch {
+            // Bounded, intended delay: one write per pause in typing instead of one per keystroke.
+            delay(DRAFT_SAVE_DELAY_MILLIS)
+            drafts.save(machineID, windowID, text)
+        }
     }
     fun back() { stopRealTerminal(); mutableState.update {
         when {
@@ -847,6 +873,8 @@ class MachinesViewModel(
         const val REATTACH_RESET_NANOS = 30_000_000_000L
         /** How long a reconnect waits for the machine link before giving up. */
         const val RECONNECT_LINK_TIMEOUT_MILLIS = 12_000L
+        /** Pause in typing after which the draft is written to disk. */
+        const val DRAFT_SAVE_DELAY_MILLIS = 250L
         /** Wheel steps per burst while leaving copy mode, and how many bursts at most. */
         const val COPY_MODE_EXIT_STEPS = 12
         const val COPY_MODE_EXIT_BURSTS = 40

@@ -96,6 +96,8 @@ fun TerminalScreen(
     onView: (TerminalView) -> Unit = {},
     onZoom: (Float) -> Unit = {},
     onReconnectReal: () -> Unit = {},
+    draft: String = "",
+    onDraftChange: (String) -> Unit = {},
 ) {
     var realRequested by rememberSaveable { mutableStateOf(false) }
     // Default way in: attach to the window's own tmux session. Only a host without the attach RPC,
@@ -108,6 +110,7 @@ fun TerminalScreen(
             onStopReal = { realRequested = false; manuallyLeft = true; onStopReal() },
             onPty = onPty, onPtyWheel = onPtyWheel, onPtyResize = onPtyResize,
             onLeaveCopyMode = onLeaveCopyMode, onView = onView, onZoom = onZoom, onReconnect = onReconnectReal,
+            draft = draft, onDraftChange = onDraftChange,
         )
         return
     }
@@ -119,7 +122,8 @@ fun TerminalScreen(
     }
     MirrorTerminalScreen(snapshot, loading, error, errorDetail, sending, reconnecting, connected, onRefresh, onReconnect, onScroll, onSend,
         attachFallbackDetail = attachFallbackDetail,
-        onRequestReal = { columns, rows -> realRequested = true; manuallyLeft = false; onStartReal(columns, rows, false) })
+        onRequestReal = { columns, rows -> realRequested = true; manuallyLeft = false; onStartReal(columns, rows, false) },
+        draft = draft, onDraftChange = onDraftChange)
 }
 
 /** The attached tmux client: the phone owns a real PTY of its own size; tmux keeps the desktop's. */
@@ -130,6 +134,7 @@ private fun RealTerminalScreen(
     viewMode: TerminalView, zoom: Float, startWithKeys: Boolean,
     onStopReal: () -> Unit, onPty: (String, Boolean) -> Unit, onPtyWheel: (Boolean, Int) -> Unit, onPtyResize: (Int, Int) -> Unit,
     onLeaveCopyMode: () -> Unit, onView: (TerminalView) -> Unit, onZoom: (Float) -> Unit, onReconnect: () -> Unit,
+    draft: String, onDraftChange: (String) -> Unit,
 ) {
     var keysVisible by rememberSaveable { mutableStateOf(startWithKeys) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
@@ -307,6 +312,7 @@ private fun RealTerminalScreen(
             enabled = ready && connected, sending = sending, modifiers = modifiers, keysVisible = keysVisible,
             onToggleKeys = { keysVisible = !keysVisible },
             onSend = { text, withEnter, onDelivered -> onPty(text, withEnter); onDelivered(true); consumeModifiers() },
+            draft = draft, onDraftChange = onDraftChange,
         )
     }
 }
@@ -316,7 +322,7 @@ private fun RealTerminalScreen(
 private fun MirrorTerminalScreen(
     snapshot: TerminalSnapshot?, loading: Boolean, error: Int?, errorDetail: String?, sending: Boolean, reconnecting: Boolean, connected: Boolean,
     onRefresh: () -> Unit, onReconnect: () -> Unit, onScroll: (Int) -> Unit, onSend: (String, Boolean, (Boolean) -> Unit) -> Unit,
-    attachFallbackDetail: String?, onRequestReal: (Int, Int) -> Unit,
+    attachFallbackDetail: String?, onRequestReal: (Int, Int) -> Unit, draft: String, onDraftChange: (String) -> Unit,
 ) {
     var viewMode by rememberSaveable { mutableStateOf(TerminalView.FIT) }
     var keysVisible by rememberSaveable { mutableStateOf(false) }
@@ -442,6 +448,7 @@ private fun MirrorTerminalScreen(
             enabled = ready, sending = sending, modifiers = modifiers, keysVisible = keysVisible,
             onToggleKeys = { keysVisible = !keysVisible },
             onSend = { text, withEnter, onDelivered -> onSend(text, withEnter, onDelivered); consumeModifiers() },
+            draft = draft, onDraftChange = onDraftChange,
         )
     }
 }
