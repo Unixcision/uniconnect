@@ -15,6 +15,9 @@ class MobileDesktop:
         self.window = window
         self.access = MobileAccess(window.store.root)
         self.rpc = MobileRPC(window, self.access, GLib.idle_add)
+        # Un finally no cubre que el proceso muera: el arranque barre los audios que
+        # dejó una caída anterior antes de que nadie pueda dictar de nuevo.
+        self.rpc.transcription.sweep_orphans()
         self.host = MobileHost(self.access, self.rpc, translate=window._)
         self.rpc.host = self.host
         self.dialog = None

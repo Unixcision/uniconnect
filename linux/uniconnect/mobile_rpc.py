@@ -96,7 +96,7 @@ class MobileRPC:
         if operation == "audio.transcribe":
             # Conversión y motor fuera de GTK: solo el bloqueo y el permiso se
             # comprueban en el hilo dueño del modelo, como en las transferencias.
-            return self.transcribe_dispatch(params, authorized)
+            return self.transcribe_dispatch(params, connection_id, authorized)
         if operation in self.FILE_OPERATIONS:
             # Trozos, verificación y salto SSH fuera de GTK; solo la identidad de
             # la caja y el bloqueo se comprueban en el hilo dueño del modelo.
@@ -202,13 +202,15 @@ class MobileRPC:
 
     # ----- transcribe.v1 -----
 
-    def transcribe_dispatch(self, params, authorized):
+    def transcribe_dispatch(self, params, connection_id, authorized):
         """Valida y enruta `mobile.audio.transcribe`; el audio nunca se guarda ni se registra."""
+        owner = self.file_owner(connection_id)
         audio, mime, language = params.get("audio"), params.get("mime"), params.get("language")
         if not isinstance(audio, str) or not audio:
             raise RPCError("invalid_params", "No llegó ningún audio que transcribir")
         if len(audio) > (self.transcription.max_bytes * 4) // 3 + 16:
-            raise RPCError("too_large", "El audio supera el máximo admitido")
+            raise RPCError("too_large", "El audio supera el máximo de "
+                                        f"{self.transcription.max_bytes // (1024 * 1024)} MiB")
         try:
             raw = base64.b64decode(audio, validate=True)
         except (binascii.Error, ValueError) as error:
@@ -222,7 +224,7 @@ class MobileRPC:
                 # Contexto opcional: si viene, tiene que seguir existiendo.
                 self.target(params, terminal=params.get("terminal_id") is not None)
         self.on_main(check)
-        return self.transcription.transcribe(raw, mime, language)
+        return self.transcription.transcribe(raw, mime, language, owner=owner)
 
     @staticmethod
     def pty_identity(workspace, record):

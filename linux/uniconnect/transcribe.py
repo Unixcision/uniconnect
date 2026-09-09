@@ -3,9 +3,11 @@
 El móvil graba un audio corto y lo entrega por la conexión privada; el equipo lo
 transcribe con whisper.cpp local (sin servicio externo, sin red) y devuelve solo
 el texto. El audio vive en un temporal 0600 dentro de un directorio 0700 propio
-de la llamada y se borra siempre —éxito, error, plazo agotado o cancelación—; ni
-el audio ni el texto se registran en ningún log. Si el equipo no tiene motor o
-modelo se responde `unsupported` y el móvil cae a su dictado local.
+de la llamada, bajo `~/.cache/uniconnect/transcribe/`, y se borra siempre —éxito,
+error, plazo agotado o cancelación—; lo que deje una caída del proceso lo barre el
+arranque siguiente. Ni el audio ni el texto se registran en ningún log. Si el
+equipo no tiene motor o modelo se responde `unsupported` y el móvil cae a su
+dictado local.
 """
 
 from __future__ import annotations
@@ -24,16 +26,23 @@ from typing import Callable
 
 from .mobile_protocol import RPCError
 
-MAX_AUDIO_BYTES = 6 * 1024 * 1024
+# 3 MiB binarios son 4 MiB en base64: el marco del protocolo admite 8 MiB, así que
+# queda sitio de sobra para el JSON que envuelve al audio. Con 6 MiB la petición
+# reventaría en el decodificador antes de que nadie pudiera responder `too_large`.
+MAX_AUDIO_BYTES = 3 * 1024 * 1024
 MAX_AUDIO_SECONDS = 300
-BUDGET_SECONDS = 75.0  # El móvil abandona a los 90 s: el equipo responde antes.
-CLEANUP_MARGIN = 3.0  # Reserva para matar el proceso y borrar el temporal antes del plazo.
+BUDGET_SECONDS = 90.0
+CLEANUP_MARGIN = 5.0  # Dentro del presupuesto: el equipo contesta antes de los 90 s del móvil.
+MAX_JOBS = 2
+MAX_JOBS_PER_OWNER = 1
+ORPHAN_SECONDS = 600.0
 MAX_THREADS = 8
 WAV_PREFIX_BYTES = 65536
 
 _LANGUAGE = re.compile(r"[a-z]{2}")
 _MARKER = re.compile(r"\[[^\]]*\]")
 _TIMESTAMP = re.compile(r"^\[[0-9:.,\s\->]+\]\s*")
+_PID = re.compile(r"(\d+)-")
 
 
 @dataclass(frozen=True)
@@ -95,6 +104,17 @@ def clean_transcript(output: str) -> str:
     return re.sub(r"\s+", " ", " ".join(lines)).strip()
 
 
+def process_alive(pid: int) -> bool:
+    """`True` si ese pid existe ahora mismo; los permisos ajenos también cuentan como vivo."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except (PermissionError, OSError):
+        return True
+    return True
+
+
 class SubprocessRunner:
     """Ejecutor real: proceso hijo sin stdin, con salida capturada y plazo propio."""
 
@@ -123,12 +143,14 @@ class TranscriptionEngine:
     No hace nada en el constructor: el binario y el modelo se buscan en la primera
     transcripción y se cachean, y una avería del motor invalida la caché para que la
     siguiente llamada vuelva a mirar. Conversión, transcripción y limpieza comparten
-    un único presupuesto monotónico (`budget`, 75 s) con reloj inyectable, y todo
-    corre en el hilo del que llama —nunca en el de GTK—, así que el móvil recibe la
-    respuesta antes de su propio plazo de 90 s.
+    un único presupuesto monotónico (`budget`, 90 s) con reloj inyectable, del que se
+    reservan los últimos `CLEANUP_MARGIN` segundos, así que la respuesta sale antes
+    del plazo de 90 s del móvil. Todo corre en el hilo del que llama, nunca en el de
+    GTK. Como whisper se come la máquina, solo hay `max_jobs` transcripciones a la
+    vez y `max_jobs_per_owner` por dispositivo; lo que pase de ahí es `busy`.
 
     Para probarla sin ejecutar whisper se inyectan `runner` (ejecutor de procesos),
-    `which`, `clock`, `temp_root` y las rutas de binario y modelo.
+    `which`, `clock`, `work_directory`, `alive` y las rutas de binario y modelo.
     """
 
     BINARIES = ("whisper-cli", "whisper-cpp", "main")
@@ -140,27 +162,41 @@ class TranscriptionEngine:
                  model: str | None = None, threads: int | None = None,
                  runner: Callable[..., subprocess.CompletedProcess] | None = None,
                  which: Callable[[str], str | None] = shutil.which,
-                 clock: Callable[[], float] = time.monotonic, temp_root: str | Path | None = None,
+                 clock: Callable[[], float] = time.monotonic,
+                 work_directory: str | Path | None = None,
+                 alive: Callable[[int], bool] = process_alive,
                  budget: float = BUDGET_SECONDS, max_bytes: int = MAX_AUDIO_BYTES,
-                 max_seconds: float = MAX_AUDIO_SECONDS, environment=None):
+                 max_seconds: float = MAX_AUDIO_SECONDS, max_jobs: int = MAX_JOBS,
+                 max_jobs_per_owner: int = MAX_JOBS_PER_OWNER,
+                 orphan_seconds: float = ORPHAN_SECONDS, environment=None):
         environment = os.environ if environment is None else environment
         self.model_directory = Path(model_directory) if model_directory is not None \
             else self.default_model_directory(environment)
+        self.work_directory = Path(work_directory) if work_directory is not None \
+            else self.default_work_directory(environment)
         self.binary = binary if binary is not None else environment.get("UNICONNECT_WHISPER_BIN") or None
         self.model = model if model is not None else environment.get("UNICONNECT_WHISPER_MODEL") or None
         self.threads = threads if threads is not None else self.default_threads(environment)
         self.runner = runner if runner is not None else SubprocessRunner()
-        self.which, self.clock = which, clock
-        self.temp_root = Path(temp_root) if temp_root is not None else None
+        self.which, self.clock, self.alive = which, clock, alive
         self.budget, self.max_bytes, self.max_seconds = budget, max_bytes, max_seconds
-        # Cerrojo corto: solo protege la caché de la detección, nunca la transcripción.
+        self.max_jobs, self.max_jobs_per_owner = max_jobs, max_jobs_per_owner
+        self.orphan_seconds = orphan_seconds
+        # Cerrojo corto: la caché de la detección y la cuenta de trabajos en curso.
+        # La transcripción, que es lo lento, ocurre siempre fuera de él.
         self.lock = threading.Lock()
         self.engine: Engine | None = None
+        self.running: list[str] = []
 
     @staticmethod
     def default_model_directory(environment) -> Path:
         base = environment.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
         return Path(base) / "uniconnect" / "whisper"
+
+    @staticmethod
+    def default_work_directory(environment) -> Path:
+        base = environment.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+        return Path(base) / "uniconnect" / "transcribe"
 
     @staticmethod
     def default_threads(environment) -> int:
@@ -169,6 +205,44 @@ class TranscriptionEngine:
         if configured and configured.strip().isdigit() and int(configured) > 0:
             return min(MAX_THREADS, int(configured))
         return max(1, min(MAX_THREADS, (os.cpu_count() or 2) - 1))
+
+    # ----- restos de una caída -----
+
+    def sweep_orphans(self) -> int:
+        """Borra al arrancar los directorios de trabajo que dejó un proceso muerto.
+
+        El `finally` de cada transcripción no cubre que el proceso desaparezca a
+        media faena, así que el arranque limpia lo que quedó: un directorio cuyo pid
+        ya no exista, o cualquiera con más de `orphan_seconds` de antigüedad (ninguna
+        transcripción vive tanto). Esa doble regla es lo que hace seguro el barrido
+        cuando hay otra instancia de UniConnect transcribiendo a la vez.
+        """
+        removed, now = 0, time.time()
+        try:
+            entries = list(self.work_directory.iterdir())
+        except OSError:
+            return 0
+        for entry in entries:
+            match = _PID.match(entry.name)
+            try:
+                stale = now - entry.stat().st_mtime > self.orphan_seconds
+            except OSError:
+                continue
+            if match is not None and not stale and self.alive(int(match.group(1))):
+                continue
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                self.unlink(entry)
+            removed += 1
+        return removed
+
+    @staticmethod
+    def unlink(path: Path) -> None:
+        try:
+            path.unlink()
+        except OSError:
+            pass
 
     # ----- detección del motor -----
 
@@ -217,15 +291,32 @@ class TranscriptionEngine:
         # El más pequeño por defecto: en un equipo sin GPU es el único que responde a tiempo.
         return min(models, key=lambda item: (item.stat().st_size, item.name))
 
+    # ----- trabajos en curso -----
+
+    def claim(self, owner: str) -> None:
+        """Reserva turno; `busy` si el equipo o ese dispositivo ya están transcribiendo."""
+        with self.lock:
+            if self.running.count(owner) >= self.max_jobs_per_owner:
+                raise RPCError("busy", "Ya hay un dictado en curso desde este dispositivo; espera a que termine")
+            if len(self.running) >= self.max_jobs:
+                raise RPCError("busy", "El equipo está transcribiendo otro audio; espera a que termine")
+            self.running.append(owner)
+
+    def release(self, owner: str) -> None:
+        with self.lock:
+            if owner in self.running:
+                self.running.remove(owner)
+
     # ----- transcripción -----
 
-    def transcribe(self, audio: bytes, mime, language=None, *,
+    def transcribe(self, audio: bytes, mime, language=None, *, owner: str = "",
                    cancelled: Callable[[], bool] = lambda: False) -> dict:
         """Devuelve `{text, engine, seconds, took_ms}` para un audio ya decodificado.
 
-        Valida formato y límites, escribe el audio en un temporal privado, lo convierte
-        a WAV 16 kHz mono si hace falta y llama al motor. El directorio temporal se
-        borra en cualquier salida.
+        Valida formato y límites, escribe el audio en un temporal privado, mide su
+        duración real (nunca la que sugiera el MIME), lo convierte a WAV 16 kHz mono
+        si hace falta y llama al motor. El directorio temporal se borra en cualquier
+        salida y el turno se libera pase lo que pase.
         """
         started = self.clock()
         deadline = started + self.budget
@@ -236,27 +327,36 @@ class TranscriptionEngine:
         if len(audio) > self.max_bytes:
             raise RPCError("too_large", f"El audio supera el máximo de {self.max_bytes // (1024 * 1024)} MiB")
         engine = self.resolve()
-        directory = Path(tempfile.mkdtemp(prefix="uniconnect-audio-", dir=self.temp_root))
+        self.claim(owner)
         try:
-            source = self.write_private(directory / ("entrada" + extension), audio)
-            self.check(cancelled, deadline)
-            seconds = self.probe_seconds(source, extension, deadline)
-            if seconds is not None and seconds > self.max_seconds:
-                raise RPCError("too_large", f"El audio supera los {int(self.max_seconds) // 60} minutos")
-            wave, measured = self.prepare_wave(source, extension, directory, deadline, cancelled)
-            seconds = measured if measured is not None else seconds
-            if seconds is not None and seconds > self.max_seconds:
-                raise RPCError("too_large", f"El audio supera los {int(self.max_seconds) // 60} minutos")
-            self.check(cancelled, deadline)
-            text = self.run_whisper(engine, wave, language, deadline)
-        except RPCError:
-            raise
-        except OSError as error:
-            raise RPCError("io_failed", "No se pudo preparar el audio en el equipo") from error
+            directory = self.workspace()
+            try:
+                source = self.write_private(directory / ("entrada" + extension), audio)
+                self.check(cancelled, deadline)
+                seconds = self.measure(source, deadline)
+                wave, converted = self.prepare_wave(source, directory, deadline, cancelled)
+                seconds = converted if converted is not None else seconds
+                self.refuse_long(seconds)
+                self.check(cancelled, deadline)
+                text = self.run_whisper(engine, wave, language, deadline)
+            except RPCError:
+                raise
+            except OSError as error:
+                raise RPCError("io_failed", "No se pudo preparar el audio en el equipo") from error
+            finally:
+                shutil.rmtree(directory, ignore_errors=True)
         finally:
-            shutil.rmtree(directory, ignore_errors=True)
+            self.release(owner)
         return {"text": text, "engine": engine.name, "seconds": round(seconds or 0.0, 2),
                 "took_ms": int((self.clock() - started) * 1000)}
+
+    def workspace(self) -> Path:
+        """Directorio 0700 propio de esta llamada, con el pid delante para el barrido."""
+        try:
+            self.work_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+            return Path(tempfile.mkdtemp(prefix=f"{os.getpid()}-", dir=self.work_directory))
+        except OSError as error:
+            raise RPCError("io_failed", "No se pudo preparar la carpeta de trabajo del equipo") from error
 
     def extension_for(self, mime) -> str:
         if not isinstance(mime, str):
@@ -274,6 +374,10 @@ class TranscriptionEngine:
         if not isinstance(language, str) or not _LANGUAGE.fullmatch(language.strip().lower()):
             raise RPCError("invalid_params", "Idioma no válido")
         return language.strip().lower()
+
+    def refuse_long(self, seconds: float | None) -> None:
+        if seconds is not None and seconds > self.max_seconds:
+            raise RPCError("too_large", f"El audio supera los {int(self.max_seconds) // 60} minutos")
 
     @staticmethod
     def write_private(path: Path, audio: bytes) -> Path:
@@ -296,12 +400,19 @@ class TranscriptionEngine:
             raise RPCError("io_failed", "La transcripción tardó demasiado y se canceló")
         return remaining
 
-    def probe_seconds(self, source: Path, extension: str, deadline: float) -> float | None:
-        """Duración antes de convertir: cabecera WAV si la hay, si no `ffprobe`; `None` si no se sabe."""
-        if extension == ".wav":
-            fields = read_wav_format(source)
-            if fields is not None:
-                return fields.seconds
+    def measure(self, source: Path, deadline: float) -> float | None:
+        """Duración del audio que llegó de verdad, no la que insinúe el MIME.
+
+        Manda el contenido: la cabecera del archivo si resulta ser un WAV y, si no,
+        `ffprobe`. Un audio que se anuncia como WAV y no lo es cae en la rama de
+        `ffprobe` como cualquier otro. Si no hay forma de saberlo aquí (sin
+        `ffprobe`), la duración real se conoce igual tras convertir con ffmpeg, y ahí
+        se vuelve a comprobar el límite antes de gastar un segundo de motor.
+        """
+        fields = read_wav_format(source)
+        if fields is not None:
+            self.refuse_long(fields.seconds)
+            return fields.seconds
         probe = self.which("ffprobe")
         if not probe:
             return None
@@ -314,17 +425,18 @@ class TranscriptionEngine:
         except (subprocess.TimeoutExpired, OSError):
             return None
         try:
-            return float((result.stdout or "").strip())
+            seconds = float((result.stdout or "").strip())
         except ValueError:
             return None
+        self.refuse_long(seconds)
+        return seconds
 
-    def prepare_wave(self, source: Path, extension: str, directory: Path, deadline: float,
+    def prepare_wave(self, source: Path, directory: Path, deadline: float,
                      cancelled: Callable[[], bool]) -> tuple[Path, float | None]:
         """Devuelve el WAV 16 kHz mono que whisper.cpp acepta y su duración exacta."""
-        if extension == ".wav":
-            fields = read_wav_format(source)
-            if fields is not None and fields.ready_for_whisper:
-                return source, fields.seconds
+        fields = read_wav_format(source)
+        if fields is not None and fields.ready_for_whisper:
+            return source, fields.seconds
         converter = self.which("ffmpeg")
         if not converter:
             raise RPCError("unsupported", "Falta ffmpeg en el equipo para convertir el audio del móvil")
@@ -339,8 +451,8 @@ class TranscriptionEngine:
             os.chmod(target, 0o600)
         except OSError:
             pass
-        fields = read_wav_format(target)
-        return target, fields.seconds if fields is not None else None
+        converted = read_wav_format(target)
+        return target, converted.seconds if converted is not None else None
 
     def run_whisper(self, engine: Engine, wave: Path, language: str, deadline: float) -> str:
         remaining = deadline - self.clock() - CLEANUP_MARGIN

@@ -482,6 +482,9 @@ and answers with the text alone. A host that implements it advertises
 `box_update`, `activity.v1` and `file_put.v1`. A host that does not advertise it,
 or one that answers `unsupported` because it has no engine or no model, makes the
 phone fall back to its own on-device dictation; nothing is ever sent elsewhere.
+Closed on 2026-09-09 after cross review (a clip that fits in a protocol frame, a
+duration measured from the audio and not from its MIME, a bounded number of
+concurrent jobs, and no audio surviving a crash).
 
 - `mobile.audio.transcribe {audio, mime, language?, workspace_id?, terminal_id?}` →
   `{text, engine, seconds, took_ms}`. `audio` is the whole clip in base64 (one
@@ -491,19 +494,32 @@ phone fall back to its own on-device dictation; nothing is ever sent elsewhere.
   exist. `text` is one dictation line (no timestamps, no `[BLANK_AUDIO]` markers),
   `engine` names motor and model without host paths (`whisper.cpp/ggml-base.bin`),
   `seconds` is the measured audio duration and `took_ms` what the host spent.
-- Limits: `audio` ≤ 6 MiB and ≤ 5 minutes → `too_large`. The phone keeps clips
-  short: this is dictation, not a recording service.
+- Limits: `audio` ≤ 3 MiB and ≤ 5 minutes → `too_large`. The size limit is the
+  protocol's, not a policy: 3 MiB of audio is 4 MiB of base64, which leaves room
+  for the JSON around it inside the 8 MiB frame (`MAX_FRAME`). A 6 MiB clip would
+  be exactly 8 MiB encoded and the frame decoder would drop the request before
+  anyone could answer `too_large`. The phone keeps clips short anyway: this is
+  dictation, not a recording service.
+- Duration is measured from the audio that actually arrived, never from what the
+  MIME claims, so a long recording relabelled as a tiny WAV is refused all the
+  same.
+- One transcription at a time per device and two per host (`busy` beyond that):
+  whisper saturates every core it is given, and a machine with four of them cannot
+  serve two dictations and a desktop at once.
 - Errors: `invalid_params` (bad base64, unknown MIME, bad language, no audio),
   `too_large`, `unsupported` (no engine, no model, or no converter for a
-  compressed clip; the phone dictates locally instead), `locked` (the host is
-  locked) and `io_failed` (the engine failed, the deadline was exhausted or the
-  call was cancelled), as the rest of the mobile API.
+  compressed clip; the phone dictates locally instead), `busy` (too many jobs in
+  flight), `locked` (the host is locked) and `io_failed` (the engine failed, the
+  deadline was exhausted or the call was cancelled), as the rest of the mobile API.
+- Deadline: 90 s on both sides. The host reserves the tail of its own budget for
+  cleanup, so it always answers before the phone stops waiting.
 - Privacy: the audio is written to a private temporary file and deleted on every
-  exit path, success or failure; neither the audio nor the transcript is written
-  to any log, kept on disk or included in an error message.
+  exit path, success or failure; what a crash leaves behind is deleted at the next
+  start. Neither the audio nor the transcript is written to any log, kept on disk
+  or included in an error message.
 
 Host side on Linux (2026-09-09, `linux/uniconnect/transcribe.py`, routed by
-`mobile_rpc.py`):
+`mobile_rpc.py`, swept at start by `mobile_desktop.py`):
 
 - **Engine.** whisper.cpp only, looked up once and cached: the configured binary
   (`UNICONNECT_WHISPER_BIN`, which must exist and be executable) or the first of
@@ -517,31 +533,43 @@ Host side on Linux (2026-09-09, `linux/uniconnect/transcribe.py`, routed by
   `UNICONNECT_WHISPER_THREADS` overrides that. A missing binary or model answers
   `unsupported` with the reason in Spanish; a failing or timing-out engine answers
   `io_failed` and invalidates the cache, so the next call looks again.
-- **Conversion.** whisper.cpp only reads PCM 16-bit mono WAV at 16 kHz, so a clip
-  that is already in that shape (its RIFF header is parsed, not trusted from the
-  MIME) goes straight to the engine and anything else goes through `ffmpeg`
-  (`-ac 1 -ar 16000 -c:a pcm_s16le`). Without `ffmpeg` a compressed clip answers
-  `unsupported` and the phone dictates locally. Duration is checked before
-  converting, from the WAV header or from `ffprobe` when it exists, and again from
-  the converted WAV, which is authoritative for `seconds`.
-- **Budget and threading.** Probe, conversion, transcription and cleanup share one
-  monotonic budget of 75 s (`TranscriptionEngine.budget`, injected clock, against
-  the phone's 90 s deadline for the call) minus a
-  3 s cleanup margin: each child process gets what is left of it as its own
-  timeout, and an exhausted budget answers `io_failed` without starting the next
-  step, so the host always replies before the phone gives up. Everything runs on
-  the peer's thread, never on GTK; only the approval and lock checks (and the
-  optional box/terminal lookup) hop to the model owner, as the file transfers do.
-  The call is cancellable: a `cancelled` callable is checked between stages. As
-  with `file.commit`, a request that takes longer than the peer's 30 s idle
-  timeout is answered first and its connection is closed right after, so the
-  phone must not reuse that connection for the next request.
-- **Privacy.** Each call gets its own `mkdtemp` directory (0700) under the system
-  temporary directory; the clip is written with `O_EXCL|O_NOFOLLOW` and mode 0600
-  and the converted WAV is chmod-ed to 0600 too. The directory is removed in a
-  `finally`, so success, engine failure, timeout and cancellation all leave
-  nothing behind. No log line, message or exception carries the audio or the text:
-  the engine's own stderr is never forwarded to the phone.
+- **Duration and conversion.** whisper.cpp only reads PCM 16-bit mono WAV at
+  16 kHz. The file's own RIFF header decides both the duration and whether it can
+  skip the converter; the MIME only picks a file extension. A clip that is not a
+  readable WAV is measured with `ffprobe` when it exists and converted with
+  `ffmpeg` (`-ac 1 -ar 16000 -c:a pcm_s16le`), and the converted WAV is measured
+  again, which is what `seconds` reports; over five minutes at any of those three
+  points answers `too_large` before a second of engine time is spent. Without
+  `ffmpeg` a clip that is not already in whisper's shape answers `unsupported` and
+  the phone dictates locally. A WAV that passes through unconverted needs no
+  `ffprobe` to be safe: 3 MiB at 32000 B/s cannot hold more than 98 seconds.
+- **Budget, jobs and threading.** Probe, conversion, transcription and cleanup
+  share one monotonic budget of 90 s (`TranscriptionEngine.budget`, injected
+  clock), of which the last 5 s are reserved: each child process gets what is left
+  as its own timeout, and an exhausted budget answers `io_failed` without starting
+  the next step, so the host replies at around 85 s and the phone's 90 s deadline
+  is never reached. A device may hold one job and the host two
+  (`max_jobs_per_owner`, `max_jobs`); the turn is taken after validation, before
+  the engine runs, and released in a `finally`. The device is the approved tailnet
+  address of the live connection, as in `file_put`, so a second connection from the
+  same phone does not get a second turn. Everything runs on the peer's thread,
+  never on GTK; only the approval and lock checks (and the optional box/terminal
+  lookup) hop to the model owner. The call is cancellable: a `cancelled` callable
+  is checked between stages. As with `file.commit`, a request that takes longer
+  than the peer's 30 s idle timeout is answered first and its connection is closed
+  right after, so the phone must not reuse that connection for the next request.
+- **Privacy and crash leftovers.** Each call gets its own directory (0700) named
+  `<pid>-<random>` under `$XDG_CACHE_HOME/uniconnect/transcribe`
+  (`~/.cache/uniconnect/transcribe`); the clip is written with `O_EXCL|O_NOFOLLOW`
+  and mode 0600 and the converted WAV is chmod-ed to 0600 too. The directory is
+  removed in a `finally`, so success, engine failure, timeout and cancellation all
+  leave nothing behind, but a `finally` cannot survive a killed process:
+  `TranscriptionEngine.sweep_orphans()`, called from `MobileDesktop.__init__`,
+  deletes at start every directory whose pid is gone or that is older than 10
+  minutes (no transcription lives that long). Those two rules together are what
+  makes the sweep safe while another UniConnect instance is transcribing. No log
+  line, message or exception carries the audio or the text: the engine's own
+  stderr is never forwarded to the phone.
 
 ### ローカルウインドウの作成と保存
 

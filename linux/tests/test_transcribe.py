@@ -5,14 +5,15 @@ import os
 import struct
 import subprocess
 import tempfile
+import time
 import types
 import unittest
 from pathlib import Path
 
-from uniconnect.mobile_protocol import RPCError
+from uniconnect.mobile_protocol import MAX_FRAME, RPCError
 from uniconnect.mobile_rpc import MobileRPC
 from uniconnect.transcribe import (CLEANUP_MARGIN, Engine, TranscriptionEngine, clean_transcript,
-                                   read_wav_format)
+                                   process_alive, read_wav_format)
 
 
 def wav_bytes(seconds=1.0, rate=16000, channels=1, bits=16, audio_format=1):
@@ -72,8 +73,8 @@ class EngineTestCase(unittest.TestCase):
         self.root = Path(self.directory.name)
         self.models = self.root / "modelos"
         self.models.mkdir()
-        self.temp_root = self.root / "temporales"
-        self.temp_root.mkdir()
+        self.work = self.root / "trabajo"
+        self.work.mkdir()
         self.binaries = {}
         self.now = 1000.0
         self.runner = Recorder(self)
@@ -94,21 +95,21 @@ class EngineTestCase(unittest.TestCase):
     def snapshot_modes(self):
         """Permisos de todo lo que hay en el temporal mientras el proceso corre."""
         return {item.name: os.stat(item).st_mode & 0o777
-                for parent in self.temp_root.iterdir() for item in parent.iterdir()}
+                for parent in self.work.iterdir() for item in parent.iterdir()}
 
     def leftovers(self):
-        return sorted(item.name for item in self.temp_root.iterdir())
+        return sorted(item.name for item in self.work.iterdir())
 
     def engine(self, **overrides):
         options = dict(model_directory=self.models, threads=3, runner=self.runner,
-                       which=self.binaries.get, clock=lambda: self.now, temp_root=self.temp_root,
+                       which=self.binaries.get, clock=lambda: self.now, work_directory=self.work,
                        environment={})
         options.update(overrides)
         return TranscriptionEngine(**options)
 
-    def transcribe(self, audio=None, mime="audio/mp4", language="es", engine=None, **overrides):
+    def transcribe(self, audio=None, mime="audio/mp4", language="es", engine=None, owner="", **overrides):
         engine = engine if engine is not None else self.engine(**overrides)
-        return engine.transcribe(audio if audio is not None else b"audio-comprimido", mime, language)
+        return engine.transcribe(audio if audio is not None else b"audio-comprimido", mime, language, owner=owner)
 
     def code(self, **arguments):
         with self.assertRaises(RPCError) as caught:
@@ -180,7 +181,9 @@ class DetectionTests(EngineTestCase):
         self.assertEqual(engine.resolve().model.name, "ggml-tiny.bin")  # Revalidado tras la avería.
 
     def test_the_default_budget_answers_before_the_phone_gives_up(self):
-        self.assertLessEqual(self.engine().budget + CLEANUP_MARGIN, 90.0)
+        engine = TranscriptionEngine(model_directory=self.models, environment={})
+        self.assertEqual(engine.budget, 90.0)  # El plazo acordado con el movil.
+        self.assertLess(engine.budget - CLEANUP_MARGIN, 90.0)  # Y el motor para antes de agotarlo.
 
     def test_default_threads_follow_the_cores_minus_one(self):
         self.assertEqual(TranscriptionEngine.default_threads({"UNICONNECT_WHISPER_THREADS": "2"}), 2)
@@ -263,9 +266,11 @@ class CommandTests(EngineTestCase):
 
 
 class LimitTests(EngineTestCase):
-    def test_audio_over_six_mebibytes_is_too_large(self):
+    def test_audio_over_three_mebibytes_is_too_large_and_fits_in_a_frame(self):
         engine = self.engine()
-        self.assertEqual(engine.max_bytes, 6 * 1024 * 1024)
+        self.assertEqual(engine.max_bytes, 3 * 1024 * 1024)
+        # El maximo, ya en base64 y con el JSON alrededor, tiene que caber en un marco.
+        self.assertLess((engine.max_bytes * 4) // 3 + 4096, MAX_FRAME)
         with self.assertRaises(RPCError) as caught:
             engine.transcribe(b"x" * (engine.max_bytes + 1), "audio/mp4", "es")
         self.assertEqual(caught.exception.code, "too_large")
@@ -292,6 +297,30 @@ class LimitTests(EngineTestCase):
             self.transcribe(audio=wav_bytes(seconds=301), mime="audio/wav")
         self.assertEqual(caught.exception.code, "too_large")
         self.assertEqual(self.runner.names(), [])
+
+    def test_a_lying_mime_does_not_get_the_duration_it_claims(self):
+        """Un mp4 largo disfrazado de WAV se mide por su contenido, con ffprobe."""
+        self.install("ffprobe")
+        self.runner.probe_seconds = 900.0
+        with self.assertRaises(RPCError) as caught:
+            self.transcribe(audio=b"\x00\x00\x00 ftypmp42" + b"z" * 2048, mime="audio/wav")
+        self.assertEqual(caught.exception.code, "too_large")
+        self.assertEqual(self.runner.names(), ["ffprobe"])
+        self.assertEqual(self.leftovers(), [])
+
+    def test_a_lying_mime_without_ffprobe_is_caught_after_converting(self):
+        self.runner.converted_seconds = 900.0
+        with self.assertRaises(RPCError) as caught:
+            self.transcribe(audio=b"no soy un wav", mime="audio/wav")
+        self.assertEqual(caught.exception.code, "too_large")
+        self.assertEqual(self.runner.names(), ["ffmpeg"])
+        self.assertEqual(self.leftovers(), [])
+
+    def test_a_real_wav_is_measured_from_its_own_data_not_from_ffprobe(self):
+        self.install("ffprobe")
+        self.runner.probe_seconds = 900.0  # Mentira del contenedor: manda la cabecera real.
+        self.assertEqual(self.transcribe(audio=wav_bytes(seconds=2), mime="audio/mp4")["seconds"], 2.0)
+        self.assertEqual(self.runner.names(), ["whisper-cli"])
 
     def test_a_long_conversion_is_rejected_after_ffmpeg(self):
         self.runner.converted_seconds = 400.0
@@ -368,6 +397,97 @@ class FailureTests(EngineTestCase):
         self.assertEqual(self.leftovers(), [])
 
 
+class ConcurrencyTests(EngineTestCase):
+    def test_one_job_per_device_and_two_in_total(self):
+        engine = self.engine()
+        engine.claim("movil-a")
+        with self.assertRaises(RPCError) as same:
+            engine.claim("movil-a")
+        self.assertEqual(same.exception.code, "busy")
+        self.assertIn("este dispositivo", same.exception.message)
+        engine.claim("movil-b")
+        with self.assertRaises(RPCError) as third:
+            engine.claim("movil-c")
+        self.assertEqual(third.exception.code, "busy")
+        self.assertIn("otro audio", third.exception.message)
+        engine.release("movil-a")
+        engine.claim("movil-c")
+        self.assertEqual(sorted(engine.running), ["movil-b", "movil-c"])
+
+    def test_a_second_dictation_from_the_same_device_is_refused_while_the_first_runs(self):
+        engine, refused = self.engine(), []
+        def busy(argv, timeout):
+            with self.assertRaises(RPCError) as caught:
+                engine.transcribe(b"otro", "audio/mp4", "es", owner="movil-a")
+            refused.append(caught.exception.code)
+            Path(argv[-1]).write_bytes(wav_bytes())
+            return Result()
+        self.runner.handlers["ffmpeg"] = busy
+        engine.transcribe(b"audio", "audio/mp4", "es", owner="movil-a")
+        self.assertEqual(refused, ["busy"])
+        self.assertEqual(engine.running, [])  # El turno se libera al terminar.
+
+    def test_every_ending_releases_the_turn(self):
+        engine = self.engine()
+        self.runner.handlers["whisper-cli"] = lambda argv, timeout: Result(returncode=1)
+        self.assertEqual(self.code(engine=engine, owner="movil-a"), "io_failed")
+        self.assertEqual(engine.running, [])
+        self.assertEqual(self.code(engine=engine, mime="video/mp4"), "invalid_params")
+        self.assertEqual(engine.running, [])
+        self.binaries.clear()
+        self.assertEqual(self.code(engine=self.engine(), owner="movil-a"), "unsupported")
+        self.assertEqual(engine.running, [])
+
+
+class OrphanTests(EngineTestCase):
+    def make(self, name, age=0.0):
+        directory = self.work / name
+        directory.mkdir()
+        (directory / "entrada.m4a").write_bytes(b"audio")
+        stamp = time.time() - age
+        os.utime(directory, (stamp, stamp))
+        return directory
+
+    def test_a_crash_leaves_audio_and_the_next_start_deletes_it(self):
+        engine = self.engine(alive=lambda pid: pid == os.getpid())
+        mine = self.make(f"{os.getpid()}-vivo")
+        dead = self.make("999999-muerto")
+        self.assertEqual(engine.sweep_orphans(), 1)
+        self.assertTrue(mine.exists())  # Otra instancia viva no se toca.
+        self.assertFalse(dead.exists())
+
+    def test_old_leftovers_go_even_when_the_pid_was_recycled(self):
+        engine = self.engine(alive=lambda pid: True)
+        old = self.make(f"{os.getpid()}-antiguo", age=700.0)
+        fresh = self.make(f"{os.getpid()}-reciente", age=10.0)
+        strange = self.make("sin-pid", age=700.0)
+        self.assertEqual(engine.sweep_orphans(), 2)
+        self.assertFalse(old.exists())
+        self.assertFalse(strange.exists())
+        self.assertTrue(fresh.exists())
+
+    def test_the_sweep_survives_a_missing_directory_and_stray_files(self):
+        engine = self.engine(alive=lambda pid: False)
+        self.assertEqual(self.engine(work_directory=self.root / "no-hay").sweep_orphans(), 0)
+        stray = self.work / "1-suelto.wav"
+        stray.write_bytes(b"x")
+        self.assertEqual(engine.sweep_orphans(), 1)
+        self.assertFalse(stray.exists())
+
+    def test_a_live_transcription_is_not_swept_by_another_instance(self):
+        engine, seen = self.engine(), []
+        other = self.engine(alive=process_alive)
+        def sweeping(argv, timeout):
+            other.sweep_orphans()  # Otra instancia arranca en mitad de este dictado.
+            seen.append(self.leftovers())
+            Path(argv[-1]).write_bytes(wav_bytes())
+            return Result()
+        self.runner.handlers["ffmpeg"] = sweeping
+        self.assertEqual(engine.transcribe(b"audio", "audio/mp4", "es")["text"], "Hola desde el movil")
+        self.assertEqual(len(seen[0]), 1)
+        self.assertEqual(self.leftovers(), [])
+
+
 class PrivacyTests(EngineTestCase):
     def test_the_audio_is_private_while_it_exists_and_is_deleted_afterwards(self):
         result = self.transcribe()
@@ -380,13 +500,14 @@ class PrivacyTests(EngineTestCase):
     def test_the_temporary_directory_is_private_and_removed_on_every_path(self):
         seen = []
         def peek(argv, timeout):
-            seen.extend((item.name, item.stat().st_mode & 0o777) for item in self.temp_root.iterdir())
+            seen.extend((item.name, item.stat().st_mode & 0o777) for item in self.work.iterdir())
             return Result(returncode=1)
         self.runner.handlers["ffmpeg"] = peek
         self.assertEqual(self.code(), "io_failed")
         self.assertEqual(len(seen), 1)
-        self.assertTrue(seen[0][0].startswith("uniconnect-audio-"))
+        self.assertTrue(seen[0][0].startswith(f"{os.getpid()}-"))
         self.assertEqual(seen[0][1], 0o700)
+        self.assertEqual(self.engine().work_directory, self.work)
         self.assertEqual(self.leftovers(), [])
 
     def test_no_error_message_carries_the_audio_or_the_text(self):
@@ -435,18 +556,19 @@ class RPCTests(EngineTestCase):
             store=types.SimpleNamespace(workspaces=[self.local], data={}))
         self.rpc = MobileRPC(self.window, types.SimpleNamespace(machine_id="host"), lambda callback: callback(),
                              transcription=self.engine())
-        self.rpc.host = types.SimpleNamespace(address="100.64.0.1", port=58465, peer_of=lambda value: "100.64.0.7")
+        self.peers = {"conn-a": "100.64.0.7", "conn-a2": "100.64.0.7", "conn-b": "100.64.0.9"}
+        self.rpc.host = types.SimpleNamespace(address="100.64.0.1", port=58465, peer_of=self.peers.get)
 
     def tearDown(self):
         self.rpc.close_attachments()
         super().tearDown()
 
-    def call(self, params, authorized=lambda: True):
-        return self.rpc.dispatch("mobile.audio.transcribe", params, "conn-a", authorized=authorized)
+    def call(self, params, authorized=lambda: True, connection="conn-a"):
+        return self.rpc.dispatch("mobile.audio.transcribe", params, connection, authorized=authorized)
 
-    def error(self, params, authorized=lambda: True):
+    def error(self, params, authorized=lambda: True, connection="conn-a"):
         with self.assertRaises(RPCError) as caught:
-            self.call(params, authorized)
+            self.call(params, authorized, connection)
         return caught.exception.code
 
     def request(self, audio=b"comprimido", **extra):
@@ -469,7 +591,9 @@ class RPCTests(EngineTestCase):
         self.assertEqual(self.error({"audio": "no es base64!!", "mime": "audio/mp4"}), "invalid_params")
         self.assertEqual(self.error({"audio": base64.b64encode(b"x").decode()}), "invalid_params")
         self.assertEqual(self.error(self.request(language="klingon")), "invalid_params")
-        self.assertEqual(self.error({"audio": "A" * (9 * 1024 * 1024), "mime": "audio/mp4"}), "too_large")
+        limit = (self.rpc.transcription.max_bytes * 4) // 3 + 16
+        self.assertEqual(self.error({"audio": "A" * (limit + 1), "mime": "audio/mp4"}), "too_large")
+        self.assertLess(limit + 4096, MAX_FRAME)  # Y el maximo admitido sigue cabiendo en un marco.
         self.assertEqual(self.runner.names(), [])
 
     def test_a_locked_or_revoked_desktop_refuses_before_transcribing(self):
@@ -483,6 +607,24 @@ class RPCTests(EngineTestCase):
         self.assertEqual(self.error(self.request(workspace_id="fantasma")), "not_found")
         self.assertEqual(self.error(self.request(workspace_id="local", terminal_id="fantasma")), "not_found")
         self.assertEqual(self.runner.names(), [])
+
+    def test_the_device_owns_its_turn_across_connections(self):
+        outcomes = []
+        def busy(argv, timeout):
+            if outcomes:  # El dictado anidado del otro movil no vuelve a anidar.
+                Path(argv[-1]).write_bytes(wav_bytes())
+                return Result()
+            outcomes.append(self.error(self.request(), connection="conn-a2"))  # Mismo movil, otra conexion.
+            outcomes.append(self.call(self.request(), connection="conn-b")["text"])  # Otro movil: entra.
+            Path(argv[-1]).write_bytes(wav_bytes())
+            return Result()
+        self.runner.handlers["ffmpeg"] = busy
+        self.assertEqual(self.call(self.request())["text"], "Hola desde el movil")
+        self.assertEqual(outcomes, ["busy", "Hola desde el movil"])
+        self.assertEqual(self.rpc.transcription.running, [])
+
+    def test_an_unknown_connection_is_not_a_device(self):
+        self.assertEqual(self.error(self.request(), connection="conn-fantasma"), "not_found")
 
     def test_a_host_without_whisper_answers_unsupported(self):
         self.binaries.clear()
