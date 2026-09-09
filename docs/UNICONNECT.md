@@ -217,8 +217,49 @@ and an amber `hand.raised.fill` while `waiting`; each window's tab shows the sam
 through the bonsplit loading spinner and the `hand.raised.fill` icon. Nothing is
 shown for `idle` or `unknown`. Implementation: `Sources/Activity/`
 (`AgentActivity` value, `AgentActivityResolver` rules, `AgentActivityMonitor` actor,
-`AgentActivityCoordinator` composed in `AppDelegate`). Status: macOS done; Linux
-and Android pending.
+`AgentActivityCoordinator` composed in `AppDelegate`). Status: macOS and Linux
+done on the host side; Android pending.
+
+Host side on Linux (2026-09-09, `linux/uniconnect/activity.py` rules and
+`activity_monitor.py` cycle; `mobile_rpc.py` publishes it; same states, sources,
+thresholds and aggregation as macOS unless stated here):
+
+- **Cycle.** `ActivityMonitor` runs on a 2 s GLib timer. Local tmux windows are
+  probed once per socket (`uniconnect-local` or the record's `tmuxSocket`) with
+  `tmux -L <socket> list-panes -a -F '#{session_name}\t#{pane_current_command}\t#{pane_title}\t#{window_activity}'`
+  on the window's worker pool (`Window.background`), never on GTK; with several
+  panes per session the most recently active one wins. SSH boxes use the same
+  validated `Transport` (the box's vault credential, `-T`, batch) but every 10 s
+  per box and only while the vault is unlocked, since every probe is a full SSH
+  handshake (`ControlMaster` is off). Local windows without tmux read the PTY's
+  foreground process group (`tcgetpgrp` on the VTE pty, `/proc/<pgid>/comm`) and
+  VTE's window title. Probes never overlap: a socket in flight is skipped.
+- **Facts.** Output comes from VTE's `contents-changed` on every surface (also
+  tmux and SSH windows); a local key press, `mobile.terminal.input` and PTY
+  input from a mobile attachment mark keyboard activity so output within 250 ms
+  is echo; a VTE size change, `mobile.terminal.viewport` and PTY resizes mark a
+  500 ms redraw window. `#{window_activity}` only stands in when the surface has
+  produced no counted output yet. The hook rule exists (`note_hook`, 120 s TTL,
+  `running`/`needsInput`/`idle`) but nothing feeds it on Linux today: hooks only
+  carry the native session id, so states come from command, screen, title and
+  output. The screen is VTE's visible text (already free of ANSI; stripped again
+  defensively), last 12 non-empty lines, read only when output has been quiet
+  for ≥ 1 s and only once per quiet period: without new output the verdict is
+  cached, so a visible permission prompt stays `waiting` until the agent prints
+  again. The text is inspected and dropped, never logged or sent.
+- **Publication.** Every terminal of `mobile.workspace.list` carries
+  `activity {state, source, agent, since}` (`since` as integer epoch seconds, `0`
+  before the first evaluation) and every workspace `activity {state}`; a host
+  without the monitor answers `unknown`. A state or agent change refreshes the
+  sidebar and calls `MobileDesktop.workspace_changed`, which now emits
+  `workspace.updated` at most once per second (first change immediate, later
+  ones coalesced into one trailing event). Windows whose surface disappears are
+  forgotten and read back as `unknown`.
+- **UI.** The workspace card and each row of the window flyout show a
+  `Gtk.Spinner` while `working` and an amber `dialog-question-symbolic`
+  (`uc-activity-waiting`, same amber as the Mac's raised hand) while `waiting`;
+  nothing for `idle` or `unknown`. The snapshot the sidebar reconciles includes
+  the state, so rows re-render only when it changes.
 
 #### Notification kind
 
@@ -242,6 +283,17 @@ hooks send the value as an optional fourth field of the `notify*` socket payload
 of the body. A notice without a hook kind (raw OSC 9/777, `cmux notify`, other
 callers) falls back to the window's activity at that instant: `waiting` →
 `attention`, `idle` → `finished`, `working`/`unknown` → `info`.
+
+Host side on Linux (2026-09-09): the only notice source today is VTE's `bell`
+(`WindowNotifications.notify_window`), which has no hook kind, so every notice
+takes the fallback from the window's activity at that instant
+(`activity.notification_kind`: `waiting` → `attention`, `idle` → `finished`,
+else `info`) and persists it in `notificationHistory` through
+`notification_record(..., kind=)`. `mobile.notifications.list` and
+`notification.created` carry it; records saved before the field existed are read
+back as `info` without being rewritten. The hook mapping (`kind_from_hook`) and
+the `title|subtitle|body|kind` split (`split_notify_payload`) are implemented and
+tested for the day a `notify` control command or agent hooks reach the Linux host.
 
 ### File put (mobile contract file_put.v1, 2026-09-09)
 
