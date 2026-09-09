@@ -10,7 +10,8 @@ extension TerminalNotification {
             surfaceID: (panelId ?? surfaceId)?.uuidString,
             title: title, subtitle: subtitle, body: body,
             createdAtMilliseconds: Int64((createdAt.timeIntervalSince1970 * 1000).rounded(.down)),
-            isRead: isRead
+            isRead: isRead,
+            kind: kind.rawValue
         )
     }
 }

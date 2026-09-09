@@ -2719,6 +2719,8 @@ struct SessionNotificationSnapshot: Codable, Sendable {
     var isRead: Bool
     var paneFlash: Bool?
     var clickAction: TerminalNotificationClickAction?
+    /// `attention` | `finished` | `info`; ausente en snapshots antiguos, que se leen como `info`.
+    var kind: String?
 
     init(
         id: UUID,
@@ -2728,7 +2730,8 @@ struct SessionNotificationSnapshot: Codable, Sendable {
         createdAt: TimeInterval,
         isRead: Bool,
         paneFlash: Bool? = nil,
-        clickAction: TerminalNotificationClickAction? = nil
+        clickAction: TerminalNotificationClickAction? = nil,
+        kind: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -2738,6 +2741,7 @@ struct SessionNotificationSnapshot: Codable, Sendable {
         self.isRead = isRead
         self.paneFlash = paneFlash
         self.clickAction = clickAction
+        self.kind = kind
     }
 
     init(notification: TerminalNotification) {
@@ -2749,7 +2753,8 @@ struct SessionNotificationSnapshot: Codable, Sendable {
             createdAt: notification.createdAt.timeIntervalSince1970,
             isRead: notification.isRead,
             paneFlash: notification.paneFlash,
-            clickAction: notification.clickAction
+            clickAction: notification.clickAction,
+            kind: notification.kind.rawValue
         )
     }
 
@@ -2765,7 +2770,8 @@ struct SessionNotificationSnapshot: Codable, Sendable {
             createdAt: Date(timeIntervalSince1970: createdAt),
             isRead: isRead,
             paneFlash: paneFlash ?? true,
-            clickAction: clickAction
+            clickAction: clickAction,
+            kind: kind.flatMap(TerminalNotificationKind.init(wireValue:)) ?? .info
         )
     }
 }

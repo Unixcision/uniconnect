@@ -10348,6 +10348,7 @@ class TerminalController {
             "title": notification.title,
             "subtitle": notification.subtitle,
             "body": notification.body,
+            "kind": notification.kind.rawValue,
             "created_at": Self.notificationCreatedAtString(notification.createdAt),
             "tab_title": v2OrNull(AppDelegate.shared?.tabTitle(for: notification.tabId)),
         ]
@@ -17407,13 +17408,14 @@ class TerminalController {
                 return
             }
             let surfaceId = tabManager.focusedSurfaceId(for: tabId)
-            let (title, subtitle, body) = parseNotificationPayload(args)
+            let (title, subtitle, body, kind) = parseNotificationPayload(args)
             deliverNotificationSynchronously(
                 tabId: tabId,
                 surfaceId: surfaceId,
                 title: title,
                 subtitle: subtitle,
-                body: body
+                body: body,
+                kind: kind
             )
         }
         return result
@@ -17439,13 +17441,14 @@ class TerminalController {
                 result = "ERROR: Surface not found"
                 return
             }
-            let (title, subtitle, body) = parseNotificationPayload(payload)
+            let (title, subtitle, body, kind) = parseNotificationPayload(payload)
             deliverNotificationSynchronously(
                 tabId: tabId,
                 surfaceId: surfaceId,
                 title: title,
                 subtitle: subtitle,
-                body: body
+                body: body,
+                kind: kind
             )
         }
         return result
@@ -17462,7 +17465,7 @@ class TerminalController {
         let tabArg = parts[0]
         let panelArg = parts[1]
         let payload = parts.count > 2 ? parts[2] : ""
-        let (title, subtitle, body) = parseNotificationPayload(payload)
+        let (title, subtitle, body, kind) = parseNotificationPayload(payload)
 
         if let workspaceId = UUID(uuidString: tabArg),
            let panelId = UUID(uuidString: panelArg) {
@@ -17481,7 +17484,8 @@ class TerminalController {
                     surfaceId: panelId,
                     title: title,
                     subtitle: subtitle,
-                    body: body
+                    body: body,
+                    kind: kind
                 )
             }
             return result
@@ -17509,7 +17513,8 @@ class TerminalController {
                 surfaceId: panelId,
                 title: title,
                 subtitle: subtitle,
-                body: body
+                body: body,
+                kind: kind
             )
         }
         return result
@@ -17536,7 +17541,7 @@ class TerminalController {
         guard !payload.isEmpty else {
             return "ERROR: Usage: notify_target_async <workspace_uuid> <surface_uuid> <title>|<subtitle>|<body>"
         }
-        let (title, subtitle, body) = parseNotificationPayload(payload)
+        let (title, subtitle, body, kind) = parseNotificationPayload(payload)
 #if DEBUG
         cmuxDebugLog(
             "socket.notifyTargetAsync.enqueue workspace=\(tabId.uuidString.prefix(8)) surface=\(surfaceId.uuidString.prefix(8)) titleLen=\(title.count) subtitleLen=\(subtitle.count) bodyLen=\(body.count) coalesces=0"
@@ -17548,6 +17553,7 @@ class TerminalController {
             title: title,
             subtitle: subtitle,
             body: body,
+            kind: kind,
             coalesces: false
         )
         return "OK"
@@ -18298,16 +18304,29 @@ class TerminalController {
         return nil
     }
 
-    private func parseNotificationPayload(_ args: String) -> (String, String, String) {
+    /// `title|subtitle|body[|kind]`: el cuarto campo solo cuenta si es un kind válido; si no,
+    /// sigue formando parte del cuerpo como antes.
+    private func parseNotificationPayload(
+        _ args: String
+    ) -> (title: String, subtitle: String, body: String, kind: TerminalNotificationKind?) {
         let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return ("Notification", "", "") }
-        let parts = trimmed.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
+        guard !trimmed.isEmpty else { return ("Notification", "", "", nil) }
+        var parts = trimmed.split(separator: "|", maxSplits: 3, omittingEmptySubsequences: false).map(String.init)
+        var kind: TerminalNotificationKind?
+        if parts.count == 4 {
+            if let parsedKind = TerminalNotificationKind(wireValue: parts[3]) {
+                kind = parsedKind
+                parts.removeLast()
+            } else {
+                parts = [parts[0], parts[1], parts[2] + "|" + parts[3]]
+            }
+        }
         let title = parts.count > 0 ? parts[0].trimmingCharacters(in: .whitespacesAndNewlines) : ""
         let subtitle = parts.count > 2 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
         let body = parts.count > 2
             ? parts[2].trimmingCharacters(in: .whitespacesAndNewlines)
             : (parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : "")
-        return (title.isEmpty ? "Notification" : title, subtitle, body)
+        return (title.isEmpty ? "Notification" : title, subtitle, body, kind)
     }
 
     private func closeWorkspace(_ tabId: String) -> String {

@@ -21163,7 +21163,12 @@ struct CMUXCLI {
                         localized: "cli.claude-hook.notification.title",
                         defaultValue: "Claude Code"
                     )
-                    let payload = notificationPayload(title: title, subtitle: completion.subtitle, body: completion.body)
+                    let payload = notificationPayload(
+                        title: title,
+                        subtitle: completion.subtitle,
+                        body: completion.body,
+                        kind: .forClaudeHook(subcommand: subcommand, notificationType: nil, message: completion.body)
+                    )
                     _ = try? sendV1Command("notify_target_async \(workspaceId) \(surfaceId) \(payload)", client: client)
                 }
                 print("OK")
@@ -21308,7 +21313,13 @@ struct CMUXCLI {
                 localized: "cli.claude-hook.notification.title",
                 defaultValue: "Claude Code"
             )
-            let payload = notificationPayload(title: title, subtitle: summary.subtitle, body: summary.body)
+            let notificationType = parsedInput.object.flatMap { firstString(in: $0, keys: ["notification_type"]) }
+            let payload = notificationPayload(
+                title: title,
+                subtitle: summary.subtitle,
+                body: summary.body,
+                kind: .forClaudeHook(subcommand: "notification", notificationType: notificationType, message: summary.body)
+            )
 
             if let sessionId = parsedInput.sessionId {
                 try? sessionStore.upsert(
@@ -24199,8 +24210,17 @@ struct CMUXCLI {
             .replacingOccurrences(of: "|", with: "¦")
     }
 
-    private func notificationPayload(title: String, subtitle: String, body: String) -> String {
-        "\(sanitizeNotificationField(title))|\(sanitizeNotificationField(subtitle))|\(sanitizeNotificationField(body))"
+    /// `title|subtitle|body[|kind]`: el cuarto campo lleva el ``TerminalNotificationKind``
+    /// decidido por el hook; sin él, el host cae al estado de actividad de la ventana.
+    private func notificationPayload(
+        title: String,
+        subtitle: String,
+        body: String,
+        kind: TerminalNotificationKind? = nil
+    ) -> String {
+        let base = "\(sanitizeNotificationField(title))|\(sanitizeNotificationField(subtitle))|\(sanitizeNotificationField(body))"
+        guard let kind else { return base }
+        return "\(base)|\(kind.rawValue)"
     }
 
     private func redactClaudeSensitiveSpans(_ value: String) -> String {
@@ -28079,7 +28099,12 @@ export default function uniconnectPiSessionExtension(pi: ExtensionAPI) {
                 telemetry.breadcrumb("\(def.name)-hook.stop.subagent-notification-suppressed")
             }
             if shouldPublishStopAlert, shouldSendNotification(fingerprint: notificationFingerprint) {
-                let payload = notificationPayload(title: def.displayName, subtitle: subtitle, body: body)
+                let payload = notificationPayload(
+                    title: def.displayName,
+                    subtitle: subtitle,
+                    body: body,
+                    kind: .forAgentHook(event: "Stop", status: stopNotificationStatus.rawValue)
+                )
                 let notifyCommand = "notify_target_async \(workspaceId) \(surfaceId) \(payload)"
 #if DEBUG
                 agentHookDebugLog(
@@ -28391,7 +28416,12 @@ export default function uniconnectPiSessionExtension(pi: ExtensionAPI) {
 
             let notificationFingerprint = notificationDedupeFingerprint(status: summary.status)
             if shouldSendNotification(fingerprint: notificationFingerprint) {
-                let payload = notificationPayload(title: def.displayName, subtitle: summary.subtitle, body: summary.body)
+                let payload = notificationPayload(
+                    title: def.displayName,
+                    subtitle: summary.subtitle,
+                    body: summary.body,
+                    kind: .forAgentHook(event: nil, status: summary.status?.rawValue)
+                )
                 let notifyCommand = "notify_target_async \(workspaceId) \(surfaceId) \(payload)"
 #if DEBUG
                 agentHookDebugLog(

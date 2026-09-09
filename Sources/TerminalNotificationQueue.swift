@@ -10,6 +10,8 @@ fileprivate struct QueuedTerminalNotification: Sendable {
     let title: String
     let subtitle: String
     let body: String
+    /// Kind explícito del emisor (hooks); `nil` deja decidir a la actividad de la ventana.
+    let kind: TerminalNotificationKind?
 }
 
 fileprivate enum TerminalSocketMutation {
@@ -51,13 +53,15 @@ final class TerminalMutationBus: @unchecked Sendable {
         title: String,
         subtitle: String,
         body: String,
+        kind: TerminalNotificationKind? = nil,
         coalesces: Bool = true
     ) {
         enqueueNotification(QueuedTerminalNotification(
             key: QueuedTerminalNotificationKey(tabId: tabId, surfaceId: surfaceId),
             title: title,
             subtitle: subtitle,
-            body: body
+            body: body,
+            kind: kind
         ), coalesces: coalesces)
     }
 
@@ -360,7 +364,8 @@ extension TerminalController {
         surfaceId: UUID?,
         title: String,
         subtitle: String,
-        body: String
+        body: String,
+        kind: TerminalNotificationKind? = nil
     ) {
         TerminalMutationBus.shared.discardPendingNotifications(forTabId: tabId, surfaceId: surfaceId)
 #if DEBUG
@@ -373,7 +378,8 @@ extension TerminalController {
             surfaceId: surfaceId,
             title: title,
             subtitle: subtitle,
-            body: body
+            body: body,
+            kind: kind
         )
     }
 }
@@ -398,7 +404,8 @@ extension TerminalNotificationStore {
             surfaceId: notification.key.surfaceId,
             title: notification.title,
             subtitle: notification.subtitle,
-            body: notification.body
+            body: notification.body,
+            kind: notification.kind
         )
     }
 

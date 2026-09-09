@@ -23,6 +23,9 @@ public struct MobileNotificationRecord: Codable, Equatable, Sendable {
     public let createdAtMilliseconds: Int64
     /// Whether the authoritative desktop notification has already been read.
     public let isRead: Bool
+    /// What the notice expects from the user: `attention` (the agent waits for an
+    /// answer), `finished` (the turn ended) or `info` (everything else).
+    public let kind: String
 
     /// Creates a bounded portable snapshot of an existing notification.
     /// - Parameters:
@@ -34,7 +37,8 @@ public struct MobileNotificationRecord: Codable, Equatable, Sendable {
     ///   - body: The notification body, truncated to the wire limit.
     ///   - createdAtMilliseconds: The notification's original Unix timestamp.
     ///   - isRead: The desktop's current read state.
-    public init(id: String, workspaceID: String, surfaceID: String?, title: String, subtitle: String, body: String, createdAtMilliseconds: Int64, isRead: Bool) {
+    ///   - kind: `attention`, `finished` or `info`; defaults to `info` for callers that predate it.
+    public init(id: String, workspaceID: String, surfaceID: String?, title: String, subtitle: String, body: String, createdAtMilliseconds: Int64, isRead: Bool, kind: String = "info") {
         self.id = id
         self.workspaceID = workspaceID
         self.surfaceID = surfaceID
@@ -46,6 +50,7 @@ public struct MobileNotificationRecord: Codable, Equatable, Sendable {
             Date.ISO8601FormatStyle(includingFractionalSeconds: true, timeZone: .gmt)
         )
         self.isRead = isRead
+        self.kind = kind
     }
 
     /// Returns the JSON object used unchanged in list responses and event payloads.
@@ -53,13 +58,13 @@ public struct MobileNotificationRecord: Codable, Equatable, Sendable {
     public func jsonObject() -> [String: Any] {
         [
             "id": id, "workspace_id": workspaceID, "surface_id": surfaceID as Any? ?? NSNull(),
-            "title": title, "subtitle": subtitle, "body": body,
+            "title": title, "subtitle": subtitle, "body": body, "kind": kind,
             "created_at": createdAt, "created_at_ms": createdAtMilliseconds, "is_read": isRead,
         ]
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, subtitle, body
+        case id, title, subtitle, body, kind
         case workspaceID = "workspace_id"
         case surfaceID = "surface_id"
         case createdAt = "created_at"

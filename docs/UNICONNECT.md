@@ -200,6 +200,29 @@ shown for `idle` or `unknown`. Implementation: `Sources/Activity/`
 `AgentActivityCoordinator` composed in `AppDelegate`). Status: macOS done; Linux
 and Android pending.
 
+#### Notification kind
+
+Mobile notices distinguish "needs your answer" from "has finished". Every record of
+`mobile.notifications.list` and every `notification.created` event carries
+`"kind"`: `attention` (the agent waits for the user: permission, question,
+elicitation, needs input), `finished` (turn ended: Stop, `idle_prompt`,
+`agent_completed`) or `info` (everything else). The host decides it when the
+notice is created and persists it with the notice; notices saved before the field
+existed are read back as `info`.
+
+Derivation: `cmux claude-hook notification` maps `notification_type`
+`permission_prompt` | `elicitation_dialog` | `elicitation_url_dialog` |
+`agent_needs_input` → `attention` and `idle_prompt` | `agent_completed` →
+`finished`; `cmux claude-hook stop|idle` → `finished`. The generic agent hooks
+(Codex, Gemini, Agy, Grok…) use the same criterion per event: `PermissionRequest`
+→ `attention`, Stop / turn complete → `finished`, otherwise their classified
+status (`needsInput` → `attention`, `idle` → `finished`, `error` → `info`). The
+hooks send the value as an optional fourth field of the `notify*` socket payload
+(`title|subtitle|body|kind`); a fourth field that is not a valid kind stays part
+of the body. A notice without a hook kind (raw OSC 9/777, `cmux notify`, other
+callers) falls back to the window's activity at that instant: `waiting` →
+`attention`, `idle` → `finished`, `working`/`unknown` → `info`.
+
 ### ローカルウインドウの作成と保存
 
 ショートカット、タブの追加ボタン、コマンドパレット、コンテキストメニューの

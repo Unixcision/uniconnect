@@ -782,6 +782,8 @@ struct TerminalNotification: Identifiable, Hashable {
     var isRead: Bool
     var paneFlash: Bool = true
     var clickAction: TerminalNotificationClickAction?
+    /// Qué espera el aviso del usuario; los avisos persistidos antes de este campo son `info`.
+    var kind: TerminalNotificationKind = .info
 
     init(
         id: UUID,
@@ -794,7 +796,8 @@ struct TerminalNotification: Identifiable, Hashable {
         createdAt: Date,
         isRead: Bool,
         paneFlash: Bool = true,
-        clickAction: TerminalNotificationClickAction? = nil
+        clickAction: TerminalNotificationClickAction? = nil,
+        kind: TerminalNotificationKind = .info
     ) {
         self.id = id
         self.tabId = tabId
@@ -807,6 +810,7 @@ struct TerminalNotification: Identifiable, Hashable {
         self.isRead = isRead
         self.paneFlash = paneFlash
         self.clickAction = clickAction
+        self.kind = kind
     }
 
     func matches(tabId targetTabId: UUID, surfaceId targetSurfaceId: UUID?) -> Bool {
@@ -1246,7 +1250,8 @@ final class TerminalNotificationStore: ObservableObject {
         body: String,
         cooldownKey: String? = nil,
         cooldownInterval: TimeInterval? = nil,
-        clickAction: TerminalNotificationClickAction? = nil
+        clickAction: TerminalNotificationClickAction? = nil,
+        kind: TerminalNotificationKind? = nil
     ) {
 #if DEBUG
         cmuxDebugLog(
@@ -1286,13 +1291,20 @@ final class TerminalNotificationStore: ObservableObject {
             subtitle: subtitle,
             body: body
         )
+        // El kind se decide al crear el aviso: el explícito del hook o, si no, la
+        // actividad de la ventana en este instante.
+        let resolvedKind = TerminalNotificationKind.derived(
+            explicit: kind,
+            activityState: policyContext.activityState
+        )
         guard !policyContext.hooks.isEmpty else {
             applyNotification(
                 request: policyContext.request,
                 effects: TerminalNotificationPolicyEffects(),
                 now: now,
                 cooldownReservation: cooldownReservation,
-                clickAction: clickAction
+                clickAction: clickAction,
+                kind: resolvedKind
             )
             return
         }
@@ -1309,7 +1321,8 @@ final class TerminalNotificationStore: ObservableObject {
                     effects: TerminalNotificationPolicyEffects(),
                     now: Date(),
                     cooldownReservation: cooldownReservation,
-                    clickAction: clickAction
+                    clickAction: clickAction,
+                    kind: resolvedKind
                 )
                 return
             }
@@ -1325,7 +1338,8 @@ final class TerminalNotificationStore: ObservableObject {
                     envelope: envelope,
                     now: Date(),
                     cooldownReservation: cooldownReservation,
-                    clickAction: clickAction
+                    clickAction: clickAction,
+                    kind: resolvedKind
                 )
             case .failure(let failure):
                 self.applyNotification(
@@ -1333,7 +1347,8 @@ final class TerminalNotificationStore: ObservableObject {
                     effects: TerminalNotificationPolicyEffects(),
                     now: Date(),
                     cooldownReservation: cooldownReservation,
-                    clickAction: clickAction
+                    clickAction: clickAction,
+                    kind: resolvedKind
                 )
                 self.reportNotificationHookFailure(failure)
             }
@@ -1349,6 +1364,8 @@ final class TerminalNotificationStore: ObservableObject {
         let request: TerminalNotificationPolicyRequest
         let hooks: [CmuxResolvedNotificationHook]
         let globalConfigPath: String?
+        /// Actividad de IA de la ventana al crear el aviso; decide el `kind` sin hook explícito.
+        let activityState: AgentActivity.State?
     }
 
     private func makeCooldownReservation(
@@ -1419,7 +1436,8 @@ final class TerminalNotificationStore: ObservableObject {
                 isFocusedPanel: isFocusedPanel
             ),
             hooks: cmuxConfigStore?.notificationHooks(startingFrom: cwd) ?? [],
-            globalConfigPath: cmuxConfigStore?.globalConfigPath
+            globalConfigPath: cmuxConfigStore?.globalConfigPath,
+            activityState: panelId.flatMap { workspace?.agentActivityByPanelId[$0]?.state }
         )
     }
 
@@ -1428,7 +1446,8 @@ final class TerminalNotificationStore: ObservableObject {
         envelope: TerminalNotificationPolicyEnvelope,
         now: Date,
         cooldownReservation: NotificationCooldownReservation?,
-        clickAction: TerminalNotificationClickAction?
+        clickAction: TerminalNotificationClickAction?,
+        kind: TerminalNotificationKind
     ) {
         let payload = envelope.notification
         applyNotification(
@@ -1446,7 +1465,8 @@ final class TerminalNotificationStore: ObservableObject {
             effects: envelope.effects,
             now: now,
             cooldownReservation: cooldownReservation,
-            clickAction: clickAction
+            clickAction: clickAction,
+            kind: kind
         )
     }
 
@@ -1455,7 +1475,8 @@ final class TerminalNotificationStore: ObservableObject {
         effects: TerminalNotificationPolicyEffects,
         now: Date,
         cooldownReservation: NotificationCooldownReservation?,
-        clickAction: TerminalNotificationClickAction?
+        clickAction: TerminalNotificationClickAction?,
+        kind: TerminalNotificationKind
     ) {
         let shouldSuppressExternalDelivery = shouldSuppressExternalDelivery(
             tabId: request.tabId,
@@ -1472,7 +1493,8 @@ final class TerminalNotificationStore: ObservableObject {
             createdAt: now,
             isRead: !effects.markUnread,
             paneFlash: effects.paneFlash,
-            clickAction: clickAction
+            clickAction: clickAction,
+            kind: kind
         )
 
         if effects.record {
@@ -1858,7 +1880,8 @@ final class TerminalNotificationStore: ObservableObject {
             createdAt: notification.createdAt,
             isRead: notification.isRead,
             paneFlash: notification.paneFlash,
-            clickAction: notification.clickAction
+            clickAction: notification.clickAction,
+            kind: notification.kind
         )
     }
 
@@ -1938,7 +1961,8 @@ final class TerminalNotificationStore: ObservableObject {
                 createdAt: notification.createdAt,
                 isRead: notification.isRead,
                 paneFlash: notification.paneFlash,
-                clickAction: notification.clickAction
+                clickAction: notification.clickAction,
+                kind: notification.kind
             )
         }
         if didMoveNotification {
