@@ -598,7 +598,14 @@ Host side on Linux (2026-09-09, `linux/uniconnect/transcribe.py`, routed by
   place, because between creating a lock and taking it there is an instant when it
   would look free; the work directory is created after that. So neither a lock nor
   a directory is ever visible under its real name without an owner, and the job
-  holds the lock until it is done; the kernel releases the
+  holds the lock until it is done. Births are coordinated with the sweep through a
+  shared `.uc-nacimientos` lock: a job holds it (shared) while it is being born and
+  the sweep takes it (exclusive) before judging any half-born file, so the gap
+  between creating a lock and taking it, where it would look free without being
+  abandoned, never coincides with a sweep, and a machine suspended inside that gap
+  for any length of time keeps its dictation. The birth also waits for its own lock
+  rather than giving up, since the only thing that can hold it for an instant is a
+  sweep checking whether it was abandoned. The kernel releases the
   lock when the owning process dies, however it dies, so a lock that can be taken
   marks an abandoned directory. The sweep holds that lock from the check through
   the deletion, never releasing it in between, and a lock left without a work
