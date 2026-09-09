@@ -1031,7 +1031,11 @@ final class MobileHostService {
                     if request.method == "mobile.host.status" {
                         return MobileHostPublicStatusCache.result()
                     }
-                    let result = await TerminalController.shared.mobileHostHandleRPC(request)
+                    // file_put.v1 liga cada transferencia al dispositivo aprobado que la empezó.
+                    let result = await TerminalController.shared.mobileHostHandleRPC(
+                        request,
+                        peer: MobileHostPeerIdentity(connectionID: id, address: peerAddress)
+                    )
                     await MobileHostService.shared.recordCreatedResourcesIfNeeded(
                         request: request,
                         result: result

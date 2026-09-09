@@ -20911,13 +20911,24 @@ class TerminalController {
     // MARK: - Mobile Host V2 Methods
 
     @MainActor
-    func mobileHostHandleRPC(_ request: MobileHostRPCRequest) async -> MobileHostRPCResult {
+    func mobileHostHandleRPC(
+        _ request: MobileHostRPCRequest,
+        peer: MobileHostPeerIdentity? = nil
+    ) async -> MobileHostRPCResult {
         let result: V2CallResult
         switch request.method {
         case "mobile.host.status":
             result = v2MobileHostStatus(params: request.params, includePrivateMetadata: false)
         case "mobile.attach_ticket.create":
             result = await v2MobileAttachTicketCreate(params: request.params)
+        case "mobile.file.begin":
+            result = await v2MobileFileBegin(params: request.params, peer: peer)
+        case "mobile.file.chunk":
+            result = await v2MobileFileChunk(params: request.params, peer: peer)
+        case "mobile.file.commit":
+            result = await v2MobileFileCommit(params: request.params, peer: peer)
+        case "mobile.file.abort":
+            result = await v2MobileFileAbort(params: request.params, peer: peer)
         case "mobile.workspace.list", "workspace.list":
             result = v2MobileWorkspaceList(params: request.params)
         case "mobile.workspace.update":
@@ -21460,7 +21471,190 @@ class TerminalController {
     /// `activity.v1`: cada terminal y cada espacio llevan un objeto `activity`.
     /// `box_update`: favoritos y orden compartidos (`mobile.workspace.update`,
     /// `mobile.terminal.update`, `is_pinned` en cada terminal, fijados primero).
-    private static let mobileWorkspaceListCapabilities: [String] = ["activity.v1", "box_update"]
+    /// `file_put.v1`: adjuntar archivos desde el móvil (`mobile.file.begin/chunk/commit/abort`).
+    private static let mobileWorkspaceListCapabilities: [String] = ["activity.v1", "box_update", "file_put.v1"]
+
+    // MARK: - file_put.v1
+
+    /// Servicio de transferencias del móvil; toda su E/S corre fuera del hilo principal.
+    private let mobileFilePutService = MobileFilePutService()
+
+    private func mobileFilePutLockedError() -> V2CallResult? {
+        guard UniConnectAppLock.shared.isLocked else { return nil }
+        return .err(
+            code: "locked",
+            message: String(localized: "uniconnect.mobile.tmux.locked", defaultValue: "Desbloquea UniConnect para acceder a esta terminal."),
+            data: nil
+        )
+    }
+
+    private func mobileFilePutResult(_ error: MobileFilePutError) -> V2CallResult {
+        .err(code: error.code, message: error.message, data: nil)
+    }
+
+    /// Ligadura actual de una caja: dispositivo que llama, caja y revisión de credencial de hoy.
+    /// `nil` cuando la caja no existe o su credencial SSH ya no se puede resolver.
+    @MainActor
+    private func mobileFilePutBinding(
+        workspaceId: UUID,
+        tabManager: TabManager,
+        peer: MobileHostPeerIdentity?
+    ) -> (binding: MobileFilePutBinding, workspace: Workspace)? {
+        guard let located = mobileLocateWorkspace(workspaceId, preferring: tabManager) else { return nil }
+        let workspace = located.workspace
+        guard let profile = workspace.uniConnectProfile, profile.isSSH else {
+            return (MobileFilePutBinding(peerAddress: peer?.address, workspaceID: workspace.id, credentialID: nil, credentialRecord: nil), workspace)
+        }
+        guard let credentialID = profile.credentialId,
+              let record = UniConnectVault.shared.credentialRecord(for: credentialID),
+              record.effectiveTarget != nil else {
+            return nil
+        }
+        return (MobileFilePutBinding(peerAddress: peer?.address, workspaceID: workspace.id, credentialID: credentialID, credentialRecord: record), workspace)
+    }
+
+    private func mobileFilePutTransferID(_ params: [String: Any]) -> UUID? {
+        v2UUID(params, "transfer_id")
+    }
+
+    /// Recalcula la ligadura de una transferencia viva; `nil` = `not_found` (caja o credencial cambiadas).
+    @MainActor
+    private func mobileFilePutCurrentBinding(
+        transferID: UUID,
+        params: [String: Any],
+        peer: MobileHostPeerIdentity?
+    ) async -> MobileFilePutBinding? {
+        guard let stored = await mobileFilePutService.binding(of: transferID),
+              let tabManager = v2ResolveTabManager(params: params),
+              let current = mobileFilePutBinding(workspaceId: stored.workspaceID, tabManager: tabManager, peer: peer) else {
+            return nil
+        }
+        return current.binding
+    }
+
+    /// `mobile.file.begin {workspace_id, terminal_id?, name, size, mime?}` → `{transfer_id, chunk_bytes}`.
+    @MainActor
+    private func v2MobileFileBegin(params: [String: Any], peer: MobileHostPeerIdentity?) async -> V2CallResult {
+        if let error = mobileFilePutLockedError() { return error }
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
+        }
+        guard let workspaceId = v2UUID(params, "workspace_id") else {
+            return .err(code: "invalid_params", message: String(localized: "uniconnect.shared.indica.una.caja.existente", defaultValue: "Indica una caja existente"), data: nil)
+        }
+        guard let name = v2RawString(params, "name")?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+            return .err(code: "invalid_params", message: String(localized: "uniconnect.mobile.file.invalidName", defaultValue: "Indica un nombre de archivo válido."), data: nil)
+        }
+        guard v2HasNonNullParam(params, "size"), let size = v2Int(params, "size") else {
+            return .err(code: "invalid_params", message: String(localized: "uniconnect.mobile.file.invalidSize", defaultValue: "Indica el tamaño del archivo en bytes."), data: nil)
+        }
+        guard let located = mobileFilePutBinding(workspaceId: workspaceId, tabManager: tabManager, peer: peer) else {
+            return .err(code: "invalid_params", message: String(localized: "uniconnect.shared.no.se.encontr.la.caja", defaultValue: "No se encontró la caja"), data: nil)
+        }
+        var terminalID: UUID?
+        switch mobileTerminalAliasUUID(params: params) {
+        case .missing:
+            terminalID = nil
+        case let .value(value):
+            guard located.workspace.terminalPanel(for: value) != nil else {
+                return .err(code: "invalid_params", message: String(localized: "uniconnect.shared.no.se.encontr.la.ventana", defaultValue: "No se encontró la ventana"), data: nil)
+            }
+            terminalID = value
+        case .invalid, .conflict:
+            return .err(code: "invalid_params", message: String(localized: "uniconnect.shared.indica.una.ventana.existente", defaultValue: "Indica una ventana existente"), data: nil)
+        }
+        do {
+            let begin = try await mobileFilePutService.begin(
+                name: name,
+                size: size,
+                mime: v2RawString(params, "mime"),
+                terminalID: terminalID,
+                binding: located.binding
+            )
+            return .ok(["transfer_id": begin.transferID.uuidString, "chunk_bytes": begin.chunkBytes])
+        } catch let error as MobileFilePutError {
+            return mobileFilePutResult(error)
+        } catch {
+            return .err(code: "io_failed", message: String(describing: error), data: nil)
+        }
+    }
+
+    /// `mobile.file.chunk {transfer_id, index, data}` → `{received_bytes}`.
+    @MainActor
+    private func v2MobileFileChunk(params: [String: Any], peer: MobileHostPeerIdentity?) async -> V2CallResult {
+        if let error = mobileFilePutLockedError() { return error }
+        guard let transferID = mobileFilePutTransferID(params) else {
+            return mobileFilePutResult(.notFound)
+        }
+        guard v2HasNonNullParam(params, "index"), let index = v2Int(params, "index"),
+              let data = params["data"] as? String else {
+            return .err(code: "invalid_params", message: String(localized: "uniconnect.mobile.file.invalidChunk", defaultValue: "El trozo no es base64 válido o supera chunk_bytes."), data: nil)
+        }
+        guard let binding = await mobileFilePutCurrentBinding(transferID: transferID, params: params, peer: peer) else {
+            return mobileFilePutResult(.notFound)
+        }
+        do {
+            let received = try await mobileFilePutService.appendChunk(
+                transferID: transferID,
+                index: index,
+                base64: data,
+                binding: binding
+            )
+            return .ok(["received_bytes": received])
+        } catch let error as MobileFilePutError {
+            return mobileFilePutResult(error)
+        } catch {
+            return .err(code: "io_failed", message: String(describing: error), data: nil)
+        }
+    }
+
+    /// `mobile.file.commit {transfer_id, sha256}` → `{path, location, remote_path?, remote_error?}`.
+    @MainActor
+    private func v2MobileFileCommit(params: [String: Any], peer: MobileHostPeerIdentity?) async -> V2CallResult {
+        if let error = mobileFilePutLockedError() { return error }
+        guard let transferID = mobileFilePutTransferID(params) else {
+            return mobileFilePutResult(.notFound)
+        }
+        guard let sha256 = v2RawString(params, "sha256")?.trimmingCharacters(in: .whitespacesAndNewlines),
+              sha256.count == 64, sha256.allSatisfy(\.isHexDigit) else {
+            return .err(code: "invalid_params", message: String(localized: "uniconnect.mobile.file.invalidSha", defaultValue: "Indica el sha256 del archivo en hexadecimal."), data: nil)
+        }
+        guard let binding = await mobileFilePutCurrentBinding(transferID: transferID, params: params, peer: peer) else {
+            return mobileFilePutResult(.notFound)
+        }
+        do {
+            let commit = try await mobileFilePutService.commit(transferID: transferID, sha256: sha256, binding: binding)
+            var payload: [String: Any] = [
+                "path": commit.path,
+                "location": commit.location.rawValue,
+            ]
+            if let remotePath = commit.remotePath { payload["remote_path"] = remotePath }
+            if let remoteError = commit.remoteError { payload["remote_error"] = remoteError }
+            return .ok(payload)
+        } catch let error as MobileFilePutError {
+            return mobileFilePutResult(error)
+        } catch {
+            return .err(code: "io_failed", message: String(describing: error), data: nil)
+        }
+    }
+
+    /// `mobile.file.abort {transfer_id}` → `{}`.
+    @MainActor
+    private func v2MobileFileAbort(params: [String: Any], peer: MobileHostPeerIdentity?) async -> V2CallResult {
+        if let error = mobileFilePutLockedError() { return error }
+        guard let transferID = mobileFilePutTransferID(params),
+              let binding = await mobileFilePutCurrentBinding(transferID: transferID, params: params, peer: peer) else {
+            return mobileFilePutResult(.notFound)
+        }
+        do {
+            try await mobileFilePutService.abort(transferID: transferID, binding: binding)
+            return .ok([:])
+        } catch let error as MobileFilePutError {
+            return mobileFilePutResult(error)
+        } catch {
+            return .err(code: "io_failed", message: String(describing: error), data: nil)
+        }
+    }
 
     /// Cambio de favorito y/o posición del contrato `box_update`, ya validado.
     private struct MobileArrangementChange {

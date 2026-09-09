@@ -426,9 +426,15 @@
 		284FD21ACF8BD1ED6AEBD7A0 /* MobileAttachTicketStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D6D2AC715764ECC1F6B26A2 /* MobileAttachTicketStore.swift */; };
 		632B115044E17B4E0BD76AA1 /* MobileBoxArrangement.swift in Sources */ = {isa = PBXBuildFile; fileRef = D72956C9322F8667B9A0DC03 /* MobileBoxArrangement.swift */; };
 		053B07EFCFB345B8A96C743F /* MobileBoxArrangementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE9959248844544E00A2266F /* MobileBoxArrangementTests.swift */; };
+		6CA68B8B5C796CCC6F4E6FF3 /* MobileFilePutName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D43DD00B6B7A470CFB6702B /* MobileFilePutName.swift */; };
+		8B7F66EFFA775B79D948C44F /* MobileFilePutService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D087EA8606165C5280ECAF6 /* MobileFilePutService.swift */; };
+		D37E1AB858F04B4388EFB6B2 /* MobileFilePutServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41777CC1F441E625114CF7B1 /* MobileFilePutServiceTests.swift */; };
+		6200FB64D6719C7BC833A4DC /* MobileFilePutTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8B2B8ADB3B3442BE6ADEE1 /* MobileFilePutTypes.swift */; };
+		99490894EE80B6C2CB81D04A /* MobileFileSSHCopier.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6C1CCAF7A276C4981FD5C30 /* MobileFileSSHCopier.swift */; };
 		6AA2F2E8BEB19ED6B8E125DB /* MobileHostAuthorizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BD519CFE74530A46DF0925D /* MobileHostAuthorizationTests.swift */; };
 		A90623000000000000000002 /* MobileHostOutboundQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90613000000000000000002 /* MobileHostOutboundQueue.swift */; };
 		A90622000000000000000004 /* MobileHostOutboundQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90612000000000000000004 /* MobileHostOutboundQueueTests.swift */; };
+		26F81666C317D8A107A0A790 /* MobileHostPeerIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D309F8CD0FF7565ABF4A771 /* MobileHostPeerIdentity.swift */; };
 		4E673EDE464BF3AB80E94C1D /* MobileHostRPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47BDC06F004C02A52B05E4A0 /* MobileHostRPC.swift */; };
 		F67FBC88671C40AC3A3284CE /* MobileHostService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ACA497A6831165EA879C642 /* MobileHostService.swift */; };
 		C0DE10510000000000000001 /* MobileHostServiceSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10510000000000000002 /* MobileHostServiceSettingsTests.swift */; };
@@ -1405,9 +1411,15 @@
 		8D6D2AC715764ECC1F6B26A2 /* MobileAttachTicketStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileAttachTicketStore.swift; sourceTree = "<group>"; };
 		D72956C9322F8667B9A0DC03 /* MobileBoxArrangement.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileBoxArrangement.swift; sourceTree = "<group>"; };
 		EE9959248844544E00A2266F /* MobileBoxArrangementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileBoxArrangementTests.swift; sourceTree = "<group>"; };
+		4D43DD00B6B7A470CFB6702B /* MobileFilePutName.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileFilePutName.swift; sourceTree = "<group>"; };
+		3D087EA8606165C5280ECAF6 /* MobileFilePutService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileFilePutService.swift; sourceTree = "<group>"; };
+		41777CC1F441E625114CF7B1 /* MobileFilePutServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileFilePutServiceTests.swift; sourceTree = "<group>"; };
+		7D8B2B8ADB3B3442BE6ADEE1 /* MobileFilePutTypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileFilePutTypes.swift; sourceTree = "<group>"; };
+		D6C1CCAF7A276C4981FD5C30 /* MobileFileSSHCopier.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileFileSSHCopier.swift; sourceTree = "<group>"; };
 		9BD519CFE74530A46DF0925D /* MobileHostAuthorizationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileHostAuthorizationTests.swift; sourceTree = "<group>"; };
 		A90613000000000000000002 /* MobileHostOutboundQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileHostOutboundQueue.swift; sourceTree = "<group>"; };
 		A90612000000000000000004 /* MobileHostOutboundQueueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileHostOutboundQueueTests.swift; sourceTree = "<group>"; };
+		1D309F8CD0FF7565ABF4A771 /* MobileHostPeerIdentity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileHostPeerIdentity.swift; sourceTree = "<group>"; };
 		47BDC06F004C02A52B05E4A0 /* MobileHostRPC.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileHostRPC.swift; sourceTree = "<group>"; };
 		7ACA497A6831165EA879C642 /* MobileHostService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileHostService.swift; sourceTree = "<group>"; };
 		C0DE10510000000000000002 /* MobileHostServiceSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileHostServiceSettingsTests.swift; sourceTree = "<group>"; };
@@ -2307,6 +2319,11 @@
 				F9BC53FA4991A6EBFB930EDF /* MobilePairingView.swift */,
 				5AE701F43A0B49F08835191C /* MobilePairingWindowController.swift */,
 				C9F14137954A34DFFA05C88C /* MobileWorkspaceListObserver.swift */,
+				1D309F8CD0FF7565ABF4A771 /* MobileHostPeerIdentity.swift */,
+				4D43DD00B6B7A470CFB6702B /* MobileFilePutName.swift */,
+				7D8B2B8ADB3B3442BE6ADEE1 /* MobileFilePutTypes.swift */,
+				D6C1CCAF7A276C4981FD5C30 /* MobileFileSSHCopier.swift */,
+				3D087EA8606165C5280ECAF6 /* MobileFilePutService.swift */,
 				D72956C9322F8667B9A0DC03 /* MobileBoxArrangement.swift */,
 				F51B54FAD18160281FC1C2B6 /* MobileTerminalRenderObserver.swift */,
 				4F05EBBC2FE0D5CB2F662B8A /* MobileTerminalByteTee.swift */,
@@ -2941,6 +2958,7 @@
 				D2C075029771815DD5DA1332 /* NotificationAndMenuBarTests.swift */,
 				4E5F60720000000000000002 /* NotificationSoundSettingsTests.swift */,
 				42092CDB2109E250F7F2A76E /* TabManagerUnitTests.swift */,
+				41777CC1F441E625114CF7B1 /* MobileFilePutServiceTests.swift */,
 				EE9959248844544E00A2266F /* MobileBoxArrangementTests.swift */,
 				38B8FAEE192577F5B9C54AF1 /* UniConnectRemotePaneTitleTests.swift */,
 				565EAB895EC099E22C016A71 /* TerminalNotificationKindTests.swift */,
@@ -3626,7 +3644,12 @@
 				C0DE3150A00000000000001 /* MinimalModeSidebarControls.swift in Sources */,
 				284FD21ACF8BD1ED6AEBD7A0 /* MobileAttachTicketStore.swift in Sources */,
 				632B115044E17B4E0BD76AA1 /* MobileBoxArrangement.swift in Sources */,
+				6CA68B8B5C796CCC6F4E6FF3 /* MobileFilePutName.swift in Sources */,
+				8B7F66EFFA775B79D948C44F /* MobileFilePutService.swift in Sources */,
+				6200FB64D6719C7BC833A4DC /* MobileFilePutTypes.swift in Sources */,
+				99490894EE80B6C2CB81D04A /* MobileFileSSHCopier.swift in Sources */,
 				A90623000000000000000002 /* MobileHostOutboundQueue.swift in Sources */,
+				26F81666C317D8A107A0A790 /* MobileHostPeerIdentity.swift in Sources */,
 				4E673EDE464BF3AB80E94C1D /* MobileHostRPC.swift in Sources */,
 				F67FBC88671C40AC3A3284CE /* MobileHostService.swift in Sources */,
 				0099C2865D9D468747D14593 /* MobilePairingModel.swift in Sources */,
@@ -4192,6 +4215,7 @@
 				17C9F5BA0DD14EDC8C3E5001 /* MainWindowVisibilityControllerTests.swift in Sources */,
 				D3664002D3664002D3664002 /* MarkdownPanelTests.swift in Sources */,
 				053B07EFCFB345B8A96C743F /* MobileBoxArrangementTests.swift in Sources */,
+				D37E1AB858F04B4388EFB6B2 /* MobileFilePutServiceTests.swift in Sources */,
 				6AA2F2E8BEB19ED6B8E125DB /* MobileHostAuthorizationTests.swift in Sources */,
 				A90622000000000000000004 /* MobileHostOutboundQueueTests.swift in Sources */,
 				C0DE10510000000000000001 /* MobileHostServiceSettingsTests.swift in Sources */,
