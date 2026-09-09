@@ -21,6 +21,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.unixcision.uniconnect.android.domain.NoticeRoute
 import com.unixcision.uniconnect.android.notifications.AndroidNoticePublisher
+import com.unixcision.uniconnect.android.notifications.NoticeCounters
 import java.util.UUID
 import com.unixcision.uniconnect.android.ui.MachinesScreen
 import com.unixcision.uniconnect.android.ui.MachinesViewModel
@@ -77,6 +78,8 @@ class MainActivity : ComponentActivity() {
         val machineID = intent?.getStringExtra(AndroidNoticePublisher.MACHINE_ID) ?: return
         val workspaceID = intent.getStringExtra(AndroidNoticePublisher.WORKSPACE_ID) ?: return
         val windowID = intent.getStringExtra(AndroidNoticePublisher.WINDOW_ID)
+        // Opening the row is the reader looking: the window's count starts again from one.
+        intent.getStringExtra(AndroidNoticePublisher.THREAD)?.let(NoticeCounters::clear)
         if (runCatching { UUID.fromString(machineID); UUID.fromString(workspaceID); windowID?.let(UUID::fromString) }.isFailure) return
         model.openNotice(NoticeRoute(machineID, workspaceID, windowID))
         // A rotation must not navigate again after the user has moved somewhere else.

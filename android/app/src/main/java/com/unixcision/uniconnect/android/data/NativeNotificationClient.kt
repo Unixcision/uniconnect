@@ -53,6 +53,6 @@ class NativeNotificationClient(private val rpc: FramedRpcClient) : NotificationC
         val id = value.getString("id").also { UUID.fromString(it) }
         val workspaceID = value.getString("workspace_id").also { UUID.fromString(it) }
         val windowID = if (value.isNull("surface_id")) null else value.getString("surface_id").also { UUID.fromString(it) }
-        return RemoteNotice(id, workspaceID, windowID, value.getLong("created_at_ms"), value.getBoolean("is_read"))
+        return RemoteNotice(id, workspaceID, windowID, value.getLong("created_at_ms"), value.getBoolean("is_read"), NoticeKind.parse(value.optString("kind").ifEmpty { null }))
     }
 }

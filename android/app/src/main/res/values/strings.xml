@@ -104,6 +104,10 @@
     <string name="notice_title_window">%1$s · %2$s</string>
     <string name="notice_title_workspace">%1$s</string>
     <string name="notice_machine">Aviso de %1$s</string>
+    <string name="notice_text_attention">Espera tu respuesta · %1$s</string>
+    <string name="notice_text_finished">Ha terminado · %1$s</string>
+    <string name="notice_title_count">%1$s (%2$d)</string>
+    <string name="attention_channel">Ventanas que esperan tu respuesta</string>
     <string name="mobile_notices">Avisos en este móvil</string>
     <string name="notices_connected">Conexión privada activa. Recibirás los avisos de esta máquina.</string>
     <string name="notices_reconnecting">El enlace de avisos está conectando. Android puede retrasar la red durante el reposo.</string>
