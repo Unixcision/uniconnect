@@ -58,10 +58,10 @@ fun SettingsSheet(settings: AppSettings, onChange: (AppSettings) -> Unit, onDism
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             SheetHeader(
-                icon = { Icon(Icons.Rounded.Settings, null, tint = UniTheme.colors.accentSoft) },
+                icon = { Icon(Icons.Rounded.Settings, null, tint = UniTheme.colors.accent) },
                 title = stringResource(R.string.settings),
                 note = stringResource(R.string.settings_note),
-                tone = UniTheme.colors.accentSoft,
+                tone = UniTheme.colors.accent,
             )
 
             SettingsSection(stringResource(R.string.settings_appearance)) {

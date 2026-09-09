@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.unixcision.uniconnect.android.R
+import com.unixcision.uniconnect.android.ui.theme.RowDensity
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import com.unixcision.uniconnect.android.ui.theme.WorkspaceLayout
 import com.unixcision.uniconnect.android.domain.ActivityState
@@ -134,25 +135,33 @@ fun MachineBoxesScreen(
                 }
             }
             item {
-                val tile: @Composable (RemoteWorkspace) -> Unit = { workspace ->
-                    WorkspaceTile(workspace, selected = workspace.id == selectedWorkspaceID, dimmed = !connection.connected,
-                        pinned = workspace.isPinned || workspace.id in overrides.pinnedWorkspaces,
-                        onClick = { onSelectWorkspace(workspace.id) }, onLongClick = { heldWorkspace = workspace })
-                }
-                // The same tiles, either as the desktop's scrolling rail or wrapped into a grid.
+                // The desktop's scrolling rail of tiles, or a grid of cells with the name beside the mark.
                 if (rail) LazyRow(state = workspaceRow, horizontalArrangement = Arrangement.spacedBy(spacing.gap), contentPadding = PaddingValues(vertical = 4.dp)) {
-                    items(workspaces, key = { it.id }) { workspace -> tile(workspace) }
+                    items(workspaces, key = { it.id }) { workspace ->
+                        WorkspaceTile(workspace, selected = workspace.id == selectedWorkspaceID, dimmed = !connection.connected,
+                            pinned = workspace.isPinned || workspace.id in overrides.pinnedWorkspaces,
+                            onClick = { onSelectWorkspace(workspace.id) }, onLongClick = { heldWorkspace = workspace })
+                    }
                     if (connection.connected) item { NewWorkspaceTile(onCreateWorkspace) }
-                } else FlowRow(
-                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(spacing.gap), verticalArrangement = Arrangement.spacedBy(spacing.gap),
-                ) {
-                    workspaces.forEach { workspace -> key(workspace.id) { tile(workspace) } }
-                    if (connection.connected) NewWorkspaceTile(onCreateWorkspace)
+                } else BoxWithConstraints(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    // Cells share the width evenly; one column is an index list, three a dense grid.
+                    val columns = UniTheme.layout.workspaceColumns
+                    val cell = (maxWidth - spacing.gap * (columns - 1)) / columns
+                    val rowGap = UniTheme.layout.rowGap(spacing)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.gap), verticalArrangement = Arrangement.spacedBy(rowGap)) {
+                        workspaces.forEach { workspace ->
+                            key(workspace.id) {
+                                WorkspaceCell(workspace, selected = workspace.id == selectedWorkspaceID, dimmed = !connection.connected,
+                                    pinned = workspace.isPinned || workspace.id in overrides.pinnedWorkspaces, modifier = Modifier.width(cell),
+                                    onClick = { onSelectWorkspace(workspace.id) }, onLongClick = { heldWorkspace = workspace })
+                            }
+                        }
+                        if (connection.connected) NewWorkspaceCell(Modifier.width(cell), onCreateWorkspace)
+                    }
                 }
             }
             if (snapshot.workspaces.isEmpty()) item {
-                GlassCard(Modifier.fillMaxWidth(), accent = UniTheme.colors.accentSoft) {
+                GlassCard(Modifier.fillMaxWidth(), accent = UniTheme.colors.accent) {
                     Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(stringResource(R.string.no_workspaces), color = UniTheme.colors.muted)
                         if (connection.connected) Button(onClick = onCreateWorkspace, shape = UniTheme.shapes.button) {
@@ -187,9 +196,15 @@ fun MachineBoxesScreen(
                     }
                 }
                 if (selected.windows.isEmpty()) item { Text(stringResource(R.string.no_windows), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall) }
-                items(windows, key = { it.id }) { window ->
-                    WindowRow(window, themedTone(selected.name), pinned = window.isPinned || window.id in overrides.pinnedWindows,
-                        onClick = { onSelectWindow(window.id) }, onLongClick = { heldWindow = window })
+                if (windows.isNotEmpty()) item {
+                    Column(verticalArrangement = Arrangement.spacedBy(UniTheme.layout.rowGap(spacing))) {
+                        windows.forEach { window ->
+                            key(window.id) {
+                                WindowRow(window, themedTone(selected.name), pinned = window.isPinned || window.id in overrides.pinnedWindows,
+                                    onClick = { onSelectWindow(window.id) }, onLongClick = { heldWindow = window })
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -233,11 +248,62 @@ private fun NewWorkspaceTile(onClick: () -> Unit) {
     }
 }
 
+/**
+ * One box as a grid cell: the mark with the name and window count beside it, so a two or three
+ * column grid still reads without a caption under every tile. Selection tints the cell's edge
+ * with the box's tone; the pin and the AI mark sit in the text, not over the mark.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun WorkspaceCell(workspace: RemoteWorkspace, selected: Boolean, dimmed: Boolean, pinned: Boolean, modifier: Modifier, onClick: () -> Unit, onLongClick: () -> Unit) {
+    val compact = UniTheme.layout.density == RowDensity.COMPACT
+    val tone = themedTone(workspace.name)
+    GlassCard(modifier, style = UniTheme.layout.rowsAs, accent = if (selected) tone else null) {
+        Row(
+            Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = if (compact) 8.dp else 12.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp),
+        ) {
+            BoxMonogram(workspace.name, size = if (compact) 36.dp else 44.dp, selected = selected, dimmed = dimmed, tone = tone)
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(workspace.name, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelLarge, fontFamily = UniTheme.type.identifierFamily,
+                        color = if (selected) UniTheme.colors.text else UniTheme.colors.muted, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (pinned) Icon(Icons.Rounded.Star, stringResource(R.string.box_pinned), Modifier.size(12.dp), tint = UniTheme.colors.warning)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(pluralStringResource(R.plurals.window_count, workspace.windows.size, workspace.windows.size), style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    ActivityMark(workspace.activity, size = 12.dp, tone = tone)
+                }
+            }
+        }
+    }
+}
+
+/** The cell that offers a new box, in the same shape as the cells around it. */
+@Composable
+private fun NewWorkspaceCell(modifier: Modifier, onClick: () -> Unit) {
+    val compact = UniTheme.layout.density == RowDensity.COMPACT
+    val size = if (compact) 36.dp else 44.dp
+    GlassCard(modifier, style = UniTheme.layout.rowsAs) {
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = if (compact) 8.dp else 12.dp, vertical = if (compact) 8.dp else 12.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp),
+        ) {
+            Box(Modifier.size(size).border(1.5.dp, UniTheme.colors.accent.copy(alpha = .5f), monogramShape(size)), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Add, stringResource(R.string.new_workspace), Modifier.size(20.dp), tint = UniTheme.colors.accent)
+            }
+            Text(stringResource(R.string.new_workspace_tile), style = MaterialTheme.typography.labelLarge, color = UniTheme.colors.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
 @Composable
 fun KindBadge(workspace: RemoteWorkspace) {
     val (label, color) = when (workspace.isSSH) {
-        true -> R.string.box_ssh_badge to UniTheme.colors.accentSoft
-        false -> R.string.box_local_badge to UniTheme.colors.accent
+        true -> R.string.box_ssh_badge to UniTheme.colors.accent
+        false -> R.string.box_local_badge to UniTheme.colors.muted
         null -> R.string.box_unknown_badge to UniTheme.colors.muted
     }
     Text(stringResource(label), Modifier.background(color.copy(alpha = .14f), UniTheme.shapes.chip).padding(horizontal = 8.dp, vertical = 3.dp),
@@ -247,7 +313,7 @@ fun KindBadge(workspace: RemoteWorkspace) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun WindowRow(window: RemoteWindow, tone: Color, pinned: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
-    GlassCard(Modifier.fillMaxWidth()) {
+    GlassCard(Modifier.fillMaxWidth(), style = UniTheme.layout.rowsAs) {
         Row(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(horizontal = 16.dp, vertical = UniTheme.layout.rowPadding), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(38.dp).background(tone.copy(alpha = .14f), UniTheme.shapes.chip), contentAlignment = Alignment.Center) {
                 Icon(Icons.Rounded.Terminal, null, Modifier.size(20.dp), tint = tone)
@@ -264,10 +330,10 @@ private fun WindowRow(window: RemoteWindow, tone: Color, pinned: Boolean, onClic
 @Composable
 private fun NotConnectedCard(connection: MachinesViewModel.Connection, onConnect: () -> Unit) {
     val pending = connection.error == R.string.approval_required
-    GlassCard(Modifier.fillMaxWidth(), accent = if (pending) UniTheme.colors.warning else UniTheme.colors.accentSoft) {
+    GlassCard(Modifier.fillMaxWidth(), accent = if (pending) UniTheme.colors.warning else UniTheme.colors.accent) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(Modifier.size(44.dp).background((if (pending) UniTheme.colors.warning else UniTheme.colors.accentSoft).copy(alpha = .14f), UniTheme.shapes.chip), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Lock, null, tint = if (pending) UniTheme.colors.warning else UniTheme.colors.accentSoft)
+            Box(Modifier.size(44.dp).background((if (pending) UniTheme.colors.warning else UniTheme.colors.accent).copy(alpha = .14f), UniTheme.shapes.chip), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Lock, null, tint = if (pending) UniTheme.colors.warning else UniTheme.colors.accent)
             }
             Text(stringResource(if (pending) R.string.approval_pending_title else R.string.not_connected_title), style = MaterialTheme.typography.titleLarge)
             Text(stringResource(connection.error ?: R.string.not_connected_detail), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodyMedium)

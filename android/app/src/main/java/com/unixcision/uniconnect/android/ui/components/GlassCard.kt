@@ -12,7 +12,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
@@ -20,10 +19,11 @@ import com.unixcision.uniconnect.android.ui.theme.CardStyle
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 
 /**
- * The one surface a screen groups content on. In a theme that draws cards it is a translucent
- * card with a light gradient edge; in a hairline theme it is the content between two rules,
- * with no fill at all. [accent] echoes a box's tone or a live state: a soft glow in the
- * top-start corner of a card, a thin bar down the start edge of a hairline block.
+ * The one surface a screen groups content on, flat in every theme: a card is a fill with a one
+ * pixel outline, a hairline block is the content above a rule, with no fill at all. [style]
+ * defaults to the theme's choice for message blocks; list rows pass the theme's row style.
+ * [accent] echoes a box's tone or a live state: it tints the outline of a card and draws a thin
+ * bar down the start edge of a hairline block.
  */
 @Composable
 fun GlassCard(
@@ -32,10 +32,11 @@ fun GlassCard(
     tint: Color = UniTheme.colors.surface,
     accent: Color? = null,
     onClick: (() -> Unit)? = null,
+    style: CardStyle = UniTheme.layout.cardsAs,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = UniTheme.colors
-    val base = if (UniTheme.layout.cardsAs == CardStyle.HAIRLINE) {
+    val base = if (style == CardStyle.HAIRLINE) {
         val rule = colors.outline
         modifier.drawBehind {
             val stroke = 1.dp.toPx()
@@ -43,18 +44,9 @@ fun GlassCard(
             if (accent != null) drawRect(accent, topLeft = Offset.Zero, size = Size(3.dp.toPx(), size.height))
         }
     } else {
-        val edge = Brush.linearGradient(listOf(colors.glassTop, colors.glassBottom))
-        val fill = Brush.verticalGradient(listOf(tint.copy(alpha = .94f), tint.copy(alpha = .78f)))
-        modifier.clip(shape).background(fill).border(1.dp, edge, shape)
+        modifier.clip(shape).background(tint).border(1.dp, accent?.copy(alpha = .35f) ?: colors.outline, shape)
     }
-    val filled = UniTheme.layout.cardsAs == CardStyle.CARD
     Box(if (onClick != null) base.clickable(onClick = onClick) else base) {
-        if (accent != null && filled) Box(Modifier.matchParentSize().drawBehind {
-            drawCircle(
-                Brush.radialGradient(listOf(accent.copy(alpha = .22f), Color.Transparent), center = Offset(0f, 0f), radius = size.width * .55f),
-                radius = size.width * .55f, center = Offset(0f, 0f),
-            )
-        })
         Column(content = content)
     }
 }

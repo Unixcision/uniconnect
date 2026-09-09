@@ -52,7 +52,7 @@ fun CreateResourceSheet(context: CreationContext, saving: Boolean, error: Int?, 
         mutableStateOf(existing?.availableAgentTargets?.firstOrNull { it.id == "terminal" }?.id ?: existing?.availableAgentTargets?.firstOrNull()?.id ?: "terminal")
     }
     val selectedAgent = existing?.availableAgentTargets?.firstOrNull { it.id == agentID }
-    val tone = if (useSSH) UniTheme.colors.accentSoft else UniTheme.colors.accent
+    val tone = UniTheme.colors.accent
     ModalBottomSheet(
         onDismissRequest = { if (!saving) onDismiss() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -93,7 +93,7 @@ fun CreateResourceSheet(context: CreationContext, saving: Boolean, error: Int?, 
                 placeholder = if (existing != null) selectedAgent?.title ?: stringResource(R.string.creation_name_placeholder) else null)
             if (existing == null && useSSH) Box {
                 OutlinedButton(onClick = { sourceMenu = true }, enabled = !saving, modifier = Modifier.fillMaxWidth(), shape = UniTheme.shapes.button) {
-                    Icon(Icons.Rounded.Language, null, Modifier.size(16.dp), tint = UniTheme.colors.accentSoft); Spacer(Modifier.width(8.dp))
+                    Icon(Icons.Rounded.Language, null, Modifier.size(16.dp), tint = UniTheme.colors.accent); Spacer(Modifier.width(8.dp))
                     Text(context.sshSources.firstOrNull { it.id == sourceID }?.name ?: stringResource(R.string.select_ssh_source))
                 }
                 DropdownMenu(expanded = sourceMenu, onDismissRequest = { sourceMenu = false }, containerColor = UniTheme.colors.surfaceRaised) {
@@ -106,7 +106,7 @@ fun CreateResourceSheet(context: CreationContext, saving: Boolean, error: Int?, 
             if (existing != null || !useSSH) SheetField(directory, { directory = it },
                 stringResource(if (existing == null) R.string.working_directory else R.string.optional_directory),
                 hint = stringResource(R.string.directory_hint), enabled = !saving, monospace = true, placeholder = "/")
-            if (useSSH) Text(stringResource(R.string.ssh_inherit_note), style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.accentSoft)
+            if (useSSH) Text(stringResource(R.string.ssh_inherit_note), style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted)
             error?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             Button(
                 onClick = {
@@ -175,8 +175,8 @@ private fun targetPresentation(id: String): Pair<ImageVector, Color> = when {
     id == "terminal" -> Icons.Rounded.Terminal to UniTheme.colors.accent
     id == "claude" -> Icons.Rounded.AutoAwesome to UniTheme.colors.warning
     id == "codex" -> Icons.Rounded.Code to UniTheme.colors.success
-    id == "agy" -> Icons.Rounded.Explore to UniTheme.colors.accentSoft
+    id == "agy" -> Icons.Rounded.Explore to UniTheme.colors.accent
     id == "grok" -> Icons.Rounded.Bolt to UniTheme.colors.danger
-    id.startsWith("custom") -> Icons.Rounded.SmartToy to UniTheme.colors.accentSoft
+    id.startsWith("custom") -> Icons.Rounded.SmartToy to UniTheme.colors.accent
     else -> Icons.Rounded.Extension to UniTheme.colors.muted
 }

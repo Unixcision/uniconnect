@@ -93,6 +93,36 @@ class UniTokensTest {
     }
 
     @Test
+    fun senalAndTintaSeparateRowsWithHairlines() {
+        assertEquals(CardStyle.HAIRLINE, UniTokens.tokensFor(DesignTheme.SENAL, dark = true).layout.rowsAs)
+        assertEquals(CardStyle.HAIRLINE, UniTokens.tokensFor(DesignTheme.TINTA, dark = true).layout.rowsAs)
+        assertEquals(CardStyle.CARD, UniTokens.tokensFor(DesignTheme.SERENO, dark = true).layout.rowsAs)
+        assertEquals(CardStyle.CARD, UniTokens.tokensFor(DesignTheme.TERMINAL, dark = true).layout.rowsAs)
+    }
+
+    @Test
+    fun boxesAreARailInSerenoAndAGridOfTheAgreedColumnsElsewhere() {
+        assertEquals(WorkspaceLayout.RAIL, UniTokens.tokensFor(DesignTheme.SERENO, dark = false).layout.workspacesAs)
+        listOf(DesignTheme.SENAL to 2, DesignTheme.TINTA to 1, DesignTheme.TERMINAL to 3).forEach { (theme, columns) ->
+            val layout = UniTokens.tokensFor(theme, dark = false).layout
+            assertEquals("$theme is a grid", WorkspaceLayout.GRID, layout.workspacesAs)
+            assertEquals("$theme columns", columns, layout.workspaceColumns)
+        }
+    }
+
+    @Test
+    fun accentSoftIsATintNotAColourOfItsOwn() {
+        themes.forEach { theme ->
+            listOf(false, true).forEach { dark ->
+                val c = UniTokens.tokensFor(theme, dark).colors
+                assertTrue("$theme accentSoft is translucent", c.accentSoft.alpha < .5f)
+                assertEquals("$theme accentSoft is the accent", c.accent.copy(alpha = c.accentSoft.alpha), c.accentSoft)
+                assertTrue("$theme outline is translucent", c.outline.alpha < .5f)
+            }
+        }
+    }
+
+    @Test
     fun layoutAndShapeDoNotDependOnTheMode() {
         themes.forEach { theme ->
             val light = UniTokens.tokensFor(theme, dark = false)

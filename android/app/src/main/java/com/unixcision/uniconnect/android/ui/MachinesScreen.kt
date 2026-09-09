@@ -29,10 +29,6 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -77,16 +73,8 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
         else -> Level.LIST
     }
 
-    // Read once here: the draw lambda below runs outside composition.
-    val colors = UniTheme.colors
-    val glow = if (colors.isDark) 1f else .45f
-    Box(Modifier.fillMaxSize().background(colors.background).drawBehind {
-        drawRect(Brush.verticalGradient(listOf(colors.surface, colors.background, colors.background)))
-        drawCircle(Brush.radialGradient(listOf(colors.accentSoft.copy(alpha = .22f * glow), Color.Transparent), center = Offset(size.width * .95f, -size.height * .05f), radius = size.width * .7f),
-            radius = size.width * .7f, center = Offset(size.width * .95f, -size.height * .05f))
-        drawCircle(Brush.radialGradient(listOf(colors.accent.copy(alpha = .12f * glow), Color.Transparent), center = Offset(0f, size.height * .35f), radius = size.width * .6f),
-            radius = size.width * .6f, center = Offset(0f, size.height * .35f))
-    }) {
+    // A flat ground in every theme: no gradient, no glow.
+    Box(Modifier.fillMaxSize().background(UniTheme.colors.background)) {
         // System bars and cutout only: the IME is padded once, by the screen that hosts the composer.
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)).widthIn(max = 840.dp).align(Alignment.TopCenter)) {
             AppHeader(
@@ -235,14 +223,13 @@ private fun AppHeader(
 @Composable
 private fun MachineList(machines: List<Machine>, connections: Map<String, MachinesViewModel.Connection>, onAdd: () -> Unit, onSelect: (String) -> Unit) {
     val spacing = UniTheme.spacing
-    val identifier = UniTheme.type.identifierFamily
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = spacing.page, end = spacing.page, top = 12.dp, bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(spacing.gap)) {
         item {
             Text(stringResource(R.string.home_title), style = MaterialTheme.typography.displaySmall)
             Text(stringResource(R.string.home_subtitle), Modifier.padding(top = 6.dp, bottom = 8.dp), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodyLarge)
         }
         if (machines.isEmpty()) item {
-            GlassCard(Modifier.fillMaxWidth().padding(top = 12.dp), accent = UniTheme.colors.accentSoft) {
+            GlassCard(Modifier.fillMaxWidth().padding(top = 12.dp), accent = UniTheme.colors.accent) {
                 Column(Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Image(painterResource(R.drawable.uniconnect_mark), null, Modifier.size(120.dp))
                     Text(stringResource(R.string.empty_title), Modifier.padding(top = 18.dp), style = MaterialTheme.typography.titleLarge)
@@ -253,30 +240,8 @@ private fun MachineList(machines: List<Machine>, connections: Map<String, Machin
                 }
             }
         }
-        items(machines, key = { it.id }) { machine ->
-            val connection = connections[machine.id]
-            val tone = themedTone(machine.name)
-            GlassCard(Modifier.fillMaxWidth(), accent = if (connection?.connected == true) UniTheme.colors.success else tone, onClick = { onSelect(machine.id) }) {
-                Row(Modifier.fillMaxWidth().padding(UniTheme.layout.cardPadding), verticalAlignment = Alignment.CenterVertically) {
-                    BoxMonogram(machine.name, size = 54.dp, selected = connection?.connected == true, tone = tone)
-                    Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
-                        Text(machine.name, style = MaterialTheme.typography.titleMedium, fontFamily = identifier, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(machine.endpoint.displayAddress, color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall, fontFamily = identifier, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            when {
-                                connection?.connected == true -> StatusPill(stringResource(R.string.connected_machine), PillTone.Live)
-                                connection?.checking == true -> StatusPill(stringResource(R.string.checking_machine), PillTone.Busy)
-                                else -> StatusPill(stringResource(R.string.saved_machine), PillTone.Idle)
-                            }
-                            connection?.snapshot?.let { snapshot ->
-                                Text(pluralStringResource(R.plurals.window_count, snapshot.workspaces.sumOf { it.windows.size }, snapshot.workspaces.sumOf { it.windows.size }),
-                                    style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.muted)
-                            }
-                        }
-                    }
-                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = UniTheme.colors.muted)
-                }
-            }
+        if (machines.isNotEmpty()) item {
+            Column(verticalArrangement = Arrangement.spacedBy(UniTheme.layout.rowGap(spacing))) { machines.forEach { machine -> key(machine.id) { MachineRow(machine, connections[machine.id]) { onSelect(machine.id) } } } }
         }
         item {
             Row(Modifier.padding(top = 12.dp, start = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -285,9 +250,37 @@ private fun MachineList(machines: List<Machine>, connections: Map<String, Machin
                 }
                 Column {
                     Text(stringResource(R.string.security_note), style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted)
-                    Text(stringResource(R.string.hierarchy_hint), style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.accentSoft)
+                    Text(stringResource(R.string.hierarchy_hint), style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.accent)
                 }
             }
+        }
+    }
+}
+
+/** One saved machine: a card or a row between rules, as the theme draws its lists. */
+@Composable
+private fun MachineRow(machine: Machine, connection: MachinesViewModel.Connection?, onSelect: () -> Unit) {
+    val identifier = UniTheme.type.identifierFamily
+    val tone = themedTone(machine.name)
+    GlassCard(Modifier.fillMaxWidth(), accent = if (connection?.connected == true) UniTheme.colors.success else tone, onClick = onSelect, style = UniTheme.layout.rowsAs) {
+        Row(Modifier.fillMaxWidth().padding(UniTheme.layout.cardPadding), verticalAlignment = Alignment.CenterVertically) {
+            BoxMonogram(machine.name, size = 54.dp, selected = connection?.connected == true, tone = tone)
+            Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
+                Text(machine.name, style = MaterialTheme.typography.titleMedium, fontFamily = identifier, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(machine.endpoint.displayAddress, color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall, fontFamily = identifier, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    when {
+                        connection?.connected == true -> StatusPill(stringResource(R.string.connected_machine), PillTone.Live)
+                        connection?.checking == true -> StatusPill(stringResource(R.string.checking_machine), PillTone.Busy)
+                        else -> StatusPill(stringResource(R.string.saved_machine), PillTone.Idle)
+                    }
+                    connection?.snapshot?.let { snapshot ->
+                        Text(pluralStringResource(R.plurals.window_count, snapshot.workspaces.sumOf { it.windows.size }, snapshot.workspaces.sumOf { it.windows.size }),
+                            style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.muted)
+                    }
+                }
+            }
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = UniTheme.colors.muted)
         }
     }
 }

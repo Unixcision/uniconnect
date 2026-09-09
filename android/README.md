@@ -20,11 +20,15 @@ dirección Tailscale y puerto (58465 inicialmente).
   de cada una de las ocho combinaciones; `UniTheme` las publica por `CompositionLocal`
   y deriva de ellas el `colorScheme`, las `Shapes` y la `Typography` de Material para que
   hojas, interruptores y botones hereden el tema. Ninguna pantalla lleva colores fijos:
-  todo se lee de `UniTheme.colors` (acento, acento suave, éxito, aviso, peligro, texto,
-  atenuado, contorno, cristal y ocho tonos de monograma). Tinta pinta hairlines en lugar
-  de tarjetas y titulares con serif; Terminal muestra nombres de máquina, caja y ventana
-  en monoespaciada y las cajas en rejilla; Señal es compacto con etiquetas en versalitas.
-  El cambio se aplica al instante, sin reiniciar. Las barras del sistema siguen al modo.
+  todo se lee de `UniTheme.colors` (acento, acento como tinte de contenedor, éxito, aviso,
+  peligro, texto, atenuado, contorno translúcido y ocho tonos de monograma). Las paletas
+  son las de las maquetas de diseño; los fondos son planos y las tarjetas un relleno con
+  contorno de 1 px, sin degradados. Sereno: riel de fichas redondeadas y filas holgadas.
+  Señal: filas compactas entre hairlines, cajas en rejilla de 2 columnas, etiquetas en
+  versalitas con tracking. Tinta: titulares con serif, márgenes anchos, todo entre reglas
+  y las cajas como lista índice. Terminal: identificadores en monoespaciada y cajas en
+  rejilla densa de 3 columnas con contorno. El cambio se aplica al instante, sin reiniciar.
+  Las barras del sistema siguen al modo.
 - Creación en dos pasos: «Nuevo espacio de trabajo» envía `initial_terminal:false`; si el
   host confirma una caja vacía se abre al instante la hoja «Primera ventana de …» con el
   catálogo de inicio de esa caja. «Ahora no» deja la caja sin ventanas; nunca se lanza una

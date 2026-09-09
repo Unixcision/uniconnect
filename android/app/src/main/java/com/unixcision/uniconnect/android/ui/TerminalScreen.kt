@@ -193,7 +193,7 @@ private fun RealTerminalScreen(
         Box(
             Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp).clip(frameShape)
                 .background(Color(parseColor(real.snapshot?.background, 0xFF070D20.toInt())))
-                .border(1.dp, Brush.verticalGradient(listOf(UniTheme.colors.glassTop, UniTheme.colors.glassBottom)), frameShape),
+                .border(1.dp, UniTheme.colors.outlineFade, frameShape),
         ) {
             val snapshot = real.snapshot
             if (snapshot == null) {
@@ -397,7 +397,7 @@ private fun MirrorTerminalScreen(
             Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
                 .clip(frameShape)
                 .background(Color(parseColor(snapshot?.background, 0xFF070D20.toInt())))
-                .border(1.dp, Brush.verticalGradient(listOf(UniTheme.colors.glassTop, UniTheme.colors.glassBottom)), frameShape),
+                .border(1.dp, UniTheme.colors.outlineFade, frameShape),
         ) {
             if (snapshot == null) {
                 Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {

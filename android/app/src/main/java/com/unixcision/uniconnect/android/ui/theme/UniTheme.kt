@@ -64,12 +64,11 @@ fun UniTheme(theme: DesignTheme, mode: ColorMode, content: @Composable () -> Uni
 private fun UniTokens.materialColorScheme(): ColorScheme {
     val c = colors
     val onErrorContainer = if (c.isDark) lerp(c.danger, Color.White, .45f) else c.danger
-    val onAccentSoft = if (c.isDark) c.background else Color.White
     return if (c.isDark) darkColorScheme(
         primary = c.accent, onPrimary = c.onAccent,
-        primaryContainer = c.accent.copy(alpha = .18f), onPrimaryContainer = c.accent,
-        secondary = c.accentSoft, onSecondary = onAccentSoft,
-        secondaryContainer = c.accentSoft.copy(alpha = .2f), onSecondaryContainer = c.text,
+        primaryContainer = c.accentSoft, onPrimaryContainer = c.accent,
+        secondary = c.accent, onSecondary = c.onAccent,
+        secondaryContainer = c.accentSoft, onSecondaryContainer = c.text,
         tertiary = c.success, onTertiary = c.onAccent,
         background = c.background, onBackground = c.text,
         surface = c.surface, onSurface = c.text,
@@ -77,14 +76,14 @@ private fun UniTokens.materialColorScheme(): ColorScheme {
         surfaceContainer = c.surface, surfaceContainerHigh = c.surfaceRaised,
         surfaceContainerHighest = c.surfaceRaised, surfaceContainerLow = c.background,
         surfaceContainerLowest = c.background,
-        outline = c.outline, outlineVariant = c.outline.copy(alpha = .6f),
+        outline = c.outline, outlineVariant = c.outline,
         error = c.danger, onError = c.onAccent,
         errorContainer = c.danger.copy(alpha = .18f), onErrorContainer = onErrorContainer,
     ) else lightColorScheme(
         primary = c.accent, onPrimary = c.onAccent,
-        primaryContainer = c.accent.copy(alpha = .14f), onPrimaryContainer = c.accent,
-        secondary = c.accentSoft, onSecondary = onAccentSoft,
-        secondaryContainer = c.accentSoft.copy(alpha = .16f), onSecondaryContainer = c.text,
+        primaryContainer = c.accentSoft, onPrimaryContainer = c.accent,
+        secondary = c.accent, onSecondary = c.onAccent,
+        secondaryContainer = c.accentSoft, onSecondaryContainer = c.text,
         tertiary = c.success, onTertiary = c.onAccent,
         background = c.background, onBackground = c.text,
         surface = c.surface, onSurface = c.text,
@@ -92,7 +91,7 @@ private fun UniTokens.materialColorScheme(): ColorScheme {
         surfaceContainer = c.surface, surfaceContainerHigh = c.surfaceRaised,
         surfaceContainerHighest = c.surfaceRaised, surfaceContainerLow = c.background,
         surfaceContainerLowest = c.surface,
-        outline = c.outline, outlineVariant = c.outline.copy(alpha = .6f),
+        outline = c.outline, outlineVariant = c.outline,
         error = c.danger, onError = c.onAccent,
         errorContainer = c.danger.copy(alpha = .12f), onErrorContainer = onErrorContainer,
     )
@@ -117,6 +116,7 @@ private fun UniTokens.materialTypography(): Typography {
         titleLarge = base.titleLarge.copy(fontFamily = headline, fontWeight = FontWeight.Bold),
         titleMedium = base.titleMedium.copy(fontFamily = headline, fontWeight = FontWeight.SemiBold),
         titleSmall = base.titleSmall.copy(fontFamily = headline, fontWeight = FontWeight.SemiBold),
-        labelSmall = base.labelSmall.copy(letterSpacing = if (type.labelUppercase) 0.8.sp else 0.3.sp),
+        // Metadata and eyebrows: tracked as the theme asks, and a touch smaller where it tracks wide.
+        labelSmall = base.labelSmall.copy(letterSpacing = type.labelLetterSpacing, fontSize = if (type.labelUppercase) 10.5.sp else base.labelSmall.fontSize),
     )
 }

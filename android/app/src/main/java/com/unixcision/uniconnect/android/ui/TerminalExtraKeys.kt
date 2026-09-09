@@ -102,12 +102,12 @@ private fun KeyCap(label: String, description: String, enabled: Boolean, modifie
 private fun ToggleCap(label: String, active: Boolean, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val shape = UniTheme.shapes.chip
     Box(
-        modifier.height(42.dp).background(if (active) UniTheme.colors.accentSoft.copy(alpha = .25f) else UniTheme.colors.surfaceRaised.copy(alpha = .75f), shape)
-            .border(1.dp, if (active) UniTheme.colors.accentSoft.copy(alpha = .6f) else UniTheme.colors.outline, shape)
+        modifier.height(42.dp).background(if (active) UniTheme.colors.accentSoft else UniTheme.colors.surfaceRaised.copy(alpha = .75f), shape)
+            .border(1.dp, if (active) UniTheme.colors.accent.copy(alpha = .6f) else UniTheme.colors.outline, shape)
             .combinedClickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = if (active) UniTheme.colors.accentSoft else UniTheme.colors.muted, fontWeight = FontWeight.SemiBold)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = if (active) UniTheme.colors.accent else UniTheme.colors.muted, fontWeight = FontWeight.SemiBold)
     }
 }
 

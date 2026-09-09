@@ -15,7 +15,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -64,7 +63,7 @@ fun TerminalComposer(
             }
             Row(
                 Modifier.weight(1f).background(UniTheme.colors.surface, UniTheme.shapes.card)
-                    .border(1.dp, Brush.linearGradient(listOf(UniTheme.colors.glassTop, UniTheme.colors.glassBottom)), UniTheme.shapes.card)
+                    .border(1.dp, UniTheme.colors.outlineFade, UniTheme.shapes.card)
                     .padding(horizontal = 16.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

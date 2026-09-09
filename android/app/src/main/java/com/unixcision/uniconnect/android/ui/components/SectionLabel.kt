@@ -13,7 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 
-/** Eyebrow label, in small capitals where the theme asks for them, with optional trailing content. */
+/** Eyebrow label, in tracked small capitals where the theme asks for them, with optional trailing content. */
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier, trailing: @Composable RowScope.() -> Unit = {}) {
     val spacing = UniTheme.spacing
@@ -21,7 +21,7 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier, trailing: @Composa
         Text(
             if (UniTheme.type.labelUppercase) text.uppercase() else text,
             style = if (UniTheme.type.labelUppercase) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
-            color = UniTheme.colors.accentSoft, fontWeight = FontWeight.Bold,
+            color = UniTheme.colors.accent, fontWeight = FontWeight.Bold,
         )
         Spacer(Modifier.weight(1f))
         trailing()
