@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.AttachPaste
+import com.unixcision.uniconnect.android.domain.AttachRoute
 import com.unixcision.uniconnect.android.domain.MachineFailure
 import com.unixcision.uniconnect.android.domain.UploadFailure
 import com.unixcision.uniconnect.android.domain.UploadService
@@ -77,10 +78,10 @@ fun AttachButton(model: AttachViewModel, target: AttachTarget, draft: String, on
 @Composable
 private fun AttachSheet(model: AttachViewModel, target: AttachTarget, transfers: List<AttachViewModel.Transfer>, service: UploadService, onDismiss: () -> Unit) {
     var localError by remember { mutableStateOf<Int?>(null) }
-    // The external route is only reachable through its own button, so the pickers know the route by construction.
+    // The external route is only reachable through its own button; the pickers only show once a route exists.
     var external by rememberSaveable { mutableStateOf(false) }
-    val route = if (target.supportsFilePut) AttachViewModel.Route.HOST else AttachViewModel.Route.EXTERNAL
-    val pickers = rememberAttachmentPickers(onPicked = { model.attach(target, it, route) }, onUnavailable = { localError = it })
+    val route = AttachRoute.decide(takesFiles = target.supportsFilePut, chosenExternal = external)
+    val pickers = rememberAttachmentPickers(onPicked = { uris -> route?.let { model.attach(target, uris, it) } }, onUnavailable = { localError = it })
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),

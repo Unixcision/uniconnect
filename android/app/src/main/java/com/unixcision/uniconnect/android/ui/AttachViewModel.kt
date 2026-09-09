@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unixcision.uniconnect.android.data.ContentReader
 import com.unixcision.uniconnect.android.domain.AttachPaste
+import com.unixcision.uniconnect.android.domain.AttachRoute
 import com.unixcision.uniconnect.android.domain.FilePutClient
 import com.unixcision.uniconnect.android.domain.FilePutTransfer
 import com.unixcision.uniconnect.android.domain.FileSender
@@ -35,15 +36,12 @@ class AttachViewModel(
 ) : ViewModel() {
     enum class Status { PENDING, SENDING, DONE, FAILED }
 
-    /** Where a file goes: the window's host over the private connection, or an external service. */
-    enum class Route { HOST, EXTERNAL }
-
     /** One picked file on its way to a path or a link for one window. */
     data class Transfer(
         val id: String,
         val uri: Uri,
         val target: AttachTarget,
-        val route: Route,
+        val route: AttachRoute,
         val name: String,
         val size: Long,
         val sent: Long = 0,
@@ -58,7 +56,7 @@ class AttachViewModel(
         /** The screen has dealt with the result: pasted it, or told the reader it was kept. */
         val handled: Boolean = false,
     ) {
-        val isLink: Boolean get() = route == Route.EXTERNAL
+        val isLink: Boolean get() = route == AttachRoute.EXTERNAL
         val fraction: Float get() = if (size <= 0) 1f else (sent.toFloat() / size).coerceIn(0f, 1f)
     }
 
@@ -77,7 +75,7 @@ class AttachViewModel(
     }
 
     /** Queues [uris] for [target] by [route] and starts sending if nothing is on its way. */
-    fun attach(target: AttachTarget, uris: List<Uri>, route: Route) {
+    fun attach(target: AttachTarget, uris: List<Uri>, route: AttachRoute) {
         if (uris.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
             val described = uris.map { uri ->
@@ -132,14 +130,14 @@ class AttachViewModel(
         }
         try {
             when (transfer.route) {
-                Route.HOST -> {
+                AttachRoute.HOST -> {
                     val outcome = filePut.withSession(transfer.target.machine) { session ->
                         FilePutTransfer.run(session, transfer.target.workspaceID, transfer.target.windowID, transfer.name, transfer.size, reader.mimeType(transfer.uri), { reader.open(transfer.uri) }, progress)
                     }
                     val pasteable = AttachPaste.shouldPaste(outcome.location, transfer.target.isSSH)
                     update(transfer.id) { it.copy(status = Status.DONE, sent = transfer.size, reference = outcome.pastePath, pasteable = pasteable, remoteError = outcome.remoteError) }
                 }
-                Route.EXTERNAL -> {
+                AttachRoute.EXTERNAL -> {
                     val link = sender.send(state.value.service, transfer.name, transfer.size, { reader.open(transfer.uri) }, progress)
                     update(transfer.id) { it.copy(status = Status.DONE, sent = transfer.size, reference = link, pasteable = true) }
                 }
