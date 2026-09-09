@@ -162,6 +162,29 @@ tardar). Los adjuntos van en secuencia y se quedan en la hoja con su motivo si f
 Probado en la JVM (troceado, sha256, índices, abort, pegado y cliente RPC contra una sesión
 falsa); no probado contra un host real ni en el Pixel.
 
+## Dictado por voz
+
+En la cajita de la terminal, con el borrador vacío, el botón flotante de enviar es un micrófono
+(«Dictar»); en cuanto hay texto vuelve a ser enviar, con transición. Al tocarlo se pide
+`RECORD_AUDIO` en contexto (denegado: aviso breve; denegado para siempre: botón «Abrir
+ajustes»). Grabando, el campo se sustituye por una barra con medidor de nivel (a partir de
+`onRmsChanged`), el texto parcial en vivo, Cancelar (descarta) y Listo (para y usa lo dicho);
+el botón flotante pasa a «Parar». Lo reconocido se AÑADE al borrador tras un espacio, nunca lo
+pisa, y no se envía solo: en Ajustes → «Voz» está «Enviar al terminar de dictar» (apagado por
+defecto; encendido manda con Intro como el botón) e «Idioma del dictado» («El del móvil»,
+es-ES o en-US).
+
+Motor: `android.speech.SpeechRecognizer` nativo sin dependencias, en `data/AndroidDictation`
+(hilo principal). Prefiere el reconocedor local (`createOnDeviceSpeechRecognizer`,
+`EXTRA_PREFER_OFFLINE`) cuando `isOnDeviceRecognitionAvailable` lo permite (Android 12+) y cae
+al de red si el idioma no está disponible localmente; si no hay reconocimiento en el móvil el
+micrófono no aparece. `domain/Dictation` es la interfaz (estado `Idle`, `Listening(parcial,
+nivel)`, `Done(texto)`, `Failed(motivo)`), `domain/DictationMachine` la máquina de estados pura,
+`DictationDraft.append` la regla de añadir y `ComposerAction.decide` la de micrófono/enviar; el
+composable no sabe nada del reconocedor. Manifiesto: `RECORD_AUDIO` y `<queries>` del
+`RecognitionService`. Probado solo en la JVM (máquina de estados, añadir al borrador, decisión
+del botón, persistencia de los ajustes); el reconocimiento real no se ha ejercitado en el Pixel.
+
 ## Arquitectura
 
 El usuario asume el diseño y frontend Android desde el 5 de septiembre de 2026.

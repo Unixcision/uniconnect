@@ -6,6 +6,7 @@ import androidx.datastore.preferences.preferencesDataStoreFile
 import com.unixcision.uniconnect.android.data.NativeMachineClient
 import com.unixcision.uniconnect.android.data.FramedRpcClient
 import com.unixcision.uniconnect.android.data.StoredMachineRepository
+import com.unixcision.uniconnect.android.data.AndroidDictation
 import com.unixcision.uniconnect.android.data.AndroidNotificationConnections
 import com.unixcision.uniconnect.android.data.ContentReader
 import com.unixcision.uniconnect.android.data.HttpFileSender
@@ -17,6 +18,7 @@ import com.unixcision.uniconnect.android.data.StoredDraftRepository
 import com.unixcision.uniconnect.android.data.StoredBoxOverridesRepository
 import com.unixcision.uniconnect.android.data.StoredSettingsRepository
 import com.unixcision.uniconnect.android.data.StoredUploadHistoryRepository
+import com.unixcision.uniconnect.android.domain.Dictation
 import com.unixcision.uniconnect.android.domain.FilePutClient
 import com.unixcision.uniconnect.android.domain.FileSender
 import com.unixcision.uniconnect.android.domain.NotificationClient
@@ -52,4 +54,5 @@ class AppContainer(context: Context) {
     val uploadHistory: UploadHistoryRepository = StoredUploadHistoryRepository(store)
     val contentReader = ContentReader(context.contentResolver)
     val filePutClient: FilePutClient = NativeFilePutClient(rpc)
+    val dictation: Dictation = AndroidDictation(context)
 }

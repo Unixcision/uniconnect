@@ -107,6 +107,7 @@ fun TerminalScreen(
     activity: ActivityState = ActivityState.UNKNOWN,
     attachments: AttachViewModel? = null,
     attachTarget: AttachTarget? = null,
+    dictation: DictationViewModel? = null,
 ) {
     var realRequested by rememberSaveable { mutableStateOf(false) }
     // Default way in: attach to the window's own tmux session. Only a host without the attach RPC,
@@ -120,7 +121,7 @@ fun TerminalScreen(
             onPty = onPty, onPtyWheel = onPtyWheel, onPtyResize = onPtyResize,
             onLeaveCopyMode = onLeaveCopyMode, onView = onView, onZoom = onZoom, onReconnect = onReconnectReal,
             draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity,
-            attachments = attachments, attachTarget = attachTarget,
+            attachments = attachments, attachTarget = attachTarget, dictation = dictation, settings = settings,
         )
         return
     }
@@ -134,7 +135,7 @@ fun TerminalScreen(
         attachFallbackDetail = attachFallbackDetail,
         onRequestReal = { columns, rows -> realRequested = true; manuallyLeft = false; onStartReal(columns, rows, false) },
         draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity,
-        attachments = attachments, attachTarget = attachTarget)
+        attachments = attachments, attachTarget = attachTarget, dictation = dictation, settings = settings)
 }
 
 /** The attached tmux client: the phone owns a real PTY of its own size; tmux keeps the desktop's. */
@@ -146,7 +147,7 @@ private fun RealTerminalScreen(
     onStopReal: () -> Unit, onPty: (String, Boolean) -> Unit, onPtyWheel: (Boolean, Int) -> Unit, onPtyResize: (Int, Int) -> Unit,
     onLeaveCopyMode: () -> Unit, onView: (TerminalView) -> Unit, onZoom: (Float) -> Unit, onReconnect: () -> Unit,
     draft: String, onDraftChange: (String) -> Unit, windowPinned: Boolean, onTogglePin: () -> Unit, activity: ActivityState,
-    attachments: AttachViewModel?, attachTarget: AttachTarget?,
+    attachments: AttachViewModel?, attachTarget: AttachTarget?, dictation: DictationViewModel?, settings: AppSettings,
 ) {
     var keysVisible by rememberSaveable { mutableStateOf(startWithKeys) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
@@ -331,6 +332,7 @@ private fun RealTerminalScreen(
             onToggleKeys = { keysVisible = !keysVisible },
             onSend = { text, withEnter, onDelivered -> onPty(text, withEnter); onDelivered(true); consumeModifiers() },
             draft = draft, onDraftChange = onDraftChange,
+            dictation = dictation, dictationLanguage = settings.dictationLanguage, sendOnDictationEnd = settings.sendOnDictationEnd,
         )
     }
 }
@@ -342,7 +344,7 @@ private fun MirrorTerminalScreen(
     onRefresh: () -> Unit, onReconnect: () -> Unit, onScroll: (Int) -> Unit, onSend: (String, Boolean, (Boolean) -> Unit) -> Unit,
     attachFallbackDetail: String?, onRequestReal: (Int, Int) -> Unit, draft: String, onDraftChange: (String) -> Unit,
     windowPinned: Boolean, onTogglePin: () -> Unit, activity: ActivityState,
-    attachments: AttachViewModel?, attachTarget: AttachTarget?,
+    attachments: AttachViewModel?, attachTarget: AttachTarget?, dictation: DictationViewModel?, settings: AppSettings,
 ) {
     var viewMode by rememberSaveable { mutableStateOf(TerminalView.FIT) }
     var keysVisible by rememberSaveable { mutableStateOf(false) }
@@ -475,6 +477,7 @@ private fun MirrorTerminalScreen(
             onToggleKeys = { keysVisible = !keysVisible },
             onSend = { text, withEnter, onDelivered -> onSend(text, withEnter, onDelivered); consumeModifiers() },
             draft = draft, onDraftChange = onDraftChange,
+            dictation = dictation, dictationLanguage = settings.dictationLanguage, sendOnDictationEnd = settings.sendOnDictationEnd,
         )
     }
 }

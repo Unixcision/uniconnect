@@ -5,6 +5,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <!-- Dictation into the composer; asked for in context the first time the microphone is tapped. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Android 11+ hides other packages: the system speech recogniser must be declared to be seen. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
     <application
         android:name=".UniConnectApplication"
         android:allowBackup="false"

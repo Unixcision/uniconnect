@@ -292,4 +292,25 @@
     <string name="key_ctrl_z_desc">Control Z: suspender</string>
     <string name="key_ctrl_l_desc">Control L: limpiar pantalla</string>
     <string name="real_terminal_reconnect">Reconectar</string>
+    <string name="dictation_start">Dictar</string>
+    <string name="dictation_stop">Parar</string>
+    <string name="dictation_cancel">Cancelar</string>
+    <string name="dictation_done">Listo</string>
+    <string name="dictation_listening">Habla; lo dicho se escribe en la cajita</string>
+    <string name="dictation_note">Dictando. Listo lo pasa a la cajita; Cancelar lo descarta.</string>
+    <string name="dictation_permission_denied">Sin permiso de micrófono no se puede dictar</string>
+    <string name="dictation_permission_settings">Abrir ajustes</string>
+    <string name="dictation_failed_permission">Sin permiso de micrófono</string>
+    <string name="dictation_failed_network">Sin conexión para reconocer la voz</string>
+    <string name="dictation_failed_not_understood">No se ha entendido; prueba otra vez</string>
+    <string name="dictation_failed_engine">No hay motor de reconocimiento de voz disponible</string>
+    <string name="dictation_failed_busy">El reconocedor de voz está ocupado; espera un momento</string>
+    <string name="dictation_failed_other">No se ha podido dictar</string>
+    <string name="settings_voice">Voz</string>
+    <string name="settings_send_on_dictation">Enviar al terminar de dictar</string>
+    <string name="settings_send_on_dictation_note">Manda lo dictado con Intro nada más terminar. Apagado, queda en la cajita para revisarlo.</string>
+    <string name="settings_dictation_language">Idioma del dictado</string>
+    <string name="dictation_language_device">El del móvil</string>
+    <string name="dictation_language_es">es-ES</string>
+    <string name="dictation_language_en">en-US</string>
 </resources>

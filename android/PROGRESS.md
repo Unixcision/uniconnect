@@ -25,6 +25,10 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
   sistema para el resto. Protocolos según lo medido el 9 de septiembre. Tests JVM incluido
   `HttpFileSender` contra un `HttpServer` local; no probado contra los servicios reales ni
   instalado en el Pixel.
+- Dictado por voz (2026-09-09): micrófono en el botón flotante con el borrador vacío,
+  SpeechRecognizer nativo (local preferido, red de respaldo), permiso en contexto, barra de
+  dictado con nivel y texto parcial, añadido al borrador con espacio, ajustes «Voz» (enviar al
+  terminar, idioma). Máquina de estados pura y reglas testeadas en JVM; sin probar en el Pixel.
 - Adjuntar desde la terminal (2026-09-09, contrato `file_put.v1`): clip en la barra de la
   ventana abierta, hoja rápida con foto/imágenes/archivos, transferencia por trozos base64
   ≤ 1 MiB con SHA-256 por la sesión RPC, ruta (remota si el host la da) pegada al instante

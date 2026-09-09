@@ -31,6 +31,7 @@ import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.AppSettings
 import com.unixcision.uniconnect.android.domain.ColorMode
 import com.unixcision.uniconnect.android.domain.DesignTheme
+import com.unixcision.uniconnect.android.domain.DictationLanguage
 import com.unixcision.uniconnect.android.domain.TerminalView
 import com.unixcision.uniconnect.android.domain.UploadService
 import com.unixcision.uniconnect.android.domain.UploadStyle
@@ -112,6 +113,26 @@ fun SettingsSheet(settings: AppSettings, onChange: (AppSettings) -> Unit, onDism
                     checked = settings.showExtraKeys,
                     onChange = { onChange(settings.copy(showExtraKeys = it)) },
                 )
+            }
+
+            SettingsSection(stringResource(R.string.settings_voice)) {
+                SettingsSwitch(
+                    title = stringResource(R.string.settings_send_on_dictation),
+                    note = stringResource(R.string.settings_send_on_dictation_note),
+                    checked = settings.sendOnDictationEnd,
+                    onChange = { onChange(settings.copy(sendOnDictationEnd = it)) },
+                )
+                Text(stringResource(R.string.settings_dictation_language), Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodyMedium)
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                    DictationLanguage.entries.forEachIndexed { index, language ->
+                        SegmentedButton(
+                            selected = settings.dictationLanguage == language,
+                            onClick = { onChange(settings.copy(dictationLanguage = language)) },
+                            shape = SegmentedButtonDefaults.itemShape(index, DictationLanguage.entries.size),
+                            colors = segmentColors(),
+                        ) { Text(stringResource(language.label), style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    }
+                }
             }
 
             SettingsSection(stringResource(R.string.settings_terminal_upload)) {
@@ -212,6 +233,14 @@ private fun TerminalUploadPicker(settings: AppSettings, onChange: (AppSettings) 
         ) { Text(stringResource(R.string.upload_save_service), fontWeight = FontWeight.SemiBold) }
     }
 }
+
+/** The visible name of a dictation language. */
+private val DictationLanguage.label: Int
+    get() = when (this) {
+        DictationLanguage.DEVICE -> R.string.dictation_language_device
+        DictationLanguage.ES_ES -> R.string.dictation_language_es
+        DictationLanguage.EN_US -> R.string.dictation_language_en
+    }
 
 /** The visible name of an upload style. */
 private val UploadStyle.label: Int
