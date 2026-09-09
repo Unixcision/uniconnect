@@ -142,6 +142,7 @@ class MobileDesktop:
     def close(self):
         self.close_dialog()
         self.rpc.close_attachments()
+        self.rpc.file_put.close()  # Cancela el barrido de caducidad y borra los .part vivos.
         if self.terminal_source:
             GLib.source_remove(self.terminal_source)
             self.terminal_source = None

@@ -32,6 +32,8 @@ MAX_SIZE = 200 * 1024 * 1024
 MAX_NAME_CHARS = 120
 MAX_NAME_BYTES = 200
 EXPIRY_SECONDS = 600
+SWEEP_SECONDS = 60
+REMOTE_BUDGET_SECONDS = 100
 MAX_SUFFIX = 1000
 
 _EXTENSION = re.compile(r"\.([A-Za-z0-9]{1,15})$")
@@ -97,25 +99,64 @@ class _Transfer:
 class FilePutStore:
     """Transferencias en curso: reserva de nombres, trozos, caducidad y verificación.
 
-    No depende de GTK; `root`, `clock` y `today` se inyectan para poder probarla en
-    un directorio temporal. Cada transferencia pertenece a un `owner` (la sesión
-    móvil que la empezó) y guarda la `box` (identidad de la caja) que el que enruta
-    comprueba antes de cada operación.
+    No depende de GTK; `root`, `clock`, `today` y el temporizador se inyectan para
+    poder probarla en un directorio temporal. Cada transferencia pertenece a un
+    `owner` (el dispositivo móvil que la empezó) y guarda la `box` (identidad de la
+    caja) que el que enruta comprueba antes de cada operación. Mientras haya
+    transferencias vivas, un barrido cada `sweep_interval` segundos (hilo propio,
+    nunca GTK) borra los .part caducados aunque el móvil ya no envíe nada; `close()`
+    cancela el barrido y borra los .part vivos.
     """
 
     def __init__(self, root: str | Path, *, clock: Callable[[], float] = time.monotonic,
                  today: Callable[[], datetime.date] = datetime.date.today,
                  chunk_bytes: int = CHUNK_BYTES, max_size: int = MAX_SIZE, expiry: float = EXPIRY_SECONDS,
+                 sweep_interval: float = SWEEP_SECONDS, timer: Callable | None = None,
                  max_transfers: int = 16, max_per_owner: int = 4, disk_usage=shutil.disk_usage):
         self.root = Path(root)
         self.clock, self.today = clock, today
         self.chunk_bytes, self.max_size, self.expiry = chunk_bytes, max_size, expiry
+        self.sweep_interval = sweep_interval
+        self.timer_factory = timer if timer is not None else self.daemon_timer
         self.max_transfers, self.max_per_owner = max_transfers, max_per_owner
         self.disk_usage = disk_usage
         # Un solo cerrojo reentrante: las escrituras de un trozo son cortas (≤ 1 MiB a
         # caché de páginas) y la copia larga al servidor ocurre fuera de él.
         self.lock = threading.RLock()
         self.transfers: dict[str, _Transfer] = {}
+        self.timer = None
+        self.closed = False
+
+    @staticmethod
+    def daemon_timer(interval: float, callback: Callable[[], None]):
+        """Temporizador real: hilo daemon con `cancel()`, para no retener el cierre del proceso."""
+        timer = threading.Timer(interval, callback)
+        timer.daemon = True
+        timer.start()
+        return timer
+
+    def _schedule_locked(self) -> None:
+        if self.closed or self.timer is not None or not self.transfers:
+            return
+        self.timer = self.timer_factory(self.sweep_interval, self._sweep)
+
+    def _sweep(self) -> None:
+        with self.lock:
+            self.timer = None
+            if self.closed:
+                return
+            self._expire_locked()
+            self._schedule_locked()
+
+    def close(self) -> None:
+        """Cierre definitivo: cancela el barrido y borra los .part de las transferencias vivas."""
+        with self.lock:
+            self.closed = True
+            timer, self.timer = self.timer, None
+            for transfer in list(self.transfers.values()):
+                self._discard(transfer)
+        if timer is not None:
+            timer.cancel()
 
     # ----- ciclo de vida -----
 
@@ -130,6 +171,8 @@ class FilePutStore:
         clean = sanitize_name(name)
         directory = self.root / self.today().strftime("%Y%m%d")
         with self.lock:
+            if self.closed:
+                raise RPCError("busy", "El acceso móvil se está cerrando")
             self._expire_locked()
             if len(self.transfers) >= self.max_transfers or \
                     sum(item.owner == owner for item in self.transfers.values()) >= self.max_per_owner:
@@ -146,6 +189,7 @@ class FilePutStore:
                                  directory=directory, part_path=directory / (final_name + ".part"),
                                  size=size, descriptor=descriptor, last_activity=self.clock())
             self.transfers[transfer.identifier] = transfer
+            self._schedule_locked()
         return {"transfer_id": transfer.identifier, "chunk_bytes": self.chunk_bytes}
 
     def _reserve_locked(self, directory: Path, name: str) -> tuple[str, int]:
@@ -310,21 +354,31 @@ class RemoteInbox:
 
     Usa la misma conexión validada que la caja (sin credenciales en argv) y el
     cliente SFTP existente: nombre temporal oculto y renombrado sin sobrescribir.
+    Preparar la carpeta, transferir y cerrar comparten un único presupuesto
+    monotónico (`budget`, 100 s): el móvil abandona el commit a los 120 s y el
+    host debe responder antes, con `location: "host"` si el plazo se agotó.
     """
 
     DIRECTORY = "uniconnect-entrada"
+    CLOSE_MARGIN = 8.0  # Limpieza del temporal (3 s) y cierre del proceso sftp (≤ 4 s).
 
-    def __init__(self, *, transport_factory=Transport, transfer_factory=SFTPTransfer, timeout: float = 110):
-        self.transport_factory, self.transfer_factory, self.timeout = transport_factory, transfer_factory, timeout
+    def __init__(self, *, transport_factory=Transport, transfer_factory=SFTPTransfer,
+                 budget: float = REMOTE_BUDGET_SECONDS, clock: Callable[[], float] = time.monotonic):
+        self.transport_factory, self.transfer_factory = transport_factory, transfer_factory
+        self.budget, self.clock = budget, clock
 
     def copy(self, command: SSHCommand, local_path: Path, name: str) -> str:
+        deadline = self.clock() + self.budget
         script = ('umask 077; mkdir -p -- "$HOME/uniconnect-entrada" || exit 74; '
                   'printf \'UC_DIR\\t%s\\n\' "$HOME/uniconnect-entrada"')
-        output = self.transport_factory(command).run(script, timeout=25).stdout
+        output = self.transport_factory(command).run(script, timeout=max(1.0, deadline - self.clock())).stdout
         directory = next((line.split("\t", 1)[1] for line in output.splitlines() if line.startswith("UC_DIR\t")), "")
         if not directory.startswith("/"):
             raise TransportError("remote_command_failed", "no se pudo resolver la carpeta de entrada")
-        transfer = self.transfer_factory(command, timeout=self.timeout)
+        remaining = deadline - self.clock() - self.CLOSE_MARGIN
+        if remaining <= 0:
+            raise TransportError("upload_timeout")
+        transfer = self.transfer_factory(command, timeout=remaining)
         return transfer.put(local_path, posixpath.normpath(directory), name)
 
     _MESSAGES = {

@@ -235,6 +235,55 @@ class StoreTests(unittest.TestCase):
             with self.assertRaises(RPCError):
                 self.store.lookup("movil", transfer)
 
+    def test_scheduled_sweep_deletes_the_part_without_further_traffic(self):
+        timers = []
+        def timer(interval, callback):
+            handle = types.SimpleNamespace(interval=interval, callback=callback, cancelled=False)
+            handle.cancel = lambda: setattr(handle, "cancelled", True)
+            timers.append(handle)
+            return handle
+        store = FilePutStore(self.root, clock=lambda: self.now, today=lambda: TODAY, timer=timer)
+        transfer = store.begin("movil", self.box, "abandonado.bin", 8)["transfer_id"]
+        store.begin("movil", self.box, "segundo.bin", 8)
+        self.assertEqual([t.interval for t in timers], [60])  # Un solo barrido para todas.
+        self.now += 60
+        timers[0].callback()
+        self.assertTrue((self.day / "abandonado.bin.part").exists())
+        self.assertEqual(len(timers), 2)  # Sigue habiendo transferencias: se reprograma.
+        self.now += 539
+        store.chunk("movil", transfer, 0, b"abcd")  # La actividad del mismo dispositivo la conserva.
+        self.now += 1  # "segundo.bin" cumple los 600 s sin trozos; nadie llama al store.
+        timers[1].callback()
+        self.assertEqual(sorted(p.name for p in self.day.iterdir()), ["abandonado.bin.part"])
+        self.assertEqual(len(timers), 3)
+        self.now += 600
+        timers[2].callback()  # Sin ningún RPC ni desconexión posterior.
+        self.assertEqual(list(self.day.iterdir()), [])
+        self.assertEqual(len(timers), 3)  # Sin transferencias no hay barrido pendiente.
+        store.begin("movil", self.box, "vivo.bin", 8)
+        self.assertEqual(len(timers), 4)
+        store.close()
+        self.assertTrue(timers[3].cancelled)
+        self.assertEqual(list(self.day.iterdir()), [])
+        with self.assertRaises(RPCError) as error:
+            store.begin("movil", self.box, "tarde.bin", 8)
+        self.assertEqual(error.exception.code, "busy")
+
+    def test_real_daemon_timer_expires_off_thread(self):
+        handles = []
+        def timer(interval, callback):
+            handle = FilePutStore.daemon_timer(interval, callback)
+            handles.append(handle)
+            return handle
+        store = FilePutStore(self.root, clock=lambda: self.now, today=lambda: TODAY, sweep_interval=0.01, timer=timer)
+        store.begin("movil", self.box, "abandonado.bin", 8)
+        self.assertTrue(handles[0].daemon)
+        self.now += 600
+        handles[0].join(5)
+        self.assertEqual(list(self.day.iterdir()), [])
+        self.assertEqual(len(handles), 1)
+        store.close()
+
 
 class RemoteInboxTests(unittest.TestCase):
     def test_copy_creates_remote_directory_then_puts_with_exact_name(self):
@@ -251,11 +300,60 @@ class RemoteInboxTests(unittest.TestCase):
                 puts.append((str(local_path), directory, name))
                 return directory + "/" + name
         command = SSHCommand.parse("ssh -p 2222 dani@example.com")
-        inbox = RemoteInbox(transport_factory=transport, transfer_factory=Transfer, timeout=42)
+        inbox = RemoteInbox(transport_factory=transport, transfer_factory=Transfer, budget=42, clock=lambda: 0.0)
         self.assertEqual(inbox.copy(command, Path("/tmp/x/foto.jpg"), "foto.jpg"), "/home/dani/uniconnect-entrada/foto.jpg")
         self.assertIs(scripts[0][0], command)
         self.assertIn("mkdir -p -- \"$HOME/uniconnect-entrada\"", scripts[0][1])
-        self.assertEqual(puts, [(command, 42), ("/tmp/x/foto.jpg", "/home/dani/uniconnect-entrada", "foto.jpg")])
+        self.assertEqual(scripts[0][2], {"timeout": 42})
+        self.assertEqual(puts, [(command, 42 - RemoteInbox.CLOSE_MARGIN),
+                                ("/tmp/x/foto.jpg", "/home/dani/uniconnect-entrada", "foto.jpg")])
+
+    def test_preparation_transfer_and_close_share_one_hundred_second_budget(self):
+        now, calls = [1000.0], []
+        def transport(command, **_):
+            def run(script, *, timeout, **options):
+                calls.append(("run", timeout))
+                now[0] += 30
+                return types.SimpleNamespace(stdout="UC_DIR\t/home/dani/uniconnect-entrada\n")
+            return types.SimpleNamespace(run=run)
+        class Transfer:
+            def __init__(self, command, *, timeout):
+                calls.append(("sftp", timeout))
+            def put(self, local_path, directory, name):
+                return directory + "/" + name
+        inbox = RemoteInbox(transport_factory=transport, transfer_factory=Transfer, clock=lambda: now[0])
+        inbox.copy(SSHCommand.parse("ssh dani@example.com"), Path("/tmp/x/a.bin"), "a.bin")
+        self.assertEqual(calls, [("run", 100.0), ("sftp", 100.0 - 30 - RemoteInbox.CLOSE_MARGIN)])
+
+    def test_exhausted_budget_answers_host_before_the_phone_gives_up(self):
+        with tempfile.TemporaryDirectory(prefix="uc-fileput-budget-") as directory:
+            now = [5000.0]
+            store = FilePutStore(Path(directory), clock=lambda: now[0], today=lambda: TODAY)
+            for slow_prepare, slow_transfer in ((95, 0), (30, None)):
+                def transport(command, **_):
+                    def run(script, *, timeout, **options):
+                        now[0] += min(slow_prepare, timeout)
+                        return types.SimpleNamespace(stdout="UC_DIR\t/home/dani/uniconnect-entrada\n")
+                    return types.SimpleNamespace(run=run)
+                class Transfer:
+                    def __init__(self, command, *, timeout):
+                        self.timeout = timeout
+                    def put(self, local_path, directory, name):
+                        now[0] += self.timeout  # El SFTP consume todo su plazo y lo anuncia.
+                        raise TransportError("upload_timeout")
+                inbox = RemoteInbox(transport_factory=transport, transfer_factory=Transfer, clock=lambda: now[0])
+                command = SSHCommand.parse("ssh dani@example.com")
+                transfer = store.begin("movil", {"workspace_id": "ssh"}, "lento.bin", 4)["transfer_id"]
+                store.chunk("movil", transfer, 0, b"abcd")
+                started = now[0]
+                result = store.commit("movil", transfer, sha(b"abcd"),
+                                      remote_copy=lambda path, name: inbox.copy(command, path, name))
+                with self.subTest(slow_prepare=slow_prepare):
+                    self.assertLessEqual(now[0] - started, 100)  # Antes de los 120 s del móvil.
+                    self.assertEqual(result["location"], "host")
+                    self.assertEqual(result["remote_error"], "La copia al servidor tardó demasiado y se canceló")
+                    self.assertTrue(Path(result["path"]).exists())
+            store.close()
 
     def test_copy_fails_when_the_directory_cannot_be_resolved(self):
         transport = lambda command, **_: types.SimpleNamespace(run=lambda *a, **k: types.SimpleNamespace(stdout=""))

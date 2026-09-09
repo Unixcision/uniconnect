@@ -376,14 +376,25 @@ Host side on Linux (2026-09-09, `linux/uniconnect/file_put.py`, routed by
   (`SFTPTransfer.put`): a hidden `.<nonce>-<name>.partial` created `O_EXCL`, then the
   SFTP v3 rename (link+unlink on OpenSSH, so a taken name answers `SSH_FX_FAILURE`
   instead of being replaced) to `<name>`, `<name>-2`… The name sent is the final host
-  name. The whole copy has a 110 s deadline (the phone waits 120 s); any failure
-  answers the host path with `location: "host"` and a Spanish `remote_error`
-  (`RemoteInbox.describe`, at most 500 characters, no local paths or content).
+  name. Preparing the directory, the transfer and the close of the sftp process
+  share one monotonic budget of 100 s (`RemoteInbox.budget`, injected clock): the
+  `mkdir` step gets whatever is left of it, the SFTP client gets the remainder minus
+  an 8 s close margin, and an exhausted budget answers `upload_timeout` without
+  starting the transfer, so the host always replies before the phone's 120 s. Any
+  failure answers the host path with `location: "host"` and a Spanish
+  `remote_error` (`RemoteInbox.describe`, at most 500 characters, no local paths
+  or content).
 - **Threading and expiry.** Chunk writes, verification and the SSH hop run on the
   peer's thread, never on GTK; only the identity/lock checks hop to the model owner.
-  Expiry (10 minutes without a chunk) is enforced lazily on every file RPC and on
-  every peer disconnect (`FilePutStore.expire`), deleting the `.part`; there is no
-  timer thread. `abort` deletes the `.part` immediately.
+  Expiry (10 minutes without a chunk) is enforced on every file RPC, on every peer
+  disconnect and by a scheduled sweep: while any transfer is live, one daemon timer
+  (`threading.Timer`, injectable) runs `expire()` every 60 s and reschedules
+  itself, so an abandoned `.part` is deleted between 10 and 11 minutes after its
+  last chunk even if the phone never speaks again; a new connection from the same
+  approved device keeps a transfer alive by sending chunks. `FilePutStore.close()`
+  (called from `MobileDesktop.close` at shutdown) cancels the timer and deletes
+  every live `.part`; a locked app only refuses RPCs. `abort` deletes the `.part`
+  immediately.
 
 ### ローカルウインドウの作成と保存
 
