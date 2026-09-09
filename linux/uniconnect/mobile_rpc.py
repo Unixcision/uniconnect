@@ -1,6 +1,7 @@
 """Mobile actions over the authoritative desktop model and its existing panes."""
 
 import base64
+import binascii
 import datetime
 import hashlib
 import json
@@ -11,9 +12,11 @@ import time
 import uuid
 from collections import OrderedDict
 from concurrent.futures import Future, TimeoutError
+from pathlib import Path
 
 from .mobile_protocol import RPCError
 from .arrangement import WorkspaceArrangement
+from .file_put import FilePutStore, RemoteInbox
 from .mobile_pty import MobilePTYAttachments
 from .mobile_pty_process import MobilePTYProcess
 from .mobile_render_grid import (MAX_CAPTURE_BYTES, MAX_SCROLLBACK_ROWS, capture_dependencies_ready,
@@ -22,12 +25,17 @@ from .transport import SSHCommand, Transport
 
 
 class MobileRPC:
+    FILE_OPERATIONS = ("file.begin", "file.chunk", "file.commit", "file.abort")
+
     def __init__(self, window, access, schedule, *, transport_factory=Transport,
-                 clock=time.monotonic, wait=time.sleep, pty_factory=MobilePTYProcess):
+                 clock=time.monotonic, wait=time.sleep, pty_factory=MobilePTYProcess,
+                 file_put=None, remote_inbox=None):
         self.window, self.access, self.schedule = window, access, schedule
         self.transport_factory = transport_factory
         self.clock, self.wait = clock, wait
         self.host = None
+        self.file_put = file_put if file_put is not None else FilePutStore(Path.home() / "UniConnect" / "Entrada")
+        self.remote_inbox = remote_inbox if remote_inbox is not None else RemoteInbox()
         self.viewports, self.original_sizes = {}, {}
         self.revisions = {}
         self.revision_lock = threading.Lock()
@@ -82,7 +90,97 @@ class MobileRPC:
             return self.attachments.dispatch(operation, params, connection_id, authorized)
         if operation == "terminal.replay":
             return self.replay(params, authorized=authorized)
+        if operation in self.FILE_OPERATIONS:
+            # Trozos, verificación y salto SSH fuera de GTK; solo la identidad de
+            # la caja y el bloqueo se comprueban en el hilo dueño del modelo.
+            return self.file_dispatch(operation, params, connection_id, authorized)
         return self.on_main(lambda: checked(lambda: self._dispatch_main(operation, params, connection_id)))
+
+    # ----- file_put.v1 -----
+
+    @staticmethod
+    def box_identity(workspace):
+        """Lo que liga una transferencia a su caja: id, tipo y revisión de credencial."""
+        return {"workspace_id": workspace["id"], "kind": workspace["kind"],
+                "credential_id": workspace.get("credentialId")}
+
+    def file_owner(self, connection_id):
+        """El dispositivo aprobado (dirección del tailnet) dueño de la conexión viva."""
+        owner = self.host.peer_of(connection_id) if self.host is not None else None
+        if not owner:
+            raise RPCError("not_found", "No se reconoce la sesión móvil")
+        return owner
+
+    def file_box(self, params, authorized, *, expected=None, connect=False):
+        """En el hilo del modelo: identidad durable de la caja y, si se pide, su conexión SSH."""
+        def resolve():
+            if not authorized():
+                raise RPCError("approval_required", "El permiso de este dispositivo ha sido revocado")
+            if self.window.locked:
+                raise RPCError("locked", "UniConnect está bloqueado")
+            workspace = self.target(params, terminal=params.get("terminal_id") is not None)[0]
+            identity = self.box_identity(workspace)
+            if expected is not None and identity != expected:
+                raise RPCError("not_found", "La caja ha cambiado desde que empezó la transferencia")
+            command = None
+            if connect and workspace["kind"] == "ssh":
+                vault = getattr(self.window, "vault", None)
+                if vault is not None and vault.locked:
+                    raise RPCError("locked", "La bóveda privada está bloqueada")
+                try:
+                    command = SSHCommand.parse(self.window.connection(workspace))
+                except Exception as error:
+                    raise RPCError("not_found", "La credencial de la caja ya no está disponible") from error
+            return identity, command
+        return self.on_main(resolve)
+
+    def file_dispatch(self, operation, params, connection_id, authorized):
+        owner = self.file_owner(connection_id)
+        if operation == "file.begin":
+            name, size, mime = params.get("name"), params.get("size"), params.get("mime")
+            if not isinstance(name, str) or not name or len(name) > 1024:
+                raise RPCError("invalid_params", "Nombre de archivo no válido")
+            if type(size) is not int or size < 0:
+                raise RPCError("invalid_params", "Tamaño de archivo no válido")
+            if mime is not None and (not isinstance(mime, str) or len(mime) > 255 or not mime.isprintable()):
+                raise RPCError("invalid_params", "Tipo MIME no válido")
+            identity, _ = self.file_box(params, authorized)
+            return self.file_put.begin(owner, {**identity, "terminal_id": params.get("terminal_id")}, name, size)
+        transfer_id = params.get("transfer_id")
+        if not isinstance(transfer_id, str) or not transfer_id or len(transfer_id) > 128:
+            raise RPCError("invalid_params", "Identificador de transferencia no válido")
+        if operation == "file.abort":
+            def check():
+                if not authorized():
+                    raise RPCError("approval_required", "El permiso de este dispositivo ha sido revocado")
+                if self.window.locked:
+                    raise RPCError("locked", "UniConnect está bloqueado")
+            self.on_main(check)
+            return self.file_put.abort(owner, transfer_id)
+        box = self.file_put.lookup(owner, transfer_id)
+        expected = {key: box.get(key) for key in ("workspace_id", "kind", "credential_id")}
+        try:
+            _, command = self.file_box({"workspace_id": box.get("workspace_id")}, authorized,
+                                       expected=expected, connect=operation == "file.commit")
+        except RPCError as error:
+            if error.code == "not_found":
+                self.file_put.discard(owner, transfer_id)  # La caja ya no es la de begin: fuera el .part.
+            raise
+        if operation == "file.chunk":
+            index, data = params.get("index"), params.get("data")
+            if type(index) is not int:
+                raise RPCError("invalid_params", "Índice de trozo no válido")
+            if not isinstance(data, str) or len(data) > (self.file_put.chunk_bytes * 4) // 3 + 8:
+                raise RPCError("invalid_params", "Trozo no válido")
+            try:
+                raw = base64.b64decode(data, validate=True)
+            except (binascii.Error, ValueError) as error:
+                raise RPCError("invalid_params", "El trozo no es base64 válido") from error
+            return self.file_put.chunk(owner, transfer_id, index, raw)
+        remote_copy = None
+        if command is not None:
+            remote_copy = lambda path, name: self.remote_inbox.copy(command, path, name)
+        return self.file_put.commit(owner, transfer_id, params.get("sha256"), remote_copy=remote_copy)
 
     @staticmethod
     def pty_identity(workspace, record):
@@ -251,7 +349,8 @@ class MobileRPC:
                           "terminals": terminals})
         if terminals_filter and not any(box["terminals"] for box in boxes):
             raise RPCError("not_found", "No se encontró la terminal")
-        return {"workspaces": boxes, "display_name": socket.gethostname(), "capabilities": ["box_update"]}
+        return {"workspaces": boxes, "display_name": socket.gethostname(),
+                "capabilities": ["box_update", "file_put.v1"]}
 
     def invalidate_terminal(self, panel_id):
         with self.revision_lock:
@@ -410,6 +509,9 @@ class MobileRPC:
 
     def disconnected(self, connection_id):
         self.attachments.disconnected(connection_id)
+        # Las transferencias pertenecen al dispositivo, no a la conexión TCP (el
+        # móvil aborta desde una sesión nueva); aquí solo caducan las abandonadas.
+        self.file_put.expire()
         def clear():
             panels = {key[2] for key in self.viewports if key[0] == connection_id}
             self.viewports = {key: value for key, value in self.viewports.items() if key[0] != connection_id}

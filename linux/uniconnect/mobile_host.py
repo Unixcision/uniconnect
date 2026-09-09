@@ -142,6 +142,14 @@ class MobileHost:
         with self.lock:
             return next((client for client in self.clients if client.identifier == connection_id), None)
 
+    def peer_of(self, connection_id):
+        """Approved tailnet address that owns a live connection, or None."""
+        client = self._client(connection_id)
+        if client is None:
+            return None
+        with self.access.lock:
+            return client.peer if self.access.is_approved(client.peer) else None
+
     def has_topic(self, connection_id, topic):
         """Check a live owner's subscription without requesting new approval."""
         client = self._client(connection_id)
