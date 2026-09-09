@@ -313,4 +313,23 @@
     <string name="dictation_language_device">El del móvil</string>
     <string name="dictation_language_es">es-ES</string>
     <string name="dictation_language_en">en-US</string>
+    <string name="dictation_recording">Grabando para el equipo; se transcribe al pulsar Listo</string>
+    <string name="dictation_recording_note">Grabando. Listo lo manda al equipo para transcribirlo; Cancelar lo descarta.</string>
+    <string name="dictation_transcribing">Transcribiendo en el equipo…</string>
+    <string name="dictation_transcribing_cut">Cortado a los 5 minutos; transcribiendo en el equipo…</string>
+    <string name="dictation_transcribing_note">El equipo está transcribiendo lo grabado. Cancelar lo descarta.</string>
+    <string name="dictation_failed_no_audio">No se ha grabado nada</string>
+    <string name="dictation_failed_too_long">El audio es demasiado largo para el equipo; graba otro más corto</string>
+    <string name="dictation_failed_locked">UniConnect está bloqueado en el equipo: desbloquéalo para transcribir</string>
+    <string name="dictation_failed_host">El equipo no ha podido transcribir el audio</string>
+    <string name="dictation_failed_host_offline">Sin conexión con el equipo</string>
+    <string name="dictation_host_cannot">Este equipo no transcribe: se usa el dictado del móvil</string>
+    <string name="dictation_host_required_unavailable">El equipo no puede transcribir ahora: se dicta en el móvil</string>
+    <string name="dictation_retry">Reintentar</string>
+    <string name="dictation_record_again">Grabar otra vez</string>
+    <string name="settings_transcription">Transcripción</string>
+    <string name="settings_transcription_note">El equipo transcribe con Whisper y entiende mucho mejor. Automática lo usa cuando el equipo puede; si no, dicta el móvil.</string>
+    <string name="transcription_auto">Automática</string>
+    <string name="transcription_phone">Móvil</string>
+    <string name="transcription_host">Equipo</string>
 </resources>

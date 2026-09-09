@@ -185,6 +185,47 @@ composable no sabe nada del reconocedor. Manifiesto: `RECORD_AUDIO` y `<queries>
 `RecognitionService`. Probado solo en la JVM (máquina de estados, añadir al borrador, decisión
 del botón, persistencia de los ajustes); el reconocimiento real no se ha ejercitado en el Pixel.
 
+### Transcripción en el equipo (`transcribe.v1`)
+
+El equipo (Mac o Linux) transcribe con Whisper mucho mejor que el móvil, así que cuando anuncia
+la capacidad `transcribe.v1` en `capabilities` de `mobile.workspace.list` (`MachineSnapshot.transcribes`)
+el dictado deja de reconocer y pasa a GRABAR: `MediaRecorder` en MPEG-4 + AAC, 16 kHz mono a
+32 kbps sobre un archivo de `cacheDir` (`data/MediaRecorderVoice`), que es lo que Whisper lee sin
+remuestrear y sale a unos 240 KB por minuto. Mientras graba, la barra no tiene texto parcial
+porque no existe: lleva el medidor de nivel (`maxAmplitude`, con raíz cuadrada para que se mueva),
+un cronómetro que se vuelve ámbar en 4:30, Cancelar y Listo. A los 5 minutos corta sola y avisa
+(«Cortado a los 5 minutos; transcribiendo…»).
+
+Al pulsar Listo el audio viaja entero en una llamada por el mismo transporte enmarcado que los
+adjuntos: `mobile.audio.transcribe {audio: <base64>, mime: "audio/mp4", language?, workspace_id,
+terminal_id}` → `{text, engine, seconds, took_ms}`, con 90 s de plazo (`data/NativeHostTranscription`).
+El límite es el del contrato, 6 MiB, acotado además por lo que cabe en un mensaje de 8 MiB una vez
+codificado (`domain/AudioPayload`, que codifica por bloques de 192 KiB); a 32 kbps cinco minutos son
+~1,2 MB, así que el tope es una guarda, no una talla de trabajo. El texto se AÑADE al borrador con
+`DictationDraft.append` y respeta «Enviar al terminar de dictar». **El audio se borra siempre**:
+transcrito, rechazado, cancelado o al empezar otra grabación.
+
+Errores, cada uno con su mensaje: `too_large` → «El audio es demasiado largo…» con «Grabar otra
+vez»; `locked` → «UniConnect está bloqueado en el equipo…»; `unsupported` → se avisa una sola vez
+(«Este equipo no transcribe: se usa el dictado del móvil») y ese equipo no se vuelve a intentar
+mientras dure la sesión; `invalid_params` / `io_failed` / código desconocido → «El equipo no ha
+podido transcribir el audio»; caída de red → «Sin conexión con el equipo». En los tres últimos el
+audio se CONSERVA para un único «Reintentar»; después se borra pase lo que pase.
+
+Ajustes → «Voz» → «Transcripción»: «Automática» (el equipo si puede, el móvil si no; por defecto),
+«Móvil» (nunca se pregunta al equipo) y «Equipo» (avisa cada vez que ese equipo no puede y dicta el
+móvil). Se guarda en `settings.transcription`; un almacén escrito antes de esta clave se sigue
+leyendo con sus valores de voz intactos.
+
+Arquitectura: `domain/Dictation` sigue siendo la interfaz y hay dos implementaciones,
+`data/AndroidDictation` (móvil) y `domain/HostDictation` (equipo). La elección es una función pura,
+`TranscriptionRoute.decide(modo, capacidad, hay reconocedor)`, y `ui/DictationViewModel` solo publica
+el estado del motor activo, así que el composable lee los mismos estados en los dos casos.
+`MediaRecorder` queda tras `domain/VoiceRecorder` y el RPC tras `domain/HostTranscription`, de modo
+que todo el flujo (elección, límite de tamaño, cada error, borrado del archivo, reintento único,
+corte a los 5 minutos) se prueba en la JVM sin micrófono ni socket. Probado solo así: 31 pruebas
+nuevas; contra un host real con Whisper no se ha ejercitado todavía.
+
 ## Arquitectura
 
 El usuario asume el diseño y frontend Android desde el 5 de septiembre de 2026.

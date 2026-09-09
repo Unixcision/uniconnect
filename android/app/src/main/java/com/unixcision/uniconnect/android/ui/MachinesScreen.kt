@@ -169,6 +169,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                             attachments = attachments,
                             dictation = dictation,
                             attachTarget = if (machine != null && workspace != null && window != null) AttachTarget(machine, workspace.id, window.id, workspace.isSSH, connection?.snapshot?.putsFiles == true) else null,
+                            hostTranscribes = connection?.snapshot?.transcribes == true,
                         )
                     }
                     Level.MACHINE -> if (machine != null) MachineBoxesScreen(

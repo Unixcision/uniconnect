@@ -57,6 +57,7 @@ import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import com.unixcision.uniconnect.android.domain.ActivityState
 import com.unixcision.uniconnect.android.domain.AppSettings
+import com.unixcision.uniconnect.android.domain.DictationTarget
 import com.unixcision.uniconnect.android.domain.TerminalKeyEncoder
 import com.unixcision.uniconnect.android.domain.TerminalView
 import com.unixcision.uniconnect.android.domain.TerminalModifiers
@@ -108,6 +109,7 @@ fun TerminalScreen(
     attachments: AttachViewModel? = null,
     attachTarget: AttachTarget? = null,
     dictation: DictationViewModel? = null,
+    hostTranscribes: Boolean = false,
 ) {
     var realRequested by rememberSaveable { mutableStateOf(false) }
     // Default way in: attach to the window's own tmux session. Only a host without the attach RPC,
@@ -122,6 +124,7 @@ fun TerminalScreen(
             onLeaveCopyMode = onLeaveCopyMode, onView = onView, onZoom = onZoom, onReconnect = onReconnectReal,
             draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity,
             attachments = attachments, attachTarget = attachTarget, dictation = dictation, settings = settings,
+            hostTranscribes = hostTranscribes,
         )
         return
     }
@@ -135,7 +138,8 @@ fun TerminalScreen(
         attachFallbackDetail = attachFallbackDetail,
         onRequestReal = { columns, rows -> realRequested = true; manuallyLeft = false; onStartReal(columns, rows, false) },
         draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity,
-        attachments = attachments, attachTarget = attachTarget, dictation = dictation, settings = settings)
+        attachments = attachments, attachTarget = attachTarget, dictation = dictation, settings = settings,
+        hostTranscribes = hostTranscribes)
 }
 
 /** The attached tmux client: the phone owns a real PTY of its own size; tmux keeps the desktop's. */
@@ -148,6 +152,7 @@ private fun RealTerminalScreen(
     onLeaveCopyMode: () -> Unit, onView: (TerminalView) -> Unit, onZoom: (Float) -> Unit, onReconnect: () -> Unit,
     draft: String, onDraftChange: (String) -> Unit, windowPinned: Boolean, onTogglePin: () -> Unit, activity: ActivityState,
     attachments: AttachViewModel?, attachTarget: AttachTarget?, dictation: DictationViewModel?, settings: AppSettings,
+    hostTranscribes: Boolean,
 ) {
     var keysVisible by rememberSaveable { mutableStateOf(startWithKeys) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
@@ -333,6 +338,9 @@ private fun RealTerminalScreen(
             onSend = { text, withEnter, onDelivered -> onPty(text, withEnter); onDelivered(true); consumeModifiers() },
             draft = draft, onDraftChange = onDraftChange,
             dictation = dictation, dictationLanguage = settings.dictationLanguage, sendOnDictationEnd = settings.sendOnDictationEnd,
+            transcription = settings.transcription, hostTranscribes = hostTranscribes,
+            // The window an attachment would go to is the window a recording is transcribed for.
+            dictationTarget = attachTarget?.let { DictationTarget(it.machine, it.workspaceID, it.windowID) },
         )
     }
 }
@@ -345,6 +353,7 @@ private fun MirrorTerminalScreen(
     attachFallbackDetail: String?, onRequestReal: (Int, Int) -> Unit, draft: String, onDraftChange: (String) -> Unit,
     windowPinned: Boolean, onTogglePin: () -> Unit, activity: ActivityState,
     attachments: AttachViewModel?, attachTarget: AttachTarget?, dictation: DictationViewModel?, settings: AppSettings,
+    hostTranscribes: Boolean,
 ) {
     var viewMode by rememberSaveable { mutableStateOf(TerminalView.FIT) }
     var keysVisible by rememberSaveable { mutableStateOf(false) }
@@ -478,6 +487,9 @@ private fun MirrorTerminalScreen(
             onSend = { text, withEnter, onDelivered -> onSend(text, withEnter, onDelivered); consumeModifiers() },
             draft = draft, onDraftChange = onDraftChange,
             dictation = dictation, dictationLanguage = settings.dictationLanguage, sendOnDictationEnd = settings.sendOnDictationEnd,
+            transcription = settings.transcription, hostTranscribes = hostTranscribes,
+            // The window an attachment would go to is the window a recording is transcribed for.
+            dictationTarget = attachTarget?.let { DictationTarget(it.machine, it.workspaceID, it.windowID) },
         )
     }
 }

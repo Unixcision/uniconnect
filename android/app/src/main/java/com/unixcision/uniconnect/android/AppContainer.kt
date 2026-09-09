@@ -11,6 +11,8 @@ import com.unixcision.uniconnect.android.data.AndroidNotificationConnections
 import com.unixcision.uniconnect.android.data.ContentReader
 import com.unixcision.uniconnect.android.data.HttpFileSender
 import com.unixcision.uniconnect.android.data.NativeFilePutClient
+import com.unixcision.uniconnect.android.data.MediaRecorderVoice
+import com.unixcision.uniconnect.android.data.NativeHostTranscription
 import com.unixcision.uniconnect.android.data.NativeNotificationClient
 import com.unixcision.uniconnect.android.data.StoredNoticeDeliveryRepository
 import com.unixcision.uniconnect.android.data.StoredNoticeNameCatalog
@@ -21,6 +23,9 @@ import com.unixcision.uniconnect.android.data.StoredUploadHistoryRepository
 import com.unixcision.uniconnect.android.domain.Dictation
 import com.unixcision.uniconnect.android.domain.FilePutClient
 import com.unixcision.uniconnect.android.domain.FileSender
+import com.unixcision.uniconnect.android.domain.HostDictation
+import com.unixcision.uniconnect.android.domain.HostTranscription
+import com.unixcision.uniconnect.android.domain.VoiceRecorder
 import com.unixcision.uniconnect.android.domain.NotificationClient
 import com.unixcision.uniconnect.android.domain.NoticeDeliveryRepository
 import com.unixcision.uniconnect.android.domain.NoticeNameCatalog
@@ -55,4 +60,7 @@ class AppContainer(context: Context) {
     val contentReader = ContentReader(context.contentResolver)
     val filePutClient: FilePutClient = NativeFilePutClient(rpc)
     val dictation: Dictation = AndroidDictation(context)
+    val voiceRecorder: VoiceRecorder = MediaRecorderVoice(context)
+    val hostTranscription: HostTranscription = NativeHostTranscription(rpc)
+    val hostDictation = HostDictation(voiceRecorder, hostTranscription, ioScope)
 }

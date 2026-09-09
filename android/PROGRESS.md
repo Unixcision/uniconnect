@@ -143,3 +143,17 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
 - E2E Mac de aprobación, árbol, pantalla, input y avisos ya demostrado. Faltan
   interrupción de red, revocación, reposo profundo y prueba real Linux. No confundir esos
   pendientes con la prueba de eco que sí se ha realizado.
+
+## Dictado con Whisper del equipo (9 de septiembre de 2026)
+
+- Implementado el lado móvil de `transcribe.v1`: grabación MPEG-4/AAC 16 kHz mono a 32 kbps en
+  `cacheDir`, envío en una sola llamada `mobile.audio.transcribe` con 90 s de plazo, texto añadido
+  al borrador y audio borrado en todos los caminos (éxito, rechazo, cancelación y arranque nuevo).
+- La elección de motor es pura y comprobable: `TranscriptionRoute.decide(modo, capacidad del equipo,
+  hay reconocedor)`. Sin capacidad o con `unsupported` se dicta en el móvil, avisando una sola vez.
+- Ajustes → Voz → «Transcripción»: Automática (por defecto), Móvil y Equipo.
+- 31 pruebas JVM nuevas (elección de motor, base64 por bloques y límite de 6 MiB acotado al mensaje
+  de 8 MiB, cada código de error del contrato, borrado del archivo en todos los caminos, reintento
+  único, corte a los 5 minutos, persistencia del ajuste). Build y `testDebugUnitTest` en verde.
+- No probado contra un host real: ningún equipo anuncia todavía `transcribe.v1`, así que el camino
+  del móvil es el único ejercitado de punta a punta. Tampoco se ha instalado nada en el Pixel.

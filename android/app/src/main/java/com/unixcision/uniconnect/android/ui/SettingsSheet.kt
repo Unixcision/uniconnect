@@ -33,6 +33,7 @@ import com.unixcision.uniconnect.android.domain.ColorMode
 import com.unixcision.uniconnect.android.domain.DesignTheme
 import com.unixcision.uniconnect.android.domain.DictationLanguage
 import com.unixcision.uniconnect.android.domain.TerminalView
+import com.unixcision.uniconnect.android.domain.TranscriptionMode
 import com.unixcision.uniconnect.android.domain.UploadService
 import com.unixcision.uniconnect.android.domain.UploadStyle
 import com.unixcision.uniconnect.android.ui.theme.CardStyle
@@ -116,6 +117,18 @@ fun SettingsSheet(settings: AppSettings, onChange: (AppSettings) -> Unit, onDism
             }
 
             SettingsSection(stringResource(R.string.settings_voice)) {
+                Text(stringResource(R.string.settings_transcription), style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.settings_transcription_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                    TranscriptionMode.entries.forEachIndexed { index, mode ->
+                        SegmentedButton(
+                            selected = settings.transcription == mode,
+                            onClick = { onChange(settings.copy(transcription = mode)) },
+                            shape = SegmentedButtonDefaults.itemShape(index, TranscriptionMode.entries.size),
+                            colors = segmentColors(),
+                        ) { Text(stringResource(mode.label), style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    }
+                }
                 SettingsSwitch(
                     title = stringResource(R.string.settings_send_on_dictation),
                     note = stringResource(R.string.settings_send_on_dictation_note),
@@ -233,6 +246,14 @@ private fun TerminalUploadPicker(settings: AppSettings, onChange: (AppSettings) 
         ) { Text(stringResource(R.string.upload_save_service), fontWeight = FontWeight.SemiBold) }
     }
 }
+
+/** The visible name of a way of transcribing. */
+private val TranscriptionMode.label: Int
+    get() = when (this) {
+        TranscriptionMode.AUTO -> R.string.transcription_auto
+        TranscriptionMode.PHONE -> R.string.transcription_phone
+        TranscriptionMode.HOST -> R.string.transcription_host
+    }
 
 /** The visible name of a dictation language. */
 private val DictationLanguage.label: Int
