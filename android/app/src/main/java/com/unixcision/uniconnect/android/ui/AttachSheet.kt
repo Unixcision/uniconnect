@@ -89,15 +89,14 @@ private fun AttachSheet(model: AttachViewModel, target: AttachTarget, transfers:
     var armed by rememberSaveable { mutableStateOf<String?>(null) }
     val pickers = rememberAttachmentPickers(
         onPicked = { uris ->
-            val capture = AttachCapture.decode(armed)
+            val decision = AttachCapture.resolve(armed, target.machine.id, target.workspaceID, target.windowID, takesFilesNow = target.supportsFilePut)
             armed = null
-            if (capture == null || !capture.matches(target.machine.id, target.workspaceID, target.windowID)) {
-                if (uris.isNotEmpty()) localError = R.string.attach_pick_again
-            } else when (val decision = AttachDecision.onReturn(capture.route, takesFilesNow = target.supportsFilePut)) {
-                // The host may have stopped taking files while the picker was open: then the file
-                // fails here and never leaves for the fallback on its own.
+            when (decision) {
                 is AttachDecision.Send -> model.attach(target, uris, decision.route)
-                AttachDecision.HostLostCapability -> model.attach(target, uris, capture.route, refusal = HostLostCapability())
+                // The host stopped taking files while the picker was open: the file fails here and
+                // never leaves for the fallback on its own.
+                AttachDecision.HostLostCapability -> model.attach(target, uris, AttachRoute.HOST, refusal = HostLostCapability())
+                AttachDecision.PickAgain -> if (uris.isNotEmpty()) localError = R.string.attach_pick_again
             }
         },
         onUnavailable = { armed = null; localError = it },

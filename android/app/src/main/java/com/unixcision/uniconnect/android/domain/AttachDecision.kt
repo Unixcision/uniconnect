@@ -13,6 +13,9 @@ sealed class AttachDecision {
     /** The captured route was the host, and the host no longer takes files: fail, do not go external. */
     data object HostLostCapability : AttachDecision()
 
+    /** The result came back without its capture, or for another window: drop it and ask the reader to pick again. */
+    data object PickAgain : AttachDecision()
+
     companion object {
         /** The decision for a file picked under [captured] when the host [takesFilesNow] or not. */
         fun onReturn(captured: AttachRoute, takesFilesNow: Boolean): AttachDecision =

@@ -17,6 +17,18 @@ data class AttachCapture(val route: AttachRoute, val machineID: String, val work
     companion object {
         private const val SEPARATOR = ""
 
+        /**
+         * What to do with a picker result that came back to the window [machineID] / [workspaceID] /
+         * [windowID] with [saved] as the capture kept from the tap, when the host [takesFilesNow]
+         * or not. Without a readable capture for this very window nothing is sent: the reader is
+         * asked to pick again rather than have a destination rebuilt from newer values.
+         */
+        fun resolve(saved: String?, machineID: String, workspaceID: String, windowID: String, takesFilesNow: Boolean): AttachDecision {
+            val capture = decode(saved) ?: return AttachDecision.PickAgain
+            if (!capture.matches(machineID, workspaceID, windowID)) return AttachDecision.PickAgain
+            return AttachDecision.onReturn(capture.route, takesFilesNow)
+        }
+
         /** The capture behind [raw], or null when there is none or it cannot be read. */
         fun decode(raw: String?): AttachCapture? {
             val parts = raw?.split(SEPARATOR) ?: return null
