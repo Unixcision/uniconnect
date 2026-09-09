@@ -13499,6 +13499,91 @@ final class Workspace: Identifiable, ObservableObject {
         return remote.displayTitle
     }
 
+    // MARK: - Favoritos y orden de ventanas (contrato box_update)
+
+    /// Ventanas de terminal en el orden que ve el móvil: fijadas primero, estable para el resto.
+    func mobileOrderedTerminalPanelIds() -> [UUID] {
+        let terminals = orderedPanelIds.filter { panels[$0] is TerminalPanel }
+        return MobileBoxArrangement<UUID>.pinnedFirst(terminals, pinnedIDs: pinnedPanelIds)
+    }
+
+    /// Aplica valores explícitos de favorito y/o posición (base cero dentro de su grupo) a una
+    /// ventana sin tocar foco, selección ni splits. Devuelve `false` si la ventana no existe o el
+    /// reorden no pudo aplicarse; en ese caso el favorito vuelve a su valor anterior.
+    @discardableResult
+    func applyMobileTerminalArrangement(panelId: UUID, isPinned: Bool?, position: Int?) -> Bool {
+        guard panels[panelId] is TerminalPanel,
+              let plan = MobileBoxArrangement<UUID>.plan(
+                  orderedIDs: mobileOrderedTerminalPanelIds(),
+                  pinnedIDs: pinnedPanelIds,
+                  target: panelId,
+                  isPinned: isPinned,
+                  position: position
+              ) else { return false }
+        let wasPinned = pinnedPanelIds.contains(panelId)
+        var moved = true
+        preservingTabSelection {
+            if let isPinned, isPinned != wasPinned {
+                setPanelPinned(panelId: panelId, pinned: isPinned)
+            }
+            if position != nil {
+                moved = movePanelTab(panelId, toPlannedOrder: plan.orderedIDs)
+            }
+        }
+        guard moved else {
+            preservingTabSelection { setPanelPinned(panelId: panelId, pinned: wasPinned) }
+            return false
+        }
+        if UniConnectCoordinator.isEnabled { UniConnectCoordinator.shared.requestSave() }
+        return true
+    }
+
+    /// Mueve una ventana un puesto dentro de su grupo (fijadas o no fijadas); menú de la pestaña.
+    func movePanelWithinGroup(panelId: UUID, offset: Int) {
+        let pinned = pinnedPanelIds.contains(panelId)
+        let group = mobileOrderedTerminalPanelIds().filter { pinnedPanelIds.contains($0) == pinned }
+        guard let index = group.firstIndex(of: panelId) else { return }
+        applyMobileTerminalArrangement(panelId: panelId, isPinned: nil, position: index + offset)
+    }
+
+    /// Recoloca la pestaña de la ventana dentro de su propio panel para que las terminales del
+    /// panel sigan `plannedOrder`; las pestañas que no son terminal conservan su sitio y el
+    /// layout de splits no cambia.
+    private func movePanelTab(_ panelId: UUID, toPlannedOrder plannedOrder: [UUID]) -> Bool {
+        guard let tabId = surfaceIdFromPanelId(panelId),
+              let paneId = paneId(forPanelId: panelId),
+              let planIndex = plannedOrder.firstIndex(of: panelId) else { return false }
+        let paneTabIds = bonsplitController.tabs(inPane: paneId).map(\.id)
+        guard let sourceIndex = paneTabIds.firstIndex(of: tabId) else { return false }
+        let followers = Set(plannedOrder[(planIndex + 1)...])
+        var desired = paneTabIds.filter { $0 != tabId }
+        let insertAt = desired.firstIndex { candidate in
+            guard let candidatePanelId = panelIdFromSurfaceId(candidate) else { return false }
+            return followers.contains(candidatePanelId)
+        } ?? desired.count
+        desired.insert(tabId, at: insertAt)
+        guard let finalIndex = desired.firstIndex(of: tabId), finalIndex != sourceIndex else { return true }
+        // bonsplit interpreta el destino como hueco de inserción sobre la lista original.
+        let destination = finalIndex > sourceIndex ? finalIndex + 1 : finalIndex
+        return bonsplitController.reorderTab(tabId, toIndex: destination)
+    }
+
+    /// Ejecuta `body` y devuelve la selección de cada panel y el panel enfocado a como estaban.
+    private func preservingTabSelection(_ body: () -> Void) {
+        let focusedPane = bonsplitController.focusedPaneId
+        let selectedByPane: [(PaneID, TabID?)] = bonsplitController.allPaneIds.map {
+            ($0, bonsplitController.selectedTab(inPane: $0)?.id)
+        }
+        body()
+        for (paneId, tabId) in selectedByPane {
+            guard let tabId, bonsplitController.selectedTab(inPane: paneId)?.id != tabId else { continue }
+            bonsplitController.selectTab(tabId)
+        }
+        if let focusedPane, bonsplitController.focusedPaneId != focusedPane {
+            bonsplitController.focusPane(focusedPane)
+        }
+    }
+
     /// Pestaña de la ventana: ruedecita mientras trabaja, mano cuando espera, icono normal si no.
     private func syncAgentActivityTabIndicator(panelId: UUID) {
         guard panels[panelId] is TerminalPanel,
@@ -20968,6 +21053,12 @@ extension Workspace: BonsplitDelegate {
             }
         case .moveToNewWorkspace:
             _ = AppDelegate.shared?.moveBonsplitTabToNewWorkspace(tabId: tab.id.uuid, focus: true, focusWindow: false)
+        case .moveLeft:
+            guard let panelId = panelIdFromSurfaceId(tab.id) else { return }
+            movePanelWithinGroup(panelId: panelId, offset: -1)
+        case .moveRight:
+            guard let panelId = panelIdFromSurfaceId(tab.id) else { return }
+            movePanelWithinGroup(panelId: panelId, offset: 1)
         case .moveToLeftPane:
             guard let panelId = panelIdFromSurfaceId(tab.id) else { return }
             _ = moveSurfaceToAdjacentPane(panelId: panelId, direction: .left)

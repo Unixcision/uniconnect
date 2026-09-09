@@ -92,6 +92,9 @@ final class MobileWorkspaceListObserver {
                 // Actividad de IA (activity.v1): el coordinador la publica como mucho cada
                 // dos segundos, así que el móvil recibe `workspace.updated` coalescido.
                 workspace.$agentActivityByPanelId.map { _ in () }.eraseToAnyPublisher(),
+                // Favoritos de ventana (box_update): fijar una pestaña no cambia el
+                // conjunto de paneles ni su título, solo este conjunto.
+                workspace.$pinnedPanelIds.map { _ in () }.eraseToAnyPublisher(),
                 // Pure drag-reorders change spatial order without changing the panel
                 // set; bonsplit selection state is not `@Published`, so this counter
                 // is the only signal the observer gets for a reorder.
@@ -152,6 +155,7 @@ final class MobileWorkspaceListObserver {
                 hasher.combine(workspace.panelTitle(panelId: id))
                 hasher.combine(workspace.panelDirectories[id])
                 hasher.combine(workspace.agentActivityByPanelId[id])
+                hasher.combine(workspace.pinnedPanelIds.contains(id))
                 let localRecord = workspace.uniConnectLocalWindowsByPanelId[id]
                 hasher.combine(localRecord?.tmuxBinding)
                 hasher.combine(localRecord?.runtimeState.rawValue)

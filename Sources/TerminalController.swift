@@ -1819,6 +1819,10 @@ class TerminalController {
             return v2Result(id: id, self.v2MobileHostStatus(params: params))
         case "mobile.workspace.list":
             return v2Result(id: id, self.v2MobileWorkspaceList(params: params))
+        case "mobile.workspace.update":
+            return v2Result(id: id, self.v2MobileWorkspaceUpdate(params: params))
+        case "mobile.terminal.update":
+            return v2Result(id: id, self.v2MobileTerminalUpdate(params: params))
         case "mobile.notifications.list":
             return v2Result(id: id, self.v2MobileNotificationsList(params: params))
         case "mobile.terminal.create", "terminal.create":
@@ -2366,6 +2370,8 @@ class TerminalController {
             "mobile.host.status",
             "mobile.attach_ticket.create",
             "mobile.workspace.list",
+            "mobile.workspace.update",
+            "mobile.terminal.update",
             "mobile.notifications.list",
             "mobile.terminal.create",
             "mobile.terminal.reconnect",
@@ -20914,6 +20920,10 @@ class TerminalController {
             result = await v2MobileAttachTicketCreate(params: request.params)
         case "mobile.workspace.list", "workspace.list":
             result = v2MobileWorkspaceList(params: request.params)
+        case "mobile.workspace.update":
+            result = v2MobileWorkspaceUpdate(params: request.params)
+        case "mobile.terminal.update":
+            result = v2MobileTerminalUpdate(params: request.params)
         case "mobile.notifications.list":
             result = v2MobileNotificationsList(params: request.params)
         case "workspace.create":
@@ -21401,6 +21411,7 @@ class TerminalController {
                     ),
                     "is_ready": terminal.surface.surface != nil,
                     "is_focused": terminal.id == workspace.focusedPanelId,
+                    "is_pinned": workspace.isPanelPinned(terminal.id),
                     "tmux_binding": tmuxBinding,
                     "runtime_state": v2OrNull(localRecord?.runtimeState.rawValue),
                     "agent": v2OrNull(localRecord?.activeConversation?.kind.rawValue),
@@ -21447,7 +21458,186 @@ class TerminalController {
 
     /// Capacidades del snapshot `mobile.workspace.list` que este host implementa.
     /// `activity.v1`: cada terminal y cada espacio llevan un objeto `activity`.
-    private static let mobileWorkspaceListCapabilities: [String] = ["activity.v1"]
+    /// `box_update`: favoritos y orden compartidos (`mobile.workspace.update`,
+    /// `mobile.terminal.update`, `is_pinned` en cada terminal, fijados primero).
+    private static let mobileWorkspaceListCapabilities: [String] = ["activity.v1", "box_update"]
+
+    /// Cambio de favorito y/o posición del contrato `box_update`, ya validado.
+    private struct MobileArrangementChange {
+        let isPinned: Bool?
+        let position: Int?
+    }
+
+    /// Valida `is_pinned` / `position`; los mensajes coinciden con los de Linux.
+    private func mobileArrangementChange(
+        params: [String: Any]
+    ) -> (change: MobileArrangementChange?, error: V2CallResult?) {
+        var isPinned: Bool?
+        if v2HasNonNullParam(params, "is_pinned") {
+            guard let value = params["is_pinned"] as? Bool else {
+                return (nil, .err(
+                    code: "invalid_params",
+                    message: String(localized: "uniconnect.shared.el.favorito.debe.ser.verdadero.o.falso", defaultValue: "El favorito debe ser verdadero o falso"),
+                    data: nil
+                ))
+            }
+            isPinned = value
+        }
+        var position: Int?
+        if v2HasNonNullParam(params, "position") {
+            guard let value = v2Int(params, "position") else {
+                return (nil, .err(
+                    code: "invalid_params",
+                    message: String(localized: "uniconnect.shared.la.posici.n.debe.ser.un.n.mero.entero", defaultValue: "La posición debe ser un número entero"),
+                    data: nil
+                ))
+            }
+            position = value
+        }
+        guard isPinned != nil || position != nil else {
+            return (nil, mobileArrangementInvalidChange(code: "invalid_params"))
+        }
+        return (MobileArrangementChange(isPinned: isPinned, position: position), nil)
+    }
+
+    private func mobileArrangementInvalidChange(code: String) -> V2CallResult {
+        .err(
+            code: code,
+            message: String(localized: "uniconnect.shared.cambio.de.favoritos.u.orden.no.v.lido", defaultValue: "Cambio de favoritos u orden no válido"),
+            data: nil
+        )
+    }
+
+    /// Busca el espacio en el gestor preferido y, si no está, en el resto de ventanas de la app.
+    @MainActor
+    private func mobileLocateWorkspace(
+        _ workspaceId: UUID,
+        preferring tabManager: TabManager
+    ) -> (tabManager: TabManager, workspace: Workspace)? {
+        var managers = [tabManager]
+        for candidate in UniConnectCoordinator.shared.allTabManagers()
+        where !managers.contains(where: { $0 === candidate }) {
+            managers.append(candidate)
+        }
+        for manager in managers {
+            if let workspace = manager.tabs.first(where: { $0.id == workspaceId }) {
+                return (manager, workspace)
+            }
+        }
+        return nil
+    }
+
+    /// `mobile.workspace.update {workspace_id, is_pinned?, position?}` (contrato `box_update`):
+    /// valores explícitos por ID, primero el favorito y luego la posición base cero dentro de
+    /// su grupo; responde con el mismo objeto completo que `mobile.workspace.list`.
+    private func v2MobileWorkspaceUpdate(params: [String: Any]) -> V2CallResult {
+        if let error = mobileMutationUnavailable() { return error }
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
+        }
+        guard let workspaceId = v2UUID(params, "workspace_id") else {
+            return .err(
+                code: "invalid_params",
+                message: String(localized: "uniconnect.shared.indica.una.caja.existente", defaultValue: "Indica una caja existente"),
+                data: nil
+            )
+        }
+        let parsed = mobileArrangementChange(params: params)
+        guard let change = parsed.change else {
+            return parsed.error ?? mobileArrangementInvalidChange(code: "invalid_params")
+        }
+        return v2MainSync {
+            guard let located = mobileLocateWorkspace(workspaceId, preferring: tabManager) else {
+                return .err(
+                    code: "invalid_params",
+                    message: String(localized: "uniconnect.shared.no.se.encontr.la.caja", defaultValue: "No se encontró la caja"),
+                    data: nil
+                )
+            }
+            let (manager, workspace) = located
+            let wasPinned = workspace.isPinned
+            if let isPinned = change.isPinned, workspace.isPinned != isPinned {
+                manager.setPinned(workspace, pinned: isPinned)
+                guard workspace.isPinned == isPinned else {
+                    return mobileArrangementInvalidChange(code: "unavailable")
+                }
+            }
+            if let position = change.position {
+                let plan = MobileBoxArrangement<UUID>.plan(
+                    orderedIDs: manager.tabs.map(\.id),
+                    pinnedIDs: Set(manager.tabs.filter(\.isPinned).map(\.id)),
+                    target: workspaceId,
+                    isPinned: nil,
+                    position: position
+                )
+                guard let index = plan?.index(of: workspaceId),
+                      manager.reorderWorkspace(tabId: workspaceId, toIndex: index) else {
+                    if workspace.isPinned != wasPinned {
+                        manager.setPinned(workspace, pinned: wasPinned)
+                    }
+                    return mobileArrangementInvalidChange(code: "unavailable")
+                }
+            }
+            return self.v2MobileWorkspaceList(params: [:], tabManager: manager)
+        }
+    }
+
+    /// `mobile.terminal.update {workspace_id, terminal_id, is_pinned?, position?}` (contrato
+    /// `box_update`): el favorito y la posición de una ventana dentro de su espacio, sin tocar
+    /// foco, selección ni splits; responde con el objeto completo de `mobile.workspace.list`.
+    private func v2MobileTerminalUpdate(params: [String: Any]) -> V2CallResult {
+        if let error = mobileMutationUnavailable() { return error }
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
+        }
+        guard let workspaceId = v2UUID(params, "workspace_id") else {
+            return .err(
+                code: "invalid_params",
+                message: String(localized: "uniconnect.shared.indica.una.caja.existente", defaultValue: "Indica una caja existente"),
+                data: nil
+            )
+        }
+        let terminalId: UUID
+        switch mobileTerminalAliasUUID(params: params) {
+        case let .value(value):
+            terminalId = value
+        case .missing, .invalid, .conflict:
+            return .err(
+                code: "invalid_params",
+                message: String(localized: "uniconnect.shared.indica.una.ventana.existente", defaultValue: "Indica una ventana existente"),
+                data: nil
+            )
+        }
+        let parsed = mobileArrangementChange(params: params)
+        guard let change = parsed.change else {
+            return parsed.error ?? mobileArrangementInvalidChange(code: "invalid_params")
+        }
+        return v2MainSync {
+            guard let located = mobileLocateWorkspace(workspaceId, preferring: tabManager) else {
+                return .err(
+                    code: "invalid_params",
+                    message: String(localized: "uniconnect.shared.no.se.encontr.la.caja", defaultValue: "No se encontró la caja"),
+                    data: nil
+                )
+            }
+            let (manager, workspace) = located
+            guard workspace.terminalPanel(for: terminalId) != nil else {
+                return .err(
+                    code: "invalid_params",
+                    message: String(localized: "uniconnect.shared.no.se.encontr.la.ventana", defaultValue: "No se encontró la ventana"),
+                    data: nil
+                )
+            }
+            guard workspace.applyMobileTerminalArrangement(
+                panelId: terminalId,
+                isPinned: change.isPinned,
+                position: change.position
+            ) else {
+                return mobileArrangementInvalidChange(code: "unavailable")
+            }
+            return self.v2MobileWorkspaceList(params: [:], tabManager: manager)
+        }
+    }
 
     private enum MobileTerminalAliasUUID {
         case missing
@@ -22266,11 +22456,11 @@ class TerminalController {
     }
 
     private func mobileTerminalPanels(in workspace: Workspace) -> [TerminalPanel] {
-        // Use the workspace's spatial (left-to-right, top-to-bottom) panel order
-        // so the phone's terminal dropdown matches the on-screen bonsplit layout,
-        // rather than focused-first/UUID order. `is_focused` in the payload still
-        // tells the phone which terminal is active.
-        orderedPanels(in: workspace).compactMap { $0 as? TerminalPanel }
+        // Spatial (left-to-right, top-to-bottom) bonsplit order with the pinned
+        // windows first and the rest stable (contrato box_update), rather than
+        // focused-first/UUID order. `is_focused` in the payload still tells the
+        // phone which terminal is active.
+        workspace.mobileOrderedTerminalPanelIds().compactMap { workspace.terminalPanel(for: $0) }
     }
 
     private func mobileNonEmpty(_ raw: String?) -> String? {
