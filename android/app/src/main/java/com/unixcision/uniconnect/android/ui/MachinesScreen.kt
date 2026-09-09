@@ -64,7 +64,8 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
     val connection = machine?.let { state.connections[it.id] }
     val workspace = connection?.snapshot?.workspaces?.firstOrNull { it.id == state.selectedWorkspace }
     val window = workspace?.windows?.firstOrNull { it.id == state.selectedWindow }
-    val overrides = machine?.let { state.overrides[it.id] } ?: BoxOverrides()
+    // Against a host that keeps favourites itself, the phone's own copy is not shown.
+    val overrides = machine?.takeIf { connection?.snapshot?.keepsBoxes != true }?.let { state.overrides[it.id] } ?: BoxOverrides()
     var removing by remember { mutableStateOf<Machine?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     BackHandler(enabled = machine != null, onBack = model::back)

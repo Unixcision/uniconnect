@@ -161,6 +161,7 @@ class MachinesViewModel(
                         val snapshot = client.probe(machine)
                         noticeNames.remember(machine.id, snapshot)
                         mutableState.update { if (stale()) it else it.copy(connections = it.connections + (machine.id to Connection(connected = true, snapshot = snapshot))) }
+                        handOverBoxes(machine, snapshot)
                     } catch (cancelled: CancellationException) { throw cancelled }
                     catch (failure: Exception) {
                         val code = (failure as? MachineFailure.Rejected)?.code
@@ -263,6 +264,7 @@ class MachinesViewModel(
                     machine.id, created, result.snapshot.workspaces.filter { box -> box.isSSH == true }, firstWindow = true,
                 ) else null
                 noticeNames.remember(machine.id, result.snapshot)
+                handOverBoxes(machine, result.snapshot)
                 mutableState.update { it.copy(creating = false, creation = nextCreation, creationError = null,
                     connections = it.connections + (machine.id to Connection(connected = true, snapshot = result.snapshot)),
                     selectedMachine = machine.id, selectedWorkspace = result.workspaceID, selectedWindow = result.windowID,
@@ -303,7 +305,7 @@ class MachinesViewModel(
     fun toggleWorkspacePinned(workspaceID: String) {
         val machine = selectedMachineOrNull() ?: return
         val snapshot = state.value.connections[machine.id]?.snapshot ?: return
-        val current = state.value.overrides[machine.id] ?: BoxOverrides()
+        val current = overridesFor(machine.id, snapshot)
         val workspace = snapshot.workspaces.firstOrNull { it.id == workspaceID } ?: return
         val pinned = !(workspace.isPinned || workspaceID in current.pinnedWorkspaces)
         boxChange(machine, { client.updateWorkspace(machine, workspaceID, isPinned = pinned, position = null) }) {
@@ -316,7 +318,7 @@ class MachinesViewModel(
         val machine = selectedMachineOrNull() ?: return
         val workspaceID = state.value.selectedWorkspace ?: return
         val snapshot = state.value.connections[machine.id]?.snapshot ?: return
-        val current = state.value.overrides[machine.id] ?: BoxOverrides()
+        val current = overridesFor(machine.id, snapshot)
         val window = snapshot.workspaces.firstOrNull { it.id == workspaceID }?.windows?.firstOrNull { it.id == windowID } ?: return
         val pinned = !(window.isPinned || windowID in current.pinnedWindows)
         boxChange(machine, { client.updateWindow(machine, workspaceID, windowID, isPinned = pinned, position = null) }) {
@@ -328,7 +330,7 @@ class MachinesViewModel(
     fun moveWorkspace(workspaceID: String, delta: Int) {
         val machine = selectedMachineOrNull() ?: return
         val snapshot = state.value.connections[machine.id]?.snapshot ?: return
-        val current = state.value.overrides[machine.id] ?: BoxOverrides()
+        val current = overridesFor(machine.id, snapshot)
         val shown = BoxArrangement.workspaces(snapshot, current).map { it.id }
         val order = if (delta == Int.MIN_VALUE) BoxArrangement.movedToTop(shown, workspaceID) else BoxArrangement.moved(shown, workspaceID, delta)
         val pinned = order.filter { id -> snapshot.workspaces.first { it.id == id }.isPinned || id in current.pinnedWorkspaces }
@@ -341,7 +343,7 @@ class MachinesViewModel(
         val machine = selectedMachineOrNull() ?: return
         val workspaceID = state.value.selectedWorkspace ?: return
         val snapshot = state.value.connections[machine.id]?.snapshot ?: return
-        val current = state.value.overrides[machine.id] ?: BoxOverrides()
+        val current = overridesFor(machine.id, snapshot)
         val workspace = snapshot.workspaces.firstOrNull { it.id == workspaceID } ?: return
         val shown = BoxArrangement.windows(workspace, current).map { it.id }
         val order = if (delta == Int.MIN_VALUE) BoxArrangement.movedToTop(shown, windowID) else BoxArrangement.moved(shown, windowID, delta)
@@ -377,6 +379,46 @@ class MachinesViewModel(
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { mutableState.update { it.copy(error = R.string.box_change_failed) } }
+        }
+    }
+
+    /** The phone's own favourites and order count only against a host that cannot keep them. */
+    private fun overridesFor(machineID: String, snapshot: MachineSnapshot): BoxOverrides =
+        if (snapshot.keepsBoxes) BoxOverrides() else state.value.overrides[machineID] ?: BoxOverrides()
+
+    private val handingOver = mutableSetOf<String>()
+
+    /**
+     * Once a host starts keeping favourites, what the phone marked on its own goes to the host
+     * a single time (pins only; the host's order wins) and the local copy is dropped, so the
+     * two never disagree. A failed hand-over keeps the copy and tries again on the next snapshot.
+     */
+    private fun handOverBoxes(machine: Machine, snapshot: MachineSnapshot) {
+        if (!snapshot.keepsBoxes) return
+        val kept = state.value.overrides[machine.id] ?: return
+        if (kept.isEmpty || !handingOver.add(machine.id)) return
+        viewModelScope.launch {
+            try {
+                var latest = snapshot
+                for (workspace in snapshot.workspaces) {
+                    if (workspace.id in kept.pinnedWorkspaces && !workspace.isPinned) {
+                        latest = client.updateWorkspace(machine, workspace.id, isPinned = true, position = null)
+                    }
+                    for (window in workspace.windows) if (window.id in kept.pinnedWindows && !window.isPinned) {
+                        latest = client.updateWindow(machine, workspace.id, window.id, isPinned = true, position = null)
+                    }
+                }
+                mutableState.update {
+                    it.copy(
+                        overrides = it.overrides - machine.id,
+                        hostKeepsOrder = it.hostKeepsOrder + (machine.id to true),
+                        connections = it.connections + (machine.id to (it.connections[machine.id] ?: Connection()).copy(connected = true, snapshot = latest)),
+                    )
+                }
+                boxOverrides.save(machine.id, BoxOverrides())
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { mutableState.update { it.copy(error = R.string.box_change_failed) } }
+            finally { handingOver.remove(machine.id) }
         }
     }
 
@@ -485,6 +527,7 @@ class MachinesViewModel(
                         when (update) {
                             is MachineUpdate.Workspaces -> {
                                 noticeNames.remember(machine.id, update.snapshot)
+                                handOverBoxes(machine, update.snapshot)
                                 mutableState.update { current ->
                                     val creation = current.creation
                                     val refreshedCreation = if (creation?.machineID == machine.id && creation.workspace != null) {
