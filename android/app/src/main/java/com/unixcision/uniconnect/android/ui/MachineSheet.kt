@@ -82,7 +82,7 @@ fun SheetField(
         label = { Text(label) },
         placeholder = placeholder?.let { { Text(it, color = UniTheme.colors.muted.copy(alpha = .6f)) } },
         supportingText = hint?.let { { Text(it) } },
-        singleLine = true, enabled = enabled, shape = UniTheme.shapes.button,
+        singleLine = true, enabled = enabled, shape = UniTheme.shapes.field,
         keyboardOptions = KeyboardOptions(keyboardType = keyboard, autoCorrectEnabled = !monospace),
         textStyle = if (monospace) MaterialTheme.typography.bodyLarge.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace) else MaterialTheme.typography.bodyLarge,
         colors = OutlinedTextFieldDefaults.colors(

@@ -11,6 +11,8 @@ import androidx.compose.ui.unit.TextUnit
  * - [identifierFamily] dresses names of machines, boxes and windows, and addresses.
  * - [labelUppercase] says whether eyebrow labels and metadata are set in small capitals, and
  *   [labelLetterSpacing] how much they are tracked.
+ * - [labelQuiet] sets section labels in the muted colour at normal weight instead of the accent
+ *   in bold, so a very clean theme names a section without shouting it.
  */
 @Immutable
 data class UniType(
@@ -18,4 +20,5 @@ data class UniType(
     val identifierFamily: FontFamily,
     val labelUppercase: Boolean,
     val labelLetterSpacing: TextUnit,
+    val labelQuiet: Boolean = false,
 )

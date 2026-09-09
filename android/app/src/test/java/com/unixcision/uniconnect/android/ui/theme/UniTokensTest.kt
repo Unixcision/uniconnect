@@ -11,7 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * What every one of the eight theme readings must hold, checked through the same pure function
+ * What every one of the ten theme readings must hold, checked through the same pure function
  * the screens use. Contrast is the WCAG ratio, so a palette that stops reading fails here.
  */
 class UniTokensTest {
@@ -78,10 +78,13 @@ class UniTokensTest {
     }
 
     @Test
-    fun senalIsCompactAndSerenoIsNot() {
+    fun senalIsCompactAndNieveAndSerenoAreNot() {
         assertEquals(RowDensity.COMPACT, UniTokens.tokensFor(DesignTheme.SENAL, dark = false).layout.density)
         assertEquals(RowDensity.COMPACT, UniTokens.tokensFor(DesignTheme.SENAL, dark = true).layout.density)
         assertEquals(RowDensity.COMFORTABLE, UniTokens.tokensFor(DesignTheme.SERENO, dark = false).layout.density)
+        listOf(false, true).forEach { dark ->
+            assertEquals("nieve dark=$dark leaves air around a row", RowDensity.COMFORTABLE, UniTokens.tokensFor(DesignTheme.NIEVE, dark).layout.density)
+        }
     }
 
     @Test
@@ -96,13 +99,16 @@ class UniTokensTest {
     fun senalAndTintaSeparateRowsWithHairlines() {
         assertEquals(CardStyle.HAIRLINE, UniTokens.tokensFor(DesignTheme.SENAL, dark = true).layout.rowsAs)
         assertEquals(CardStyle.HAIRLINE, UniTokens.tokensFor(DesignTheme.TINTA, dark = true).layout.rowsAs)
+        assertEquals(CardStyle.CARD, UniTokens.tokensFor(DesignTheme.NIEVE, dark = true).layout.rowsAs)
         assertEquals(CardStyle.CARD, UniTokens.tokensFor(DesignTheme.SERENO, dark = true).layout.rowsAs)
         assertEquals(CardStyle.CARD, UniTokens.tokensFor(DesignTheme.TERMINAL, dark = true).layout.rowsAs)
     }
 
     @Test
-    fun boxesAreARailInSerenoAndAGridOfTheAgreedColumnsElsewhere() {
-        assertEquals(WorkspaceLayout.RAIL, UniTokens.tokensFor(DesignTheme.SERENO, dark = false).layout.workspacesAs)
+    fun boxesAreARailInNieveAndSerenoAndAGridOfTheAgreedColumnsElsewhere() {
+        listOf(DesignTheme.NIEVE, DesignTheme.SERENO).forEach { theme ->
+            assertEquals("$theme is a rail", WorkspaceLayout.RAIL, UniTokens.tokensFor(theme, dark = false).layout.workspacesAs)
+        }
         listOf(DesignTheme.SENAL to 2, DesignTheme.TINTA to 1, DesignTheme.TERMINAL to 3).forEach { (theme, columns) ->
             val layout = UniTokens.tokensFor(theme, dark = false).layout
             assertEquals("$theme is a grid", WorkspaceLayout.GRID, layout.workspacesAs)
@@ -136,10 +142,88 @@ class UniTokensTest {
 
     @Test
     fun radiiFollowTheBrief() {
+        assertEquals(28f, UniTokens.tokensFor(DesignTheme.NIEVE, dark = false).shapes.cardRadius.value)
         assertEquals(24f, UniTokens.tokensFor(DesignTheme.SERENO, dark = false).shapes.cardRadius.value)
         assertEquals(12f, UniTokens.tokensFor(DesignTheme.SENAL, dark = false).shapes.cardRadius.value)
         assertEquals(4f, UniTokens.tokensFor(DesignTheme.TINTA, dark = false).shapes.cardRadius.value)
         assertEquals(8f, UniTokens.tokensFor(DesignTheme.TERMINAL, dark = false).shapes.cardRadius.value)
+    }
+
+    @Test
+    fun nieveRoundsHarderThanEveryOtherThemeAndItsChipsAndButtonsArePills() {
+        val nieve = UniTokens.tokensFor(DesignTheme.NIEVE, dark = false).shapes
+        (themes - DesignTheme.NIEVE).forEach { theme ->
+            val other = UniTokens.tokensFor(theme, dark = false).shapes
+            assertTrue("$theme cards round less than nieve", other.cardRadius.value < nieve.cardRadius.value)
+        }
+        // A pill is any radius past half the height of what it wraps; 999 dp is how a shape says so.
+        assertTrue("nieve chips are pills", nieve.chipRadius.value >= 999f)
+        assertTrue("nieve buttons are pills", nieve.buttonRadius.value >= 999f)
+        assertTrue("nieve sheets round at least as hard as its cards", nieve.sheetRadius >= nieve.cardRadius)
+        // A floating label has nowhere to sit in the notch of a pill, so the field steps back.
+        assertTrue("nieve fields are not pills", nieve.fieldRadius < nieve.buttonRadius)
+        (themes - DesignTheme.NIEVE).forEach { theme ->
+            val other = UniTokens.tokensFor(theme, dark = false).shapes
+            assertEquals("$theme fields follow its buttons", other.buttonRadius, other.fieldRadius)
+        }
+    }
+
+    @Test
+    fun nieveLeavesMoreAirBetweenBlocksThanTheThemeItIsClosestTo() {
+        val nieve = UniTokens.tokensFor(DesignTheme.NIEVE, dark = false).spacing
+        val sereno = UniTokens.tokensFor(DesignTheme.SERENO, dark = false).spacing
+        assertTrue("nieve keeps a wide page margin", nieve.page.value >= 20f)
+        assertTrue("nieve separates blocks more than sereno", nieve.gap > sereno.gap)
+        assertTrue("nieve separates things inside a row more than sereno", nieve.gapSmall > sereno.gapSmall)
+    }
+
+    @Test
+    fun onlyNieveSeparatesASurfaceWithLight() {
+        listOf(false, true).forEach { dark ->
+            assertTrue("nieve dark=$dark floats", UniTokens.tokensFor(DesignTheme.NIEVE, dark).elevation.floats)
+        }
+        (themes - DesignTheme.NIEVE).forEach { theme ->
+            listOf(false, true).forEach { dark ->
+                val elevation = UniTokens.tokensFor(theme, dark).elevation
+                assertFalse("$theme dark=$dark stays flat", elevation.floats)
+                assertEquals("$theme dark=$dark keeps its one pixel edge", UniElevation.flat, elevation)
+            }
+        }
+    }
+
+    @Test
+    fun nieveCastsTwoLayersInTheLightAndLiftsItsSurfacesInTheDark() {
+        val light = UniTokens.tokensFor(DesignTheme.NIEVE, dark = false).elevation
+        assertTrue("the wide layer spreads further than the short one", light.ambient > light.key)
+        assertTrue("the short layer is there at all", light.key.value > 0f)
+        assertTrue("the wide layer is the fainter of the two", light.ambientColor.alpha < light.keyColor.alpha)
+        assertEquals("a lit ground needs no lift", 0f, light.surfaceLift)
+
+        val dark = UniTokens.tokensFor(DesignTheme.NIEVE, dark = true).elevation
+        assertEquals("no wide layer on a dark ground", 0f, dark.ambient.value)
+        assertEquals("no short layer on a dark ground", 0f, dark.key.value)
+        assertTrue("a dark ground lifts instead", dark.surfaceLift > 0f)
+        assertTrue("the lift stays a whisper", dark.surfaceLift < .15f)
+    }
+
+    @Test
+    fun nieveKeepsItsEdgeBelowAPixelInBothModes() {
+        listOf(false, true).forEach { dark ->
+            val hairline = UniTokens.tokensFor(DesignTheme.NIEVE, dark).elevation.hairline
+            assertTrue("nieve dark=$dark draws barely an edge", hairline.value > 0f && hairline.value < 1f)
+        }
+    }
+
+    @Test
+    fun onlyNieveNamesItsSectionsQuietlyAndNoneOfItsLabelsShout() {
+        listOf(false, true).forEach { dark ->
+            val type = UniTokens.tokensFor(DesignTheme.NIEVE, dark).type
+            assertTrue("nieve dark=$dark labels are quiet", type.labelQuiet)
+            assertFalse("nieve dark=$dark does not force capitals", type.labelUppercase)
+        }
+        (themes - DesignTheme.NIEVE).forEach { theme ->
+            assertFalse("$theme labels keep their accent", UniTokens.tokensFor(theme, dark = false).type.labelQuiet)
+        }
     }
 
     /** WCAG contrast ratio between two opaque colours. */

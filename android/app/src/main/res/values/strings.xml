@@ -209,6 +209,7 @@
     <string name="settings_design_theme_note">Cambia colores, formas y disposición de toda la app. Se aplica al momento.</string>
     <string name="settings_color_mode">Claro u oscuro</string>
     <string name="settings_color_mode_note">Sistema sigue el ajuste del móvil y cambia con él.</string>
+    <string name="theme_nieve">Nieve</string>
     <string name="theme_sereno">Sereno</string>
     <string name="theme_senal">Señal</string>
     <string name="theme_tinta">Tinta</string>

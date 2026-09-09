@@ -10,12 +10,27 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
 - Splash nativo AndroidX, tema oscuro y reutilización automática del PNG canónico
   `design/UniConnect.icon/Assets/uniconnect-icon.png` sin duplicarlo en fuentes.
 - Recursos de interfaz solo en español y manifiesto sin copia de seguridad.
-- Sistema de temas (2026-09-09): cuatro temas de diseño × claro/oscuro/sistema en
+- Sistema de temas (2026-09-09): cinco temas de diseño × claro/oscuro/sistema en
   `ui/theme/` con tokens puros y testeados (`UniTokensTest`: contraste WCAG de texto,
-  atenuado, acento y estados en las ocho combinaciones; serif en Tinta, mono en Terminal,
+  atenuado, acento y estados en las diez combinaciones; serif en Tinta, mono en Terminal,
   Señal compacto). La paleta fija `Brand` ha desaparecido. Persistencia cubierta por
   `StoredSettingsRepositoryTest` con un DataStore en memoria. Verificado solo compilando y
   con tests: no se ha instalado en ningún móvil ni revisado visualmente.
+- Tema Nieve (2026-09-09): quinto tema minimalista y flotante, primero de la lista en
+  Ajustes → Apariencia. Token nuevo `ui/theme/UniElevation` (capa ambiente, capa corta,
+  elevación por color para el modo oscuro y grosor del canto) como sexto campo de
+  `UniTokens`; los otros cuatro temas usan `UniElevation.flat` y no cambian de aspecto.
+  `UniType` gana `labelQuiet` y `UniShapes` gana `fieldRadius` (por defecto el de los
+  botones, así que solo Nieve lo separa). `GlassCard` apila dos `Modifier.shadow` cuando
+  el tema flota y mantiene el canto en 0,5 dp; en oscuro pone un 5 % de blanco sobre el
+  relleno. La fila de fichas de tema pasa a scroll horizontal con fichas de 96 dp porque
+  cinco no caben repartidas, y la miniatura dibuja la sombra o la elevación del tema que
+  representa. `extraSmall` de Material se acota al radio de tarjeta para que un chip
+  píldora no convierta los menús desplegables en lozanges. Tests: `UniTokensTest` (18
+  casos, incluidos contraste WCAG de Nieve en claro y oscuro, densidad COMFORTABLE,
+  radios grandes, píldoras, aire, sombra en claro / elevación en oscuro, canto por debajo
+  del píxel y etiquetas quietas) y `UniElevationTest` (3 casos). 221 tests JVM en verde.
+  No se ha revisado visualmente en ningún móvil ni emulador.
 - Enviar archivos (2026-09-09): sección global en la home (icono en la barra y fila bajo
   las máquinas) que sube fotos, imágenes o archivos a un servicio de transferencia y da el
   enlace para copiar o compartir. Servicio elegible y guardado en ajustes (presets

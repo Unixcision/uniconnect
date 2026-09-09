@@ -15,6 +15,11 @@ data class UniShapes(
     val sheetRadius: Dp,
     val chipRadius: Dp,
     val buttonRadius: Dp,
+    /**
+     * Text fields, which follow the buttons unless a theme rounds its buttons into pills: a
+     * floating label cannot sit in the notch of a corner that wide.
+     */
+    val fieldRadius: Dp = buttonRadius,
 ) {
     /** Cards, rows and the terminal frame. */
     val card: CornerBasedShape get() = RoundedCornerShape(cardRadius)
@@ -25,6 +30,9 @@ data class UniShapes(
     /** Badges, key caps and small tiles. */
     val chip: CornerBasedShape get() = RoundedCornerShape(chipRadius)
 
-    /** Buttons and text fields. */
+    /** Buttons. */
     val button: CornerBasedShape get() = RoundedCornerShape(buttonRadius)
+
+    /** Text fields. */
+    val field: CornerBasedShape get() = RoundedCornerShape(fieldRadius)
 }

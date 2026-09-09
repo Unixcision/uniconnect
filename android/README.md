@@ -12,23 +12,39 @@ dirección Tailscale y puerto (58465 inicialmente).
   deterministas por caja como el rail compacto del Mac, riel horizontal de espacios de
   trabajo con sus ventanas debajo, hojas inferiores para alta de máquina y creación, y
   transiciones entre niveles. Componentes en `ui/components/`.
-- Temas de diseño (9 de septiembre): cuatro temas elegibles en Ajustes → Apariencia,
-  combinables con claro, oscuro o sistema. `domain/DesignTheme` (`SERENO`, `SENAL`,
-  `TINTA`, `TERMINAL`) y `domain/ColorMode` se guardan en `AppSettings`; los valores
-  antiguos siguen leyéndose y por defecto es Sereno + Sistema. `ui/theme/UniTokens.tokensFor`
-  es una función pura que devuelve colores, formas, espaciado, tipografía y disposición
-  de cada una de las ocho combinaciones; `UniTheme` las publica por `CompositionLocal`
+- Temas de diseño (9 de septiembre): cinco temas elegibles en Ajustes → Apariencia,
+  combinables con claro, oscuro o sistema. `domain/DesignTheme` (`NIEVE`, `SERENO`,
+  `SENAL`, `TINTA`, `TERMINAL`) y `domain/ColorMode` se guardan en `AppSettings`; los
+  valores antiguos siguen leyéndose y por defecto es Sereno + Sistema.
+  `ui/theme/UniTokens.tokensFor` es una función pura que devuelve colores, formas,
+  espaciado, tipografía, disposición y elevación de cada una de las diez combinaciones;
+  `UniTheme` las publica por `CompositionLocal`
   y deriva de ellas el `colorScheme`, las `Shapes` y la `Typography` de Material para que
   hojas, interruptores y botones hereden el tema. Ninguna pantalla lleva colores fijos:
   todo se lee de `UniTheme.colors` (acento, acento como tinte de contenedor, éxito, aviso,
   peligro, texto, atenuado, contorno translúcido y ocho tonos de monograma). Las paletas
   son las de las maquetas de diseño; los fondos son planos y las tarjetas un relleno con
-  contorno de 1 px, sin degradados. Sereno: riel de fichas redondeadas y filas holgadas.
+  contorno de 1 px, sin degradados, salvo en un tema flotante. Sereno: riel de fichas
+  redondeadas y filas holgadas.
   Señal: filas compactas entre hairlines, cajas en rejilla de 2 columnas, etiquetas en
   versalitas con tracking. Tinta: titulares con serif, márgenes anchos, todo entre reglas
   y las cajas como lista índice. Terminal: identificadores en monoespaciada y cajas en
   rejilla densa de 3 columnas con contorno. El cambio se aplica al instante, sin reiniciar.
   Las barras del sistema siguen al modo.
+- Tema Nieve (9 de septiembre): el quinto tema, minimalista y flotante. En claro, página
+  gris muy claro (`#F7F7F9`) con superficies blancas que flotan encima con dos capas de
+  sombra (una amplia y tenue, otra corta y definida) y un canto de 0,5 dp casi invisible;
+  en oscuro, negro cálido (`#0E0E10`) con superficies `#1A1A1E` que se separan por color
+  más 5 % de blanco, porque una sombra no se ve sobre negro. Radios grandes y constantes
+  (tarjetas 28, hojas 32, chips y botones en píldora, campos de texto 16 para que la
+  etiqueta flotante quepa en la muesca), márgenes de 22 y separaciones de 16, filas
+  holgadas, riel de fichas para las cajas, tipografía sans sin versalitas y etiquetas de
+  sección en gris a peso normal. Un solo acento, índigo grafito (`#3A5BD9` en claro,
+  `#7E9BFF` en oscuro), y estados verde, ámbar y rojo apagados. El token nuevo es
+  `ui/theme/UniElevation` (capa ambiente, capa corta, elevación por color y grosor del
+  canto); los otros cuatro temas usan `UniElevation.flat` y quedan idénticos.
+  `GlassCard` y la miniatura de la ficha de tema en Ajustes dibujan la sombra o la
+  elevación por color según lo que diga el token.
 - Creación en dos pasos: «Nuevo espacio de trabajo» envía `initial_terminal:false`; si el
   host confirma una caja vacía se abre al instante la hoja «Primera ventana de …» con el
   catálogo de inicio de esa caja. «Ahora no» deja la caja sin ventanas; nunca se lanza una

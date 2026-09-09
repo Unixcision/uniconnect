@@ -18,7 +18,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -74,9 +76,15 @@ fun SettingsSheet(settings: AppSettings, onChange: (AppSettings) -> Unit, onDism
             SettingsSection(stringResource(R.string.settings_appearance)) {
                 Text(stringResource(R.string.settings_design_theme), style = MaterialTheme.typography.bodyMedium)
                 Text(stringResource(R.string.settings_design_theme_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
-                Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // A fixed width per card and a scroll, not five slivers sharing the sheet: the
+                // thumbnail has to be big enough to show a floating surface and the name has to
+                // fit whole.
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 10.dp).horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
                     DesignTheme.entries.forEach { theme ->
-                        ThemeCard(theme, selected = settings.designTheme == theme, dark = UniTheme.colors.isDark, Modifier.weight(1f)) {
+                        ThemeCard(theme, selected = settings.designTheme == theme, dark = UniTheme.colors.isDark, Modifier.width(96.dp)) {
                             onChange(settings.copy(designTheme = theme))
                         }
                     }
@@ -173,27 +181,38 @@ fun SettingsSheet(settings: AppSettings, onChange: (AppSettings) -> Unit, onDism
 
 /**
  * One design theme to pick, drawn in its own palette for the mode in force: its ground, a small
- * card on it, its accent and two lines of text. The name is set in the theme's own type, so the
- * serif and the monospace announce themselves before they are chosen.
+ * surface on it, its accent and two lines of text. The surface is separated the way the theme
+ * separates one, so a floating theme shows its shadow (or its lift, in the dark) here and a flat
+ * theme shows its rule. The name is set in the theme's own type, so the serif and the monospace
+ * announce themselves before they are chosen.
  */
 @Composable
 private fun ThemeCard(theme: DesignTheme, selected: Boolean, dark: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val preview = remember(theme, dark) { UniTokens.tokensFor(theme, dark) }
     val palette = preview.colors
-    val shape = RoundedCornerShape(preview.shapes.cardRadius.coerceIn(4.dp, 14.dp))
-    val inner = RoundedCornerShape(preview.shapes.cardRadius.coerceIn(2.dp, 8.dp))
+    val elevation = preview.elevation
+    val shape = RoundedCornerShape(preview.shapes.cardRadius.coerceIn(6.dp, 18.dp))
+    val inner = RoundedCornerShape(preview.shapes.cardRadius.coerceIn(3.dp, 12.dp))
     Column(
         modifier.clip(shape).background(palette.background)
             .border(if (selected) 2.dp else 1.dp, if (selected) UniTheme.colors.accent else UniTheme.colors.outline, shape)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
-            .padding(6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
+            .padding(10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Column(
-            Modifier.fillMaxWidth().height(46.dp).background(palette.surface, inner).border(1.dp, palette.outline, inner).padding(6.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp),
+            Modifier.fillMaxWidth().height(52.dp)
+                // Halved so a 52 dp thumbnail is not swallowed by a shadow sized for a real card.
+                .then(if (elevation.ambient > 0.dp) Modifier.shadow(elevation.ambient / 2, inner, clip = false, ambientColor = elevation.ambientColor, spotColor = elevation.ambientColor) else Modifier)
+                .then(if (elevation.key > 0.dp) Modifier.shadow(elevation.key, inner, clip = false, ambientColor = elevation.keyColor, spotColor = elevation.keyColor) else Modifier)
+                .clip(inner)
+                .background(palette.surface)
+                .then(if (elevation.surfaceLift > 0f) Modifier.background(Color.White.copy(alpha = elevation.surfaceLift)) else Modifier)
+                .border(elevation.hairline, palette.outline, inner)
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Box(Modifier.width(18.dp).height(5.dp).background(palette.accent, CircleShape))
+            Box(Modifier.width(20.dp).height(5.dp).background(palette.accent, CircleShape))
             Box(Modifier.fillMaxWidth(.85f).height(4.dp).background(palette.text.copy(alpha = .85f), CircleShape))
             Box(Modifier.fillMaxWidth(.55f).height(4.dp).background(palette.muted, CircleShape))
         }
@@ -274,8 +293,14 @@ private val UploadStyle.label: Int
 /** A titled group of related preferences: a soft container, or rules above and below in a hairline theme. */
 @Composable
 private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    val quiet = UniTheme.type.labelQuiet
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(title, color = UniTheme.colors.accent, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        Text(
+            title,
+            color = if (quiet) UniTheme.colors.muted else UniTheme.colors.accent,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (quiet) FontWeight.Medium else FontWeight.SemiBold,
+        )
         if (UniTheme.layout.cardsAs == CardStyle.HAIRLINE) {
             val rule = UniTheme.colors.outline
             Column(
@@ -325,6 +350,7 @@ private val TerminalView.label: Int
 /** The visible name of a design theme. */
 private val DesignTheme.label: Int
     get() = when (this) {
+        DesignTheme.NIEVE -> R.string.theme_nieve
         DesignTheme.SERENO -> R.string.theme_sereno
         DesignTheme.SENAL -> R.string.theme_senal
         DesignTheme.TINTA -> R.string.theme_tinta

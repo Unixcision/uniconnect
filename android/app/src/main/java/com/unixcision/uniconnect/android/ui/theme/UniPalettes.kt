@@ -3,7 +3,7 @@ package com.unixcision.uniconnect.android.ui.theme
 import androidx.compose.ui.graphics.Color
 
 /**
- * The eight palettes: four themes, each light and dark, as the design mock-ups fix them. Only
+ * The ten palettes: five themes, each light and dark, as the design mock-ups fix them. Only
  * [UniTokens.tokensFor] reads them.
  *
  * Outlines are white or black at a small alpha so one rule reads on page, surface and raised
@@ -13,6 +13,33 @@ import androidx.compose.ui.graphics.Color
 internal object UniPalettes {
     private val white = Color.White
     private val black = Color.Black
+
+    // Nieve: an off-white page with white surfaces floating on it, one graphite indigo, and
+    // nothing else with a colour. In the dark it is a warm near-black with the same restraint;
+    // there the ground, the surface and the raised surface are three steps of the same grey,
+    // because that is what separates them where a shadow cannot.
+    val nieveLight = UniColors(
+        isDark = false,
+        background = Color(0xFFF7F7F9), surface = Color(0xFFFFFFFF), surfaceRaised = Color(0xFFEFEFF3),
+        outline = black.copy(alpha = .05f), text = Color(0xFF0B0B10), muted = Color(0xFF6B6B73),
+        accent = Color(0xFF3A5BD9), onAccent = Color(0xFFFFFFFF), accentSoft = Color(0xFF3A5BD9).copy(alpha = .12f),
+        success = Color(0xFF2A8F58), warning = Color(0xFFB7791F), danger = Color(0xFFC0392F),
+        tones = listOf(
+            Color(0xFF3A5BD9), Color(0xFF0F766E), Color(0xFFB45309), Color(0xFFB02A5B),
+            Color(0xFF1D4ED8), Color(0xFF7C3AED), Color(0xFF4D7C0F), Color(0xFF0E7490),
+        ),
+    )
+    val nieveDark = UniColors(
+        isDark = true,
+        background = Color(0xFF0E0E10), surface = Color(0xFF1A1A1E), surfaceRaised = Color(0xFF232329),
+        outline = white.copy(alpha = .07f), text = Color(0xFFF2F2F5), muted = Color(0xFF9A9AA4),
+        accent = Color(0xFF7E9BFF), onAccent = Color(0xFF0E0E10), accentSoft = Color(0xFF7E9BFF).copy(alpha = .14f),
+        success = Color(0xFF5FD08A), warning = Color(0xFFE8B45C), danger = Color(0xFFF0736B),
+        tones = listOf(
+            Color(0xFF7E9BFF), Color(0xFF5EEAD4), Color(0xFFFBBF24), Color(0xFFFB7185),
+            Color(0xFF93C5FD), Color(0xFFC4B5FD), Color(0xFFA3E635), Color(0xFF67E8F9),
+        ),
+    )
 
     // Sereno: warm neutrals, sand as the accent, nothing loud.
     val serenoDark = UniColors(

@@ -1,6 +1,7 @@
 package com.unixcision.uniconnect.android.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LocalContentColor
@@ -33,6 +34,7 @@ object UniTheme {
     val spacing: UniSpacing @Composable @ReadOnlyComposable get() = LocalUniTokens.current.spacing
     val type: UniType @Composable @ReadOnlyComposable get() = LocalUniTokens.current.type
     val layout: UniLayout @Composable @ReadOnlyComposable get() = LocalUniTokens.current.layout
+    val elevation: UniElevation @Composable @ReadOnlyComposable get() = LocalUniTokens.current.elevation
 }
 
 /**
@@ -97,8 +99,10 @@ private fun UniTokens.materialColorScheme(): ColorScheme {
     )
 }
 
+// Material dresses menus and snackbars with `extraSmall`. A theme whose chips are pills means
+// that literally, so the radius is held to the theme's own cards before it gets there.
 private fun UniTokens.materialShapes() = Shapes(
-    extraSmall = shapes.chip,
+    extraSmall = RoundedCornerShape(shapes.chipRadius.coerceAtMost(shapes.cardRadius)),
     small = shapes.button,
     medium = shapes.card,
     large = shapes.card,
