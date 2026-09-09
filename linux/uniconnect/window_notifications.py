@@ -158,9 +158,13 @@ class WindowNotifications:
                 self._notification_preserve_focus_id = item["surface_id"]
         return changed
 
-    def notify_window(self, workspace, window):
+    def notify_window(self, workspace, window, hook_kind=None):
+        from .activity import notification_kind
         from .mobile_rpc import notification_record
-        item = notification_record(workspace, window, time.time(), str(uuid.uuid4()))
+        monitor = getattr(self, "activity", None)
+        state = monitor.activity(window["id"]).state if monitor is not None else "unknown"
+        item = notification_record(workspace, window, time.time(), str(uuid.uuid4()),
+                                   kind=notification_kind(hook_kind, state))
         item["body"] = self._("Session needs attention")
         def change(history):
             window["unread"] = True

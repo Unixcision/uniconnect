@@ -89,6 +89,21 @@ class WorkspaceSidebar:
         counts = Counter(value["status"] for value in snapshot["windows"] if value["status"])
         return " · ".join(f"{self._(name)}: {count}" for name, count in counts.items())
 
+    def indicator(self, state):
+        """Gtk.Spinner mientras trabaja, icono ámbar mientras espera; nada para idle/unknown."""
+        if state == "working":
+            spinner = Gtk.Spinner()
+            spinner.set_size_request(14, 14)
+            spinner.set_tooltip_text(self._("Trabajando"))
+            spinner.start()
+            return spinner
+        if state == "waiting":
+            icon = Gtk.Image.new_from_icon_name("dialog-question-symbolic", Gtk.IconSize.MENU)
+            icon.get_style_context().add_class("uc-activity-waiting")
+            icon.set_tooltip_text(self._("Esperando tu respuesta"))
+            return icon
+        return None
+
     def card(self, snapshot, compact):
         box = Gtk.Box(spacing=9, margin=8)
         color = Gdk.RGBA()
@@ -106,7 +121,12 @@ class WorkspaceSidebar:
             name = "★ " + name
         title.set_markup(f"<b>{GLib.markup_escape_text(name)}</b>")
         title.get_style_context().add_class("uc-workspace-title")
-        body.pack_start(title, False, False, 0)
+        heading = Gtk.Box(spacing=4)
+        heading.pack_start(title, True, True, 0)
+        indicator = self.indicator(snapshot.get("activity"))
+        if indicator is not None:
+            heading.pack_start(indicator, False, False, 0)
+        body.pack_start(heading, False, False, 0)
         if compact:
             count = len(snapshot["windows"])
             unread = sum(value["unread"] for value in snapshot["windows"])
@@ -188,7 +208,12 @@ class WorkspaceSidebar:
             selected = value["id"] == snapshot["selected"]
             text = ("✓ " if selected else "") + ("★ " if value.get("pinned") else "") + value["name"] + ("  ●" if value["unread"] else "")
             label = Gtk.Label(label=text, xalign=0, ellipsize=Pango.EllipsizeMode.END)
-            button.add(label)
+            inner = Gtk.Box(spacing=4)
+            inner.pack_start(label, True, True, 0)
+            indicator = self.indicator(value.get("activity"))
+            if indicator is not None:
+                inner.pack_start(indicator, False, False, 0)
+            button.add(inner)
             button.set_tooltip_text(value["name"] + (" · " + self._(value["status"]) if value["status"] else ""))
             button.connect("clicked", self.select_clicked, snapshot["id"], value["id"])
             button.connect("button-press-event", self.window_context, snapshot["id"], value["id"])

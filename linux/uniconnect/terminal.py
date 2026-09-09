@@ -67,7 +67,10 @@ class TerminalSurface(Gtk.Box):
         self.terminal.connect("key-press-event", self.on_selection_key)
         self.terminal.connect("notify::current-directory-uri", self.on_directory)
         self.terminal.connect("contents-changed", self.on_mobile_content_changed)
+        self.terminal.connect("contents-changed", self.on_activity_output)
         self.terminal.connect("cursor-moved", self.on_mobile_content_changed)
+        self.terminal.connect("size-allocate", self.on_activity_resize)
+        self._activity_size = None
         self.terminal.drag_dest_set(Gtk.DestDefaults.ALL, [], Gdk.DragAction.COPY)
         self.terminal.drag_dest_add_uri_targets()
         self.terminal.connect("drag-data-received", self.on_drop)
@@ -151,6 +154,19 @@ class TerminalSurface(Gtk.Box):
     def on_mobile_content_changed(self, *_):
         if not self.disposed and hasattr(self.owner, "mobile"):
             self.owner.mobile.terminal_changed(self.record["id"])
+
+    def on_activity_output(self, *_):
+        # Salida real del PTY para activity.v1; el eco y el redibujado se descartan en el resolutor.
+        if not self.disposed and hasattr(self.owner, "activity"):
+            self.owner.activity.note_output(self.record["id"])
+
+    def on_activity_resize(self, *_):
+        if self.disposed or not hasattr(self.owner, "activity"):
+            return
+        size = (self.terminal.get_column_count(), self.terminal.get_row_count())
+        if size != self._activity_size:
+            self._activity_size = size
+            self.owner.activity.note_resize(self.record["id"])
 
     def update_status(self, status, detail=""):
         self.status = status
@@ -512,6 +528,8 @@ class TerminalSurface(Gtk.Box):
         return False
 
     def on_selection_key(self, _, event):
+        if hasattr(self.owner, "activity"):
+            self.owner.activity.note_input(self.record["id"])  # Su eco no cuenta como salida.
         if event.keyval == Gdk.KEY_Escape and self.selection_drag.active:
             self.owner.run_action("cancel_selection")
             return True

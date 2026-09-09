@@ -1,5 +1,8 @@
 """GTK composition and local approval UI for the personal Tailscale adapter."""
 
+import math
+import time
+
 from gi.repository import GLib, Gtk
 
 from .mobile_access import MobileAccess
@@ -18,6 +21,7 @@ class MobileDesktop:
         self.refresh_source = None
         self.terminal_source = None
         self.dirty_terminals = set()
+        self.workspace_source, self.last_workspace_emit = None, -math.inf
         self.button = Gtk.Button.new_from_icon_name("smartphone-symbolic", Gtk.IconSize.BUTTON)
         self.button.set_tooltip_text(window._("Mobile access"))
         self.button.connect("clicked", lambda *_: self.show())
@@ -112,7 +116,21 @@ class MobileDesktop:
         self.schedule_refresh()
 
     def workspace_changed(self):
+        """Emite workspace.updated; ráfagas (actividad cada 2 s) se coalescen a un evento por segundo."""
+        if self.workspace_source is not None:
+            return
+        elapsed = time.monotonic() - self.last_workspace_emit
+        if elapsed >= 1.0:
+            self.last_workspace_emit = time.monotonic()
+            self.host.emit("workspace.updated")
+            return
+        self.workspace_source = GLib.timeout_add(int((1.0 - elapsed) * 1000) + 1, self.flush_workspace)
+
+    def flush_workspace(self):
+        self.workspace_source = None
+        self.last_workspace_emit = time.monotonic()
         self.host.emit("workspace.updated")
+        return False
 
     def notification_created(self, item):
         if not self.window.locked:
@@ -146,4 +164,7 @@ class MobileDesktop:
         if self.terminal_source:
             GLib.source_remove(self.terminal_source)
             self.terminal_source = None
+        if self.workspace_source:
+            GLib.source_remove(self.workspace_source)
+            self.workspace_source = None
         self.host.stop()

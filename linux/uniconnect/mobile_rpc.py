@@ -15,6 +15,7 @@ from concurrent.futures import Future, TimeoutError
 from pathlib import Path
 
 from .mobile_protocol import RPCError
+from .activity import activity_snapshot, workspace_activity
 from .arrangement import WorkspaceArrangement
 from .file_put import FilePutStore, RemoteInbox
 from .mobile_pty import MobilePTYAttachments
@@ -87,6 +88,7 @@ class MobileRPC:
         if operation in ("terminal.attach", "terminal.pty_input", "terminal.pty_resize", "terminal.detach"):
             # PTY spawn/readiness and stream I/O stay off GTK. Only durable
             # identity/approval snapshots are checked on the UI model owner.
+            self.note_activity(operation, params)
             return self.attachments.dispatch(operation, params, connection_id, authorized)
         if operation == "terminal.replay":
             return self.replay(params, authorized=authorized)
@@ -95,6 +97,23 @@ class MobileRPC:
             # la caja y el bloqueo se comprueban en el hilo dueño del modelo.
             return self.file_dispatch(operation, params, connection_id, authorized)
         return self.on_main(lambda: checked(lambda: self._dispatch_main(operation, params, connection_id)))
+
+    # ----- activity.v1 -----
+
+    def note_activity(self, operation, params):
+        """Teclado y redimensionado del móvil: su eco no es salida del agente."""
+        monitor = getattr(self.window, "activity", None)
+        if monitor is None:
+            return
+        attachment = self.attachments.attachments.get(params.get("attach_id")) if isinstance(params, dict) else None
+        target = getattr(attachment, "target", None) or {}
+        surface_id = target.get("surface_id")
+        if not surface_id:
+            return
+        if operation == "terminal.pty_input":
+            monitor.note_input(surface_id)
+        elif operation == "terminal.pty_resize":
+            monitor.note_resize(surface_id)
 
     # ----- file_put.v1 -----
 
@@ -279,6 +298,9 @@ class MobileRPC:
                 raise RPCError("invalid_params", "La entrada de terminal no es válida")
             if not surface.pid:
                 raise RPCError("process_exited", "La terminal está desconectada")
+            monitor = getattr(self.window, "activity", None)
+            if monitor is not None:
+                monitor.note_input(record["id"])
             surface.send(text)
             return {**identifiers, "queued": True}
         if operation in ("terminal.reconnect", "terminal.reset"):
@@ -288,6 +310,9 @@ class MobileRPC:
                 surface.launch()
             return {**identifiers, "queued": True}
         if operation == "terminal.viewport":
+            monitor = getattr(self.window, "activity", None)
+            if monitor is not None:
+                monitor.note_resize(record["id"])
             return {**identifiers, **self.viewport(surface, params, connection_id)}
         if operation == "terminal.scroll":
             lines = params.get("delta_y", params.get("lines", 0))
@@ -324,6 +349,7 @@ class MobileRPC:
         if terminals_filter and not all(isinstance(value, str) and value == terminals_filter[0] for value in terminals_filter):
             raise RPCError("invalid_params", "Identificadores de terminal contradictorios")
         boxes = []
+        monitor = getattr(self.window, "activity", None)
         for workspace in WorkspaceArrangement.ordered(values):
             terminals = []
             for record in WorkspaceArrangement.ordered(workspace["windows"]):
@@ -332,6 +358,7 @@ class MobileRPC:
                 surface = self.window.surfaces.get(record["id"])
                 terminals.append({"id": record["id"], "title": record["name"],
                                   "is_pinned": bool(record.get("pinned")),
+                                  "activity": activity_snapshot(monitor, record["id"]),
                                   "current_directory": record.get("cwd") or workspace.get("cwd"),
                                   "is_ready": bool(surface and surface.pid and not surface.disposed),
                                   "is_focused": surface is self.window.focused_surface and surface is not None,
@@ -345,12 +372,13 @@ class MobileRPC:
             boxes.append({"id": workspace["id"], "title": workspace["name"], "kind": workspace["kind"],
                           "current_directory": workspace.get("cwd"), "is_pinned": workspace.get("pinned", False),
                           "is_selected": workspace["id"] == self.window.store.data.get("selectedWorkspaceId"),
+                          "activity": workspace_activity(monitor, workspace),
                           "available_agent_targets": [{"id": key, "title": title} for key, title in targets],
                           "terminals": terminals})
         if terminals_filter and not any(box["terminals"] for box in boxes):
             raise RPCError("not_found", "No se encontró la terminal")
         return {"workspaces": boxes, "display_name": socket.gethostname(),
-                "capabilities": ["box_update", "file_put.v1"]}
+                "capabilities": ["activity.v1", "box_update", "file_put.v1"]}
 
     def invalidate_terminal(self, panel_id):
         with self.revision_lock:
@@ -540,7 +568,8 @@ class MobileRPC:
                         key=lambda item: (item["created_at_ms"], item["id"]), reverse=True)
         if cursor:
             values = [item for item in values if (item["created_at_ms"], item["id"]) < cursor]
-        page = values[:limit]
+        page = [{**item, "kind": item.get("kind") if item.get("kind") in ("attention", "finished", "info") else "info"}
+                for item in values[:limit]]
         next_cursor = None
         if len(values) > limit:
             item = page[-1]
@@ -549,8 +578,9 @@ class MobileRPC:
         return {"notifications": page, "next_cursor": next_cursor}
 
 
-def notification_record(workspace, record, stamp, identifier):
+def notification_record(workspace, record, stamp, identifier, kind="info"):
     return {"id": identifier, "workspace_id": workspace["id"], "surface_id": record["id"],
             "title": record["name"][:512], "subtitle": workspace["name"][:512], "body": "La sesión necesita tu atención",
             "created_at": datetime.datetime.fromtimestamp(stamp, datetime.timezone.utc).isoformat(),
-            "created_at_ms": int(stamp * 1000), "is_read": False}
+            "created_at_ms": int(stamp * 1000), "is_read": False,
+            "kind": kind if kind in ("attention", "finished", "info") else "info"}

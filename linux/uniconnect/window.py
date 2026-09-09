@@ -49,6 +49,9 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         self.last_input, self.last_saved = time.monotonic(), 0
         self.locked = False
         self.native_sessions = NativeSessions(self)
+        from .activity_monitor import ActivityMonitor
+        self.activity = ActivityMonitor(self)
+        self.activity.start()
         self.fullscreened = False
         self.set_default_size(1350, 840)
         self.set_wmclass("uniconnect", "UniConnect")
@@ -246,11 +249,13 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                 continue
             snapshots.append({"id": workspace["id"], "name": workspace["name"],
                               "pinned": bool(workspace.get("pinned")),
+                              "activity": self.activity.workspace_state(workspace) if hasattr(self, "activity") else "unknown",
                               "kind": workspace["kind"], "color": workspace.get("color") or "#66b9ff",
                               "selected": workspace.get("selectedWindowId"),
                               "windows": tuple({"id": record["id"], "name": record["name"],
                                                 "pinned": bool(record.get("pinned")),
                                                 "unread": bool(record.get("unread")),
+                                                "activity": self.activity.activity(record["id"]).state if hasattr(self, "activity") else "unknown",
                                                 "status": self.surfaces[record["id"]].status if record["id"] in self.surfaces else "Guardada",
                                                 "reconnect": workspace["kind"] == "ssh" and bool(record.get("tmux"))}
                                                for record in WorkspaceArrangement.ordered(workspace.get("windows", [])))})
@@ -1360,6 +1365,8 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         if self._tick_source:
             GLib.source_remove(self._tick_source)
             self._tick_source = 0
+        if hasattr(self, "activity"):
+            self.activity.stop()
         self.persist()
         if hasattr(self, "mobile"):
             self.mobile.close()

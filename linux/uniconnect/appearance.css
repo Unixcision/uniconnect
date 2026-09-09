@@ -264,3 +264,9 @@ window.uniconnect.uc-dark {
     background-image: none;
     border-color: alpha(@uc_ink, 0.08);
 }
+
+/* activity.v1: el agente espera una respuesta (mismo ámbar que la mano alzada del Mac). */
+.uniconnect .uc-activity-waiting,
+.uc-sidebar-flyout .uc-activity-waiting {
+    color: #e0a020;
+}
