@@ -102,6 +102,8 @@ class WorkspaceSidebar:
         body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         title = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END)
         name = snapshot["name"][:2].upper() if compact else snapshot["name"]
+        if snapshot.get("pinned"):
+            name = "★ " + name
         title.set_markup(f"<b>{GLib.markup_escape_text(name)}</b>")
         title.get_style_context().add_class("uc-workspace-title")
         body.pack_start(title, False, False, 0)
@@ -184,7 +186,7 @@ class WorkspaceSidebar:
             button = Gtk.Button()
             button.set_relief(Gtk.ReliefStyle.NONE)
             selected = value["id"] == snapshot["selected"]
-            text = ("✓ " if selected else "") + value["name"] + ("  ●" if value["unread"] else "")
+            text = ("✓ " if selected else "") + ("★ " if value.get("pinned") else "") + value["name"] + ("  ●" if value["unread"] else "")
             label = Gtk.Label(label=text, xalign=0, ellipsize=Pango.EllipsizeMode.END)
             button.add(label)
             button.set_tooltip_text(value["name"] + (" · " + self._(value["status"]) if value["status"] else ""))

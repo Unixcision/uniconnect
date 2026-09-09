@@ -1,0 +1,40 @@
+name: UniConnect favoritos y orden Linux
+on:
+  push:
+    branches: [uniconnect, feat/linux-favorites-order]
+    paths:
+      - linux/**
+      - Resources/Localizable.xcstrings
+      - .github/workflows/uniconnect-linux-arrangement.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  favoritos:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Dependencias de la pantalla aislada
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi python3-cryptography python3-venv gir1.2-gtk-3.0 gir1.2-vte-2.91 xvfb tmux openssh-client
+          /usr/bin/python3 -m venv --system-site-packages linux/.venv
+          linux/.venv/bin/python -m pip install -r linux/requirements-mobile.txt
+      - name: Favoritos, RPC y orden real sin cambiar sesiones
+        env:
+          PYTHONPATH: linux
+        run: xvfb-run -a linux/.venv/bin/python -m unittest discover -s linux/tests -p 'test_arrangement*.py' -v
+      - name: Regresiones de escritorio, persistencia y acceso móvil
+        env:
+          PYTHONPATH: linux
+        run: |
+          for suite in window sidebar state mobile mobile_consent mobile_lazy_surface mobile_pty_rpc first_window mainwindow_copy terminal; do
+            xvfb-run -a linux/.venv/bin/python -m unittest discover -s linux/tests -p "test_${suite}.py" -v || exit 1
+          done
+      - name: Textos y menús en español
+        run: linux/.venv/bin/python -m unittest discover -s linux/tests -p test_i18n.py -v
