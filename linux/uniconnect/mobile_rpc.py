@@ -22,6 +22,7 @@ from .mobile_pty import MobilePTYAttachments
 from .mobile_pty_process import MobilePTYProcess
 from .mobile_render_grid import (MAX_CAPTURE_BYTES, MAX_SCROLLBACK_ROWS, capture_dependencies_ready,
                                  render_grid_from_tmux_capture)
+from .transcribe import TranscriptionEngine
 from .transport import SSHCommand, Transport
 
 
@@ -30,13 +31,14 @@ class MobileRPC:
 
     def __init__(self, window, access, schedule, *, transport_factory=Transport,
                  clock=time.monotonic, wait=time.sleep, pty_factory=MobilePTYProcess,
-                 file_put=None, remote_inbox=None):
+                 file_put=None, remote_inbox=None, transcription=None):
         self.window, self.access, self.schedule = window, access, schedule
         self.transport_factory = transport_factory
         self.clock, self.wait = clock, wait
         self.host = None
         self.file_put = file_put if file_put is not None else FilePutStore(Path.home() / "UniConnect" / "Entrada")
         self.remote_inbox = remote_inbox if remote_inbox is not None else RemoteInbox()
+        self.transcription = transcription if transcription is not None else TranscriptionEngine()
         self.viewports, self.original_sizes = {}, {}
         self.revisions = {}
         self.revision_lock = threading.Lock()
@@ -91,6 +93,10 @@ class MobileRPC:
             return self.attachments.dispatch(operation, params, connection_id, authorized)
         if operation == "terminal.replay":
             return self.replay(params, authorized=authorized)
+        if operation == "audio.transcribe":
+            # Conversión y motor fuera de GTK: solo el bloqueo y el permiso se
+            # comprueban en el hilo dueño del modelo, como en las transferencias.
+            return self.transcribe_dispatch(params, authorized)
         if operation in self.FILE_OPERATIONS:
             # Trozos, verificación y salto SSH fuera de GTK; solo la identidad de
             # la caja y el bloqueo se comprueban en el hilo dueño del modelo.
@@ -193,6 +199,30 @@ class MobileRPC:
         if command is not None:
             remote_copy = lambda path, name: self.remote_inbox.copy(command, path, name)
         return self.file_put.commit(owner, transfer_id, params.get("sha256"), remote_copy=remote_copy)
+
+    # ----- transcribe.v1 -----
+
+    def transcribe_dispatch(self, params, authorized):
+        """Valida y enruta `mobile.audio.transcribe`; el audio nunca se guarda ni se registra."""
+        audio, mime, language = params.get("audio"), params.get("mime"), params.get("language")
+        if not isinstance(audio, str) or not audio:
+            raise RPCError("invalid_params", "No llegó ningún audio que transcribir")
+        if len(audio) > (self.transcription.max_bytes * 4) // 3 + 16:
+            raise RPCError("too_large", "El audio supera el máximo admitido")
+        try:
+            raw = base64.b64decode(audio, validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise RPCError("invalid_params", "El audio no es base64 válido") from error
+        def check():
+            if not authorized():
+                raise RPCError("approval_required", "El permiso de este dispositivo ha sido revocado")
+            if self.window.locked:
+                raise RPCError("locked", "UniConnect está bloqueado")
+            if params.get("workspace_id") is not None:
+                # Contexto opcional: si viene, tiene que seguir existiendo.
+                self.target(params, terminal=params.get("terminal_id") is not None)
+        self.on_main(check)
+        return self.transcription.transcribe(raw, mime, language)
 
     @staticmethod
     def pty_identity(workspace, record):
@@ -371,7 +401,7 @@ class MobileRPC:
         if terminals_filter and not any(box["terminals"] for box in boxes):
             raise RPCError("not_found", "No se encontró la terminal")
         return {"workspaces": boxes, "display_name": socket.gethostname(),
-                "capabilities": ["activity.v1", "box_update", "file_put.v1"]}
+                "capabilities": ["activity.v1", "box_update", "file_put.v1", "transcribe.v1"]}
 
     def invalidate_terminal(self, panel_id):
         with self.revision_lock:

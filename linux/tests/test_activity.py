@@ -339,7 +339,7 @@ class RPCTests(unittest.TestCase):
     def test_workspace_list_publishes_activity_per_terminal_and_workspace(self):
         self.monitor.states["a"] = AgentActivity("waiting", "screen", "claude", 1700000000.4)
         result = self.rpc.dispatch("mobile.workspace.list", {}, "peer")
-        self.assertEqual(result["capabilities"], ["activity.v1", "box_update", "file_put.v1"])
+        self.assertEqual(result["capabilities"], ["activity.v1", "box_update", "file_put.v1", "transcribe.v1"])
         box = result["workspaces"][0]
         self.assertEqual(box["activity"], {"state": "waiting"})
         self.assertEqual(box["terminals"][0]["activity"],
