@@ -333,6 +333,46 @@ Host side on macOS (2026-09-09, `MobileFilePutService` actor in `Sources/Mobile/
   for 10 minutes is deleted together with its `.part` (injected clock, cancellable
   task). `abort` deletes the `.part` immediately.
 
+Host side on Linux (2026-09-09, `linux/uniconnect/file_put.py`, routed by
+`mobile_rpc.py`; the same paths, limits and codes as macOS unless stated here):
+
+- **Binding.** The owner of a transfer is the approved tailnet address of the live
+  connection (`MobileHost.peer_of`), never the TCP connection: the phone opens one
+  connection per transfer and aborts from a fresh one after a failure, so a new
+  connection from the same approved device can continue or abort, while another
+  device, an unknown connection or a revoked one answers `not_found`. `begin` also
+  captures the box id, kind and `credentialId` (each edit of an SSH connection is a
+  new immutable vault revision, so a different id is an edited box); chunk and commit
+  re-resolve the box on the GTK thread and compare: a missing or edited box answers
+  `not_found` and drops the `.part` at once. A locked app answers `locked` to all four
+  RPCs; a locked vault answers `locked` to the commit of an SSH box instead of
+  prompting.
+- **Reservation and names.** `~/UniConnect/Entrada/<YYYYMMDD>/<name>.part`, created
+  `O_EXCL` with mode 0600 and day directory 0700; the final name is the first free
+  ordinal not reserved by another live transfer. `commit` verifies the SHA-256,
+  `fsync`s, hard-links the `.part` to the first free name (`link` fails on an existing
+  file, so nothing is ever replaced) and unlinks the `.part`. `sanitize_name` keeps
+  the last path component, drops control characters, replaces everything that is not
+  a letter, digit, mark, space or one of `. _ - + , @ =` with `_`, strips leading dots
+  and spaces, keeps a final `.ext` of up to 15 alphanumerics, and bounds the result to
+  120 characters and 200 UTF-8 bytes; an empty result becomes `archivo`. `begin` also
+  refuses with `io_failed` when the disk has less than the file size plus 64 MiB free,
+  and with `busy` beyond 4 live transfers per device or 16 in total.
+- **SSH hop.** `RemoteInbox.copy` runs, through the box's validated `SSHCommand`
+  (`Transport.run`, password only via `SSHPASS`), `mkdir -p "$HOME/uniconnect-entrada"`
+  and reads the absolute directory back, then uploads with the existing SFTP client
+  (`SFTPTransfer.put`): a hidden `.<nonce>-<name>.partial` created `O_EXCL`, then the
+  SFTP v3 rename (link+unlink on OpenSSH, so a taken name answers `SSH_FX_FAILURE`
+  instead of being replaced) to `<name>`, `<name>-2`… The name sent is the final host
+  name. The whole copy has a 110 s deadline (the phone waits 120 s); any failure
+  answers the host path with `location: "host"` and a Spanish `remote_error`
+  (`RemoteInbox.describe`, at most 500 characters, no local paths or content).
+- **Threading and expiry.** Chunk writes, verification and the SSH hop run on the
+  peer's thread, never on GTK; only the identity/lock checks hop to the model owner.
+  Expiry (10 minutes without a chunk) is enforced lazily on every file RPC and on
+  every peer disconnect (`FilePutStore.expire`), deleting the `.part`; there is no
+  timer thread. `abort` deletes the `.part` immediately.
+
 ### ローカルウインドウの作成と保存
 
 ショートカット、タブの追加ボタン、コマンドパレット、コンテキストメニューの
