@@ -23,6 +23,23 @@ class AttachRouteTest {
     }
 
     @Test
+    fun theRouteCapturedAtTheTapHoldsWhenThePickerReturns() {
+        // Snapshot changed while the picker was open: the host took files, now it does not.
+        assertEquals(AttachDecision.HostLostCapability, AttachDecision.onReturn(captured = AttachRoute.HOST, takesFilesNow = false))
+        // Nothing changed: send as seen.
+        assertEquals(AttachDecision.Send(AttachRoute.HOST), AttachDecision.onReturn(captured = AttachRoute.HOST, takesFilesNow = true))
+        // The reader saw the fallback line and chose with it: the host gaining the capability meanwhile does not redirect the file.
+        assertEquals(AttachDecision.Send(AttachRoute.EXTERNAL), AttachDecision.onReturn(captured = AttachRoute.EXTERNAL, takesFilesNow = true))
+        assertEquals(AttachDecision.Send(AttachRoute.EXTERNAL), AttachDecision.onReturn(captured = AttachRoute.EXTERNAL, takesFilesNow = false))
+    }
+
+    @Test
+    fun aLostCapabilityNeverBecomesAnExternalUpload() {
+        val decision = AttachDecision.onReturn(captured = AttachRoute.HOST, takesFilesNow = false)
+        assertFalse(decision is AttachDecision.Send)
+    }
+
+    @Test
     fun theTerminalFallbackFollowsEnviarArchivosUnlessChosen() {
         val page = UploadService("temp.sh", UploadStyle.MULTIPART_FILE)
         assertEquals(page, AppSettings(uploadService = page).terminalUpload)

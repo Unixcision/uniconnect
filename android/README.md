@@ -150,7 +150,10 @@ un preset, o «Personalizado» con URL completa: esquema, host, puerto y ruta ta
 RAW_NAMED añade `/<nombre>` a esa ruta y los estilos de formulario envían a la URL tal
 cual) y se guarda aparte (`terminalUploadService`) sin tocar la página. Un `not_found` en
 chunk o commit (transferencia caducada, caja cambiada) es un fallo con su mensaje y
-reintento desde el principio. `domain/FilePutTransfer` (puro) trocea, calcula el SHA-256 y aborta en el host si
+reintento desde el principio. Con tipo de caja desconocido tampoco se pega una copia del
+host. La ruta (host o respaldo) se captura al tocar un botón y se resuelve al volver del
+selector (`domain/AttachDecision`): si el equipo dejó de anunciar la capacidad mientras
+tanto, el adjunto falla con su mensaje y nunca sale al respaldo por su cuenta. `domain/FilePutTransfer` (puro) trocea, calcula el SHA-256 y aborta en el host si
 algo falla; `data/NativeFilePutClient` habla el RPC sobre una sesión framed abierta para
 toda la transferencia, con plazos de 60 s por trozo y 120 s para el commit (el scp puede
 tardar). Los adjuntos van en secuencia y se quedan en la hoja con su motivo si fallan.

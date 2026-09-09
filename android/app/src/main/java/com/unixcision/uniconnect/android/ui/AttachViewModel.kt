@@ -75,18 +75,25 @@ class AttachViewModel(
         viewModelScope.launch { settingsRepository.settings.collect { stored -> mutableState.update { it.copy(service = stored.terminalUpload) } } }
     }
 
-    /** Queues [uris] for [target] by [route] and starts sending if nothing is on its way. */
-    fun attach(target: AttachTarget, uris: List<Uri>, route: AttachRoute) {
+    /**
+     * Queues [uris] for [target] by [route] and starts sending if nothing is on its way. With a
+     * [refusal] the files are listed as failed with that reason and nothing is sent: the route
+     * the reader saw is no longer possible and no other is taken for them.
+     */
+    fun attach(target: AttachTarget, uris: List<Uri>, route: AttachRoute, refusal: Throwable? = null) {
         if (uris.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
             val described = uris.map { uri ->
                 runCatching { reader.describe(uri) }.fold(
-                    onSuccess = { Transfer(UUID.randomUUID().toString(), uri, target, route, it.name, it.size) },
-                    onFailure = { Transfer(UUID.randomUUID().toString(), uri, target, route, uri.lastPathSegment ?: "", 0, status = Status.FAILED, failure = UploadFailure.Unreadable(uri.lastPathSegment ?: uri.toString())) },
+                    onSuccess = {
+                        if (refusal == null) Transfer(UUID.randomUUID().toString(), uri, target, route, it.name, it.size)
+                        else Transfer(UUID.randomUUID().toString(), uri, target, route, it.name, it.size, status = Status.FAILED, failure = refusal)
+                    },
+                    onFailure = { Transfer(UUID.randomUUID().toString(), uri, target, route, uri.lastPathSegment ?: "", 0, status = Status.FAILED, failure = refusal ?: UploadFailure.Unreadable(uri.lastPathSegment ?: uri.toString())) },
                 )
             }
             mutableState.update { it.copy(transfers = it.transfers + described) }
-            startWorker()
+            if (refusal == null) startWorker()
         }
     }
 

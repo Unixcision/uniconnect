@@ -264,6 +264,8 @@
     <string name="attach_not_pasted_ssh">No está en el servidor de esta ventana SSH, así que la ruta no se pega sola.</string>
     <string name="attach_remote_error_only">No se ha podido copiar al servidor (%1$s); la ruta del equipo no se pega en una ventana SSH.</string>
     <string name="attach_copy_host_path">Copiar ruta del equipo</string>
+    <string name="attach_not_pasted_unknown">No se sabe dónde corre el agente de esta ventana, así que la ruta no se pega sola.</string>
+    <string name="attach_failed_capability_lost">El equipo ha dejado de admitir adjuntos directos; vuelve a intentarlo</string>
     <string name="attach_kept_toast">Adjunto guardado en el equipo, sin pegar: mira en Adjuntar</string>
     <string name="attach_transfers">Adjuntos de esta ventana</string>
     <string name="attach_sending">Enviando… %1$d %%</string>

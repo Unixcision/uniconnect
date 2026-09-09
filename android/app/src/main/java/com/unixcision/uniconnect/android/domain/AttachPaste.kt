@@ -21,16 +21,11 @@ object AttachPaste {
      * Whether a file that ended at [location] may be pasted into a window whose box is SSH
      * ([windowIsSSH] true), local (false) or of unknown kind (null). A remote copy is always
      * where the agent can read it; a host copy is not, for an SSH window: the reader is told and
-     * offered the path, but nothing is pasted for them. When the kind is unknown, a
-     * [remoteError] is the host saying it tried a hop and failed, so the copy is not pasted
-     * either; without one the host treated the box as local and the copy is where it belongs.
+     * offered the path, but nothing is pasted for them. An unknown kind proves nothing, so a
+     * host copy is not pasted for it either; [remoteError] is shown but does not decide.
      */
     fun shouldPaste(location: FilePutLocation, windowIsSSH: Boolean?, remoteError: String? = null): Boolean = when (location) {
         FilePutLocation.REMOTE -> true
-        FilePutLocation.HOST -> when (windowIsSSH) {
-            true -> false
-            false -> true
-            null -> remoteError.isNullOrBlank()
-        }
+        FilePutLocation.HOST -> windowIsSSH == false
     }
 }

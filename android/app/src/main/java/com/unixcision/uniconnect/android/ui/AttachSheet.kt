@@ -26,7 +26,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.AttachPaste
+import com.unixcision.uniconnect.android.domain.AttachDecision
 import com.unixcision.uniconnect.android.domain.AttachRoute
+import com.unixcision.uniconnect.android.domain.HostLostCapability
 import com.unixcision.uniconnect.android.domain.MachineFailure
 import com.unixcision.uniconnect.android.domain.UploadFailure
 import com.unixcision.uniconnect.android.domain.UploadService
@@ -83,7 +85,16 @@ private fun AttachSheet(model: AttachViewModel, target: AttachTarget, transfers:
     // snapshot changed meanwhile; only after process death do the current values stand in.
     var armed by remember { mutableStateOf<Pair<AttachTarget, AttachRoute>?>(null) }
     val pickers = rememberAttachmentPickers(
-        onPicked = { uris -> val (destination, way) = armed ?: (target to route); armed = null; model.attach(destination, uris, way) },
+        onPicked = { uris ->
+            val (destination, way) = armed ?: (target to route)
+            armed = null
+            // The host may have stopped taking files while the picker was open: then the file fails
+            // here and never leaves for the fallback on its own.
+            when (val decision = AttachDecision.onReturn(way, takesFilesNow = target.supportsFilePut)) {
+                is AttachDecision.Send -> model.attach(destination, uris, decision.route)
+                AttachDecision.HostLostCapability -> model.attach(destination, uris, way, refusal = HostLostCapability())
+            }
+        },
         onUnavailable = { armed = null; localError = it },
     )
     val armedPickers = remember(pickers, target, route) {
@@ -167,7 +178,14 @@ private fun TransferRow(transfer: AttachViewModel.Transfer, onRetry: () -> Unit,
                 } else {
                     // Kept on the host, not where this SSH window's agent runs: shown and copyable, never pasted for the reader.
                     Text(stringResource(R.string.attach_kept_on_host, transfer.reference.orEmpty()), style = MaterialTheme.typography.bodySmall, fontFamily = UniTheme.type.identifierFamily, color = colors.text, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                    Text(transfer.remoteError?.let { stringResource(R.string.attach_remote_error_only, it) } ?: stringResource(R.string.attach_not_pasted_ssh), style = MaterialTheme.typography.labelSmall, color = colors.warning)
+                    Text(
+                        when {
+                            transfer.remoteError != null -> stringResource(R.string.attach_remote_error_only, transfer.remoteError)
+                            transfer.target.isSSH == true -> stringResource(R.string.attach_not_pasted_ssh)
+                            else -> stringResource(R.string.attach_not_pasted_unknown)
+                        },
+                        style = MaterialTheme.typography.labelSmall, color = colors.warning,
+                    )
                     TextButton(onClick = { copyToClipboard(context, transfer.reference.orEmpty()) }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
                         Icon(Icons.Rounded.ContentCopy, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.attach_copy_host_path), style = MaterialTheme.typography.labelMedium)
                     }
@@ -195,6 +213,7 @@ private fun Throwable?.attachMessage(): String = when (this) {
         else -> stringResource(R.string.attach_failed_rejected, detail?.takeIf { it.isNotBlank() } ?: code)
     }
     is MachineFailure -> stringResource(R.string.attach_failed_transport)
+    is HostLostCapability -> stringResource(R.string.attach_failed_capability_lost)
     is UploadFailure -> message()
     else -> stringResource(R.string.attach_failed_transport)
 }
