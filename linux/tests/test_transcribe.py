@@ -1,7 +1,9 @@
 """transcribe.v1 en el host Linux: límites, motor, orden de whisper, errores y borrado del audio."""
 
 import base64
+import errno
 import fcntl
+import socket
 import os
 import shutil
 import struct
@@ -12,10 +14,13 @@ import time
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from uniconnect.mobile_protocol import MAX_FRAME, RPCError
+from uniconnect.mobile_access import MobileAccess
+from uniconnect.mobile_host import MobileHost, _Client
+from uniconnect.mobile_protocol import MAX_FRAME, RPCError, encode_frame
 from uniconnect.mobile_rpc import MobileRPC
-from uniconnect.transcribe import (CLEANUP_MARGIN, LOCK_PREFIX, STAGING_PREFIX, STAGING_SECONDS,
+from uniconnect.transcribe import (BIRTHS_NAME, CLEANUP_MARGIN, LOCK_PREFIX, STAGING_PREFIX,
                                    CancelledTranscription, Engine, SubprocessRunner,
                                    TranscriptionEngine, clean_transcript, is_marker, read_wav_format)
 
@@ -114,7 +119,8 @@ class EngineTestCase(unittest.TestCase):
 
     def leftovers(self):
         """Lo que queda en la carpeta de trabajo, sin contar cerrojos sueltos."""
-        return sorted(item.name for item in self.work.iterdir() if not item.name.startswith(LOCK_PREFIX))
+        return sorted(item.name for item in self.work.iterdir()
+                      if not item.name.startswith(LOCK_PREFIX) and item.name != BIRTHS_NAME)
 
     def engine(self, **overrides):
         options = dict(model_directory=self.models, threads=3, runner=self.runner,
@@ -766,24 +772,57 @@ class OrphanTests(EngineTestCase):
         self.assertTrue(held.exists())
         self.assertTrue((self.work / (LOCK_PREFIX + "convivo")).exists())
 
-    def test_a_lock_being_born_is_untouchable_until_it_is_ancient(self):
-        """El instante entre crear el cerrojo y tomarlo: ahi no puede entrar ningun barrido."""
-        engine = self.engine(grace_seconds=0.0)
-        newborn = self.work / (STAGING_PREFIX + "abc123")
-        newborn.write_bytes(b"")
-        self.assertEqual(engine.sweep_orphans(), 0)
-        self.assertTrue(newborn.exists())
-        stamp = time.time() - STAGING_SECONDS - 60
-        os.utime(newborn, (stamp, stamp))
-        # Antiquisimo pero con su creador vivo (suspendido a medio nacer): intocable.
-        descriptor = os.open(newborn, os.O_RDWR)
+    def test_a_pause_before_the_first_lock_never_costs_the_dictation(self):
+        """El hueco entre crear el archivo y adquirirlo, con el equipo suspendido dentro."""
+        engine, sweeper = self.engine(), self.engine()
+        inside, resume, born = threading.Event(), threading.Event(), []
+        real = tempfile.mkstemp
+        def suspended(*arguments, **options):
+            descriptor, path = real(*arguments, **options)
+            inside.set()
+            resume.wait(10)  # Aqui se para el equipo, ANTES del primer flock.
+            return descriptor, path
+        with mock.patch("uniconnect.transcribe.tempfile.mkstemp", suspended):
+            worker = threading.Thread(target=lambda: born.append(engine.workspace()))
+            worker.start()
+            self.assertTrue(inside.wait(5))
+            staging = [item for item in self.work.iterdir() if item.name.startswith(STAGING_PREFIX)]
+            self.assertEqual(len(staging), 1)
+            for item in self.work.iterdir():  # Pasan mil años y otra instancia barre.
+                os.utime(item, (0, 0))
+            self.assertEqual(sweeper.sweep_orphans(), 0)
+            self.assertTrue(staging[0].exists(), "borrado un nacimiento en curso")
+            resume.set()
+            worker.join(10)
+        self.assertTrue(born[0].exists())  # El renombrado encontro su archivo.
+        self.assertTrue(engine.claimed(born[0]))
+        engine.discard(born[0])
+
+    def test_a_staging_left_by_a_dead_process_is_swept_whatever_its_age(self):
+        engine = self.engine()
+        abandoned = self.work / (STAGING_PREFIX + "abc123")
+        abandoned.write_bytes(b"")
+        self.assertEqual(engine.sweep_orphans(), 1)  # Sin nacimientos en curso y sin dueño.
+        self.assertFalse(abandoned.exists())
+
+    def test_a_staging_its_owner_still_holds_is_never_swept(self):
+        engine = self.engine()
+        held = self.work / (STAGING_PREFIX + "def456")
+        descriptor = os.open(held, os.O_RDWR | os.O_CREAT, 0o600)
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         self.holders.append(descriptor)
+        os.utime(held, (0, 0))
         self.assertEqual(engine.sweep_orphans(), 0)
-        self.assertTrue(newborn.exists())
-        os.close(self.holders.pop())
-        self.assertEqual(engine.sweep_orphans(), 1)
-        self.assertFalse(newborn.exists())
+        self.assertTrue(held.exists())
+
+    def test_the_coordination_lock_is_never_deleted(self):
+        engine = self.engine()
+        engine.discard(engine.workspace())
+        births = self.work / BIRTHS_NAME
+        self.assertTrue(births.exists())
+        os.utime(births, (0, 0))
+        self.assertEqual(engine.sweep_orphans(), 0)
+        self.assertTrue(births.exists())
 
     def test_what_is_not_ours_is_left_alone_however_old(self):
         engine = self.engine(grace_seconds=0.0)
@@ -797,17 +836,43 @@ class OrphanTests(EngineTestCase):
         for item in strangers:
             self.assertTrue(item.exists(), item.name)
 
-    def test_a_failed_birth_does_not_leak_its_descriptor(self):
-        engine = self.engine(work_directory=self.root / "prohibido")
-        engine.work_directory.mkdir()
-        opened = len(os.listdir(f"/dev/fd")) if os.path.isdir("/dev/fd") else None
-        for _ in range(20):
-            with self.assertRaises(RPCError):
-                engine.work_directory.chmod(0o500)  # No se puede crear el directorio de trabajo.
-                engine.workspace()
-        engine.work_directory.chmod(0o700)
-        if opened is not None:
-            self.assertLess(len(os.listdir("/dev/fd")) - opened, 10)
+    def test_a_birth_that_fails_after_opening_closes_its_descriptor(self):
+        """Los fallos que importan son los POSTERIORES a abrir el archivo."""
+        engine = self.engine()
+        engine.work_directory.mkdir(parents=True, exist_ok=True)
+        real_mkstemp, real_flock = tempfile.mkstemp, fcntl.flock
+        for stage in ("flock", "rename", "mkdir"):
+            with self.subTest(stage=stage):
+                opened = []
+                def watched(*arguments, **options):
+                    descriptor, path = real_mkstemp(*arguments, **options)
+                    opened.append(descriptor)
+                    return descriptor, path
+                taken = []
+                def failing_flock(descriptor, operation):
+                    if taken:  # La primera es la del cerrojo de nacimientos, que si vale.
+                        raise OSError("flock")
+                    taken.append(descriptor)
+                    return real_flock(descriptor, operation)
+                patches = [mock.patch("uniconnect.transcribe.tempfile.mkstemp", watched)]
+                if stage == "flock":
+                    patches.append(mock.patch("uniconnect.transcribe.fcntl.flock", failing_flock))
+                else:
+                    patches.append(mock.patch(f"uniconnect.transcribe.os.{stage}",
+                                              side_effect=OSError(stage)))
+                for patch in patches:
+                    patch.start()
+                try:
+                    with self.assertRaises(RPCError) as caught:
+                        engine.workspace()
+                finally:
+                    for patch in reversed(patches):
+                        patch.stop()
+                self.assertEqual(caught.exception.code, "io_failed")
+                self.assertEqual(len(opened), 1, "el fallo no llego a abrir nada")
+                with self.assertRaises(OSError) as leak:
+                    os.fstat(opened[0])  # Cerrado: el descriptor ya no vale.
+                self.assertEqual(leak.exception.errno, errno.EBADF)
 
     def test_the_count_only_includes_what_was_really_deleted(self):
         def stubborn(directory):
@@ -1055,6 +1120,79 @@ class RPCTests(EngineTestCase):
         self.rpc.transcription = self.engine()
         self.assertEqual(self.error(self.request()), "unsupported")
 
+
+
+class LiveHangUpTests(unittest.TestCase):
+    """Integracion de verdad: un socket real que se cierra con whisper corriendo."""
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory(prefix="uc-transcribe-vivo-")
+        self.root = Path(self.folder.name)
+        self.work = self.root / "trabajo"
+        self.work.mkdir()
+        self.pidfile = self.root / "hijo.pid"
+        self.engine_binary = self.root / "whisper-falso"
+        # Un "motor" que avisa de que ya esta corriendo, ignora el TERM educado y se
+        # queda medio minuto: si al cerrar el socket muere, es que lo mataron de verdad.
+        self.engine_binary.write_text(
+            "#!/bin/sh\nprintf '%s' \"$$\" > " + str(self.pidfile) + "\ntrap '' TERM\nsleep 30\n")
+        self.engine_binary.chmod(0o700)
+        self.model = self.root / "ggml-tiny.bin"
+        self.model.write_bytes(b"m")
+        self.transcription = TranscriptionEngine(
+            binary=str(self.engine_binary), model=str(self.model), work_directory=self.work,
+            which=lambda name: None, environment={})
+        self.access = MobileAccess(self.root / "acceso")
+        self.access.authorize("100.64.0.2", "Mi telefono")
+        self.access.approve("100.64.0.2")
+        window = types.SimpleNamespace(locked=False, surfaces={}, focused_surface=None, activity=None,
+                                       store=types.SimpleNamespace(workspaces=[], data={}))
+        self.rpc = MobileRPC(window, types.SimpleNamespace(machine_id="host"), lambda callback: callback(),
+                             transcription=self.transcription)
+        self.host = MobileHost(self.access, self.rpc)
+        self.rpc.host = self.host
+        self.left, self.right = socket.socketpair()
+        self.client = _Client(self.host, self.left, "100.64.0.2")
+        self.host.clients.add(self.client)
+
+    def tearDown(self):
+        self.client.close()
+        try:
+            self.right.close()
+        except OSError:
+            pass
+        self.rpc.close_attachments()
+        self.folder.cleanup()
+
+    def test_closing_the_socket_kills_the_engine_frees_the_turn_and_leaves_no_audio(self):
+        worker = threading.Thread(target=self.client.run, daemon=True)
+        worker.start()
+        audio = base64.b64encode(wav_bytes(seconds=1)).decode()  # Ya en 16 kHz mono: sin ffmpeg.
+        self.right.sendall(encode_frame({
+            "id": "uno", "method": "mobile.audio.transcribe",
+            "params": {"address": "100.64.0.2", "device_name": "Mi telefono",
+                       "audio": audio, "mime": "audio/wav", "language": "es"}}))
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and not self.pidfile.exists():
+            time.sleep(0.02)
+        self.assertTrue(self.pidfile.exists(), "el motor no llego a arrancar")
+        child = int(self.pidfile.read_text())
+        os.kill(child, 0)  # Vivo y comiendo CPU.
+        self.assertEqual(self.transcription.running, ["100.64.0.2"])
+        self.right.close()  # El movil se va de verdad, con el hijo corriendo.
+        gone = time.monotonic() + 15
+        while time.monotonic() < gone:
+            try:
+                os.kill(child, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(child, 0)  # Muerto, y no por su cuenta: le quedaban 30 s de sueño.
+        worker.join(timeout=10)
+        self.assertEqual(self.transcription.running, [])  # El turno se libera.
+        leftovers = [item.name for item in self.work.iterdir() if item.name != BIRTHS_NAME]
+        self.assertEqual(leftovers, [])  # Y no queda audio en disco.
 
 if __name__ == "__main__":
     unittest.main()

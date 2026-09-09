@@ -51,7 +51,11 @@ LOCK_PREFIX = ".uc-trabajo-"
 # se renombra al nombre que lo acredita. Un nacimiento interrumpido es un archivo
 # vacío, sin audio, y se recoge por pura antigüedad.
 STAGING_PREFIX = ".naciendo-"
-STAGING_SECONDS = 600.0
+# Cerrojo de coordinación: quien está creando un trabajo lo sujeta en modo compartido
+# mientras dura el nacimiento, y el barrido pide el exclusivo antes de opinar sobre
+# los archivos a medio nacer. Así el hueco entre crear el archivo y adquirirlo, que
+# es donde parecería libre sin estarlo, nunca coincide con un barrido.
+BIRTHS_NAME = ".uc-nacimientos"
 # Las versiones anteriores guardaban el cerrojo DENTRO del directorio de trabajo. Se
 # sigue reconociendo para respetar a su dueño mientras convivan las dos versiones.
 LEGACY_LOCK_NAME = ".uc-trabajo"
@@ -388,10 +392,10 @@ class TranscriptionEngine:
         return held[0]
 
     @staticmethod
-    def take(path: Path) -> int | None:
+    def take(path: Path, *, create: bool = False) -> int | None:
         """Toma un cerrojo concreto; `None` si tiene dueño o no se puede comprobar."""
         try:
-            descriptor = os.open(path, os.O_RDWR)
+            descriptor = os.open(path, os.O_RDWR | (os.O_CREAT if create else 0), 0o600)
         except OSError:
             return None
         try:
@@ -423,42 +427,51 @@ class TranscriptionEngine:
         otra cosa que haya en la carpeta se conserva, que borrar lo ajeno no es tarea
         nuestra.
         """
-        removed, now = 0, time.time()
+        removed = 0
         with self.lock:
             active, pending = set(self.active), list(self.undeleted)
-        for directory in pending:
-            if directory not in active and self.sweep(directory, now):
-                removed += 1
+        # `create`: que nadie haya nacido todavía es la calma más absoluta, no un
+        # motivo para no barrer.
+        births = self.take(self.work_directory / BIRTHS_NAME, create=True)
         try:
-            entries = list(self.work_directory.iterdir())
-        except OSError:
-            return removed
-        for entry in entries:
-            if not entry.name.startswith(LOCK_PREFIX) and entry not in active and entry not in pending:
-                if self.sweep(entry, now):
+            for directory in pending:
+                if directory not in active and self.sweep(directory, births is not None):
                     removed += 1
-        for entry in entries:
-            if entry.name.startswith(LOCK_PREFIX) and self.sweep_lock(entry):
-                removed += 1
-        return removed
+            try:
+                entries = list(self.work_directory.iterdir())
+            except OSError:
+                return removed
+            for entry in entries:
+                if not entry.name.startswith(LOCK_PREFIX) and entry not in active and entry not in pending:
+                    if self.sweep(entry, births is not None):
+                        removed += 1
+            for entry in entries:
+                if entry.name.startswith(LOCK_PREFIX) and self.sweep_lock(entry):
+                    removed += 1
+            return removed
+        finally:
+            if births is not None:
+                os.close(births)
 
-    def sweep(self, entry: Path, now: float) -> bool:
+    def sweep(self, entry: Path, quiet: bool) -> bool:
         """Borra una entrada suelta de la carpeta si de verdad es un huérfano nuestro."""
+        if entry.name == BIRTHS_NAME:
+            return False  # El cerrojo de coordinación no se toca nunca.
         if entry.name.startswith(STAGING_PREFIX):
-            # Un cerrojo a medio nacer. Hacen falta las dos cosas: que nadie lo tenga
-            # tomado (su creador puede llevar horas suspendido con él en la mano) y
-            # que sea antiquísimo, porque entre crearlo y tomarlo hay un instante en
-            # el que está libre sin estar abandonado.
+            # Un archivo a medio nacer. Solo se juzga cuando no hay ningún nacimiento
+            # en curso (`quiet`), porque durante el hueco entre crearlo y adquirirlo
+            # parecería libre sin estarlo, y una pausa larga del equipo justo ahí no
+            # puede costarle el dictado a nadie. Con la carpeta en calma, un archivo
+            # que además nadie sujeta es un huérfano acreditado, tenga la edad que
+            # tenga.
+            if not quiet:
+                return False
             descriptor = self.take(entry)
             if descriptor is None:
                 return False
             try:
-                if now - entry.stat().st_mtime < STAGING_SECONDS:
-                    return False
                 self.unlink(entry)
                 return not entry.exists()
-            except OSError:
-                return False
             finally:
                 os.close(descriptor)
         if not entry.is_dir() or not self.locks_of(entry):
@@ -645,9 +658,13 @@ class TranscriptionEngine:
         visibles sin dueño: cuando aparecen con su nombre bueno, el `flock` lleva ya
         un rato en la mano de este proceso.
         """
-        descriptor = None
+        descriptor = birth = None
         try:
             self.work_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+            # Compartido: varios dictados pueden nacer a la vez, pero ningún barrido
+            # opina sobre los archivos a medio nacer mientras alguno esté en ello.
+            birth = os.open(self.work_directory / BIRTHS_NAME, os.O_RDWR | os.O_CREAT, 0o600)
+            fcntl.flock(birth, fcntl.LOCK_SH)
             descriptor, staging = tempfile.mkstemp(prefix=STAGING_PREFIX, dir=self.work_directory)
             # Bloqueante a propósito: este archivo acaba de nacer con un nombre único,
             # así que el único que puede tenerlo cogido es un barrido comprobando si
@@ -665,6 +682,12 @@ class TranscriptionEngine:
                 except OSError:
                     pass
             raise RPCError("io_failed", "No se pudo preparar la carpeta de trabajo del equipo") from error
+        finally:
+            if birth is not None:
+                try:
+                    os.close(birth)  # El nacimiento ha terminado, en bien o en mal.
+                except OSError:
+                    pass
         with self.lock:
             self.active.add(directory)
             self.locks[directory] = descriptor
