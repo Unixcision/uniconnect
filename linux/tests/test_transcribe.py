@@ -654,13 +654,35 @@ class OrphanTests(EngineTestCase):
         self.assertFalse(dead.exists())
         self.assertTrue(live.exists())
 
-    def test_an_old_directory_with_no_lock_goes_but_a_new_one_waits(self):
-        engine = self.engine()
+    def test_a_directory_without_any_lock_is_kept_however_old(self):
+        """Sin cerrojo no hay abandono acreditado, y mientras convivan versiones se conserva."""
+        engine = self.engine(grace_seconds=0.0)
         newborn = self.make("123-naciendo", lock=False)
         old = self.make("123-antiguo", age=700.0, lock=False)
+        self.assertEqual(engine.sweep_orphans(), 0)
+        self.assertTrue(newborn.exists())
+        self.assertTrue(old.exists())
+
+    def test_a_job_from_the_previous_version_is_recognised_by_its_inner_lock(self):
+        """La version anterior guardaba el cerrojo dentro: hay que respetar a su dueno."""
+        engine = self.engine(grace_seconds=0.0)
+        held, free = self.work / "555-viejo-vivo", self.work / "555-viejo-muerto"
+        for directory, keep in ((held, True), (free, False)):
+            directory.mkdir()
+            (directory / "entrada.m4a").write_bytes(b"audio")
+            descriptor = os.open(directory / ".uc-trabajo", os.O_RDWR | os.O_CREAT, 0o600)
+            if keep:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.holders.append(descriptor)
+            else:
+                os.close(descriptor)
+            stamp = time.time() - 900
+            os.utime(directory, (stamp, stamp))
+        self.assertTrue(engine.claimed(held))
+        self.assertFalse(engine.claimed(free))
         self.assertEqual(engine.sweep_orphans(), 1)
-        self.assertTrue(newborn.exists())  # Puede ser otra instancia a medio crearlo.
-        self.assertFalse(old.exists())
+        self.assertTrue(held.exists())
+        self.assertFalse(free.exists())
 
     def test_the_sweep_never_takes_a_directory_that_is_in_use(self):
         engine = self.engine()
@@ -674,14 +696,14 @@ class OrphanTests(EngineTestCase):
         self.assertEqual(engine.active, set())
         self.assertEqual(engine.locks, {})
 
-    def test_the_sweep_survives_a_missing_directory_and_stray_files(self):
-        engine = self.engine()
+    def test_the_sweep_survives_a_missing_directory_and_keeps_stray_files(self):
+        engine = self.engine(grace_seconds=0.0)
         self.assertEqual(self.engine(work_directory=self.root / "no-hay").sweep_orphans(), 0)
         stray = self.work / "1-suelto.wav"
         stray.write_bytes(b"x")
         os.utime(stray, (0, 0))
-        self.assertEqual(engine.sweep_orphans(), 1)
-        self.assertFalse(stray.exists())
+        self.assertEqual(engine.sweep_orphans(), 0)
+        self.assertTrue(stray.exists())  # Un archivo suelto no se acredita: se queda.
 
     def test_a_failed_deletion_is_noticed_and_retried_by_the_sweep(self):
         refusals = []
@@ -753,6 +775,13 @@ class OrphanTests(EngineTestCase):
         self.assertTrue(newborn.exists())
         stamp = time.time() - STAGING_SECONDS - 60
         os.utime(newborn, (stamp, stamp))
+        # Antiquisimo pero con su creador vivo (suspendido a medio nacer): intocable.
+        descriptor = os.open(newborn, os.O_RDWR)
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        self.holders.append(descriptor)
+        self.assertEqual(engine.sweep_orphans(), 0)
+        self.assertTrue(newborn.exists())
+        os.close(self.holders.pop())
         self.assertEqual(engine.sweep_orphans(), 1)
         self.assertFalse(newborn.exists())
 
@@ -767,6 +796,18 @@ class OrphanTests(EngineTestCase):
         self.assertEqual(engine.sweep_orphans(), 0)
         for item in strangers:
             self.assertTrue(item.exists(), item.name)
+
+    def test_a_failed_birth_does_not_leak_its_descriptor(self):
+        engine = self.engine(work_directory=self.root / "prohibido")
+        engine.work_directory.mkdir()
+        opened = len(os.listdir(f"/dev/fd")) if os.path.isdir("/dev/fd") else None
+        for _ in range(20):
+            with self.assertRaises(RPCError):
+                engine.work_directory.chmod(0o500)  # No se puede crear el directorio de trabajo.
+                engine.workspace()
+        engine.work_directory.chmod(0o700)
+        if opened is not None:
+            self.assertLess(len(os.listdir("/dev/fd")) - opened, 10)
 
     def test_the_count_only_includes_what_was_really_deleted(self):
         def stubborn(directory):
@@ -877,7 +918,10 @@ class RPCTests(EngineTestCase):
         self.rpc = MobileRPC(self.window, types.SimpleNamespace(machine_id="host"), schedule,
                              transcription=self.engine())
         self.peers = {"conn-a": "100.64.0.7", "conn-a2": "100.64.0.7", "conn-b": "100.64.0.9"}
-        self.rpc.host = types.SimpleNamespace(address="100.64.0.1", port=58465, peer_of=self.peers.get)
+        self.hung_up = set()  # Conexiones cuyo socket ya esta cerrado por el otro lado.
+        self.rpc.host = types.SimpleNamespace(
+            address="100.64.0.1", port=58465, peer_of=self.peers.get,
+            connection_lost=lambda value: value in self.hung_up or value not in self.peers)
 
     def tearDown(self):
         self.rpc.close_attachments()
@@ -949,6 +993,18 @@ class RPCTests(EngineTestCase):
             Path(argv[-1]).write_bytes(wav_bytes())
             return Result()
         self.runner.handlers["ffmpeg"] = leaves
+        self.assertEqual(self.error(self.request()), "io_failed")
+        self.assertEqual(self.runner.names(), ["ffmpeg"])  # Whisper no llega a arrancar.
+        self.assertEqual(self.leftovers(), [])
+        self.assertEqual(self.rpc.transcription.running, [])
+
+    def test_a_socket_that_hangs_up_mid_transcription_cancels_the_engine(self):
+        """El caso que mas importa: el movil cierra el socket y nadie lo esta leyendo."""
+        def hangs_up(argv, timeout):
+            self.hung_up.add("conn-a")  # El peer sigue aprobado, pero su TCP ya no esta.
+            Path(argv[-1]).write_bytes(wav_bytes())
+            return Result()
+        self.runner.handlers["ffmpeg"] = hangs_up
         self.assertEqual(self.error(self.request()), "io_failed")
         self.assertEqual(self.runner.names(), ["ffmpeg"])  # Whisper no llega a arrancar.
         self.assertEqual(self.leftovers(), [])

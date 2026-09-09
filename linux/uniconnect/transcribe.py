@@ -52,6 +52,9 @@ LOCK_PREFIX = ".uc-trabajo-"
 # vacío, sin audio, y se recoge por pura antigüedad.
 STAGING_PREFIX = ".naciendo-"
 STAGING_SECONDS = 600.0
+# Las versiones anteriores guardaban el cerrojo DENTRO del directorio de trabajo. Se
+# sigue reconociendo para respetar a su dueño mientras convivan las dos versiones.
+LEGACY_LOCK_NAME = ".uc-trabajo"
 MAX_THREADS = 8
 WAV_PREFIX_BYTES = 65536
 WAV_BYTES_PER_SECOND = 16000 * 2  # PCM 16 bits mono a 16 kHz, que es lo que whisper.cpp lee.
@@ -355,6 +358,11 @@ class TranscriptionEngine:
         """El cerrojo hermano de un directorio `<pid>-<azar>`."""
         return directory.parent / (LOCK_PREFIX + directory.name.split("-", 1)[-1])
 
+    def locks_of(self, directory: Path) -> list[Path]:
+        """Los cerrojos que pueden acreditar a un trabajo: el hermano y el interior antiguo."""
+        return [path for path in (self.lock_of(directory), directory / LEGACY_LOCK_NAME)
+                if path.exists()]
+
     def acquire(self, directory: Path) -> int | None:
         """Toma el cerrojo de un trabajo ajeno; devuelve su descriptor o `None` si tiene dueño.
 
@@ -365,10 +373,27 @@ class TranscriptionEngine:
         para que quien vaya a borrar mantenga la exclusión hasta el final: soltarla
         antes abriría justo la carrera que el cerrojo existe para cerrar.
         """
+        held = []
+        for path in self.locks_of(directory):
+            descriptor = self.take(path)
+            if descriptor is None:  # Alguien lo tiene, o no se puede leer: hay dueño.
+                for taken in held:
+                    os.close(taken)
+                return None
+            held.append(descriptor)
+        if not held:
+            return None  # Sin cerrojo no se acredita nada: no se toca.
+        for extra in held[1:]:
+            os.close(extra)
+        return held[0]
+
+    @staticmethod
+    def take(path: Path) -> int | None:
+        """Toma un cerrojo concreto; `None` si tiene dueño o no se puede comprobar."""
         try:
-            descriptor = os.open(self.lock_of(directory), os.O_RDWR)
+            descriptor = os.open(path, os.O_RDWR)
         except OSError:
-            return None  # Sin cerrojo legible no se acredita nada: no se toca.
+            return None
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
             return descriptor
@@ -378,7 +403,7 @@ class TranscriptionEngine:
 
     def claimed(self, directory: Path) -> bool:
         """`True` si alguien está trabajando ahí ahora mismo. Solo para consultar."""
-        if not directory.is_dir() or not self.lock_of(directory).exists():
+        if not directory.is_dir() or not self.locks_of(directory):
             return False
         descriptor = self.acquire(directory)
         if descriptor is None:
@@ -420,34 +445,33 @@ class TranscriptionEngine:
     def sweep(self, entry: Path, now: float) -> bool:
         """Borra una entrada suelta de la carpeta si de verdad es un huérfano nuestro."""
         if entry.name.startswith(STAGING_PREFIX):
-            # Un cerrojo a medio nacer: nunca se juzga por el cerrojo (todavía no lo
-            # tiene) ni por la gracia corta, solo cuando lleva ahí una eternidad.
+            # Un cerrojo a medio nacer. Hacen falta las dos cosas: que nadie lo tenga
+            # tomado (su creador puede llevar horas suspendido con él en la mano) y
+            # que sea antiquísimo, porque entre crearlo y tomarlo hay un instante en
+            # el que está libre sin estar abandonado.
+            descriptor = self.take(entry)
+            if descriptor is None:
+                return False
             try:
                 if now - entry.stat().st_mtime < STAGING_SECONDS:
                     return False
+                self.unlink(entry)
+                return not entry.exists()
             except OSError:
                 return False
-            self.unlink(entry)
-            return not entry.exists()
-        if entry.is_dir() and self.lock_of(entry).exists():
-            descriptor = self.acquire(entry)
-            if descriptor is None:
-                return False  # Tiene dueño, o no se puede comprobar.
-            try:
-                return self.discard(entry)  # Con el cerrojo puesto: nadie entra en medio.
             finally:
                 os.close(descriptor)
-        if not _OURS.fullmatch(entry.name):
-            return False  # Ni cerrojo ni nuestro nombre: no se acredita, no se borra.
-        try:
-            if now - entry.stat().st_mtime < self.grace_seconds:
-                return False  # Puede estar naciendo en otra instancia.
-        except OSError:
+        if not entry.is_dir() or not self.locks_of(entry):
+            # Sin cerrojo no hay nada que acreditar, y mientras puedan convivir dos
+            # versiones ni la edad ni el nombre prueban abandono: se conserva.
             return False
-        if entry.is_dir():
-            return self.discard(entry)
-        self.unlink(entry)
-        return not entry.exists()
+        descriptor = self.acquire(entry)
+        if descriptor is None:
+            return False  # Tiene dueño, o no se puede comprobar.
+        try:
+            return self.discard(entry)  # Con el cerrojo puesto: nadie entra en medio.
+        finally:
+            os.close(descriptor)
 
     def sweep_lock(self, lock: Path) -> bool:
         """Borra un cerrojo que ya no guarda a nadie: sin dueño y sin trabajo que proteger."""
@@ -621,15 +645,25 @@ class TranscriptionEngine:
         visibles sin dueño: cuando aparecen con su nombre bueno, el `flock` lleva ya
         un rato en la mano de este proceso.
         """
+        descriptor = None
         try:
             self.work_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
             descriptor, staging = tempfile.mkstemp(prefix=STAGING_PREFIX, dir=self.work_directory)
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            # Bloqueante a propósito: este archivo acaba de nacer con un nombre único,
+            # así que el único que puede tenerlo cogido es un barrido comprobando si
+            # está abandonado, y eso dura un suspiro. Con LOCK_NB perderíamos el
+            # dictado por haber coincidido con esa comprobación.
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
             token = Path(staging).name[len(STAGING_PREFIX):]
             os.rename(staging, self.work_directory / (LOCK_PREFIX + token))
             directory = self.work_directory / f"{os.getpid()}-{token}"
             os.mkdir(directory, 0o700)
         except OSError as error:
+            if descriptor is not None:  # Un nacimiento fallido no se queda con el descriptor.
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
             raise RPCError("io_failed", "No se pudo preparar la carpeta de trabajo del equipo") from error
         with self.lock:
             self.active.add(directory)

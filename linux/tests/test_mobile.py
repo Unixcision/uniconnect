@@ -547,5 +547,91 @@ class RealTmuxReplayTests(unittest.TestCase):
                 subprocess.run(args + ["kill-server"], capture_output=True, timeout=5)
 
 
+
+class LongCallTests(unittest.TestCase):
+    """El bucle del cliente frente a una peticion que tarda mas que el plazo de inactividad."""
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory(prefix="uc-mobile-largo-")
+        self.access = MobileAccess(Path(self.folder.name))
+        self.access.authorize("100.64.0.2", "Mi telefono")  # Queda pendiente, como en la vida real.
+        self.access.approve("100.64.0.2")
+        self.now = [1000.0]
+        self.elapsed = 0.0
+        def dispatch(method, params, connection_id, **kwargs):
+            self.now[0] += self.elapsed  # Lo que el equipo tarda en transcribir.
+            return {"text": "hola"}
+        self.rpc = types.SimpleNamespace(dispatch=dispatch, disconnected=lambda identifier: None)
+        self.host = MobileHost(self.access, self.rpc, clock=lambda: self.now[0])
+        self.left, self.right = socket.socketpair()
+        self.client = _Client(self.host, self.left, "100.64.0.2")
+        self.host.clients.add(self.client)
+
+    def tearDown(self):
+        self.client.close()
+        self.right.close()
+        self.folder.cleanup()
+
+    def ask(self):
+        request = {"id": "uno", "method": "mobile.audio.transcribe",
+                   "params": {"address": "100.64.0.2", "device_name": "Mi telefono"}}
+        self.right.sendall(encode_frame(request))
+
+    def answer(self, timeout=5.0):
+        """Lo que el movil recibe de vuelta, o None si la conexion murio sin contestar."""
+        decoder, deadline = FrameDecoder(), time.monotonic() + timeout
+        self.right.settimeout(0.2)
+        while time.monotonic() < deadline:
+            try:
+                data = self.right.recv(65536)
+            except socket.timeout:
+                continue
+            if not data:
+                return None
+            messages = decoder.feed(data)
+            if messages:
+                return messages[0]
+        return None
+
+    def run_client(self):
+        worker = threading.Thread(target=self.client.run, daemon=True)
+        worker.start()
+        return worker
+
+    def delivers_after(self, seconds):
+        """Una peticion que tarda `seconds` en atenderse tiene que llegar de vuelta igual."""
+        self.elapsed = seconds
+        worker = self.run_client()
+        self.ask()
+        answer = self.answer()
+        self.assertIsNotNone(answer, "la conexion murio con la respuesta sin entregar")
+        self.assertEqual(answer["result"], {"text": "hola"})
+        self.client.close()
+        worker.join(timeout=5)
+
+    def test_a_reply_after_forty_seconds_is_still_delivered(self):
+        self.delivers_after(40.0)
+
+    def test_a_reply_after_seventy_seconds_is_still_delivered(self):
+        self.delivers_after(70.0)
+
+    def test_an_idle_connection_still_dies_on_its_own(self):
+        worker = self.run_client()
+        self.now[0] += 60.0
+        worker.join(timeout=5)
+        self.assertFalse(worker.is_alive())
+        self.assertTrue(self.client.closed)
+
+    def test_a_hang_up_is_visible_while_a_call_is_in_flight(self):
+        self.assertFalse(self.client.peer_closed())
+        self.assertFalse(self.host.connection_lost(self.client.identifier))
+        self.right.sendall(b"algo por leer")
+        self.assertFalse(self.client.peer_closed())  # Datos pendientes no son un cierre.
+        self.left.recv(65536)  # Se consumen, que es lo que haria el bucle.
+        self.right.close()
+        self.assertTrue(self.client.peer_closed())
+        self.assertTrue(self.host.connection_lost(self.client.identifier))
+        self.assertTrue(self.host.connection_lost("una-conexion-que-no-existe"))
+
 if __name__ == "__main__":
     unittest.main()

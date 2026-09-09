@@ -230,7 +230,11 @@ class MobileRPC:
         def gone():
             # El motor mira esto mientras trabaja: si el móvil se desconecta o le
             # revocan el permiso, se mata a whisper en vez de dejarlo comerse la CPU.
-            return not (self.host is not None and self.host.peer_of(connection_id)) or not authorized()
+            # `connection_lost` espía el socket, porque mientras esta petición se
+            # atiende nadie lo está leyendo y un cierre pasaría inadvertido.
+            if self.host is None or not self.host.peer_of(connection_id):
+                return True
+            return self.host.connection_lost(connection_id) or not authorized()
         return self.transcription.transcribe(raw, mime, language, owner=owner,
                                              deadline=deadline, cancelled=gone)
 

@@ -33,9 +33,11 @@ def verified_tailscale_address(*, run=subprocess.run):
 
 
 class MobileHost:
-    def __init__(self, access, rpc, *, port=58465, resolve=verified_tailscale_address, translate=lambda value: value):
+    def __init__(self, access, rpc, *, port=58465, resolve=verified_tailscale_address, translate=lambda value: value,
+                 clock=time.monotonic):
         self.access, self.rpc, self.port, self.resolve = access, rpc, port, resolve
         self.translate = translate
+        self.clock = clock
         self.lock = threading.RLock()
         self.clients = set()
         self.listener = None
@@ -142,6 +144,18 @@ class MobileHost:
         with self.lock:
             return next((client for client in self.clients if client.identifier == connection_id), None)
 
+    def connection_lost(self, connection_id):
+        """True cuando esa conexión ya no puede recibir la respuesta que está esperando.
+
+        Una petición larga (una transcripción, por ejemplo) se atiende dentro del
+        bucle de su cliente, así que mientras dura nadie lee el socket y un cierre
+        del móvil pasaría inadvertido hasta el final. Esto lo mira sin consumir nada
+        de lo que haya llegado, para que el trabajo se pueda abandonar en cuanto el
+        que lo pidió se va.
+        """
+        client = self._client(connection_id)
+        return client is None or client.peer_closed()
+
     def peer_of(self, connection_id):
         """Approved tailnet address that owns a live connection, or None."""
         client = self._client(connection_id)
@@ -246,8 +260,19 @@ class _Client:
             except Exception:
                 pass  # A failed cleanup must not leave other clients connected.
 
+    def peer_closed(self):
+        """True si el otro extremo ya cerró; espía el socket sin consumir nada."""
+        if self.closed:
+            return True
+        try:
+            return self.socket.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT) == b""
+        except (BlockingIOError, socket.timeout):
+            return False  # No hay nada que leer, que no es lo mismo que estar cerrado.
+        except OSError:
+            return True
+
     def run(self):
-        activity, first = time.monotonic(), True
+        activity, first = self.host.clock(), True
         try:
             while not self.closed:
                 with self.lock:
@@ -261,7 +286,7 @@ class _Client:
                     data = self.socket.recv(65536)
                     if not data:
                         break
-                    activity = time.monotonic()
+                    activity = self.host.clock()
                     requests = self.decoder.feed(data)
                     if len(requests) > 64:
                         raise ValueError("Demasiadas peticiones en una lectura")
@@ -270,7 +295,15 @@ class _Client:
                             break
                         first = False
                         self.handle(request)
-                if time.monotonic() - activity > (15 if first else 30) and not self.streams:
+                    # Atender una petición es actividad, y puede haber durado más que
+                    # el plazo: sin esto, una respuesta que costó 40 s se encolaba y
+                    # la conexión moría por inactividad antes de llegar a enviarla.
+                    activity = self.host.clock()
+                with self.lock:
+                    pending = bool(self.queue)
+                if pending:
+                    continue  # Nunca se cierra con una respuesta sin entregar.
+                if self.host.clock() - activity > (15 if first else 30) and not self.streams:
                     break
         except (OSError, ValueError, TypeError):
             pass
