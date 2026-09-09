@@ -224,12 +224,20 @@ minutos son ~1,2 MB, así que el tope es una guarda, no una talla de trabajo. El
 `DictationDraft.append` y respeta «Enviar al terminar de dictar». **El audio se borra siempre**:
 transcrito, rechazado, cancelado o al empezar otra grabación.
 
-Errores, cada uno con su mensaje: `too_large` → «El audio es demasiado largo…» con «Grabar otra
-vez»; `locked` → «UniConnect está bloqueado en el equipo…»; `unsupported` → se avisa una sola vez
-(«Este equipo no transcribe: se usa el dictado del móvil») y ese equipo no se vuelve a intentar
-mientras dure la sesión; `invalid_params` / `io_failed` / código desconocido → «El equipo no ha
-podido transcribir el audio»; caída de red → «Sin conexión con el equipo». En los tres últimos el
-audio se CONSERVA para un único «Reintentar»; después se borra pase lo que pase.
+Errores, cada uno con su mensaje: `too_large` → «El audio es demasiado largo…» con «Dictar otra
+vez»; `locked` → «UniConnect está bloqueado en el equipo…»; `invalid_params` / `io_failed` / código
+desconocido → «El equipo no ha podido transcribir el audio». En esos dos últimos el audio se
+CONSERVA para un único «Reintentar»; después se borra pase lo que pase.
+
+`unsupported` y una caída de red no son un callejón sin salida y NO le cuestan al usuario lo que
+acaba de decir: la misma grabación se reencamina en el acto al siguiente equipo que pueda,
+recalculando la regla automática sin el que acaba de fallar, y lo único que se ve es la barra
+diciendo quién transcribe ahora. Solo cuando no queda ningún destino se convierte en un aviso:
+«Ningún equipo puede transcribir: se descarta lo grabado y se dicta en el móvil», con «Dictar otra
+vez» si el móvil tiene reconocedor. Ahí sí se borra el audio, porque un reconocedor local necesita
+micrófono en vivo y no sabe qué hacer con un archivo. La diferencia entre los dos casos es lo que se
+recuerda: `unsupported` marca esa máquina para los siguientes dictados; una caída de red solo la
+descarta para esa grabación.
 
 `busy` es aparte porque no es un fallo: el equipo admite un dictado por dispositivo y dos en total
 (Whisper se come los núcleos), así que responde «El equipo está transcribiendo otro audio;
@@ -273,7 +281,7 @@ el estado del motor activo, así que el composable lee los mismos estados en los
 `MediaRecorder` queda tras `domain/VoiceRecorder` y el RPC tras `domain/HostTranscription`, de modo
 que todo el flujo (elección, límite de tamaño, cada error, borrado del archivo, reintento único,
 corte a los 5 minutos) se prueba en la JVM sin micrófono ni socket. La llamada se prueba además
-contra un host de mentira en un par de sockets, como la de adjuntos. Probado solo así: 50 pruebas
+contra un host de mentira en un par de sockets, como la de adjuntos. Probado solo así: 53 pruebas
 nuevas; contra un host real con Whisper no se ha ejercitado todavía.
 
 ## Arquitectura

@@ -178,7 +178,10 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
   pueda, si no el móvil; Ajustes gana «Elegido» con la lista de máquinas y guarda el identificador.
 - Cuando transcribe otro equipo, la petición no lleva `workspace_id` ni `terminal_id` y la barra dice
   qué equipo lo hace. El `unsupported` se recuerda por máquina, no en general.
-- 50 pruebas JVM nuevas (elección de motor, base64 por bloques, tope de 3 MiB y trama, cada código de
+- Una grabación ya no se pierde porque el equipo no pueda: `unsupported` y una caída de red la
+  reencaminan en el acto al siguiente equipo capaz, sin que el usuario toque nada. Solo se descarta
+  cuando no queda ningún destino, y entonces se dice y se ofrece dictar otra vez en el móvil.
+- 53 pruebas JVM nuevas (elección de motor, base64 por bloques, tope de 3 MiB y trama, cada código de
   error del contrato contra un host de mentira en un par de sockets, borrado del archivo en todos los
   caminos, reintento único, corte a los 5 minutos, persistencia del ajuste). Build y
   `testDebugUnitTest` en verde.

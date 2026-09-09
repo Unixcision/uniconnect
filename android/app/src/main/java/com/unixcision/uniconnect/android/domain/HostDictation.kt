@@ -14,11 +14,15 @@ import kotlinx.coroutines.launch
  * the text back. While recording there is no partial text to show, so the bar carries a level and
  * a stopwatch instead; at five minutes the recording ends on its own and is sent.
  *
- * The recording never outlives its outcome. It is deleted once transcribed, once refused for good,
- * and on a cancel; the one case where it is kept is a failure worth trying again (the machine was
- * unreachable, locked, or broke), and then only until a single [resend] has been made. A machine
- * that is merely busy is not a failure at all: there the recording waits for as many retries as
- * the reader wants, until one works or they [discardKept] it.
+ * A machine that cannot take the recording at all does not cost the reader what they just said:
+ * the same audio goes straight to the next machine a [TranscriberRelay] names, and the only sign
+ * of it is the bar saying who is transcribing now.
+ *
+ * The recording never outlives its outcome. It is deleted once transcribed, once there is nowhere
+ * left to send it, and on a cancel; the cases where it is kept are a failure worth trying again
+ * (the machine was locked or broke), and then only until a single [resend] has been made. A
+ * machine that is merely busy is not a failure at all: there the recording waits for as many
+ * retries as the reader wants, until one works or they [discardKept] it.
  *
  * Everything about the microphone is behind [VoiceRecorder] and everything about the connection
  * behind [HostTranscription], so this whole flow is exercised in tests with neither.
@@ -52,6 +56,11 @@ class HostDictation(
     override val available: Boolean get() = recorder.available
 
     private val refused = mutableSetOf<String>()
+    private val tried = mutableSetOf<String>()
+    private var relay: TranscriberRelay? = null
+
+    /** Whether the recording in flight was the one the five-minute limit ended. */
+    private var cutAtLimit = false
 
     /**
      * Machines that answered `unsupported`. They are not asked again while the app runs, so the
@@ -59,9 +68,13 @@ class HostDictation(
      */
     val refusedMachines: Set<String> get() = refused
 
-    /** The machine the next recording goes to, and the window it belongs to when it is that machine's. */
-    fun aim(target: DictationTarget) {
+    /**
+     * The machine the next recording goes to, and the window it belongs to when it is that
+     * machine's. [relay] is asked for another machine when this one turns out not to take it.
+     */
+    fun aim(target: DictationTarget, relay: TranscriberRelay? = null) {
         this.target = target
+        this.relay = relay
     }
 
     override fun start(language: DictationLanguage) {
@@ -70,6 +83,8 @@ class HostDictation(
         sending = null
         dropKept()
         retried = false
+        tried.clear()
+        cutAtLimit = false
         if (target == null) { machine.fail(DictationFailure.HOST_FAILED); return }
         if (!recorder.start()) { machine.fail(DictationFailure.ENGINE_UNAVAILABLE); return }
         finishing.set(false)
@@ -113,7 +128,7 @@ class HostDictation(
         val clip = kept ?: return
         kept = null
         retried = true
-        send(clip, cut = false)
+        send(clip, cutAtLimit)
     }
 
     private fun finish(cut: Boolean) {
@@ -121,6 +136,7 @@ class HostDictation(
         val running = ticker
         ticker = null
         running?.cancel()
+        cutAtLimit = cut
         val clip = recorder.stop()
         if (clip == null || clip.bytes <= 0) {
             clip?.delete()
@@ -149,9 +165,27 @@ class HostDictation(
         }
     }
 
-    /** Turns a failed send into a state, keeping the recording only when one retry makes sense. */
+    /**
+     * Turns a failed send into a state, keeping the recording whenever there is anywhere left for
+     * it to go.
+     *
+     * A machine with no engine, and a machine that did not answer at all, are both dead ends for
+     * this recording and not for the reader: the audio is passed to the next machine at once. Only
+     * when there is none does it become something to read, and to say plainly that what was said
+     * is gone.
+     */
     private fun refuse(aimed: DictationTarget, clip: AudioClip, failure: Exception) {
         val refusal = (failure as? TranscribeRefused)?.refusal
+        if (refusal == TranscribeRefusal.UNSUPPORTED) refused += aimed.machine.id
+        if (refusal == null) tried += aimed.machine.id
+        if (refusal == TranscribeRefusal.UNSUPPORTED || refusal == null) {
+            val elsewhere = relay?.next(refused + tried)
+            if (elsewhere != null) {
+                target = elsewhere
+                send(clip, cutAtLimit)
+                return
+            }
+        }
         val reason = when (refusal) {
             TranscribeRefusal.TOO_LARGE -> DictationFailure.TOO_LONG
             TranscribeRefusal.UNSUPPORTED -> DictationFailure.HOST_UNSUPPORTED
@@ -160,7 +194,6 @@ class HostDictation(
             TranscribeRefusal.INVALID_PARAMS, TranscribeRefusal.IO_FAILED, TranscribeRefusal.UNKNOWN -> DictationFailure.HOST_FAILED
             null -> DictationFailure.HOST_UNREACHABLE
         }
-        if (refusal == TranscribeRefusal.UNSUPPORTED) refused += aimed.machine.id
         // A busy machine will not be busy for long, so that recording is kept for as many tries as
         // the reader makes; the rest are failures and get exactly one.
         val passing = refusal == TranscribeRefusal.BUSY
@@ -169,8 +202,12 @@ class HostDictation(
             kept = clip
             machine.fail(reason, DictationRetry.RESEND)
         } else {
+            // Nowhere left to send it: the recording is gone, and the line says so rather than
+            // leaving the reader wondering. A phone recogniser needs a live microphone, so what
+            // was captured cannot be handed to it.
             clip.delete()
-            machine.fail(reason, if (reason == DictationFailure.TOO_LONG) DictationRetry.RERECORD else DictationRetry.NONE)
+            val again = reason == DictationFailure.TOO_LONG || reason == DictationFailure.HOST_UNSUPPORTED
+            machine.fail(reason, if (again) DictationRetry.RERECORD else DictationRetry.NONE)
         }
     }
 

@@ -156,10 +156,8 @@ fun TerminalComposer(
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) begin()
         else permission.launch(Manifest.permission.RECORD_AUDIO)
     }
-    val action = ComposerAction.decide(
-        draftEmpty = draft.isEmpty(),
-        dictationAvailable = dictation?.canDictate(transcription, transcribers, dictationTarget, transcriptionMachine) == true,
-    )
+    val canDictate = dictation?.canDictate(transcription, transcribers, dictationTarget, transcriptionMachine) == true
+    val action = ComposerAction.decide(draftEmpty = draft.isEmpty(), dictationAvailable = canDictate)
 
     Column(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 6.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -245,7 +243,7 @@ fun TerminalComposer(
                 }
                 // The kept recording travels once more; a recording the machine will never take is
                 // recorded again instead.
-                if (retry != DictationRetry.NONE) TextButton(
+                if (retry == DictationRetry.RESEND || (retry == DictationRetry.RERECORD && canDictate)) TextButton(
                     onClick = {
                         val resend = retry == DictationRetry.RESEND
                         retry = DictationRetry.NONE
@@ -371,7 +369,7 @@ private val DictationFailure.message: Int
         DictationFailure.TOO_LONG -> R.string.dictation_failed_too_long
         DictationFailure.HOST_LOCKED -> R.string.dictation_failed_locked
         DictationFailure.HOST_BUSY -> R.string.dictation_failed_host_busy
-        DictationFailure.HOST_UNSUPPORTED -> R.string.dictation_host_cannot
+        DictationFailure.HOST_UNSUPPORTED -> R.string.dictation_failed_no_transcriber
         DictationFailure.HOST_FAILED -> R.string.dictation_failed_host
         DictationFailure.HOST_UNREACHABLE -> R.string.dictation_failed_host_offline
     }

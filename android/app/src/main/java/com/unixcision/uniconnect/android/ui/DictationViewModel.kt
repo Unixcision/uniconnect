@@ -7,6 +7,7 @@ import com.unixcision.uniconnect.android.domain.DictationLanguage
 import com.unixcision.uniconnect.android.domain.DictationState
 import com.unixcision.uniconnect.android.domain.DictationTarget
 import com.unixcision.uniconnect.android.domain.HostDictation
+import com.unixcision.uniconnect.android.domain.TranscriberRelay
 import com.unixcision.uniconnect.android.domain.TranscriptionCandidate
 import com.unixcision.uniconnect.android.domain.TranscriptionEngine
 import com.unixcision.uniconnect.android.domain.TranscriptionMode
@@ -66,7 +67,7 @@ class DictationViewModel(private val phone: Dictation, private val host: HostDic
         if (route.engine == TranscriptionEngine.HOST && target != null) {
             engine.value = TranscriptionEngine.HOST
             other.value = route.machine?.name?.takeUnless { route.ofWindow }
-            host.aim(target)
+            host.aim(target, relayFor(machines, window))
             host.start(language)
         } else {
             engine.value = TranscriptionEngine.PHONE
@@ -90,6 +91,16 @@ class DictationViewModel(private val phone: Dictation, private val host: HostDic
 
     /** The reader gave up on the recording the machine did not take; it is deleted. */
     fun discard() = host.discardKept()
+
+    /**
+     * Where a recording goes when the machine it was sent to cannot take it: the automatic rule
+     * again, over the machines known when the dictation started and without the ones that are out.
+     * The line naming who transcribes follows it, so the reader sees the audio move.
+     */
+    private fun relayFor(machines: List<TranscriptionCandidate>, window: DictationTarget?) = TranscriberRelay { out ->
+        val next = TranscriptionRoute.decide(TranscriptionMode.AUTO, machines, window?.machine?.id, null, phone.available, out)
+        next.target(window)?.also { other.value = next.machine?.name?.takeUnless { _ -> next.ofWindow } }
+    }
 
     private fun route(mode: TranscriptionMode, machines: List<TranscriptionCandidate>, window: DictationTarget?, chosenMachineID: String?) =
         TranscriptionRoute.decide(mode, machines, window?.machine?.id, chosenMachineID, phone.available, host.refusedMachines)

@@ -135,21 +135,69 @@ class HostDictationTest {
     }
 
     @Test
-    fun aMachineWithoutAnEngineSaysSoOnceAndIsNotAskedAgain() {
+    fun aMachineWithoutAnEngineHandsTheSameRecordingToTheNextOne() {
+        val clip = FakeClip(90_000)
+        val asked = mutableListOf<String>()
+        val host = FakeTranscription { if (asked.last() == "m1") throw TranscribeRefused(TranscribeRefusal.UNSUPPORTED) else Transcript("git log") }
+        host.onCall = { asked += it.machine.id }
+        val dictation = dictation(FakeRecorder(clip), host)
+        dictation.aim(target) { out -> DictationTarget(other).takeUnless { other.id in out } }
+        dictation.start(DictationLanguage.ES_ES)
+        dictation.stop()
+        awaitDone(dictation)
+        assertEquals("what was said is not lost: the Mac answers for the window of the other machine", DictationState.Done("git log"), dictation.state.value)
+        assertEquals(listOf("m1", "m2"), asked)
+        assertEquals("nothing was pressed in between", 2, host.calls.get())
+        assertTrue("and it is gone once transcribed", clip.deleted)
+        assertEquals("the one with no engine is marked for the next dictations", setOf("m1"), dictation.refusedMachines)
+    }
+
+    @Test
+    fun withNoMachineLeftTheRecordingIsDiscardedAndSaidSo() {
         val clip = FakeClip(90_000)
         val host = FakeTranscription { throw TranscribeRefused(TranscribeRefusal.UNSUPPORTED) }
-        val dictation = record(clip, host)
+        val dictation = dictation(FakeRecorder(clip), host)
+        // The relay offers the second machine, which has no engine either.
+        dictation.aim(target) { out -> DictationTarget(other).takeUnless { other.id in out } }
+        dictation.start(DictationLanguage.ES_ES)
+        dictation.stop()
         awaitFailure(dictation)
-        assertEquals(DictationState.Failed(DictationFailure.HOST_UNSUPPORTED, DictationRetry.NONE), dictation.state.value)
-        assertTrue(clip.deleted)
-        assertEquals("that machine is not asked again", setOf("m1"), dictation.refusedMachines)
+        assertEquals(DictationState.Failed(DictationFailure.HOST_UNSUPPORTED, DictationRetry.RERECORD), dictation.state.value)
+        assertEquals("both were tried before giving up", 2, host.calls.get())
+        assertTrue("a recorded file is no use to a live recogniser, so it goes", clip.deleted)
+        assertEquals(setOf("m1", "m2"), dictation.refusedMachines)
+    }
+
+    @Test
+    fun aMachineThatDidNotAnswerHandsTheRecordingOnToo() {
+        val clip = FakeClip(90_000)
+        val asked = mutableListOf<String>()
+        val host = FakeTranscription { if (asked.last() == "m1") throw MachineFailure.Transport() else Transcript("make") }
+        host.onCall = { asked += it.machine.id }
+        val dictation = dictation(FakeRecorder(clip), host)
+        dictation.aim(target) { out -> DictationTarget(other).takeUnless { other.id in out } }
+        dictation.start(DictationLanguage.ES_ES)
+        dictation.stop()
+        awaitDone(dictation)
+        assertEquals(DictationState.Done("make"), dictation.state.value)
+        assertEquals(listOf("m1", "m2"), asked)
+        assertTrue("a machine that did not answer is not one without an engine", dictation.refusedMachines.isEmpty())
+    }
+
+    @Test
+    fun withNowhereToRelayAMachineThatDidNotAnswerKeepsTheRecordingForARetry() {
+        val clip = FakeClip(90_000)
+        val dictation = record(clip, FakeTranscription { throw MachineFailure.Transport() })
+        awaitFailure(dictation)
+        assertEquals(DictationState.Failed(DictationFailure.HOST_UNREACHABLE, DictationRetry.RESEND), dictation.state.value)
+        assertFalse(clip.deleted)
     }
 
     @Test
     fun onlyTheMachineThatHasNoEngineIsSkipped() {
         val clip = FakeClip(90_000)
         val dictation = dictation(FakeRecorder(clip), FakeTranscription { throw TranscribeRefused(TranscribeRefusal.UNSUPPORTED) })
-        dictation.aim(DictationTarget(other))
+        dictation.aim(DictationTarget(other), null)
         dictation.start(DictationLanguage.DEVICE)
         dictation.stop()
         awaitFailure(dictation)
@@ -285,10 +333,13 @@ class HostDictationTest {
         val calls = AtomicInteger()
         var language: String? = null
         var mime: String? = null
+        /** Told which machine is being asked, before the answer is decided. */
+        var onCall: ((DictationTarget) -> Unit)? = null
         override suspend fun transcribe(target: DictationTarget, audio: ByteArray, mime: String, language: String?): Transcript {
             calls.incrementAndGet()
             this.language = language
             this.mime = mime
+            onCall?.invoke(target)
             return answer()
         }
     }
