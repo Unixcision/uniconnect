@@ -2,6 +2,8 @@
   "sourceLanguage": "es",
   "version": "1.0",
   "strings": {
+    "uniconnect.activity.working": {"extractionState":"manual","localizations":{"es":{"stringUnit":{"state":"translated","value":"La IA está trabajando"}}}},
+    "uniconnect.activity.waiting": {"extractionState":"manual","localizations":{"es":{"stringUnit":{"state":"translated","value":"La IA espera tu respuesta"}}}},
     "uniconnect.shared.subir.ventana.en.la.lista": {"extractionState":"manual","localizations":{"es":{"stringUnit":{"state":"translated","value":"Subir ventana en la lista"}}}},
     "uniconnect.shared.bajar.ventana.en.la.lista": {"extractionState":"manual","localizations":{"es":{"stringUnit":{"state":"translated","value":"Bajar ventana en la lista"}}}},
     "uniconnect.shared.mover.ventana.al.principio.de.su.grupo": {"extractionState":"manual","localizations":{"es":{"stringUnit":{"state":"translated","value":"Mover ventana al principio de su grupo"}}}},

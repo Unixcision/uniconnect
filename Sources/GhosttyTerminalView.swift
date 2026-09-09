@@ -5549,6 +5549,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// surface. The Mac sync server reads the tee'd bytes to broadcast
     /// raw PTY output to paired iPhones (`MobileTerminalByteTee`).
     private var mobileByteTeeContext: Unmanaged<MobileTerminalByteTeeUserdata>?
+    /// UniConnect: última salida real de la PTY (sin eco ni redibujados) para la actividad de IA.
+    let agentOutputActivity = AgentOutputActivityCell()
     /// The desired focus state for the Ghostty C surface. May be set before the
     /// C surface exists (e.g. during layout restoration); `createSurface`
     /// reapplies this value once the runtime surface exists, then keeps using it
@@ -6876,7 +6878,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
         // grid parity by construction. The userdata box is released
         // alongside `surfaceCallbackContext` when the surface tears down.
         mobileByteTeeContext?.release()
-        let teeContext = Unmanaged.passRetained(MobileTerminalByteTeeUserdata(surfaceID: id))
+        let teeContext = Unmanaged.passRetained(
+            MobileTerminalByteTeeUserdata(surfaceID: id, outputActivity: agentOutputActivity)
+        )
         ghostty_surface_set_pty_tee_cb(
             createdSurface,
             cmuxMobileTerminalByteTeeCallback,
@@ -7024,6 +7028,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
 
         if sizeChanged {
+            agentOutputActivity.noteResize()
             ghostty_surface_set_size(surface, wpx, hpx)
             lastPixelWidth = wpx
             lastPixelHeight = hpx
@@ -7081,6 +7086,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         #endif
 
         guard sizeChanged else { return false }
+        agentOutputActivity.noteResize()
         ghostty_surface_set_size(surface, appliedWidth, appliedHeight)
         lastPixelWidth = appliedWidth
         lastPixelHeight = appliedHeight
@@ -7116,6 +7122,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             ghostty_surface_refresh(surface)
             return false
         }
+        agentOutputActivity.noteResize()
         ghostty_surface_set_size(surface, uncappedWidth, uncappedHeight)
         lastPixelWidth = uncappedWidth
         lastPixelHeight = uncappedHeight
@@ -7353,6 +7360,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             return false
         }
         guard !ghostty_surface_process_exited(liveSurface) else { return false }
+        agentOutputActivity.noteLocalInput()
 
         var keyEvent = ghostty_input_key_s()
         keyEvent.action = GHOSTTY_ACTION_PRESS
@@ -7738,6 +7746,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         keycode: UInt32,
         mods: ghostty_input_mods_e = GHOSTTY_MODS_NONE
     ) {
+        agentOutputActivity.noteLocalInput()
         var keyEvent = ghostty_input_key_s()
         keyEvent.action = GHOSTTY_ACTION_PRESS
         keyEvent.keycode = keycode
@@ -7819,6 +7828,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     private func writeTextData(_ data: Data, to surface: ghostty_surface_t) {
+        agentOutputActivity.noteLocalInput()
         data.withUnsafeBytes { rawBuffer in
             guard let baseAddress = rawBuffer.baseAddress?.assumingMemoryBound(to: CChar.self) else { return }
             ghostty_surface_text(surface, baseAddress, UInt(rawBuffer.count))
@@ -7826,6 +7836,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     private func writeInputTextData(_ data: Data, to surface: ghostty_surface_t) {
+        agentOutputActivity.noteLocalInput()
         data.withUnsafeBytes { rawBuffer in
             guard let baseAddress = rawBuffer.baseAddress?.assumingMemoryBound(to: CChar.self) else { return }
             ghostty_surface_text_input(surface, baseAddress, UInt(rawBuffer.count))
@@ -10133,6 +10144,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     }
 
     override func keyDown(with event: NSEvent) {
+        // UniConnect: una tecla local marca la ventana de eco; es un compare-and-set sin asignaciones.
+        terminalSurface?.agentOutputActivity.noteLocalInput()
 #if DEBUG
         let typingTimingStart = CmuxTypingTiming.start()
         let phaseTotalStart = ProcessInfo.processInfo.systemUptime

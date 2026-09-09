@@ -849,6 +849,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Strongly-held observers for every active TabManager. Each observer owns
     /// Combine subscriptions that publish workspace.updated to mobile clients.
     private var mobileWorkspaceListObservers: [ObjectIdentifier: MobileWorkspaceListObserver] = [:]
+    /// UniConnect: ciclo de actividad de IA por ventana (barra lateral y `activity.v1` del móvil).
+    /// Se compone aquí, en la raíz, y lee los espacios de todas las ventanas en cada ciclo.
+    private var agentActivityCoordinator: AgentActivityCoordinator?
 
     /// The app's settings dependency container, handed over by `cmuxApp` via
     /// `configure(...)` before any main window is created. AppKit builds the
@@ -1325,6 +1328,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         claimAuthCallbackURLSchemes()
         StartupBreadcrumbLog.append("appDelegate.didFinish.authSchemes.claimed")
+
+        if !isRunningUnderXCTest {
+            let coordinator = AgentActivityCoordinator(
+                host: AgentActivityWorkspaceBridge(workspacesProvider: { [weak self] in
+                    self?.uniConnectAllTabManagers().flatMap(\.tabs) ?? []
+                })
+            )
+            coordinator.start()
+            agentActivityCoordinator = coordinator
+            StartupBreadcrumbLog.append("appDelegate.didFinish.agentActivity.started")
+        }
 
         // Install the Feed (workstream) store. Separate from the transport
         // wiring: the store is a plain singleton here, and the socket

@@ -44,7 +44,8 @@ extension SidebarWorkspaceSnapshotBuilder.Snapshot {
             customTitle: snapshot.customTitle,
             groupId: groupId,
             finderDirectoryPath: finderDirectoryPath,
-            canReconnectSSH: canReconnectSSH
+            canReconnectSSH: canReconnectSSH,
+            agentActivityState: agentActivityState
         )
     }
 }

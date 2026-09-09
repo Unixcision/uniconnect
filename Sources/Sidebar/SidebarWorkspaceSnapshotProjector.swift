@@ -85,7 +85,8 @@ struct SidebarWorkspaceSnapshotProjector {
             finderDirectoryPath: WorkspaceFinderDirectoryResolver.path(for: workspace),
             canReconnectSSH: workspace.uniConnectTmuxSessionsByPanelId.keys.contains {
                 workspace.panels[$0] != nil
-            }
+            },
+            agentActivityState: workspace.aggregatedAgentActivityState
         )
     }
 

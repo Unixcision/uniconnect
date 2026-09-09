@@ -146,6 +146,8 @@ public let cmuxMobileTerminalByteTeeCallback: @convention(c) (
     guard let userdata, let bytes, len > 0 else { return }
     let box = Unmanaged<MobileTerminalByteTeeUserdata>.fromOpaque(userdata).takeUnretainedValue()
     let count = Int(len)
+    // UniConnect: marca de salida real para la actividad de IA, antes del filtro de suscriptores.
+    box.outputActivity.noteOutput(byteCount: count)
     bytes.withMemoryRebound(to: UInt8.self, capacity: count) { rebound in
         let buffer = UnsafeBufferPointer(start: rebound, count: count)
         MobileTerminalByteTee.shared.append(surfaceID: box.surfaceID, bytes: buffer)
@@ -157,7 +159,11 @@ public let cmuxMobileTerminalByteTeeCallback: @convention(c) (
 /// the `TerminalSurface`; release happens when the surface is freed.
 public final class MobileTerminalByteTeeUserdata {
     public let surfaceID: UUID
-    public init(surfaceID: UUID) {
+    /// Celda de actividad de la superficie; la escribe el trampolín en el hilo de E/S.
+    let outputActivity: AgentOutputActivityCell
+
+    init(surfaceID: UUID, outputActivity: AgentOutputActivityCell) {
         self.surfaceID = surfaceID
+        self.outputActivity = outputActivity
     }
 }

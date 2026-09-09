@@ -11035,6 +11035,11 @@ final class Workspace: Identifiable, ObservableObject {
     var agentPIDPanelIdsByKey: [String: UUID] = [:]
     var agentPIDKeysByPanelId: [UUID: Set<String>] = [:]
     var agentLifecycleStatesByPanelId: [UUID: [String: AgentHibernationLifecycleState]] = [:]
+    /// Epoch en segundos del último `set_agent_lifecycle` por panel; el ciclo de actividad
+    /// solo se fía de un informe con menos de dos minutos.
+    private var agentLifecycleReportedAtByPanelId: [UUID: TimeInterval] = [:]
+    /// Actividad de IA por ventana publicada por `AgentActivityCoordinator` (host = fuente de verdad).
+    @Published private(set) var agentActivityByPanelId: [UUID: AgentActivity] = [:]
     var restoredTerminalScrollbackByPanelId: [UUID: String] = [:]
 #if DEBUG
     var debugSessionSnapshotScrollbackFallbackPanelIds: Set<UUID> = []
@@ -11103,6 +11108,7 @@ final class Workspace: Identifiable, ObservableObject {
             sidebarObservationSignal($activeRemoteTerminalSessionCount),
             sidebarObservationSignal($listeningPorts),
             sidebarObservationSignal($uniConnectPlaceholderPanelIds),
+            sidebarObservationSignal($agentActivityByPanelId),
         ]
 
         return Publishers.MergeMany(publishers).eraseToAnyPublisher()
@@ -13382,6 +13388,7 @@ final class Workspace: Identifiable, ObservableObject {
     ) -> Bool {
         guard panels[targetPanelId] != nil else { return false }
         agentLifecycleStatesByPanelId[targetPanelId, default: [:]][key] = lifecycle
+        agentLifecycleReportedAtByPanelId[targetPanelId] = Date().timeIntervalSince1970
         if key == "claude_code" {
             NotificationCenter.default.post(
                 name: .uniConnectClaudeSessionSignal,
@@ -13408,6 +13415,7 @@ final class Workspace: Identifiable, ObservableObject {
             agentLifecycleStatesByPanelId[panelId]?.removeValue(forKey: key)
             if agentLifecycleStatesByPanelId[panelId]?.isEmpty == true {
                 agentLifecycleStatesByPanelId.removeValue(forKey: panelId)
+                agentLifecycleReportedAtByPanelId.removeValue(forKey: panelId)
             }
             didClear = true
             recordAgentLifecycleChange(panelId: panelId)
@@ -13416,11 +13424,13 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     func clearAgentLifecycleStates(panelId: UUID) {
+        agentLifecycleReportedAtByPanelId.removeValue(forKey: panelId)
         guard agentLifecycleStatesByPanelId.removeValue(forKey: panelId) != nil else { return }
         recordAgentLifecycleChange(panelId: panelId)
     }
 
     func clearAllAgentLifecycleStates() {
+        agentLifecycleReportedAtByPanelId.removeAll()
         let panelIds = Array(agentLifecycleStatesByPanelId.keys)
         guard !panelIds.isEmpty else { return }
         agentLifecycleStatesByPanelId.removeAll()
@@ -13434,6 +13444,53 @@ final class Workspace: Identifiable, ObservableObject {
             workspaceId: id,
             panelId: panelId
         )
+    }
+
+    // MARK: - Actividad de IA (activity.v1)
+
+    /// Epoch en segundos del último informe de hooks del panel, o `nil` si nunca hubo.
+    func agentLifecycleReportedAt(panelId: UUID) -> TimeInterval? {
+        guard agentLifecycleStatesByPanelId[panelId]?.isEmpty == false else { return nil }
+        return agentLifecycleReportedAtByPanelId[panelId]
+    }
+
+    /// Estado agregado del espacio: `waiting` > `working` > `idle` > `unknown`.
+    var aggregatedAgentActivityState: AgentActivity.State {
+        AgentActivity.aggregateState(agentActivityByPanelId.values)
+    }
+
+    /// Único punto de mutación de la actividad: publica el diccionario solo si cambia y
+    /// sincroniza el indicador de la pestaña de cada ventana afectada.
+    func applyAgentActivities(_ next: [UUID: AgentActivity]) {
+        let filtered = next.filter { panels[$0.key] != nil }
+        guard filtered != agentActivityByPanelId else { return }
+        let previous = agentActivityByPanelId
+        agentActivityByPanelId = filtered
+        let touchedPanelIds = Set(previous.keys).union(filtered.keys)
+        for panelId in touchedPanelIds where previous[panelId]?.state != filtered[panelId]?.state {
+            syncAgentActivityTabIndicator(panelId: panelId)
+        }
+    }
+
+    /// Olvida la actividad de una ventana que se cierra o se traslada.
+    func clearAgentActivity(panelId: UUID) {
+        agentLifecycleReportedAtByPanelId.removeValue(forKey: panelId)
+        guard agentActivityByPanelId.removeValue(forKey: panelId) != nil else { return }
+        syncAgentActivityTabIndicator(panelId: panelId)
+    }
+
+    /// Pestaña de la ventana: ruedecita mientras trabaja, mano cuando espera, icono normal si no.
+    private func syncAgentActivityTabIndicator(panelId: UUID) {
+        guard panels[panelId] is TerminalPanel,
+              let tabId = surfaceIdFromPanelId(panelId),
+              let existing = bonsplitController.tab(tabId) else { return }
+        let state = agentActivityByPanelId[panelId]?.state ?? .unknown
+        let isLoading = state == .working
+        let icon = state == .waiting ? "hand.raised.fill" : "terminal.fill"
+        let loadingUpdate: Bool? = existing.isLoading == isLoading ? nil : isLoading
+        let iconUpdate: String?? = existing.icon == icon ? nil : .some(icon)
+        guard loadingUpdate != nil || iconUpdate != nil else { return }
+        bonsplitController.updateTab(tabId, icon: iconUpdate, isLoading: loadingUpdate)
     }
 
     func agentHibernationLifecycleState(

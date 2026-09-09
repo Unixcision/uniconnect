@@ -15867,6 +15867,8 @@ struct SidebarWorkspaceSnapshotBuilder {
         let groupId: UUID?
         let finderDirectoryPath: String?
         let canReconnectSSH: Bool
+        /// Actividad de IA agregada del espacio (`waiting` > `working` > `idle` > `unknown`).
+        let agentActivityState: AgentActivity.State
 
         init(
             presentationKey: PresentationKey,
@@ -15895,7 +15897,8 @@ struct SidebarWorkspaceSnapshotBuilder {
             customTitle: String? = nil,
             groupId: UUID? = nil,
             finderDirectoryPath: String? = nil,
-            canReconnectSSH: Bool = false
+            canReconnectSSH: Bool = false,
+            agentActivityState: AgentActivity.State = .unknown
         ) {
             self.presentationKey = presentationKey
             self.title = title
@@ -15924,6 +15927,7 @@ struct SidebarWorkspaceSnapshotBuilder {
             self.groupId = groupId
             self.finderDirectoryPath = finderDirectoryPath
             self.canReconnectSSH = canReconnectSSH
+            self.agentActivityState = agentActivityState
         }
     }
 }
@@ -16209,6 +16213,13 @@ struct TabItemView: View, Equatable {
                         .foregroundColor(activeSecondaryColor(0.8))
                         .safeHelp(protectedWorkspaceTooltip)
                 }
+
+                // UniConnect: actividad de IA agregada del espacio (valor precomputado en el snapshot).
+                SidebarAgentActivityIndicator(
+                    state: workspaceSnapshot.agentActivityState,
+                    fontSize: scaledFontSize(10)
+                )
+                .equatable()
 
                 Text(workspaceSnapshot.title)
                     .font(.system(size: scaledFontSize(12.5), weight: titleFontWeight))
