@@ -40,6 +40,9 @@ class ContentReader(private val resolver: ContentResolver) {
         return Description(UploadFileName.sanitize(name ?: fallback), size)
     }
 
+    /** The MIME type the provider declares for [uri], if any. */
+    fun mimeType(uri: Uri): String? = runCatching { resolver.getType(uri) }.getOrNull()?.takeIf { it.isNotBlank() }
+
     /** The bytes of [uri], fresh each time so a retry starts again from the first byte. */
     fun open(uri: Uri): InputStream = try {
         resolver.openInputStream(uri) ?: throw UploadFailure.Unreadable(uri.lastPathSegment ?: uri.toString())

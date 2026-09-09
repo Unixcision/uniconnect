@@ -63,14 +63,14 @@ class FramedRpcSession(private val socket: Socket, private val scope: CoroutineS
         }
     }
 
-    suspend fun call(method: String, params: JSONObject): RpcEnvelope {
+    suspend fun call(method: String, params: JSONObject, deadlineMillis: Long = 12_000): RpcEnvelope {
         check(!closed.get())
         require(pending.size < 16)
         val id = UUID.randomUUID().toString()
         val completion = CompletableDeferred<RpcEnvelope>()
         pending[id] = completion
         try {
-            return transportDeadline(12_000) {
+            return transportDeadline(deadlineMillis) {
                 val bytes = JSONObject().put("id", id).put("method", method).put("params", params)
                     .toString().toByteArray(Charsets.UTF_8)
                 require(bytes.size in 1..FramedRpcClient.MAX_FRAME_BYTES)
