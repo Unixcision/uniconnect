@@ -213,6 +213,7 @@ private fun Throwable?.attachMessage(): String = when (this) {
     is MachineFailure.Rejected -> when (code) {
         "too_large" -> stringResource(R.string.attach_failed_too_large)
         "locked" -> stringResource(R.string.attach_failed_locked)
+        "busy" -> stringResource(R.string.attach_failed_busy)
         "io_failed" -> stringResource(R.string.attach_failed_io)
         "not_found" -> stringResource(R.string.attach_failed_not_found)
         else -> stringResource(R.string.attach_failed_rejected, detail?.takeIf { it.isNotBlank() } ?: code)

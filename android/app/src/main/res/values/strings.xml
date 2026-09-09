@@ -275,7 +275,8 @@
     <string name="attach_pasted_link">Enlace pegado en la cajita</string>
     <string name="attach_remote_error">No se ha podido copiar al servidor (%1$s); se ha pegado la ruta del equipo.</string>
     <string name="attach_failed_too_large">El archivo supera los 200 MB que admite el equipo</string>
-    <string name="attach_failed_locked">El equipo está ocupado con otra transferencia; vuelve a intentarlo</string>
+    <string name="attach_failed_locked">UniConnect está bloqueado en el equipo: desbloquéalo para adjuntar</string>
+    <string name="attach_failed_busy">El equipo está ocupado con otra transferencia; vuelve a intentarlo</string>
     <string name="attach_failed_io">El equipo no ha podido guardar el archivo</string>
     <string name="attach_failed_not_found">La transferencia ha caducado o la caja ha cambiado; reintenta desde el principio</string>
     <string name="attach_failed_rejected">El equipo ha rechazado el adjunto (%1$s)</string>
