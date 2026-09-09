@@ -330,8 +330,14 @@
     <string name="dictation_retry">Reintentar</string>
     <string name="dictation_record_again">Grabar otra vez</string>
     <string name="settings_transcription">Transcripción</string>
-    <string name="settings_transcription_note">El equipo transcribe con Whisper y entiende mucho mejor. Automática lo usa cuando el equipo puede; si no, dicta el móvil.</string>
+    <string name="settings_transcription_note">Un equipo transcribe con Whisper y entiende mucho mejor. Automática usa el equipo de la ventana si puede; si no, el primer equipo conectado que pueda; si ninguno, dicta el móvil.</string>
+    <string name="settings_transcription_no_machines">No hay equipos guardados a los que mandar el audio</string>
+    <string name="settings_transcription_offline">Sin conexión ahora mismo</string>
+    <string name="settings_transcription_cannot">Este equipo no transcribe</string>
     <string name="transcription_auto">Automática</string>
     <string name="transcription_phone">Móvil</string>
-    <string name="transcription_host">Equipo</string>
+    <string name="transcription_host">Ventana</string>
+    <string name="transcription_machine">Elegido</string>
+    <string name="dictation_transcribed_by">Transcribe %1$s</string>
+    <string name="dictation_chosen_unavailable">El equipo elegido no puede transcribir ahora: se usa el que pueda</string>
 </resources>

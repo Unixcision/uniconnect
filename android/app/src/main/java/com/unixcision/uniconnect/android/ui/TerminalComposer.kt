@@ -54,6 +54,7 @@ import com.unixcision.uniconnect.android.domain.DictationState
 import com.unixcision.uniconnect.android.domain.DictationTarget
 import com.unixcision.uniconnect.android.domain.TerminalKeyEncoder
 import com.unixcision.uniconnect.android.domain.TerminalModifiers
+import com.unixcision.uniconnect.android.domain.TranscriptionCandidate
 import com.unixcision.uniconnect.android.domain.TranscriptionMode
 import com.unixcision.uniconnect.android.domain.TranscriptionNotice
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
@@ -84,8 +85,9 @@ fun TerminalComposer(
     dictationLanguage: DictationLanguage = DictationLanguage.DEVICE,
     sendOnDictationEnd: Boolean = false,
     transcription: TranscriptionMode = TranscriptionMode.AUTO,
+    transcriptionMachine: String? = null,
+    transcribers: List<TranscriptionCandidate> = emptyList(),
     dictationTarget: DictationTarget? = null,
-    hostTranscribes: Boolean = false,
 ) {
     val context = LocalContext.current
     val send: (String, Boolean) -> Unit = { submitted, withEnter ->
@@ -108,6 +110,8 @@ fun TerminalComposer(
     val dictationState by (dictation?.state ?: idle).collectAsStateWithLifecycle()
     val listening = dictationState as? DictationState.Listening
     val transcribing = dictationState as? DictationState.Transcribing
+    val idleName = remember { MutableStateFlow<String?>(null) }
+    val transcriber by (dictation?.transcriber ?: idleName).collectAsStateWithLifecycle()
     var notice by remember { mutableStateOf<Int?>(null) }
     var offerSettings by remember { mutableStateOf(false) }
     var retry by remember { mutableStateOf(DictationRetry.NONE) }
@@ -136,7 +140,7 @@ fun TerminalComposer(
         notice = null
         offerSettings = false
         retry = DictationRetry.NONE
-        dictation?.start(dictationLanguage, transcription, dictationTarget, hostTranscribes)?.let { notice = it.message }
+        dictation?.start(dictationLanguage, transcription, transcribers, dictationTarget, transcriptionMachine)?.let { notice = it.message }
         Unit
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -154,7 +158,7 @@ fun TerminalComposer(
     }
     val action = ComposerAction.decide(
         draftEmpty = draft.isEmpty(),
-        dictationAvailable = dictation?.canDictate(transcription, hostTranscribes && dictationTarget != null) == true,
+        dictationAvailable = dictation?.canDictate(transcription, transcribers, dictationTarget, transcriptionMachine) == true,
     )
 
     Column(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 6.dp)) {
@@ -225,6 +229,13 @@ fun TerminalComposer(
                     }
                 }
             }
+        }
+        transcriber?.takeIf { listening != null || transcribing != null }?.let { name ->
+            Text(
+                stringResource(R.string.dictation_transcribed_by, name),
+                Modifier.padding(top = 4.dp, start = 4.dp),
+                color = UniTheme.colors.muted, style = MaterialTheme.typography.labelSmall,
+            )
         }
         notice?.let { message ->
             Row(Modifier.fillMaxWidth().padding(top = 4.dp, start = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -370,6 +381,7 @@ private val TranscriptionNotice.message: Int
     get() = when (this) {
         TranscriptionNotice.HOST_CANNOT -> R.string.dictation_host_cannot
         TranscriptionNotice.HOST_REQUIRED_UNAVAILABLE -> R.string.dictation_host_required_unavailable
+        TranscriptionNotice.CHOSEN_UNAVAILABLE -> R.string.dictation_chosen_unavailable
     }
 
 private fun openAppSettings(context: android.content.Context) {

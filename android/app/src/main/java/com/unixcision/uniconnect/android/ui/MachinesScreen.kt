@@ -45,6 +45,7 @@ import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import com.unixcision.uniconnect.android.domain.ActivityState
 import com.unixcision.uniconnect.android.domain.BoxOverrides
 import com.unixcision.uniconnect.android.domain.Machine
+import com.unixcision.uniconnect.android.domain.TranscriptionCandidate
 import com.unixcision.uniconnect.android.ui.components.BoxMonogram
 import com.unixcision.uniconnect.android.ui.components.GlassCard
 import com.unixcision.uniconnect.android.ui.components.PillTone
@@ -63,6 +64,14 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
     val connection = machine?.let { state.connections[it.id] }
     val workspace = connection?.snapshot?.workspaces?.firstOrNull { it.id == state.selectedWorkspace }
     val window = workspace?.windows?.firstOrNull { it.id == state.selectedWindow }
+    // Any saved machine may be the one that transcribes, not only the one of the open window: a
+    // laptop with a big model answers far better than a small server with a small one.
+    val transcribers = remember(state.machines, state.connections) {
+        state.machines.map { saved ->
+            val link = state.connections[saved.id]
+            TranscriptionCandidate(saved, transcribes = link?.snapshot?.transcribes == true, connected = link?.connected == true)
+        }
+    }
     // Against a host that keeps favourites itself, the phone's own copy is not shown.
     val overrides = machine?.takeIf { connection?.snapshot?.keepsBoxes != true }?.let { state.overrides[it.id] } ?: BoxOverrides()
     var removing by remember { mutableStateOf<Machine?>(null) }
@@ -169,7 +178,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                             attachments = attachments,
                             dictation = dictation,
                             attachTarget = if (machine != null && workspace != null && window != null) AttachTarget(machine, workspace.id, window.id, workspace.isSSH, connection?.snapshot?.putsFiles == true) else null,
-                            hostTranscribes = connection?.snapshot?.transcribes == true,
+                            transcribers = transcribers,
                         )
                     }
                     Level.MACHINE -> if (machine != null) MachineBoxesScreen(
@@ -190,7 +199,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
             }
         }
     }
-    if (state.showingSettings) SettingsSheet(state.settings, model::updateSettings, model::dismissSettings)
+    if (state.showingSettings) SettingsSheet(state.settings, transcribers, model::updateSettings, model::dismissSettings)
     if (state.adding) MachineSheet(state.saving, state.formError, onDismiss = model::dismissAdd, onSave = model::saveMachine)
     state.editing?.let { target ->
         MachineSheet(state.saving, state.formError, machine = target, onDismiss = model::dismissEdit, onSave = model::saveMachine)

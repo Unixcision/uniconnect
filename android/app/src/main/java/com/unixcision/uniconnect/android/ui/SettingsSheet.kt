@@ -35,6 +35,7 @@ import com.unixcision.uniconnect.android.domain.ColorMode
 import com.unixcision.uniconnect.android.domain.DesignTheme
 import com.unixcision.uniconnect.android.domain.DictationLanguage
 import com.unixcision.uniconnect.android.domain.TerminalView
+import com.unixcision.uniconnect.android.domain.TranscriptionCandidate
 import com.unixcision.uniconnect.android.domain.TranscriptionMode
 import com.unixcision.uniconnect.android.domain.UploadService
 import com.unixcision.uniconnect.android.domain.UploadStyle
@@ -51,7 +52,7 @@ import com.unixcision.uniconnect.android.ui.theme.UniTokens
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsSheet(settings: AppSettings, onChange: (AppSettings) -> Unit, onDismiss: () -> Unit) {
+fun SettingsSheet(settings: AppSettings, transcribers: List<TranscriptionCandidate>, onChange: (AppSettings) -> Unit, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val version = remember(context) {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty()
@@ -131,12 +132,18 @@ fun SettingsSheet(settings: AppSettings, onChange: (AppSettings) -> Unit, onDism
                     TranscriptionMode.entries.forEachIndexed { index, mode ->
                         SegmentedButton(
                             selected = settings.transcription == mode,
-                            onClick = { onChange(settings.copy(transcription = mode)) },
+                            // Picking "one machine" with none picked yet starts on the first that can.
+                            onClick = {
+                                val chosen = if (mode == TranscriptionMode.MACHINE) settings.transcriptionMachine ?: transcribers.firstOrNull { it.transcribes }?.machine?.id
+                                else settings.transcriptionMachine
+                                onChange(settings.copy(transcription = mode, transcriptionMachine = chosen))
+                            },
                             shape = SegmentedButtonDefaults.itemShape(index, TranscriptionMode.entries.size),
                             colors = segmentColors(),
-                        ) { Text(stringResource(mode.label), style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        ) { Text(stringResource(mode.label), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     }
                 }
+                if (settings.transcription == TranscriptionMode.MACHINE) TranscriberPicker(settings, transcribers, onChange)
                 SettingsSwitch(
                     title = stringResource(R.string.settings_send_on_dictation),
                     note = stringResource(R.string.settings_send_on_dictation_note),
@@ -266,12 +273,48 @@ private fun TerminalUploadPicker(settings: AppSettings, onChange: (AppSettings) 
     }
 }
 
+/**
+ * The machines a recording may be sent to, with what stops each one from taking it right now. A
+ * machine that cannot is still worth picking: it may be the one with the good model, and today it
+ * is only asleep. While it cannot, the automatic rule runs instead and the composer says so.
+ */
+@Composable
+private fun TranscriberPicker(settings: AppSettings, transcribers: List<TranscriptionCandidate>, onChange: (AppSettings) -> Unit) {
+    if (transcribers.isEmpty()) {
+        Text(stringResource(R.string.settings_transcription_no_machines), Modifier.padding(top = 8.dp), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
+        return
+    }
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        transcribers.forEach { candidate ->
+            val chosen = settings.transcriptionMachine == candidate.machine.id
+            Row(
+                Modifier.fillMaxWidth()
+                    .selectable(selected = chosen, role = Role.RadioButton) { onChange(settings.copy(transcriptionMachine = candidate.machine.id)) }
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = chosen, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = UniTheme.colors.accent, unselectedColor = UniTheme.colors.outline))
+                Column(Modifier.padding(start = 8.dp)) {
+                    Text(candidate.machine.name, style = MaterialTheme.typography.bodyMedium, color = UniTheme.colors.text)
+                    val mark = when {
+                        !candidate.connected -> R.string.settings_transcription_offline
+                        !candidate.transcribes -> R.string.settings_transcription_cannot
+                        else -> null
+                    }
+                    mark?.let { Text(stringResource(it), color = UniTheme.colors.muted, style = MaterialTheme.typography.labelSmall) }
+                }
+            }
+        }
+    }
+}
+
 /** The visible name of a way of transcribing. */
 private val TranscriptionMode.label: Int
     get() = when (this) {
         TranscriptionMode.AUTO -> R.string.transcription_auto
         TranscriptionMode.PHONE -> R.string.transcription_phone
         TranscriptionMode.HOST -> R.string.transcription_host
+        TranscriptionMode.MACHINE -> R.string.transcription_machine
     }
 
 /** The visible name of a dictation language. */

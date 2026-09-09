@@ -36,6 +36,7 @@ class StoredSettingsRepository(private val store: DataStore<Preferences>) : Sett
     private val sendOnDictation = booleanPreferencesKey("settings.sendOnDictationEnd")
     private val dictationLanguage = stringPreferencesKey("settings.dictationLanguage")
     private val transcription = stringPreferencesKey("settings.transcription")
+    private val transcriptionMachine = stringPreferencesKey("settings.transcriptionMachine")
     private val defaults = AppSettings()
 
     override val settings = store.data.map { stored ->
@@ -50,6 +51,7 @@ class StoredSettingsRepository(private val store: DataStore<Preferences>) : Sett
             sendOnDictationEnd = stored[sendOnDictation] ?: defaults.sendOnDictationEnd,
             dictationLanguage = DictationLanguage.named(stored[dictationLanguage]),
             transcription = TranscriptionMode.named(stored[transcription]),
+            transcriptionMachine = stored[transcriptionMachine]?.takeIf { it.isNotBlank() },
         )
     }.distinctUntilChanged()
 
@@ -65,6 +67,8 @@ class StoredSettingsRepository(private val store: DataStore<Preferences>) : Sett
             preferences[sendOnDictation] = settings.sendOnDictationEnd
             preferences[dictationLanguage] = settings.dictationLanguage.name
             preferences[transcription] = settings.transcription.name
+            val transcriber = settings.transcriptionMachine
+            if (transcriber == null) preferences.remove(transcriptionMachine) else preferences[transcriptionMachine] = transcriber
             val terminal = settings.terminalUploadService
             if (terminal == null) {
                 preferences.remove(terminalUploadDomain)

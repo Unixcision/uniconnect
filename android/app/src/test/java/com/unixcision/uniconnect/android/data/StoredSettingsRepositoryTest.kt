@@ -110,6 +110,18 @@ class StoredSettingsRepositoryTest {
     }
 
     @Test
+    fun thePickedMachineIsStoredByIdentifierAndCanBeTakenBack() = runBlocking {
+        val repository = StoredSettingsRepository(MemoryPreferences())
+        assertEquals(null, repository.settings.first().transcriptionMachine)
+        repository.update(repository.settings.first().copy(transcription = TranscriptionMode.MACHINE, transcriptionMachine = "mac-1"))
+        val stored = repository.settings.first()
+        assertEquals(TranscriptionMode.MACHINE, stored.transcription)
+        assertEquals("mac-1", stored.transcriptionMachine)
+        repository.update(stored.copy(transcription = TranscriptionMode.AUTO, transcriptionMachine = null))
+        assertEquals(null, repository.settings.first().transcriptionMachine)
+    }
+
+    @Test
     fun aStoreFromBeforeTranscriptionExistedKeepsItsVoiceSettings() = runBlocking {
         val older = preferencesOf(
             booleanPreferencesKey("settings.sendOnDictationEnd") to true,

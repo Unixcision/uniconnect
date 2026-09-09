@@ -18,6 +18,7 @@ import org.junit.Test
 class HostDictationTest {
     private val machine = Machine("m1", "MINIPC", MachineEndpoint.parse("100.64.0.1", "58465")!!)
     private val target = DictationTarget(machine, "w1", "t1")
+    private val other = Machine("m2", "Mac de Dani", MachineEndpoint.parse("100.64.0.2", "58465")!!)
 
     @Test
     fun whatTheMachineUnderstoodEndsInTheComposerAndTheRecordingIsGone() {
@@ -104,7 +105,7 @@ class HostDictationTest {
             awaitFailure(dictation)
             assertEquals(DictationState.Failed(DictationFailure.HOST_BUSY, DictationRetry.RESEND), dictation.state.value)
             assertFalse("waiting is not failing: the recording stays", clip.deleted)
-            assertFalse("nor does it turn the machine off", dictation.unsupported)
+            assertTrue("nor does it turn the machine off", dictation.refusedMachines.isEmpty())
             dictation.reset()
             dictation.resend()
         }
@@ -141,7 +142,19 @@ class HostDictationTest {
         awaitFailure(dictation)
         assertEquals(DictationState.Failed(DictationFailure.HOST_UNSUPPORTED, DictationRetry.NONE), dictation.state.value)
         assertTrue(clip.deleted)
-        assertTrue("the phone takes over from here", dictation.unsupported)
+        assertEquals("that machine is not asked again", setOf("m1"), dictation.refusedMachines)
+    }
+
+    @Test
+    fun onlyTheMachineThatHasNoEngineIsSkipped() {
+        val clip = FakeClip(90_000)
+        val dictation = dictation(FakeRecorder(clip), FakeTranscription { throw TranscribeRefused(TranscribeRefusal.UNSUPPORTED) })
+        dictation.aim(DictationTarget(other))
+        dictation.start(DictationLanguage.DEVICE)
+        dictation.stop()
+        awaitFailure(dictation)
+        assertEquals(setOf("m2"), dictation.refusedMachines)
+        assertFalse("the machine of the window was never the problem", "m1" in dictation.refusedMachines)
     }
 
     @Test

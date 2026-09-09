@@ -173,7 +173,12 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
 - `busy` mapeado como espera, no como error desconocido (el host Linux ya lo devuelve: un dictado por
   dispositivo, dos por equipo). La grabación se conserva para todos los reintentos que hagan falta y
   solo se borra al acertar o al descartar el aviso.
-- 38 pruebas JVM nuevas (elección de motor, base64 por bloques, tope de 3 MiB y trama, cada código de
+- El dictado ya puede usar OTRO equipo distinto al de la ventana (medido: el Mac tarda 1,8 s donde el
+  MINIPC tarda 68 s y entiende mal). Automática usa el de la ventana, si no el primero conectado que
+  pueda, si no el móvil; Ajustes gana «Elegido» con la lista de máquinas y guarda el identificador.
+- Cuando transcribe otro equipo, la petición no lleva `workspace_id` ni `terminal_id` y la barra dice
+  qué equipo lo hace. El `unsupported` se recuerda por máquina, no en general.
+- 50 pruebas JVM nuevas (elección de motor, base64 por bloques, tope de 3 MiB y trama, cada código de
   error del contrato contra un host de mentira en un par de sockets, borrado del archivo en todos los
   caminos, reintento único, corte a los 5 minutos, persistencia del ajuste). Build y
   `testDebugUnitTest` en verde.

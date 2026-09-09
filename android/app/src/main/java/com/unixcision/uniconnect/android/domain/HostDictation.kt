@@ -51,13 +51,16 @@ class HostDictation(
 
     override val available: Boolean get() = recorder.available
 
-    /** Whether this machine answered `unsupported`; the phone dictates from then on. */
-    var unsupported: Boolean = false
-        private set
+    private val refused = mutableSetOf<String>()
 
-    /** The window the next recording belongs to; without one nothing is recorded. */
+    /**
+     * Machines that answered `unsupported`. They are not asked again while the app runs, so the
+     * route falls to another machine, or to the phone, without the reader doing anything.
+     */
+    val refusedMachines: Set<String> get() = refused
+
+    /** The machine the next recording goes to, and the window it belongs to when it is that machine's. */
     fun aim(target: DictationTarget) {
-        if (target.machine.id != this.target?.machine?.id) unsupported = false
         this.target = target
     }
 
@@ -141,13 +144,13 @@ class HostDictation(
                 clip.delete()
                 throw stopped
             } catch (failure: Exception) {
-                refuse(clip, failure)
+                refuse(aimed, clip, failure)
             }
         }
     }
 
     /** Turns a failed send into a state, keeping the recording only when one retry makes sense. */
-    private fun refuse(clip: AudioClip, failure: Exception) {
+    private fun refuse(aimed: DictationTarget, clip: AudioClip, failure: Exception) {
         val refusal = (failure as? TranscribeRefused)?.refusal
         val reason = when (refusal) {
             TranscribeRefusal.TOO_LARGE -> DictationFailure.TOO_LONG
@@ -157,7 +160,7 @@ class HostDictation(
             TranscribeRefusal.INVALID_PARAMS, TranscribeRefusal.IO_FAILED, TranscribeRefusal.UNKNOWN -> DictationFailure.HOST_FAILED
             null -> DictationFailure.HOST_UNREACHABLE
         }
-        if (refusal == TranscribeRefusal.UNSUPPORTED) unsupported = true
+        if (refusal == TranscribeRefusal.UNSUPPORTED) refused += aimed.machine.id
         // A busy machine will not be busy for long, so that recording is kept for as many tries as
         // the reader makes; the rest are failures and get exactly one.
         val passing = refusal == TranscribeRefusal.BUSY

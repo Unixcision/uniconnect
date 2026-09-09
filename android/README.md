@@ -240,19 +240,40 @@ Cada llamada abre su propia conexión y la cierra al terminar, como los adjuntos
 conexión tras responder una petición que ha pasado de su plazo de inactividad, así que ninguna se
 reutiliza para la siguiente.
 
-Ajustes → «Voz» → «Transcripción»: «Automática» (el equipo si puede, el móvil si no; por defecto),
-«Móvil» (nunca se pregunta al equipo) y «Equipo» (avisa cada vez que ese equipo no puede y dicta el
-móvil). Se guarda en `settings.transcription`; un almacén escrito antes de esta clave se sigue
-leyendo con sus valores de voz intactos.
+### Qué equipo transcribe
+
+El equipo de la ventana no siempre es el que debe transcribir. Medido el 9 de septiembre de 2026 con
+el mismo audio de 12 s en español: el Mac (M4, modelo grande) tarda 1,8 s y acierta; el MINIPC Linux
+(4 núcleos y 16 terminales encima) tarda 68 s con el mediano, 25 s con el base y 18 s con el pequeño,
+y estos dos últimos entienden mal («por a debe» por «por adb»). Así que el dictado puede mandar el
+audio a OTRO equipo distinto al de la ventana.
+
+Ajustes → «Voz» → «Transcripción» tiene cuatro valores: «Automática» (por defecto), «Móvil»,
+«Ventana» y «Elegido». La regla de Automática es: el equipo de la ventana si transcribe; si no, el
+primer equipo CONECTADO que anuncie la capacidad (el Mac mientras escribes en una ventana del
+Linux); si ninguno, dictado local. «Ventana» no se va a otro equipo: avisa cada vez que ese no puede
+y dicta el móvil. «Elegido» abre la lista de máquinas guardadas marcando las que no pueden («Este
+equipo no transcribe») y las que no responden ahora («Sin conexión ahora mismo»); si la elegida está
+caída o contesta `unsupported`, se cae a la regla automática y se avisa una vez. Se guardan
+`settings.transcription` y `settings.transcriptionMachine`, que es el identificador de la máquina y
+no su nombre, así que renombrarla no pierde la elección; un almacén escrito antes de estas claves se
+sigue leyendo con sus valores de voz intactos.
+
+Cuando transcribe un equipo que no es el de la ventana, la barra lo dice en pequeño («Transcribe Mac
+de Dani») y la petición NO lleva `workspace_id` ni `terminal_id`: son opcionales en el contrato y no
+significan nada para una máquina que no es dueña de esa ventana. El texto vuelve igual y se pega en
+la cajita de la ventana abierta. Un `unsupported` se recuerda por máquina, no en general, así que
+solo esa deja de intentarse.
 
 Arquitectura: `domain/Dictation` sigue siendo la interfaz y hay dos implementaciones,
 `data/AndroidDictation` (móvil) y `domain/HostDictation` (equipo). La elección es una función pura,
-`TranscriptionRoute.decide(modo, capacidad, hay reconocedor)`, y `ui/DictationViewModel` solo publica
+`TranscriptionRoute.decide(modo, máquinas con capacidad y conexión, máquina de la ventana, elegida,
+hay reconocedor, rechazadas)`, y `ui/DictationViewModel` solo publica
 el estado del motor activo, así que el composable lee los mismos estados en los dos casos.
 `MediaRecorder` queda tras `domain/VoiceRecorder` y el RPC tras `domain/HostTranscription`, de modo
 que todo el flujo (elección, límite de tamaño, cada error, borrado del archivo, reintento único,
 corte a los 5 minutos) se prueba en la JVM sin micrófono ni socket. La llamada se prueba además
-contra un host de mentira en un par de sockets, como la de adjuntos. Probado solo así: 38 pruebas
+contra un host de mentira en un par de sockets, como la de adjuntos. Probado solo así: 50 pruebas
 nuevas; contra un host real con Whisper no se ha ejercitado todavía.
 
 ## Arquitectura

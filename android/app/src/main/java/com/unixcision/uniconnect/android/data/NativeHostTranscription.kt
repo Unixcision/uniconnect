@@ -27,13 +27,13 @@ class NativeHostTranscription(private val rpc: FramedRpcClient) : HostTranscript
     internal suspend fun over(session: FramedRpcSession, target: DictationTarget, audio: ByteArray, mime: String, language: String?): Transcript {
         if (!AudioPayload.fits(audio.size.toLong())) throw TranscribeRefused(TranscribeRefusal.TOO_LARGE)
         val encoded = AudioPayload.encode(audio)
-        val fields = (target.workspaceID + target.terminalID + mime + language.orEmpty()).toByteArray(Charsets.UTF_8).size
+        val fields = (target.workspaceID.orEmpty() + target.terminalID.orEmpty() + mime + language.orEmpty()).toByteArray(Charsets.UTF_8).size
         if (!AudioPayload.requestFits(encoded.length.toLong(), fields.toLong())) throw TranscribeRefused(TranscribeRefusal.TOO_LARGE)
-        val params = JSONObject()
-            .put("audio", encoded)
-            .put("mime", mime)
-            .put("workspace_id", target.workspaceID)
-            .put("terminal_id", target.terminalID)
+        val params = JSONObject().put("audio", encoded).put("mime", mime)
+        // A machine that does not own the window is asked for text and nothing else: its own
+        // boxes have no such identifiers, and the contract takes both as optional.
+        target.workspaceID?.let { params.put("workspace_id", it) }
+        target.terminalID?.let { params.put("terminal_id", it) }
         language?.let { params.put("language", it) }
         val result = try {
             session.call(METHOD, params, DEADLINE_MILLIS).value.getJSONObject("result")

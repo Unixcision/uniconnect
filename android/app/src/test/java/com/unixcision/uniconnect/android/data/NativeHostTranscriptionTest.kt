@@ -85,6 +85,26 @@ class NativeHostTranscriptionTest {
     }
 
     @Test
+    fun aMachineThatDoesNotOwnTheWindowIsAskedForTextAndNothingElse() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val pair = SocketPair()
+        try {
+            val host = scope.async {
+                val params = pair.read().also { pair.reply(it, JSONObject().put("text", "hola")) }.getJSONObject("params")
+                assertEquals("the window belongs to another machine", false, params.has("workspace_id"))
+                assertEquals(false, params.has("terminal_id"))
+                assertEquals("audio/mp4", params.getString("mime"))
+            }
+            val elsewhere = DictationTarget(target.machine)
+            val transcript = FramedRpcSession(pair.local, scope).use { session ->
+                NativeHostTranscription(FramedRpcClient(scope)).over(session, elsewhere, ByteArray(64), "audio/mp4", "es")
+            }
+            assertEquals("hola", transcript.text)
+            withTimeout(3_000) { host.await() }
+        } finally { pair.close(); scope.cancel() }
+    }
+
+    @Test
     fun everyErrorOfTheContractComesBackAsItsOwnRefusal() = runBlocking {
         listOf("too_large" to TranscribeRefusal.TOO_LARGE, "unsupported" to TranscribeRefusal.UNSUPPORTED, "locked" to TranscribeRefusal.LOCKED, "busy" to TranscribeRefusal.BUSY, "invalid_params" to TranscribeRefusal.INVALID_PARAMS, "io_failed" to TranscribeRefusal.IO_FAILED, "vaya" to TranscribeRefusal.UNKNOWN).forEach { (code, expected) ->
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
