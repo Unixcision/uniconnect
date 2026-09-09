@@ -6,12 +6,25 @@ dirección Tailscale y puerto (58465 inicialmente).
 
 ## Estado real
 
-- Splash nativo con el logo original de UniConnect, tema azul noche/cian/violeta.
+- Splash nativo con el logo original de UniConnect.
 - Rediseño 2026 (5 de septiembre): tema Material 3 Expressive (`MaterialExpressiveTheme`,
   `MotionScheme.expressive()`, `LoadingIndicator`), tarjetas de cristal, monogramas
   deterministas por caja como el rail compacto del Mac, riel horizontal de espacios de
   trabajo con sus ventanas debajo, hojas inferiores para alta de máquina y creación, y
   transiciones entre niveles. Componentes en `ui/components/`.
+- Temas de diseño (9 de septiembre): cuatro temas elegibles en Ajustes → Apariencia,
+  combinables con claro, oscuro o sistema. `domain/DesignTheme` (`SERENO`, `SENAL`,
+  `TINTA`, `TERMINAL`) y `domain/ColorMode` se guardan en `AppSettings`; los valores
+  antiguos siguen leyéndose y por defecto es Sereno + Sistema. `ui/theme/UniTokens.tokensFor`
+  es una función pura que devuelve colores, formas, espaciado, tipografía y disposición
+  de cada una de las ocho combinaciones; `UniTheme` las publica por `CompositionLocal`
+  y deriva de ellas el `colorScheme`, las `Shapes` y la `Typography` de Material para que
+  hojas, interruptores y botones hereden el tema. Ninguna pantalla lleva colores fijos:
+  todo se lee de `UniTheme.colors` (acento, acento suave, éxito, aviso, peligro, texto,
+  atenuado, contorno, cristal y ocho tonos de monograma). Tinta pinta hairlines en lugar
+  de tarjetas y titulares con serif; Terminal muestra nombres de máquina, caja y ventana
+  en monoespaciada y las cajas en rejilla; Señal es compacto con etiquetas en versalitas.
+  El cambio se aplica al instante, sin reiniciar. Las barras del sistema siguen al modo.
 - Creación en dos pasos: «Nuevo espacio de trabajo» envía `initial_terminal:false`; si el
   host confirma una caja vacía se abre al instante la hoja «Primera ventana de …» con el
   catálogo de inicio de esa caja. «Ahora no» deja la caja sin ventanas; nunca se lanza una

@@ -10,6 +10,12 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
 - Splash nativo AndroidX, tema oscuro y reutilización automática del PNG canónico
   `design/UniConnect.icon/Assets/uniconnect-icon.png` sin duplicarlo en fuentes.
 - Recursos de interfaz solo en español y manifiesto sin copia de seguridad.
+- Sistema de temas (2026-09-09): cuatro temas de diseño × claro/oscuro/sistema en
+  `ui/theme/` con tokens puros y testeados (`UniTokensTest`: contraste WCAG de texto,
+  atenuado, acento y estados en las ocho combinaciones; serif en Tinta, mono en Terminal,
+  Señal compacto). La paleta fija `Brand` ha desaparecido. Persistencia cubierta por
+  `StoredSettingsRepositoryTest` con un DataStore en memoria. Verificado solo compilando y
+  con tests: no se ha instalado en ningún móvil ni revisado visualmente.
 
 ## En curso
 
