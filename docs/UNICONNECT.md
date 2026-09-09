@@ -482,9 +482,6 @@ and answers with the text alone. A host that implements it advertises
 `box_update`, `activity.v1` and `file_put.v1`. A host that does not advertise it,
 or one that answers `unsupported` because it has no engine or no model, makes the
 phone fall back to its own on-device dictation; nothing is ever sent elsewhere.
-Closed on 2026-09-09 after cross review (a clip that fits in a protocol frame, a
-duration measured from the audio and not from its MIME, a bounded number of
-concurrent jobs, and no audio surviving a crash).
 
 - `mobile.audio.transcribe {audio, mime, language?, workspace_id?, terminal_id?}` →
   `{text, engine, seconds, took_ms}`. `audio` is the whole clip in base64 (one
@@ -515,8 +512,9 @@ concurrent jobs, and no audio surviving a crash).
   compressed clip; the phone dictates locally instead), `busy` (too many jobs in
   flight), `locked` (the host is locked) and `io_failed` (the engine failed, the
   deadline was exhausted or the call was cancelled), as the rest of the mobile API.
-- Deadline: 90 s on both sides. The host reserves the tail of its own budget for
-  cleanup, so it always answers before the phone stops waiting.
+- Deadline: the phone waits 90 s from before it sends. The host's own budget is
+  75 s counted from the moment the request reaches its RPC, with the tail of it
+  reserved for killing the child and cleaning up.
 - Privacy: the audio is written to a private temporary file and deleted on every
   exit path, success or failure; what a crash leaves behind is deleted at the next
   start. Neither the audio nor the transcript is written to any log, kept on disk
@@ -553,11 +551,14 @@ Host side on Linux (2026-09-09, `linux/uniconnect/transcribe.py`, routed by
   passes through unconverted needs no `ffprobe` to be safe: 3 MiB at 32000 B/s
   cannot hold more than 98 seconds.
 - **Budget, jobs and threading.** Probe, conversion, transcription and cleanup
-  share one monotonic budget of 90 s (`TranscriptionEngine.budget`, injected
-  clock), of which the last 5 s are reserved: each child process gets what is left
-  as its own timeout, and an exhausted budget answers `io_failed` without starting
-  the next step, so the host replies at around 85 s and the phone's 90 s deadline
-  is never reached. A device may hold one job and the host two
+  share one monotonic budget of 75 s (`TranscriptionEngine.budget`, injected
+  clock), of which the last 5 s are reserved. It is stamped by
+  `TranscriptionEngine.deadline()` at the top of the RPC, before the base64 is
+  decoded and before the hop to the model thread, so that time comes out of the
+  same budget instead of being added after it; `took_ms` is measured from there
+  too. Each child process gets what is left as its own timeout, and an exhausted
+  budget answers `io_failed` without starting the next step. A device may hold one
+  job and the host two
   (`max_jobs_per_owner`, `max_jobs`); the turn is taken after validation, before
   the engine runs, and released in a `finally` on every ending, cancellation and
   timeout included. The same device is refused at once (a double tap is not a
@@ -586,10 +587,16 @@ Host side on Linux (2026-09-09, `linux/uniconnect/transcribe.py`, routed by
   removed in a `finally`, so success, engine failure, timeout and cancellation all
   leave nothing behind, but a `finally` cannot survive a killed process:
   `TranscriptionEngine.sweep_orphans()`, called from `MobileDesktop.__init__`,
-  deletes at start every directory whose pid is gone or that is older than 10
-  minutes (no transcription lives that long), and skips the ones this instance is
-  using right now. Those rules together are what makes the sweep safe while another
-  job, or another UniConnect instance, is transcribing. The deletion is verified
+  deletes at start the work directories that have no owner. Ownership is proved by
+  a `flock` on a `.uc-trabajo` file that the job takes before writing anything and
+  holds until it is done: the kernel releases it when the owning process dies,
+  however it dies, so a lock that can be taken is an abandoned directory. Age
+  proves nothing on its own (a suspended machine, a clock jump or a stuck job all
+  leave an old directory with a live owner), so it is only used for a directory
+  that carries no lock at all, which is respected until it is 30 s old in case
+  another instance is in the middle of creating it. That, plus skipping the
+  directories this instance is using, is what makes the sweep safe while another
+  job or another UniConnect instance is transcribing. The deletion is verified
   rather than assumed: `rmtree(ignore_errors=True)` can report success with the
   audio still on disk, so the directory is checked afterwards, retried with the
   permissions reopened, and recorded for the next sweep if it still survives. No

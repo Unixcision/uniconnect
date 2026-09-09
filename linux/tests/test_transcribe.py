@@ -1,6 +1,7 @@
 """transcribe.v1 en el host Linux: límites, motor, orden de whisper, errores y borrado del audio."""
 
 import base64
+import fcntl
 import os
 import shutil
 import struct
@@ -14,9 +15,9 @@ from pathlib import Path
 
 from uniconnect.mobile_protocol import MAX_FRAME, RPCError
 from uniconnect.mobile_rpc import MobileRPC
-from uniconnect.transcribe import (CLEANUP_MARGIN, CancelledTranscription, Engine, SubprocessRunner,
-                                   TranscriptionEngine, clean_transcript, is_marker, process_alive,
-                                   read_wav_format)
+from uniconnect.transcribe import (CLEANUP_MARGIN, LOCK_NAME, CancelledTranscription, Engine,
+                                   SubprocessRunner, TranscriptionEngine, clean_transcript,
+                                   is_marker, read_wav_format)
 
 
 def wav_bytes(seconds=1.0, rate=16000, channels=1, bits=16, audio_format=1):
@@ -193,11 +194,6 @@ class DetectionTests(EngineTestCase):
         self.assertIsNone(engine.engine)
         del self.runner.handlers["whisper-cli"]
         self.assertEqual(engine.resolve().model.name, "ggml-tiny.bin")  # Revalidado tras la avería.
-
-    def test_the_default_budget_answers_before_the_phone_gives_up(self):
-        engine = TranscriptionEngine(model_directory=self.models, environment={})
-        self.assertEqual(engine.budget, 90.0)  # El plazo acordado con el movil.
-        self.assertLess(engine.budget - CLEANUP_MARGIN, 90.0)  # Y el motor para antes de agotarlo.
 
     def test_default_threads_follow_the_cores_minus_one(self):
         self.assertEqual(TranscriptionEngine.default_threads({"UNICONNECT_WHISPER_THREADS": "2"}), 2)
@@ -613,31 +609,77 @@ class CancellationTests(EngineTestCase):
 
 
 class OrphanTests(EngineTestCase):
-    def make(self, name, age=0.0):
+    def setUp(self):
+        super().setUp()
+        self.holders = []
+
+    def tearDown(self):
+        for descriptor in self.holders:
+            os.close(descriptor)
+        super().tearDown()
+
+    def make(self, name, age=0.0, held=False, lock=True):
+        """Un directorio de trabajo como los de verdad, con su cerrojo tomado o libre."""
         directory = self.work / name
         directory.mkdir()
         (directory / "entrada.m4a").write_bytes(b"audio")
+        if lock:
+            descriptor = os.open(directory / LOCK_NAME, os.O_RDWR | os.O_CREAT, 0o600)
+            if held:  # Un dueño vivo mantiene el cerrojo abierto mientras trabaja.
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.holders.append(descriptor)
+            else:
+                os.close(descriptor)
         stamp = time.time() - age
         os.utime(directory, (stamp, stamp))
         return directory
 
-    def test_a_crash_leaves_audio_and_the_next_start_deletes_it(self):
-        engine = self.engine(alive=lambda pid: pid == os.getpid())
-        mine = self.make(f"{os.getpid()}-vivo")
-        dead = self.make("999999-muerto")
-        self.assertEqual(engine.sweep_orphans(), 1)
-        self.assertTrue(mine.exists())  # Otra instancia viva no se toca.
-        self.assertFalse(dead.exists())
+    def test_a_directory_with_a_live_owner_is_never_swept_however_old(self):
+        engine = self.engine()
+        for age in (0.0, 700.0, 86400.0, 30 * 86400.0):
+            held = self.make(f"{os.getpid()}-vivo-{int(age)}", age=age, held=True)
+            self.assertTrue(engine.claimed(held))
+            self.assertEqual(engine.sweep_orphans(), 0)
+            self.assertTrue(held.exists(), f"borrado un trabajo vivo de {age} s")
 
-    def test_old_leftovers_go_even_when_the_pid_was_recycled(self):
-        engine = self.engine(alive=lambda pid: True)
-        old = self.make(f"{os.getpid()}-antiguo", age=700.0)
-        fresh = self.make(f"{os.getpid()}-reciente", age=10.0)
-        strange = self.make("sin-pid", age=700.0)
-        self.assertEqual(engine.sweep_orphans(), 2)
+    def test_a_crash_leaves_audio_and_the_next_start_deletes_it(self):
+        engine = self.engine()
+        # Un proceso muerto no sujeta su cerrojo: el nucleo lo suelta al morir, y eso
+        # es lo que acredita el abandono, no la antiguedad.
+        dead = self.make("999999-muerto")
+        live = self.make(f"{os.getpid()}-vivo", held=True)
+        self.assertEqual(engine.sweep_orphans(), 1)
+        self.assertFalse(dead.exists())
+        self.assertTrue(live.exists())
+
+    def test_an_old_directory_with_no_lock_goes_but_a_new_one_waits(self):
+        engine = self.engine()
+        newborn = self.make("123-naciendo", lock=False)
+        old = self.make("123-antiguo", age=700.0, lock=False)
+        self.assertEqual(engine.sweep_orphans(), 1)
+        self.assertTrue(newborn.exists())  # Puede ser otra instancia a medio crearlo.
         self.assertFalse(old.exists())
-        self.assertFalse(strange.exists())
-        self.assertTrue(fresh.exists())
+
+    def test_the_sweep_never_takes_a_directory_that_is_in_use(self):
+        engine = self.engine()
+        mine = engine.workspace()
+        (mine / "entrada.m4a").write_bytes(b"audio")
+        os.utime(mine, (0, 0))  # Antiquisimo, pero en uso: no se toca.
+        self.assertEqual(engine.sweep_orphans(), 0)
+        self.assertTrue(mine.exists())
+        self.assertTrue(engine.claimed(mine))
+        self.assertTrue(engine.discard(mine))
+        self.assertEqual(engine.active, set())
+        self.assertEqual(engine.locks, {})
+
+    def test_the_sweep_survives_a_missing_directory_and_stray_files(self):
+        engine = self.engine()
+        self.assertEqual(self.engine(work_directory=self.root / "no-hay").sweep_orphans(), 0)
+        stray = self.work / "1-suelto.wav"
+        stray.write_bytes(b"x")
+        os.utime(stray, (0, 0))
+        self.assertEqual(engine.sweep_orphans(), 1)
+        self.assertFalse(stray.exists())
 
     def test_a_failed_deletion_is_noticed_and_retried_by_the_sweep(self):
         refusals = []
@@ -651,33 +693,14 @@ class OrphanTests(EngineTestCase):
         self.assertEqual(len(left), 1)  # El audio sigue en disco, y el motor lo sabe.
         self.assertEqual([item.name for item in engine.undeleted], left)
         self.assertEqual(engine.active, set())
+        self.assertEqual(engine.locks, {})  # El cerrojo se solto, asi que ya es barrible.
         engine.remove = shutil.rmtree
         self.assertEqual(engine.sweep_orphans(), 1)
         self.assertEqual(self.leftovers(), [])
         self.assertEqual(engine.undeleted, [])
 
-    def test_the_sweep_never_takes_a_directory_that_is_in_use(self):
-        engine = self.engine()
-        engine.work_directory.mkdir(parents=True, exist_ok=True)
-        mine = engine.workspace()
-        (mine / "entrada.m4a").write_bytes(b"audio")
-        os.utime(mine, (0, 0))  # Antiquisimo, pero en uso: no se toca.
-        self.assertEqual(engine.sweep_orphans(), 0)
-        self.assertTrue(mine.exists())
-        self.assertTrue(engine.discard(mine))
-        self.assertEqual(engine.active, set())
-
-    def test_the_sweep_survives_a_missing_directory_and_stray_files(self):
-        engine = self.engine(alive=lambda pid: False)
-        self.assertEqual(self.engine(work_directory=self.root / "no-hay").sweep_orphans(), 0)
-        stray = self.work / "1-suelto.wav"
-        stray.write_bytes(b"x")
-        self.assertEqual(engine.sweep_orphans(), 1)
-        self.assertFalse(stray.exists())
-
     def test_a_live_transcription_is_not_swept_by_another_instance(self):
-        engine, seen = self.engine(), []
-        other = self.engine(alive=process_alive)
+        engine, other, seen = self.engine(), self.engine(), []
         def sweeping(argv, timeout):
             other.sweep_orphans()  # Otra instancia arranca en mitad de este dictado.
             seen.append(self.leftovers())
@@ -693,9 +716,9 @@ class PrivacyTests(EngineTestCase):
     def test_the_audio_is_private_while_it_exists_and_is_deleted_afterwards(self):
         result = self.transcribe()
         self.assertEqual(self.leftovers(), [])
-        modes = self.runner.calls[0].modes
-        self.assertEqual(modes, {"entrada.m4a": 0o600})
-        self.assertEqual(self.runner.calls[1].modes, {"entrada.m4a": 0o600, "audio16k.wav": 0o600})
+        self.assertEqual(self.runner.calls[0].modes, {"entrada.m4a": 0o600, LOCK_NAME: 0o600})
+        self.assertEqual(self.runner.calls[1].modes,
+                         {"entrada.m4a": 0o600, "audio16k.wav": 0o600, LOCK_NAME: 0o600})
         self.assertNotIn("audio", result)
 
     def test_the_temporary_directory_is_private_and_removed_on_every_path(self):
@@ -766,7 +789,11 @@ class RPCTests(EngineTestCase):
         self.window = types.SimpleNamespace(
             locked=False, surfaces={}, focused_surface=None, activity=None,
             store=types.SimpleNamespace(workspaces=[self.local], data={}))
-        self.rpc = MobileRPC(self.window, types.SimpleNamespace(machine_id="host"), lambda callback: callback(),
+        self.delay = 0.0
+        def schedule(callback):  # El salto al hilo del modelo tarda lo que le digamos.
+            self.now += self.delay
+            callback()
+        self.rpc = MobileRPC(self.window, types.SimpleNamespace(machine_id="host"), schedule,
                              transcription=self.engine())
         self.peers = {"conn-a": "100.64.0.7", "conn-a2": "100.64.0.7", "conn-b": "100.64.0.9"}
         self.rpc.host = types.SimpleNamespace(address="100.64.0.1", port=58465, peer_of=self.peers.get)
@@ -856,6 +883,32 @@ class RPCTests(EngineTestCase):
         self.assertEqual(self.error(self.request(), authorized=lambda: approved[0]), "io_failed")
         self.assertEqual(self.runner.names(), ["ffmpeg"])
         self.assertEqual(self.leftovers(), [])
+
+    def test_the_budget_starts_when_the_request_arrives_not_when_the_engine_does(self):
+        engine = self.rpc.transcription
+        self.call(self.request())
+        first = self.runner.calls[0].timeout
+        self.assertAlmostEqual(first, engine.budget - CLEANUP_MARGIN)
+        self.runner.calls.clear()
+        self.delay = 12.0  # Decodificar y saltar al hilo del modelo se ha comido 12 s.
+        result = self.call(self.request())
+        self.assertAlmostEqual(self.runner.calls[0].timeout, first - self.delay)
+        self.assertEqual(result["took_ms"], 12000)  # Y el tiempo declarado los incluye.
+
+    def test_the_whole_call_fits_well_inside_the_phone_deadline(self):
+        # El movil espera 90 s contados desde antes del envio. Con el retraso de
+        # entrada dentro del presupuesto, lo que el equipo puede tardar como mucho es
+        # su presupuesto entero, y el ultimo proceso para antes del margen de limpieza.
+        engine = self.rpc.transcription
+        self.delay = 20.0
+        def slow(argv, timeout):
+            self.now += timeout  # El hijo agota justo lo que se le concede.
+            raise subprocess.TimeoutExpired(argv, timeout)
+        self.runner.handlers["ffmpeg"] = slow
+        started = self.now
+        self.assertEqual(self.error(self.request()), "io_failed")
+        self.assertLessEqual(self.now - started, engine.budget)
+        self.assertLessEqual(engine.budget, 75.0)
 
     def test_an_unknown_connection_is_not_a_device(self):
         self.assertEqual(self.error(self.request(), connection="conn-fantasma"), "not_found")

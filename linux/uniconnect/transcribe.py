@@ -12,6 +12,7 @@ modelo se responde `unsupported` y el móvil cae a su dictado local.
 
 from __future__ import annotations
 
+import fcntl
 import os
 import re
 import shutil
@@ -33,12 +34,16 @@ from .mobile_protocol import RPCError
 MAX_AUDIO_BYTES = 3 * 1024 * 1024
 MAX_AUDIO_SECONDS = 300
 CONVERSION_MARGIN = 5.0  # Lo que se deja convertir de más para poder ver que el audio se pasa.
-BUDGET_SECONDS = 90.0
-CLEANUP_MARGIN = 5.0  # Dentro del presupuesto: el equipo contesta antes de los 90 s del móvil.
+# El presupuesto se cuenta desde que la petición entra en el RPC, no desde que llega
+# al motor: decodificar el base64 y saltar al hilo del modelo también gasta. El móvil
+# arranca sus 90 s antes incluso, al enviar, así que el equipo se queda en 75.
+BUDGET_SECONDS = 75.0
+CLEANUP_MARGIN = 5.0  # Reservado dentro del presupuesto para matar al hijo y limpiar.
 TURN_SECONDS = 5.0
 MAX_JOBS = 2
 MAX_JOBS_PER_OWNER = 1
-ORPHAN_SECONDS = 600.0
+GRACE_SECONDS = 30.0
+LOCK_NAME = ".uc-trabajo"
 MAX_THREADS = 8
 WAV_PREFIX_BYTES = 65536
 WAV_BYTES_PER_SECOND = 16000 * 2  # PCM 16 bits mono a 16 kHz, que es lo que whisper.cpp lee.
@@ -47,7 +52,6 @@ _LANGUAGE = re.compile(r"[a-z]{2}")
 _TIMESTAMP = re.compile(r"^\[[0-9:.,\s\->]+\]\s*")
 _BRACKETS = re.compile(r"^\[(.*)\]$")
 _TOKEN = re.compile(r"_[a-z]{2,4}_[0-9]*")
-_PID = re.compile(r"(\d+)-")
 # Lo que whisper.cpp escribe cuando no hay voz. Cualquier otra cosa entre corchetes
 # es dictado del usuario y se conserva: "[pendiente]" es texto, no un marcador.
 _MARKERS = frozenset({"blank_audio", "music", "applause", "laughter", "silence", "inaudible",
@@ -124,17 +128,6 @@ def clean_transcript(output: str) -> str:
             continue
         lines.append(line)
     return re.sub(r"\s+", " ", " ".join(lines)).strip()
-
-
-def process_alive(pid: int) -> bool:
-    """`True` si ese pid existe ahora mismo; los permisos ajenos también cuentan como vivo."""
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except (PermissionError, OSError):
-        return True
-    return True
 
 
 class SubprocessRunner:
@@ -227,7 +220,7 @@ class TranscriptionEngine:
     corto (`turn_seconds`) y, si no se libera, recibe `busy`.
 
     Para probarla sin ejecutar whisper se inyectan `runner` (ejecutor de procesos),
-    `which`, `clock`, `work_directory`, `alive`, `remove` y las rutas del motor.
+    `which`, `clock`, `work_directory`, `remove` y las rutas del motor.
     """
 
     BINARIES = ("whisper-cli", "whisper-cpp", "main")
@@ -241,12 +234,11 @@ class TranscriptionEngine:
                  which: Callable[[str], str | None] = shutil.which,
                  clock: Callable[[], float] = time.monotonic,
                  work_directory: str | Path | None = None,
-                 alive: Callable[[int], bool] = process_alive,
                  remove: Callable[[Path], None] = shutil.rmtree,
                  budget: float = BUDGET_SECONDS, max_bytes: int = MAX_AUDIO_BYTES,
                  max_seconds: float = MAX_AUDIO_SECONDS, max_jobs: int = MAX_JOBS,
                  max_jobs_per_owner: int = MAX_JOBS_PER_OWNER, turn_seconds: float = TURN_SECONDS,
-                 orphan_seconds: float = ORPHAN_SECONDS, environment=None):
+                 grace_seconds: float = GRACE_SECONDS, environment=None):
         environment = os.environ if environment is None else environment
         self.model_directory = Path(model_directory) if model_directory is not None \
             else self.default_model_directory(environment)
@@ -256,10 +248,10 @@ class TranscriptionEngine:
         self.model = model if model is not None else environment.get("UNICONNECT_WHISPER_MODEL") or None
         self.threads = threads if threads is not None else self.default_threads(environment)
         self.runner = runner if runner is not None else SubprocessRunner()
-        self.which, self.clock, self.alive, self.remove = which, clock, alive, remove
+        self.which, self.clock, self.remove = which, clock, remove
         self.budget, self.max_bytes, self.max_seconds = budget, max_bytes, max_seconds
         self.max_jobs, self.max_jobs_per_owner = max_jobs, max_jobs_per_owner
-        self.turn_seconds, self.orphan_seconds = turn_seconds, orphan_seconds
+        self.turn_seconds, self.grace_seconds = turn_seconds, grace_seconds
         # Un solo cerrojo, con su condición para los turnos: protege la caché del
         # motor, la cuenta de trabajos y la lista de directorios vivos. Lo lento
         # (conversión y transcripción) ocurre siempre fuera de él.
@@ -268,6 +260,7 @@ class TranscriptionEngine:
         self.engine: Engine | None = None
         self.running: list[str] = []
         self.active: set[Path] = set()
+        self.locks: dict[Path, int] = {}
         self.undeleted: list[Path] = []
 
     @staticmethod
@@ -298,6 +291,7 @@ class TranscriptionEngine:
         permisos y se repite; lo que sobreviva a eso queda anotado para que el
         barrido lo reintente, nunca se da por borrado.
         """
+        self.unlock(directory)
         for attempt in range(2):
             try:
                 self.remove(directory)
@@ -317,6 +311,16 @@ class TranscriptionEngine:
                 self.undeleted.append(directory)
         return False
 
+    def unlock(self, directory: Path) -> None:
+        """Suelta el cerrojo del trabajo: cerrar el descriptor es lo que lo libera."""
+        with self.lock:
+            descriptor = self.locks.pop(directory, None)
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
     @staticmethod
     def reopen(directory: Path) -> None:
         """Devuelve permisos de escritura por si un fallo previo los dejó cerrados."""
@@ -330,35 +334,59 @@ class TranscriptionEngine:
         except OSError:
             pass
 
+    def claimed(self, directory: Path) -> bool:
+        """`True` si alguien está trabajando ahí ahora mismo, acreditado por su cerrojo.
+
+        La antigüedad no prueba abandono: una suspensión del equipo, un salto del
+        reloj o un trabajo atascado dejan un directorio viejo con su dueño vivo. Lo
+        que sí lo prueba es que el `flock` del trabajo se pueda tomar, porque el
+        núcleo lo suelta cuando el proceso dueño muere, se cuelgue o no.
+        """
+        if not directory.is_dir():
+            return False  # Un archivo suelto no es un trabajo: no hay nada que respetar.
+        try:
+            descriptor = os.open(directory / LOCK_NAME, os.O_RDWR)
+        except FileNotFoundError:
+            return False
+        except OSError:
+            return True  # No se puede comprobar: se respeta, que es lo barato.
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            return False
+        except OSError:
+            return True
+        finally:
+            os.close(descriptor)
+
     def sweep_orphans(self) -> int:
-        """Borra al arrancar los directorios de trabajo que dejó un proceso muerto.
+        """Borra al arrancar los trabajos que dejó un proceso muerto, y solo esos.
 
         El `finally` de cada transcripción no cubre que el proceso desaparezca a
-        media faena, así que el arranque limpia lo que quedó: un directorio cuyo pid
-        ya no exista, o cualquiera con más de `orphan_seconds` de antigüedad (ninguna
-        transcripción vive tanto). Esa doble regla, más saltarse los directorios que
-        esta instancia está usando ahora mismo, es lo que hace seguro el barrido con
-        otro trabajo o incluso otra instancia de UniConnect transcribiendo a la vez.
+        media faena, así que el arranque limpia lo que quedó. Se borra únicamente lo
+        que no tiene dueño: el cerrojo libre lo acredita. Un directorio sin cerrojo
+        (versión anterior, o uno que acaba de nacer en otra instancia) se respeta
+        hasta que pasa `grace_seconds`, para no pisar a nadie por una carrera de
+        milisegundos.
         """
         removed, now = 0, time.time()
         with self.lock:
             active, pending = set(self.active), list(self.undeleted)
         for directory in pending:
-            if directory not in active and self.discard(directory):
+            if directory not in active and not self.claimed(directory) and self.discard(directory):
                 removed += 1
         try:
             entries = list(self.work_directory.iterdir())
         except OSError:
             return removed
         for entry in entries:
-            if entry in active:
+            if entry in active or self.claimed(entry):
                 continue
-            match = _PID.match(entry.name)
             try:
-                stale = now - entry.stat().st_mtime > self.orphan_seconds
+                young = now - entry.stat().st_mtime < self.grace_seconds
             except OSError:
                 continue
-            if match is not None and not stale and self.alive(int(match.group(1))):
+            if young and not (entry / LOCK_NAME).exists():
                 continue
             if entry.is_dir():
                 self.discard(entry)
@@ -452,7 +480,17 @@ class TranscriptionEngine:
 
     # ----- transcripción -----
 
+    def deadline(self) -> float:
+        """Vencimiento de una petición que entra ahora, en el reloj monotónico del motor.
+
+        Lo llama quien recibe el RPC, antes de decodificar el audio y de saltar al
+        hilo del modelo, para que ese tiempo salga del mismo presupuesto y no se
+        sume por detrás.
+        """
+        return self.clock() + self.budget
+
     def transcribe(self, audio: bytes, mime, language=None, *, owner: str = "",
+                   deadline: float | None = None,
                    cancelled: Callable[[], bool] = lambda: False) -> dict:
         """Devuelve `{text, engine, seconds, took_ms}` para un audio ya decodificado.
 
@@ -461,9 +499,13 @@ class TranscriptionEngine:
         WAV 16 kHz mono si hace falta y llama al motor. El directorio temporal se
         borra en cualquier salida, el turno se libera pase lo que pase y una
         cancelación no devuelve texto aunque el motor ya lo hubiera escrito.
+
+        - Parameter deadline: vencimiento ya fijado por quien recibió la petición
+          (`deadline()`); si falta, se cuenta desde aquí. `took_ms` se mide desde ese
+          origen, así que incluye lo que la petición tardó en llegar al motor.
         """
-        started = self.clock()
-        deadline = started + self.budget
+        deadline = self.deadline() if deadline is None else deadline
+        started = deadline - self.budget  # Cuándo empezó a contar, no cuándo llegó aquí.
         extension = self.extension_for(mime)
         language = self.language_for(language)
         if not isinstance(audio, (bytes, bytearray)) or not audio:
@@ -496,14 +538,19 @@ class TranscriptionEngine:
                 "took_ms": int((self.clock() - started) * 1000)}
 
     def workspace(self) -> Path:
-        """Directorio 0700 propio de esta llamada, con el pid delante para el barrido."""
+        """Directorio 0700 propio de esta llamada, con su cerrojo y el pid en el nombre."""
         try:
             self.work_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
             directory = Path(tempfile.mkdtemp(prefix=f"{os.getpid()}-", dir=self.work_directory))
+            # El cerrojo se toma antes de escribir nada: mientras este proceso viva,
+            # ningún barrido (ni de otra instancia) puede llevarse este audio.
+            descriptor = os.open(directory / LOCK_NAME, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError as error:
             raise RPCError("io_failed", "No se pudo preparar la carpeta de trabajo del equipo") from error
         with self.lock:
             self.active.add(directory)
+            self.locks[directory] = descriptor
         return directory
 
     def extension_for(self, mime) -> str:

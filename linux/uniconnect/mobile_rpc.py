@@ -204,6 +204,9 @@ class MobileRPC:
 
     def transcribe_dispatch(self, params, connection_id, authorized):
         """Valida y enruta `mobile.audio.transcribe`; el audio nunca se guarda ni se registra."""
+        # El plazo empieza a contar aquí: decodificar el audio y saltar al hilo del
+        # modelo también gasta, y el móvil ya lleva esperando desde antes.
+        deadline = self.transcription.deadline()
         owner = self.file_owner(connection_id)
         audio, mime, language = params.get("audio"), params.get("mime"), params.get("language")
         if not isinstance(audio, str) or not audio:
@@ -228,7 +231,8 @@ class MobileRPC:
             # El motor mira esto mientras trabaja: si el móvil se desconecta o le
             # revocan el permiso, se mata a whisper en vez de dejarlo comerse la CPU.
             return not (self.host is not None and self.host.peer_of(connection_id)) or not authorized()
-        return self.transcription.transcribe(raw, mime, language, owner=owner, cancelled=gone)
+        return self.transcription.transcribe(raw, mime, language, owner=owner,
+                                             deadline=deadline, cancelled=gone)
 
     @staticmethod
     def pty_identity(workspace, record):
