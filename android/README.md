@@ -137,10 +137,14 @@ rápida «Adjuntar» con las mismas tres entradas. Si el host anuncia `file_put.
 cerrar; contrato completo en `docs/UNICONNECT.md`, apartado *File put*) y el host devuelve
 la ruta donde lo ha dejado (o la ruta remota si ha podido copiarlo por scp a la caja SSH).
 Esa ruta se pega al instante en la cajita del chat, con un espacio delante si ya había
-texto y entre comillas si lleva espacios, y se avisa «Ruta pegada en la cajita»; un
-`remote_error` se muestra pero se pega igualmente la ruta del equipo. Si el host no anuncia
-la capacidad, la hoja lo dice y el archivo va al servicio de «Enviar archivos», pegando el
-enlace. `domain/FilePutTransfer` (puro) trocea, calcula el SHA-256 y aborta en el host si
+texto y entre comillas si lleva espacios, y se avisa «Ruta pegada en la cajita», pero solo
+si el archivo está donde corre el agente de la ventana: `remote_path` con `location=remote`,
+o la ruta del host en una caja local. Si el salto SSH falla (`location=host` con
+`remote_error`) en una ventana SSH, no se pega nada: la hoja muestra el fallo y ofrece
+«Copiar ruta del equipo» (regla pura en `domain/AttachPaste.shouldPaste`). Si el host no
+anuncia la capacidad no hay fallback silencioso: la hoja dice que el equipo no admite
+adjuntar directamente y ofrece un único botón explícito «Subir a <servicio> y pegar el
+enlace»; solo con ese toque el archivo sale al servicio de «Enviar archivos». `domain/FilePutTransfer` (puro) trocea, calcula el SHA-256 y aborta en el host si
 algo falla; `data/NativeFilePutClient` habla el RPC sobre una sesión framed abierta para
 toda la transferencia, con plazos de 60 s por trozo y 120 s para el commit (el scp puede
 tardar). Los adjuntos van en secuencia y se quedan en la hoja con su motivo si fallan.

@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unixcision.uniconnect.android.data.ContentReader
+import com.unixcision.uniconnect.android.domain.AttachPaste
 import com.unixcision.uniconnect.android.domain.FilePutClient
 import com.unixcision.uniconnect.android.domain.FilePutTransfer
 import com.unixcision.uniconnect.android.domain.FileSender
@@ -20,10 +21,11 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 /**
- * Attachments picked from a terminal window. Each one goes to the window's host over the private
- * connection (`file_put.v1`) and comes back as a path, or, when the host cannot take files, to
- * the transfer service of "Enviar archivos" and comes back as a link. Whatever comes back is
- * offered once for pasting into that window's composer; the screen marks it pasted.
+ * Attachments picked from a terminal window. By default each one goes to the window's host over
+ * the private connection (`file_put.v1`) and comes back as a path; only on the reader's explicit
+ * choice does one go to the transfer service of "Enviar archivos" and come back as a link. What
+ * comes back is offered once for pasting into that window's composer when it sits where the
+ * window's agent can read it; otherwise it is shown and kept for copying.
  */
 class AttachViewModel(
     private val filePut: FilePutClient,
@@ -33,30 +35,36 @@ class AttachViewModel(
 ) : ViewModel() {
     enum class Status { PENDING, SENDING, DONE, FAILED }
 
+    /** Where a file goes: the window's host over the private connection, or an external service. */
+    enum class Route { HOST, EXTERNAL }
+
     /** One picked file on its way to a path or a link for one window. */
     data class Transfer(
         val id: String,
         val uri: Uri,
         val target: AttachTarget,
+        val route: Route,
         val name: String,
         val size: Long,
         val sent: Long = 0,
         val status: Status = Status.PENDING,
-        /** The path (host or remote) or the link to paste, once done. */
+        /** The path (host or remote) or the link, once done. */
         val reference: String? = null,
-        /** Whether [reference] is a link to a transfer service rather than a path on a machine. */
-        val isLink: Boolean = false,
-        /** The host kept the file but could not copy it to the SSH server; the host path was pasted. */
+        /** Whether [reference] may go into the composer on its own; a host copy for an SSH window may not. */
+        val pasteable: Boolean = true,
+        /** The host kept the file but could not copy it to the SSH server. */
         val remoteError: String? = null,
         val failure: Throwable? = null,
-        val pasted: Boolean = false,
+        /** The screen has dealt with the result: pasted it, or told the reader it was kept. */
+        val handled: Boolean = false,
     ) {
+        val isLink: Boolean get() = route == Route.EXTERNAL
         val fraction: Float get() = if (size <= 0) 1f else (sent.toFloat() / size).coerceIn(0f, 1f)
     }
 
     data class State(
         val transfers: List<Transfer> = emptyList(),
-        /** The transfer service used when a host cannot take files. */
+        /** The transfer service used on the explicit external route. */
         val service: UploadService = UploadService.default,
     )
 
@@ -68,14 +76,14 @@ class AttachViewModel(
         viewModelScope.launch { settingsRepository.settings.collect { stored -> mutableState.update { it.copy(service = stored.uploadService) } } }
     }
 
-    /** Queues [uris] for [target] and starts sending if nothing is on its way. */
-    fun attach(target: AttachTarget, uris: List<Uri>) {
+    /** Queues [uris] for [target] by [route] and starts sending if nothing is on its way. */
+    fun attach(target: AttachTarget, uris: List<Uri>, route: Route) {
         if (uris.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
             val described = uris.map { uri ->
                 runCatching { reader.describe(uri) }.fold(
-                    onSuccess = { Transfer(UUID.randomUUID().toString(), uri, target, it.name, it.size) },
-                    onFailure = { Transfer(UUID.randomUUID().toString(), uri, target, uri.lastPathSegment ?: "", 0, status = Status.FAILED, failure = UploadFailure.Unreadable(uri.lastPathSegment ?: uri.toString())) },
+                    onSuccess = { Transfer(UUID.randomUUID().toString(), uri, target, route, it.name, it.size) },
+                    onFailure = { Transfer(UUID.randomUUID().toString(), uri, target, route, uri.lastPathSegment ?: "", 0, status = Status.FAILED, failure = UploadFailure.Unreadable(uri.lastPathSegment ?: uri.toString())) },
                 )
             }
             mutableState.update { it.copy(transfers = it.transfers + described) }
@@ -83,8 +91,8 @@ class AttachViewModel(
         }
     }
 
-    /** The screen has put the reference into the composer; it is not offered again. */
-    fun markPasted(id: String) = update(id) { it.copy(pasted = true) }
+    /** The screen has pasted the reference or told the reader where it is; it is not offered again. */
+    fun markHandled(id: String) = update(id) { it.copy(handled = true) }
 
     /** Sends a failed transfer again from its first byte. */
     fun retry(id: String) {
@@ -123,14 +131,18 @@ class AttachViewModel(
             }
         }
         try {
-            if (transfer.target.supportsFilePut) {
-                val outcome = filePut.withSession(transfer.target.machine) { session ->
-                    FilePutTransfer.run(session, transfer.target.workspaceID, transfer.target.windowID, transfer.name, transfer.size, reader.mimeType(transfer.uri), { reader.open(transfer.uri) }, progress)
+            when (transfer.route) {
+                Route.HOST -> {
+                    val outcome = filePut.withSession(transfer.target.machine) { session ->
+                        FilePutTransfer.run(session, transfer.target.workspaceID, transfer.target.windowID, transfer.name, transfer.size, reader.mimeType(transfer.uri), { reader.open(transfer.uri) }, progress)
+                    }
+                    val pasteable = AttachPaste.shouldPaste(outcome.location, transfer.target.isSSH)
+                    update(transfer.id) { it.copy(status = Status.DONE, sent = transfer.size, reference = outcome.pastePath, pasteable = pasteable, remoteError = outcome.remoteError) }
                 }
-                update(transfer.id) { it.copy(status = Status.DONE, sent = transfer.size, reference = outcome.pastePath, isLink = false, remoteError = outcome.remoteError) }
-            } else {
-                val link = sender.send(state.value.service, transfer.name, transfer.size, { reader.open(transfer.uri) }, progress)
-                update(transfer.id) { it.copy(status = Status.DONE, sent = transfer.size, reference = link, isLink = true) }
+                Route.EXTERNAL -> {
+                    val link = sender.send(state.value.service, transfer.name, transfer.size, { reader.open(transfer.uri) }, progress)
+                    update(transfer.id) { it.copy(status = Status.DONE, sent = transfer.size, reference = link, pasteable = true) }
+                }
             }
         } catch (e: CancellationException) {
             throw e

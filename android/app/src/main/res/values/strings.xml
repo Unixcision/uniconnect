@@ -252,7 +252,14 @@
     <string name="upload_empty">Aún no has subido nada. Los enlaces que consigas quedarán aquí.</string>
     <string name="attach_title">Adjuntar</string>
     <string name="attach_note_host">Se envía a %1$s por la conexión privada y la ruta se pega en la cajita.</string>
-    <string name="attach_note_fallback">%1$s aún no admite adjuntos por la conexión privada: se sube a %2$s y se pega el enlace.</string>
+    <string name="attach_unsupported">%1$s no admite adjuntar directamente. Puedes subirlo a un servicio externo si lo eliges tú.</string>
+    <string name="attach_external_button">Subir a %1$s y pegar el enlace</string>
+    <string name="attach_external_note">Sale de tus equipos: se sube a %1$s y se pega el enlace. Cualquiera con el enlace puede descargarlo.</string>
+    <string name="attach_kept_on_host">Guardado en el equipo: %1$s</string>
+    <string name="attach_not_pasted_ssh">No está en el servidor de esta ventana SSH, así que la ruta no se pega sola.</string>
+    <string name="attach_remote_error_only">No se ha podido copiar al servidor (%1$s); la ruta del equipo no se pega en una ventana SSH.</string>
+    <string name="attach_copy_host_path">Copiar ruta del equipo</string>
+    <string name="attach_kept_toast">Adjunto guardado en el equipo, sin pegar: mira en Adjuntar</string>
     <string name="attach_transfers">Adjuntos de esta ventana</string>
     <string name="attach_sending">Enviando… %1$d %%</string>
     <string name="attach_done">Pegado: %1$s</string>

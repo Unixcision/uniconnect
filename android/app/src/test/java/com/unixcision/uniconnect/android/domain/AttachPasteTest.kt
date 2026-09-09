@@ -26,6 +26,15 @@ class AttachPasteTest {
     }
 
     @Test
+    fun aRemoteCopyIsAlwaysPastedAndAHostCopyOnlyIntoALocalWindow() {
+        assertTrue(AttachPaste.shouldPaste(FilePutLocation.REMOTE, windowIsSSH = true))
+        assertTrue(AttachPaste.shouldPaste(FilePutLocation.REMOTE, windowIsSSH = false))
+        assertTrue(AttachPaste.shouldPaste(FilePutLocation.HOST, windowIsSSH = false))
+        assertTrue(AttachPaste.shouldPaste(FilePutLocation.HOST, windowIsSSH = null))
+        assertFalse("a host copy is not where an SSH window's agent runs", AttachPaste.shouldPaste(FilePutLocation.HOST, windowIsSSH = true))
+    }
+
+    @Test
     fun theHostSaysWhetherItTakesFiles() {
         assertTrue(MachineSnapshot("Mac", emptyList(), setOf("box_update", "file_put.v1")).putsFiles)
         assertFalse(MachineSnapshot("Linux", emptyList(), setOf("box_update", "activity.v1")).putsFiles)

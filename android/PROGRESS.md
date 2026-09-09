@@ -28,7 +28,9 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
 - Adjuntar desde la terminal (2026-09-09, contrato `file_put.v1`): clip en la barra de la
   ventana abierta, hoja rápida con foto/imágenes/archivos, transferencia por trozos base64
   ≤ 1 MiB con SHA-256 por la sesión RPC, ruta (remota si el host la da) pegada al instante
-  en la cajita; sin capacidad, cae al servicio de «Enviar archivos» y pega el enlace.
+  en la cajita solo si está donde corre el agente (remota en SSH, host en local; si el salto
+  SSH falla se muestra y se ofrece copiar, no se pega). Sin capacidad no hay fallback
+  silencioso: botón explícito «Subir a <servicio> y pegar el enlace».
   Tests JVM de troceado, pegado y cliente RPC contra una sesión falsa. Mac y Linux aún no
   implementan el host; no probado contra ninguno ni en el Pixel.
 

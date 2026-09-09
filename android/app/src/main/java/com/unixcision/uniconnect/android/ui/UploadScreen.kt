@@ -221,8 +221,8 @@ private fun LinkLine(link: String, context: Context) {
     val colors = UniTheme.colors
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Icon(Icons.Rounded.Link, null, Modifier.size(16.dp), tint = colors.accent)
-        Text(link, Modifier.weight(1f).clickable { copyLink(context, link) }, style = MaterialTheme.typography.bodySmall, fontFamily = UniTheme.type.identifierFamily, color = colors.accent, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        IconButton(onClick = { copyLink(context, link) }, Modifier.size(32.dp)) { Icon(Icons.Rounded.ContentCopy, stringResource(R.string.upload_copy), Modifier.size(18.dp), tint = colors.accent) }
+        Text(link, Modifier.weight(1f).clickable { copyToClipboard(context, link) }, style = MaterialTheme.typography.bodySmall, fontFamily = UniTheme.type.identifierFamily, color = colors.accent, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        IconButton(onClick = { copyToClipboard(context, link) }, Modifier.size(32.dp)) { Icon(Icons.Rounded.ContentCopy, stringResource(R.string.upload_copy), Modifier.size(18.dp), tint = colors.accent) }
         IconButton(onClick = { shareLink(context, link) }, Modifier.size(32.dp)) { Icon(Icons.Rounded.Share, stringResource(R.string.upload_share), Modifier.size(18.dp), tint = colors.muted) }
     }
 }
@@ -243,8 +243,8 @@ private val UploadStyle.label: Int
         UploadStyle.LITTERBOX -> R.string.upload_style_litterbox
     }
 
-private fun copyLink(context: Context, link: String) {
-    context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("UniConnect", link))
+internal fun copyToClipboard(context: Context, text: String) {
+    context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("UniConnect", text))
     // Android 13 and later shows its own confirmation when something is copied.
     if (Build.VERSION.SDK_INT < 33) Toast.makeText(context, R.string.upload_copied, Toast.LENGTH_SHORT).show()
 }

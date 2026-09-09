@@ -9,6 +9,8 @@ import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Refresh
@@ -34,8 +36,9 @@ import com.unixcision.uniconnect.android.ui.components.SectionLabel
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 
 /**
- * The clip in a terminal's bar. Opens the quick sheet to attach, and, sheet open or closed,
- * pastes into this window's composer whatever its transfers come back with, exactly once each.
+ * The clip in a terminal's bar. Opens the quick sheet to attach, and, sheet open or closed, deals
+ * once with each finished transfer of this window: pastes its path or link into the composer
+ * when the file sits where the window's agent runs, or tells the reader it was kept on the host.
  */
 @Composable
 fun AttachButton(model: AttachViewModel, target: AttachTarget, draft: String, onDraftChange: (String) -> Unit) {
@@ -46,16 +49,18 @@ fun AttachButton(model: AttachViewModel, target: AttachTarget, draft: String, on
     val latestDraft by rememberUpdatedState(draft)
     val latestChange by rememberUpdatedState(onDraftChange)
     LaunchedEffect(mine) {
-        val ready = mine.filter { it.status == AttachViewModel.Status.DONE && !it.pasted && it.reference != null }
-        if (ready.isEmpty()) return@LaunchedEffect
-        // Fold locally: the draft the screen holds only catches up after the change is applied.
-        var text = latestDraft
-        ready.forEach { transfer ->
-            text = AttachPaste.pasteInto(text, requireNotNull(transfer.reference))
-            model.markPasted(transfer.id)
+        val finished = mine.filter { it.status == AttachViewModel.Status.DONE && !it.handled && it.reference != null }
+        if (finished.isEmpty()) return@LaunchedEffect
+        val (toPaste, kept) = finished.partition { it.pasteable }
+        if (toPaste.isNotEmpty()) {
+            // Fold locally: the draft the screen holds only catches up after the change is applied.
+            var text = latestDraft
+            toPaste.forEach { text = AttachPaste.pasteInto(text, requireNotNull(it.reference)) }
+            latestChange(text)
+            Toast.makeText(context, if (toPaste.any { it.isLink }) R.string.attach_pasted_link else R.string.attach_pasted_path, Toast.LENGTH_SHORT).show()
         }
-        latestChange(text)
-        Toast.makeText(context, if (ready.any { it.isLink }) R.string.attach_pasted_link else R.string.attach_pasted_path, Toast.LENGTH_SHORT).show()
+        if (kept.isNotEmpty()) Toast.makeText(context, R.string.attach_kept_toast, Toast.LENGTH_LONG).show()
+        finished.forEach { model.markHandled(it.id) }
     }
     val busy = mine.any { it.status == AttachViewModel.Status.SENDING || it.status == AttachViewModel.Status.PENDING }
     IconButton(onClick = { open = true }) {
@@ -64,12 +69,18 @@ fun AttachButton(model: AttachViewModel, target: AttachTarget, draft: String, on
     if (open) AttachSheet(model, target, mine, state.service, onDismiss = { open = false })
 }
 
-/** Quick sheet: three ways to pick, the transfers of this window, and where they go. */
+/**
+ * Quick sheet: three ways to pick when the host takes files over the private connection; when it
+ * does not, it says so and the external service is one explicit tap away, never the default.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AttachSheet(model: AttachViewModel, target: AttachTarget, transfers: List<AttachViewModel.Transfer>, service: UploadService, onDismiss: () -> Unit) {
     var localError by remember { mutableStateOf<Int?>(null) }
-    val pickers = rememberAttachmentPickers(onPicked = { model.attach(target, it) }, onUnavailable = { localError = it })
+    // The external route is only reachable through its own button, so the pickers know the route by construction.
+    var external by rememberSaveable { mutableStateOf(false) }
+    val route = if (target.supportsFilePut) AttachViewModel.Route.HOST else AttachViewModel.Route.EXTERNAL
+    val pickers = rememberAttachmentPickers(onPicked = { model.attach(target, it, route) }, onUnavailable = { localError = it })
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -80,14 +91,16 @@ private fun AttachSheet(model: AttachViewModel, target: AttachTarget, transfers:
             SheetHeader(
                 icon = { Icon(Icons.Rounded.AttachFile, null, tint = UniTheme.colors.accent) },
                 title = stringResource(R.string.attach_title),
-                note = if (target.supportsFilePut) stringResource(R.string.attach_note_host, target.machine.name)
-                else stringResource(R.string.attach_note_fallback, target.machine.name, service.baseUrl),
+                note = if (target.supportsFilePut) stringResource(R.string.attach_note_host, target.machine.name) else stringResource(R.string.attach_unsupported, target.machine.name),
                 tone = UniTheme.colors.accent,
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(UniTheme.spacing.gapSmall)) {
-                ActionTile(Icons.Rounded.CameraAlt, stringResource(R.string.upload_take_photo), Modifier.weight(1f), pickers.takePhoto)
-                ActionTile(Icons.Rounded.Image, stringResource(R.string.upload_pick_images), Modifier.weight(1f), pickers.pickImages)
-                ActionTile(Icons.Rounded.AttachFile, stringResource(R.string.upload_pick_files), Modifier.weight(1f), pickers.pickFiles)
+            if (target.supportsFilePut) PickerTiles(pickers)
+            else if (!external) Button(onClick = { external = true }, modifier = Modifier.fillMaxWidth(), shape = UniTheme.shapes.button, contentPadding = PaddingValues(14.dp)) {
+                Icon(Icons.Rounded.CloudUpload, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.attach_external_button, service.domain), fontWeight = FontWeight.SemiBold)
+            } else {
+                Text(stringResource(R.string.attach_external_note, service.baseUrl), color = UniTheme.colors.warning, style = MaterialTheme.typography.bodySmall)
+                PickerTiles(pickers)
             }
             localError?.let { ErrorNotice(it) { localError = null } }
             if (transfers.isNotEmpty()) {
@@ -103,12 +116,22 @@ private fun AttachSheet(model: AttachViewModel, target: AttachTarget, transfers:
     }
 }
 
-/** One attachment: queued, a progress bar, the pasted reference, or why it failed. */
+@Composable
+private fun PickerTiles(pickers: AttachmentPickers) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(UniTheme.spacing.gapSmall)) {
+        ActionTile(Icons.Rounded.CameraAlt, stringResource(R.string.upload_take_photo), Modifier.weight(1f), pickers.takePhoto)
+        ActionTile(Icons.Rounded.Image, stringResource(R.string.upload_pick_images), Modifier.weight(1f), pickers.pickImages)
+        ActionTile(Icons.Rounded.AttachFile, stringResource(R.string.upload_pick_files), Modifier.weight(1f), pickers.pickFiles)
+    }
+}
+
+/** One attachment: queued, a progress bar, the pasted reference, a kept host copy, or why it failed. */
 @Composable
 private fun TransferRow(transfer: AttachViewModel.Transfer, onRetry: () -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
     val colors = UniTheme.colors
     val accent = when (transfer.status) {
-        AttachViewModel.Status.DONE -> colors.success
+        AttachViewModel.Status.DONE -> if (transfer.pasteable) colors.success else colors.warning
         AttachViewModel.Status.FAILED -> colors.danger
         AttachViewModel.Status.SENDING -> colors.accent
         AttachViewModel.Status.PENDING -> null
@@ -128,12 +151,19 @@ private fun TransferRow(transfer: AttachViewModel.Transfer, onRetry: () -> Unit,
                     LinearProgressIndicator(progress = { transfer.fraction }, modifier = Modifier.fillMaxWidth(), color = colors.accent, trackColor = colors.surfaceRaised)
                     Text(stringResource(R.string.attach_sending, (transfer.fraction * 100).toInt()), style = MaterialTheme.typography.labelSmall, color = colors.muted)
                 }
-                AttachViewModel.Status.DONE -> {
+                AttachViewModel.Status.DONE -> if (transfer.pasteable) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(Icons.Rounded.Check, null, Modifier.size(16.dp), tint = colors.success)
                         Text(stringResource(R.string.attach_done, transfer.reference.orEmpty()), style = MaterialTheme.typography.bodySmall, fontFamily = UniTheme.type.identifierFamily, color = colors.text, maxLines = 3, overflow = TextOverflow.Ellipsis)
                     }
                     transfer.remoteError?.let { Text(stringResource(R.string.attach_remote_error, it), style = MaterialTheme.typography.labelSmall, color = colors.warning) }
+                } else {
+                    // Kept on the host, not where this SSH window's agent runs: shown and copyable, never pasted for the reader.
+                    Text(stringResource(R.string.attach_kept_on_host, transfer.reference.orEmpty()), style = MaterialTheme.typography.bodySmall, fontFamily = UniTheme.type.identifierFamily, color = colors.text, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    Text(transfer.remoteError?.let { stringResource(R.string.attach_remote_error_only, it) } ?: stringResource(R.string.attach_not_pasted_ssh), style = MaterialTheme.typography.labelSmall, color = colors.warning)
+                    TextButton(onClick = { copyToClipboard(context, transfer.reference.orEmpty()) }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
+                        Icon(Icons.Rounded.ContentCopy, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.attach_copy_host_path), style = MaterialTheme.typography.labelMedium)
+                    }
                 }
                 AttachViewModel.Status.FAILED -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Rounded.ErrorOutline, null, Modifier.size(16.dp), tint = colors.danger)

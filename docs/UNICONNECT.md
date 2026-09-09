@@ -251,38 +251,51 @@ the box is an SSH one, copies it on to the server with the same connection and
 credential it already uses for that box. The phone then pastes the resulting path
 into the terminal's composer so an agent can read it (Claude reads images by path).
 A host that implements it advertises `"capabilities": ["file_put.v1"]` in the
-`mobile.workspace.list` result, next to `box_update` and `activity.v1`.
+`mobile.workspace.list` result, next to `box_update` and `activity.v1`. Closed on
+2026-09-09 after cross review (no silent external fallback, no host path pasted into
+an SSH window, transfers bound to their device and box).
 
 RPCs, in the order one transfer uses them:
 
 - `mobile.file.begin {workspace_id, terminal_id?, name, size, mime?}` →
   `{transfer_id, chunk_bytes}`. `chunk_bytes` ≤ 1048576 (1 MiB raw is 1.4 MiB in
   base64, under the 8 MiB frame limit). Limits: `size` ≤ 200 MiB; the host
-  sanitises `name` (no paths, no odd characters).
+  sanitises `name` (no paths, no odd characters). The host binds the `transfer_id`
+  to the authenticated device (the mobile session's identity) and to the box and
+  credential revision captured here, and reserves the final name at once (a
+  `.part` file) so no other file, including a concurrent upload, is overwritten.
 - `mobile.file.chunk {transfer_id, index, data}` → `{received_bytes}`. `data` is
   base64; indices are consecutive from 0. Out of order or duplicated →
-  `invalid_params`.
+  `invalid_params`. A chunk whose device, box or credential revision no longer
+  match the transfer, or whose box was edited or device revoked → `not_found`.
 - `mobile.file.commit {transfer_id, sha256}` → `{path, location: "host" | "remote",
-  remote_path?, remote_error?}`. The host writes to
-  `~/UniConnect/Entrada/<YYYYMMDD>/<name>` (suffix `-2`, `-3`… if it exists) and
-  verifies the SHA-256. If the box is SSH: scp to the server as
-  `~/uniconnect-entrada/<name>` (creating the directory) and answer `remote_path`
-  with `location: "remote"`; if the scp fails, answer the host path with
-  `location: "host"` and a readable `remote_error` all the same.
+  remote_path?, remote_error?}`. The same binding check as a chunk. The host
+  writes to `~/UniConnect/Entrada/<YYYYMMDD>/<name>` (suffix `-2`, `-3`… if it
+  exists) and verifies the SHA-256. If the box is SSH: scp to the server under a
+  temporary name, then `mv` without overwriting, as `~/uniconnect-entrada/<name>`
+  (creating the directory), and answer `remote_path` with `location: "remote"`;
+  if the copy fails, answer the host path with `location: "host"` and a readable
+  `remote_error` all the same.
 - `mobile.file.abort {transfer_id}`. Transfers expire after 10 minutes without
   chunks.
-- Errors: `invalid_params`, `too_large`, `not_found` (transfer), `io_failed`,
-  `locked`, as the rest of the mobile API.
+- Errors: `invalid_params`, `too_large`, `not_found` (transfer, or a binding that
+  changed), `io_failed`, `locked` (the host is locked), as the rest of the mobile
+  API.
 
 Phone side: a clip in the terminal's bar (real and mirror) opens a quick sheet
 with "Hacer foto / Elegir imágenes / Elegir archivos" and the transfers of that
-window with their progress. On commit the phone pastes into the composer
-`remote_path` when `location` is `remote`, else `path`, preceded by a space when
-something was already typed, quoted if it carries a space; a `remote_error` is
-shown but the host path is pasted anyway. A host that does not advertise
-`file_put.v1` gets the fallback: the file goes to the transfer service of
-"Enviar archivos" (sendit.sh by default) and its link is pasted instead. Android
-implements the phone side; Mac and Linux implement the host side.
+window with their progress. On commit the phone pastes into the composer only when
+the file sits where the window's agent runs: `remote_path` when `location` is
+`remote`, or `path` when `location` is `host` and the window's box is local. A host
+copy for an SSH window (`location: "host"` with `remote_error`) is never pasted:
+the sheet shows the failure and offers "Copiar ruta del equipo". Pasting appends
+to what is typed, preceded by a space when something was already there, quoted if
+the path carries a space. A host that does not advertise `file_put.v1` gets no
+silent fallback: the sheet says the machine does not take attachments directly
+and offers one explicit button, "Subir a <servicio> y pegar el enlace", which is
+the only way a file leaves for the transfer service of "Enviar archivos". Android
+implements the phone side; Mac and Linux implement the host side (Linux reuses
+its SFTP transfer for the SSH hop, off the GTK thread).
 
 ### ローカルウインドウの作成と保存
 

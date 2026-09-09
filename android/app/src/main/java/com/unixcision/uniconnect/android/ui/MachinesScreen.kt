@@ -167,7 +167,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                             onTogglePin = { window?.let { model.toggleWindowPinned(it.id) } },
                             activity = window?.activity?.state ?: ActivityState.UNKNOWN,
                             attachments = attachments,
-                            attachTarget = if (machine != null && workspace != null && window != null) AttachTarget(machine, workspace.id, window.id, connection?.snapshot?.putsFiles == true) else null,
+                            attachTarget = if (machine != null && workspace != null && window != null) AttachTarget(machine, workspace.id, window.id, workspace.isSSH, connection?.snapshot?.putsFiles == true) else null,
                         )
                     }
                     Level.MACHINE -> if (machine != null) MachineBoxesScreen(
