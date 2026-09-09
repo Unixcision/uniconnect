@@ -190,3 +190,18 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
   `testDebugUnitTest` en verde.
 - No probado contra un host real: ningún equipo anuncia todavía `transcribe.v1`, así que el camino
   del móvil es el único ejercitado de punta a punta. Tampoco se ha instalado nada en el Pixel.
+
+## Dictado local arreglado en el Pixel (10 de septiembre de 2026)
+
+- Diagnóstico real en el Pixel 8 Pro (Android 16, es-ES, permiso concedido): al tocar el micrófono
+  el audio entraba, pero el reconocedor local abortaba al instante y salía «No se ha entendido» sin
+  que la barra llegara a verse. El servicio por defecto es `com.google.android.tts`, que no tiene
+  modelo de español para `createOnDeviceSpeechRecognizer`.
+- Un error sin parciales y en menos de 1,5 s ya no se trata como «no se ha entendido»: se reintenta
+  una vez con el reconocedor de red, en silencio, manteniendo la barra. Si ese también se rinde
+  igual de rápido, el aviso lo dice y ofrece usar el equipo si alguno puede transcribir.
+- La barra se publica al tocar el micrófono, antes de la primera llamada del motor.
+- Extras de silencio (1,5 s / 1,5 s) y mínimo (2 s) en el intent, y `EXTRA_LANGUAGE` con la etiqueta
+  del sistema cuando el ajuste es «El del móvil»; nunca una etiqueta vacía.
+- 14 pruebas JVM nuevas (recuperación del motor, idioma del reconocedor, la barra antes de cualquier
+  resultado). 258 tests en total, 0 fallos. Falta probarlo en el Pixel: lo hace el usuario.

@@ -194,7 +194,23 @@ Motor: `android.speech.SpeechRecognizer` nativo sin dependencias, en `data/Andro
 (hilo principal). Prefiere el reconocedor local (`createOnDeviceSpeechRecognizer`,
 `EXTRA_PREFER_OFFLINE`) cuando `isOnDeviceRecognitionAvailable` lo permite (Android 12+) y cae
 al de red si el idioma no está disponible localmente; si no hay reconocimiento en el móvil el
-micrófono no aparece. `domain/Dictation` es la interfaz (estado `Idle`, `Listening(parcial,
+micrófono no aparece.
+
+Un motor que se rinde ANTES de que diera tiempo a decir nada no se toma por su palabra. Medido en
+el Pixel 8 Pro (Android 16, es-ES, servicio por defecto `com.google.android.tts`): el reconocedor
+local no tiene modelo de español y aborta al instante, y eso llegaba al usuario como «No se ha
+entendido» sin haber abierto la boca, con la barra sin llegar a verse. Ahora, si el error llega sin
+ningún parcial y en menos de 1,5 s, se reintenta UNA vez con el de red sin `EXTRA_PREFER_OFFLINE` y
+sin decir nada al usuario, y la barra sigue donde estaba; si el de red se rinde igual de rápido, el
+aviso dice la verdad («El reconocimiento de voz de este móvil no responde») y ofrece «Usar el
+equipo» cuando alguno puede transcribir. La regla es pura, `domain/RecogniserRecovery`. La barra se
+publica al tocar el micrófono, antes de la primera llamada del motor, así que Cancelar y Listo están
+siempre a la vista. El intent lleva además `EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS` y
+`EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS` de 1,5 s y
+`EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS` de 2 s para que un silencio inicial no corte el dictado, y
+`EXTRA_LANGUAGE` viaja siempre con una etiqueta real: con «El del móvil» se manda la del sistema
+(`Locale.getDefault().toLanguageTag()`) en vez de omitirla, porque algunos motores sin idioma caen a
+inglés. `domain/Dictation` es la interfaz (estado `Idle`, `Listening(parcial,
 nivel)`, `Done(texto)`, `Failed(motivo)`), `domain/DictationMachine` la máquina de estados pura,
 `DictationDraft.append` la regla de añadir y `ComposerAction.decide` la de micrófono/enviar; el
 composable no sabe nada del reconocedor. Manifiesto: `RECORD_AUDIO` y `<queries>` del
@@ -291,7 +307,7 @@ el estado del motor activo, así que el composable lee los mismos estados en los
 `MediaRecorder` queda tras `domain/VoiceRecorder` y el RPC tras `domain/HostTranscription`, de modo
 que todo el flujo (elección, límite de tamaño, cada error, borrado del archivo, reintento único,
 corte a los 5 minutos) se prueba en la JVM sin micrófono ni socket. La llamada se prueba además
-contra un host de mentira en un par de sockets, como la de adjuntos. Probado solo así: 54 pruebas
+contra un host de mentira en un par de sockets, como la de adjuntos. Probado solo así: 68 pruebas
 nuevas; contra un host real con Whisper no se ha ejercitado todavía.
 
 ## Arquitectura

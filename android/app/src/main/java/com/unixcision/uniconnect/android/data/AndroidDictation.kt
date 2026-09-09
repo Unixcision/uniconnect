@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -14,14 +15,19 @@ import com.unixcision.uniconnect.android.domain.DictationFailure
 import com.unixcision.uniconnect.android.domain.DictationLanguage
 import com.unixcision.uniconnect.android.domain.DictationMachine
 import com.unixcision.uniconnect.android.domain.DictationState
+import com.unixcision.uniconnect.android.domain.RecogniserRecovery
+import java.util.Locale
 import kotlinx.coroutines.flow.StateFlow
 
 /**
  * [Dictation] over the platform's own [SpeechRecognizer], with no extra dependency. The on-device
- * recogniser is preferred where the phone has one (Android 12 and later); when it cannot handle
- * the language the network recogniser is tried once instead. Everything touching the recogniser
- * runs on the main thread, which is what it demands; the state machine is the pure
- * [DictationMachine] and is what the screen watches.
+ * recogniser is preferred where the phone has one (Android 12 and later); an engine that gives up
+ * before a word could have been said is not taken at its word, and the network recogniser is tried
+ * once instead. Everything touching the recogniser runs on the main thread, which is what it
+ * demands; the state machine is the pure [DictationMachine] and is what the screen watches.
+ *
+ * The bar is on screen from the moment the microphone is tapped, and a retry keeps it there: the
+ * reader sees a dictation that is starting, never a button that seems to do nothing.
  */
 class AndroidDictation(private val context: Context) : Dictation {
     private val machine = DictationMachine()
@@ -30,6 +36,7 @@ class AndroidDictation(private val context: Context) : Dictation {
     private var onDevice = false
     private var language = DictationLanguage.DEVICE
     private var triedOnline = false
+    private var startedAt = 0L
 
     override val state: StateFlow<DictationState> get() = machine.state
 
@@ -39,6 +46,8 @@ class AndroidDictation(private val context: Context) : Dictation {
         main.post {
             this.language = language
             triedOnline = false
+            // The bar belongs to the reader from the tap, not from the engine's first callback.
+            machine.onStarting()
             begin(preferOffline = true)
         }
     }
@@ -75,7 +84,8 @@ class AndroidDictation(private val context: Context) : Dictation {
         // The listener goes in before listening starts, or early callbacks are lost.
         created.setRecognitionListener(listener)
         recognizer = created
-        machine.onStarting()
+        if (machine.state.value !is DictationState.Listening) machine.onStarting()
+        startedAt = SystemClock.elapsedRealtime()
         created.startListening(intent(local))
     }
 
@@ -83,7 +93,11 @@ class AndroidDictation(private val context: Context) : Dictation {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-        language.tag?.let { putExtra(RecognizerIntent.EXTRA_LANGUAGE, it) }
+        // Silence at the start is someone thinking, not someone who has finished.
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, SILENCE_MILLIS)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, SILENCE_MILLIS)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, MINIMUM_MILLIS)
+        language.recognitionTag(Locale.getDefault().toLanguageTag())?.let { putExtra(RecognizerIntent.EXTRA_LANGUAGE, it) }
         if (local) putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
     }
 
@@ -105,14 +119,20 @@ class AndroidDictation(private val context: Context) : Dictation {
         }
 
         override fun onError(error: Int) {
-            // The local engine has no model for the language: try the network one once.
-            if (onDevice && !triedOnline && error in LANGUAGE_ERRORS) {
+            val failure = failureOf(error)
+            val elapsed = SystemClock.elapsedRealtime() - startedAt
+            val heard = (machine.state.value as? DictationState.Listening)?.partial?.isNotBlank() == true
+            // An engine with no model for the language aborts at once: that is not an answer about
+            // what was said, so the network recogniser gets the same dictation without a word to
+            // the reader, and the bar stays where it is.
+            if (RecogniserRecovery.retryOnline(onDevice, triedOnline, heard, elapsed, failure)) {
                 triedOnline = true
                 main.post { begin(preferOffline = false) }
                 return
             }
             main.post { release() }
-            machine.onError(failureOf(error))
+            if (RecogniserRecovery.silent(heard, elapsed, failure)) machine.fail(DictationFailure.RECOGNISER_SILENT)
+            else machine.onError(failure)
         }
     }
 
@@ -122,8 +142,11 @@ class AndroidDictation(private val context: Context) : Dictation {
     }
 
     companion object {
-        /** ERROR_LANGUAGE_NOT_SUPPORTED, ERROR_LANGUAGE_UNAVAILABLE and ERROR_CANNOT_CHECK_SUPPORT (Android 13), as numbers so older phones link. */
-        private val LANGUAGE_ERRORS = setOf(12, 13, 14)
+        /** How long a silence may last before the engine decides the sentence is over. */
+        private const val SILENCE_MILLIS = 1_500
+
+        /** The engine waits at least this long before it may end on its own. */
+        private const val MINIMUM_MILLIS = 2_000
 
         /** The platform's error code in the reader's terms. */
         fun failureOf(code: Int): DictationFailure = when (code) {

@@ -97,6 +97,28 @@ class DictationMachineTest {
     }
 
     @Test
+    fun theBarIsListeningBeforeAnyResultAndStaysThroughARetry() {
+        val machine = DictationMachine()
+        machine.onStarting()
+        assertTrue("the bar belongs to the reader from the tap", machine.state.value is DictationState.Listening)
+        // The on-device engine aborted and the network one is asked instead: the bar does not blink.
+        machine.onStarting()
+        assertEquals(DictationState.Listening(), machine.state.value)
+        machine.onPartial("git")
+        assertTrue(machine.state.value is DictationState.Listening)
+        machine.onFinal("git status")
+        assertEquals(DictationState.Done("git status"), machine.state.value)
+    }
+
+    @Test
+    fun anEngineThatDoesNotAnswerIsItsOwnFailure() {
+        val machine = DictationMachine()
+        machine.onStarting()
+        machine.fail(DictationFailure.RECOGNISER_SILENT)
+        assertEquals(DictationState.Failed(DictationFailure.RECOGNISER_SILENT), machine.state.value)
+    }
+
+    @Test
     fun aFailureOutsideListeningIsStillReported() {
         val machine = DictationMachine()
         machine.fail(DictationFailure.ENGINE_UNAVAILABLE)

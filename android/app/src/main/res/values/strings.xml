@@ -307,6 +307,8 @@
     <string name="dictation_failed_engine">No hay motor de reconocimiento de voz disponible</string>
     <string name="dictation_failed_busy">El reconocedor de voz está ocupado; espera un momento</string>
     <string name="dictation_failed_other">No se ha podido dictar</string>
+    <string name="dictation_failed_silent">El reconocimiento de voz de este móvil no responde</string>
+    <string name="dictation_use_machine">Usar el equipo</string>
     <string name="settings_voice">Voz</string>
     <string name="settings_send_on_dictation">Enviar al terminar de dictar</string>
     <string name="settings_send_on_dictation_note">Manda lo dictado con Intro nada más terminar. Apagado, queda en la cajita para revisarlo.</string>

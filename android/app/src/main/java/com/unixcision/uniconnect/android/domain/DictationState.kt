@@ -12,6 +12,12 @@ enum class DictationFailure {
     /** Nothing was captured: the recorder gave no file, or an empty one. */
     NO_AUDIO,
 
+    /**
+     * The phone's recogniser gave up before a word could have been said, on the on-device engine
+     * and on the network one. It is the engine that is not answering, not the voice.
+     */
+    RECOGNISER_SILENT,
+
     /** The machine refused the recording for being too long or too big. */
     TOO_LONG,
 

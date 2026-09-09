@@ -115,6 +115,7 @@ fun TerminalComposer(
     var notice by remember { mutableStateOf<Int?>(null) }
     var offerSettings by remember { mutableStateOf(false) }
     var retry by remember { mutableStateOf(DictationRetry.NONE) }
+    var lastFailure by remember { mutableStateOf<DictationFailure?>(null) }
     val latestDraft by rememberUpdatedState(draft)
     LaunchedEffect(dictationState) {
         when (val outcome = dictationState) {
@@ -125,6 +126,7 @@ fun TerminalComposer(
                     onSend(TerminalKeyEncoder.encodeText(merged, modifiers), true) { delivered -> if (delivered) onDraftChange("") }
                 }
                 retry = DictationRetry.NONE
+                lastFailure = null
                 dictation?.consume()
             }
             is DictationState.Failed -> {
@@ -133,6 +135,7 @@ fun TerminalComposer(
                 else outcome.reason.message
                 offerSettings = outcome.reason == DictationFailure.NO_PERMISSION
                 retry = outcome.retry
+                lastFailure = outcome.reason
                 dictation?.consume()
             }
             else -> {}
@@ -145,6 +148,7 @@ fun TerminalComposer(
         notice = null
         offerSettings = false
         retry = DictationRetry.NONE
+        lastFailure = null
         dictation?.start(dictationLanguage, mode, transcribers, dictationTarget, transcriptionMachine)?.let { notice = it.message }
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -252,7 +256,8 @@ fun TerminalComposer(
                     DictationRetry.RESEND -> R.string.dictation_retry
                     DictationRetry.RERECORD -> R.string.dictation_record_again.takeIf { canDictate }
                     DictationRetry.DICTATE_ON_PHONE -> R.string.dictation_record_again.takeIf { dictation?.phoneListens == true }
-                    DictationRetry.NONE -> null
+                    DictationRetry.NONE ->
+                        R.string.dictation_use_machine.takeIf { lastFailure == DictationFailure.RECOGNISER_SILENT && transcribers.any { candidate -> candidate.ready } }
                 }
                 offer?.let { label ->
                     TextButton(
@@ -265,6 +270,8 @@ fun TerminalComposer(
                             when (kind) {
                                 DictationRetry.RESEND -> dictation?.resend()
                                 DictationRetry.DICTATE_ON_PHONE -> startDictation(TranscriptionMode.PHONE)
+                                // The phone's engine is the one that failed: let a machine listen.
+                                DictationRetry.NONE -> startDictation(TranscriptionMode.AUTO)
                                 else -> startDictation(transcription)
                             }
                         },
@@ -272,7 +279,7 @@ fun TerminalComposer(
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                     ) { Text(stringResource(label), style = MaterialTheme.typography.labelMedium) }
                 }
-                IconButton(onClick = { notice = null; offerSettings = false; retry = DictationRetry.NONE; dictation?.discard() }, Modifier.size(24.dp)) { Icon(Icons.Rounded.Close, stringResource(R.string.dismiss), Modifier.size(14.dp), tint = UniTheme.colors.muted) }
+                IconButton(onClick = { notice = null; offerSettings = false; retry = DictationRetry.NONE; lastFailure = null; dictation?.discard() }, Modifier.size(24.dp)) { Icon(Icons.Rounded.Close, stringResource(R.string.dismiss), Modifier.size(14.dp), tint = UniTheme.colors.muted) }
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 6.dp, start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -382,6 +389,7 @@ private val DictationFailure.message: Int
         DictationFailure.ENGINE_UNAVAILABLE -> R.string.dictation_failed_engine
         DictationFailure.BUSY -> R.string.dictation_failed_busy
         DictationFailure.OTHER -> R.string.dictation_failed_other
+        DictationFailure.RECOGNISER_SILENT -> R.string.dictation_failed_silent
         DictationFailure.NO_AUDIO -> R.string.dictation_failed_no_audio
         DictationFailure.TOO_LONG -> R.string.dictation_failed_too_long
         DictationFailure.HOST_LOCKED -> R.string.dictation_failed_locked
