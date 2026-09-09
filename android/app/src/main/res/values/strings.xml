@@ -186,6 +186,8 @@
     <string name="box_actions_workspace">Espacio de trabajo</string>
     <string name="box_actions_window">Ventana</string>
     <string name="box_change_failed">No se ha podido guardar el cambio en el equipo</string>
+    <string name="activity_working">La IA está trabajando</string>
+    <string name="activity_waiting">La IA espera tu respuesta</string>
     <string name="box_local_only">Este equipo aún no sincroniza favoritos ni orden: se guardan solo en este móvil</string>
     <string name="settings">Ajustes</string>
     <string name="settings_note">Todo esto es de este móvil. No cambia nada en tus máquinas.</string>

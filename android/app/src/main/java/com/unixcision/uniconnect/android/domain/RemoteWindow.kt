@@ -1,3 +1,3 @@
 package com.unixcision.uniconnect.android.domain
 
-data class RemoteWindow(val id: String, val name: String, val kind: String, val isPinned: Boolean = false)
+data class RemoteWindow(val id: String, val name: String, val kind: String, val isPinned: Boolean = false, val activity: RemoteActivity? = null)

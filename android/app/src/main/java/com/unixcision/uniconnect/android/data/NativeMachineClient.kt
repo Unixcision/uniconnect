@@ -175,10 +175,15 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
     override suspend fun attach(machine: Machine, workspaceID: String, windowID: String, columns: Int, rows: Int): TerminalAttachment =
         NativeTerminalAttachment.open(rpc.open(machine.endpoint), workspaceID, windowID, columns.coerceIn(1, 1000), rows.coerceIn(1, 1000))
 
+    private fun decodeActivity(json: JSONObject?): RemoteActivity? = json?.let {
+        RemoteActivity(ActivityState.parse(it.optString("state", "")), it.optString("source").ifEmpty { null }, it.optString("agent").ifEmpty { null },
+            if (it.has("since") && !it.isNull("since")) it.optLong("since") else null)
+    }
+
     private fun decodeMachine(machine: Machine, result: JSONObject): MachineSnapshot {
         val workspaces = result.getJSONArray("workspaces").objects().map { workspace ->
             val terminals = workspace.getJSONArray("terminals").objects().map { terminal ->
-                RemoteWindow(terminal.getString("id"), terminal.getString("title"), "terminal", terminal.optBoolean("is_pinned", false))
+                RemoteWindow(terminal.getString("id"), terminal.getString("title"), "terminal", terminal.optBoolean("is_pinned", false), decodeActivity(terminal.optJSONObject("activity")))
             }
             require(terminals.map { it.id }.distinct().size == terminals.size)
             val kind = when (workspace.optString("kind")) { "ssh" -> true; "local" -> false; else -> null }
@@ -186,7 +191,8 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
                 RemoteAgentTarget(it.getString("id"), it.getString("title"))
             }
             require(targets.map { it.id }.distinct().size == targets.size)
-            RemoteWorkspace(workspace.getString("id"), workspace.getString("title"), kind, terminals, targets, workspace.optBoolean("is_pinned", false))
+            RemoteWorkspace(workspace.getString("id"), workspace.getString("title"), kind, terminals, targets, workspace.optBoolean("is_pinned", false),
+                workspace.optJSONObject("activity")?.let { ActivityState.parse(it.optString("state", "")) })
         }
         require(workspaces.map { it.id }.distinct().size == workspaces.size)
         val capabilities = (result.optJSONArray("capabilities") ?: JSONArray()).let { array -> List(array.length()) { array.optString(it) } }.filter { it.isNotEmpty() }.toSet()

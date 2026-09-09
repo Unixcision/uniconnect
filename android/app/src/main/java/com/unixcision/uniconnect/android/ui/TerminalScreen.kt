@@ -55,11 +55,13 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.unixcision.uniconnect.android.R
+import com.unixcision.uniconnect.android.domain.ActivityState
 import com.unixcision.uniconnect.android.domain.AppSettings
 import com.unixcision.uniconnect.android.domain.TerminalKeyEncoder
 import com.unixcision.uniconnect.android.domain.TerminalView
 import com.unixcision.uniconnect.android.domain.TerminalModifiers
 import com.unixcision.uniconnect.android.domain.TerminalSnapshot
+import com.unixcision.uniconnect.android.ui.components.ActivityMark
 import com.unixcision.uniconnect.android.ui.components.PillTone
 import com.unixcision.uniconnect.android.ui.components.StatusPill
 
@@ -102,6 +104,7 @@ fun TerminalScreen(
     onDraftChange: (String) -> Unit = {},
     windowPinned: Boolean = false,
     onTogglePin: () -> Unit = {},
+    activity: ActivityState = ActivityState.UNKNOWN,
 ) {
     var realRequested by rememberSaveable { mutableStateOf(false) }
     // Default way in: attach to the window's own tmux session. Only a host without the attach RPC,
@@ -114,7 +117,7 @@ fun TerminalScreen(
             onStopReal = { realRequested = false; manuallyLeft = true; onStopReal() },
             onPty = onPty, onPtyWheel = onPtyWheel, onPtyResize = onPtyResize,
             onLeaveCopyMode = onLeaveCopyMode, onView = onView, onZoom = onZoom, onReconnect = onReconnectReal,
-            draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin,
+            draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity,
         )
         return
     }
@@ -127,7 +130,7 @@ fun TerminalScreen(
     MirrorTerminalScreen(snapshot, loading, error, errorDetail, sending, reconnecting, connected, onRefresh, onReconnect, onScroll, onSend,
         attachFallbackDetail = attachFallbackDetail,
         onRequestReal = { columns, rows -> realRequested = true; manuallyLeft = false; onStartReal(columns, rows, false) },
-        draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin)
+        draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity)
 }
 
 /** The attached tmux client: the phone owns a real PTY of its own size; tmux keeps the desktop's. */
@@ -138,7 +141,7 @@ private fun RealTerminalScreen(
     viewMode: TerminalView, zoom: Float, startWithKeys: Boolean,
     onStopReal: () -> Unit, onPty: (String, Boolean) -> Unit, onPtyWheel: (Boolean, Int) -> Unit, onPtyResize: (Int, Int) -> Unit,
     onLeaveCopyMode: () -> Unit, onView: (TerminalView) -> Unit, onZoom: (Float) -> Unit, onReconnect: () -> Unit,
-    draft: String, onDraftChange: (String) -> Unit, windowPinned: Boolean, onTogglePin: () -> Unit,
+    draft: String, onDraftChange: (String) -> Unit, windowPinned: Boolean, onTogglePin: () -> Unit, activity: ActivityState,
 ) {
     var keysVisible by rememberSaveable { mutableStateOf(startWithKeys) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
@@ -152,6 +155,7 @@ private fun RealTerminalScreen(
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             StatusPill(stringResource(R.string.real_terminal_pill), if (ready) PillTone.Busy else PillTone.Idle)
+            ActivityMark(activity, Modifier.padding(start = 10.dp), size = 18.dp)
             Spacer(Modifier.weight(1f))
             IconButton(onClick = onTogglePin) {
                 Icon(if (windowPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder, stringResource(if (windowPinned) R.string.box_unpin else R.string.box_pin), tint = if (windowPinned) Brand.Amber else Brand.Muted)
@@ -330,7 +334,7 @@ private fun MirrorTerminalScreen(
     snapshot: TerminalSnapshot?, loading: Boolean, error: Int?, errorDetail: String?, sending: Boolean, reconnecting: Boolean, connected: Boolean,
     onRefresh: () -> Unit, onReconnect: () -> Unit, onScroll: (Int) -> Unit, onSend: (String, Boolean, (Boolean) -> Unit) -> Unit,
     attachFallbackDetail: String?, onRequestReal: (Int, Int) -> Unit, draft: String, onDraftChange: (String) -> Unit,
-    windowPinned: Boolean, onTogglePin: () -> Unit,
+    windowPinned: Boolean, onTogglePin: () -> Unit, activity: ActivityState,
 ) {
     var viewMode by rememberSaveable { mutableStateOf(TerminalView.FIT) }
     var keysVisible by rememberSaveable { mutableStateOf(false) }
@@ -345,6 +349,7 @@ private fun MirrorTerminalScreen(
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             StatusPill(stringResource(if (connected) R.string.terminal_live else R.string.terminal_offline), if (connected) PillTone.Live else PillTone.Idle)
+            ActivityMark(activity, Modifier.padding(start = 10.dp), size = 18.dp)
             Spacer(Modifier.weight(1f))
             IconButton(onClick = onTogglePin) {
                 Icon(if (windowPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder, stringResource(if (windowPinned) R.string.box_unpin else R.string.box_pin), tint = if (windowPinned) Brand.Amber else Brand.Muted)

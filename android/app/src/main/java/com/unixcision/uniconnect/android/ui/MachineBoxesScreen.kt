@@ -37,12 +37,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.unixcision.uniconnect.android.R
+import com.unixcision.uniconnect.android.domain.ActivityState
 import com.unixcision.uniconnect.android.domain.BoxArrangement
 import com.unixcision.uniconnect.android.domain.BoxOverrides
 import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.domain.NotificationLinkState
 import com.unixcision.uniconnect.android.domain.RemoteWindow
 import com.unixcision.uniconnect.android.domain.RemoteWorkspace
+import com.unixcision.uniconnect.android.ui.components.ActivityMark
 import com.unixcision.uniconnect.android.ui.components.BoxMonogram
 import com.unixcision.uniconnect.android.ui.components.GlassCard
 import com.unixcision.uniconnect.android.ui.components.SectionLabel
@@ -191,6 +193,11 @@ private fun WorkspaceTile(workspace: RemoteWorkspace, selected: Boolean, dimmed:
                     .background(Brand.Night, CircleShape).border(1.dp, Brand.Outline, CircleShape),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Rounded.Star, stringResource(R.string.box_pinned), Modifier.size(12.dp), tint = Brand.Amber) }
+            if (workspace.activity == ActivityState.WORKING || workspace.activity == ActivityState.WAITING) Box(
+                Modifier.align(Alignment.BottomStart).offset(x = (-4).dp, y = 4.dp).size(22.dp)
+                    .background(Brand.Night, CircleShape).border(1.dp, Brand.Outline, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { ActivityMark(workspace.activity, size = 13.dp) }
             if (workspace.windows.isNotEmpty()) Box(
                 Modifier.align(Alignment.BottomEnd).offset(x = 4.dp, y = 4.dp).size(22.dp)
                     .background(Brand.Night, CircleShape).border(1.dp, Brand.Outline, CircleShape),
@@ -232,6 +239,7 @@ private fun WindowRow(window: RemoteWindow, tone: Color, pinned: Boolean, onClic
                 Icon(Icons.Rounded.Terminal, null, Modifier.size(20.dp), tint = tone)
             }
             Text(window.name, Modifier.weight(1f).padding(horizontal = 14.dp), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            window.activity?.state?.let { ActivityMark(it, Modifier.padding(end = 10.dp), size = 18.dp, tone = tone) }
             if (pinned) Icon(Icons.Rounded.Star, stringResource(R.string.box_pinned), Modifier.size(16.dp).padding(end = 2.dp), tint = Brand.Amber)
             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = Brand.Muted)
         }

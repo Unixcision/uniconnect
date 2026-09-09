@@ -44,6 +44,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.unixcision.uniconnect.android.R
+import com.unixcision.uniconnect.android.domain.ActivityState
 import com.unixcision.uniconnect.android.domain.BoxOverrides
 import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.ui.components.BoxMonogram
@@ -162,6 +163,7 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
                             draft = state.draft, onDraftChange = model::updateDraft,
                             windowPinned = window?.isPinned == true || window?.id in overrides.pinnedWindows,
                             onTogglePin = { window?.let { model.toggleWindowPinned(it.id) } },
+                            activity = window?.activity?.state ?: ActivityState.UNKNOWN,
                         )
                     }
                     Level.MACHINE -> if (machine != null) MachineBoxesScreen(
