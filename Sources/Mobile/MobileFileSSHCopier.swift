@@ -3,19 +3,30 @@ import os
 
 /// Salto SSH de `file_put.v1`: ejecuta el mismo `ssh` validado y fijado al endpoint de la caja
 /// (`UniConnectSSH.processInvocation`) con el archivo por `stdin` y un script remoto que lo
-/// deja en `~/uniconnect-entrada/<nombre>` sin pisar nada: escribe en un nombre temporal y
-/// hace `mv -n`, probando `-2`, `-3`… si el definitivo ya existe. Equivale a un `scp` con la
-/// misma credencial, pero sin traducir las opciones de `ssh` a las de `scp`.
+/// deja en `~/uniconnect-entrada/<nombre>` sin pisar nada: escribe en un nombre temporal y lo
+/// enlaza (`ln`, que falla si el destino existe) sobre `<nombre>`, `<nombre>-2`, … hasta
+/// ``maximumCandidates``; cualquier entrada existente (archivo, directorio o enlace) cuenta
+/// como colisión, y un fallo que no sea colisión (permisos, disco, ruta) aborta con mensaje y
+/// borra el temporal. Equivale a un `scp` con la misma credencial, sin traducir las opciones
+/// de `ssh` a las de `scp`. El host conserva siempre su copia: si el salto falla, `commit`
+/// responde `location: "host"` con `remote_error`.
 struct MobileFileSSHCopier: MobileFileRemoteCopying {
     /// Directorio remoto, relativo a `$HOME` del servidor.
     static let remoteDirectory = "uniconnect-entrada"
+    /// Nombres con sufijo que se prueban antes de rendirse.
+    static let maximumCandidates = 50
+    /// Código de salida del script cuando todos los candidatos están ocupados.
+    static let exitNoFreeName: Int32 = 75
+    /// Código de salida del script cuando el archivo no se pudo colocar por otra causa.
+    static let exitPlacementFailed: Int32 = 74
 
     // Hosts the one-shot deadline timer; a queue only for timer delivery, never for state.
     private static let timerQueue = DispatchQueue(label: "com.unixcision.uniconnect.mobile.file-put.timer")
 
     init() {}
 
-    /// Script `sh` que recibe el archivo por stdin y lo coloca sin sobrescribir; imprime la ruta final.
+    /// Script `sh` (POSIX, vale en Linux y macOS) que recibe el archivo por stdin y lo coloca
+    /// sin sobrescribir; imprime la ruta final por stdout y explica cualquier fallo por stderr.
     static func remoteScript(name: MobileFilePutName, nonce: String) -> String {
         let quote = UniConnectSSH.shellQuote
         let temp = quote(".\(name.fileName).\(nonce).part")
@@ -27,11 +38,19 @@ struct MobileFileSSHCopier: MobileFileRemoteCopying {
             "d=\"$HOME/\(remoteDirectory)\"",
             "mkdir -p \"$d\"",
             "t=\"$d/\"\(temp)",
+            "trap 'rm -f \"$t\"' EXIT",
             "cat > \"$t\"",
             "i=1",
             "n=\"$d/\"\(first)",
-            "while :; do mv -n \"$t\" \"$n\" 2>/dev/null || true; [ -e \"$t\" ] || break; i=$((i+1)); n=\"$d/\"\(stem)\"-$i\"\(ext); done",
-            "printf '%s\\n' \"$n\"",
+            "while :; do "
+                + "if [ -e \"$n\" ] || [ -L \"$n\" ]; then "
+                + "i=$((i+1)); "
+                + "if [ \"$i\" -gt \(maximumCandidates) ]; then echo \"sin nombre libre tras \(maximumCandidates) candidatos en $d\" >&2; exit \(exitNoFreeName); fi; "
+                + "n=\"$d/\"\(stem)\"-$i\"\(ext); continue; "
+                + "fi; "
+                + "if ln \"$t\" \"$n\"; then rm -f \"$t\"; printf '%s\\n' \"$n\"; exit 0; fi; "
+                + "echo \"no se pudo colocar el archivo en $n\" >&2; exit \(exitPlacementFailed); "
+                + "done",
         ].joined(separator: "; ")
     }
 

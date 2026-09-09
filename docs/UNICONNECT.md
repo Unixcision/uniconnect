@@ -328,12 +328,18 @@ Host side on macOS (2026-09-09, `MobileFilePutService` actor in `Sources/Mobile/
   appeared meanwhile; it never overwrites.
 - **SSH hop.** For an SSH box the host runs the box's own validated, endpoint-pinned
   `ssh` (`UniConnectSSH.processInvocation`, same credential, `-T`) with the file on
-  standard input and a remote `sh` script that does `mkdir -p ~/uniconnect-entrada`,
-  writes `.<name>.<nonce>.part`, then `mv -n` to `<name>`, `<name>-2`, … until the
-  temporary file is gone, and prints the final path; this is the scp step of the
-  contract done over the same connection. The copy is bounded by a 100 s deadline (the
-  phone waits 120 s for `commit`); a timeout or a non-zero exit answers
-  `location: "host"` with `remote_error` and the host file kept.
+  standard input and a remote POSIX `sh` script that does `mkdir -p ~/uniconnect-entrada`,
+  writes `.<name>.<nonce>.part`, then links it (`ln`, which fails if the target exists)
+  to `<name>`, `<name>-2`, … and prints the final path; this is the scp step of the
+  contract done over the same connection. Any existing entry (file, directory or link,
+  dangling ones included) counts as a collision and moves to the next suffix, so a
+  directory named like the file never swallows it; at most 50 candidates are tried
+  (exit 75 "sin nombre libre"); any other failure (permissions, disk, path) aborts
+  with exit 74 and the reason on stderr; the temporary file is removed on every exit
+  path (`trap`). The copy is bounded by a 100 s deadline (the phone waits 120 s for
+  `commit`); a timeout or a non-zero exit answers `location: "host"` with
+  `remote_error` (the stderr text) and the host file is always kept: there is no
+  deletion policy for the host copy.
 - **Threading and expiry.** All file I/O and the SSH hop run inside the actor, never
   on the main thread; the transfer table lives there too. A transfer with no chunk
   for 10 minutes is deleted together with its `.part` (injected clock, cancellable

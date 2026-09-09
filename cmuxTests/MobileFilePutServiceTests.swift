@@ -64,19 +64,116 @@ struct MobileFilePutServiceTests {
         #expect(name.candidate(3) == "foto-3.jpg")
     }
 
-    @Test("El script remoto escribe en temporal, mueve sin sobrescribir y prueba -2, -3…")
-    func remoteScript() {
-        let script = MobileFileSSHCopier.remoteScript(name: MobileFilePutName(rawName: "foto.jpg"), nonce: "abc123")
-        #expect(script.contains("mkdir -p \"$d\""))
-        #expect(script.contains("t=\"$d/\"'.foto.jpg.abc123.part'"))
-        #expect(script.contains("cat > \"$t\""))
-        #expect(script.contains("n=\"$d/\"'foto.jpg'"))
-        #expect(script.contains("mv -n \"$t\" \"$n\""))
-        #expect(script.contains("[ -e \"$t\" ] || break"))
-        #expect(script.contains("n=\"$d/\"'foto'\"-$i\"'.jpg'"))
-        #expect(script.contains("printf '%s\\n' \"$n\""))
-        #expect(script.hasPrefix("set -e"))
-        #expect(!script.contains("rm "))
+    /// Resultado de ejecutar el script remoto con `/bin/sh` sobre un `$HOME` temporal.
+    private struct ScriptRun {
+        let exitStatus: Int32
+        let stdout: String
+        let stderr: String
+        var remotePath: String { stdout.split(separator: "\n").last.map(String.init) ?? "" }
+    }
+
+    /// Ejecuta el script real como lo haría el servidor: `sh`, stdin = el archivo, `$HOME` temporal.
+    private func runRemoteScript(name: String, nonce: String = "n0nce", home: URL, content: Data) throws -> ScriptRun {
+        let input = home.appendingPathComponent("entrada-\(UUID().uuidString).bin")
+        try content.write(to: input)
+        defer { try? FileManager.default.removeItem(at: input) }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", MobileFileSSHCopier.remoteScript(name: MobileFilePutName(rawName: name), nonce: nonce)]
+        process.environment = ["HOME": home.path, "PATH": "/usr/bin:/bin"]
+        process.standardInput = try #require(FileHandle(forReadingAtPath: input.path))
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        try process.run()
+        let out = stdout.fileHandleForReading.readDataToEndOfFile()
+        let err = stderr.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return ScriptRun(
+            exitStatus: process.terminationStatus,
+            stdout: String(decoding: out, as: UTF8.self),
+            stderr: String(decoding: err, as: UTF8.self)
+        )
+    }
+
+    private func entries(_ directory: URL) throws -> Set<String> {
+        Set(try FileManager.default.contentsOfDirectory(atPath: directory.path))
+    }
+
+    @Test("El script remoto coloca el archivo sin sobrescribir: colisión con archivo, directorio y enlace pasan al siguiente sufijo")
+    func remoteScriptCollisions() throws {
+        let home = try makeBaseDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let entrada = home.appendingPathComponent(MobileFileSSHCopier.remoteDirectory, isDirectory: true)
+        let content = Data("imagen".utf8)
+
+        let first = try runRemoteScript(name: "foto.jpg", home: home, content: content)
+        #expect(first.exitStatus == 0, "\(first.stderr)")
+        #expect(first.remotePath == entrada.appendingPathComponent("foto.jpg").path)
+        #expect(try Data(contentsOf: entrada.appendingPathComponent("foto.jpg")) == content)
+        #expect(try entries(entrada) == ["foto.jpg"])
+
+        let second = try runRemoteScript(name: "foto.jpg", home: home, content: Data("otra".utf8))
+        #expect(second.exitStatus == 0, "\(second.stderr)")
+        #expect(second.remotePath == entrada.appendingPathComponent("foto-2.jpg").path)
+        #expect(try Data(contentsOf: entrada.appendingPathComponent("foto.jpg")) == content)
+        #expect(try Data(contentsOf: entrada.appendingPathComponent("foto-2.jpg")) == Data("otra".utf8))
+
+        try FileManager.default.createDirectory(at: entrada.appendingPathComponent("foto-3.jpg"), withIntermediateDirectories: false)
+        try FileManager.default.createSymbolicLink(at: entrada.appendingPathComponent("foto-4.jpg"), withDestinationURL: entrada.appendingPathComponent("no-existe"))
+        let third = try runRemoteScript(name: "foto.jpg", home: home, content: Data("tres".utf8))
+        #expect(third.exitStatus == 0, "\(third.stderr)")
+        #expect(third.remotePath == entrada.appendingPathComponent("foto-5.jpg").path)
+        #expect(try entries(entrada.appendingPathComponent("foto-3.jpg")).isEmpty)
+        #expect(try Data(contentsOf: entrada.appendingPathComponent("foto-5.jpg")) == Data("tres".utf8))
+        #expect(try entries(entrada).filter { $0.hasSuffix(".part") }.isEmpty)
+    }
+
+    @Test("El script remoto se rinde tras 50 candidatos y limpia el temporal")
+    func remoteScriptCandidateLimit() throws {
+        let home = try makeBaseDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let entrada = home.appendingPathComponent(MobileFileSSHCopier.remoteDirectory, isDirectory: true)
+        try FileManager.default.createDirectory(at: entrada, withIntermediateDirectories: true)
+        let name = MobileFilePutName(rawName: "lleno.txt")
+        for ordinal in 1...MobileFileSSHCopier.maximumCandidates {
+            try Data().write(to: entrada.appendingPathComponent(name.candidate(ordinal)))
+        }
+        let run = try runRemoteScript(name: "lleno.txt", home: home, content: Data("x".utf8))
+        #expect(run.exitStatus == MobileFileSSHCopier.exitNoFreeName)
+        #expect(run.stdout.isEmpty)
+        #expect(run.stderr.contains("sin nombre libre"))
+        #expect(try entries(entrada).count == MobileFileSSHCopier.maximumCandidates)
+        #expect(try entries(entrada).filter { $0.hasSuffix(".part") }.isEmpty)
+    }
+
+    @Test("Sin permisos en el directorio remoto el script falla con mensaje y sin dejar restos")
+    func remoteScriptPermissionDenied() throws {
+        let home = try makeBaseDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let entrada = home.appendingPathComponent(MobileFileSSHCopier.remoteDirectory, isDirectory: true)
+        try FileManager.default.createDirectory(at: entrada, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: entrada.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: entrada.path) }
+        let run = try runRemoteScript(name: "foto.jpg", home: home, content: Data("x".utf8))
+        #expect(run.exitStatus != 0)
+        #expect(run.stdout.isEmpty)
+        #expect(!run.stderr.isEmpty)
+        #expect(try entries(entrada).isEmpty)
+    }
+
+    @Test("El script cita nombres con espacios y paréntesis y conserva la extensión en los sufijos")
+    func remoteScriptQuoting() throws {
+        let home = try makeBaseDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let entrada = home.appendingPathComponent(MobileFileSSHCopier.remoteDirectory, isDirectory: true)
+        let name = MobileFilePutName(rawName: "foto (1) de ayer.jpeg").fileName
+        try FileManager.default.createDirectory(at: entrada, withIntermediateDirectories: true)
+        try Data().write(to: entrada.appendingPathComponent(name))
+        let run = try runRemoteScript(name: "foto (1) de ayer.jpeg", home: home, content: Data("y".utf8))
+        #expect(run.exitStatus == 0, "\(run.stderr)")
+        #expect(run.remotePath == entrada.appendingPathComponent("foto_(1)_de_ayer-2.jpeg").path)
     }
 
     @Test("Flujo local: begin reserva el .part, los trozos se suman y commit verifica el sha")
