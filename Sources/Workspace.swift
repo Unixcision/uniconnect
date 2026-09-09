@@ -11040,6 +11040,9 @@ final class Workspace: Identifiable, ObservableObject {
     private var agentLifecycleReportedAtByPanelId: [UUID: TimeInterval] = [:]
     /// Actividad de IA por ventana publicada por `AgentActivityCoordinator` (host = fuente de verdad).
     @Published private(set) var agentActivityByPanelId: [UUID: AgentActivity] = [:]
+    /// `pane_current_command` del tmux remoto, extraído del prefijo `comando|título` del
+    /// título OSC de las ventanas SSH; ausente cuando el título no lleva prefijo.
+    private(set) var panelRemoteForegroundCommands: [UUID: String] = [:]
     var restoredTerminalScrollbackByPanelId: [UUID: String] = [:]
 #if DEBUG
     var debugSessionSnapshotScrollbackFallbackPanelIds: Set<UUID> = []
@@ -13475,8 +13478,25 @@ final class Workspace: Identifiable, ObservableObject {
     /// Olvida la actividad de una ventana que se cierra o se traslada.
     func clearAgentActivity(panelId: UUID) {
         agentLifecycleReportedAtByPanelId.removeValue(forKey: panelId)
+        panelRemoteForegroundCommands.removeValue(forKey: panelId)
         guard agentActivityByPanelId.removeValue(forKey: panelId) != nil else { return }
         syncAgentActivityTabIndicator(panelId: panelId)
+    }
+
+    /// Recibe el título OSC de un terminal y devuelve lo que debe verse. En las ventanas SSH
+    /// el tmux remoto propaga `comando|título`: el comando se guarda para la actividad de
+    /// IA y solo el título llega a la barra lateral, la pestaña y el móvil.
+    func ingestPanelProcessTitle(panelId: UUID, rawTitle: String) -> String {
+        guard uniConnectProfile?.isSSH == true, panels[panelId] is TerminalPanel else {
+            return rawTitle
+        }
+        let remote = UniConnectRemotePaneTitle(rawTitle: rawTitle)
+        if let command = remote.command {
+            panelRemoteForegroundCommands[panelId] = command
+        } else {
+            panelRemoteForegroundCommands.removeValue(forKey: panelId)
+        }
+        return remote.displayTitle
     }
 
     /// Pestaña de la ventana: ruedecita mientras trabaja, mano cuando espera, icono normal si no.

@@ -2,11 +2,13 @@ import Foundation
 
 /// Lo que el título de la ventana y el comando en primer plano dicen de la IA.
 ///
-/// El comando (`pane_current_command` de tmux o proceso en primer plano de la PTY)
-/// identifica la IA; un shell significa que no hay IA. El título solo aporta evidencia
-/// POSITIVA de trabajo: Codex antepone un spinner braille (U+2800–U+28FF) mientras
-/// trabaja. Claude Code pone `✳ tema` tanto trabajando como parado, así que ese
-/// prefijo identifica a Claude pero nunca cambia el estado.
+/// El comando (`pane_current_command` de tmux, el prefijo `comando|título` que propaga
+/// el tmux remoto o el proceso en primer plano de la PTY) identifica la IA; un shell
+/// significa que no hay IA; un intérprete (`node`, `python3`…) es un agente vivo sin
+/// nombre. El título solo aporta evidencia POSITIVA de trabajo: Codex antepone un
+/// spinner braille (U+2800–U+28FF) mientras trabaja. Claude Code pone `✳ tema` tanto
+/// trabajando como parado, así que ese prefijo identifica a Claude pero nunca cambia
+/// el estado.
 struct AgentActivityTitleSignal: Equatable, Sendable {
     /// Comandos que son un shell: la ventana no tiene IA aunque el título diga algo.
     static let shellCommands: Set<String> = [
@@ -14,6 +16,9 @@ struct AgentActivityTitleSignal: Equatable, Sendable {
     ]
     /// Comandos tras los que el proceso real no es visible desde el Mac (remoto o multiplexado).
     static let opaqueCommands: Set<String> = ["ssh", "mosh", "mosh-client", "tmux", "screen", "et"]
+    /// Intérpretes bajo los que corren los agentes instalados con npm o pip (Gemini, Claude
+    /// de npm, Agy…): IA viva aunque no sepamos cuál.
+    static let agentRuntimeCommands: Set<String> = ["node", "python3", "python", "bun", "deno"]
     /// Prefijo con el que Claude Code titula la ventana; identifica al agente, no su estado.
     static let claudeTitleMarker: Character = "✳"
 
@@ -24,6 +29,8 @@ struct AgentActivityTitleSignal: Equatable, Sendable {
     let isShell: Bool
     /// El proceso en primer plano oculta el real (ssh, tmux…): la pantalla es la única pista.
     let hidesForegroundProcess: Bool
+    /// El proceso en primer plano es un intérprete de agentes: hay IA viva sin nombre.
+    let isAgentRuntime: Bool
 
     init(title: String?, currentCommand: String?) {
         let command = Self.normalizedCommand(currentCommand)
@@ -33,12 +40,14 @@ struct AgentActivityTitleSignal: Equatable, Sendable {
             state = nil
             isShell = true
             hidesForegroundProcess = false
+            isAgentRuntime = false
             return
         }
         agent = Self.agent(fromCommand: command) ?? Self.agent(fromTitle: trimmedTitle)
         state = Self.startsWithBrailleSpinner(trimmedTitle) ? .working : nil
         isShell = false
         hidesForegroundProcess = command.map { Self.opaqueCommands.contains($0) } ?? true
+        isAgentRuntime = command.map { Self.agentRuntimeCommands.contains($0) } ?? false
     }
 
     /// Último componente del comando, sin el guion de shell de login y en minúsculas.

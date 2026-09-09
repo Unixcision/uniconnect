@@ -848,6 +848,8 @@
 		D26B20000000000000000041 /* UniConnectRecoveryCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000041 /* UniConnectRecoveryCoordinator.swift */; };
 		D26B40000000000000000006 /* UniConnectRecoveryPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B30000000000000000006 /* UniConnectRecoveryPersistenceTests.swift */; };
 		D26B20000000000000000044 /* UniConnectRecoveryRestoreTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000044 /* UniConnectRecoveryRestoreTransaction.swift */; };
+		2DC34A24E8A8E5825F17154B /* UniConnectRemotePaneTitle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A8AF05A1E08F304BFBD63C7 /* UniConnectRemotePaneTitle.swift */; };
+		F0F740F8E1DF09C48C13A1C3 /* UniConnectRemotePaneTitleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B8FAEE192577F5B9C54AF1 /* UniConnectRemotePaneTitleTests.swift */; };
 		D26B20000000000000000043 /* UniConnectSessionPersistenceObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000043 /* UniConnectSessionPersistenceObserver.swift */; };
 		F50032060000000000000001 /* UniConnectSidebarActionButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50032060000000000000002 /* UniConnectSidebarActionButton.swift */; };
 		F50032070000000000000001 /* UniConnectSidebarActionButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50032070000000000000002 /* UniConnectSidebarActionButtonStyle.swift */; };
@@ -1812,6 +1814,8 @@
 		D26B10000000000000000041 /* UniConnectRecoveryCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectRecoveryCoordinator.swift; sourceTree = "<group>"; };
 		D26B30000000000000000006 /* UniConnectRecoveryPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectRecoveryPersistenceTests.swift; sourceTree = "<group>"; };
 		D26B10000000000000000044 /* UniConnectRecoveryRestoreTransaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectRecoveryRestoreTransaction.swift; sourceTree = "<group>"; };
+		8A8AF05A1E08F304BFBD63C7 /* UniConnectRemotePaneTitle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UniConnectRemotePaneTitle.swift; sourceTree = "<group>"; };
+		38B8FAEE192577F5B9C54AF1 /* UniConnectRemotePaneTitleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectRemotePaneTitleTests.swift; sourceTree = "<group>"; };
 		D26B10000000000000000043 /* UniConnectSessionPersistenceObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSessionPersistenceObserver.swift; sourceTree = "<group>"; };
 		F50032060000000000000002 /* UniConnectSidebarActionButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSidebarActionButton.swift; sourceTree = "<group>"; };
 		F50032070000000000000002 /* UniConnectSidebarActionButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSidebarActionButtonStyle.swift; sourceTree = "<group>"; };
@@ -2260,6 +2264,7 @@
 				E04291941501882C5F4DC29F /* AgentActivityTitleSignal.swift */,
 				9F8C4B8DB4173652772BE1A2 /* AgentActivityScreenSignal.swift */,
 				6B0D8FA641DAA591EDF92222 /* AgentActivityResolver.swift */,
+				8A8AF05A1E08F304BFBD63C7 /* UniConnectRemotePaneTitle.swift */,
 				7B6CD26698FA349296E33458 /* TmuxPaneActivityRow.swift */,
 				283B8FD286A5DABF23B0F57C /* TmuxPaneActivityProbe.swift */,
 				7D496778D9CACECC418144B8 /* AgentOutputActivityCell.swift */,
@@ -2931,6 +2936,7 @@
 				D2C075029771815DD5DA1332 /* NotificationAndMenuBarTests.swift */,
 				4E5F60720000000000000002 /* NotificationSoundSettingsTests.swift */,
 				42092CDB2109E250F7F2A76E /* TabManagerUnitTests.swift */,
+				38B8FAEE192577F5B9C54AF1 /* UniConnectRemotePaneTitleTests.swift */,
 				565EAB895EC099E22C016A71 /* TerminalNotificationKindTests.swift */,
 				8B98BFBCD07EBB789FD093B7 /* AgentActivityResolverTests.swift */,
 				F500310A0000000000000002 /* NotificationsPopoverPlacementTests.swift */,
@@ -3918,6 +3924,7 @@
 				D26B20000000000000000040 /* UniConnectRecoveryBackupRepository.swift in Sources */,
 				D26B20000000000000000041 /* UniConnectRecoveryCoordinator.swift in Sources */,
 				D26B20000000000000000044 /* UniConnectRecoveryRestoreTransaction.swift in Sources */,
+				2DC34A24E8A8E5825F17154B /* UniConnectRemotePaneTitle.swift in Sources */,
 				D26B20000000000000000043 /* UniConnectSessionPersistenceObserver.swift in Sources */,
 				F50032060000000000000001 /* UniConnectSidebarActionButton.swift in Sources */,
 				F50032070000000000000001 /* UniConnectSidebarActionButtonStyle.swift in Sources */,
@@ -4263,6 +4270,7 @@
 				A90622000000000000000002 /* UniConnectMobileAccessTests.swift in Sources */,
 				F26A04000000000000000001 /* UniConnectRailTests.swift in Sources */,
 				D26B40000000000000000006 /* UniConnectRecoveryPersistenceTests.swift in Sources */,
+				F0F740F8E1DF09C48C13A1C3 /* UniConnectRemotePaneTitleTests.swift in Sources */,
 				A76C40000000000000000001 /* UniConnectSSHConfigTargetResolverTests.swift in Sources */,
 				C0FFEE7800000000000000B1 /* UniConnectSSHConnectCommandValidatorTests.swift in Sources */,
 				D26B40000000000000000007 /* UniConnectSSHProcessInvocationTests.swift in Sources */,

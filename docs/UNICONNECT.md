@@ -182,6 +182,19 @@ Rules per window (measured live on 2026-09-09):
    verdict leaves the host.
 6. `since` is the epoch of the last **state change**, not of every probe.
 
+SSH windows: the Mac cannot see the remote process and remote tmux servers keep
+`set-titles` off, so the attach line (`UniConnectSSH`) applies three non-persistent
+options in the same `tmux … \; …` invocation on every attach (create, existing and
+recoverable paths; tmux 3.2a and 3.4+): `set-option -g set-titles on`,
+`set-option -g set-titles-string '#{pane_current_command}|#{pane_title}'` and
+`set-option -s set-clipboard off` (OSC 52 kills tmux 3.2a on selection). The OSC title
+of an SSH surface then arrives as `command|title`; `UniConnectRemotePaneTitle` splits
+it when the prefix looks like a process name: the command feeds `agent` (`claude`,
+`codex`, `gemini`, `agy`; `node`/`python3` count as a live agent without a name; a
+shell means `unknown`) and the braille check, and only the title part reaches the
+sidebar, the tab, the window title and the phone. A title without a valid prefix
+stays untouched.
+
 Output activity comes from the PTY tee of every surface (also for tmux and SSH
 windows): keyboard echo (output within 250 ms of a local or mobile key) and resize
 redraws (500 ms) are not counted. Local tmux windows (socket `uniconnect-local`,

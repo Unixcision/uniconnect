@@ -339,7 +339,7 @@ extension Workspace {
         panelPullRequests.removeValue(forKey: panelId)
         panelTitles.removeValue(forKey: panelId)
         panelCustomTitles.removeValue(forKey: panelId)
-        clearAgentActivity(panelId: panelId)
+        clearAgentActivity(panelId: panelId)  // también olvida el comando remoto del título
         if closePanel {
             uniConnectTmuxSessionsByPanelId.removeValue(forKey: panelId)
             uniConnectClaudeSessionsByPanelId.removeValue(forKey: panelId)

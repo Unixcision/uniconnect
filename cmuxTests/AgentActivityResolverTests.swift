@@ -205,6 +205,21 @@ struct AgentActivityResolverTests {
         #expect(remoteQuiet.state == .unknown)
     }
 
+    @Test("Un intérprete (node, python3) es IA viva sin nombre: la salida da working e idle")
+    func agentRuntimeCommands() {
+        let signal = AgentActivityTitleSignal(title: "Gemini CLI", currentCommand: "node")
+        #expect(signal.isAgentRuntime)
+        #expect(signal.agent == .gemini)
+        let anonymous = AgentActivityTitleSignal(title: "host", currentCommand: "python3")
+        #expect(anonymous.isAgentRuntime)
+        #expect(anonymous.agent == nil)
+        let working = resolve(evidence(title: "host", command: "python3", outputAge: 1))
+        #expect(working.state == .working)
+        #expect(working.agent == nil)
+        let idle = resolve(evidence(title: "host", command: "node", outputAge: 9, screen: false))
+        #expect(idle.state == .idle)
+    }
+
     @Test("La conversación activa del registro local identifica al agente")
     func knownAgentFromRecord() {
         let activity = resolve(evidence(command: "python3", knownAgent: .agy, outputAge: 2))

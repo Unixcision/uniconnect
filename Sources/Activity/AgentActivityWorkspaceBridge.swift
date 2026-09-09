@@ -55,9 +55,12 @@ final class AgentActivityWorkspaceBridge: AgentActivityHostReading {
             : nil
         let evidence = AgentActivityEvidence(
             hooks: hooksEvidence(for: panelID, in: workspace),
+            // En SSH el comando remoto llega como prefijo del título OSC (ver
+            // UniConnectRemotePaneTitle); si no, vale el proceso en primer plano de la PTY.
             title: AgentActivityEvidence.Title(
                 text: workspace.panelTitles[panelID] ?? terminal.title,
-                currentCommand: terminal.surface.agentActivityForegroundCommand()
+                currentCommand: workspace.panelRemoteForegroundCommands[panelID]
+                    ?? terminal.surface.agentActivityForegroundCommand()
             ),
             knownAgent: knownAgent,
             output: AgentActivityEvidence.Output(

@@ -6637,10 +6637,13 @@ class TabManager: ObservableObject {
 
     private func updatePanelTitle(tabId: UUID, panelId: UUID, title: String) {
         guard let tab = tabs.first(where: { $0.id == tabId }) else { return }
-        _ = tab.updatePanelTitle(panelId: panelId, title: title)
+        // UniConnect: en las ventanas SSH el título llega como `comando|título`; el
+        // comando se queda en el espacio para la actividad de IA y solo el título se enseña.
+        let displayTitle = tab.ingestPanelProcessTitle(panelId: panelId, rawTitle: title)
+        _ = tab.updatePanelTitle(panelId: panelId, title: displayTitle)
 
         if tab.focusedPanelId == panelId {
-            tab.applyProcessTitle(title)
+            tab.applyProcessTitle(displayTitle)
             if selectedTabId == tabId {
                 updateWindowTitle(for: tab)
             }

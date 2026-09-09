@@ -87,6 +87,21 @@ enum UniConnectSSH {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
+    /// Formato de título que propaga el tmux remoto: `comando|título`. El Mac lo separa
+    /// con `UniConnectRemotePaneTitle` para conocer el proceso en primer plano de la
+    /// ventana SSH sin enseñar nunca el prefijo.
+    static let remoteTitleFormat = "#{pane_current_command}|#{pane_title}"
+
+    /// Opciones no persistentes que UniConnect fija en el servidor tmux remoto en cada
+    /// attach (viven mientras vive ese servidor; válidas en tmux 3.2a y 3.4+): títulos
+    /// propagados con el comando en primer plano, y `set-clipboard` apagado porque el
+    /// OSC 52 mata a tmux 3.2a al seleccionar.
+    static let remoteTmuxAttachOptions: [[String]] = [
+        ["set-option", "-g", "set-titles", "on"],
+        ["set-option", "-g", "set-titles-string", shellQuote(remoteTitleFormat)],
+        ["set-option", "-s", "set-clipboard", "off"],
+    ]
+
     /// The remote command used only for an explicit new window. `-A` attaches if the
     /// named session exists and otherwise creates it; `-c` seeds that first directory.
     static func remoteTmuxCommand(session: String, directory: String?) -> String {
@@ -100,6 +115,10 @@ enum UniConnectSSH {
         }
         // Wheel scrolling inside tmux needs mouse mode on attach as well as create.
         parts += ["\\;", "set-option", "-g", "mouse", "on"]
+        // Same tmux invocation: title propagation and clipboard policy follow the attach.
+        for option in remoteTmuxAttachOptions {
+            parts += ["\\;"] + option
+        }
         return parts.joined(separator: " ")
     }
 
@@ -112,11 +131,12 @@ enum UniConnectSSH {
             // Starting the client in the saved directory seeds a newly created session
             // without depending on version-specific handling of -A with -c. Existing
             // panes stay untouched; a vanished directory must not prevent attaching.
+            let attachOptions = remoteTmuxAttachOptions.map { $0.joined(separator: " ") }.joined(separator: " \\; ")
             operation = [
                 "if cd \(shellQuote(directory)); then",
                 "\(createOrAttach);",
                 "else",
-                "tmux attach-session -t \(shellQuote("=" + session));",
+                "tmux \(attachOptions) \\; attach-session -t \(shellQuote("=" + session));",
                 "fi"
             ].joined(separator: " ")
         } else {
@@ -155,7 +175,10 @@ enum UniConnectSSH {
             locale: Locale.current,
             session
         )
-        return [
+        let attachOptionLines = remoteTmuxAttachOptions.map { option in
+            "tmux \(option.joined(separator: " ")) >/dev/null 2>&1 || true;"
+        }
+        return ([
             "if ! command -v tmux >/dev/null 2>&1; then",
             "printf '%s\\n' \(shellQuote("[UniConnect] \(missingTmuxMessage)")) >&2;",
             "exit 127;",
@@ -166,8 +189,9 @@ enum UniConnectSSH {
             "fi;",
             "tmux set-option -g mouse on >/dev/null 2>&1 || true;",
             "tmux set-option -g history-limit 50000 >/dev/null 2>&1 || true;",
+        ] + attachOptionLines + [
             "exec tmux attach-session -t \(target)"
-        ].joined(separator: " ")
+        ]).joined(separator: " ")
     }
 
     /// Full local command line that opens a terminal tab bound to a tmux session.

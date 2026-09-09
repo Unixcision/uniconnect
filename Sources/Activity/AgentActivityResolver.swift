@@ -124,6 +124,7 @@ struct AgentActivityResolver: Equatable, Sendable {
             } else {
                 agent = freshHooks?.agent ?? title.agent ?? evidence.knownAgent
                 isAgentAlive = freshHooks != nil || title.agent != nil || evidence.knownAgent != nil
+                    || title.isAgentRuntime
             }
             outputAge = evidence.output.lastOutputAt.map { max(0, now - $0) }
         }
