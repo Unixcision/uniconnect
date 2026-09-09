@@ -32,8 +32,10 @@ class AudioPayloadTest {
     }
 
     @Test
-    fun nothingOverSixMebibytesFitsAndNeitherDoesAnEmptyRecording() {
-        assertFalse("the contract refuses over 6 MiB", AudioPayload.fits(AudioPayload.MAX_AUDIO_BYTES + 1))
+    fun theCeilingIsThreeMebibytesOfAudioAndNothingEmpty() {
+        assertEquals(3L * 1024 * 1024, AudioPayload.MAX_AUDIO_BYTES)
+        assertTrue("the last byte the contract takes", AudioPayload.fits(AudioPayload.MAX_AUDIO_BYTES))
+        assertFalse("one byte more is refused here, not by the host", AudioPayload.fits(AudioPayload.MAX_AUDIO_BYTES + 1))
         assertFalse("nothing was recorded", AudioPayload.fits(0))
         assertFalse(AudioPayload.fits(-1))
         // Five minutes at 32 kbps is around 1.2 MB, so the working sizes are far below the ceiling.
@@ -42,15 +44,27 @@ class AudioPayloadTest {
     }
 
     @Test
-    fun theRealCeilingIsWhatOneFrameCarriesEncoded() {
-        val largest = (1..AudioPayload.MAX_AUDIO_BYTES).last { AudioPayload.fits(it) }
-        assertTrue("a fitting recording encodes inside a frame", AudioPayload.encodedLength(largest) <= AudioPayload.MAX_ENCODED_BYTES)
-        assertFalse("one byte more does not", AudioPayload.fits(largest + 1))
-        assertTrue("and it is under the contract's own ceiling", largest <= AudioPayload.MAX_AUDIO_BYTES)
+    fun theWholeCeilingEncodesWithHalfAFrameToSpare() {
+        val encoded = AudioPayload.encodedLength(AudioPayload.MAX_AUDIO_BYTES)
+        assertEquals("base64 grows it by a third", 4L * 1024 * 1024, encoded)
+        assertTrue("the largest request the phone can build fits one frame", AudioPayload.requestFits(encoded, fieldBytes = 4096))
+        assertEquals("which is exactly half a frame", AudioPayload.MAX_FRAME_BYTES / 2, encoded)
+        assertTrue("so half the frame is free for everything else", AudioPayload.MAX_FRAME_BYTES - encoded >= 4L * 1024 * 1024)
+    }
+
+    @Test
+    fun aRequestThatWouldBreakTheFrameIsRefusedBeforeItIsBuilt() {
+        val frame = AudioPayload.MAX_FRAME_BYTES
+        assertTrue(AudioPayload.requestFits(frame - AudioPayload.ENVELOPE_BYTES, fieldBytes = 0))
+        assertFalse(AudioPayload.requestFits(frame - AudioPayload.ENVELOPE_BYTES + 1, fieldBytes = 0))
+        assertFalse("the ids and the language count too", AudioPayload.requestFits(frame - AudioPayload.ENVELOPE_BYTES - 10, fieldBytes = 11))
+        // The old 6 MiB ceiling encoded into exactly one frame, leaving no room for the message.
+        assertFalse(AudioPayload.requestFits(AudioPayload.encodedLength(6L * 1024 * 1024), fieldBytes = 0))
     }
 
     @Test
     fun encodingSomethingThatDoesNotFitIsRefusedInsteadOfSent() {
         assertThrows(IllegalArgumentException::class.java) { AudioPayload.encode(ByteArray(0)) }
+        assertThrows(IllegalArgumentException::class.java) { AudioPayload.encode(ByteArray((AudioPayload.MAX_AUDIO_BYTES + 1).toInt())) }
     }
 }

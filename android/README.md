@@ -215,9 +215,12 @@ un cronómetro que se vuelve ámbar en 4:30, Cancelar y Listo. A los 5 minutos c
 Al pulsar Listo el audio viaja entero en una llamada por el mismo transporte enmarcado que los
 adjuntos: `mobile.audio.transcribe {audio: <base64>, mime: "audio/mp4", language?, workspace_id,
 terminal_id}` → `{text, engine, seconds, took_ms}`, con 90 s de plazo (`data/NativeHostTranscription`).
-El límite es el del contrato, 6 MiB, acotado además por lo que cabe en un mensaje de 8 MiB una vez
-codificado (`domain/AudioPayload`, que codifica por bloques de 192 KiB); a 32 kbps cinco minutos son
-~1,2 MB, así que el tope es una guarda, no una talla de trabajo. El texto se AÑADE al borrador con
+El límite del contrato es 3 MiB de audio (y 5 minutos), no más: base64 engorda un tercio, así que
+3 MiB son ~4 MiB codificados y dejan media trama libre para el resto del mensaje; con 6 MiB la
+petición ocupaba justo la trama de 8 MiB y reventaba antes de llegar al host, sin poder responder
+`too_large`. El móvil mide el archivo ANTES de leerlo y comprueba además que la petición entera
+quepa en la trama (`domain/AudioPayload`, que codifica por bloques de 192 KiB); a 32 kbps cinco
+minutos son ~1,2 MB, así que el tope es una guarda, no una talla de trabajo. El texto se AÑADE al borrador con
 `DictationDraft.append` y respeta «Enviar al terminar de dictar». **El audio se borra siempre**:
 transcrito, rechazado, cancelado o al empezar otra grabación.
 
@@ -239,7 +242,8 @@ Arquitectura: `domain/Dictation` sigue siendo la interfaz y hay dos implementaci
 el estado del motor activo, así que el composable lee los mismos estados en los dos casos.
 `MediaRecorder` queda tras `domain/VoiceRecorder` y el RPC tras `domain/HostTranscription`, de modo
 que todo el flujo (elección, límite de tamaño, cada error, borrado del archivo, reintento único,
-corte a los 5 minutos) se prueba en la JVM sin micrófono ni socket. Probado solo así: 31 pruebas
+corte a los 5 minutos) se prueba en la JVM sin micrófono ni socket. La llamada se prueba además
+contra un host de mentira en un par de sockets, como la de adjuntos. Probado solo así: 36 pruebas
 nuevas; contra un host real con Whisper no se ha ejercitado todavía.
 
 ## Arquitectura

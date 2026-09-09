@@ -167,8 +167,12 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
 - La elección de motor es pura y comprobable: `TranscriptionRoute.decide(modo, capacidad del equipo,
   hay reconocedor)`. Sin capacidad o con `unsupported` se dicta en el móvil, avisando una sola vez.
 - Ajustes → Voz → «Transcripción»: Automática (por defecto), Móvil y Equipo.
-- 31 pruebas JVM nuevas (elección de motor, base64 por bloques y límite de 6 MiB acotado al mensaje
-  de 8 MiB, cada código de error del contrato, borrado del archivo en todos los caminos, reintento
-  único, corte a los 5 minutos, persistencia del ajuste). Build y `testDebugUnitTest` en verde.
+- Límite del contrato corregido a 3 MiB de audio (aviso de CODEX VPS): 6 MiB en base64 son 8 MiB
+  clavados, la trama entera, así que la petición reventaba antes de llegar al host y sin poder
+  responder `too_large`. El móvil mide antes de enviar y comprueba también la petición serializada.
+- 36 pruebas JVM nuevas (elección de motor, base64 por bloques, tope de 3 MiB y trama, cada código de
+  error del contrato contra un host de mentira en un par de sockets, borrado del archivo en todos los
+  caminos, reintento único, corte a los 5 minutos, persistencia del ajuste). Build y
+  `testDebugUnitTest` en verde.
 - No probado contra un host real: ningún equipo anuncia todavía `transcribe.v1`, así que el camino
   del móvil es el único ejercitado de punta a punta. Tampoco se ha instalado nada en el Pixel.
