@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.AttachPaste
+import com.unixcision.uniconnect.android.domain.AttachCapture
 import com.unixcision.uniconnect.android.domain.AttachDecision
 import com.unixcision.uniconnect.android.domain.AttachRoute
 import com.unixcision.uniconnect.android.domain.HostLostCapability
@@ -81,27 +82,32 @@ fun AttachButton(model: AttachViewModel, target: AttachTarget, draft: String, on
 private fun AttachSheet(model: AttachViewModel, target: AttachTarget, transfers: List<AttachViewModel.Transfer>, service: UploadService, onDismiss: () -> Unit) {
     var localError by remember { mutableStateOf<Int?>(null) }
     val route = AttachRoute.forHost(takesFiles = target.supportsFilePut)
-    // What the reader saw when tapping is what happens when the picker returns, even if the
-    // snapshot changed meanwhile; only after process death do the current values stand in.
-    var armed by remember { mutableStateOf<Pair<AttachTarget, AttachRoute>?>(null) }
+    // What the reader saw when tapping is what happens when the picker returns: the route and the
+    // window are captured at the tap as saved state, so they survive the picker and a process
+    // death alike. A result that comes back without its capture, or for another window, is
+    // dropped and the reader is asked to pick again; a destination is never rebuilt from newer values.
+    var armed by rememberSaveable { mutableStateOf<String?>(null) }
     val pickers = rememberAttachmentPickers(
         onPicked = { uris ->
-            val (destination, way) = armed ?: (target to route)
+            val capture = AttachCapture.decode(armed)
             armed = null
-            // The host may have stopped taking files while the picker was open: then the file fails
-            // here and never leaves for the fallback on its own.
-            when (val decision = AttachDecision.onReturn(way, takesFilesNow = target.supportsFilePut)) {
-                is AttachDecision.Send -> model.attach(destination, uris, decision.route)
-                AttachDecision.HostLostCapability -> model.attach(destination, uris, way, refusal = HostLostCapability())
+            if (capture == null || !capture.matches(target.machine.id, target.workspaceID, target.windowID)) {
+                if (uris.isNotEmpty()) localError = R.string.attach_pick_again
+            } else when (val decision = AttachDecision.onReturn(capture.route, takesFilesNow = target.supportsFilePut)) {
+                // The host may have stopped taking files while the picker was open: then the file
+                // fails here and never leaves for the fallback on its own.
+                is AttachDecision.Send -> model.attach(target, uris, decision.route)
+                AttachDecision.HostLostCapability -> model.attach(target, uris, capture.route, refusal = HostLostCapability())
             }
         },
         onUnavailable = { armed = null; localError = it },
     )
     val armedPickers = remember(pickers, target, route) {
+        val arm = { armed = AttachCapture(route, target.machine.id, target.workspaceID, target.windowID).encode() }
         AttachmentPickers(
-            takePhoto = { armed = target to route; pickers.takePhoto() },
-            pickImages = { armed = target to route; pickers.pickImages() },
-            pickFiles = { armed = target to route; pickers.pickFiles() },
+            takePhoto = { arm(); pickers.takePhoto() },
+            pickImages = { arm(); pickers.pickImages() },
+            pickFiles = { arm(); pickers.pickFiles() },
         )
     }
     ModalBottomSheet(

@@ -289,9 +289,12 @@ the file sits where the window's agent runs: `remote_path` when `location` is
 `remote`, or `path` when `location` is `host` and the window's box is known to be
 local. A host copy for an SSH window (`location: "host"` with `remote_error`) or for
 a window whose box kind is unknown is never pasted: the sheet shows why and offers
-"Copiar ruta del equipo". The route (host or fallback) is captured when a picker
-button is tapped; if the host stops advertising `file_put.v1` while the picker is
-open, the attachment fails with its own message and is not sent elsewhere. Pasting appends
+"Copiar ruta del equipo". The route (host or fallback) and the window are captured
+when a picker button is tapped, as saved state that survives a process death; a
+result that returns without its capture or for another window is dropped and the
+reader is asked to pick again, never re-routed with newer values. If the host stops
+advertising `file_put.v1` while the picker is open, the attachment fails with its
+own message and is not sent elsewhere. Pasting appends
 to what is typed, preceded by a space when something was already there, quoted if
 the path carries a space. A host that does not advertise `file_put.v1` gets the
 fallback the reader configured under Ajustes → "Adjuntar desde la terminal" (by
