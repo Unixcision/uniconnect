@@ -98,7 +98,9 @@ class SFTPTransfer:
                 if len(data) >= 8:
                     size, = struct.unpack(">I", data[4:8])
                     detail = data[8:8 + size].decode("utf-8", "replace")
-                raise TransportError("sftp_operation_failed", detail)
+                error = TransportError("sftp_operation_failed", detail)
+                error.status = status  # Numeric SSH_FX_* code, for callers that retry on FAILURE.
+                raise error
         if response != expected:
             raise TransportError("unexpected_sftp_response", str(response))
         return data
@@ -141,6 +143,19 @@ class SFTPTransfer:
                     self._process.kill()
                     self._process.wait()
 
+    @staticmethod
+    def _local(local_path: str | Path) -> Path:
+        local_path = Path(local_path).expanduser().resolve(strict=True)
+        if not local_path.is_file():
+            raise TransportError("upload_not_regular_file")
+        return local_path
+
+    @staticmethod
+    def _directory(remote_directory: str) -> str:
+        if not remote_directory.startswith("/") or "\0" in remote_directory:
+            raise TransportError("invalid_upload_directory")
+        return remote_directory
+
     def run(self, local_path: str | Path, remote_directory: str,
             progress: Callable[[int, int], None] | None = None) -> str:
         """Upload to an existing absolute directory and return the final remote path.
@@ -148,16 +163,35 @@ class SFTPTransfer:
         Each filename contains a random transfer ID, and partial data is renamed
         only after the server acknowledges all bytes and closes the file.
         """
-        local_path = Path(local_path).expanduser().resolve(strict=True)
-        if not local_path.is_file():
-            raise TransportError("upload_not_regular_file")
-        if not remote_directory.startswith("/") or "\0" in remote_directory:
-            raise TransportError("invalid_upload_directory")
-        total = local_path.stat().st_size
+        local_path = self._local(local_path)
+        remote_directory = self._directory(remote_directory)
         identifier = uuid.uuid4().hex[:12]
-        name = identifier + "-" + local_path.name
-        final_path = posixpath.join(remote_directory, name)
-        temporary_path = final_path + ".partial"
+        final_path = posixpath.join(remote_directory, identifier + "-" + local_path.name)
+        return self._upload(local_path, final_path + ".partial", (final_path,), progress)
+
+    def put(self, local_path: str | Path, remote_directory: str, name: str,
+            progress: Callable[[int, int], None] | None = None, *, attempts: int = 100) -> str:
+        """Upload as exactly `name` inside an absolute directory, never overwriting.
+
+        Data lands in a hidden temporary file; the final name is claimed with the
+        non-overwriting SFTP rename, falling back to `name-2`, `name-3`… while the
+        server reports the name as taken. Returns the remote path that was claimed.
+        """
+        local_path = self._local(local_path)
+        remote_directory = self._directory(remote_directory)
+        if not name or name in (".", "..") or "/" in name or "\0" in name:
+            raise TransportError("invalid_upload_name")
+        temporary_path = posixpath.join(remote_directory, "." + uuid.uuid4().hex[:12] + "-" + name + ".partial")
+        stem, dot, extension = name.rpartition(".")
+        if not stem or not extension.isalnum():
+            stem, dot, extension = name, "", ""
+        candidates = [posixpath.join(remote_directory, name)]
+        candidates += [posixpath.join(remote_directory, f"{stem}-{number}{dot}{extension}")
+                       for number in range(2, attempts + 1)]
+        return self._upload(local_path, temporary_path, candidates, progress)
+
+    def _upload(self, local_path: Path, temporary_path: str, final_paths, progress) -> str:
+        total = local_path.stat().st_size
         temporary_created = False
         try:
             if self.cancelled.is_set():
@@ -184,9 +218,18 @@ class SFTPTransfer:
                     if progress:
                         progress(completed, total)
             self._request(4, self._string(handle))
-            self._request(18, self._string(temporary_path) + self._string(final_path))
-            temporary_created = False
-            return final_path
+            for final_path in final_paths:
+                try:
+                    # OpenSSH implements the v3 rename with link+unlink: a taken
+                    # name answers SSH_FX_FAILURE instead of being replaced.
+                    self._request(18, self._string(temporary_path) + self._string(final_path))
+                except TransportError as exc:
+                    if exc.code == "sftp_operation_failed" and getattr(exc, "status", None) == 4:
+                        continue
+                    raise
+                temporary_created = False
+                return final_path
+            raise TransportError("upload_name_conflict")
         except BaseException as exc:
             if temporary_created and self._process and self._process.poll() is None:
                 try:

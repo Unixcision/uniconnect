@@ -289,15 +289,19 @@ class TmuxHistoryBehaviorTests(unittest.TestCase):
                                      self.tmux(socket, "list-keys", "-T", table, "MouseDragEnd1Pane"))
 
 
+SFTP_SERVER = next((path for path in ("/usr/lib/openssh/sftp-server", "/usr/libexec/openssh/sftp-server",
+                                      "/usr/libexec/sftp-server") if Path(path).exists()), None)
+
+
 class LocalSFTPCommand:
     def argv(self, *args, **kwargs):
-        return ["/usr/lib/openssh/sftp-server"]
+        return [SFTP_SERVER]
 
     def environment(self):
         return dict(os.environ)
 
 
-@unittest.skipUnless(Path("/usr/lib/openssh/sftp-server").exists(), "sftp-server unavailable")
+@unittest.skipUnless(SFTP_SERVER, "sftp-server unavailable")
 class SFTPBehaviorTests(unittest.TestCase):
     def test_binary_upload_reports_confirmed_bytes_and_publishes_complete_file(self):
         with tempfile.TemporaryDirectory(prefix="uc-sftp-") as directory:
@@ -329,6 +333,30 @@ class SFTPBehaviorTests(unittest.TestCase):
             self.assertEqual(caught.exception.code, "upload_cancelled")
             self.assertEqual(list(destination.iterdir()), [sentinel])
             self.assertEqual(sentinel.read_text(), "keep me")
+
+    def test_put_claims_exact_name_then_numbered_suffixes_without_overwriting(self):
+        with tempfile.TemporaryDirectory(prefix="uc-sftp-") as directory:
+            destination = Path(directory) / "uniconnect-entrada"
+            destination.mkdir()
+            (destination / "informe.pdf").write_bytes(b"anterior")
+            results = []
+            for payload in (b"%PDF-1", b"%PDF-2"):
+                source = Path(directory) / "informe.pdf"
+                source.write_bytes(payload)
+                results.append(SFTPTransfer(LocalSFTPCommand()).put(source, str(destination), "informe.pdf"))
+            self.assertEqual(results, [str(destination / "informe-2.pdf"), str(destination / "informe-3.pdf")])
+            self.assertEqual((destination / "informe.pdf").read_bytes(), b"anterior")
+            self.assertEqual((destination / "informe-2.pdf").read_bytes(), b"%PDF-1")
+            self.assertEqual((destination / "informe-3.pdf").read_bytes(), b"%PDF-2")
+            self.assertEqual(sorted(p.name for p in destination.iterdir()), ["informe-2.pdf", "informe-3.pdf", "informe.pdf"])
+            self.assertEqual((destination / "informe-3.pdf").stat().st_mode & 0o777, 0o600)
+            with self.assertRaises(TransportError) as caught:
+                SFTPTransfer(LocalSFTPCommand()).put(source, str(destination), "../fuera.pdf")
+            self.assertEqual(caught.exception.code, "invalid_upload_name")
+            with self.assertRaises(TransportError) as caught:
+                SFTPTransfer(LocalSFTPCommand()).put(source, str(destination), "informe.pdf", attempts=3)
+            self.assertEqual(caught.exception.code, "upload_name_conflict")
+            self.assertEqual(sorted(p.name for p in destination.iterdir()), ["informe-2.pdf", "informe-3.pdf", "informe.pdf"])
 
 
 if __name__ == "__main__":
