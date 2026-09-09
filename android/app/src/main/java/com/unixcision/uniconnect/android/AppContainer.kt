@@ -7,12 +7,16 @@ import com.unixcision.uniconnect.android.data.NativeMachineClient
 import com.unixcision.uniconnect.android.data.FramedRpcClient
 import com.unixcision.uniconnect.android.data.StoredMachineRepository
 import com.unixcision.uniconnect.android.data.AndroidNotificationConnections
+import com.unixcision.uniconnect.android.data.ContentReader
+import com.unixcision.uniconnect.android.data.HttpFileSender
 import com.unixcision.uniconnect.android.data.NativeNotificationClient
 import com.unixcision.uniconnect.android.data.StoredNoticeDeliveryRepository
 import com.unixcision.uniconnect.android.data.StoredNoticeNameCatalog
 import com.unixcision.uniconnect.android.data.StoredDraftRepository
 import com.unixcision.uniconnect.android.data.StoredBoxOverridesRepository
 import com.unixcision.uniconnect.android.data.StoredSettingsRepository
+import com.unixcision.uniconnect.android.data.StoredUploadHistoryRepository
+import com.unixcision.uniconnect.android.domain.FileSender
 import com.unixcision.uniconnect.android.domain.NotificationClient
 import com.unixcision.uniconnect.android.domain.NoticeDeliveryRepository
 import com.unixcision.uniconnect.android.domain.NoticeNameCatalog
@@ -21,6 +25,7 @@ import com.unixcision.uniconnect.android.domain.BoxOverridesRepository
 import com.unixcision.uniconnect.android.domain.MachineClient
 import com.unixcision.uniconnect.android.domain.MachineRepository
 import com.unixcision.uniconnect.android.domain.SettingsRepository
+import com.unixcision.uniconnect.android.domain.UploadHistoryRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -41,4 +46,7 @@ class AppContainer(context: Context) {
     val drafts: DraftRepository = StoredDraftRepository(store)
     val boxOverrides: BoxOverridesRepository = StoredBoxOverridesRepository(store)
     val notificationClient: NotificationClient = NativeNotificationClient(rpc)
+    val fileSender: FileSender = HttpFileSender()
+    val uploadHistory: UploadHistoryRepository = StoredUploadHistoryRepository(store)
+    val contentReader = ContentReader(context.contentResolver)
 }

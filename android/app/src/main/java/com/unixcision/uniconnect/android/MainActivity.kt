@@ -25,6 +25,7 @@ import com.unixcision.uniconnect.android.notifications.NoticeCounters
 import java.util.UUID
 import com.unixcision.uniconnect.android.ui.MachinesScreen
 import com.unixcision.uniconnect.android.ui.MachinesViewModel
+import com.unixcision.uniconnect.android.ui.UploadViewModel
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 
 class MainActivity : ComponentActivity() {
@@ -46,12 +47,16 @@ class MainActivity : ComponentActivity() {
         val container = (application as UniConnectApplication).container
         val factory = object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
-                require(modelClass == MachinesViewModel::class.java)
                 @Suppress("UNCHECKED_CAST")
-                return MachinesViewModel(container.machines, container.machineClient, container.notificationConnections, container.settings, container.noticeNames, container.drafts, container.boxOverrides) as T
+                return when (modelClass) {
+                    MachinesViewModel::class.java -> MachinesViewModel(container.machines, container.machineClient, container.notificationConnections, container.settings, container.noticeNames, container.drafts, container.boxOverrides)
+                    UploadViewModel::class.java -> UploadViewModel(container.fileSender, container.settings, container.uploadHistory, container.contentReader)
+                    else -> throw IllegalArgumentException("unknown model ${modelClass.name}")
+                } as T
             }
         }
         model = ViewModelProvider(this, factory)[MachinesViewModel::class.java]
+        val uploads = ViewModelProvider(this, factory)[UploadViewModel::class.java]
         handleNotice(intent)
         setContent {
             // The theme wraps the whole app and follows the stored preference as it changes, so a
@@ -60,7 +65,7 @@ class MainActivity : ComponentActivity() {
             UniTheme(state.settings.designTheme, state.settings.colorMode) {
                 val dark = UniTheme.colors.isDark
                 LaunchedEffect(dark) { applySystemBars(dark) }
-                MachinesScreen(model, ::requestNotifications)
+                MachinesScreen(model, uploads, ::requestNotifications)
             }
         }
     }

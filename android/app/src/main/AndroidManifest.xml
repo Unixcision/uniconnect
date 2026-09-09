@@ -20,6 +20,14 @@
             </intent-filter>
         </activity>
         <receiver android:name=".notifications.NoticeDismissReceiver" android:exported="false" />
+        <!-- Lets a camera app write a photo into this app's cache for "Enviar archivos"; no CAMERA permission is needed for that. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
         <service android:name=".notifications.ConnectedMachineService" android:exported="false" android:foregroundServiceType="connectedDevice" />
     </application>
 </manifest>

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -49,11 +51,11 @@ import com.unixcision.uniconnect.android.ui.components.PillTone
 import com.unixcision.uniconnect.android.ui.components.StatusPill
 import com.unixcision.uniconnect.android.ui.components.themedTone
 
-private enum class Level { LOADING, LIST, MACHINE, TERMINAL }
+private enum class Level { LOADING, LIST, UPLOADS, MACHINE, TERMINAL }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> Unit) {
+fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, onEnableNotifications: (String) -> Unit) {
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.pauseLiveConnection() }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { model.resumeLiveConnection() }
     val state by model.state.collectAsStateWithLifecycle()
@@ -65,11 +67,15 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
     val overrides = machine?.takeIf { connection?.snapshot?.keepsBoxes != true }?.let { state.overrides[it.id] } ?: BoxOverrides()
     var removing by remember { mutableStateOf<Machine?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
-    BackHandler(enabled = machine != null, onBack = model::back)
+    // "Enviar archivos" is a section of the home, not of a machine: opening a machine leaves it.
+    var sendingFiles by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(machine?.id) { if (machine != null) sendingFiles = false }
+    BackHandler(enabled = machine != null || sendingFiles) { if (machine != null) model.back() else sendingFiles = false }
     val level = when {
         state.loading -> Level.LOADING
         window != null -> Level.TERMINAL
         machine != null -> Level.MACHINE
+        sendingFiles -> Level.UPLOADS
         else -> Level.LIST
     }
 
@@ -79,14 +85,15 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)).widthIn(max = 840.dp).align(Alignment.TopCenter)) {
             AppHeader(
                 compact = level == Level.TERMINAL,
-                title = window?.name ?: machine?.name ?: stringResource(R.string.app_name),
+                title = window?.name ?: machine?.name ?: stringResource(if (level == Level.UPLOADS) R.string.upload_title else R.string.app_name),
                 subtitle = when {
                     window != null -> "${machine?.name.orEmpty()} · ${workspace?.name.orEmpty()}"
                     machine != null -> machine.endpoint.displayAddress
+                    level == Level.UPLOADS -> stringResource(R.string.upload_subtitle)
                     else -> stringResource(R.string.home_eyebrow)
                 },
-                showBack = machine != null,
-                onBack = model::back,
+                showBack = machine != null || level == Level.UPLOADS,
+                onBack = { if (machine != null) model.back() else sendingFiles = false },
                 monogramSeed = machine?.name,
                 pill = when {
                     machine == null -> null
@@ -97,6 +104,9 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
             ) {
                 when (level) {
                     Level.LIST -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { sendingFiles = true }) {
+                            Icon(Icons.Rounded.CloudUpload, stringResource(R.string.upload_title), tint = UniTheme.colors.muted)
+                        }
                         IconButton(onClick = model::showSettings) {
                             Icon(Icons.Rounded.Settings, stringResource(R.string.settings), tint = UniTheme.colors.muted)
                         }
@@ -138,6 +148,7 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
             ) { target ->
                 when (target) {
                     Level.LOADING -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingIndicator(color = UniTheme.colors.accent) }
+                    Level.UPLOADS -> UploadScreen(uploads)
                     Level.TERMINAL -> key(machine?.id, workspace?.id, window?.id) {
                         TerminalScreen(
                             snapshot = state.terminal, loading = state.terminalLoading, error = state.terminalError, errorDetail = state.terminalErrorDetail,
@@ -170,7 +181,7 @@ fun MachinesScreen(model: MachinesViewModel, onEnableNotifications: (String) -> 
                     Level.LIST -> PullToRefreshBox(
                         isRefreshing = state.refreshing,
                         onRefresh = { model.refreshMachineStates(force = true) },
-                    ) { MachineList(state.machines, state.connections, model::showAdd, model::selectMachine) }
+                    ) { MachineList(state.machines, state.connections, model::showAdd, model::selectMachine, onUploads = { sendingFiles = true }) }
                 }
             }
         }
@@ -221,7 +232,7 @@ private fun AppHeader(
 }
 
 @Composable
-private fun MachineList(machines: List<Machine>, connections: Map<String, MachinesViewModel.Connection>, onAdd: () -> Unit, onSelect: (String) -> Unit) {
+private fun MachineList(machines: List<Machine>, connections: Map<String, MachinesViewModel.Connection>, onAdd: () -> Unit, onSelect: (String) -> Unit, onUploads: () -> Unit) {
     val spacing = UniTheme.spacing
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = spacing.page, end = spacing.page, top = 12.dp, bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(spacing.gap)) {
         item {
@@ -242,6 +253,21 @@ private fun MachineList(machines: List<Machine>, connections: Map<String, Machin
         }
         if (machines.isNotEmpty()) item {
             Column(verticalArrangement = Arrangement.spacedBy(UniTheme.layout.rowGap(spacing))) { machines.forEach { machine -> key(machine.id) { MachineRow(machine, connections[machine.id]) { onSelect(machine.id) } } } }
+        }
+        item {
+            // The one section that is not a machine: files to a link, from the home as well as the bar.
+            GlassCard(Modifier.fillMaxWidth().padding(top = 4.dp), onClick = onUploads, style = UniTheme.layout.rowsAs, accent = UniTheme.colors.accent) {
+                Row(Modifier.fillMaxWidth().padding(UniTheme.layout.cardPadding), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(44.dp).background(UniTheme.colors.accentSoft, UniTheme.shapes.chip), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.CloudUpload, null, Modifier.size(22.dp), tint = UniTheme.colors.accent)
+                    }
+                    Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+                        Text(stringResource(R.string.upload_title), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(stringResource(R.string.upload_home_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = UniTheme.colors.muted)
+                }
+            }
         }
         item {
             Row(Modifier.padding(top = 12.dp, start = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {

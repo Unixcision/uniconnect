@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the photos a camera app writes for "Enviar archivos"; nothing else of the app is shared. -->
+<paths>
+    <cache-path name="photos" path="photos/" />
+</paths>
