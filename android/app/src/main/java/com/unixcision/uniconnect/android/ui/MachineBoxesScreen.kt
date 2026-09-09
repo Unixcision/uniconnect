@@ -84,17 +84,23 @@ fun MachineBoxesScreen(
     // A lazy row keeps its scroll anchored to the first visible key, so a tile that jumps to the
     // front would slide out of view: after a change, the row scrolls to where the tile went.
     val workspaceRow = rememberLazyListState()
-    var reveal by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(reveal, workspaces) {
-        val id = reveal ?: return@LaunchedEffect
-        val index = workspaces.indexOfFirst { it.id == id }
+    // The tile to show and the order the row had when it was asked for: a host answers later
+    // than a local change, so the scroll waits until the order has actually moved.
+    var reveal by remember { mutableStateOf<Pair<String, List<String>>?>(null) }
+    val order = workspaces.map { it.id }
+    fun revealLater(id: String) { reveal = id to order }
+    LaunchedEffect(reveal, order) {
+        val (id, before) = reveal ?: return@LaunchedEffect
+        if (order == before) return@LaunchedEffect
+        val index = order.indexOf(id)
         // Near the start the whole head of the row fits, so show it from the first tile.
-        if (index >= 0) { workspaceRow.animateScrollToItem(if (index < 3) 0 else index - 1); reveal = null }
+        if (index >= 0) workspaceRow.animateScrollToItem(if (index < 3) 0 else index - 1)
+        reveal = null
     }
     heldWorkspace?.let { held ->
         BoxActionsSheet(held.name, R.string.box_actions_workspace, held.isPinned || held.id in overrides.pinnedWorkspaces,
-            onTogglePin = { reveal = held.id; onToggleWorkspacePin(held.id) }, onMoveTop = { reveal = held.id; onMoveWorkspace(held.id, Int.MIN_VALUE) },
-            onMoveUp = { reveal = held.id; onMoveWorkspace(held.id, -1) }, onMoveDown = { reveal = held.id; onMoveWorkspace(held.id, 1) }, onDismiss = { heldWorkspace = null })
+            onTogglePin = { revealLater(held.id); onToggleWorkspacePin(held.id) }, onMoveTop = { revealLater(held.id); onMoveWorkspace(held.id, Int.MIN_VALUE) },
+            onMoveUp = { revealLater(held.id); onMoveWorkspace(held.id, -1) }, onMoveDown = { revealLater(held.id); onMoveWorkspace(held.id, 1) }, onDismiss = { heldWorkspace = null })
     }
     heldWindow?.let { held ->
         BoxActionsSheet(held.name, R.string.box_actions_window, held.isPinned || held.id in overrides.pinnedWindows,
@@ -151,7 +157,7 @@ fun MachineBoxesScreen(
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(selected.name, Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             KindBadge(selected)
-                            IconButton(onClick = { reveal = selected.id; onToggleWorkspacePin(selected.id) }, Modifier.size(36.dp)) {
+                            IconButton(onClick = { revealLater(selected.id); onToggleWorkspacePin(selected.id) }, Modifier.size(36.dp)) {
                                 Icon(if (selectedPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder, stringResource(if (selectedPinned) R.string.box_unpin else R.string.box_pin),
                                     tint = if (selectedPinned) Brand.Amber else Brand.Muted)
                             }
