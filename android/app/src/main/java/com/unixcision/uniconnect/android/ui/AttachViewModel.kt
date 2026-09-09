@@ -135,7 +135,7 @@ class AttachViewModel(
                     val outcome = filePut.withSession(transfer.target.machine) { session ->
                         FilePutTransfer.run(session, transfer.target.workspaceID, transfer.target.windowID, transfer.name, transfer.size, reader.mimeType(transfer.uri), { reader.open(transfer.uri) }, progress)
                     }
-                    val pasteable = AttachPaste.shouldPaste(outcome.location, transfer.target.isSSH)
+                    val pasteable = AttachPaste.shouldPaste(outcome.location, transfer.target.isSSH, outcome.remoteError)
                     update(transfer.id) { it.copy(status = Status.DONE, sent = transfer.size, reference = outcome.pastePath, pasteable = pasteable, remoteError = outcome.remoteError) }
                 }
                 AttachRoute.EXTERNAL -> {

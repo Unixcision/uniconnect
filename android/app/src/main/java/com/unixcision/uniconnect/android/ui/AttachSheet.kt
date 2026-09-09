@@ -79,7 +79,20 @@ fun AttachButton(model: AttachViewModel, target: AttachTarget, draft: String, on
 private fun AttachSheet(model: AttachViewModel, target: AttachTarget, transfers: List<AttachViewModel.Transfer>, service: UploadService, onDismiss: () -> Unit) {
     var localError by remember { mutableStateOf<Int?>(null) }
     val route = AttachRoute.forHost(takesFiles = target.supportsFilePut)
-    val pickers = rememberAttachmentPickers(onPicked = { uris -> model.attach(target, uris, route) }, onUnavailable = { localError = it })
+    // What the reader saw when tapping is what happens when the picker returns, even if the
+    // snapshot changed meanwhile; only after process death do the current values stand in.
+    var armed by remember { mutableStateOf<Pair<AttachTarget, AttachRoute>?>(null) }
+    val pickers = rememberAttachmentPickers(
+        onPicked = { uris -> val (destination, way) = armed ?: (target to route); armed = null; model.attach(destination, uris, way) },
+        onUnavailable = { armed = null; localError = it },
+    )
+    val armedPickers = remember(pickers, target, route) {
+        AttachmentPickers(
+            takePhoto = { armed = target to route; pickers.takePhoto() },
+            pickImages = { armed = target to route; pickers.pickImages() },
+            pickFiles = { armed = target to route; pickers.pickFiles() },
+        )
+    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -95,7 +108,7 @@ private fun AttachSheet(model: AttachViewModel, target: AttachTarget, transfers:
             )
             // The one line the reader sees before tapping when the file will leave for the fallback service.
             if (!target.supportsFilePut) Text(stringResource(R.string.attach_fallback_line, target.machine.name, service.domain), color = UniTheme.colors.warning, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-            PickerTiles(pickers)
+            PickerTiles(armedPickers)
             localError?.let { ErrorNotice(it) { localError = null } }
             if (transfers.isNotEmpty()) {
                 SectionLabel(stringResource(R.string.attach_transfers))

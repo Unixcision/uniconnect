@@ -30,7 +30,8 @@ class AttachPasteTest {
         assertTrue(AttachPaste.shouldPaste(FilePutLocation.REMOTE, windowIsSSH = true))
         assertTrue(AttachPaste.shouldPaste(FilePutLocation.REMOTE, windowIsSSH = false))
         assertTrue(AttachPaste.shouldPaste(FilePutLocation.HOST, windowIsSSH = false))
-        assertTrue(AttachPaste.shouldPaste(FilePutLocation.HOST, windowIsSSH = null))
+        assertTrue("unknown kind, no hop attempted: the host treated the box as local", AttachPaste.shouldPaste(FilePutLocation.HOST, windowIsSSH = null))
+        assertFalse("unknown kind, but the host says its hop failed: not where the agent runs", AttachPaste.shouldPaste(FilePutLocation.HOST, windowIsSSH = null, remoteError = "scp: Connection refused"))
         assertFalse("a host copy is not where an SSH window's agent runs", AttachPaste.shouldPaste(FilePutLocation.HOST, windowIsSSH = true))
     }
 

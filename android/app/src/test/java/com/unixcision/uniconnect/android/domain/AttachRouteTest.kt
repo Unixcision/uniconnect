@@ -34,10 +34,11 @@ class AttachRouteTest {
     fun aFailedSshHopKeepsTheHostPathForCopyingAndDoesNotPasteIntoTheSshWindow() {
         val outcome = FilePutOutcome("/Users/d/UniConnect/Entrada/20260909/a.png", FilePutLocation.HOST, remotePath = null, remoteError = "scp: Connection refused")
         assertEquals("/Users/d/UniConnect/Entrada/20260909/a.png", outcome.pastePath)
-        assertFalse(AttachPaste.shouldPaste(outcome.location, windowIsSSH = true))
+        assertFalse(AttachPaste.shouldPaste(outcome.location, windowIsSSH = true, outcome.remoteError))
+        assertFalse("even with the box kind unknown, the host's failed hop keeps it off the draft", AttachPaste.shouldPaste(outcome.location, windowIsSSH = null, outcome.remoteError))
         // The draft is what it was: nothing appended.
         val draft = "mira esto"
-        val pasted = if (AttachPaste.shouldPaste(outcome.location, windowIsSSH = true)) AttachPaste.pasteInto(draft, outcome.pastePath) else draft
+        val pasted = if (AttachPaste.shouldPaste(outcome.location, windowIsSSH = true, outcome.remoteError)) AttachPaste.pasteInto(draft, outcome.pastePath) else draft
         assertEquals("mira esto", pasted)
     }
 
