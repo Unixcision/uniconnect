@@ -43,12 +43,17 @@ TURN_SECONDS = 5.0
 MAX_JOBS = 2
 MAX_JOBS_PER_OWNER = 1
 GRACE_SECONDS = 30.0
-LOCK_NAME = ".uc-trabajo"
+# El cerrojo es HERMANO del directorio de trabajo, no vive dentro: se crea y se toma
+# antes de que el directorio exista, así que nadie llega a ver un trabajo sin dueño.
+LOCK_PREFIX = ".uc-trabajo-"
 MAX_THREADS = 8
 WAV_PREFIX_BYTES = 65536
 WAV_BYTES_PER_SECOND = 16000 * 2  # PCM 16 bits mono a 16 kHz, que es lo que whisper.cpp lee.
 
 _LANGUAGE = re.compile(r"[a-z]{2}")
+# Lo que este módulo crea y por tanto puede barrer: `<pid>-<azar>`. Lo que no encaje
+# aquí no es nuestro y se conserva, aunque lleve meses en la carpeta.
+_OURS = re.compile(r"\d+-.+")
 _TIMESTAMP = re.compile(r"^\[[0-9:.,\s\->]+\]\s*")
 _BRACKETS = re.compile(r"^\[(.*)\]$")
 _TOKEN = re.compile(r"_[a-z]{2,4}_[0-9]*")
@@ -291,13 +296,15 @@ class TranscriptionEngine:
         permisos y se repite; lo que sobreviva a eso queda anotado para que el
         barrido lo reintente, nunca se da por borrado.
         """
-        self.unlock(directory)
         for attempt in range(2):
             try:
                 self.remove(directory)
             except OSError:
                 pass
             if not directory.exists():
+                # El cerrojo se suelta cuando el trabajo ya no está, nunca antes.
+                self.unlock(directory)
+                self.unlink(self.lock_of(directory))
                 with self.lock:
                     self.active.discard(directory)
                     if directory in self.undeleted:
@@ -305,6 +312,10 @@ class TranscriptionEngine:
                 return True
             if attempt == 0:
                 self.reopen(directory)
+        # No se pudo borrar: el trabajo ha terminado igual, así que se suelta el
+        # cerrojo para que el barrido siguiente pueda reclamar el resto. Su fichero
+        # se conserva, que es lo que permite acreditarlo entonces.
+        self.unlock(directory)
         with self.lock:
             self.active.discard(directory)
             if directory not in self.undeleted:
@@ -334,66 +345,114 @@ class TranscriptionEngine:
         except OSError:
             pass
 
-    def claimed(self, directory: Path) -> bool:
-        """`True` si alguien está trabajando ahí ahora mismo, acreditado por su cerrojo.
+    def lock_of(self, directory: Path) -> Path:
+        """El cerrojo hermano de un directorio `<pid>-<azar>`."""
+        return directory.parent / (LOCK_PREFIX + directory.name.split("-", 1)[-1])
+
+    def acquire(self, directory: Path) -> int | None:
+        """Toma el cerrojo de un trabajo ajeno; devuelve su descriptor o `None` si tiene dueño.
 
         La antigüedad no prueba abandono: una suspensión del equipo, un salto del
         reloj o un trabajo atascado dejan un directorio viejo con su dueño vivo. Lo
-        que sí lo prueba es que el `flock` del trabajo se pueda tomar, porque el
-        núcleo lo suelta cuando el proceso dueño muere, se cuelgue o no.
+        que sí lo prueba es que el `flock` se pueda tomar, porque el núcleo lo suelta
+        cuando el proceso dueño muere, se cuelgue o no. El descriptor se devuelve
+        para que quien vaya a borrar mantenga la exclusión hasta el final: soltarla
+        antes abriría justo la carrera que el cerrojo existe para cerrar.
         """
-        if not directory.is_dir():
-            return False  # Un archivo suelto no es un trabajo: no hay nada que respetar.
         try:
-            descriptor = os.open(directory / LOCK_NAME, os.O_RDWR)
-        except FileNotFoundError:
-            return False
+            descriptor = os.open(self.lock_of(directory), os.O_RDWR)
         except OSError:
-            return True  # No se puede comprobar: se respeta, que es lo barato.
+            return None  # Sin cerrojo legible no se acredita nada: no se toca.
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
-            return False
+            return descriptor
         except OSError:
-            return True
-        finally:
             os.close(descriptor)
+            return None
+
+    def claimed(self, directory: Path) -> bool:
+        """`True` si alguien está trabajando ahí ahora mismo. Solo para consultar."""
+        if not directory.is_dir() or not self.lock_of(directory).exists():
+            return False
+        descriptor = self.acquire(directory)
+        if descriptor is None:
+            return True
+        os.close(descriptor)
+        return False
 
     def sweep_orphans(self) -> int:
         """Borra al arrancar los trabajos que dejó un proceso muerto, y solo esos.
 
         El `finally` de cada transcripción no cubre que el proceso desaparezca a
-        media faena, así que el arranque limpia lo que quedó. Se borra únicamente lo
-        que no tiene dueño: el cerrojo libre lo acredita. Un directorio sin cerrojo
-        (versión anterior, o uno que acaba de nacer en otra instancia) se respeta
-        hasta que pasa `grace_seconds`, para no pisar a nadie por una carrera de
-        milisegundos.
+        media faena, así que el arranque limpia lo que quedó. Un directorio con
+        cerrojo se borra si y solo si el cerrojo se puede tomar, y el borrado ocurre
+        con la exclusión en la mano de principio a fin. Uno sin cerrojo no está
+        acreditado como nuestro: solo se borra si lleva nuestro patrón de nombre (un
+        temporal de una versión anterior) y ya ha pasado `grace_seconds`. Cualquier
+        otra cosa que haya en la carpeta se conserva, que borrar lo ajeno no es tarea
+        nuestra.
         """
         removed, now = 0, time.time()
         with self.lock:
             active, pending = set(self.active), list(self.undeleted)
         for directory in pending:
-            if directory not in active and not self.claimed(directory) and self.discard(directory):
+            if directory not in active and self.sweep(directory, now):
                 removed += 1
         try:
             entries = list(self.work_directory.iterdir())
         except OSError:
             return removed
         for entry in entries:
-            if entry in active or self.claimed(entry):
-                continue
-            try:
-                young = now - entry.stat().st_mtime < self.grace_seconds
-            except OSError:
-                continue
-            if young and not (entry / LOCK_NAME).exists():
-                continue
-            if entry.is_dir():
-                self.discard(entry)
-            else:
-                self.unlink(entry)
-            removed += 1
+            if not entry.name.startswith(LOCK_PREFIX) and entry not in active and entry not in pending:
+                if self.sweep(entry, now):
+                    removed += 1
+        for entry in entries:
+            if entry.name.startswith(LOCK_PREFIX) and self.sweep_lock(entry):
+                removed += 1
         return removed
+
+    def sweep(self, entry: Path, now: float) -> bool:
+        """Borra una entrada suelta de la carpeta si de verdad es un huérfano nuestro."""
+        if entry.is_dir() and self.lock_of(entry).exists():
+            descriptor = self.acquire(entry)
+            if descriptor is None:
+                return False  # Tiene dueño, o no se puede comprobar.
+            try:
+                return self.discard(entry)  # Con el cerrojo puesto: nadie entra en medio.
+            finally:
+                os.close(descriptor)
+        if not _OURS.fullmatch(entry.name):
+            return False  # Ni cerrojo ni nuestro nombre: no se acredita, no se borra.
+        try:
+            if now - entry.stat().st_mtime < self.grace_seconds:
+                return False  # Puede estar naciendo en otra instancia.
+        except OSError:
+            return False
+        if entry.is_dir():
+            return self.discard(entry)
+        self.unlink(entry)
+        return not entry.exists()
+
+    def sweep_lock(self, lock: Path) -> bool:
+        """Borra un cerrojo que ya no guarda a nadie: sin dueño y sin trabajo que proteger."""
+        token = lock.name[len(LOCK_PREFIX):]
+        # Ojo: el glob de pathlib también devuelve los ocultos, y el propio cerrojo
+        # termina en el mismo token, así que solo cuenta un directorio de trabajo.
+        if any(item.is_dir() for item in self.work_directory.glob(f"*-{token}")):
+            return False  # Su trabajo sigue ahí: el cerrojo hace falta.
+        try:
+            descriptor = os.open(lock, os.O_RDWR)
+        except OSError:
+            return False
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return False  # Alguien lo tiene tomado: está a punto de crear su trabajo.
+        else:
+            self.unlink(lock)
+            return not lock.exists()
+        finally:
+            os.close(descriptor)
 
     @staticmethod
     def unlink(path: Path) -> None:
@@ -538,14 +597,19 @@ class TranscriptionEngine:
                 "took_ms": int((self.clock() - started) * 1000)}
 
     def workspace(self) -> Path:
-        """Directorio 0700 propio de esta llamada, con su cerrojo y el pid en el nombre."""
+        """Directorio 0700 propio de esta llamada, con su cerrojo tomado de antemano.
+
+        El cerrojo se crea y se adquiere primero, y el directorio de trabajo nace
+        después con el nombre que lo emparienta. Así no existe el instante en que un
+        trabajo es visible sin dueño: cuando el directorio aparece, su cerrojo lleva
+        ya un rato en la mano de este proceso.
+        """
         try:
             self.work_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-            directory = Path(tempfile.mkdtemp(prefix=f"{os.getpid()}-", dir=self.work_directory))
-            # El cerrojo se toma antes de escribir nada: mientras este proceso viva,
-            # ningún barrido (ni de otra instancia) puede llevarse este audio.
-            descriptor = os.open(directory / LOCK_NAME, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+            descriptor, lock = tempfile.mkstemp(prefix=LOCK_PREFIX, dir=self.work_directory)
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            directory = self.work_directory / f"{os.getpid()}-{Path(lock).name[len(LOCK_PREFIX):]}"
+            os.mkdir(directory, 0o700)
         except OSError as error:
             raise RPCError("io_failed", "No se pudo preparar la carpeta de trabajo del equipo") from error
         with self.lock:

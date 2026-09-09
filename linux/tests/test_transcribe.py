@@ -15,7 +15,7 @@ from pathlib import Path
 
 from uniconnect.mobile_protocol import MAX_FRAME, RPCError
 from uniconnect.mobile_rpc import MobileRPC
-from uniconnect.transcribe import (CLEANUP_MARGIN, LOCK_NAME, CancelledTranscription, Engine,
+from uniconnect.transcribe import (CLEANUP_MARGIN, LOCK_PREFIX, CancelledTranscription, Engine,
                                    SubprocessRunner, TranscriptionEngine, clean_transcript,
                                    is_marker, read_wav_format)
 
@@ -110,10 +110,11 @@ class EngineTestCase(unittest.TestCase):
     def snapshot_modes(self):
         """Permisos de todo lo que hay en el temporal mientras el proceso corre."""
         return {item.name: os.stat(item).st_mode & 0o777
-                for parent in self.work.iterdir() for item in parent.iterdir()}
+                for parent in self.work.iterdir() if parent.is_dir() for item in parent.iterdir()}
 
     def leftovers(self):
-        return sorted(item.name for item in self.work.iterdir())
+        """Lo que queda en la carpeta de trabajo, sin contar cerrojos sueltos."""
+        return sorted(item.name for item in self.work.iterdir() if not item.name.startswith(LOCK_PREFIX))
 
     def engine(self, **overrides):
         options = dict(model_directory=self.models, threads=3, runner=self.runner,
@@ -619,12 +620,13 @@ class OrphanTests(EngineTestCase):
         super().tearDown()
 
     def make(self, name, age=0.0, held=False, lock=True):
-        """Un directorio de trabajo como los de verdad, con su cerrojo tomado o libre."""
+        """Un directorio de trabajo como los de verdad, con su cerrojo hermano."""
         directory = self.work / name
         directory.mkdir()
         (directory / "entrada.m4a").write_bytes(b"audio")
         if lock:
-            descriptor = os.open(directory / LOCK_NAME, os.O_RDWR | os.O_CREAT, 0o600)
+            token = name.split("-", 1)[-1]
+            descriptor = os.open(self.work / (LOCK_PREFIX + token), os.O_RDWR | os.O_CREAT, 0o600)
             if held:  # Un dueño vivo mantiene el cerrojo abierto mientras trabaja.
                 fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 self.holders.append(descriptor)
@@ -699,6 +701,73 @@ class OrphanTests(EngineTestCase):
         self.assertEqual(self.leftovers(), [])
         self.assertEqual(engine.undeleted, [])
 
+    def test_creating_and_sweeping_at_the_same_time_never_loses_a_job(self):
+        """La carrera de verdad: una instancia crea trabajos mientras otra barre sin piedad."""
+        maker, sweeper = self.engine(), self.engine(grace_seconds=0.0)  # El peor caso posible.
+        lost, failed, done = [], [], []
+        def create():
+            try:
+                for _ in range(150):
+                    directory = maker.workspace()
+                    audio = directory / "entrada.m4a"
+                    audio.write_bytes(b"audio")
+                    if not audio.exists() or audio.read_bytes() != b"audio":
+                        lost.append(directory)
+                    maker.discard(directory)
+            except Exception as error:  # Un trabajo que ni siquiera puede arrancar tambien cuenta.
+                failed.append(error)
+            finally:
+                done.append(True)
+        def sweep():
+            while not done:
+                sweeper.sweep_orphans()
+        workers = [threading.Thread(target=create), threading.Thread(target=sweep)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=30)
+        self.assertEqual((lost, failed), ([], []))
+        self.assertEqual(self.leftovers(), [])
+
+    def test_a_lock_without_its_job_goes_but_one_being_taken_stays(self):
+        engine = self.engine(grace_seconds=0.0)
+        orphan = self.work / (LOCK_PREFIX + "sinduenyo")
+        orphan.write_bytes(b"")
+        taken = self.work / (LOCK_PREFIX + "naciendo")
+        descriptor = os.open(taken, os.O_RDWR | os.O_CREAT, 0o600)
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        self.holders.append(descriptor)
+        held = self.make("777-convivo", held=True)
+        self.assertEqual(engine.sweep_orphans(), 1)
+        self.assertFalse(orphan.exists())
+        self.assertTrue(taken.exists())  # Su trabajo esta a punto de nacer.
+        self.assertTrue(held.exists())
+        self.assertTrue((self.work / (LOCK_PREFIX + "convivo")).exists())
+
+    def test_what_is_not_ours_is_left_alone_however_old(self):
+        engine = self.engine(grace_seconds=0.0)
+        strangers = []
+        for name in ("descargas", "informe.txt", "sin-pid-delante", ".oculto"):
+            item = self.work / name
+            item.mkdir() if not name.endswith(".txt") else item.write_bytes(b"x")
+            os.utime(item, (0, 0))
+            strangers.append(item)
+        self.assertEqual(engine.sweep_orphans(), 0)
+        for item in strangers:
+            self.assertTrue(item.exists(), item.name)
+
+    def test_the_count_only_includes_what_was_really_deleted(self):
+        def stubborn(directory):
+            raise OSError("no se puede borrar")
+        engine = self.engine(remove=stubborn, grace_seconds=0.0)
+        self.make("999999-uno")
+        self.make("999999-dos")
+        self.assertEqual(engine.sweep_orphans(), 0)  # Ninguno se fue: ninguno se cuenta.
+        self.assertEqual(len(self.leftovers()), 2)
+        engine.remove = shutil.rmtree
+        self.assertEqual(engine.sweep_orphans(), 2)
+        self.assertEqual(self.leftovers(), [])
+
     def test_a_live_transcription_is_not_swept_by_another_instance(self):
         engine, other, seen = self.engine(), self.engine(), []
         def sweeping(argv, timeout):
@@ -716,15 +785,15 @@ class PrivacyTests(EngineTestCase):
     def test_the_audio_is_private_while_it_exists_and_is_deleted_afterwards(self):
         result = self.transcribe()
         self.assertEqual(self.leftovers(), [])
-        self.assertEqual(self.runner.calls[0].modes, {"entrada.m4a": 0o600, LOCK_NAME: 0o600})
-        self.assertEqual(self.runner.calls[1].modes,
-                         {"entrada.m4a": 0o600, "audio16k.wav": 0o600, LOCK_NAME: 0o600})
+        self.assertEqual(self.runner.calls[0].modes, {"entrada.m4a": 0o600})
+        self.assertEqual(self.runner.calls[1].modes, {"entrada.m4a": 0o600, "audio16k.wav": 0o600})
         self.assertNotIn("audio", result)
 
     def test_the_temporary_directory_is_private_and_removed_on_every_path(self):
         seen = []
         def peek(argv, timeout):
-            seen.extend((item.name, item.stat().st_mode & 0o777) for item in self.work.iterdir())
+            seen.extend((item.name, item.stat().st_mode & 0o777)
+                        for item in self.work.iterdir() if item.is_dir())
             return Result(returncode=1)
         self.runner.handlers["ffmpeg"] = peek
         self.assertEqual(self.code(), "io_failed")

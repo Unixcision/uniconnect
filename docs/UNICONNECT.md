@@ -516,9 +516,9 @@ phone fall back to its own on-device dictation; nothing is ever sent elsewhere.
   75 s counted from the moment the request reaches its RPC, with the tail of it
   reserved for killing the child and cleaning up.
 - Privacy: the audio is written to a private temporary file and deleted on every
-  exit path, success or failure; what a crash leaves behind is deleted at the next
-  start. Neither the audio nor the transcript is written to any log, kept on disk
-  or included in an error message.
+  exit path, success or failure. A deletion that the filesystem refuses, and
+  whatever a crash leaves behind, is retried at the next start. Neither the audio
+  nor the transcript is written to any log or included in an error message.
 
 Host side on Linux (2026-09-09, `linux/uniconnect/transcribe.py`, routed by
 `mobile_rpc.py`, swept at start by `mobile_desktop.py`):
@@ -584,24 +584,30 @@ Host side on Linux (2026-09-09, `linux/uniconnect/transcribe.py`, routed by
   `<pid>-<random>` under `$XDG_CACHE_HOME/uniconnect/transcribe`
   (`~/.cache/uniconnect/transcribe`); the clip is written with `O_EXCL|O_NOFOLLOW`
   and mode 0600 and the converted WAV is chmod-ed to 0600 too. The directory is
-  removed in a `finally`, so success, engine failure, timeout and cancellation all
-  leave nothing behind, but a `finally` cannot survive a killed process:
+  removed in a `finally` on success, engine failure, timeout and cancellation
+  alike, and the deletion is verified rather than assumed:
+  `rmtree(ignore_errors=True)` can report success with the audio still on disk, so
+  the directory is checked afterwards and retried with the permissions reopened. A
+  deletion the filesystem still refuses leaves the audio there; the engine records
+  that directory instead of pretending otherwise, and the next sweep retries it.
+- **Ownership and the sweep.** A `finally` cannot survive a killed process, so
   `TranscriptionEngine.sweep_orphans()`, called from `MobileDesktop.__init__`,
   deletes at start the work directories that have no owner. Ownership is proved by
-  a `flock` on a `.uc-trabajo` file that the job takes before writing anything and
-  holds until it is done: the kernel releases it when the owning process dies,
-  however it dies, so a lock that can be taken is an abandoned directory. Age
-  proves nothing on its own (a suspended machine, a clock jump or a stuck job all
-  leave an old directory with a live owner), so it is only used for a directory
-  that carries no lock at all, which is respected until it is 30 s old in case
-  another instance is in the middle of creating it. That, plus skipping the
-  directories this instance is using, is what makes the sweep safe while another
-  job or another UniConnect instance is transcribing. The deletion is verified
-  rather than assumed: `rmtree(ignore_errors=True)` can report success with the
-  audio still on disk, so the directory is checked afterwards, retried with the
-  permissions reopened, and recorded for the next sweep if it still survives. No
-  log line, message or exception carries the audio or the text: the engine's own
-  stderr is never forwarded to the phone.
+  a `flock` on a sibling `.uc-trabajo-<token>` file, which the job creates and
+  takes **before** its work directory exists and holds until it is done, so no
+  sweep ever sees a published directory without an owner; the kernel releases the
+  lock when the owning process dies, however it dies, so a lock that can be taken
+  marks an abandoned directory. The sweep holds that lock from the check through
+  the deletion, never releasing it in between, and a lock left without a work
+  directory is removed the same way. Age proves nothing on its own (a suspended
+  machine, a clock jump or a stuck job all leave an old directory with a live
+  owner), so it is used only for a directory that carries no lock at all, and only
+  when the name follows this module's own `<pid>-<random>` pattern: anything else
+  in that folder is someone else's and is left alone however old it is. That, plus
+  skipping the directories this instance is using, is what makes the sweep safe
+  while another job or another UniConnect instance is transcribing. No log line,
+  message or exception carries the audio or the text: the engine's own stderr is
+  never forwarded to the phone.
 - **Transcript text.** Only whisper's own non-speech markers are dropped
   (`[BLANK_AUDIO]`, `[Music]`, `[Applause]`, `[_TT_…]` and the like, matched
   against a known list). A bracketed line the reader actually dictated, such as
