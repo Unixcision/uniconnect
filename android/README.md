@@ -124,9 +124,28 @@ UniConnect: el móvil habla directamente con el servicio.
   con copiar, compartir y borrar. Copiar usa el portapapeles del sistema; compartir,
   `ACTION_SEND`.
 - Pruebas: extracción del enlace en los tres formatos, saneado del nombre, URL por estilo,
-  persistencia de servicio e historial, y `HttpFileSender` contra un `HttpServer` local en
+  persistencia de servicio e historial, y `HttpFileSender` contra un servidor HTTP local en
   la JVM para los tres estilos, progreso, rechazo, respuesta sin enlace, host caído y
   archivo ilegible. No se ha probado contra los servicios reales desde la app.
+
+### Adjuntar desde la terminal (file_put.v1)
+
+En la barra de la ventana abierta (terminal real y espejo) hay un clip que abre una hoja
+rápida «Adjuntar» con las mismas tres entradas. Si el host anuncia `file_put.v1` en
+`capabilities`, el archivo viaja por la conexión privada móvil → host en trozos
+(`mobile.file.begin/chunk/commit/abort`, trozos base64 de como mucho 1 MiB, SHA-256 al
+cerrar; contrato completo en `docs/UNICONNECT.md`, apartado *File put*) y el host devuelve
+la ruta donde lo ha dejado (o la ruta remota si ha podido copiarlo por scp a la caja SSH).
+Esa ruta se pega al instante en la cajita del chat, con un espacio delante si ya había
+texto y entre comillas si lleva espacios, y se avisa «Ruta pegada en la cajita»; un
+`remote_error` se muestra pero se pega igualmente la ruta del equipo. Si el host no anuncia
+la capacidad, la hoja lo dice y el archivo va al servicio de «Enviar archivos», pegando el
+enlace. `domain/FilePutTransfer` (puro) trocea, calcula el SHA-256 y aborta en el host si
+algo falla; `data/NativeFilePutClient` habla el RPC sobre una sesión framed abierta para
+toda la transferencia, con plazos de 60 s por trozo y 120 s para el commit (el scp puede
+tardar). Los adjuntos van en secuencia y se quedan en la hoja con su motivo si fallan.
+Probado en la JVM (troceado, sha256, índices, abort, pegado y cliente RPC contra una sesión
+falsa); no probado contra un host real ni en el Pixel.
 
 ## Arquitectura
 

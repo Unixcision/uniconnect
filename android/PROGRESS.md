@@ -25,6 +25,12 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
   sistema para el resto. Protocolos según lo medido el 9 de septiembre. Tests JVM incluido
   `HttpFileSender` contra un `HttpServer` local; no probado contra los servicios reales ni
   instalado en el Pixel.
+- Adjuntar desde la terminal (2026-09-09, contrato `file_put.v1`): clip en la barra de la
+  ventana abierta, hoja rápida con foto/imágenes/archivos, transferencia por trozos base64
+  ≤ 1 MiB con SHA-256 por la sesión RPC, ruta (remota si el host la da) pegada al instante
+  en la cajita; sin capacidad, cae al servicio de «Enviar archivos» y pega el enlace.
+  Tests JVM de troceado, pegado y cliente RPC contra una sesión falsa. Mac y Linux aún no
+  implementan el host; no probado contra ninguno ni en el Pixel.
 
 ## En curso
 

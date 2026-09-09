@@ -100,10 +100,17 @@ never calls these RPCs: it keeps favourites and order locally per machine and sa
 once, and switches to the RPC path on its own when the host starts advertising it.
 "Sync" means every client of one host sees the same; macOS and Linux are separate
 installations with separate boxes and nothing is merged between them. Status: Android
-done; macOS (panel pin, `sidebarOrderedPanelIds` reorder, both RPCs, capability) pending;
-Linux done (f33dc23cc7 on `feat/linux-favorites-order`, installed on the MINIPC and validated
-from the Pixel over the RPC path on 2026-09-09; guide in `docs/LINUX-FAVORITOS.md` of that
-branch).
+done; macOS done on 2026-09-09 (`MobileBoxArrangement` holds the pure semantics; the
+workspace side reuses `Workspace.isPinned`, `TabManager.setPinned` and
+`reorderWorkspace(tabId:toIndex:)`; the window side reuses the existing per-panel pin
+(`pinnedPanelIds`, persisted in the session snapshot and restored on relaunch) and
+reorders the tab within its own pane through `applyMobileTerminalArrangement`, restoring
+the previous tab selection and pane focus afterwards; the snapshot lists pinned windows
+first; the tab context menu gains "Mover a la izquierda / derecha" next to the existing
+"Fijar ventana"; autosave through `UniConnectCoordinator.requestSave`, with the pin rolled
+back when the reorder fails); Linux done (f33dc23cc7 on `feat/linux-favorites-order`,
+installed on the MINIPC and validated from the Pixel over the RPC path on 2026-09-09;
+guide in `docs/LINUX-FAVORITOS.md` of that branch).
 
 The local chooser offers Terminal, Claude, Codex, Agy, Grok and a custom command,
 with a visible name and editable **Window Folder**. The folder initially uses the
@@ -235,6 +242,47 @@ hooks send the value as an optional fourth field of the `notify*` socket payload
 of the body. A notice without a hook kind (raw OSC 9/777, `cmux notify`, other
 callers) falls back to the window's activity at that instant: `waiting` →
 `attention`, `idle` → `finished`, `working`/`unknown` → `info`.
+
+### File put (mobile contract file_put.v1, 2026-09-09)
+
+The phone can hand a file to a host over the private connection it already uses,
+with no external service and no SSH key on the phone: the host stores it and, when
+the box is an SSH one, copies it on to the server with the same connection and
+credential it already uses for that box. The phone then pastes the resulting path
+into the terminal's composer so an agent can read it (Claude reads images by path).
+A host that implements it advertises `"capabilities": ["file_put.v1"]` in the
+`mobile.workspace.list` result, next to `box_update` and `activity.v1`.
+
+RPCs, in the order one transfer uses them:
+
+- `mobile.file.begin {workspace_id, terminal_id?, name, size, mime?}` →
+  `{transfer_id, chunk_bytes}`. `chunk_bytes` ≤ 1048576 (1 MiB raw is 1.4 MiB in
+  base64, under the 8 MiB frame limit). Limits: `size` ≤ 200 MiB; the host
+  sanitises `name` (no paths, no odd characters).
+- `mobile.file.chunk {transfer_id, index, data}` → `{received_bytes}`. `data` is
+  base64; indices are consecutive from 0. Out of order or duplicated →
+  `invalid_params`.
+- `mobile.file.commit {transfer_id, sha256}` → `{path, location: "host" | "remote",
+  remote_path?, remote_error?}`. The host writes to
+  `~/UniConnect/Entrada/<YYYYMMDD>/<name>` (suffix `-2`, `-3`… if it exists) and
+  verifies the SHA-256. If the box is SSH: scp to the server as
+  `~/uniconnect-entrada/<name>` (creating the directory) and answer `remote_path`
+  with `location: "remote"`; if the scp fails, answer the host path with
+  `location: "host"` and a readable `remote_error` all the same.
+- `mobile.file.abort {transfer_id}`. Transfers expire after 10 minutes without
+  chunks.
+- Errors: `invalid_params`, `too_large`, `not_found` (transfer), `io_failed`,
+  `locked`, as the rest of the mobile API.
+
+Phone side: a clip in the terminal's bar (real and mirror) opens a quick sheet
+with "Hacer foto / Elegir imágenes / Elegir archivos" and the transfers of that
+window with their progress. On commit the phone pastes into the composer
+`remote_path` when `location` is `remote`, else `path`, preceded by a space when
+something was already typed, quoted if it carries a space; a `remote_error` is
+shown but the host path is pasted anyway. A host that does not advertise
+`file_put.v1` gets the fallback: the file goes to the transfer service of
+"Enviar archivos" (sendit.sh by default) and its link is pasted instead. Android
+implements the phone side; Mac and Linux implement the host side.
 
 ### ローカルウインドウの作成と保存
 
