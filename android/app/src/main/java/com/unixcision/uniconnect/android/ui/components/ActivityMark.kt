@@ -14,18 +14,19 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.ActivityState
-import com.unixcision.uniconnect.android.ui.Brand
+import com.unixcision.uniconnect.android.ui.theme.UniTheme
 
 /**
  * The one mark for what an AI is doing: a small live indicator while it works, a raised hand in
- * amber when it waits for the reader. Nothing for idle or unknown, so a quiet list stays quiet.
+ * the warning colour when it waits for the reader. Nothing for idle or unknown, so a quiet list
+ * stays quiet.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun ActivityMark(state: ActivityState, modifier: Modifier = Modifier, size: Dp = 18.dp, tone: Color = Brand.Cyan) {
+fun ActivityMark(state: ActivityState, modifier: Modifier = Modifier, size: Dp = 18.dp, tone: Color = UniTheme.colors.accent) {
     when (state) {
         ActivityState.WORKING -> LoadingIndicator(modifier.size(size), color = tone)
-        ActivityState.WAITING -> Icon(Icons.Rounded.BackHand, stringResource(R.string.activity_waiting), modifier.size(size), tint = Brand.Amber)
+        ActivityState.WAITING -> Icon(Icons.Rounded.BackHand, stringResource(R.string.activity_waiting), modifier.size(size), tint = UniTheme.colors.warning)
         ActivityState.IDLE, ActivityState.UNKNOWN -> {}
     }
 }

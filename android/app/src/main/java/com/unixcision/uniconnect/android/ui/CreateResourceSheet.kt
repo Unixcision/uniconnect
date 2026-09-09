@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -31,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.unixcision.uniconnect.android.R
+import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import com.unixcision.uniconnect.android.domain.RemoteAgentTarget
 import com.unixcision.uniconnect.android.domain.ResourceCreation
 
@@ -52,17 +52,17 @@ fun CreateResourceSheet(context: CreationContext, saving: Boolean, error: Int?, 
         mutableStateOf(existing?.availableAgentTargets?.firstOrNull { it.id == "terminal" }?.id ?: existing?.availableAgentTargets?.firstOrNull()?.id ?: "terminal")
     }
     val selectedAgent = existing?.availableAgentTargets?.firstOrNull { it.id == agentID }
-    val tone = if (useSSH) Brand.Violet else Brand.Cyan
+    val tone = if (useSSH) UniTheme.colors.accentSoft else UniTheme.colors.accent
     ModalBottomSheet(
         onDismissRequest = { if (!saving) onDismiss() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Brand.Surface,
-        dragHandle = { BottomSheetDefaults.DragHandle(color = Brand.Outline) },
+        containerColor = UniTheme.colors.surface,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = UniTheme.colors.outline) },
     ) {
         Column(Modifier.padding(horizontal = 24.dp).verticalScroll(rememberScrollState()).imePadding().navigationBarsPadding().padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             when {
                 existing == null -> SheetHeader({ Icon(Icons.Rounded.ViewInAr, null, tint = tone) }, stringResource(R.string.new_workspace), stringResource(R.string.create_workspace_note), tone)
-                context.firstWindow -> SheetHeader({ Icon(Icons.Rounded.AutoAwesome, null, tint = Brand.Mint) }, stringResource(R.string.first_window_title, existing.name), stringResource(R.string.first_window_note), Brand.Mint)
+                context.firstWindow -> SheetHeader({ Icon(Icons.Rounded.AutoAwesome, null, tint = UniTheme.colors.success) }, stringResource(R.string.first_window_title, existing.name), stringResource(R.string.first_window_note), UniTheme.colors.success)
                 else -> SheetHeader({ Icon(Icons.Rounded.Terminal, null, tint = tone) }, stringResource(R.string.new_window), stringResource(R.string.create_window_note), tone)
             }
             if (existing == null) {
@@ -74,11 +74,11 @@ fun CreateResourceSheet(context: CreationContext, saving: Boolean, error: Int?, 
                         icon = { Icon(Icons.Rounded.Language, null, Modifier.size(16.dp)) }, label = { Text(stringResource(R.string.ssh_workspace)) },
                         colors = segmentColors())
                 }
-                Text(stringResource(if (useSSH) R.string.creation_kind_ssh_note else R.string.creation_kind_local_note), style = MaterialTheme.typography.bodySmall, color = Brand.Muted)
+                Text(stringResource(if (useSSH) R.string.creation_kind_ssh_note else R.string.creation_kind_local_note), style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted)
             }
             if (existing != null) {
                 Text(stringResource(R.string.creation_agent_label), style = MaterialTheme.typography.labelLarge)
-                if (existing.availableAgentTargets.isEmpty()) Text(stringResource(R.string.creation_agents_unavailable), style = MaterialTheme.typography.bodySmall, color = Brand.Amber)
+                if (existing.availableAgentTargets.isEmpty()) Text(stringResource(R.string.creation_agents_unavailable), style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.warning)
                 else TargetGrid(existing.availableAgentTargets, agentID, enabled = !saving) { agentID = it }
                 Text(
                     when {
@@ -86,17 +86,17 @@ fun CreateResourceSheet(context: CreationContext, saving: Boolean, error: Int?, 
                         selectedAgent.id == "terminal" -> stringResource(R.string.creation_terminal_agent)
                         else -> stringResource(R.string.creation_agent_note, selectedAgent.title)
                     },
-                    style = MaterialTheme.typography.bodySmall, color = Brand.Muted,
+                    style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted,
                 )
             }
             SheetField(name, { name = it }, stringResource(R.string.resource_name), enabled = !saving,
                 placeholder = if (existing != null) selectedAgent?.title ?: stringResource(R.string.creation_name_placeholder) else null)
             if (existing == null && useSSH) Box {
-                OutlinedButton(onClick = { sourceMenu = true }, enabled = !saving, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-                    Icon(Icons.Rounded.Language, null, Modifier.size(16.dp), tint = Brand.Violet); Spacer(Modifier.width(8.dp))
+                OutlinedButton(onClick = { sourceMenu = true }, enabled = !saving, modifier = Modifier.fillMaxWidth(), shape = UniTheme.shapes.button) {
+                    Icon(Icons.Rounded.Language, null, Modifier.size(16.dp), tint = UniTheme.colors.accentSoft); Spacer(Modifier.width(8.dp))
                     Text(context.sshSources.firstOrNull { it.id == sourceID }?.name ?: stringResource(R.string.select_ssh_source))
                 }
-                DropdownMenu(expanded = sourceMenu, onDismissRequest = { sourceMenu = false }, containerColor = Brand.SurfaceHigh) {
+                DropdownMenu(expanded = sourceMenu, onDismissRequest = { sourceMenu = false }, containerColor = UniTheme.colors.surfaceRaised) {
                     context.sshSources.forEach { workspace ->
                         DropdownMenuItem(text = { Text(workspace.name) }, onClick = { sourceID = workspace.id; sourceMenu = false })
                     }
@@ -106,7 +106,7 @@ fun CreateResourceSheet(context: CreationContext, saving: Boolean, error: Int?, 
             if (existing != null || !useSSH) SheetField(directory, { directory = it },
                 stringResource(if (existing == null) R.string.working_directory else R.string.optional_directory),
                 hint = stringResource(R.string.directory_hint), enabled = !saving, monospace = true, placeholder = "/")
-            if (useSSH) Text(stringResource(R.string.ssh_inherit_note), style = MaterialTheme.typography.bodySmall, color = Brand.Violet)
+            if (useSSH) Text(stringResource(R.string.ssh_inherit_note), style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.accentSoft)
             error?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             Button(
                 onClick = {
@@ -118,14 +118,14 @@ fun CreateResourceSheet(context: CreationContext, saving: Boolean, error: Int?, 
                     )
                 },
                 enabled = !saving && (existing == null || selectedAgent != null),
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), contentPadding = PaddingValues(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = if (context.firstWindow) Brand.Mint else tone, contentColor = Brand.Night),
+                modifier = Modifier.fillMaxWidth(), shape = UniTheme.shapes.button, contentPadding = PaddingValues(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = if (context.firstWindow) UniTheme.colors.success else tone, contentColor = UniTheme.colors.onAccent),
             ) {
-                if (saving) LoadingIndicator(Modifier.size(20.dp), color = Brand.Night)
+                if (saving) LoadingIndicator(Modifier.size(20.dp), color = UniTheme.colors.onAccent)
                 else Text(stringResource(if (existing == null) R.string.create else R.string.new_window), fontWeight = FontWeight.SemiBold)
             }
             TextButton(onClick = onDismiss, enabled = !saving, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(if (context.firstWindow) R.string.not_now else R.string.cancel), color = Brand.Muted)
+                Text(stringResource(if (context.firstWindow) R.string.not_now else R.string.cancel), color = UniTheme.colors.muted)
             }
         }
     }
@@ -133,8 +133,8 @@ fun CreateResourceSheet(context: CreationContext, saving: Boolean, error: Int?, 
 
 @Composable
 private fun segmentColors() = SegmentedButtonDefaults.colors(
-    activeContainerColor = Brand.Cyan.copy(alpha = .18f), activeContentColor = Brand.Cyan, activeBorderColor = Brand.Cyan.copy(alpha = .5f),
-    inactiveContainerColor = Color.Transparent, inactiveContentColor = Brand.Muted, inactiveBorderColor = Brand.Outline,
+    activeContainerColor = UniTheme.colors.accent.copy(alpha = .18f), activeContentColor = UniTheme.colors.accent, activeBorderColor = UniTheme.colors.accent.copy(alpha = .5f),
+    inactiveContainerColor = Color.Transparent, inactiveContentColor = UniTheme.colors.muted, inactiveBorderColor = UniTheme.colors.outline,
 )
 
 /** Two-column cards for the host's launch catalogue; the IDs are opaque and sent back unchanged. */
@@ -153,29 +153,30 @@ private fun TargetGrid(targets: List<RemoteAgentTarget>, selectedID: String, ena
 @Composable
 private fun TargetCard(target: RemoteAgentTarget, selected: Boolean, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val (icon, tone) = targetPresentation(target.id)
-    val shape = RoundedCornerShape(16.dp)
+    val shape = UniTheme.shapes.button
     Row(
-        modifier.background(if (selected) tone.copy(alpha = .14f) else Brand.DeepBlue.copy(alpha = .4f), shape)
-            .border(if (selected) 1.5.dp else 1.dp, if (selected) tone.copy(alpha = .7f) else Brand.Outline, shape)
+        modifier.background(if (selected) tone.copy(alpha = .14f) else UniTheme.colors.surfaceRaised.copy(alpha = .4f), shape)
+            .border(if (selected) 1.5.dp else 1.dp, if (selected) tone.copy(alpha = .7f) else UniTheme.colors.outline, shape)
             .clickable(enabled = enabled, onClick = onClick).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Icon(icon, null, Modifier.size(22.dp), tint = if (selected) tone else Brand.Muted)
+        Icon(icon, null, Modifier.size(22.dp), tint = if (selected) tone else UniTheme.colors.muted)
         Column(Modifier.weight(1f)) {
-            Text(target.title, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (selected) Brand.Text else Brand.Muted)
+            Text(target.title, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (selected) UniTheme.colors.text else UniTheme.colors.muted)
             Text(stringResource(if (target.id == "terminal") R.string.creation_target_terminal_summary else R.string.creation_target_agent_summary),
-                style = MaterialTheme.typography.labelSmall, color = Brand.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         if (selected) Icon(Icons.Rounded.CheckCircle, null, Modifier.size(18.dp), tint = tone)
     }
 }
 
+@Composable
 private fun targetPresentation(id: String): Pair<ImageVector, Color> = when {
-    id == "terminal" -> Icons.Rounded.Terminal to Brand.Cyan
-    id == "claude" -> Icons.Rounded.AutoAwesome to Brand.Amber
-    id == "codex" -> Icons.Rounded.Code to Brand.Mint
-    id == "agy" -> Icons.Rounded.Explore to Brand.Violet
-    id == "grok" -> Icons.Rounded.Bolt to Brand.Coral
-    id.startsWith("custom") -> Icons.Rounded.SmartToy to Brand.Violet
-    else -> Icons.Rounded.Extension to Brand.Muted
+    id == "terminal" -> Icons.Rounded.Terminal to UniTheme.colors.accent
+    id == "claude" -> Icons.Rounded.AutoAwesome to UniTheme.colors.warning
+    id == "codex" -> Icons.Rounded.Code to UniTheme.colors.success
+    id == "agy" -> Icons.Rounded.Explore to UniTheme.colors.accentSoft
+    id == "grok" -> Icons.Rounded.Bolt to UniTheme.colors.danger
+    id.startsWith("custom") -> Icons.Rounded.SmartToy to UniTheme.colors.accentSoft
+    else -> Icons.Rounded.Extension to UniTheme.colors.muted
 }

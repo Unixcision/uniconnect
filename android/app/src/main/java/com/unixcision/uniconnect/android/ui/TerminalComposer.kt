@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -24,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.unixcision.uniconnect.android.R
+import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import com.unixcision.uniconnect.android.domain.TerminalKeyEncoder
 import com.unixcision.uniconnect.android.domain.TerminalModifiers
 
@@ -59,12 +59,12 @@ fun TerminalComposer(
     ).joinToString("+")
     Column(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 6.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilledTonalIconButton(onClick = onToggleKeys, modifier = Modifier.size(48.dp), colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = Brand.DeepBlue, contentColor = Brand.Muted)) {
+            FilledTonalIconButton(onClick = onToggleKeys, modifier = Modifier.size(48.dp), colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = UniTheme.colors.surfaceRaised, contentColor = UniTheme.colors.muted)) {
                 Icon(if (keysVisible) Icons.Rounded.KeyboardHide else Icons.Rounded.Keyboard, stringResource(if (keysVisible) R.string.keys_hide else R.string.keys_show))
             }
             Row(
-                Modifier.weight(1f).background(Brand.Surface, RoundedCornerShape(24.dp))
-                    .border(1.dp, Brush.linearGradient(listOf(Brand.GlassTop, Brand.GlassBottom)), RoundedCornerShape(24.dp))
+                Modifier.weight(1f).background(UniTheme.colors.surface, UniTheme.shapes.card)
+                    .border(1.dp, Brush.linearGradient(listOf(UniTheme.colors.glassTop, UniTheme.colors.glassBottom)), UniTheme.shapes.card)
                     .padding(horizontal = 16.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -74,14 +74,14 @@ fun TerminalComposer(
                     onValueChange = onDraftChange,
                     modifier = Modifier.weight(1f).padding(vertical = 10.dp),
                     enabled = !sending,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Brand.Text, fontFamily = FontFamily.Monospace),
-                    cursorBrush = SolidColor(Brand.Cyan),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = UniTheme.colors.text, fontFamily = FontFamily.Monospace),
+                    cursorBrush = SolidColor(UniTheme.colors.accent),
                     minLines = 1,
                     maxLines = 6,
                     keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Default),
                     decorationBox = { field ->
                         Box {
-                            if (draft.isEmpty()) Text(stringResource(R.string.terminal_input), color = Brand.Muted, style = MaterialTheme.typography.bodyLarge)
+                            if (draft.isEmpty()) Text(stringResource(R.string.terminal_input), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodyLarge)
                             field()
                         }
                     },
@@ -93,19 +93,19 @@ fun TerminalComposer(
                 enabled = enabled && !sending && draft.isNotEmpty(),
                 modifier = Modifier.size(48.dp),
                 shape = CircleShape,
-                colors = IconButtonDefaults.filledIconButtonColors(containerColor = Brand.Cyan, contentColor = Brand.Night, disabledContainerColor = Brand.DeepBlue, disabledContentColor = Brand.Muted),
+                colors = IconButtonDefaults.filledIconButtonColors(containerColor = UniTheme.colors.accent, contentColor = UniTheme.colors.onAccent, disabledContainerColor = UniTheme.colors.surfaceRaised, disabledContentColor = UniTheme.colors.muted),
             ) {
-                if (sending) LoadingIndicator(Modifier.size(22.dp), color = Brand.Night)
+                if (sending) LoadingIndicator(Modifier.size(22.dp), color = UniTheme.colors.onAccent)
                 else Icon(Icons.AutoMirrored.Rounded.Send, stringResource(R.string.terminal_send), Modifier.size(22.dp))
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 6.dp, start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (modifierLabel.isNotEmpty()) Text(
                 stringResource(R.string.composer_modifiers, modifierLabel),
-                Modifier.background(Brand.Cyan.copy(alpha = .14f), CircleShape).padding(horizontal = 10.dp, vertical = 3.dp),
-                style = MaterialTheme.typography.labelSmall, color = Brand.Cyan, fontWeight = FontWeight.Bold,
+                Modifier.background(UniTheme.colors.accent.copy(alpha = .14f), CircleShape).padding(horizontal = 10.dp, vertical = 3.dp),
+                style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.accent, fontWeight = FontWeight.Bold,
             )
-            Text(stringResource(R.string.terminal_send_note), color = Brand.Muted, style = MaterialTheme.typography.labelSmall)
+            Text(stringResource(R.string.terminal_send_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.labelSmall)
             Spacer(Modifier.weight(1f))
             TextButton(onClick = { submit(false) }, enabled = enabled && !sending && draft.isNotEmpty(), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
                 Text(stringResource(R.string.terminal_send_raw), style = MaterialTheme.typography.labelMedium)

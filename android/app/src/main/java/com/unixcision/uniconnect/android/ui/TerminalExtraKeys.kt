@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,13 +17,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.unixcision.uniconnect.android.R
+import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import com.unixcision.uniconnect.android.domain.TerminalKey
 
 /** Sticky modifier state: armed applies once to the next key or text; locked stays until tapped again. */
@@ -88,34 +87,34 @@ fun TerminalExtraKeys(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun KeyCap(label: String, description: String, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(11.dp)
+    val shape = UniTheme.shapes.chip
     Box(
-        modifier.height(42.dp).background(Brand.DeepBlue.copy(alpha = if (enabled) .75f else .35f), shape).border(1.dp, Brand.Outline, shape)
+        modifier.height(42.dp).background(UniTheme.colors.surfaceRaised.copy(alpha = if (enabled) .75f else .35f), shape).border(1.dp, UniTheme.colors.outline, shape)
             .combinedClickable(enabled = enabled, onClick = onClick)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = if (enabled) Brand.Text else Brand.Muted, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = if (enabled) UniTheme.colors.text else UniTheme.colors.muted, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 
 @Composable
 private fun ToggleCap(label: String, active: Boolean, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(11.dp)
+    val shape = UniTheme.shapes.chip
     Box(
-        modifier.height(42.dp).background(if (active) Brand.Violet.copy(alpha = .25f) else Brand.DeepBlue.copy(alpha = .75f), shape)
-            .border(1.dp, if (active) Brand.Violet.copy(alpha = .6f) else Brand.Outline, shape)
+        modifier.height(42.dp).background(if (active) UniTheme.colors.accentSoft.copy(alpha = .25f) else UniTheme.colors.surfaceRaised.copy(alpha = .75f), shape)
+            .border(1.dp, if (active) UniTheme.colors.accentSoft.copy(alpha = .6f) else UniTheme.colors.outline, shape)
             .combinedClickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = if (active) Brand.Violet else Brand.Muted, fontWeight = FontWeight.SemiBold)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = if (active) UniTheme.colors.accentSoft else UniTheme.colors.muted, fontWeight = FontWeight.SemiBold)
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ModifierCap(label: String, state: ModifierState, enabled: Boolean, modifier: Modifier, onChange: (ModifierState) -> Unit) {
-    val shape = RoundedCornerShape(11.dp)
+    val shape = UniTheme.shapes.chip
     val armed = state != ModifierState.OFF
     val hint = when (state) {
         ModifierState.OFF -> stringResource(R.string.modifier_hint)
@@ -124,8 +123,8 @@ private fun ModifierCap(label: String, state: ModifierState, enabled: Boolean, m
     }
     Box(
         modifier.height(42.dp)
-            .background(when (state) { ModifierState.LOCKED -> Brand.Cyan; ModifierState.ARMED -> Brand.Cyan.copy(alpha = .22f); ModifierState.OFF -> Brand.DeepBlue.copy(alpha = .75f) }, shape)
-            .border(1.dp, if (armed) Brand.Cyan.copy(alpha = .7f) else Brand.Outline, shape)
+            .background(when (state) { ModifierState.LOCKED -> UniTheme.colors.accent; ModifierState.ARMED -> UniTheme.colors.accent.copy(alpha = .22f); ModifierState.OFF -> UniTheme.colors.surfaceRaised.copy(alpha = .75f) }, shape)
+            .border(1.dp, if (armed) UniTheme.colors.accent.copy(alpha = .7f) else UniTheme.colors.outline, shape)
             .combinedClickable(
                 enabled = enabled,
                 onClick = { onChange(if (state == ModifierState.OFF) ModifierState.ARMED else ModifierState.OFF) },
@@ -135,10 +134,7 @@ private fun ModifierCap(label: String, state: ModifierState, enabled: Boolean, m
         contentAlignment = Alignment.Center,
     ) {
         Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
-            color = when (state) { ModifierState.LOCKED -> Brand.Night; ModifierState.ARMED -> Brand.Cyan; ModifierState.OFF -> if (enabled) Brand.Text else Brand.Muted })
-        if (state == ModifierState.LOCKED) Box(Modifier.align(Alignment.TopEnd).padding(5.dp).size(6.dp).background(Brand.Night, CircleShape))
+            color = when (state) { ModifierState.LOCKED -> UniTheme.colors.onAccent; ModifierState.ARMED -> UniTheme.colors.accent; ModifierState.OFF -> if (enabled) UniTheme.colors.text else UniTheme.colors.muted })
+        if (state == ModifierState.LOCKED) Box(Modifier.align(Alignment.TopEnd).padding(5.dp).size(6.dp).background(UniTheme.colors.background, CircleShape))
     }
 }
-
-/** Colour tint reused by the composer chip that mirrors the armed modifiers. */
-val ModifierState.tint: Color get() = if (this == ModifierState.OFF) Brand.Muted else Brand.Cyan

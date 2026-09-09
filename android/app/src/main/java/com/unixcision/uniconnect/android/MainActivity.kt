@@ -12,16 +12,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.unixcision.uniconnect.android.domain.NoticeRoute
 import com.unixcision.uniconnect.android.notifications.AndroidNoticePublisher
 import java.util.UUID
 import com.unixcision.uniconnect.android.ui.MachinesScreen
 import com.unixcision.uniconnect.android.ui.MachinesViewModel
-import com.unixcision.uniconnect.android.ui.UniConnectTheme
+import com.unixcision.uniconnect.android.ui.theme.UniTheme
 
 class MainActivity : ComponentActivity() {
     private lateinit var model: MachinesViewModel
@@ -34,8 +37,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
+        applySystemBars(dark = true)
         // Animate the native splash out when the first frame is ready; never wait on a timer.
         splash.setOnExitAnimationListener { provider ->
             provider.view.animate().alpha(0f).setDuration(180).withEndAction { provider.remove() }.start()
@@ -50,7 +52,23 @@ class MainActivity : ComponentActivity() {
         }
         model = ViewModelProvider(this, factory)[MachinesViewModel::class.java]
         handleNotice(intent)
-        setContent { UniConnectTheme { MachinesScreen(model, ::requestNotifications) } }
+        setContent {
+            // The theme wraps the whole app and follows the stored preference as it changes, so a
+            // new choice in the settings sheet is on screen at once, sheet included.
+            val state by model.state.collectAsStateWithLifecycle()
+            UniTheme(state.settings.designTheme, state.settings.colorMode) {
+                val dark = UniTheme.colors.isDark
+                LaunchedEffect(dark) { applySystemBars(dark) }
+                MachinesScreen(model, ::requestNotifications)
+            }
+        }
+    }
+
+    /** Transparent bars whose icons contrast with the ground the theme draws under them. */
+    private fun applySystemBars(dark: Boolean) {
+        val transparent = android.graphics.Color.TRANSPARENT
+        val style = if (dark) SystemBarStyle.dark(transparent) else SystemBarStyle.light(transparent, transparent)
+        enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
     }
 
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); handleNotice(intent) }

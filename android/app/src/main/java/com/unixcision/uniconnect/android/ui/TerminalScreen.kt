@@ -15,7 +15,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloseFullscreen
@@ -55,6 +54,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.unixcision.uniconnect.android.R
+import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import com.unixcision.uniconnect.android.domain.ActivityState
 import com.unixcision.uniconnect.android.domain.AppSettings
 import com.unixcision.uniconnect.android.domain.TerminalKeyEncoder
@@ -158,49 +158,49 @@ private fun RealTerminalScreen(
             ActivityMark(activity, Modifier.padding(start = 10.dp), size = 18.dp)
             Spacer(Modifier.weight(1f))
             IconButton(onClick = onTogglePin) {
-                Icon(if (windowPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder, stringResource(if (windowPinned) R.string.box_unpin else R.string.box_pin), tint = if (windowPinned) Brand.Amber else Brand.Muted)
+                Icon(if (windowPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder, stringResource(if (windowPinned) R.string.box_unpin else R.string.box_pin), tint = if (windowPinned) UniTheme.colors.warning else UniTheme.colors.muted)
             }
             // One tap back to the live screen, handled by the model: it walks the pane out with
             // wheel steps and stops as soon as tmux's indicator clears.
             if (real.copyMode) IconButton(onClick = onLeaveCopyMode) {
-                Icon(Icons.Rounded.KeyboardDoubleArrowDown, stringResource(R.string.terminal_leave_copy_mode), tint = Brand.Amber)
+                Icon(Icons.Rounded.KeyboardDoubleArrowDown, stringResource(R.string.terminal_leave_copy_mode), tint = UniTheme.colors.warning)
             }
             if (real.snapshot != null) IconButton(onClick = { onView(viewMode.next) }) {
                 Icon(
                     when (viewMode) { TerminalView.FIT -> Icons.Rounded.ZoomIn; TerminalView.WRAP -> Icons.Rounded.OpenInFull; TerminalView.PAN -> Icons.Rounded.ZoomOutMap },
                     stringResource(when (viewMode) { TerminalView.FIT -> R.string.screen_actual_size; TerminalView.WRAP -> R.string.screen_pan; TerminalView.PAN -> R.string.screen_fit_width }),
-                    tint = Brand.Muted,
+                    tint = UniTheme.colors.muted,
                 )
             }
-            IconButton(onClick = onStopReal) { Icon(Icons.Rounded.LinkOff, stringResource(R.string.real_terminal_stop), tint = Brand.Muted) }
+            IconButton(onClick = onStopReal) { Icon(Icons.Rounded.LinkOff, stringResource(R.string.real_terminal_stop), tint = UniTheme.colors.muted) }
         }
         real.error?.let {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
                 Text(stringResource(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                real.errorDetail?.let { detail -> Text(stringResource(R.string.host_error_code, detail), color = Brand.Muted, style = MaterialTheme.typography.labelSmall) }
+                real.errorDetail?.let { detail -> Text(stringResource(R.string.host_error_code, detail), color = UniTheme.colors.muted, style = MaterialTheme.typography.labelSmall) }
             }
         }
         // The host ended or refused the session: say so and offer the way back in right here,
         // instead of leaving a greyed-out composer and a detour through the mirror.
         if (real.ended || real.error != null) Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (real.ended) Text(stringResource(R.string.real_terminal_ended), Modifier.weight(1f), color = Brand.Amber, style = MaterialTheme.typography.bodySmall)
+            if (real.ended) Text(stringResource(R.string.real_terminal_ended), Modifier.weight(1f), color = UniTheme.colors.warning, style = MaterialTheme.typography.bodySmall)
             else Spacer(Modifier.weight(1f))
-            Button(onClick = onReconnect, enabled = connected, shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+            Button(onClick = onReconnect, enabled = connected, shape = UniTheme.shapes.button, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
                 Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.real_terminal_reconnect))
             }
         }
-        val frameShape = RoundedCornerShape(20.dp)
+        val frameShape = UniTheme.shapes.card
         Box(
             Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp).clip(frameShape)
                 .background(Color(parseColor(real.snapshot?.background, 0xFF070D20.toInt())))
-                .border(1.dp, Brush.verticalGradient(listOf(Brand.GlassTop, Brand.GlassBottom)), frameShape),
+                .border(1.dp, Brush.verticalGradient(listOf(UniTheme.colors.glassTop, UniTheme.colors.glassBottom)), frameShape),
         ) {
             val snapshot = real.snapshot
             if (snapshot == null) {
                 Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                     if (real.connecting) {
-                        LoadingIndicator(color = Brand.Cyan)
-                        Text(stringResource(R.string.real_terminal_connecting), Modifier.padding(top = 16.dp), color = Brand.Muted, style = MaterialTheme.typography.bodyMedium)
+                        LoadingIndicator(color = UniTheme.colors.accent)
+                        Text(stringResource(R.string.real_terminal_connecting), Modifier.padding(top = 16.dp), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             } else BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -352,17 +352,17 @@ private fun MirrorTerminalScreen(
             ActivityMark(activity, Modifier.padding(start = 10.dp), size = 18.dp)
             Spacer(Modifier.weight(1f))
             IconButton(onClick = onTogglePin) {
-                Icon(if (windowPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder, stringResource(if (windowPinned) R.string.box_unpin else R.string.box_pin), tint = if (windowPinned) Brand.Amber else Brand.Muted)
+                Icon(if (windowPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder, stringResource(if (windowPinned) R.string.box_unpin else R.string.box_pin), tint = if (windowPinned) UniTheme.colors.warning else UniTheme.colors.muted)
             }
             IconButton(onClick = onReconnect, enabled = (connected || error != null) && !reconnecting) {
-                if (reconnecting) LoadingIndicator(Modifier.size(20.dp), color = Brand.Cyan)
-                else Icon(Icons.Rounded.Sync, stringResource(R.string.terminal_reconnect), tint = Brand.Muted)
+                if (reconnecting) LoadingIndicator(Modifier.size(20.dp), color = UniTheme.colors.accent)
+                else Icon(Icons.Rounded.Sync, stringResource(R.string.terminal_reconnect), tint = UniTheme.colors.muted)
             }
             // Real terminal: a tmux client of the phone's size. The readable geometry is measured
             // here so the attach asks the host for exactly the size this screen can draw.
             var armReal by remember { mutableStateOf(false) }
             IconButton(onClick = { armReal = true }, enabled = connected) {
-                Icon(Icons.Rounded.Link, stringResource(R.string.real_terminal_start), tint = Brand.Muted)
+                Icon(Icons.Rounded.Link, stringResource(R.string.real_terminal_start), tint = UniTheme.colors.muted)
             }
             RealTerminalStarter(armReal) { columns, rows -> armReal = false; onRequestReal(columns, rows) }
             if (snapshot != null) IconButton(onClick = { viewMode = viewMode.next }) {
@@ -370,18 +370,18 @@ private fun MirrorTerminalScreen(
                 Icon(
                     when (viewMode) { TerminalView.FIT -> Icons.Rounded.ZoomIn; TerminalView.WRAP -> Icons.Rounded.OpenInFull; TerminalView.PAN -> Icons.Rounded.ZoomOutMap },
                     stringResource(when (viewMode) { TerminalView.FIT -> R.string.screen_actual_size; TerminalView.WRAP -> R.string.screen_pan; TerminalView.PAN -> R.string.screen_fit_width }),
-                    tint = Brand.Muted,
+                    tint = UniTheme.colors.muted,
                 )
             }
             IconButton(onClick = onRefresh, enabled = !loading) {
-                if (loading) LoadingIndicator(Modifier.size(20.dp), color = Brand.Cyan)
-                else Icon(Icons.Rounded.Refresh, stringResource(R.string.screen_refresh), tint = Brand.Muted)
+                if (loading) LoadingIndicator(Modifier.size(20.dp), color = UniTheme.colors.accent)
+                else Icon(Icons.Rounded.Refresh, stringResource(R.string.screen_refresh), tint = UniTheme.colors.muted)
             }
         }
         error?.let {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
                 Text(stringResource(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                errorDetail?.let { detail -> Text(stringResource(R.string.host_error_code, detail), color = Brand.Muted, style = MaterialTheme.typography.labelSmall) }
+                errorDetail?.let { detail -> Text(stringResource(R.string.host_error_code, detail), color = UniTheme.colors.muted, style = MaterialTheme.typography.labelSmall) }
             }
         }
         // A refused attach must say so: silence here reads as "the real terminal is broken".
@@ -389,20 +389,20 @@ private fun MirrorTerminalScreen(
             Text(
                 stringResource(R.string.real_terminal_fell_back, detail),
                 Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-                color = Brand.Amber, style = MaterialTheme.typography.labelSmall,
+                color = UniTheme.colors.warning, style = MaterialTheme.typography.labelSmall,
             )
         }
-        val frameShape = RoundedCornerShape(20.dp)
+        val frameShape = UniTheme.shapes.card
         Box(
             Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
                 .clip(frameShape)
                 .background(Color(parseColor(snapshot?.background, 0xFF070D20.toInt())))
-                .border(1.dp, Brush.verticalGradient(listOf(Brand.GlassTop, Brand.GlassBottom)), frameShape),
+                .border(1.dp, Brush.verticalGradient(listOf(UniTheme.colors.glassTop, UniTheme.colors.glassBottom)), frameShape),
         ) {
             if (snapshot == null) {
                 Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (loading) LoadingIndicator(color = Brand.Cyan)
-                    Text(stringResource(if (loading) R.string.screen_loading else R.string.screen_unavailable), Modifier.padding(top = 16.dp), color = Brand.Muted, style = MaterialTheme.typography.bodyMedium)
+                    if (loading) LoadingIndicator(color = UniTheme.colors.accent)
+                    Text(stringResource(if (loading) R.string.screen_loading else R.string.screen_unavailable), Modifier.padding(top = 16.dp), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodyMedium)
                 }
             } else BoxWithConstraints(Modifier.fillMaxSize()) {
                 val viewport = IntSize(constraints.maxWidth, constraints.maxHeight)

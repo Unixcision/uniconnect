@@ -23,10 +23,21 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.unixcision.uniconnect.android.ui.Brand
+import com.unixcision.uniconnect.android.ui.theme.UniTheme
 
-enum class PillTone(val color: Color, val pulses: Boolean) {
-    Live(Brand.Mint, true), Busy(Brand.Cyan, true), Idle(Brand.Muted, false), Warning(Brand.Amber, false), Danger(Brand.Coral, false),
+/** The states a pill can announce; the colour comes from the theme at draw time. */
+enum class PillTone(val pulses: Boolean) {
+    Live(true), Busy(true), Idle(false), Warning(false), Danger(false);
+
+    /** The theme's colour for this state. */
+    val color: Color
+        @Composable get() = when (this) {
+            Live -> UniTheme.colors.success
+            Busy -> UniTheme.colors.accent
+            Idle -> UniTheme.colors.muted
+            Warning -> UniTheme.colors.warning
+            Danger -> UniTheme.colors.danger
+        }
 }
 
 /** Compact state badge with a dot that pulses only for live states; text stays readable on every tone. */
@@ -37,13 +48,15 @@ fun StatusPill(text: String, tone: PillTone, modifier: Modifier = Modifier) {
         val value by transition.animateFloat(1f, .35f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "pill-alpha")
         value
     } else 1f
+    val color = tone.color
+    val shape = UniTheme.shapes.chip
     Row(
-        modifier.background(tone.color.copy(alpha = .12f), CircleShape).border(1.dp, tone.color.copy(alpha = .35f), CircleShape)
+        modifier.background(color.copy(alpha = .12f), shape).border(1.dp, color.copy(alpha = .35f), shape)
             .padding(horizontal = 10.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Box(Modifier.size(7.dp).alpha(alpha).background(tone.color, CircleShape))
-        Text(text, style = MaterialTheme.typography.labelSmall, color = tone.color, fontWeight = FontWeight.SemiBold)
+        Box(Modifier.size(7.dp).alpha(alpha).background(color, CircleShape))
+        Text(if (UniTheme.type.labelUppercase) text.uppercase() else text, style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.SemiBold)
     }
 }

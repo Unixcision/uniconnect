@@ -2,7 +2,6 @@ package com.unixcision.uniconnect.android.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsActive
@@ -13,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.unixcision.uniconnect.android.R
+import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import com.unixcision.uniconnect.android.domain.NotificationLinkState
 import com.unixcision.uniconnect.android.ui.components.GlassCard
 
@@ -21,14 +21,14 @@ fun NotificationConnectionCard(link: NotificationLinkState?, canEnable: Boolean,
     var confirming by remember { mutableStateOf(false) }
     val active = link == NotificationLinkState.Connecting || link == NotificationLinkState.Connected || link == NotificationLinkState.Reconnecting
     val tone = when (link) {
-        NotificationLinkState.Connected -> Brand.Mint
-        NotificationLinkState.Connecting, NotificationLinkState.Reconnecting -> Brand.Cyan
-        NotificationLinkState.ApprovalRequired, NotificationLinkState.Failed -> Brand.Amber
-        null -> Brand.Muted
+        NotificationLinkState.Connected -> UniTheme.colors.success
+        NotificationLinkState.Connecting, NotificationLinkState.Reconnecting -> UniTheme.colors.accent
+        NotificationLinkState.ApprovalRequired, NotificationLinkState.Failed -> UniTheme.colors.warning
+        null -> UniTheme.colors.muted
     }
-    GlassCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), accent = if (active) tone else null) {
+    GlassCard(Modifier.fillMaxWidth(), accent = if (active) tone else null) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(Modifier.size(42.dp).background(tone.copy(alpha = .14f), RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(42.dp).background(tone.copy(alpha = .14f), UniTheme.shapes.chip), contentAlignment = Alignment.Center) {
                 Icon(if (active) Icons.Rounded.NotificationsActive else Icons.Rounded.Notifications, null, tint = tone)
             }
             Column(Modifier.weight(1f)) {
@@ -39,22 +39,22 @@ fun NotificationConnectionCard(link: NotificationLinkState?, canEnable: Boolean,
                     NotificationLinkState.ApprovalRequired -> R.string.approval_required
                     NotificationLinkState.Failed -> R.string.notices_failed
                     null -> R.string.notices_off
-                }), style = MaterialTheme.typography.bodySmall, color = Brand.Muted, maxLines = 3)
+                }), style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted, maxLines = 3)
             }
             Switch(
                 checked = active, enabled = active || canEnable,
                 onCheckedChange = { if (active) onDisable() else confirming = true },
-                colors = SwitchDefaults.colors(checkedThumbColor = Brand.Night, checkedTrackColor = Brand.Mint, uncheckedTrackColor = Brand.DeepBlue, uncheckedBorderColor = Brand.Outline),
+                colors = SwitchDefaults.colors(checkedThumbColor = UniTheme.colors.onAccent, checkedTrackColor = UniTheme.colors.success, uncheckedTrackColor = UniTheme.colors.surfaceRaised, uncheckedBorderColor = UniTheme.colors.outline),
             )
         }
     }
     if (confirming) AlertDialog(
         onDismissRequest = { confirming = false },
-        containerColor = Brand.SurfaceHigh,
-        icon = { Icon(Icons.Rounded.NotificationsActive, null, tint = Brand.Mint) },
+        containerColor = UniTheme.colors.surfaceRaised,
+        icon = { Icon(Icons.Rounded.NotificationsActive, null, tint = UniTheme.colors.success) },
         title = { Text(stringResource(R.string.enable_notices)) },
-        text = { Text(stringResource(R.string.notices_opt_in_detail), color = Brand.Muted) },
-        confirmButton = { TextButton(onClick = { confirming = false; onEnable() }) { Text(stringResource(R.string.activate), color = Brand.Mint) } },
+        text = { Text(stringResource(R.string.notices_opt_in_detail), color = UniTheme.colors.muted) },
+        confirmButton = { TextButton(onClick = { confirming = false; onEnable() }) { Text(stringResource(R.string.activate), color = UniTheme.colors.success) } },
         dismissButton = { TextButton(onClick = { confirming = false }) { Text(stringResource(R.string.cancel)) } },
     )
 }
