@@ -2,9 +2,11 @@
 
 import base64
 import os
+import shutil
 import struct
 import subprocess
 import tempfile
+import threading
 import time
 import types
 import unittest
@@ -12,8 +14,9 @@ from pathlib import Path
 
 from uniconnect.mobile_protocol import MAX_FRAME, RPCError
 from uniconnect.mobile_rpc import MobileRPC
-from uniconnect.transcribe import (CLEANUP_MARGIN, Engine, TranscriptionEngine, clean_transcript,
-                                   process_alive, read_wav_format)
+from uniconnect.transcribe import (CLEANUP_MARGIN, CancelledTranscription, Engine, SubprocessRunner,
+                                   TranscriptionEngine, clean_transcript, is_marker, process_alive,
+                                   read_wav_format)
 
 
 def wav_bytes(seconds=1.0, rate=16000, channels=1, bits=16, audio_format=1):
@@ -43,11 +46,22 @@ class Recorder:
         self.transcript = "Hola desde el movil\n"
         self.converted_seconds = 1.0
         self.probe_seconds = None
+        self.inside = False
 
-    def __call__(self, argv, *, timeout):
+    def __call__(self, argv, *, timeout, cancelled=lambda: False):
         name = Path(argv[0]).name
         self.calls.append(types.SimpleNamespace(name=name, argv=list(argv), timeout=timeout,
-                                                modes=self.test.snapshot_modes()))
+                                                modes=self.test.snapshot_modes(), cancelled=cancelled))
+        self.inside = True
+        try:
+            result = self.produce(name, argv, timeout)
+            if cancelled():  # Lo que hace el de verdad: matar al hijo en vez de entregar su salida.
+                raise CancelledTranscription()
+            return result
+        finally:
+            self.inside = False
+
+    def produce(self, name, argv, timeout):
         handler = self.handlers.get(name)
         if handler is not None:
             return handler(argv, timeout)
@@ -292,9 +306,13 @@ class LimitTests(EngineTestCase):
         self.runner.probe_seconds = 299.5
         self.assertEqual(self.transcribe()["seconds"], 1.0)  # La conversión manda sobre la sonda.
 
-    def test_a_long_wav_is_rejected_from_its_own_header(self):
+    def test_a_long_wav_is_rejected_from_its_own_header_not_from_its_size(self):
+        # 301 s a 8 kHz y 8 bits son 2,4 MB: cabe de sobra en el limite de 3 MiB, asi
+        # que lo que lo rechaza es la duracion que declara su cabecera.
+        audio = wav_bytes(seconds=301, rate=8000, bits=8)
+        self.assertLess(len(audio), self.engine().max_bytes)
         with self.assertRaises(RPCError) as caught:
-            self.transcribe(audio=wav_bytes(seconds=301), mime="audio/wav")
+            self.transcribe(audio=audio, mime="audio/wav")
         self.assertEqual(caught.exception.code, "too_large")
         self.assertEqual(self.runner.names(), [])
 
@@ -336,6 +354,41 @@ class LimitTests(EngineTestCase):
         self.assertEqual(self.transcribe()["text"], "Hola desde el movil")
         self.runner.handlers["ffprobe"] = lambda argv, timeout: (_ for _ in ()).throw(OSError("sin ffprobe"))
         self.assertEqual(self.transcribe()["text"], "Hola desde el movil")
+
+
+class ConversionLimitTests(EngineTestCase):
+    def test_the_conversion_is_bounded_in_time_and_in_bytes(self):
+        engine = self.engine()
+        self.transcribe(engine=engine)
+        order = self.runner.argv_of("ffmpeg")
+        self.assertEqual(float(order[order.index("-t") + 1]), 305.0)  # Cinco minutos y un margen.
+        self.assertEqual(int(order[order.index("-fs") + 1]), engine.conversion_bytes)
+        self.assertGreater(engine.conversion_bytes, 300 * 32000)
+
+    def test_output_that_hits_the_byte_ceiling_is_refused_not_truncated(self):
+        engine = self.engine()
+        def brimming(argv, timeout):
+            Path(argv[-1]).write_bytes(b"RIFF" + b"\0" * (engine.conversion_bytes - 4))
+            return Result()
+        self.runner.handlers["ffmpeg"] = brimming
+        with self.assertRaises(RPCError) as caught:
+            self.transcribe(engine=engine)
+        self.assertEqual(caught.exception.code, "too_large")
+        self.assertEqual(self.runner.names(), ["ffmpeg"])  # Nada de transcribir un recorte.
+        self.assertEqual(self.leftovers(), [])
+
+    def test_an_unverifiable_conversion_is_a_failure_not_a_transcription(self):
+        for content in (b"esto no es un wav", wav_bytes(seconds=1, rate=44100)):
+            self.runner.calls.clear()
+            def broken(argv, timeout, content=content):
+                Path(argv[-1]).write_bytes(content)
+                return Result()
+            self.runner.handlers["ffmpeg"] = broken
+            with self.assertRaises(RPCError) as caught:
+                self.transcribe()
+            self.assertEqual(caught.exception.code, "io_failed")
+            self.assertEqual(self.runner.names(), ["ffmpeg"])
+        self.assertEqual(self.leftovers(), [])
 
 
 class FailureTests(EngineTestCase):
@@ -398,21 +451,46 @@ class FailureTests(EngineTestCase):
 
 
 class ConcurrencyTests(EngineTestCase):
+    def take(self, engine, owner, budget=None):
+        deadline = engine.clock() + (budget if budget is not None else engine.budget)
+        engine.claim(owner, deadline, lambda: False)
+
+    def refused(self, engine, owner, budget=None):
+        with self.assertRaises(RPCError) as caught:
+            self.take(engine, owner, budget)
+        self.assertEqual(caught.exception.code, "busy")
+        return caught.exception.message
+
     def test_one_job_per_device_and_two_in_total(self):
-        engine = self.engine()
-        engine.claim("movil-a")
-        with self.assertRaises(RPCError) as same:
-            engine.claim("movil-a")
-        self.assertEqual(same.exception.code, "busy")
-        self.assertIn("este dispositivo", same.exception.message)
-        engine.claim("movil-b")
-        with self.assertRaises(RPCError) as third:
-            engine.claim("movil-c")
-        self.assertEqual(third.exception.code, "busy")
-        self.assertIn("otro audio", third.exception.message)
+        engine = self.engine(turn_seconds=0.0)
+        self.take(engine, "movil-a")
+        self.assertIn("este dispositivo", self.refused(engine, "movil-a"))
+        self.take(engine, "movil-b")
+        self.assertIn("otro audio", self.refused(engine, "movil-c"))
         engine.release("movil-a")
-        engine.claim("movil-c")
+        self.take(engine, "movil-c")
         self.assertEqual(sorted(engine.running), ["movil-b", "movil-c"])
+
+    def test_a_full_host_waits_for_a_turn_and_then_gives_up(self):
+        engine = self.engine(turn_seconds=0.2, clock=time.monotonic)
+        self.take(engine, "movil-a")
+        self.take(engine, "movil-b")
+        freed = threading.Timer(0.05, lambda: engine.release("movil-a"))
+        freed.daemon = True
+        freed.start()
+        engine.claim("movil-c", time.monotonic() + 30, lambda: False)  # Espera y entra.
+        self.assertEqual(sorted(engine.running), ["movil-b", "movil-c"])
+        started = time.monotonic()
+        self.assertIn("otro audio", self.refused(engine, "movil-d"))
+        self.assertGreater(time.monotonic() - started, 0.1)  # Ha esperado su turno antes de rendirse.
+
+    def test_the_wait_never_eats_the_budget_it_needs_to_transcribe(self):
+        engine = self.engine(turn_seconds=60.0)
+        self.take(engine, "movil-a")
+        self.take(engine, "movil-b")
+        started = self.now
+        self.assertIn("otro audio", self.refused(engine, "movil-c", budget=CLEANUP_MARGIN))
+        self.assertEqual(self.now, started)  # El reloj no avanza: no se ha esperado nada.
 
     def test_a_second_dictation_from_the_same_device_is_refused_while_the_first_runs(self):
         engine, refused = self.engine(), []
@@ -427,6 +505,21 @@ class ConcurrencyTests(EngineTestCase):
         self.assertEqual(refused, ["busy"])
         self.assertEqual(engine.running, [])  # El turno se libera al terminar.
 
+    def test_a_cancelled_or_expired_job_also_frees_its_slot(self):
+        engine = self.engine(budget=30.0)
+        def eternal(argv, timeout):
+            self.now += 40.0
+            Path(argv[-1]).write_bytes(wav_bytes())
+            return Result()
+        self.runner.handlers["ffmpeg"] = eternal
+        self.assertEqual(self.code(engine=engine, owner="movil-a"), "io_failed")
+        self.assertEqual(engine.running, [])  # Presupuesto agotado.
+        del self.runner.handlers["ffmpeg"]
+        with self.assertRaises(RPCError):
+            engine.transcribe(b"audio", "audio/mp4", "es", owner="movil-a", cancelled=lambda: True)
+        self.assertEqual(engine.running, [])  # Cancelacion.
+        self.assertEqual(self.transcribe(engine=self.engine(), owner="movil-a")["text"], "Hola desde el movil")
+
     def test_every_ending_releases_the_turn(self):
         engine = self.engine()
         self.runner.handlers["whisper-cli"] = lambda argv, timeout: Result(returncode=1)
@@ -437,6 +530,86 @@ class ConcurrencyTests(EngineTestCase):
         self.binaries.clear()
         self.assertEqual(self.code(engine=self.engine(), owner="movil-a"), "unsupported")
         self.assertEqual(engine.running, [])
+
+
+class CancellationTests(EngineTestCase):
+    def switch(self, after):
+        """Un `cancelled` que dice que sí a partir de la llamada `after`."""
+        state = {"calls": 0}
+        def cancelled():
+            state["calls"] += 1
+            return state["calls"] > after
+        return cancelled
+
+    def during(self, name):
+        """Un `cancelled` que se enciende mientras corre ese proceso, como una desconexion."""
+        return lambda: self.runner.inside and self.runner.names()[-1:] == [name]
+
+    def transcribe_with(self, cancelled, engine=None):
+        engine = engine if engine is not None else self.engine()
+        with self.assertRaises(RPCError) as caught:
+            engine.transcribe(b"audio", "audio/mp4", "es", owner="movil-a", cancelled=cancelled)
+        self.assertEqual(caught.exception.code, "io_failed")
+        self.assertIn("cancel", caught.exception.message)
+        return engine
+
+    def test_cancelling_during_the_conversion_stops_there(self):
+        alive = []
+        def convert(argv, timeout):
+            alive.append(self.leftovers())  # El audio existe mientras ffmpeg trabaja.
+            Path(argv[-1]).write_bytes(wav_bytes())
+            return Result()
+        self.runner.handlers["ffmpeg"] = convert
+        engine = self.transcribe_with(self.during("ffmpeg"))
+        self.assertEqual(self.runner.names(), ["ffmpeg"])  # Whisper ni se llega a lanzar.
+        self.assertEqual(len(alive[0]), 1)
+        self.assertEqual(self.leftovers(), [])
+        self.assertEqual(engine.running, [])
+
+    def test_cancelling_during_whisper_kills_it_and_returns_no_text(self):
+        engine = self.engine()
+        def convert(argv, timeout):
+            Path(argv[-1]).write_bytes(wav_bytes())
+            return Result()
+        self.runner.handlers["ffmpeg"] = convert
+        # El ejecutor simulado hace lo que el de verdad: si le cancelan, avisa en vez
+        # de devolver la transcripcion que whisper hubiera escrito.
+        self.runner.handlers["whisper-cli"] = lambda argv, timeout: Result(stdout="texto que no debe salir")
+        self.transcribe_with(self.during("whisper-cli"), engine=engine)
+        self.assertEqual(self.runner.names(), ["ffmpeg", "whisper-cli"])
+        self.assertEqual(self.leftovers(), [])
+
+    def test_text_already_transcribed_is_dropped_when_the_phone_left(self):
+        engine, seen = self.engine(), []
+        def convert(argv, timeout):
+            Path(argv[-1]).write_bytes(wav_bytes())
+            return Result()
+        self.runner.handlers["ffmpeg"] = convert
+        def late(argv, timeout):
+            seen.append("transcrito")
+            return Result(stdout="Hola")
+        self.runner.handlers["whisper-cli"] = late
+        # Se cancela justo despues de que el motor termine: el texto existe y se tira.
+        finished = lambda: not self.runner.inside and "whisper-cli" in self.runner.names()
+        self.transcribe_with(finished, engine=engine)
+        self.assertEqual(seen, ["transcrito"])
+        self.assertEqual(self.leftovers(), [])
+
+    def test_the_real_runner_kills_a_child_that_ignores_the_polite_signal(self):
+        runner, started = SubprocessRunner(), time.monotonic()
+        with self.assertRaises(CancelledTranscription):
+            runner(["/bin/sh", "-c", "trap '' TERM; sleep 30"], timeout=30, cancelled=self.switch(after=1))
+        self.assertLess(time.monotonic() - started, runner.GRACE_SECONDS + 3)
+
+    def test_the_real_runner_stops_a_child_that_outlives_its_deadline(self):
+        runner, started = SubprocessRunner(), time.monotonic()
+        with self.assertRaises(subprocess.TimeoutExpired):
+            runner(["/bin/sh", "-c", "sleep 30"], timeout=0.2)
+        self.assertLess(time.monotonic() - started, 3)
+
+    def test_the_real_runner_returns_output_and_status(self):
+        result = SubprocessRunner()(["/bin/sh", "-c", "printf hola; exit 3"], timeout=10)
+        self.assertEqual((result.returncode, result.stdout), (3, "hola"))
 
 
 class OrphanTests(EngineTestCase):
@@ -465,6 +638,34 @@ class OrphanTests(EngineTestCase):
         self.assertFalse(old.exists())
         self.assertFalse(strange.exists())
         self.assertTrue(fresh.exists())
+
+    def test_a_failed_deletion_is_noticed_and_retried_by_the_sweep(self):
+        refusals = []
+        def stubborn(directory):
+            refusals.append(Path(directory))
+            raise OSError("no se puede borrar")
+        engine = self.engine(remove=stubborn)
+        self.assertEqual(self.transcribe(engine=engine)["text"], "Hola desde el movil")
+        self.assertEqual(len(refusals), 2)  # Lo intenta dos veces antes de rendirse.
+        left = self.leftovers()
+        self.assertEqual(len(left), 1)  # El audio sigue en disco, y el motor lo sabe.
+        self.assertEqual([item.name for item in engine.undeleted], left)
+        self.assertEqual(engine.active, set())
+        engine.remove = shutil.rmtree
+        self.assertEqual(engine.sweep_orphans(), 1)
+        self.assertEqual(self.leftovers(), [])
+        self.assertEqual(engine.undeleted, [])
+
+    def test_the_sweep_never_takes_a_directory_that_is_in_use(self):
+        engine = self.engine()
+        engine.work_directory.mkdir(parents=True, exist_ok=True)
+        mine = engine.workspace()
+        (mine / "entrada.m4a").write_bytes(b"audio")
+        os.utime(mine, (0, 0))  # Antiquisimo, pero en uso: no se toca.
+        self.assertEqual(engine.sweep_orphans(), 0)
+        self.assertTrue(mine.exists())
+        self.assertTrue(engine.discard(mine))
+        self.assertEqual(engine.active, set())
 
     def test_the_sweep_survives_a_missing_directory_and_stray_files(self):
         engine = self.engine(alive=lambda pid: False)
@@ -519,9 +720,20 @@ class PrivacyTests(EngineTestCase):
 
 
 class TextTests(unittest.TestCase):
+    def test_only_whisper_markers_are_dropped_not_bracketed_dictation(self):
+        for marker in ("[BLANK_AUDIO]", "[ Silence ]", "[Music]", "[APPLAUSE]", "[Laughter]",
+                       "[Inaudible]", "[_TT_120]", "[_BEG_]", "[*]", "[Speaking foreign language]"):
+            self.assertTrue(is_marker(marker), marker)
+        for dictation in ("[pendiente]", "[TODO: llamar a Dani]", "[1]", "[nota mental]",
+                          "[BLANK_AUDIO] con texto", "corchetes [dentro] de una frase"):
+            self.assertFalse(is_marker(dictation), dictation)
+        self.assertEqual(clean_transcript("[BLANK_AUDIO]\n[pendiente]\n"), "[pendiente]")
+        self.assertEqual(clean_transcript("apunta [pendiente] y ya"), "apunta [pendiente] y ya")
+
     def test_transcript_is_cleaned_up_into_one_dictation_line(self):
         self.assertEqual(clean_transcript(" Hola  mundo \n\n  segunda linea \n"), "Hola mundo segunda linea")
         self.assertEqual(clean_transcript("[BLANK_AUDIO]\n[ Silence ]\nTexto\n"), "Texto")
+        self.assertEqual(clean_transcript("[MUSIC]\n[Applause]\n"), "")
         self.assertEqual(clean_transcript("[00:00:00.000 --> 00:00:02.000]  Con marca\n"), "Con marca")
         self.assertEqual(clean_transcript(""), "")
         self.assertEqual(clean_transcript("[MUSIC]"), "")
@@ -622,6 +834,28 @@ class RPCTests(EngineTestCase):
         self.assertEqual(self.call(self.request())["text"], "Hola desde el movil")
         self.assertEqual(outcomes, ["busy", "Hola desde el movil"])
         self.assertEqual(self.rpc.transcription.running, [])
+
+    def test_a_phone_that_disconnects_mid_transcription_cancels_the_engine(self):
+        def leaves(argv, timeout):
+            self.peers.pop("conn-a")  # El movil se va mientras ffmpeg trabaja.
+            Path(argv[-1]).write_bytes(wav_bytes())
+            return Result()
+        self.runner.handlers["ffmpeg"] = leaves
+        self.assertEqual(self.error(self.request()), "io_failed")
+        self.assertEqual(self.runner.names(), ["ffmpeg"])  # Whisper no llega a arrancar.
+        self.assertEqual(self.leftovers(), [])
+        self.assertEqual(self.rpc.transcription.running, [])
+
+    def test_a_revoked_device_cancels_the_engine_too(self):
+        approved = [True]
+        def revoked(argv, timeout):
+            approved[0] = False  # Le quitan el permiso a media transcripcion.
+            Path(argv[-1]).write_bytes(wav_bytes())
+            return Result()
+        self.runner.handlers["ffmpeg"] = revoked
+        self.assertEqual(self.error(self.request(), authorized=lambda: approved[0]), "io_failed")
+        self.assertEqual(self.runner.names(), ["ffmpeg"])
+        self.assertEqual(self.leftovers(), [])
 
     def test_an_unknown_connection_is_not_a_device(self):
         self.assertEqual(self.error(self.request(), connection="conn-fantasma"), "not_found")

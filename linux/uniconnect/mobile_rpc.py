@@ -224,7 +224,11 @@ class MobileRPC:
                 # Contexto opcional: si viene, tiene que seguir existiendo.
                 self.target(params, terminal=params.get("terminal_id") is not None)
         self.on_main(check)
-        return self.transcription.transcribe(raw, mime, language, owner=owner)
+        def gone():
+            # El motor mira esto mientras trabaja: si el móvil se desconecta o le
+            # revocan el permiso, se mata a whisper en vez de dejarlo comerse la CPU.
+            return not (self.host is not None and self.host.peer_of(connection_id)) or not authorized()
+        return self.transcription.transcribe(raw, mime, language, owner=owner, cancelled=gone)
 
     @staticmethod
     def pty_identity(workspace, record):

@@ -503,9 +503,13 @@ concurrent jobs, and no audio surviving a crash).
 - Duration is measured from the audio that actually arrived, never from what the
   MIME claims, so a long recording relabelled as a tiny WAV is refused all the
   same.
-- One transcription at a time per device and two per host (`busy` beyond that):
-  whisper saturates every core it is given, and a machine with four of them cannot
-  serve two dictations and a desktop at once.
+- One transcription at a time per device and two per host: whisper saturates every
+  core it is given, and a machine with four of them cannot serve two dictations and
+  a desktop at once. A third caller waits a few seconds for a turn and then gets
+  `busy`.
+- A dictation the phone abandons is stopped on the host: losing the connection or
+  the device's approval kills the running converter or engine instead of letting it
+  finish, and no text is returned for a call that was cancelled.
 - Errors: `invalid_params` (bad base64, unknown MIME, bad language, no audio),
   `too_large`, `unsupported` (no engine, no model, or no converter for a
   compressed clip; the phone dictates locally instead), `busy` (too many jobs in
@@ -539,10 +543,15 @@ Host side on Linux (2026-09-09, `linux/uniconnect/transcribe.py`, routed by
   readable WAV is measured with `ffprobe` when it exists and converted with
   `ffmpeg` (`-ac 1 -ar 16000 -c:a pcm_s16le`), and the converted WAV is measured
   again, which is what `seconds` reports; over five minutes at any of those three
-  points answers `too_large` before a second of engine time is spent. Without
-  `ffmpeg` a clip that is not already in whisper's shape answers `unsupported` and
-  the phone dictates locally. A WAV that passes through unconverted needs no
-  `ffprobe` to be safe: 3 MiB at 32000 B/s cannot hold more than 98 seconds.
+  points answers `too_large` before a second of engine time is spent. The
+  conversion itself is bounded in both duration (`-t`, five minutes plus a small
+  margin) and output size (`-fs`), so an hour of audio never expands onto the
+  host's disk; reaching either ceiling answers `too_large` rather than quietly
+  transcribing a truncated clip, and an output whose format or duration cannot be
+  verified answers `io_failed`. Without `ffmpeg` a clip that is not already in
+  whisper's shape answers `unsupported` and the phone dictates locally. A WAV that
+  passes through unconverted needs no `ffprobe` to be safe: 3 MiB at 32000 B/s
+  cannot hold more than 98 seconds.
 - **Budget, jobs and threading.** Probe, conversion, transcription and cleanup
   share one monotonic budget of 90 s (`TranscriptionEngine.budget`, injected
   clock), of which the last 5 s are reserved: each child process gets what is left
@@ -550,14 +559,26 @@ Host side on Linux (2026-09-09, `linux/uniconnect/transcribe.py`, routed by
   the next step, so the host replies at around 85 s and the phone's 90 s deadline
   is never reached. A device may hold one job and the host two
   (`max_jobs_per_owner`, `max_jobs`); the turn is taken after validation, before
-  the engine runs, and released in a `finally`. The device is the approved tailnet
-  address of the live connection, as in `file_put`, so a second connection from the
-  same phone does not get a second turn. Everything runs on the peer's thread,
-  never on GTK; only the approval and lock checks (and the optional box/terminal
-  lookup) hop to the model owner. The call is cancellable: a `cancelled` callable
-  is checked between stages. As with `file.commit`, a request that takes longer
-  than the peer's 30 s idle timeout is answered first and its connection is closed
-  right after, so the phone must not reuse that connection for the next request.
+  the engine runs, and released in a `finally` on every ending, cancellation and
+  timeout included. The same device is refused at once (a double tap is not a
+  queue); a caller that meets the host-wide limit waits at most `turn_seconds`, and
+  never past the budget it still needs to transcribe, before answering `busy`. The
+  device is the approved tailnet address of the live connection, as in `file_put`,
+  so a second connection from the same phone does not get a second turn.
+  Everything runs on the peer's thread, never on GTK; only the approval and lock
+  checks (and the optional box/terminal lookup) hop to the model owner. As with
+  `file.commit`, a request that takes longer than the peer's 30 s idle timeout is
+  answered first and its connection is closed right after, so the phone must not
+  reuse that connection for the next request.
+- **Cancellation.** `mobile_rpc.py` hands the engine a `cancelled` predicate that
+  reads the live connection and the device's approval, so a phone that walks away
+  (or a revoked device, or the host closing) stops the work rather than paying for
+  it. `SubprocessRunner` runs each child through `Popen` and waits in small slices,
+  checking the deadline and that predicate on every turn; when either fires it
+  signals the whole process group (`start_new_session`) with `SIGTERM` and then
+  `SIGKILL`, because killing only the parent leaves grandchildren holding the pipes
+  open. A cancelled call answers `io_failed` and never returns text, even when the
+  engine had already produced it.
 - **Privacy and crash leftovers.** Each call gets its own directory (0700) named
   `<pid>-<random>` under `$XDG_CACHE_HOME/uniconnect/transcribe`
   (`~/.cache/uniconnect/transcribe`); the clip is written with `O_EXCL|O_NOFOLLOW`
@@ -566,10 +587,18 @@ Host side on Linux (2026-09-09, `linux/uniconnect/transcribe.py`, routed by
   leave nothing behind, but a `finally` cannot survive a killed process:
   `TranscriptionEngine.sweep_orphans()`, called from `MobileDesktop.__init__`,
   deletes at start every directory whose pid is gone or that is older than 10
-  minutes (no transcription lives that long). Those two rules together are what
-  makes the sweep safe while another UniConnect instance is transcribing. No log
-  line, message or exception carries the audio or the text: the engine's own
+  minutes (no transcription lives that long), and skips the ones this instance is
+  using right now. Those rules together are what makes the sweep safe while another
+  job, or another UniConnect instance, is transcribing. The deletion is verified
+  rather than assumed: `rmtree(ignore_errors=True)` can report success with the
+  audio still on disk, so the directory is checked afterwards, retried with the
+  permissions reopened, and recorded for the next sweep if it still survives. No
+  log line, message or exception carries the audio or the text: the engine's own
   stderr is never forwarded to the phone.
+- **Transcript text.** Only whisper's own non-speech markers are dropped
+  (`[BLANK_AUDIO]`, `[Music]`, `[Applause]`, `[_TT_…]` and the like, matched
+  against a known list). A bracketed line the reader actually dictated, such as
+  `[pendiente]`, is text and survives.
 
 ### ローカルウインドウの作成と保存
 
