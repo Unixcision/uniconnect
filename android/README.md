@@ -93,6 +93,41 @@ Las direcciones numéricas se limitan a `100.64.0.0/10` y
 que resuelven a una IP Tailscale antes de conectar. No activa Tailscale, abre puertos
 ni cambia la configuración de macOS/Linux por su cuenta.
 
+## Enviar archivos
+
+Sección global de la página principal (icono de nube en la barra superior y fila bajo las
+máquinas) para subir fotos o archivos a un servicio de transferencia y copiar el enlace que
+devuelve, pensada para pegarlo después en los servidores. No pasa por ninguna máquina de
+UniConnect: el móvil habla directamente con el servicio.
+
+- Tres entradas: «Hacer foto» (una app de cámara escribe en `cacheDir/photos` a través del
+  `FileProvider` `${applicationId}.files`, `res/xml/file_paths.xml`), «Elegir imágenes»
+  (selector de fotos del sistema) y «Elegir archivos» (documentos). Ninguna necesita permiso
+  declarado: no hay `CAMERA` ni `READ_MEDIA_*` en el manifiesto; los selectores conceden
+  acceso por URI y `TakePicture` no exige el permiso de cámara si la app no lo declara.
+- Servicio configurable y persistido con los demás ajustes (`AppSettings.uploadService`,
+  claves `settings.uploadDomain` y `settings.uploadStyle`), porque estos servicios caen.
+  Presets medidos: `sendit.sh` (por defecto), `temp.sh`, `litterbox.catbox.moe` y
+  `transfer.sh`; «Personalizado» admite un dominio propio con uno de tres estilos
+  (`domain/UploadStyle`): `RAW_NAMED` (cuerpo crudo por POST a `/<nombre>`; sendit.sh y
+  transfer.sh), `MULTIPART_FILE` (formulario con campo `file` a `/upload`; temp.sh) y
+  `LITTERBOX` (`reqtype=fileupload`, `time=72h`, `fileToUpload`). El enlace es la primera
+  URL http(s) del cuerpo, o las claves `link`, `url` o `downloadUrl` si es JSON
+  (`domain/UploadLink`). Sin URL o HTTP ≥ 400 se muestra un error legible con el dominio.
+- Transporte `data/HttpFileSender` con `HttpURLConnection`: sin dependencias nuevas,
+  streaming con longitud fija (nada se carga entero en memoria), progreso por bytes,
+  30 s de conexión y 10 min de lectura, `User-Agent: UniConnect Android`. Los archivos se
+  suben en secuencia; un fallo se queda en pantalla con su motivo y botón Reintentar.
+- Nombre saneado antes de enviarlo (`domain/UploadFileName`): sin directorios ni caracteres
+  raros, acentos plegados, extensión conservada, nunca vacío.
+- Historial de los últimos 30 enlaces en DataStore (`data/StoredUploadHistoryRepository`),
+  con copiar, compartir y borrar. Copiar usa el portapapeles del sistema; compartir,
+  `ACTION_SEND`.
+- Pruebas: extracción del enlace en los tres formatos, saneado del nombre, URL por estilo,
+  persistencia de servicio e historial, y `HttpFileSender` contra un `HttpServer` local en
+  la JVM para los tres estilos, progreso, rechazo, respuesta sin enlace, host caído y
+  archivo ilegible. No se ha probado contra los servicios reales desde la app.
+
 ## Arquitectura
 
 El usuario asume el diseño y frontend Android desde el 5 de septiembre de 2026.

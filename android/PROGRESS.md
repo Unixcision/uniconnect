@@ -16,6 +16,15 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
   Señal compacto). La paleta fija `Brand` ha desaparecido. Persistencia cubierta por
   `StoredSettingsRepositoryTest` con un DataStore en memoria. Verificado solo compilando y
   con tests: no se ha instalado en ningún móvil ni revisado visualmente.
+- Enviar archivos (2026-09-09): sección global en la home (icono en la barra y fila bajo
+  las máquinas) que sube fotos, imágenes o archivos a un servicio de transferencia y da el
+  enlace para copiar o compartir. Servicio elegible y guardado en ajustes (presets
+  sendit.sh, temp.sh, litterbox.catbox.moe, transfer.sh, o dominio propio con estilo
+  RAW_NAMED / MULTIPART_FILE / LITTERBOX), historial de 30 enlaces, subida secuencial con
+  progreso y reintento. Sin permisos nuevos: FileProvider para la foto, selectores del
+  sistema para el resto. Protocolos según lo medido el 9 de septiembre. Tests JVM incluido
+  `HttpFileSender` contra un `HttpServer` local; no probado contra los servicios reales ni
+  instalado en el Pixel.
 
 ## En curso
 
