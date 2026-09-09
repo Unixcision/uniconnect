@@ -4,6 +4,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -148,6 +149,8 @@ class HostDictationTest {
         assertEquals("what was said is not lost: the Mac answers for the window of the other machine", DictationState.Done("git log"), dictation.state.value)
         assertEquals(listOf("m1", "m2"), asked)
         assertEquals("nothing was pressed in between", 2, host.calls.get())
+        assertEquals(listOf("m1", "m2"), host.received.map { it.first })
+        host.received.forEach { (machine, audio) -> assertArrayEquals("what $machine was given", clip.contents(), audio) }
         assertTrue("and it is gone once transcribed", clip.deleted)
         assertEquals("the one with no engine is marked for the next dictations", setOf("m1"), dictation.refusedMachines)
     }
@@ -162,7 +165,11 @@ class HostDictationTest {
         dictation.start(DictationLanguage.ES_ES)
         dictation.stop()
         awaitFailure(dictation)
-        assertEquals(DictationState.Failed(DictationFailure.HOST_UNSUPPORTED, DictationRetry.RERECORD), dictation.state.value)
+        assertEquals(
+            "no machine will take it, so the next dictation is spoken to the phone",
+            DictationState.Failed(DictationFailure.HOST_UNSUPPORTED, DictationRetry.DICTATE_ON_PHONE),
+            dictation.state.value,
+        )
         assertEquals("both were tried before giving up", 2, host.calls.get())
         assertTrue("a recorded file is no use to a live recogniser, so it goes", clip.deleted)
         assertEquals(setOf("m1", "m2"), dictation.refusedMachines)
@@ -181,7 +188,44 @@ class HostDictationTest {
         awaitDone(dictation)
         assertEquals(DictationState.Done("make"), dictation.state.value)
         assertEquals(listOf("m1", "m2"), asked)
+        host.received.forEach { (machine, audio) -> assertArrayEquals("what $machine was given", clip.contents(), audio) }
         assertTrue("a machine that did not answer is not one without an engine", dictation.refusedMachines.isEmpty())
+    }
+
+    @Test
+    fun aMachineThatDidNotAnswerIsTheOneOfferedWhenTheOtherHasNoEngine() {
+        val clip = FakeClip(90_000)
+        val asked = mutableListOf<String>()
+        // The tailnet blinks once for the window's machine; the other has no engine at all.
+        var blink = true
+        val host = FakeTranscription {
+            when {
+                asked.last() == "m1" && blink -> { blink = false; throw MachineFailure.Transport() }
+                asked.last() == "m1" -> Transcript("por adb")
+                else -> throw TranscribeRefused(TranscribeRefusal.UNSUPPORTED)
+            }
+        }
+        host.onCall = { asked += it.machine.id }
+        val dictation = dictation(FakeRecorder(clip), host)
+        dictation.aim(target) { out -> DictationTarget(other).takeUnless { other.id in out } }
+        dictation.start(DictationLanguage.ES_ES)
+        dictation.stop()
+        awaitFailure(dictation)
+        assertEquals(
+            "the machine that only failed to answer can still take it, so that is what is offered",
+            DictationState.Failed(DictationFailure.HOST_UNREACHABLE, DictationRetry.RESEND),
+            dictation.state.value,
+        )
+        assertFalse("and the recording is still there for it", clip.deleted)
+        assertEquals(listOf("m1", "m2"), asked)
+        // The retry goes back to the machine that went quiet, not to the one with no engine.
+        dictation.reset()
+        asked.clear()
+        dictation.resend()
+        awaitDone(dictation)
+        assertEquals(listOf("m1"), asked)
+        assertEquals(DictationState.Done("por adb"), dictation.state.value)
+        assertTrue(clip.deleted)
     }
 
     @Test
@@ -310,11 +354,21 @@ class HostDictationTest {
         throw AssertionError("timed out waiting for $what")
     }
 
-    /** A recording that remembers whether it was deleted, which is what most of these tests assert. */
+    /**
+     * A recording that remembers whether it was deleted, which is what most of these tests assert.
+     * Reading one that was deleted fails, exactly as a missing file would, so a test cannot pass
+     * by accident over an audio that is no longer there.
+     */
     private class FakeClip(override val bytes: Long) : AudioClip {
         var deleted = false
-        override fun read(): ByteArray = ByteArray(bytes.coerceAtMost(1_024).toInt())
+        private val content = ByteArray(bytes.coerceAtMost(1_024).toInt()) { (it * 13 % 251).toByte() }
+        override fun read(): ByteArray {
+            check(!deleted) { "a deleted recording cannot be read" }
+            return content
+        }
         override fun delete() { deleted = true }
+        /** What the machine should receive, for a test to compare against. */
+        fun contents(): ByteArray = content
     }
 
     private class FakeRecorder(private val clip: AudioClip?) : VoiceRecorder {
@@ -333,12 +387,15 @@ class HostDictationTest {
         val calls = AtomicInteger()
         var language: String? = null
         var mime: String? = null
+        /** The audio each machine was given, in the order they were asked. */
+        val received = mutableListOf<Pair<String, ByteArray>>()
         /** Told which machine is being asked, before the answer is decided. */
         var onCall: ((DictationTarget) -> Unit)? = null
         override suspend fun transcribe(target: DictationTarget, audio: ByteArray, mime: String, language: String?): Transcript {
             calls.incrementAndGet()
             this.language = language
             this.mime = mime
+            received += target.machine.id to audio
             onCall?.invoke(target)
             return answer()
         }

@@ -179,9 +179,12 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
 - Cuando transcribe otro equipo, la petición no lleva `workspace_id` ni `terminal_id` y la barra dice
   qué equipo lo hace. El `unsupported` se recuerda por máquina, no en general.
 - Una grabación ya no se pierde porque el equipo no pueda: `unsupported` y una caída de red la
-  reencaminan en el acto al siguiente equipo capaz, sin que el usuario toque nada. Solo se descarta
-  cuando no queda ningún destino, y entonces se dice y se ofrece dictar otra vez en el móvil.
-- 53 pruebas JVM nuevas (elección de motor, base64 por bloques, tope de 3 MiB y trama, cada código de
+  reencaminan en el acto al siguiente equipo capaz, sin que el usuario toque nada.
+- Al agotar destinos el aviso describe la ruta real: si alguno solo se quedó sin contestar, el audio
+  se conserva y se ofrece reintentar contra ESE equipo; solo si ninguno tiene motor se descarta,
+  explicándolo, y «Dictar otra vez» fuerza el dictado local en vez de volver a la regla automática.
+  Sin reconocedor en el móvil no se promete dictado local ni se ofrece botón.
+- 54 pruebas JVM nuevas (elección de motor, base64 por bloques, tope de 3 MiB y trama, cada código de
   error del contrato contra un host de mentira en un par de sockets, borrado del archivo en todos los
   caminos, reintento único, corte a los 5 minutos, persistencia del ajuste). Build y
   `testDebugUnitTest` en verde.

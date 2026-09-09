@@ -330,6 +330,7 @@
     <string name="dictation_retry">Reintentar</string>
     <string name="dictation_record_again">Dictar otra vez</string>
     <string name="dictation_failed_no_transcriber">Ningún equipo puede transcribir: se descarta lo grabado y se dicta en el móvil</string>
+    <string name="dictation_failed_no_transcriber_deaf">Ningún equipo puede transcribir y el móvil no reconoce voz: se descarta lo grabado</string>
     <string name="settings_transcription">Transcripción</string>
     <string name="settings_transcription_note">Un equipo transcribe con Whisper y entiende mucho mejor. Automática usa el equipo de la ventana si puede; si no, el primer equipo conectado que pueda; si ninguno, dicta el móvil.</string>
     <string name="settings_transcription_no_machines">No hay equipos guardados a los que mandar el audio</string>

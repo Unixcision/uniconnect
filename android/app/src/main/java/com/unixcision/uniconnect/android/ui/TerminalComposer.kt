@@ -128,7 +128,9 @@ fun TerminalComposer(
                 dictation?.consume()
             }
             is DictationState.Failed -> {
-                notice = outcome.reason.message
+                // Never promise a dictation on a phone that cannot listen.
+                notice = if (outcome.reason == DictationFailure.HOST_UNSUPPORTED && dictation?.phoneListens != true) R.string.dictation_failed_no_transcriber_deaf
+                else outcome.reason.message
                 offerSettings = outcome.reason == DictationFailure.NO_PERMISSION
                 retry = outcome.retry
                 dictation?.consume()
@@ -136,15 +138,17 @@ fun TerminalComposer(
             else -> {}
         }
     }
-    val begin = {
+    // The way of transcribing is remembered across the permission prompt, because a retry after
+    // "no machine can" is a dictation on the phone whatever the setting says.
+    var pending by remember { mutableStateOf(transcription) }
+    val begin: (TranscriptionMode) -> Unit = { mode ->
         notice = null
         offerSettings = false
         retry = DictationRetry.NONE
-        dictation?.start(dictationLanguage, transcription, transcribers, dictationTarget, transcriptionMachine)?.let { notice = it.message }
-        Unit
+        dictation?.start(dictationLanguage, mode, transcribers, dictationTarget, transcriptionMachine)?.let { notice = it.message }
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) begin()
+        if (granted) begin(pending)
         else {
             // No rationale to show means the reader ticked "don't ask again": only the app's settings can undo that.
             val activity = context as? Activity
@@ -152,8 +156,9 @@ fun TerminalComposer(
             notice = R.string.dictation_permission_denied
         }
     }
-    val startDictation = {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) begin()
+    val startDictation: (TranscriptionMode) -> Unit = { mode ->
+        pending = mode
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) begin(mode)
         else permission.launch(Manifest.permission.RECORD_AUDIO)
     }
     val canDictate = dictation?.canDictate(transcription, transcribers, dictationTarget, transcriptionMachine) == true
@@ -203,7 +208,7 @@ fun TerminalComposer(
                 onClick = {
                     when (face) {
                         Face.STOP -> dictation?.stop()
-                        Face.MIC -> startDictation()
+                        Face.MIC -> startDictation(transcription)
                         Face.SEND -> submit(true)
                         Face.SENDING -> {}
                     }
@@ -243,17 +248,29 @@ fun TerminalComposer(
                 }
                 // The kept recording travels once more; a recording the machine will never take is
                 // recorded again instead.
-                if (retry == DictationRetry.RESEND || (retry == DictationRetry.RERECORD && canDictate)) TextButton(
-                    onClick = {
-                        val resend = retry == DictationRetry.RESEND
-                        retry = DictationRetry.NONE
-                        notice = null
-                        if (resend) dictation?.resend() else startDictation()
-                    },
-                    enabled = enabled && !sending,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                ) {
-                    Text(stringResource(if (retry == DictationRetry.RESEND) R.string.dictation_retry else R.string.dictation_record_again), style = MaterialTheme.typography.labelMedium)
+                val offer = when (retry) {
+                    DictationRetry.RESEND -> R.string.dictation_retry
+                    DictationRetry.RERECORD -> R.string.dictation_record_again.takeIf { canDictate }
+                    DictationRetry.DICTATE_ON_PHONE -> R.string.dictation_record_again.takeIf { dictation?.phoneListens == true }
+                    DictationRetry.NONE -> null
+                }
+                offer?.let { label ->
+                    TextButton(
+                        onClick = {
+                            val kind = retry
+                            retry = DictationRetry.NONE
+                            notice = null
+                            // The phone is forced here, not asked for: the automatic rule would go
+                            // back to a machine that was only unreachable a moment ago.
+                            when (kind) {
+                                DictationRetry.RESEND -> dictation?.resend()
+                                DictationRetry.DICTATE_ON_PHONE -> startDictation(TranscriptionMode.PHONE)
+                                else -> startDictation(transcription)
+                            }
+                        },
+                        enabled = enabled && !sending,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    ) { Text(stringResource(label), style = MaterialTheme.typography.labelMedium) }
                 }
                 IconButton(onClick = { notice = null; offerSettings = false; retry = DictationRetry.NONE; dictation?.discard() }, Modifier.size(24.dp)) { Icon(Icons.Rounded.Close, stringResource(R.string.dismiss), Modifier.size(14.dp), tint = UniTheme.colors.muted) }
             }

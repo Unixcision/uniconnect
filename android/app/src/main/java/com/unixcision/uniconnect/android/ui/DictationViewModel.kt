@@ -44,6 +44,9 @@ class DictationViewModel(private val phone: Dictation, private val host: HostDic
     /** Notices that are only worth saying once, and were said. */
     private val told = mutableSetOf<TranscriptionNotice>()
 
+    /** Whether the phone itself can recognise speech; without it nothing local can be promised. */
+    val phoneListens: Boolean get() = phone.available
+
     /** Whether a microphone is worth offering for these machines and this setting. */
     fun canDictate(mode: TranscriptionMode, machines: List<TranscriptionCandidate>, window: DictationTarget?, chosenMachineID: String?): Boolean =
         route(mode, machines, window, chosenMachineID).canDictate(phone.available)

@@ -232,12 +232,22 @@ CONSERVA para un único «Reintentar»; después se borra pase lo que pase.
 `unsupported` y una caída de red no son un callejón sin salida y NO le cuestan al usuario lo que
 acaba de decir: la misma grabación se reencamina en el acto al siguiente equipo que pueda,
 recalculando la regla automática sin el que acaba de fallar, y lo único que se ve es la barra
-diciendo quién transcribe ahora. Solo cuando no queda ningún destino se convierte en un aviso:
-«Ningún equipo puede transcribir: se descarta lo grabado y se dicta en el móvil», con «Dictar otra
-vez» si el móvil tiene reconocedor. Ahí sí se borra el audio, porque un reconocedor local necesita
-micrófono en vivo y no sabe qué hacer con un archivo. La diferencia entre los dos casos es lo que se
-recuerda: `unsupported` marca esa máquina para los siguientes dictados; una caída de red solo la
-descarta para esa grabación.
+diciendo quién transcribe ahora. La diferencia entre los dos casos es lo que se recuerda:
+`unsupported` marca esa máquina para los siguientes dictados; una caída de red solo la descarta para
+esa grabación, porque puede ser un bache de la tailnet.
+
+Cuando se agotan los destinos, lo que pasa depende de por qué se agotaron, y el aviso dice
+exactamente eso:
+
+- Si alguno solo se quedó sin contestar, la grabación se CONSERVA y se ofrece «Reintentar» contra
+  ese equipo, que es el que todavía puede tomarla. Es el caso mixto (uno sin red y otro sin motor):
+  no se pierde nada.
+- Si ninguno tiene motor, no hay a dónde ir y ahí sí se borra el audio, porque un reconocedor local
+  necesita micrófono en vivo y no sabe qué hacer con un archivo. El aviso lo dice («Ningún equipo
+  puede transcribir: se descarta lo grabado y se dicta en el móvil») y «Dictar otra vez» FUERZA el
+  dictado local, sin volver a preguntar a los equipos. Si el móvil no reconoce voz, el aviso no
+  promete lo que no puede cumplir («…y el móvil no reconoce voz: se descarta lo grabado») y no
+  ofrece botón.
 
 `busy` es aparte porque no es un fallo: el equipo admite un dictado por dispositivo y dos en total
 (Whisper se come los núcleos), así que responde «El equipo está transcribiendo otro audio;
@@ -281,7 +291,7 @@ el estado del motor activo, así que el composable lee los mismos estados en los
 `MediaRecorder` queda tras `domain/VoiceRecorder` y el RPC tras `domain/HostTranscription`, de modo
 que todo el flujo (elección, límite de tamaño, cada error, borrado del archivo, reintento único,
 corte a los 5 minutos) se prueba en la JVM sin micrófono ni socket. La llamada se prueba además
-contra un host de mentira en un par de sockets, como la de adjuntos. Probado solo así: 53 pruebas
+contra un host de mentira en un par de sockets, como la de adjuntos. Probado solo así: 54 pruebas
 nuevas; contra un host real con Whisper no se ha ejercitado todavía.
 
 ## Arquitectura

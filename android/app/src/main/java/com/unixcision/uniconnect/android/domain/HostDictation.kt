@@ -62,6 +62,9 @@ class HostDictation(
     /** Whether the recording in flight was the one the five-minute limit ended. */
     private var cutAtLimit = false
 
+    /** The first machine that did not answer at all, which is still worth trying again. */
+    private var unreachable: DictationTarget? = null
+
     /**
      * Machines that answered `unsupported`. They are not asked again while the app runs, so the
      * route falls to another machine, or to the phone, without the reader doing anything.
@@ -85,6 +88,7 @@ class HostDictation(
         retried = false
         tried.clear()
         cutAtLimit = false
+        unreachable = null
         if (target == null) { machine.fail(DictationFailure.HOST_FAILED); return }
         if (!recorder.start()) { machine.fail(DictationFailure.ENGINE_UNAVAILABLE); return }
         finishing.set(false)
@@ -177,7 +181,10 @@ class HostDictation(
     private fun refuse(aimed: DictationTarget, clip: AudioClip, failure: Exception) {
         val refusal = (failure as? TranscribeRefused)?.refusal
         if (refusal == TranscribeRefusal.UNSUPPORTED) refused += aimed.machine.id
-        if (refusal == null) tried += aimed.machine.id
+        if (refusal == null) {
+            tried += aimed.machine.id
+            if (unreachable == null) unreachable = aimed
+        }
         if (refusal == TranscribeRefusal.UNSUPPORTED || refusal == null) {
             val elsewhere = relay?.next(refused + tried)
             if (elsewhere != null) {
@@ -185,6 +192,15 @@ class HostDictation(
                 send(clip, cutAtLimit)
                 return
             }
+        }
+        // Out of machines, but one of them only failed to answer: that one can still take this
+        // recording, so the reader is told what actually happened instead of losing what was said.
+        val silent = unreachable
+        if (refusal == TranscribeRefusal.UNSUPPORTED && silent != null && !retried) {
+            target = silent
+            kept = clip
+            machine.fail(DictationFailure.HOST_UNREACHABLE, DictationRetry.RESEND)
+            return
         }
         val reason = when (refusal) {
             TranscribeRefusal.TOO_LARGE -> DictationFailure.TOO_LONG
@@ -206,8 +222,12 @@ class HostDictation(
             // leaving the reader wondering. A phone recogniser needs a live microphone, so what
             // was captured cannot be handed to it.
             clip.delete()
-            val again = reason == DictationFailure.TOO_LONG || reason == DictationFailure.HOST_UNSUPPORTED
-            machine.fail(reason, if (again) DictationRetry.RERECORD else DictationRetry.NONE)
+            val again = when (reason) {
+                DictationFailure.TOO_LONG -> DictationRetry.RERECORD
+                DictationFailure.HOST_UNSUPPORTED -> DictationRetry.DICTATE_ON_PHONE
+                else -> DictationRetry.NONE
+            }
+            machine.fail(reason, again)
         }
     }
 
