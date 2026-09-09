@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.unixcision.uniconnect.android.domain.AppSettings
 import com.unixcision.uniconnect.android.domain.ColorMode
 import com.unixcision.uniconnect.android.domain.DesignTheme
+import com.unixcision.uniconnect.android.domain.DictationLanguage
 import com.unixcision.uniconnect.android.domain.SettingsRepository
 import com.unixcision.uniconnect.android.domain.TerminalView
 import com.unixcision.uniconnect.android.domain.UploadService
@@ -31,6 +32,8 @@ class StoredSettingsRepository(private val store: DataStore<Preferences>) : Sett
     private val uploadStyle = stringPreferencesKey("settings.uploadStyle")
     private val terminalUploadDomain = stringPreferencesKey("settings.terminalUploadDomain")
     private val terminalUploadStyle = stringPreferencesKey("settings.terminalUploadStyle")
+    private val sendOnDictation = booleanPreferencesKey("settings.sendOnDictationEnd")
+    private val dictationLanguage = stringPreferencesKey("settings.dictationLanguage")
     private val defaults = AppSettings()
 
     override val settings = store.data.map { stored ->
@@ -42,6 +45,8 @@ class StoredSettingsRepository(private val store: DataStore<Preferences>) : Sett
             colorMode = ColorMode.named(stored[mode]),
             uploadService = service(stored[uploadDomain], stored[uploadStyle]) ?: defaults.uploadService,
             terminalUploadService = service(stored[terminalUploadDomain], stored[terminalUploadStyle]),
+            sendOnDictationEnd = stored[sendOnDictation] ?: defaults.sendOnDictationEnd,
+            dictationLanguage = DictationLanguage.named(stored[dictationLanguage]),
         )
     }.distinctUntilChanged()
 
@@ -54,6 +59,8 @@ class StoredSettingsRepository(private val store: DataStore<Preferences>) : Sett
             preferences[mode] = settings.colorMode.name
             preferences[uploadDomain] = settings.uploadService.domain
             preferences[uploadStyle] = settings.uploadService.style.name
+            preferences[sendOnDictation] = settings.sendOnDictationEnd
+            preferences[dictationLanguage] = settings.dictationLanguage.name
             val terminal = settings.terminalUploadService
             if (terminal == null) {
                 preferences.remove(terminalUploadDomain)

@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.unixcision.uniconnect.android.domain.AppSettings
 import com.unixcision.uniconnect.android.domain.ColorMode
 import com.unixcision.uniconnect.android.domain.DesignTheme
+import com.unixcision.uniconnect.android.domain.DictationLanguage
 import com.unixcision.uniconnect.android.domain.TerminalView
 import com.unixcision.uniconnect.android.domain.UploadService
 import com.unixcision.uniconnect.android.domain.UploadStyle
@@ -83,6 +84,18 @@ class StoredSettingsRepositoryTest {
         assertEquals(page, chosen.uploadService)
         repository.update(chosen.copy(terminalUploadService = null))
         assertEquals(page, repository.settings.first().terminalUpload)
+    }
+
+    @Test
+    fun theVoiceSettingsSurviveARoundTripAndDefaultToOffAndTheDevice() = runBlocking {
+        val repository = StoredSettingsRepository(MemoryPreferences())
+        val fresh = repository.settings.first()
+        assertEquals(false, fresh.sendOnDictationEnd)
+        assertEquals(DictationLanguage.DEVICE, fresh.dictationLanguage)
+        repository.update(fresh.copy(sendOnDictationEnd = true, dictationLanguage = DictationLanguage.ES_ES))
+        val stored = repository.settings.first()
+        assertEquals(true, stored.sendOnDictationEnd)
+        assertEquals(DictationLanguage.ES_ES, stored.dictationLanguage)
     }
 
     @Test
