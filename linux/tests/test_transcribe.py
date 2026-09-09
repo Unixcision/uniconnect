@@ -20,7 +20,8 @@ from uniconnect.mobile_access import MobileAccess
 from uniconnect.mobile_host import MobileHost, _Client
 from uniconnect.mobile_protocol import MAX_FRAME, RPCError, encode_frame
 from uniconnect.mobile_rpc import MobileRPC
-from uniconnect.transcribe import (BIRTHS_NAME, CLEANUP_MARGIN, LOCK_PREFIX, STAGING_PREFIX,
+from uniconnect.transcribe import (BIRTHS_NAME, CLEANUP_MARGIN, LEGACY_STAGING_PREFIX, LOCK_PREFIX,
+                                   STAGING_PREFIX,
                                    CancelledTranscription, Engine, SubprocessRunner,
                                    TranscriptionEngine, clean_transcript, is_marker, read_wav_format)
 
@@ -122,10 +123,14 @@ class EngineTestCase(unittest.TestCase):
         return sorted(item.name for item in self.work.iterdir()
                       if not item.name.startswith(LOCK_PREFIX) and item.name != BIRTHS_NAME)
 
+    def advance(self, seconds):
+        """Esperar, con el reloj falso, es avanzarlo: si no, un plazo no venceria jamas."""
+        self.now += max(seconds, 0.001)
+
     def engine(self, **overrides):
         options = dict(model_directory=self.models, threads=3, runner=self.runner,
-                       which=self.binaries.get, clock=lambda: self.now, work_directory=self.work,
-                       environment={})
+                       which=self.binaries.get, clock=lambda: self.now, wait=self.advance,
+                       work_directory=self.work, environment={})
         options.update(overrides)
         return TranscriptionEngine(**options)
 
@@ -692,7 +697,7 @@ class OrphanTests(EngineTestCase):
 
     def test_the_sweep_never_takes_a_directory_that_is_in_use(self):
         engine = self.engine()
-        mine = engine.workspace()
+        mine = engine.workspace(engine.deadline(), lambda: False)
         (mine / "entrada.m4a").write_bytes(b"audio")
         os.utime(mine, (0, 0))  # Antiquisimo, pero en uso: no se toca.
         self.assertEqual(engine.sweep_orphans(), 0)
@@ -736,7 +741,7 @@ class OrphanTests(EngineTestCase):
         def create():
             try:
                 for _ in range(200):
-                    directory = maker.workspace()
+                    directory = maker.workspace(maker.deadline(), lambda: False)
                     audio = directory / "entrada.m4a"
                     audio.write_bytes(b"audio")
                     if not audio.exists() or audio.read_bytes() != b"audio":
@@ -783,7 +788,7 @@ class OrphanTests(EngineTestCase):
             resume.wait(10)  # Aqui se para el equipo, ANTES del primer flock.
             return descriptor, path
         with mock.patch("uniconnect.transcribe.tempfile.mkstemp", suspended):
-            worker = threading.Thread(target=lambda: born.append(engine.workspace()))
+            worker = threading.Thread(target=lambda: born.append(engine.workspace(engine.deadline(), lambda: False)))
             worker.start()
             self.assertTrue(inside.wait(5))
             staging = [item for item in self.work.iterdir() if item.name.startswith(STAGING_PREFIX)]
@@ -817,12 +822,75 @@ class OrphanTests(EngineTestCase):
 
     def test_the_coordination_lock_is_never_deleted(self):
         engine = self.engine()
-        engine.discard(engine.workspace())
+        engine.discard(engine.workspace(engine.deadline(), lambda: False))
         births = self.work / BIRTHS_NAME
         self.assertTrue(births.exists())
         os.utime(births, (0, 0))
         self.assertEqual(engine.sweep_orphans(), 0)
         self.assertTrue(births.exists())
+
+    def test_a_slow_sweep_never_hangs_a_dictation(self):
+        """El barrido sujeta el cerrojo global un buen rato; el dictado no puede colgarse."""
+        engine, sweeper = self.engine(), self.engine()
+        holding, release = threading.Event(), threading.Event()
+        real_take = sweeper.take
+        def slow_take(path, **options):
+            descriptor = real_take(path, **options)
+            if descriptor is not None and path.name == BIRTHS_NAME:
+                holding.set()
+                release.wait(20)  # Un borrado que se eterniza con el global en la mano.
+            return descriptor
+        sweeper.take = slow_take
+        worker = threading.Thread(target=sweeper.sweep_orphans, daemon=True)
+        worker.start()
+        self.assertTrue(holding.wait(5))
+        started = self.now
+        with self.assertRaises(RPCError) as caught:  # El dictado llega justo en ese momento.
+            engine.workspace(engine.deadline(), lambda: False)
+        self.assertEqual(caught.exception.code, "busy")  # Se rinde, no se cuelga.
+        self.assertLessEqual(self.now - started, engine.budget)  # Y dentro del presupuesto.
+        release.set()
+        worker.join(10)
+
+    def test_a_dictation_gives_up_the_wait_when_the_phone_leaves(self):
+        engine, other = self.engine(), self.engine()
+        held = other.take(self.work / BIRTHS_NAME, create=True)
+        self.assertIsNotNone(held)
+        try:
+            with self.assertRaises(RPCError) as caught:
+                engine.workspace(engine.deadline(), lambda: True)
+            self.assertEqual(caught.exception.code, "io_failed")
+        finally:
+            os.close(held)
+
+    def test_a_slow_sweep_does_not_hold_the_global_lock_while_it_deletes(self):
+        """Decidir con el global puesto, borrar sin el: si no, cualquiera se queda esperando."""
+        engine = self.engine()
+        held = []
+        real_discard = engine.discard
+        def watched(directory):
+            held.append(self.engine().take(self.work / BIRTHS_NAME, create=True))
+            return real_discard(directory)
+        engine.discard = watched
+        self.make("999999-muerto")
+        self.assertEqual(engine.sweep_orphans(), 1)
+        self.assertEqual(len(held), 1)
+        self.assertIsNotNone(held[0], "el barrido retenia el cerrojo global mientras borraba")
+        os.close(held[0])
+
+    def test_a_staging_from_the_previous_version_is_left_alone(self):
+        """La version anterior no se coordina por el cerrojo global: su creador puede estar vivo."""
+        engine = self.engine()
+        inherited = self.work / (LEGACY_STAGING_PREFIX + "abc123")
+        inherited.write_bytes(b"")
+        os.utime(inherited, (0, 0))
+        self.assertEqual(engine.sweep_orphans(), 0)
+        self.assertTrue(inherited.exists())
+        mine = self.work / (STAGING_PREFIX + "def456")  # El prefijo nuevo si se barre.
+        mine.write_bytes(b"")
+        self.assertEqual(engine.sweep_orphans(), 1)
+        self.assertTrue(inherited.exists())
+        self.assertFalse(mine.exists())
 
     def test_what_is_not_ours_is_left_alone_however_old(self):
         engine = self.engine(grace_seconds=0.0)
@@ -864,7 +932,7 @@ class OrphanTests(EngineTestCase):
                     patch.start()
                 try:
                     with self.assertRaises(RPCError) as caught:
-                        engine.workspace()
+                        engine.workspace(engine.deadline(), lambda: False)
                 finally:
                     for patch in reversed(patches):
                         patch.stop()

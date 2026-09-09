@@ -603,9 +603,16 @@ Host side on Linux (2026-09-09, `linux/uniconnect/transcribe.py`, routed by
   the sweep takes it (exclusive) before judging any half-born file, so the gap
   between creating a lock and taking it, where it would look free without being
   abandoned, never coincides with a sweep, and a machine suspended inside that gap
-  for any length of time keeps its dictation. The birth also waits for its own lock
-  rather than giving up, since the only thing that can hold it for an instant is a
-  sweep checking whether it was abandoned. The kernel releases the
+  for any length of time keeps its dictation. Neither wait is open-ended: both run
+  against the deadline this call already carries and against its cancellation, and a
+  lock that will not come answers `busy` without starting, so a stalled process or a
+  slow sweep can cost a dictation its turn but never hang it. The sweep, for its
+  part, holds the shared lock only while it decides which half-born files are
+  orphans and lets go before deleting them, so it never keeps a new dictation
+  waiting on its own housekeeping. Half-born files use this version's own
+  `.uc-naciendo-` prefix; the older `.naciendo-` files are left untouched, since a
+  previous version does not take part in this coordination and its creator may well
+  be alive. The kernel releases the
   lock when the owning process dies, however it dies, so a lock that can be taken
   marks an abandoned directory. The sweep holds that lock from the check through
   the deletion, never releasing it in between, and a lock left without a work

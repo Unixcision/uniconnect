@@ -40,6 +40,7 @@ CONVERSION_MARGIN = 5.0  # Lo que se deja convertir de más para poder ver que e
 BUDGET_SECONDS = 75.0
 CLEANUP_MARGIN = 5.0  # Reservado dentro del presupuesto para matar al hijo y limpiar.
 TURN_SECONDS = 5.0
+HOLD_POLL_SECONDS = 0.02
 MAX_JOBS = 2
 MAX_JOBS_PER_OWNER = 1
 GRACE_SECONDS = 30.0
@@ -50,7 +51,12 @@ LOCK_PREFIX = ".uc-trabajo-"
 # y adquirirlo hay un instante en el que estaría libre. Solo cuando ya está en la mano
 # se renombra al nombre que lo acredita. Un nacimiento interrumpido es un archivo
 # vacío, sin audio, y se recoge por pura antigüedad.
-STAGING_PREFIX = ".naciendo-"
+# Prefijo propio de esta versión. Las anteriores usaban `.naciendo-` sin coordinarse
+# por `.uc-nacimientos`, así que un creador antiguo detenido antes de tomar su cerrojo
+# le parecería abandonado a este barrido: lo heredado se conserva intacto y nunca se
+# toca, y un barrido antiguo tampoco reconoce este prefijo nuevo.
+STAGING_PREFIX = ".uc-naciendo-"
+LEGACY_STAGING_PREFIX = ".naciendo-"
 # Cerrojo de coordinación: quien está creando un trabajo lo sujeta en modo compartido
 # mientras dura el nacimiento, y el barrido pide el exclusivo antes de opinar sobre
 # los archivos a medio nacer. Así el hueco entre crear el archivo y adquirirlo, que
@@ -238,7 +244,7 @@ class TranscriptionEngine:
     corto (`turn_seconds`) y, si no se libera, recibe `busy`.
 
     Para probarla sin ejecutar whisper se inyectan `runner` (ejecutor de procesos),
-    `which`, `clock`, `work_directory`, `remove` y las rutas del motor.
+    `which`, `clock`, `wait`, `work_directory`, `remove` y las rutas del motor.
     """
 
     BINARIES = ("whisper-cli", "whisper-cpp", "main")
@@ -251,6 +257,7 @@ class TranscriptionEngine:
                  runner: Callable[..., subprocess.CompletedProcess] | None = None,
                  which: Callable[[str], str | None] = shutil.which,
                  clock: Callable[[], float] = time.monotonic,
+                 wait: Callable[[float], None] = time.sleep,
                  work_directory: str | Path | None = None,
                  remove: Callable[[Path], None] = shutil.rmtree,
                  budget: float = BUDGET_SECONDS, max_bytes: int = MAX_AUDIO_BYTES,
@@ -266,7 +273,7 @@ class TranscriptionEngine:
         self.model = model if model is not None else environment.get("UNICONNECT_WHISPER_MODEL") or None
         self.threads = threads if threads is not None else self.default_threads(environment)
         self.runner = runner if runner is not None else SubprocessRunner()
-        self.which, self.clock, self.remove = which, clock, remove
+        self.which, self.clock, self.wait, self.remove = which, clock, wait, remove
         self.budget, self.max_bytes, self.max_seconds = budget, max_bytes, max_seconds
         self.max_jobs, self.max_jobs_per_owner = max_jobs, max_jobs_per_owner
         self.turn_seconds, self.grace_seconds = turn_seconds, grace_seconds
@@ -391,6 +398,37 @@ class TranscriptionEngine:
             os.close(extra)
         return held[0]
 
+    def hold(self, path: Path, operation: int, deadline: float,
+             cancelled: Callable[[], bool], *, create: bool = False) -> int:
+        """Toma un cerrojo insistiendo un poco, pero nunca más allá del plazo de la llamada.
+
+        Esperar sin salida es lo que convierte un barrido lento, o un proceso
+        detenido, en un dictado colgado: la llamada se pasaría del presupuesto o
+        seguiría esperando cuando el móvil ya se ha ido, reteniendo su turno. Aquí se
+        reintenta en tandas cortas contra el vencimiento ya sellado y contra la
+        cancelación, y si no hay manera se responde `busy` sin llegar a empezar.
+        """
+        try:
+            descriptor = os.open(path, os.O_RDWR | (os.O_CREAT if create else 0), 0o600)
+        except OSError as error:
+            raise RPCError("io_failed", "No se pudo preparar la carpeta de trabajo del equipo") from error
+        while True:
+            try:
+                fcntl.flock(descriptor, operation | fcntl.LOCK_NB)
+                return descriptor
+            except BlockingIOError:
+                pass  # Ocupado, que es lo único que merece reintentarse.
+            except OSError as error:
+                os.close(descriptor)
+                raise RPCError("io_failed", "No se pudo preparar la carpeta de trabajo del equipo") from error
+            if cancelled():
+                os.close(descriptor)
+                raise RPCError("io_failed", "La transcripción se canceló")
+            if deadline - self.clock() - CLEANUP_MARGIN <= 0:
+                os.close(descriptor)
+                raise RPCError("busy", "El equipo está ocupado preparando otro dictado; espera un momento")
+            self.wait(HOLD_POLL_SECONDS)
+
     @staticmethod
     def take(path: Path, *, create: bool = False) -> int | None:
         """Toma un cerrojo concreto; `None` si tiene dueño o no se puede comprobar."""
@@ -430,50 +468,65 @@ class TranscriptionEngine:
         removed = 0
         with self.lock:
             active, pending = set(self.active), list(self.undeleted)
-        # `create`: que nadie haya nacido todavía es la calma más absoluta, no un
-        # motivo para no barrer.
-        births = self.take(self.work_directory / BIRTHS_NAME, create=True)
         try:
-            for directory in pending:
-                if directory not in active and self.sweep(directory, births is not None):
-                    removed += 1
-            try:
-                entries = list(self.work_directory.iterdir())
-            except OSError:
-                return removed
-            for entry in entries:
-                if not entry.name.startswith(LOCK_PREFIX) and entry not in active and entry not in pending:
-                    if self.sweep(entry, births is not None):
-                        removed += 1
-            for entry in entries:
-                if entry.name.startswith(LOCK_PREFIX) and self.sweep_lock(entry):
-                    removed += 1
-            return removed
-        finally:
-            if births is not None:
-                os.close(births)
+            entries = list(self.work_directory.iterdir())
+        except OSError:
+            entries = []
+        for directory in pending:
+            if directory not in active and self.sweep(directory):
+                removed += 1
+        for entry in entries:
+            if entry.name.startswith(LOCK_PREFIX) or entry in active or entry in pending:
+                continue
+            if not entry.name.startswith(STAGING_PREFIX) and self.sweep(entry):
+                removed += 1
+        # Los archivos a medio nacer se DECIDEN con el cerrojo global en la mano y se
+        # borran después, ya sin él: retenerlo durante todo el recorrido y todos los
+        # borrados dejaría esperando a cualquiera que quisiera empezar un dictado.
+        for staging in self.orphan_stagings(entries):
+            if self.sweep_staging(staging):
+                removed += 1
+        for entry in entries:
+            if entry.name.startswith(LOCK_PREFIX) and self.sweep_lock(entry):
+                removed += 1
+        return removed
 
-    def sweep(self, entry: Path, quiet: bool) -> bool:
+    def orphan_stagings(self, entries: list[Path]) -> list[Path]:
+        """Los archivos a medio nacer que nadie sujeta, mirados con la carpeta en calma."""
+        births = self.take(self.work_directory / BIRTHS_NAME, create=True)
+        if births is None:
+            return []  # Hay algún nacimiento en curso: hoy no se opina de esto.
+        try:
+            found = []
+            for entry in entries:
+                if not entry.name.startswith(STAGING_PREFIX):
+                    continue
+                descriptor = self.take(entry)
+                if descriptor is not None:
+                    os.close(descriptor)
+                    found.append(entry)
+            return found
+        finally:
+            os.close(births)
+
+    def sweep_staging(self, entry: Path) -> bool:
+        """Borra un archivo a medio nacer ya juzgado, comprobando otra vez que sigue sin dueño."""
+        descriptor = self.take(entry)
+        if descriptor is None:
+            return False
+        try:
+            self.unlink(entry)
+            return not entry.exists()
+        finally:
+            os.close(descriptor)
+
+    def sweep(self, entry: Path) -> bool:
         """Borra una entrada suelta de la carpeta si de verdad es un huérfano nuestro."""
-        if entry.name == BIRTHS_NAME:
-            return False  # El cerrojo de coordinación no se toca nunca.
-        if entry.name.startswith(STAGING_PREFIX):
-            # Un archivo a medio nacer. Solo se juzga cuando no hay ningún nacimiento
-            # en curso (`quiet`), porque durante el hueco entre crearlo y adquirirlo
-            # parecería libre sin estarlo, y una pausa larga del equipo justo ahí no
-            # puede costarle el dictado a nadie. Con la carpeta en calma, un archivo
-            # que además nadie sujeta es un huérfano acreditado, tenga la edad que
-            # tenga.
-            if not quiet:
-                return False
-            descriptor = self.take(entry)
-            if descriptor is None:
-                return False
-            try:
-                self.unlink(entry)
-                return not entry.exists()
-            finally:
-                os.close(descriptor)
+        if entry.name == BIRTHS_NAME or entry.name.startswith(LEGACY_STAGING_PREFIX):
+            # El cerrojo de coordinación no se toca nunca, y un nacimiento de una
+            # versión anterior tampoco: no se coordina con este barrido, así que su
+            # creador podría estar vivo y no habría forma de saberlo. Está vacío.
+            return False
         if not entry.is_dir() or not self.locks_of(entry):
             # Sin cerrojo no hay nada que acreditar, y mientras puedan convivir dos
             # versiones ni la edad ni el nombre prueban abandono: se conserva.
@@ -627,7 +680,7 @@ class TranscriptionEngine:
         engine = self.resolve()
         self.claim(owner, deadline, cancelled)
         try:
-            directory = self.workspace()
+            directory = self.workspace(deadline, cancelled)
             try:
                 source = self.write_private(directory / ("entrada" + extension), audio)
                 self.check(cancelled, deadline)
@@ -649,49 +702,68 @@ class TranscriptionEngine:
         return {"text": text, "engine": engine.name, "seconds": round(seconds or 0.0, 2),
                 "took_ms": int((self.clock() - started) * 1000)}
 
-    def workspace(self) -> Path:
+    def workspace(self, deadline: float, cancelled: Callable[[], bool]) -> Path:
         """Directorio 0700 propio de esta llamada, con su cerrojo tomado de antemano.
 
         El cerrojo se crea con un nombre que el barrido no reconoce, se adquiere, y
         solo entonces se renombra al nombre que lo acredita; el directorio de trabajo
         nace después. Así no existe el instante en que un cerrojo o un trabajo sean
-        visibles sin dueño: cuando aparecen con su nombre bueno, el `flock` lleva ya
-        un rato en la mano de este proceso.
+        visibles sin dueño. Las dos esperas van contra el plazo de la llamada, así
+        que un barrido lento o un proceso detenido pueden costar un `busy`, nunca un
+        dictado colgado.
         """
         descriptor = birth = None
         try:
             self.work_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
             # Compartido: varios dictados pueden nacer a la vez, pero ningún barrido
             # opina sobre los archivos a medio nacer mientras alguno esté en ello.
-            birth = os.open(self.work_directory / BIRTHS_NAME, os.O_RDWR | os.O_CREAT, 0o600)
-            fcntl.flock(birth, fcntl.LOCK_SH)
+            birth = self.hold(self.work_directory / BIRTHS_NAME, fcntl.LOCK_SH,
+                              deadline, cancelled, create=True)
             descriptor, staging = tempfile.mkstemp(prefix=STAGING_PREFIX, dir=self.work_directory)
-            # Bloqueante a propósito: este archivo acaba de nacer con un nombre único,
-            # así que el único que puede tenerlo cogido es un barrido comprobando si
-            # está abandonado, y eso dura un suspiro. Con LOCK_NB perderíamos el
-            # dictado por haber coincidido con esa comprobación.
-            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            # El único que puede tener cogido este archivo recién nacido es un barrido
+            # comprobando si está abandonado, y eso dura un suspiro; aun así, con plazo.
+            self.wait_for(descriptor, deadline, cancelled)
             token = Path(staging).name[len(STAGING_PREFIX):]
             os.rename(staging, self.work_directory / (LOCK_PREFIX + token))
             directory = self.work_directory / f"{os.getpid()}-{token}"
             os.mkdir(directory, 0o700)
         except OSError as error:
-            if descriptor is not None:  # Un nacimiento fallido no se queda con el descriptor.
-                try:
-                    os.close(descriptor)
-                except OSError:
-                    pass
+            self.close(descriptor)  # Un nacimiento fallido no se queda con el descriptor.
             raise RPCError("io_failed", "No se pudo preparar la carpeta de trabajo del equipo") from error
+        except RPCError:
+            self.close(descriptor)
+            raise
         finally:
-            if birth is not None:
-                try:
-                    os.close(birth)  # El nacimiento ha terminado, en bien o en mal.
-                except OSError:
-                    pass
+            self.close(birth)  # El nacimiento ha terminado, en bien o en mal.
         with self.lock:
             self.active.add(directory)
             self.locks[directory] = descriptor
         return directory
+
+    def wait_for(self, descriptor: int, deadline: float, cancelled: Callable[[], bool]) -> None:
+        """Espera el cerrojo exclusivo de un descriptor ya abierto, con el mismo plazo."""
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return
+            except BlockingIOError:
+                pass  # Ocupado, que es lo único que merece reintentarse.
+            except OSError as error:
+                raise RPCError("io_failed", "No se pudo preparar la carpeta de trabajo del equipo") from error
+            if cancelled():
+                raise RPCError("io_failed", "La transcripción se canceló")
+            if deadline - self.clock() - CLEANUP_MARGIN <= 0:
+                raise RPCError("busy", "El equipo está ocupado preparando otro dictado; espera un momento")
+            self.wait(HOLD_POLL_SECONDS)
+
+    @staticmethod
+    def close(descriptor: int | None) -> None:
+        if descriptor is None:
+            return
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
 
     def extension_for(self, mime) -> str:
         if not isinstance(mime, str):
