@@ -46,6 +46,12 @@ GRACE_SECONDS = 30.0
 # El cerrojo es HERMANO del directorio de trabajo, no vive dentro: se crea y se toma
 # antes de que el directorio exista, así que nadie llega a ver un trabajo sin dueño.
 LOCK_PREFIX = ".uc-trabajo-"
+# El cerrojo también nace con un nombre que el barrido no toca, porque entre crearlo
+# y adquirirlo hay un instante en el que estaría libre. Solo cuando ya está en la mano
+# se renombra al nombre que lo acredita. Un nacimiento interrumpido es un archivo
+# vacío, sin audio, y se recoge por pura antigüedad.
+STAGING_PREFIX = ".naciendo-"
+STAGING_SECONDS = 600.0
 MAX_THREADS = 8
 WAV_PREFIX_BYTES = 65536
 WAV_BYTES_PER_SECOND = 16000 * 2  # PCM 16 bits mono a 16 kHz, que es lo que whisper.cpp lee.
@@ -413,6 +419,16 @@ class TranscriptionEngine:
 
     def sweep(self, entry: Path, now: float) -> bool:
         """Borra una entrada suelta de la carpeta si de verdad es un huérfano nuestro."""
+        if entry.name.startswith(STAGING_PREFIX):
+            # Un cerrojo a medio nacer: nunca se juzga por el cerrojo (todavía no lo
+            # tiene) ni por la gracia corta, solo cuando lleva ahí una eternidad.
+            try:
+                if now - entry.stat().st_mtime < STAGING_SECONDS:
+                    return False
+            except OSError:
+                return False
+            self.unlink(entry)
+            return not entry.exists()
         if entry.is_dir() and self.lock_of(entry).exists():
             descriptor = self.acquire(entry)
             if descriptor is None:
@@ -599,16 +615,19 @@ class TranscriptionEngine:
     def workspace(self) -> Path:
         """Directorio 0700 propio de esta llamada, con su cerrojo tomado de antemano.
 
-        El cerrojo se crea y se adquiere primero, y el directorio de trabajo nace
-        después con el nombre que lo emparienta. Así no existe el instante en que un
-        trabajo es visible sin dueño: cuando el directorio aparece, su cerrojo lleva
-        ya un rato en la mano de este proceso.
+        El cerrojo se crea con un nombre que el barrido no reconoce, se adquiere, y
+        solo entonces se renombra al nombre que lo acredita; el directorio de trabajo
+        nace después. Así no existe el instante en que un cerrojo o un trabajo sean
+        visibles sin dueño: cuando aparecen con su nombre bueno, el `flock` lleva ya
+        un rato en la mano de este proceso.
         """
         try:
             self.work_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-            descriptor, lock = tempfile.mkstemp(prefix=LOCK_PREFIX, dir=self.work_directory)
+            descriptor, staging = tempfile.mkstemp(prefix=STAGING_PREFIX, dir=self.work_directory)
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            directory = self.work_directory / f"{os.getpid()}-{Path(lock).name[len(LOCK_PREFIX):]}"
+            token = Path(staging).name[len(STAGING_PREFIX):]
+            os.rename(staging, self.work_directory / (LOCK_PREFIX + token))
+            directory = self.work_directory / f"{os.getpid()}-{token}"
             os.mkdir(directory, 0o700)
         except OSError as error:
             raise RPCError("io_failed", "No se pudo preparar la carpeta de trabajo del equipo") from error

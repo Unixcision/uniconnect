@@ -593,9 +593,12 @@ Host side on Linux (2026-09-09, `linux/uniconnect/transcribe.py`, routed by
 - **Ownership and the sweep.** A `finally` cannot survive a killed process, so
   `TranscriptionEngine.sweep_orphans()`, called from `MobileDesktop.__init__`,
   deletes at start the work directories that have no owner. Ownership is proved by
-  a `flock` on a sibling `.uc-trabajo-<token>` file, which the job creates and
-  takes **before** its work directory exists and holds until it is done, so no
-  sweep ever sees a published directory without an owner; the kernel releases the
+  a `flock` on a sibling `.uc-trabajo-<token>` file. That file is itself created
+  under a name the sweep does not recognise, locked, and only then renamed into
+  place, because between creating a lock and taking it there is an instant when it
+  would look free; the work directory is created after that. So neither a lock nor
+  a directory is ever visible under its real name without an owner, and the job
+  holds the lock until it is done; the kernel releases the
   lock when the owning process dies, however it dies, so a lock that can be taken
   marks an abandoned directory. The sweep holds that lock from the check through
   the deletion, never releasing it in between, and a lock left without a work

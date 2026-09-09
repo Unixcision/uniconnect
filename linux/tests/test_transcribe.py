@@ -15,9 +15,9 @@ from pathlib import Path
 
 from uniconnect.mobile_protocol import MAX_FRAME, RPCError
 from uniconnect.mobile_rpc import MobileRPC
-from uniconnect.transcribe import (CLEANUP_MARGIN, LOCK_PREFIX, CancelledTranscription, Engine,
-                                   SubprocessRunner, TranscriptionEngine, clean_transcript,
-                                   is_marker, read_wav_format)
+from uniconnect.transcribe import (CLEANUP_MARGIN, LOCK_PREFIX, STAGING_PREFIX, STAGING_SECONDS,
+                                   CancelledTranscription, Engine, SubprocessRunner,
+                                   TranscriptionEngine, clean_transcript, is_marker, read_wav_format)
 
 
 def wav_bytes(seconds=1.0, rate=16000, channels=1, bits=16, audio_format=1):
@@ -707,7 +707,7 @@ class OrphanTests(EngineTestCase):
         lost, failed, done = [], [], []
         def create():
             try:
-                for _ in range(150):
+                for _ in range(200):
                     directory = maker.workspace()
                     audio = directory / "entrada.m4a"
                     audio.write_bytes(b"audio")
@@ -743,6 +743,18 @@ class OrphanTests(EngineTestCase):
         self.assertTrue(taken.exists())  # Su trabajo esta a punto de nacer.
         self.assertTrue(held.exists())
         self.assertTrue((self.work / (LOCK_PREFIX + "convivo")).exists())
+
+    def test_a_lock_being_born_is_untouchable_until_it_is_ancient(self):
+        """El instante entre crear el cerrojo y tomarlo: ahi no puede entrar ningun barrido."""
+        engine = self.engine(grace_seconds=0.0)
+        newborn = self.work / (STAGING_PREFIX + "abc123")
+        newborn.write_bytes(b"")
+        self.assertEqual(engine.sweep_orphans(), 0)
+        self.assertTrue(newborn.exists())
+        stamp = time.time() - STAGING_SECONDS - 60
+        os.utime(newborn, (stamp, stamp))
+        self.assertEqual(engine.sweep_orphans(), 1)
+        self.assertFalse(newborn.exists())
 
     def test_what_is_not_ours_is_left_alone_however_old(self):
         engine = self.engine(grace_seconds=0.0)
