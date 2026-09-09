@@ -231,6 +231,15 @@ mientras dure la sesión; `invalid_params` / `io_failed` / código desconocido �
 podido transcribir el audio»; caída de red → «Sin conexión con el equipo». En los tres últimos el
 audio se CONSERVA para un único «Reintentar»; después se borra pase lo que pase.
 
+`busy` es aparte porque no es un fallo: el equipo admite un dictado por dispositivo y dos en total
+(Whisper se come los núcleos), así que responde «El equipo está transcribiendo otro audio;
+inténtalo en unos segundos». Ahí la grabación se conserva para TODOS los reintentos que haga falta,
+no solo uno, y solo se borra cuando uno funciona o cuando se descarta el aviso con la X.
+
+Cada llamada abre su propia conexión y la cierra al terminar, como los adjuntos: el host cierra la
+conexión tras responder una petición que ha pasado de su plazo de inactividad, así que ninguna se
+reutiliza para la siguiente.
+
 Ajustes → «Voz» → «Transcripción»: «Automática» (el equipo si puede, el móvil si no; por defecto),
 «Móvil» (nunca se pregunta al equipo) y «Equipo» (avisa cada vez que ese equipo no puede y dicta el
 móvil). Se guarda en `settings.transcription`; un almacén escrito antes de esta clave se sigue
@@ -243,7 +252,7 @@ el estado del motor activo, así que el composable lee los mismos estados en los
 `MediaRecorder` queda tras `domain/VoiceRecorder` y el RPC tras `domain/HostTranscription`, de modo
 que todo el flujo (elección, límite de tamaño, cada error, borrado del archivo, reintento único,
 corte a los 5 minutos) se prueba en la JVM sin micrófono ni socket. La llamada se prueba además
-contra un host de mentira en un par de sockets, como la de adjuntos. Probado solo así: 36 pruebas
+contra un host de mentira en un par de sockets, como la de adjuntos. Probado solo así: 38 pruebas
 nuevas; contra un host real con Whisper no se ha ejercitado todavía.
 
 ## Arquitectura

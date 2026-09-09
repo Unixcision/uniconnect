@@ -16,7 +16,9 @@ import kotlinx.coroutines.launch
  *
  * The recording never outlives its outcome. It is deleted once transcribed, once refused for good,
  * and on a cancel; the one case where it is kept is a failure worth trying again (the machine was
- * unreachable, locked, or broke), and then only until a single [resend] has been made.
+ * unreachable, locked, or broke), and then only until a single [resend] has been made. A machine
+ * that is merely busy is not a failure at all: there the recording waits for as many retries as
+ * the reader wants, until one works or they [discardKept] it.
  *
  * Everything about the microphone is behind [VoiceRecorder] and everything about the connection
  * behind [HostTranscription], so this whole flow is exercised in tests with neither.
@@ -63,7 +65,7 @@ class HostDictation(
         this.language = language
         sending?.cancel()
         sending = null
-        discardKept()
+        dropKept()
         retried = false
         if (target == null) { machine.fail(DictationFailure.HOST_FAILED); return }
         if (!recorder.start()) { machine.fail(DictationFailure.ENGINE_UNAVAILABLE); return }
@@ -90,7 +92,7 @@ class HostDictation(
         sending?.cancel()
         sending = null
         recorder.discard()
-        discardKept()
+        dropKept()
         machine.cancel()
     }
 
@@ -100,7 +102,10 @@ class HostDictation(
         cancel()
     }
 
-    /** Sends the kept recording once more; after this it is gone whatever happens. */
+    /** Throws away the recording that was waiting for a retry; the reader gave up on it. */
+    fun discardKept() = dropKept()
+
+    /** Sends the kept recording once more; after this it is gone unless the machine was only busy. */
     fun resend() {
         val clip = kept ?: return
         kept = null
@@ -148,12 +153,16 @@ class HostDictation(
             TranscribeRefusal.TOO_LARGE -> DictationFailure.TOO_LONG
             TranscribeRefusal.UNSUPPORTED -> DictationFailure.HOST_UNSUPPORTED
             TranscribeRefusal.LOCKED -> DictationFailure.HOST_LOCKED
+            TranscribeRefusal.BUSY -> DictationFailure.HOST_BUSY
             TranscribeRefusal.INVALID_PARAMS, TranscribeRefusal.IO_FAILED, TranscribeRefusal.UNKNOWN -> DictationFailure.HOST_FAILED
             null -> DictationFailure.HOST_UNREACHABLE
         }
         if (refusal == TranscribeRefusal.UNSUPPORTED) unsupported = true
+        // A busy machine will not be busy for long, so that recording is kept for as many tries as
+        // the reader makes; the rest are failures and get exactly one.
+        val passing = refusal == TranscribeRefusal.BUSY
         val worthResending = reason == DictationFailure.HOST_LOCKED || reason == DictationFailure.HOST_FAILED || reason == DictationFailure.HOST_UNREACHABLE
-        if (worthResending && !retried) {
+        if (passing || (worthResending && !retried)) {
             kept = clip
             machine.fail(reason, DictationRetry.RESEND)
         } else {
@@ -162,7 +171,7 @@ class HostDictation(
         }
     }
 
-    private fun discardKept() {
+    private fun dropKept() {
         kept?.delete()
         kept = null
     }

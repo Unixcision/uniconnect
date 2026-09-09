@@ -322,6 +322,7 @@
     <string name="dictation_failed_no_audio">No se ha grabado nada</string>
     <string name="dictation_failed_too_long">El audio es demasiado largo para el equipo; graba otro más corto</string>
     <string name="dictation_failed_locked">UniConnect está bloqueado en el equipo: desbloquéalo para transcribir</string>
+    <string name="dictation_failed_host_busy">El equipo está transcribiendo otro audio; inténtalo en unos segundos</string>
     <string name="dictation_failed_host">El equipo no ha podido transcribir el audio</string>
     <string name="dictation_failed_host_offline">Sin conexión con el equipo</string>
     <string name="dictation_host_cannot">Este equipo no transcribe: se usa el dictado del móvil</string>

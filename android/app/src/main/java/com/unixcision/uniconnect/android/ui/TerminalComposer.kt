@@ -246,7 +246,7 @@ fun TerminalComposer(
                 ) {
                     Text(stringResource(if (retry == DictationRetry.RESEND) R.string.dictation_retry else R.string.dictation_record_again), style = MaterialTheme.typography.labelMedium)
                 }
-                IconButton(onClick = { notice = null; offerSettings = false; retry = DictationRetry.NONE }, Modifier.size(24.dp)) { Icon(Icons.Rounded.Close, stringResource(R.string.dismiss), Modifier.size(14.dp), tint = UniTheme.colors.muted) }
+                IconButton(onClick = { notice = null; offerSettings = false; retry = DictationRetry.NONE; dictation?.discard() }, Modifier.size(24.dp)) { Icon(Icons.Rounded.Close, stringResource(R.string.dismiss), Modifier.size(14.dp), tint = UniTheme.colors.muted) }
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 6.dp, start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -359,6 +359,7 @@ private val DictationFailure.message: Int
         DictationFailure.NO_AUDIO -> R.string.dictation_failed_no_audio
         DictationFailure.TOO_LONG -> R.string.dictation_failed_too_long
         DictationFailure.HOST_LOCKED -> R.string.dictation_failed_locked
+        DictationFailure.HOST_BUSY -> R.string.dictation_failed_host_busy
         DictationFailure.HOST_UNSUPPORTED -> R.string.dictation_host_cannot
         DictationFailure.HOST_FAILED -> R.string.dictation_failed_host
         DictationFailure.HOST_UNREACHABLE -> R.string.dictation_failed_host_offline

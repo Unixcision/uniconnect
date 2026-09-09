@@ -80,8 +80,11 @@ class DictationViewModel(private val phone: Dictation, private val host: HostDic
     /** The outcome was taken by the composer. */
     fun consume() = active().reset()
 
-    /** Sends the recording the machine did not take, once. */
+    /** Sends the recording the machine did not take again. */
     fun resend() = host.resend()
+
+    /** The reader gave up on the recording the machine did not take; it is deleted. */
+    fun discard() = host.discardKept()
 
     private fun active(): Dictation = if (engine.value == TranscriptionEngine.HOST) host else phone
 

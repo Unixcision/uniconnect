@@ -94,6 +94,46 @@ class HostDictationTest {
     }
 
     @Test
+    fun aBusyMachineKeepsTheRecordingForAsManyTriesAsTheReaderMakes() {
+        val clip = FakeClip(90_000)
+        var busy = true
+        val host = FakeTranscription { if (busy) throw TranscribeRefused(TranscribeRefusal.BUSY) else Transcript("ls -la") }
+        val dictation = record(clip, host)
+        // Two retries in a row still find it busy, and the recording is still there for a third.
+        repeat(2) {
+            awaitFailure(dictation)
+            assertEquals(DictationState.Failed(DictationFailure.HOST_BUSY, DictationRetry.RESEND), dictation.state.value)
+            assertFalse("waiting is not failing: the recording stays", clip.deleted)
+            assertFalse("nor does it turn the machine off", dictation.unsupported)
+            dictation.reset()
+            dictation.resend()
+        }
+        awaitFailure(dictation)
+        assertEquals(DictationState.Failed(DictationFailure.HOST_BUSY, DictationRetry.RESEND), dictation.state.value)
+        assertFalse(clip.deleted)
+        busy = false
+        dictation.reset()
+        dictation.resend()
+        awaitDone(dictation)
+        assertEquals(DictationState.Done("ls -la"), dictation.state.value)
+        assertTrue(clip.deleted)
+        assertEquals(4, host.calls.get())
+    }
+
+    @Test
+    fun givingUpOnAKeptRecordingDeletesIt() {
+        val clip = FakeClip(90_000)
+        val dictation = record(clip, FakeTranscription { throw TranscribeRefused(TranscribeRefusal.BUSY) })
+        awaitFailure(dictation)
+        assertFalse(clip.deleted)
+        dictation.reset()
+        dictation.discardKept()
+        assertTrue("the reader dismissed the line, so nothing is kept", clip.deleted)
+        dictation.resend()
+        assertEquals(DictationState.Idle, dictation.state.value)
+    }
+
+    @Test
     fun aMachineWithoutAnEngineSaysSoOnceAndIsNotAskedAgain() {
         val clip = FakeClip(90_000)
         val host = FakeTranscription { throw TranscribeRefused(TranscribeRefusal.UNSUPPORTED) }

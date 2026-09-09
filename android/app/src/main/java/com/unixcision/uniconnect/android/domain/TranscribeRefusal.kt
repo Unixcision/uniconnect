@@ -11,6 +11,13 @@ enum class TranscribeRefusal {
     /** UniConnect is locked on the machine. */
     LOCKED,
 
+    /**
+     * Another dictation is already running: the machine takes one per device and two in all,
+     * because the engine eats every core it is given. It passes on its own, so it is a wait and
+     * not a failure of the machine.
+     */
+    BUSY,
+
     /** The request was malformed, which is a bug on this side. */
     INVALID_PARAMS,
 
@@ -26,6 +33,7 @@ enum class TranscribeRefusal {
             "too_large" -> TOO_LARGE
             "unsupported" -> UNSUPPORTED
             "locked" -> LOCKED
+            "busy" -> BUSY
             "invalid_params" -> INVALID_PARAMS
             "io_failed" -> IO_FAILED
             else -> UNKNOWN

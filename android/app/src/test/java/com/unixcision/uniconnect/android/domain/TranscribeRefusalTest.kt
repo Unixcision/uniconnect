@@ -10,6 +10,7 @@ class TranscribeRefusalTest {
         assertEquals(TranscribeRefusal.TOO_LARGE, TranscribeRefusal.of("too_large"))
         assertEquals(TranscribeRefusal.UNSUPPORTED, TranscribeRefusal.of("unsupported"))
         assertEquals(TranscribeRefusal.LOCKED, TranscribeRefusal.of("locked"))
+        assertEquals(TranscribeRefusal.BUSY, TranscribeRefusal.of("busy"))
         assertEquals(TranscribeRefusal.INVALID_PARAMS, TranscribeRefusal.of("invalid_params"))
         assertEquals(TranscribeRefusal.IO_FAILED, TranscribeRefusal.of("io_failed"))
     }
@@ -25,5 +26,6 @@ class TranscribeRefusalTest {
         assertEquals(TranscribeRefusal.UNKNOWN, TranscribeRefusal.of(null))
         assertEquals(TranscribeRefusal.UNKNOWN, TranscribeRefusal.of(""))
         assertEquals(TranscribeRefusal.UNKNOWN, TranscribeRefusal.of("model_cold"))
+        assertEquals("a machine that is busy is not an unknown failure", TranscribeRefusal.BUSY, TranscribeRefusal.of("busy"))
     }
 }

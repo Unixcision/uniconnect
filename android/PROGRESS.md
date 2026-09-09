@@ -170,7 +170,10 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
 - Límite del contrato corregido a 3 MiB de audio (aviso de CODEX VPS): 6 MiB en base64 son 8 MiB
   clavados, la trama entera, así que la petición reventaba antes de llegar al host y sin poder
   responder `too_large`. El móvil mide antes de enviar y comprueba también la petición serializada.
-- 36 pruebas JVM nuevas (elección de motor, base64 por bloques, tope de 3 MiB y trama, cada código de
+- `busy` mapeado como espera, no como error desconocido (el host Linux ya lo devuelve: un dictado por
+  dispositivo, dos por equipo). La grabación se conserva para todos los reintentos que hagan falta y
+  solo se borra al acertar o al descartar el aviso.
+- 38 pruebas JVM nuevas (elección de motor, base64 por bloques, tope de 3 MiB y trama, cada código de
   error del contrato contra un host de mentira en un par de sockets, borrado del archivo en todos los
   caminos, reintento único, corte a los 5 minutos, persistencia del ajuste). Build y
   `testDebugUnitTest` en verde.

@@ -86,7 +86,7 @@ class NativeHostTranscriptionTest {
 
     @Test
     fun everyErrorOfTheContractComesBackAsItsOwnRefusal() = runBlocking {
-        listOf("too_large" to TranscribeRefusal.TOO_LARGE, "unsupported" to TranscribeRefusal.UNSUPPORTED, "locked" to TranscribeRefusal.LOCKED, "io_failed" to TranscribeRefusal.IO_FAILED, "vaya" to TranscribeRefusal.UNKNOWN).forEach { (code, expected) ->
+        listOf("too_large" to TranscribeRefusal.TOO_LARGE, "unsupported" to TranscribeRefusal.UNSUPPORTED, "locked" to TranscribeRefusal.LOCKED, "busy" to TranscribeRefusal.BUSY, "invalid_params" to TranscribeRefusal.INVALID_PARAMS, "io_failed" to TranscribeRefusal.IO_FAILED, "vaya" to TranscribeRefusal.UNKNOWN).forEach { (code, expected) ->
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
             val pair = SocketPair()
             try {

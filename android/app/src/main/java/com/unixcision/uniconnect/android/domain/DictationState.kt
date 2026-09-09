@@ -18,6 +18,9 @@ enum class DictationFailure {
     /** UniConnect is locked on the machine. */
     HOST_LOCKED,
 
+    /** The machine is already transcribing as much as it can; the recording waits for a retry. */
+    HOST_BUSY,
+
     /** The machine has no transcription engine after all; the phone takes over. */
     HOST_UNSUPPORTED,
 
