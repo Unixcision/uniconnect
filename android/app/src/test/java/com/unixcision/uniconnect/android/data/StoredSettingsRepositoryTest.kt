@@ -11,6 +11,7 @@ import com.unixcision.uniconnect.android.domain.ColorMode
 import com.unixcision.uniconnect.android.domain.DesignTheme
 import com.unixcision.uniconnect.android.domain.DictationLanguage
 import com.unixcision.uniconnect.android.domain.TerminalView
+import com.unixcision.uniconnect.android.domain.TranscriptionMode
 import com.unixcision.uniconnect.android.domain.UploadService
 import com.unixcision.uniconnect.android.domain.UploadStyle
 import kotlinx.coroutines.flow.Flow
@@ -96,6 +97,28 @@ class StoredSettingsRepositoryTest {
         val stored = repository.settings.first()
         assertEquals(true, stored.sendOnDictationEnd)
         assertEquals(DictationLanguage.ES_ES, stored.dictationLanguage)
+    }
+
+    @Test
+    fun theWayOfTranscribingSurvivesARoundTripAndDefaultsToAutomatic() = runBlocking {
+        val repository = StoredSettingsRepository(MemoryPreferences())
+        assertEquals(TranscriptionMode.AUTO, repository.settings.first().transcription)
+        repository.update(repository.settings.first().copy(transcription = TranscriptionMode.HOST))
+        assertEquals(TranscriptionMode.HOST, repository.settings.first().transcription)
+        repository.update(repository.settings.first().copy(transcription = TranscriptionMode.PHONE))
+        assertEquals(TranscriptionMode.PHONE, repository.settings.first().transcription)
+    }
+
+    @Test
+    fun aStoreFromBeforeTranscriptionExistedKeepsItsVoiceSettings() = runBlocking {
+        val older = preferencesOf(
+            booleanPreferencesKey("settings.sendOnDictationEnd") to true,
+            stringPreferencesKey("settings.dictationLanguage") to "ES_ES",
+        )
+        val stored = StoredSettingsRepository(MemoryPreferences(older)).settings.first()
+        assertEquals(true, stored.sendOnDictationEnd)
+        assertEquals(DictationLanguage.ES_ES, stored.dictationLanguage)
+        assertEquals(TranscriptionMode.AUTO, stored.transcription)
     }
 
     @Test

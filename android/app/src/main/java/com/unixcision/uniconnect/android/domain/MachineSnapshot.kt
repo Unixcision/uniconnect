@@ -5,7 +5,8 @@ package com.unixcision.uniconnect.android.domain
  *
  * [capabilities] is the host's own list (`capabilities` in the workspace list); a host that keeps
  * favourites and order for its clients announces ``BOX_UPDATE`` there, one that takes files over
- * the private connection announces ``FILE_PUT``. Nothing is inferred from error codes: an absent
+ * the private connection announces ``FILE_PUT``, and one that turns recorded audio into text
+ * announces ``TRANSCRIBE``. Nothing is inferred from error codes: an absent
  * capability means the phone keeps those on its own or goes another way.
  */
 data class MachineSnapshot(val serverName: String, val workspaces: List<RemoteWorkspace>, val capabilities: Set<String> = emptySet()) {
@@ -14,11 +15,17 @@ data class MachineSnapshot(val serverName: String, val workspaces: List<RemoteWo
     /** Whether `mobile.file.begin/chunk/commit/abort` can be used against this host. */
     val putsFiles: Boolean get() = FILE_PUT in capabilities
 
+    /** Whether `mobile.audio.transcribe` can be used against this host. */
+    val transcribes: Boolean get() = TRANSCRIBE in capabilities
+
     companion object {
         /** The host implements mobile.workspace.update and mobile.terminal.update. */
         const val BOX_UPDATE = "box_update"
 
         /** The host implements the file_put.v1 contract. */
         const val FILE_PUT = "file_put.v1"
+
+        /** The host implements the transcribe.v1 contract. */
+        const val TRANSCRIBE = "transcribe.v1"
     }
 }

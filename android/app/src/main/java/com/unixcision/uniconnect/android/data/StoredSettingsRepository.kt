@@ -11,6 +11,7 @@ import com.unixcision.uniconnect.android.domain.DesignTheme
 import com.unixcision.uniconnect.android.domain.DictationLanguage
 import com.unixcision.uniconnect.android.domain.SettingsRepository
 import com.unixcision.uniconnect.android.domain.TerminalView
+import com.unixcision.uniconnect.android.domain.TranscriptionMode
 import com.unixcision.uniconnect.android.domain.UploadService
 import com.unixcision.uniconnect.android.domain.UploadStyle
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -34,6 +35,7 @@ class StoredSettingsRepository(private val store: DataStore<Preferences>) : Sett
     private val terminalUploadStyle = stringPreferencesKey("settings.terminalUploadStyle")
     private val sendOnDictation = booleanPreferencesKey("settings.sendOnDictationEnd")
     private val dictationLanguage = stringPreferencesKey("settings.dictationLanguage")
+    private val transcription = stringPreferencesKey("settings.transcription")
     private val defaults = AppSettings()
 
     override val settings = store.data.map { stored ->
@@ -47,6 +49,7 @@ class StoredSettingsRepository(private val store: DataStore<Preferences>) : Sett
             terminalUploadService = service(stored[terminalUploadDomain], stored[terminalUploadStyle]),
             sendOnDictationEnd = stored[sendOnDictation] ?: defaults.sendOnDictationEnd,
             dictationLanguage = DictationLanguage.named(stored[dictationLanguage]),
+            transcription = TranscriptionMode.named(stored[transcription]),
         )
     }.distinctUntilChanged()
 
@@ -61,6 +64,7 @@ class StoredSettingsRepository(private val store: DataStore<Preferences>) : Sett
             preferences[uploadStyle] = settings.uploadService.style.name
             preferences[sendOnDictation] = settings.sendOnDictationEnd
             preferences[dictationLanguage] = settings.dictationLanguage.name
+            preferences[transcription] = settings.transcription.name
             val terminal = settings.terminalUploadService
             if (terminal == null) {
                 preferences.remove(terminalUploadDomain)

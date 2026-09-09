@@ -14,6 +14,8 @@ package com.unixcision.uniconnect.android.domain
  * - Parameter sendOnDictationEnd: whether dictated text is sent with Enter as soon as dictation
  *   ends, instead of waiting in the composer for the reader to send it.
  * - Parameter dictationLanguage: the language dictation is recognised in.
+ * - Parameter transcription: whether dictated audio is turned into text by the machine, which is
+ *   better at it, or by the phone itself.
  */
 data class AppSettings(
     val terminalView: TerminalView = TerminalView.PAN,
@@ -25,6 +27,7 @@ data class AppSettings(
     val terminalUploadService: UploadService? = null,
     val sendOnDictationEnd: Boolean = false,
     val dictationLanguage: DictationLanguage = DictationLanguage.DEVICE,
+    val transcription: TranscriptionMode = TranscriptionMode.AUTO,
 ) {
     /** The fallback service the terminal's clip actually uses: its own choice, or the one of "Enviar archivos". */
     val terminalUpload: UploadService get() = terminalUploadService ?: uploadService

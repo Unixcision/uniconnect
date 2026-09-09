@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.update
  * transition is testable without a microphone: partial text refines a listening state, a final
  * result ends it, an error ends it too unless something was already understood, and cancelling
  * throws everything away.
+ *
+ * The same machine drives a dictation the machine transcribes: there the recording has no partial
+ * text, it carries its length in seconds, and the wait for the answer is its own state.
  */
 class DictationMachine {
     private val mutable = MutableStateFlow<DictationState>(DictationState.Idle)
@@ -17,16 +20,38 @@ class DictationMachine {
     /** Recording has been asked for: listening, with nothing understood yet. */
     fun onStarting() { mutable.value = DictationState.Listening() }
 
+    /** Recording audio for a machine: no partial text will arrive, only a level and a length. */
+    fun onRecording() { mutable.value = DictationState.Listening(recording = true) }
+
     /** The recogniser refined what it hears; ignored when not listening. */
     fun onPartial(text: String) = mutable.update { if (it is DictationState.Listening) it.copy(partial = text) else it }
 
     /** The voice level in dB from the recogniser; kept as 0..1 for the meter. */
     fun onLevel(rmsDb: Float) = mutable.update { if (it is DictationState.Listening) it.copy(level = normalize(rmsDb)) else it }
 
+    /** A level already between 0 and 1, as a recorder's amplitude gives it. */
+    fun onMeter(level: Float) = mutable.update { if (it is DictationState.Listening) it.copy(level = level.coerceIn(0f, 1f)) else it }
+
+    /** How long has been recorded, for the stopwatch of a machine-side dictation. */
+    fun onElapsed(seconds: Int) = mutable.update { if (it is DictationState.Listening) it.copy(seconds = seconds) else it }
+
+    /**
+     * The recording is on its way to the machine; [cut] when the five-minute limit ended it. It is
+     * set from wherever the send starts, so a retry after the failure was taken shows the wait too.
+     */
+    fun onTranscribing(cut: Boolean = false) { mutable.value = DictationState.Transcribing(cut) }
+
     /** The final result. Empty falls back to the last partial; nothing at all is "not understood". */
     fun onFinal(text: String?) = mutable.update { current ->
         if (current !is DictationState.Listening) return@update current
         val spoken = text?.trim().orEmpty().ifEmpty { current.partial.trim() }
+        if (spoken.isEmpty()) DictationState.Failed(DictationFailure.NOT_UNDERSTOOD) else DictationState.Done(spoken)
+    }
+
+    /** What the machine understood; empty text is "not understood" as well. */
+    fun onTranscript(text: String) = mutable.update { current ->
+        if (current !is DictationState.Transcribing) return@update current
+        val spoken = text.trim()
         if (spoken.isEmpty()) DictationState.Failed(DictationFailure.NOT_UNDERSTOOD) else DictationState.Done(spoken)
     }
 
@@ -37,8 +62,10 @@ class DictationMachine {
         else DictationState.Failed(failure)
     }
 
-    /** A failure before or outside listening, such as no engine at all. */
-    fun fail(failure: DictationFailure) { mutable.value = DictationState.Failed(failure) }
+    /** A failure before or outside listening, such as no engine at all or a machine that refused. */
+    fun fail(failure: DictationFailure, retry: DictationRetry = DictationRetry.NONE) {
+        mutable.value = DictationState.Failed(failure, retry)
+    }
 
     /** Throws away whatever was heard. */
     fun cancel() { mutable.value = DictationState.Idle }
