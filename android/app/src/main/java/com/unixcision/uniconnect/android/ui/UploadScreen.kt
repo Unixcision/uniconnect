@@ -4,18 +4,13 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AttachFile
@@ -33,23 +28,21 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.UploadFailure
 import com.unixcision.uniconnect.android.domain.UploadResult
 import com.unixcision.uniconnect.android.domain.UploadService
 import com.unixcision.uniconnect.android.domain.UploadStyle
+import com.unixcision.uniconnect.android.ui.components.ActionTile
 import com.unixcision.uniconnect.android.ui.components.GlassCard
 import com.unixcision.uniconnect.android.ui.components.SectionLabel
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
-import java.io.File
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -69,15 +62,7 @@ fun UploadScreen(model: UploadViewModel) {
     val context = LocalContext.current
     val spacing = UniTheme.spacing
     var localError by remember { mutableStateOf<Int?>(null) }
-    val pickImages = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris -> model.enqueue(uris) }
-    val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> model.enqueue(uris) }
-    // The photo's destination survives the camera app taking over the screen.
-    var photo by rememberSaveable { mutableStateOf<Uri?>(null) }
-    val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
-        val target = photo
-        photo = null
-        if (taken && target != null) model.enqueue(listOf(target))
-    }
+    val pickers = rememberAttachmentPickers(onPicked = model::enqueue, onUnavailable = { localError = it })
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = spacing.page, end = spacing.page, top = 8.dp, bottom = 40.dp),
@@ -86,17 +71,9 @@ fun UploadScreen(model: UploadViewModel) {
         item { ServicePicker(state.service, onChange = model::setService) }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing.gapSmall)) {
-                ActionTile(Icons.Rounded.CameraAlt, stringResource(R.string.upload_take_photo), Modifier.weight(1f)) {
-                    val target = newPhotoUri(context)
-                    photo = target
-                    runCatching { takePhoto.launch(target) }.onFailure { photo = null; localError = R.string.upload_no_camera }
-                }
-                ActionTile(Icons.Rounded.Image, stringResource(R.string.upload_pick_images), Modifier.weight(1f)) {
-                    runCatching { pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }.onFailure { localError = R.string.upload_no_picker }
-                }
-                ActionTile(Icons.Rounded.AttachFile, stringResource(R.string.upload_pick_files), Modifier.weight(1f)) {
-                    runCatching { pickFiles.launch(arrayOf("*/*")) }.onFailure { localError = R.string.upload_no_picker }
-                }
+                ActionTile(Icons.Rounded.CameraAlt, stringResource(R.string.upload_take_photo), Modifier.weight(1f), pickers.takePhoto)
+                ActionTile(Icons.Rounded.Image, stringResource(R.string.upload_pick_images), Modifier.weight(1f), pickers.pickImages)
+                ActionTile(Icons.Rounded.AttachFile, stringResource(R.string.upload_pick_files), Modifier.weight(1f), pickers.pickFiles)
             }
         }
         localError?.let { message -> item { ErrorNotice(message) { localError = null } } }
@@ -181,19 +158,6 @@ private fun ServiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
     )
 }
 
-/** One of the three big ways in: an icon over a label, the whole tile a target. */
-@Composable
-private fun ActionTile(icon: ImageVector, label: String, modifier: Modifier, onClick: () -> Unit) {
-    GlassCard(modifier, onClick = onClick, accent = UniTheme.colors.accent) {
-        Column(Modifier.fillMaxWidth().padding(vertical = 18.dp, horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(Modifier.size(44.dp).background(UniTheme.colors.accentSoft, UniTheme.shapes.chip), contentAlignment = Alignment.Center) {
-                Icon(icon, null, Modifier.size(24.dp), tint = UniTheme.colors.accent)
-            }
-            Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        }
-    }
-}
-
 /** A picked file on its way: queued, a progress bar, the link with copy and share, or why it failed. */
 @Composable
 private fun UploadRow(upload: UploadViewModel.Upload, onRetry: () -> Unit, onDismiss: () -> Unit) {
@@ -265,7 +229,7 @@ private fun LinkLine(link: String, context: Context) {
 
 /** The reason in the reader's words, with the domain or file in the sentence. */
 @Composable
-private fun UploadFailure.message(): String = when (this) {
+internal fun UploadFailure.message(): String = when (this) {
     is UploadFailure.Unreachable -> stringResource(R.string.upload_unreachable, domain)
     is UploadFailure.Rejected -> stringResource(R.string.upload_rejected, domain, code)
     is UploadFailure.NoLink -> stringResource(R.string.upload_no_link)
@@ -288,13 +252,6 @@ private fun copyLink(context: Context, link: String) {
 private fun shareLink(context: Context, link: String) {
     val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, link)
     runCatching { context.startActivity(Intent.createChooser(send, context.getString(R.string.upload_share))) }
-}
-
-/** A fresh file under the app's own cache for a camera app to write into, shared through the FileProvider. */
-private fun newPhotoUri(context: Context): Uri {
-    val directory = File(context.cacheDir, "photos").apply { mkdirs() }
-    val file = File(directory, "IMG_${System.currentTimeMillis()}.jpg")
-    return FileProvider.getUriForFile(context, "${context.packageName}.files", file)
 }
 
 /** Bytes as the reader says them: B, KB, MB or GB with one decimal past kilobytes. */

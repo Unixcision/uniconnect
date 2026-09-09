@@ -105,6 +105,8 @@ fun TerminalScreen(
     windowPinned: Boolean = false,
     onTogglePin: () -> Unit = {},
     activity: ActivityState = ActivityState.UNKNOWN,
+    attachments: AttachViewModel? = null,
+    attachTarget: AttachTarget? = null,
 ) {
     var realRequested by rememberSaveable { mutableStateOf(false) }
     // Default way in: attach to the window's own tmux session. Only a host without the attach RPC,
@@ -118,6 +120,7 @@ fun TerminalScreen(
             onPty = onPty, onPtyWheel = onPtyWheel, onPtyResize = onPtyResize,
             onLeaveCopyMode = onLeaveCopyMode, onView = onView, onZoom = onZoom, onReconnect = onReconnectReal,
             draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity,
+            attachments = attachments, attachTarget = attachTarget,
         )
         return
     }
@@ -130,7 +133,8 @@ fun TerminalScreen(
     MirrorTerminalScreen(snapshot, loading, error, errorDetail, sending, reconnecting, connected, onRefresh, onReconnect, onScroll, onSend,
         attachFallbackDetail = attachFallbackDetail,
         onRequestReal = { columns, rows -> realRequested = true; manuallyLeft = false; onStartReal(columns, rows, false) },
-        draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity)
+        draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity,
+        attachments = attachments, attachTarget = attachTarget)
 }
 
 /** The attached tmux client: the phone owns a real PTY of its own size; tmux keeps the desktop's. */
@@ -142,6 +146,7 @@ private fun RealTerminalScreen(
     onStopReal: () -> Unit, onPty: (String, Boolean) -> Unit, onPtyWheel: (Boolean, Int) -> Unit, onPtyResize: (Int, Int) -> Unit,
     onLeaveCopyMode: () -> Unit, onView: (TerminalView) -> Unit, onZoom: (Float) -> Unit, onReconnect: () -> Unit,
     draft: String, onDraftChange: (String) -> Unit, windowPinned: Boolean, onTogglePin: () -> Unit, activity: ActivityState,
+    attachments: AttachViewModel?, attachTarget: AttachTarget?,
 ) {
     var keysVisible by rememberSaveable { mutableStateOf(startWithKeys) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
@@ -160,6 +165,8 @@ private fun RealTerminalScreen(
             IconButton(onClick = onTogglePin) {
                 Icon(if (windowPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder, stringResource(if (windowPinned) R.string.box_unpin else R.string.box_pin), tint = if (windowPinned) UniTheme.colors.warning else UniTheme.colors.muted)
             }
+            // The clip: attach to this window, and paste the path or link into the composer.
+            if (attachments != null && attachTarget != null) AttachButton(attachments, attachTarget, draft, onDraftChange)
             // One tap back to the live screen, handled by the model: it walks the pane out with
             // wheel steps and stops as soon as tmux's indicator clears.
             if (real.copyMode) IconButton(onClick = onLeaveCopyMode) {
@@ -335,6 +342,7 @@ private fun MirrorTerminalScreen(
     onRefresh: () -> Unit, onReconnect: () -> Unit, onScroll: (Int) -> Unit, onSend: (String, Boolean, (Boolean) -> Unit) -> Unit,
     attachFallbackDetail: String?, onRequestReal: (Int, Int) -> Unit, draft: String, onDraftChange: (String) -> Unit,
     windowPinned: Boolean, onTogglePin: () -> Unit, activity: ActivityState,
+    attachments: AttachViewModel?, attachTarget: AttachTarget?,
 ) {
     var viewMode by rememberSaveable { mutableStateOf(TerminalView.FIT) }
     var keysVisible by rememberSaveable { mutableStateOf(false) }
@@ -354,6 +362,8 @@ private fun MirrorTerminalScreen(
             IconButton(onClick = onTogglePin) {
                 Icon(if (windowPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder, stringResource(if (windowPinned) R.string.box_unpin else R.string.box_pin), tint = if (windowPinned) UniTheme.colors.warning else UniTheme.colors.muted)
             }
+            // The clip: attach to this window, and paste the path or link into the composer.
+            if (attachments != null && attachTarget != null) AttachButton(attachments, attachTarget, draft, onDraftChange)
             IconButton(onClick = onReconnect, enabled = (connected || error != null) && !reconnecting) {
                 if (reconnecting) LoadingIndicator(Modifier.size(20.dp), color = UniTheme.colors.accent)
                 else Icon(Icons.Rounded.Sync, stringResource(R.string.terminal_reconnect), tint = UniTheme.colors.muted)

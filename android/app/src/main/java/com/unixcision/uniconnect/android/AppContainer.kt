@@ -9,6 +9,7 @@ import com.unixcision.uniconnect.android.data.StoredMachineRepository
 import com.unixcision.uniconnect.android.data.AndroidNotificationConnections
 import com.unixcision.uniconnect.android.data.ContentReader
 import com.unixcision.uniconnect.android.data.HttpFileSender
+import com.unixcision.uniconnect.android.data.NativeFilePutClient
 import com.unixcision.uniconnect.android.data.NativeNotificationClient
 import com.unixcision.uniconnect.android.data.StoredNoticeDeliveryRepository
 import com.unixcision.uniconnect.android.data.StoredNoticeNameCatalog
@@ -16,6 +17,7 @@ import com.unixcision.uniconnect.android.data.StoredDraftRepository
 import com.unixcision.uniconnect.android.data.StoredBoxOverridesRepository
 import com.unixcision.uniconnect.android.data.StoredSettingsRepository
 import com.unixcision.uniconnect.android.data.StoredUploadHistoryRepository
+import com.unixcision.uniconnect.android.domain.FilePutClient
 import com.unixcision.uniconnect.android.domain.FileSender
 import com.unixcision.uniconnect.android.domain.NotificationClient
 import com.unixcision.uniconnect.android.domain.NoticeDeliveryRepository
@@ -49,4 +51,5 @@ class AppContainer(context: Context) {
     val fileSender: FileSender = HttpFileSender()
     val uploadHistory: UploadHistoryRepository = StoredUploadHistoryRepository(store)
     val contentReader = ContentReader(context.contentResolver)
+    val filePutClient: FilePutClient = NativeFilePutClient(rpc)
 }

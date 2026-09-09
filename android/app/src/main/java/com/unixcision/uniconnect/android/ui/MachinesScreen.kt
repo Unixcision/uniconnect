@@ -55,7 +55,7 @@ private enum class Level { LOADING, LIST, UPLOADS, MACHINE, TERMINAL }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, onEnableNotifications: (String) -> Unit) {
+fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachments: AttachViewModel, onEnableNotifications: (String) -> Unit) {
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.pauseLiveConnection() }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { model.resumeLiveConnection() }
     val state by model.state.collectAsStateWithLifecycle()
@@ -166,6 +166,8 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, onEnableN
                             windowPinned = window?.isPinned == true || window?.id in overrides.pinnedWindows,
                             onTogglePin = { window?.let { model.toggleWindowPinned(it.id) } },
                             activity = window?.activity?.state ?: ActivityState.UNKNOWN,
+                            attachments = attachments,
+                            attachTarget = if (machine != null && workspace != null && window != null) AttachTarget(machine, workspace.id, window.id, connection?.snapshot?.putsFiles == true) else null,
                         )
                     }
                     Level.MACHINE -> if (machine != null) MachineBoxesScreen(
