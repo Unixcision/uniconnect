@@ -154,33 +154,43 @@ priority `waiting` > `working` > `idle` > `unknown`. Whenever any state changes 
 host emits the existing `workspace.updated` event, coalesced to at least one second
 (the macOS cycle runs every two seconds).
 
-Sources per window, highest priority wins when its data is fresh:
+Rules per window (measured live on 2026-09-09):
 
-1. **Agent hooks** already reported through `set_agent_lifecycle`
-   (`running` → `working`, `needsInput` → `waiting`, `idle` → `idle`) or, failing
-   that, the newest `set_status` text of the panel. Only reports younger than 120 s
-   count; macOS keeps the report time per panel.
-2. **Pane title.** Local tmux windows (socket `uniconnect-local`, sessions
-   `uc-<hex>`) are probed once per socket every cycle with
-   `tmux -L <socket> list-panes -a -F '#{session_name}\t#{pane_current_command}\t#{pane_title}\t#{window_activity}'`
-   off the main thread; SSH and direct-PTY windows use the OSC title of the surface
-   and the foreground process name. Claude Code sets `✳ topic` when it is not working
-   and another marker (`·`) while it works; Codex prefixes a braille spinner
-   (U+2800–U+28FF) while working and removes it when it stops; Gemini and Agy mark
-   nothing. `pane_current_command` (`claude`, `codex`, `node`, `gemini`, `agy`…)
-   identifies the agent; a shell (`zsh`, `bash`, `fish`, `sh`) means `unknown` and no
-   indicator.
-3. **Screen.** When the output is quiet and an agent is alive, the last ~12 visible
-   lines are inspected (ANSI stripped) for a permission question: Claude
-   "Do you want to proceed?", "❯ 1. Yes", "Esc to cancel"; Codex "Allow" with
-   "[y/n]" or "Approve"; Gemini/Agy "Allow execution", "Apply this change".
-4. **Output activity.** PTY output bytes in the last 3 s = `working`; no output for
-   more than 5 s with a live agent = `idle` (hysteresis in between). Keyboard echo
-   (output within 250 ms of a local key) and resize redraws (500 ms) are not counted.
+1. **Agent** comes from the foreground command (`pane_current_command` of the local
+   tmux pane, or the foreground process of the PTY: `claude`, `codex`, `gemini`,
+   `agy`) or from the hooks; the title only identifies the agent (`✳` = Claude,
+   braille = Codex) when the command does not. A shell (`zsh`, `bash`, `fish`, `sh`)
+   means `unknown` and no indicator, whatever the title says.
+2. **Hooks** already reported through `set_agent_lifecycle` (`running` → `working`,
+   `needsInput` → `waiting`, `idle` → `idle`) or, failing that, the newest
+   `set_status` text of the panel, win whenever the report is younger than 120 s;
+   macOS keeps the report time per panel.
+3. Otherwise: **(a)** a permission question visible on screen → `waiting`, beating
+   everything else; **(b)** a title starting with a braille spinner (U+2800–U+28FF,
+   Codex while working) → `working`; **(c)** PTY output in the last 3 s → `working`;
+   **(d)** no output for more than 5 s with a live agent → `idle` (between 3 and
+   5 s the previous state is kept); **(e)** else `unknown`.
+4. The title is only **positive** evidence of work. Claude Code titles the window
+   `✳ topic` both while working and while stopped (it changes to the topic when the
+   prompt is sent and never again), so `✳` never means "stopped"; Gemini and Agy
+   mark nothing.
+5. The **screen** is inspected only when the output has been quiet for at least 1 s:
+   the last ~12 visible lines (ANSI stripped) are matched against Claude
+   "Do you want to proceed?", "❯ 1. Yes", "Esc to cancel"; Codex "Allow"/"Approve"
+   with "[y/n]", "Would you like to run"; Gemini/Agy "Allow execution",
+   "Apply this change". The captured text is neither logged nor sent: only the
+   verdict leaves the host.
+6. `since` is the epoch of the last **state change**, not of every probe.
 
-Tie-break: if title, screen or output say "not working" but there is continuous
-output, output wins (`working`). `waiting` only comes from hooks or screen, never
-from output. `since` is preserved while the state does not change.
+Output activity comes from the PTY tee of every surface (also for tmux and SSH
+windows): keyboard echo (output within 250 ms of a local or mobile key) and resize
+redraws (500 ms) are not counted. Local tmux windows (socket `uniconnect-local`,
+sessions `uc-<hex>`) are probed once per socket every cycle with
+`tmux -L <socket> list-panes -a -F '#{session_name}\t#{pane_current_command}\t#{pane_title}\t#{window_activity}'`
+off the main thread; `#{window_activity}` is only a fallback when the tee has no
+data. Measured with real Claude Code: stopped, the window emits nothing (cursor
+blink does not count); working, the spinner redraws continuously, so the 3 s / 5 s
+thresholds hold. `waiting` only comes from hooks or screen, never from output.
 
 macOS UI: the workspace row of the sidebar shows a small spinner while `working`
 and an amber `hand.raised.fill` while `waiting`; each window's tab shows the same

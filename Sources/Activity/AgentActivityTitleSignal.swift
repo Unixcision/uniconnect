@@ -2,25 +2,28 @@ import Foundation
 
 /// Lo que el título de la ventana y el comando en primer plano dicen de la IA.
 ///
-/// Reglas comprobadas en producción: Claude Code encabeza el título con `✳ tema`
-/// cuando no trabaja y con otra marca (`·`) cuando trabaja; Codex antepone un
-/// spinner braille (U+2800–U+28FF) mientras trabaja y lo quita al parar; Gemini y
-/// Agy no marcan nada. Si el proceso en primer plano es un shell, no hay IA.
+/// El comando (`pane_current_command` de tmux o proceso en primer plano de la PTY)
+/// identifica la IA; un shell significa que no hay IA. El título solo aporta evidencia
+/// POSITIVA de trabajo: Codex antepone un spinner braille (U+2800–U+28FF) mientras
+/// trabaja. Claude Code pone `✳ tema` tanto trabajando como parado, así que ese
+/// prefijo identifica a Claude pero nunca cambia el estado.
 struct AgentActivityTitleSignal: Equatable, Sendable {
     /// Comandos que son un shell: la ventana no tiene IA aunque el título diga algo.
     static let shellCommands: Set<String> = [
         "zsh", "bash", "fish", "sh", "dash", "tcsh", "csh", "ksh", "nu", "login",
     ]
-    /// Marca con la que Claude Code encabeza el título cuando no trabaja.
-    static let claudeIdleMarker: Character = "✳"
-    /// Marcas con las que Claude Code encabeza el título mientras trabaja.
-    static let claudeWorkingMarkers: Set<Character> = ["·", "•", "✶", "✻", "✽", "✢", "∗"]
+    /// Comandos tras los que el proceso real no es visible desde el Mac (remoto o multiplexado).
+    static let opaqueCommands: Set<String> = ["ssh", "mosh", "mosh-client", "tmux", "screen", "et"]
+    /// Prefijo con el que Claude Code titula la ventana; identifica al agente, no su estado.
+    static let claudeTitleMarker: Character = "✳"
 
     let agent: AgentActivity.Agent?
-    /// `.working` o `.idle` cuando el título lo dice; `nil` cuando no dice nada.
+    /// `.working` cuando el título lleva el spinner braille; `nil` en cualquier otro caso.
     let state: AgentActivity.State?
     /// El proceso en primer plano es un shell: no hay IA en la ventana.
     let isShell: Bool
+    /// El proceso en primer plano oculta el real (ssh, tmux…): la pantalla es la única pista.
+    let hidesForegroundProcess: Bool
 
     init(title: String?, currentCommand: String?) {
         let command = Self.normalizedCommand(currentCommand)
@@ -29,12 +32,13 @@ struct AgentActivityTitleSignal: Equatable, Sendable {
             agent = nil
             state = nil
             isShell = true
+            hidesForegroundProcess = false
             return
         }
-        let resolvedAgent = Self.agent(fromCommand: command) ?? Self.agent(fromTitle: trimmedTitle)
-        agent = resolvedAgent
+        agent = Self.agent(fromCommand: command) ?? Self.agent(fromTitle: trimmedTitle)
+        state = Self.startsWithBrailleSpinner(trimmedTitle) ? .working : nil
         isShell = false
-        state = Self.state(for: resolvedAgent, title: trimmedTitle)
+        hidesForegroundProcess = command.map { Self.opaqueCommands.contains($0) } ?? true
     }
 
     /// Último componente del comando, sin el guion de shell de login y en minúsculas.
@@ -70,7 +74,7 @@ struct AgentActivityTitleSignal: Equatable, Sendable {
         if startsWithBrailleSpinner(title) {
             return .codex
         }
-        if let first = title.first, first == claudeIdleMarker || first == "·" {
+        if title.first == claudeTitleMarker {
             return .claude
         }
         let lowered = title.lowercased()
@@ -79,20 +83,5 @@ struct AgentActivityTitleSignal: Equatable, Sendable {
         if lowered.contains("gemini") { return .gemini }
         if lowered.contains("antigravity") || lowered.hasPrefix("agy") { return .agy }
         return nil
-    }
-
-    private static func state(for agent: AgentActivity.Agent?, title: String) -> AgentActivity.State? {
-        guard let agent, !title.isEmpty else { return nil }
-        switch agent {
-        case .claude:
-            guard let first = title.first else { return nil }
-            if first == claudeIdleMarker { return .idle }
-            if claudeWorkingMarkers.contains(first) { return .working }
-            return nil
-        case .codex:
-            return startsWithBrailleSpinner(title) ? .working : .idle
-        case .gemini, .agy:
-            return nil
-        }
     }
 }

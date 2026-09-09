@@ -3,9 +3,9 @@ import Foundation
 /// Servicio que decide la ``AgentActivity`` de cada ventana a partir de sus pruebas.
 ///
 /// Corre fuera del hilo principal: lanza la sonda de tmux (una por socket), completa
-/// las pruebas con el título y el comando del panel, pide la pantalla solo a las
-/// ventanas en calma con IA viva y aplica el ``AgentActivityResolver``. Conserva la
-/// decisión anterior de cada ventana para calcular `since` y la histéresis.
+/// las pruebas con el título y el comando del panel, pide el veredicto de pantalla solo
+/// a las ventanas en calma y aplica el ``AgentActivityResolver``. Conserva la decisión
+/// anterior de cada ventana para calcular `since` y la histéresis.
 actor AgentActivityMonitor {
     private let probe: TmuxPaneActivityProbe
     private let resolver: AgentActivityResolver
@@ -24,11 +24,11 @@ actor AgentActivityMonitor {
     /// - Parameters:
     ///   - inputs: Pruebas recogidas en el hilo principal.
     ///   - now: Epoch en segundos de la evaluación.
-    ///   - screenText: Lector de pantalla para las ventanas que necesiten comprobación.
+    ///   - screenShowsPermissionPrompt: Veredicto de pantalla para las ventanas que lo necesiten.
     func evaluate(
         inputs: [AgentActivityTerminalInput],
         now: TimeInterval,
-        screenText: @MainActor @Sendable (UUID) -> String?
+        screenShowsPermissionPrompt: @MainActor @Sendable (UUID) -> Bool
     ) async -> [UUID: [UUID: AgentActivity]] {
         let rowsBySocket = await probeRows(socketNames: Set(inputs.compactMap { $0.tmux?.socketName }))
         var next: [UUID: AgentActivity] = [:]
@@ -42,7 +42,7 @@ actor AgentActivityMonitor {
                 }
             }
             if resolver.needsScreenCheck(evidence: evidence, now: now) {
-                evidence.screenText = await screenText(input.panelID)
+                evidence.screenShowsPermissionPrompt = await screenShowsPermissionPrompt(input.panelID)
             }
             let activity = resolver.resolve(
                 evidence: evidence,

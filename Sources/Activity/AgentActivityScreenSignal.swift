@@ -2,12 +2,13 @@ import Foundation
 
 /// Detecta en las últimas líneas visibles una pregunta de permiso pendiente.
 ///
-/// Solo se consulta cuando la salida está en calma: una IA que pide permiso deja de
-/// escribir y la pregunta queda al pie de la pantalla.
+/// Se consulta solo con la salida en calma: una IA que pide permiso deja de escribir y
+/// la pregunta queda al pie de la pantalla. El texto capturado no sale de aquí: el
+/// resto del ciclo solo ve el veredicto.
 struct AgentActivityScreenSignal: Equatable, Sendable {
     /// Líneas del pie de pantalla que se inspeccionan.
     static let defaultLineWindow = 12
-    /// Fragmentos (en minúsculas) que delatan una pregunta de permiso.
+    /// Fragmentos (en minúsculas) que por sí solos delatan una pregunta de permiso.
     static let waitingPatterns: [String] = [
         // Claude Code
         "do you want to proceed",
@@ -22,8 +23,9 @@ struct AgentActivityScreenSignal: Equatable, Sendable {
         "allow once",
         "allow always",
         // Codex
-        "approve",
         "would you like to run",
+        "allow command",
+        "approve this command",
     ]
 
     /// Hay una pregunta de permiso visible.
@@ -72,7 +74,8 @@ struct AgentActivityScreenSignal: Equatable, Sendable {
         if waitingPatterns.contains(where: { loweredTail.contains($0) }) {
             return true
         }
-        // Codex: «Allow …» junto a la respuesta «[y/n]».
-        return loweredTail.contains("[y/n]") && loweredTail.contains("allow")
+        // Codex: «Allow …» o «Approve …» junto a la respuesta «[y/n]».
+        let asksYesNo = loweredTail.contains("[y/n]") || loweredTail.contains("(y/n)")
+        return asksYesNo && (loweredTail.contains("allow") || loweredTail.contains("approve"))
     }
 }

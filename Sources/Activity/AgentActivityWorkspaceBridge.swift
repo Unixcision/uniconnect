@@ -24,13 +24,13 @@ final class AgentActivityWorkspaceBridge: AgentActivityHostReading {
         return inputs
     }
 
-    func visibleText(panelID: UUID) -> String? {
+    func screenShowsPermissionPrompt(panelID: UUID) -> Bool {
         for workspace in uniqueWorkspaces() {
-            if let terminal = workspace.terminalPanel(for: panelID) {
-                return terminal.surface.visibleText()
-            }
+            guard let terminal = workspace.terminalPanel(for: panelID) else { continue }
+            // El texto capturado muere aquí: solo el veredicto cruza al monitor.
+            return AgentActivityScreenSignal(visibleText: terminal.surface.visibleText()).isWaitingForUser
         }
-        return nil
+        return false
     }
 
     func apply(activitiesByWorkspace: [UUID: [UUID: AgentActivity]]) {

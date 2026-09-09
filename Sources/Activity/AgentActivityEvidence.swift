@@ -3,7 +3,7 @@ import Foundation
 /// Pruebas recogidas para una ventana antes de decidir su ``AgentActivity``.
 ///
 /// Las rellena ``AgentActivityWorkspaceBridge`` en el hilo principal y las completa
-/// ``AgentActivityMonitor`` (sonda de tmux, lectura de pantalla). El
+/// ``AgentActivityMonitor`` (sonda de tmux, veredicto de pantalla). El
 /// ``AgentActivityResolver`` solo las lee.
 struct AgentActivityEvidence: Equatable, Sendable {
     /// Último informe de los hooks del agente (`set_agent_lifecycle` o `set_status`).
@@ -67,20 +67,20 @@ struct AgentActivityEvidence: Equatable, Sendable {
     /// IA que el registro de la ventana local dice que está en marcha (conversación activa).
     var knownAgent: AgentActivity.Agent?
     var output: Output
-    /// Texto visible de la superficie; `nil` mientras no se haya leído la pantalla.
-    var screenText: String?
+    /// Veredicto de pantalla (pregunta de permiso visible); `nil` mientras no se haya mirado.
+    var screenShowsPermissionPrompt: Bool?
 
     init(
         hooks: Hooks? = nil,
         title: Title? = nil,
         knownAgent: AgentActivity.Agent? = nil,
         output: Output = Output(lastOutputAt: nil),
-        screenText: String? = nil
+        screenShowsPermissionPrompt: Bool? = nil
     ) {
         self.hooks = hooks
         self.title = title
         self.knownAgent = knownAgent
         self.output = output
-        self.screenText = screenText
+        self.screenShowsPermissionPrompt = screenShowsPermissionPrompt
     }
 }
