@@ -2,30 +2,32 @@ package com.unixcision.uniconnect.android.domain
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The two paths the cross review asked to see covered: nothing goes to an external service
- * without the reader's explicit choice, and a host copy that did not reach the SSH server is
- * kept for copying, never pasted into the remote window's draft.
+ * Which way an attachment goes and what may be pasted afterwards: a host that takes files gets
+ * them directly, any other host sends the file to the fallback service announced on the sheet,
+ * and a host copy that did not reach the SSH server is kept for copying, never pasted into the
+ * remote window's draft.
  */
 class AttachRouteTest {
     @Test
-    fun withoutTheCapabilityAndWithoutAnExplicitChoiceNothingIsSent() {
-        assertNull(AttachRoute.decide(takesFiles = false, chosenExternal = false))
+    fun aHostThatTakesFilesGetsThemOverThePrivateConnection() {
+        assertEquals(AttachRoute.HOST, AttachRoute.forHost(takesFiles = true))
     }
 
     @Test
-    fun theExternalServiceIsOnlyReachedByTheExplicitChoice() {
-        assertEquals(AttachRoute.EXTERNAL, AttachRoute.decide(takesFiles = false, chosenExternal = true))
+    fun aHostWithoutTheCapabilitySendsToTheFallbackService() {
+        assertEquals(AttachRoute.EXTERNAL, AttachRoute.forHost(takesFiles = false))
     }
 
     @Test
-    fun aHostThatTakesFilesAlwaysGetsThemOverThePrivateConnection() {
-        assertEquals(AttachRoute.HOST, AttachRoute.decide(takesFiles = true, chosenExternal = false))
-        assertEquals(AttachRoute.HOST, AttachRoute.decide(takesFiles = true, chosenExternal = true))
+    fun theTerminalFallbackFollowsEnviarArchivosUnlessChosen() {
+        val page = UploadService("temp.sh", UploadStyle.MULTIPART_FILE)
+        assertEquals(page, AppSettings(uploadService = page).terminalUpload)
+        val own = UploadService("https://mi.servidor.com/api/upload", UploadStyle.MULTIPART_FILE)
+        assertEquals(own, AppSettings(uploadService = page, terminalUploadService = own).terminalUpload)
     }
 
     @Test

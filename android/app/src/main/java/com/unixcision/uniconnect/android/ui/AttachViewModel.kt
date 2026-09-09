@@ -23,8 +23,9 @@ import java.util.UUID
 
 /**
  * Attachments picked from a terminal window. By default each one goes to the window's host over
- * the private connection (`file_put.v1`) and comes back as a path; only on the reader's explicit
- * choice does one go to the transfer service of "Enviar archivos" and come back as a link. What
+ * the private connection (`file_put.v1`) and comes back as a path; when the host cannot take it,
+ * the sheet says so and the file goes to the fallback service of the settings, coming back as a
+ * link. What
  * comes back is offered once for pasting into that window's composer when it sits where the
  * window's agent can read it; otherwise it is shown and kept for copying.
  */
@@ -62,7 +63,7 @@ class AttachViewModel(
 
     data class State(
         val transfers: List<Transfer> = emptyList(),
-        /** The transfer service used on the explicit external route. */
+        /** The fallback service of the terminal's clip, from the settings. */
         val service: UploadService = UploadService.default,
     )
 
@@ -71,7 +72,7 @@ class AttachViewModel(
     private var worker: Job? = null
 
     init {
-        viewModelScope.launch { settingsRepository.settings.collect { stored -> mutableState.update { it.copy(service = stored.uploadService) } } }
+        viewModelScope.launch { settingsRepository.settings.collect { stored -> mutableState.update { it.copy(service = stored.terminalUpload) } } }
     }
 
     /** Queues [uris] for [target] by [route] and starts sending if nothing is on its way. */

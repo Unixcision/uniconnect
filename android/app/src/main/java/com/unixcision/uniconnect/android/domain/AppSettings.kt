@@ -9,6 +9,8 @@ package com.unixcision.uniconnect.android.domain
  * - Parameter designTheme: which of the four designs dresses the app.
  * - Parameter colorMode: whether that design is shown light, dark or as the phone is set.
  * - Parameter uploadService: where "Enviar archivos" sends files and how.
+ * - Parameter terminalUploadService: where the terminal's clip sends a file when the host cannot
+ *   take it directly; null means "the same as Enviar archivos", which is the default.
  */
 data class AppSettings(
     val terminalView: TerminalView = TerminalView.PAN,
@@ -17,4 +19,8 @@ data class AppSettings(
     val designTheme: DesignTheme = DesignTheme.SERENO,
     val colorMode: ColorMode = ColorMode.SYSTEM,
     val uploadService: UploadService = UploadService.default,
-)
+    val terminalUploadService: UploadService? = null,
+) {
+    /** The fallback service the terminal's clip actually uses: its own choice, or the one of "Enviar archivos". */
+    val terminalUpload: UploadService get() = terminalUploadService ?: uploadService
+}

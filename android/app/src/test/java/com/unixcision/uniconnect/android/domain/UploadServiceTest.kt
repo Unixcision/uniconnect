@@ -27,6 +27,29 @@ class UploadServiceTest {
     }
 
     @Test
+    fun aFullUrlNamesItsOwnEndpoint() {
+        assertEquals("https://mi.servidor.com/api/upload", UploadService("https://mi.servidor.com/api/upload", UploadStyle.MULTIPART_FILE).uploadUrl("a.png"))
+        assertEquals("https://mi.servidor.com/api/upload/a.png", UploadService("https://mi.servidor.com/api/upload", UploadStyle.RAW_NAMED).uploadUrl("a.png"))
+        assertEquals("http://10.0.0.5:8080/put/a.png", UploadService("http://10.0.0.5:8080/put", UploadStyle.RAW_NAMED).uploadUrl("a.png"))
+        assertEquals("http://10.0.0.5:8080/put", UploadService("http://10.0.0.5:8080/put", UploadStyle.LITTERBOX).uploadUrl("a.png"))
+        // Without a path of its own, a style keeps its measured default path.
+        assertEquals("http://10.0.0.5:8080/upload", UploadService("http://10.0.0.5:8080", UploadStyle.MULTIPART_FILE).uploadUrl("a.png"))
+        assertFalse(UploadService("http://10.0.0.5:8080", UploadStyle.MULTIPART_FILE).hasOwnPath)
+        assertTrue(UploadService("http://10.0.0.5:8080/put", UploadStyle.MULTIPART_FILE).hasOwnPath)
+    }
+
+    @Test
+    fun aTypedUrlKeepsSchemeHostPortAndPath() {
+        assertEquals("https://mi.servidor.com/api/upload", UploadService.normalizeUrl("  HTTPS://Mi.Servidor.com/api/upload/ "))
+        assertEquals("http://10.0.0.5:8080/put", UploadService.normalizeUrl("http://10.0.0.5:8080/put"))
+        assertEquals("https://files.example", UploadService.normalizeUrl("https://files.example/"))
+        assertEquals("sendit.sh", UploadService.normalizeUrl(" sendit.sh "))
+        assertEquals("files.example", UploadService.normalizeUrl("files.example/upload"))
+        assertEquals("", UploadService.normalizeUrl("ftp://old.example/x"))
+        assertEquals("", UploadService.normalizeUrl("https://"))
+    }
+
+    @Test
     fun senditIsTheDefaultAndPresetsAreKnown() {
         assertEquals(UploadService("sendit.sh", UploadStyle.RAW_NAMED), UploadService.default)
         assertEquals(listOf("sendit.sh", "temp.sh", "litterbox.catbox.moe", "transfer.sh"), UploadService.presets.map { it.domain })

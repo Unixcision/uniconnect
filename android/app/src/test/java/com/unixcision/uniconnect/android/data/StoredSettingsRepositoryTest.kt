@@ -69,6 +69,23 @@ class StoredSettingsRepositoryTest {
     }
 
     @Test
+    fun theTerminalFallbackIsKeptApartAndFollowsThePageUntilChosen() = runBlocking {
+        val repository = StoredSettingsRepository(MemoryPreferences())
+        val page = UploadService("temp.sh", UploadStyle.MULTIPART_FILE)
+        repository.update(AppSettings(uploadService = page))
+        val stored = repository.settings.first()
+        assertEquals(null, stored.terminalUploadService)
+        assertEquals(page, stored.terminalUpload)
+        val own = UploadService("https://mi.servidor.com/api/upload", UploadStyle.RAW_NAMED)
+        repository.update(stored.copy(terminalUploadService = own))
+        val chosen = repository.settings.first()
+        assertEquals(own, chosen.terminalUploadService)
+        assertEquals(page, chosen.uploadService)
+        repository.update(chosen.copy(terminalUploadService = null))
+        assertEquals(page, repository.settings.first().terminalUpload)
+    }
+
+    @Test
     fun aStoredDomainWithAnUnknownStyleReadsAsRaw() = runBlocking {
         val stored = preferencesOf(
             stringPreferencesKey("settings.uploadDomain") to "temp.sh",

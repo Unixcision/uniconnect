@@ -9,7 +9,6 @@ import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Image
@@ -71,17 +70,16 @@ fun AttachButton(model: AttachViewModel, target: AttachTarget, draft: String, on
 }
 
 /**
- * Quick sheet: three ways to pick when the host takes files over the private connection; when it
- * does not, it says so and the external service is one explicit tap away, never the default.
+ * Quick sheet: the three ways to pick, always, and the transfers of this window. When the host
+ * cannot take files over the private connection, one visible line above the buttons says the
+ * file will go to the fallback service instead, before anything is tapped.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AttachSheet(model: AttachViewModel, target: AttachTarget, transfers: List<AttachViewModel.Transfer>, service: UploadService, onDismiss: () -> Unit) {
     var localError by remember { mutableStateOf<Int?>(null) }
-    // The external route is only reachable through its own button; the pickers only show once a route exists.
-    var external by rememberSaveable { mutableStateOf(false) }
-    val route = AttachRoute.decide(takesFiles = target.supportsFilePut, chosenExternal = external)
-    val pickers = rememberAttachmentPickers(onPicked = { uris -> route?.let { model.attach(target, uris, it) } }, onUnavailable = { localError = it })
+    val route = AttachRoute.forHost(takesFiles = target.supportsFilePut)
+    val pickers = rememberAttachmentPickers(onPicked = { uris -> model.attach(target, uris, route) }, onUnavailable = { localError = it })
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -92,17 +90,12 @@ private fun AttachSheet(model: AttachViewModel, target: AttachTarget, transfers:
             SheetHeader(
                 icon = { Icon(Icons.Rounded.AttachFile, null, tint = UniTheme.colors.accent) },
                 title = stringResource(R.string.attach_title),
-                note = if (target.supportsFilePut) stringResource(R.string.attach_note_host, target.machine.name) else stringResource(R.string.attach_unsupported, target.machine.name),
+                note = if (target.supportsFilePut) stringResource(R.string.attach_note_host, target.machine.name) else stringResource(R.string.attach_note_window),
                 tone = UniTheme.colors.accent,
             )
-            if (target.supportsFilePut) PickerTiles(pickers)
-            else if (!external) Button(onClick = { external = true }, modifier = Modifier.fillMaxWidth(), shape = UniTheme.shapes.button, contentPadding = PaddingValues(14.dp)) {
-                Icon(Icons.Rounded.CloudUpload, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.attach_external_button, service.domain), fontWeight = FontWeight.SemiBold)
-            } else {
-                Text(stringResource(R.string.attach_external_note, service.baseUrl), color = UniTheme.colors.warning, style = MaterialTheme.typography.bodySmall)
-                PickerTiles(pickers)
-            }
+            // The one line the reader sees before tapping when the file will leave for the fallback service.
+            if (!target.supportsFilePut) Text(stringResource(R.string.attach_fallback_line, target.machine.name, service.domain), color = UniTheme.colors.warning, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            PickerTiles(pickers)
             localError?.let { ErrorNotice(it) { localError = null } }
             if (transfers.isNotEmpty()) {
                 SectionLabel(stringResource(R.string.attach_transfers))

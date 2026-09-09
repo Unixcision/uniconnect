@@ -290,12 +290,48 @@ the file sits where the window's agent runs: `remote_path` when `location` is
 copy for an SSH window (`location: "host"` with `remote_error`) is never pasted:
 the sheet shows the failure and offers "Copiar ruta del equipo". Pasting appends
 to what is typed, preceded by a space when something was already there, quoted if
-the path carries a space. A host that does not advertise `file_put.v1` gets no
-silent fallback: the sheet says the machine does not take attachments directly
-and offers one explicit button, "Subir a <servicio> y pegar el enlace", which is
-the only way a file leaves for the transfer service of "Enviar archivos". Android
-implements the phone side; Mac and Linux implement the host side (Linux reuses
-its SFTP transfer for the SSH hop, off the GTK thread).
+the path carries a space. A host that does not advertise `file_put.v1` gets the
+fallback the reader configured under Ajustes → "Adjuntar desde la terminal" (by
+default the service of "Enviar archivos"; presets or a custom full URL with its
+own style), and the fallback is never silent: the sheet shows one line above the
+three buttons, "<equipo> no admite adjuntar directamente: se sube a <servicio> y
+se pega el enlace", before anything is tapped, and the link is pasted instead of a
+path. A `not_found` on chunk or commit (expired transfer, edited box or revoked
+device) is a failure with its own message and a retry from the first byte.
+Android implements the phone side; Mac and Linux implement the host side (Linux
+reuses its SFTP transfer for the SSH hop, off the GTK thread).
+
+Host side on macOS (2026-09-09, `MobileFilePutService` actor in `Sources/Mobile/`):
+
+- **Binding.** `begin` captures the calling device (the approved tailnet address of the
+  connection, which `MobileHostService` re-validates on every request and closes on
+  revocation), the box id and, for SSH boxes, the credential id plus the credential
+  record as resolved at that moment. Every chunk, commit and abort recomputes the
+  binding from the live box and compares it: a different device, a missing box, an
+  edited or unresolvable credential → `not_found`. A locked app answers `locked` to
+  all four RPCs. `chunk_bytes` is 1 MiB; `size` above 200 MiB → `too_large`.
+- **Reservation.** `begin` creates `~/UniConnect/Entrada/<YYYYMMDD>/<name>.part` with
+  an exclusive create, choosing the first ordinal whose final name and `.part` are
+  both free (`name`, `name-2`, `name-3`…), so concurrent uploads of the same name get
+  distinct files. `name` is sanitised (`MobileFilePutName`: last path component only,
+  no control or shell characters, no leading dot, at most 120 UTF-8 bytes, extension
+  kept). Chunks append to the `.part` in order from 0 and feed an incremental SHA-256;
+  a chunk beyond `size` discards the transfer with `too_large`. `commit` checks that
+  the received bytes equal `size` and that the digest matches, then renames the
+  `.part` to the reserved name, falling forward to the next free ordinal if a file
+  appeared meanwhile; it never overwrites.
+- **SSH hop.** For an SSH box the host runs the box's own validated, endpoint-pinned
+  `ssh` (`UniConnectSSH.processInvocation`, same credential, `-T`) with the file on
+  standard input and a remote `sh` script that does `mkdir -p ~/uniconnect-entrada`,
+  writes `.<name>.<nonce>.part`, then `mv -n` to `<name>`, `<name>-2`, … until the
+  temporary file is gone, and prints the final path; this is the scp step of the
+  contract done over the same connection. The copy is bounded by a 100 s deadline (the
+  phone waits 120 s for `commit`); a timeout or a non-zero exit answers
+  `location: "host"` with `remote_error` and the host file kept.
+- **Threading and expiry.** All file I/O and the SSH hop run inside the actor, never
+  on the main thread; the transfer table lives there too. A transfer with no chunk
+  for 10 minutes is deleted together with its `.part` (injected clock, cancellable
+  task). `abort` deletes the `.part` immediately.
 
 ### ローカルウインドウの作成と保存
 

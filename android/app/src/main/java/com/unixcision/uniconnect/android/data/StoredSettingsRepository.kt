@@ -29,6 +29,8 @@ class StoredSettingsRepository(private val store: DataStore<Preferences>) : Sett
     private val mode = stringPreferencesKey("settings.colorMode")
     private val uploadDomain = stringPreferencesKey("settings.uploadDomain")
     private val uploadStyle = stringPreferencesKey("settings.uploadStyle")
+    private val terminalUploadDomain = stringPreferencesKey("settings.terminalUploadDomain")
+    private val terminalUploadStyle = stringPreferencesKey("settings.terminalUploadStyle")
     private val defaults = AppSettings()
 
     override val settings = store.data.map { stored ->
@@ -38,8 +40,8 @@ class StoredSettingsRepository(private val store: DataStore<Preferences>) : Sett
             probeOnOpen = stored[probe] ?: defaults.probeOnOpen,
             designTheme = DesignTheme.named(stored[theme]),
             colorMode = ColorMode.named(stored[mode]),
-            uploadService = stored[uploadDomain]?.takeIf { it.isNotBlank() }
-                ?.let { UploadService(it, UploadStyle.named(stored[uploadStyle])) } ?: defaults.uploadService,
+            uploadService = service(stored[uploadDomain], stored[uploadStyle]) ?: defaults.uploadService,
+            terminalUploadService = service(stored[terminalUploadDomain], stored[terminalUploadStyle]),
         )
     }.distinctUntilChanged()
 
@@ -52,6 +54,18 @@ class StoredSettingsRepository(private val store: DataStore<Preferences>) : Sett
             preferences[mode] = settings.colorMode.name
             preferences[uploadDomain] = settings.uploadService.domain
             preferences[uploadStyle] = settings.uploadService.style.name
+            val terminal = settings.terminalUploadService
+            if (terminal == null) {
+                preferences.remove(terminalUploadDomain)
+                preferences.remove(terminalUploadStyle)
+            } else {
+                preferences[terminalUploadDomain] = terminal.domain
+                preferences[terminalUploadStyle] = terminal.style.name
+            }
         }
     }
+
+    /** A stored domain and style as a service; no domain means nothing was chosen. */
+    private fun service(domain: String?, style: String?): UploadService? =
+        domain?.takeIf { it.isNotBlank() }?.let { UploadService(it, UploadStyle.named(style)) }
 }

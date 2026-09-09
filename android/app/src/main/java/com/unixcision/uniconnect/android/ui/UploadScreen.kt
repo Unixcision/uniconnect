@@ -145,7 +145,7 @@ private fun ServicePicker(service: UploadService, onChange: (UploadService) -> U
 }
 
 @Composable
-private fun ServiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
+internal fun ServiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
     FilterChip(
         selected = selected, onClick = onClick,
         label = { Text(label, style = MaterialTheme.typography.labelMedium, fontFamily = UniTheme.type.identifierFamily) },

@@ -142,9 +142,15 @@ si el archivo está donde corre el agente de la ventana: `remote_path` con `loca
 o la ruta del host en una caja local. Si el salto SSH falla (`location=host` con
 `remote_error`) en una ventana SSH, no se pega nada: la hoja muestra el fallo y ofrece
 «Copiar ruta del equipo» (regla pura en `domain/AttachPaste.shouldPaste`). Si el host no
-anuncia la capacidad no hay fallback silencioso: la hoja dice que el equipo no admite
-adjuntar directamente y ofrece un único botón explícito «Subir a <servicio> y pegar el
-enlace»; solo con ese toque el archivo sale al servicio de «Enviar archivos». `domain/FilePutTransfer` (puro) trocea, calcula el SHA-256 y aborta en el host si
+anuncia la capacidad, la hoja muestra sobre los tres botones una línea visible «<equipo>
+no admite adjuntar directamente: se sube a <servicio> y se pega el enlace» y, al tocar
+cualquiera, el archivo va al servicio de respaldo y se pega el enlace. Ese servicio se
+elige en Ajustes → «Adjuntar desde la terminal» (igual que «Enviar archivos» por defecto,
+un preset, o «Personalizado» con URL completa: esquema, host, puerto y ruta tal cual;
+RAW_NAMED añade `/<nombre>` a esa ruta y los estilos de formulario envían a la URL tal
+cual) y se guarda aparte (`terminalUploadService`) sin tocar la página. Un `not_found` en
+chunk o commit (transferencia caducada, caja cambiada) es un fallo con su mensaje y
+reintento desde el principio. `domain/FilePutTransfer` (puro) trocea, calcula el SHA-256 y aborta en el host si
 algo falla; `data/NativeFilePutClient` habla el RPC sobre una sesión framed abierta para
 toda la transferencia, con plazos de 60 s por trozo y 120 s para el commit (el scp puede
 tardar). Los adjuntos van en secuencia y se quedan en la hoja con su motivo si fallan.

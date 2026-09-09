@@ -2,6 +2,7 @@ package com.unixcision.uniconnect.android.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -12,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -22,6 +24,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.unixcision.uniconnect.android.R
@@ -29,6 +32,8 @@ import com.unixcision.uniconnect.android.domain.AppSettings
 import com.unixcision.uniconnect.android.domain.ColorMode
 import com.unixcision.uniconnect.android.domain.DesignTheme
 import com.unixcision.uniconnect.android.domain.TerminalView
+import com.unixcision.uniconnect.android.domain.UploadService
+import com.unixcision.uniconnect.android.domain.UploadStyle
 import com.unixcision.uniconnect.android.ui.theme.CardStyle
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import com.unixcision.uniconnect.android.ui.theme.UniTokens
@@ -109,6 +114,11 @@ fun SettingsSheet(settings: AppSettings, onChange: (AppSettings) -> Unit, onDism
                 )
             }
 
+            SettingsSection(stringResource(R.string.settings_terminal_upload)) {
+                Text(stringResource(R.string.settings_terminal_upload_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
+                TerminalUploadPicker(settings, onChange)
+            }
+
             SettingsSection(stringResource(R.string.settings_connections)) {
                 SettingsSwitch(
                     title = stringResource(R.string.settings_probe_on_open),
@@ -161,6 +171,55 @@ private fun ThemeCard(theme: DesignTheme, selected: Boolean, dark: Boolean, modi
         )
     }
 }
+
+/**
+ * The fallback service of the terminal's clip: the same as "Enviar archivos" (the default), one
+ * of the presets, or a custom one that may be a full URL with scheme, host, port and path. It is
+ * kept apart from the page's own service and never changes it.
+ */
+@Composable
+private fun TerminalUploadPicker(settings: AppSettings, onChange: (AppSettings) -> Unit) {
+    val chosen = settings.terminalUploadService
+    var editing by rememberSaveable { mutableStateOf(false) }
+    val custom = chosen != null && !chosen.isPreset
+    var url by rememberSaveable(chosen) { mutableStateOf(if (custom) chosen?.domain.orEmpty() else "") }
+    var style by rememberSaveable(chosen) { mutableStateOf(if (custom) chosen?.style ?: UploadStyle.RAW_NAMED else UploadStyle.RAW_NAMED) }
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ServiceChip(stringResource(R.string.terminal_upload_same, settings.uploadService.domain), selected = !editing && chosen == null) {
+            editing = false; onChange(settings.copy(terminalUploadService = null))
+        }
+        UploadService.presets.forEach { preset ->
+            ServiceChip(preset.domain, selected = !editing && chosen == preset) { editing = false; onChange(settings.copy(terminalUploadService = preset)) }
+        }
+        ServiceChip(stringResource(R.string.upload_custom), selected = editing || custom) { editing = true }
+    }
+    Text(stringResource(R.string.upload_service_note_short, settings.terminalUpload.baseUrl), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
+    if (editing || custom) {
+        SheetField(url, { url = it }, stringResource(R.string.upload_url), hint = stringResource(R.string.upload_url_hint), monospace = true, keyboard = KeyboardType.Uri)
+        Text(stringResource(R.string.upload_style), style = MaterialTheme.typography.bodyMedium)
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            UploadStyle.entries.forEachIndexed { index, candidate ->
+                SegmentedButton(
+                    selected = style == candidate, onClick = { style = candidate },
+                    shape = SegmentedButtonDefaults.itemShape(index, UploadStyle.entries.size), colors = segmentColors(),
+                ) { Text(stringResource(candidate.label), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+        }
+        val normalized = UploadService.normalizeUrl(url)
+        Button(
+            onClick = { onChange(settings.copy(terminalUploadService = UploadService(normalized, style))); editing = false },
+            enabled = normalized.isNotEmpty(), modifier = Modifier.fillMaxWidth(), shape = UniTheme.shapes.button,
+        ) { Text(stringResource(R.string.upload_save_service), fontWeight = FontWeight.SemiBold) }
+    }
+}
+
+/** The visible name of an upload style. */
+private val UploadStyle.label: Int
+    get() = when (this) {
+        UploadStyle.RAW_NAMED -> R.string.upload_style_raw
+        UploadStyle.MULTIPART_FILE -> R.string.upload_style_multipart
+        UploadStyle.LITTERBOX -> R.string.upload_style_litterbox
+    }
 
 /** A titled group of related preferences: a soft container, or rules above and below in a hairline theme. */
 @Composable
