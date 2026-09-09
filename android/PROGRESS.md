@@ -99,7 +99,10 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
   lo devuelve a su sitio, la ventana se marca desde la lista y desde la barra abierta,
   y todo sobrevive a matar el proceso. Corregido en la misma tanda: la fila perezosa
   anclaba el scroll a la primera ficha y escondía el favorito que saltaba al principio.
-  Pendiente: repetir contra un host que anuncie `box_update` (ruta RPC).
+  Repetido el 2026-09-09 contra el Linux del MINIPC con `box_update` (f33dc23cc7): sin aviso,
+  traspaso inicial de los favoritos locales al host, pin/unpin/bajar/mover al principio por RPC
+  y el móvil pinta el snapshot del host. Quitar el favorito deja el elemento donde está en la
+  lista del host (no vuelve a su sitio anterior): comportamiento esperado.
 
 ## Riesgos de contrato comunicados al agente principal
 

@@ -92,14 +92,18 @@ the split layout; apply `is_pinned` first, then `position`, which is zero-based 
 its group* (pinned / unpinned) and is clamped when out of range; persist as the host
 already persists (autosave on macOS, `store.save` on Linux) with rollback on failure;
 answer with the same full object as `mobile.workspace.list` (not the create-style filtered
-snapshot); `invalid_params` when an id is missing or unknown. The snapshot must also carry
+snapshot); `invalid_params` when an id is missing or unknown. Unpinning leaves the item where
+it sits in the host's list (physically first if it was pinned before); it does not return to
+an earlier spot, because the host keeps one list and never remembers a previous position. The snapshot must also carry
 `is_pinned` on every terminal, not only on workspaces. Without the capability Android
 never calls these RPCs: it keeps favourites and order locally per machine and says so
 once, and switches to the RPC path on its own when the host starts advertising it.
 "Sync" means every client of one host sees the same; macOS and Linux are separate
 installations with separate boxes and nothing is merged between them. Status: Android
-done; macOS (panel pin, `sidebarOrderedPanelIds` reorder, both RPCs, capability) and
-Linux (window reorder across panes, both RPCs, capability) pending.
+done; macOS (panel pin, `sidebarOrderedPanelIds` reorder, both RPCs, capability) pending;
+Linux done (f33dc23cc7 on `feat/linux-favorites-order`, installed on the MINIPC and validated
+from the Pixel over the RPC path on 2026-09-09; guide in `docs/LINUX-FAVORITOS.md` of that
+branch).
 
 The local chooser offers Terminal, Claude, Codex, Agy, Grok and a custom command,
 with a visible name and editable **Window Folder**. The folder initially uses the
