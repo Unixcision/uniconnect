@@ -50,7 +50,7 @@ class MobileRPC:
             has_topic=lambda connection, topic: bool(self.host and self.host.has_topic(connection, topic)),
             emit=lambda connection, topic, payload: bool(self.host and self.host.emit_private(connection, topic, payload)),
             disconnect=lambda connection: self.host and self.host.disconnect_client(connection),
-            process_factory=pty_factory)
+            process_factory=pty_factory, on_input=self.pty_activity)
 
     def on_main(self, action):
         future = Future()
@@ -88,7 +88,6 @@ class MobileRPC:
         if operation in ("terminal.attach", "terminal.pty_input", "terminal.pty_resize", "terminal.detach"):
             # PTY spawn/readiness and stream I/O stay off GTK. Only durable
             # identity/approval snapshots are checked on the UI model owner.
-            self.note_activity(operation, params)
             return self.attachments.dispatch(operation, params, connection_id, authorized)
         if operation == "terminal.replay":
             return self.replay(params, authorized=authorized)
@@ -100,20 +99,14 @@ class MobileRPC:
 
     # ----- activity.v1 -----
 
-    def note_activity(self, operation, params):
-        """Teclado y redimensionado del móvil: su eco no es salida del agente."""
-        monitor = getattr(self.window, "activity", None)
-        if monitor is None:
-            return
-        attachment = self.attachments.attachments.get(params.get("attach_id")) if isinstance(params, dict) else None
-        target = getattr(attachment, "target", None) or {}
-        surface_id = target.get("surface_id")
-        if not surface_id:
-            return
-        if operation == "terminal.pty_input":
-            monitor.note_input(surface_id)
-        elif operation == "terminal.pty_resize":
-            monitor.note_resize(surface_id)
+    def pty_activity(self, surface_id, kind):
+        """Teclado/tamaño del PTY móvil ya validados: se anota en el hilo dueño del modelo, sin cerrojos."""
+        def note():
+            monitor = getattr(self.window, "activity", None)
+            if monitor is not None:
+                (monitor.note_resize if kind == "resize" else monitor.note_input)(surface_id)
+            return False
+        self.schedule(note)
 
     # ----- file_put.v1 -----
 

@@ -224,29 +224,53 @@ Host side on Linux (2026-09-09, `linux/uniconnect/activity.py` rules and
 `activity_monitor.py` cycle; `mobile_rpc.py` publishes it; same states, sources,
 thresholds and aggregation as macOS unless stated here):
 
-- **Cycle.** `ActivityMonitor` runs on a 2 s GLib timer. Local tmux windows are
-  probed once per socket (`uniconnect-local` or the record's `tmuxSocket`) with
-  `tmux -L <socket> list-panes -a -F '#{session_name}\t#{pane_current_command}\t#{pane_title}\t#{window_activity}'`
-  on the window's worker pool (`Window.background`), never on GTK; with several
-  panes per session the most recently active one wins. SSH boxes use the same
-  validated `Transport` (the box's vault credential, `-T`, batch) but every 10 s
-  per box and only while the vault is unlocked, since every probe is a full SSH
-  handshake (`ControlMaster` is off). Local windows without tmux read the PTY's
-  foreground process group (`tcgetpgrp` on the VTE pty, `/proc/<pgid>/comm`) and
-  VTE's window title. Probes never overlap: a socket in flight is skipped.
+- **Cycle.** `ActivityMonitor` runs on a 2 s GLib timer (the timer and the
+  transport are injectable, so the composition is tested with fake windows).
+  Local tmux windows are probed once per socket (`uniconnect-local` or the
+  record's `tmuxSocket`) with
+  `tmux -L <socket> list-panes -a -F '#{session_name}\t#{pane_id}\t#{pane_current_command}\t#{pane_title}\t#{window_activity}'`
+  on the window's worker pool (`Window.background`), never on GTK. The result is
+  kept per pane: a window resolves the pane it saved (`paneId`, the same explicit
+  `%N` that `MobilePTYProcess` targets) or the only pane of its session; two
+  panes and no saved id is ambiguous and answers `unknown`, never a neighbour's
+  activity. SSH boxes use the same validated `Transport` (the box's vault
+  credential, `-T`, batch) but every 10 s per (box, socket) key and only while
+  the vault is unlocked, since every probe is a full SSH handshake
+  (`ControlMaster` is off); two sockets in one box are both probed. Local windows
+  without tmux read the PTY's foreground process group (`tcgetpgrp` on the VTE
+  pty, `/proc/<pgid>/comm`) and VTE's window title. Probes never overlap: a key
+  in flight is skipped. A failed probe or one that no longer lists the session or
+  pane clears the window's command, title and `window_activity` and the window
+  answers `unknown` until a later probe finds it again; a surface without a live
+  process (`pid == 0`, exited, relaunched or disposed) forgets every fact at once,
+  so a dead Codex with a braille title or a visible prompt never stays `working`
+  or `waiting`.
 - **Facts.** Output comes from VTE's `contents-changed` on every surface (also
   tmux and SSH windows); a local key press, `mobile.terminal.input` and PTY
   input from a mobile attachment mark keyboard activity so output within 250 ms
   is echo; a VTE size change, `mobile.terminal.viewport` and PTY resizes mark a
-  500 ms redraw window. `#{window_activity}` only stands in when the surface has
+  500 ms redraw window. The PTY facts come from `MobilePTYAttachments` only
+  after permission, attachment owner and parameters are validated (`on_input`
+  callback, called outside the attachment lock) and `MobileRPC.pty_activity`
+  hands them to the model owner through the same `schedule` (`GLib.idle_add`)
+  every RPC uses, so the resolver is only ever touched on the GTK thread and no
+  lock is held across it; a rejected RPC changes nothing. `#{window_activity}` only stands in when the surface has
   produced no counted output yet. The hook rule exists (`note_hook`, 120 s TTL,
   `running`/`needsInput`/`idle`) but nothing feeds it on Linux today: hooks only
   carry the native session id, so states come from command, screen, title and
-  output. The screen is VTE's visible text (already free of ANSI; stripped again
-  defensively), last 12 non-empty lines, read only when output has been quiet
-  for ≥ 1 s and only once per quiet period: without new output the verdict is
-  cached, so a visible permission prompt stays `waiting` until the agent prints
-  again. The text is inspected and dropped, never logged or sent.
+  output. The screen is VTE's visible text, read with `get_text_format(TEXT)`
+  where it exists (VTE ≥ 0.76 aborts `get_text` with non-null attributes under
+  `fatal-criticals`) and `get_text` on older VTE, exactly as `terminal.py`
+  already does; the last 12 visible rows are kept as they are, blank rows
+  included, so an old prompt scrolled off cannot be recovered. It is read only
+  when output has been quiet for ≥ 1 s and only when the screen may have changed:
+  a screen epoch grows with every VTE output event (counted or discarded as echo
+  or resize redraw), the first read needs no observed output, and without a new
+  epoch the verdict is cached, so a visible permission prompt stays `waiting`
+  until the agent prints again and the user's echoed answer invalidates it. A
+  real VTE under `G_DEBUG=fatal-criticals` exercises this read in
+  `tests/test_activity_gtk.py`. The text is inspected and dropped, never logged
+  or sent.
 - **Publication.** Every terminal of `mobile.workspace.list` carries
   `activity {state, source, agent, since}` (`since` as integer epoch seconds, `0`
   before the first evaluation) and every workspace `activity {state}`; a host

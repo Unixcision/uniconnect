@@ -155,6 +155,10 @@ class TerminalSurface(Gtk.Box):
         if not self.disposed and hasattr(self.owner, "mobile"):
             self.owner.mobile.terminal_changed(self.record["id"])
 
+    def _activity_reset(self):
+        if hasattr(self.owner, "activity"):
+            self.owner.activity.forget(self.record["id"])
+
     def on_activity_output(self, *_):
         # Salida real del PTY para activity.v1; el eco y el redibujado se descartan en el resolutor.
         if not self.disposed and hasattr(self.owner, "activity"):
@@ -332,6 +336,7 @@ class TerminalSurface(Gtk.Box):
             self.on_exit(terminal, early_exit)
         else:
             self.pid = pid
+            self._activity_reset()  # Proceso nuevo: nada del anterior (título, comando) sigue valiendo.
             self.update_status("Folder missing" if self._launch_notice else "Running", self._launch_notice or "")
             self._emit_lifecycle("spawned")
             self._watch_stability(generation, pid)
@@ -343,6 +348,7 @@ class TerminalSurface(Gtk.Box):
             return
         previous_pid = self.pid
         self.pid = 0
+        self._activity_reset()
         self._emit_lifecycle("exited", pid=previous_pid, status=os.waitstatus_to_exitcode(status))
         self._clear_timer("_stable_source")
         if self.disposed:
@@ -468,6 +474,7 @@ class TerminalSurface(Gtk.Box):
 
     def dispose(self):
         self.disposed = True
+        self._activity_reset()
         self.stop_client()
 
     def on_focus(self, *_):

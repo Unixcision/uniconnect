@@ -43,9 +43,12 @@ class MobilePTYAttachments:
     MAX_PER_CONNECTION = 4
     TOPIC = "terminal.pty"
 
-    def __init__(self, *, prepare, validate, has_topic, emit, process_factory, disconnect=lambda connection: None):
+    def __init__(self, *, prepare, validate, has_topic, emit, process_factory, disconnect=lambda connection: None,
+                 on_input=lambda surface_id, kind: None):
         self.prepare, self.validate = prepare, validate
         self.has_topic, self.emit = has_topic, emit
+        # Teclado/tamaño del móvil ya validados (permiso, dueño, parámetros), fuera de todo cerrojo.
+        self.on_input = on_input
         self.process_factory = process_factory
         self.disconnect = disconnect
         self.lock = threading.RLock()
@@ -74,6 +77,7 @@ class MobilePTYAttachments:
                 self.require_live(attachment)
                 attachment.process.resize(columns, rows)
                 attachment.columns, attachment.rows = columns, rows
+            self.on_input(attachment.target["surface_id"], "resize")
             return {"attach_id": attachment.identifier, "columns": columns, "rows": rows}
         if operation == "terminal.pty_input":
             encoded = params.get("data")
@@ -91,6 +95,7 @@ class MobilePTYAttachments:
                     raise RPCError("busy", "La terminal todavía está procesando la entrada anterior")
                 attachment.pending.append(data)
                 attachment.pending_bytes += len(data)
+            self.on_input(attachment.target["surface_id"], "input")
             return {"attach_id": attachment.identifier, "queued": True}
         raise RPCError("method_not_found", "Esta operación no está disponible")
 
