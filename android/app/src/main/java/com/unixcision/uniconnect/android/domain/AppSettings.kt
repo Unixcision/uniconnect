@@ -8,6 +8,7 @@ package com.unixcision.uniconnect.android.domain
  * - Parameter probeOnOpen: whether the list asks every machine if it answers, without being asked.
  * - Parameter designTheme: which of the four designs dresses the app.
  * - Parameter colorMode: whether that design is shown light, dark or as the phone is set.
+ * - Parameter uploadService: where "Enviar archivos" sends files and how.
  */
 data class AppSettings(
     val terminalView: TerminalView = TerminalView.PAN,
@@ -15,4 +16,5 @@ data class AppSettings(
     val probeOnOpen: Boolean = true,
     val designTheme: DesignTheme = DesignTheme.SERENO,
     val colorMode: ColorMode = ColorMode.SYSTEM,
+    val uploadService: UploadService = UploadService.default,
 )

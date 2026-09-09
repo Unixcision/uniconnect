@@ -10,6 +10,8 @@ import com.unixcision.uniconnect.android.domain.ColorMode
 import com.unixcision.uniconnect.android.domain.DesignTheme
 import com.unixcision.uniconnect.android.domain.SettingsRepository
 import com.unixcision.uniconnect.android.domain.TerminalView
+import com.unixcision.uniconnect.android.domain.UploadService
+import com.unixcision.uniconnect.android.domain.UploadStyle
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
@@ -17,7 +19,7 @@ import kotlinx.coroutines.flow.map
  * Preferences kept beside the machine list; a missing value reads as the shipped default.
  *
  * Every preference has its own key, so a store written by an older build, before the appearance
- * keys existed, still reads: the old values are kept and the new ones take their defaults.
+ * or upload keys existed, still reads: the old values are kept and the new ones take their defaults.
  */
 class StoredSettingsRepository(private val store: DataStore<Preferences>) : SettingsRepository {
     private val view = stringPreferencesKey("settings.terminalView")
@@ -25,6 +27,8 @@ class StoredSettingsRepository(private val store: DataStore<Preferences>) : Sett
     private val probe = booleanPreferencesKey("settings.probeOnOpen")
     private val theme = stringPreferencesKey("settings.designTheme")
     private val mode = stringPreferencesKey("settings.colorMode")
+    private val uploadDomain = stringPreferencesKey("settings.uploadDomain")
+    private val uploadStyle = stringPreferencesKey("settings.uploadStyle")
     private val defaults = AppSettings()
 
     override val settings = store.data.map { stored ->
@@ -34,6 +38,8 @@ class StoredSettingsRepository(private val store: DataStore<Preferences>) : Sett
             probeOnOpen = stored[probe] ?: defaults.probeOnOpen,
             designTheme = DesignTheme.named(stored[theme]),
             colorMode = ColorMode.named(stored[mode]),
+            uploadService = stored[uploadDomain]?.takeIf { it.isNotBlank() }
+                ?.let { UploadService(it, UploadStyle.named(stored[uploadStyle])) } ?: defaults.uploadService,
         )
     }.distinctUntilChanged()
 
@@ -44,6 +50,8 @@ class StoredSettingsRepository(private val store: DataStore<Preferences>) : Sett
             preferences[probe] = settings.probeOnOpen
             preferences[theme] = settings.designTheme.name
             preferences[mode] = settings.colorMode.name
+            preferences[uploadDomain] = settings.uploadService.domain
+            preferences[uploadStyle] = settings.uploadService.style.name
         }
     }
 }

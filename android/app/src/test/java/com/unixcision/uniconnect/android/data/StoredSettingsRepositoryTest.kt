@@ -10,6 +10,8 @@ import com.unixcision.uniconnect.android.domain.AppSettings
 import com.unixcision.uniconnect.android.domain.ColorMode
 import com.unixcision.uniconnect.android.domain.DesignTheme
 import com.unixcision.uniconnect.android.domain.TerminalView
+import com.unixcision.uniconnect.android.domain.UploadService
+import com.unixcision.uniconnect.android.domain.UploadStyle
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -53,6 +55,26 @@ class StoredSettingsRepositoryTest {
             AppSettings(terminalView = TerminalView.FIT, showExtraKeys = true, probeOnOpen = false, designTheme = DesignTheme.SERENO, colorMode = ColorMode.SYSTEM),
             repository.settings.first(),
         )
+    }
+
+    @Test
+    fun theUploadServiceSurvivesARoundTripAndDefaultsToSendit() = runBlocking {
+        val repository = StoredSettingsRepository(MemoryPreferences())
+        assertEquals(UploadService("sendit.sh", UploadStyle.RAW_NAMED), repository.settings.first().uploadService)
+        val custom = UploadService("archivos.midominio.com", UploadStyle.MULTIPART_FILE)
+        repository.update(AppSettings(uploadService = custom))
+        assertEquals(custom, repository.settings.first().uploadService)
+        repository.update(AppSettings(uploadService = UploadService.presets[2]))
+        assertEquals(UploadStyle.LITTERBOX, repository.settings.first().uploadService.style)
+    }
+
+    @Test
+    fun aStoredDomainWithAnUnknownStyleReadsAsRaw() = runBlocking {
+        val stored = preferencesOf(
+            stringPreferencesKey("settings.uploadDomain") to "temp.sh",
+            stringPreferencesKey("settings.uploadStyle") to "PIGEON",
+        )
+        assertEquals(UploadService("temp.sh", UploadStyle.RAW_NAMED), StoredSettingsRepository(MemoryPreferences(stored)).settings.first().uploadService)
     }
 
     @Test
