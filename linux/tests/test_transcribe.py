@@ -179,6 +179,9 @@ class DetectionTests(EngineTestCase):
         del self.runner.handlers["whisper-cli"]
         self.assertEqual(engine.resolve().model.name, "ggml-tiny.bin")  # Revalidado tras la avería.
 
+    def test_the_default_budget_answers_before_the_phone_gives_up(self):
+        self.assertLessEqual(self.engine().budget + CLEANUP_MARGIN, 90.0)
+
     def test_default_threads_follow_the_cores_minus_one(self):
         self.assertEqual(TranscriptionEngine.default_threads({"UNICONNECT_WHISPER_THREADS": "2"}), 2)
         self.assertEqual(TranscriptionEngine.default_threads({"UNICONNECT_WHISPER_THREADS": "99"}), 8)

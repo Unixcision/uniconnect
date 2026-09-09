@@ -525,7 +525,8 @@ Host side on Linux (2026-09-09, `linux/uniconnect/transcribe.py`, routed by
   converting, from the WAV header or from `ffprobe` when it exists, and again from
   the converted WAV, which is authoritative for `seconds`.
 - **Budget and threading.** Probe, conversion, transcription and cleanup share one
-  monotonic budget of 90 s (`TranscriptionEngine.budget`, injected clock) minus a
+  monotonic budget of 75 s (`TranscriptionEngine.budget`, injected clock, against
+  the phone's 90 s deadline for the call) minus a
   3 s cleanup margin: each child process gets what is left of it as its own
   timeout, and an exhausted budget answers `io_failed` without starting the next
   step, so the host always replies before the phone gives up. Everything runs on

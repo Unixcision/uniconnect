@@ -26,7 +26,7 @@ from .mobile_protocol import RPCError
 
 MAX_AUDIO_BYTES = 6 * 1024 * 1024
 MAX_AUDIO_SECONDS = 300
-BUDGET_SECONDS = 90.0
+BUDGET_SECONDS = 75.0  # El móvil abandona a los 90 s: el equipo responde antes.
 CLEANUP_MARGIN = 3.0  # Reserva para matar el proceso y borrar el temporal antes del plazo.
 MAX_THREADS = 8
 WAV_PREFIX_BYTES = 65536
@@ -123,9 +123,9 @@ class TranscriptionEngine:
     No hace nada en el constructor: el binario y el modelo se buscan en la primera
     transcripción y se cachean, y una avería del motor invalida la caché para que la
     siguiente llamada vuelva a mirar. Conversión, transcripción y limpieza comparten
-    un único presupuesto monotónico (`budget`, 90 s) con reloj inyectable, y todo
+    un único presupuesto monotónico (`budget`, 75 s) con reloj inyectable, y todo
     corre en el hilo del que llama —nunca en el de GTK—, así que el móvil recibe la
-    respuesta antes de su propio plazo.
+    respuesta antes de su propio plazo de 90 s.
 
     Para probarla sin ejecutar whisper se inyectan `runner` (ejecutor de procesos),
     `which`, `clock`, `temp_root` y las rutas de binario y modelo.
