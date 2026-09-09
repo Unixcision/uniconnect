@@ -8,6 +8,8 @@ import struct
 
 from gi.repository import GLib
 
+from .arrangement import WorkspaceArrangement
+
 
 class ControlServer:
     def __init__(self, window):
@@ -74,7 +76,7 @@ class ControlServer:
             return {"app": "UniConnect", "platform": "linux", "locked": self.window.locked}
         if self.window.locked:
             raise ValueError("UniConnect is locked")
-        workspaces = self.window.store.workspaces
+        workspaces = WorkspaceArrangement.ordered(self.window.store.workspaces)
         workspace_id = request.get("workspace") or self.window.store.data.get("selectedWorkspaceId")
         if isinstance(workspace_id, str) and workspace_id.startswith("workspace:"):
             workspace_id = workspaces[int(workspace_id.split(":")[1]) - 1]["id"]
@@ -86,7 +88,7 @@ class ControlServer:
         if command in ("list-surfaces", "surface.list"):
             return [{"id": p["id"], "name": p["name"], "tmux": p.get("tmux"), "sessionId": p.get("sessionId"),
                      "status": self.window.surfaces[p["id"]].status if p["id"] in self.window.surfaces else "saved"}
-                    for p in (workspace or {}).get("windows", [])]
+                    for p in WorkspaceArrangement.ordered((workspace or {}).get("windows", []))]
         if command in ("current-workspace", "identify"):
             return {"workspace": workspace_id, "surface": surface_id}
         if command in ("select-workspace", "workspace.select"):
