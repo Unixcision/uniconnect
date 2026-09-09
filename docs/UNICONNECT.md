@@ -132,6 +132,64 @@ If a required saved folder disappears, UniConnect does not silently run an agent
 under a different project. Recovery retains the saved conversation and explains
 the missing path; selecting a replacement must not rewrite other windows' folders.
 
+### Activity (mobile contract activity.v1, 2026-09-09)
+
+The host computes, per terminal window and per workspace, whether an AI (Claude,
+Codex, Gemini, Agy) is **working** or **waiting** for the user, shows it in its own
+UI and publishes it to the phone. The host is the source of truth; clients never
+recompute it. A host that implements it advertises `"capabilities": ["activity.v1"]`
+in the `mobile.workspace.list` result (`capabilities` is an array of strings next to
+`workspaces`; other capabilities such as `box_update` are added independently).
+
+Every terminal of the snapshot carries
+`"activity": {"state", "source", "agent", "since"}`:
+
+- `state`: `working` | `waiting` | `idle` | `unknown`.
+- `source`: `hooks` | `title` | `screen` | `output`, the source that decided.
+- `agent`: `claude` | `codex` | `gemini` | `agy` | `null`.
+- `since`: epoch seconds of the last `state` change (`0` = never evaluated).
+
+Every workspace carries `"activity": {"state"}` aggregated over its terminals with
+priority `waiting` > `working` > `idle` > `unknown`. Whenever any state changes the
+host emits the existing `workspace.updated` event, coalesced to at least one second
+(the macOS cycle runs every two seconds).
+
+Sources per window, highest priority wins when its data is fresh:
+
+1. **Agent hooks** already reported through `set_agent_lifecycle`
+   (`running` → `working`, `needsInput` → `waiting`, `idle` → `idle`) or, failing
+   that, the newest `set_status` text of the panel. Only reports younger than 120 s
+   count; macOS keeps the report time per panel.
+2. **Pane title.** Local tmux windows (socket `uniconnect-local`, sessions
+   `uc-<hex>`) are probed once per socket every cycle with
+   `tmux -L <socket> list-panes -a -F '#{session_name}\t#{pane_current_command}\t#{pane_title}\t#{window_activity}'`
+   off the main thread; SSH and direct-PTY windows use the OSC title of the surface
+   and the foreground process name. Claude Code sets `✳ topic` when it is not working
+   and another marker (`·`) while it works; Codex prefixes a braille spinner
+   (U+2800–U+28FF) while working and removes it when it stops; Gemini and Agy mark
+   nothing. `pane_current_command` (`claude`, `codex`, `node`, `gemini`, `agy`…)
+   identifies the agent; a shell (`zsh`, `bash`, `fish`, `sh`) means `unknown` and no
+   indicator.
+3. **Screen.** When the output is quiet and an agent is alive, the last ~12 visible
+   lines are inspected (ANSI stripped) for a permission question: Claude
+   "Do you want to proceed?", "❯ 1. Yes", "Esc to cancel"; Codex "Allow" with
+   "[y/n]" or "Approve"; Gemini/Agy "Allow execution", "Apply this change".
+4. **Output activity.** PTY output bytes in the last 3 s = `working`; no output for
+   more than 5 s with a live agent = `idle` (hysteresis in between). Keyboard echo
+   (output within 250 ms of a local key) and resize redraws (500 ms) are not counted.
+
+Tie-break: if title, screen or output say "not working" but there is continuous
+output, output wins (`working`). `waiting` only comes from hooks or screen, never
+from output. `since` is preserved while the state does not change.
+
+macOS UI: the workspace row of the sidebar shows a small spinner while `working`
+and an amber `hand.raised.fill` while `waiting`; each window's tab shows the same
+through the bonsplit loading spinner and the `hand.raised.fill` icon. Nothing is
+shown for `idle` or `unknown`. Implementation: `Sources/Activity/`
+(`AgentActivity` value, `AgentActivityResolver` rules, `AgentActivityMonitor` actor,
+`AgentActivityCoordinator` composed in `AppDelegate`). Status: macOS done; Linux
+and Android pending.
+
 ### ローカルウインドウの作成と保存
 
 ショートカット、タブの追加ボタン、コマンドパレット、コンテキストメニューの

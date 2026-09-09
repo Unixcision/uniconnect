@@ -21384,7 +21384,8 @@ class TerminalController {
                     "is_focused": terminal.id == workspace.focusedPanelId,
                     "tmux_binding": tmuxBinding,
                     "runtime_state": v2OrNull(localRecord?.runtimeState.rawValue),
-                    "agent": v2OrNull(localRecord?.activeConversation?.kind.rawValue)
+                    "agent": v2OrNull(localRecord?.activeConversation?.kind.rawValue),
+                    "activity": (workspace.agentActivityByPanelId[terminal.id] ?? .unevaluated).mobilePayload
                 ]
             }
 
@@ -21395,6 +21396,7 @@ class TerminalController {
                 "is_selected": managers.contains(where: { $0.selectedTabId == workspace.id }),
                 "is_pinned": workspace.isPinned,
                 "kind": workspace.uniConnectProfile?.isSSH == true ? "ssh" : "local",
+                "activity": AgentActivity.mobileAggregatePayload(for: workspace.aggregatedAgentActivityState),
                 "available_agent_targets": availableTargets,
                 "terminals": terminals
             ]
@@ -21412,7 +21414,8 @@ class TerminalController {
         }
 
         var payload: [String: Any] = [
-            "workspaces": workspaces
+            "workspaces": workspaces,
+            "capabilities": Self.mobileWorkspaceListCapabilities
         ]
         if let createdWorkspaceID {
             payload["created_workspace_id"] = createdWorkspaceID
@@ -21422,6 +21425,10 @@ class TerminalController {
         }
         return .ok(payload)
     }
+
+    /// Capacidades del snapshot `mobile.workspace.list` que este host implementa.
+    /// `activity.v1`: cada terminal y cada espacio llevan un objeto `activity`.
+    private static let mobileWorkspaceListCapabilities: [String] = ["activity.v1"]
 
     private enum MobileTerminalAliasUUID {
         case missing
