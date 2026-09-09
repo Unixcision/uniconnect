@@ -604,9 +604,12 @@ Host side on Linux (2026-09-09, `linux/uniconnect/transcribe.py`, routed by
   the deletion, never releasing it in between, and a lock left without a work
   directory is removed the same way. Age proves nothing on its own (a suspended
   machine, a clock jump or a stuck job all leave an old directory with a live
-  owner), so it is used only for a directory that carries no lock at all, and only
-  when the name follows this module's own `<pid>-<random>` pattern: anything else
-  in that folder is someone else's and is left alone however old it is. That, plus
+  owner), so a directory that carries no lock at all is simply kept: while two
+  versions of UniConnect can coexist, neither its age nor its name proves it was
+  abandoned. The previous layout, which kept the lock inside the work directory as
+  `.uc-trabajo`, is still recognised so that a job created by that version is
+  respected while its owner holds it. Anything else in that folder is someone
+  else's and is left alone however old it is. That, plus
   skipping the directories this instance is using, is what makes the sweep safe
   while another job or another UniConnect instance is transcribing. No log line,
   message or exception carries the audio or the text: the engine's own stderr is
