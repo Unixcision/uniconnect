@@ -461,7 +461,7 @@ private fun SpeechModelRow(
             is SpeechModelState.Downloading -> stringResource(R.string.speech_model_downloading, ByteSize.percent(state.downloaded, state.total), ByteSize.format(state.downloaded))
             is SpeechModelState.Paused -> stringResource(R.string.speech_model_paused, ByteSize.percent(state.downloaded, state.total))
             is SpeechModelState.Ready -> stringResource(R.string.speech_model_ready, ByteSize.format(state.bytes))
-            is SpeechModelState.Failed -> stringResource(state.reason.message)
+            is SpeechModelState.Failed -> stringResource(state.reason.message) + (state.detail?.let { " ($it)" } ?: "")
         }
         Text(
             status,

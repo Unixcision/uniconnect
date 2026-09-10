@@ -25,8 +25,14 @@ enum class SpeechModel(val file: String, val bytes: Long) {
         /** The whisper.cpp model repository; the only address the app downloads a model from. */
         const val HOST = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/"
 
-        /** The first four bytes of every ggml model file, checked before one is called usable. */
-        val MAGIC = byteArrayOf(0x67, 0x67, 0x6d, 0x6c)
+        /**
+         * The first four bytes of every ggml model file, checked before one is called usable.
+         *
+         * ggml writes its magic as the 32-bit number `0x67676d6c` on a little-endian machine, so
+         * on disk the bytes read `lmgg` and not `ggml`. Spelling it the readable way round rejects
+         * every model that ever downloads correctly.
+         */
+        val MAGIC = byteArrayOf(0x6c, 0x6d, 0x67, 0x67)
 
         /** Reads a stored name; anything unrecognised is nothing at all rather than a guess. */
         fun named(raw: String?): SpeechModel? = entries.firstOrNull { it.name == raw }

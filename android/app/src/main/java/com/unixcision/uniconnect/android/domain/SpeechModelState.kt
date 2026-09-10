@@ -40,8 +40,17 @@ sealed class SpeechModelState {
     /**
      * The download ended without a usable model. [downloaded] is what is still on disk and will be
      * resumed from, so a failure halfway through does not throw away what was already fetched.
+     *
+     * [detail] is the concrete cause in the server's or the platform's own terms — an HTTP status,
+     * the name of the exception that was thrown — shown after the sentence. "Check your
+     * connection" is what an app says when it has not bothered to look; the detail is what makes
+     * the difference between a captive portal, a blocked host and a server that answered 403.
      */
-    data class Failed(val reason: SpeechModelFailure, val downloaded: Long = 0) : SpeechModelState()
+    data class Failed(
+        val reason: SpeechModelFailure,
+        val downloaded: Long = 0,
+        val detail: String? = null,
+    ) : SpeechModelState()
 
     /** How far along, from 0 to 1, for the states that hold part of a file. */
     val fraction: Float

@@ -123,6 +123,14 @@ class HttpSpeechModelStore(
             runCatching { half.delete() }
             have = 0
         }
+        if (have == sizeOf(model)) {
+            // Every byte is already here and only the last step is missing: the app was killed
+            // between the final byte and the rename. Asking the server to resume from the end of
+            // the file earns an HTTP 416 and nothing else, for ever, so the download can never
+            // finish; finish it here instead of going back to the network for nothing.
+            finish(model, half, whole)
+            return@withContext
+        }
         val missing = sizeOf(model) - have
         if (directory.usableSpace in 0 until missing + HEADROOM_BYTES) {
             publish(model, SpeechModelState.Failed(SpeechModelFailure.NO_SPACE, have))
@@ -142,8 +150,15 @@ class HttpSpeechModelStore(
             connection = opened
             val code = opened.responseCode
             val resumed = code == HttpURLConnection.HTTP_PARTIAL
+            if (code == RANGE_NOT_SATISFIABLE) {
+                // What is on disk does not match what the server is willing to send from. Whatever
+                // it is, it is not a piece of this file: dropping it is the only way forward.
+                runCatching { half.delete() }
+                publish(model, SpeechModelState.Failed(SpeechModelFailure.CORRUPT, 0, "HTTP $code"))
+                return@withContext
+            }
             if (code != HttpURLConnection.HTTP_OK && !resumed) {
-                publish(model, SpeechModelState.Failed(SpeechModelFailure.NETWORK, have))
+                publish(model, SpeechModelState.Failed(SpeechModelFailure.NETWORK, have, "HTTP $code"))
                 return@withContext
             }
             // A server that ignored the range restarts the file; anything already fetched is dropped
@@ -158,20 +173,26 @@ class HttpSpeechModelStore(
         } catch (stopped: CancellationException) {
             throw stopped
         } catch (broken: IOException) {
-            publish(model, SpeechModelState.Failed(SpeechModelFailure.NETWORK, half.length()))
+            val cause = broken::class.simpleName.orEmpty() + (broken.message?.let { ": " + it.take(120) } ?: "")
+            publish(model, SpeechModelState.Failed(SpeechModelFailure.NETWORK, half.length(), cause))
             return@withContext
         } finally {
             runCatching { connection?.disconnect() }
         }
 
+        finish(model, half, whole)
+    }
+
+    /** Checks the finished file and gives it its real name, or says why it could not. */
+    private fun finish(model: SpeechModel, half: File, whole: File) {
         if (half.length() != sizeOf(model) || !isGgml(half)) {
             publish(model, SpeechModelState.Failed(SpeechModelFailure.CORRUPT, half.length()))
-            return@withContext
+            return
         }
         runCatching { whole.delete() }
         if (!half.renameTo(whole)) {
             publish(model, SpeechModelState.Failed(SpeechModelFailure.WRITE_FAILED, half.length()))
-            return@withContext
+            return
         }
         publish(model, SpeechModelState.Ready(whole.length()))
     }
@@ -219,6 +240,9 @@ class HttpSpeechModelStore(
     }.getOrDefault(false)
 
     private companion object {
+        /** `HttpURLConnection` has no constant for 416; a resume past the end of a file earns it. */
+        const val RANGE_NOT_SATISFIABLE = 416
+
         const val CONNECT_MILLIS = 20_000
         const val READ_MILLIS = 60_000
         const val BLOCK_BYTES = 128 * 1024

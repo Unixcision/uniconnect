@@ -107,7 +107,32 @@ class HttpSpeechModelStoreTest {
     @Test
     fun aServerThatRefusesTheRequestIsANetworkFailureThatKeepsNothing() {
         server.status = 404
-        assertEquals(SpeechModelState.Failed(SpeechModelFailure.NETWORK, 0), fetch(store()))
+        // The reason the server gave travels with the failure: "check your connection" on its own
+        // is what an app says when it has not looked.
+        assertEquals(SpeechModelState.Failed(SpeechModelFailure.NETWORK, 0, "HTTP 404"), fetch(store()))
+    }
+
+    @Test
+    fun aWholeFileLeftUnnamedIsFinishedWithoutAskingTheServerAgain() {
+        // The app was killed between the last byte and the rename: every byte is on disk under the
+        // .part name. Resuming from the end of it earns an HTTP 416 and nothing else, for ever.
+        File(directory, SpeechModel.BASE.file + ".part").writeBytes(body)
+        val store = store()
+        assertEquals(SpeechModelState.Ready(body.size.toLong()), fetch(store))
+        assertEquals("the server was never asked", 0, server.requests)
+        assertArrayEquals(body, File(directory, SpeechModel.BASE.file).readBytes())
+    }
+
+    @Test
+    fun aRangeTheServerWillNotSatisfyThrowsAwayThePieceInsteadOfRetryingForEver() {
+        File(directory, SpeechModel.BASE.file + ".part").writeBytes(body.copyOf(1_000))
+        server.status = 416
+        val store = store()
+        assertEquals(SpeechModelState.Failed(SpeechModelFailure.CORRUPT, 0, "HTTP 416"), fetch(store))
+        assertFalse("the piece that no server accepts is gone", File(directory, SpeechModel.BASE.file + ".part").exists())
+
+        server.status = 200
+        assertEquals("and the next attempt starts clean", SpeechModelState.Ready(body.size.toLong()), fetch(store))
     }
 
     @Test
