@@ -17,6 +17,7 @@ import com.unixcision.uniconnect.android.domain.DictationLanguage
 import com.unixcision.uniconnect.android.domain.DictationMachine
 import com.unixcision.uniconnect.android.domain.DictationState
 import com.unixcision.uniconnect.android.domain.RecogniserRecovery
+import com.unixcision.uniconnect.android.domain.RecogniserSlot
 import java.util.Locale
 import kotlinx.coroutines.flow.StateFlow
 
@@ -37,7 +38,7 @@ import kotlinx.coroutines.flow.StateFlow
 class AndroidDictation(private val context: Context) : Dictation {
     private val machine = DictationMachine()
     private val main = Handler(Looper.getMainLooper())
-    private var recognizer: SpeechRecognizer? = null
+    private val slot = RecogniserSlot<SpeechRecognizer>()
     private var onDevice = false
     private var language = DictationLanguage.DEVICE
     private var triedOnline = false
@@ -58,13 +59,13 @@ class AndroidDictation(private val context: Context) : Dictation {
         }
     }
 
-    override fun stop() { main.post { recognizer?.stopListening() } }
+    override fun stop() { main.post { slot.engine?.stopListening() } }
 
     override fun cancel() {
         main.post {
             // Whatever is in flight stops speaking for this dictation before anything else happens.
             attempts.abandon()
-            recognizer?.cancel()
+            slot.engine?.cancel()
             release()
             machine.cancel()
         }
@@ -75,7 +76,7 @@ class AndroidDictation(private val context: Context) : Dictation {
     override fun destroy() {
         main.post {
             attempts.abandon()
-            recognizer?.cancel()
+            slot.engine?.cancel()
             release()
             if (machine.state.value is DictationState.Listening) machine.cancel()
         }
@@ -93,8 +94,8 @@ class AndroidDictation(private val context: Context) : Dictation {
         if (created == null) { machine.fail(DictationFailure.ENGINE_UNAVAILABLE); return }
         onDevice = local
         // The listener goes in before listening starts, or early callbacks are lost.
-        created.setRecognitionListener(Callbacks(attempt))
-        recognizer = created
+        created.setRecognitionListener(Callbacks(attempt, created))
+        slot.replace(created)?.let { previous -> runCatching { previous.destroy() } }
         if (machine.state.value !is DictationState.Listening) machine.onStarting()
         startedAt = SystemClock.elapsedRealtime()
         created.startListening(intent(local))
@@ -113,8 +114,17 @@ class AndroidDictation(private val context: Context) : Dictation {
     }
 
     /** One try's callbacks; they do nothing once that try has been left behind. */
-    private inner class Callbacks(private val attempt: Int) : RecognitionListener {
+    private inner class Callbacks(private val attempt: Int, private val engine: SpeechRecognizer) : RecognitionListener {
         private val live: Boolean get() = attempts.isLive(attempt)
+
+        /**
+         * Tears down this try's own engine, later, and never the one another try may have put in
+         * its place in the meantime.
+         */
+        fun releaseLater() = main.post {
+            runCatching { engine.destroy() }
+            slot.releaseIfHeld(engine)
+        }
 
         override fun onReadyForSpeech(params: Bundle?) {}
         override fun onBeginningOfSpeech() {}
@@ -130,7 +140,7 @@ class AndroidDictation(private val context: Context) : Dictation {
 
         override fun onResults(results: Bundle?) {
             if (!live) return
-            main.post { release() }
+            releaseLater()
             machine.onFinal(results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull())
         }
 
@@ -147,15 +157,15 @@ class AndroidDictation(private val context: Context) : Dictation {
                 main.post { begin(attempt, preferOffline = false) }
                 return
             }
-            main.post { release() }
+            releaseLater()
             if (RecogniserRecovery.silent(heard, elapsed, failure)) machine.fail(DictationFailure.RECOGNISER_SILENT)
             else machine.onError(failure)
         }
     }
 
+    /** Lets go of whatever is in the slot right now; only a caller on the main thread may do this. */
     private fun release() {
-        recognizer?.let { runCatching { it.destroy() } }
-        recognizer = null
+        slot.clear()?.let { runCatching { it.destroy() } }
     }
 
     companion object {

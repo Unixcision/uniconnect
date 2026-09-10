@@ -207,9 +207,13 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
   reintento encolado ya no reabre el micrófono ni deja caer resultados tardíos.
 - «Usar el equipo» comparte ruta con la acción: solo se ofrece si la regla automática llegaría de
   verdad a una máquina (las que ya dijeron `unsupported` no cuentan) y se revalida al pulsar.
-- 19 pruebas JVM nuevas (recuperación del motor, idioma del reconocedor, la barra antes de cualquier
-  resultado, invalidación de intentos, máquinas rechazadas que no son alternativa). 263 tests, 0
-  fallos.
+- La limpieza diferida del reconocedor va por instancia (`domain/RecogniserSlot`): la de un intento
+  viejo ya no puede destruir el motor que otro intento acaba de crear.
+- «Usar el equipo» sobrevive al diálogo de permiso como intención y se revalida al arrancar; si el
+  último equipo se fue mientras el diálogo estaba abierto, se dice en vez de arrancar el móvil.
+- 24 pruebas JVM nuevas (recuperación del motor, idioma del reconocedor, la barra antes de cualquier
+  resultado, invalidación de intentos, limpieza por instancia, máquinas rechazadas y candidato que
+  desaparece durante el permiso). 268 tests, 0 fallos.
 - PROBADO EN EL PIXEL por el usuario tras el arreglo: el dictado local ya funciona y transcribe en
   vivo a la cajita. La calidad es mala («me entiende fatal»), así que el camino bueno sigue siendo
   Whisper del equipo. Lo del umbral de 1,5 s es heurística nuestra, no un diagnóstico del modelo

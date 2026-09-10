@@ -215,8 +215,17 @@ cuentan, y se revalida al pulsar). La decisión vive en `domain/RecogniserRecove
 
 Cada intento lleva un número (`domain/DictationAttempts`), así que cancelar entre el fallo de un
 motor y el reintento encolado para él deja ese reintento sin efecto: el micrófono no se reabre solo
-y un resultado tardío no cae en un dictado que ya no existe. La barra se publica al tocar el
-micrófono, antes de la primera llamada del motor, así que Cancelar y Listo están siempre a la vista.
+y un resultado tardío no cae en un dictado que ya no existe. La limpieza del reconocedor también va
+por instancia (`domain/RecogniserSlot`): destruirlo hay que encolarlo al hilo principal, así que
+corre más tarde de lo que se decidió, y para entonces puede haber otro dictado con su propio motor;
+cada limpieza nombra el motor que quería tirar y solo suelta ese, nunca «el actual». La barra se
+publica al tocar el micrófono, antes de la primera llamada del motor, así que Cancelar y Listo están
+siempre a la vista.
+
+«Usar el equipo» es una intención, no un modo: sobrevive al diálogo de permiso y se revalida justo
+antes de arrancar, ya con el permiso concedido. Si el último equipo elegible desapareció mientras el
+diálogo estaba abierto, se dice («Ya no hay ningún equipo que pueda transcribir») en vez de arrancar
+el móvil, que es justo lo que el usuario acababa de rechazar.
 
 El intent pide `EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS` y
 `EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS` de 1,5 s y
@@ -325,7 +334,7 @@ el estado del motor activo, así que el composable lee los mismos estados en los
 `MediaRecorder` queda tras `domain/VoiceRecorder` y el RPC tras `domain/HostTranscription`, de modo
 que todo el flujo (elección, límite de tamaño, cada error, borrado del archivo, reintento único,
 corte a los 5 minutos) se prueba en la JVM sin micrófono ni socket. La llamada se prueba además
-contra un host de mentira en un par de sockets, como la de adjuntos. Probado solo así: 73 pruebas
+contra un host de mentira en un par de sockets, como la de adjuntos. Probado solo así: 78 pruebas
 nuevas; contra un host real con Whisper no se ha ejercitado todavía.
 
 ## Arquitectura

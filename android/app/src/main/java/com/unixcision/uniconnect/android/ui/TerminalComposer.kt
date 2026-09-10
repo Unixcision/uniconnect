@@ -141,18 +141,28 @@ fun TerminalComposer(
             else -> {}
         }
     }
-    // The way of transcribing is remembered across the permission prompt, because a retry after
-    // "no machine can" is a dictation on the phone whatever the setting says.
+    // What the reader asked for is remembered across the permission prompt: a retry after "no
+    // machine can" is a dictation on the phone whatever the setting says, and "use the machine"
+    // means a machine and nothing else, however long the prompt takes.
     var pending by remember { mutableStateOf(transcription) }
-    val begin: (TranscriptionMode) -> Unit = { mode ->
-        notice = null
-        offerSettings = false
-        retry = DictationRetry.NONE
-        lastFailure = null
-        dictation?.start(dictationLanguage, mode, transcribers, dictationTarget, transcriptionMachine)?.let { notice = it.message }
+    var machinesOnly by remember { mutableStateOf(false) }
+    val begin: (TranscriptionMode, Boolean) -> Unit = { mode, onlyMachines ->
+        // Asked again here, not where the button was drawn: the last machine may have gone while
+        // the permission prompt was up, and falling back to the phone is what the reader refused.
+        if (onlyMachines && dictation?.machineWouldTranscribe(transcribers, dictationTarget) != true) {
+            notice = R.string.dictation_no_machine_now
+            retry = DictationRetry.NONE
+            lastFailure = null
+        } else {
+            notice = null
+            offerSettings = false
+            retry = DictationRetry.NONE
+            lastFailure = null
+            dictation?.start(dictationLanguage, mode, transcribers, dictationTarget, transcriptionMachine)?.let { notice = it.message }
+        }
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) begin(pending)
+        if (granted) begin(pending, machinesOnly)
         else {
             // No rationale to show means the reader ticked "don't ask again": only the app's settings can undo that.
             val activity = context as? Activity
@@ -160,9 +170,10 @@ fun TerminalComposer(
             notice = R.string.dictation_permission_denied
         }
     }
-    val startDictation: (TranscriptionMode) -> Unit = { mode ->
+    val startDictation: (TranscriptionMode, Boolean) -> Unit = { mode, onlyMachines ->
         pending = mode
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) begin(mode)
+        machinesOnly = onlyMachines
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) begin(mode, onlyMachines)
         else permission.launch(Manifest.permission.RECORD_AUDIO)
     }
     val canDictate = dictation?.canDictate(transcription, transcribers, dictationTarget, transcriptionMachine) == true
@@ -212,7 +223,7 @@ fun TerminalComposer(
                 onClick = {
                     when (face) {
                         Face.STOP -> dictation?.stop()
-                        Face.MIC -> startDictation(transcription)
+                        Face.MIC -> startDictation(transcription, false)
                         Face.SEND -> submit(true)
                         Face.SENDING -> {}
                     }
@@ -273,13 +284,11 @@ fun TerminalComposer(
                             // back to a machine that was only unreachable a moment ago.
                             when (kind) {
                                 DictationRetry.RESEND -> dictation?.resend()
-                                DictationRetry.DICTATE_ON_PHONE -> startDictation(TranscriptionMode.PHONE)
-                                // The phone's engine is the one that failed: let a machine listen,
-                                // and say so if the machines stopped being able while the line was up.
-                                DictationRetry.NONE ->
-                                    if (dictation?.machineWouldTranscribe(transcribers, dictationTarget) == true) startDictation(TranscriptionMode.AUTO)
-                                    else notice = R.string.dictation_no_machine_now
-                                else -> startDictation(transcription)
+                                DictationRetry.DICTATE_ON_PHONE -> startDictation(TranscriptionMode.PHONE, false)
+                                // The phone's engine is the one that failed, so this asks for a
+                                // machine and refuses to settle for the phone that just failed.
+                                DictationRetry.NONE -> startDictation(TranscriptionMode.AUTO, true)
+                                else -> startDictation(transcription, false)
                             }
                         },
                         enabled = enabled && !sending,

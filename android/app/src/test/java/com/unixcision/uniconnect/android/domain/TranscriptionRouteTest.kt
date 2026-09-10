@@ -82,6 +82,18 @@ class TranscriptionRouteTest {
     }
 
     @Test
+    fun aCandidateThatDisappearsWhileThePromptIsUpIsNoLongerOffered() {
+        // The reader asked for a machine because the phone's recogniser does not answer, and the
+        // microphone permission prompt went up. The Mac drops off the tailnet while it is up.
+        val whenAsked = listOf(TranscriptionCandidate(mac, transcribes = true, connected = true))
+        assertEquals(TranscriptionEngine.HOST, TranscriptionRoute.decide(TranscriptionMode.AUTO, whenAsked, windowMachineID = null).engine)
+        val whenGranted = listOf(TranscriptionCandidate(mac, transcribes = true, connected = false))
+        val route = TranscriptionRoute.decide(TranscriptionMode.AUTO, whenGranted, windowMachineID = null)
+        assertEquals("starting on the phone here is exactly what was refused", TranscriptionEngine.PHONE, route.engine)
+        assertNull(route.machine)
+    }
+
+    @Test
     fun withNoMachineAbleThePhoneDictates() {
         val route = TranscriptionRoute.decide(TranscriptionMode.AUTO, listOf(TranscriptionCandidate(linux, transcribes = false, connected = true)), windowMachineID = "linux")
         assertEquals(TranscriptionEngine.PHONE, route.engine)
