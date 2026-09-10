@@ -71,7 +71,11 @@ Actualizado: 2026-09-10. Responsable: agente `bridge_lifecycle_audit`; última e
   `domain/ClipHandover` pasa la grabación a `HostDictation.adopt` en vez de perderla.
   Ajustes → «Voz» → «Transcripción» pasa a cuatro filas con radio y frase explicativa: Automática,
   Un equipo concreto, Whisper en el móvil, Reconocedor del móvil; el valor antiguo `HOST`
-  («Ventana») desaparece y se lee como `AUTO`. Nueva sección «Modelo de voz en el móvil» con estado,
+  («Ventana») desaparece y se lee como `AUTO`. Los tres modos fijos son ÓRDENES: no se mejoran por
+  su cuenta aunque haya algo mejor despierto, y solo ceden cuando su motor es imposible (sin modelo,
+  motor nativo caído, máquina que no responde o contesta `unsupported`), diciendo cada vez qué ha
+  pasado y quién ha transcribido en su lugar. Con un modo fijo la barra nombra siempre el motor,
+  incluso si es el equipo de la ventana. Nueva sección «Modelo de voz en el móvil» con estado,
   progreso, tamaño en disco y borrado, y la última medida real de tiempo. La barra de dictado dice
   quién transcribe salvo cuando es el equipo de la ventana. 318 pruebas JVM en verde, entre ellas
   `TranscriptionRouteLocalTest` (todas las combinaciones más el invariante de que nunca se enruta a

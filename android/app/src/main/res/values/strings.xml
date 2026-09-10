@@ -328,7 +328,7 @@
     <string name="dictation_failed_host_busy">El equipo está transcribiendo otro audio; inténtalo en unos segundos</string>
     <string name="dictation_failed_host">El equipo no ha podido transcribir el audio</string>
     <string name="dictation_failed_host_offline">Sin conexión con el equipo</string>
-    <string name="dictation_host_cannot">Este equipo no transcribe: se usa el dictado del móvil</string>
+    <string name="dictation_host_cannot">Ningún equipo puede transcribir ahora: transcribe %1$s</string>
     <string name="dictation_retry">Reintentar</string>
     <string name="dictation_record_again">Dictar otra vez</string>
     <string name="dictation_failed_no_transcriber">Ningún equipo puede transcribir: se descarta lo grabado y se dicta en el móvil</string>
@@ -342,7 +342,7 @@
     <string name="transcription_phone">Reconocedor del móvil</string>
     <string name="transcription_machine">Un equipo concreto</string>
     <string name="dictation_transcribed_by">Transcribe %1$s</string>
-    <string name="dictation_chosen_unavailable">El equipo elegido no puede transcribir ahora: se usa el que pueda</string>
+    <string name="dictation_chosen_unavailable">El equipo elegido no puede transcribir ahora: transcribe %1$s</string>
     <string name="transcription_local">Whisper en el móvil</string>
     <string name="transcription_auto_note">Lo mejor que haya: el equipo de la ventana, otro equipo que pueda, Whisper en este móvil si hay modelo y, si no, el reconocedor del sistema.</string>
     <string name="transcription_machine_note">Siempre el equipo que elijas aquí abajo, sea cual sea la ventana abierta.</string>
@@ -377,6 +377,8 @@
     <string name="dictation_failed_local">Whisper del móvil no ha podido transcribir lo grabado</string>
     <string name="dictation_failed_local_no_model">No hay ningún modelo de Whisper descargado en el móvil</string>
     <string name="dictation_failed_local_unreadable">El móvil no ha podido leer lo que acaba de grabar</string>
-    <string name="dictation_local_unavailable">No hay modelo de Whisper en el móvil: se usa lo mejor que haya</string>
-    <string name="dictation_local_failed_handed_over">Whisper del móvil ha fallado: lo grabado va a un equipo</string>
+    <string name="dictation_local_unavailable">No hay modelo de Whisper descargado en el móvil: transcribe %1$s</string>
+    <string name="dictation_local_failed_handed_over">Whisper del móvil ha fallado: lo grabado va a %1$s</string>
+    <string name="transcriber_phone_whisper">Whisper del móvil</string>
+    <string name="transcriber_phone_recogniser">el reconocedor del móvil</string>
 </resources>

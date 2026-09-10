@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.unixcision.uniconnect.android.domain.ClipHandover
 import com.unixcision.uniconnect.android.domain.Dictation
 import com.unixcision.uniconnect.android.domain.DictationLanguage
+import com.unixcision.uniconnect.android.domain.DictationNotice
 import com.unixcision.uniconnect.android.domain.DictationState
 import com.unixcision.uniconnect.android.domain.DictationTarget
 import com.unixcision.uniconnect.android.domain.HostDictation
@@ -50,7 +51,7 @@ class DictationViewModel(
 ) : ViewModel() {
     private val engine = MutableStateFlow(TranscriptionEngine.PHONE)
     private val other = MutableStateFlow<Transcriber?>(null)
-    private val notices = MutableStateFlow<TranscriptionNotice?>(null)
+    private val notices = MutableStateFlow<DictationNotice?>(null)
 
     val state: StateFlow<DictationState> = engine
         .flatMapLatest {
@@ -65,8 +66,13 @@ class DictationViewModel(
     /** Who is transcribing, when that is worth saying; null when it is the window's own machine. */
     val transcriber: StateFlow<Transcriber?> = other.asStateFlow()
 
-    /** A line the composer should show once, set by anything that changes the engine mid-dictation. */
-    val notice: StateFlow<TranscriptionNotice?> = notices.asStateFlow()
+    /**
+     * What to tell the reader when the engine they ordered did not run, and who ran instead.
+     *
+     * Set from the routing and from anything that changes the engine mid-dictation, so a
+     * substitution is never silent.
+     */
+    val notice: StateFlow<DictationNotice?> = notices.asStateFlow()
 
     /** Every Whisper model and where it is, for the settings sheet. */
     val models: StateFlow<Map<SpeechModel, SpeechModelState>> = speechModels.states
@@ -126,11 +132,14 @@ class DictationViewModel(
     ) {
         val route = route(mode, machines, window, chosenMachineID)
         val target = route.target(window)
+        // Under an explicit order the bar names the engine even when it is the window's own
+        // machine: someone comparing engines has to be able to read who is transcribing, always.
+        val ordered = mode != TranscriptionMode.AUTO
         when {
             route.engine == TranscriptionEngine.HOST && target != null -> {
                 engine.value = TranscriptionEngine.HOST
-                other.value = route.machine?.name?.let { Transcriber.OtherMachine(it) }?.takeUnless { route.ofWindow }
-                host.aim(target, relayFor(machines, window))
+                other.value = route.machine?.name?.let { Transcriber.OtherMachine(it) }?.takeUnless { route.ofWindow && !ordered }
+                host.aim(target, relayFor(mode, machines, window))
                 host.start(language)
             }
             route.engine == TranscriptionEngine.LOCAL -> {
@@ -145,7 +154,7 @@ class DictationViewModel(
                 phone.start(language)
             }
         }
-        say(route.notice)
+        route.notice?.let { say(it, route.ran) }
     }
 
     /** Stop and keep what was said. */
@@ -166,11 +175,18 @@ class DictationViewModel(
     /**
      * Where a recording goes when the machine it was sent to cannot take it: the automatic rule
      * again, over the machines known when the dictation started and without the ones that are out.
-     * The line naming who transcribes follows it, so the reader sees the audio move.
+     *
+     * Under the automatic rule the only sign is the line naming who transcribes now, because that
+     * rule promised exactly this. Under an explicit choice it is a choice that could not be
+     * honoured, so it is said in words as well.
      */
-    private fun relayFor(machines: List<TranscriptionCandidate>, window: DictationTarget?) = TranscriberRelay { out ->
+    private fun relayFor(mode: TranscriptionMode, machines: List<TranscriptionCandidate>, window: DictationTarget?) = TranscriberRelay { out ->
         val next = TranscriptionRoute.decide(TranscriptionMode.AUTO, machines, window?.machine?.id, null, phone.available, local.ready, out)
-        next.target(window)?.also { other.value = next.machine?.name?.let { name -> Transcriber.OtherMachine(name) }?.takeUnless { _ -> next.ofWindow } }
+        val ordered = mode != TranscriptionMode.AUTO
+        next.target(window)?.also {
+            other.value = next.machine?.name?.let { name -> Transcriber.OtherMachine(name) }?.takeUnless { _ -> next.ofWindow && !ordered }
+            if (ordered) say(TranscriptionNotice.CHOSEN_UNAVAILABLE, next.ran)
+        }
     }
 
     /**
@@ -183,9 +199,10 @@ class DictationViewModel(
         if (next.engine != TranscriptionEngine.HOST || target == null) false
         else {
             engine.value = TranscriptionEngine.HOST
-            other.value = next.machine?.name?.let { Transcriber.OtherMachine(it) }?.takeUnless { next.ofWindow }
-            say(TranscriptionNotice.LOCAL_FAILED_HANDED_OVER)
-            host.adopt(clip, target, relayFor(machines, window))
+            // Whisper here was an order, so who took over is named whatever machine it is.
+            other.value = next.machine?.name?.let { Transcriber.OtherMachine(it) }
+            say(TranscriptionNotice.LOCAL_FAILED_HANDED_OVER, next.ran)
+            host.adopt(clip, target, relayFor(TranscriptionMode.LOCAL, machines, window))
             true
         }
     }
@@ -193,13 +210,14 @@ class DictationViewModel(
     private fun route(mode: TranscriptionMode, machines: List<TranscriptionCandidate>, window: DictationTarget?, chosenMachineID: String?) =
         TranscriptionRoute.decide(mode, machines, window?.machine?.id, chosenMachineID, phone.available, local.ready, host.refusedMachines)
 
-    /** A notice that repeats is always shown; one that does not is shown the first time only. */
-    private fun say(notice: TranscriptionNotice?) {
-        when {
-            notice == null -> Unit
-            notice.repeats -> notices.value = notice
-            told.add(notice) -> notices.value = notice
-        }
+    /**
+     * A notice that repeats is always shown; one that does not is shown the first time only.
+     *
+     * [instead] is who transcribed in its place, so the line can name it rather than leave the
+     * reader guessing where their voice went.
+     */
+    private fun say(notice: TranscriptionNotice, instead: Transcriber?) {
+        if (notice.repeats || told.add(notice)) notices.value = DictationNotice(notice, instead)
     }
 
     private fun active(): Dictation = when (engine.value) {

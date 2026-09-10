@@ -142,7 +142,7 @@ class TranscriptionRouteTest {
         val route = TranscriptionRoute.decide(TranscriptionMode.MACHINE, asleep, windowMachineID = "linux", chosenMachineID = "spare")
         assertEquals("the automatic rule ran and found the Mac", mac, route.machine)
         assertEquals(TranscriptionNotice.CHOSEN_UNAVAILABLE, route.notice)
-        assertFalse(route.notice!!.repeats)
+        assertTrue("an order that could not be honoured is said every single time", route.notice!!.repeats)
     }
 
     @Test

@@ -75,7 +75,7 @@ class TranscriptionRouteLocalTest {
         assertEquals("the Mac can, so the recording is not wasted on the recogniser", TranscriptionEngine.HOST, route.engine)
         assertEquals(mac, route.machine)
         assertEquals(TranscriptionNotice.LOCAL_UNAVAILABLE, route.notice)
-        assertFalse("a missing model is a fact, said once", route.notice!!.repeats)
+        assertTrue("an order that could not be honoured is said every single time", route.notice!!.repeats)
     }
 
     @Test
@@ -145,6 +145,57 @@ class TranscriptionRouteLocalTest {
                 }
             }
         }
+    }
+
+    @Test
+    fun anOrderIsNeverQuietlyImprovedUpon() {
+        // Every fixed way of transcribing, against machines that could do it better, with a model
+        // downloaded and a recogniser available: the engine that runs is the one that was ordered.
+        for (machines in listOf(windowCan, onlyOtherCan, noneCan)) {
+            val local = TranscriptionRoute.decide(TranscriptionMode.LOCAL, machines, "linux", "mac", phoneAvailable = true, localReady = true)
+            assertEquals("$machines", TranscriptionEngine.LOCAL, local.engine)
+            assertNull("nothing to explain: it is what was ordered", local.notice)
+
+            val recogniser = TranscriptionRoute.decide(TranscriptionMode.PHONE, machines, "linux", "mac", phoneAvailable = true, localReady = true)
+            assertEquals("$machines", TranscriptionEngine.PHONE, recogniser.engine)
+            assertNull(recogniser.notice)
+        }
+        // The picked machine answers even when the window's own could, and even with a model here.
+        val picked = TranscriptionRoute.decide(TranscriptionMode.MACHINE, windowCan, "linux", "mac", phoneAvailable = true, localReady = true)
+        assertEquals(mac, picked.machine)
+        assertFalse("the window's machine is not better than an order", picked.ofWindow)
+        assertNull(picked.notice)
+    }
+
+    @Test
+    fun theWindowsOwnMachineCanBeTheOneOrdered() {
+        val picked = TranscriptionRoute.decide(TranscriptionMode.MACHINE, windowCan, "linux", "linux", localReady = true)
+        assertEquals(linux, picked.machine)
+        assertTrue("its own window, so the identifiers travel with the audio", picked.ofWindow)
+        assertNull(picked.notice)
+    }
+
+    @Test
+    fun anOrderOnlyGivesWayWhenItsEngineCannotRun() {
+        // Whisper here with no model, and the picked machine asleep: the only two ways out.
+        val noModel = TranscriptionRoute.decide(TranscriptionMode.LOCAL, windowCan, "linux", localReady = false)
+        assertEquals(TranscriptionNotice.LOCAL_UNAVAILABLE, noModel.notice)
+        val asleep = TranscriptionRoute.decide(TranscriptionMode.MACHINE, noneCan, "linux", chosenMachineID = "mac", localReady = true)
+        assertEquals(TranscriptionNotice.CHOSEN_UNAVAILABLE, asleep.notice)
+        assertTrue("both are said every time they happen", noModel.notice!!.repeats && asleep.notice!!.repeats)
+    }
+
+    @Test
+    fun whoRanInsteadIsAlwaysNameableForTheLineThatExplainsIt() {
+        val toAMachine = TranscriptionRoute.decide(TranscriptionMode.LOCAL, onlyOtherCan, "linux", localReady = false)
+        assertEquals(Transcriber.OtherMachine("Mac de Dani"), toAMachine.ran)
+        val toWhisper = TranscriptionRoute.decide(TranscriptionMode.MACHINE, noneCan, "linux", chosenMachineID = "mac", localReady = true)
+        assertEquals(Transcriber.PhoneWhisper, toWhisper.ran)
+        val toTheRecogniser = TranscriptionRoute.decide(TranscriptionMode.LOCAL, noneCan, "linux", localReady = false)
+        assertEquals(Transcriber.PhoneRecogniser, toTheRecogniser.ran)
+        // Even the window's own machine is nameable here: the bar hides it, an explanation does not.
+        val ownWindow = TranscriptionRoute.decide(TranscriptionMode.AUTO, windowCan, "linux")
+        assertEquals(Transcriber.OtherMachine("MINIPC"), ownWindow.ran)
     }
 
     private fun machine(id: String, name: String) = Machine(id, name, MachineEndpoint.parse("100.64.0.1", "58465")!!)

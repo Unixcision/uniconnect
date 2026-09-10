@@ -322,13 +322,23 @@ su voz):
   CONECTADO que anuncie la capacidad (el Mac mientras escribes en una ventana del Linux); si
   ninguno, Whisper en el propio móvil si hay modelo descargado; y solo si tampoco, el reconocedor
   del sistema.
-- **Un equipo concreto**: abre la lista de máquinas guardadas marcando las que no pueden («Este
-  equipo no transcribe») y las que no responden ahora («Sin conexión ahora mismo»); si la elegida
-  está caída o contesta `unsupported`, se cae a la regla automática y se avisa una vez.
+- **Un equipo concreto**: ese equipo y solo ese, sea cual sea la ventana abierta. Abre la lista de
+  máquinas guardadas marcando las que no pueden («Este equipo no transcribe») y las que no responden
+  ahora («Sin conexión ahora mismo»).
 - **Whisper en el móvil**: siempre el modelo local, sin conexión y sin mandar el audio a ningún
-  sitio. Sin modelo descargado se cae a la regla automática y se avisa una vez, con un enlace a
-  «Modelo de voz en el móvil».
+  sitio.
 - **Reconocedor del móvil**: el de Android. Es el que peor entiende y el que estaba antes.
+
+**Los tres modos fijos son órdenes, no preferencias.** Si eliges «Whisper en el móvil», transcribe
+el móvil aunque el Mac esté despierto y sea mejor: es lo que hace falta para poder comparar motores.
+Nada se «mejora» por su cuenta. La única desviación ocurre cuando el motor elegido es IMPOSIBLE en
+ese momento: no hay modelo descargado, el motor nativo falla, o la máquina elegida no responde o
+contesta `unsupported`. Ahí se cae por la escalera de Automática y se dice en palabras qué ha pasado
+y quién ha transcribido en su lugar («No hay modelo de Whisper descargado en el móvil: transcribe
+Mac de Dani»), nombrando siempre al sustituto. Y se dice CADA VEZ que pasa, no solo la primera: si
+avisáramos una vez y luego usáramos otra cosa en silencio durante diez dictados, la comparación no
+valdría nada. Las notas de la regla automática, que está haciendo justo lo que anuncia, sí se dicen
+una sola vez.
 
 El valor antiguo «Ventana» (`HOST`) ha desaparecido: «Automática» ya prefiere el equipo de la
 ventana y, a diferencia de aquél, tiene a dónde ir cuando ese no puede. Un almacén escrito con
@@ -336,10 +346,11 @@ ventana y, a diferencia de aquél, tiene a dónde ir cuando ese no puede. Un alm
 que es el identificador de la máquina y no su nombre, así que renombrarla no pierde la elección; un
 almacén escrito antes de estas claves se sigue leyendo con sus valores de voz intactos.
 
-La barra dice siempre quién va a transcribir, salvo cuando es lo esperado: «Transcribe Mac de Dani»
-para otro equipo, «Transcribe este móvil (Whisper)» para el modelo local y «Reconocedor del móvil»
-para el del sistema. Cuando transcribe el equipo de la ventana abierta no dice nada, porque decirlo
-sería ruido. Cuando transcribe un equipo que no es el de la ventana la petición NO lleva `workspace_id` ni `terminal_id`: son opcionales en el contrato y no
+La barra dice siempre quién va a transcribir: «Transcribe Mac de Dani» para un equipo, «Transcribe
+este móvil (Whisper)» para el modelo local y «Reconocedor del móvil» para el del sistema. La única
+vez que calla es con **Automática** cuando transcribe el equipo de la ventana abierta, porque ahí
+decirlo sería ruido. Con un modo fijo se lee siempre el motor elegido, incluso cuando resulta ser el
+equipo de la ventana: mientras se comparan motores hay que poder leer quién está transcribiendo. Cuando transcribe un equipo que no es el de la ventana la petición NO lleva `workspace_id` ni `terminal_id`: son opcionales en el contrato y no
 significan nada para una máquina que no es dueña de esa ventana. El texto vuelve igual y se pega en
 la cajita de la ventana abierta. Un `unsupported` se recuerda por máquina, no en general, así que
 solo esa deja de intentarse.
@@ -420,11 +431,18 @@ móvil… 40 %») y cancelable. El contexto nativo se abre y se libera alrededor
 (`try/finally`), así que entre dos frases no quedan pesos residentes. Hilos: la mitad de los núcleos,
 entre 2 y 6 (un Tensor G3 de nueve núcleos usa 4, que es lo que tiene el clúster grande).
 
-Si falta el modelo, la regla automática ya lo decide ANTES de grabar, así que no se pierde nada. Si
-el motor revienta a mitad, o el móvil no puede decodificar su propia grabación, el archivo NO se
-tira: `domain/ClipHandover` se lo pasa a `HostDictation.adopt`, que lo manda al equipo que la regla
-automática elegiría, y la barra pasa a decir el nombre de ese equipo. Solo cuando no hay ningún
-equipo se borra y se avisa, ofreciendo dictar otra vez.
+Si falta el modelo, la ruta ya lo decide ANTES de grabar, así que no se pierde nada. Si el motor
+revienta a mitad, o el móvil no puede decodificar su propia grabación, el archivo NO se tira:
+`domain/ClipHandover` se lo pasa a `HostDictation.adopt`, que lo manda al equipo que la regla
+automática elegiría, la barra pasa a decir el nombre de ese equipo y una línea explica el cambio
+(«Whisper del móvil ha fallado: lo grabado va a Mac de Dani»). Solo cuando no hay ningún equipo se
+borra y se avisa, ofreciendo dictar otra vez. Lo mismo con «Un equipo concreto»: si esa máquina
+rechaza la grabación en vuelo, el relevo la lleva a otra y lo dice, en vez de cambiarla en silencio
+como sí hace Automática.
+
+El aviso viaja como `domain/DictationNotice`, que lleva el motivo y el sustituto, para que la línea
+pueda nombrarlo. `TranscriptionRoute.ran` da ese nombre incluso cuando es el equipo de la ventana:
+la barra oculta ese caso, una explicación no.
 
 ### Cuánto tarda (sin medir todavía)
 

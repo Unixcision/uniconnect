@@ -47,6 +47,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.ComposerAction
 import com.unixcision.uniconnect.android.domain.DictationDraft
+import com.unixcision.uniconnect.android.domain.DictationNotice
 import com.unixcision.uniconnect.android.domain.DictationFailure
 import com.unixcision.uniconnect.android.domain.DictationLanguage
 import com.unixcision.uniconnect.android.domain.DictationRetry
@@ -113,9 +114,10 @@ fun TerminalComposer(
     val transcribing = dictationState as? DictationState.Transcribing
     val idleName = remember { MutableStateFlow<Transcriber?>(null) }
     val transcriber by (dictation?.transcriber ?: idleName).collectAsStateWithLifecycle()
-    val idleNotice = remember { MutableStateFlow<TranscriptionNotice?>(null) }
+    val idleNotice = remember { MutableStateFlow<DictationNotice?>(null) }
     val engineNotice by (dictation?.notice ?: idleNotice).collectAsStateWithLifecycle()
     var notice by remember { mutableStateOf<Int?>(null) }
+    var noticeArgument by remember { mutableStateOf<String?>(null) }
     var offerSettings by remember { mutableStateOf(false) }
     var retry by remember { mutableStateOf(DictationRetry.NONE) }
     var lastFailure by remember { mutableStateOf<DictationFailure?>(null) }
@@ -136,6 +138,7 @@ fun TerminalComposer(
                 // Never promise a dictation on a phone that cannot listen.
                 notice = if (outcome.reason == DictationFailure.HOST_UNSUPPORTED && dictation?.phoneListens != true) R.string.dictation_failed_no_transcriber_deaf
                 else outcome.reason.message
+                noticeArgument = null
                 offerSettings = outcome.reason == DictationFailure.NO_PERMISSION
                 retry = outcome.retry
                 lastFailure = outcome.reason
@@ -144,9 +147,17 @@ fun TerminalComposer(
             else -> {}
         }
     }
+    val substituteNames = mapOf(
+        Transcriber.PhoneWhisper to stringResource(R.string.transcriber_phone_whisper),
+        Transcriber.PhoneRecogniser to stringResource(R.string.transcriber_phone_recogniser),
+    )
     LaunchedEffect(engineNotice) {
-        engineNotice?.let {
-            notice = it.message
+        engineNotice?.let { said ->
+            notice = said.notice.message
+            noticeArgument = when (val instead = said.instead) {
+                is Transcriber.OtherMachine -> instead.name
+                else -> substituteNames[instead]
+            }
             dictation?.clearNotice()
         }
     }
@@ -160,10 +171,12 @@ fun TerminalComposer(
         // the permission prompt was up, and falling back to the phone is what the reader refused.
         if (onlyMachines && dictation?.machineWouldTranscribe(transcribers, dictationTarget) != true) {
             notice = R.string.dictation_no_machine_now
+            noticeArgument = null
             retry = DictationRetry.NONE
             lastFailure = null
         } else {
             notice = null
+            noticeArgument = null
             offerSettings = false
             retry = DictationRetry.NONE
             lastFailure = null
@@ -177,6 +190,7 @@ fun TerminalComposer(
             val activity = context as? Activity
             offerSettings = activity != null && !activity.shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)
             notice = R.string.dictation_permission_denied
+            noticeArgument = null
         }
     }
     val startDictation: (TranscriptionMode, Boolean) -> Unit = { mode, onlyMachines ->
@@ -270,7 +284,10 @@ fun TerminalComposer(
         }
         notice?.let { message ->
             Row(Modifier.fillMaxWidth().padding(top = 4.dp, start = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(stringResource(message), Modifier.weight(1f), color = UniTheme.colors.warning, style = MaterialTheme.typography.labelSmall)
+                Text(
+                    noticeArgument?.let { stringResource(message, it) } ?: stringResource(message),
+                    Modifier.weight(1f), color = UniTheme.colors.warning, style = MaterialTheme.typography.labelSmall,
+                )
                 if (offerSettings) TextButton(onClick = { openAppSettings(context) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
                     Text(stringResource(R.string.dictation_permission_settings), style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
                 }
@@ -293,6 +310,7 @@ fun TerminalComposer(
                             val kind = retry
                             retry = DictationRetry.NONE
                             notice = null
+                            noticeArgument = null
                             // The phone is forced here, not asked for: the automatic rule would go
                             // back to a machine that was only unreachable a moment ago.
                             when (kind) {
@@ -308,7 +326,7 @@ fun TerminalComposer(
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                     ) { Text(stringResource(label), style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false) }
                 }
-                IconButton(onClick = { notice = null; offerSettings = false; retry = DictationRetry.NONE; lastFailure = null; dictation?.discard() }, Modifier.size(24.dp)) { Icon(Icons.Rounded.Close, stringResource(R.string.dismiss), Modifier.size(14.dp), tint = UniTheme.colors.muted) }
+                IconButton(onClick = { notice = null; noticeArgument = null; offerSettings = false; retry = DictationRetry.NONE; lastFailure = null; dictation?.discard() }, Modifier.size(24.dp)) { Icon(Icons.Rounded.Close, stringResource(R.string.dismiss), Modifier.size(14.dp), tint = UniTheme.colors.muted) }
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 6.dp, start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

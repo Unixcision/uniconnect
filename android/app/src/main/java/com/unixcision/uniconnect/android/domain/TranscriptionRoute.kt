@@ -16,6 +16,19 @@ data class TranscriptionRoute(
     val ofWindow: Boolean = false,
     val notice: TranscriptionNotice? = null,
 ) {
+    /**
+     * Who actually transcribes on this route, named even when it is the window's own machine.
+     *
+     * The bar hides that case under the automatic rule because saying it would be noise, but an
+     * explanation of a choice that could not be honoured has to name the substitute whatever it is.
+     */
+    val ran: Transcriber
+        get() = when (engine) {
+            TranscriptionEngine.HOST -> Transcriber.OtherMachine(machine?.name.orEmpty())
+            TranscriptionEngine.LOCAL -> Transcriber.PhoneWhisper
+            TranscriptionEngine.PHONE -> Transcriber.PhoneRecogniser
+        }
+
     /** Whether a microphone is worth offering: something can turn a recording into text. */
     fun canDictate(phoneAvailable: Boolean): Boolean = when (engine) {
         TranscriptionEngine.HOST, TranscriptionEngine.LOCAL -> true
