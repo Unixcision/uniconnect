@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.unixcision.uniconnect.android"
     compileSdk = 36
+    ndkVersion = "28.2.13676358"
     defaultConfig {
         applicationId = "com.unixcision.uniconnect.android"
         minSdk = 26
@@ -15,6 +16,15 @@ android {
         versionName = "0.1.0"
         resourceConfigurations += "es"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Whisper on the phone is built for the one architecture every Android phone in use has;
+        // a second copy for armeabi-v7a or x86_64 would double the native payload for emulators.
+        ndk { abiFilters += "arm64-v8a" }
+    }
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
     buildTypes {
         release { isMinifyEnabled = false }
