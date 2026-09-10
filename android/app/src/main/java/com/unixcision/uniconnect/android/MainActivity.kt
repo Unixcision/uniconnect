@@ -54,7 +54,7 @@ class MainActivity : ComponentActivity() {
                     MachinesViewModel::class.java -> MachinesViewModel(container.machines, container.machineClient, container.notificationConnections, container.settings, container.noticeNames, container.drafts, container.boxOverrides)
                     UploadViewModel::class.java -> UploadViewModel(container.fileSender, container.settings, container.uploadHistory, container.contentReader)
                     AttachViewModel::class.java -> AttachViewModel(container.filePutClient, container.fileSender, container.settings, container.contentReader)
-                    DictationViewModel::class.java -> DictationViewModel(container.dictation, container.hostDictation)
+                    DictationViewModel::class.java -> DictationViewModel(container.dictation, container.hostDictation, container.localDictation, container.speechModels)
                     else -> throw IllegalArgumentException("unknown model ${modelClass.name}")
                 } as T
             }

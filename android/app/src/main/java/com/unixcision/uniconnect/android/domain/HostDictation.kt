@@ -127,6 +127,29 @@ class HostDictation(
     /** Throws away the recording that was waiting for a retry; the reader gave up on it. */
     fun discardKept() = dropKept()
 
+    /**
+     * Takes a recording another engine could not read and sends it to [target], with [relay] for
+     * wherever else it may go.
+     *
+     * It is what keeps a failure of Whisper on the phone from costing the reader what they said:
+     * the same file reaches a machine, and the bar only changes to name who is transcribing now.
+     */
+    fun adopt(clip: AudioClip, target: DictationTarget, relay: TranscriberRelay? = null) {
+        finishing.set(true)
+        ticker?.cancel()
+        ticker = null
+        sending?.cancel()
+        sending = null
+        dropKept()
+        retried = false
+        tried.clear()
+        cutAtLimit = false
+        unreachable = null
+        this.target = target
+        this.relay = relay
+        send(clip, cut = false)
+    }
+
     /** Sends the kept recording once more; after this it is gone unless the machine was only busy. */
     fun resend() {
         val clip = kept ?: return

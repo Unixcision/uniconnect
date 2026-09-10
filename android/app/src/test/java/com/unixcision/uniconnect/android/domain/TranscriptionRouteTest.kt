@@ -117,17 +117,6 @@ class TranscriptionRouteTest {
     }
 
     @Test
-    fun alwaysOnTheWindowsMachineDoesNotWanderToAnother() {
-        val able = TranscriptionRoute.decide(TranscriptionMode.HOST, listOf(TranscriptionCandidate(linux, transcribes = true, connected = true)), windowMachineID = "linux")
-        assertEquals(linux, able.machine)
-        assertTrue(able.ofWindow)
-        val unable = TranscriptionRoute.decide(TranscriptionMode.HOST, mixed, windowMachineID = "linux")
-        assertEquals("the Mac could, but the reader asked for the window's own", TranscriptionEngine.PHONE, unable.engine)
-        assertEquals(TranscriptionNotice.HOST_REQUIRED_UNAVAILABLE, unable.notice)
-        assertTrue("an unmet explicit choice is said every time", unable.notice!!.repeats)
-    }
-
-    @Test
     fun onePickedMachineTranscribesWhicheverWindowIsOpen() {
         val route = TranscriptionRoute.decide(TranscriptionMode.MACHINE, mixed, windowMachineID = "linux", chosenMachineID = "mac")
         assertEquals(mac, route.machine)
@@ -199,8 +188,9 @@ class TranscriptionRouteTest {
 
     @Test
     fun aStoredModeSurvivesAndAnythingUnknownIsAutomatic() {
-        assertEquals(TranscriptionMode.HOST, TranscriptionMode.named("HOST"))
+        assertEquals("the way of the window's own machine is gone; automatic already prefers it", TranscriptionMode.AUTO, TranscriptionMode.named("HOST"))
         assertEquals(TranscriptionMode.PHONE, TranscriptionMode.named("PHONE"))
+        assertEquals(TranscriptionMode.LOCAL, TranscriptionMode.named("LOCAL"))
         assertEquals(TranscriptionMode.MACHINE, TranscriptionMode.named("MACHINE"))
         assertEquals(TranscriptionMode.AUTO, TranscriptionMode.named(null))
         assertEquals(TranscriptionMode.AUTO, TranscriptionMode.named("WHISPER"))

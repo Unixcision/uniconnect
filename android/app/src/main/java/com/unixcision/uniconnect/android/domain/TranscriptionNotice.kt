@@ -8,12 +8,15 @@ package com.unixcision.uniconnect.android.domain
  * time it happens.
  */
 enum class TranscriptionNotice(val repeats: Boolean) {
-    /** Automatic: no machine can transcribe, so the phone dictates. */
+    /** Automatic: nothing better could run, so the phone's own recogniser dictates. */
     HOST_CANNOT(repeats = false),
-
-    /** "Always on the machine of the window" was chosen, but that machine cannot transcribe. */
-    HOST_REQUIRED_UNAVAILABLE(repeats = true),
 
     /** The machine the reader picked is not there or cannot transcribe, so the automatic rule ran. */
     CHOSEN_UNAVAILABLE(repeats = false),
+
+    /** "Whisper on the phone" was chosen with no model downloaded, so the automatic rule ran. */
+    LOCAL_UNAVAILABLE(repeats = false),
+
+    /** Whisper on the phone broke mid-recording and a machine took the recording instead. */
+    LOCAL_FAILED_HANDED_OVER(repeats = false),
 }

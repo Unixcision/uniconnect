@@ -35,6 +35,15 @@ enum class DictationFailure {
 
     /** The recording never reached the machine. */
     HOST_UNREACHABLE,
+
+    /** Whisper on the phone was asked for and there is no model downloaded. */
+    LOCAL_NO_MODEL,
+
+    /** Whisper on the phone read the recording and could not turn it into text. */
+    LOCAL_FAILED,
+
+    /** The phone could not turn its own recording into samples the model reads. */
+    LOCAL_UNREADABLE,
 }
 
 /** Where a dictation is, from the composer's point of view. */
@@ -55,8 +64,14 @@ sealed class DictationState {
         val recording: Boolean = false,
     ) : DictationState()
 
-    /** The recording is on its way to the machine; [cut] when it was stopped at the five-minute limit. */
-    data class Transcribing(val cut: Boolean = false) : DictationState()
+    /**
+     * The recording is being turned into text; [cut] when it was stopped at the five-minute limit.
+     *
+     * [onDevice] tells the bar that Whisper is reading it here rather than on a machine, and
+     * [progress] how far along that is, from 0 to 1, or a negative number while nothing is known.
+     * A machine reports nothing until it answers, so its wait keeps the negative.
+     */
+    data class Transcribing(val cut: Boolean = false, val onDevice: Boolean = false, val progress: Float = -1f) : DictationState()
 
     /** Recording ended with [text] understood; the composer takes it once and resets. */
     data class Done(val text: String) : DictationState()

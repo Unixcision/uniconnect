@@ -11,7 +11,10 @@ import com.unixcision.uniconnect.android.data.AndroidNotificationConnections
 import com.unixcision.uniconnect.android.data.ContentReader
 import com.unixcision.uniconnect.android.data.HttpFileSender
 import com.unixcision.uniconnect.android.data.NativeFilePutClient
+import com.unixcision.uniconnect.android.data.HttpSpeechModelStore
+import com.unixcision.uniconnect.android.data.MediaCodecAudioDecoder
 import com.unixcision.uniconnect.android.data.MediaRecorderVoice
+import com.unixcision.uniconnect.android.data.WhisperTranscription
 import com.unixcision.uniconnect.android.data.NativeHostTranscription
 import com.unixcision.uniconnect.android.data.NativeNotificationClient
 import com.unixcision.uniconnect.android.data.StoredNoticeDeliveryRepository
@@ -20,11 +23,15 @@ import com.unixcision.uniconnect.android.data.StoredDraftRepository
 import com.unixcision.uniconnect.android.data.StoredBoxOverridesRepository
 import com.unixcision.uniconnect.android.data.StoredSettingsRepository
 import com.unixcision.uniconnect.android.data.StoredUploadHistoryRepository
+import com.unixcision.uniconnect.android.domain.AudioDecoder
 import com.unixcision.uniconnect.android.domain.Dictation
 import com.unixcision.uniconnect.android.domain.FilePutClient
 import com.unixcision.uniconnect.android.domain.FileSender
 import com.unixcision.uniconnect.android.domain.HostDictation
 import com.unixcision.uniconnect.android.domain.HostTranscription
+import com.unixcision.uniconnect.android.domain.LocalDictation
+import com.unixcision.uniconnect.android.domain.LocalTranscription
+import com.unixcision.uniconnect.android.domain.SpeechModelStore
 import com.unixcision.uniconnect.android.domain.VoiceRecorder
 import com.unixcision.uniconnect.android.domain.NotificationClient
 import com.unixcision.uniconnect.android.domain.NoticeDeliveryRepository
@@ -35,6 +42,7 @@ import com.unixcision.uniconnect.android.domain.MachineClient
 import com.unixcision.uniconnect.android.domain.MachineRepository
 import com.unixcision.uniconnect.android.domain.SettingsRepository
 import com.unixcision.uniconnect.android.domain.UploadHistoryRepository
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -63,4 +71,9 @@ class AppContainer(context: Context) {
     val voiceRecorder: VoiceRecorder = MediaRecorderVoice(context)
     val hostTranscription: HostTranscription = NativeHostTranscription(rpc)
     val hostDictation = HostDictation(voiceRecorder, hostTranscription, ioScope)
+    // Models live beside the app's own files: uninstalling takes them, and nothing else can read them.
+    val speechModels: SpeechModelStore = HttpSpeechModelStore(File(context.filesDir, "whisper"), ioScope)
+    val audioDecoder: AudioDecoder = MediaCodecAudioDecoder()
+    val localTranscription: LocalTranscription = WhisperTranscription()
+    val localDictation = LocalDictation(voiceRecorder, audioDecoder, localTranscription, speechModels, ioScope)
 }

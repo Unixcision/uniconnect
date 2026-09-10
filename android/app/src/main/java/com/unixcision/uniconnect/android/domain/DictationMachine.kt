@@ -36,10 +36,16 @@ class DictationMachine {
     fun onElapsed(seconds: Int) = mutable.update { if (it is DictationState.Listening) it.copy(seconds = seconds) else it }
 
     /**
-     * The recording is on its way to the machine; [cut] when the five-minute limit ended it. It is
-     * set from wherever the send starts, so a retry after the failure was taken shows the wait too.
+     * The recording is on its way to being text; [cut] when the five-minute limit ended it, and
+     * [onDevice] when Whisper reads it here. It is set from wherever the work starts, so a retry
+     * after the failure was taken shows the wait too.
      */
-    fun onTranscribing(cut: Boolean = false) { mutable.value = DictationState.Transcribing(cut) }
+    fun onTranscribing(cut: Boolean = false, onDevice: Boolean = false) { mutable.value = DictationState.Transcribing(cut, onDevice) }
+
+    /** How far along a transcription on this phone is, from 0 to 100; ignored when not transcribing. */
+    fun onTranscribeProgress(percent: Int) = mutable.update {
+        if (it is DictationState.Transcribing) it.copy(progress = (percent.coerceIn(0, 100) / 100f)) else it
+    }
 
     /** The final result. Empty falls back to the last partial; nothing at all is "not understood". */
     fun onFinal(text: String?) = mutable.update { current ->

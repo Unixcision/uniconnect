@@ -103,8 +103,8 @@ class StoredSettingsRepositoryTest {
     fun theWayOfTranscribingSurvivesARoundTripAndDefaultsToAutomatic() = runBlocking {
         val repository = StoredSettingsRepository(MemoryPreferences())
         assertEquals(TranscriptionMode.AUTO, repository.settings.first().transcription)
-        repository.update(repository.settings.first().copy(transcription = TranscriptionMode.HOST))
-        assertEquals(TranscriptionMode.HOST, repository.settings.first().transcription)
+        repository.update(repository.settings.first().copy(transcription = TranscriptionMode.LOCAL))
+        assertEquals(TranscriptionMode.LOCAL, repository.settings.first().transcription)
         repository.update(repository.settings.first().copy(transcription = TranscriptionMode.PHONE))
         assertEquals(TranscriptionMode.PHONE, repository.settings.first().transcription)
     }
