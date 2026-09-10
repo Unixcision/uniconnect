@@ -2,6 +2,8 @@ package com.unixcision.uniconnect.android.data
 
 import com.unixcision.uniconnect.android.domain.MachineFailure
 
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.Socket
@@ -33,10 +35,14 @@ class FramedRpcSession(private val socket: Socket, private val scope: CoroutineS
     private val events = Channel<RpcEnvelope>(64)
     private val bufferedBytes = AtomicInteger()
     private val writeLock = Mutex()
-    private val output = DataOutputStream(socket.getOutputStream())
+    // Buffered on purpose. `DataOutputStream.writeInt` on a raw socket stream is four one-byte
+    // `write` syscalls, and the frame body a fifth; the reader side pays the same for every header.
+    // Unbuffered, an idle phone was making about a thousand syscalls a second to move 27 KB/s, which
+    // kept a whole core busy, heated the phone and slowed everything else down with it.
+    private val output = DataOutputStream(BufferedOutputStream(socket.getOutputStream(), FRAME_BUFFER_BYTES))
     private val reader = scope.launch(Dispatchers.IO) {
         try {
-            val input = DataInputStream(socket.getInputStream())
+            val input = DataInputStream(BufferedInputStream(socket.getInputStream(), FRAME_BUFFER_BYTES))
             var ordinal = 0L
             while (!closed.get()) {
                 val length = input.readInt()
@@ -141,4 +147,9 @@ class FramedRpcSession(private val socket: Socket, private val scope: CoroutineS
     }
 
     class EventBufferOverflow : Exception()
+
+    companion object {
+        /** Socket buffer for both directions: one syscall per frame instead of one per field. */
+        const val FRAME_BUFFER_BYTES = 32 * 1024
+    }
 }

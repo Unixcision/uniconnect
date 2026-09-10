@@ -1,9 +1,8 @@
 package com.unixcision.uniconnect.android.ui.components
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.repeatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,10 +15,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -40,23 +40,37 @@ enum class PillTone(val pulses: Boolean) {
         }
 }
 
-/** Compact state badge with a dot that pulses only for live states; text stays readable on every tone. */
+/** Compact state badge with a dot that beats when the state arrives and then holds still. */
 @Composable
 fun StatusPill(text: String, tone: PillTone, modifier: Modifier = Modifier) {
-    val alpha = if (tone.pulses) {
-        val transition = rememberInfiniteTransition(label = "pill-pulse")
-        val value by transition.animateFloat(1f, .35f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "pill-alpha")
-        value
-    } else 1f
     val color = tone.color
     val shape = UniTheme.shapes.chip
+    // The beat is deliberately finite. An endless pulse looks alive but forces the whole window to
+    // redraw at the display's refresh rate for as long as it is on screen: on a Pixel 8 Pro that was
+    // ~120 fps forever, half a core burnt on a still list, a warm phone and every other animation on
+    // the device stuttering behind it. Motion belongs to the moment the state changes, not to the
+    // state itself. Read inside `graphicsLayer` so each beat is a draw, never a recomposition.
+    val pulse = remember { Animatable(1f) }
+    LaunchedEffect(tone) {
+        if (!tone.pulses) return@LaunchedEffect
+        pulse.snapTo(1f)
+        pulse.animateTo(DIM_ALPHA, repeatable(PULSE_BEATS, tween(BEAT_MILLIS), RepeatMode.Reverse))
+        pulse.snapTo(1f)
+    }
     Row(
         modifier.background(color.copy(alpha = .12f), shape).border(1.dp, color.copy(alpha = .35f), shape)
             .padding(horizontal = 10.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Box(Modifier.size(7.dp).alpha(alpha).background(color, CircleShape))
+        Box(Modifier.size(7.dp).graphicsLayer { alpha = pulse.value }.background(color, CircleShape))
         Text(if (UniTheme.type.labelUppercase) text.uppercase() else text, style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.SemiBold)
     }
 }
+
+/** How faint the dot gets at the bottom of a beat. */
+private const val DIM_ALPHA = .35f
+/** Half-beats: an even count ends the animation back at full strength. */
+private const val PULSE_BEATS = 6
+/** Duration of one half-beat. */
+private const val BEAT_MILLIS = 900
