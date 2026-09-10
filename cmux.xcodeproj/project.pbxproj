@@ -476,6 +476,8 @@
 		4B5C5A7A2056FEA0AF97352A /* MobileTranscriptionProcessRunning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36EF6FB2EFCA151569A6F11A /* MobileTranscriptionProcessRunning.swift */; };
 		3F68222E28153AC0E0B7BC1D /* MobileTranscriptionRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771B192627475FC34AE7FED5 /* MobileTranscriptionRequest.swift */; };
 		0E57E993EB2408D567BDE499 /* MobileTranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4AC74967E58DD505DF467B /* MobileTranscriptionService.swift */; };
+		6812B98A9774E429DBADBF81 /* MobileTranscriptionSpawn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78BAA3B8C57C7203FA781FBA /* MobileTranscriptionSpawn.swift */; };
+		EDB39055BF39DD53FFB8D392 /* MobileTranscriptionSpawner.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDF5457FA60A6AC4BDB2E779 /* MobileTranscriptionSpawner.swift */; };
 		4D2C7FC4337A44F41963C17A /* MobileTranscriptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCBE69364D6D78FEB61D955 /* MobileTranscriptionTests.swift */; };
 		83D7DC88C5750C87550BF276 /* MobileTranscriptionToolchain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E33B90AD5585E1135552691 /* MobileTranscriptionToolchain.swift */; };
 		4D44BD727032FB3EE29F6660 /* MobileTranscriptionWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17F298865256C2940B26650 /* MobileTranscriptionWorkspace.swift */; };
@@ -1483,6 +1485,8 @@
 		36EF6FB2EFCA151569A6F11A /* MobileTranscriptionProcessRunning.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionProcessRunning.swift; sourceTree = "<group>"; };
 		771B192627475FC34AE7FED5 /* MobileTranscriptionRequest.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionRequest.swift; sourceTree = "<group>"; };
 		9B4AC74967E58DD505DF467B /* MobileTranscriptionService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionService.swift; sourceTree = "<group>"; };
+		78BAA3B8C57C7203FA781FBA /* MobileTranscriptionSpawn.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionSpawn.swift; sourceTree = "<group>"; };
+		EDF5457FA60A6AC4BDB2E779 /* MobileTranscriptionSpawner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionSpawner.swift; sourceTree = "<group>"; };
 		4BCBE69364D6D78FEB61D955 /* MobileTranscriptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionTests.swift; sourceTree = "<group>"; };
 		1E33B90AD5585E1135552691 /* MobileTranscriptionToolchain.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionToolchain.swift; sourceTree = "<group>"; };
 		A17F298865256C2940B26650 /* MobileTranscriptionWorkspace.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionWorkspace.swift; sourceTree = "<group>"; };
@@ -2381,6 +2385,8 @@
 				36EF6FB2EFCA151569A6F11A /* MobileTranscriptionProcessRunning.swift */,
 				771B192627475FC34AE7FED5 /* MobileTranscriptionRequest.swift */,
 				9B4AC74967E58DD505DF467B /* MobileTranscriptionService.swift */,
+				78BAA3B8C57C7203FA781FBA /* MobileTranscriptionSpawn.swift */,
+				EDF5457FA60A6AC4BDB2E779 /* MobileTranscriptionSpawner.swift */,
 				1E33B90AD5585E1135552691 /* MobileTranscriptionToolchain.swift */,
 				A17F298865256C2940B26650 /* MobileTranscriptionWorkspace.swift */,
 				165C8BB01D8ECFBE68ADCEF6 /* MobileAudioConversionCommand.swift */,
@@ -3751,6 +3757,8 @@
 				4B5C5A7A2056FEA0AF97352A /* MobileTranscriptionProcessRunning.swift in Sources */,
 				3F68222E28153AC0E0B7BC1D /* MobileTranscriptionRequest.swift in Sources */,
 				0E57E993EB2408D567BDE499 /* MobileTranscriptionService.swift in Sources */,
+				6812B98A9774E429DBADBF81 /* MobileTranscriptionSpawn.swift in Sources */,
+				EDB39055BF39DD53FFB8D392 /* MobileTranscriptionSpawner.swift in Sources */,
 				83D7DC88C5750C87550BF276 /* MobileTranscriptionToolchain.swift in Sources */,
 				4D44BD727032FB3EE29F6660 /* MobileTranscriptionWorkspace.swift in Sources */,
 				DAD033AF10E4B2A952CCECBC /* MobileWAVFormat.swift in Sources */,

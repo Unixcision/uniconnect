@@ -681,12 +681,18 @@ Host side on macOS (2026-09-10, `Sources/Mobile/MobileTranscription*.swift`, rou
   them do not take turns.
 - **Cancellation.** The connection's own close path cancels that connection's
   dictations, so a phone that walks away and a device whose approval is revoked both
-  stop the work rather than paying for it. Cancelling the task sends `SIGTERM` to
-  the child and `SIGKILL` two seconds later if it is still there. The signal goes to
-  the child and not to its group: `Process` offers no way to start a new session,
-  and signalling a group without one would reach UniConnect itself. `ffmpeg`,
-  `ffprobe` and `whisper-cli` spawn no grandchildren, so there is nothing else to
-  reach. A cancelled call answers `io_failed` and never returns text.
+  stop the work rather than paying for it. Cancelling the task signals the child's
+  whole process group with `SIGTERM`, and `SIGKILL` two seconds later if anything is
+  still there, because killing only the parent leaves grandchildren holding the
+  pipes open. That group exists because the children are not started through
+  `Process`, which offers no way to open a session: `MobileTranscriptionSpawner`
+  uses `posix_spawn` with `POSIX_SPAWN_SETSID`, so each child leads its own session
+  and its process group carries its own pid. That is what makes `kill(-pid, …)`
+  both correct and safe here; signalling a group without a session of its own would
+  either reach nothing or reach UniConnect. The same spawn also closes every
+  inherited descriptor (`POSIX_SPAWN_CLOEXEC_DEFAULT`), so the engine never holds a
+  socket of the phone's connection. A cancelled call answers `io_failed` and never
+  returns text.
 - **Privacy and crash leftovers.** Each call gets its own 0700 directory named
   `<pid>-<random>` under `~/Library/Caches/UniConnect/transcribe`, and the clip is
   written with `O_EXCL|O_NOFOLLOW` and mode 0600. The directory is removed on every

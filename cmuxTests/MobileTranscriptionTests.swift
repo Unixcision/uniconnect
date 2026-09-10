@@ -680,6 +680,73 @@ struct MobileTranscriptionJobTests {
     }
 }
 
+@Suite("transcribe.v1: el hijo y su grupo de procesos")
+struct MobileTranscriptionProcessRunnerTests {
+    @Test("lo que devuelve waitpid se traduce a código de salida o a señal en negativo")
+    func exitStatusMapping() {
+        #expect(MobileTranscriptionProcessRunner.exitStatus(raw: 0) == 0)
+        #expect(MobileTranscriptionProcessRunner.exitStatus(raw: 1 << 8) == 1)
+        #expect(MobileTranscriptionProcessRunner.exitStatus(raw: 3 << 8) == 3)
+        #expect(MobileTranscriptionProcessRunner.exitStatus(raw: SIGKILL) == -SIGKILL)
+        #expect(MobileTranscriptionProcessRunner.exitStatus(raw: SIGTERM) == -SIGTERM)
+    }
+
+    @Test("el hijo arranca en su propio grupo, que es lo que permite señalar al grupo entero")
+    func childLeadsItsOwnGroup() throws {
+        let spawner = MobileTranscriptionSpawner()
+        let child = try spawner.spawn(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "ps -o pgid= -p $$"]
+        )
+        let output = FileHandle(fileDescriptor: child.standardOutputDescriptor, closeOnDealloc: true)
+        let text = String(decoding: (try? output.readToEnd()) ?? Data(), as: UTF8.self)
+        try? output.close()
+        let errors = FileHandle(fileDescriptor: child.standardErrorDescriptor, closeOnDealloc: true)
+        _ = try? errors.readToEnd()
+        try? errors.close()
+        var raw: Int32 = 0
+        while waitpid(child.identifier, &raw, 0) < 0 && errno == EINTR {}
+        let group = try #require(pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)))
+        #expect(group == child.identifier)
+    }
+
+    @Test("un hijo normal devuelve su salida y su código")
+    func capturesOutput() async throws {
+        let runner = MobileTranscriptionProcessRunner()
+        let result = try await runner.run(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "printf hola; printf ay >&2; exit 3"]
+        )
+        #expect(result.standardOutputText == "hola")
+        #expect(String(decoding: result.standardError, as: UTF8.self) == "ay")
+        #expect(result.exitStatus == 3)
+        #expect(!result.didSucceed)
+    }
+
+    @Test("cancelar mata al hijo en vez de esperar a que termine")
+    func cancellationKillsTheChild() async throws {
+        let runner = MobileTranscriptionProcessRunner(escalation: .milliseconds(200))
+        let started = ContinuousClock.now
+        let task = Task {
+            try await runner.run(
+                executable: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "sleep 30"]
+            )
+        }
+        // El hijo tiene que existir antes de cancelar, o se cancelaría antes de arrancar.
+        try await Task.sleep(for: .milliseconds(150))
+        task.cancel()
+        var capturado: (any Error)?
+        do {
+            _ = try await task.value
+        } catch {
+            capturado = error
+        }
+        #expect(capturado is CancellationError)
+        #expect(ContinuousClock.now - started < .seconds(10))
+    }
+}
+
 @Suite("transcribe.v1: el servicio")
 struct MobileTranscriptionServiceTests {
     private func makeService(

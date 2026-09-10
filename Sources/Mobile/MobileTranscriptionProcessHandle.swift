@@ -1,24 +1,23 @@
 import Foundation
 import os
 
-/// Agarre sobre el proceso hijo que corre ahora mismo, para poder matarlo desde fuera.
+/// Agarre sobre el hijo que corre ahora mismo, para poder matarlo desde fuera.
 ///
 /// Existe porque el manejador de cancelación de una tarea es síncrono y no puede esperar al
 /// actor: cuando el móvil cuelga o se agota el presupuesto, la señal tiene que salir en ese
-/// mismo instante. Se señala al hijo directamente y no a su grupo, porque `Process` no deja
-/// abrir sesión propia y `ffmpeg`, `ffprobe` y `whisper-cli` no crean nietos; señalar al
-/// grupo sin sesión propia alcanzaría al propio UniConnect.
+/// mismo instante. Se señala al GRUPO del hijo, no solo al hijo, para que un nieto no
+/// sobreviva a su padre; el grupo existe porque ``MobileTranscriptionSpawner`` le abre sesión
+/// propia, y por eso su identificador es el del propio hijo y la señal no alcanza a nadie más.
 final class MobileTranscriptionProcessHandle: @unchecked Sendable {
     private struct State {
-        var process: Process?
         var identifier: pid_t?
         var didFinish = false
         var wasCancelled = false
     }
 
     // Carve-out de lock: `terminate()` llega desde el manejador de cancelación, síncrono y
-    // fuera de todo contexto async, y compite con el arranque y con el fin del proceso por un
-    // par de banderas. Un actor solo añadiría saltos de tarea a un compara-y-cambia.
+    // fuera de todo contexto async, y compite con el arranque y con el fin del hijo por un par
+    // de banderas. Un actor solo añadiría saltos de tarea a un compara-y-cambia.
     private let state = OSAllocatedUnfairLock(initialState: State())
     private let escalation: Duration
     private let clock: any Clock<Duration>
@@ -36,49 +35,58 @@ final class MobileTranscriptionProcessHandle: @unchecked Sendable {
         state.withLock { $0.wasCancelled }
     }
 
-    /// Registra el proceso recién lanzado.
+    /// Registra el hijo recién arrancado.
     ///
-    /// - Parameter process: Proceso ya en marcha.
-    /// - Returns: `false` si la cancelación llegó antes de arrancar; quien llama debe matarlo.
-    func attach(_ process: Process) -> Bool {
+    /// - Parameter identifier: Identificador del hijo, que es también el de su grupo.
+    /// - Returns: `false` si la cancelación llegó antes de arrancar; entonces el grupo ya ha
+    ///   recibido la señal y quien llama solo tiene que recoger al hijo.
+    func attach(_ identifier: pid_t) -> Bool {
         let accepted = state.withLock { current -> Bool in
             guard !current.wasCancelled else { return false }
-            current.process = process
-            current.identifier = process.processIdentifier
+            current.identifier = identifier
             return true
         }
         if !accepted {
-            process.terminate()
+            Self.signalGroup(identifier, SIGKILL)
         }
         return accepted
     }
 
-    /// Marca el proceso como terminado para que la escalada a `SIGKILL` no dispare.
+    /// Marca al hijo como terminado y recogido, para que la escalada a `SIGKILL` no dispare
+    /// sobre un identificador que el sistema ya puede haber reutilizado.
     func finish() {
         state.withLock { current in
             current.didFinish = true
-            current.process = nil
         }
     }
 
-    /// Manda `SIGTERM` al hijo y programa `SIGKILL` si sigue vivo pasada la escalada.
+    /// Manda `SIGTERM` al grupo del hijo y programa `SIGKILL` si sigue vivo tras la escalada.
     func terminate() {
-        let process = state.withLock { current -> Process? in
+        let identifier = state.withLock { current -> pid_t? in
             current.wasCancelled = true
             guard !current.didFinish else { return nil }
-            return current.process
+            return current.identifier
         }
-        guard let process else { return }
-        process.terminate()
+        guard let identifier else { return }
+        Self.signalGroup(identifier, SIGTERM)
         Task.detached { [state, escalation, clock] in
             // Retraso acotado y cancelable: es el plazo entre las dos señales, no un sondeo.
             try? await clock.sleep(for: escalation)
-            let identifier = state.withLock { current -> pid_t? in
+            let pending = state.withLock { current -> pid_t? in
                 guard !current.didFinish else { return nil }
                 return current.identifier
             }
-            guard let identifier, identifier > 0 else { return }
-            kill(identifier, SIGKILL)
+            guard let pending else { return }
+            Self.signalGroup(pending, SIGKILL)
         }
+    }
+
+    /// Señala al grupo de procesos cuyo identificador es el del hijo.
+    ///
+    /// El identificador se comprueba antes de negarlo: `kill(0, …)` alcanzaría al grupo de
+    /// UniConnect y `kill(-1, …)` a todo lo que el usuario pueda tocar.
+    private static func signalGroup(_ identifier: pid_t, _ signal: Int32) {
+        guard identifier > 1 else { return }
+        kill(-identifier, signal)
     }
 }
