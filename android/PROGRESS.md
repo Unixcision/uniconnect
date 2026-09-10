@@ -1,6 +1,6 @@
 # Base Android — estado de implementación
 
-Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
+Actualizado: 2026-09-10. Responsable: agente `bridge_lifecycle_audit`; última entrada, el agente Android de Whisper local.
 
 ## Ya creado
 
@@ -54,6 +54,31 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
   Tests JVM de troceado, pegado y cliente RPC contra una sesión falsa. Mac y Linux aún no
   implementan el host; no probado contra ninguno ni en el Pixel.
 
+- Whisper en el propio móvil (2026-09-10): tercer motor de transcripción, sin conexión.
+  whisper.cpp vendorizado y podado en `app/src/main/cpp/whisper/` (solo backend de CPU de ggml,
+  6,1 MB de fuentes; commit en `whisper-commit.txt`, licencia MIT incluida) con JNI propio
+  `uniwhisper.cpp` (progreso y cancelación reales vía `progress_callback`/`abort_callback`).
+  CMake 3.22.1 + NDK 28.2.13676358, `abiFilters` solo `arm64-v8a`,
+  `-march=armv8.2-a+fp16+dotprod`; `data/WhisperNative` comprueba `asimdhp`/`asimddp` en
+  `/proc/cpuinfo` antes de cargar la librería. **APK Debug 24,12 MB → 26,71 MB (+2,59 MB de
+  `libuniwhisper.so`, que va sin comprimir); el APK ya solo trae arm64-v8a.** El modelo NO va en el
+  APK: `data/HttpSpeechModelStore` descarga `ggml-base-q5_1.bin` (56,9 MB) o `ggml-small-q5_1.bin`
+  (181 MB) a `filesDir/whisper/` con reanudación por `Range`, comprobación de espacio libre,
+  verificación de tamaño exacto y de la magia `ggml`, y borrado. `domain/LocalDictation` graba con el
+  mismo `MediaRecorderVoice` que para un equipo, decodifica con `data/MediaCodecAudioDecoder`
+  (`MediaExtractor` + `MediaCodec` sobre un `MediaDataSource` en memoria) y `domain/PcmSamples`, y
+  lee el modelo en `Dispatchers.Default` con porcentaje y cancelación. Si el motor falla,
+  `domain/ClipHandover` pasa la grabación a `HostDictation.adopt` en vez de perderla.
+  Ajustes → «Voz» → «Transcripción» pasa a cuatro filas con radio y frase explicativa: Automática,
+  Un equipo concreto, Whisper en el móvil, Reconocedor del móvil; el valor antiguo `HOST`
+  («Ventana») desaparece y se lee como `AUTO`. Nueva sección «Modelo de voz en el móvil» con estado,
+  progreso, tamaño en disco y borrado, y la última medida real de tiempo. La barra de dictado dice
+  quién transcribe salvo cuando es el equipo de la ventana. 318 pruebas JVM en verde, entre ellas
+  `TranscriptionRouteLocalTest` (todas las combinaciones más el invariante de que nunca se enruta a
+  un motor que no puede correr), `PcmSamplesTest`, `LocalDictationTest`, `HttpSpeechModelStoreTest`
+  (servidor local con rangos y cortes), `SpeechModelTest` y `ByteSizeTest`. **No probado en ningún
+  móvil: no se ha medido cuánto tarda de verdad ni se ha instalado el APK.**
+
 ## En curso
 
 - Ya implementados: modelos, repositorio DataStore y formulario Tailscale.
@@ -91,6 +116,10 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
   Linux son instalaciones distintas, no se fusionan.
 
 ## Validación pendiente
+
+- Whisper local: falta instalar en el Pixel 8 Pro y medir de verdad `base` y `small` con audio
+  español real, y ver cuánto calienta. La app ya lo mide y lo enseña en Ajustes; sin ese dato no se
+  puede decir si `small` sirve para dictar o solo para tener paciencia.
 
 - Wrapper y APK Debug compilados; compilan también las pruebas unitarias, sin
   ejecutarlas. `assembleDebug compileDebugUnitTestKotlin`: éxito en 18 segundos.

@@ -314,33 +314,130 @@ el mismo audio de 12 s en español: el Mac (M4, modelo grande) tarda 1,8 s y aci
 y estos dos últimos entienden mal («por a debe» por «por adb»). Así que el dictado puede mandar el
 audio a OTRO equipo distinto al de la ventana.
 
-Ajustes → «Voz» → «Transcripción» tiene cuatro valores: «Automática» (por defecto), «Móvil»,
-«Ventana» y «Elegido». La regla de Automática es: el equipo de la ventana si transcribe; si no, el
-primer equipo CONECTADO que anuncie la capacidad (el Mac mientras escribes en una ventana del
-Linux); si ninguno, dictado local. «Ventana» no se va a otro equipo: avisa cada vez que ese no puede
-y dicta el móvil. «Elegido» abre la lista de máquinas guardadas marcando las que no pueden («Este
-equipo no transcribe») y las que no responden ahora («Sin conexión ahora mismo»); si la elegida está
-caída o contesta `unsupported`, se cae a la regla automática y se avisa una vez. Se guardan
-`settings.transcription` y `settings.transcriptionMachine`, que es el identificador de la máquina y
-no su nombre, así que renombrarla no pierde la elección; un almacén escrito antes de estas claves se
-sigue leyendo con sus valores de voz intactos.
+Ajustes → «Voz» → «Transcripción» tiene cuatro opciones, cada una con la frase que dice quién
+transcribe (una fila con radio, no un segmento: «Automática» a secas no le dice a nadie a dónde va
+su voz):
 
-Cuando transcribe un equipo que no es el de la ventana, la barra lo dice en pequeño («Transcribe Mac
-de Dani») y la petición NO lleva `workspace_id` ni `terminal_id`: son opcionales en el contrato y no
+- **Automática** (por defecto): el equipo de la ventana si transcribe; si no, el primer equipo
+  CONECTADO que anuncie la capacidad (el Mac mientras escribes en una ventana del Linux); si
+  ninguno, Whisper en el propio móvil si hay modelo descargado; y solo si tampoco, el reconocedor
+  del sistema.
+- **Un equipo concreto**: abre la lista de máquinas guardadas marcando las que no pueden («Este
+  equipo no transcribe») y las que no responden ahora («Sin conexión ahora mismo»); si la elegida
+  está caída o contesta `unsupported`, se cae a la regla automática y se avisa una vez.
+- **Whisper en el móvil**: siempre el modelo local, sin conexión y sin mandar el audio a ningún
+  sitio. Sin modelo descargado se cae a la regla automática y se avisa una vez, con un enlace a
+  «Modelo de voz en el móvil».
+- **Reconocedor del móvil**: el de Android. Es el que peor entiende y el que estaba antes.
+
+El valor antiguo «Ventana» (`HOST`) ha desaparecido: «Automática» ya prefiere el equipo de la
+ventana y, a diferencia de aquél, tiene a dónde ir cuando ese no puede. Un almacén escrito con
+`HOST` se lee como `AUTO`. Se guardan `settings.transcription` y `settings.transcriptionMachine`,
+que es el identificador de la máquina y no su nombre, así que renombrarla no pierde la elección; un
+almacén escrito antes de estas claves se sigue leyendo con sus valores de voz intactos.
+
+La barra dice siempre quién va a transcribir, salvo cuando es lo esperado: «Transcribe Mac de Dani»
+para otro equipo, «Transcribe este móvil (Whisper)» para el modelo local y «Reconocedor del móvil»
+para el del sistema. Cuando transcribe el equipo de la ventana abierta no dice nada, porque decirlo
+sería ruido. Cuando transcribe un equipo que no es el de la ventana la petición NO lleva `workspace_id` ni `terminal_id`: son opcionales en el contrato y no
 significan nada para una máquina que no es dueña de esa ventana. El texto vuelve igual y se pega en
 la cajita de la ventana abierta. Un `unsupported` se recuerda por máquina, no en general, así que
 solo esa deja de intentarse.
 
-Arquitectura: `domain/Dictation` sigue siendo la interfaz y hay dos implementaciones,
-`data/AndroidDictation` (móvil) y `domain/HostDictation` (equipo). La elección es una función pura,
+Arquitectura: `domain/Dictation` sigue siendo la interfaz y hay tres implementaciones,
+`data/AndroidDictation` (reconocedor del sistema), `domain/HostDictation` (equipo) y
+`domain/LocalDictation` (Whisper aquí). La elección es una función pura,
 `TranscriptionRoute.decide(modo, máquinas con capacidad y conexión, máquina de la ventana, elegida,
-hay reconocedor, rechazadas)`, y `ui/DictationViewModel` solo publica
+hay reconocedor, hay modelo local, rechazadas)`, y `ui/DictationViewModel` solo publica
 el estado del motor activo, así que el composable lee los mismos estados en los dos casos.
 `MediaRecorder` queda tras `domain/VoiceRecorder` y el RPC tras `domain/HostTranscription`, de modo
 que todo el flujo (elección, límite de tamaño, cada error, borrado del archivo, reintento único,
 corte a los 5 minutos) se prueba en la JVM sin micrófono ni socket. La llamada se prueba además
 contra un host de mentira en un par de sockets, como la de adjuntos. Probado solo así: 78 pruebas
 nuevas; contra un host real con Whisper no se ha ejercitado todavía.
+
+## Whisper en el propio móvil (sin conexión)
+
+Tercer motor de transcripción, elegible en Ajustes: whisper.cpp compilado para `arm64-v8a` y
+corriendo dentro de la app, sin mandar el audio a ninguna parte.
+
+### El motor nativo
+
+whisper.cpp está vendorizado y podado en `app/src/main/cpp/whisper/` (commit en
+`whisper/whisper-commit.txt`, licencia MIT en `whisper/LICENSE`): `src/whisper.cpp`,
+`include/whisper.h` y el árbol de `ggml` **solo con el backend de CPU**. El resto de backends de
+ggml (CUDA, Vulkan, Metal, SYCL, OpenCL, Hexagon…) no está copiado porque en el CMake de ggml son
+opcionales y aquí van apagados; son 6,1 MB de fuentes en vez de 25.
+
+El JNI es propio, `app/src/main/cpp/uniwhisper.cpp`, no el del ejemplo `whisper.android`: cuatro
+funciones (`openModel`, `closeModel`, `transcribe`, `systemInfo`), un contexto por transcripción, y
+progreso y cancelación de vuelta a Kotlin a través de un objeto oyente
+(`whisper_full_params.progress_callback` y `abort_callback`). Cancelar de verdad detiene el modelo
+en vez de esperarlo. `data/WhisperNative` es el `object` con las `external fun`.
+
+Se compila con `externalNativeBuild` (CMake 3.22.1, NDK 28.2.13676358) y `abiFilters` solo
+`arm64-v8a`, con `-march=armv8.2-a+fp16+dotprod` y `GGML_CPU_ARM_ARCH` igual: sin medias precisiones
+y sin producto escalar de enteros, un modelo cuantizado en un móvil es inusable. Eso NO es la línea
+base de arm64, así que `WhisperNative.loaded` lee antes `/proc/cpuinfo` y solo carga la librería si
+el CPU anuncia `asimdhp` y `asimddp`; un móvil sin ellos transcribe en otro sitio en vez de morir
+con una instrucción ilegal. Todo arm64 de 2018 en adelante los tiene.
+
+**Impacto en el APK: `libuniwhisper.so` son 2,58 MB y va sin comprimir, así que la APK Debug pasa de
+24,12 MB a 26,71 MB (+2,59 MB).** El `abiFilters` a `arm64-v8a` también quita del APK las copias de
+las librerías de AndroidX para armeabi-v7a, x86 y x86_64: la app ya no se instala en 32 bits ni en
+un emulador x86.
+
+### El modelo: se descarga, no viene en la app
+
+Ajustes → «Modelo de voz en el móvil» ofrece dos, de
+`https://huggingface.co/ggerganov/whisper.cpp/resolve/main/`:
+
+| Modelo | Archivo | Tamaño exacto |
+|---|---|---|
+| Base | `ggml-base-q5_1.bin` | 59 707 625 B (56,9 MB) |
+| Small | `ggml-small-q5_1.bin` | 190 085 487 B (181 MB) |
+
+`data/HttpSpeechModelStore` los guarda en `filesDir/whisper/`, o sea el almacenamiento privado de la
+app: desaparecen al desinstalar y ninguna otra app los lee. Nada se descarga solo; hace falta pulsar
+«Descargar». La descarga se escribe en `<archivo>.part` y solo se renombra al nombre bueno cuando el
+tamaño es EXACTAMENTE el de la tabla y los cuatro primeros bytes son la magia `ggml`. Reanuda con
+`Range: bytes=N-`; si el servidor ignora el rango y contesta 200, empieza de cero en vez de añadir
+al trozo viejo y corromperlo. Antes de empezar comprueba el espacio libre (lo que falta más 32 MB de
+margen) y avisa si no cabe. Estados: no descargado, descargando con porcentaje y barra, a medias
+(«Reanudar»), listo con el tamaño en disco, o el fallo concreto. «Borrar el modelo» se lleva también
+lo que hubiera a medias.
+
+### Cómo se usa
+
+Graba igual que para un equipo, con el mismo `data/MediaRecorderVoice`: AAC 16 kHz mono en MPEG-4.
+Después `data/MediaCodecAudioDecoder` lo decodifica con `MediaExtractor` + `MediaCodec` (en Android
+no hay ffmpeg) sobre un `MediaDataSource` en memoria, y `domain/PcmSamples` hace la aritmética:
+PCM de 16 bits o de coma flotante → mono → 16 kHz → `FloatArray` de -1 a 1. Esa parte es pura y se
+prueba en la JVM con tonos sintéticos; la del códec no.
+
+El modelo corre en `Dispatchers.Default`, con el porcentaje en la barra («Transcribiendo en este
+móvil… 40 %») y cancelable. El contexto nativo se abre y se libera alrededor de cada llamada
+(`try/finally`), así que entre dos frases no quedan pesos residentes. Hilos: la mitad de los núcleos,
+entre 2 y 6 (un Tensor G3 de nueve núcleos usa 4, que es lo que tiene el clúster grande).
+
+Si falta el modelo, la regla automática ya lo decide ANTES de grabar, así que no se pierde nada. Si
+el motor revienta a mitad, o el móvil no puede decodificar su propia grabación, el archivo NO se
+tira: `domain/ClipHandover` se lo pasa a `HostDictation.adopt`, que lo manda al equipo que la regla
+automática elegiría, y la barra pasa a decir el nombre de ese equipo. Solo cuando no hay ningún
+equipo se borra y se avisa, ofreciendo dictar otra vez.
+
+### Cuánto tarda (sin medir todavía)
+
+**No se ha medido en ningún móvil.** No hay instalación en el Pixel desde esta consola. Lo que sí
+hace la app es medirlo cada vez: `WhisperTranscription` registra en logcat (`UniConnectWhisper`)
+«X s de audio en Y ms con N hilos» y Ajustes muestra «Última vez en este móvil: X s de audio en Y s»
+bajo los modelos. Con eso se juzga si merece la pena, en lugar de creerse una promesa.
+
+La expectativa honesta antes de medir: en un Pixel 8 Pro (Tensor G3) `base` q5_1 debería ir
+razonablemente por encima del tiempo real, y `small` q5_1 puede acercarse al tiempo real o pasarse,
+calentando el móvil. Ninguno de los dos se acerca al Mac M4, que hace 12 s de audio en 1,8 s. Si sale
+lento, es lento: esto es para cuando no hay ningún equipo despierto, no un sustituto del equipo.
+
 
 ## Arquitectura
 
