@@ -200,7 +200,7 @@ fun TerminalComposer(
         else permission.launch(Manifest.permission.RECORD_AUDIO)
     }
     val canDictate = dictation?.canDictate(transcription, transcribers, dictationTarget, transcriptionMachine) == true
-    val action = ComposerAction.decide(draftEmpty = draft.isEmpty(), dictationAvailable = canDictate)
+    val action = ComposerAction.decide(draft, dictationAvailable = canDictate)
 
     Column(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 6.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -254,7 +254,7 @@ fun TerminalComposer(
                 enabled = when (face) {
                     Face.STOP -> true
                     Face.MIC -> enabled && !sending
-                    Face.SEND -> enabled && !sending && draft.isNotEmpty()
+                    Face.SEND -> enabled && !sending && ComposerAction.hasSomethingToSend(draft)
                     Face.SENDING -> false
                 },
                 modifier = Modifier.size(48.dp),
