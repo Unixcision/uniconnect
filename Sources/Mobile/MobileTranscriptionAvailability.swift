@@ -20,7 +20,7 @@ struct MobileTranscriptionAvailability: Sendable {
     ///   - probe: Comprobación real; los tests pasan una que no toca el disco.
     init(
         lifetime: Duration = MobileTranscriptionAvailability.defaultLifetime,
-        probe: @escaping @Sendable () -> Bool = { MobileTranscriptionAvailability.hasEngineAndModel() }
+        probe: @escaping @Sendable () -> Bool = { MobileTranscriptionAvailability.canTranscribe() }
     ) {
         self.lifetime = lifetime
         self.probe = probe
@@ -39,11 +39,17 @@ struct MobileTranscriptionAvailability: Sendable {
         return lastAnswer
     }
 
-    /// Comprobación real: hace falta el motor y al menos un modelo instalado.
+    /// Comprobación real: hacen falta el motor, el conversor y al menos un modelo instalado.
+    ///
+    /// El conversor cuenta tanto como el motor. Lo que graba el móvil es AAC en contenedor
+    /// MPEG-4, que whisper.cpp no lee, así que sin `ffmpeg` el equipo anunciaría la capacidad y
+    /// fallaría en el primer dictado, justo cuando el usuario ya ha hablado. Es mejor no
+    /// anunciarla y que el móvil dicte en local desde el principio.
     ///
     /// - Returns: `true` si `transcribe.v1` puede funcionar en este equipo.
-    static func hasEngineAndModel() -> Bool {
-        guard MobileTranscriptionToolchain.resolve().whisperCLI != nil else { return false }
+    static func canTranscribe() -> Bool {
+        let toolchain = MobileTranscriptionToolchain.resolve()
+        guard toolchain.whisperCLI != nil, toolchain.ffmpeg != nil else { return false }
         return MobileWhisperModelCatalog().preferredModel() != nil
     }
 }

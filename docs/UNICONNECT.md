@@ -515,10 +515,12 @@ phone fall back to its own on-device dictation; nothing is ever sent elsewhere.
 - Deadline: the phone waits 90 s from before it sends. The host's own budget is
   75 s counted from the moment the request reaches its RPC, with the tail of it
   reserved for killing the child and cleaning up.
-- Privacy: the audio is written to a private temporary file and deleted on every
-  exit path, success or failure. A deletion that the filesystem refuses, and
-  whatever a crash leaves behind, is retried at the next start. Neither the audio
-  nor the transcript is written to any log or included in an error message.
+- Privacy: the audio is written to a private temporary file whose deletion is
+  attempted on every exit path, success or failure. Deletion is attempted, not
+  guaranteed: a filesystem that refuses leaves the clip on disk, and so does a
+  crash. Neither is hidden — the host records what it could not delete and retries
+  it, at the next dictation and at the next start. Neither the audio nor the
+  transcript is written to any log or included in an error message.
 
 Host side on Linux (2026-09-09, `linux/uniconnect/transcribe.py`, routed by
 `mobile_rpc.py`, swept at start by `mobile_desktop.py`):
@@ -652,8 +654,12 @@ Host side on macOS (2026-09-10, `Sources/Mobile/MobileTranscription*.swift`, rou
   depend on the order the filesystem returns; nothing is ever downloaded. A missing
   binary or model answers `unsupported` with the reason in Spanish, and
   `transcribe.v1` is then not advertised at all: `mobile.workspace.list` adds the
-  capability only when both are present, so the phone dictates locally instead of
-  discovering the gap mid-sentence. That check is cached for a minute, so dropping
+  capability only when the engine, a model **and** `ffmpeg` are all present, so the
+  phone dictates locally instead of discovering the gap mid-sentence. The converter
+  counts as much as the engine here, because what the phone records is AAC in an
+  MPEG-4 container, which whisper.cpp cannot read: a host without `ffmpeg` would
+  advertise the capability and then fail the first dictation, right after the user
+  had already spoken. That check is cached for a minute, so dropping
   a model into the folder takes effect without restarting UniConnect.
 - **Duration and conversion.** The clip's own RIFF header decides the duration and
   whether the converter can be skipped; the MIME only picks the temporary file's
@@ -692,13 +698,24 @@ Host side on macOS (2026-09-10, `Sources/Mobile/MobileTranscription*.swift`, rou
   either reach nothing or reach UniConnect. The same spawn also closes every
   inherited descriptor (`POSIX_SPAWN_CLOEXEC_DEFAULT`), so the engine never holds a
   socket of the phone's connection. A cancelled call answers `io_failed` and never
-  returns text.
+  returns text. Two orderings are covered explicitly, because both leave a process
+  behind if they are not: a cancellation that arrives before the child has been
+  registered still signals it, and the call still drains both pipes and reaps the
+  child before returning, since exiting early would leave a zombie and with it a
+  slot of the per-device limit taken forever. A connection that closes while its
+  request is still in flight is remembered, so the dictation it asked for is
+  cancelled as soon as it starts rather than running orphaned to the deadline.
 - **Privacy and crash leftovers.** Each call gets its own 0700 directory named
   `<pid>-<random>` under `~/Library/Caches/UniConnect/transcribe`, and the clip is
-  written with `O_EXCL|O_NOFOLLOW` and mode 0600. The directory is removed on every
-  exit path, and the removal is verified rather than assumed: a `removeItem` that
-  the filesystem refuses is retried with the permissions reopened. What a killed
-  process leaves behind is swept at the first dictation after the next start, and
+  written with `O_EXCL|O_NOFOLLOW` and mode 0600. Removal of the directory is attempted on every
+  exit path, and its outcome is checked rather than assumed: a `removeItem` that
+  the filesystem refuses is retried with the permissions reopened, and one that
+  still fails is recorded and retried before the next dictation instead of being
+  reported as clean. The dictation itself is answered either way, because losing
+  the cleanup is no reason to throw away a line the user just spoke; what is not
+  acceptable is answering as though the disk were clean when it is not. What a
+  killed process leaves behind is swept at the first dictation after the next start,
+  and
   ownership is proved by the `pid` in the name rather than by age, which proves
   nothing when a machine can be suspended mid-dictation: a directory whose owner
   still answers is kept, and so is anything whose name does not carry a `pid`,

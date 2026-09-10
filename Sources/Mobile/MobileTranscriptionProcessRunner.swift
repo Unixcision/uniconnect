@@ -65,8 +65,9 @@ struct MobileTranscriptionProcessRunner: MobileTranscriptionProcessRunning {
         handle: MobileTranscriptionProcessHandle
     ) async throws -> MobileTranscriptionProcessResult {
         let child = try spawner.spawn(executable: executable, arguments: arguments)
-        // Si la cancelación se adelantó al arranque, el grupo ya ha recibido la señal; aun así
-        // hay que vaciar y recoger al hijo para no dejar un zombi detrás.
+        // Si la cancelación se adelantó al arranque, `attach` señala ya al grupo. Pase lo que
+        // pase se vacían las dos tuberías y se recoge al hijo antes de devolver nada: salir
+        // antes dejaría un zombi, y con él un turno del aforo ocupado para siempre.
         let didAttach = handle.attach(child.identifier)
         async let standardOutput = Self.readToEnd(fileDescriptor: child.standardOutputDescriptor)
         async let standardError = Self.readToEnd(fileDescriptor: child.standardErrorDescriptor)
@@ -83,12 +84,36 @@ struct MobileTranscriptionProcessRunner: MobileTranscriptionProcessRunning {
         return result
     }
 
+    /// Vacía una tubería hasta el fin de archivo y cierra su descriptor.
+    ///
+    /// Se lee con `read` y no con `FileHandle` a propósito. El descriptor viene crudo del
+    /// arranque y aquí tiene un único dueño, que lo cierra exactamente una vez; envolverlo en
+    /// un `FileHandle` que también cierra al liberarse abriría la puerta a un cierre doble, y
+    /// un número de descriptor reutilizado entretanto por otra conexión se cerraría de paso.
+    /// Eso no se ve al probar: se manifiesta más tarde como una desconexión de otra cosa.
+    ///
+    /// - Parameter fileDescriptor: Extremo de lectura, del que esta función se hace dueña.
+    /// - Returns: Todo lo que escribió el hijo por esa salida.
     private static func readToEnd(fileDescriptor: Int32) async -> Data {
         await withCheckedContinuation { continuation in
             waitQueue.async {
-                let handle = FileHandle(fileDescriptor: fileDescriptor, closeOnDealloc: true)
-                defer { try? handle.close() }
-                continuation.resume(returning: (try? handle.readToEnd()) ?? Data())
+                var data = Data()
+                var buffer = [UInt8](repeating: 0, count: 65_536)
+                while true {
+                    let count = buffer.withUnsafeMutableBytes { raw in
+                        read(fileDescriptor, raw.baseAddress, raw.count)
+                    }
+                    if count > 0 {
+                        data.append(contentsOf: buffer[0..<count])
+                        continue
+                    }
+                    if count < 0, errno == EINTR {
+                        continue
+                    }
+                    break
+                }
+                close(fileDescriptor)
+                continuation.resume(returning: data)
             }
         }
     }

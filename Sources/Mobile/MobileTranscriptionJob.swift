@@ -22,6 +22,8 @@ struct MobileTranscriptionJob: Sendable {
     let clock: any Clock<Duration>
     /// Hilos que se le piden al motor.
     let threads: Int
+    /// Aviso de que un directorio de trabajo se quedó en el disco.
+    let onCleanupFailure: @Sendable (URL) -> Void
 
     /// - Parameters:
     ///   - limits: Límites y presupuesto.
@@ -31,6 +33,8 @@ struct MobileTranscriptionJob: Sendable {
     ///   - runner: Lanzador de procesos; los tests pasan uno falso.
     ///   - clock: Reloj del plazo; los tests pasan uno virtual.
     ///   - threads: Hilos del motor.
+    ///   - onCleanupFailure: Se avisa con el directorio que el sistema de archivos se negó a
+    ///     borrar, para que se reintente más tarde. No lleva ni el audio ni el texto.
     init(
         limits: MobileTranscriptionLimits,
         workspace: MobileTranscriptionWorkspace,
@@ -38,7 +42,8 @@ struct MobileTranscriptionJob: Sendable {
         model: URL,
         runner: any MobileTranscriptionProcessRunning,
         clock: any Clock<Duration>,
-        threads: Int
+        threads: Int,
+        onCleanupFailure: @escaping @Sendable (URL) -> Void = { _ in }
     ) {
         self.limits = limits
         self.workspace = workspace
@@ -47,6 +52,7 @@ struct MobileTranscriptionJob: Sendable {
         self.runner = runner
         self.clock = clock
         self.threads = threads
+        self.onCleanupFailure = onCleanupFailure
     }
 
     /// Nombre del motor que viaja al móvil, sin rutas del equipo.
@@ -92,7 +98,14 @@ struct MobileTranscriptionJob: Sendable {
         } catch {
             throw MobileTranscriptionError.ioFailed(Self.ioFailedMessage)
         }
-        defer { workspace.remove(directory) }
+        // Un borrado que el sistema de archivos rechaza deja el audio en el disco. Se avisa en
+        // vez de dar la limpieza por hecha, y el dictado se responde igual: perder la limpieza
+        // no es motivo para tirar un texto que el usuario acaba de dictar.
+        defer {
+            if !workspace.remove(directory) {
+                onCleanupFailure(directory)
+            }
+        }
 
         let clip = directory.appendingPathComponent("clip.\(request.format.fileExtension)", isDirectory: false)
         try workspace.write(request.audio, to: clip)

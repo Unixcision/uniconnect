@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let mobileTranscribeLog = Logger(subsystem: "com.unixcision.uniconnect", category: "mobile-transcribe")
 
 /// Servicio de `transcribe.v1`: recibe el clip del móvil, lo transcribe con whisper.cpp en
 /// este equipo y devuelve solo el texto.
@@ -29,6 +32,16 @@ actor MobileTranscriptionService {
     private var admission: MobileTranscriptionAdmission
     private var jobs: [UUID: RunningJob] = [:]
     private var didSweep = false
+    /// Directorios que el sistema de archivos se negó a borrar; se reintentan en el siguiente
+    /// dictado, porque mientras este proceso viva el barrido no los toca (su pid sigue vivo).
+    private var pendingCleanup: [URL] = []
+    /// Conexiones cerradas hace poco. Una conexión puede caerse mientras su petición todavía
+    /// va de camino, y entonces `cancel(connectionID:)` no encuentra ningún trabajo que matar;
+    /// recordarlas evita que ese dictado arranque huérfano y ocupe turno hasta agotar el plazo.
+    private var cancelledConnections: [UUID] = []
+
+    /// Cuántas conexiones cerradas se recuerdan; de sobra para el trasiego de un móvil.
+    private static let rememberedCancellations = 64
 
     /// - Parameters:
     ///   - limits: Límites del contrato; los tests los hacen pequeños.
@@ -81,6 +94,7 @@ actor MobileTranscriptionService {
         startedAt: ContinuousClock.Instant
     ) async throws -> MobileTranscriptionOutcome {
         sweepOnceAtStart()
+        retryPendingCleanup()
         let toolchain = resolveToolchain()
         guard toolchain.whisperCLI != nil else {
             throw MobileTranscriptionError.unsupported(Self.noEngineMessage)
@@ -101,15 +115,29 @@ actor MobileTranscriptionService {
             model: model,
             runner: runner,
             clock: clock,
-            threads: threads
+            threads: threads,
+            onCleanupFailure: { [weak self] directory in
+                Task { await self?.recordLeftover(directory) }
+            }
         )
         let remaining = limits.workingBudget - (ContinuousClock.now - startedAt)
         let jobID = UUID()
         let task = Task.detached { try await job.run(request: request, remaining: remaining) }
         jobs[jobID] = RunningJob(connectionID: connectionID, task: task)
         defer { jobs.removeValue(forKey: jobID) }
+        // La conexión pudo cerrarse mientras esta petición venía de camino: entonces el aviso
+        // llegó antes de que hubiera nada registrado y hay que atenderlo ahora.
+        if let connectionID, cancelledConnections.contains(connectionID) {
+            task.cancel()
+        }
         do {
-            let outcome = try await task.value
+            // La tarea es suelta a propósito, para que dos dictados no se turnen en el actor;
+            // esto vuelve a atar su vida a la de quien llama, que si no seguiría corriendo.
+            let outcome = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
             return MobileTranscriptionOutcome(
                 text: outcome.text,
                 engine: outcome.engine,
@@ -133,8 +161,43 @@ actor MobileTranscriptionService {
     ///
     /// - Parameter connectionID: Conexión que se acaba de cerrar.
     func cancel(connectionID: UUID) {
+        remember(cancelled: connectionID)
         for job in jobs.values where job.connectionID == connectionID {
             job.task.cancel()
+        }
+    }
+
+    /// Apunta un directorio de trabajo que no se pudo borrar.
+    ///
+    /// El dictado ya se respondió: perder la limpieza no es motivo para tirar un texto que el
+    /// usuario acaba de dictar. Queda anotado para reintentarlo, y la anotación no lleva ni el
+    /// audio ni el texto, solo la ruta del directorio.
+    ///
+    /// - Parameter directory: Directorio que sigue en el disco.
+    func recordLeftover(_ directory: URL) {
+        guard !pendingCleanup.contains(directory) else { return }
+        pendingCleanup.append(directory)
+        mobileTranscribeLog.warning(
+            "mobile transcribe could not delete its work directory; retrying on the next dictation"
+        )
+    }
+
+    /// Directorios pendientes de borrar; los tests lo consultan.
+    var pendingCleanupCount: Int {
+        pendingCleanup.count
+    }
+
+    private func retryPendingCleanup() {
+        guard !pendingCleanup.isEmpty else { return }
+        pendingCleanup.removeAll { workspace.remove($0) }
+    }
+
+    private func remember(cancelled connectionID: UUID) {
+        guard !cancelledConnections.contains(connectionID) else { return }
+        cancelledConnections.append(connectionID)
+        let excess = cancelledConnections.count - Self.rememberedCancellations
+        if excess > 0 {
+            cancelledConnections.removeFirst(excess)
         }
     }
 

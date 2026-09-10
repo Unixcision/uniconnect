@@ -429,6 +429,21 @@ struct MobileTranscriptionWorkspaceTests {
         }
     }
 
+    @Test("un borrado que el disco rechaza se responde como fallo, no como éxito")
+    func removeReportsFailure() throws {
+        let root = try makeRoot()
+        let workspace = MobileTranscriptionWorkspace(root: root)
+        let directory = try workspace.makeCallDirectory()
+        defer {
+            _ = directory.path.withCString { chflags($0, 0) }
+            try? FileManager.default.removeItem(at: root)
+        }
+        try workspace.write(Data([1, 2, 3]), to: directory.appendingPathComponent("clip.wav"))
+        _ = directory.path.withCString { chflags($0, UInt32(UF_IMMUTABLE)) }
+        #expect(!workspace.remove(directory))
+        #expect(FileManager.default.fileExists(atPath: directory.path))
+    }
+
     @Test("el dueño se lee del nombre del directorio")
     func ownerParsing() {
         #expect(MobileTranscriptionWorkspace.owner(ofDirectoryNamed: "4321-abcdef") == 4321)
@@ -487,6 +502,38 @@ private final class ProbeCounter: @unchecked Sendable {
     func increment() { count += 1 }
 }
 
+/// Apunta los directorios que el trabajo no pudo borrar.
+private final class LeftoverRecorder: @unchecked Sendable {
+    // El aviso llega desde la misma tarea que luego lee la cuenta; sin concurrencia real.
+    private var directories: [URL] = []
+    var count: Int { directories.count }
+    func record(_ directory: URL) { directories.append(directory) }
+}
+
+/// Lanzador que, además de responder, deja el directorio de la llamada imposible de borrar.
+///
+/// Marca inmutable el directorio que contiene el audio que le pasan, que es la forma de que el
+/// borrado del trabajo falle de verdad en mitad de la llamada, cuando el clip ya está escrito.
+private actor SabotagingRunner: MobileTranscriptionProcessRunning {
+    private let text: String
+
+    init(text: String) {
+        self.text = text
+    }
+
+    func run(executable: URL, arguments: [String]) async throws -> MobileTranscriptionProcessResult {
+        if let index = arguments.firstIndex(of: "-f"), index + 1 < arguments.count {
+            let directory = URL(fileURLWithPath: arguments[index + 1]).deletingLastPathComponent()
+            _ = directory.path.withCString { chflags($0, UInt32(UF_IMMUTABLE)) }
+        }
+        return MobileTranscriptionProcessResult(
+            exitStatus: 0,
+            standardOutput: Data(text.utf8),
+            standardError: Data()
+        )
+    }
+}
+
 @Suite("transcribe.v1: el trabajo de principio a fin")
 struct MobileTranscriptionJobTests {
     private func makeWorkspace() throws -> (MobileTranscriptionWorkspace, URL) {
@@ -543,6 +590,40 @@ struct MobileTranscriptionJobTests {
         #expect(invocations[0].arguments.contains("-nt"))
         #expect(FileManager.default.fileExists(atPath: root.path))
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+    }
+
+    @Test("si el borrado falla, el dictado se responde igual y el directorio queda apuntado")
+    func reportsCleanupFailure() async throws {
+        let (workspace, root) = try makeWorkspace()
+        defer {
+            for entry in (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? [] {
+                _ = root.appendingPathComponent(entry).path.withCString { chflags($0, 0) }
+            }
+            try? FileManager.default.removeItem(at: root)
+        }
+        let reported = LeftoverRecorder()
+        let job = MobileTranscriptionJob(
+            limits: MobileTranscriptionLimits(),
+            workspace: workspace,
+            toolchain: MobileTranscriptionToolchain(whisperCLI: whisper, ffmpeg: nil, ffprobe: nil),
+            model: model,
+            runner: SabotagingRunner(text: "hola"),
+            clock: ContinuousClock(),
+            threads: 2,
+            onCleanupFailure: { reported.record($0) }
+        )
+        let request = MobileTranscriptionRequest(
+            audio: WAVFixture(seconds: 1).data,
+            format: .wav,
+            language: nil,
+            device: nil
+        )
+        let outcome = try await job.run(request: request, remaining: .seconds(30))
+        // El texto llega igual: perder la limpieza no es motivo para tirar un dictado.
+        #expect(outcome.text == "hola")
+        // Y el directorio que se quedó en el disco queda anotado para reintentarlo.
+        #expect(reported.count == 1)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).count == 1)
     }
 
     @Test("un clip comprimido sin conversor responde unsupported")
@@ -723,6 +804,80 @@ struct MobileTranscriptionProcessRunnerTests {
         #expect(!result.didSucceed)
     }
 
+    @Test("un hijo que ignora TERM se mata igual, sin esperar a que termine solo")
+    func killsAChildThatIgnoresTerm() async throws {
+        let runner = MobileTranscriptionProcessRunner(escalation: .milliseconds(200))
+        let marker = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uc-term-\(UUID().uuidString)", isDirectory: false)
+        let started = ContinuousClock.now
+        let task = Task {
+            try await runner.run(
+                executable: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "trap '' TERM; echo listo > \(marker.path); sleep 45"]
+            )
+        }
+        // No se cancela hasta que el hijo confirma que ya ignora TERM.
+        while !FileManager.default.fileExists(atPath: marker.path) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        defer { try? FileManager.default.removeItem(at: marker) }
+        task.cancel()
+        var capturado: (any Error)?
+        do {
+            _ = try await task.value
+        } catch {
+            capturado = error
+        }
+        #expect(capturado is CancellationError)
+        // Si solo hubiera llegado el TERM que el hijo ignora, esto tardaría los 45 s del sleep.
+        #expect(ContinuousClock.now - started < .seconds(15))
+    }
+
+    @Test("cancelar antes de arrancar no deja el hijo suelto ni cuelga la llamada")
+    func cancellationBeforeStart() async throws {
+        let runner = MobileTranscriptionProcessRunner(escalation: .milliseconds(200))
+        let task = Task {
+            // La tarea nace cancelada, así que la cancelación llega antes del arranque.
+            try await runner.run(
+                executable: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "sleep 45"]
+            )
+        }
+        task.cancel()
+        var capturado: (any Error)?
+        do {
+            _ = try await task.value
+        } catch {
+            capturado = error
+        }
+        #expect(capturado is CancellationError)
+    }
+
+    @Test("ejecutar un hijo no cierra descriptores que son de otro")
+    func doesNotCloseForeignDescriptors() async throws {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uc-fd-\(UUID().uuidString)", isDirectory: false)
+        try Data("ajeno".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let foreign = open(file.path, O_RDONLY)
+        #expect(foreign >= 0)
+        defer { close(foreign) }
+
+        let runner = MobileTranscriptionProcessRunner()
+        for _ in 0..<8 {
+            _ = try await runner.run(
+                executable: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "printf x"]
+            )
+        }
+        // Un cierre doble habría soltado este número para que lo reutilizara otro; si sigue
+        // siendo nuestro y legible, nadie lo cerró por detrás.
+        #expect(fcntl(foreign, F_GETFD) != -1)
+        var buffer = [UInt8](repeating: 0, count: 8)
+        let count = buffer.withUnsafeMutableBytes { read(foreign, $0.baseAddress, $0.count) }
+        #expect(count == 5)
+    }
+
     @Test("cancelar mata al hijo en vez de esperar a que termine")
     func cancellationKillsTheChild() async throws {
         let runner = MobileTranscriptionProcessRunner(escalation: .milliseconds(200))
@@ -845,6 +1000,51 @@ struct MobileTranscriptionServiceTests {
         }
         #expect(capturado?.code == "invalid_params")
         #expect(await runner.invocations.isEmpty)
+    }
+
+    @Test("una conexión que se cerró antes de registrar el trabajo no deja el dictado huérfano")
+    func cancellationBeforeRegistration() async throws {
+        let service = try makeService(
+            toolchain: MobileTranscriptionToolchain(
+                whisperCLI: URL(fileURLWithPath: "/opt/homebrew/bin/whisper-cli"),
+                ffmpeg: nil,
+                ffprobe: nil
+            ),
+            model: URL(fileURLWithPath: "/m.bin"),
+            runner: RecordingRunner(holdForever: true)
+        )
+        let connectionID = UUID()
+        // El aviso llega antes de que exista trabajo alguno que cancelar.
+        await service.cancel(connectionID: connectionID)
+        var capturado: MobileTranscriptionError?
+        do {
+            _ = try await service.transcribe(
+                base64: WAVFixture(seconds: 1).data.base64EncodedString(),
+                mime: "audio/wav",
+                language: nil,
+                device: "100.9.9.9",
+                connectionID: connectionID,
+                startedAt: ContinuousClock.now
+            )
+        } catch let error as MobileTranscriptionError {
+            capturado = error
+        }
+        #expect(capturado?.code == "io_failed")
+        #expect(await service.activeJobCount == 0)
+    }
+
+    @Test("un borrado que el disco rechaza queda apuntado en vez de darse por hecho")
+    func recordsLeftovers() async throws {
+        let service = try makeService(
+            toolchain: MobileTranscriptionToolchain(whisperCLI: nil, ffmpeg: nil, ffprobe: nil),
+            model: nil
+        )
+        #expect(await service.pendingCleanupCount == 0)
+        await service.recordLeftover(URL(fileURLWithPath: "/tmp/uc-transcribe-fantasma"))
+        #expect(await service.pendingCleanupCount == 1)
+        // Apuntar dos veces el mismo directorio no lo duplica.
+        await service.recordLeftover(URL(fileURLWithPath: "/tmp/uc-transcribe-fantasma"))
+        #expect(await service.pendingCleanupCount == 1)
     }
 
     @Test("el segundo dictado del mismo móvil recibe busy, y cerrar la conexión libera el turno")
