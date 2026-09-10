@@ -447,9 +447,19 @@ la barra oculta ese caso, una explicación no.
 ### Cuánto tarda (sin medir todavía)
 
 **No se ha medido en ningún móvil.** No hay instalación en el Pixel desde esta consola. Lo que sí
-hace la app es medirlo cada vez: `WhisperTranscription` registra en logcat (`UniConnectWhisper`)
-«X s de audio en Y ms con N hilos» y Ajustes muestra «Última vez en este móvil: X s de audio en Y s»
-bajo los modelos. Con eso se juzga si merece la pena, en lugar de creerse una promesa.
+hace la app es medirlo cada vez, y en dos sitios que miden cosas distintas a propósito:
+
+- **Ajustes**, bajo los modelos: «Última vez en este móvil: X s de audio en Y s». Y es la ESPERA
+  ENTERA, desde que se pulsa Listo hasta que aparece el texto: abrir el modelo, decodificar el m4a y
+  leerlo. Es la cifra que se compara con un equipo, porque es la que se sufre.
+- **logcat**, etiqueta `UniConnectWhisper`: «X s de audio en Y ms con N hilos». Ahí Y es solo
+  `whisper_full`, sin abrir el modelo ni decodificar. Sirve para saber en qué se va el tiempo.
+
+Para comparar contra el Mac de forma limpia: dictar el mismo párrafo dos veces seguidas, una con
+«Whisper en el móvil» y otra con «Un equipo concreto» apuntando al Mac. Con un modo fijo la barra
+nombra el motor, así que no hay duda de quién transcribió cada vez. Conviene repetir la primera
+medida: la segunda pasada tiene el archivo del modelo ya en caché y el móvil más caliente, y las dos
+cosas tiran en sentidos opuestos.
 
 La expectativa honesta antes de medir: en un Pixel 8 Pro (Tensor G3) `base` q5_1 debería ir
 razonablemente por encima del tiempo real, y `small` q5_1 puede acercarse al tiempo real o pasarse,

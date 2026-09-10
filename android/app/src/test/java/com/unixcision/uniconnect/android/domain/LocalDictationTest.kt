@@ -148,6 +148,21 @@ class LocalDictationTest {
         assertFalse("a model with no engine transcribes nothing either", local.ready)
     }
 
+    @Test
+    fun theMeasurementCoversTheWholeWaitAndNotJustTheModel() {
+        // An engine that reports a suspiciously small run of its own: what is kept is the wait
+        // around everything, because opening the model and decoding are also waited for.
+        engine.reported = Transcript("hola", "whisper.cpp", seconds = 99.0, tookMillis = 1)
+        decoder.samples = FloatArray(PcmSamples.RATE * 3) { 0.1f }
+        val local = dictation()
+        local.start(DictationLanguage.DEVICE)
+        local.stop()
+        val run = local.lastRun!!
+        assertEquals("the length comes from the samples, not from the engine", 3.0, run.seconds, 1e-9)
+        assertTrue("the engine's own figure is not the whole wait", run.tookMillis >= 0)
+        assertEquals("hola", run.text)
+    }
+
     private class FakeClip(override val bytes: Long = 1_024) : AudioClip {
         var deleted = false
         override fun read(): ByteArray = ByteArray(bytes.toInt())
@@ -184,6 +199,7 @@ class LocalDictationTest {
         var cancelled = false
         var failure: Exception? = null
         var onRun: (TranscriptionProgress?) -> Unit = {}
+        var reported: Transcript? = null
 
         override suspend fun transcribe(samples: FloatArray, modelPath: String, language: String?, progress: TranscriptionProgress?): Transcript? {
             ran = true
@@ -191,7 +207,7 @@ class LocalDictationTest {
             this.modelPath = modelPath
             onRun(progress)
             failure?.let { throw it }
-            return if (cancelled) null else Transcript(text)
+            return if (cancelled) null else reported ?: Transcript(text)
         }
     }
 

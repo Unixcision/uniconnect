@@ -58,9 +58,10 @@ class LocalDictation(
     val ready: Boolean get() = engine.available && models.ready != null
 
     /**
-     * What the last recording read here cost: how many seconds of audio, and how long the model
-     * took over them. It is the only honest way to answer whether this phone is worth using for
-     * a given model, so the settings sheet shows it.
+     * What the last recording read here cost: how many seconds of audio, and how long the whole
+     * wait was, from the moment the reader pressed done to the text appearing. Opening the model
+     * and decoding the recording are counted, because they are part of what is waited for and the
+     * number is there to be compared against a machine.
      */
     var lastRun: Transcript? = null
         private set
@@ -131,13 +132,15 @@ class LocalDictation(
         stopping.set(false)
         reading = scope.launch {
             try {
+                // Measured around everything, not just the model: opening the weights and decoding
+                // the recording are part of the wait, and the whole wait is what compares with a
+                // machine. The engine still logs its own share for diagnosis.
+                val started = System.currentTimeMillis()
                 val transcript = withContext(worker) {
                     val samples = decoder.decode(clip)
                     if (samples.isEmpty()) throw AudioDecodeFailed("the recording decoded to no samples")
-                    val started = System.currentTimeMillis()
-                    val text = engine.transcribe(samples, path, language.code, Reporter())
-                    // The engine measures its own run; this is the fallback for one that does not.
-                    text?.let { if (it.tookMillis > 0) it else it.copy(seconds = PcmSamples.seconds(samples), tookMillis = System.currentTimeMillis() - started) }
+                    engine.transcribe(samples, path, language.code, Reporter())
+                        ?.copy(seconds = PcmSamples.seconds(samples), tookMillis = System.currentTimeMillis() - started)
                 }
                 clip.delete()
                 if (transcript == null) return@launch  // cancelled: the state is already Idle
