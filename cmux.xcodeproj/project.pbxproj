@@ -424,6 +424,8 @@
 		E1000000A1B2C3D4E5F60718 /* MenuKeyEquivalentRoutingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1000001A1B2C3D4E5F60718 /* MenuKeyEquivalentRoutingUITests.swift */; };
 		C0DE3150A00000000000001 /* MinimalModeSidebarControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE3150A00000000000002 /* MinimalModeSidebarControls.swift */; };
 		284FD21ACF8BD1ED6AEBD7A0 /* MobileAttachTicketStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D6D2AC715764ECC1F6B26A2 /* MobileAttachTicketStore.swift */; };
+		E64954EF20D89D36B12971E1 /* MobileAudioConversionCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 165C8BB01D8ECFBE68ADCEF6 /* MobileAudioConversionCommand.swift */; };
+		6FE2483BC3C6603D8A5E946B /* MobileAudioProbeCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64CF3FB84818CE941ECA092D /* MobileAudioProbeCommand.swift */; };
 		632B115044E17B4E0BD76AA1 /* MobileBoxArrangement.swift in Sources */ = {isa = PBXBuildFile; fileRef = D72956C9322F8667B9A0DC03 /* MobileBoxArrangement.swift */; };
 		053B07EFCFB345B8A96C743F /* MobileBoxArrangementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE9959248844544E00A2266F /* MobileBoxArrangementTests.swift */; };
 		6CA68B8B5C796CCC6F4E6FF3 /* MobileFilePutName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D43DD00B6B7A470CFB6702B /* MobileFilePutName.swift */; };
@@ -461,6 +463,26 @@
 		A6092606BB0000000000000B /* MobileTmuxOutputDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6092606AA0000000000000B /* MobileTmuxOutputDecoder.swift */; };
 		A6092606BB00000000000104 /* MobileTmuxPTYIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6092606AA00000000000104 /* MobileTmuxPTYIntegrationTests.swift */; };
 		A6092606BB00000000000007 /* MobileTmuxTargetResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6092606AA00000000000007 /* MobileTmuxTargetResolver.swift */; };
+		55311EC23E94297AEDFF9BCC /* MobileTranscriptionAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5537A1728E22484663B5244A /* MobileTranscriptionAdmission.swift */; };
+		24E07078931F2DD3B531665F /* MobileTranscriptionAudioFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = B23C3A2916C2DF69E43B89D4 /* MobileTranscriptionAudioFormat.swift */; };
+		46295499EA2390A1C218A403 /* MobileTranscriptionAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1365AC47D1BE6D374F820E1A /* MobileTranscriptionAvailability.swift */; };
+		9DF4852544031C6B0CA7D937 /* MobileTranscriptionError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F990F958ABAA89961876EE6 /* MobileTranscriptionError.swift */; };
+		28E99D7BB783F0B9B17CC94B /* MobileTranscriptionJob.swift in Sources */ = {isa = PBXBuildFile; fileRef = 380046FCE101A17CB998067A /* MobileTranscriptionJob.swift */; };
+		F15F995EEA5E70268D317C1B /* MobileTranscriptionLimits.swift in Sources */ = {isa = PBXBuildFile; fileRef = A828817C2BA47A48DF21AF86 /* MobileTranscriptionLimits.swift */; };
+		D949CA731C6CB49EB6984A80 /* MobileTranscriptionOutcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01AEEE6E81607559FBAAC0F5 /* MobileTranscriptionOutcome.swift */; };
+		CF84F0A7FD82B07402A64603 /* MobileTranscriptionProcessHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FDFEF6F0B0F157666C45D16 /* MobileTranscriptionProcessHandle.swift */; };
+		E84233E120B8D2B823639AD1 /* MobileTranscriptionProcessResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = D949FC5427DBFD4778690933 /* MobileTranscriptionProcessResult.swift */; };
+		63A83561D8BFD6EFA3490D65 /* MobileTranscriptionProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25322FAC943BB4E14F4110AF /* MobileTranscriptionProcessRunner.swift */; };
+		4B5C5A7A2056FEA0AF97352A /* MobileTranscriptionProcessRunning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36EF6FB2EFCA151569A6F11A /* MobileTranscriptionProcessRunning.swift */; };
+		3F68222E28153AC0E0B7BC1D /* MobileTranscriptionRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771B192627475FC34AE7FED5 /* MobileTranscriptionRequest.swift */; };
+		0E57E993EB2408D567BDE499 /* MobileTranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4AC74967E58DD505DF467B /* MobileTranscriptionService.swift */; };
+		4D2C7FC4337A44F41963C17A /* MobileTranscriptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCBE69364D6D78FEB61D955 /* MobileTranscriptionTests.swift */; };
+		83D7DC88C5750C87550BF276 /* MobileTranscriptionToolchain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E33B90AD5585E1135552691 /* MobileTranscriptionToolchain.swift */; };
+		4D44BD727032FB3EE29F6660 /* MobileTranscriptionWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17F298865256C2940B26650 /* MobileTranscriptionWorkspace.swift */; };
+		DAD033AF10E4B2A952CCECBC /* MobileWAVFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 749116875E8042CBF789D444 /* MobileWAVFormat.swift */; };
+		8351BE958D4E479500541190 /* MobileWhisperCLICommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF511819725BDB7CF3E614BE /* MobileWhisperCLICommand.swift */; };
+		247290F36B24E271654D7675 /* MobileWhisperModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6044587DAD6D123567409487 /* MobileWhisperModelCatalog.swift */; };
+		EB6D06199791CE777277EEBB /* MobileWhisperTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3B359AD0FA40514CE37B87C /* MobileWhisperTranscript.swift */; };
 		F6448F377504F33956E7E03B /* MobileWorkspaceListFidelityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86544CEFA1CA33CA9225FB6E /* MobileWorkspaceListFidelityTests.swift */; };
 		00C3AA443F6DA8D94E28CE17 /* MobileWorkspaceListObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9F14137954A34DFFA05C88C /* MobileWorkspaceListObserver.swift */; };
 		B9000015A1B2C3D4E5F60719 /* MultiWindowNotificationsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000016A1B2C3D4E5F60719 /* MultiWindowNotificationsUITests.swift */; };
@@ -1409,6 +1431,8 @@
 		E1000001A1B2C3D4E5F60718 /* MenuKeyEquivalentRoutingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuKeyEquivalentRoutingUITests.swift; sourceTree = "<group>"; };
 		C0DE3150A00000000000002 /* MinimalModeSidebarControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Update/MinimalModeSidebarControls.swift; sourceTree = "<group>"; };
 		8D6D2AC715764ECC1F6B26A2 /* MobileAttachTicketStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileAttachTicketStore.swift; sourceTree = "<group>"; };
+		165C8BB01D8ECFBE68ADCEF6 /* MobileAudioConversionCommand.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileAudioConversionCommand.swift; sourceTree = "<group>"; };
+		64CF3FB84818CE941ECA092D /* MobileAudioProbeCommand.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileAudioProbeCommand.swift; sourceTree = "<group>"; };
 		D72956C9322F8667B9A0DC03 /* MobileBoxArrangement.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileBoxArrangement.swift; sourceTree = "<group>"; };
 		EE9959248844544E00A2266F /* MobileBoxArrangementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileBoxArrangementTests.swift; sourceTree = "<group>"; };
 		4D43DD00B6B7A470CFB6702B /* MobileFilePutName.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileFilePutName.swift; sourceTree = "<group>"; };
@@ -1446,6 +1470,26 @@
 		A6092606AA0000000000000B /* MobileTmuxOutputDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTmuxOutputDecoder.swift; sourceTree = "<group>"; };
 		A6092606AA00000000000104 /* MobileTmuxPTYIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTmuxPTYIntegrationTests.swift; sourceTree = "<group>"; };
 		A6092606AA00000000000007 /* MobileTmuxTargetResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTmuxTargetResolver.swift; sourceTree = "<group>"; };
+		5537A1728E22484663B5244A /* MobileTranscriptionAdmission.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionAdmission.swift; sourceTree = "<group>"; };
+		B23C3A2916C2DF69E43B89D4 /* MobileTranscriptionAudioFormat.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionAudioFormat.swift; sourceTree = "<group>"; };
+		1365AC47D1BE6D374F820E1A /* MobileTranscriptionAvailability.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionAvailability.swift; sourceTree = "<group>"; };
+		3F990F958ABAA89961876EE6 /* MobileTranscriptionError.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionError.swift; sourceTree = "<group>"; };
+		380046FCE101A17CB998067A /* MobileTranscriptionJob.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionJob.swift; sourceTree = "<group>"; };
+		A828817C2BA47A48DF21AF86 /* MobileTranscriptionLimits.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionLimits.swift; sourceTree = "<group>"; };
+		01AEEE6E81607559FBAAC0F5 /* MobileTranscriptionOutcome.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionOutcome.swift; sourceTree = "<group>"; };
+		6FDFEF6F0B0F157666C45D16 /* MobileTranscriptionProcessHandle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionProcessHandle.swift; sourceTree = "<group>"; };
+		D949FC5427DBFD4778690933 /* MobileTranscriptionProcessResult.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionProcessResult.swift; sourceTree = "<group>"; };
+		25322FAC943BB4E14F4110AF /* MobileTranscriptionProcessRunner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionProcessRunner.swift; sourceTree = "<group>"; };
+		36EF6FB2EFCA151569A6F11A /* MobileTranscriptionProcessRunning.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionProcessRunning.swift; sourceTree = "<group>"; };
+		771B192627475FC34AE7FED5 /* MobileTranscriptionRequest.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionRequest.swift; sourceTree = "<group>"; };
+		9B4AC74967E58DD505DF467B /* MobileTranscriptionService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionService.swift; sourceTree = "<group>"; };
+		4BCBE69364D6D78FEB61D955 /* MobileTranscriptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionTests.swift; sourceTree = "<group>"; };
+		1E33B90AD5585E1135552691 /* MobileTranscriptionToolchain.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionToolchain.swift; sourceTree = "<group>"; };
+		A17F298865256C2940B26650 /* MobileTranscriptionWorkspace.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileTranscriptionWorkspace.swift; sourceTree = "<group>"; };
+		749116875E8042CBF789D444 /* MobileWAVFormat.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileWAVFormat.swift; sourceTree = "<group>"; };
+		FF511819725BDB7CF3E614BE /* MobileWhisperCLICommand.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileWhisperCLICommand.swift; sourceTree = "<group>"; };
+		6044587DAD6D123567409487 /* MobileWhisperModelCatalog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileWhisperModelCatalog.swift; sourceTree = "<group>"; };
+		F3B359AD0FA40514CE37B87C /* MobileWhisperTranscript.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileWhisperTranscript.swift; sourceTree = "<group>"; };
 		86544CEFA1CA33CA9225FB6E /* MobileWorkspaceListFidelityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileWorkspaceListFidelityTests.swift; sourceTree = "<group>"; };
 		C9F14137954A34DFFA05C88C /* MobileWorkspaceListObserver.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileWorkspaceListObserver.swift; sourceTree = "<group>"; };
 		B9000016A1B2C3D4E5F60719 /* MultiWindowNotificationsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiWindowNotificationsUITests.swift; sourceTree = "<group>"; };
@@ -2324,6 +2368,27 @@
 				7D8B2B8ADB3B3442BE6ADEE1 /* MobileFilePutTypes.swift */,
 				D6C1CCAF7A276C4981FD5C30 /* MobileFileSSHCopier.swift */,
 				3D087EA8606165C5280ECAF6 /* MobileFilePutService.swift */,
+				5537A1728E22484663B5244A /* MobileTranscriptionAdmission.swift */,
+				B23C3A2916C2DF69E43B89D4 /* MobileTranscriptionAudioFormat.swift */,
+				1365AC47D1BE6D374F820E1A /* MobileTranscriptionAvailability.swift */,
+				3F990F958ABAA89961876EE6 /* MobileTranscriptionError.swift */,
+				380046FCE101A17CB998067A /* MobileTranscriptionJob.swift */,
+				A828817C2BA47A48DF21AF86 /* MobileTranscriptionLimits.swift */,
+				01AEEE6E81607559FBAAC0F5 /* MobileTranscriptionOutcome.swift */,
+				6FDFEF6F0B0F157666C45D16 /* MobileTranscriptionProcessHandle.swift */,
+				D949FC5427DBFD4778690933 /* MobileTranscriptionProcessResult.swift */,
+				25322FAC943BB4E14F4110AF /* MobileTranscriptionProcessRunner.swift */,
+				36EF6FB2EFCA151569A6F11A /* MobileTranscriptionProcessRunning.swift */,
+				771B192627475FC34AE7FED5 /* MobileTranscriptionRequest.swift */,
+				9B4AC74967E58DD505DF467B /* MobileTranscriptionService.swift */,
+				1E33B90AD5585E1135552691 /* MobileTranscriptionToolchain.swift */,
+				A17F298865256C2940B26650 /* MobileTranscriptionWorkspace.swift */,
+				165C8BB01D8ECFBE68ADCEF6 /* MobileAudioConversionCommand.swift */,
+				64CF3FB84818CE941ECA092D /* MobileAudioProbeCommand.swift */,
+				749116875E8042CBF789D444 /* MobileWAVFormat.swift */,
+				FF511819725BDB7CF3E614BE /* MobileWhisperCLICommand.swift */,
+				6044587DAD6D123567409487 /* MobileWhisperModelCatalog.swift */,
+				F3B359AD0FA40514CE37B87C /* MobileWhisperTranscript.swift */,
 				D72956C9322F8667B9A0DC03 /* MobileBoxArrangement.swift */,
 				F51B54FAD18160281FC1C2B6 /* MobileTerminalRenderObserver.swift */,
 				4F05EBBC2FE0D5CB2F662B8A /* MobileTerminalByteTee.swift */,
@@ -2959,6 +3024,7 @@
 				4E5F60720000000000000002 /* NotificationSoundSettingsTests.swift */,
 				42092CDB2109E250F7F2A76E /* TabManagerUnitTests.swift */,
 				41777CC1F441E625114CF7B1 /* MobileFilePutServiceTests.swift */,
+				4BCBE69364D6D78FEB61D955 /* MobileTranscriptionTests.swift */,
 				EE9959248844544E00A2266F /* MobileBoxArrangementTests.swift */,
 				38B8FAEE192577F5B9C54AF1 /* UniConnectRemotePaneTitleTests.swift */,
 				565EAB895EC099E22C016A71 /* TerminalNotificationKindTests.swift */,
@@ -3643,6 +3709,8 @@
 				3865A0033865A0033865A003 /* MenubarSearchPopover.swift in Sources */,
 				C0DE3150A00000000000001 /* MinimalModeSidebarControls.swift in Sources */,
 				284FD21ACF8BD1ED6AEBD7A0 /* MobileAttachTicketStore.swift in Sources */,
+				E64954EF20D89D36B12971E1 /* MobileAudioConversionCommand.swift in Sources */,
+				6FE2483BC3C6603D8A5E946B /* MobileAudioProbeCommand.swift in Sources */,
 				632B115044E17B4E0BD76AA1 /* MobileBoxArrangement.swift in Sources */,
 				6CA68B8B5C796CCC6F4E6FF3 /* MobileFilePutName.swift in Sources */,
 				8B7F66EFFA775B79D948C44F /* MobileFilePutService.swift in Sources */,
@@ -3670,6 +3738,25 @@
 				D60647000000000000000002 /* MobileTmuxGeometry.swift in Sources */,
 				A6092606BB0000000000000B /* MobileTmuxOutputDecoder.swift in Sources */,
 				A6092606BB00000000000007 /* MobileTmuxTargetResolver.swift in Sources */,
+				55311EC23E94297AEDFF9BCC /* MobileTranscriptionAdmission.swift in Sources */,
+				24E07078931F2DD3B531665F /* MobileTranscriptionAudioFormat.swift in Sources */,
+				46295499EA2390A1C218A403 /* MobileTranscriptionAvailability.swift in Sources */,
+				9DF4852544031C6B0CA7D937 /* MobileTranscriptionError.swift in Sources */,
+				28E99D7BB783F0B9B17CC94B /* MobileTranscriptionJob.swift in Sources */,
+				F15F995EEA5E70268D317C1B /* MobileTranscriptionLimits.swift in Sources */,
+				D949CA731C6CB49EB6984A80 /* MobileTranscriptionOutcome.swift in Sources */,
+				CF84F0A7FD82B07402A64603 /* MobileTranscriptionProcessHandle.swift in Sources */,
+				E84233E120B8D2B823639AD1 /* MobileTranscriptionProcessResult.swift in Sources */,
+				63A83561D8BFD6EFA3490D65 /* MobileTranscriptionProcessRunner.swift in Sources */,
+				4B5C5A7A2056FEA0AF97352A /* MobileTranscriptionProcessRunning.swift in Sources */,
+				3F68222E28153AC0E0B7BC1D /* MobileTranscriptionRequest.swift in Sources */,
+				0E57E993EB2408D567BDE499 /* MobileTranscriptionService.swift in Sources */,
+				83D7DC88C5750C87550BF276 /* MobileTranscriptionToolchain.swift in Sources */,
+				4D44BD727032FB3EE29F6660 /* MobileTranscriptionWorkspace.swift in Sources */,
+				DAD033AF10E4B2A952CCECBC /* MobileWAVFormat.swift in Sources */,
+				8351BE958D4E479500541190 /* MobileWhisperCLICommand.swift in Sources */,
+				247290F36B24E271654D7675 /* MobileWhisperModelCatalog.swift in Sources */,
+				EB6D06199791CE777277EEBB /* MobileWhisperTranscript.swift in Sources */,
 				00C3AA443F6DA8D94E28CE17 /* MobileWorkspaceListObserver.swift in Sources */,
 				A5001094 /* NotificationsPage.swift in Sources */,
 				F50031090000000000000001 /* NotificationsPopoverPlacement.swift in Sources */,
@@ -4224,6 +4311,7 @@
 				A6092606BB00000000000103 /* MobileTmuxAttachmentControllerTests.swift in Sources */,
 				A6092606BB00000000000102 /* MobileTmuxAttachPlanTests.swift in Sources */,
 				A6092606BB00000000000104 /* MobileTmuxPTYIntegrationTests.swift in Sources */,
+				4D2C7FC4337A44F41963C17A /* MobileTranscriptionTests.swift in Sources */,
 				F6448F377504F33956E7E03B /* MobileWorkspaceListFidelityTests.swift in Sources */,
 				B798F5DBEEC044439B775ACA /* NativeSettingsPresentationTests.swift in Sources */,
 				734F49D37E543DD01C2F4FEF /* NotificationAndMenuBarTests.swift in Sources */,

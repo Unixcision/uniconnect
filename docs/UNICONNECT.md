@@ -633,6 +633,78 @@ Host side on Linux (2026-09-09, `linux/uniconnect/transcribe.py`, routed by
   against a known list). A bracketed line the reader actually dictated, such as
   `[pendiente]`, is text and survives.
 
+Host side on macOS (2026-09-10, `Sources/Mobile/MobileTranscription*.swift`, routed by
+`TerminalController.mobileHostHandleRPC`):
+
+- **Engine.** whisper.cpp through `whisper-cli`, one process per dictation, looked
+  up in the Homebrew and system directories because the app does not inherit the
+  user's `PATH`; `whisper-cpp` and the older `main` are accepted under the same
+  role. `whisper-server` is deliberately not used, for the same reason as on Linux
+  and for one more that is specific to it: the server never announces that it is
+  listening. Its startup line stays in a block-buffered stdout when no terminal is
+  attached and nothing equivalent reaches stderr, so a host would have to poll the
+  port to find out, which the repository's concurrency rules forbid. It would buy
+  about a second: on the Apple silicon machine this was measured on, `whisper-cli`
+  answers a twelve-second clip in 1.57 s including the model load, against 654 MB
+  the server would hold resident between dictations. The model is the first `*.bin`
+  in `~/Library/Application Support/UniConnect/whisper`, chosen by a fixed
+  preference (`large-v3-turbo` first, plain `large` last) so the answer does not
+  depend on the order the filesystem returns; nothing is ever downloaded. A missing
+  binary or model answers `unsupported` with the reason in Spanish, and
+  `transcribe.v1` is then not advertised at all: `mobile.workspace.list` adds the
+  capability only when both are present, so the phone dictates locally instead of
+  discovering the gap mid-sentence. That check is cached for a minute, so dropping
+  a model into the folder takes effect without restarting UniConnect.
+- **Duration and conversion.** The clip's own RIFF header decides the duration and
+  whether the converter can be skipped; the MIME only picks the temporary file's
+  extension. A clip that is not a readable WAV is measured with `ffprobe` when it
+  is installed and converted with `ffmpeg` (`-ac 1 -ar 16000 -c:a pcm_s16le`), and
+  the converted WAV is measured again, which is what `seconds` reports. Every one
+  of those measurements is checked against the five-minute limit before the next
+  step runs, so an hour of audio recompressed into 3 MiB is refused before a second
+  of engine time is spent. The conversion is bounded in duration (`-t`, five
+  minutes plus ten seconds) and in output size (`-fs`), and a clip that comes out
+  against either ceiling answers `too_large` rather than quietly transcribing half
+  a dictation. Without `ffmpeg` a clip that is not already in whisper's shape
+  answers `unsupported`.
+- **Budget, jobs and threading.** The 75 s budget is stamped in the RPC handler
+  before the base64 is decoded and before any box is looked up, so that work comes
+  out of the same budget instead of being added to it, and `took_ms` is measured
+  from there too. The last 5 s are reserved for killing the child and cleaning up.
+  The deadline is a cancellable sleep on an injected clock racing the pipeline
+  inside a task group: when it wins, the sibling is cancelled, the running child is
+  killed and the call answers `io_failed`. A device may hold one dictation and the
+  host two; a second request from the same phone is refused at once, because a
+  double tap is not a queue. The device is the approved tailnet address of the live
+  connection, as in `file_put`. Nothing runs on the main thread: the handler hops to
+  an actor immediately and each dictation runs in its own detached task, so two of
+  them do not take turns.
+- **Cancellation.** The connection's own close path cancels that connection's
+  dictations, so a phone that walks away and a device whose approval is revoked both
+  stop the work rather than paying for it. Cancelling the task sends `SIGTERM` to
+  the child and `SIGKILL` two seconds later if it is still there. The signal goes to
+  the child and not to its group: `Process` offers no way to start a new session,
+  and signalling a group without one would reach UniConnect itself. `ffmpeg`,
+  `ffprobe` and `whisper-cli` spawn no grandchildren, so there is nothing else to
+  reach. A cancelled call answers `io_failed` and never returns text.
+- **Privacy and crash leftovers.** Each call gets its own 0700 directory named
+  `<pid>-<random>` under `~/Library/Caches/UniConnect/transcribe`, and the clip is
+  written with `O_EXCL|O_NOFOLLOW` and mode 0600. The directory is removed on every
+  exit path, and the removal is verified rather than assumed: a `removeItem` that
+  the filesystem refuses is retried with the permissions reopened. What a killed
+  process leaves behind is swept at the first dictation after the next start, and
+  ownership is proved by the `pid` in the name rather than by age, which proves
+  nothing when a machine can be suspended mid-dictation: a directory whose owner
+  still answers is kept, and so is anything whose name does not carry a `pid`,
+  since two UniConnect builds can share that folder. Neither the audio nor the text
+  reaches any log, and the engine's stderr is never forwarded to the phone.
+- **Transcript text.** Only whisper's own non-speech markers are dropped
+  (`[BLANK_AUDIO]`, `[Music]`, `[Applause]`, `[Silence]`, `[_TT_…]` and the like,
+  matched against a known list). A bracketed line the user actually dictated, such
+  as `[pendiente]`, is text and survives, and an unclosed bracket is text too. The
+  segments whisper emits are joined into the single line the phone pastes into its
+  composer.
+
 ### ローカルウインドウの作成と保存
 
 ショートカット、タブの追加ボタン、コマンドパレット、コンテキストメニューの

@@ -20929,6 +20929,8 @@ class TerminalController {
             result = await v2MobileFileCommit(params: request.params, peer: peer)
         case "mobile.file.abort":
             result = await v2MobileFileAbort(params: request.params, peer: peer)
+        case "mobile.audio.transcribe":
+            result = await v2MobileAudioTranscribe(params: request.params, peer: peer)
         case "mobile.workspace.list", "workspace.list":
             result = v2MobileWorkspaceList(params: request.params)
         case "mobile.workspace.update":
@@ -21456,7 +21458,7 @@ class TerminalController {
 
         var payload: [String: Any] = [
             "workspaces": workspaces,
-            "capabilities": Self.mobileWorkspaceListCapabilities
+            "capabilities": mobileWorkspaceListCapabilities
         ]
         if let createdWorkspaceID {
             payload["created_workspace_id"] = createdWorkspaceID
@@ -21472,7 +21474,16 @@ class TerminalController {
     /// `box_update`: favoritos y orden compartidos (`mobile.workspace.update`,
     /// `mobile.terminal.update`, `is_pinned` en cada terminal, fijados primero).
     /// `file_put.v1`: adjuntar archivos desde el móvil (`mobile.file.begin/chunk/commit/abort`).
-    private static let mobileWorkspaceListCapabilities: [String] = ["activity.v1", "box_update", "file_put.v1"]
+    /// `transcribe.v1`: dictado transcrito en el equipo (`mobile.audio.transcribe`), y solo si
+    /// aquí hay motor y modelo: anunciarlo sin ellos dejaría al móvil sin dictado, en vez de
+    /// hacerle usar el suyo local.
+    private var mobileWorkspaceListCapabilities: [String] {
+        var capabilities = ["activity.v1", "box_update", "file_put.v1"]
+        if mobileTranscriptionAvailability.isAvailable() {
+            capabilities.append("transcribe.v1")
+        }
+        return capabilities
+    }
 
     // MARK: - file_put.v1
 
@@ -21653,6 +21664,122 @@ class TerminalController {
             return mobileFilePutResult(error)
         } catch {
             return .err(code: "io_failed", message: String(describing: error), data: nil)
+        }
+    }
+
+    // MARK: - transcribe.v1
+
+    /// Servicio de dictado del móvil; todo su trabajo corre fuera del hilo principal.
+    private let mobileTranscriptionService = MobileTranscriptionService()
+
+    /// Respuesta guardada de si este equipo puede anunciar `transcribe.v1`.
+    private var mobileTranscriptionAvailability = MobileTranscriptionAvailability()
+
+    /// Mata los dictados de una conexión que acaba de cerrarse.
+    ///
+    /// - Parameter connectionID: Conexión cerrada, ya sea porque el móvil se fue o porque se
+    ///   le retiró la aprobación al dispositivo.
+    func mobileTranscriptionCancel(connectionID: UUID) async {
+        await mobileTranscriptionService.cancel(connectionID: connectionID)
+    }
+
+    private func mobileTranscriptionResult(_ error: MobileTranscriptionError) -> V2CallResult {
+        .err(code: error.code, message: error.message, data: nil)
+    }
+
+    private func mobileTranscriptionLockedError() -> V2CallResult? {
+        guard UniConnectAppLock.shared.isLocked else { return nil }
+        return .err(
+            code: "locked",
+            message: String(
+                localized: "uniconnect.mobile.transcribe.locked",
+                defaultValue: "Desbloquea UniConnect para dictar en este equipo."
+            ),
+            data: nil
+        )
+    }
+
+    /// Comprueba el contexto opcional de un dictado.
+    ///
+    /// `workspace_id` y `terminal_id` no hacen falta: el móvil puede dictar apuntando a una
+    /// ventana que vive en otro equipo, y entonces aquí no hay ninguna caja que buscar. Lo que
+    /// sí venga tiene que existir, para que el móvil se entere de que su ventana ya no está en
+    /// vez de recibir un texto que no va a poder pegar en ninguna parte.
+    @MainActor
+    private func mobileTranscriptionContextError(params: [String: Any]) -> V2CallResult? {
+        let alias = mobileTerminalAliasUUID(params: params)
+        if let error = mobileTerminalAliasValidationError(params: params) { return error }
+        if let error = mobileWorkspaceIDValidationError(params: params) { return error }
+        let workspaceID = v2HasNonNullParam(params, "workspace_id") ? v2UUID(params, "workspace_id") : nil
+        var terminalID: UUID?
+        if case let .value(value) = alias { terminalID = value }
+        guard workspaceID != nil || terminalID != nil else { return nil }
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
+        }
+        if let workspaceID {
+            guard let located = mobileLocateWorkspace(workspaceID, preferring: tabManager) else {
+                return .err(
+                    code: "invalid_params",
+                    message: String(localized: "uniconnect.shared.no.se.encontr.la.caja", defaultValue: "No se encontró la caja"),
+                    data: nil
+                )
+            }
+            if let terminalID, located.workspace.terminalPanel(for: terminalID) == nil {
+                return .err(
+                    code: "invalid_params",
+                    message: String(localized: "uniconnect.shared.no.se.encontr.la.ventana", defaultValue: "No se encontró la ventana"),
+                    data: nil
+                )
+            }
+            return nil
+        }
+        guard let terminalID else { return nil }
+        let managers = UniConnectCoordinator.shared.allTabManagers()
+        let exists = ([tabManager] + managers).contains { manager in
+            manager.tabs.contains { $0.terminalPanel(for: terminalID) != nil }
+        }
+        guard exists else {
+            return .err(
+                code: "invalid_params",
+                message: String(localized: "uniconnect.shared.no.se.encontr.la.ventana", defaultValue: "No se encontró la ventana"),
+                data: nil
+            )
+        }
+        return nil
+    }
+
+    /// `mobile.audio.transcribe {audio, mime, language?, workspace_id?, terminal_id?}` →
+    /// `{text, engine, seconds, took_ms}` (contrato `transcribe.v1`).
+    @MainActor
+    private func v2MobileAudioTranscribe(params: [String: Any], peer: MobileHostPeerIdentity?) async -> V2CallResult {
+        // El presupuesto de la llamada arranca aquí, antes de decodificar el base64 y antes de
+        // buscar caja ninguna, para que ese trabajo salga del mismo plazo en vez de sumarse.
+        let startedAt = ContinuousClock.now
+        if let error = mobileTranscriptionLockedError() { return error }
+        if let error = mobileTranscriptionContextError(params: params) { return error }
+        do {
+            let outcome = try await mobileTranscriptionService.transcribe(
+                base64: params["audio"] as? String,
+                mime: v2RawString(params, "mime"),
+                language: v2RawString(params, "language"),
+                device: peer?.address,
+                connectionID: peer?.connectionID,
+                startedAt: startedAt
+            )
+            return .ok([
+                "text": outcome.text,
+                "engine": outcome.engine,
+                "seconds": outcome.seconds,
+                "took_ms": outcome.tookMs,
+            ])
+        } catch let error as MobileTranscriptionError {
+            return mobileTranscriptionResult(error)
+        } catch {
+            return mobileTranscriptionResult(.ioFailed(String(
+                localized: "uniconnect.mobile.transcribe.ioFailed",
+                defaultValue: "No se pudo transcribir el audio en el equipo."
+            )))
         }
     }
 

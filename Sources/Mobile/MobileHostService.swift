@@ -1044,6 +1044,9 @@ final class MobileHostService {
                 },
                 onClose: { id in
                     MobileHostConnectionRegistry.shared.remove(id: id)
+                    // transcribe.v1 no sigue gastando núcleos en un dictado que ya no le
+                    // llegará a nadie: al cerrarse la conexión se mata su proceso hijo.
+                    await TerminalController.shared.mobileTranscriptionCancel(connectionID: id)
                     await MobileHostService.shared.removeConnection(id: id)
                 }
             )
