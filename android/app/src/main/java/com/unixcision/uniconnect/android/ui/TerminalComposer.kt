@@ -54,6 +54,7 @@ import com.unixcision.uniconnect.android.domain.DictationState
 import com.unixcision.uniconnect.android.domain.DictationTarget
 import com.unixcision.uniconnect.android.domain.TerminalKeyEncoder
 import com.unixcision.uniconnect.android.domain.TerminalModifiers
+import com.unixcision.uniconnect.android.domain.Transcriber
 import com.unixcision.uniconnect.android.domain.TranscriptionCandidate
 import com.unixcision.uniconnect.android.domain.TranscriptionMode
 import com.unixcision.uniconnect.android.domain.TranscriptionNotice
@@ -110,8 +111,10 @@ fun TerminalComposer(
     val dictationState by (dictation?.state ?: idle).collectAsStateWithLifecycle()
     val listening = dictationState as? DictationState.Listening
     val transcribing = dictationState as? DictationState.Transcribing
-    val idleName = remember { MutableStateFlow<String?>(null) }
+    val idleName = remember { MutableStateFlow<Transcriber?>(null) }
     val transcriber by (dictation?.transcriber ?: idleName).collectAsStateWithLifecycle()
+    val idleNotice = remember { MutableStateFlow<TranscriptionNotice?>(null) }
+    val engineNotice by (dictation?.notice ?: idleNotice).collectAsStateWithLifecycle()
     var notice by remember { mutableStateOf<Int?>(null) }
     var offerSettings by remember { mutableStateOf(false) }
     var retry by remember { mutableStateOf(DictationRetry.NONE) }
@@ -141,6 +144,12 @@ fun TerminalComposer(
             else -> {}
         }
     }
+    LaunchedEffect(engineNotice) {
+        engineNotice?.let {
+            notice = it.message
+            dictation?.clearNotice()
+        }
+    }
     // What the reader asked for is remembered across the permission prompt: a retry after "no
     // machine can" is a dictation on the phone whatever the setting says, and "use the machine"
     // means a machine and nothing else, however long the prompt takes.
@@ -158,7 +167,7 @@ fun TerminalComposer(
             offerSettings = false
             retry = DictationRetry.NONE
             lastFailure = null
-            dictation?.start(dictationLanguage, mode, transcribers, dictationTarget, transcriptionMachine)?.let { notice = it.message }
+            dictation?.start(dictationLanguage, mode, transcribers, dictationTarget, transcriptionMachine)
         }
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -185,7 +194,7 @@ fun TerminalComposer(
                 Icon(if (keysVisible) Icons.Rounded.KeyboardHide else Icons.Rounded.Keyboard, stringResource(if (keysVisible) R.string.keys_hide else R.string.keys_show))
             }
             if (listening != null) DictationBar(listening, Modifier.weight(1f), onCancel = { dictation?.cancel() }, onDone = { dictation?.stop() })
-            else if (transcribing != null) TranscribingBar(transcribing.cut, Modifier.weight(1f), onCancel = { dictation?.cancel() })
+            else if (transcribing != null) TranscribingBar(transcribing, Modifier.weight(1f), onCancel = { dictation?.cancel() })
             else Row(
                 Modifier.weight(1f).background(UniTheme.colors.surface, UniTheme.shapes.card)
                     .border(1.dp, UniTheme.colors.outlineFade, UniTheme.shapes.card)
@@ -248,9 +257,13 @@ fun TerminalComposer(
                 }
             }
         }
-        transcriber?.takeIf { listening != null || transcribing != null }?.let { name ->
+        transcriber?.takeIf { listening != null || transcribing != null }?.let { who ->
             Text(
-                stringResource(R.string.dictation_transcribed_by, name),
+                when (who) {
+                    is Transcriber.OtherMachine -> stringResource(R.string.dictation_transcribed_by, who.name)
+                    Transcriber.PhoneWhisper -> stringResource(R.string.dictation_transcribed_by_whisper)
+                    Transcriber.PhoneRecogniser -> stringResource(R.string.dictation_transcribed_by_recogniser)
+                },
                 Modifier.padding(top = 4.dp, start = 4.dp),
                 color = UniTheme.colors.muted, style = MaterialTheme.typography.labelSmall,
             )
@@ -307,6 +320,7 @@ fun TerminalComposer(
             val note = when {
                 listening?.recording == true -> R.string.dictation_recording_note
                 listening != null -> R.string.dictation_note
+                transcribing?.onDevice == true -> R.string.dictation_transcribing_local_note
                 transcribing != null -> R.string.dictation_transcribing_note
                 else -> R.string.terminal_send_note
             }
@@ -372,10 +386,13 @@ private fun DictationBar(listening: DictationState.Listening, modifier: Modifier
     }
 }
 
-/** The wait for the machine's text; [cut] when the recording ended at the five-minute limit. */
+/**
+ * The wait for the text: on a machine, which says nothing until it answers, or here, where Whisper
+ * reports how far along it is and the percentage is the only sign that a phone is working at all.
+ */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun TranscribingBar(cut: Boolean, modifier: Modifier, onCancel: () -> Unit) {
+private fun TranscribingBar(transcribing: DictationState.Transcribing, modifier: Modifier, onCancel: () -> Unit) {
     val colors = UniTheme.colors
     Row(
         modifier.background(colors.surface, UniTheme.shapes.card).border(1.dp, colors.accent.copy(alpha = .5f), UniTheme.shapes.card)
@@ -384,9 +401,21 @@ private fun TranscribingBar(cut: Boolean, modifier: Modifier, onCancel: () -> Un
     ) {
         LoadingIndicator(Modifier.size(20.dp), color = colors.accent)
         Text(
-            stringResource(if (cut) R.string.dictation_transcribing_cut else R.string.dictation_transcribing),
+            stringResource(
+                when {
+                    transcribing.onDevice && transcribing.cut -> R.string.dictation_transcribing_local_cut
+                    transcribing.onDevice -> R.string.dictation_transcribing_local
+                    transcribing.cut -> R.string.dictation_transcribing_cut
+                    else -> R.string.dictation_transcribing
+                }
+            ),
             Modifier.weight(1f).padding(vertical = 8.dp),
             style = MaterialTheme.typography.bodyMedium, color = colors.muted, maxLines = 2, overflow = TextOverflow.Ellipsis,
+        )
+        if (transcribing.progress >= 0f) Text(
+            "${(transcribing.progress * 100).toInt()} %",
+            style = MaterialTheme.typography.labelLarge, fontFamily = FontFamily.Monospace,
+            color = colors.accent, fontWeight = FontWeight.Bold,
         )
         IconButton(onClick = onCancel, Modifier.size(36.dp)) { Icon(Icons.Rounded.Close, stringResource(R.string.dictation_cancel), Modifier.size(18.dp), tint = colors.muted) }
     }
@@ -427,14 +456,18 @@ private val DictationFailure.message: Int
         DictationFailure.HOST_UNSUPPORTED -> R.string.dictation_failed_no_transcriber
         DictationFailure.HOST_FAILED -> R.string.dictation_failed_host
         DictationFailure.HOST_UNREACHABLE -> R.string.dictation_failed_host_offline
+        DictationFailure.LOCAL_NO_MODEL -> R.string.dictation_failed_local_no_model
+        DictationFailure.LOCAL_FAILED -> R.string.dictation_failed_local
+        DictationFailure.LOCAL_UNREADABLE -> R.string.dictation_failed_local_unreadable
     }
 
 /** The line about which engine ended up running. */
 private val TranscriptionNotice.message: Int
     get() = when (this) {
         TranscriptionNotice.HOST_CANNOT -> R.string.dictation_host_cannot
-        TranscriptionNotice.HOST_REQUIRED_UNAVAILABLE -> R.string.dictation_host_required_unavailable
         TranscriptionNotice.CHOSEN_UNAVAILABLE -> R.string.dictation_chosen_unavailable
+        TranscriptionNotice.LOCAL_UNAVAILABLE -> R.string.dictation_local_unavailable
+        TranscriptionNotice.LOCAL_FAILED_HANDED_OVER -> R.string.dictation_local_failed_handed_over
     }
 
 private fun openAppSettings(context: android.content.Context) {

@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,11 +30,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.AppSettings
 import com.unixcision.uniconnect.android.domain.ColorMode
 import com.unixcision.uniconnect.android.domain.DesignTheme
+import com.unixcision.uniconnect.android.domain.ByteSize
 import com.unixcision.uniconnect.android.domain.DictationLanguage
+import com.unixcision.uniconnect.android.domain.SpeechModel
+import com.unixcision.uniconnect.android.domain.SpeechModelFailure
+import com.unixcision.uniconnect.android.domain.SpeechModelState
 import com.unixcision.uniconnect.android.domain.TerminalView
 import com.unixcision.uniconnect.android.domain.TranscriptionCandidate
 import com.unixcision.uniconnect.android.domain.TranscriptionMode
@@ -52,7 +58,13 @@ import com.unixcision.uniconnect.android.ui.theme.UniTokens
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsSheet(settings: AppSettings, transcribers: List<TranscriptionCandidate>, onChange: (AppSettings) -> Unit, onDismiss: () -> Unit) {
+fun SettingsSheet(
+    settings: AppSettings,
+    transcribers: List<TranscriptionCandidate>,
+    dictation: DictationViewModel?,
+    onChange: (AppSettings) -> Unit,
+    onDismiss: () -> Unit,
+) {
     val context = LocalContext.current
     val version = remember(context) {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty()
@@ -128,22 +140,33 @@ fun SettingsSheet(settings: AppSettings, transcribers: List<TranscriptionCandida
             SettingsSection(stringResource(R.string.settings_voice)) {
                 Text(stringResource(R.string.settings_transcription), style = MaterialTheme.typography.bodyMedium)
                 Text(stringResource(R.string.settings_transcription_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 6.dp)) {
-                    TranscriptionMode.entries.forEachIndexed { index, mode ->
-                        SegmentedButton(
+                // A row of segments could not say who transcribes, and that is the only thing worth
+                // saying here: each way gets a line of its own under its name.
+                Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                    TranscriptionMode.entries.forEach { mode ->
+                        ChoiceRow(
+                            title = stringResource(mode.label),
+                            note = stringResource(mode.note),
                             selected = settings.transcription == mode,
                             // Picking "one machine" with none picked yet starts on the first that can.
-                            onClick = {
+                            onSelect = {
                                 val chosen = if (mode == TranscriptionMode.MACHINE) settings.transcriptionMachine ?: transcribers.firstOrNull { it.transcribes }?.machine?.id
                                 else settings.transcriptionMachine
                                 onChange(settings.copy(transcription = mode, transcriptionMachine = chosen))
                             },
-                            shape = SegmentedButtonDefaults.itemShape(index, TranscriptionMode.entries.size),
-                            colors = segmentColors(),
-                        ) { Text(stringResource(mode.label), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        )
+                        if (mode == TranscriptionMode.MACHINE && settings.transcription == TranscriptionMode.MACHINE) {
+                            TranscriberPicker(settings, transcribers, onChange)
+                        }
+                        if (mode == TranscriptionMode.LOCAL && settings.transcription == TranscriptionMode.LOCAL && dictation?.localReady != true) {
+                            Text(
+                                stringResource(if (dictation?.whisperRuns == false) R.string.settings_whisper_unsupported else R.string.settings_whisper_needs_model),
+                                Modifier.padding(start = 32.dp, bottom = 4.dp),
+                                color = UniTheme.colors.warning, style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
                     }
                 }
-                if (settings.transcription == TranscriptionMode.MACHINE) TranscriberPicker(settings, transcribers, onChange)
                 SettingsSwitch(
                     title = stringResource(R.string.settings_send_on_dictation),
                     note = stringResource(R.string.settings_send_on_dictation_note),
@@ -159,6 +182,33 @@ fun SettingsSheet(settings: AppSettings, transcribers: List<TranscriptionCandida
                             shape = SegmentedButtonDefaults.itemShape(index, DictationLanguage.entries.size),
                             colors = segmentColors(),
                         ) { Text(stringResource(language.label), style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    }
+                }
+            }
+
+            if (dictation != null) SettingsSection(stringResource(R.string.settings_speech_models)) {
+                Text(stringResource(R.string.settings_speech_models_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
+                if (!dictation.whisperRuns) Text(
+                    stringResource(R.string.settings_whisper_unsupported),
+                    color = UniTheme.colors.warning, style = MaterialTheme.typography.labelSmall,
+                ) else {
+                    val states by dictation.models.collectAsStateWithLifecycle()
+                    SpeechModel.entries.forEach { model ->
+                        SpeechModelRow(
+                            model = model,
+                            state = states[model] ?: SpeechModelState.Missing,
+                            onDownload = { dictation.download(model) },
+                            onCancel = { dictation.cancelDownload(model) },
+                            onDelete = { dictation.deleteModel(model) },
+                        )
+                    }
+                    // Measured, not promised. How long this phone takes is the only thing that
+                    // decides whether the model is worth keeping, and it depends on the phone.
+                    dictation.lastWhisperRun()?.takeIf { it.tookMillis > 0 }?.let { run ->
+                        Text(
+                            stringResource(R.string.speech_model_last_run, "%.0f".format(run.seconds), "%.1f".format(run.tookMillis / 1000.0)),
+                            Modifier.padding(top = 4.dp), color = UniTheme.colors.muted, style = MaterialTheme.typography.labelSmall,
+                        )
                     }
                 }
             }
@@ -312,10 +362,120 @@ private fun TranscriberPicker(settings: AppSettings, transcribers: List<Transcri
 private val TranscriptionMode.label: Int
     get() = when (this) {
         TranscriptionMode.AUTO -> R.string.transcription_auto
-        TranscriptionMode.PHONE -> R.string.transcription_phone
-        TranscriptionMode.HOST -> R.string.transcription_host
         TranscriptionMode.MACHINE -> R.string.transcription_machine
+        TranscriptionMode.LOCAL -> R.string.transcription_local
+        TranscriptionMode.PHONE -> R.string.transcription_phone
     }
+
+/** The sentence under it, which says who ends up transcribing. */
+private val TranscriptionMode.note: Int
+    get() = when (this) {
+        TranscriptionMode.AUTO -> R.string.transcription_auto_note
+        TranscriptionMode.MACHINE -> R.string.transcription_machine_note
+        TranscriptionMode.LOCAL -> R.string.transcription_local_note
+        TranscriptionMode.PHONE -> R.string.transcription_phone_note
+    }
+
+/** The visible name of a model, and the sentence that says what it costs. */
+private val SpeechModel.label: Int
+    get() = when (this) {
+        SpeechModel.BASE -> R.string.speech_model_base
+        SpeechModel.SMALL -> R.string.speech_model_small
+    }
+
+private val SpeechModel.note: Int
+    get() = when (this) {
+        SpeechModel.BASE -> R.string.speech_model_base_note
+        SpeechModel.SMALL -> R.string.speech_model_small_note
+    }
+
+/** Why a download did not finish, in the reader's words. */
+private val SpeechModelFailure.message: Int
+    get() = when (this) {
+        SpeechModelFailure.NO_SPACE -> R.string.speech_model_no_space
+        SpeechModelFailure.NETWORK -> R.string.speech_model_network
+        SpeechModelFailure.CORRUPT -> R.string.speech_model_corrupt
+        SpeechModelFailure.WRITE_FAILED -> R.string.speech_model_write_failed
+    }
+
+/**
+ * One way of transcribing, with the sentence that says who does it. A radio and two lines, not a
+ * segment: the name alone ("Automática") does not tell anyone where their voice goes.
+ */
+@Composable
+private fun ChoiceRow(title: String, note: String, selected: Boolean, onSelect: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().selectable(selected = selected, role = Role.RadioButton, onClick = onSelect).padding(vertical = 6.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        RadioButton(
+            selected = selected, onClick = null,
+            colors = RadioButtonDefaults.colors(selectedColor = UniTheme.colors.accent, unselectedColor = UniTheme.colors.outline),
+        )
+        Column(Modifier.padding(start = 8.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, color = if (selected) UniTheme.colors.accent else UniTheme.colors.text)
+            Text(note, color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+/**
+ * One Whisper model: what it is, what it costs and the single thing worth doing to it right now.
+ *
+ * Nothing here starts on its own. A model is fetched because this button was pressed, the bar
+ * shows what is on the phone rather than what this attempt fetched (so a resumed download does not
+ * appear to start over), and deleting says how much storage comes back.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun SpeechModelRow(
+    model: SpeechModel,
+    state: SpeechModelState,
+    onDownload: () -> Unit,
+    onCancel: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                Text(stringResource(model.label), style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(model.note, ByteSize.format(model.bytes)), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
+            }
+            when (state) {
+                is SpeechModelState.Downloading -> TextButton(onClick = onCancel, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
+                    Text(stringResource(R.string.speech_model_stop), style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
+                }
+                is SpeechModelState.Ready -> IconButton(onClick = onDelete, Modifier.size(36.dp)) {
+                    Icon(Icons.Rounded.Delete, stringResource(R.string.speech_model_delete), Modifier.size(18.dp), tint = UniTheme.colors.muted)
+                }
+                else -> TextButton(onClick = onDownload, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
+                    Text(
+                        stringResource(if (state is SpeechModelState.Paused) R.string.speech_model_resume else R.string.speech_model_download),
+                        style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false,
+                    )
+                }
+            }
+        }
+        val status = when (state) {
+            SpeechModelState.Missing -> stringResource(R.string.speech_model_missing)
+            is SpeechModelState.Downloading -> stringResource(R.string.speech_model_downloading, ByteSize.percent(state.downloaded, state.total), ByteSize.format(state.downloaded))
+            is SpeechModelState.Paused -> stringResource(R.string.speech_model_paused, ByteSize.percent(state.downloaded, state.total))
+            is SpeechModelState.Ready -> stringResource(R.string.speech_model_ready, ByteSize.format(state.bytes))
+            is SpeechModelState.Failed -> stringResource(state.reason.message)
+        }
+        Text(
+            status,
+            color = if (state is SpeechModelState.Failed) UniTheme.colors.warning else UniTheme.colors.muted,
+            style = MaterialTheme.typography.labelSmall,
+        )
+        if (state is SpeechModelState.Downloading || state is SpeechModelState.Paused) LinearProgressIndicator(
+            progress = { state.fraction },
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            color = UniTheme.colors.accent,
+            trackColor = UniTheme.colors.outline,
+        )
+    }
+}
 
 /** The visible name of a dictation language. */
 private val DictationLanguage.label: Int

@@ -199,7 +199,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
             }
         }
     }
-    if (state.showingSettings) SettingsSheet(state.settings, transcribers, model::updateSettings, model::dismissSettings)
+    if (state.showingSettings) SettingsSheet(state.settings, transcribers, dictation, model::updateSettings, model::dismissSettings)
     if (state.adding) MachineSheet(state.saving, state.formError, onDismiss = model::dismissAdd, onSave = model::saveMachine)
     state.editing?.let { target ->
         MachineSheet(state.saving, state.formError, machine = target, onDismiss = model::dismissEdit, onSave = model::saveMachine)
