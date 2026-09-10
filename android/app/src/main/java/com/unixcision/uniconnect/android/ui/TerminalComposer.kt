@@ -259,7 +259,7 @@ fun TerminalComposer(
             Row(Modifier.fillMaxWidth().padding(top = 4.dp, start = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(stringResource(message), Modifier.weight(1f), color = UniTheme.colors.warning, style = MaterialTheme.typography.labelSmall)
                 if (offerSettings) TextButton(onClick = { openAppSettings(context) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                    Text(stringResource(R.string.dictation_permission_settings), style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.dictation_permission_settings), style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
                 }
                 // The kept recording travels once more; a recording the machine will never take is
                 // recorded again instead.
@@ -293,7 +293,7 @@ fun TerminalComposer(
                         },
                         enabled = enabled && !sending,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    ) { Text(stringResource(label), style = MaterialTheme.typography.labelMedium) }
+                    ) { Text(stringResource(label), style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false) }
                 }
                 IconButton(onClick = { notice = null; offerSettings = false; retry = DictationRetry.NONE; lastFailure = null; dictation?.discard() }, Modifier.size(24.dp)) { Icon(Icons.Rounded.Close, stringResource(R.string.dismiss), Modifier.size(14.dp), tint = UniTheme.colors.muted) }
             }
@@ -310,10 +310,24 @@ fun TerminalComposer(
                 transcribing != null -> R.string.dictation_transcribing_note
                 else -> R.string.terminal_send_note
             }
-            Text(stringResource(note), color = UniTheme.colors.muted, style = MaterialTheme.typography.labelSmall)
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = { submit(false) }, enabled = enabled && !sending && draft.isNotEmpty() && listening == null && transcribing == null, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
-                Text(stringResource(R.string.terminal_send_raw), style = MaterialTheme.typography.labelMedium)
+            // The note takes what is left and gives way with an ellipsis. Without a weight it
+            // claimed its whole intrinsic width and squeezed the button beside it until its label
+            // broke one letter per line.
+            Text(
+                stringResource(note), Modifier.weight(1f), color = UniTheme.colors.muted,
+                style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+            // While dictating there is nothing to send raw, and the button is disabled anyway:
+            // taking it out of the row leaves the note the whole width instead of a sliver each.
+            if (listening == null && transcribing == null) TextButton(
+                onClick = { submit(false) },
+                enabled = enabled && !sending && draft.isNotEmpty(),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+            ) {
+                Text(
+                    stringResource(R.string.terminal_send_raw), style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -332,7 +346,7 @@ private fun DictationBar(listening: DictationState.Listening, modifier: Modifier
     val colors = UniTheme.colors
     Row(
         modifier.background(colors.surface, UniTheme.shapes.card).border(1.dp, colors.accent.copy(alpha = .5f), UniTheme.shapes.card)
-            .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            .padding(start = 14.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         VoiceMeter(listening.level)
@@ -365,7 +379,7 @@ private fun TranscribingBar(cut: Boolean, modifier: Modifier, onCancel: () -> Un
     val colors = UniTheme.colors
     Row(
         modifier.background(colors.surface, UniTheme.shapes.card).border(1.dp, colors.accent.copy(alpha = .5f), UniTheme.shapes.card)
-            .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            .padding(start = 14.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         LoadingIndicator(Modifier.size(20.dp), color = colors.accent)

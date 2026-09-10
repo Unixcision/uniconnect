@@ -255,6 +255,11 @@ porque no existe: lleva el medidor de nivel (`maxAmplitude`, con raíz cuadrada 
 un cronómetro que se vuelve ámbar en 4:30, Cancelar y Listo. A los 5 minutos corta sola y avisa
 («Cortado a los 5 minutos; transcribiendo…»).
 
+El pie del compositor se adapta a la barra: la línea de ayuda se lleva el ancho sobrante y se
+recorta con puntos suspensivos, y «Solo texto» desaparece mientras se dicta (ahí está deshabilitado
+de todas formas) en vez de quedarse en un hueco tan estrecho que su rótulo se partía en vertical,
+letra por letra. Ningún botón de esa zona puede partirse ya: van a una línea sin salto.
+
 Al pulsar Listo el audio viaja entero en una llamada por el mismo transporte enmarcado que los
 adjuntos: `mobile.audio.transcribe {audio: <base64>, mime: "audio/mp4", language?, workspace_id,
 terminal_id}` → `{text, engine, seconds, took_ms}`, con 90 s de plazo (`data/NativeHostTranscription`).

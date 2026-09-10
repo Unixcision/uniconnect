@@ -218,3 +218,17 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
   vivo a la cajita. La calidad es mala («me entiende fatal»), así que el camino bueno sigue siendo
   Whisper del equipo. Lo del umbral de 1,5 s es heurística nuestra, no un diagnóstico del modelo
   ausente, y los extras de silencio pueden ser ignorados por el motor: documentado como tal.
+
+## Retoque visual del compositor (10 de septiembre de 2026)
+
+- Visto por el usuario en el Pixel con captura: mientras la barra de dictado está activa, «Solo
+  texto» se partía en vertical (una letra por línea) porque la línea de ayuda reclamaba todo su
+  ancho y dejaba al botón un hueco de pocos píxeles.
+- La línea de ayuda pasa a tener peso y recorte con puntos suspensivos, «Solo texto» se retira
+  mientras se dicta o se transcribe (ahí ya estaba deshabilitado), y los botones del aviso van a una
+  línea sin salto. Las barras de grabación y de transcripción respiran a la derecha como el campo.
+- El rótulo de la barra se acorta a «Grabando para el equipo»: la explicación de Listo y Cancelar ya
+  estaba en la línea de ayuda de abajo, así que sobraba repetirla y le quitaba sitio al cronómetro.
+- No verificado en pantalla por mí: no abro emuladores ni instalo en el móvil. Es maquetación
+  razonada, pendiente de que el usuario la mire en el Pixel, y conviene comprobarla también con el
+  tema Nieve y con la fila de teclas abierta.

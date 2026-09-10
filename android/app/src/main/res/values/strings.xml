@@ -317,7 +317,7 @@
     <string name="dictation_language_device">El del móvil</string>
     <string name="dictation_language_es">es-ES</string>
     <string name="dictation_language_en">en-US</string>
-    <string name="dictation_recording">Grabando para el equipo; se transcribe al pulsar Listo</string>
+    <string name="dictation_recording">Grabando para el equipo</string>
     <string name="dictation_recording_note">Grabando. Listo lo manda al equipo para transcribirlo; Cancelar lo descarta.</string>
     <string name="dictation_transcribing">Transcribiendo en el equipo…</string>
     <string name="dictation_transcribing_cut">Cortado a los 5 minutos; transcribiendo en el equipo…</string>
