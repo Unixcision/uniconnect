@@ -256,8 +256,12 @@ fun TerminalComposer(
                     DictationRetry.RESEND -> R.string.dictation_retry
                     DictationRetry.RERECORD -> R.string.dictation_record_again.takeIf { canDictate }
                     DictationRetry.DICTATE_ON_PHONE -> R.string.dictation_record_again.takeIf { dictation?.phoneListens == true }
+                    // Offered only when the automatic rule would really reach a machine: a machine
+                    // that already answered that it has no engine is not an alternative to anything.
                     DictationRetry.NONE ->
-                        R.string.dictation_use_machine.takeIf { lastFailure == DictationFailure.RECOGNISER_SILENT && transcribers.any { candidate -> candidate.ready } }
+                        R.string.dictation_use_machine.takeIf {
+                            lastFailure == DictationFailure.RECOGNISER_SILENT && dictation?.machineWouldTranscribe(transcribers, dictationTarget) == true
+                        }
                 }
                 offer?.let { label ->
                     TextButton(
@@ -270,8 +274,11 @@ fun TerminalComposer(
                             when (kind) {
                                 DictationRetry.RESEND -> dictation?.resend()
                                 DictationRetry.DICTATE_ON_PHONE -> startDictation(TranscriptionMode.PHONE)
-                                // The phone's engine is the one that failed: let a machine listen.
-                                DictationRetry.NONE -> startDictation(TranscriptionMode.AUTO)
+                                // The phone's engine is the one that failed: let a machine listen,
+                                // and say so if the machines stopped being able while the line was up.
+                                DictationRetry.NONE ->
+                                    if (dictation?.machineWouldTranscribe(transcribers, dictationTarget) == true) startDictation(TranscriptionMode.AUTO)
+                                    else notice = R.string.dictation_no_machine_now
                                 else -> startDictation(transcription)
                             }
                         },

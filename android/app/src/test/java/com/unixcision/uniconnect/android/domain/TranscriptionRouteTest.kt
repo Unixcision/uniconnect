@@ -68,6 +68,20 @@ class TranscriptionRouteTest {
     }
 
     @Test
+    fun machinesThatAlreadyRefusedAreNotAnAlternativeToAPhoneThatFailed() {
+        // The phone's recogniser gave up and the screen wants to offer the machines instead; both
+        // are connected and announce the capability, but both already answered that they cannot.
+        val both = listOf(
+            TranscriptionCandidate(linux, transcribes = true, connected = true),
+            TranscriptionCandidate(mac, transcribes = true, connected = true),
+        )
+        assertTrue("they look able", both.all { it.ready })
+        val route = TranscriptionRoute.decide(TranscriptionMode.AUTO, both, windowMachineID = "linux", refused = setOf("linux", "mac"))
+        assertEquals("so there is nothing to offer: this would land back on the phone", TranscriptionEngine.PHONE, route.engine)
+        assertNull(route.machine)
+    }
+
+    @Test
     fun withNoMachineAbleThePhoneDictates() {
         val route = TranscriptionRoute.decide(TranscriptionMode.AUTO, listOf(TranscriptionCandidate(linux, transcribes = false, connected = true)), windowMachineID = "linux")
         assertEquals(TranscriptionEngine.PHONE, route.engine)

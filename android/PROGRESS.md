@@ -203,5 +203,14 @@ Actualizado: 2026-09-05. Responsable: agente `bridge_lifecycle_audit`.
 - La barra se publica al tocar el micrófono, antes de la primera llamada del motor.
 - Extras de silencio (1,5 s / 1,5 s) y mínimo (2 s) en el intent, y `EXTRA_LANGUAGE` con la etiqueta
   del sistema cuando el ajuste es «El del móvil»; nunca una etiqueta vacía.
-- 14 pruebas JVM nuevas (recuperación del motor, idioma del reconocedor, la barra antes de cualquier
-  resultado). 258 tests en total, 0 fallos. Falta probarlo en el Pixel: lo hace el usuario.
+- Cada intento lleva número (`domain/DictationAttempts`): cancelar entre el fallo de un motor y su
+  reintento encolado ya no reabre el micrófono ni deja caer resultados tardíos.
+- «Usar el equipo» comparte ruta con la acción: solo se ofrece si la regla automática llegaría de
+  verdad a una máquina (las que ya dijeron `unsupported` no cuentan) y se revalida al pulsar.
+- 19 pruebas JVM nuevas (recuperación del motor, idioma del reconocedor, la barra antes de cualquier
+  resultado, invalidación de intentos, máquinas rechazadas que no son alternativa). 263 tests, 0
+  fallos.
+- PROBADO EN EL PIXEL por el usuario tras el arreglo: el dictado local ya funciona y transcribe en
+  vivo a la cajita. La calidad es mala («me entiende fatal»), así que el camino bueno sigue siendo
+  Whisper del equipo. Lo del umbral de 1,5 s es heurística nuestra, no un diagnóstico del modelo
+  ausente, y los extras de silencio pueden ser ignorados por el motor: documentado como tal.

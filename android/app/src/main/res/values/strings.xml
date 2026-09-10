@@ -309,6 +309,7 @@
     <string name="dictation_failed_other">No se ha podido dictar</string>
     <string name="dictation_failed_silent">El reconocimiento de voz de este móvil no responde</string>
     <string name="dictation_use_machine">Usar el equipo</string>
+    <string name="dictation_no_machine_now">Ya no hay ningún equipo que pueda transcribir</string>
     <string name="settings_voice">Voz</string>
     <string name="settings_send_on_dictation">Enviar al terminar de dictar</string>
     <string name="settings_send_on_dictation_note">Manda lo dictado con Intro nada más terminar. Apagado, queda en la cajita para revisarlo.</string>

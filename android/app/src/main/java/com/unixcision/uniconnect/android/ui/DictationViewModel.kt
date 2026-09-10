@@ -47,6 +47,13 @@ class DictationViewModel(private val phone: Dictation, private val host: HostDic
     /** Whether the phone itself can recognise speech; without it nothing local can be promised. */
     val phoneListens: Boolean get() = phone.available
 
+    /**
+     * Whether some machine would really take a recording right now: the same rule the dictation
+     * would follow, refusals included, so nothing is offered that would quietly land on the phone.
+     */
+    fun machineWouldTranscribe(machines: List<TranscriptionCandidate>, window: DictationTarget?): Boolean =
+        route(TranscriptionMode.AUTO, machines, window, null).engine == TranscriptionEngine.HOST
+
     /** Whether a microphone is worth offering for these machines and this setting. */
     fun canDictate(mode: TranscriptionMode, machines: List<TranscriptionCandidate>, window: DictationTarget?, chosenMachineID: String?): Boolean =
         route(mode, machines, window, chosenMachineID).canDictate(phone.available)

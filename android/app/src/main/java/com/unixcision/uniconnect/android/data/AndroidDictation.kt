@@ -11,6 +11,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import com.unixcision.uniconnect.android.domain.Dictation
+import com.unixcision.uniconnect.android.domain.DictationAttempts
 import com.unixcision.uniconnect.android.domain.DictationFailure
 import com.unixcision.uniconnect.android.domain.DictationLanguage
 import com.unixcision.uniconnect.android.domain.DictationMachine
@@ -28,6 +29,10 @@ import kotlinx.coroutines.flow.StateFlow
  *
  * The bar is on screen from the moment the microphone is tapped, and a retry keeps it there: the
  * reader sees a dictation that is starting, never a button that seems to do nothing.
+ *
+ * Every try carries a number from [DictationAttempts], so a cancel between an engine's failure and
+ * the retry queued for it leaves that retry with nothing to do: the microphone never reopens on its
+ * own, and a late result never lands in a dictation the reader already left.
  */
 class AndroidDictation(private val context: Context) : Dictation {
     private val machine = DictationMachine()
@@ -37,6 +42,7 @@ class AndroidDictation(private val context: Context) : Dictation {
     private var language = DictationLanguage.DEVICE
     private var triedOnline = false
     private var startedAt = 0L
+    private val attempts = DictationAttempts()
 
     override val state: StateFlow<DictationState> get() = machine.state
 
@@ -48,7 +54,7 @@ class AndroidDictation(private val context: Context) : Dictation {
             triedOnline = false
             // The bar belongs to the reader from the tap, not from the engine's first callback.
             machine.onStarting()
-            begin(preferOffline = true)
+            begin(attempts.begin(), preferOffline = true)
         }
     }
 
@@ -56,6 +62,8 @@ class AndroidDictation(private val context: Context) : Dictation {
 
     override fun cancel() {
         main.post {
+            // Whatever is in flight stops speaking for this dictation before anything else happens.
+            attempts.abandon()
             recognizer?.cancel()
             release()
             machine.cancel()
@@ -66,13 +74,16 @@ class AndroidDictation(private val context: Context) : Dictation {
 
     override fun destroy() {
         main.post {
+            attempts.abandon()
             recognizer?.cancel()
             release()
             if (machine.state.value is DictationState.Listening) machine.cancel()
         }
     }
 
-    private fun begin(preferOffline: Boolean) {
+    private fun begin(attempt: Int, preferOffline: Boolean) {
+        // The reader cancelled, or started again, while this try was waiting its turn.
+        if (!attempts.isLive(attempt)) return
         release()
         if (!available) { machine.fail(DictationFailure.ENGINE_UNAVAILABLE); return }
         val local = preferOffline && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
@@ -82,7 +93,7 @@ class AndroidDictation(private val context: Context) : Dictation {
         if (created == null) { machine.fail(DictationFailure.ENGINE_UNAVAILABLE); return }
         onDevice = local
         // The listener goes in before listening starts, or early callbacks are lost.
-        created.setRecognitionListener(listener)
+        created.setRecognitionListener(Callbacks(attempt))
         recognizer = created
         if (machine.state.value !is DictationState.Listening) machine.onStarting()
         startedAt = SystemClock.elapsedRealtime()
@@ -101,33 +112,39 @@ class AndroidDictation(private val context: Context) : Dictation {
         if (local) putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
     }
 
-    private val listener = object : RecognitionListener {
+    /** One try's callbacks; they do nothing once that try has been left behind. */
+    private inner class Callbacks(private val attempt: Int) : RecognitionListener {
+        private val live: Boolean get() = attempts.isLive(attempt)
+
         override fun onReadyForSpeech(params: Bundle?) {}
         override fun onBeginningOfSpeech() {}
-        override fun onRmsChanged(rmsdB: Float) { machine.onLevel(rmsdB) }
+        override fun onRmsChanged(rmsdB: Float) { if (live) machine.onLevel(rmsdB) }
         override fun onBufferReceived(buffer: ByteArray?) {}
         override fun onEndOfSpeech() {}
         override fun onEvent(eventType: Int, params: Bundle?) {}
 
         override fun onPartialResults(partialResults: Bundle?) {
+            if (!live) return
             partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let { machine.onPartial(it) }
         }
 
         override fun onResults(results: Bundle?) {
+            if (!live) return
             main.post { release() }
             machine.onFinal(results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull())
         }
 
         override fun onError(error: Int) {
+            if (!live) return
             val failure = failureOf(error)
             val elapsed = SystemClock.elapsedRealtime() - startedAt
             val heard = (machine.state.value as? DictationState.Listening)?.partial?.isNotBlank() == true
-            // An engine with no model for the language aborts at once: that is not an answer about
+            // An engine that gives up before a word could have been said is not answering about
             // what was said, so the network recogniser gets the same dictation without a word to
             // the reader, and the bar stays where it is.
             if (RecogniserRecovery.retryOnline(onDevice, triedOnline, heard, elapsed, failure)) {
                 triedOnline = true
-                main.post { begin(preferOffline = false) }
+                main.post { begin(attempt, preferOffline = false) }
                 return
             }
             main.post { release() }
