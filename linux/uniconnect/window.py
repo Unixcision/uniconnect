@@ -672,13 +672,32 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             raise RPCError("invalid_params", self._("Nombre de espacio de trabajo no válido"))
         workspace = {"id": str(uuid.uuid4()), "name": name.strip(), "kind": kind, "windows": []}
         if kind == "ssh":
-            source = next((item for item in self.store.workspaces
-                           if item["id"] == params.get("source_workspace_id") and item["kind"] == "ssh"), None)
-            if source is None:
-                raise RPCError("invalid_params", self._("Elige un espacio SSH existente del que heredar la conexión"))
-            for key in ("credentialId", "hostLabel", "cwd", "color"):
-                if key in source:
-                    workspace[key] = source[key]
+            connect = params.get("connect_command")
+            if connect is not None:
+                # ssh_create.v1: the phone may send a whole connection command instead of naming a
+                # box to inherit from. It arrives inside the private tunnel and is parsed here by
+                # the same validator the desktop dialog uses, so nothing reaches the vault that
+                # this machine would not accept from its own form. It can carry a password: it is
+                # never logged and never sent back.
+                if (not isinstance(connect, str) or connect.strip() != connect or not connect
+                        or len(connect.encode()) > 4096 or not connect.isprintable()):
+                    raise RPCError("invalid_params", self._("Comando de conexión no válido"))
+                if self.vault.locked:
+                    raise RPCError("locked", self._("La bóveda privada está bloqueada"))
+                try:
+                    command = SSHCommand.parse(connect)
+                except Exception as error:
+                    raise RPCError("invalid_params", self._("Comando de conexión no válido")) from error
+                workspace["credentialId"] = self.vault.put(connect)
+                workspace["hostLabel"] = str(command.endpoint_key())
+            else:
+                source = next((item for item in self.store.workspaces
+                               if item["id"] == params.get("source_workspace_id") and item["kind"] == "ssh"), None)
+                if source is None:
+                    raise RPCError("invalid_params", self._("Elige un espacio SSH existente del que heredar la conexión"))
+                for key in ("credentialId", "hostLabel", "cwd", "color"):
+                    if key in source:
+                        workspace[key] = source[key]
         elif kind == "local":
             directory = params.get("directory")
             if not isinstance(directory, str) or not directory.startswith("/") or not Path(directory).is_dir():

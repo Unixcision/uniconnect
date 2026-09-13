@@ -21478,12 +21478,16 @@ class TerminalController {
     /// aquí hay motor y modelo: anunciarlo sin ellos dejaría al móvil sin dictado, en vez de
     /// hacerle usar el suyo local.
     private var mobileWorkspaceListCapabilities: [String] {
-        var capabilities = ["activity.v1", "box_update", "file_put.v1"]
+        var capabilities = ["activity.v1", "box_update", "file_put.v1", "ssh_create.v1"]
         if mobileTranscriptionAvailability.isAvailable() {
             capabilities.append("transcribe.v1")
         }
         return capabilities
     }
+
+    /// Longest connection command a phone may send. Well past any real `ssh`/`sshpass` line and
+    /// short enough that a hostile client cannot make the Mac parse a huge string.
+    nonisolated private static let mobileConnectCommandMaxBytes = 4096
 
     // MARK: - file_put.v1
 
@@ -22092,13 +22096,33 @@ class TerminalController {
                 )
                 UniConnectCoordinator.shared.requestSave()
             } else if kind == "ssh" {
-                guard let sourceID = v2UUID(params, "source_workspace_id"),
-                      let source = ([tabManager] + UniConnectCoordinator.shared.allTabManagers())
-                        .flatMap(\.tabs).first(where: { $0.id == sourceID }),
-                      let created = UniConnectCoordinator.shared.createSSHWorkspace(
-                          name: name, inheriting: source, in: tabManager, select: false
-                      ) else { return mobileCreationInvalidParameters() }
-                workspace = created
+                // ssh_create.v1: a phone may send a whole connection command instead of naming a
+                // box to inherit from. It travels inside the private tunnel and is validated here
+                // by the same parser the desktop sheet uses before anything is stored, so the
+                // phone can never hand the Mac a command it would not accept from its own UI.
+                // The command may carry a password: it is never logged, never echoed back, and
+                // only ever reaches the encrypted vault.
+                if let rawConnect = v2RawString(params, "connect_command") {
+                    let connect = rawConnect.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !connect.isEmpty,
+                          connect.utf8.count <= Self.mobileConnectCommandMaxBytes,
+                          !connect.contains(where: { $0.isNewline }),
+                          UniConnectSSH.validateConnectCommand(connect) == nil,
+                          let created = UniConnectCoordinator.shared.createSSHWorkspace(
+                              name: name, color: nil, connectCommand: connect, in: tabManager,
+                              select: false, finalizeCreation: false
+                          ) else { return mobileCreationInvalidParameters() }
+                    workspace = created
+                    UniConnectCoordinator.shared.requestSave()
+                } else {
+                    guard let sourceID = v2UUID(params, "source_workspace_id"),
+                          let source = ([tabManager] + UniConnectCoordinator.shared.allTabManagers())
+                            .flatMap(\.tabs).first(where: { $0.id == sourceID }),
+                          let created = UniConnectCoordinator.shared.createSSHWorkspace(
+                              name: name, inheriting: source, in: tabManager, select: false
+                          ) else { return mobileCreationInvalidParameters() }
+                    workspace = created
+                }
             } else {
                 return mobileCreationInvalidParameters()
             }

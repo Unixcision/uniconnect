@@ -88,6 +88,11 @@
     <string name="creation_agent_select">Selecciona una opción de inicio</string>
     <string name="creation_agent_note">Al crear la ventana se iniciará %1$s en la carpeta de trabajo.</string>
     <string name="creation_agents_unavailable">La máquina no ha enviado opciones de inicio. Actualiza la conexión antes de crear una ventana.</string>
+    <string name="ssh_write_connection">Escribir</string>
+    <string name="ssh_inherit_connection">Heredar</string>
+    <string name="ssh_connection_command">Comando de conexión</string>
+    <string name="ssh_connection_command_hint">Por ejemplo: ssh root@ejemplo.com, o sshpass -p \'CLAVE\' ssh usuario@ejemplo.com</string>
+    <string name="ssh_write_note">Va cifrado por la conexión privada hasta el equipo, que lo comprueba y lo guarda en su bóveda. El móvil no lo escribe en ningún sitio ni lo vuelve a recibir.</string>
     <string name="ssh_inherit_note">La dirección, el usuario y las credenciales SSH se heredan en la máquina. No se copian al móvil.</string>
     <string name="creation_invalid">Revisa el nombre, la carpeta absoluta, la opción de inicio y, si es SSH, el nombre de tmux.</string>
     <string name="creation_rejected">La máquina ha rechazado la creación. Comprueba la carpeta, la opción de inicio y, si es SSH, que el nombre tmux no esté en uso.</string>

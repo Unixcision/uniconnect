@@ -121,8 +121,12 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
         request.directory?.let { params.put("directory", it) }
         when (request) {
             is ResourceCreation.Workspace -> {
-                params.put("kind", if (request.sourceWorkspaceID == null) "local" else "ssh")
+                val ssh = request.sourceWorkspaceID != null || request.connectCommand != null
+                params.put("kind", if (ssh) "ssh" else "local")
                 request.sourceWorkspaceID?.let { params.put("source_workspace_id", it) }
+                // ssh_create.v1. The command may carry a password, so it is never logged here and
+                // never stored on the phone; the machine validates it and keeps it in its vault.
+                request.connectCommand?.let { params.put("connect_command", it) }
                 // Older hosts ignore the flag and still open one terminal; the reconciled tree tells us.
                 if (!request.initialTerminal) params.put("initial_terminal", false)
             }

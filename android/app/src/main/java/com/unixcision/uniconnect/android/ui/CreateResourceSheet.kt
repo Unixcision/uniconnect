@@ -48,6 +48,12 @@ fun CreateResourceSheet(context: CreationContext, saving: Boolean, error: Int?, 
     var useSSH by rememberSaveable(context.workspace?.id) { mutableStateOf(existing?.isSSH == true) }
     var sourceID by rememberSaveable { mutableStateOf(context.sshSources.firstOrNull()?.id) }
     var sourceMenu by remember { mutableStateOf(false) }
+    // A new box's SSH connection is either written here or inherited from one the machine holds.
+    // Writing is offered only when the machine says it can validate and keep a command; inheriting
+    // only when it has one to inherit. With both, writing leads, because someone who opened this
+    // form to reach a server it does not know yet has nothing to inherit.
+    var writeSSH by rememberSaveable { mutableStateOf(context.sshSources.isEmpty()) }
+    var connectCommand by rememberSaveable { mutableStateOf("") }
     var agentID by rememberSaveable(context.machineID, context.workspace?.id) {
         mutableStateOf(existing?.availableAgentTargets?.firstOrNull { it.id == "terminal" }?.id ?: existing?.availableAgentTargets?.firstOrNull()?.id ?: "terminal")
     }
@@ -70,7 +76,7 @@ fun CreateResourceSheet(context: CreationContext, saving: Boolean, error: Int?, 
                     SegmentedButton(selected = !useSSH, onClick = { useSSH = false }, shape = SegmentedButtonDefaults.itemShape(0, 2), enabled = !saving,
                         icon = { Icon(Icons.Rounded.Folder, null, Modifier.size(16.dp)) }, label = { Text(stringResource(R.string.local_workspace)) },
                         colors = segmentColors())
-                    SegmentedButton(selected = useSSH, onClick = { useSSH = true }, shape = SegmentedButtonDefaults.itemShape(1, 2), enabled = !saving && context.sshSources.isNotEmpty(),
+                    SegmentedButton(selected = useSSH, onClick = { useSSH = true }, shape = SegmentedButtonDefaults.itemShape(1, 2), enabled = !saving && context.allowsSSH,
                         icon = { Icon(Icons.Rounded.Language, null, Modifier.size(16.dp)) }, label = { Text(stringResource(R.string.ssh_workspace)) },
                         colors = segmentColors())
                 }
@@ -91,14 +97,29 @@ fun CreateResourceSheet(context: CreationContext, saving: Boolean, error: Int?, 
             }
             SheetField(name, { name = it }, stringResource(R.string.resource_name), enabled = !saving,
                 placeholder = if (existing != null) selectedAgent?.title ?: stringResource(R.string.creation_name_placeholder) else null)
-            if (existing == null && useSSH) Box {
-                OutlinedButton(onClick = { sourceMenu = true }, enabled = !saving, modifier = Modifier.fillMaxWidth(), shape = UniTheme.shapes.button) {
-                    Icon(Icons.Rounded.Language, null, Modifier.size(16.dp), tint = UniTheme.colors.accent); Spacer(Modifier.width(8.dp))
-                    Text(context.sshSources.firstOrNull { it.id == sourceID }?.name ?: stringResource(R.string.select_ssh_source))
+            if (existing == null && useSSH) {
+                // Only a machine with both ways to offer needs the choice spelled out.
+                if (context.takesNewSSH && context.sshSources.isNotEmpty()) {
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        SegmentedButton(selected = writeSSH, onClick = { writeSSH = true }, shape = SegmentedButtonDefaults.itemShape(0, 2), enabled = !saving,
+                            label = { Text(stringResource(R.string.ssh_write_connection)) }, colors = segmentColors())
+                        SegmentedButton(selected = !writeSSH, onClick = { writeSSH = false }, shape = SegmentedButtonDefaults.itemShape(1, 2), enabled = !saving,
+                            label = { Text(stringResource(R.string.ssh_inherit_connection)) }, colors = segmentColors())
+                    }
                 }
-                DropdownMenu(expanded = sourceMenu, onDismissRequest = { sourceMenu = false }, containerColor = UniTheme.colors.surfaceRaised) {
-                    context.sshSources.forEach { workspace ->
-                        DropdownMenuItem(text = { Text(workspace.name) }, onClick = { sourceID = workspace.id; sourceMenu = false })
+                if (writeSSH && context.takesNewSSH) {
+                    SheetField(connectCommand, { connectCommand = it }, stringResource(R.string.ssh_connection_command),
+                        hint = stringResource(R.string.ssh_connection_command_hint), enabled = !saving, monospace = true,
+                        placeholder = "ssh root@ejemplo.com")
+                } else Box {
+                    OutlinedButton(onClick = { sourceMenu = true }, enabled = !saving, modifier = Modifier.fillMaxWidth(), shape = UniTheme.shapes.button) {
+                        Icon(Icons.Rounded.Language, null, Modifier.size(16.dp), tint = UniTheme.colors.accent); Spacer(Modifier.width(8.dp))
+                        Text(context.sshSources.firstOrNull { it.id == sourceID }?.name ?: stringResource(R.string.select_ssh_source))
+                    }
+                    DropdownMenu(expanded = sourceMenu, onDismissRequest = { sourceMenu = false }, containerColor = UniTheme.colors.surfaceRaised) {
+                        context.sshSources.forEach { workspace ->
+                            DropdownMenuItem(text = { Text(workspace.name) }, onClick = { sourceID = workspace.id; sourceMenu = false })
+                        }
                     }
                 }
             }
@@ -106,14 +127,29 @@ fun CreateResourceSheet(context: CreationContext, saving: Boolean, error: Int?, 
             if (existing != null || !useSSH) SheetField(directory, { directory = it },
                 stringResource(if (existing == null) R.string.working_directory else R.string.optional_directory),
                 hint = stringResource(R.string.directory_hint), enabled = !saving, monospace = true, placeholder = "/")
-            if (useSSH) Text(stringResource(R.string.ssh_inherit_note), style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted)
+            if (useSSH) Text(
+                stringResource(
+                    if (existing == null && writeSSH && context.takesNewSSH) R.string.ssh_write_note
+                    else R.string.ssh_inherit_note
+                ),
+                style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted,
+            )
             error?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             Button(
                 onClick = {
                     val folder = directory.trim().takeIf { it.isNotEmpty() }
                     val visibleName = name.trim().ifEmpty { selectedAgent?.title.orEmpty() }
                     onCreate(
-                        if (existing == null) ResourceCreation.Workspace(name.trim(), if (useSSH) null else folder, if (useSSH) sourceID else null, initialTerminal = false)
+                        if (existing == null) {
+                            val typed = if (useSSH && writeSSH && context.takesNewSSH) connectCommand.trim().takeIf { it.isNotEmpty() } else null
+                            ResourceCreation.Workspace(
+                                name.trim(),
+                                if (useSSH) null else folder,
+                                if (useSSH && typed == null) sourceID else null,
+                                initialTerminal = false,
+                                connectCommand = typed,
+                            )
+                        }
                         else ResourceCreation.Terminal(existing.id, visibleName, folder, if (useSSH) tmux.trim() else null, requireNotNull(selectedAgent).id),
                     )
                 },

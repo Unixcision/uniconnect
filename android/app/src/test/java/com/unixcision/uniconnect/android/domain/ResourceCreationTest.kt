@@ -27,4 +27,25 @@ class ResourceCreationTest {
         assertFalse(ResourceCreation.Workspace("Proyecto", "/tmp\u0000", null).isValid())
         assertFalse(ResourceCreation.Workspace("Proyecto", "/" + "a".repeat(4096), null).isValid())
     }
+
+    @Test fun aWrittenConnectionIsItsOwnShapeAndNeverTravelsWithAnInheritedOneOrAFolder() {
+        assertTrue(ResourceCreation.Workspace("ELTEMPLO", null, null, connectCommand = "ssh root@eltemploacademy.com").isValid())
+        assertTrue(ResourceCreation.Workspace("VPS", null, null, connectCommand = "sshpass -p 'clave' ssh dani@ejemplo.com").isValid())
+        // One box, one way of connecting: a written command cannot arrive alongside an inherited
+        // credential or a local folder, because the machine would have to guess which one wins.
+        assertFalse(ResourceCreation.Workspace("VPS", null, "otra-caja", connectCommand = "ssh root@ejemplo.com").isValid())
+        assertFalse(ResourceCreation.Workspace("VPS", "/home/dani", null, connectCommand = "ssh root@ejemplo.com").isValid())
+    }
+
+    @Test fun aConnectionCommandIsRefusedHereOnlyWhenItCouldNeverBeOne() {
+        // What is safe is the machine's call: it owns the parser and the vault. The phone stops
+        // what no machine could ever accept, and nothing else.
+        assertFalse(ResourceCreation.Workspace("VPS", null, null, connectCommand = "").isValid())
+        assertFalse(ResourceCreation.Workspace("VPS", null, null, connectCommand = " ssh root@x ").isValid())
+        assertFalse(ResourceCreation.Workspace("VPS", null, null, connectCommand = "ssh root@x\nrm -rf /").isValid())
+        assertFalse(ResourceCreation.Workspace("VPS", null, null, connectCommand = "ssh root@x\u0000").isValid())
+        assertFalse(ResourceCreation.Workspace("VPS", null, null, connectCommand = "ssh " + "a".repeat(4096)).isValid())
+        // A command the machine will reject is still worth sending: the machine says why.
+        assertTrue(ResourceCreation.Workspace("VPS", null, null, connectCommand = "rm -rf /").isValid())
+    }
 }

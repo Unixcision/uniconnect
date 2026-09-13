@@ -11,4 +11,9 @@ data class CreationContext(
     val workspace: RemoteWorkspace?,
     val sshSources: List<RemoteWorkspace>,
     val firstWindow: Boolean = false,
-)
+    /** Whether this machine accepts a connection command typed here (`ssh_create.v1`). */
+    val takesNewSSH: Boolean = false,
+) {
+    /** Whether an SSH box can be made at all: by writing a new connection or by reusing one. */
+    val allowsSSH: Boolean get() = takesNewSSH || sshSources.isNotEmpty()
+}

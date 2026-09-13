@@ -235,7 +235,8 @@ class MachinesViewModel(
         val connection = current.connections[machineID]?.takeIf { it.connected } ?: return
         val workspaces = connection.snapshot?.workspaces ?: return
         val workspace = if (inWorkspace) workspaces.firstOrNull { it.id == current.selectedWorkspace && it.isSSH != null } ?: return else null
-        mutableState.update { it.copy(creation = CreationContext(machineID, workspace, workspaces.filter { box -> box.isSSH == true }), creationError = null) }
+        val takesNewSSH = connection.snapshot?.takesNewSSH == true
+        mutableState.update { it.copy(creation = CreationContext(machineID, workspace, workspaces.filter { box -> box.isSSH == true }, takesNewSSH = takesNewSSH), creationError = null) }
     }
     fun dismissCreate() { if (!state.value.creating) mutableState.update { it.copy(creation = null, creationError = null) } }
 
@@ -261,7 +262,8 @@ class MachinesViewModel(
                 val askFirstWindow = request is ResourceCreation.Workspace && !request.initialTerminal &&
                     created != null && created.isSSH != null && created.windows.isEmpty()
                 val nextCreation = if (askFirstWindow) CreationContext(
-                    machine.id, created, result.snapshot.workspaces.filter { box -> box.isSSH == true }, firstWindow = true,
+                    machine.id, created, result.snapshot.workspaces.filter { box -> box.isSSH == true },
+                    firstWindow = true, takesNewSSH = result.snapshot.takesNewSSH,
                 ) else null
                 noticeNames.remember(machine.id, result.snapshot)
                 handOverBoxes(machine, result.snapshot)

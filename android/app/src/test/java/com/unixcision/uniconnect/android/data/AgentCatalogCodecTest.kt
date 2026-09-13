@@ -47,4 +47,23 @@ class AgentCatalogCodecTest {
     private fun decode(value: JSONObject): MachineSnapshot = NativeMachineClient::class.java
         .getDeclaredMethod("decodeMachine", Machine::class.java, JSONObject::class.java)
         .apply { isAccessible = true }.invoke(client, machine, value) as MachineSnapshot
+
+    @Test fun aWrittenConnectionTravelsAsSshWithItsCommandAndNothingElse() {
+        val written = client.creationParameters(
+            ResourceCreation.Workspace("ELTEMPLO", null, null, initialTerminal = false, connectCommand = "ssh root@eltemploacademy.com")
+        )
+        assertEquals("ssh", written.getString("kind"))
+        assertEquals("ssh root@eltemploacademy.com", written.getString("connect_command"))
+        assertFalse("a written command inherits nothing", written.has("source_workspace_id"))
+        assertFalse(written.getBoolean("initial_terminal"))
+
+        val inherited = client.creationParameters(ResourceCreation.Workspace("Otra", null, "caja-origen"))
+        assertEquals("ssh", inherited.getString("kind"))
+        assertEquals("caja-origen", inherited.getString("source_workspace_id"))
+        assertFalse("inheriting sends no command", inherited.has("connect_command"))
+
+        val local = client.creationParameters(ResourceCreation.Workspace("Proyecto", "/home/dani", null))
+        assertEquals("local", local.getString("kind"))
+        assertFalse(local.has("connect_command"))
+    }
 }
