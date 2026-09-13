@@ -39830,6 +39830,28 @@
         }
       }
     },
+    "uniconnect.ssh.create.error.abandoned": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido crear la caja porque la sesión cambió mientras se conectaba. Inténtalo otra vez."
+          }
+        }
+      }
+    },
+    "uniconnect.ssh.create.error.alreadyRunning": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ya se está conectando otra caja en esta ventana. Espera a que termine y vuelve a intentarlo."
+          }
+        }
+      }
+    },
     "uniconnect.ssh.probe.error.launchUnavailable": {
       "extractionState": "manual",
       "localizations": {

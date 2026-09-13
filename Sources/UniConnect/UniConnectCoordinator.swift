@@ -403,18 +403,25 @@ final class UniConnectCoordinator: ObservableObject {
         in tabManager: TabManager
     ) {
         let owner = ObjectIdentifier(tabManager)
-        guard sshWorkspaceCreationTasks[owner] == nil,
-              let targetResolver = sshTargetResolver else {
-            if sshWorkspaceCreationTasks[owner] == nil {
-                presentError(String(
-                    localized: "uniconnect.ssh.probe.error.launchUnavailable",
-                    defaultValue: "The SSH connection could not be started."
-                ))
-            }
+        // Every way out of this flow says something. The sheet has already dismissed itself by
+        // the time we get here, so a silent return leaves the reader looking at a window where
+        // nothing happened and no box appeared, with no way to tell a rejected command from a
+        // lost one.
+        guard sshWorkspaceCreationTasks[owner] == nil else {
+            presentError(String(
+                localized: "uniconnect.ssh.create.error.alreadyRunning",
+                defaultValue: "Another box is already being connected in this window. Wait for it to finish and try again."
+            ))
+            return
+        }
+        guard let targetResolver = sshTargetResolver else {
+            presentError(String(
+                localized: "uniconnect.ssh.probe.error.launchUnavailable",
+                defaultValue: "The SSH connection could not be started."
+            ))
             return
         }
         let token = UUID()
-        let expectedMutationRevision = importMutationGate?.externalMutationRevision
         sshWorkspaceCreationTokens[owner] = token
         let transaction = UniConnectSSHWorkspaceCreationTransaction(
             targetResolver: targetResolver
@@ -427,10 +434,19 @@ final class UniConnectCoordinator: ObservableObject {
                     self.sshWorkspaceCreationTokens.removeValue(forKey: owner)
                 }
             }
-            guard let tabManager else { return }
+            guard let tabManager else {
+                self.presentError(Self.sshCreationAbandonedMessage)
+                return
+            }
             do {
                 let record = try await transaction.prepare(
                     connectCommand: connectCommand,
+                    // What makes this submission stale is that it no longer has anywhere to land:
+                    // a newer submission replaced it, its window is gone, or an import holds the
+                    // mutation lease. Ordinary activity elsewhere does not. Comparing the gate's
+                    // mutation revision here did exactly that — the counter moves on every tab and
+                    // window change anywhere in the app, so on a busy session any window opening
+                    // while the resolver ran made the reader's own "Connect" vanish without a word.
                     isCurrentSubmission: { [weak self, weak tabManager] in
                         guard let self, let tabManager,
                               self.sshWorkspaceCreationTokens[owner] == token,
@@ -438,11 +454,11 @@ final class UniConnectCoordinator: ObservableObject {
                               self.importMutationGate?.isLocked != true else {
                             return false
                         }
-                        guard let expectedMutationRevision else { return true }
-                        return self.importMutationGate?.externalMutationRevision
-                            == expectedMutationRevision
+                        return true
                     }
                 )
+                // A newer submission owning the flow is the reader's own doing and the only
+                // abandonment worth staying quiet about.
                 guard self.sshWorkspaceCreationTokens[owner] == token else { return }
                 _ = self.createSSHWorkspace(
                     name: name,
@@ -464,13 +480,23 @@ final class UniConnectCoordinator: ObservableObject {
                         )
                     )
                 case .staleSubmission, .cancelled:
-                    break
+                    // Reaching here means the flow lost its window or an import took the lease;
+                    // a superseding submission already returned above without an alert.
+                    self.presentError(Self.sshCreationAbandonedMessage)
                 }
             } catch {
                 self.presentError(error.localizedDescription)
             }
         }
         sshWorkspaceCreationTasks[owner] = task
+    }
+
+    /// Shown when an SSH box creation is dropped for a reason the reader did not ask for.
+    private static var sshCreationAbandonedMessage: String {
+        String(
+            localized: "uniconnect.ssh.create.error.abandoned",
+            defaultValue: "The box could not be created because the session changed while connecting. Try again."
+        )
     }
 
     @discardableResult
