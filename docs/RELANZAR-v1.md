@@ -73,10 +73,20 @@ destino SSH efectivo + usuario + socket/servidor tmux + panel + generación
 panel remoto y lo relanzaría por su cuenta: dos registros locales independientes no garantizan «una
 vez». Para una caja local, el destino efectivo es esa máquina, y la clave sigue siendo la misma.
 
-Y con la clave no basta: hace falta **autoridad sobre el objetivo**. O bien exclusión mutua entre
-hosts sobre esa clave, o bien un **único ejecutor** designado por objetivo. Un objetivo sin autoridad
+Y con la clave no basta: hace falta **autoridad sobre el objetivo**. Un objetivo sin autoridad
 resoluble se **excluye**; no se ejecuta «por si acaso». Relanzar dos veces el mismo agente porque se
 veía desde dos sitios es un fallo, no un detalle.
+
+**La autoridad vive en el destino, no en cada host.** Dos hosts con su propio registro local no
+pueden garantizar «una vez» por mucho que ambos sean cuidadosos: cada uno decide con información que
+el otro no tiene. Así que el cerrojo y el diario están **donde está el panel**, en
+`~/.local/state/uniconnect/relaunch-v1` de la máquina destino, y la identidad que se arbitra incluye
+arranque del sistema, uid, inodo del socket, arranque del servidor tmux, panel y arranque del panel,
+más la generación del proceso.
+
+De ahí se sigue algo que simplifica el Mac: **para un objetivo SSH, el Mac no maneja tmux por su
+cuenta**. Reutiliza por SSH el mismo trabajador que arbitra en el destino. Un solo ejecutor por
+objetivo, y es el que está al lado del panel.
 
 ## 3. Dos fases: `plan` y `apply`
 

@@ -10,6 +10,23 @@ interface MachineClient {
     /** Pins or moves a window inside its workspace on the host. */
     suspend fun updateWindow(machine: Machine, workspaceID: String, windowID: String, isPinned: Boolean?, position: Int?): MachineSnapshot
     suspend fun create(machine: Machine, request: ResourceCreation): CreationResult
+
+    /**
+     * Previsualiza un relanzado sin ejecutarlo (`relaunch.plan`).
+     *
+     * Devuelve lo que tocaría y lo que deja fuera con su motivo, más un vale con caducidad. Existe
+     * para poder enseñar «esto toca 26 agentes» mientras todavía es una frase.
+     */
+    suspend fun relaunchPlan(machine: Machine, verb: RelaunchVerb, scope: RelaunchScope): RelaunchPlan
+
+    /**
+     * Ejecuta un plan (`relaunch.apply`). No espera a que termine: vuelve en cuanto el equipo lo
+     * acepta, y el estado se sigue con [relaunchStatus].
+     */
+    suspend fun relaunchApply(machine: Machine, plan: RelaunchPlan): RelaunchOperation
+
+    /** Consulta una operación por su identificador (`relaunch.status`). No caduca. */
+    suspend fun relaunchStatus(machine: Machine, operationID: String): RelaunchOperation
     suspend fun inspect(machine: Machine): MachineSnapshot
     /** One-shot authorized check for the machine list; never creates or attaches anything. */
     suspend fun probe(machine: Machine): MachineSnapshot

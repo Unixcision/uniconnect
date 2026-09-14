@@ -28,6 +28,14 @@ data class MachineSnapshot(val serverName: String, val workspaces: List<RemoteWo
      */
     val takesNewSSH: Boolean get() = SSH_CREATE in capabilities
 
+    /**
+     * Whether this machine can relaunch its agents on request.
+     *
+     * A machine that does not announce it is never sent the call and never shows the action: the
+     * alternative is a button that looks like it worked and did nothing at all.
+     */
+    val relaunches: Boolean get() = RELAUNCH in capabilities
+
     companion object {
         /** The host implements mobile.workspace.update and mobile.terminal.update. */
         const val BOX_UPDATE = "box_update"
@@ -40,5 +48,8 @@ data class MachineSnapshot(val serverName: String, val workspaces: List<RemoteWo
 
         /** The host accepts `connect_command` in workspace.create (ssh_create.v1). */
         const val SSH_CREATE = "ssh_create.v1"
+
+        /** The host implements relaunch.plan/apply/status (relaunch.v1). */
+        const val RELAUNCH = "relaunch.v1"
     }
 }
