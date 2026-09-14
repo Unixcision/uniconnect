@@ -1,48 +1,69 @@
 import Foundation
 
-/// How one kind of agent is read and spoken to when relaunching it.
+/// Everything needed to close one kind of agent and bring the same conversation back.
 ///
-/// There is no universal way to close an AI and bring it back: each one prints different things,
-/// asks different questions and is resumed with a different line. Claude prints
-/// `Resume this session with: <id>` on its way out; Codex does not, and its identity is established
-/// from the live process instead. A single hard-coded reader would work for whichever agent it was
-/// written against and quietly mangle the rest.
+/// A screen reader is not enough, and believing otherwise is the quickest way to ruin somebody's
+/// conversation. An adapter has to supply three things a reader cannot:
 ///
-/// So the reader is per agent, and an agent without a dialect is **refused, never guessed at**.
+/// - **Identity from outside the screen.** Claude prints its conversation on the way out; Codex does
+///   not, and there it is settled by a writer lock the live process actually holds.
+/// - **The invocation as arguments**, not as a sentence. A joined string invites a quoting mistake
+///   to become an argument, and these lines carry flags that decide what an agent may do.
+/// - **Proof that a new process is in place.** A pane that looks the same can be a pane where
+///   nothing happened.
+///
+/// An agent without an adapter is reported as ``RelaunchCause/unsupported`` and left untouched.
+/// Knowing how an agent is *spelled* is not knowing its life cycle.
 public protocol RelaunchAgentDialect: Sendable {
-    /// The provider this dialect speaks for, as the host names it (`claude`, `codex`, …).
+    /// The provider this adapter speaks for, as the host names it (`claude`, `codex`, …).
     var provider: String { get }
 
     /// Reads what a pane is showing.
+    ///
+    /// Anything not positively recognised is ``RelaunchScreenReading/unrecognised``. There is no
+    /// universal list of safe texts: an unfamiliar permission, trust prompt, folder chooser or a
+    /// draft somebody left half-typed all end the attempt rather than get answered.
     func read(screen: String) -> RelaunchScreenReading
 
-    /// The line that brings the agent back on `sessionID`, keeping `previousArguments`' flags.
+    /// The conversation `evidence` proves this pane is on, or `nil` when it proves none.
+    func conversation(from evidence: RelaunchIdentityEvidence) -> String?
+
+    /// The argv that brings `conversation` back, preserving `previousArgv`'s flags.
     ///
-    /// Returns `nil` when this dialect cannot be sure which conversation to resume. That is a
-    /// refusal, not a fallback: resuming the wrong conversation is worse than not resuming.
-    func relaunchCommand(sessionID: String?, previousArguments: [String]) -> String?
+    /// Returns `nil` when this adapter cannot be sure, which is a refusal and not a fallback.
+    func invocation(conversation: String, previousArgv: [String]) -> [String]?
+
+    /// Whether the pane ended up holding a genuinely relaunched agent.
+    func verify(proof: RelaunchProcessProof, reading: RelaunchScreenReading) -> Result<Void, RelaunchCause>
 }
 
-/// Picks the dialect for a provider, and refuses when there is none.
+extension RelaunchAgentDialect {
+    /// The default verification every adapter gets: a new process, and an agent at its prompt.
+    public func verify(
+        proof: RelaunchProcessProof,
+        reading: RelaunchScreenReading
+    ) -> Result<Void, RelaunchCause> {
+        if let cause = proof.failureCause { return .failure(cause) }
+        return reading == .agentReady ? .success(()) : .failure(.unknownDialog)
+    }
+}
+
+/// Picks the adapter for a provider, and refuses when there is none.
 public struct RelaunchDialects: Sendable {
     private let byProvider: [String: any RelaunchAgentDialect]
 
-    /// - Parameter dialects: every agent this build knows how to relaunch.
     public init(_ dialects: [any RelaunchAgentDialect]) {
         byProvider = Dictionary(uniqueKeysWithValues: dialects.map { ($0.provider, $0) })
     }
 
-    /// Every agent shipped with a dialect today.
-    ///
-    /// An agent missing here is not broken: it is reported as ``RelaunchCause/unsupported`` and left
-    /// exactly as it was, which is the right answer until somebody writes how it speaks.
+    /// Every agent this build knows how to relaunch **and verify**, which is a shorter list than the
+    /// agents it knows how to launch.
     public static let known = RelaunchDialects([ClaudeRelaunchDialect()])
 
-    /// The dialect for `provider`, or `nil` when this build does not know that agent.
+    /// The adapter for `provider`, or `nil` when this build does not know that agent's life cycle.
     public func dialect(for provider: String) -> (any RelaunchAgentDialect)? {
         byProvider[provider.lowercased()]
     }
 
-    /// The providers this build can relaunch.
     public var supportedProviders: Set<String> { Set(byProvider.keys) }
 }

@@ -5,7 +5,7 @@ import Foundation
 /// The identifier travels; the sentence the reader sees is the client's, in its own language. A
 /// cause on one target is **not** an error of the call: twenty-five targets can succeed while one
 /// waits for someone to answer a trust prompt.
-public enum RelaunchCause: String, Sendable, Codable, CaseIterable {
+public enum RelaunchCause: String, Sendable, Codable, CaseIterable, Error {
     /// Which conversation this is could not be established. Nothing is closed on a guess.
     case ambiguousIdentity = "identidad_ambigua"
     /// The screen showed something unrecognised. Nothing is answered blindly.
