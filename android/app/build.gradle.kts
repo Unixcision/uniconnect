@@ -46,6 +46,20 @@ val syncBrandArtwork by tasks.registering(Copy::class) {
 }
 tasks.named("preBuild").configure { dependsOn(syncBrandArtwork) }
 
+// Los ejemplos de `contracts/` SON el contrato, no una ilustración: las pruebas de Mac, Linux y
+// Android leen los mismos ficheros. Copiarlos a los recursos de prueba es lo que impide que este
+// lado se aleje del acordado sin que nadie se entere.
+val syncContractFixtures by tasks.registering(Copy::class) {
+    from(rootProject.file("../contracts/relaunch-v1"))
+    into(layout.buildDirectory.dir("generated/contracts/relaunch-v1"))
+    include("*.json")
+}
+android.sourceSets["test"].resources.srcDir(layout.buildDirectory.dir("generated/contracts"))
+// El nombre exacto de la tarea de recursos de prueba depende de la variante, así que se engancha
+// por tipo en vez de por nombre.
+tasks.matching { it.name.startsWith("process") && it.name.endsWith("UnitTestJavaRes") }
+    .configureEach { dependsOn(syncContractFixtures) }
+
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2026.06.01"))
     implementation("androidx.compose.ui:ui")

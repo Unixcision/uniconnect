@@ -68,14 +68,24 @@ class AgentCatalogCodecTest {
     }
 
     @Test fun `el alcance viaja con kind e id, y nada mas`() {
-        // Acordado con el motor Linux: el espacio al que pertenece una ventana se queda en el
-        // modelo. Mandarlo por el cable invitaria a que el equipo resolviera el objetivo con el, y
-        // quien puede resolverlo es el que lo tiene delante.
-        val ventana = client.scopeParameters(RelaunchScope.Window("maquina", "espacio", "ventana-7"))
-        assertEquals("window", ventana.getString("kind"))
-        assertEquals("ventana-7", ventana.getString("id"))
+        // Se compara contra el fichero del contrato, el mismo que consume el motor Linux. Si un
+        // lado cambia la forma del cable, esta prueba se cae aqui en vez de descubrirse el dia que
+        // un movil le pida algo a un equipo y no pase nada.
+        val acordado = JSONObject(
+            requireNotNull(javaClass.classLoader?.getResourceAsStream("relaunch-v1/plan-window-request.json"))
+                { "falta el fixture del contrato: contracts/relaunch-v1/plan-window-request.json" }
+                .bufferedReader().readText()
+        ).getJSONObject("scope")
+
+        val ventana = client.scopeParameters(
+            RelaunchScope.Window("maquina", "espacio", acordado.getString("id"))
+        )
+        assertEquals(acordado.getString("kind"), ventana.getString("kind"))
+        assertEquals(acordado.getString("id"), ventana.getString("id"))
+        // El espacio al que pertenece una ventana se queda en el modelo: mandarlo invitaria al
+        // equipo a resolver el objetivo con el, y quien puede resolverlo es el que lo tiene delante.
         assertFalse(ventana.has("workspace_id"))
-        assertEquals(2, ventana.length())
+        assertEquals(acordado.length(), ventana.length())
 
         val espacio = client.scopeParameters(RelaunchScope.Workspace("maquina", "espacio-3"))
         assertEquals("workspace", espacio.getString("kind"))
