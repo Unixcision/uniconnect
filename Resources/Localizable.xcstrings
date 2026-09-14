@@ -376,6 +376,17 @@
         }
       }
     },
+    "uniconnect.relaunch.cause.no_enviado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No enviado; prepara un plan nuevo si quieres relanzarlo"
+          }
+        }
+      }
+    },
     "uniconnect.relaunch.cause.sin_autoridad": {
       "extractionState": "manual",
       "localizations": {

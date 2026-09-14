@@ -153,7 +153,8 @@ class WorkerStatusTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="uc-relaunch-journal-") as directory:
             root = Path(directory)
             paths = root / "pane.lock", root / "claim.json", root / "operation.json"
-            worker = TargetWorker({"action": "status", "session": "fixture", "socket": "fixture"})
+            worker = TargetWorker({"action": "status", "session": "fixture", "socket": "fixture",
+                                   "expected": {"generation": 1}})
             worker.paths = lambda: paths
             worker.inspect = lambda **kw: self.fail("status/late start must not inspect or close an agent")
             with paths[0].open("w") as lock:

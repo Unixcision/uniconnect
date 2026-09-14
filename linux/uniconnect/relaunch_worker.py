@@ -603,19 +603,34 @@ class TargetWorker:
             return self.start()
         if action == "status":
             lock_path, _, journal = self.paths()
-            value = self.read(journal)
-            if value["state"] not in ("verificado", "omitido", "fallido", "necesita_usuario"):
-                descriptor = os.open(lock_path, os.O_RDWR | os.O_NOFOLLOW)
+            try:
+                value = self.read(journal)
+            except FileNotFoundError:
+                value = {"state": "planificado", "cause": "sin_autoridad"}
+            if value["state"] in ("verificado", "omitido", "fallido", "necesita_usuario"):
+                return value
+            descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+            try:
+                info = os.fstat(descriptor)
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+                    raise Unavailable("sin_autoridad")
                 try:
-                    try:
-                        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    except BlockingIOError:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return value  # Its live owner may be writing acceptance now.
+                # Re-read under the SAME target lock used by start. Missing is
+                # NOT proof of no effects. Seal this operation as unresolved so
+                # a delayed start cannot close it after we returned a final result.
+                # No native inspection, restart or generation claim is made here.
+                if journal.exists():
+                    value = self.read(journal)
+                    if value["state"] in ("verificado", "omitido", "fallido", "necesita_usuario"):
                         return value
-                    value = {"state": "necesita_usuario", "cause": "sin_autoridad"}
-                    self.write(journal, value)
-                finally:
-                    os.close(descriptor)
-            return value
+                value = {"state": "necesita_usuario", "cause": "sin_autoridad"}
+                self.write(journal, value)
+                return value
+            finally:
+                os.close(descriptor)
         raise Unavailable("no_soportado")
 
 

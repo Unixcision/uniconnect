@@ -41,7 +41,8 @@ class RelaunchService:
         self.closed = False
 
     def close(self):
-        self.closed = True
+        with self.lock:
+            self.closed = True
         if hasattr(self.adapter, "close"):
             self.adapter.close()
         if self.pool:
@@ -145,9 +146,12 @@ class RelaunchService:
             for result, target in zip(value["results"], value.get("targets", [])):
                 job = (identifier, result["key"])
                 if result["state"] not in TERMINAL and job not in self.running:
+                    if value.get("dispatch", {}).get(result["key"]) == "not_sent":
+                        self.not_sent(identifier, result["key"])
+                        continue
                     self.running.add(job)
                     self.submit(self.recover, identifier, target, authorized)
-            return self.response(value, True)
+            return self.response(self.read(identifier), True)
 
     def apply(self, identifier, token, owner, authorized):
         self.identifier(identifier)
@@ -168,6 +172,7 @@ class RelaunchService:
                 raise RPCError("token_caducado", "El plan ha caducado; vuelve a previsualizar")
             value = {"operation_id": identifier, "owner": owner, "hash": digest,
                      "verb": plan["verb"], "created_at": self.clock(),
+                     "dispatch": {proof["key"]: "not_sent" for _, proof in plan["selected"]},
                      "targets": [{"proof": proof, "record": {key: candidate.get("record", {}).get(key)
                                    for key in ("id", "tmux", "tmuxSocket", "agent", "cwd", "sessionId")},
                                   "workspace_id": candidate.get("workspace", {}).get("id"),
@@ -184,12 +189,23 @@ class RelaunchService:
             self.plans.pop(identifier)
         for candidate, proof in plan["selected"]:
             try:
-                self.submit(self.execute, identifier, plan["verb"], candidate, proof, authorized)
+                future = self.submit(self.execute, identifier, plan["verb"], candidate, proof, authorized)
+                if hasattr(future, "add_done_callback"):
+                    future.add_done_callback(lambda value, key=proof["key"]:
+                        self.not_sent(identifier, key) if value.cancelled() else None)
             except Exception:
-                with self.lock:
-                    self.running.discard((identifier, proof["key"]))
-                    self.update(identifier, proof["key"], {"state": "fallido", "cause": "sin_autoridad"})
+                self.not_sent(identifier, proof["key"])
         return response
+
+    def not_sent(self, identifier, key):
+        """Only durable pre-dispatch evidence permits saying no effect was sent."""
+        with self.lock:
+            try:
+                value = self.read(identifier)
+                if value.get("dispatch", {}).get(key) == "not_sent":
+                    self.update(identifier, key, {"state": "omitido", "cause": "no_enviado"})
+            finally:
+                self.running.discard((identifier, key))
 
     def update(self, identifier, key, result):
         with self.lock:
@@ -207,12 +223,24 @@ class RelaunchService:
 
     def execute(self, identifier, verb, candidate, proof, authorized):
         try:
-            self.check(authorized)
+            with self.lock:
+                self.check(authorized)
+                value = self.read(identifier)
+                # Persist BEFORE entering an adapter that can send effects.
+                # A crash after this boundary is UNKNOWN, not proof of delivery
+                # or of non-delivery. Older journals lack this evidence and must
+                # also be recovered conservatively.
+                value.setdefault("dispatch", {})[proof["key"]] = "possible"
+                self.save(identifier, value)
             result = self.adapter.execute(candidate, verb, proof, identifier,
-                lambda result: self.update(identifier, proof["key"], result), authorized)
+                lambda result: self.update(identifier, proof["key"], result),
+                lambda: not self.closed and authorized())
             self.update(identifier, proof["key"], result)
         except Exception as error:
-            self.update(identifier, proof["key"], {"state": "fallido", "cause": getattr(error, "cause", "host_inaccesible")})
+            if self.read(identifier).get("dispatch", {}).get(proof["key"]) == "not_sent":
+                self.not_sent(identifier, proof["key"])
+            else:
+                self.update(identifier, proof["key"], {"state": "fallido", "cause": getattr(error, "cause", "host_inaccesible")})
         finally:
             with self.lock:
                 self.running.discard((identifier, proof["key"]))

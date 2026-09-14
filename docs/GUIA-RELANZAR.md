@@ -104,6 +104,14 @@ operación no vuelve a cerrar una IA ya atendida. Si cerraste el diálogo o UniC
 abre **IA → Resultados de relanzados…** y elige la operación anterior: ese recibo
 solo consulta, nunca vuelve a aplicar. No prepares y apliques repetidamente
 planes nuevos para resolver un corte: primero revisa el resultado y la ventana.
+Si cerraste UniConnect con ventanas aún en cola y figura **Omitido — No enviado**,
+esas ventanas no llegaron al ejecutor y necesitan un plan nuevo si todavía deseas
+relanzarlas. Las ya enviadas siguen consultándose con su operación original. La
+ausencia de un registro remoto no se toma como prueba de que no hubo envío.
+Si el envío pudo empezar pero el destino no conserva un resultado acreditable,
+se muestra **Necesita tu intervención**, no «No enviado». Esa operación se cierra
+frente a peticiones tardías, sin relanzar nada desde la consulta de estado. Revisa
+la ventana antes de decidir qué hacer; no se garantiza que no hubiera efectos.
 El token de un plan nuevo caduca a los 120 segundos; si aún no lo habías aplicado,
 debes preparar otro. Una operación ya aceptada se recupera con su identidad original.
 
