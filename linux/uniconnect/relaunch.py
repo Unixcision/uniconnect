@@ -38,6 +38,14 @@ class RelaunchService:
         self.lock = threading.RLock()
         self.plans = {}
         self.running = set()
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+        if hasattr(self.adapter, "close"):
+            self.adapter.close()
+        if self.pool:
+            self.pool.shutdown(wait=False, cancel_futures=True)
 
     @staticmethod
     def scope(value, machine_id, workspaces):
@@ -58,9 +66,8 @@ class RelaunchService:
             raise RPCError("alcance_no_valido", "El alcance supera 512 ventanas; divide la operación")
         return selected
 
-    @staticmethod
-    def check(authorized):
-        if not authorized():
+    def check(self, authorized):
+        if self.closed or not authorized():
             raise RPCError("token_no_valido", "El dispositivo ya no tiene autorización")
 
     @staticmethod

@@ -1389,6 +1389,8 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             self._tick_source = 0
         if hasattr(self, "activity"):
             self.activity.stop()
+        if hasattr(self, "relaunch"):
+            self.relaunch.close()
         self.persist()
         if hasattr(self, "mobile"):
             self.mobile.close()

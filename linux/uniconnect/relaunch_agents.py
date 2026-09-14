@@ -25,12 +25,18 @@ class RelaunchAgents:
     def __init__(self, *, transport_factory=Transport, reconnect=None, clock=time.monotonic,
                  wait=None, catalog=None, validate=lambda candidate: True, resolve=None):
         self.transport_factory, self.reconnect, self.clock = transport_factory, reconnect, clock
-        self.wait = wait or threading.Event().wait
+        self.stopped = threading.Event()
+        self.wait = wait or self.stopped.wait
         self.validate = validate
         self.resolve = resolve
         self.catalog = catalog or AgentResumeCatalog()
         self.source = Path(__file__).with_name("relaunch_worker.py").read_text()
         self.identity_helper = base64.b64encode(Path(__file__).with_name("agent_identity_hook.py").read_bytes()).decode()
+
+    def close(self):
+        # Stop observation, not the already admitted target-side close/reopen.
+        # A later desktop recovers its journal. Never issue another start here.
+        self.stopped.set()
 
     def request(self, candidate, action, **values):
         record = candidate["record"]
@@ -107,7 +113,7 @@ class RelaunchAgents:
             return result
         deadline = self.clock() + 95
         previous = None
-        while self.clock() < deadline:
+        while self.clock() < deadline and not self.stopped.is_set():
             try:
                 result = self.request(candidate, "status", expected=proof, operation_id=operation_id)
             except Exception:

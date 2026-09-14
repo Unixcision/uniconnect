@@ -165,3 +165,14 @@ class RelaunchTests(unittest.TestCase):
         self.assertEqual(value["state"], "verificado")
         self.assertNotIn("cause", value)
         self.assertEqual(self.adapter.calls, [])
+
+    def test_closing_desktop_stops_observation_and_prevents_new_dispatch(self):
+        closed = []
+        self.adapter.close = lambda: closed.append(True)
+        plan = self.plan()
+        self.service.close()
+        with self.assertRaises(RPCError):
+            self.apply(plan)
+        self.assertEqual(closed, [True])
+        self.assertEqual(self.jobs, [])
+        self.assertEqual(self.adapter.calls, [])

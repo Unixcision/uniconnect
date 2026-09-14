@@ -24,6 +24,9 @@ class RelaunchDesktop:
         self.history = RelaunchHistory(window.store.root / "relaunch-receipts-v1")
         self.machines = MachineDirectory(window.store.root)
 
+    def close(self):
+        self.service.close()
+
     def main(self, action):
         if threading.get_ident() == self.main_thread:
             return action()
@@ -202,6 +205,8 @@ class RelaunchDesktop:
         import datetime
         window = self.window
         def show(receipts):
+            if window._closed:
+                return
             if not receipts:
                 window.error(window._("No hay relanzados guardados en este equipo"))
                 return
@@ -232,6 +237,8 @@ class RelaunchDesktop:
         from gi.repository import Gtk
         window = self.window
         def show(machines):
+            if window._closed:
+                return
             dialog = Gtk.Dialog(title=window._("Equipos del alcance global"), transient_for=window, modal=True)
             dialog.add_buttons(window._("Close"), Gtk.ResponseType.CLOSE,
                                window._("Añadir equipo"), Gtk.ResponseType.APPLY,
@@ -257,6 +264,8 @@ class RelaunchDesktop:
     def result_window(self, plan, response):
         from gi.repository import GLib, Gtk
         window = self.window
+        if window._closed:
+            return
         dialog = Gtk.Dialog(title=window._("Resultado del relanzado"), transient_for=window, modal=False)
         dialog.set_default_size(660, 420)
         dialog.add_button(window._("Close"), Gtk.ResponseType.CLOSE)
@@ -268,7 +277,7 @@ class RelaunchDesktop:
         live = [True]
         labels = {target["key"]: target["label"] for target in plan["targets"]}
         def update(value):
-            if not live[0]:
+            if not live[0] or window._closed:
                 return
             lines = [labels.get(item["key"], item["key"]) + " — " + window._("uniconnect.relaunch.state." + item["state"]) +
                      (": " + window._("uniconnect.relaunch.cause." + item["cause"]) if item.get("cause") else "") for item in value["results"]]
@@ -277,7 +286,7 @@ class RelaunchDesktop:
             if value["operation_state"] == "en_curso":
                 GLib.timeout_add(750, refresh)
         def refresh():
-            if live[0]:
+            if live[0] and not window._closed:
                 def status():
                     return (plan["fleet"].operation("relaunch.status") if "fleet" in plan else
                             self.dispatch("relaunch.status", {"operation_id": plan["operation_id"]}))
