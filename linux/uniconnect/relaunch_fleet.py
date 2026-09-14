@@ -104,6 +104,16 @@ class RelaunchFleet:
                     raise RPCError("token_no_valido", "Un recibo solo permite consultar, no volver a aplicar")
                 params["token"] = plan["token"]
             try:
+                if hasattr(self.local, "allowed") and not self.local.main(self.local.allowed):
+                    raise RPCError("permisos", "El escritorio ya no permite esta operación")
+                if method == "relaunch.apply" and host["id"] != "local" and hasattr(self.local, "machines"):
+                    # A changed/deleted RPC route is not permission to send the
+                    # frozen plan to a replacement host. Status remains read-only
+                    # against the original receipt endpoint.
+                    route = host["endpoint"]
+                    if not any(machine["id"] == host["id"] and machine["host"] == route["host"]
+                               and machine["port"] == route["port"] for machine in self.local.machines.snapshot()):
+                        raise RPCError("generacion_cambiada", "El equipo configurado cambió después del plan")
                 value = host["call"](method, params)
                 results.extend({**item, "key": host["id"] + "|" + item["key"]} for item in value["results"])
                 in_progress |= value["operation_state"] == "en_curso"

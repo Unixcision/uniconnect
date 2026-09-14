@@ -69,12 +69,23 @@ class RelaunchDesktop:
         workspace = next((box for box in self.window.store.workspaces if box["id"] == candidate["workspace"]["id"]), None)
         record = next((row for row in workspace.get("windows", []) if row["id"] == candidate["record"]["id"]), None) if workspace else None
         fields = ("tmux", "tmuxSocket", "agent", "cwd", "sessionId")
-        return bool(record and all(record.get(key) == candidate["record"].get(key) for key in fields)
-                    and workspace.get("credentialId") == candidate["workspace"].get("credentialId"))
+        if not (record and all(record.get(key) == candidate["record"].get(key) for key in fields)
+                and workspace.get("kind") == candidate["workspace"].get("kind")
+                and workspace.get("credentialId") == candidate["workspace"].get("credentialId")):
+            return False
+        try:
+            connection = self.window.connection(workspace) if workspace["kind"] == "ssh" else None
+            if workspace["kind"] == "ssh" and connection is None:
+                return False
+            return connection == candidate.get("connection")
+        except Exception:
+            return False
 
     def resolve(self, target):
         candidates = self.snapshot({"kind": "window", "id": target["record"]["id"]})
         for candidate in candidates:
+            if candidate["workspace"]["kind"] == "ssh" and candidate["connection"] is None:
+                raise RelaunchUnavailable("permisos")
             if (candidate["workspace"]["id"] == target["workspace_id"]
                     and candidate["workspace"].get("credentialId") == target["credential_id"]
                     and all(candidate["record"].get(key) == value for key, value in target["record"].items())):

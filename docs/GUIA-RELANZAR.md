@@ -19,6 +19,19 @@ deliberadamente permisos. Conserva los argumentos de configuración reconocidos 
 la carpeta del proceso. Si no puede acreditar el resultado, lo indica; no muestra
 un éxito solo porque haya reaparecido una terminal.
 
+## Después de cambiar de cuenta
+
+1. Completa tú el cambio de cuenta **en el equipo donde se ejecuta la IA**. Si
+   la ventana es SSH a DESA, el login relevante es el de DESA, no el del visor Linux.
+2. Relanza primero una ventana y comprueba conversación, cuenta y posibilidad de
+   escribir. No hace falta crear otra conversación para cargar una cuenta cambiada.
+3. Después aplica el mismo flujo al espacio o al alcance global que necesites.
+
+Se conserva el entorno/perfil del proceso. Si dos ventanas usan perfiles o
+directorios de configuración diferentes, un login en uno no cambia el otro.
+UniConnect no copia tokens entre perfiles, no cambia de proveedor y no inicia sesión
+por ti. Si vuelve un aviso de autenticación, resuélvelo en el perfil de esa ventana.
+
 ## Una ventana
 
 1. Selecciona la ventana en UniConnect.
@@ -43,6 +56,12 @@ del agente, no termina automáticamente las tareas que estuviera haciendo.
 
 Las ventanas añadidas después de preparar el plan no se incluyen. Si cambias un
 proceso o una conexión mientras revisas, prepara otro plan para ese objetivo.
+
+El permiso y el destino se comprueban de nuevo antes de enviar cada relanzado.
+Una vez que el trabajador de destino ha aceptado ese cierre/reapertura, deja
+terminar ese ciclo para no dejarte una shell vacía; revocar acceso impide los
+siguientes envíos, pero no deshace un cierre que ya fue admitido. La pérdida de
+conexión no se interpreta por sí sola como una revocación.
 
 ## Este equipo y global
 
