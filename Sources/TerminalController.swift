@@ -1,3 +1,4 @@
+import CMUXAgentLaunch
 import AppKit
 import CmuxAuthRuntime
 import CmuxControlSocket
@@ -20959,6 +20960,12 @@ class TerminalController {
             result = v2MobileTerminalMouse(params: request.params)
         case "workspace.action":
             result = v2MobileWorkspaceAction(params: request.params)
+        case "relaunch.plan":
+            result = v2MobileRelaunchPlan(params: request.params, peer: peer)
+        case "relaunch.apply":
+            result = await v2MobileRelaunchApply(params: request.params, peer: peer)
+        case "relaunch.status":
+            result = v2MobileRelaunchStatus(params: request.params, peer: peer)
 #if DEBUG
         case "dogfood.feedback.submit":
             result = await v2MobileDogfoodFeedbackSubmit(params: request.params)
@@ -21478,7 +21485,7 @@ class TerminalController {
     /// aquí hay motor y modelo: anunciarlo sin ellos dejaría al móvil sin dictado, en vez de
     /// hacerle usar el suyo local.
     private var mobileWorkspaceListCapabilities: [String] {
-        var capabilities = ["activity.v1", "box_update", "file_put.v1", "ssh_create.v1"]
+        var capabilities = ["activity.v1", "box_update", "file_put.v1", "ssh_create.v1", "relaunch.v1"]
         if mobileTranscriptionAvailability.isAvailable() {
             capabilities.append("transcribe.v1")
         }
@@ -21488,6 +21495,141 @@ class TerminalController {
     /// Longest connection command a phone may send. Well past any real `ssh`/`sshpass` line and
     /// short enough that a hostile client cannot make the Mac parse a huge string.
     nonisolated private static let mobileConnectCommandMaxBytes = 4096
+
+    // MARK: - relaunch.v1
+
+    /// Planes entregados y operaciones aceptadas, para que un segundo `apply` recupere en vez de
+    /// volver a cerrar.
+    private let mobileRelaunchStore = UniConnectRelaunchOperationStore()
+
+    /// Las cajas que caen dentro de un alcance.
+    ///
+    /// No existe un alcance «todo el sistema»: `machine` es este equipo, y el cliente compone el
+    /// resto preguntando a cada uno. Así un equipo que no contesta se ve como tal.
+    private func mobileRelaunchWorkspaces(params: [String: Any], tabManager: TabManager) -> [Workspace]? {
+        let kind = v2RawString(params, "kind") ?? ""
+        let identifier = v2RawString(params, "id") ?? ""
+        switch kind {
+        case "machine":
+            return tabManager.tabs
+        case "workspace":
+            guard let id = UUID(uuidString: identifier),
+                  let workspace = tabManager.tabs.first(where: { $0.id == id }) else { return nil }
+            return [workspace]
+        case "window":
+            guard let id = UUID(uuidString: identifier) else { return nil }
+            // Una ventana se resuelve por sí misma: su caja no viaja por el cable a propósito, para
+            // que el equipo no resuelva el objetivo con un dato que el cliente pudo equivocarse.
+            guard let workspace = tabManager.tabs.first(where: {
+                $0.uniConnectLocalWindowsByPanelId[id] != nil
+            }) else { return nil }
+            return [workspace]
+        default:
+            return nil
+        }
+    }
+
+    private func mobileRelaunchCoordinator() -> UniConnectRelaunchCoordinator {
+        UniConnectRelaunchCoordinator(machineID: Host.current().localizedName ?? "mac")
+    }
+
+    private func v2MobileRelaunchPlan(params: [String: Any], peer: MobileHostPeerIdentity?) -> V2CallResult {
+        if let error = mobileFilePutLockedError() { return error }
+        guard let peer else {
+            return .err(code: "not_found", message: "No se reconoce la sesión móvil", data: nil)
+        }
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
+        }
+        guard let scope = params["scope"] as? [String: Any],
+              let workspaces = mobileRelaunchWorkspaces(params: scope, tabManager: tabManager) else {
+            return .err(code: "alcance_no_valido", message: "El alcance pedido no se puede resolver", data: nil)
+        }
+        let preview = mobileRelaunchCoordinator().preview(workspaces: workspaces)
+        let token = mobileRelaunchStore.issue(
+            deviceID: peer.address, verb: .agentRelaunch, targets: preview.targets
+        )
+        return .ok([
+            "operation_id": token.operationID.uuidString,
+            "token": token.operationID.uuidString,
+            "expires_at": ISO8601DateFormatter().string(from: token.expiresAt),
+            "verb": RelaunchVerb.agentRelaunch.rawValue,
+            "targets": preview.targets.map {
+                ["key": $0.key.text, "label": $0.label, "provider": $0.provider,
+                 "generation": $0.key.generation, "state": RelaunchTargetState.planned.rawValue]
+            },
+            "excluded": preview.exclusions.map { ["label": $0.label, "cause": $0.cause.rawValue] },
+        ])
+    }
+
+    private func v2MobileRelaunchApply(params: [String: Any], peer: MobileHostPeerIdentity?) async -> V2CallResult {
+        if let error = mobileFilePutLockedError() { return error }
+        guard let peer else {
+            return .err(code: "not_found", message: "No se reconoce la sesión móvil", data: nil)
+        }
+        guard let operationID = v2UUID(params, "operation_id"),
+              let token = mobileRelaunchStore.token(for: operationID) else {
+            return .err(code: RelaunchError.unknownOperation.rawValue, message: "Operación desconocida", data: nil)
+        }
+        let targets = mobileRelaunchStore.targets(for: operationID)
+        let live = Dictionary(targets.map { ($0.key.paneIdentity, $0.key) }, uniquingKeysWith: { first, _ in first })
+
+        switch RelaunchAdmissionGate().admit(
+            token: token, requestedBy: peer.address,
+            knownOperations: mobileRelaunchStore.accepted, liveTargets: live, now: Date()
+        ) {
+        case let .reject(error):
+            return .err(code: error.rawValue, message: "La petición no se acepta", data: nil)
+        case let .recover(operationID):
+            guard let operation = mobileRelaunchStore.operation(operationID, recovered: true) else {
+                return .err(code: RelaunchError.unknownOperation.rawValue, message: "Operación desconocida", data: nil)
+            }
+            return .ok(mobileRelaunchPayload(operation))
+        case let .execute(running, excluded):
+            // Se apunta ANTES de cerrar nada: una operación que solo existe cuando termina es una
+            // operación que un corte de red borra, y borrarla es lo que hace que el reintento cierre
+            // todo dos veces.
+            mobileRelaunchStore.accept(operationID: operationID, verb: token.verb, targets: running)
+            let chosen = targets.filter { target in running.contains(target.key) }
+            let preview = UniConnectRelaunchCoordinator.Preview(targets: chosen, exclusions: [])
+            let coordinator = mobileRelaunchCoordinator()
+            let operation = await coordinator.run(preview)
+            var results = operation.results
+            results.append(contentsOf: excluded.map {
+                RelaunchOperation.Result(key: $0.key, state: .skipped, cause: $0.cause)
+            })
+            mobileRelaunchStore.update(operationID: operationID, results: results)
+            return .ok(mobileRelaunchPayload(
+                mobileRelaunchStore.operation(operationID, recovered: false)
+                    ?? RelaunchOperation(operationID: operationID, verb: token.verb, recovered: false, results: results)
+            ))
+        }
+    }
+
+    private func v2MobileRelaunchStatus(params: [String: Any], peer: MobileHostPeerIdentity?) -> V2CallResult {
+        guard peer != nil else {
+            return .err(code: "not_found", message: "No se reconoce la sesión móvil", data: nil)
+        }
+        guard let operationID = v2UUID(params, "operation_id"),
+              let operation = mobileRelaunchStore.operation(operationID, recovered: true) else {
+            return .err(code: RelaunchError.unknownOperation.rawValue, message: "Operación desconocida", data: nil)
+        }
+        return .ok(mobileRelaunchPayload(operation))
+    }
+
+    private func mobileRelaunchPayload(_ operation: RelaunchOperation) -> [String: Any] {
+        [
+            "operation_id": operation.operationID.uuidString,
+            "recovered": operation.recovered,
+            "operation_state": operation.state.rawValue,
+            "results": operation.results.map { result -> [String: Any] in
+                var item: [String: Any] = ["key": result.key.text, "state": result.state.rawValue]
+                if let cause = result.cause { item["cause"] = cause.rawValue }
+                if let effectiveID = result.effectiveID { item["effective_id"] = effectiveID }
+                return item
+            },
+        ]
+    }
 
     // MARK: - file_put.v1
 
