@@ -1,3 +1,4 @@
+import CMUXAgentLaunch
 import AppKit
 import SwiftUI
 import CryptoKit
@@ -295,6 +296,110 @@ final class UniConnectCoordinator: ObservableObject {
             workspaceName: workspace.customTitle ?? workspace.title,
             windowName: workspace.panelTitle(panelId: routeID) ?? tmuxSession
         )
+    }
+
+    // MARK: Relanzar IA
+
+    private var relaunchCoordinator: UniConnectRelaunchCoordinator?
+    private var relaunchInFlight = false
+
+    /// Cierra y reabre las IA de `workspaces`, dejándolas como estaban.
+    ///
+    /// Un solo camino para el menú, el contextual y el móvil. Antes de tocar nada enseña lo que va a
+    /// hacer cuando son muchas ventanas: desde el móvil, «todo» está a un toque sin querer de
+    /// veintiséis agentes reiniciados, y en el Mac el menú de al lado dice lo mismo.
+    func relaunchAgents(in workspaces: [Workspace]) {
+        guard !relaunchInFlight else {
+            presentError(String(
+                localized: "uniconnect.relaunch.error.alreadyRunning",
+                defaultValue: "Ya hay un relanzado en marcha. Espera a que termine."
+            ))
+            return
+        }
+        let coordinator = relaunchCoordinator ?? UniConnectRelaunchCoordinator(
+            machineID: Host.current().localizedName ?? "mac"
+        )
+        relaunchCoordinator = coordinator
+        let preview = coordinator.preview(workspaces: workspaces)
+
+        guard !preview.targets.isEmpty else {
+            // Una lista vacía se explica, porque «no ha pasado nada» y «no había nada que hacer» se
+            // parecen demasiado desde fuera.
+            presentError(preview.exclusions.isEmpty
+                ? String(
+                    localized: "uniconnect.relaunch.error.nothingToDo",
+                    defaultValue: "No hay ninguna IA que relanzar aquí."
+                )
+                : String(
+                    localized: "uniconnect.relaunch.error.allExcluded",
+                    defaultValue: "Ninguna de estas ventanas se puede relanzar todavía: o no se sabe qué conversación llevan, o su IA aún no tiene adaptador. Se quedan como están."
+                ))
+            return
+        }
+
+        if preview.needsConfirmation, !confirmRelaunch(preview) { return }
+
+        relaunchInFlight = true
+        Task { @MainActor [weak self] in
+            let operation = await coordinator.run(preview)
+            self?.relaunchInFlight = false
+            self?.reportRelaunch(operation)
+        }
+    }
+
+    /// Enseña lo que va a pasar y espera un sí.
+    private func confirmRelaunch(_ preview: UniConnectRelaunchCoordinator.Preview) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(
+            localized: "uniconnect.relaunch.confirm.title",
+            defaultValue: "¿Relanzar \(preview.targets.count) ventanas?"
+        )
+        var detail = preview.targets.prefix(8).map(\.label).joined(separator: "\n")
+        if preview.targets.count > 8 {
+            detail += "\n…"
+        }
+        if !preview.exclusions.isEmpty {
+            detail += "\n\n" + String(
+                localized: "uniconnect.relaunch.confirm.excluded",
+                defaultValue: "Se quedan fuera \(preview.exclusions.count), intactas."
+            )
+        }
+        alert.informativeText = detail
+        alert.addButton(withTitle: String(localized: "uniconnect.relaunch.confirm.go", defaultValue: "Relanzar"))
+        alert.addButton(withTitle: String(localized: "common.cancel", defaultValue: "Cancel"))
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    /// Cuenta cómo quedó cada ventana, sin esconder las que necesitan a alguien.
+    private func reportRelaunch(_ operation: RelaunchOperation) {
+        let verified = operation.results.filter { $0.state == .verified }.count
+        let waiting = operation.needingUser
+        let failed = operation.retryable
+        guard !waiting.isEmpty || !failed.isEmpty else { return }
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = String(
+            localized: "uniconnect.relaunch.done.title",
+            defaultValue: "Relanzadas \(verified) de \(operation.results.count)"
+        )
+        var detail: [String] = []
+        if !waiting.isEmpty {
+            detail.append(String(
+                localized: "uniconnect.relaunch.done.needsUser",
+                defaultValue: "\(waiting.count) esperan a que contestes algo en su ventana: un permiso o la confianza de una carpeta. No se contestan solas a propósito."
+            ))
+        }
+        if !failed.isEmpty {
+            detail.append(String(
+                localized: "uniconnect.relaunch.done.failed",
+                defaultValue: "\(failed.count) no salieron y se han quedado como estaban."
+            ))
+        }
+        alert.informativeText = detail.joined(separator: "\n\n")
+        alert.addButton(withTitle: String(localized: "common.ok", defaultValue: "OK"))
+        alert.runModal()
     }
 
     // MARK: Window helpers

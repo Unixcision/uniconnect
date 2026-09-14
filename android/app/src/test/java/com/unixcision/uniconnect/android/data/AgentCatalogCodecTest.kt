@@ -66,4 +66,23 @@ class AgentCatalogCodecTest {
         assertEquals("local", local.getString("kind"))
         assertFalse(local.has("connect_command"))
     }
+
+    @Test fun `el alcance viaja con kind e id, y nada mas`() {
+        // Acordado con el motor Linux: el espacio al que pertenece una ventana se queda en el
+        // modelo. Mandarlo por el cable invitaria a que el equipo resolviera el objetivo con el, y
+        // quien puede resolverlo es el que lo tiene delante.
+        val ventana = client.scopeParameters(RelaunchScope.Window("maquina", "espacio", "ventana-7"))
+        assertEquals("window", ventana.getString("kind"))
+        assertEquals("ventana-7", ventana.getString("id"))
+        assertFalse(ventana.has("workspace_id"))
+        assertEquals(2, ventana.length())
+
+        val espacio = client.scopeParameters(RelaunchScope.Workspace("maquina", "espacio-3"))
+        assertEquals("workspace", espacio.getString("kind"))
+        assertEquals("espacio-3", espacio.getString("id"))
+
+        val equipo = client.scopeParameters(RelaunchScope.Machine("maquina-1"))
+        assertEquals("machine", equipo.getString("kind"))
+        assertEquals("maquina-1", equipo.getString("id"))
+    }
 }

@@ -1343,6 +1343,31 @@ struct cmuxApp: App {
             }
             .disabled(activeTabManager.selectedWorkspace?.uniConnectProfile?.isSSH != true)
 
+            Divider()
+
+            // Tres alcances y un solo camino por debajo. Un alcance «todo» que no fuera la suma de
+            // los equipos escondería que uno no contestó.
+            Button {
+                guard let workspace = activeTabManager.selectedWorkspace else { return }
+                UniConnectCoordinator.shared.relaunchAgents(in: [workspace])
+            } label: {
+                Label(
+                    String(localized: "menu.box.relaunchAgents", defaultValue: "Relanzar las IA de esta caja"),
+                    systemImage: "arrow.clockwise.circle"
+                )
+            }
+            .disabled(activeTabManager.selectedWorkspace == nil)
+
+            Button {
+                UniConnectCoordinator.shared.relaunchAgents(in: activeTabManager.tabs)
+            } label: {
+                Label(
+                    String(localized: "menu.box.relaunchAgentsEverywhere", defaultValue: "Relanzar todas las IA de este equipo"),
+                    systemImage: "arrow.clockwise.circle.fill"
+                )
+            }
+            .disabled(activeTabManager.tabs.isEmpty)
+
             Menu {
                 ForEach(WorkspaceTabColorSettings.palette(), id: \.id) { entry in
                     Button {

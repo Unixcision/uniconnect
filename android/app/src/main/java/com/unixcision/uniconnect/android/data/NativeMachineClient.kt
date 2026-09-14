@@ -129,8 +129,10 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
         decodeOperation(call(machine, "relaunch.status", JSONObject().put("operation_id", operationID)))
 
     internal fun scopeParameters(scope: RelaunchScope): JSONObject = when (scope) {
+        // Solo `kind` e `id` viajan. El espacio al que pertenece una ventana se queda en el modelo
+        // y en la pantalla: mandarlo invitaría a que el equipo decidiera con él, y quien resuelve
+        // un objetivo es el que lo tiene delante.
         is RelaunchScope.Window -> JSONObject().put("kind", "window").put("id", scope.windowID)
-            .put("workspace_id", scope.workspaceID)
         is RelaunchScope.Workspace -> JSONObject().put("kind", "workspace").put("id", scope.workspaceID)
         is RelaunchScope.Machine -> JSONObject().put("kind", "machine").put("id", scope.machineID)
     }
