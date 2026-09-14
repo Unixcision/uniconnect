@@ -189,6 +189,18 @@ AgentAdapter
 
 Mismos tres verbos para caja local y SSH; cambia el transporte, no el contrato.
 
+**Y una suposición que hay que nombrar, porque ya ha mordido:** cerrar una IA deja un intérprete de
+órdenes esperando. Es cierto cuando la ventana lanzó la IA desde su shell, y **falso cuando la lanzó
+un supervisor**. Los servidores con `recovery.py` tienen encima un vigilante que espera a su hijo y
+lo vuelve a abrir tras un error o un Intro: ahí no queda ninguna shell donde escribir, y el verbo
+rechaza el objetivo en vez de teclear a ciegas, que es lo correcto pero deja la ventana fuera.
+
+Un arranque supervisado necesita **su propio adaptador**, que sepa hablar con el supervisor en lugar
+de con una shell. Lo que no vale es quitar la comprobación y mandar la orden igualmente, ni usar las
+acciones del supervisor por la espalda: puede tocar más ventanas o cambiar permisos. Medido el
+15-09-2026 en las 19 ventanas del MINIPC de Dani: ninguna admitida, y la raíz de varias era
+exactamente esto.
+
 ## 7. Superficies
 
 - **Mac y Linux**: menú contextual de la ventana / del espacio, y menú superior.
