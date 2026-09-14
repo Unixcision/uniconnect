@@ -4,6 +4,7 @@ import copy
 import json
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 
 from uniconnect.mobile_protocol import RPCError
@@ -130,6 +131,20 @@ class RelaunchTests(unittest.TestCase):
             with self.assertRaises(RPCError):
                 RelaunchService.scope(scope, "machine", [workspace])
 
+    def test_shared_window_request_is_resolved_and_admitted_without_workspace_id(self):
+        path = Path(__file__).resolve().parents[2] / "contracts/relaunch-v1/plan-window-request.json"
+        request = json.loads(path.read_text())
+        window = {"id": request["scope"]["id"]}
+        workspace = {"id": "workspace-context", "windows": [window, {"id": "not-selected"}]}
+        selected = self.service.scope(request["scope"], "machine", [workspace])
+        self.assertEqual(selected, [(workspace, window)])
+        plan = self.service.plan(request["verb"], [{"record": record, "workspace": box,
+            "label": record["id"], "provider": "codex"} for box, record in selected], "owner", self.authorized)
+        self.assertEqual(len(plan["targets"]), 1)
+        self.assertEqual(self.adapter.calls, [])
+        with self.assertRaises(RPCError):
+            self.service.scope({**request["scope"], "workspace_id": workspace["id"]}, "machine", [workspace])
+
     def test_new_phase_cannot_undo_a_terminal_result(self):
         plan = self.plan()
         self.apply(plan)
@@ -219,3 +234,52 @@ class RelaunchTests(unittest.TestCase):
                 self.assertEqual(result["results"][0]["state"], "verificado")
                 self.assertEqual(starts, [plan["operation_id"]])
                 self.assertEqual(reads, [plan["operation_id"]])
+
+    def test_fifth_queued_target_is_durably_not_sent_when_four_workers_are_accepted(self):
+        barrier, release = threading.Barrier(5), threading.Event()
+        starts, reads = [], []
+        adapter = Adapter()
+        def execute(candidate, verb, proof, operation, changed, authorized):
+            starts.append(proof["key"])
+            barrier.wait(timeout=5)
+            if not release.wait(timeout=5):
+                raise RuntimeError("fixture did not release accepted workers")
+            return {"state": "reabriendo", "cause": "host_inaccesible"}
+        def recover(target, operation):
+            reads.append(target["proof"]["key"])
+            return {"state": "verificado"}
+        adapter.execute, adapter.recover = execute, recover
+        service = RelaunchService(Path(self.directory.name), adapter)
+        candidates = [{"label": str(i), "key": str(i), "provider": "codex"} for i in range(5)]
+        plan = service.plan("agent.relaunch", candidates, "owner", lambda: True)
+        try:
+            service.apply(plan["operation_id"], plan["token"], "owner", lambda: True)
+            barrier.wait(timeout=5)  # Four live workers; the fifth Future cannot have run.
+            service.close()
+            last = service.read(plan["operation_id"])["results"][-1]
+            self.assertEqual(last, {"key": "4", "state": "omitido", "cause": "no_enviado"})
+        finally:
+            release.set()
+            service.close()
+            service.pool.shutdown(wait=True, cancel_futures=True)
+        jobs = []
+        restored = RelaunchService(Path(self.directory.name), adapter, submit=lambda *job: jobs.append(job))
+        restored.status(plan["operation_id"], "owner", lambda: True)
+        for job in jobs:
+            job[0](*job[1:])
+        result = restored.status(plan["operation_id"], "owner", lambda: True)
+        self.assertEqual(result["operation_state"], "terminada")
+        self.assertEqual([r["state"] for r in result["results"]], ["verificado"] * 4 + ["omitido"])
+        self.assertEqual(sorted(starts), ["0", "1", "2", "3"])
+        self.assertEqual(sorted(reads), ["0", "1", "2", "3"])
+
+    def test_crash_after_admission_before_dispatch_is_not_sent_and_never_replayed(self):
+        plan = self.plan()
+        self.apply(plan)  # submit retained the job; execute has not begun.
+        restored = RelaunchService(Path(self.directory.name), self.adapter,
+            submit=lambda *job: self.fail("An unsent target must not recover or start"))
+        result = restored.status(plan["operation_id"], "owner", self.authorized)
+        self.assertEqual(result["operation_state"], "terminada")
+        self.assertEqual(result["results"][0]["state"], "omitido")
+        self.assertEqual(result["results"][0]["cause"], "no_enviado")
+        self.assertEqual(self.adapter.calls, [])

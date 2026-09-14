@@ -8,6 +8,7 @@ El documento que los explica es `docs/RELANZAR-v1.md`.
 | Archivo | Qué fija |
 |---|---|
 | `plan-request.json` | Forma de `relaunch.plan`. |
+| `plan-window-request.json` | Petición de ventana: scope tiene exactamente `kind` e `id`; el contexto de espacio del cliente no añade `workspace_id` al wire. |
 | `plan-response.json` | Objetivos, exclusiones con causa, token y caducidad. |
 | `apply-request.json` | Forma de `relaunch.apply`. |
 | `apply-response.json` | Resultado por objetivo de un `apply` que sí ejecutó. |
