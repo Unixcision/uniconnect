@@ -3,6 +3,10 @@ package com.unixcision.uniconnect.android.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unixcision.uniconnect.android.R
+import com.unixcision.uniconnect.android.domain.RelaunchConfirmation
+import com.unixcision.uniconnect.android.domain.RelaunchPlan
+import com.unixcision.uniconnect.android.domain.RelaunchVerb
+import com.unixcision.uniconnect.android.domain.RelaunchScope
 import com.unixcision.uniconnect.android.domain.MachineFailure
 import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.domain.MachineClient
@@ -93,6 +97,8 @@ class MachinesViewModel(
         val terminal: TerminalSnapshot? = null, val terminalLoading: Boolean = false,
         val terminalError: Int? = null, val terminalErrorDetail: String? = null, val inputSending: Boolean = false, val reconnecting: Boolean = false,
         val creation: CreationContext? = null, val creating: Boolean = false, val creationError: Int? = null,
+        /** Un relanzado a la espera de que alguien lo confirme, o en marcha, o recién terminado. */
+        val relaunch: RelaunchUI? = null,
         val notificationLinks: Map<String, NotificationLinkState> = emptyMap(),
         val realTerminal: RealTerminal? = null,
         /** Machines whose host has no attach RPC yet; the mirror is used without asking again. */
@@ -238,6 +244,73 @@ class MachinesViewModel(
         val takesNewSSH = connection.snapshot?.takesNewSSH == true
         mutableState.update { it.copy(creation = CreationContext(machineID, workspace, workspaces.filter { box -> box.isSSH == true }, takesNewSSH = takesNewSSH), creationError = null) }
     }
+    /**
+     * Pide el plan de un relanzado y, si toca, lo enseña antes de ejecutarlo.
+     *
+     * Siempre se pide el plan, incluso para una ventana suelta: es lo que devuelve los objetivos
+     * reales y las exclusiones con su motivo. Ejecutar sin plan sería adivinar cuántas ventanas hay
+     * detrás de lo que alguien pulsó.
+     */
+    fun relaunch(machineID: String, scope: RelaunchScope) {
+        val current = state.value
+        if (current.relaunch is RelaunchUI.Running) return
+        val machine = current.machines.firstOrNull { it.id == machineID } ?: return
+        viewModelScope.launch {
+            val plan = try {
+                client.relaunchPlan(machine, RelaunchVerb.RELAUNCH, scope)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                mutableState.update { it.copy(relaunch = RelaunchUI.Failed(machineID, R.string.relaunch_failed)) }
+                return@launch
+            }
+            if (plan.targets.isEmpty()) {
+                // Una lista vacía se explica: «no ha pasado nada» y «no había nada que hacer» se
+                // parecen demasiado desde fuera.
+                mutableState.update { it.copy(relaunch = RelaunchUI.Failed(machineID, R.string.relaunch_nothing)) }
+                return@launch
+            }
+            if (RelaunchConfirmation.needsConfirmation(plan.targets.size)) {
+                mutableState.update { it.copy(relaunch = RelaunchUI.Confirm(machineID, plan)) }
+            } else {
+                apply(machineID, plan)
+            }
+        }
+    }
+
+    /** Ejecuta un plan ya enseñado. */
+    fun confirmRelaunch() {
+        val pending = state.value.relaunch as? RelaunchUI.Confirm ?: return
+        viewModelScope.launch { apply(pending.machineID, pending.plan) }
+    }
+
+    fun dismissRelaunch() {
+        if (state.value.relaunch is RelaunchUI.Running) return
+        mutableState.update { it.copy(relaunch = null) }
+    }
+
+    private suspend fun apply(machineID: String, plan: RelaunchPlan) {
+        val machine = state.value.machines.firstOrNull { it.id == machineID } ?: return
+        mutableState.update {
+            it.copy(relaunch = RelaunchUI.Running(machineID, plan.operationID, plan.targets.size))
+        }
+        val operation = try {
+            client.relaunchApply(machine, plan)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            // La operación puede haber sido aceptada aunque la respuesta se perdiera. Se pregunta
+            // por ella en vez de darla por fallida: repetir el apply cerraría todo por segunda vez.
+            runCatching { client.relaunchStatus(machine, plan.operationID) }.getOrNull()
+                ?: run {
+                    mutableState.update { it.copy(relaunch = RelaunchUI.Failed(machineID, R.string.relaunch_unknown)) }
+                    return
+                }
+        }
+        mutableState.update { it.copy(relaunch = RelaunchUI.Done(machineID, operation)) }
+        startObserving(machine, force = true)
+    }
+
     fun dismissCreate() { if (!state.value.creating) mutableState.update { it.copy(creation = null, creationError = null) } }
 
     fun create(request: ResourceCreation) {

@@ -190,6 +190,11 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                         overrides = overrides, hostKeepsOrder = state.hostKeepsOrder[machine.id],
                         onToggleWorkspacePin = model::toggleWorkspacePinned, onToggleWindowPin = model::toggleWindowPinned,
                         onMoveWorkspace = model::moveWorkspace, onMoveWindow = model::moveWindow,
+                        // Solo se ofrece si el equipo dice que sabe hacerlo. Un equipo antiguo no
+                        // enseña la acción, en vez de enseñarla y tragársela.
+                        onRelaunch = if (connection?.snapshot?.relaunches == true) {
+                            { scope -> model.relaunch(machine.id, scope) }
+                        } else null,
                     )
                     Level.LIST -> PullToRefreshBox(
                         isRefreshing = state.refreshing,
@@ -198,6 +203,9 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                 }
             }
         }
+    }
+    state.relaunch?.let { relaunch ->
+        RelaunchDialog(relaunch, onConfirm = model::confirmRelaunch, onDismiss = model::dismissRelaunch)
     }
     if (state.showingSettings) SettingsSheet(state.settings, transcribers, dictation, model::updateSettings, model::dismissSettings)
     if (state.adding) MachineSheet(state.saving, state.formError, onDismiss = model::dismissAdd, onSave = model::saveMachine)

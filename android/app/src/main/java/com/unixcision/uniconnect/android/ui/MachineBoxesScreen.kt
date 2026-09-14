@@ -40,6 +40,7 @@ import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.ui.theme.RowDensity
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import com.unixcision.uniconnect.android.ui.theme.WorkspaceLayout
+import com.unixcision.uniconnect.android.domain.RelaunchScope
 import com.unixcision.uniconnect.android.domain.ActivityState
 import com.unixcision.uniconnect.android.domain.BoxArrangement
 import com.unixcision.uniconnect.android.domain.BoxOverrides
@@ -78,6 +79,11 @@ fun MachineBoxesScreen(
     onToggleWindowPin: (String) -> Unit = {},
     onMoveWorkspace: (String, Int) -> Unit = { _, _ -> },
     onMoveWindow: (String, Int) -> Unit = { _, _ -> },
+    /**
+     * Relanza las IA de un alcance. Nulo cuando el equipo no anuncia `relaunch.v1`: la acción no se
+     * enseña en vez de enseñarse y no hacer nada.
+     */
+    onRelaunch: ((RelaunchScope) -> Unit)? = null,
 ) {
     val snapshot = connection.snapshot
     val selected = snapshot?.workspaces?.firstOrNull { it.id == selectedWorkspaceID }
@@ -109,12 +115,16 @@ fun MachineBoxesScreen(
     heldWorkspace?.let { held ->
         BoxActionsSheet(held.name, R.string.box_actions_workspace, held.isPinned || held.id in overrides.pinnedWorkspaces,
             onTogglePin = { revealLater(held.id); onToggleWorkspacePin(held.id) }, onMoveTop = { revealLater(held.id); onMoveWorkspace(held.id, Int.MIN_VALUE) },
-            onMoveUp = { revealLater(held.id); onMoveWorkspace(held.id, -1) }, onMoveDown = { revealLater(held.id); onMoveWorkspace(held.id, 1) }, onDismiss = { heldWorkspace = null })
+            onMoveUp = { revealLater(held.id); onMoveWorkspace(held.id, -1) }, onMoveDown = { revealLater(held.id); onMoveWorkspace(held.id, 1) }, onDismiss = { heldWorkspace = null },
+            onRelaunch = onRelaunch?.let { relaunch -> { relaunch(RelaunchScope.Workspace(machine.id, held.id)) } })
     }
     heldWindow?.let { held ->
         BoxActionsSheet(held.name, R.string.box_actions_window, held.isPinned || held.id in overrides.pinnedWindows,
             onTogglePin = { onToggleWindowPin(held.id) }, onMoveTop = { onMoveWindow(held.id, Int.MIN_VALUE) },
-            onMoveUp = { onMoveWindow(held.id, -1) }, onMoveDown = { onMoveWindow(held.id, 1) }, onDismiss = { heldWindow = null })
+            onMoveUp = { onMoveWindow(held.id, -1) }, onMoveDown = { onMoveWindow(held.id, 1) }, onDismiss = { heldWindow = null },
+            onRelaunch = onRelaunch?.let { relaunch ->
+                { relaunch(RelaunchScope.Window(machine.id, selectedWorkspaceID.orEmpty(), held.id)) }
+            })
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = spacing.page, end = spacing.page, top = 8.dp, bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(spacing.gap)) {
         if (snapshot == null) item { NotConnectedCard(connection, onConnect) }

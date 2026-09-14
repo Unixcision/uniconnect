@@ -9,12 +9,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.VerticalAlignTop
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -44,6 +47,13 @@ fun BoxActionsSheet(
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
     onDismiss: () -> Unit,
+    /**
+     * Cerrar y reabrir las IA de aquí, dejándolas como estaban.
+     *
+     * Nulo cuando el equipo no anuncia `relaunch.v1`: una acción que parece funcionar y no hace
+     * nada es peor que una acción que no está.
+     */
+    onRelaunch: (() -> Unit)? = null,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = UniTheme.colors.surface) {
         Column(Modifier.padding(horizontal = 12.dp).padding(bottom = 28.dp)) {
@@ -54,6 +64,10 @@ fun BoxActionsSheet(
             Action(R.string.box_move_top, Icons.Rounded.VerticalAlignTop) { onMoveTop(); onDismiss() }
             Action(R.string.box_move_up, Icons.Rounded.ArrowUpward) { onMoveUp(); onDismiss() }
             Action(R.string.box_move_down, Icons.Rounded.ArrowDownward) { onMoveDown(); onDismiss() }
+            onRelaunch?.let { relaunch ->
+                HorizontalDivider(Modifier.padding(vertical = 4.dp), color = UniTheme.colors.outline)
+                Action(R.string.relaunch_agents, Icons.Rounded.RestartAlt) { relaunch(); onDismiss() }
+            }
         }
     }
 }
