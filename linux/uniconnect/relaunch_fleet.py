@@ -5,6 +5,7 @@ import socket
 import uuid
 
 from .mobile_access import tailnet_address
+from .machine_directory import endpoint
 from .mobile_protocol import FrameDecoder, RPCError, encode_frame
 
 
@@ -18,19 +19,22 @@ class RelaunchFleet:
     def restore(cls, local, receipts, *, call=None):
         fleet = cls(local, (), call=call)
         for receipt in receipts:
-            address = receipt["id"]
+            address = receipt.get("endpoint", receipt["id"])
             host = {**receipt}
-            host["call"] = (local.dispatch if address == "local" else
+            host["call"] = (local.dispatch if receipt["id"] == "local" else
                             lambda method, params, address=address: fleet.call(address, method, params))
             fleet.hosts.append(host)
         return fleet
 
     @staticmethod
     def rpc(address, method, params):
-        if not tailnet_address(address):
-            raise RPCError("approval_required", "El equipo no es una dirección autorizada de Tailscale")
+        destination = endpoint(address["host"], address["port"]) if isinstance(address, dict) else endpoint(address, 58465)
+        resolved = socket.getaddrinfo(destination["host"], destination["port"], type=socket.SOCK_STREAM)
+        if not resolved or any(not tailnet_address(item[4][0]) for item in resolved):
+            raise RPCError("approval_required", "La dirección del equipo no resuelve dentro de Tailscale")
+        numeric = resolved[0][4][0]
         identifier = str(uuid.uuid4())
-        with socket.create_connection((address, 58465), timeout=4) as connection:
+        with socket.create_connection((numeric, destination["port"]), timeout=4) as connection:
             connection.settimeout(20)
             connection.sendall(encode_frame({"id": identifier, "method": "mobile." + method, "params": params}))
             decoder = FrameDecoder()
@@ -50,11 +54,13 @@ class RelaunchFleet:
         self.hosts = [{"id": "local", "label": "Este equipo", "call": self.local.dispatch}]
         seen = set()
         for peer in self.peers:
-            address = peer["address"]
-            if address in seen:
+            address = endpoint(peer["host"], peer["port"]) if "host" in peer else peer["address"]
+            identity = (address["host"], address["port"]) if isinstance(address, dict) else address
+            if identity in seen:
                 continue
-            seen.add(address)
-            self.hosts.append({"id": address, "label": peer.get("label", address),
+            seen.add(identity)
+            self.hosts.append({"id": peer.get("id", str(identity)), "endpoint": address,
+                               "label": peer.get("name", peer.get("label", str(identity))),
                                "call": lambda method, params, address=address: self.call(address, method, params)})
         def prepare(host):
             try:
@@ -65,6 +71,8 @@ class RelaunchFleet:
                     if "relaunch.v1" not in status.get("capabilities", []):
                         raise RPCError("no_soportado", "El equipo no anuncia relaunch.v1")
                     machine_id = status["machine_id"]
+                    if machine_id == self.local.machine_id:
+                        raise RPCError("duplicado", "Este equipo ya está incluido como local")
                 host["plan"] = host["call"]("relaunch.plan", {
                     "verb": "agent.relaunch", "scope": {"kind": "machine", "id": machine_id}})
             except Exception as error:
@@ -100,7 +108,11 @@ class RelaunchFleet:
                 results.extend({**item, "key": host["id"] + "|" + item["key"]} for item in value["results"])
                 in_progress |= value["operation_state"] == "en_curso"
             except Exception as error:
-                results.extend({"key": host["id"] + "|" + item["key"], "state": "necesita_usuario",
-                                "cause": getattr(error, "code", "host_inaccesible")} for item in plan["targets"])
+                cause = getattr(error, "code", "host_inaccesible")
+                unknown = cause in ("host_inaccesible", "internal_error", "timeout")
+                in_progress |= unknown and bool(plan["targets"])
+                results.extend({"key": host["id"] + "|" + item["key"],
+                                "state": "planificado" if unknown else "necesita_usuario",
+                                "cause": cause} for item in plan["targets"])
         return {"recovered": method == "relaunch.status", "operation_state": "en_curso" if in_progress else "terminada",
                 "results": results}

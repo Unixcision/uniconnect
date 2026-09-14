@@ -17,7 +17,7 @@ class RelaunchHistory:
         receipt = {key: copy.deepcopy(plan[key]) for key in ("operation_id", "verb", "targets", "excluded")}
         receipt["created_at"] = self.clock()
         if "fleet" in plan:
-            receipt["hosts"] = [{"id": host["id"], "label": host["label"],
+            receipt["hosts"] = [{"id": host["id"], "label": host["label"], "endpoint": host.get("endpoint", host["id"]),
                                   "plan": {key: copy.deepcopy(host["plan"][key])
                                            for key in ("operation_id", "targets", "excluded")}}
                                  for host in plan["fleet"].hosts if "plan" in host]

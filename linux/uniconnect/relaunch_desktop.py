@@ -9,6 +9,7 @@ from .mobile_protocol import RPCError
 from .relaunch import RelaunchService
 from .relaunch_agents import RelaunchAgents, RelaunchUnavailable
 from .relaunch_history import RelaunchHistory
+from .machine_directory import MachineDirectory
 from .transport import SSHCommand, Transport
 
 
@@ -21,6 +22,7 @@ class RelaunchDesktop:
             RelaunchAgents(reconnect=self.reconnect, validate=lambda candidate: self.main(lambda: self.current(candidate)),
                            resolve=lambda target: self.main(lambda: self.resolve(target))))
         self.history = RelaunchHistory(window.store.root / "relaunch-receipts-v1")
+        self.machines = MachineDirectory(window.store.root)
 
     def main(self, action):
         if threading.get_ident() == self.main_thread:
@@ -134,11 +136,8 @@ class RelaunchDesktop:
         window = self.window
         if kind == "global":
             from .relaunch_fleet import RelaunchFleet
-            peers = window.mobile.access.snapshot()[0] if hasattr(window, "mobile") else []
-            own = getattr(getattr(window, "mobile", None), "host", None)
-            peers = [p for p in peers if p["address"] != getattr(own, "address", None)]
             window.status_label.set_text(window._("Preparando el plan de relanzado…"))
-            window.background(RelaunchFleet(self, peers).plan, self.preview)
+            window.background(lambda: RelaunchFleet(self, self.machines.snapshot()).plan(), self.preview)
             return
         if kind == "window":
             identifier = window.focused_surface.record["id"]
@@ -151,17 +150,14 @@ class RelaunchDesktop:
         window.background(lambda: self.dispatch("relaunch.plan", {"verb": "agent.relaunch", "scope": scope}), self.preview)
 
     def preview(self, plan):
-        from gi.repository import Gtk
         window = self.window
+        if window._closed:
+            return
         names = ["• " + target["label"] for target in plan["targets"]]
         names += ["— " + target["label"] + ": " + window._("uniconnect.relaunch.cause." + target["cause"]) for target in plan["excluded"]]
         detail = window._("Se cerrará y reabrirá la IA conservando su conversación. tmux y tus archivos no se borran.")
-        detail += "\n\n" + "\n".join(names)
         window.status_label.set_text(window._("Plan de relanzado preparado"))
-        if not plan["targets"]:
-            window.error(window._("No hay agentes que puedan relanzarse con seguridad") + "\n\n" + "\n".join(names))
-            return
-        if not window.confirm("Relanzar las IA seleccionadas", detail):
+        if not self.confirm_plan(detail, names, bool(plan["targets"])):
             return
         def apply():
             self.history.remember(plan)
@@ -169,6 +165,26 @@ class RelaunchDesktop:
                 return plan["fleet"].operation("relaunch.apply")
             return self.dispatch("relaunch.apply", {"operation_id": plan["operation_id"], "token": plan["token"]})
         window.background(apply, lambda value: self.result_window(plan, value))
+
+    def confirm_plan(self, detail, names, eligible):
+        from gi.repository import Gtk
+        window = self.window
+        dialog = Gtk.Dialog(title=window._("Relanzar las IA seleccionadas"), transient_for=window, modal=True)
+        dialog.set_default_size(680, 430)
+        dialog.add_buttons(window._("Cancel"), Gtk.ResponseType.CANCEL, window._("Apply"), Gtk.ResponseType.OK)
+        dialog.set_response_sensitive(Gtk.ResponseType.OK, eligible)
+        description = Gtk.Label(label=detail if eligible else window._("No hay agentes que puedan relanzarse con seguridad"))
+        description.set_line_wrap(True)
+        dialog.get_content_area().pack_start(description, False, True, 10)
+        content = Gtk.TextView(editable=False, cursor_visible=False, wrap_mode=Gtk.WrapMode.WORD_CHAR)
+        content.get_buffer().set_text("\n".join(names))
+        scroll = Gtk.ScrolledWindow()
+        scroll.add(content)
+        dialog.get_content_area().pack_start(scroll, True, True, 10)
+        dialog.show_all()
+        accepted = dialog.run() == Gtk.ResponseType.OK and eligible
+        dialog.destroy()
+        return accepted
 
     def show_history(self):
         from gi.repository import Gtk
@@ -200,6 +216,32 @@ class RelaunchDesktop:
                 return self.dispatch("relaunch.status", {"operation_id": plan["operation_id"]})
             window.background(status, lambda value: self.result_window(plan, value))
         window.background(self.history.recent, show)
+
+    def show_machines(self):
+        from gi.repository import Gtk
+        window = self.window
+        def show(machines):
+            dialog = Gtk.Dialog(title=window._("Equipos del alcance global"), transient_for=window, modal=True)
+            dialog.add_buttons(window._("Close"), Gtk.ResponseType.CLOSE,
+                               window._("Añadir equipo"), Gtk.ResponseType.APPLY,
+                               window._("Quitar de la lista"), Gtk.ResponseType.REJECT)
+            choices = Gtk.ComboBoxText()
+            for machine in machines:
+                choices.append_text(machine["name"] + " · " + machine["host"] + ":" + str(machine["port"]))
+            if machines:
+                choices.set_active(0)
+            dialog.get_content_area().pack_start(choices, True, True, 12)
+            dialog.show_all()
+            response, index = dialog.run(), choices.get_active()
+            dialog.destroy()
+            if response == Gtk.ResponseType.APPLY:
+                value = window.fields_dialog("Añadir equipo UniConnect", [("name", "Name", "", "text"),
+                    ("host", "Dirección Tailscale o MagicDNS", "", "text"), ("port", "Puerto", "58465", "text")])
+                if value:
+                    window.background(lambda: self.machines.save(value["name"], value["host"], value["port"]), show)
+            elif response == Gtk.ResponseType.REJECT and index >= 0:
+                window.background(lambda: self.machines.remove(machines[index]["id"]), show)
+        window.background(self.machines.snapshot, show)
 
     def result_window(self, plan, response):
         from gi.repository import GLib, Gtk

@@ -171,7 +171,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             "Edit": ["copy", "show_history", "cancel_selection", "paste", "find", "find_next", "find_previous", "hide_find", "find_selection", "send_ctrl_f"],
             "View": ["sidebar", "palette", "notifications", "notifications_latest_unread", "notifications_mark_all_read", "notifications_dismiss_all", "font_larger", "font_smaller", "font_reset", "split_right", "split_down", "equalize_panes", "maximize_pane", "focus_left", "focus_right", "focus_up", "focus_down", "fullscreen"],
             "Workspace": ["rename_workspace", "pin_workspace", "edit_ssh", "workspace_previous", "workspace_next", "workspace_up", "workspace_down", "workspace_first", "window_previous", "window_next", "rename_window", "pin_window", "window_up", "window_down", "window_first", "reconnect", "reconnect_all", "notifications_toggle_workspace", "notifications_toggle_window", "upload", "kill_tmux"],
-            "IA": ["relaunch_window", "relaunch_workspace", "relaunch_machine", "relaunch_global", "relaunch_history"],
+            "IA": ["relaunch_window", "relaunch_workspace", "relaunch_machine", "relaunch_global", "relaunch_history", "relaunch_machines"],
             "Help": ["help", "help_shortcuts", "help_settings", "report_issue"],
         }
         for label, names in groups.items():

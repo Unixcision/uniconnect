@@ -2,6 +2,72 @@
   "sourceLanguage": "es",
   "version": "1.0",
   "strings": {
+    "uniconnect.shared.equipos.del.alcance.global": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Equipos del alcance global…"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.a.adir.equipo": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir equipo"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.quitar.de.la.lista": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar de la lista"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.a.adir.equipo.uniconnect": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir equipo UniConnect"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.direcci.n.tailscale.o.magicdns": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dirección Tailscale o MagicDNS"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.puerto": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Puerto"
+          }
+        }
+      }
+    },
     "uniconnect.shared.resultados.de.relanzados": {
       "extractionState": "manual",
       "localizations": {

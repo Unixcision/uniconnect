@@ -11,6 +11,7 @@ from uniconnect.relaunch_desktop import RelaunchDesktop
 from uniconnect.relaunch_fleet import RelaunchFleet
 from uniconnect.relaunch_history import RelaunchHistory
 from uniconnect.mobile_protocol import RPCError
+from uniconnect.machine_directory import MachineDirectory, endpoint
 from test_relaunch import Adapter
 
 
@@ -64,3 +65,61 @@ class DesktopModelTests(unittest.TestCase):
             window.locked = True
             with self.assertRaises(RPCError):
                 desktop.snapshot({"kind": "machine", "id": "machine"})
+
+
+class DirectoryTests(unittest.TestCase):
+    def test_inventory_has_explicit_routes_independent_of_incoming_approvals(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = MachineDirectory(Path(folder))
+            self.assertEqual(directory.snapshot(), [])
+            saved = directory.save("Mac", "mac.tail123.ts.net", "59001")
+            original = saved[0]["id"]
+            self.assertEqual(saved[0]["port"], 59001)
+            self.assertEqual(MachineDirectory(Path(folder)).snapshot(), saved)
+            changed = directory.save("Mac renombrado", "mac.tail123.ts.net", 59001)
+            self.assertEqual(len(changed), 1)
+            self.assertEqual(changed[0]["id"], original)
+            self.assertEqual(directory.remove(original), [])
+            self.assertEqual(directory.path.stat().st_mode & 0o777, 0o600)
+        for host, port in (("example.com", 58465), ("127.0.0.1", 123), ("100.64.0.2", 0),
+                           ("100.64.0.2", 65536), ("x;echo", 58465)):
+            with self.assertRaises(ValueError):
+                endpoint(host, port)
+
+
+class MobileOwnerTests(unittest.TestCase):
+    def test_actual_peer_owns_operation_across_tcp_reconnect_but_not_revocation(self):
+        from uniconnect.mobile_access import MobileAccess
+        from uniconnect.mobile_rpc import MobileRPC
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            access = MobileAccess(root)
+            for address in ("100.64.0.2", "100.64.0.3"):
+                access.authorize(address)
+                access.approve(address)
+            jobs, adapter = [], Adapter()
+            service = RelaunchService(root / "operations", adapter, submit=lambda *job: jobs.append(job))
+            workspace = {"id": "box", "name": "Caja", "kind": "local", "windows": [
+                {"id": "window", "name": "Codex", "agent": "codex", "tmux": "fixture"}]}
+            window = SimpleNamespace(store=SimpleNamespace(root=root, workspaces=[workspace], data={}),
+                                     mobile=SimpleNamespace(access=access), locked=False, _closed=False, surfaces={})
+            window.relaunch = RelaunchDesktop(window, lambda action: action(), service=service)
+            rpc = MobileRPC(window, access, lambda action: action(), file_put=SimpleNamespace(),
+                            remote_inbox=SimpleNamespace(), transcription=SimpleNamespace())
+            rpc.host = SimpleNamespace(peer_of=lambda connection: "100.64.0.3" if connection == "other" else "100.64.0.2",
+                                       address="100.64.0.1", port=58465)
+            self.assertIn("relaunch.v1", rpc.dispatch("mobile.host.status", {}, "first")["capabilities"])
+            self.assertIn("relaunch.v1", rpc.dispatch("mobile.workspace.list", {}, "first")["capabilities"])
+            plan = rpc.dispatch("mobile.relaunch.plan", {"verb": "agent.relaunch",
+                "scope": {"kind": "machine", "id": access.machine_id}, "owner": "spoof"}, "first")
+            params = {"operation_id": plan["operation_id"], "token": plan["token"]}
+            with self.assertRaises(RPCError):
+                rpc.dispatch("mobile.relaunch.apply", params, "other")
+            self.assertEqual(jobs, [])
+            rpc.dispatch("mobile.relaunch.apply", params, "second-connection-same-peer")
+            self.assertEqual(len(jobs), 1)
+            access.revoke("100.64.0.2")
+            jobs[0][0](*jobs[0][1:])
+            self.assertEqual(adapter.calls, [])
+            with self.assertRaises(RPCError):
+                rpc.dispatch("mobile.relaunch.status", {"operation_id": plan["operation_id"]}, "third-connection")

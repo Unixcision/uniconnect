@@ -13,11 +13,11 @@ from types import SimpleNamespace
 import unittest
 import uuid
 
-from uniconnect.relaunch_agents import RelaunchAgents
+from uniconnect.relaunch_agents import RelaunchAgents, RelaunchUnavailable
 from uniconnect.relaunch_fleet import RelaunchFleet
 from uniconnect.relaunch_worker import TargetWorker, Unavailable, TmuxOutputEvents
 from uniconnect.resume_catalog import AgentResumeCatalog
-from uniconnect.transport import Transport
+from uniconnect.transport import Transport, TransportError
 
 
 class ArgumentsTests(unittest.TestCase):
@@ -103,6 +103,94 @@ class FleetTests(unittest.TestCase):
         self.assertEqual(result["operation_state"], "terminada")
         self.assertFalse(any(c[0] == "100.64.0.4" for c in calls))
 
+    def test_all_hosts_disconnected_is_unknown_not_a_finished_operation(self):
+        local = SimpleNamespace(machine_id="local", dispatch=lambda *args: (_ for _ in ()).throw(ConnectionError()))
+        fleet = RelaunchFleet.restore(local, [{"id": "local", "label": "Local", "plan": {
+            "operation_id": "op", "targets": [{"key": "pane"}], "excluded": []}}])
+        value = fleet.operation("relaunch.status")
+        self.assertEqual(value["operation_state"], "en_curso")
+        self.assertEqual(value["results"][0]["state"], "planificado")
+
+    def test_configured_port_and_directory_endpoint_survive_receipt_recovery(self):
+        calls = []
+        local = SimpleNamespace(machine_id="local", dispatch=lambda method, params:
+            {"operation_id": "local-op", "token": "token", "targets": [], "excluded": []})
+        def call(address, method, params):
+            calls.append((address, method, params))
+            if method == "host.status":
+                return {"machine_id": "remote", "capabilities": ["relaunch.v1"]}
+            if method == "relaunch.plan":
+                return {"operation_id": "remote-op", "token": "token", "targets": [], "excluded": []}
+            return {"results": [], "operation_state": "terminada"}
+        destination = {"host": "mac.tail123.ts.net", "port": 59001}
+        fleet = RelaunchFleet(local, [{"id": "saved", "name": "Mac", **destination}], call=call)
+        fleet.plan()
+        self.assertEqual(calls[0][0], destination)
+        host = fleet.hosts[1]
+        restored = RelaunchFleet.restore(local, [{key: host[key] for key in ("id", "label", "endpoint", "plan")}], call=call)
+        restored.operation("relaunch.status")
+        self.assertEqual(calls[-1][0], destination)
+
+
+class RecoveryAndRevocationTests(unittest.TestCase):
+    def setUp(self):
+        self.candidate = {"provider": "codex", "connection": None,
+                          "record": {"id": "window", "tmux": "fixture", "tmuxSocket": "fixture"}}
+        self.proof = {"key": "pane", "generation": 1}
+
+    def test_revocation_or_replacement_while_probe_is_pending_never_sends_start(self):
+        for revoke in (True, False):
+            allowed, current, calls = [True], [True], []
+            adapter = RelaunchAgents(validate=lambda candidate: current[0])
+            def request(candidate, action, **params):
+                calls.append(action)
+                if revoke:
+                    allowed[0] = False
+                else:
+                    current[0] = False
+                return self.proof
+            adapter.request = request
+            if revoke:
+                with self.assertRaises(RelaunchUnavailable) as error:
+                    adapter.execute(self.candidate, "agent.relaunch", self.proof, "operation", lambda r: None, lambda: allowed[0])
+                self.assertEqual(error.exception.cause, "permisos")
+            else:
+                value = adapter.execute(self.candidate, "agent.relaunch", self.proof, "operation", lambda r: None, lambda: allowed[0])
+                self.assertEqual(value["cause"], "generacion_cambiada")
+            self.assertEqual(calls, ["inspect"])
+
+    def test_lost_start_response_and_long_outage_recover_same_journal_without_another_start(self):
+        for lose_start in (True, False):
+            clock, starts, reachable, status_ids = [0], [], [False], []
+            operation = str(uuid.uuid4())
+            def run(command, **kwargs):
+                request = json.loads(base64.b64decode(shlex.split(command)[-1]))
+                action = request["action"]
+                if action == "inspect":
+                    value = self.proof
+                elif action == "start":
+                    starts.append(request["operation_id"])
+                    if lose_start:
+                        raise TransportError("connection_timeout")
+                    value = {"state": "cerrando"}
+                else:
+                    status_ids.append(request["operation_id"])
+                    if not reachable[0]:
+                        raise TransportError("remote_command_failed")
+                    value = {"state": "verificado", "effective_id": "same-conversation"}
+                return SimpleNamespace(stdout="UC_RELAUNCH_V1 " + json.dumps(value))
+            adapter = RelaunchAgents(transport_factory=lambda *a, **k: SimpleNamespace(run=run),
+                resolve=lambda target: self.candidate, clock=lambda: clock[0],
+                wait=lambda delay: clock.__setitem__(0, clock[0] + delay))
+            value = adapter.execute(self.candidate, "agent.relaunch", self.proof, operation, lambda r: None, lambda: True)
+            self.assertNotIn(value["state"], ("fallido", "necesita_usuario", "verificado"))
+            with self.assertRaises(RelaunchUnavailable):
+                adapter.recover({"proof": self.proof}, operation)
+            reachable[0] = True
+            self.assertEqual(adapter.recover({"proof": self.proof}, operation)["state"], "verificado")
+            self.assertEqual(starts, [operation])
+            self.assertEqual(set(status_ids), {operation})
+
 
 PROVIDER = r'''
 #include <stdio.h>
@@ -114,6 +202,8 @@ PROVIDER = r'''
 #include <string.h>
 static volatile sig_atomic_t stopped = 0;
 static void stop(int ignored) { stopped = 1; }
+static void draft(int ignored) { const char text[]="\033[2J\033[H› borrador"; write(1,text,sizeof(text)-1); }
+static void clear(int ignored) { const char text[]="\033[2J\033[H› "; write(1,text,sizeof(text)-1); }
 int main(int argc, char **argv) {
   const char *id = getenv("UC_FIXTURE_ID");
   if (argc > 2 && !strcmp(argv[1], "resume")) id = argv[2];
@@ -123,6 +213,7 @@ int main(int argc, char **argv) {
   struct flock lock = {.l_type=F_WRLCK, .l_whence=SEEK_SET, .l_start=0, .l_len=0};
   if (fd < 0 || fcntl(fd, F_SETLK, &lock)) return 2;
   signal(SIGTERM, stop);
+  signal(SIGUSR1, draft); signal(SIGUSR2, clear);
   printf("\033[2J\033[H› "); fflush(stdout);
   while (!stopped) pause();
   close(fd);
@@ -172,6 +263,21 @@ class TargetIntegrationTests(unittest.TestCase):
                         events.wait(deadline, time.monotonic)
                 operation = str(uuid.uuid4())
                 phases = []
+                import signal
+                os.kill(proof["pid"], signal.SIGUSR1)
+                def screen_until(predicate):
+                    deadline = time.monotonic() + 5
+                    while not predicate(subprocess.check_output(["tmux", "-L", socket_name, "capture-pane", "-p", "-t", "=fixture:"], text=True)):
+                        events.wait(deadline, time.monotonic)
+                screen_until(lambda screen: "› borrador" in screen)
+                rejected = str(uuid.uuid4())
+                draft_result = adapter.execute(candidate, "agent.relaunch", proof, rejected, phases.append, lambda: True)
+                self.assertEqual(draft_result, {"state": "necesita_usuario", "cause": "dialogo_desconocido"})
+                self.assertEqual(adapter.probe(candidate, "agent.relaunch"), proof)
+                os.kill(proof["pid"], signal.SIGUSR2)
+                screen_until(lambda screen: "› " in screen and "borrador" not in screen)
+                self.assertEqual(adapter.request(candidate, "start", expected=proof, operation_id=rejected), draft_result)
+                phases.clear()
                 result = adapter.execute(candidate, "agent.relaunch", proof, operation, phases.append, lambda: True)
                 self.assertEqual(result, {"state": "verificado", "effective_id": native})
                 new = adapter.probe(candidate, "agent.relaunch")

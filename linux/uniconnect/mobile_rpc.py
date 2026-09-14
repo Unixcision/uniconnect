@@ -426,7 +426,7 @@ class MobileRPC:
             raise RPCError("not_found", "No se encontró la terminal")
         return {"workspaces": boxes, "display_name": socket.gethostname(),
                 "capabilities": ["activity.v1", "box_update", "file_put.v1", "transcribe.v1",
-                                 "ssh_create.v1"]}
+                                 "ssh_create.v1"] + (["relaunch.v1"] if getattr(self.window, "relaunch", None) is not None else [])}
 
     def invalidate_terminal(self, panel_id):
         with self.revision_lock:

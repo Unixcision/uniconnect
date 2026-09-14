@@ -42,13 +42,19 @@ class RelaunchAgents:
             request["identity_helper"] = self.identity_helper
         payload = base64.b64encode(json.dumps(request).encode()).decode()
         transport = self.transport_factory(candidate.get("connection"), socket_name=request["socket"])
-        result = transport.run(shlex.join(["python3", "-c", self.source, payload]), timeout=18)
+        try:
+            result = transport.run(shlex.join(["python3", "-c", self.source, payload]), timeout=18)
+        except Exception:
+            raise RelaunchUnavailable("host_inaccesible") from None
         # Login-shell banners are allowed; only the bounded, versioned reply is parsed.
         lines = [line[len("UC_RELAUNCH_V1 "):] for line in result.stdout.splitlines()
                  if line.startswith("UC_RELAUNCH_V1 ")]
         if len(lines) != 1 or len(lines[0]) > 65536:
             raise RelaunchUnavailable("host_inaccesible")
-        response = json.loads(lines[0])
+        try:
+            response = json.loads(lines[0])
+        except ValueError:
+            raise RelaunchUnavailable("host_inaccesible") from None
         if "error" in response:
             raise RelaunchUnavailable(response["error"])
         return response
@@ -84,6 +90,12 @@ class RelaunchAgents:
             # Until a provider exposes a verifiable input receipt, never type
             # into a possibly active permission dialog or claim a queued key is ACKed.
             return {"state": "necesita_usuario", "cause": "no_soportado"}
+        # Probing a remote host can take seconds. Recheck after it, immediately
+        # before dispatching the target-side atomic close/reopen operation.
+        if not authorized():
+            raise RelaunchUnavailable("permisos")
+        if not self.validate(candidate):
+            return {"state": "omitido", "cause": "generacion_cambiada"}
         try:
             result = self.request(candidate, "start", expected=proof, operation_id=operation_id)
         except RelaunchUnavailable as error:

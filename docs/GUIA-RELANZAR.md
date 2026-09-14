@@ -51,12 +51,17 @@ instalación de UniConnect, de todos sus espacios. Incluye las IA en VPS que se 
 desde estas ventanas; no se limita a procesos locales de Linux.
 
 **IA → Relanzar IA globalmente…** añade los otros equipos conocidos/autorizados de
-la red personal. En Linux se toma el inventario de dispositivos aprobados de
-**Acceso remoto**, no se escanea una red ni se conceden permisos nuevos. Cada
-destino debe tener UniConnect escuchando en el canal móvil existente y autorizar a
+la red personal. En Linux configura ese inventario en **IA → Equipos del alcance
+global…**: nombre, dirección Tailscale/MagicDNS y puerto de cada host UniConnect.
+Es un directorio de conexiones salientes, independiente de quién tenga permiso
+para entrar aquí. No se escanea una red ni se conceden permisos nuevos. Cada
+destino debe tener UniConnect escuchando en su puerto configurado y autorizar a
 este equipo; aprobar un móvil para entrar aquí no concede el permiso inverso.
 Un dispositivo sin host UniConnect, inaccesible o sin capacidad `relaunch.v1`
 aparece excluido. Comprueba la lista: un equipo no registrado no está incluido.
+Añade instalaciones UniConnect, no cada destino SSH: los VPS ya entran a través
+de sus ventanas. Quitar un equipo del directorio no cierra sus sesiones ni revoca
+permisos; solo lo deja fuera de futuros planes globales.
 
 El cliente pide un plan independiente a cada equipo y muestra las exclusiones.
 Dos vistas del mismo panel SSH no deben producir dos reinicios: la exclusión mutua
