@@ -1,6 +1,7 @@
 {
   "operation_id": "0c8a1f3e-5b62-4f77-8d90-6a1e4c2b7d15",
   "recovered": false,
+  "operation_state": "terminada",
   "results": [
     {
       "key": "local:MacBook-Pro-de-Daniel|tmux:uniconnect-local|pane:%13|gen:7",

@@ -24,12 +24,27 @@ usuario las pide en momentos distintos.
 esto y no relanzar nada. En SSH es además *el* caso, porque lo que se cae es el transporte mientras
 el tmux remoto sigue vivo.
 
-**Compatibilidad, no reinvención.** En el Mac, `v2MobileTerminalReconnect` ya reconecta durable en
-local y SSH y explícitamente no relanza la IA; `UniConnectCoordinator.reconnectAllSSHWindowsNow` ya
-agrega el transporte SSH. `transport.reconnect` **reutiliza esa ruta y conserva su semántica**. En
-Linux, `mobile_rpc.py` trata hoy `terminal.reconnect`/`reset` como `surface.launch()`: ese camino
-**no** se convierte en un cierre de IA implícito. Un cliente antiguo que llama a reconectar debe
-seguir obteniendo exactamente lo de siempre.
+**Compatibilidad, no reinvención.** Los caminos que ya existen se conservan con su semántica; el
+verbo nuevo es estricto y **no hereda sus atajos**. Son dos plataformas con dos historias distintas
+y conviene no mezclarlas:
+
+- **Mac.** `v2MobileTerminalReconnect` ya reconecta durable en local y SSH y explícitamente no
+  relanza la IA; `UniConnectCoordinator.reconnectAllSSHWindowsNow` agrega el transporte SSH.
+  `transport.reconnect` reutiliza esa ruta.
+- **Linux.** `mobile_rpc.py` trata hoy `terminal.reconnect`/`reset` como `surface.launch()`, y esa
+  llamada **no crea tmux**: `launch(create=False)` → `terminal_launch(create=False)` →
+  `TmuxCommand.attach` comprueba `has-session`, sale 72 si falta y usa `attach-session`. Ese camino
+  no se convierte en un cierre de IA implícito.
+
+**Y una trampa que hay que nombrar**: en Linux, la ruta de escritorio con la carpeta local borrada
+puede abrir una **shell de recuperación** en vez de la conversación. Un panel con una shell ahí
+**no es `verificado`**: el verbo nuevo comprueba que el panel y el transporte son los que esperaba y,
+si no lo son, devuelve `fallido`. Enseñar una shell de recuperación como «reconectado» es mentir con
+un tic verde.
+
+`transport.reconnect` **no crea ni reanuda nada de forma implícita**. Si no hay a qué reengancharse,
+falla y lo dice; no inventa una sesión. Los alias antiguos siguen funcionando como siempre para
+quien ya los usa.
 
 Para reanudar, Linux ya comparte sintaxis en `resume_catalog.py` →
 `Packages/CMUXAgentLaunch/…/agent-resume-v1.json`. Se reutiliza; no se crea otro catálogo.
@@ -101,8 +116,10 @@ cualquiera de ellas  →  necesita_usuario | fallido | omitido
 `agent.relaunch` exige el **mismo ID efectivo** vivo; `transport.reconnect`, que el transporte
 entrega; `agent.continue`, que el agente **acusó recibo** del encargo.
 
-- `verificado` exige comprobar el **mismo ID efectivo** y el estado resultante. Un `queued` no se
-  enseña jamás como «IA relanzada».
+- `verificado` se **comprueba**, nunca se supone, y qué hay que comprobar depende del verbo (ver el
+  diagrama de arriba). Lo del **mismo ID efectivo** es exigencia de `agent.relaunch` y solo de él;
+  `transport.reconnect` no tiene conversación que comparar y `agent.continue` compara acuse de
+  recibo. Un `queued` no se enseña jamás como «IA relanzada».
 - `necesita_usuario` es un estado de primera: diálogo no reconocido, confianza de carpeta, permisos.
 - Cada motivo es una causa estable (identificador), y el texto en español lo pone el cliente.
 
@@ -114,7 +131,7 @@ vez. Se reintentan solo los fallidos.
 
 | Situación | Qué hace |
 |---|---|
-| `apply` repetido con un token de una operación **ya aceptada** | Devuelve **esa misma operación** y su estado. Aunque el token haya caducado entretanto: recuperar el resultado de algo que ya se hizo no puede exigir un plan nuevo, o el corte de red se convierte en trabajo perdido. |
+| `apply` repetido con un token de una operación **ya aceptada** | Devuelve **esa misma operación** y su estado. Aunque el token haya caducado entretanto: recuperar el resultado de algo que ya se hizo no puede exigir un plan nuevo, o el corte de red se convierte en trabajo perdido. **La excepción es solo a la caducidad**: sigue exigiendo un dispositivo autorizado *ahora* y que sea el dueño de esa operación. Un token caducado no es una llave maestra. |
 | `apply` **nuevo** con token caducado | **Rechazado.** No se ejecuta nada. |
 | `apply` nuevo con token válido pero un objetivo cuya generación cambió | Ese objetivo **excluido**; el resto sigue. Se pide plan nuevo para él. |
 
@@ -124,6 +141,12 @@ enseña distinto: una es «esto ya pasó, mira», la otra es «vuelve a mirar y 
 
 Consultar el estado de una operación en curso o terminada es su propia llamada, y **no caduca**
 mientras la operación se conserve.
+
+**`apply` no bloquea hasta terminar.** Devuelve en cuanto la operación está aceptada, con los
+objetivos en el estado que tengan; el cliente sigue con `relaunch.status`. Y ojo con lo que
+significa `recovered: true`: es **«esta operación ya existía»**, no «ya terminó». Una operación
+recuperada puede estar todavía en curso, y el campo que dice si terminó es el estado de la
+operación, no `recovered`.
 
 ## 5. Reglas que no se negocian
 
@@ -175,7 +198,7 @@ esos mismos archivos**. Si un ejemplo y una implementación discrepan, manda el 
 |---|---|
 | `relaunch.plan` | Previsualiza. Devuelve objetivos, exclusiones con motivo y un token. |
 | `relaunch.apply` | Ejecuta el plan de ese token. |
-| `relaunch.status` | Consulta una operación por su id. No caduca. |
+| `relaunch.status` | Consulta una operación por su id. No caduca. Es la que se usa mientras `apply` sigue en curso. |
 
 ```jsonc
 // relaunch.plan  →  petición
@@ -233,6 +256,12 @@ Las mismas en los tres lados, porque los fallos son los mismos:
 - `apply` **nuevo** con token caducado → `token_caducado`, sin efectos.
 - Mismo panel remoto alcanzable desde dos hosts → un solo ejecutor; el otro lo da por `duplicado`.
 - Objetivo sin autoridad resoluble → `sin_autoridad`, excluido, nada cerrado.
+- `apply` devuelve con objetivos a medias → `operation_state: "en_curso"`, y `relaunch.status` los
+  termina de contar. `apply` no bloquea.
+- Recuperar con token caducado desde un dispositivo **no autorizado** o que **no es el dueño** de la
+  operación → rechazado. La excepción es a la caducidad, no a la autorización.
+- Reconectar un panel cuya carpeta local ya no existe y acaba en shell de recuperación → `fallido`,
+  nunca `verificado`.
 
 ## 10. Pendiente de decisión del usuario
 
