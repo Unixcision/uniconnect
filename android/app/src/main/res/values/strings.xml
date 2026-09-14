@@ -89,6 +89,7 @@
     <string name="creation_agent_note">Al crear la ventana se iniciará %1$s en la carpeta de trabajo.</string>
     <string name="creation_agents_unavailable">La máquina no ha enviado opciones de inicio. Actualiza la conexión antes de crear una ventana.</string>
     <string name="relaunch_agents">Relanzar las IA</string>
+    <string name="relaunch_all_agents">Relanzar todas las IA</string>
     <string name="relaunch_confirm_title">¿Relanzar %1$d ventanas?</string>
     <string name="relaunch_confirm_note">Cada una se cierra y se vuelve a abrir con su misma conversación. Las que no se puedan, se quedan como están.</string>
     <string name="relaunch_confirm_excluded">Se quedan fuera %1$d, intactas.</string>

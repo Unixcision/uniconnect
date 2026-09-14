@@ -308,7 +308,15 @@ final class UniConnectCoordinator: ObservableObject {
     /// Un solo camino para el menú, el contextual y el móvil. Antes de tocar nada enseña lo que va a
     /// hacer cuando son muchas ventanas: desde el móvil, «todo» está a un toque sin querer de
     /// veintiséis agentes reiniciados, y en el Mac el menú de al lado dice lo mismo.
-    func relaunchAgents(in workspaces: [Workspace]) {
+    /// Relanza solo la IA de una ventana concreta.
+    ///
+    /// Es el alcance que más se usa y el único que no necesita preguntar: quien lo pide está
+    /// mirando esa ventana.
+    func relaunchAgent(panelID: UUID, in workspace: Workspace) {
+        relaunchAgents(in: [workspace], onlyPanels: [panelID])
+    }
+
+    func relaunchAgents(in workspaces: [Workspace], onlyPanels: Set<UUID>? = nil) {
         guard !relaunchInFlight else {
             presentError(String(
                 localized: "uniconnect.relaunch.error.alreadyRunning",
@@ -320,7 +328,20 @@ final class UniConnectCoordinator: ObservableObject {
             machineID: Host.current().localizedName ?? "mac"
         )
         relaunchCoordinator = coordinator
-        let preview = coordinator.preview(workspaces: workspaces)
+        var preview = coordinator.preview(workspaces: workspaces)
+        if let onlyPanels {
+            // Filtrar por panel y no por caja: una ventana suelta es su propio alcance, y el resto
+            // de su caja no tiene por qué enterarse.
+            let wanted = Set(workspaces.flatMap { workspace in
+                workspace.uniConnectLocalWindowsByPanelId
+                    .filter { onlyPanels.contains($0.key) }
+                    .compactMap { $0.value.tmuxBinding?.name }
+            })
+            preview = UniConnectRelaunchCoordinator.Preview(
+                targets: preview.targets.filter { wanted.contains($0.session) },
+                exclusions: preview.exclusions
+            )
+        }
 
         guard !preview.targets.isEmpty else {
             // Una lista vacía se explica, porque «no ha pasado nada» y «no había nada que hacer» se

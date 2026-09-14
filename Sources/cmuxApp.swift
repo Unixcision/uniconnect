@@ -1348,6 +1348,18 @@ struct cmuxApp: App {
             // Tres alcances y un solo camino por debajo. Un alcance «todo» que no fuera la suma de
             // los equipos escondería que uno no contestó.
             Button {
+                guard let workspace = activeTabManager.selectedWorkspace,
+                      let panelID = workspace.focusedPanelId else { return }
+                UniConnectCoordinator.shared.relaunchAgent(panelID: panelID, in: workspace)
+            } label: {
+                Label(
+                    String(localized: "menu.box.relaunchAgentWindow", defaultValue: "Relanzar la IA de esta ventana"),
+                    systemImage: "arrow.clockwise"
+                )
+            }
+            .disabled(activeTabManager.selectedWorkspace?.focusedPanelId == nil)
+
+            Button {
                 guard let workspace = activeTabManager.selectedWorkspace else { return }
                 UniConnectCoordinator.shared.relaunchAgents(in: [workspace])
             } label: {

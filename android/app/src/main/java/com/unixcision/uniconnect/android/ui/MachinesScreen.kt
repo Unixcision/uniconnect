@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -42,6 +43,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
+import com.unixcision.uniconnect.android.domain.RelaunchScope
 import com.unixcision.uniconnect.android.domain.ActivityState
 import com.unixcision.uniconnect.android.domain.BoxOverrides
 import com.unixcision.uniconnect.android.domain.Machine
@@ -135,6 +137,18 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                                 leadingIcon = { Icon(Icons.Rounded.Edit, null, tint = UniTheme.colors.accent) },
                                 onClick = { menuOpen = false; machine?.let(model::showEdit) },
                             )
+                            // El alcance de equipo entero vive aquí y no en la pulsación larga de un
+                            // espacio: pedir «todas» debe costar un gesto distinto que pedir «estas».
+                            if (connection?.snapshot?.relaunches == true && machine != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.relaunch_all_agents)) },
+                                    leadingIcon = { Icon(Icons.Rounded.RestartAlt, null, tint = UniTheme.colors.accent) },
+                                    onClick = {
+                                        menuOpen = false
+                                        model.relaunch(machine.id, RelaunchScope.Machine(machine.id))
+                                    },
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.remove), color = UniTheme.colors.danger) },
                                 leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = UniTheme.colors.danger) },
