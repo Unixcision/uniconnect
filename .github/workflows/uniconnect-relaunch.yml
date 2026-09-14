@@ -1,0 +1,28 @@
+name: UniConnect · relanzado Linux aislado
+
+on:
+  push:
+    branches: [uniconnect, 'desarrollo/**']
+    paths:
+      - 'linux/**'
+      - 'contracts/relaunch-v1/**'
+      - '.github/workflows/uniconnect-relaunch.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  relaunch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Dependencias del adaptador
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-cryptography tmux gcc
+      - name: Plan, permisos, proveedores, abanico y proceso tmux aislado
+        env:
+          PYTHONPATH: ${{ github.workspace }}/linux
+        run: /usr/bin/python3 -m unittest discover -s linux/tests -p 'test_relaunch*.py' -v
