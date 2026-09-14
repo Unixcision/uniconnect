@@ -194,6 +194,7 @@ class RelaunchService:
                 phases = PHASES[value["verb"]]
                 if state not in TERMINAL and (state not in phases or phases.index(state) < phases.index(previous["state"])):
                     raise ValueError("invalid_relaunch_transition")
+                previous.pop("cause", None)
                 previous.update({k: v for k, v in result.items() if k in ("state", "cause", "effective_id")})
             self.save(identifier, value)
 
@@ -216,7 +217,11 @@ class RelaunchService:
             result = self.adapter.recover(target, identifier)
             self.update(identifier, key, result)
         except Exception as error:
-            self.update(identifier, key, {"state": "necesita_usuario", "cause": getattr(error, "cause", "sin_autoridad")})
+            cause = getattr(error, "cause", "sin_autoridad")
+            with self.lock:
+                previous = next(row for row in self.read(identifier)["results"] if row["key"] == key)
+                self.update(identifier, key, {"state": previous["state"] if cause == "host_inaccesible" else "necesita_usuario",
+                                               "cause": cause})
         finally:
             with self.lock:
                 self.running.discard((identifier, key))

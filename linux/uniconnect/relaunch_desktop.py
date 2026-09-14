@@ -8,6 +8,7 @@ import uuid
 from .mobile_protocol import RPCError
 from .relaunch import RelaunchService
 from .relaunch_agents import RelaunchAgents, RelaunchUnavailable
+from .relaunch_history import RelaunchHistory
 from .transport import SSHCommand, Transport
 
 
@@ -19,6 +20,7 @@ class RelaunchDesktop:
         self.service = service or RelaunchService(window.store.root / "relaunch-v1",
             RelaunchAgents(reconnect=self.reconnect, validate=lambda candidate: self.main(lambda: self.current(candidate)),
                            resolve=lambda target: self.main(lambda: self.resolve(target))))
+        self.history = RelaunchHistory(window.store.root / "relaunch-receipts-v1")
 
     def main(self, action):
         if threading.get_ident() == self.main_thread:
@@ -162,10 +164,42 @@ class RelaunchDesktop:
         if not window.confirm("Relanzar las IA seleccionadas", detail):
             return
         def apply():
+            self.history.remember(plan)
             if "fleet" in plan:
                 return plan["fleet"].operation("relaunch.apply")
             return self.dispatch("relaunch.apply", {"operation_id": plan["operation_id"], "token": plan["token"]})
         window.background(apply, lambda value: self.result_window(plan, value))
+
+    def show_history(self):
+        from gi.repository import Gtk
+        import datetime
+        window = self.window
+        def show(receipts):
+            if not receipts:
+                window.error(window._("No hay relanzados guardados en este equipo"))
+                return
+            dialog = Gtk.Dialog(title=window._("Resultados de relanzados"), transient_for=window, modal=True)
+            dialog.add_buttons(window._("Cancel"), Gtk.ResponseType.CANCEL, window._("Ver resultado"), Gtk.ResponseType.OK)
+            choices = Gtk.ComboBoxText()
+            for receipt in receipts:
+                date = datetime.datetime.fromtimestamp(receipt["created_at"]).strftime("%d/%m %H:%M")
+                choices.append_text(date + " · " + ", ".join(t["label"] for t in receipt["targets"])[:160])
+            choices.set_active(0)
+            dialog.get_content_area().pack_start(choices, True, True, 12)
+            dialog.show_all()
+            response, index = dialog.run(), choices.get_active()
+            dialog.destroy()
+            if response != Gtk.ResponseType.OK or index < 0:
+                return
+            plan = receipts[index]
+            def status():
+                if "hosts" in plan:
+                    from .relaunch_fleet import RelaunchFleet
+                    plan["fleet"] = RelaunchFleet.restore(self, plan["hosts"])
+                    return plan["fleet"].operation("relaunch.status")
+                return self.dispatch("relaunch.status", {"operation_id": plan["operation_id"]})
+            window.background(status, lambda value: self.result_window(plan, value))
+        window.background(self.history.recent, show)
 
     def result_window(self, plan, response):
         from gi.repository import GLib, Gtk

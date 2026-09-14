@@ -84,7 +84,13 @@ class RelaunchAgents:
             # Until a provider exposes a verifiable input receipt, never type
             # into a possibly active permission dialog or claim a queued key is ACKed.
             return {"state": "necesita_usuario", "cause": "no_soportado"}
-        result = self.request(candidate, "start", expected=proof, operation_id=operation_id)
+        try:
+            result = self.request(candidate, "start", expected=proof, operation_id=operation_id)
+        except RelaunchUnavailable as error:
+            if error.cause != "host_inaccesible":
+                raise
+            # A lost response is not proof that the accepted target worker failed.
+            return {"state": "planificado", "cause": "host_inaccesible"}
         if result["state"] in ("verificado", "fallido", "omitido", "necesita_usuario"):
             return result
         deadline = self.clock() + 95
@@ -103,4 +109,4 @@ class RelaunchAgents:
             if result["state"] in ("verificado", "fallido", "omitido", "necesita_usuario"):
                 return result
             self.wait(0.5)
-        return {"state": "necesita_usuario", "cause": "host_inaccesible"}
+        return {"state": result["state"], "cause": "host_inaccesible"}

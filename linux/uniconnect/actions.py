@@ -44,6 +44,7 @@ ACTIONS = (
     Action("relaunch_workspace", "Relanzar IA de este espacio…"),
     Action("relaunch_machine", "Relanzar IA de este equipo…"),
     Action("relaunch_global", "Relanzar IA globalmente…"),
+    Action("relaunch_history", "Resultados de relanzados…"),
     Action("rename_workspace", "Rename workspace"),
     Action("rename_window", "Rename window"),
     Action("reset_window_name", "Reset window name"),

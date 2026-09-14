@@ -14,6 +14,17 @@ class RelaunchFleet:
         self.call = call or self.rpc
         self.hosts = []
 
+    @classmethod
+    def restore(cls, local, receipts, *, call=None):
+        fleet = cls(local, (), call=call)
+        for receipt in receipts:
+            address = receipt["id"]
+            host = {**receipt}
+            host["call"] = (local.dispatch if address == "local" else
+                            lambda method, params, address=address: fleet.call(address, method, params))
+            fleet.hosts.append(host)
+        return fleet
+
     @staticmethod
     def rpc(address, method, params):
         if not tailnet_address(address):
@@ -81,6 +92,8 @@ class RelaunchFleet:
             plan = host["plan"]
             params = {"operation_id": plan["operation_id"]}
             if method == "relaunch.apply":
+                if "token" not in plan:
+                    raise RPCError("token_no_valido", "Un recibo solo permite consultar, no volver a aplicar")
                 params["token"] = plan["token"]
             try:
                 value = host["call"](method, params)

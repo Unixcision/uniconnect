@@ -15,7 +15,7 @@ import uuid
 
 from uniconnect.relaunch_agents import RelaunchAgents
 from uniconnect.relaunch_fleet import RelaunchFleet
-from uniconnect.relaunch_worker import TargetWorker, Unavailable
+from uniconnect.relaunch_worker import TargetWorker, Unavailable, TmuxOutputEvents
 from uniconnect.resume_catalog import AgentResumeCatalog
 from uniconnect.transport import Transport
 
@@ -61,6 +61,21 @@ class ArgumentsTests(unittest.TestCase):
             worker.tmux = lambda *args, screen=screen: (str(len(screen.splitlines()) - 1) if args[0] == "display-message" else screen)
             with self.assertRaises(Unavailable):
                 worker.require_empty_composer({"pane": {"pane": "%1"}})
+
+    def test_native_turn_activity_and_runtime_settings_are_required_before_exit(self):
+        process = {"cwd": "/work", "argv": ["codex", "-m", "fixture-model", "-s", "read-only", "-a", "never"]}
+        context = {"type": "turn_context", "payload": {"model": "fixture-model", "cwd": "/work",
+                    "sandbox_policy": {"type": "read-only"}, "approval_policy": "never"}}
+        complete = {"type": "event_msg", "payload": {"type": "task_complete"}}
+        TargetWorker.validate_quiescence([context, complete], process)
+        for rows in ([context], [context, complete, {"type": "event_msg", "payload": {"type": "task_started"}}],
+                     [context, complete, {"type": "response_item", "payload": {"role": "user"}}],
+                     [context, complete, {"type": "event_msg", "payload": {"type": "thread_settings_applied",
+                         "thread_settings": {"model": "changed", "cwd": "/work", "approval_policy": "never"}}}]):
+            with self.subTest(rows=rows), self.assertRaises(Unavailable):
+                TargetWorker.validate_quiescence(rows, process)
+        with self.assertRaises(Unavailable):
+            TargetWorker.validate_quiescence([context, complete], {**process, "argv": ["codex"]})
 
 
 class FleetTests(unittest.TestCase):
@@ -128,15 +143,23 @@ class TargetIntegrationTests(unittest.TestCase):
                            text=True, capture_output=True, check=True, timeout=30)
             socket_name = "uc-relaunch-" + uuid.uuid4().hex[:12]
             native = str(uuid.uuid4())
+            transcripts = root / ".codex/sessions/2026/09/14"
+            transcripts.mkdir(parents=True)
+            (transcripts / ("rollout-fixture-" + native + ".jsonl")).write_text("\n".join(json.dumps(row) for row in (
+                {"type": "session_meta", "payload": {"id": native}},
+                {"type": "turn_context", "payload": {"model": "fixture-model", "cwd": directory,
+                    "sandbox_policy": {"type": "read-only"}, "approval_policy": "never"}},
+                {"type": "event_msg", "payload": {"type": "task_complete"}})) + "\n")
             transport = Transport(socket_name=socket_name)
             candidate = {"label": "Fixture · Codex", "provider": "codex", "connection": None,
                          "record": {"id": "fixture", "tmux": "fixture", "tmuxSocket": socket_name}}
             adapter = RelaunchAgents()
             subprocess.run(["tmux", "-L", socket_name, "new-session", "-d", "-s", "fixture", "-c", directory,
                             "/bin/bash", "--noprofile", "--norc", "-i"], check=True, capture_output=True, timeout=5)
+            events = TmuxOutputEvents(["tmux", "-L", socket_name], "fixture")
             try:
                 command = shlex.join(["env", "UC_FIXTURE_ID=" + native, "UC_FIXTURE_ROOT=" + directory,
-                                      str(executable), "-m", "fixture-model"])
+                                      str(executable), "-m", "fixture-model", "-s", "read-only", "-a", "never"])
                 subprocess.run(["tmux", "-L", socket_name, "send-keys", "-t", "=fixture:", "-l", command + "\n"],
                                check=True, capture_output=True, timeout=5)
                 deadline = time.monotonic() + 8
@@ -146,7 +169,7 @@ class TargetIntegrationTests(unittest.TestCase):
                         break
                     except Exception:
                         self.assertLess(time.monotonic(), deadline)
-                        time.sleep(0.05)
+                        events.wait(deadline, time.monotonic)
                 operation = str(uuid.uuid4())
                 phases = []
                 result = adapter.execute(candidate, "agent.relaunch", proof, operation, phases.append, lambda: True)
@@ -161,4 +184,5 @@ class TargetIntegrationTests(unittest.TestCase):
                 self.assertEqual(another, {"state": "omitido", "cause": "duplicado"})
                 self.assertTrue(all(p["state"] in ("planificado", "cerrando", "reabriendo", "verificado") for p in phases))
             finally:
+                events.close()
                 subprocess.run(["tmux", "-L", socket_name, "kill-server"], capture_output=True, timeout=5)

@@ -170,6 +170,9 @@ class WindowCommands:
     def action_relaunch_global(self):
         self.relaunch.show("global")
 
+    def action_relaunch_history(self):
+        self.relaunch.show_history()
+
     @staticmethod
     def arrangement_group(items, record):
         return [value for value in items if bool(value.get("pinned")) == bool(record.get("pinned"))]

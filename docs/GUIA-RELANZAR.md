@@ -76,7 +76,9 @@ reiniciar todos los procesos de una máquina: solo los objetivos de IA inventari
 | No completado | No hay prueba de éxito; no lo des por reiniciado. |
 
 Usa **Actualizar estado** si se cortó la conexión. Consultar o recuperar la misma
-operación no vuelve a cerrar una IA ya atendida. No prepares y apliques repetidamente
+operación no vuelve a cerrar una IA ya atendida. Si cerraste el diálogo o UniConnect,
+abre **IA → Resultados de relanzados…** y elige la operación anterior: ese recibo
+solo consulta, nunca vuelve a aplicar. No prepares y apliques repetidamente
 planes nuevos para resolver un corte: primero revisa el resultado y la ventana.
 El token de un plan nuevo caduca a los 120 segundos; si aún no lo habías aplicado,
 debes preparar otro. Una operación ya aceptada se recupera con su identidad original.
@@ -90,7 +92,10 @@ El inventario no oculta proveedores desconocidos. La sintaxis compartida contien
 17 proveedores, pero eso no demuestra que los 17 se puedan cerrar/reabrir con
 seguridad. Actualmente el adaptador de proceso Linux implementa evidencia para
 **Codex y Claude**: proceso vivo, generación y conversación observada mediante
-metadatos nativos/archivos abiertos, no el ID antiguo de la ventana.
+metadatos nativos/archivos abiertos, no el ID antiguo de la ventana. **Identificar
+no basta para cerrar**: el cierre automático Linux exige además evidencia de
+turno terminado y configuración efectiva de Codex. Claude sigue excluido del
+cierre automático hasta disponer de esa comprobación de ciclo de vida.
 
 - Otros proveedores: **no soportado** hasta tener adaptador y pruebas de ciclo de
   vida propios. No se ejecuta un comando aproximado.
@@ -98,13 +103,35 @@ metadatos nativos/archivos abiertos, no el ID antiguo de la ventana.
   no reconocidos, falta de evidencia o plataforma remota no Linux: se excluyen.
 - Un supervisor externo puede relanzar por su cuenta; el adaptador no lo modifica.
 - Una IA cuyo cierre no termina limpiamente no recibe SIGKILL ni pulsaciones a ciegas.
-- Los argumentos explícitos se conservan; no se añade bypass de permisos. La
-  conservación de cambios dinámicos realizados dentro de la IA requiere validación
-  adicional y no debe darse por probada solo por conservar argv.
+- Los argumentos explícitos se conservan; no se añade bypass de permisos. Si el
+  modelo, esfuerzo, carpeta o política efectivos de Codex no coinciden con la
+  configuración comprobable del lanzamiento, el objetivo se excluye antes de cerrar.
+  También se excluyen perfiles/configuraciones que este adaptador no sabe acreditar,
+  incluidos permisos de escritura con raíces ampliadas. No se cambia su configuración
+  para hacerlos compatibles.
+- No escribas en la ventana mientras se aplica su relanzado; un mensaje nuevo
+  cambia el estado que acabas de confirmar.
 
 Para Codex se utiliza la forma documentada `codex resume <SESSION_ID>`, no
 `--last`. Si cambia la carpeta, Codex puede pedir elegirla; no se responde de
 forma automática. [Referencia oficial de comandos de Codex](https://learn.chatgpt.com/docs/developer-commands?surface=cli).
+
+## Desde Android y Mac
+
+La operativa acordada es la misma, con plan previo y resultados por objetivo:
+
+- **Ventana:** menú contextual de esa ventana; en Android, pulsación larga.
+- **Espacio:** menú del espacio; en Android, pulsación larga sobre el espacio.
+- **Equipo:** menú del equipo elegido, sin limitarlo a la ventana visible.
+- **Global:** acción global del cliente que reúne equipos autorizados y muestra
+  también los inaccesibles. No confundirla con el menú de un solo equipo.
+
+En Android las órdenes viajan al host por `relaunch.plan/apply/status`; el móvil
+no ejecuta un cierre por teclas. Si el host no anuncia `relaunch.v1`, no está
+disponible. Ante pérdida de red se consulta la operación original; no se crea otra
+para «probar». **Esta sección describe la operativa común, no certifica que los
+menús de tu versión Android/Mac ya estén entregados.** Su interfaz y validación
+nativa pertenecen al tramo de esos clientes y siguen pendientes de cierre conjunto.
 
 ## Comprobación humana antes de dar la función por terminada
 

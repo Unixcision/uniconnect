@@ -2,6 +2,39 @@
   "sourceLanguage": "es",
   "version": "1.0",
   "strings": {
+    "uniconnect.shared.resultados.de.relanzados": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resultados de relanzados…"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.no.hay.relanzados.guardados.en.este.equipo": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay relanzados guardados en este equipo"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.ver.resultado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ver resultado"
+          }
+        }
+      }
+    },
     "uniconnect.shared.ia": {
       "extractionState": "manual",
       "localizations": {

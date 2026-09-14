@@ -137,3 +137,31 @@ class RelaunchTests(unittest.TestCase):
         self.service.update(plan["operation_id"], key, {"state": "omitido", "cause": "generacion_cambiada"})
         self.service.update(plan["operation_id"], key, {"state": "cerrando"})
         self.assertEqual(self.service.status(plan["operation_id"], "owner", self.authorized)["results"][0]["state"], "omitido")
+
+    def test_concurrent_status_during_submission_never_starts_recovery(self):
+        plan = self.plan()
+        submitted = []
+        def submit(*job):
+            submitted.append(job)
+            self.service.status(plan["operation_id"], "owner", self.authorized)
+        self.service.submit = submit
+        self.apply(plan)
+        self.assertEqual(len(submitted), 1)
+        self.assertEqual(submitted[0][0], self.service.execute)
+
+    def test_temporarily_unreachable_recovery_can_later_reach_verified(self):
+        plan = self.plan()
+        self.apply(plan)
+        self.service.running.clear()  # Simulate a new desktop, not a new apply.
+        self.adapter.recover = lambda target, operation: (_ for _ in ()).throw(RelaunchUnavailable("host_inaccesible"))
+        target = self.service.read(plan["operation_id"])["targets"][0]
+        self.service.recover(plan["operation_id"], target, self.authorized)
+        value = self.service.read(plan["operation_id"])["results"][0]
+        self.assertEqual(value["state"], "planificado")
+        self.assertEqual(value["cause"], "host_inaccesible")
+        self.adapter.recover = lambda target, operation: {"state": "verificado", "effective_id": "current"}
+        self.service.recover(plan["operation_id"], target, self.authorized)
+        value = self.service.read(plan["operation_id"])["results"][0]
+        self.assertEqual(value["state"], "verificado")
+        self.assertNotIn("cause", value)
+        self.assertEqual(self.adapter.calls, [])

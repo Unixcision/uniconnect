@@ -28,6 +28,31 @@ class Unavailable(Exception):
         self.cause = cause
 
 
+class TmuxOutputEvents:
+    """Read-only control attachment: wait for real pane output, not sleep/poll."""
+    def __init__(self, binary, session):
+        self.process = subprocess.Popen([*binary, "-C", "attach-session", "-t", "=" + session,
+                                         "-f", "read-only,ignore-size"], stdin=subprocess.PIPE,
+                                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
+
+    def wait(self, deadline, clock):
+        remaining = deadline - clock()
+        if remaining <= 0:
+            raise Unavailable("dialogo_desconocido")
+        ready, _, _ = select.select([self.process.stdout], [], [], remaining)
+        if not ready or not os.read(self.process.stdout.fileno(), 65536):
+            raise Unavailable("dialogo_desconocido")
+
+    def close(self):
+        self.process.stdin.close()
+        try:
+            self.process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            self.process.terminate()  # Only our own read-only control client.
+            self.process.wait(timeout=2)
+        self.process.stdout.close()
+
+
 class TargetWorker:
     def __init__(self, request, *, proc=Path("/proc"), run=subprocess.run, clock=time.monotonic):
         self.request, self.proc, self.run, self.clock = request, proc, run, clock
@@ -142,6 +167,117 @@ class TargetWorker:
             raise Unavailable("identidad_ambigua")
         return identifier
 
+    def quiescent_configuration(self, provider, process, identifier, hook):
+        """Require a native completed turn AND explicit matching launch policy.
+
+        A visible prompt can coexist with active work. Until an adapter can prove
+        lifecycle and effective settings, identity alone does not authorize exit.
+        Reads metadata only; no transcript contents leave the target.
+        """
+        if provider != "codex":
+            raise Unavailable("no_soportado")
+        paths = set()
+        for fd in (self.proc / str(process["pid"]) / "fd").iterdir():
+            try:
+                target = Path(os.readlink(fd))
+                if "rollout-" in target.name and target.suffix == ".jsonl":
+                    paths.add(target)
+                if target.parent.name == "thread-writer-locks" and target.stem == identifier:
+                    # The effective id was already attributed to the held lock.
+                    # Filename lookup only locates its transcript, never chooses id.
+                    paths.update((target.parent.parent / "sessions").glob("*/*/*/*" + identifier + ".jsonl"))
+            except OSError:
+                continue
+        if len(paths) != 1:
+            raise Unavailable("no_soportado")
+        path = paths.pop()
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(descriptor, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+                raise Unavailable("sin_autoridad")
+            header = json.loads(handle.readline(65537))
+            if header.get("type") != "session_meta" or header.get("payload", {}).get("id") != identifier:
+                raise Unavailable("identidad_ambigua")
+            offset = max(handle.tell(), info.st_size - 4 * 1024 * 1024)
+            handle.seek(offset)
+            if offset > 65536:
+                handle.readline()  # Discard partial first record of a bounded tail.
+            rows = []
+            for line in handle.read(4 * 1024 * 1024).splitlines():
+                if len(line) <= 65536:
+                    try:
+                        rows.append(json.loads(line))
+                    except ValueError:
+                        raise Unavailable("no_soportado") from None
+        self.validate_quiescence(rows, process)
+
+    @staticmethod
+    def validate_quiescence(rows, process):
+        context, settings, completed = None, None, False
+        for row in rows:
+            payload = row.get("payload", {})
+            if row.get("type") == "turn_context":
+                context = payload
+                settings = None
+            if row.get("type") == "event_msg":
+                kind = payload.get("type")
+                if kind == "task_started":
+                    completed = False
+                elif kind in ("task_complete", "turn_aborted"):
+                    completed = True
+                elif kind == "thread_settings_applied":
+                    settings = payload.get("thread_settings", {})
+            if row.get("type") == "response_item" and payload.get("role") == "user":
+                completed = False
+        if not context or not completed:
+            raise Unavailable("dialogo_desconocido")
+        # Do not silently convert an in-UI model/permission change back to argv.
+        # Profiles/defaults need a richer effective-settings adapter; exclude now.
+        argv = process["argv"][1:]
+        explicit, effort = {}, None
+        for index, value in enumerate(argv):
+            option, _, inline = value.partition("=")
+            if option in ("--model", "-m", "--sandbox", "-s", "--ask-for-approval", "-a"):
+                explicit[option] = inline if "=" in value else (argv[index + 1] if index + 1 < len(argv) else None)
+            if option in ("--cd", "-C"):
+                directory = inline if "=" in value else (argv[index + 1] if index + 1 < len(argv) else None)
+                if directory != process["cwd"]:
+                    raise Unavailable("no_soportado")
+            if option in ("--profile", "-p"):
+                raise Unavailable("no_soportado")
+            if option in ("--config", "-c"):
+                config = inline if "=" in value else (argv[index + 1] if index + 1 < len(argv) else "")
+                if config.startswith("model_reasoning_effort="):
+                    try:
+                        effort = json.loads(config.partition("=")[2])
+                    except ValueError:
+                        raise Unavailable("no_soportado") from None
+        model = explicit.get("--model", explicit.get("-m"))
+        sandbox = explicit.get("--sandbox", explicit.get("-s"))
+        approval = explicit.get("--ask-for-approval", explicit.get("-a"))
+        bypass = "--dangerously-bypass-approvals-and-sandbox" in argv
+        if bypass:
+            sandbox, approval = "danger-full-access", "never"
+        actual_sandbox = context.get("sandbox_policy", {}).get("type")
+        if (not model or not sandbox or not approval or model != context.get("model")
+                or sandbox != actual_sandbox or approval != context.get("approval_policy")
+                or context.get("cwd") != process["cwd"]):
+            raise Unavailable("no_soportado")
+        if context.get("effort") != effort or (settings and settings.get("reasoning_effort") != effort):
+            raise Unavailable("no_soportado")
+        if settings and (settings.get("model") != model or settings.get("approval_policy") != approval
+                         or settings.get("cwd") != process["cwd"]):
+            raise Unavailable("no_soportado")
+        # Expanded writable roots and profile changes cannot be reconstructed
+        # safely from just the three CLI flags. Reject, don't widen permissions.
+        if sandbox not in ("read-only", "danger-full-access"):
+            raise Unavailable("no_soportado")
+        if settings and settings.get("permission_profile"):
+            profile = settings["permission_profile"]
+            if profile != {"type": "disabled"} or sandbox != "danger-full-access":
+                raise Unavailable("no_soportado")
+
     @staticmethod
     def resume_arguments(provider, argv, identifier, catalog):
         """Retain explicit options, remove ONLY the previous conversation selector.
@@ -235,6 +371,7 @@ class TargetWorker:
             raise Unavailable("identidad_ambigua")
         process = matches[0]
         effective = self.native_id(provider, process, hook, pane)
+        self.quiescent_configuration(provider, process, effective, hook)
         # The root must remain as an interactive shell after its agent exits.
         # Supervisors/custom shell scripts can restart independently: excluded.
         if Path(root["argv"][0]).name.lstrip("-") not in ("bash", "zsh", "sh"):
@@ -328,6 +465,10 @@ class TargetWorker:
             try:
                 self.perform(journal)
             except BaseException as error:
+                if self.read(journal).get("state") == "planificado":
+                    # No close was attempted. Allow a NEW confirmed plan once
+                    # the draft/permission problem is resolved by the person.
+                    self.write(claim_path, {"released": True, "operation_id": self.request["operation_id"]})
                 self.write(journal, {"state": "necesita_usuario", "cause": getattr(error, "cause", "host_inaccesible")})
             finally:
                 os.close(fd)
@@ -358,8 +499,12 @@ class TargetWorker:
         if not isinstance(helper, str) or len(helper) > 32768:
             raise Unavailable("no_soportado")
         env["UNICONNECT_NATIVE_HELPER"] = helper
+        original = process["argv"]
+        managed = any(self.managed_hook(self.request["provider"], option.split("=", 1)[0],
+                      option.split("=", 1)[1] if "=" in option else (original[index + 1] if index + 1 < len(original) else ""))
+                      for index, option in enumerate(original) if option.split("=", 1)[0] in ("-c", "--config", "--settings"))
         capsule = {"argv": resume, "env": env, "cwd": process["cwd"],
-                   "agent": self.request["provider"], "window_id": self.request["window_id"]}
+                   "agent": self.request["provider"], "window_id": self.request["window_id"], "managed_identity": managed}
         if not hasattr(os, "memfd_create"):
             raise Unavailable("no_soportado")
         descriptor = os.memfd_create("uniconnect-relaunch", os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
@@ -370,12 +515,14 @@ class TargetWorker:
         os.lseek(descriptor, 0, os.SEEK_SET)
         fcntl.fcntl(descriptor, fcntl.F_ADD_SEALS, fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL)
         capsule_path = self.proc / str(os.getpid()) / "fd" / str(descriptor)
+        events = TmuxOutputEvents(self.binary, self.request["session"])
         try:
-            self.restart(proof, root, process, capsule_path, journal)
+            self.restart(proof, root, process, capsule_path, journal, events)
         finally:
+            events.close()
             os.close(descriptor)
 
-    def restart(self, proof, root, process, capsule_path, journal):
+    def restart(self, proof, root, process, capsule_path, journal, events):
         descriptor = os.pidfd_open(process["pid"])
         try:
             if self.inspect() != proof:
@@ -395,7 +542,7 @@ class TargetWorker:
             if (after["start"] == root["start"] and after["foreground"] == after["group"]
                     and not self.descendants(root["pid"]) and not any(self.same_process(p) for p in owned.values())):
                 break
-            select.select([], [], [], 0.1)  # Bounded OS-process exit/readiness observation.
+            events.wait(deadline, self.clock)
         else:
             raise Unavailable("dialogo_desconocido")
         if any(arg not in ("-l", "-i", "--login", "--noprofile", "--norc") for arg in after["argv"][1:]):
@@ -407,7 +554,8 @@ class TargetWorker:
                     'f=open(p); d=json.load(f); f.close(); '
                     'os.chdir(d["cwd"]); os.environ.clear(); os.environ.update(d["env"]); '
                     'n={"__name__":"uniconnect_launch"}; '
-                    'exec(base64.b64decode(os.environ["UNICONNECT_NATIVE_HELPER"]),n); n["launch"](d)')
+                    'exec(base64.b64decode(os.environ["UNICONNECT_NATIVE_HELPER"]),n); '
+                    'n["launch"](d) if d["managed_identity"] else os.execvpe(d["argv"][0],d["argv"],os.environ)')
         command = shlex.join([sys.executable, "-c", launcher, str(capsule_path)])
         if self.pane()[0] != proof["pane"] or self.descendants(root["pid"]):
             raise Unavailable("generacion_cambiada")
@@ -423,7 +571,7 @@ class TargetWorker:
                     return
             except (Unavailable, OSError):
                 pass
-            select.select([], [], [], 0.25)  # Bounded native-identity observation, not a success delay.
+            events.wait(deadline, self.clock)
         raise Unavailable("dialogo_desconocido")
 
     def same_process(self, process):
