@@ -25,7 +25,11 @@
 #   - Un panel puede no estar en el prompt (vista de tareas, panel de uso). Hay que
 #     sacarlo con Escape antes de nada, o las teclas acaban dentro de un cuadro de texto.
 #   - Al arrancar, Claude puede pedir «¿confías en esta carpeta?» con «No, exit»
-#     preseleccionado. Un Enter a ciegas ahí mata la sesión recién abierta.
+#     preseleccionado. Un Enter a ciegas ahí mata la sesión recién abierta. Este
+#     script NO lo contesta: un permiso lo da una persona, así que deja el diálogo
+#     en pantalla y lo dice.
+#   - Los diálogos que sí resuelve, los resuelve eligiendo la opción por su TEXTO
+#     y nunca por su posición; si no reconoce lo que ve, se aparta y avisa.
 #
 set -uo pipefail
 
@@ -91,15 +95,24 @@ for pane in "${PANELES[@]}"; do
   for _ in 1 2; do tm send-keys -t "$pane" Escape; sleep 1; done
 
   tm send-keys -t "$pane" "/exit"; sleep 1; tm send-keys -t "$pane" Enter
-  salio=0
+  salio=0; sin_reconocer=0
   for _ in $(seq 1 30); do
     sleep 1
     [ "$(proceso "$pane")" = "zsh" ] && { salio=1; break; }
     if pantalla "$pane" | grep -q "Background work is running"; then
-      tm send-keys -t "$pane" Enter   # «Exit and stop tasks», la primera opción
+      # La opción se elige por su TEXTO, nunca por su posición: el orden puede
+      # cambiar entre versiones y pulsar Enter a ciegas es aceptar lo que toque.
+      n=$(pantalla "$pane" | grep -oE '[0-9]+\. *Exit and stop tasks' | grep -oE '^[0-9]+' | head -1)
+      if [ -z "$n" ]; then
+        echo "$pane  DIÁLOGO NO RECONOCIDO al salir: lo dejo como está"
+        sin_reconocer=1
+        break
+      fi
+      tm send-keys -t "$pane" "$n"; sleep 1; tm send-keys -t "$pane" Enter
       sleep 2
     fi
   done
+  if [ "${sin_reconocer:-0}" = 1 ]; then fallos=$((fallos+1)); continue; fi
   if [ "$salio" = 0 ]; then echo "$pane  NO SALIÓ, lo dejo como estaba  ($ruta)"; fallos=$((fallos+1)); continue; fi
 
   id=$(pantalla "$pane" | grep -A1 "Resume this session with" |
@@ -108,17 +121,22 @@ for pane in "${PANELES[@]}"; do
   else orden="claude --continue --dangerously-skip-permissions"; fi
 
   tm send-keys -t "$pane" "$orden"; sleep 1; tm send-keys -t "$pane" Enter
-  volvio=0
+  volvio=0; confianza=0
   for _ in $(seq 1 35); do
     sleep 1
-    # «¿Confías en esta carpeta?» llega con «No, exit» preseleccionado.
+    # «¿Confías en esta carpeta?» NO se contesta aquí. Es un permiso, y un permiso
+    # lo da una persona. Se deja el diálogo en pantalla y se avisa.
     if pantalla "$pane" | grep -q "Yes, I trust this folder"; then
-      tm send-keys -t "$pane" Down; sleep 1; tm send-keys -t "$pane" Enter; sleep 3
+      confianza=1
+      break
     fi
     [ "$(proceso "$pane")" = "claude.exe" ] && { volvio=1; break; }
   done
   sleep 3
-  if [ "$volvio" = 1 ] && pantalla "$pane" | grep -q "bypass permissions on"; then
+  if [ "${confianza:-0}" = 1 ]; then
+    printf '%-6s TE NECESITA: pide confirmar la carpeta en pantalla  %s\n' "$pane" "$ruta"
+    fallos=$((fallos+1))
+  elif [ "$volvio" = 1 ] && pantalla "$pane" | grep -q "bypass permissions on"; then
     printf '%-6s OK   sesión=%s  %s\n' "$pane" "${id:0:8}" "$ruta"
   else
     printf '%-6s REVISAR (proceso=%s)  %s\n' "$pane" "$(proceso "$pane")" "$ruta"
