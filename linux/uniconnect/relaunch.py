@@ -225,9 +225,14 @@ class RelaunchService:
             self.update(identifier, key, result)
         except Exception as error:
             cause = getattr(error, "cause", "sin_autoridad")
+            # A queued observer can lose its desktop/permission before it runs.
+            # That prevents reading; it does NOT prove the admitted remote
+            # close/reopen failed. Keep the original phase recoverable by the
+            # same owner after access returns, without dispatching another start.
+            observation_unavailable = isinstance(error, RPCError) or cause in ("host_inaccesible", "permisos")
             with self.lock:
                 previous = next(row for row in self.read(identifier)["results"] if row["key"] == key)
-                self.update(identifier, key, {"state": previous["state"] if cause == "host_inaccesible" else "necesita_usuario",
+                self.update(identifier, key, {"state": previous["state"] if observation_unavailable else "necesita_usuario",
                                                "cause": cause})
         finally:
             with self.lock:
