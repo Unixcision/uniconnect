@@ -64,11 +64,13 @@ class ArgumentsTests(unittest.TestCase):
 
     def test_native_turn_activity_and_runtime_settings_are_required_before_exit(self):
         process = {"cwd": "/work", "argv": ["codex", "-m", "fixture-model", "-s", "read-only", "-a", "never"]}
-        context = {"type": "turn_context", "payload": {"model": "fixture-model", "cwd": "/work",
+        context = {"type": "turn_context", "payload": {"turn_id": "current-turn", "model": "fixture-model", "cwd": "/work",
                     "sandbox_policy": {"type": "read-only"}, "approval_policy": "never"}}
-        complete = {"type": "event_msg", "payload": {"type": "task_complete"}}
+        complete = {"type": "event_msg", "payload": {"type": "task_complete", "turn_id": "current-turn"}}
         TargetWorker.validate_quiescence([context, complete], process)
         for rows in ([context], [context, complete, {"type": "event_msg", "payload": {"type": "task_started"}}],
+                     [context, {"type": "event_msg", "payload": {"type": "task_complete", "turn_id": "old-turn"}}],
+                     [context, {"type": "event_msg", "payload": {"type": "task_started", "turn_id": "new-turn"}}, complete],
                      [context, complete, {"type": "response_item", "payload": {"role": "user"}}],
                      [context, complete, {"type": "event_msg", "payload": {"type": "thread_settings_applied",
                          "thread_settings": {"model": "changed", "cwd": "/work", "approval_policy": "never"}}}]):
@@ -238,9 +240,9 @@ class TargetIntegrationTests(unittest.TestCase):
             transcripts.mkdir(parents=True)
             (transcripts / ("rollout-fixture-" + native + ".jsonl")).write_text("\n".join(json.dumps(row) for row in (
                 {"type": "session_meta", "payload": {"id": native}},
-                {"type": "turn_context", "payload": {"model": "fixture-model", "cwd": directory,
+                {"type": "turn_context", "payload": {"turn_id": "fixture-turn", "model": "fixture-model", "cwd": directory,
                     "sandbox_policy": {"type": "read-only"}, "approval_policy": "never"}},
-                {"type": "event_msg", "payload": {"type": "task_complete"}})) + "\n")
+                {"type": "event_msg", "payload": {"type": "task_complete", "turn_id": "fixture-turn"}})) + "\n")
             transport = Transport(socket_name=socket_name)
             candidate = {"label": "Fixture · Codex", "provider": "codex", "connection": None,
                          "record": {"id": "fixture", "tmux": "fixture", "tmuxSocket": socket_name}}
@@ -275,7 +277,7 @@ class TargetIntegrationTests(unittest.TestCase):
                 self.assertEqual(draft_result, {"state": "necesita_usuario", "cause": "dialogo_desconocido"})
                 self.assertEqual(adapter.probe(candidate, "agent.relaunch"), proof)
                 os.kill(proof["pid"], signal.SIGUSR2)
-                screen_until(lambda screen: "› " in screen and "borrador" not in screen)
+                screen_until(lambda screen: screen.splitlines()[0].strip() == "›" and "borrador" not in screen)
                 self.assertEqual(adapter.request(candidate, "start", expected=proof, operation_id=rejected), draft_result)
                 phases.clear()
                 result = adapter.execute(candidate, "agent.relaunch", proof, operation, phases.append, lambda: True)

@@ -102,7 +102,7 @@ class MobileOwnerTests(unittest.TestCase):
             workspace = {"id": "box", "name": "Caja", "kind": "local", "windows": [
                 {"id": "window", "name": "Codex", "agent": "codex", "tmux": "fixture"}]}
             window = SimpleNamespace(store=SimpleNamespace(root=root, workspaces=[workspace], data={}),
-                                     mobile=SimpleNamespace(access=access), locked=False, _closed=False, surfaces={})
+                                     mobile=SimpleNamespace(access=access), locked=False, _closed=False, surfaces={}, focused_surface=None)
             window.relaunch = RelaunchDesktop(window, lambda action: action(), service=service)
             rpc = MobileRPC(window, access, lambda action: action(), file_put=SimpleNamespace(),
                             remote_inbox=SimpleNamespace(), transcription=SimpleNamespace())
