@@ -1,0 +1,26 @@
+{
+  "operation_id": "0c8a1f3e-5b62-4f77-8d90-6a1e4c2b7d15",
+  "token": "rlq1.MjAyNi0wOS0xNFQxODoyODowMFo",
+  "expires_at": "2026-09-14T18:30:00Z",
+  "verb": "agent.relaunch",
+  "targets": [
+    {
+      "key": "local:MacBook-Pro-de-Daniel|tmux:uniconnect-local|pane:%13|gen:7",
+      "label": "TIPSTERTRUST · Claude Code",
+      "provider": "claude",
+      "generation": 7,
+      "state": "planificado"
+    },
+    {
+      "key": "ssh:root@185.237.235.117:22|tmux:uniconnect|pane:%2|gen:3",
+      "label": "ELTEMPLO · Codex",
+      "provider": "codex",
+      "generation": 3,
+      "state": "planificado"
+    }
+  ],
+  "excluded": [
+    { "label": "IMPUESTOS · Claude Code", "cause": "identidad_ambigua" },
+    { "label": "MINIPC · Codex", "cause": "sin_autoridad" }
+  ]
+}

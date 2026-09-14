@@ -1,0 +1,11 @@
+{
+  "identidad_ambigua": "No se pudo determinar con certeza qué conversación es. No se cierra nada.",
+  "dialogo_desconocido": "La pantalla mostraba algo que no se reconoce. No se responde a ciegas.",
+  "confianza_carpeta": "El agente pidió confirmar la carpeta. Lo tiene que contestar una persona.",
+  "permisos": "El agente pidió permisos. Lo tiene que contestar una persona.",
+  "sin_autoridad": "Nadie tiene autoridad resoluble sobre este objetivo, o la tiene otro ejecutor.",
+  "generacion_cambiada": "El objetivo cambió entre el plan y la ejecución. Hace falta un plan nuevo.",
+  "host_inaccesible": "El equipo no respondió.",
+  "duplicado": "El mismo objetivo ya lo ejecuta otro; aquí no se repite.",
+  "no_soportado": "El equipo no anuncia relaunch.v1 o el proveedor no admite este verbo."
+}

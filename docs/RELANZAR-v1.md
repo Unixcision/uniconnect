@@ -47,10 +47,21 @@ esconder que otro no contestó.
 `machine` significa **host UniConnect** (el Mac, el Linux), nunca «destino SSH». Las ventanas SSH de
 un host entran en el `machine` de ese host.
 
-**Deduplicación obligatoria.** El mismo panel remoto puede verse desde dos hosts o dos clientes. Los
-objetivos se identifican por su identidad efectiva (host + panel + generación), y un objetivo
-repetido se ejecuta **una vez**, informando de la coincidencia. Relanzar dos veces el mismo agente
-porque se veía desde dos sitios es un fallo, no un detalle.
+**Deduplicación obligatoria, y por la identidad del objetivo, no la de quien lo mira.** El mismo
+panel remoto puede verse desde dos hosts o dos clientes. La clave de identidad es:
+
+```
+destino SSH efectivo + usuario + socket/servidor tmux + panel + generación
+```
+
+**Nunca el host UniConnect que lo muestra.** Si se usara el host, cada uno se creería dueño del mismo
+panel remoto y lo relanzaría por su cuenta: dos registros locales independientes no garantizan «una
+vez». Para una caja local, el destino efectivo es esa máquina, y la clave sigue siendo la misma.
+
+Y con la clave no basta: hace falta **autoridad sobre el objetivo**. O bien exclusión mutua entre
+hosts sobre esa clave, o bien un **único ejecutor** designado por objetivo. Un objetivo sin autoridad
+resoluble se **excluye**; no se ejecuta «por si acaso». Relanzar dos veces el mismo agente porque se
+veía desde dos sitios es un fallo, no un detalle.
 
 ## 3. Dos fases: `plan` y `apply`
 
@@ -75,13 +86,20 @@ Repetir `apply` con el mismo token devuelve **la misma operación**, no otro cie
 
 ## 4. Estados y resultado
 
-Resultado **por objetivo**, nunca agregado:
+Resultado **por objetivo**, nunca agregado. Cada verbo recorre sus propias fases; solo
+`agent.relaunch` cierra y reabre:
 
 ```
-planificado → cerrando → reabriendo → verificado
-                              ↓
-                       necesita_usuario | fallido | omitido
+agent.relaunch      planificado → cerrando → reabriendo → verificado
+transport.reconnect planificado → reenganchando → verificado
+agent.continue      planificado → entregando → verificado
+
+cualquiera de ellas  →  necesita_usuario | fallido | omitido
 ```
+
+`verificado` significa cosas distintas en cada uno y hay que comprobarlo, no suponerlo:
+`agent.relaunch` exige el **mismo ID efectivo** vivo; `transport.reconnect`, que el transporte
+entrega; `agent.continue`, que el agente **acusó recibo** del encargo.
 
 - `verificado` exige comprobar el **mismo ID efectivo** y el estado resultante. Un `queued` no se
   enseña jamás como «IA relanzada».
@@ -91,6 +109,21 @@ planificado → cerrando → reabriendo → verificado
 **Idempotencia por objetivo y por fase.** Si se cerró la IA y se cortó el SSH antes de recibir el
 resultado, el reintento debe **comprobar si ya reabrió** y recuperar el resultado, no cerrarla otra
 vez. Se reintentan solo los fallidos.
+
+**Recuperar no es pedir de nuevo, y la caducidad no se aplica igual a las dos cosas:**
+
+| Situación | Qué hace |
+|---|---|
+| `apply` repetido con un token de una operación **ya aceptada** | Devuelve **esa misma operación** y su estado. Aunque el token haya caducado entretanto: recuperar el resultado de algo que ya se hizo no puede exigir un plan nuevo, o el corte de red se convierte en trabajo perdido. |
+| `apply` **nuevo** con token caducado | **Rechazado.** No se ejecuta nada. |
+| `apply` nuevo con token válido pero un objetivo cuya generación cambió | Ese objetivo **excluido**; el resto sigue. Se pide plan nuevo para él. |
+
+De ahí que el resultado distinga **recuperable** (la operación existe y se consulta) de **fallo que
+exige plan nuevo** (la identidad ya no es la del plan). Son dos cosas distintas y el cliente las
+enseña distinto: una es «esto ya pasó, mira», la otra es «vuelve a mirar y decide».
+
+Consultar el estado de una operación en curso o terminada es su propia llamada, y **no caduca**
+mientras la operación se conserve.
 
 ## 5. Reglas que no se negocian
 
@@ -131,7 +164,60 @@ Mismos tres verbos para caja local y SSH; cambia el transporte, no el contrato.
 Un host anuncia `relaunch.v1` en `capabilities`. Quien no lo anuncie no recibe estas peticiones y el
 cliente no ofrece la acción, igual que con `ssh_create.v1`.
 
-## 8. Pruebas compartidas
+## 8. Forma normativa: nombres, campos y errores
+
+Los ejemplos vivos están en `contracts/relaunch-v1/`, y **las pruebas de las tres plataformas leen
+esos mismos archivos**. Si un ejemplo y una implementación discrepan, manda el ejemplo.
+
+**Llamadas** (mismos nombres en el RPC del móvil y en el socket de escritorio):
+
+| Llamada | Para qué |
+|---|---|
+| `relaunch.plan` | Previsualiza. Devuelve objetivos, exclusiones con motivo y un token. |
+| `relaunch.apply` | Ejecuta el plan de ese token. |
+| `relaunch.status` | Consulta una operación por su id. No caduca. |
+
+```jsonc
+// relaunch.plan  →  petición
+{ "verb": "agent.relaunch", "scope": { "kind": "workspace", "id": "<uuid>" } }
+
+// relaunch.plan  →  respuesta
+{
+  "operation_id": "<uuid>",
+  "token": "<opaco>",
+  "expires_at": "2026-09-14T18:30:00Z",   // duración por defecto: 120 s
+  "verb": "agent.relaunch",
+  "targets": [
+    { "key": "<identidad del objetivo>", "label": "PROYECTOS · Claude Code",
+      "provider": "claude", "generation": 7, "state": "planificado" }
+  ],
+  "excluded": [
+    { "label": "IMPUESTOS · Codex", "cause": "identidad_ambigua" }
+  ]
+}
+
+// relaunch.apply  →  petición
+{ "operation_id": "<uuid>", "token": "<opaco>" }
+
+// relaunch.apply / relaunch.status  →  respuesta
+{
+  "operation_id": "<uuid>",
+  "recovered": false,                      // true = ya existía; no se ejecutó nada nuevo
+  "results": [
+    { "key": "<identidad>", "state": "verificado", "effective_id": "<id conversación>" },
+    { "key": "<identidad>", "state": "necesita_usuario", "cause": "dialogo_desconocido" }
+  ]
+}
+```
+
+**Causas estables** (identificador en el protocolo; el texto en español lo pone el cliente):
+`identidad_ambigua`, `dialogo_desconocido`, `confianza_carpeta`, `permisos`, `sin_autoridad`,
+`generacion_cambiada`, `host_inaccesible`, `duplicado`, `no_soportado`.
+
+**Errores de la llamada** (distintos de una causa por objetivo, que no es un error):
+`token_caducado`, `token_no_valido`, `operacion_desconocida`, `alcance_no_valido`.
+
+## 9. Pruebas compartidas
 
 Las mismas en los tres lados, porque los fallos son los mismos:
 
@@ -143,8 +229,12 @@ Las mismas en los tres lados, porque los fallos son los mismos:
 - Corte entre cierre y reapertura → el reintento recupera, no vuelve a cerrar.
 - Ventana añadida después del plan → no entra sin un plan nuevo.
 - Cliente antiguo llamando a `terminal.reconnect` → comportamiento de siempre, sin cierre de IA.
+- `apply` de una operación ya aceptada, con el token **caducado** → se recupera, `recovered: true`.
+- `apply` **nuevo** con token caducado → `token_caducado`, sin efectos.
+- Mismo panel remoto alcanzable desde dos hosts → un solo ejecutor; el otro lo da por `duplicado`.
+- Objetivo sin autoridad resoluble → `sin_autoridad`, excluido, nada cerrado.
 
-## 9. Pendiente de decisión del usuario
+## 10. Pendiente de decisión del usuario
 
 Si `apply` sobre un alcance grande pide **confirmación explícita** o va directo. Afecta al cliente,
 no a la forma del contrato: `plan`/`apply` ya da el mecanismo para enseñar lo que va a pasar. Está
