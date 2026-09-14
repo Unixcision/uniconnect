@@ -63,6 +63,9 @@ enum class RelaunchCause(val wire: String) {
     FOLDER_TRUST("confianza_carpeta"),
     PERMISSIONS("permisos"),
     NO_AUTHORITY("sin_autoridad"),
+
+    /** Aceptado y cancelado antes de mandarle nada. No se tocó: no es lo mismo que haber fallado. */
+    NOT_SENT("no_enviado"),
     GENERATION_CHANGED("generacion_cambiada"),
     HOST_UNREACHABLE("host_inaccesible"),
     DUPLICATE("duplicado"),

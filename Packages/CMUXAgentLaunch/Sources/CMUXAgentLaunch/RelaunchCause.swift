@@ -16,6 +16,11 @@ public enum RelaunchCause: String, Sendable, Codable, CaseIterable, Error {
     case permissions = "permisos"
     /// Nobody holds resolvable authority over this target, or another executor does.
     case noAuthority = "sin_autoridad"
+    /// Accepted, then cancelled before anything was sent to it. Nothing was touched.
+    ///
+    /// Its own cause and not a failure: a target that never left the queue has a different answer
+    /// from one that was tried and did not work, and retrying them means different things.
+    case notSent = "no_enviado"
     /// The target changed between the plan and the execution.
     case generationChanged = "generacion_cambiada"
     /// The machine did not answer.

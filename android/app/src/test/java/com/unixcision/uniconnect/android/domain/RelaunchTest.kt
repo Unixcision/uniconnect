@@ -47,4 +47,17 @@ class RelaunchTest {
         assertTrue(RelaunchConfirmation.needsConfirmation(5))
         assertTrue(RelaunchConfirmation.needsConfirmation(26))
     }
+
+    @Test fun `conoce todas las causas del contrato`() {
+        // Mismo fichero que consume el motor Linux, copiado a los recursos de prueba. Si alguien
+        // anade una causa y este lado no la tiene, el lector veria un objetivo sin motivo, que se
+        // lee como un objetivo olvidado.
+        val json = requireNotNull(
+            javaClass.classLoader?.getResourceAsStream("relaunch-v1/causes.json")
+        ) { "falta contracts/relaunch-v1/causes.json" }.bufferedReader().readText()
+        val delContrato = org.json.JSONObject(json).keys().asSequence().toSet()
+        val conocidas = RelaunchCause.entries.map { it.wire }.toSet()
+        assertEquals(emptySet<String>(), delContrato - conocidas)
+        assertEquals(emptySet<String>(), conocidas - delContrato)
+    }
 }
