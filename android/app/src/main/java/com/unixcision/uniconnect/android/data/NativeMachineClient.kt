@@ -115,6 +115,63 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
         return CreationResult(decodeMachine(machine, result), workspaceID, windowID)
     }
 
+    override suspend fun relaunchPlan(machine: Machine, verb: RelaunchVerb, scope: RelaunchScope): RelaunchPlan {
+        val params = JSONObject().put("verb", verb.wire).put("scope", scopeParameters(scope))
+        return decodePlan(call(machine, "relaunch.plan", params), verb)
+    }
+
+    override suspend fun relaunchApply(machine: Machine, plan: RelaunchPlan): RelaunchOperation {
+        val params = JSONObject().put("operation_id", plan.operationID).put("token", plan.token)
+        return decodeOperation(call(machine, "relaunch.apply", params))
+    }
+
+    override suspend fun relaunchStatus(machine: Machine, operationID: String): RelaunchOperation =
+        decodeOperation(call(machine, "relaunch.status", JSONObject().put("operation_id", operationID)))
+
+    internal fun scopeParameters(scope: RelaunchScope): JSONObject = when (scope) {
+        is RelaunchScope.Window -> JSONObject().put("kind", "window").put("id", scope.windowID)
+            .put("workspace_id", scope.workspaceID)
+        is RelaunchScope.Workspace -> JSONObject().put("kind", "workspace").put("id", scope.workspaceID)
+        is RelaunchScope.Machine -> JSONObject().put("kind", "machine").put("id", scope.machineID)
+    }
+
+    internal fun decodePlan(result: JSONObject, verb: RelaunchVerb): RelaunchPlan {
+        val targets = result.optJSONArray("targets") ?: JSONArray()
+        val excluded = result.optJSONArray("excluded") ?: JSONArray()
+        return RelaunchPlan(
+            operationID = result.getString("operation_id"),
+            token = result.getString("token"),
+            verb = verb,
+            targets = List(targets.length()) { index ->
+                val item = targets.getJSONObject(index)
+                RelaunchTarget(item.getString("key"), item.optString("label"), item.optString("provider"))
+            },
+            // Una exclusión sin motivo se lee como una ventana olvidada, así que el motivo viaja
+            // siempre aunque esta versión no sepa nombrarlo.
+            exclusions = List(excluded.length()) { index ->
+                val item = excluded.getJSONObject(index)
+                RelaunchExclusion(item.optString("label"), RelaunchCause.named(item.optString("cause")))
+            },
+        )
+    }
+
+    internal fun decodeOperation(result: JSONObject): RelaunchOperation {
+        val results = result.optJSONArray("results") ?: JSONArray()
+        return RelaunchOperation(
+            operationID = result.getString("operation_id"),
+            recovered = result.optBoolean("recovered", false),
+            results = List(results.length()) { index ->
+                val item = results.getJSONObject(index)
+                RelaunchResult(
+                    key = item.getString("key"),
+                    state = RelaunchTargetState.named(item.optString("state")),
+                    cause = RelaunchCause.named(item.optString("cause")),
+                    effectiveID = item.optString("effective_id").takeIf { it.isNotEmpty() },
+                )
+            },
+        )
+    }
+
     internal fun creationParameters(request: ResourceCreation): JSONObject {
         require(request.isValid())
         val params = JSONObject().put("name", request.name)
