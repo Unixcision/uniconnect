@@ -147,6 +147,28 @@ class FleetTests(unittest.TestCase):
         self.assertEqual(calls, ["relaunch.status"])
 
 
+class WorkerStatusTests(unittest.TestCase):
+    def test_missing_journal_requires_user_and_seals_the_same_operation_against_late_start(self):
+        import fcntl
+        with tempfile.TemporaryDirectory(prefix="uc-relaunch-journal-") as directory:
+            root = Path(directory)
+            paths = root / "pane.lock", root / "claim.json", root / "operation.json"
+            worker = TargetWorker({"action": "status", "session": "fixture", "socket": "fixture"})
+            worker.paths = lambda: paths
+            worker.inspect = lambda **kw: self.fail("status/late start must not inspect or close an agent")
+            with paths[0].open("w") as lock:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                value = worker.dispatch()
+                self.assertEqual(value["state"], "planificado")
+                self.assertFalse(paths[2].exists())  # Never race the live owner.
+            value = worker.dispatch()
+            self.assertEqual(value, {"state": "necesita_usuario", "cause": "sin_autoridad"})
+            self.assertEqual(worker.dispatch(), value)
+            self.assertFalse(paths[1].exists())  # No generation consumed/released by an absent receipt.
+            worker.request["action"] = "start"
+            self.assertEqual(worker.dispatch(), value)  # A late request cannot close after a final response.
+
+
 class RecoveryAndRevocationTests(unittest.TestCase):
     def setUp(self):
         self.candidate = {"provider": "codex", "connection": None,
