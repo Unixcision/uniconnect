@@ -214,18 +214,21 @@ class TargetWorker:
 
     @staticmethod
     def validate_quiescence(rows, process):
-        context, settings, completed = None, None, False
+        context, settings, completed, active_turn = None, None, False, None
         for row in rows:
             payload = row.get("payload", {})
             if row.get("type") == "turn_context":
                 context = payload
                 settings = None
+                active_turn, completed = payload.get("turn_id"), False
             if row.get("type") == "event_msg":
                 kind = payload.get("type")
                 if kind == "task_started":
-                    completed = False
+                    active_turn, completed = payload.get("turn_id"), False
                 elif kind in ("task_complete", "turn_aborted"):
-                    completed = True
+                    if (isinstance(active_turn, str) and active_turn and payload.get("turn_id") == active_turn
+                            and context and context.get("turn_id") == active_turn):
+                        completed = True
                 elif kind == "thread_settings_applied":
                     settings = payload.get("thread_settings", {})
             if row.get("type") == "response_item" and payload.get("role") == "user":
