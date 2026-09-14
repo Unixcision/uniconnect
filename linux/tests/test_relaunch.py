@@ -176,3 +176,46 @@ class RelaunchTests(unittest.TestCase):
         self.assertEqual(closed, [True])
         self.assertEqual(self.jobs, [])
         self.assertEqual(self.adapter.calls, [])
+
+    def test_revocation_or_desktop_close_during_queued_status_does_not_finalize_remote_work(self):
+        for interruption in ("revoked", "closed", "busy"):
+            with self.subTest(interruption=interruption):
+                root = Path(self.directory.name) / interruption
+                jobs, starts, reads = [], [], []
+                adapter = Adapter()
+                def execute(*args):
+                    starts.append(args[3])
+                    return {"state": "reabriendo", "cause": "host_inaccesible"}
+                def recover(target, operation):
+                    reads.append(operation)
+                    return {"state": "verificado", "effective_id": "current"}
+                adapter.execute, adapter.recover = execute, recover
+                service = RelaunchService(root, adapter, submit=lambda *job: jobs.append(job))
+                permission = [True]
+                def authorized():
+                    if permission[0] == "busy":
+                        raise RPCError("busy", "El escritorio está ocupado")
+                    return permission[0]
+                plan = service.plan("agent.relaunch", [{"label": "IA", "provider": "codex"}], "owner", authorized)
+                service.apply(plan["operation_id"], plan["token"], "owner", authorized)
+                job = jobs.pop(0)
+                job[0](*job[1:])
+                service.status(plan["operation_id"], "owner", authorized)
+                if interruption == "closed":
+                    service.close()
+                else:
+                    permission[0] = "busy" if interruption == "busy" else False
+                job = jobs.pop(0)
+                job[0](*job[1:])
+                self.assertEqual(reads, [])  # No access after revocation/close.
+                self.assertEqual(service.read(plan["operation_id"])["results"][0]["state"], "reabriendo")
+                permission[0] = True
+                if interruption == "closed":
+                    service = RelaunchService(root, adapter, submit=lambda *job: jobs.append(job))
+                service.status(plan["operation_id"], "owner", authorized)
+                job = jobs.pop(0)
+                job[0](*job[1:])
+                result = service.status(plan["operation_id"], "owner", authorized)
+                self.assertEqual(result["results"][0]["state"], "verificado")
+                self.assertEqual(starts, [plan["operation_id"]])
+                self.assertEqual(reads, [plan["operation_id"]])
