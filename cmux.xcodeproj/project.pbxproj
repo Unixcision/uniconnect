@@ -884,6 +884,7 @@
 		A9062000000000000000RL02 /* UniConnectRelaunchExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9061000000000000000RL02 /* UniConnectRelaunchExecutor.swift */; };
 		A9062000000000000000RL03 /* UniConnectRelaunchInventory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9061000000000000000RL03 /* UniConnectRelaunchInventory.swift */; };
 		A9062000000000000000RL05 /* UniConnectRelaunchOperationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9061000000000000000RL05 /* UniConnectRelaunchOperationStore.swift */; };
+		D37E1AB858F04B4388EFBRL1 /* UniConnectRelaunchOperationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41777CC1F441E625114CFRL1 /* UniConnectRelaunchOperationStoreTests.swift */; };
 		A9062000000000000000RL01 /* UniConnectRelaunchTmuxDriver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9061000000000000000RL01 /* UniConnectRelaunchTmuxDriver.swift */; };
 		2DC34A24E8A8E5825F17154B /* UniConnectRemotePaneTitle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A8AF05A1E08F304BFBD63C7 /* UniConnectRemotePaneTitle.swift */; };
 		F0F740F8E1DF09C48C13A1C3 /* UniConnectRemotePaneTitleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B8FAEE192577F5B9C54AF1 /* UniConnectRemotePaneTitleTests.swift */; };
@@ -1887,6 +1888,7 @@
 		A9061000000000000000RL02 /* UniConnectRelaunchExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectRelaunchExecutor.swift; sourceTree = "<group>"; };
 		A9061000000000000000RL03 /* UniConnectRelaunchInventory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectRelaunchInventory.swift; sourceTree = "<group>"; };
 		A9061000000000000000RL05 /* UniConnectRelaunchOperationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectRelaunchOperationStore.swift; sourceTree = "<group>"; };
+		41777CC1F441E625114CFRL1 /* UniConnectRelaunchOperationStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectRelaunchOperationStoreTests.swift; sourceTree = "<group>"; };
 		A9061000000000000000RL01 /* UniConnectRelaunchTmuxDriver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectRelaunchTmuxDriver.swift; sourceTree = "<group>"; };
 		8A8AF05A1E08F304BFBD63C7 /* UniConnectRemotePaneTitle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UniConnectRemotePaneTitle.swift; sourceTree = "<group>"; };
 		38B8FAEE192577F5B9C54AF1 /* UniConnectRemotePaneTitleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectRemotePaneTitleTests.swift; sourceTree = "<group>"; };
@@ -3045,6 +3047,7 @@
 				4E5F60720000000000000002 /* NotificationSoundSettingsTests.swift */,
 				42092CDB2109E250F7F2A76E /* TabManagerUnitTests.swift */,
 				41777CC1F441E625114CF7B1 /* MobileFilePutServiceTests.swift */,
+				41777CC1F441E625114CFRL1 /* UniConnectRelaunchOperationStoreTests.swift */,
 				4BCBE69364D6D78FEB61D955 /* MobileTranscriptionTests.swift */,
 				EE9959248844544E00A2266F /* MobileBoxArrangementTests.swift */,
 				38B8FAEE192577F5B9C54AF1 /* UniConnectRemotePaneTitleTests.swift */,
@@ -4418,6 +4421,7 @@
 				A90622000000000000000002 /* UniConnectMobileAccessTests.swift in Sources */,
 				F26A04000000000000000001 /* UniConnectRailTests.swift in Sources */,
 				D26B40000000000000000006 /* UniConnectRecoveryPersistenceTests.swift in Sources */,
+				D37E1AB858F04B4388EFBRL1 /* UniConnectRelaunchOperationStoreTests.swift in Sources */,
 				F0F740F8E1DF09C48C13A1C3 /* UniConnectRemotePaneTitleTests.swift in Sources */,
 				A76C40000000000000000001 /* UniConnectSSHConfigTargetResolverTests.swift in Sources */,
 				C0FFEE7800000000000000B1 /* UniConnectSSHConnectCommandValidatorTests.swift in Sources */,

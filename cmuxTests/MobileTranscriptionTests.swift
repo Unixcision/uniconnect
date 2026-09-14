@@ -141,7 +141,9 @@ struct MobileTranscriptionLimitsTests {
     }
 
     @Test("un clip por encima del tamaño es too_large antes de decodificar")
-    func tooLargeByBytes() {
+    func tooLargeByBytes() throws {
+        // `throws` en el test a propósito: un error que no sea del contrato debe salir a la
+        // superficie y tumbar la prueba, no quedarse callado en un catch que lo traga.
         let enorme = String(repeating: "A", count: limits.maximumBase64Characters + 8)
         var capturado: MobileTranscriptionError?
         do {
@@ -216,28 +218,37 @@ struct MobileTranscriptionAdmissionTests {
     @Test("un dispositivo no puede tener dos dictados a la vez")
     func perDevice() {
         var admission = MobileTranscriptionAdmission(perDevice: 1, total: 2)
-        #expect(admission.admit(device: "100.1.1.1"))
-        #expect(!admission.admit(device: "100.1.1.1"))
+        let admissionPaso1 = admission.admit(device: "100.1.1.1")
+        #expect(admissionPaso1)
+        let admissionPaso2 = admission.admit(device: "100.1.1.1")
+        #expect(!admissionPaso2)
         admission.release(device: "100.1.1.1")
-        #expect(admission.admit(device: "100.1.1.1"))
+        let admissionPaso3 = admission.admit(device: "100.1.1.1")
+        #expect(admissionPaso3)
     }
 
     @Test("el equipo no pasa de dos dictados en total")
     func hostWide() {
         var admission = MobileTranscriptionAdmission(perDevice: 1, total: 2)
-        #expect(admission.admit(device: "a"))
-        #expect(admission.admit(device: "b"))
-        #expect(!admission.admit(device: "c"))
+        let admissionPaso4 = admission.admit(device: "a")
+        #expect(admissionPaso4)
+        let admissionPaso5 = admission.admit(device: "b")
+        #expect(admissionPaso5)
+        let admissionPaso6 = admission.admit(device: "c")
+        #expect(!admissionPaso6)
         #expect(admission.activeCount == 2)
         admission.release(device: "a")
-        #expect(admission.admit(device: "c"))
+        let admissionPaso7 = admission.admit(device: "c")
+        #expect(admissionPaso7)
     }
 
     @Test("una llamada sin dispositivo tampoco se salta el aforo")
     func anonymousDevice() {
         var admission = MobileTranscriptionAdmission(perDevice: 1, total: 2)
-        #expect(admission.admit(device: nil))
-        #expect(!admission.admit(device: "   "))
+        let admissionPaso8 = admission.admit(device: nil)
+        #expect(admissionPaso8)
+        let admissionPaso9 = admission.admit(device: "   ")
+        #expect(!admissionPaso9)
     }
 }
 
@@ -412,7 +423,8 @@ struct MobileTranscriptionWorkspaceTests {
             try FileManager.default.attributesOfItem(atPath: clip.path)[.posixPermissions] as? NSNumber
         )
         #expect(permissions.int16Value == 0o600)
-        #expect(workspace.remove(directory))
+        let workspacePaso1 = workspace.remove(directory)
+        #expect(workspacePaso1)
         #expect(!FileManager.default.fileExists(atPath: directory.path))
     }
 
@@ -440,7 +452,8 @@ struct MobileTranscriptionWorkspaceTests {
         }
         try workspace.write(Data([1, 2, 3]), to: directory.appendingPathComponent("clip.wav"))
         _ = directory.path.withCString { chflags($0, UInt32(UF_IMMUTABLE)) }
-        #expect(!workspace.remove(directory))
+        let workspacePaso2 = workspace.remove(directory)
+        #expect(!workspacePaso2)
         #expect(FileManager.default.fileExists(atPath: directory.path))
     }
 
@@ -480,17 +493,21 @@ struct MobileTranscriptionAvailabilityTests {
             return true
         }
         let start = ContinuousClock.now
-        #expect(availability.isAvailable(now: start))
-        #expect(availability.isAvailable(now: start.advanced(by: .seconds(30))))
+        let disponiblePaso1 = availability.isAvailable(now: start)
+        #expect(disponiblePaso1)
+        let disponiblePaso2 = availability.isAvailable(now: start.advanced(by: .seconds(30)))
+        #expect(disponiblePaso2)
         #expect(counter.value == 1)
-        #expect(availability.isAvailable(now: start.advanced(by: .seconds(61))))
+        let disponiblePaso3 = availability.isAvailable(now: start.advanced(by: .seconds(61)))
+        #expect(disponiblePaso3)
         #expect(counter.value == 2)
     }
 
     @Test("sin motor ni modelo no se anuncia nada")
     func unavailable() {
         var availability = MobileTranscriptionAvailability(lifetime: .seconds(60)) { false }
-        #expect(!availability.isAvailable(now: ContinuousClock.now))
+        let disponiblePaso4 = availability.isAvailable(now: ContinuousClock.now)
+        #expect(!disponiblePaso4)
     }
 }
 
