@@ -58,8 +58,12 @@ class DesktopModelTests(unittest.TestCase):
             desktop.dispatch("relaunch.plan", {"verb": "agent.relaunch", "scope": {"kind": "machine", "id": "machine"}})
             self.assertIsNone(observed[0]["record"]["tmux"])
             self.assertEqual(workspace["windows"][0]["tmux"], "tmux")
+            window.connection = lambda box: "ssh user@100.64.0.2"
             snapshot = desktop.snapshot({"kind": "window", "id": "window"})[0]
             self.assertTrue(desktop.current(snapshot))
+            window.connection = lambda box: "ssh user@100.64.0.3"
+            self.assertFalse(desktop.current(snapshot))
+            window.connection = lambda box: "ssh user@100.64.0.2"
             workspace["credentialId"] = "changed"
             self.assertFalse(desktop.current(snapshot))
             window.locked = True

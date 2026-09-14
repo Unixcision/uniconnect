@@ -133,6 +133,19 @@ class FleetTests(unittest.TestCase):
         restored.operation("relaunch.status")
         self.assertEqual(calls[-1][0], destination)
 
+    def test_removed_host_route_cannot_receive_apply_but_original_status_is_recoverable(self):
+        calls = []
+        local = SimpleNamespace(machines=SimpleNamespace(snapshot=lambda: []))
+        host = {"id": "saved", "label": "Mac", "endpoint": {"host": "100.64.0.2", "port": 59001},
+                "plan": {"operation_id": "op", "token": "token", "targets": [{"key": "pane"}], "excluded": []}}
+        fleet = RelaunchFleet.restore(local, [host], call=lambda address, method, params:
+            calls.append(method) or {"operation_state": "terminada", "results": []})
+        value = fleet.operation("relaunch.apply")
+        self.assertEqual(calls, [])
+        self.assertEqual(value["results"][0]["cause"], "generacion_cambiada")
+        fleet.operation("relaunch.status")
+        self.assertEqual(calls, ["relaunch.status"])
+
 
 class RecoveryAndRevocationTests(unittest.TestCase):
     def setUp(self):
