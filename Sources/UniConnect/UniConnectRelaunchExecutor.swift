@@ -68,10 +68,19 @@ struct UniConnectRelaunchExecutor: Sendable {
             return .init(key: target.key, state: .failed, cause: .hostUnreachable)
         }
         // The agent's own process, not the pane's shell: the shell survives the relaunch unchanged,
-        // so it can neither prove a new process nor catch a close that silently failed.
-        guard let before = await driver.agentPID(socket: target.socket, pane: pane) else {
-            // A pane sitting at its shell has no agent to close. Nothing is touched.
+        // so it can neither prove a new process nor catch a close that silently failed. Every answer
+        // other than one unmistakable agent leaves the window alone — a window nobody touched is
+        // always recoverable, and one closed on a guess is not.
+        let before: UniConnectRelaunchAgentProcess
+        switch await driver.agent(socket: target.socket, pane: pane, provider: target.provider) {
+        case let .found(process):
+            before = process
+        case .noAgent:
             return .init(key: target.key, state: .skipped, cause: .ambiguousIdentity)
+        case .ambiguous:
+            return .init(key: target.key, state: .skipped, cause: .ambiguousIdentity)
+        case .unreadable:
+            return .init(key: target.key, state: .failed, cause: .hostUnreachable)
         }
 
         // Identity first: nothing is closed before it is known what would have to come back.
@@ -101,8 +110,14 @@ struct UniConnectRelaunchExecutor: Sendable {
                 return .init(key: target.key, state: .needsUser, cause: .folderTrust)
             }
             guard reading == .agentReady else { continue }
-            let after = await driver.agentPID(socket: target.socket, pane: pane)
-            let proof = RelaunchProcessProof(before: before, after: after)
+            // A recycled identifier is not the same process: the start time decides, not the number.
+            let replacement = await driver.agent(
+                socket: target.socket,
+                pane: pane,
+                provider: target.provider
+            )
+            guard case let .found(after) = replacement else { continue }
+            let proof = RelaunchProcessProof(before: before.generation, after: after.generation)
             switch dialect.verify(proof: proof, reading: reading) {
             case .success:
                 return .init(key: target.key, state: .verified, effectiveID: conversation)

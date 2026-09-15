@@ -414,13 +414,14 @@ final class UniConnectCoordinator: ObservableObject {
             ))
         }
         if !failed.isEmpty {
-            // Nunca «se han quedado como estaban»: para llegar aquí su IA ya se cerró, y lo que
-            // no se pudo hacer fue **comprobar** que volviera. Decir que están intactas manda a
-            // alguien a otra cosa mientras su ventana está en el shell, que es justo lo que pasó
-            // el 15-09-2026 con una ventana viva.
+            // Ni «se han quedado como estaban» ni «se cerraron»: las dos afirman un efecto que
+            // aquí no está probado. Un fallo puede darse antes de tocar nada (el equipo no
+            // contestó) o después de cerrar la IA, y este recuento no distingue cuál. Lo único
+            // cierto es que no se pudo confirmar, y que mirar la ventana es lo que hace falta.
+            // El 15-09-2026 la frase anterior dijo «intacta» sobre una ventana que estaba muerta.
             detail.append(String(
                 localized: "uniconnect.relaunch.done.failed",
-                defaultValue: "\(failed.count) se cerraron y no se pudo confirmar que volvieran. Míralas: puede que estén en el shell."
+                defaultValue: "\(failed.count) sin confirmar. Revisa esas ventanas: puede haber cambios."
             ))
         }
         if !untouched.isEmpty {

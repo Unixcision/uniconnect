@@ -15,7 +15,7 @@ struct UniConnectRelaunchTmuxDriver: Sendable {
     init(
         commands: any CommandRunning = CommandRunner(),
         executable: String = "tmux",
-        processLister: String = "/usr/bin/pgrep"
+        processLister: String = "/bin/ps"
     ) {
         self.commands = commands
         self.executable = executable
@@ -39,27 +39,83 @@ struct UniConnectRelaunchTmuxDriver: Sendable {
         return text.flatMap { Int32($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
     }
 
-    /// The process actually running inside a pane, above the shell that hosts it.
+    /// Finds the agent of `provider` running under a pane, or says why it could not.
     ///
     /// ``panePID(socket:pane:)`` reports the pane's **shell**, and a shell does not change when the
-    /// agent running inside it is replaced — so comparing it before and after a relaunch can never
-    /// prove anything, and a relaunch that worked is reported as one that failed. The agent is the
-    /// shell's child, and *that* identifier does change. Nil means the pane is sitting at its shell
-    /// with no agent in it, which is a reason not to close anything rather than a failure.
-    func agentPID(socket: String, pane: String) async -> Int32? {
-        guard let shell = await panePID(socket: socket, pane: pane) else { return nil }
+    /// agent inside it is replaced — so comparing it before and after a relaunch can never prove
+    /// anything, and a relaunch that worked is reported as one that failed.
+    ///
+    /// The agent is not simply "the shell's child" either. A wrapper makes it a grandchild, and a
+    /// background job makes it one candidate among several, so the whole subtree is walked and only
+    /// an executable named after the provider counts. **Exactly one match is required**: several
+    /// candidates with nothing to tell them apart is `ambiguous`, never a guess, because guessing
+    /// here means closing an agent that was doing something else.
+    func agent(
+        socket: String,
+        pane: String,
+        provider: String
+    ) async -> UniConnectRelaunchAgentLookup {
+        guard let shell = await panePID(socket: socket, pane: pane) else { return .unreadable }
+        guard let table = await processTable() else { return .unreadable }
+
+        var childrenByParent: [Int32: [Int32]] = [:]
+        for row in table { childrenByParent[row.parent, default: []].append(row.pid) }
+
+        var subtree: [Int32] = []
+        var frontier = childrenByParent[shell] ?? []
+        while let next = frontier.popLast() {
+            guard !subtree.contains(next) else { continue }  // un ciclo no deberia existir; no colgarse si lo hay
+            subtree.append(next)
+            frontier.append(contentsOf: childrenByParent[next] ?? [])
+        }
+
+        let names = Dictionary(uniqueKeysWithValues: table.map { ($0.pid, $0.command) })
+        let matches = subtree.filter { pid in
+            guard let command = names[pid] else { return false }
+            return Self.executableName(of: command) == provider
+        }
+        guard matches.count == 1, let pid = matches.first else {
+            return matches.isEmpty ? .noAgent : .ambiguous
+        }
+        guard let startedAt = await startTime(of: pid) else { return .unreadable }
+        return .found(.init(pid: pid, startedAt: startedAt))
+    }
+
+    /// Every live process as (pid, parent, command), or nil when the table could not be read.
+    private func processTable() async -> [(pid: Int32, parent: Int32, command: String)]? {
         let result = await commands.run(
             directory: NSHomeDirectory(),
             executable: processLister,
-            arguments: ["-P", String(shell)],
+            arguments: ["-Ao", "pid=,ppid=,comm="],
             timeout: 10
         )
         guard result.exitStatus == 0, let listing = result.stdout else { return nil }
-        // The newest child: a shell that kept a stopped job around still has the live agent last.
-        return listing
-            .split(separator: "\n")
-            .compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
-            .last
+        return listing.split(separator: "\n").compactMap { line in
+            let fields = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+            guard fields.count == 3, let pid = Int32(fields[0]), let parent = Int32(fields[1]) else {
+                return nil
+            }
+            return (pid, parent, String(fields[2]).trimmingCharacters(in: .whitespaces))
+        }
+    }
+
+    /// When the system says a process started. Compared verbatim, never parsed.
+    private func startTime(of pid: Int32) async -> String? {
+        let result = await commands.run(
+            directory: NSHomeDirectory(),
+            executable: processLister,
+            arguments: ["-o", "lstart=", "-p", String(pid)],
+            timeout: 10
+        )
+        guard result.exitStatus == 0,
+              let text = result.stdout?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else { return nil }
+        return text
+    }
+
+    /// The bare executable name of a command path, which is what a provider is named after.
+    private static func executableName(of command: String) -> String {
+        (command as NSString).lastPathComponent
     }
 
     /// The first pane of `session`, which is the one a UniConnect window owns.

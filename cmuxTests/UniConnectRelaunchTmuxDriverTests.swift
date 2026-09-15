@@ -10,19 +10,28 @@ import Testing
 
 /// Lo que separa «la IA volvió» de «el panel sigue teniendo un shell».
 ///
-/// El 15-09-2026 un relanzado real cerró una IA viva, la reabrió y aun asi informó de que no había
-/// salido y se había «quedado como estaba». La causa era comparar el proceso equivocado: tmux
-/// responde el PID del **shell** del panel, que no cambia nunca porque la IA corre dentro de él.
+/// El 15-09-2026 un relanzado real cerró una IA viva, la reabrió y aun así informó de que no había
+/// salido y se había «quedado como estaba». La causa era mirar el proceso equivocado: tmux responde
+/// el PID del **shell** del panel, que no cambia nunca porque la IA corre dentro de él.
+///
+/// El primer intento de arreglo tomaba «el último hijo», y eso tampoco acredita nada: con un
+/// envoltorio la IA es nieta, y con una tarea de fondo hay varios candidatos. Aquí se comprueba lo
+/// que se decidió en su lugar — recorrer el subárbol, exigir **exactamente una** coincidencia del
+/// proveedor, y no adivinar nunca.
 @Suite("Driver tmux del relanzado")
 struct UniConnectRelaunchTmuxDriverTests {
-    /// Un ejecutor de comandos que contesta lo que se le diga, y apunta lo que le preguntaron.
+    /// Un ejecutor de comandos que contesta por ejecutable y argumentos, y apunta lo que se le pidió.
     private final class FakeCommands: CommandRunning, @unchecked Sendable {
         // Solo lo tocan las llamadas secuenciales de una prueba; no hay concurrencia real aquí.
-        private(set) var calls: [(executable: String, arguments: [String])] = []
-        private let answers: [String: (String?, Int32)]
+        private(set) var calls: [[String]] = []
+        private let tmuxPanePID: String?
+        private let table: String?
+        private let started: String?
 
-        init(answers: [String: (String?, Int32)]) {
-            self.answers = answers
+        init(tmuxPanePID: String?, table: String?, started: String? = "Mon Sep 15 11:47:02 2026") {
+            self.tmuxPanePID = tmuxPanePID
+            self.table = table
+            self.started = started
         }
 
         func run(
@@ -31,56 +40,126 @@ struct UniConnectRelaunchTmuxDriverTests {
             arguments: [String],
             timeout: TimeInterval?
         ) async -> CommandResult {
-            calls.append((executable, arguments))
-            let (stdout, status) = answers[executable] ?? (nil, 1)
+            calls.append([executable] + arguments)
+            let answer: String?
+            if executable == "tmux" {
+                answer = tmuxPanePID
+            } else if arguments.contains("-Ao") {
+                answer = table
+            } else {
+                answer = started
+            }
             return CommandResult(
-                stdout: stdout,
+                stdout: answer,
                 stderr: nil,
-                exitStatus: status,
+                exitStatus: answer == nil ? 1 : 0,
                 timedOut: false,
                 executionError: nil
             )
         }
     }
 
-    @Test("El PID del agente es el hijo del shell, no el shell")
-    func agentPIDIsTheShellsChild() async {
-        let commands = FakeCommands(answers: [
-            "tmux": ("73694\n", 0),      // el shell del panel
-            "/usr/bin/pgrep": ("52938\n", 0),  // la IA dentro de él
-        ])
-        let driver = UniConnectRelaunchTmuxDriver(commands: commands, executable: "tmux")
-
-        let shell = await driver.panePID(socket: "uniconnect-local", pane: "%1")
-        let agent = await driver.agentPID(socket: "uniconnect-local", pane: "%1")
-
-        #expect(shell == 73694)
-        #expect(agent == 52938)
-        // Si fueran iguales, ninguna prueba de «proceso nuevo» podría distinguir un relanzado
-        // que funcionó de uno que no hizo nada.
-        #expect(agent != shell)
-        #expect(commands.calls.contains { $0.executable == "/usr/bin/pgrep" && $0.arguments == ["-P", "73694"] })
+    private func driver(_ commands: FakeCommands) -> UniConnectRelaunchTmuxDriver {
+        UniConnectRelaunchTmuxDriver(commands: commands, executable: "tmux", processLister: "/bin/ps")
     }
 
-    @Test("Un panel parado en su shell no tiene agente que cerrar")
+    private func lookup(
+        panePID: String? = "73694\n",
+        table: String?,
+        started: String? = "Mon Sep 15 11:47:02 2026"
+    ) async -> UniConnectRelaunchAgentLookup {
+        let commands = FakeCommands(tmuxPanePID: panePID, table: table, started: started)
+        return await driver(commands).agent(socket: "uniconnect-local", pane: "%1", provider: "claude")
+    }
+
+    @Test("La IA hija del shell se encuentra, y no es el shell")
+    func agentIsFoundUnderTheShell() async {
+        let found = await lookup(table: """
+        73694 73000 /bin/zsh
+        52938 73694 claude
+        """)
+
+        // Si valiera el PID del panel (73694), ninguna prueba de «proceso nuevo» distinguiría un
+        // relanzado que funcionó de uno que no hizo nada.
+        #expect(found == .found(.init(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026")))
+    }
+
+    @Test("La IA nieta, bajo un envoltorio, también se encuentra")
+    func agentUnderAWrapperIsFound() async {
+        let found = await lookup(table: """
+        73694 73000 /bin/zsh
+        80000 73694 claude-shim
+        52938 80000 claude
+        """)
+
+        #expect(found == .found(.init(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026")))
+    }
+
+    @Test("Un panel parado en su shell no tiene IA que cerrar")
     func paneSittingAtItsShellHasNoAgent() async {
-        let commands = FakeCommands(answers: [
-            "tmux": ("73694\n", 0),
-            "/usr/bin/pgrep": ("", 1),  // pgrep sin coincidencias sale con 1
-        ])
-        let driver = UniConnectRelaunchTmuxDriver(commands: commands, executable: "tmux")
-
-        #expect(await driver.agentPID(socket: "uniconnect-local", pane: "%1") == nil)
+        #expect(await lookup(table: "73694 73000 /bin/zsh") == .noAgent)
     }
 
-    @Test("Con varios hijos se toma el más reciente")
-    func theNewestChildWins() async {
-        let commands = FakeCommands(answers: [
-            "tmux": ("73694\n", 0),
-            "/usr/bin/pgrep": ("41000\n52938\n", 0),
-        ])
-        let driver = UniConnectRelaunchTmuxDriver(commands: commands, executable: "tmux")
+    @Test("Una tarea de fondo no se confunde con la IA")
+    func abackgroundJobIsNotTheAgent() async {
+        let found = await lookup(table: """
+        73694 73000 /bin/zsh
+        52938 73694 claude
+        60000 73694 rg
+        """)
 
-        #expect(await driver.agentPID(socket: "uniconnect-local", pane: "%1") == 52938)
+        #expect(found == .found(.init(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026")))
+    }
+
+    @Test("Con dos IA del mismo proveedor no se adivina: es ambiguo")
+    func twoAgentsOfTheSameProviderAreAmbiguous() async {
+        let found = await lookup(table: """
+        73694 73000 /bin/zsh
+        52938 73694 claude
+        52939 73694 claude
+        """)
+
+        // Cerrar una de las dos a ojo es cerrar trabajo de alguien.
+        #expect(found == .ambiguous)
+    }
+
+    @Test("Si no se puede leer la tabla de procesos no se concluye que no haya IA")
+    func anUnreadableProcessTableIsNotAnAbsentAgent() async {
+        // La diferencia importa: «no hay IA» deja la ventana en paz, «no se pudo leer» detiene todo.
+        #expect(await lookup(table: nil) != .noAgent)
+        #expect(await lookup(table: nil) == .unreadable)
+    }
+
+    @Test("Si tmux no contesta, tampoco")
+    func anUnreadablePaneIsNotAnAbsentAgent() async {
+        #expect(await lookup(panePID: nil, table: "73694 73000 /bin/zsh") == .unreadable)
+    }
+
+    @Test("Sin hora de arranque no se acredita el proceso")
+    func aProcessWithoutAStartTimeIsNotAccredited() async {
+        let found = await lookup(table: """
+        73694 73000 /bin/zsh
+        52938 73694 claude
+        """, started: nil)
+
+        #expect(found == .unreadable)
+    }
+
+    @Test("Un PID reciclado no pasa por el mismo proceso")
+    func arecycledIdentifierIsNotTheSameProcess() {
+        let antes = UniConnectRelaunchAgentProcess(pid: 52938, startedAt: "Mon Sep 15 11:00:00 2026")
+        let despues = UniConnectRelaunchAgentProcess(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026")
+
+        // Mismo número, proceso distinto: comparar solo el PID daría «no ha cambiado nada».
+        #expect(antes.pid == despues.pid)
+        #expect(antes.generation != despues.generation)
+    }
+
+    @Test("El mismo proceso da la misma generación")
+    func thesameProcessKeepsItsGeneration() {
+        let uno = UniConnectRelaunchAgentProcess(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026")
+        let otro = UniConnectRelaunchAgentProcess(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026")
+
+        #expect(uno.generation == otro.generation)
     }
 }
