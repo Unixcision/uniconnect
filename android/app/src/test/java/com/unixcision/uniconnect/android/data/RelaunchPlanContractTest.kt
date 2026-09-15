@@ -62,7 +62,9 @@ class RelaunchPlanContractTest {
 
         assertEquals(2, plan.targets.size)
         assertTrue(plan.actionable)
-        assertTrue(RelaunchPresentation.decide(plan) !is RelaunchDecision.Show)
+        // `!is Show` era demasiado débil: `Nothing` también lo cumple, y entonces la prueba pasaría
+        // con un plan que tampoco se ejecuta. Se exige el caso exacto.
+        assertTrue(RelaunchPresentation.decide(plan) is RelaunchDecision.Apply)
     }
 
     @Test fun `las causas del plan normal tambien conservan su identificador`() {
