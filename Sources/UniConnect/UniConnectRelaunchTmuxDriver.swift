@@ -10,10 +10,16 @@ import Foundation
 struct UniConnectRelaunchTmuxDriver: Sendable {
     private let commands: any CommandRunning
     private let executable: String
+    private let processLister: String
 
-    init(commands: any CommandRunning = CommandRunner(), executable: String = "tmux") {
+    init(
+        commands: any CommandRunning = CommandRunner(),
+        executable: String = "tmux",
+        processLister: String = "/usr/bin/pgrep"
+    ) {
         self.commands = commands
         self.executable = executable
+        self.processLister = processLister
     }
 
     /// The text a pane is currently showing.
@@ -31,6 +37,29 @@ struct UniConnectRelaunchTmuxDriver: Sendable {
     func panePID(socket: String, pane: String) async -> Int32? {
         let text = await run(socket: socket, ["display", "-p", "-t", pane, "#{pane_pid}"])
         return text.flatMap { Int32($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    }
+
+    /// The process actually running inside a pane, above the shell that hosts it.
+    ///
+    /// ``panePID(socket:pane:)`` reports the pane's **shell**, and a shell does not change when the
+    /// agent running inside it is replaced — so comparing it before and after a relaunch can never
+    /// prove anything, and a relaunch that worked is reported as one that failed. The agent is the
+    /// shell's child, and *that* identifier does change. Nil means the pane is sitting at its shell
+    /// with no agent in it, which is a reason not to close anything rather than a failure.
+    func agentPID(socket: String, pane: String) async -> Int32? {
+        guard let shell = await panePID(socket: socket, pane: pane) else { return nil }
+        let result = await commands.run(
+            directory: NSHomeDirectory(),
+            executable: processLister,
+            arguments: ["-P", String(shell)],
+            timeout: 10
+        )
+        guard result.exitStatus == 0, let listing = result.stdout else { return nil }
+        // The newest child: a shell that kept a stopped job around still has the live agent last.
+        return listing
+            .split(separator: "\n")
+            .compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
+            .last
     }
 
     /// The first pane of `session`, which is the one a UniConnect window owns.

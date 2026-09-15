@@ -64,8 +64,14 @@ struct UniConnectRelaunchExecutor: Sendable {
             return .init(key: target.key, state: .skipped, cause: .unsupported)
         }
         guard let pane = await driver.firstPane(socket: target.socket, session: target.session),
-              let before = await driver.panePID(socket: target.socket, pane: pane) else {
+              await driver.panePID(socket: target.socket, pane: pane) != nil else {
             return .init(key: target.key, state: .failed, cause: .hostUnreachable)
+        }
+        // The agent's own process, not the pane's shell: the shell survives the relaunch unchanged,
+        // so it can neither prove a new process nor catch a close that silently failed.
+        guard let before = await driver.agentPID(socket: target.socket, pane: pane) else {
+            // A pane sitting at its shell has no agent to close. Nothing is touched.
+            return .init(key: target.key, state: .skipped, cause: .ambiguousIdentity)
         }
 
         // Identity first: nothing is closed before it is known what would have to come back.
@@ -95,7 +101,7 @@ struct UniConnectRelaunchExecutor: Sendable {
                 return .init(key: target.key, state: .needsUser, cause: .folderTrust)
             }
             guard reading == .agentReady else { continue }
-            let after = await driver.panePID(socket: target.socket, pane: pane)
+            let after = await driver.agentPID(socket: target.socket, pane: pane)
             let proof = RelaunchProcessProof(before: before, after: after)
             switch dialect.verify(proof: proof, reading: reading) {
             case .success:

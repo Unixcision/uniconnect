@@ -397,7 +397,8 @@ final class UniConnectCoordinator: ObservableObject {
         let verified = operation.results.filter { $0.state == .verified }.count
         let waiting = operation.needingUser
         let failed = operation.retryable
-        guard !waiting.isEmpty || !failed.isEmpty else { return }
+        let untouched = operation.results.filter { $0.state == .skipped }
+        guard !waiting.isEmpty || !failed.isEmpty || !untouched.isEmpty else { return }
 
         let alert = NSAlert()
         alert.alertStyle = .informational
@@ -413,9 +414,19 @@ final class UniConnectCoordinator: ObservableObject {
             ))
         }
         if !failed.isEmpty {
+            // Nunca «se han quedado como estaban»: para llegar aquí su IA ya se cerró, y lo que
+            // no se pudo hacer fue **comprobar** que volviera. Decir que están intactas manda a
+            // alguien a otra cosa mientras su ventana está en el shell, que es justo lo que pasó
+            // el 15-09-2026 con una ventana viva.
             detail.append(String(
                 localized: "uniconnect.relaunch.done.failed",
-                defaultValue: "\(failed.count) no salieron y se han quedado como estaban."
+                defaultValue: "\(failed.count) se cerraron y no se pudo confirmar que volvieran. Míralas: puede que estén en el shell."
+            ))
+        }
+        if !untouched.isEmpty {
+            detail.append(String(
+                localized: "uniconnect.relaunch.done.skipped",
+                defaultValue: "\(untouched.count) se quedaron como estaban, sin tocarlas."
             ))
         }
         alert.informativeText = detail.joined(separator: "\n\n")
