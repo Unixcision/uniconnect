@@ -62,10 +62,11 @@ struct UniConnectRelaunchExecutor: Sendable {
 
     /// Relaunches `target`, reporting where it got to.
     func relaunch(_ target: Target) async -> RelaunchOperation.Result {
-        // Before anything is read, and long before anything is closed: this build may not yet
-        // close an agent, and saying so is the whole guard. See ``UniConnectRelaunchClosurePolicy``.
-        guard closurePolicy.allowsClosing else {
-            return .init(key: target.key, state: .skipped, cause: .unsupported)
+        // Antes de leer nada, y mucho antes de cerrar nada. Ver ``UniConnectRelaunchClosurePolicy``:
+        // una ventana local sí se relanza; una de caja SSH no, porque no hay conversación que
+        // devolverle después.
+        if let refusal = closurePolicy.refusal(for: target.key) {
+            return .init(key: target.key, state: .skipped, cause: refusal)
         }
         // An agent this build does not know how to close and verify is left exactly as it is.
         guard let dialect = dialects.dialect(for: target.provider) else {
@@ -102,8 +103,12 @@ struct UniConnectRelaunchExecutor: Sendable {
             conversation = printed ?? conversation
         }
 
+        // Las opciones que tenía puestas, leídas del proceso vivo antes de cerrarlo y no del
+        // registro, que no las guarda. Relanzar no es el momento de cambiar lo que una IA puede
+        // hacer, ni para darle más ni para quitarle.
+        let previousArgv = before.argv.isEmpty ? target.previousArgv : before.argv
         guard let conversation,
-              let argv = dialect.invocation(conversation: conversation, previousArgv: target.previousArgv) else {
+              let argv = dialect.invocation(conversation: conversation, previousArgv: previousArgv) else {
             // Closed but unidentifiable: say so loudly instead of resuming somebody else's.
             return .init(key: target.key, state: .needsUser, cause: .ambiguousIdentity)
         }

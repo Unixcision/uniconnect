@@ -21551,18 +21551,26 @@ class TerminalController {
         // a hacer, y quien mira el móvil no tiene forma de saberlo hasta que ya ha pulsado.
         let closurePolicy = UniConnectRelaunchClosurePolicy.current
         var unavailable: [String: Any] = [:]
-        if !closurePolicy.allowsClosing {
+        var refused: [RelaunchPlan.Exclusion] = []
+        let admitted = preview.targets.filter { target in
+            guard let cause = closurePolicy.refusal(for: target.key) else { return true }
+            refused.append(.init(label: target.label, cause: cause))
+            return false
+        }
+        if !refused.isEmpty {
             preview = UniConnectRelaunchCoordinator.Preview(
-                targets: [],
-                exclusions: preview.exclusions + preview.targets.map {
-                    RelaunchPlan.Exclusion(label: $0.label, cause: .unsupported)
-                }
+                targets: admitted,
+                exclusions: preview.exclusions + refused
             )
-            unavailable = [
-                "unavailable": true,
-                "unavailable_reason": closurePolicy.explanation,
-                "missing_conditions": UniConnectRelaunchClosurePolicy.outstandingConditions,
-            ]
+            // Solo cuando NO queda nada que hacer: si hay objetivos admitidos, el plan es
+            // ejecutable y decir «no disponible» seria mentir en la otra direccion.
+            if admitted.isEmpty {
+                unavailable = [
+                    "unavailable": true,
+                    "unavailable_reason": closurePolicy.explanation(for: .unsupported),
+                    "missing_conditions": UniConnectRelaunchClosurePolicy.outstandingConditions,
+                ]
+            }
         }
         let token = mobileRelaunchStore.issue(
             deviceID: peer.address, verb: .agentRelaunch, targets: preview.targets

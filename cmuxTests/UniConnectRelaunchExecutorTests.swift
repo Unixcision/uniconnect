@@ -66,8 +66,12 @@ struct UniConnectRelaunchExecutorTests {
         }
     }
 
-    private func proceso(_ pid: Int32, _ arranque: String) -> UniConnectRelaunchAgentLookup {
-        .found(.init(pid: pid, startedAt: arranque))
+    private func proceso(
+        _ pid: Int32,
+        _ arranque: String,
+        argv: [String] = ["claude", "--resume", "091942fc-27af-47e7-ae92-50e7daf1eed3", "--dangerously-skip-permissions"]
+    ) -> UniConnectRelaunchAgentLookup {
+        .found(.init(pid: pid, startedAt: arranque, argv: argv))
     }
 
     private func objetivo() -> UniConnectRelaunchExecutor.Target {
@@ -82,7 +86,7 @@ struct UniConnectRelaunchExecutorTests {
             provider: "claude",
             socket: "uniconnect-local",
             session: "uc-creadorplanos",
-            previousArgv: ["claude", "--dangerously-skip-permissions"],
+            previousArgv: [],
             evidence: RelaunchIdentityEvidence(
                 processID: 52938,
                 pane: "uc-creadorplanos",
@@ -96,7 +100,7 @@ struct UniConnectRelaunchExecutorTests {
     }
 
     private func ejecutor(_ panel: FakePane) -> UniConnectRelaunchExecutor {
-        UniConnectRelaunchExecutor(driver: panel, closurePolicy: .permissive, settle: {})
+        UniConnectRelaunchExecutor(driver: panel, settle: {})
     }
 
     private var salidaConResume: String {
@@ -179,17 +183,27 @@ struct UniConnectRelaunchExecutorTests {
         #expect(panel.typed.isEmpty)
     }
 
-    @Test("Con la política por defecto no se toca el panel ni para leerlo")
-    func thedefaultPolicyDoesNotEvenReadThePane() async {
+    @Test("Una ventana de caja SSH no se toca ni para leerla")
+    func aremoteWindowIsNotEvenRead() async {
         let panel = FakePane(
             lookups: [proceso(52938, "Mon Sep 15 09:00:00 2026")],
             screens: [iaLista, salidaConResume, iaLista]
         )
-        // Constructor por defecto a propósito: sin `closurePolicy:`, que es como lo construye el
-        // producto. Si alguien cambia `.current` sin querer, esta prueba es la que se entera.
-        let ejecutor = UniConnectRelaunchExecutor(driver: panel, settle: {})
+        let remoto = UniConnectRelaunchExecutor.Target(
+            key: RelaunchTargetKey(
+                destination: .ssh(user: "root", host: "185.237.234.231", port: 22),
+                tmuxServer: "uniconnect",
+                pane: "valenciarusa",
+                generation: 1
+            ),
+            label: "VALENCIARUSA · valenciarusa",
+            provider: "claude",
+            socket: "uniconnect",
+            session: "valenciarusa",
+            previousArgv: []
+        )
 
-        let resultado = await ejecutor.relaunch(objetivo())
+        let resultado = await UniConnectRelaunchExecutor(driver: panel, settle: {}).relaunch(remoto)
 
         #expect(resultado.state == .skipped)
         #expect(resultado.cause == .unsupported)
@@ -198,15 +212,62 @@ struct UniConnectRelaunchExecutorTests {
         #expect(panel.typed.isEmpty)
     }
 
-    @Test("Mientras falten condiciones, la política por defecto no permite cerrar")
-    func thedefaultPolicyForbidsClosingWhileConditionsRemain() {
+    @Test("Una ventana local sí se relanza, que es justo lo que se pedía")
+    func alocalWindowIsRelaunched() async {
+        let panel = FakePane(
+            lookups: [
+                proceso(52938, "Mon Sep 15 09:00:00 2026"),
+                proceso(61111, "Mon Sep 15 11:47:02 2026"),
+            ],
+            screens: [iaLista, salidaConResume, iaLista]
+        )
+
+        // Política del producto, sin nada inyectado.
+        let resultado = await UniConnectRelaunchExecutor(driver: panel, settle: {}).relaunch(objetivo())
+
+        #expect(resultado.state == .verified)
+    }
+
+    @Test("Las opciones se leen del proceso vivo, no del registro")
+    func theflagsComeFromTheLiveProcess() async {
+        // El registro no las guarda: el objetivo llega con `previousArgv: []`. Si el relanzado
+        // se apoyara en él, la IA volvería sin sus permisos y nadie se enteraría hasta usarla.
+        let panel = FakePane(
+            lookups: [
+                proceso(52938, "Mon Sep 15 09:00:00 2026",
+                        argv: ["claude", "--resume", "091942fc-27af-47e7-ae92-50e7daf1eed3",
+                               "--dangerously-skip-permissions"]),
+                proceso(61111, "Mon Sep 15 11:47:02 2026"),
+            ],
+            screens: [iaLista, salidaConResume, iaLista]
+        )
+
+        _ = await UniConnectRelaunchExecutor(driver: panel, settle: {}).relaunch(objetivo())
+
+        #expect(panel.typed.contains { $0.contains("--dangerously-skip-permissions") })
+    }
+
+    @Test("Una IA sin ese permiso no lo gana al relanzarse")
+    func anagentWithoutThatPermissionDoesNotGainIt() async {
+        // Relanzar tampoco es el momento de dar permisos que no había.
+        let panel = FakePane(
+            lookups: [
+                proceso(52938, "Mon Sep 15 09:00:00 2026",
+                        argv: ["claude", "--resume", "091942fc-27af-47e7-ae92-50e7daf1eed3"]),
+                proceso(61111, "Mon Sep 15 11:47:02 2026"),
+            ],
+            screens: [iaLista, salidaConResume, iaLista]
+        )
+
+        _ = await UniConnectRelaunchExecutor(driver: panel, settle: {}).relaunch(objetivo())
+
+        #expect(panel.typed.allSatisfy { !$0.contains("--dangerously-skip-permissions") })
+    }
+
+    @Test("Lo que queda bloqueado sigue nombrado, para que vaciarlo sea deliberado")
+    func whatIsStillRefusedStaysNamed() {
         #expect(!UniConnectRelaunchClosurePolicy.outstandingConditions.isEmpty)
-        #expect(!UniConnectRelaunchClosurePolicy.current.allowsClosing)
-        // La lista es lo que se vacía para desbloquear; que nombre también lo que se añadió
-        // después de la primera versión, para que vaciar tres cadenas no habilite de más.
-        #expect(UniConnectRelaunchClosurePolicy.outstandingConditions.contains { $0.contains("identidad nativa") })
-        #expect(UniConnectRelaunchClosurePolicy.outstandingConditions.contains { $0.contains("autoridad") })
-        #expect(UniConnectRelaunchClosurePolicy.outstandingConditions.contains { $0.contains("conversacion") })
+        #expect(UniConnectRelaunchClosurePolicy.outstandingConditions.contains { $0.contains("SSH") })
     }
 
     @Test("Una pregunta de confianza de carpeta la contesta una persona")

@@ -84,8 +84,9 @@ struct UniConnectRelaunchTmuxDriver: Sendable {
         guard matches.count == 1, let pid = matches.first else {
             return matches.isEmpty ? .noAgent : .ambiguous
         }
-        guard let startedAt = await startTime(of: pid) else { return .unreadable }
-        return .found(.init(pid: pid, startedAt: startedAt))
+        guard let startedAt = await startTime(of: pid),
+              let argv = await commandLine(of: pid) else { return .unreadable }
+        return .found(.init(pid: pid, startedAt: startedAt, argv: argv))
     }
 
     /// Every live process as (pid, parent, command), or nil when the table could not be read.
@@ -124,6 +125,25 @@ struct UniConnectRelaunchTmuxDriver: Sendable {
               let text = result.stdout?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else { return nil }
         return text
+    }
+
+    /// The command line a process is running under, as the system reports it.
+    ///
+    /// Split on spaces on purpose and nothing cleverer: what the caller does with it is ask whether
+    /// a flag is present, and a flag with a space inside is not a flag. A path with a space would
+    /// come back in pieces, which is why this is never used to *rebuild* a command, only to read
+    /// the options off one.
+    private func commandLine(of pid: Int32) async -> [String]? {
+        let result = await commands.run(
+            directory: NSHomeDirectory(),
+            executable: processLister,
+            arguments: ["-o", "args=", "-p", String(pid)],
+            timeout: 10
+        )
+        guard result.exitStatus == 0,
+              let text = result.stdout?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else { return nil }
+        return text.split(separator: " ").map(String.init)
     }
 
     /// The bare executable name of a command path, which is what a provider is named after.

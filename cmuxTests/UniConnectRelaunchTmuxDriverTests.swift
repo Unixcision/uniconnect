@@ -27,8 +27,10 @@ struct UniConnectRelaunchTmuxDriverTests {
         private let tmuxPanePID: String?
         private let table: String?
         private let started: String?
+        private let args: String?
 
-        init(tmuxPanePID: String?, table: String?, started: String? = "Mon Sep 15 11:47:02 2026") {
+        init(tmuxPanePID: String?, table: String?, started: String? = "Mon Sep 15 11:47:02 2026", args: String? = "claude --resume abc --dangerously-skip-permissions") {
+            self.args = args
             self.tmuxPanePID = tmuxPanePID
             self.table = table
             self.started = started
@@ -46,8 +48,10 @@ struct UniConnectRelaunchTmuxDriverTests {
                 answer = tmuxPanePID
             } else if arguments.contains("-Ao") {
                 answer = table
-            } else {
+            } else if arguments.contains("lstart=") {
                 answer = started
+            } else {
+                answer = args
             }
             return CommandResult(
                 stdout: answer,
@@ -81,7 +85,7 @@ struct UniConnectRelaunchTmuxDriverTests {
 
         // Si valiera el PID del panel (73694), ninguna prueba de «proceso nuevo» distinguiría un
         // relanzado que funcionó de uno que no hizo nada.
-        #expect(found == .found(.init(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026")))
+        #expect(found == .found(.init(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026", argv: ["claude", "--resume", "abc", "--dangerously-skip-permissions"])))
     }
 
     @Test("La IA nieta, bajo un envoltorio, también se encuentra")
@@ -92,7 +96,7 @@ struct UniConnectRelaunchTmuxDriverTests {
         52938 80000 claude
         """)
 
-        #expect(found == .found(.init(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026")))
+        #expect(found == .found(.init(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026", argv: ["claude", "--resume", "abc", "--dangerously-skip-permissions"])))
     }
 
     @Test("Un panel parado en su shell no tiene IA que cerrar")
@@ -108,7 +112,7 @@ struct UniConnectRelaunchTmuxDriverTests {
         60000 73694 rg
         """)
 
-        #expect(found == .found(.init(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026")))
+        #expect(found == .found(.init(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026", argv: ["claude", "--resume", "abc", "--dangerously-skip-permissions"])))
     }
 
     @Test("Con dos IA del mismo proveedor no se adivina: es ambiguo")
@@ -177,8 +181,8 @@ struct UniConnectRelaunchTmuxDriverTests {
 
     @Test("Un PID reciclado no pasa por el mismo proceso")
     func arecycledIdentifierIsNotTheSameProcess() {
-        let antes = UniConnectRelaunchAgentProcess(pid: 52938, startedAt: "Mon Sep 15 11:00:00 2026")
-        let despues = UniConnectRelaunchAgentProcess(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026")
+        let antes = UniConnectRelaunchAgentProcess(pid: 52938, startedAt: "Mon Sep 15 11:00:00 2026", argv: [])
+        let despues = UniConnectRelaunchAgentProcess(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026", argv: [])
 
         // Mismo número, proceso distinto: comparar solo el PID daría «no ha cambiado nada».
         #expect(antes.pid == despues.pid)
@@ -187,8 +191,8 @@ struct UniConnectRelaunchTmuxDriverTests {
 
     @Test("El mismo proceso se reconoce como el mismo")
     func thesameProcessKeepsItsGeneration() {
-        let uno = UniConnectRelaunchAgentProcess(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026")
-        let otro = UniConnectRelaunchAgentProcess(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026")
+        let uno = UniConnectRelaunchAgentProcess(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026", argv: [])
+        let otro = UniConnectRelaunchAgentProcess(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026", argv: [])
 
         #expect(uno.isSameProcess(as: otro))
     }

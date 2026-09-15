@@ -38317,73 +38317,18 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Relanzar todavía no está disponible: falta %@. No se ha tocado ninguna ventana."
+            "value": "Relanzar no está disponible para esa ventana. No se ha tocado ninguna."
           }
         }
       }
     },
-    "uniconnect.relaunch.blocked.argv": {
+    "uniconnect.relaunch.blocked.remote": {
       "extractionState": "manual",
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "recuperar las opciones de arranque"
-          }
-        }
-      }
-    },
-    "uniconnect.relaunch.blocked.authority": {
-      "extractionState": "manual",
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "comprobar quién manda sobre la ventana"
-          }
-        }
-      }
-    },
-    "uniconnect.relaunch.blocked.exclusion": {
-      "extractionState": "manual",
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "la exclusión compartida entre quienes pueden abrir ventanas"
-          }
-        }
-      }
-    },
-    "uniconnect.relaunch.blocked.identity": {
-      "extractionState": "manual",
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "acreditar que el proceso es el de esta conversación"
-          }
-        }
-      }
-    },
-    "uniconnect.relaunch.blocked.recovery": {
-      "extractionState": "manual",
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "poder retomar la misma operación tras un corte"
-          }
-        }
-      }
-    },
-    "uniconnect.relaunch.blocked.verification": {
-      "extractionState": "manual",
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "verificar que vuelve la misma conversación con su configuración"
+            "value": "Las ventanas que viven en un servidor todavía no se pueden relanzar desde aquí: falta acreditar qué IA hay en cada una. No se ha tocado ninguna."
           }
         }
       }

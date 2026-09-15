@@ -10,6 +10,14 @@ struct UniConnectRelaunchAgentProcess: Equatable, Sendable {
     let pid: Int32
     /// When the system says that process began, compared verbatim and never parsed.
     let startedAt: String
+    /// The command line the agent is actually running under, read from the live process.
+    ///
+    /// Read **before** anything is closed, because afterwards there is nothing left to ask. This is
+    /// what makes a relaunch give back the same agent rather than a similar one: the flags a window
+    /// was opened with are not in any record — measured on this desktop, every window had
+    /// `--dangerously-skip-permissions` and the inventory knew about none of them. Reopening
+    /// without them would quietly take away what an agent is allowed to do.
+    let argv: [String]
 
     /// Whether this is the same live process as `other`, identifier and start time together.
     ///
