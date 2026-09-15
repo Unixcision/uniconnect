@@ -264,9 +264,10 @@ class MachinesViewModel(
                 mutableState.update { it.copy(relaunch = RelaunchUI.Failed(machineID, R.string.relaunch_failed)) }
                 return@launch
             }
-            if (plan.targets.isEmpty()) {
+            if (plan.targets.isEmpty() && plan.unavailableReason == null) {
                 // Una lista vacía se explica: «no ha pasado nada» y «no había nada que hacer» se
-                // parecen demasiado desde fuera.
+                // parecen demasiado desde fuera. Pero un plan bloqueado **sí** trae explicación, y
+                // enseñarlo como «no había nada» la perdería: son cosas distintas.
                 mutableState.update { it.copy(relaunch = RelaunchUI.Failed(machineID, R.string.relaunch_nothing)) }
                 return@launch
             }

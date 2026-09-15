@@ -7,7 +7,7 @@ import org.junit.Test
 
 class RelaunchTest {
     private fun result(state: RelaunchTargetState, cause: RelaunchCause? = null) =
-        RelaunchResult("clave-${state.wire}", state, cause)
+        RelaunchResult("clave-${state.wire}", state, cause?.let { RelaunchReason(it.wire) })
 
     @Test fun `recuperada no significa terminada`() {
         // Confundirlos pone un tic verde al lado de un agente que todavía se está cerrando.

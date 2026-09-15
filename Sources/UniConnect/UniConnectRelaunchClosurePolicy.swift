@@ -81,6 +81,9 @@ struct UniConnectRelaunchClosurePolicy: Sendable {
                     condition
                 }
             }
-            .formatted(.list(type: .and))
+            // Locale explícito: el producto es solo español y la lista debe leerse igual en una
+            // máquina configurada en otro idioma, que es donde `.autoupdatingCurrent` cambiaría
+            // la conjunción sin avisar.
+            .formatted(.list(type: .and).locale(Locale(identifier: "es")))
     }
 }

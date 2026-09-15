@@ -1,6 +1,7 @@
 package com.unixcision.uniconnect.android.domain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -16,7 +17,7 @@ class RelaunchReasonsTest {
         key: String,
         state: RelaunchTargetState,
         cause: RelaunchCause? = null,
-    ) = RelaunchResult(key = key, state = state, cause = cause)
+    ) = RelaunchResult(key = key, state = state, reason = cause?.let { RelaunchReason(it.wire) })
 
     private fun operacion(vararg results: RelaunchResult) =
         RelaunchOperation(operationID = "op", recovered = false, results = results.toList())
@@ -31,7 +32,7 @@ class RelaunchReasonsTest {
         val intactos = RelaunchReasons.untouched(operacion)
 
         assertEquals(2, intactos.size)
-        assertEquals(listOf(RelaunchCause.UNSUPPORTED), RelaunchReasons.distinctCauses(intactos))
+        assertEquals(listOf(RelaunchCause.UNSUPPORTED), RelaunchReasons.distinctReasons(intactos).map { it.cause })
     }
 
     @Test
@@ -55,7 +56,7 @@ class RelaunchReasonsTest {
 
         assertEquals(
             listOf(RelaunchCause.AMBIGUOUS_IDENTITY),
-            RelaunchReasons.distinctCauses(repetidos),
+            RelaunchReasons.distinctReasons(repetidos).map { it.cause },
         )
     }
 
@@ -63,7 +64,7 @@ class RelaunchReasonsTest {
     fun `un resultado sin causa no inventa ninguna`() {
         val sinCausa = listOf(resultado("a", RelaunchTargetState.SKIPPED))
 
-        assertTrue(RelaunchReasons.distinctCauses(sinCausa).isEmpty())
+        assertTrue(RelaunchReasons.distinctReasons(sinCausa).isEmpty())
     }
 
     @Test
@@ -77,14 +78,75 @@ class RelaunchReasonsTest {
         // Dos lecturas de la misma operación tienen que enseñar la misma lista.
         assertEquals(
             listOf(RelaunchCause.UNSUPPORTED, RelaunchCause.HOST_UNREACHABLE),
-            RelaunchReasons.distinctCauses(mezcla),
+            RelaunchReasons.distinctReasons(mezcla).map { it.cause },
         )
     }
 
     @Test
     fun `una causa que esta version no conoce conserva su identificador`() {
-        // El contrato puede crecer; lo que no puede es que el móvil pierda el diagnóstico.
-        assertEquals(null, RelaunchCause.named("sin_ia"))
-        assertEquals(RelaunchCause.UNSUPPORTED, RelaunchCause.named("no_soportado"))
+        // Esta prueba antes afirmaba `named("sin_ia") == null`, que es justo lo CONTRARIO de lo
+        // que su nombre promete: se quedaba verde mientras el diagnóstico se perdía.
+        val futura = RelaunchReason.of("sin_ia")
+
+        assertEquals("sin_ia", futura?.wire)
+        assertEquals(null, futura?.cause)
+
+        val resultados = listOf(resultado("a", RelaunchTargetState.SKIPPED).copy(reason = futura))
+        assertEquals(listOf("sin_ia"), RelaunchReasons.distinctReasons(resultados).map { it.wire })
+    }
+
+    @Test
+    fun `dos causas nuevas distintas no se funden en una`() {
+        val resultados = listOf(
+            resultado("a", RelaunchTargetState.SKIPPED).copy(reason = RelaunchReason.of("sin_ia")),
+            resultado("b", RelaunchTargetState.SKIPPED).copy(reason = RelaunchReason.of("otra_futura")),
+        )
+
+        // Con el enum nulo las dos se habrían filtrado juntas y la pantalla no diría nada.
+        assertEquals(
+            listOf("sin_ia", "otra_futura"),
+            RelaunchReasons.distinctReasons(resultados).map { it.wire },
+        )
+    }
+
+    @Test
+    fun `una causa conocida sigue interpretandose`() {
+        val conocida = RelaunchReason.of("no_soportado")
+
+        assertEquals(RelaunchCause.UNSUPPORTED, conocida?.cause)
+        assertEquals("no_soportado", conocida?.wire)
+    }
+
+    private fun plan(
+        targets: List<RelaunchTarget>,
+        unavailableReason: String? = null,
+    ) = RelaunchPlan(
+        operationID = "op",
+        token = "op",
+        verb = RelaunchVerb.RELAUNCH,
+        targets = targets,
+        exclusions = emptyList(),
+        unavailableReason = unavailableReason,
+    )
+
+    @Test
+    fun `un plan con motivo de indisponibilidad no se ejecuta`() {
+        val indisponible = plan(
+            targets = listOf(RelaunchTarget("k", "CAJA · ventana", "claude")),
+            unavailableReason = "Falta la exclusión compartida.",
+        )
+
+        // Aunque llegaran objetivos, el equipo ya ha dicho que no va a cerrar nada.
+        assertFalse(indisponible.actionable)
+    }
+
+    @Test
+    fun `un plan sin objetivos tampoco`() {
+        assertFalse(plan(targets = emptyList()).actionable)
+    }
+
+    @Test
+    fun `un plan con objetivos y sin motivo si`() {
+        assertTrue(plan(targets = listOf(RelaunchTarget("k", "CAJA · ventana", "claude"))).actionable)
     }
 }

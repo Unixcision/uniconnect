@@ -21545,11 +21545,29 @@ class TerminalController {
               let workspaces = mobileRelaunchWorkspaces(params: scope, tabManager: tabManager) else {
             return .err(code: "alcance_no_valido", message: "El alcance pedido no se puede resolver", data: nil)
         }
-        let preview = mobileRelaunchCoordinator().preview(workspaces: workspaces)
+        var preview = mobileRelaunchCoordinator().preview(workspaces: workspaces)
+        // La indisponibilidad va en el PLAN, no solo en el resultado. Ofrecer veintiséis ventanas
+        // como «planificado» para devolverlas omitidas después es prometer un trabajo que no se va
+        // a hacer, y quien mira el móvil no tiene forma de saberlo hasta que ya ha pulsado.
+        let closurePolicy = UniConnectRelaunchClosurePolicy.current
+        var unavailable: [String: Any] = [:]
+        if !closurePolicy.allowsClosing {
+            preview = UniConnectRelaunchCoordinator.Preview(
+                targets: [],
+                exclusions: preview.exclusions + preview.targets.map {
+                    RelaunchPlan.Exclusion(label: $0.label, cause: .unsupported)
+                }
+            )
+            unavailable = [
+                "unavailable": true,
+                "unavailable_reason": closurePolicy.explanation,
+                "missing_conditions": UniConnectRelaunchClosurePolicy.outstandingConditions,
+            ]
+        }
         let token = mobileRelaunchStore.issue(
             deviceID: peer.address, verb: .agentRelaunch, targets: preview.targets
         )
-        return .ok([
+        var payload: [String: Any] = [
             "operation_id": token.operationID.uuidString,
             "token": token.operationID.uuidString,
             "expires_at": ISO8601DateFormatter().string(from: token.expiresAt),
@@ -21559,7 +21577,9 @@ class TerminalController {
                  "generation": $0.key.generation, "state": RelaunchTargetState.planned.rawValue]
             },
             "excluded": preview.exclusions.map { ["label": $0.label, "cause": $0.cause.rawValue] },
-        ])
+        ]
+        payload.merge(unavailable) { current, _ in current }
+        return .ok(payload)
     }
 
     private func v2MobileRelaunchApply(params: [String: Any], peer: MobileHostPeerIdentity?) async -> V2CallResult {

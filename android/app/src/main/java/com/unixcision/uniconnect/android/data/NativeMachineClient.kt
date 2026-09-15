@@ -152,8 +152,11 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
             // siempre aunque esta versión no sepa nombrarlo.
             exclusions = List(excluded.length()) { index ->
                 val item = excluded.getJSONObject(index)
-                RelaunchExclusion(item.optString("label"), RelaunchCause.named(item.optString("cause")))
+                RelaunchExclusion(item.optString("label"), RelaunchReason.of(item.optString("cause")))
             },
+            // El equipo puede decir que todavía no puede relanzar; si lo dice, se enseña antes de
+            // que nadie pulse nada.
+            unavailableReason = result.optString("unavailable_reason").takeIf { it.isNotEmpty() },
         )
     }
 
@@ -167,7 +170,7 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
                 RelaunchResult(
                     key = item.getString("key"),
                     state = RelaunchTargetState.named(item.optString("state")),
-                    cause = RelaunchCause.named(item.optString("cause")),
+                    reason = RelaunchReason.of(item.optString("cause")),
                     effectiveID = item.optString("effective_id").takeIf { it.isNotEmpty() },
                 )
             },

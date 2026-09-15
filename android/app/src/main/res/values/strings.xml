@@ -98,6 +98,7 @@
     <string name="relaunch_done_title">Relanzadas %1$d de %2$d</string>
     <string name="relaunch_needs_user">%1$d esperan a que contestes algo en su ventana, en el equipo. No se contestan solas a propósito.</string>
     <string name="relaunch_failed_some">%1$d sin confirmar. Revisa esas ventanas: puede haber cambios.</string>
+    <string name="relaunch_unavailable_title">Relanzar no está disponible</string>
     <string name="relaunch_skipped_some">%1$d se quedaron como estaban, sin tocarlas.</string>
     <string name="relaunch_cause_unsupported">Este equipo todavía no puede relanzarlas.</string>
     <string name="relaunch_cause_ambiguous">No se pudo saber con certeza qué IA hay en la ventana.</string>

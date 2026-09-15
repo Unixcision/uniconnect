@@ -80,7 +80,22 @@ enum class RelaunchCause(val wire: String) {
 data class RelaunchTarget(val key: String, val label: String, val provider: String)
 
 /** Un objetivo que el plan deja fuera, con su motivo. Nunca en silencio. */
-data class RelaunchExclusion(val label: String, val cause: RelaunchCause?)
+data class RelaunchExclusion(val label: String, val reason: RelaunchReason?)
+
+/**
+ * Un motivo tal y como llegó, con su interpretación si esta versión la tiene.
+ *
+ * El identificador **crudo** se guarda siempre. Quedarse solo con el enum es como una causa nueva
+ * del contrato (`sin_ia`, por ejemplo) desaparece por el camino: `named()` devuelve nulo, el nulo
+ * se filtra, y quien mira la pantalla ve una exclusión sin motivo. Tolerar un valor que no se
+ * entiende no es lo mismo que conservarlo, y perder el diagnóstico es peor que no saber leerlo.
+ */
+data class RelaunchReason(val wire: String, val cause: RelaunchCause? = RelaunchCause.named(wire)) {
+    companion object {
+        /** Nulo solo cuando no vino ningún motivo; nunca porque no se sepa interpretarlo. */
+        fun of(raw: String?): RelaunchReason? = raw?.takeIf { it.isNotEmpty() }?.let { RelaunchReason(it) }
+    }
+}
 
 /**
  * Lo que un relanzado haría, antes de hacerlo.
@@ -94,15 +109,29 @@ data class RelaunchPlan(
     val verb: RelaunchVerb,
     val targets: List<RelaunchTarget>,
     val exclusions: List<RelaunchExclusion>,
-)
+    /**
+     * Lo que el equipo dice si todavía no puede relanzar nada, o nulo si puede.
+     *
+     * Viaja en el **plan** y no solo en el resultado: ofrecer veintiséis ventanas como
+     * «planificado» para devolverlas omitidas después es prometer un trabajo que no se va a hacer,
+     * y quien mira la pantalla no tendría forma de saberlo hasta después de pulsar.
+     */
+    val unavailableReason: String? = null,
+) {
+    /** Si hay algo que hacer. Un plan sin objetivos no se ejecuta aunque el equipo conteste. */
+    val actionable: Boolean get() = unavailableReason == null && targets.isNotEmpty()
+}
 
 /** Cómo quedó un objetivo. */
 data class RelaunchResult(
     val key: String,
     val state: RelaunchTargetState,
-    val cause: RelaunchCause? = null,
+    val reason: RelaunchReason? = null,
     val effectiveID: String? = null,
-)
+) {
+    /** La interpretación del motivo, cuando esta versión la tiene. */
+    val cause: RelaunchCause? get() = reason?.cause
+}
 
 /** Una operación aceptada y lo lejos que va. */
 data class RelaunchOperation(

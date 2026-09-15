@@ -15,6 +15,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.RelaunchCause
+import com.unixcision.uniconnect.android.domain.RelaunchReason
 import com.unixcision.uniconnect.android.domain.RelaunchReasons
 import com.unixcision.uniconnect.android.domain.RelaunchTargetState
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
@@ -31,10 +32,24 @@ fun RelaunchDialog(state: RelaunchUI, onConfirm: () -> Unit, onDismiss: () -> Un
     when (state) {
         is RelaunchUI.Confirm -> AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text(stringResource(R.string.relaunch_confirm_title, state.plan.targets.size)) },
+            title = {
+                Text(
+                    if (state.plan.actionable) {
+                        stringResource(R.string.relaunch_confirm_title, state.plan.targets.size)
+                    } else {
+                        stringResource(R.string.relaunch_unavailable_title)
+                    }
+                )
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(stringResource(R.string.relaunch_confirm_note), style = MaterialTheme.typography.bodyMedium)
+                    // Si el equipo ya ha dicho que no puede, se dice aquí y no después de pulsar.
+                    state.plan.unavailableReason?.let { reason ->
+                        Text(reason, style = MaterialTheme.typography.bodyMedium, color = UniTheme.colors.warning)
+                    }
+                    if (state.plan.actionable) {
+                        Text(stringResource(R.string.relaunch_confirm_note), style = MaterialTheme.typography.bodyMedium)
+                    }
                     // Se nombran unas cuantas: una cifra sola no deja comprobar que son las que uno
                     // creía, y aquí el coste de equivocarse es reiniciar el agente de otro.
                     state.plan.targets.take(6).forEach {
@@ -51,8 +66,20 @@ fun RelaunchDialog(state: RelaunchUI, onConfirm: () -> Unit, onDismiss: () -> Un
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.relaunch_go)) } },
-            dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+            // Sin nada que hacer no se ofrece «Adelante»: un botón que no va a hacer nada es
+            // peor que no tenerlo, porque quien lo pulsa se queda esperando.
+            confirmButton = {
+                if (state.plan.actionable) {
+                    TextButton(onClick = onConfirm) { Text(stringResource(R.string.relaunch_go)) }
+                } else {
+                    TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
+                }
+            },
+            dismissButton = {
+                if (state.plan.actionable) {
+                    TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+                }
+            },
             containerColor = UniTheme.colors.surface,
         )
 
@@ -94,8 +121,8 @@ fun RelaunchDialog(state: RelaunchUI, onConfirm: () -> Unit, onDismiss: () -> Un
                                 style = MaterialTheme.typography.bodyMedium, color = UniTheme.colors.muted,
                             )
                         }
-                        val causes = RelaunchReasons.distinctCauses(skipped + state.operation.retryable)
-                        for (reason in causes.map { textOf(it) }) {
+                        val motivos = RelaunchReasons.distinctReasons(skipped + state.operation.retryable)
+                        for (reason in motivos.map { textOf(it) }) {
                             Text(
                                 reason,
                                 style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted,
@@ -125,10 +152,12 @@ fun RelaunchDialog(state: RelaunchUI, onConfirm: () -> Unit, onDismiss: () -> Un
  * desaparecer: perder el diagnóstico es peor que no entenderlo.
  */
 @Composable
-private fun textOf(cause: RelaunchCause): String = when (cause) {
+private fun textOf(reason: RelaunchReason): String = when (reason.cause) {
     RelaunchCause.UNSUPPORTED -> stringResource(R.string.relaunch_cause_unsupported)
     RelaunchCause.AMBIGUOUS_IDENTITY -> stringResource(R.string.relaunch_cause_ambiguous)
     RelaunchCause.NO_AUTHORITY -> stringResource(R.string.relaunch_cause_no_authority)
     RelaunchCause.HOST_UNREACHABLE -> stringResource(R.string.relaunch_cause_unreachable)
-    else -> stringResource(R.string.relaunch_cause_unknown, cause.wire)
+    // Incluye `null`: una causa que esta versión no interpreta llega aquí con su identificador
+    // intacto, y se enseña tal cual en vez de desaparecer.
+    else -> stringResource(R.string.relaunch_cause_unknown, reason.wire)
 }

@@ -22,8 +22,10 @@ object RelaunchReasons {
      * Los motivos distintos de una lista de resultados, cada uno una vez y en orden estable.
      *
      * Un recuento sin motivo obliga a mirar ventana por ventana; el mismo motivo repetido veinte
-     * veces es igual de inútil. Un resultado sin causa no inventa ninguna.
+     * veces es igual de inútil. Un resultado sin motivo no inventa ninguno, y uno que esta versión
+     * no sabe interpretar **se conserva igual**: se distingue por su identificador crudo, no por el
+     * enum, para que dos causas nuevas distintas no se fundan en una sola línea vacía.
      */
-    fun distinctCauses(results: List<RelaunchResult>): List<RelaunchCause> =
-        results.mapNotNull { it.cause }.distinct()
+    fun distinctReasons(results: List<RelaunchResult>): List<RelaunchReason> =
+        results.mapNotNull { it.reason }.distinctBy { it.wire }
 }
