@@ -152,14 +152,14 @@ struct UniConnectRelaunchTmuxDriverTests {
 
         // Mismo número, proceso distinto: comparar solo el PID daría «no ha cambiado nada».
         #expect(antes.pid == despues.pid)
-        #expect(antes.generation != despues.generation)
+        #expect(!antes.isSameProcess(as: despues))
     }
 
-    @Test("El mismo proceso da la misma generación")
+    @Test("El mismo proceso se reconoce como el mismo")
     func thesameProcessKeepsItsGeneration() {
         let uno = UniConnectRelaunchAgentProcess(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026")
         let otro = UniConnectRelaunchAgentProcess(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026")
 
-        #expect(uno.generation == otro.generation)
+        #expect(uno.isSameProcess(as: otro))
     }
 }

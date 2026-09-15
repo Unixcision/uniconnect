@@ -41,24 +41,32 @@ struct UniConnectRelaunchExecutor: Sendable {
         }
     }
 
-    private let driver: UniConnectRelaunchTmuxDriver
+    private let driver: any UniConnectRelaunchPaneAccess
     private let dialects: RelaunchDialects
+    private let closurePolicy: UniConnectRelaunchClosurePolicy
     private let sequencer = RelaunchPaneSequencer()
     /// Injected so tests do not wait for a terminal to repaint.
     private let settle: @Sendable () async -> Void
 
     init(
-        driver: UniConnectRelaunchTmuxDriver = UniConnectRelaunchTmuxDriver(),
+        driver: any UniConnectRelaunchPaneAccess = UniConnectRelaunchTmuxDriver(),
         dialects: RelaunchDialects = .known,
+        closurePolicy: UniConnectRelaunchClosurePolicy = .current,
         settle: @escaping @Sendable () async -> Void = { try? await Task.sleep(for: .seconds(1)) }
     ) {
         self.driver = driver
         self.dialects = dialects
+        self.closurePolicy = closurePolicy
         self.settle = settle
     }
 
     /// Relaunches `target`, reporting where it got to.
     func relaunch(_ target: Target) async -> RelaunchOperation.Result {
+        // Before anything is read, and long before anything is closed: this build may not yet
+        // close an agent, and saying so is the whole guard. See ``UniConnectRelaunchClosurePolicy``.
+        guard closurePolicy.allowsClosing else {
+            return .init(key: target.key, state: .skipped, cause: .unsupported)
+        }
         // An agent this build does not know how to close and verify is left exactly as it is.
         guard let dialect = dialects.dialect(for: target.provider) else {
             return .init(key: target.key, state: .skipped, cause: .unsupported)
@@ -117,7 +125,12 @@ struct UniConnectRelaunchExecutor: Sendable {
                 provider: target.provider
             )
             guard case let .found(after) = replacement else { continue }
-            let proof = RelaunchProcessProof(before: before.generation, after: after.generation)
+            // Identidad completa, no un numero: el PID solo se lleva para poder informarlo.
+            let proof = RelaunchProcessProof(
+                replacedProcess: after != before,
+                before: before.pid,
+                after: after.pid
+            )
             switch dialect.verify(proof: proof, reading: reading) {
             case .success:
                 return .init(key: target.key, state: .verified, effectiveID: conversation)

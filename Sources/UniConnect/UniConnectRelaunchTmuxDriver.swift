@@ -61,7 +61,9 @@ struct UniConnectRelaunchTmuxDriver: Sendable {
         var childrenByParent: [Int32: [Int32]] = [:]
         for row in table { childrenByParent[row.parent, default: []].append(row.pid) }
 
-        var subtree: [Int32] = []
+        // La raiz cuenta: un panel cuyo shell hizo `exec` del agente lo tiene como raiz, y dejarla
+        // fuera devolveria «aqui no hay IA» sobre una ventana que si la tiene.
+        var subtree: [Int32] = [shell]
         var frontier = childrenByParent[shell] ?? []
         while let next = frontier.popLast() {
             guard !subtree.contains(next) else { continue }  // un ciclo no deberia existir; no colgarse si lo hay
@@ -90,13 +92,19 @@ struct UniConnectRelaunchTmuxDriver: Sendable {
             timeout: 10
         )
         guard result.exitStatus == 0, let listing = result.stdout else { return nil }
-        return listing.split(separator: "\n").compactMap { line in
+        var rows: [(pid: Int32, parent: Int32, command: String)] = []
+        for line in listing.split(separator: "\n") {
             let fields = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
             guard fields.count == 3, let pid = Int32(fields[0]), let parent = Int32(fields[1]) else {
+                // Una fila que no se entiende hace sospechosa la tabla entera: descartarla en
+                // silencio convierte una lectura incompleta en «no hay agente», y eso decide
+                // cerrar o no cerrar. Mejor no saber nada que saber mal.
                 return nil
             }
-            return (pid, parent, String(fields[2]).trimmingCharacters(in: .whitespaces))
+            rows.append((pid, parent, String(fields[2]).trimmingCharacters(in: .whitespaces)))
         }
+        // Una tabla vacia no es un sistema sin procesos: es una lectura que no sirvio.
+        return rows.isEmpty ? nil : rows
     }
 
     /// When the system says a process started. Compared verbatim, never parsed.

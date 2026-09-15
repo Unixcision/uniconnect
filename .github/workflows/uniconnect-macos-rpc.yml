@@ -20,6 +20,7 @@ on:
       - cmuxTests/UniConnectLocalTmux*Tests.swift
       - cmuxTests/UniConnectRelaunchInventoryTests.swift
       - cmuxTests/UniConnectRelaunchTmuxDriverTests.swift
+      - cmuxTests/UniConnectRelaunchExecutorTests.swift
       - scripts/ci/assert_tests_ran.py
       - cmux.xcodeproj/**
       - ghostty
@@ -150,6 +151,7 @@ jobs:
             -parallel-testing-enabled NO \
             -only-testing:cmuxTests/UniConnectRelaunchInventoryTests \
             -only-testing:cmuxTests/UniConnectRelaunchTmuxDriverTests \
+            -only-testing:cmuxTests/UniConnectRelaunchExecutorTests \
             -resultBundlePath "$BUNDLE" \
             CMUX_SKIP_ZIG_BUILD=1 \
             test-without-building 2>&1 | tee "$RUNNER_TEMP/uniconnect-relaunch.log"
@@ -163,6 +165,10 @@ jobs:
             --xcresult "$BUNDLE" \
             --suite UniConnectRelaunchTmuxDriverTests \
             --minimum 10
+          python3 scripts/ci/assert_tests_ran.py \
+            --xcresult "$BUNDLE" \
+            --suite UniConnectRelaunchExecutorTests \
+            --minimum 6
 
       - name: Conservar resultados y registro de la ejecución
         if: always()

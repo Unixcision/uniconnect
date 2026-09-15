@@ -11,21 +11,14 @@ struct UniConnectRelaunchAgentProcess: Equatable, Sendable {
     /// When the system says that process began, compared verbatim and never parsed.
     let startedAt: String
 
-    /// One number standing for *this* process, identifier and start time together.
+    /// Whether this is the same live process as `other`, identifier and start time together.
     ///
-    /// ``RelaunchProcessProof`` asks whether the process changed by comparing two numbers, and a
-    /// bare pid answers that wrongly twice over: the pane's shell keeps its pid across a relaunch
-    /// that worked, and the kernel reuses a pid after a relaunch that did not. Folding the start
-    /// time in is the same thing Linux does when it builds a generation, and it makes both cases
-    /// come out right.
-    var generation: Int32 {
-        // FNV-1a: deterministic across runs, unlike `hashValue`, which is seeded per process.
-        var hash: UInt32 = 2_166_136_261
-        for byte in "\(pid)|\(startedAt)".utf8 {
-            hash ^= UInt32(byte)
-            hash = hash &* 16_777_619
-        }
-        return Int32(bitPattern: hash & 0x7FFF_FFFF)
+    /// The pair is the identity. A bare identifier answers this wrongly twice over: a pane's shell
+    /// keeps its number across a relaunch that worked, and the kernel reuses a number after a
+    /// relaunch that did not. Nothing is hashed on the way — a hash can collide, and a collision
+    /// here reads as "the agent was never replaced" on a relaunch that replaced it.
+    func isSameProcess(as other: UniConnectRelaunchAgentProcess) -> Bool {
+        self == other
     }
 }
 

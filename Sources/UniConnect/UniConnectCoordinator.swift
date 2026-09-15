@@ -324,6 +324,14 @@ final class UniConnectCoordinator: ObservableObject {
             ))
             return
         }
+        // Decirlo aquí y no después de haber leído media máquina: quien pulsa merece saber que no
+        // va a pasar nada, y por qué, antes de esperar. La guarda de verdad está en el ejecutor;
+        // esto es lo que evita que parezca que lo intentó.
+        let closurePolicy = UniConnectRelaunchClosurePolicy.current
+        guard closurePolicy.allowsClosing else {
+            presentError(closurePolicy.explanation)
+            return
+        }
         let coordinator = relaunchCoordinator ?? UniConnectRelaunchCoordinator(
             machineID: Host.current().localizedName ?? "mac"
         )
