@@ -401,6 +401,64 @@ struct UniConnectRelaunchExecutorTests {
         #expect(resultado.cause == .ambiguousIdentity)
     }
 
+    @Test("Un permiso escondido dentro de un texto no se convierte en permiso de verdad")
+    func apermissionHiddenInsideTextDoesNotBecomeReal() async {
+        // `ps` aplana los argumentos: un unico valor «hola --dangerously-skip-permissions» llega
+        // como tres tokens, y el de en medio volveria como permiso real. No hay ni un metacaracter
+        // de shell aqui, asi que comprobar eso no lo atrapa.
+        let panel = FakePane(
+            lookups: [
+                proceso(52938, "Mon Sep 15 09:00:00 2026",
+                        argv: ["claude", "--resume", "091942fc-27af-47e7-ae92-50e7daf1eed3",
+                               "--append-system-prompt", "hola", "--dangerously-skip-permissions"]),
+                proceso(61111, "Mon Sep 15 11:47:02 2026"),
+            ],
+            screens: [iaLista, salidaConResume, iaLista]
+        )
+
+        let resultado = await UniConnectRelaunchExecutor(driver: panel, settle: {}).relaunch(objetivo())
+
+        #expect(resultado.state == .skipped)
+        #expect(panel.typed.isEmpty)
+    }
+
+    @Test("Una palabra suelta que sobro de un valor tampoco se reconstruye")
+    func aloneWordLeftOverFromAValueIsNotRebuilt() async {
+        let panel = FakePane(
+            lookups: [
+                proceso(52938, "Mon Sep 15 09:00:00 2026",
+                        argv: ["claude", "--resume", "091942fc-27af-47e7-ae92-50e7daf1eed3",
+                               "trozo", "de", "un", "texto"]),
+                proceso(61111, "Mon Sep 15 11:47:02 2026"),
+            ],
+            screens: [iaLista, salidaConResume, iaLista]
+        )
+
+        let resultado = await UniConnectRelaunchExecutor(driver: panel, settle: {}).relaunch(objetivo())
+
+        #expect(resultado.state == .skipped)
+        #expect(panel.typed.isEmpty)
+    }
+
+    @Test("Y las 25 ventanas reales de este escritorio siguen pasando")
+    func thetwentyFiveRealWindowsStillPass() async {
+        // El reparto medido: 25 de 27 exactamente asi. Una lista blanca que las excluyera seria
+        // segura y completamente inutil.
+        let panel = FakePane(
+            lookups: [
+                proceso(52938, "Mon Sep 15 09:00:00 2026",
+                        argv: ["claude", "--resume", "091942fc-27af-47e7-ae92-50e7daf1eed3",
+                               "--dangerously-skip-permissions"]),
+                proceso(61111, "Mon Sep 15 11:47:02 2026"),
+            ],
+            screens: [iaLista, salidaConResume, iaLista]
+        )
+
+        let resultado = await UniConnectRelaunchExecutor(driver: panel, settle: {}).relaunch(objetivo())
+
+        #expect(resultado.state == .verified)
+    }
+
     @Test("Lo que queda bloqueado sigue nombrado, para que vaciarlo sea deliberado")
     func whatIsStillRefusedStaysNamed() {
         #expect(!UniConnectRelaunchClosurePolicy.outstandingConditions.isEmpty)
