@@ -20,6 +20,8 @@ struct UniConnectRelaunchExecutorTests {
     private final class FakePane: UniConnectRelaunchPaneAccess, @unchecked Sendable {
         // Las llamadas del ejecutor son secuenciales; no hay concurrencia real en una prueba.
         private(set) var typed: [String] = []
+        /// Toda interacción con el panel, lecturas incluidas: una guarda que lee ya ha tocado algo.
+        private(set) var interactions: [String] = []
         private var lookups: [UniConnectRelaunchAgentLookup]
         private var screens: [String]
         private let pane: String?
@@ -34,22 +36,34 @@ struct UniConnectRelaunchExecutorTests {
             self.screens = screens
         }
 
-        func firstPane(socket: String, session: String) async -> String? { pane }
-        func panePID(socket: String, pane: String) async -> Int32? { pane.isEmpty ? nil : 73694 }
+        func firstPane(socket: String, session: String) async -> String? {
+            interactions.append("firstPane")
+            return pane
+        }
+
+        func panePID(socket: String, pane: String) async -> Int32? {
+            interactions.append("panePID")
+            return pane.isEmpty ? nil : 73694
+        }
 
         func agent(
             socket: String,
             pane: String,
             provider: String
         ) async -> UniConnectRelaunchAgentLookup {
-            lookups.isEmpty ? .noAgent : lookups.removeFirst()
+            interactions.append("agent")
+            return lookups.isEmpty ? .noAgent : lookups.removeFirst()
         }
 
         func capture(socket: String, pane: String) async -> String? {
-            screens.isEmpty ? screens.last : screens.removeFirst()
+            interactions.append("capture")
+            return screens.isEmpty ? screens.last : screens.removeFirst()
         }
 
-        func type(socket: String, pane: String, text: String) async { typed.append(text) }
+        func type(socket: String, pane: String, text: String) async {
+            interactions.append("type")
+            typed.append(text)
+        }
     }
 
     private func proceso(_ pid: Int32, _ arranque: String) -> UniConnectRelaunchAgentLookup {
@@ -163,6 +177,36 @@ struct UniConnectRelaunchExecutorTests {
         #expect(resultado.state == .failed)
         #expect(resultado.cause == .hostUnreachable)
         #expect(panel.typed.isEmpty)
+    }
+
+    @Test("Con la política por defecto no se toca el panel ni para leerlo")
+    func thedefaultPolicyDoesNotEvenReadThePane() async {
+        let panel = FakePane(
+            lookups: [proceso(52938, "Mon Sep 15 09:00:00 2026")],
+            screens: [iaLista, salidaConResume, iaLista]
+        )
+        // Constructor por defecto a propósito: sin `closurePolicy:`, que es como lo construye el
+        // producto. Si alguien cambia `.current` sin querer, esta prueba es la que se entera.
+        let ejecutor = UniConnectRelaunchExecutor(driver: panel, settle: {})
+
+        let resultado = await ejecutor.relaunch(objetivo())
+
+        #expect(resultado.state == .skipped)
+        #expect(resultado.cause == .unsupported)
+        // Cero llamadas al driver, lecturas incluidas: una guarda que primero mira ya empezó.
+        #expect(panel.interactions.isEmpty)
+        #expect(panel.typed.isEmpty)
+    }
+
+    @Test("Mientras falten condiciones, la política por defecto no permite cerrar")
+    func thedefaultPolicyForbidsClosingWhileConditionsRemain() {
+        #expect(!UniConnectRelaunchClosurePolicy.outstandingConditions.isEmpty)
+        #expect(!UniConnectRelaunchClosurePolicy.current.allowsClosing)
+        // La lista es lo que se vacía para desbloquear; que nombre también lo que se añadió
+        // después de la primera versión, para que vaciar tres cadenas no habilite de más.
+        #expect(UniConnectRelaunchClosurePolicy.outstandingConditions.contains { $0.contains("identidad nativa") })
+        #expect(UniConnectRelaunchClosurePolicy.outstandingConditions.contains { $0.contains("autoridad") })
+        #expect(UniConnectRelaunchClosurePolicy.outstandingConditions.contains { $0.contains("conversacion") })
     }
 
     @Test("Una pregunta de confianza de carpeta la contesta una persona")

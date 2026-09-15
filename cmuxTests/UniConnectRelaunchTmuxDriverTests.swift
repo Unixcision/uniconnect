@@ -130,6 +130,36 @@ struct UniConnectRelaunchTmuxDriverTests {
         #expect(await lookup(table: nil) == .unreadable)
     }
 
+    @Test("Si el shell del panel no aparece en la tabla, no se concluye que no haya IA")
+    func ashellMissingFromTheTableIsNotAnAbsentAgent() async {
+        // Tabla bien formada y no vacía, pero sin el PID que dijo tmux: lo que falla es la
+        // correspondencia entre las dos lecturas, no el contenido del panel.
+        let found = await lookup(table: """
+        99999 1 /sbin/launchd
+        88888 99999 zsh
+        """)
+
+        #expect(found != .noAgent)
+        #expect(found == .unreadable)
+    }
+
+    @Test("Una fila ilegible invalida la tabla entera, no solo esa fila")
+    func anunparsableRowInvalidatesTheWholeTable() async {
+        let found = await lookup(table: """
+        73694 73000 /bin/zsh
+        ???? basura
+        52938 73694 claude
+        """)
+
+        // Descartarla en silencio convertiría una lectura incompleta en una decisión de cerrar.
+        #expect(found == .unreadable)
+    }
+
+    @Test("Una tabla vacía con salida correcta no es un sistema sin procesos")
+    func anemptyTableIsNotASystemWithoutProcesses() async {
+        #expect(await lookup(table: "") == .unreadable)
+    }
+
     @Test("Si tmux no contesta, tampoco")
     func anUnreadablePaneIsNotAnAbsentAgent() async {
         #expect(await lookup(panePID: nil, table: "73694 73000 /bin/zsh") == .unreadable)

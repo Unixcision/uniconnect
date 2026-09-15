@@ -58,6 +58,11 @@ struct UniConnectRelaunchTmuxDriver: Sendable {
         guard let shell = await panePID(socket: socket, pane: pane) else { return .unreadable }
         guard let table = await processTable() else { return .unreadable }
 
+        // El shell que dice tmux tiene que estar en la tabla. Si no esta, lo que falla es la
+        // correspondencia entre las dos lecturas, y recorrer un arbol que no contiene la raiz
+        // devuelve «aqui no hay IA» sobre una ventana de la que no sabemos nada.
+        guard table.contains(where: { $0.pid == shell }) else { return .unreadable }
+
         var childrenByParent: [Int32: [Int32]] = [:]
         for row in table { childrenByParent[row.parent, default: []].append(row.pid) }
 

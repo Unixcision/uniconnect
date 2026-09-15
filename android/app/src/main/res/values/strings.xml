@@ -97,7 +97,13 @@
     <string name="relaunch_running">Relanzando %1$d ventanas…</string>
     <string name="relaunch_done_title">Relanzadas %1$d de %2$d</string>
     <string name="relaunch_needs_user">%1$d esperan a que contestes algo en su ventana, en el equipo. No se contestan solas a propósito.</string>
-    <string name="relaunch_failed_some">%1$d no salieron y se han quedado como estaban.</string>
+    <string name="relaunch_failed_some">%1$d sin confirmar. Revisa esas ventanas: puede haber cambios.</string>
+    <string name="relaunch_skipped_some">%1$d se quedaron como estaban, sin tocarlas.</string>
+    <string name="relaunch_cause_unsupported">Este equipo todavía no puede relanzarlas.</string>
+    <string name="relaunch_cause_ambiguous">No se pudo saber con certeza qué IA hay en la ventana.</string>
+    <string name="relaunch_cause_no_authority">Otra cosa manda sobre esa ventana ahora mismo.</string>
+    <string name="relaunch_cause_unreachable">El equipo no contestó.</string>
+    <string name="relaunch_cause_unknown">Motivo no reconocido por esta versión: %1$s</string>
     <string name="relaunch_failed">No se ha podido pedir el relanzado.</string>
     <string name="relaunch_nothing">Aquí no hay ninguna IA que relanzar, o su tipo todavía no se sabe cerrar sin riesgo.</string>
     <string name="relaunch_unknown">Se perdió la respuesta y no se ha podido saber cómo quedó. No se ha repetido nada: míralo en el equipo.</string>

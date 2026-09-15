@@ -26,6 +26,15 @@ struct UniConnectRelaunchClosurePolicy: Sendable {
         // Si la respuesta se pierde despues de cerrar, no hay forma de retomar la misma operacion
         // en vez de relanzar otra vez.
         "recuperacion durable de la operacion",
+        // Hoy la identidad es PID + hora de arranque. Eso distingue un proceso de otro, pero no
+        // acredita que *ese* proceso sea el agente de *esta* conversacion.
+        "identidad nativa vinculada al proceso",
+        // Nadie comprueba que quien pide el relanzado tenga autoridad sobre el panel, ni que otro
+        // duenyo no la tenga ya.
+        "autoridad sobre el objetivo",
+        // Verificar hoy es «hay un proceso distinto y la pantalla parece lista». Falta comprobar
+        // que vuelve la misma conversacion y con la configuracion que tenia.
+        "verificacion de conversacion y configuracion del proceso nuevo",
     ]
 
     /// Whether closing is permitted. Nil conditions remaining means it is.
@@ -38,10 +47,40 @@ struct UniConnectRelaunchClosurePolicy: Sendable {
     static let permissive = UniConnectRelaunchClosurePolicy(allowsClosing: true)
 
     /// What to tell somebody who asked for a relaunch they cannot have yet.
+    ///
+    /// The conditions are interpolated into a localized format rather than concatenated into one,
+    /// so the sentence stays translatable while the list it names keeps living in code.
     var explanation: String {
         String(
-            localized: "uniconnect.relaunch.blocked",
-            defaultValue: "Relanzar todavía no está disponible: falta \(Self.outstandingConditions.joined(separator: ", ")). No se ha tocado ninguna ventana."
+            format: String(
+                localized: "uniconnect.relaunch.blocked",
+                defaultValue: "Relanzar todavía no está disponible: falta %@. No se ha tocado ninguna ventana."
+            ),
+            Self.localizedConditions
         )
+    }
+
+    /// The outstanding conditions, in the reader's language and joined as a sentence.
+    private static var localizedConditions: String {
+        outstandingConditions
+            .map { condition in
+                switch condition {
+                case "opciones de arranque":
+                    String(localized: "uniconnect.relaunch.blocked.argv", defaultValue: "recuperar las opciones de arranque")
+                case "exclusion compartida entre creadores":
+                    String(localized: "uniconnect.relaunch.blocked.exclusion", defaultValue: "la exclusión compartida entre quienes pueden abrir ventanas")
+                case "recuperacion durable de la operacion":
+                    String(localized: "uniconnect.relaunch.blocked.recovery", defaultValue: "poder retomar la misma operación tras un corte")
+                case "identidad nativa vinculada al proceso":
+                    String(localized: "uniconnect.relaunch.blocked.identity", defaultValue: "acreditar que el proceso es el de esta conversación")
+                case "autoridad sobre el objetivo":
+                    String(localized: "uniconnect.relaunch.blocked.authority", defaultValue: "comprobar quién manda sobre la ventana")
+                case "verificacion de conversacion y configuracion del proceso nuevo":
+                    String(localized: "uniconnect.relaunch.blocked.verification", defaultValue: "verificar que vuelve la misma conversación con su configuración")
+                default:
+                    condition
+                }
+            }
+            .formatted(.list(type: .and))
     }
 }

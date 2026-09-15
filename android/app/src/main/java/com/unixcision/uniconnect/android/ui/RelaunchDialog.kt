@@ -14,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.unixcision.uniconnect.android.R
+import com.unixcision.uniconnect.android.domain.RelaunchCause
+import com.unixcision.uniconnect.android.domain.RelaunchReasons
 import com.unixcision.uniconnect.android.domain.RelaunchTargetState
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 
@@ -82,6 +84,23 @@ fun RelaunchDialog(state: RelaunchUI, onConfirm: () -> Unit, onDismiss: () -> Un
                                 style = MaterialTheme.typography.bodyMedium, color = UniTheme.colors.danger,
                             )
                         }
+                        // Sin esto, una operación entera omitida enseña «Relanzadas 0 de N» y nada
+                        // más: el mismo silencio que en el equipo dijo «se han quedado como
+                        // estaban» sobre una ventana que había muerto.
+                        val skipped = RelaunchReasons.untouched(state.operation)
+                        if (skipped.isNotEmpty()) {
+                            Text(
+                                stringResource(R.string.relaunch_skipped_some, skipped.size),
+                                style = MaterialTheme.typography.bodyMedium, color = UniTheme.colors.muted,
+                            )
+                        }
+                        val causes = RelaunchReasons.distinctCauses(skipped + state.operation.retryable)
+                        for (reason in causes.map { textOf(it) }) {
+                            Text(
+                                reason,
+                                style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted,
+                            )
+                        }
                     }
                 },
                 confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } },
@@ -97,4 +116,19 @@ fun RelaunchDialog(state: RelaunchUI, onConfirm: () -> Unit, onDismiss: () -> Un
             containerColor = UniTheme.colors.surface,
         )
     }
+}
+
+/**
+ * La frase de una causa.
+ *
+ * Una causa que esta versión no conoce se muestra con su identificador literal en vez de
+ * desaparecer: perder el diagnóstico es peor que no entenderlo.
+ */
+@Composable
+private fun textOf(cause: RelaunchCause): String = when (cause) {
+    RelaunchCause.UNSUPPORTED -> stringResource(R.string.relaunch_cause_unsupported)
+    RelaunchCause.AMBIGUOUS_IDENTITY -> stringResource(R.string.relaunch_cause_ambiguous)
+    RelaunchCause.NO_AUTHORITY -> stringResource(R.string.relaunch_cause_no_authority)
+    RelaunchCause.HOST_UNREACHABLE -> stringResource(R.string.relaunch_cause_unreachable)
+    else -> stringResource(R.string.relaunch_cause_unknown, cause.wire)
 }
