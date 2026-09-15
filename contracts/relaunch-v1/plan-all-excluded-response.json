@@ -1,0 +1,12 @@
+{
+  "operation_id": "3f1c07b9-42ad-4e58-9c31-5b2870ad64ce",
+  "token": "rlq1.MjAyNi0wOS0xNVQxOToxMDowMFo",
+  "expires_at": "2026-09-15T19:10:00Z",
+  "verb": "agent.relaunch",
+  "targets": [],
+  "excluded": [
+    { "label": "NOTBETTING · Notifications", "cause": "no_soportado" },
+    { "label": "NOTBETTING · Web", "cause": "identidad_ambigua" },
+    { "label": "IBERIAVO-DESA · TVO", "cause": "sin_ia" }
+  ]
+}

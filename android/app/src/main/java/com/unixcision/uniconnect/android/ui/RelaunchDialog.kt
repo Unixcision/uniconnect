@@ -65,7 +65,21 @@ fun RelaunchDialog(state: RelaunchUI, onConfirm: () -> Unit, onDismiss: () -> Un
                         )
                         // Con motivo global basta la frase de arriba; sin él —el equipo excluyó sus
                         // candidatos uno a uno— las causas están aquí y en ningún otro sitio.
-                        if (state.plan.unavailableReason == null) {
+                        // Con objetivos, el total basta: las ventanas nombradas arriba son las que
+                        // importan. Sin objetivos, las excluidas son lo único que hay, y un total con
+                        // un motivo suelto no deja saber a QUÉ ventana le pasa qué.
+                        if (state.plan.targets.isEmpty()) {
+                            state.plan.exclusions.take(6).forEach { exclusion ->
+                                val motivo = exclusion.reason?.let { " — ${textOf(it)}" }.orEmpty()
+                                Text(
+                                    "· ${exclusion.label}$motivo",
+                                    style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted,
+                                )
+                            }
+                            if (state.plan.exclusions.size > 6) {
+                                Text("· …", style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted)
+                            }
+                        } else if (state.plan.unavailableReason == null) {
                             for (motivo in state.plan.exclusions.mapNotNull { it.reason }.distinctBy { it.wire }) {
                                 Text(
                                     textOf(motivo),

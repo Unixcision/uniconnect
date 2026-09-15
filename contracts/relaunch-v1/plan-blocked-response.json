@@ -1,0 +1,13 @@
+{
+  "operation_id": "8d54c1a6-90bf-4f2e-b7a3-11e6d0c9f482",
+  "token": "rlq1.MjAyNi0wOS0xNVQxOToxNTowMFo",
+  "expires_at": "2026-09-15T19:15:00Z",
+  "verb": "agent.relaunch",
+  "targets": [],
+  "excluded": [
+    { "label": "GESTIONES SISTEMA MAC · CREADOR PLANOS", "cause": "no_soportado" }
+  ],
+  "unavailable": true,
+  "unavailable_reason": "Relanzar todavía no está disponible: falta recuperar las opciones de arranque. No se ha tocado ninguna ventana.",
+  "missing_conditions": ["opciones de arranque", "autoridad sobre el objetivo"]
+}

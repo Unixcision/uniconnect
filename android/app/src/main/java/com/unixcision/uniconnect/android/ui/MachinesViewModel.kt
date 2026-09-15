@@ -292,6 +292,14 @@ class MachinesViewModel(
     }
 
     private suspend fun apply(machineID: String, plan: RelaunchPlan) {
+        // Que el diálogo no ofrezca el botón no es una defensa: `Show` y `Confirm` viven en el mismo
+        // estado, así que una confirmación obsoleta —o una llamada directa— alcanzaría el equipo con
+        // un plan que ya se sabe que no se puede ejecutar. La comprobación va en el camino común,
+        // que es por donde pasan todas.
+        if (!plan.actionable) {
+            mutableState.update { it.copy(relaunch = RelaunchUI.Confirm(machineID, plan)) }
+            return
+        }
         val machine = state.value.machines.firstOrNull { it.id == machineID } ?: return
         mutableState.update {
             it.copy(relaunch = RelaunchUI.Running(machineID, plan.operationID, plan.targets.size))
