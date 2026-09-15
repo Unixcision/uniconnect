@@ -76,6 +76,58 @@ struct UniConnectRelaunchInventoryTests {
         #expect(Set(reading.exclusions.map(\.label)).count == 3)
     }
 
+    @Test("Una ventana remota sin sesión tmux registrada tampoco desaparece")
+    func remoteWindowWithoutRecordedSessionIsExcluded() throws {
+        let workspace = Workspace()
+        workspace.customTitle = "COMECAMPUS"
+        workspace.uniConnectProfile = UniConnectWorkspaceProfile(
+            kind: .ssh,
+            hostLabel: "root@187.77.175.242",
+            tmuxReady: false
+        )
+        // Ni una sola entrada en el mapa de sesiones: la ventana existe, su tmux aún no consta.
+        #expect(workspace.uniConnectTmuxSessionsByPanelId.isEmpty)
+
+        let reading = UniConnectRelaunchInventory(machineID: "mac").read(workspaces: [workspace])
+
+        #expect(reading.items.isEmpty)
+        #expect(reading.exclusions.count == 1)
+        #expect(reading.exclusions.first?.cause == .unsupported)
+    }
+
+    @Test("Dos ventanas remotas con el mismo título se distinguen en la lista")
+    func remoteWindowsWithTheSameTitleStayDistinguishable() throws {
+        let workspace = try sshWorkspace(
+            title: "NOTBETTING",
+            host: "root@15.217.153.205",
+            sessions: ["claude", "claude"]
+        )
+        // Dos paneles recién creados comparten `displayTitle` ("Terminal"): la colisión es la
+        // norma, no un caso raro.
+        #expect(Set(workspace.panels.values.map(\.displayTitle)).count == 1)
+
+        let reading = UniConnectRelaunchInventory(machineID: "mac").read(workspaces: [workspace])
+
+        #expect(reading.exclusions.count == 2)
+        // Dos líneas idénticas no se distinguen de una línea y una ventana perdida.
+        #expect(Set(reading.exclusions.map(\.label)).count == 2)
+    }
+
+    @Test("Una ventana local sin registro sale como identidad ambigua, no omitida")
+    func localWindowWithoutRecordIsExcluded() throws {
+        let workspace = Workspace()
+        workspace.customTitle = "PROYECTOS"
+        workspace.uniConnectProfile = UniConnectWorkspaceProfile(kind: .local, localRoot: "/tmp")
+        // Sin ninguna entrada en uniConnectLocalWindowsByPanelId: no sabemos qué corre ahí.
+        #expect(workspace.uniConnectLocalWindowsByPanelId.isEmpty)
+
+        let reading = UniConnectRelaunchInventory(machineID: "mac").read(workspaces: [workspace])
+
+        #expect(reading.items.isEmpty)
+        #expect(reading.exclusions.count == 1)
+        #expect(reading.exclusions.first?.cause == .ambiguousIdentity)
+    }
+
     @Test("Una ventana local sin tmux se excluye con motivo en vez de caerse en silencio")
     func localWindowWithoutTmuxIsExcluded() throws {
         let workspace = Workspace()
