@@ -735,6 +735,11 @@ final class MobileHostService {
             let tcpOptions = NWProtocolTCP.Options()
             tcpOptions.noDelay = true
             let parameters = NWParameters(tls: nil, tcp: tcpOptions)
+            // Sin esto, el puerto fijo queda en TIME_WAIT unos segundos después de cerrar la app y
+            // el siguiente arranque no puede volver a cogerlo: cae al puerto efímero y **todos los
+            // móviles emparejados pierden este equipo**, porque tienen guardado el fijo. Medido dos
+            // veces seguidas el 14-09-2026 reinstalando la app.
+            parameters.allowLocalEndpointReuse = true
             let nextListener = try makeListener(
                 parameters: parameters,
                 usePreferredPort: usePreferredPort,
@@ -797,6 +802,7 @@ final class MobileHostService {
         guard access != nil, let address = MobileRouteResolver.tailscaleBindAddress(),
               TailnetPeerAddress(address) != nil else { throw TailnetListenerError.unavailable }
         let parameters = NWParameters(tls: nil, tcp: tcpOptions)
+        parameters.allowLocalEndpointReuse = true
         parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(address), port: port)
         return parameters
     }
