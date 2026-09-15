@@ -95,6 +95,15 @@ struct UniConnectRelaunchExecutor: Sendable {
         // Identity first: nothing is closed before it is known what would have to come back.
         var conversation = target.evidence.flatMap { dialect.conversation(from: $0) }
 
+        // Y fidelidad primero también: si estas opciones no se pueden devolver tal y como estaban,
+        // esta ventana no se cierra. Comprobarlo **después** de cerrar —que es donde estaba— dejaba
+        // la IA muerta y luego anunciaba que no se podía reabrir, exactamente el orden que este
+        // trabajo existe para arreglar. Lo que se añade al reabrir es un identificador de
+        // conversación, que no trae sintaxis; si lo de antes es seguro, lo de después también.
+        guard UniConnectRelaunchCommandLine.line(from: before.argv) != nil || before.argv.isEmpty else {
+            return .init(key: target.key, state: .skipped, cause: .ambiguousIdentity)
+        }
+
         switch await close(target: target, pane: pane, dialect: dialect) {
         case let .failure(cause):
             return .init(key: target.key, state: cause == .folderTrust ? .needsUser : .failed, cause: cause)
@@ -113,9 +122,7 @@ struct UniConnectRelaunchExecutor: Sendable {
             return .init(key: target.key, state: .needsUser, cause: .ambiguousIdentity)
         }
 
-        // Unir con espacios entregaba al shell lo que `ps` habia aplanado: un punto y coma o una
-        // sustitucion dentro del prompt de alguien dejaba de ser dato. Si la linea no se puede
-        // reproducir tal cual era, esta ventana no se toca mas y lo dice.
+        // Segunda red, ya con la línea completa: la de arriba evita cerrar, esta evita escribir.
         guard let linea = UniConnectRelaunchCommandLine.line(from: argv) else {
             return .init(key: target.key, state: .needsUser, cause: .ambiguousIdentity)
         }

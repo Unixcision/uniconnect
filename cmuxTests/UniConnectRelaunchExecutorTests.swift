@@ -357,9 +357,10 @@ struct UniConnectRelaunchExecutorTests {
 
         let resultado = await UniConnectRelaunchExecutor(driver: panel, settle: {}).relaunch(objetivo())
 
-        #expect(resultado.state == .needsUser)
-        // Lo unico que se escribio fue el cierre; nada de reconstruir la linea a ciegas.
-        #expect(panel.typed.allSatisfy { !$0.contains("rm") })
+        #expect(resultado.state == .skipped)
+        // Y **sin cerrarla**: comprobar esto despues del `/exit` dejaba la IA muerta para luego
+        // anunciar que no se podia reabrir. Ni una tecla en el panel.
+        #expect(panel.typed.isEmpty)
     }
 
     @Test("Una sustitucion del shell tampoco pasa")
@@ -375,8 +376,8 @@ struct UniConnectRelaunchExecutorTests {
 
         let resultado = await UniConnectRelaunchExecutor(driver: panel, settle: {}).relaunch(objetivo())
 
-        #expect(resultado.state == .needsUser)
-        #expect(panel.typed.allSatisfy { !$0.contains("whoami") })
+        #expect(resultado.state == .skipped)
+        #expect(panel.typed.isEmpty)
     }
 
     @Test("La conversacion tiene que ser el VALOR de --resume, no aparecer por ahi")
@@ -388,7 +389,7 @@ struct UniConnectRelaunchExecutorTests {
                 // Arranco sobre OTRA, con la esperada mencionada de pasada en otro argumento.
                 proceso(61111, "Mon Sep 15 11:47:02 2026",
                         argv: ["claude", "--resume", "ffffffff-0000-0000-0000-000000000000",
-                               "--add-dir", "/tmp/\(esperada)"]),
+                               "--append-system-prompt", esperada]),
             ],
             screens: [iaLista, salidaConResume, iaLista]
         )
