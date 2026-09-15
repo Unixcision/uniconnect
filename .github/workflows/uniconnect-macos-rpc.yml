@@ -19,6 +19,8 @@ on:
       - cmuxTests/MobileWorkspaceListFidelityTests.swift
       - cmuxTests/UniConnectLocalTmux*Tests.swift
       - cmuxTests/UniConnectRelaunchInventoryTests.swift
+      - cmuxTests/UniConnectRelaunchTmuxDriverTests.swift
+      - scripts/ci/assert_tests_ran.py
       - cmux.xcodeproj/**
       - ghostty
       - scripts/download-prebuilt-ghosttykit.sh
@@ -134,12 +136,12 @@ jobs:
       # Va en su propia invocación con una comprobación explícita de que las pruebas SE EJECUTARON:
       # `-only-testing` sobre una suite que no está cableada en el pbxproj informa "Executed 0 tests"
       # y pasa en verde, que es indistinguible de una regresión que nadie comprobó.
-      - name: Inventario de relanzado (y que conste que se ejecutó)
+      - name: Relanzado — inventario e identidad (y que conste que se ejecutaron)
         timeout-minutes: 5
         shell: bash
         run: |
           set -euo pipefail
-          LOG="$RUNNER_TEMP/uniconnect-relaunch-inventory.log"
+          BUNDLE="$RUNNER_TEMP/uniconnect-relaunch.xcresult"
           scripts/ci/xcodebuild_noninteractive.py \
             xcodebuild -project cmux.xcodeproj -scheme cmux-unit -configuration Debug \
             -derivedDataPath "$RUNNER_TEMP/uniconnect-mobile-rpc-dd" \
@@ -147,13 +149,20 @@ jobs:
             -destination 'platform=macOS' \
             -parallel-testing-enabled NO \
             -only-testing:cmuxTests/UniConnectRelaunchInventoryTests \
-            -resultBundlePath "$RUNNER_TEMP/uniconnect-relaunch-inventory.xcresult" \
+            -only-testing:cmuxTests/UniConnectRelaunchTmuxDriverTests \
+            -resultBundlePath "$BUNDLE" \
             CMUX_SKIP_ZIG_BUILD=1 \
-            test-without-building 2>&1 | tee "$LOG"
+            test-without-building 2>&1 | tee "$RUNNER_TEMP/uniconnect-relaunch.log"
+          # Por suite y no por totales del registro: una suite con cero casos junto a otra
+          # con seis satisface cualquier recuento hecho sobre el texto.
           python3 scripts/ci/assert_tests_ran.py \
-            --log "$LOG" \
-            --suite 'Inventario de relanzado' \
+            --xcresult "$BUNDLE" \
+            --suite UniConnectRelaunchInventoryTests \
             --minimum 6
+          python3 scripts/ci/assert_tests_ran.py \
+            --xcresult "$BUNDLE" \
+            --suite UniConnectRelaunchTmuxDriverTests \
+            --minimum 10
 
       - name: Conservar resultados y registro de la ejecución
         if: always()
@@ -165,5 +174,7 @@ jobs:
             ${{ runner.temp }}/uniconnect-mobile-rpc.log
             ${{ runner.temp }}/uniconnect-tmux-socket-access.xcresult
             ${{ runner.temp }}/uniconnect-tmux-socket-access.log
+            ${{ runner.temp }}/uniconnect-relaunch.xcresult
+            ${{ runner.temp }}/uniconnect-relaunch.log
           if-no-files-found: warn
           retention-days: 7
