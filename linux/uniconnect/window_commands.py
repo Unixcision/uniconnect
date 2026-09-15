@@ -26,6 +26,10 @@ class WindowCommands:
         return self._(self.action_map[name].label)
 
     def action_enabled(self, name):
+        # Retired desktop actions must not remain callable through saved shortcuts.
+        # Existing fleet receipts keep their read-only result recovery path.
+        if name in ("relaunch_global", "relaunch_machines"):
+            return False
         if self.locked:
             return name in ("lock", "quit")
         workspace, surface = self.current_workspace(), self.focused_surface
@@ -167,14 +171,8 @@ class WindowCommands:
     def action_relaunch_machine(self):
         self.relaunch.show("machine")
 
-    def action_relaunch_global(self):
-        self.relaunch.show("global")
-
     def action_relaunch_history(self):
         self.relaunch.show_history()
-
-    def action_relaunch_machines(self):
-        self.relaunch.show_machines()
 
     @staticmethod
     def arrangement_group(items, record):

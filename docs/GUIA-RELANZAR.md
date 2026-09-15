@@ -63,31 +63,21 @@ terminar ese ciclo para no dejarte una shell vacía; revocar acceso impide los
 siguientes envíos, pero no deshace un cierre que ya fue admitido. La pérdida de
 conexión no se interpreta por sí sola como una revocación.
 
-## Este equipo y global
+## Todo el equipo
 
 **IA → Relanzar IA de este equipo…** reúne las ventanas locales y SSH de esta
 instalación de UniConnect, de todos sus espacios. Incluye las IA en VPS que se ven
 desde estas ventanas; no se limita a procesos locales de Linux.
 
-**IA → Relanzar IA globalmente…** añade los otros equipos conocidos/autorizados de
-la red personal. En Linux configura ese inventario en **IA → Equipos del alcance
-global…**: nombre, dirección Tailscale/MagicDNS y puerto de cada host UniConnect.
-Es un directorio de conexiones salientes, independiente de quién tenga permiso
-para entrar aquí. No se escanea una red ni se conceden permisos nuevos. Cada
-destino debe tener UniConnect escuchando en su puerto configurado y autorizar a
-este equipo; aprobar un móvil para entrar aquí no concede el permiso inverso.
-Un dispositivo sin host UniConnect, inaccesible o sin capacidad `relaunch.v1`
-aparece excluido. Comprueba la lista: un equipo no registrado no está incluido.
-Añade instalaciones UniConnect, no cada destino SSH: los VPS ya entran a través
-de sus ventanas. Quitar un equipo del directorio no cierra sus sesiones ni revoca
-permisos; solo lo deja fuera de futuros planes globales.
+Solo hay **tres alcances: ventana, espacio de trabajo y equipo completo**. No hay
+una cuarta opción «Global» ni que registrar cada VPS en otro directorio: los VPS
+ya entran mediante las ventanas SSH de este equipo. Menú, paleta y atajos usan
+las mismas acciones. Los atajos antiguos de Global ya no ejecutan un relanzado.
+Los resultados de operaciones globales antiguas siguen disponibles en el historial;
+consultarlos no crea un plan nuevo ni repite el relanzado.
 
-El cliente pide un plan independiente a cada equipo y muestra las exclusiones.
-Dos vistas del mismo panel SSH no deben producir dos reinicios: la exclusión mutua
-vive en el destino real. El segundo intento se informa como duplicado.
-
-**Global siempre requiere revisar y confirmar el plan.** No es una orden de
-reiniciar todos los procesos de una máquina: solo los objetivos de IA inventariados.
+Revisa y confirma el plan: «equipo completo» incluye solo las ventanas inventariadas
+en esta instalación, no todos los procesos ni todas las cuentas del servidor.
 
 ## Entender el resultado
 
