@@ -36,12 +36,24 @@ struct UniConnectRelaunchInventory {
         var reading = Reading()
         for workspace in workspaces {
             let boxName = workspace.customTitle ?? workspace.title
+
+            // A box on a server is not a box with nothing in it. This build reaches tmux only
+            // through a local command, so its windows are named and set aside, never dropped.
+            if workspace.uniConnectProfile?.isSSH == true {
+                reading.exclusions.append(contentsOf: remoteExclusions(of: workspace, boxName: boxName))
+                continue
+            }
+
             for (panelID, record) in workspace.uniConnectLocalWindowsByPanelId {
                 let label = "\(boxName) · \(record.visibleName ?? "ventana")"
 
                 // A window without tmux is a plain PTY: there is no session to reopen into, and
-                // killing its process would take the work with it.
-                guard let binding = record.tmuxBinding else { continue }
+                // killing its process would take the work with it. Said out loud, for the same
+                // reason as every other exclusion here.
+                guard let binding = record.tmuxBinding else {
+                    reading.exclusions.append(.init(label: label, cause: .unsupported))
+                    continue
+                }
 
                 guard let conversation = activeConversation(of: record) else {
                     reading.exclusions.append(.init(label: label, cause: .ambiguousIdentity))
@@ -77,6 +89,24 @@ struct UniConnectRelaunchInventory {
             }
         }
         return reading
+    }
+
+    /// The windows of an SSH box, listed one by one with the reason this build cannot act on them.
+    ///
+    /// ``UniConnectRelaunchTmuxDriver`` runs `tmux` as a local command, and the session record of a
+    /// remote window carries no conversation — only a session name. Both would have to change before
+    /// a window on a server could be closed and verified, so the honest answer today is per window
+    /// and out loud: a box that silently disappears from a list of boxes is the same bug as a window
+    /// that silently disappears from a list of windows.
+    private func remoteExclusions(of workspace: Workspace, boxName: String) -> [RelaunchPlan.Exclusion] {
+        let host = workspace.uniConnectProfile?.hostLabel
+        return workspace.uniConnectTmuxSessionsByPanelId
+            .sorted { $0.key.uuidString < $1.key.uuidString }
+            .map { panelID, session in
+                let name = workspace.panels[panelID]?.displayTitle ?? session
+                let label = host.map { "\(boxName) · \(name) (\($0))" } ?? "\(boxName) · \(name)"
+                return RelaunchPlan.Exclusion(label: label, cause: .unsupported)
+            }
     }
 
     /// The conversation a window is on right now, preferring the active one over the latest seen.
