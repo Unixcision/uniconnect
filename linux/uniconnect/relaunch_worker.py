@@ -259,11 +259,17 @@ class TargetWorker:
         model = explicit.get("--model", explicit.get("-m"))
         sandbox = explicit.get("--sandbox", explicit.get("-s"))
         approval = explicit.get("--ask-for-approval", explicit.get("-a"))
-        bypass = "--dangerously-bypass-approvals-and-sandbox" in argv
+        # Codex exposes ``--yolo`` as the concise spelling of the same
+        # full-access/never-ask policy.  The Linux launcher uses this form;
+        # treating it as an ordinary unknown switch made the relaunch action
+        # reject otherwise identical, quiescent sessions as unsupported.
+        bypass = ("--dangerously-bypass-approvals-and-sandbox" in argv
+                  or "--yolo" in argv)
         if bypass:
             sandbox, approval = "danger-full-access", "never"
         actual_sandbox = context.get("sandbox_policy", {}).get("type")
-        if (not model or not sandbox or not approval or model != context.get("model")
+        if (((not model) and not bypass) or (model and model != context.get("model"))
+                or not sandbox or not approval
                 or sandbox != actual_sandbox or approval != context.get("approval_policy")
                 or context.get("cwd") != process["cwd"]):
             raise Unavailable("no_soportado")
@@ -300,7 +306,7 @@ class TargetWorker:
                    "-p", "--profile", "--add-dir", "--enable", "--disable"} if provider == "codex" else
                   {"--model", "--permission-mode", "--settings", "--setting-sources", "--add-dir", "--allowedTools",
                    "--disallowedTools", "--mcp-config", "--tools", "--system-prompt", "--append-system-prompt"})
-        switches = ({"--no-alt-screen", "--search", "--full-auto", "--dangerously-bypass-approvals-and-sandbox"}
+        switches = ({"--no-alt-screen", "--search", "--full-auto", "--dangerously-bypass-approvals-and-sandbox", "--yolo"}
                     if provider == "codex" else {"--dangerously-skip-permissions", "--verbose", "--strict-mcp-config"})
         kept, index = [], 0
         while index < len(arguments):

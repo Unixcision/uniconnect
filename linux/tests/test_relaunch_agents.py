@@ -35,6 +35,11 @@ class ArgumentsTests(unittest.TestCase):
                                 "--append-system-prompt", "x; $(not a shell command)"])
         self.assertFalse(any("dangerously" in part for part in args))
 
+    def test_codex_yolo_is_retained_for_resume(self):
+        args = TargetWorker.resume_arguments("codex", ["codex", "resume", "old", "--yolo"],
+                                             "current", self.catalog)
+        self.assertEqual(args, ["codex", "resume", "current", "--yolo"])
+
     def test_prompt_subcommand_and_unknown_option_are_not_replayed(self):
         for argv in (["codex", "exec", "fix"], ["codex", "resume", "old", "do anything"],
                      ["codex", "--unknown"], ["claude", "--print", "prompt"], ["claude", "--resume"]):
@@ -68,6 +73,11 @@ class ArgumentsTests(unittest.TestCase):
                     "sandbox_policy": {"type": "read-only"}, "approval_policy": "never"}}
         complete = {"type": "event_msg", "payload": {"type": "task_complete", "turn_id": "current-turn"}}
         TargetWorker.validate_quiescence([context, complete], process)
+        yolo_process = {**process, "argv": ["codex", "--yolo"]}
+        yolo_context = {**context, "payload": {**context["payload"],
+                                                "sandbox_policy": {"type": "danger-full-access"},
+                                                "approval_policy": "never"}}
+        TargetWorker.validate_quiescence([yolo_context, complete], yolo_process)
         for rows in ([context], [context, complete, {"type": "event_msg", "payload": {"type": "task_started"}}],
                      [context, {"type": "event_msg", "payload": {"type": "task_complete", "turn_id": "old-turn"}}],
                      [context, {"type": "event_msg", "payload": {"type": "task_started", "turn_id": "new-turn"}}, complete],
