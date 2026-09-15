@@ -3,6 +3,8 @@ package com.unixcision.uniconnect.android.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unixcision.uniconnect.android.R
+import com.unixcision.uniconnect.android.domain.RelaunchDecision
+import com.unixcision.uniconnect.android.domain.RelaunchPresentation
 import com.unixcision.uniconnect.android.domain.RelaunchConfirmation
 import com.unixcision.uniconnect.android.domain.RelaunchPlan
 import com.unixcision.uniconnect.android.domain.RelaunchVerb
@@ -264,17 +266,16 @@ class MachinesViewModel(
                 mutableState.update { it.copy(relaunch = RelaunchUI.Failed(machineID, R.string.relaunch_failed)) }
                 return@launch
             }
-            if (plan.targets.isEmpty() && plan.unavailableReason == null) {
-                // Una lista vacía se explica: «no ha pasado nada» y «no había nada que hacer» se
-                // parecen demasiado desde fuera. Pero un plan bloqueado **sí** trae explicación, y
-                // enseñarlo como «no había nada» la perdería: son cosas distintas.
-                mutableState.update { it.copy(relaunch = RelaunchUI.Failed(machineID, R.string.relaunch_nothing)) }
-                return@launch
-            }
-            if (RelaunchConfirmation.needsConfirmation(plan.targets.size)) {
-                mutableState.update { it.copy(relaunch = RelaunchUI.Confirm(machineID, plan)) }
-            } else {
-                apply(machineID, plan)
+            when (val decision = RelaunchPresentation.decide(plan)) {
+                // «No ha pasado nada» y «no había nada que hacer» se parecen demasiado desde fuera.
+                is RelaunchDecision.Nothing ->
+                    mutableState.update { it.copy(relaunch = RelaunchUI.Failed(machineID, R.string.relaunch_nothing)) }
+                // Hay algo que contar y nada que ejecutar. El diálogo no ofrece «Adelante».
+                is RelaunchDecision.Show ->
+                    mutableState.update { it.copy(relaunch = RelaunchUI.Confirm(machineID, decision.plan)) }
+                is RelaunchDecision.Confirm ->
+                    mutableState.update { it.copy(relaunch = RelaunchUI.Confirm(machineID, decision.plan)) }
+                is RelaunchDecision.Apply -> apply(machineID, decision.plan)
             }
         }
     }

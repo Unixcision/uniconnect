@@ -63,6 +63,16 @@ fun RelaunchDialog(state: RelaunchUI, onConfirm: () -> Unit, onDismiss: () -> Un
                             stringResource(R.string.relaunch_confirm_excluded, state.plan.exclusions.size),
                             style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.warning,
                         )
+                        // Con motivo global basta la frase de arriba; sin él —el equipo excluyó sus
+                        // candidatos uno a uno— las causas están aquí y en ningún otro sitio.
+                        if (state.plan.unavailableReason == null) {
+                            for (motivo in state.plan.exclusions.mapNotNull { it.reason }.distinctBy { it.wire }) {
+                                Text(
+                                    textOf(motivo),
+                                    style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted,
+                                )
+                            }
+                        }
                     }
                 }
             },
