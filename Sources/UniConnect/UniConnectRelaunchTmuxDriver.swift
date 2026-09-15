@@ -90,6 +90,7 @@ struct UniConnectRelaunchTmuxDriver: Sendable {
             // clase de silencio que esto existe para evitar. Se mira tambien el guion que ejecuta,
             // y solo ese: mas adentro del argumento empiezan los falsos positivos.
             if let argv = await commandLine(of: pid), argv.count > 1,
+               Self.interpreters.contains(Self.executableName(of: argv[0])),
                Self.executableName(of: argv[1]) == provider {
                 matches.append(pid)
             }
@@ -158,6 +159,14 @@ struct UniConnectRelaunchTmuxDriver: Sendable {
               !text.isEmpty else { return nil }
         return text.split(separator: " ").map(String.init)
     }
+
+    /// Programs that run another program named on their command line.
+    ///
+    /// The list is closed on purpose. Accepting any executable whose second argument ends in the
+    /// provider's name makes `less /tmp/claude` an agent, and a file name is not an identity.
+    private static let interpreters: Set<String> = [
+        "node", "bun", "deno", "python", "python3", "ruby", "perl", "sh", "bash", "zsh", "env",
+    ]
 
     /// The bare executable name of a command path, which is what a provider is named after.
     private static func executableName(of command: String) -> String {

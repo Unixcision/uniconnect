@@ -56,9 +56,14 @@ public enum RelaunchScreenReading: Sendable, Equatable {
     /// about which conversation it ended up on. Measured on a real desktop, 5 of 26 windows had been
     /// launched with no `--resume` at all.
     static func resumeSessionID(in screen: String) -> String? {
-        guard screen.contains("Resume this session with") else { return nil }
+        // El identificador que sigue al anuncio, y **solo** ese. Buscarlo en toda la captura tomaba
+        // el primero que apareciera: un identificador de una sesión anterior, todavía en pantalla
+        // más arriba, ganaba al recién impreso. Después se relanzaba esa otra conversación y
+        // encontrarla de vuelta confirmaba el error en lugar de evitarlo.
+        guard let announcement = screen.range(of: "Resume this session with") else { return nil }
+        let after = screen[announcement.upperBound...]
         let pattern = #"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"#
-        guard let range = screen.range(of: pattern, options: .regularExpression) else { return nil }
-        return String(screen[range])
+        guard let range = after.range(of: pattern, options: .regularExpression) else { return nil }
+        return String(after[range])
     }
 }

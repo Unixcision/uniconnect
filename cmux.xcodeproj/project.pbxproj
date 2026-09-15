@@ -882,6 +882,7 @@
 		D26B20000000000000000044 /* UniConnectRecoveryRestoreTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000044 /* UniConnectRecoveryRestoreTransaction.swift */; };
 		F1A82C0D64E74B3E9C07BRL4 /* UniConnectRelaunchAgentProcess.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5327BE8A0914C6FB24EARL4 /* UniConnectRelaunchAgentProcess.swift */; };
 		B8E17F4A25C3496D80A9CRL5 /* UniConnectRelaunchClosurePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3049D61E8B7422C97F1DRL5 /* UniConnectRelaunchClosurePolicy.swift */; };
+		D62F81A4C09E4B37AE15CRL8 /* UniConnectRelaunchCommandLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4718E0D3F6A42C5981DCRL8 /* UniConnectRelaunchCommandLine.swift */; };
 		A9062000000000000000RL04 /* UniConnectRelaunchCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9061000000000000000RL04 /* UniConnectRelaunchCoordinator.swift */; };
 		A9062000000000000000RL02 /* UniConnectRelaunchExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9061000000000000000RL02 /* UniConnectRelaunchExecutor.swift */; };
 		E90C7B3D1A5F44289D6BCRL7 /* UniConnectRelaunchExecutorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F42A18C6D0E3497BA35FCRL7 /* UniConnectRelaunchExecutorTests.swift */; };
@@ -1892,6 +1893,7 @@
 		D26B10000000000000000044 /* UniConnectRecoveryRestoreTransaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectRecoveryRestoreTransaction.swift; sourceTree = "<group>"; };
 		D5327BE8A0914C6FB24EARL4 /* UniConnectRelaunchAgentProcess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectRelaunchAgentProcess.swift; sourceTree = "<group>"; };
 		A3049D61E8B7422C97F1DRL5 /* UniConnectRelaunchClosurePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectRelaunchClosurePolicy.swift; sourceTree = "<group>"; };
+		B4718E0D3F6A42C5981DCRL8 /* UniConnectRelaunchCommandLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectRelaunchCommandLine.swift; sourceTree = "<group>"; };
 		A9061000000000000000RL04 /* UniConnectRelaunchCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectRelaunchCoordinator.swift; sourceTree = "<group>"; };
 		A9061000000000000000RL02 /* UniConnectRelaunchExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectRelaunchExecutor.swift; sourceTree = "<group>"; };
 		F42A18C6D0E3497BA35FCRL7 /* UniConnectRelaunchExecutorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectRelaunchExecutorTests.swift; sourceTree = "<group>"; };
@@ -2139,6 +2141,7 @@
 				A9061000000000000000RL05 /* UniConnectRelaunchOperationStore.swift */,
 				A9061000000000000000RL02 /* UniConnectRelaunchExecutor.swift */,
 				D5327BE8A0914C6FB24EARL4 /* UniConnectRelaunchAgentProcess.swift */,
+				B4718E0D3F6A42C5981DCRL8 /* UniConnectRelaunchCommandLine.swift */,
 				C10B4A85F937426D8E2ACRL6 /* UniConnectRelaunchPaneAccess.swift */,
 				A3049D61E8B7422C97F1DRL5 /* UniConnectRelaunchClosurePolicy.swift */,
 				A9061000000000000000RL03 /* UniConnectRelaunchInventory.swift */,
@@ -4087,6 +4090,7 @@
 				D26B20000000000000000044 /* UniConnectRecoveryRestoreTransaction.swift in Sources */,
 				F1A82C0D64E74B3E9C07BRL4 /* UniConnectRelaunchAgentProcess.swift in Sources */,
 				B8E17F4A25C3496D80A9CRL5 /* UniConnectRelaunchClosurePolicy.swift in Sources */,
+				D62F81A4C09E4B37AE15CRL8 /* UniConnectRelaunchCommandLine.swift in Sources */,
 				A9062000000000000000RL04 /* UniConnectRelaunchCoordinator.swift in Sources */,
 				A9062000000000000000RL02 /* UniConnectRelaunchExecutor.swift in Sources */,
 				A9062000000000000000RL03 /* UniConnectRelaunchInventory.swift in Sources */,

@@ -21557,9 +21557,17 @@ class TerminalController {
             let wanted = Set(resolved.workspaces.compactMap {
                 $0.uniConnectLocalWindowsByPanelId[panel]?.tmuxBinding?.name
             })
+            // También las exclusiones: quien pide una ventana no tiene por qué enterarse de lo que
+            // le pasa a sus vecinas, y una lista con B dentro al pedir A es la misma fuga de
+            // alcance por la otra puerta.
+            let etiqueta = resolved.workspaces.first.map { workspace in
+                "\(workspace.customTitle ?? workspace.title) · "
+            } ?? ""
             preview = UniConnectRelaunchCoordinator.Preview(
                 targets: preview.targets.filter { wanted.contains($0.session) },
-                exclusions: preview.exclusions
+                exclusions: preview.exclusions.filter { exclusion in
+                    wanted.contains { exclusion.label.hasPrefix(etiqueta) && exclusion.label.contains($0) }
+                }
             )
         }
         // La indisponibilidad va en el PLAN, no solo en el resultado. Ofrecer veintiséis ventanas

@@ -340,6 +340,66 @@ struct UniConnectRelaunchExecutorTests {
         #expect(escrito.contains("--dangerously-skip-permissions"))
     }
 
+    @Test("Un argumento con sintaxis de shell no se escribe: se para y se avisa")
+    func anargumentCarryingShellSyntaxIsNeverTyped() async {
+        // `ps` entrega los argumentos ya aplanados, asi que un valor con `;` o `$(…)` no se puede
+        // devolver tal cual ni citar sin adivinar sus limites. Conservar mas opciones abrio esto;
+        // antes solo volvia un flag conocido y no habia por donde colar nada.
+        let panel = FakePane(
+            lookups: [
+                proceso(52938, "Mon Sep 15 09:00:00 2026",
+                        argv: ["claude", "--resume", "091942fc-27af-47e7-ae92-50e7daf1eed3",
+                               "--append-system-prompt", "hola;", "rm", "-rf", "/tmp/x"]),
+                proceso(61111, "Mon Sep 15 11:47:02 2026"),
+            ],
+            screens: [iaLista, salidaConResume, iaLista]
+        )
+
+        let resultado = await UniConnectRelaunchExecutor(driver: panel, settle: {}).relaunch(objetivo())
+
+        #expect(resultado.state == .needsUser)
+        // Lo unico que se escribio fue el cierre; nada de reconstruir la linea a ciegas.
+        #expect(panel.typed.allSatisfy { !$0.contains("rm") })
+    }
+
+    @Test("Una sustitucion del shell tampoco pasa")
+    func acommandSubstitutionDoesNotPassEither() async {
+        let panel = FakePane(
+            lookups: [
+                proceso(52938, "Mon Sep 15 09:00:00 2026",
+                        argv: ["claude", "--resume", "091942fc-27af-47e7-ae92-50e7daf1eed3", "$(whoami)"]),
+                proceso(61111, "Mon Sep 15 11:47:02 2026"),
+            ],
+            screens: [iaLista, salidaConResume, iaLista]
+        )
+
+        let resultado = await UniConnectRelaunchExecutor(driver: panel, settle: {}).relaunch(objetivo())
+
+        #expect(resultado.state == .needsUser)
+        #expect(panel.typed.allSatisfy { !$0.contains("whoami") })
+    }
+
+    @Test("La conversacion tiene que ser el VALOR de --resume, no aparecer por ahi")
+    func theconversationMustBeTheResumeValue() async {
+        let esperada = "091942fc-27af-47e7-ae92-50e7daf1eed3"
+        let panel = FakePane(
+            lookups: [
+                proceso(52938, "Mon Sep 15 09:00:00 2026"),
+                // Arranco sobre OTRA, con la esperada mencionada de pasada en otro argumento.
+                proceso(61111, "Mon Sep 15 11:47:02 2026",
+                        argv: ["claude", "--resume", "ffffffff-0000-0000-0000-000000000000",
+                               "--add-dir", "/tmp/\(esperada)"]),
+            ],
+            screens: [iaLista, salidaConResume, iaLista]
+        )
+
+        let resultado = await UniConnectRelaunchExecutor(driver: panel, settle: {}).relaunch(objetivo())
+
+        // `contains` lo habria dado por bueno.
+        #expect(resultado.state == .needsUser)
+        #expect(resultado.cause == .ambiguousIdentity)
+    }
+
     @Test("Lo que queda bloqueado sigue nombrado, para que vaciarlo sea deliberado")
     func whatIsStillRefusedStaysNamed() {
         #expect(!UniConnectRelaunchClosurePolicy.outstandingConditions.isEmpty)

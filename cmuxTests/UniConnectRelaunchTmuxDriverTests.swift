@@ -99,6 +99,38 @@ struct UniConnectRelaunchTmuxDriverTests {
         #expect(found == .found(.init(pid: 52938, startedAt: "Mon Sep 15 11:47:02 2026", argv: ["claude", "--resume", "abc", "--dangerously-skip-permissions"])))
     }
 
+    @Test("Una IA lanzada por un interprete se encuentra")
+    func anagentLaunchedByAnInterpreterIsFound() async {
+        let commands = FakeCommands(
+            tmuxPanePID: "73694\n",
+            table: """
+            73694 73000 /bin/zsh
+            52938 73694 node
+            """,
+            args: "node /usr/local/bin/codex --yolo resume 01a0677f"
+        )
+        let found = await driver(commands).agent(socket: "uniconnect-local", pane: "%1", provider: "codex")
+
+        // Dos ventanas de este escritorio corren asi; mirar solo el nombre decia que no habia IA.
+        #expect(found != .noAgent)
+    }
+
+    @Test("Un fichero que se llama como el proveedor no es una IA")
+    func afileNamedAfterTheProviderIsNotAnAgent() async {
+        let commands = FakeCommands(
+            tmuxPanePID: "73694\n",
+            table: """
+            73694 73000 /bin/zsh
+            52938 73694 less
+            """,
+            args: "less /tmp/claude"
+        )
+        let found = await driver(commands).agent(socket: "uniconnect-local", pane: "%1", provider: "claude")
+
+        // `less` no ejecuta lo que le pasan: un nombre de fichero no es una identidad.
+        #expect(found == .noAgent)
+    }
+
     @Test("Un panel parado en su shell no tiene IA que cerrar")
     func paneSittingAtItsShellHasNoAgent() async {
         #expect(await lookup(table: "73694 73000 /bin/zsh") == .noAgent)

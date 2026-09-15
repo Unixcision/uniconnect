@@ -113,7 +113,13 @@ struct UniConnectRelaunchExecutor: Sendable {
             return .init(key: target.key, state: .needsUser, cause: .ambiguousIdentity)
         }
 
-        await driver.type(socket: target.socket, pane: pane, text: argv.joined(separator: " "))
+        // Unir con espacios entregaba al shell lo que `ps` habia aplanado: un punto y coma o una
+        // sustitucion dentro del prompt de alguien dejaba de ser dato. Si la linea no se puede
+        // reproducir tal cual era, esta ventana no se toca mas y lo dice.
+        guard let linea = UniConnectRelaunchCommandLine.line(from: argv) else {
+            return .init(key: target.key, state: .needsUser, cause: .ambiguousIdentity)
+        }
+        await driver.type(socket: target.socket, pane: pane, text: linea)
         for _ in 0..<30 {
             await settle()
             let screen = await driver.capture(socket: target.socket, pane: pane) ?? ""
@@ -139,7 +145,7 @@ struct UniConnectRelaunchExecutor: Sendable {
             // La conversacion que se pidio tiene que ser la que el proceso nuevo lleva puesta.
             // Antes se informaba la esperada sin comprobarla; ahora se lee de su linea de comandos,
             // que es la unica fuente que no depende de lo que la pantalla quiera contar.
-            guard after.argv.isEmpty || after.argv.contains(conversation) else {
+            guard after.argv.isEmpty || UniConnectRelaunchCommandLine.resumes(conversation, in: after.argv) else {
                 return .init(key: target.key, state: .needsUser, cause: .ambiguousIdentity)
             }
             switch dialect.verify(proof: proof, reading: reading) {
