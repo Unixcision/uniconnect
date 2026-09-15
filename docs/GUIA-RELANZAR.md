@@ -25,7 +25,7 @@ un éxito solo porque haya reaparecido una terminal.
    la ventana es SSH a DESA, el login relevante es el de DESA, no el del visor Linux.
 2. Relanza primero una ventana y comprueba conversación, cuenta y posibilidad de
    escribir. No hace falta crear otra conversación para cargar una cuenta cambiada.
-3. Después aplica el mismo flujo al espacio o al alcance global que necesites.
+3. Después aplica el mismo flujo al espacio o al equipo completo, según necesites.
 
 Se conserva el entorno/perfil del proceso. Si dos ventanas usan perfiles o
 directorios de configuración diferentes, un login en uno no cambia el otro.
@@ -145,8 +145,6 @@ La operativa acordada es la misma, con plan previo y resultados por objetivo:
 - **Ventana:** menú contextual de esa ventana; en Android, pulsación larga.
 - **Espacio:** menú del espacio; en Android, pulsación larga sobre el espacio.
 - **Equipo:** menú del equipo elegido, sin limitarlo a la ventana visible.
-- **Global:** acción global del cliente que reúne equipos autorizados y muestra
-  también los inaccesibles. No confundirla con el menú de un solo equipo.
 
 En Android las órdenes viajan al host por `relaunch.plan/apply/status`; el móvil
 no ejecuta un cierre por teclas. Si el host no anuncia `relaunch.v1`, no está
@@ -159,6 +157,6 @@ nativa pertenecen al tramo de esos clientes y siguen pendientes de cierre conjun
 
 Probar primero una ventana sin trabajo activo. Comprobar que vuelve la conversación
 correcta, que puede escribirse y que configuración/archivos siguen como estaban.
-Después probar un espacio y, por último, global con un equipo inaccesible y un
+Después probar un espacio y, por último, el equipo completo con un destino SSH inaccesible y un
 panel SSH visible desde dos hosts. Las pruebas Linux no sustituyen esta validación
 ni una prueba nativa de Mac/Android.
