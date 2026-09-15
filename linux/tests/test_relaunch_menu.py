@@ -40,6 +40,7 @@ class RelaunchMenuTests(unittest.TestCase):
         window.store = SimpleNamespace(data={"settings": {"shortcuts": {"relaunch_global": "<Alt>g"}}})
         window.focused_surface = SimpleNamespace(record={"id": "window"})
         window.current_workspace = lambda: {"id": "box", "windows": [{"id": "window"}]}
+        window.notifications_unread = lambda *args, **kwargs: False
         self.calls = []
         window.relaunch = SimpleNamespace(allowed=lambda: True, show=self.calls.append,
             show_history=lambda: self.calls.append("history"), show_machines=lambda: self.calls.append("machines"))
