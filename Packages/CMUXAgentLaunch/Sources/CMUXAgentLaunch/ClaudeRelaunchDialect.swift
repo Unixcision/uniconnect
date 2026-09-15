@@ -22,12 +22,38 @@ public struct ClaudeRelaunchDialect: RelaunchAgentDialect {
 
     public func invocation(conversation: String, previousArgv: [String]) -> [String]? {
         guard !conversation.isEmpty else { return nil }
+
+        // Everything the window was opened with comes back, not a chosen few. Keeping only the
+        // permission flag looked safe and was not: a window opened with `--model` or an appended
+        // system prompt would come back as a different agent wearing the same name. Measured on one
+        // desktop, 25 of 27 windows carried exactly one flag — and the exceptions are the point.
         var argv = ["claude", "--resume", conversation]
-        // Flags come back exactly as they were. Relaunching is not the moment to change what an
-        // agent is allowed to do, in either direction.
-        if previousArgv.contains("--dangerously-skip-permissions") {
-            argv.append("--dangerously-skip-permissions")
+        var rest = previousArgv.dropFirst()  // el ejecutable lo pone esta invocacion
+
+        // La seleccion de conversacion se sustituye por la pedida, venga como venga expresada:
+        // `--continue` y `--resume <otra>` son las dos formas de decir «sigue con aquella», y las
+        // dos tienen que dejar paso a la que se acaba de acreditar.
+        var kept: [String] = []
+        var index = rest.startIndex
+        while index < rest.endIndex {
+            let argument = rest[index]
+            if argument == "--continue" || argument == "-c" {
+                index = rest.index(after: index)
+                continue
+            }
+            if argument == "--resume" || argument == "-r" {
+                index = rest.index(after: index)
+                // Su valor, si lo trae, se va con ella.
+                if index < rest.endIndex, !rest[index].hasPrefix("-") {
+                    index = rest.index(after: index)
+                }
+                continue
+            }
+            kept.append(argument)
+            index = rest.index(after: index)
         }
+        argv.append(contentsOf: kept)
+        rest = ArraySlice(kept)
         return argv
     }
 }

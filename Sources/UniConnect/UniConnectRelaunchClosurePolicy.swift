@@ -16,8 +16,11 @@ import Foundation
 ///
 /// - **A window on a server.** The session record of a remote pane carries no conversation at all,
 ///   so there is nothing to give back after closing it.
-/// - **A pane somebody else owns.** A supervisor that relaunches on its own terms will race this
-///   one, and neither knows about the other.
+/// What it does **not** check yet, said here so nobody reads a promise into it: whether something
+/// else owns the pane. A supervisor that relaunches on its own terms would race this one and
+/// neither would know about the other. On this desktop there is no such supervisor — the local
+/// windows are tmux sessions UniConnect opened itself — which is why a local window is allowed
+/// while that check is still missing; it is a reason, not a substitute.
 struct UniConnectRelaunchClosurePolicy: Sendable {
     /// What is still missing, and for which case. Emptying it is how the refusal is lifted — with
     /// the test that proves the condition, never by deleting the check.

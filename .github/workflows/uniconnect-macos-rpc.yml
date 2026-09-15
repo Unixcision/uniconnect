@@ -168,7 +168,7 @@ jobs:
           python3 scripts/ci/assert_tests_ran.py \
             --xcresult "$BUNDLE" \
             --suite UniConnectRelaunchExecutorTests \
-            --minimum 11
+            --minimum 15
 
       - name: Conservar resultados y registro de la ejecución
         if: always()

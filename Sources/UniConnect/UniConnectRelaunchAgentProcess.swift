@@ -28,6 +28,16 @@ struct UniConnectRelaunchAgentProcess: Equatable, Sendable {
     func isSameProcess(as other: UniConnectRelaunchAgentProcess) -> Bool {
         self == other
     }
+
+    /// Dos lecturas son del mismo proceso cuando coinciden identificador y arranque.
+    ///
+    /// Escrita a mano y **sin `argv`** a propósito. La igualdad sintetizada lo incluía en cuanto se
+    /// añadió, y entonces dos lecturas del mismo proceso con la línea de comandos leída de forma
+    /// distinta contaban como reemplazo: un «verificado» sobre un relanzado que nunca ocurrió. La
+    /// línea de comandos es un dato del proceso, no lo que lo distingue de otro.
+    static func == (lhs: UniConnectRelaunchAgentProcess, rhs: UniConnectRelaunchAgentProcess) -> Bool {
+        lhs.pid == rhs.pid && lhs.startedAt == rhs.startedAt
+    }
 }
 
 /// What was found when looking for the agent inside a pane.

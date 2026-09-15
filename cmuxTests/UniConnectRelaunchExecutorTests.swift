@@ -264,6 +264,82 @@ struct UniConnectRelaunchExecutorTests {
         #expect(panel.typed.allSatisfy { !$0.contains("--dangerously-skip-permissions") })
     }
 
+    @Test("Mismo proceso con la linea de comandos leida distinta NO es un reemplazo")
+    func thesameProcessReadDifferentlyIsNotAReplacement() async {
+        // El agujero que abri al añadir `argv` al struct: la igualdad sintetizada lo incluia, asi
+        // que esto daba «verificado» sobre un relanzado que no habia ocurrido.
+        let mismo = "Mon Sep 15 09:00:00 2026"
+        let panel = FakePane(
+            lookups: [
+                proceso(52938, mismo, argv: ["claude", "--resume", "091942fc-27af-47e7-ae92-50e7daf1eed3"]),
+                proceso(52938, mismo, argv: ["claude", "--resume", "091942fc-27af-47e7-ae92-50e7daf1eed3", "--verbose"]),
+            ],
+            screens: [iaLista, salidaConResume, iaLista]
+        )
+
+        let resultado = await UniConnectRelaunchExecutor(driver: panel, settle: {}).relaunch(objetivo())
+
+        #expect(resultado.state != .verified)
+    }
+
+    @Test("Si el proceso nuevo no lleva la conversacion pedida, no se da por verificado")
+    func anewProcessOnAnotherConversationIsNotVerified() async {
+        let panel = FakePane(
+            lookups: [
+                proceso(52938, "Mon Sep 15 09:00:00 2026"),
+                // Arranco, si, pero sobre OTRA conversacion.
+                proceso(61111, "Mon Sep 15 11:47:02 2026",
+                        argv: ["claude", "--resume", "ffffffff-0000-0000-0000-000000000000"]),
+            ],
+            screens: [iaLista, salidaConResume, iaLista]
+        )
+
+        let resultado = await UniConnectRelaunchExecutor(driver: panel, settle: {}).relaunch(objetivo())
+
+        #expect(resultado.state == .needsUser)
+        #expect(resultado.cause == .ambiguousIdentity)
+    }
+
+    @Test("Las demas opciones tambien vuelven, no solo el permiso")
+    func everyOtherFlagComesBackToo() async {
+        let panel = FakePane(
+            lookups: [
+                proceso(52938, "Mon Sep 15 09:00:00 2026",
+                        argv: ["claude", "--resume", "091942fc-27af-47e7-ae92-50e7daf1eed3",
+                               "--model", "opus", "--dangerously-skip-permissions"]),
+                proceso(61111, "Mon Sep 15 11:47:02 2026"),
+            ],
+            screens: [iaLista, salidaConResume, iaLista]
+        )
+
+        _ = await UniConnectRelaunchExecutor(driver: panel, settle: {}).relaunch(objetivo())
+
+        let escrito = panel.typed.first { $0.contains("--resume") } ?? ""
+        // Conservar solo el permiso devolvia una IA parecida, no la misma.
+        #expect(escrito.contains("--model opus"))
+        #expect(escrito.contains("--dangerously-skip-permissions"))
+    }
+
+    @Test("Una ventana abierta con --continue vuelve sobre su conversacion acreditada")
+    func awindowOpenedWithContinueComesBackOnItsProvenConversation() async {
+        let panel = FakePane(
+            lookups: [
+                proceso(52938, "Mon Sep 15 09:00:00 2026",
+                        argv: ["claude", "--continue", "--dangerously-skip-permissions"]),
+                proceso(61111, "Mon Sep 15 11:47:02 2026"),
+            ],
+            screens: [iaLista, salidaConResume, iaLista]
+        )
+
+        _ = await UniConnectRelaunchExecutor(driver: panel, settle: {}).relaunch(objetivo())
+
+        let escrito = panel.typed.first { $0.contains("claude") } ?? ""
+        // `--continue` decia «sigue con la ultima»; ahora se sabe cual es, y se dice por su nombre.
+        #expect(escrito.contains("--resume 091942fc-27af-47e7-ae92-50e7daf1eed3"))
+        #expect(!escrito.contains("--continue"))
+        #expect(escrito.contains("--dangerously-skip-permissions"))
+    }
+
     @Test("Lo que queda bloqueado sigue nombrado, para que vaciarlo sea deliberado")
     func whatIsStillRefusedStaysNamed() {
         #expect(!UniConnectRelaunchClosurePolicy.outstandingConditions.isEmpty)

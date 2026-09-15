@@ -77,9 +77,22 @@ struct UniConnectRelaunchTmuxDriver: Sendable {
         }
 
         let names = Dictionary(uniqueKeysWithValues: table.map { ($0.pid, $0.command) })
-        let matches = subtree.filter { pid in
-            guard let command = names[pid] else { return false }
-            return Self.executableName(of: command) == provider
+        var matches: [Int32] = []
+        for pid in subtree {
+            guard let command = names[pid] else { continue }
+            if Self.executableName(of: command) == provider {
+                matches.append(pid)
+                continue
+            }
+            // Un agente lanzado por un interprete se llama como el interprete: en este escritorio
+            // dos ventanas de Codex corren como `node /usr/local/bin/codex`. Mirar solo el nombre
+            // del proceso diria «aqui no hay IA» sobre una ventana que si la tiene, que es la misma
+            // clase de silencio que esto existe para evitar. Se mira tambien el guion que ejecuta,
+            // y solo ese: mas adentro del argumento empiezan los falsos positivos.
+            if let argv = await commandLine(of: pid), argv.count > 1,
+               Self.executableName(of: argv[1]) == provider {
+                matches.append(pid)
+            }
         }
         guard matches.count == 1, let pid = matches.first else {
             return matches.isEmpty ? .noAgent : .ambiguous

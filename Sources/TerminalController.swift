@@ -21506,16 +21506,19 @@ class TerminalController {
     ///
     /// No existe un alcance «todo el sistema»: `machine` es este equipo, y el cliente compone el
     /// resto preguntando a cada uno. Así un equipo que no contesta se ve como tal.
-    private func mobileRelaunchWorkspaces(params: [String: Any], tabManager: TabManager) -> [Workspace]? {
+    private func mobileRelaunchWorkspaces(
+        params: [String: Any],
+        tabManager: TabManager
+    ) -> (workspaces: [Workspace], onlyPanel: UUID?)? {
         let kind = v2RawString(params, "kind") ?? ""
         let identifier = v2RawString(params, "id") ?? ""
         switch kind {
         case "machine":
-            return tabManager.tabs
+            return (tabManager.tabs, nil)
         case "workspace":
             guard let id = UUID(uuidString: identifier),
                   let workspace = tabManager.tabs.first(where: { $0.id == id }) else { return nil }
-            return [workspace]
+            return ([workspace], nil)
         case "window":
             guard let id = UUID(uuidString: identifier) else { return nil }
             // Una ventana se resuelve por sí misma: su caja no viaja por el cable a propósito, para
@@ -21523,7 +21526,10 @@ class TerminalController {
             guard let workspace = tabManager.tabs.first(where: {
                 $0.uniConnectLocalWindowsByPanelId[id] != nil
             }) else { return nil }
-            return [workspace]
+            // La caja se devuelve porque es donde vive la ventana, **y el panel con ella**: sin eso
+            // quien pide una ventana recibe un plan con todas las de su caja, que es exactamente lo
+            // que no pidió. El escritorio ya filtraba; esta ruta no.
+            return ([workspace], id)
         default:
             return nil
         }
@@ -21542,10 +21548,20 @@ class TerminalController {
             return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
         }
         guard let scope = params["scope"] as? [String: Any],
-              let workspaces = mobileRelaunchWorkspaces(params: scope, tabManager: tabManager) else {
+              let resolved = mobileRelaunchWorkspaces(params: scope, tabManager: tabManager) else {
             return .err(code: "alcance_no_valido", message: "El alcance pedido no se puede resolver", data: nil)
         }
-        var preview = mobileRelaunchCoordinator().preview(workspaces: workspaces)
+        var preview = mobileRelaunchCoordinator().preview(workspaces: resolved.workspaces)
+        if let panel = resolved.onlyPanel {
+            // Filtrar por panel y no por caja: una ventana suelta es su propio alcance.
+            let wanted = Set(resolved.workspaces.compactMap {
+                $0.uniConnectLocalWindowsByPanelId[panel]?.tmuxBinding?.name
+            })
+            preview = UniConnectRelaunchCoordinator.Preview(
+                targets: preview.targets.filter { wanted.contains($0.session) },
+                exclusions: preview.exclusions
+            )
+        }
         // La indisponibilidad va en el PLAN, no solo en el resultado. Ofrecer veintiséis ventanas
         // como «planificado» para devolverlas omitidas después es prometer un trabajo que no se va
         // a hacer, y quien mira el móvil no tiene forma de saberlo hasta que ya ha pulsado.
@@ -21600,7 +21616,26 @@ class TerminalController {
             return .err(code: RelaunchError.unknownOperation.rawValue, message: "Operación desconocida", data: nil)
         }
         let targets = mobileRelaunchStore.targets(for: operationID)
-        let live = Dictionary(targets.map { ($0.key.paneIdentity, $0.key) }, uniquingKeysWith: { first, _ in first })
+        // El estado vivo se relee del modelo, no del propio plan. Construirlo de los objetos
+        // guardados comparaba la generación del plan **consigo misma**, así que un cambio de
+        // ocupante entre planificar y aplicar no excluía nada: la comprobación existía y no
+        // comprobaba. Una ventana que ya no está, o que ahora la habita otro, deja de ser un
+        // objetivo vivo y la puerta la rechaza.
+        var live: [String: RelaunchTargetKey] = [:]
+        if let tabManager = v2ResolveTabManager(params: params) {
+            for workspace in tabManager.tabs {
+                for (_, record) in workspace.uniConnectLocalWindowsByPanelId {
+                    guard let binding = record.tmuxBinding else { continue }
+                    let key = RelaunchTargetKey(
+                        destination: .local(machineID: Host.current().localizedName ?? "mac"),
+                        tmuxServer: binding.socketName,
+                        pane: binding.name,
+                        generation: Int(record.updatedAt.rounded())
+                    )
+                    live[key.paneIdentity] = key
+                }
+            }
+        }
 
         switch RelaunchAdmissionGate().admit(
             token: token, requestedBy: peer.address,

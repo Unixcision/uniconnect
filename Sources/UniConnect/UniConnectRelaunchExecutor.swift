@@ -132,10 +132,16 @@ struct UniConnectRelaunchExecutor: Sendable {
             guard case let .found(after) = replacement else { continue }
             // Identidad completa, no un numero: el PID solo se lleva para poder informarlo.
             let proof = RelaunchProcessProof(
-                replacedProcess: after != before,
+                replacedProcess: !after.isSameProcess(as: before),
                 before: before.pid,
                 after: after.pid
             )
+            // La conversacion que se pidio tiene que ser la que el proceso nuevo lleva puesta.
+            // Antes se informaba la esperada sin comprobarla; ahora se lee de su linea de comandos,
+            // que es la unica fuente que no depende de lo que la pantalla quiera contar.
+            guard after.argv.isEmpty || after.argv.contains(conversation) else {
+                return .init(key: target.key, state: .needsUser, cause: .ambiguousIdentity)
+            }
             switch dialect.verify(proof: proof, reading: reading) {
             case .success:
                 return .init(key: target.key, state: .verified, effectiveID: conversation)
