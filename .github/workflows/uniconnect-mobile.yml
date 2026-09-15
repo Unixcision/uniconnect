@@ -46,9 +46,15 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      # `packages: ''` a proposito. Por defecto la accion instala `tools`, que Google retiro del
+      # repositorio del SDK: `sdkmanager` sale con 1 y el trabajo entero muere en la preparacion,
+      # antes de compilar nada. El resultado es que ningun cambio de Android se valida y el rojo
+      # parece del codigo que acabas de tocar. Lo que hace falta lo instala el paso siguiente.
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
+        with:
+          packages: ''
       - name: SDK Android del producto
-        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+        run: sdkmanager --install 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0'
       - name: Pruebas de comportamiento y APK nativa
         working-directory: android
         run: ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --max-workers 2
