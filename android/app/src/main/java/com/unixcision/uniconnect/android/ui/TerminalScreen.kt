@@ -196,8 +196,18 @@ private fun RealTerminalScreen(
         }
         // The host ended or refused the session: say so and offer the way back in right here,
         // instead of leaving a greyed-out composer and a detour through the mirror.
-        if (real.ended || real.error != null) Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (real.ended) Text(stringResource(R.string.real_terminal_ended), Modifier.weight(1f), color = UniTheme.colors.warning, style = MaterialTheme.typography.bodySmall)
+        //
+        // `!connected` entra aquí por lo mismo, y es el caso que faltaba: la máquina se cae un
+        // momento, el composer se apaga y **la última pantalla sigue ahí**, perfectamente legible.
+        // Se escribe, no se puede enviar, y nada explica por qué. Una pantalla que se ve bien es
+        // justo lo que hace creer que la culpa es de uno.
+        if (real.ended || real.error != null || !connected) Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            val aviso = when {
+                real.ended -> R.string.real_terminal_ended
+                !connected -> R.string.real_terminal_disconnected
+                else -> null
+            }
+            if (aviso != null) Text(stringResource(aviso), Modifier.weight(1f), color = UniTheme.colors.warning, style = MaterialTheme.typography.bodySmall)
             else Spacer(Modifier.weight(1f))
             Button(onClick = onReconnect, enabled = connected, shape = UniTheme.shapes.button, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
                 Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.real_terminal_reconnect))
