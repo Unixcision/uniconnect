@@ -4,6 +4,26 @@ El botón del teléfono en la cabecera abre **Acceso móvil**. El listener está
 desactivado inicialmente. Al activarlo, UniConnect verifica que `tailscale status
 --json` esté conectado y que su IPv4 figure también en la interfaz `tailscale0`.
 Solo escucha en esa dirección, puerto 58465; nunca en `0.0.0.0` ni en la LAN.
+
+### Varios móviles a la vez
+
+El host Linux admite hasta **16 conexiones TCP simultáneas**, compartidas por los
+dispositivos aprobados. No son 16 personas: terminal, observación, avisos y operaciones
+temporales pueden usar sockets distintos. Dos personas pueden usar el mismo host;
+cada dispositivo conserva su aprobación y sus streams privados. Al llenarse el cupo,
+se rechaza la conexión entrante sin expulsar una sesión activa por antigüedad.
+
+Los sockets heredan keepalive TCP: primera sonda tras 30 segundos de silencio,
+intervalo de 10 segundos y tres sondas; `TCP_USER_TIMEOUT=90000` acota también datos
+sin confirmar y prevalece en el cierre por fallo de keepalive. La detección es del
+orden de 90 segundos, no un plazo de inactividad del usuario. Un terminal silencioso
+que sigue respondiendo a TCP se conserva, incluso con la APK anterior. Un proceso
+que siga confirmando TCP pero se bloquee a nivel de aplicación no queda detectado
+por este mecanismo. El cierre libera los recursos privados del socket, no el tmux.
+
+Si se pierde la red, recupera la conexión y vuelve a conectar desde el móvil. No
+hace falta borrar el equipo ni volver a aprobarlo. Esta política se instala en el
+host Linux; actualizar solo Android no cambia el límite de un host antiguo.
 El sistema necesita los comandos `tailscale` e `ip`. Un fallo mantiene cerrado el
 listener y aparece en el diálogo. No modifica la configuración de Tailscale.
 
