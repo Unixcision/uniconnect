@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 import queue
+import select
 import socket
 import subprocess
 import sys
@@ -112,15 +113,42 @@ class MobileConnectionsTests(unittest.TestCase):
             self.assertEqual(connection.getsockopt(socket.IPPROTO_TCP, option), expected)
 
     def test_live_silent_stream_survives_application_idle_deadline(self):
+        expire, evaluated, survived = threading.Event(), threading.Event(), threading.Event()
+        real_select = select.select
+
+        def clock():
+            if expire.is_set():
+                evaluated.set()
+                return 3600
+            return 0
+
+        def observe_next_cycle(*args):
+            # Reaching select again proves the preceding expired-time check
+            # did not close the client. No RPC is sent between these signals.
+            if evaluated.is_set():
+                survived.set()
+            return real_select(*args)
+
+        self.host.clock = clock
         connection = self.connect()
         self.subscribe(connection)
-        self.now = 3600
+        with patch("uniconnect.mobile_host.select.select", observe_next_cycle):
+            expire.set()
+            self.assertTrue(evaluated.wait(3), "Idle deadline was not evaluated")
+            self.assertTrue(survived.wait(3), "Live silent stream closed at the idle deadline")
         self.subscribe(connection)
         self.assertEqual(len(self.host.clients), 1)
         self.assertTrue(self.closed.empty())
 
     @unittest.skipUnless(os.environ.get("UC_TEST_TCP_BLACKHOLE") == "1", "Isolated CI firewall only")
     def test_unreachable_subscriber_releases_its_slot_without_closing_other_phone(self):
+        self.check_unreachable_subscriber(pending_output=False)
+
+    @unittest.skipUnless(os.environ.get("UC_TEST_TCP_BLACKHOLE") == "1", "Isolated CI firewall only")
+    def test_unacknowledged_output_releases_only_its_connection(self):
+        self.check_unreachable_subscriber(pending_output=True)
+
+    def check_unreachable_subscriber(self, *, pending_output):
         dead, live = self.connect(), self.connect()
         self.subscribe(dead)
         self.subscribe(live)
@@ -134,6 +162,17 @@ class MobileConnectionsTests(unittest.TestCase):
                 "--dport", str(self.port), "-j", "DROP"]
         subprocess.run(["iptables", "-I", *rule], check=True)
         try:
+            if pending_output:
+                self.assertTrue(self.host.emit_private(victim.identifier, "terminal.pty", {"data": "fixture"}))
+                # Receiving the event proves application data crossed the socket;
+                # the matching TCP ACK is dropped by this test's isolated rule.
+                decoder = FrameDecoder()
+                frames = []
+                while not frames:
+                    data = dead.recv(65536)
+                    self.assertTrue(data, "Connection closed before transmitting pending output")
+                    frames.extend(decoder.feed(data))
+                self.assertEqual(frames[0]["topic"], "terminal.pty")
             self.assertEqual(self.closed.get(timeout=10), victim.identifier)
             self.assertNotIn(victim, self.host.clients)
             self.subscribe(live)

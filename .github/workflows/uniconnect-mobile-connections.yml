@@ -26,3 +26,17 @@ jobs:
         run: sudo env UC_TEST_TCP_BLACKHOLE=1 /usr/bin/python3 -m unittest discover -s linux/tests -p 'test_mobile_connections.py' -v
       - name: Privacidad y limpieza de streams existentes
         run: /usr/bin/python3 -m unittest discover -s linux/tests -p 'test_mobile_pty_host.py' -v
+      - name: La prueba silenciosa detecta eliminar la exención de streams
+        shell: bash
+        run: |
+          mutation_root=$(mktemp -d)
+          cp -a linux "$mutation_root/linux"
+          sed -i 's/ and not self.streams:/:/' "$mutation_root/linux/uniconnect/mobile_host.py"
+          cd "$mutation_root/linux/tests"
+          if /usr/bin/python3 -m unittest test_mobile_connections.MobileConnectionsTests.test_live_silent_stream_survives_application_idle_deadline -v > "$mutation_root/result.log" 2>&1; then
+            cat "$mutation_root/result.log"
+            echo 'ERROR: la prueba no detectó la regresión'
+            exit 1
+          fi
+          cat "$mutation_root/result.log"
+          grep -F 'Live silent stream closed at the idle deadline' "$mutation_root/result.log"
