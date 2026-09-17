@@ -1,0 +1,28 @@
+name: UniConnect · conexiones móviles Linux
+
+on:
+  push:
+    branches: [uniconnect, 'desarrollo/**']
+    paths:
+      - 'linux/uniconnect/mobile_*.py'
+      - 'linux/tests/test_mobile*.py'
+      - '.github/workflows/uniconnect-mobile-connections.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  connections:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Dependencias del transporte aislado
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-cryptography iptables
+      - name: Dos móviles, cupo, silencio y peer que desaparece sin cerrar TCP
+        run: sudo env UC_TEST_TCP_BLACKHOLE=1 /usr/bin/python3 -m unittest discover -s linux/tests -p 'test_mobile_connections.py' -v
+      - name: Privacidad y limpieza de streams existentes
+        run: /usr/bin/python3 -m unittest discover -s linux/tests -p 'test_mobile_pty_host.py' -v
