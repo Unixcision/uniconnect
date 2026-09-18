@@ -588,6 +588,7 @@ final class MobileHostService {
     private func bindReadyCandidate(on endpointPort: NWEndpoint.Port, generation: UUID) async -> (listener: NWListener, generation: UUID)? {
         let tcpOptions = NWProtocolTCP.Options()
         tcpOptions.noDelay = true
+        Self.keepConnectionsHonest(tcpOptions)
         let candidate: NWListener
         do {
             let parameters = try tailnetListenerParameters(tcpOptions: tcpOptions, port: endpointPort)
@@ -734,6 +735,7 @@ final class MobileHostService {
         do {
             let tcpOptions = NWProtocolTCP.Options()
             tcpOptions.noDelay = true
+            Self.keepConnectionsHonest(tcpOptions)
             let parameters = NWParameters(tls: nil, tcp: tcpOptions)
             // Sin esto, el puerto fijo queda en TIME_WAIT unos segundos después de cerrar la app y
             // el siguiente arranque no puede volver a cogerlo: cae al puerto efímero y **todos los
@@ -796,6 +798,28 @@ final class MobileHostService {
         }
         parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(address), port: endpointPort)
         return try NWListener(using: parameters)
+    }
+
+    /// Makes a dead connection look dead, instead of looking like a quiet one.
+    ///
+    /// Without this a socket only fails when something is finally written to it, which on a phone
+    /// means: the carrier drops an idle connection over 5G, or Android freezes the app in the
+    /// background, and the Mac keeps the client registered while the phone shows a screen that is
+    /// no longer live. The person types, cannot send, and nothing explains why — the pane looks
+    /// perfectly fine because it is the last frame that arrived.
+    ///
+    /// Keepalive turns that silence into an answer: unanswered probes close the connection, the
+    /// slot is released here, and the phone learns it has to reconnect. The same gap was measured
+    /// and fixed on the Linux host; this is its counterpart.
+    private static func keepConnectionsHonest(_ options: NWProtocolTCP.Options) {
+        options.enableKeepalive = true
+        // Un móvil ocioso es lo normal, no una anomalía: se sondea con holgura y se decide rápido
+        // cuando ya no contesta.
+        options.keepaliveIdle = 30
+        options.keepaliveInterval = 10
+        options.keepaliveCount = 3
+        // Con esto un envío pendiente deja de esperar indefinidamente a un extremo inalcanzable.
+        options.connectionDropTime = 60
     }
 
     private func tailnetListenerParameters(tcpOptions: NWProtocolTCP.Options, port: NWEndpoint.Port) throws -> NWParameters {

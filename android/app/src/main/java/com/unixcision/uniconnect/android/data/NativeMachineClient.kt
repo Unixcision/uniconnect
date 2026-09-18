@@ -231,8 +231,16 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
     }
 
     override suspend fun probe(machine: Machine): MachineSnapshot =
-        // A short deadline keeps the list responsive when a machine is off; no events, no streams.
-        transportDeadline(6_000) {
+        // Tiene que ser mayor que lo que tarda **abrir**: `open` se permite 15 s y el socket 7 s
+        // para el apretón de manos. Con 6 s aquí, el sondeo se rendía antes de que la conexión
+        // llegara a existir — en wifi no se nota porque abre en milisegundos, y por datos móviles,
+        // donde Tailscale puede tirar por relé, fallaba **siempre**. Después la máquina quedaba
+        // marcada como desconectada y todo lo demás fallaba sin decir por qué, incluido el bucle
+        // de reintentos que repetía el mismo plazo imposible.
+        //
+        // La lista no se resiente: los sondeos salen en paralelo (uno por máquina), así que una
+        // que esté apagada ya no retrasa a las demás por mucho que agote su plazo.
+        transportDeadline(20_000) {
             rpc.open(machine.endpoint).use { session ->
                 decodeMachine(machine, session.call("mobile.workspace.list", JSONObject()).value.getJSONObject("result"))
             }

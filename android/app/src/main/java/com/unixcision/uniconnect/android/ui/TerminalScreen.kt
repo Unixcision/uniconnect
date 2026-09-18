@@ -209,7 +209,11 @@ private fun RealTerminalScreen(
             }
             if (aviso != null) Text(stringResource(aviso), Modifier.weight(1f), color = UniTheme.colors.warning, style = MaterialTheme.typography.bodySmall)
             else Spacer(Modifier.weight(1f))
-            Button(onClick = onReconnect, enabled = connected, shape = UniTheme.shapes.button, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+            // Habilitado **sobre todo** cuando no hay conexión, que es cuando hace falta: exigir
+            // `connected` para poder reconectar dejaba un callejón sin salida —un aviso que dice
+            // «reconecta» junto a un botón de reconectar apagado—. La petición abre su propio
+            // socket, así que no depende de la conexión que se perdió.
+            Button(onClick = onReconnect, enabled = !real.connecting, shape = UniTheme.shapes.button, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
                 Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.real_terminal_reconnect))
             }
         }
