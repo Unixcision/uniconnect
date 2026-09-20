@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.ConnectionEvent
+import com.unixcision.uniconnect.android.domain.CrashReport
 import com.unixcision.uniconnect.android.domain.DiagnosticEnvironment
 import com.unixcision.uniconnect.android.domain.DiagnosticReport
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
@@ -33,13 +34,15 @@ import com.unixcision.uniconnect.android.ui.theme.UniTheme
  */
 @Composable
 fun DiagnosticDialog(
-    environment: DiagnosticEnvironment,
+    environment: DiagnosticEnvironment?,
     events: List<ConnectionEvent>,
+    crashes: List<CrashReport> = emptyList(),
     onShare: () -> Unit,
     onSend: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
-    val report = DiagnosticReport.render(environment, events)
+    // Se arma fuera de cualquier lectura del sistema: aquí ya está todo leído.
+    val report = DiagnosticReport.render(environment, events, crashes = crashes)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.diagnostics_title)) },
@@ -49,7 +52,7 @@ fun DiagnosticDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
-                    DiagnosticReport.headline(events),
+                    DiagnosticReport.headline(events, crashes),
                     style = MaterialTheme.typography.bodyMedium,
                     color = UniTheme.colors.warning,
                 )

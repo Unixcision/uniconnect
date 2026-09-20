@@ -38,26 +38,43 @@ object DiagnosticReport {
         return format.format(Date(at))
     }
 
-    /** El informe completo, listo para compartir. */
+    /**
+     * El informe completo, listo para compartir.
+     *
+     * `environment` admite nulo a propósito: si el sistema no dejó leer nada, el informe sale igual
+     * con lo que sí se sabe. Un informe incompleto sirve; uno que no se puede abrir, no.
+     */
     fun render(
-        environment: DiagnosticEnvironment,
+        environment: DiagnosticEnvironment?,
         events: List<ConnectionEvent>,
         now: Long = System.currentTimeMillis(),
+        crashes: List<CrashReport> = emptyList(),
     ): String = buildString {
         appendLine("UniConnect · informe de conexión")
         appendLine("generado: ${stamp(now)} (${TimeZone.getDefault().id})")
         appendLine()
-        appendLine("App        ${environment.appVersion} (${environment.appBuild})")
-        appendLine("Dispositivo ${environment.deviceModel} · Android ${environment.androidRelease} (API ${environment.sdkInt})")
-        appendLine("Red        ${environment.network}${environment.networkOperator?.let { " · $it" }.orEmpty()}")
-        environment.tailscaleAddress?.let { appendLine("Tailscale  $it") }
-        environment.batterySaver?.let { appendLine("Ahorro de batería: ${if (it) "activado" else "desactivado"}") }
-        environment.backgroundRestricted?.let {
-            // Importa: con esto activado Android corta la app en segundo plano y las conexiones
-            // mueren sin que la app tenga nada que ver.
-            appendLine("Uso en segundo plano restringido: ${if (it) "SÍ" else "no"}")
+        if (environment == null) appendLine("(no se pudo leer el entorno del móvil)")
+        else {
+            appendLine("App        ${environment.appVersion} (${environment.appBuild})")
+            appendLine("Dispositivo ${environment.deviceModel} · Android ${environment.androidRelease} (API ${environment.sdkInt})")
+            appendLine("Red        ${environment.network}${environment.networkOperator?.let { " · $it" }.orEmpty()}")
+            environment.tailscaleAddress?.let { appendLine("Tailscale  $it") }
+            environment.batterySaver?.let { appendLine("Ahorro de batería: ${if (it) "activado" else "desactivado"}") }
+            environment.backgroundRestricted?.let {
+                // Importa: con esto activado Android corta la app en segundo plano y las conexiones
+                // mueren sin que la app tenga nada que ver.
+                appendLine("Uso en segundo plano restringido: ${if (it) "SÍ" else "no"}")
+            }
         }
         appendLine()
+
+        // Los cierres van arriba del todo: si la app se ha muerto, eso explica el resto del
+        // informe mucho antes que cualquier intento de conexión.
+        if (crashes.isNotEmpty()) {
+            appendLine("CIERRES INESPERADOS: ${crashes.size}")
+            crashes.forEach { appendLine(it.render()) }
+            appendLine()
+        }
 
         val failures = events.count { it.outcome != ConnectionEvent.Outcome.OK }
         appendLine("Intentos registrados: ${events.size} · fallidos: $failures")
@@ -83,7 +100,9 @@ object DiagnosticReport {
     }
 
     /** Un resumen de una línea, para el propio modal y para el asunto del envío. */
-    fun headline(events: List<ConnectionEvent>): String {
+    fun headline(events: List<ConnectionEvent>, crashes: List<CrashReport> = emptyList()): String {
+        // Un cierre manda sobre cualquier fallo de conexión: es lo más grave que hay que contar.
+        crashes.firstOrNull()?.let { return "la app se cerró sola · ${it.summary.substringAfterLast('.')}" }
         val last = events.lastOrNull { it.outcome != ConnectionEvent.Outcome.OK }
             ?: return "Sin fallos registrados"
         return "${last.stage}: ${last.outcome.name.lowercase()}" +

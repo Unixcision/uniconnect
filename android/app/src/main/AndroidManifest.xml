@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <!-- Leer qué red hay es lo que distingue «por wifi va y con datos no». Sin declararlo,
+         ConnectivityManager lanza SecurityException y se lleva por delante la app entera. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Dictation into the composer; asked for in context the first time the microphone is tapped. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Android 11+ hides other packages: the system speech recogniser must be declared to be seen. -->

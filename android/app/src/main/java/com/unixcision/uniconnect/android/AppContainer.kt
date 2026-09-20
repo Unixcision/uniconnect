@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.unixcision.uniconnect.android.data.AndroidDiagnostics
+import com.unixcision.uniconnect.android.data.CrashVault
 import com.unixcision.uniconnect.android.data.FileConnectionDiaryStore
 import com.unixcision.uniconnect.android.data.NativeMachineClient
 import com.unixcision.uniconnect.android.data.FramedRpcClient
@@ -62,6 +63,11 @@ class AppContainer(context: Context) {
     /** Lo que se contará cuando falle una conexión. Ver ``ConnectionDiary``. */
     val diagnostics = AndroidDiagnostics(context)
     val connectionDiary = ConnectionDiary(store = FileConnectionDiaryStore(context))
+    /** Los cierres inesperados, guardados en el propio móvil. Ver ``CrashVault``. */
+    val crashVault = CrashVault(
+        file = java.io.File(context.filesDir, "cierres.json"),
+        appVersion = { diagnostics.environment().let { "${it.appVersion} (${it.appBuild})" } },
+    )
     val machineClient: MachineClient = NativeMachineClient(rpc, connectionDiary, diagnostics::describeNetwork)
     val notificationConnections = AndroidNotificationConnections(context, store, ioScope)
     val noticeDeliveries: NoticeDeliveryRepository = StoredNoticeDeliveryRepository(store)

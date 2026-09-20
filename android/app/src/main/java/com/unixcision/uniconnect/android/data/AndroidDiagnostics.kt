@@ -9,6 +9,7 @@ import android.os.PowerManager
 import android.app.ActivityManager
 import androidx.core.content.FileProvider
 import com.unixcision.uniconnect.android.domain.ConnectionEvent
+import com.unixcision.uniconnect.android.domain.CrashReport
 import com.unixcision.uniconnect.android.domain.DiagnosticEnvironment
 import com.unixcision.uniconnect.android.domain.DiagnosticReport
 import java.io.File
@@ -23,12 +24,21 @@ import java.io.File
  */
 class AndroidDiagnostics(private val context: Context) {
 
+    /**
+     * Lo que se sabe del móvil, sin que ninguna lectura pueda tumbar nada.
+     *
+     * Cada dato va envuelto porque **este código ya mató la app una vez**: `describeNetwork` lanzó
+     * `SecurityException` por un permiso sin declarar, se llamaba desde la composición, y el botón
+     * de diagnóstico —lo único que había para explicar un fallo— se convirtió en el fallo. Un
+     * diagnóstico que revienta es peor que no tener diagnóstico: un dato que no se puede leer se
+     * cuenta como desconocido y el informe sale igual.
+     */
     fun environment(): DiagnosticEnvironment {
         val packageInfo = runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0)
         }.getOrNull()
-        val power = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
-        val activity = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        val power = runCatching { context.getSystemService(Context.POWER_SERVICE) as? PowerManager }.getOrNull()
+        val activity = runCatching { context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager }.getOrNull()
         return DiagnosticEnvironment(
             appVersion = packageInfo?.versionName ?: "desconocida",
             appBuild = packageInfo?.let {
@@ -40,12 +50,12 @@ class AndroidDiagnostics(private val context: Context) {
             deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
             network = describeNetwork(),
             networkOperator = operatorName(),
-            batterySaver = power?.isPowerSaveMode,
+            batterySaver = runCatching { power?.isPowerSaveMode }.getOrNull(),
             // Con esto activado Android corta la app en segundo plano y las conexiones mueren sin
             // que la app tenga arte ni parte. Sin el dato, ese fallo se busca donde no está.
-            backgroundRestricted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                activity?.isBackgroundRestricted
-            } else null,
+            backgroundRestricted = runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) activity?.isBackgroundRestricted else null
+            }.getOrNull(),
         )
     }
 
@@ -56,7 +66,9 @@ class AndroidDiagnostics(private val context: Context) {
      * al generarse: el fallo que se quiere explicar es precisamente «por wifi va, con datos no»,
      * y eso no se ve si todos los intentos comparten la red del momento de mirar el informe.
      */
-    fun describeNetwork(): String {
+    fun describeNetwork(): String = runCatching { readNetwork() }.getOrElse { "desconocida (${it::class.java.simpleName})" }
+
+    private fun readNetwork(): String {
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             ?: return "desconocida"
         val capabilities = manager.getNetworkCapabilities(manager.activeNetwork)
@@ -89,12 +101,12 @@ class AndroidDiagnostics(private val context: Context) {
     }.getOrNull()
 
     /** Escribe el informe en la caché de la app y devuelve algo que se pueda compartir. */
-    fun writeReport(events: List<ConnectionEvent>): File {
+    fun writeReport(events: List<ConnectionEvent>, crashes: List<CrashReport> = emptyList()): File {
         val folder = File(context.cacheDir, "diagnostico").apply { mkdirs() }
         // Se limpia lo viejo: el diagnóstico no debe convertirse él mismo en un problema de espacio.
         folder.listFiles()?.sortedBy { it.lastModified() }?.dropLast(4)?.forEach { it.delete() }
         val file = File(folder, DiagnosticReport.fileName())
-        file.writeText(DiagnosticReport.render(environment(), events))
+        file.writeText(DiagnosticReport.render(runCatching { environment() }.getOrNull(), events, crashes = crashes))
         return file
     }
 
@@ -105,13 +117,13 @@ class AndroidDiagnostics(private val context: Context) {
      * para pegarlo en un chat sin abrir nada. Compartir funciona sin conexión, que es justo cuando
      * este informe hace falta.
      */
-    fun share(events: List<ConnectionEvent>) {
-        val file = writeReport(events)
+    fun share(events: List<ConnectionEvent>, crashes: List<CrashReport> = emptyList()) {
+        val file = writeReport(events, crashes)
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
         val send = Intent(Intent.ACTION_SEND)
             .setType("text/plain")
             .putExtra(Intent.EXTRA_STREAM, uri)
-            .putExtra(Intent.EXTRA_SUBJECT, "UniConnect · ${DiagnosticReport.headline(events)}")
+            .putExtra(Intent.EXTRA_SUBJECT, "UniConnect · ${DiagnosticReport.headline(events, crashes)}")
             .putExtra(Intent.EXTRA_TEXT, file.readText().take(60_000))
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         context.startActivity(

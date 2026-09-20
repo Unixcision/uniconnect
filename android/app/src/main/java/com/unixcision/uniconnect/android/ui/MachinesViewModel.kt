@@ -12,6 +12,8 @@ import com.unixcision.uniconnect.android.domain.RelaunchScope
 import com.unixcision.uniconnect.android.domain.MachineFailure
 import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.data.AndroidDiagnostics
+import com.unixcision.uniconnect.android.data.CrashVault
+import com.unixcision.uniconnect.android.domain.CrashReport
 import com.unixcision.uniconnect.android.domain.ConnectionDiary
 import com.unixcision.uniconnect.android.domain.ConnectionEvent
 import com.unixcision.uniconnect.android.domain.DiagnosticEnvironment
@@ -70,6 +72,8 @@ class MachinesViewModel(
     /** Lo ocurrido con las conexiones y cómo contarlo. Nulo solo en pruebas que no lo usan. */
     private val diary: ConnectionDiary? = null,
     private val diagnostics: AndroidDiagnostics? = null,
+    /** Los cierres inesperados guardados en el móvil. Ver ``CrashVault``. */
+    private val crashVault: CrashVault? = null,
 ) : ViewModel() {
     data class Connection(val checking: Boolean = false, val connected: Boolean = false, val snapshot: MachineSnapshot? = null, val error: Int? = null)
     /** A phone-sized tmux client attached to the selected window; the emulator lives in the model. */
@@ -119,6 +123,16 @@ class MachinesViewModel(
          * botón no existía.
          */
         val connectionTroubled: Boolean = false,
+        /**
+         * El entorno del móvil, leído **al abrir** el informe.
+         *
+         * No se lee desde la composición: leerlo ahí fue lo que cerró la app —una lectura del
+         * sistema lanzó `SecurityException` en pleno dibujado y se llevó la interfaz entera—.
+         * Aquí llega ya leído, y nulo si no se pudo leer.
+         */
+        val diagnosticEnvironment: DiagnosticEnvironment? = null,
+        /** Cierres inesperados que quedaron apuntados de arranques anteriores. */
+        val crashes: List<CrashReport> = emptyList(),
         val notificationLinks: Map<String, NotificationLinkState> = emptyMap(),
         val realTerminal: RealTerminal? = null,
         /** Machines whose host has no attach RPC yet; the mirror is used without asking again. */
@@ -147,6 +161,12 @@ class MachinesViewModel(
                 }
         }
         viewModelScope.launch { notificationControl.states.collect { links -> mutableState.update { it.copy(notificationLinks = links) } } }
+        crashVault?.let { baul ->
+            // Se leen una vez al arrancar: si la app se cerró sola, hay que poder contarlo aunque
+            // nadie esté mirando ninguna conexión.
+            val guardados = baul.pending()
+            if (guardados.isNotEmpty()) mutableState.update { it.copy(crashes = guardados) }
+        }
         diary?.let { registro ->
             viewModelScope.launch {
                 registro.changes.collect { mutableState.update { it.copy(connectionTroubled = registro.worthReporting()) } }
@@ -344,21 +364,37 @@ class MachinesViewModel(
         startObserving(machine, force = true)
     }
 
-    /** Abre o cierra el informe de conexión. */
+    /**
+     * Abre o cierra el informe de conexión.
+     *
+     * El entorno se lee aquí, en respuesta a una pulsación, y no mientras se dibuja: una lectura
+     * del sistema que falle tiene que estropear el informe, no la app.
+     */
     fun showDiagnostics(visible: Boolean) {
-        mutableState.update { it.copy(diagnosticsOpen = visible) }
+        val entorno = if (visible) runCatching { diagnostics?.environment() }.getOrNull() else null
+        mutableState.update { it.copy(diagnosticsOpen = visible, diagnosticEnvironment = entorno) }
     }
 
     /** Lo apuntado hasta ahora, para el informe. */
     fun connectionEvents(): List<ConnectionEvent> = diary?.all().orEmpty()
 
-    /** El entorno del móvil, para que el informe no tenga que preguntar nada. */
-    fun diagnosticEnvironment(): DiagnosticEnvironment? = diagnostics?.environment()
 
 
     /** Saca el informe por el menú de compartir. Funciona sin conexión, que es cuando hace falta. */
     fun shareDiagnostics() {
-        diagnostics?.share(connectionEvents())
+        runCatching { diagnostics?.share(connectionEvents(), state.value.crashes) }
+    }
+
+    /**
+     * Da los cierres por contados.
+     *
+     * Se llama al cerrar el informe: el aviso ha cumplido su función. El fichero se borra para que
+     * un cierre de hace tres días no siga pidiendo atención como si acabara de pasar.
+     */
+    fun forgetCrashes() {
+        if (state.value.crashes.isEmpty()) return
+        crashVault?.clear()
+        mutableState.update { it.copy(crashes = emptyList()) }
     }
 
     fun dismissCreate() { if (!state.value.creating) mutableState.update { it.copy(creation = null, creationError = null) } }

@@ -122,7 +122,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                         // El bicho solo aparece cuando hay algo que contar: varios fallos
                         // seguidos, no el parpadeo normal de una reconexión. Un icono de alarma
                         // permanente enseña a ignorarlo.
-                        if (state.connectionTroubled) {
+                        if (state.connectionTroubled || state.crashes.isNotEmpty()) {
                             IconButton(onClick = { model.showDiagnostics(true) }) {
                                 Icon(
                                     Icons.Rounded.BugReport,
@@ -232,18 +232,21 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
             }
         }
     }
+    // Sin `?.let`: el informe se abre siempre. Antes dependía de poder leer el entorno, así que
+    // un dato ilegible dejaba el botón sin hacer nada —o peor, tiraba la app al leerlo aquí en
+    // pleno dibujado—. Lo que no se pueda leer sale como desconocido y el resto del informe se
+    // enseña igual.
     if (state.diagnosticsOpen) {
-        model.diagnosticEnvironment()?.let { entorno ->
-            DiagnosticDialog(
-                environment = entorno,
-                events = model.connectionEvents(),
-                onShare = { model.shareDiagnostics(); model.showDiagnostics(false) },
-                // Enviar al equipo se ofrecerá cuando haya a dónde; compartir siempre funciona,
-                // y este informe nace justamente de no haber conexión.
-                onSend = null,
-                onDismiss = { model.showDiagnostics(false) },
-            )
-        }
+        DiagnosticDialog(
+            environment = state.diagnosticEnvironment,
+            events = model.connectionEvents(),
+            crashes = state.crashes,
+            onShare = { model.shareDiagnostics(); model.showDiagnostics(false) },
+            // Enviar al equipo se ofrecerá cuando haya a dónde; compartir siempre funciona,
+            // y este informe nace justamente de no haber conexión.
+            onSend = null,
+            onDismiss = { model.forgetCrashes(); model.showDiagnostics(false) },
+        )
     }
     state.relaunch?.let { relaunch ->
         RelaunchDialog(relaunch, onConfirm = model::confirmRelaunch, onDismiss = model::dismissRelaunch)
