@@ -2,6 +2,7 @@ package com.unixcision.uniconnect.android.data
 
 import com.unixcision.uniconnect.android.domain.*
 import java.util.UUID
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -12,7 +13,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** The host approves the observed peer IP. This client never sends SSH secrets or creates on attach. */
-class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
+class NativeMachineClient(
+    private val rpc: FramedRpcClient,
+    /** Apunta cómo acaba cada intento, para poder contarlo después. Ver ``ConnectionDiary``. */
+    private val diary: ConnectionDiary = ConnectionDiary(),
+) : MachineClient {
     private val decoder = TerminalFrameDecoder()
 
     override fun observe(machine: Machine, terminal: TerminalTarget?): Flow<MachineUpdate> = flow {
@@ -230,6 +235,52 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
         require(result.getString("surface_id").equals(windowID, ignoreCase = true))
     }
 
+    /**
+     * Ejecuta un intento y deja constancia de cómo acabó.
+     *
+     * El sondeo es el que decide si una máquina cuenta como conectada, así que es el que hay que
+     * poder explicar: sin esto, un fallo aquí se manifestaba como «no conectado» en toda la app y
+     * no quedaba rastro de si fue un rechazo, un plazo agotado o un socket que no llegó a abrirse.
+     */
+    private suspend fun <T> recording(stage: String, machine: Machine, block: suspend () -> T): T {
+        val started = System.currentTimeMillis()
+        fun note(outcome: ConnectionEvent.Outcome, detail: String?) = diary.record(
+            ConnectionEvent(
+                at = started, stage = stage, machine = machine.name,
+                endpoint = "${machine.endpoint.host}:${machine.endpoint.port}",
+                outcome = outcome, millis = System.currentTimeMillis() - started, detail = detail,
+            )
+        )
+        return try {
+            block().also { note(ConnectionEvent.Outcome.OK, null) }
+        } catch (cancelled: CancellationException) {
+            note(ConnectionEvent.Outcome.CANCELADO, null); throw cancelled
+        } catch (failure: Throwable) {
+            note(
+                when (failure) {
+                    is MachineFailure.DeadlineExceeded -> ConnectionEvent.Outcome.PLAZO_AGOTADO
+                    is MachineFailure.Rejected -> ConnectionEvent.Outcome.RECHAZADO
+                    else -> ConnectionEvent.Outcome.ERROR_TRANSPORTE
+                },
+                when (failure) {
+                    is MachineFailure.Rejected ->
+                        failure.code + (failure.detail?.let { ": $it" }.orEmpty())
+                    // El nombre de la excepción es el dato: distingue un socket rechazado de uno
+                    // que nunca llegó a abrirse.
+                    else -> failure::class.java.simpleName +
+                        (failure.message?.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty())
+                },
+            )
+            throw failure
+        }
+    }
+
+    /** Todo lo apuntado, para el informe de diagnóstico. */
+    fun connectionHistory(): List<ConnectionEvent> = diary.all()
+
+    /** Si conviene ofrecer el diagnóstico sin que lo pidan. */
+    fun troubled(): Boolean = diary.worthReporting()
+
     override suspend fun probe(machine: Machine): MachineSnapshot =
         // Tiene que ser mayor que lo que tarda **abrir**: `open` se permite 15 s y el socket 7 s
         // para el apretón de manos. Con 6 s aquí, el sondeo se rendía antes de que la conexión
@@ -240,11 +291,11 @@ class NativeMachineClient(private val rpc: FramedRpcClient) : MachineClient {
         //
         // La lista no se resiente: los sondeos salen en paralelo (uno por máquina), así que una
         // que esté apagada ya no retrasa a las demás por mucho que agote su plazo.
-        transportDeadline(20_000) {
+        recording("sondeo", machine) { transportDeadline(20_000) {
             rpc.open(machine.endpoint).use { session ->
                 decodeMachine(machine, session.call("mobile.workspace.list", JSONObject()).value.getJSONObject("result"))
             }
-        }
+        } }
 
     override suspend fun attach(machine: Machine, workspaceID: String, windowID: String, columns: Int, rows: Int): TerminalAttachment =
         NativeTerminalAttachment.open(rpc.open(machine.endpoint), workspaceID, windowID, columns.coerceIn(1, 1000), rows.coerceIn(1, 1000))

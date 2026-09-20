@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.ZoomOutMap
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -164,6 +165,16 @@ private fun RealTerminalScreen(
         if (alt == ModifierState.ARMED) alt = ModifierState.OFF
     }
     val ready = real.snapshot != null && !real.ended && real.error == null
+
+    // Una desconexión momentánea no es una noticia. El bucle de reconexión pone `connected` a
+    // falso en cada vuelta y lo devuelve a cierto al engancharse, así que reaccionar al instante
+    // hacía aparecer y desaparecer el aviso cada veintitantos segundos — y un cartel que parpadea
+    // enseña a ignorarlo, que es peor que no ponerlo. Se espera a que la caída se sostenga.
+    var caido by remember { mutableStateOf(false) }
+    LaunchedEffect(connected) {
+        if (connected) caido = false else { delay(6_000); caido = true }
+    }
+    val enlaceUtil = connected || !caido
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             StatusPill(stringResource(R.string.real_terminal_pill), if (ready) PillTone.Busy else PillTone.Idle)
@@ -201,10 +212,10 @@ private fun RealTerminalScreen(
         // momento, el composer se apaga y **la última pantalla sigue ahí**, perfectamente legible.
         // Se escribe, no se puede enviar, y nada explica por qué. Una pantalla que se ve bien es
         // justo lo que hace creer que la culpa es de uno.
-        if (real.ended || real.error != null || !connected) Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (real.ended || real.error != null || caido) Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             val aviso = when {
                 real.ended -> R.string.real_terminal_ended
-                !connected -> R.string.real_terminal_disconnected
+                caido -> R.string.real_terminal_disconnected
                 else -> null
             }
             if (aviso != null) Text(stringResource(aviso), Modifier.weight(1f), color = UniTheme.colors.warning, style = MaterialTheme.typography.bodySmall)
@@ -343,12 +354,12 @@ private fun RealTerminalScreen(
             }
         }
         if (keysVisible) TerminalExtraKeys(
-            ctrl = ctrl, alt = alt, onCtrl = { ctrl = it }, onAlt = { alt = it }, enabled = ready && connected,
+            ctrl = ctrl, alt = alt, onCtrl = { ctrl = it }, onAlt = { alt = it }, enabled = ready && enlaceUtil,
             onKey = { key -> onPty(TerminalKeyEncoder.encode(key, modifiers, cursorApplicationMode = real.applicationCursorKeys), false); consumeModifiers() },
             onText = { text -> onPty(TerminalKeyEncoder.encodeText(text, modifiers), false); consumeModifiers() },
         )
         TerminalComposer(
-            enabled = ready && connected, sending = sending, modifiers = modifiers, keysVisible = keysVisible,
+            enabled = ready && enlaceUtil, sending = sending, modifiers = modifiers, keysVisible = keysVisible,
             onToggleKeys = { keysVisible = !keysVisible },
             onSend = { text, withEnter, onDelivered -> onPty(text, withEnter); onDelivered(true); consumeModifiers() },
             draft = draft, onDraftChange = onDraftChange,

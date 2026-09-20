@@ -11,6 +11,10 @@ import com.unixcision.uniconnect.android.domain.RelaunchVerb
 import com.unixcision.uniconnect.android.domain.RelaunchScope
 import com.unixcision.uniconnect.android.domain.MachineFailure
 import com.unixcision.uniconnect.android.domain.Machine
+import com.unixcision.uniconnect.android.data.AndroidDiagnostics
+import com.unixcision.uniconnect.android.domain.ConnectionDiary
+import com.unixcision.uniconnect.android.domain.ConnectionEvent
+import com.unixcision.uniconnect.android.domain.DiagnosticEnvironment
 import com.unixcision.uniconnect.android.domain.MachineClient
 import com.unixcision.uniconnect.android.domain.AppSettings
 import com.unixcision.uniconnect.android.domain.MachineDraft
@@ -63,6 +67,9 @@ class MachinesViewModel(
     private val noticeNames: NoticeNameCatalog,
     private val drafts: DraftRepository,
     private val boxOverrides: BoxOverridesRepository,
+    /** Lo ocurrido con las conexiones y cómo contarlo. Nulo solo en pruebas que no lo usan. */
+    private val diary: ConnectionDiary? = null,
+    private val diagnostics: AndroidDiagnostics? = null,
 ) : ViewModel() {
     data class Connection(val checking: Boolean = false, val connected: Boolean = false, val snapshot: MachineSnapshot? = null, val error: Int? = null)
     /** A phone-sized tmux client attached to the selected window; the emulator lives in the model. */
@@ -101,6 +108,8 @@ class MachinesViewModel(
         val creation: CreationContext? = null, val creating: Boolean = false, val creationError: Int? = null,
         /** Un relanzado a la espera de que alguien lo confirme, o en marcha, o recién terminado. */
         val relaunch: RelaunchUI? = null,
+        /** El informe de conexión está abierto. */
+        val diagnosticsOpen: Boolean = false,
         val notificationLinks: Map<String, NotificationLinkState> = emptyMap(),
         val realTerminal: RealTerminal? = null,
         /** Machines whose host has no attach RPC yet; the mirror is used without asking again. */
@@ -319,6 +328,29 @@ class MachinesViewModel(
         }
         mutableState.update { it.copy(relaunch = RelaunchUI.Done(machineID, operation)) }
         startObserving(machine, force = true)
+    }
+
+    /** Abre o cierra el informe de conexión. */
+    fun showDiagnostics(visible: Boolean) {
+        mutableState.update { it.copy(diagnosticsOpen = visible) }
+    }
+
+    /** Lo apuntado hasta ahora, para el informe. */
+    fun connectionEvents(): List<ConnectionEvent> = diary?.all().orEmpty()
+
+    /** El entorno del móvil, para que el informe no tenga que preguntar nada. */
+    fun diagnosticEnvironment(): DiagnosticEnvironment? = diagnostics?.environment()
+
+    /**
+     * Si conviene ofrecer el informe sin que lo pidan.
+     *
+     * Un fallo suelto es ruido; varios seguidos son una historia que merece contarse.
+     */
+    fun connectionTroubled(): Boolean = diary?.worthReporting() ?: false
+
+    /** Saca el informe por el menú de compartir. Funciona sin conexión, que es cuando hace falta. */
+    fun shareDiagnostics() {
+        diagnostics?.share(connectionEvents())
     }
 
     fun dismissCreate() { if (!state.value.creating) mutableState.update { it.copy(creation = null, creationError = null) } }

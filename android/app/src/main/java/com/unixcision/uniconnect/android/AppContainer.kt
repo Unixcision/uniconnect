@@ -3,6 +3,7 @@ package com.unixcision.uniconnect.android
 import android.content.Context
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.preferencesDataStoreFile
+import com.unixcision.uniconnect.android.data.AndroidDiagnostics
 import com.unixcision.uniconnect.android.data.NativeMachineClient
 import com.unixcision.uniconnect.android.data.FramedRpcClient
 import com.unixcision.uniconnect.android.data.StoredMachineRepository
@@ -38,6 +39,7 @@ import com.unixcision.uniconnect.android.domain.NoticeDeliveryRepository
 import com.unixcision.uniconnect.android.domain.NoticeNameCatalog
 import com.unixcision.uniconnect.android.domain.DraftRepository
 import com.unixcision.uniconnect.android.domain.BoxOverridesRepository
+import com.unixcision.uniconnect.android.domain.ConnectionDiary
 import com.unixcision.uniconnect.android.domain.MachineClient
 import com.unixcision.uniconnect.android.domain.MachineRepository
 import com.unixcision.uniconnect.android.domain.SettingsRepository
@@ -56,7 +58,10 @@ class AppContainer(context: Context) {
     val machines: MachineRepository = StoredMachineRepository(store)
     val settings: SettingsRepository = StoredSettingsRepository(store)
     val rpc = FramedRpcClient(ioScope)
-    val machineClient: MachineClient = NativeMachineClient(rpc)
+    /** Lo que se contará cuando falle una conexión. Ver ``ConnectionDiary``. */
+    val connectionDiary = ConnectionDiary()
+    val diagnostics = AndroidDiagnostics(context)
+    val machineClient: MachineClient = NativeMachineClient(rpc, connectionDiary)
     val notificationConnections = AndroidNotificationConnections(context, store, ioScope)
     val noticeDeliveries: NoticeDeliveryRepository = StoredNoticeDeliveryRepository(store)
     val noticeNames: NoticeNameCatalog = StoredNoticeNameCatalog(store)

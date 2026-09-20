@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
             override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
                 @Suppress("UNCHECKED_CAST")
                 return when (modelClass) {
-                    MachinesViewModel::class.java -> MachinesViewModel(container.machines, container.machineClient, container.notificationConnections, container.settings, container.noticeNames, container.drafts, container.boxOverrides)
+                    MachinesViewModel::class.java -> MachinesViewModel(container.machines, container.machineClient, container.notificationConnections, container.settings, container.noticeNames, container.drafts, container.boxOverrides, container.connectionDiary, container.diagnostics)
                     UploadViewModel::class.java -> UploadViewModel(container.fileSender, container.settings, container.uploadHistory, container.contentReader)
                     AttachViewModel::class.java -> AttachViewModel(container.filePutClient, container.fileSender, container.settings, container.contentReader)
                     DictationViewModel::class.java -> DictationViewModel(container.dictation, container.hostDictation, container.localDictation, container.speechModels)

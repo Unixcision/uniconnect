@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Refresh
@@ -118,6 +119,18 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                         IconButton(onClick = { sendingFiles = true }) {
                             Icon(Icons.Rounded.CloudUpload, stringResource(R.string.upload_title), tint = UniTheme.colors.muted)
                         }
+                        // El bicho solo aparece cuando hay algo que contar: varios fallos
+                        // seguidos, no el parpadeo normal de una reconexión. Un icono de alarma
+                        // permanente enseña a ignorarlo.
+                        if (model.connectionTroubled()) {
+                            IconButton(onClick = { model.showDiagnostics(true) }) {
+                                Icon(
+                                    Icons.Rounded.BugReport,
+                                    stringResource(R.string.diagnostics_open),
+                                    tint = UniTheme.colors.warning,
+                                )
+                            }
+                        }
                         IconButton(onClick = model::showSettings) {
                             Icon(Icons.Rounded.Settings, stringResource(R.string.settings), tint = UniTheme.colors.muted)
                         }
@@ -216,6 +229,19 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                     ) { MachineList(state.machines, state.connections, model::showAdd, model::selectMachine, onUploads = { sendingFiles = true }) }
                 }
             }
+        }
+    }
+    if (state.diagnosticsOpen) {
+        model.diagnosticEnvironment()?.let { entorno ->
+            DiagnosticDialog(
+                environment = entorno,
+                events = model.connectionEvents(),
+                onShare = { model.shareDiagnostics(); model.showDiagnostics(false) },
+                // Enviar al equipo se ofrecerá cuando haya a dónde; compartir siempre funciona,
+                // y este informe nace justamente de no haber conexión.
+                onSend = null,
+                onDismiss = { model.showDiagnostics(false) },
+            )
         }
     }
     state.relaunch?.let { relaunch ->
