@@ -17,6 +17,7 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.CloseFullscreen
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowDown
 import androidx.compose.material.icons.rounded.Link
@@ -112,6 +113,8 @@ fun TerminalScreen(
     attachTarget: AttachTarget? = null,
     dictation: DictationViewModel? = null,
     transcribers: List<TranscriptionCandidate> = emptyList(),
+    /** Abre el informe de conexión. Se ofrece **aquí**, que es donde se ve el fallo. */
+    onDiagnostics: (() -> Unit)? = null,
 ) {
     var realRequested by rememberSaveable { mutableStateOf(false) }
     // Default way in: attach to the window's own tmux session. Only a host without the attach RPC,
@@ -126,7 +129,7 @@ fun TerminalScreen(
             onLeaveCopyMode = onLeaveCopyMode, onView = onView, onZoom = onZoom, onReconnect = onReconnectReal,
             draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity,
             attachments = attachments, attachTarget = attachTarget, dictation = dictation, settings = settings,
-            transcribers = transcribers,
+            transcribers = transcribers, onDiagnostics = onDiagnostics,
         )
         return
     }
@@ -141,7 +144,7 @@ fun TerminalScreen(
         onRequestReal = { columns, rows -> realRequested = true; manuallyLeft = false; onStartReal(columns, rows, false) },
         draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity,
         attachments = attachments, attachTarget = attachTarget, dictation = dictation, settings = settings,
-        transcribers = transcribers)
+        transcribers = transcribers, onDiagnostics = onDiagnostics)
 }
 
 /** The attached tmux client: the phone owns a real PTY of its own size; tmux keeps the desktop's. */
@@ -154,7 +157,7 @@ private fun RealTerminalScreen(
     onLeaveCopyMode: () -> Unit, onView: (TerminalView) -> Unit, onZoom: (Float) -> Unit, onReconnect: () -> Unit,
     draft: String, onDraftChange: (String) -> Unit, windowPinned: Boolean, onTogglePin: () -> Unit, activity: ActivityState,
     attachments: AttachViewModel?, attachTarget: AttachTarget?, dictation: DictationViewModel?, settings: AppSettings,
-    transcribers: List<TranscriptionCandidate>,
+    transcribers: List<TranscriptionCandidate>, onDiagnostics: (() -> Unit)?,
 ) {
     var keysVisible by rememberSaveable { mutableStateOf(startWithKeys) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
@@ -220,6 +223,13 @@ private fun RealTerminalScreen(
             }
             if (aviso != null) Text(stringResource(aviso), Modifier.weight(1f), color = UniTheme.colors.warning, style = MaterialTheme.typography.bodySmall)
             else Spacer(Modifier.weight(1f))
+            // El bicho vive junto al aviso, no en la lista de equipos: el fallo se sufre **aquí**,
+            // con el terminal delante, y obligar a retroceder dos pantallas para contarlo es
+            // pedirle a quien lo sufre que reproduzca el fallo en otro sitio. Y no espera a ningún
+            // umbral de fallos acumulados: si hay un aviso en pantalla, ya hay algo que contar.
+            if (onDiagnostics != null) IconButton(onClick = onDiagnostics) {
+                Icon(Icons.Rounded.BugReport, stringResource(R.string.diagnostics_open), tint = UniTheme.colors.warning)
+            }
             // Habilitado **sobre todo** cuando no hay conexión, que es cuando hace falta: exigir
             // `connected` para poder reconectar dejaba un callejón sin salida —un aviso que dice
             // «reconecta» junto a un botón de reconectar apagado—. La petición abre su propio
@@ -379,7 +389,7 @@ private fun MirrorTerminalScreen(
     attachFallbackDetail: String?, onRequestReal: (Int, Int) -> Unit, draft: String, onDraftChange: (String) -> Unit,
     windowPinned: Boolean, onTogglePin: () -> Unit, activity: ActivityState,
     attachments: AttachViewModel?, attachTarget: AttachTarget?, dictation: DictationViewModel?, settings: AppSettings,
-    transcribers: List<TranscriptionCandidate>,
+    transcribers: List<TranscriptionCandidate>, onDiagnostics: (() -> Unit)?,
 ) {
     var viewMode by rememberSaveable { mutableStateOf(TerminalView.FIT) }
     var keysVisible by rememberSaveable { mutableStateOf(false) }
@@ -401,6 +411,12 @@ private fun MirrorTerminalScreen(
             }
             // The clip: attach to this window, and paste the path or link into the composer.
             if (attachments != null && attachTarget != null) AttachButton(attachments, attachTarget, draft, onDraftChange)
+            // Mismo criterio que en el terminal real: el bicho sale cuando el fallo está delante,
+            // sin esperar a acumular nada. Estar «sin conexión» ya es motivo: esa es la pantalla
+            // desde la que se pidió poder mandar las trazas.
+            if (onDiagnostics != null && (error != null || !connected)) IconButton(onClick = onDiagnostics) {
+                Icon(Icons.Rounded.BugReport, stringResource(R.string.diagnostics_open), tint = UniTheme.colors.warning)
+            }
             IconButton(onClick = onReconnect, enabled = (connected || error != null) && !reconnecting) {
                 if (reconnecting) LoadingIndicator(Modifier.size(20.dp), color = UniTheme.colors.accent)
                 else Icon(Icons.Rounded.Sync, stringResource(R.string.terminal_reconnect), tint = UniTheme.colors.muted)

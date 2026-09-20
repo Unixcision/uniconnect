@@ -110,6 +110,15 @@ class MachinesViewModel(
         val relaunch: RelaunchUI? = null,
         /** El informe de conexión está abierto. */
         val diagnosticsOpen: Boolean = false,
+        /**
+         * Hay fallos recientes que merece la pena contar.
+         *
+         * Vive en el estado, y no en una llamada a ``connectionTroubled``, porque Compose no
+         * observa las llamadas a función: el botón de diagnóstico se evaluaba una vez y **no se
+         * volvía a dibujar nunca** aunque el diario se llenara de fallos. Se veía como que el
+         * botón no existía.
+         */
+        val connectionTroubled: Boolean = false,
         val notificationLinks: Map<String, NotificationLinkState> = emptyMap(),
         val realTerminal: RealTerminal? = null,
         /** Machines whose host has no attach RPC yet; the mirror is used without asking again. */
@@ -138,6 +147,11 @@ class MachinesViewModel(
                 }
         }
         viewModelScope.launch { notificationControl.states.collect { links -> mutableState.update { it.copy(notificationLinks = links) } } }
+        diary?.let { registro ->
+            viewModelScope.launch {
+                registro.changes.collect { mutableState.update { it.copy(connectionTroubled = registro.worthReporting()) } }
+            }
+        }
         viewModelScope.launch { settingsRepository.settings.collect { stored -> mutableState.update { it.copy(settings = stored) } } }
         // The activity is in the foreground when this model is built, so re-arming the saved links is allowed.
         notificationControl.restore()
@@ -341,12 +355,6 @@ class MachinesViewModel(
     /** El entorno del móvil, para que el informe no tenga que preguntar nada. */
     fun diagnosticEnvironment(): DiagnosticEnvironment? = diagnostics?.environment()
 
-    /**
-     * Si conviene ofrecer el informe sin que lo pidan.
-     *
-     * Un fallo suelto es ruido; varios seguidos son una historia que merece contarse.
-     */
-    fun connectionTroubled(): Boolean = diary?.worthReporting() ?: false
 
     /** Saca el informe por el menú de compartir. Funciona sin conexión, que es cuando hace falta. */
     fun shareDiagnostics() {
@@ -637,10 +645,12 @@ class MachinesViewModel(
         requests[machine.id] = viewModelScope.launch {
             var retry = 0
             var wasConnected = false
+            // Cuándo empezó el corte actual. Ver `CAIDA_VISIBLE_MILLIS`.
+            var caidaDesde: Long? = null
             while (true) {
                 try {
                     client.observe(machine, target).collect { update ->
-                        if (target == null || update is MachineUpdate.Terminal) { wasConnected = true; retry = 0 }
+                        if (target == null || update is MachineUpdate.Terminal) { wasConnected = true; retry = 0; caidaDesde = null }
                         when (update) {
                             is MachineUpdate.Workspaces -> {
                                 noticeNames.remember(machine.id, update.snapshot)
@@ -704,10 +714,30 @@ class MachinesViewModel(
                         code == "approval_required" -> R.string.approval_required
                         else -> R.string.connection_error
                     }
+                    // Un corte que se va a recuperar solo no se anuncia.
+                    //
+                    // Este es el «cada dos por tres me sale reconectar»: el latido pide el árbol
+                    // cada 15 s y, con Tailscale por relé, esa llamada falla de vez en cuando. Un
+                    // fallo suelto ponía `connected = false` en el acto —chip en «Sin conexión»,
+                    // aviso rojo, compositor apagado— y al segundo siguiente volvía. La conexión
+                    // no se había ido a ninguna parte; el reintento la recuperaba antes de que
+                    // nadie pudiera hacer nada con el aviso.
+                    //
+                    // Así que mientras el reintento sigue vivo y el corte es joven, la pantalla se
+                    // queda como estaba y solo se marca `checking`. Cuando el corte dura de verdad,
+                    // se dice, porque entonces sí hay algo que hacer. Esto **no** esconde un fallo
+                    // definitivo: `stop` se anuncia siempre y al instante.
+                    val ahora = System.currentTimeMillis()
+                    if (caidaDesde == null) caidaDesde = ahora
+                    val joven = wasConnected && !stop && ahora - (caidaDesde ?: ahora) < CAIDA_VISIBLE_MILLIS
                     mutableState.update { it.copy(
-                        connections = it.connections + (machine.id to (it.connections[machine.id] ?: Connection()).copy(checking = !stop, connected = false, error = message)),
-                        terminalLoading = false, terminalError = if (target != null) message else it.terminalError,
-                        terminalErrorDetail = if (target != null) detail else it.terminalErrorDetail,
+                        connections = it.connections + (machine.id to (it.connections[machine.id] ?: Connection()).let { previa ->
+                            if (joven) previa.copy(checking = true)
+                            else previa.copy(checking = !stop, connected = false, error = message)
+                        }),
+                        terminalLoading = false,
+                        terminalError = if (target != null && !joven) message else it.terminalError,
+                        terminalErrorDetail = if (target != null && !joven) detail else it.terminalErrorDetail,
                     ) }
                     if (stop) break
                     // Quick first retries so opening a window feels immediate; slower once it is a real outage.
@@ -1140,5 +1170,15 @@ class MachinesViewModel(
         const val COPY_MODE_SETTLE_MILLIS = 110L
         /** Retries allowed before a first connection is reported as failed. */
         const val INITIAL_ATTEMPTS = 3
+
+        /**
+         * Cuánto puede durar un corte antes de contarlo.
+         *
+         * Por debajo de esto el reintento casi siempre gana —el latido del árbol falla y a la
+         * siguiente vuelve—, así que anunciarlo solo produce un aviso que aparece y desaparece.
+         * Por encima, el corte es real y callarlo sería peor. Doce segundos cubren dos reintentos
+         * con la espera que crece (1 s, 2 s, 4 s…) sin dejar a nadie mirando una pantalla muerta.
+         */
+        const val CAIDA_VISIBLE_MILLIS = 12_000L
     }
 }

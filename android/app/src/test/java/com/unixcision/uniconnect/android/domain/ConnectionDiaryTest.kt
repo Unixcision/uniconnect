@@ -110,3 +110,54 @@ class ConnectionDiaryTest {
         assertTrue(segundo.endsWith(".txt"))
     }
 }
+
+/**
+ * El diario tenía que sobrevivir al cierre y avisar de que había cambiado.
+ *
+ * Los dos fallos que esto cubre se vieron en el móvil: el informe llegaba vacío tras reiniciar la
+ * app, y el botón que lo abre no se redibujaba nunca porque la pantalla preguntaba con una llamada
+ * a función en vez de mirar el estado.
+ */
+class ConnectionDiaryPersistenceTest {
+    private class MemoriaStore(var guardado: List<ConnectionEvent> = emptyList()) : ConnectionDiary.Store {
+        override fun load(): List<ConnectionEvent> = guardado
+        override fun save(events: List<ConnectionEvent>) { guardado = events }
+    }
+
+    private fun intento(at: Long, outcome: ConnectionEvent.Outcome) = ConnectionEvent(
+        at = at, stage = "sondeo", machine = "MINIPC", endpoint = "100.123.234.20:8765",
+        outcome = outcome, millis = 20_000,
+    )
+
+    @Test
+    fun `lo apuntado sigue ahi cuando el diario se vuelve a abrir`() {
+        val almacen = MemoriaStore()
+        ConnectionDiary(store = almacen).record(intento(1, ConnectionEvent.Outcome.PLAZO_AGOTADO))
+
+        val reabierto = ConnectionDiary(store = almacen)
+
+        assertEquals(1, reabierto.all().size)
+        assertEquals(ConnectionEvent.Outcome.PLAZO_AGOTADO, reabierto.all().single().outcome)
+    }
+
+    @Test
+    fun `cada apunte cambia la revision, que es de lo que se entera la pantalla`() {
+        val diario = ConnectionDiary()
+        val antes = diario.changes.value
+
+        diario.record(intento(1, ConnectionEvent.Outcome.RECHAZADO))
+        diario.record(intento(2, ConnectionEvent.Outcome.RECHAZADO))
+
+        assertEquals(antes + 2, diario.changes.value)
+    }
+
+    @Test
+    fun `un diario reabierto no supera su tamano maximo`() {
+        val almacen = MemoriaStore((1L..10L).map { intento(it, ConnectionEvent.Outcome.OK) })
+
+        val reabierto = ConnectionDiary(capacity = 3, store = almacen)
+
+        assertEquals(3, reabierto.all().size)
+        assertEquals(10L, reabierto.all().last().at)
+    }
+}

@@ -17,17 +17,29 @@ class NativeMachineClient(
     private val rpc: FramedRpcClient,
     /** Apunta cómo acaba cada intento, para poder contarlo después. Ver ``ConnectionDiary``. */
     private val diary: ConnectionDiary = ConnectionDiary(),
+    /** Qué red hay en el instante del apunte. `null` = no se sabe, y entonces no se inventa. */
+    private val networkNow: (() -> String?)? = null,
 ) : MachineClient {
     private val decoder = TerminalFrameDecoder()
 
-    override fun observe(machine: Machine, terminal: TerminalTarget?): Flow<MachineUpdate> = flow {
-        rpc.open(machine.endpoint).use { session ->
-            emitAll(observeSession(session, machine, terminal))
-        }
-    }.catch { failure ->
-        if (failure is org.json.JSONException || failure is IllegalArgumentException) throw MachineFailure.ProtocolMismatch()
-        throw failure
-    }.flowOn(Dispatchers.Default)
+    override fun observe(machine: Machine, terminal: TerminalTarget?): Flow<MachineUpdate> {
+        // El instante de apertura se fija por cada recogida, no por cada llamada: un flujo frío se
+        // recoge varias veces y compartir el reloj entre recogidas apuntaría duraciones inventadas.
+        var abierto = 0L
+        return flow {
+            abierto = System.currentTimeMillis()
+            rpc.open(machine.endpoint).use { session ->
+                emitAll(observeSession(session, machine, terminal))
+            }
+        }.catch { failure ->
+            // Este es el camino que se sufre **dentro** de un terminal: la pantalla se queda
+            // muerta y el compositor se apaga. Antes no se apuntaba —solo el sondeo—, así que el
+            // informe de diagnóstico llegaba vacío justo en el fallo que había que explicar.
+            noteFailure("seguir", machine, abierto, failure)
+            if (failure is org.json.JSONException || failure is IllegalArgumentException) throw MachineFailure.ProtocolMismatch()
+            throw failure
+        }.flowOn(Dispatchers.Default)
+    }
 
     internal fun observeSession(session: FramedRpcSession, machine: Machine, terminal: TerminalTarget?): Flow<MachineUpdate> = flow {
             subscribe(session, terminal)
@@ -221,7 +233,7 @@ class NativeMachineClient(
         if (!TerminalInputReceipt.accepts(TerminalTarget(workspaceID, windowID), actual, result.opt("queued") as? Boolean)) throw MachineFailure.InputNotQueued()
     }
 
-    override suspend fun reconnect(machine: Machine, workspaceID: String, windowID: String) {
+    override suspend fun reconnect(machine: Machine, workspaceID: String, windowID: String) = recording("reconectar", machine) {
         val result = call(machine, "mobile.terminal.reconnect", target(workspaceID, windowID))
         val actual = TerminalTarget(result.getString("workspace_id"), result.getString("surface_id"))
         if (!TerminalInputReceipt.accepts(TerminalTarget(workspaceID, windowID), actual, result.opt("queued") as? Boolean)) throw MachineFailure.InputNotQueued()
@@ -244,35 +256,49 @@ class NativeMachineClient(
      */
     private suspend fun <T> recording(stage: String, machine: Machine, block: suspend () -> T): T {
         val started = System.currentTimeMillis()
-        fun note(outcome: ConnectionEvent.Outcome, detail: String?) = diary.record(
+        return try {
+            block().also { note(stage, machine, started, ConnectionEvent.Outcome.OK, null) }
+        } catch (cancelled: CancellationException) {
+            note(stage, machine, started, ConnectionEvent.Outcome.CANCELADO, null); throw cancelled
+        } catch (failure: Throwable) {
+            noteFailure(stage, machine, started, failure); throw failure
+        }
+    }
+
+    /** Apunta un desenlace concreto. Nunca deduce nada que no haya pasado de verdad. */
+    private fun note(stage: String, machine: Machine, started: Long, outcome: ConnectionEvent.Outcome, detail: String?) =
+        diary.record(
             ConnectionEvent(
                 at = started, stage = stage, machine = machine.name,
                 endpoint = "${machine.endpoint.host}:${machine.endpoint.port}",
                 outcome = outcome, millis = System.currentTimeMillis() - started, detail = detail,
+                network = runCatching { networkNow?.invoke() }.getOrNull(),
             )
         )
-        return try {
-            block().also { note(ConnectionEvent.Outcome.OK, null) }
-        } catch (cancelled: CancellationException) {
-            note(ConnectionEvent.Outcome.CANCELADO, null); throw cancelled
-        } catch (failure: Throwable) {
-            note(
-                when (failure) {
-                    is MachineFailure.DeadlineExceeded -> ConnectionEvent.Outcome.PLAZO_AGOTADO
-                    is MachineFailure.Rejected -> ConnectionEvent.Outcome.RECHAZADO
-                    else -> ConnectionEvent.Outcome.ERROR_TRANSPORTE
-                },
-                when (failure) {
-                    is MachineFailure.Rejected ->
-                        failure.code + (failure.detail?.let { ": $it" }.orEmpty())
-                    // El nombre de la excepción es el dato: distingue un socket rechazado de uno
-                    // que nunca llegó a abrirse.
-                    else -> failure::class.java.simpleName +
-                        (failure.message?.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty())
-                },
-            )
-            throw failure
-        }
+
+    /**
+     * Traduce un fallo a un apunte, conservando el dato que lo distingue de los demás.
+     *
+     * Separado de ``recording`` porque los caminos largos —seguir un terminal— no caben en un
+     * bloque con principio y final: fallan a mitad del flujo, y ahí solo hay un fallo que apuntar.
+     */
+    private fun noteFailure(stage: String, machine: Machine, started: Long, failure: Throwable) {
+        if (failure is CancellationException) { note(stage, machine, started, ConnectionEvent.Outcome.CANCELADO, null); return }
+        note(
+            stage, machine, started,
+            when (failure) {
+                is MachineFailure.DeadlineExceeded -> ConnectionEvent.Outcome.PLAZO_AGOTADO
+                is MachineFailure.Rejected -> ConnectionEvent.Outcome.RECHAZADO
+                else -> ConnectionEvent.Outcome.ERROR_TRANSPORTE
+            },
+            when (failure) {
+                is MachineFailure.Rejected -> failure.code + (failure.detail?.let { ": $it" }.orEmpty())
+                // El nombre de la excepción es el dato: distingue un socket rechazado de uno
+                // que nunca llegó a abrirse.
+                else -> failure::class.java.simpleName +
+                    (failure.message?.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty())
+            },
+        )
     }
 
     /** Todo lo apuntado, para el informe de diagnóstico. */
@@ -298,7 +324,9 @@ class NativeMachineClient(
         } }
 
     override suspend fun attach(machine: Machine, workspaceID: String, windowID: String, columns: Int, rows: Int): TerminalAttachment =
-        NativeTerminalAttachment.open(rpc.open(machine.endpoint), workspaceID, windowID, columns.coerceIn(1, 1000), rows.coerceIn(1, 1000))
+        recording("adjuntar", machine) {
+            NativeTerminalAttachment.open(rpc.open(machine.endpoint), workspaceID, windowID, columns.coerceIn(1, 1000), rows.coerceIn(1, 1000))
+        }
 
     private fun decodeActivity(json: JSONObject?): RemoteActivity? = json?.let {
         RemoteActivity(ActivityState.parse(it.optString("state", "")), it.optString("source").ifEmpty { null }, it.optString("agent").ifEmpty { null },

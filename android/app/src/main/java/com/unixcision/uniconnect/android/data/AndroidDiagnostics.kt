@@ -49,7 +49,14 @@ class AndroidDiagnostics(private val context: Context) {
         )
     }
 
-    private fun describeNetwork(): String {
+    /**
+     * Qué red hay **ahora mismo**: `wifi`, `móvil`, `sin red`…
+     *
+     * Público porque cada apunte del diario lo necesita en su propio instante, no solo el informe
+     * al generarse: el fallo que se quiere explicar es precisamente «por wifi va, con datos no»,
+     * y eso no se ve si todos los intentos comparten la red del momento de mirar el informe.
+     */
+    fun describeNetwork(): String {
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             ?: return "desconocida"
         val capabilities = manager.getNetworkCapabilities(manager.activeNetwork)

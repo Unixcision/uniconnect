@@ -13,10 +13,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.ConnectionEvent
 import com.unixcision.uniconnect.android.domain.DiagnosticEnvironment
 import com.unixcision.uniconnect.android.domain.DiagnosticReport
@@ -40,7 +42,7 @@ fun DiagnosticDialog(
     val report = DiagnosticReport.render(environment, events)
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Informe de conexión") },
+        title = { Text(stringResource(R.string.diagnostics_title)) },
         text = {
             Column(
                 Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
@@ -62,14 +64,14 @@ fun DiagnosticDialog(
                 )
             }
         },
-        confirmButton = { TextButton(onClick = onShare) { Text("Compartir") } },
+        confirmButton = { TextButton(onClick = onShare) { Text(stringResource(R.string.diagnostics_share)) } },
         dismissButton = {
             Column {
                 // Enviar solo se ofrece cuando hay a dónde: un botón que falla en el momento en que
                 // se necesita es peor que no tenerlo, y este informe nace precisamente de no haber
                 // conexión. Compartir siempre funciona.
-                if (onSend != null) TextButton(onClick = onSend) { Text("Enviar al equipo") }
-                TextButton(onClick = onDismiss) { Text("Cerrar") }
+                if (onSend != null) TextButton(onClick = onSend) { Text(stringResource(R.string.diagnostics_send)) }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.diagnostics_close)) }
             }
         },
         containerColor = UniTheme.colors.surface,

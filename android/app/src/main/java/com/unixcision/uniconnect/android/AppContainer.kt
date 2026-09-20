@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.unixcision.uniconnect.android.data.AndroidDiagnostics
+import com.unixcision.uniconnect.android.data.FileConnectionDiaryStore
 import com.unixcision.uniconnect.android.data.NativeMachineClient
 import com.unixcision.uniconnect.android.data.FramedRpcClient
 import com.unixcision.uniconnect.android.data.StoredMachineRepository
@@ -59,9 +60,9 @@ class AppContainer(context: Context) {
     val settings: SettingsRepository = StoredSettingsRepository(store)
     val rpc = FramedRpcClient(ioScope)
     /** Lo que se contará cuando falle una conexión. Ver ``ConnectionDiary``. */
-    val connectionDiary = ConnectionDiary()
     val diagnostics = AndroidDiagnostics(context)
-    val machineClient: MachineClient = NativeMachineClient(rpc, connectionDiary)
+    val connectionDiary = ConnectionDiary(store = FileConnectionDiaryStore(context))
+    val machineClient: MachineClient = NativeMachineClient(rpc, connectionDiary, diagnostics::describeNetwork)
     val notificationConnections = AndroidNotificationConnections(context, store, ioScope)
     val noticeDeliveries: NoticeDeliveryRepository = StoredNoticeDeliveryRepository(store)
     val noticeNames: NoticeNameCatalog = StoredNoticeNameCatalog(store)

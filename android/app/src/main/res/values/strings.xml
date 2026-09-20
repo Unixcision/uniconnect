@@ -221,6 +221,9 @@
     <string name="box_local_only">Este equipo aún no sincroniza favoritos ni orden: se guardan solo en este móvil</string>
     <string name="diagnostics_open">Ver informe de conexión</string>
     <string name="diagnostics_title">Informe de conexión</string>
+    <string name="diagnostics_share">Compartir</string>
+    <string name="diagnostics_send">Enviar al equipo</string>
+    <string name="diagnostics_close">Cerrar</string>
     <string name="settings">Ajustes</string>
     <string name="settings_note">Todo esto es de este móvil. No cambia nada en tus máquinas.</string>
     <string name="settings_terminal">Terminal</string>

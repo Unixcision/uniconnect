@@ -122,7 +122,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                         // El bicho solo aparece cuando hay algo que contar: varios fallos
                         // seguidos, no el parpadeo normal de una reconexión. Un icono de alarma
                         // permanente enseña a ignorarlo.
-                        if (model.connectionTroubled()) {
+                        if (state.connectionTroubled) {
                             IconButton(onClick = { model.showDiagnostics(true) }) {
                                 Icon(
                                     Icons.Rounded.BugReport,
@@ -206,6 +206,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                             dictation = dictation,
                             attachTarget = if (machine != null && workspace != null && window != null) AttachTarget(machine, workspace.id, window.id, workspace.isSSH, connection?.snapshot?.putsFiles == true) else null,
                             transcribers = transcribers,
+                            onDiagnostics = { model.showDiagnostics(true) },
                         )
                     }
                     Level.MACHINE -> if (machine != null) MachineBoxesScreen(
