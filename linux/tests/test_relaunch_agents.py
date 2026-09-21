@@ -186,6 +186,13 @@ class RecoveryAndRevocationTests(unittest.TestCase):
                           "record": {"id": "window", "tmux": "fixture", "tmuxSocket": "fixture"}}
         self.proof = {"key": "pane", "generation": 1}
 
+    def test_live_target_waiting_for_account_lock_is_not_reported_offline(self):
+        clock = [0]
+        adapter = RelaunchAgents(clock=lambda: clock[0], wait=lambda delay: clock.__setitem__(0, clock[0] + 50))
+        adapter.request = lambda candidate, action, **kw: self.proof if action == "inspect" else {"state": "planificado"}
+        result = adapter.execute(self.candidate, "agent.relaunch", self.proof, str(uuid.uuid4()), lambda result: None, lambda: True)
+        self.assertEqual(result, {"state": "planificado"})
+
     def test_revocation_or_replacement_while_probe_is_pending_never_sends_start(self):
         for revoke in (True, False):
             allowed, current, calls = [True], [True], []

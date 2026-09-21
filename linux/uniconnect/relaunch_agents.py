@@ -117,18 +117,23 @@ class RelaunchAgents:
             return result
         deadline = self.clock() + 95
         previous = None
+        reachable = True
         while self.clock() < deadline and not self.stopped.is_set():
             try:
                 result = self.request(candidate, "status", expected=proof, operation_id=operation_id)
             except Exception:
+                reachable = False
                 # The target worker is independent of this SSH connection.
                 # Read the SAME journal after a cut; never submit another start.
                 self.wait(1)
                 continue
+            reachable = True
             if result != previous:
                 changed(result)
                 previous = result
             if result["state"] in ("verificado", "fallido", "omitido", "necesita_usuario"):
                 return result
             self.wait(0.5)
-        return {"state": result["state"], "cause": "host_inaccesible"}
+        # A live target may be queued behind another pane's account startup
+        # lock. Preserve its phase; a bounded UI wait is not a network failure.
+        return result if reachable else {"state": result["state"], "cause": "host_inaccesible"}

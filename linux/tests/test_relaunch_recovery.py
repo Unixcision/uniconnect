@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import select
+import signal
 import subprocess
 import sys
 import tempfile
@@ -86,6 +88,46 @@ class RecoveryRelaunchTests(unittest.TestCase):
                     entry["sessionId"] = "native"
                     manifest.write_text(json.dumps({"tmuxSocket": "fixture", "windows": [entry]}))
                     script.write_text("# reviewed recovery fixture\n")
+
+    @unittest.skipUnless(hasattr(os, 'fork'), 'requires a Linux worker')
+    def test_two_panes_serialize_startup_on_destination_and_duplicate_does_not_repeat(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); entered_r,entered_w=os.pipe(); release_r,release_w=os.pipe()
+            children=[]; original_fork=os.fork
+            def fork():
+                pid=original_fork()
+                if pid:children.append(pid)
+                return pid
+            def worker(number):
+                value=self.worker();proof={'generation':number}
+                value.request.update(expected=proof,operation_id=str(uuid.uuid4()))
+                value.paths=lambda: (root/f'{number}.lock',root/f'{number}-claim.json',root/f'{number}-journal.json')
+                value.inspect=lambda **_:proof
+                def perform(journal):
+                    os.write(entered_w,str(number).encode())
+                    if number==1:os.read(release_r,1)
+                    value.write(journal,{'state':'verificado'})
+                value.perform=perform
+                return value
+            try:
+                first,second=worker(1),worker(2)
+                with patch.object(os,'fork',side_effect=fork):
+                    self.assertEqual(first.start(),{'state':'planificado'})
+                    self.assertTrue(select.select([entered_r],[],[],5)[0]);self.assertEqual(os.read(entered_r,1),b'1')
+                    self.assertEqual(second.start(),{'state':'planificado'})
+                    self.assertFalse(select.select([entered_r],[],[],0.2)[0])
+                    os.write(release_w,b'!')
+                    self.assertTrue(select.select([entered_r],[],[],5)[0]);self.assertEqual(os.read(entered_r,1),b'2')
+                for pid in children:os.waitpid(pid,0)
+                children.clear()
+                self.assertEqual(first.start(),{'state':'verificado'})
+                self.assertEqual(second.start(),{'state':'verificado'})
+            finally:
+                for pid in children:
+                    try:os.kill(pid,signal.SIGTERM)
+                    except ProcessLookupError:pass
+                    os.waitpid(pid,0)
+                for fd in (entered_r,entered_w,release_r,release_w):os.close(fd)
 
 
 PROVIDER = r'''
