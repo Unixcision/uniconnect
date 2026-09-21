@@ -15,7 +15,6 @@ from pathlib import Path
 import re
 import select
 import shlex
-import signal
 import stat
 import subprocess
 import sys
@@ -267,16 +266,24 @@ class TargetWorker:
                   or "--yolo" in argv)
         if bypass:
             sandbox, approval = "danger-full-access", "never"
-        actual_sandbox = context.get("sandbox_policy", {}).get("type")
-        if (((not model) and not bypass) or (model and model != context.get("model"))
+        # A resume emits current settings without creating another turn_context.
+        # The old completed turn proves inactivity, not today's launch settings.
+        effective = context
+        if settings:
+            if settings.get("permission_profile") != {"type": "disabled"}:
+                raise Unavailable("no_soportado")
+            effective = {"model": settings.get("model"), "effort": settings.get("reasoning_effort"),
+                         "cwd": settings.get("cwd"), "approval_policy": settings.get("approval_policy"),
+                         "sandbox_policy": {"type": "danger-full-access"}}
+        actual_sandbox = effective.get("sandbox_policy", {}).get("type")
+        if (((not model) and not bypass) or (model and model != effective.get("model"))
                 or not sandbox or not approval
-                or sandbox != actual_sandbox or approval != context.get("approval_policy")
-                or context.get("cwd") != process["cwd"]):
+                or sandbox != actual_sandbox or approval != effective.get("approval_policy")
+                or effective.get("cwd") != process["cwd"]):
             raise Unavailable("no_soportado")
-        if context.get("effort") != effort or (settings and settings.get("reasoning_effort") != effort):
+        if effective.get("effort") != effort and not (effort is None and settings):
             raise Unavailable("no_soportado")
-        if settings and (settings.get("model") != model or settings.get("approval_policy") != approval
-                         or settings.get("cwd") != process["cwd"]):
+        if settings and (not isinstance(settings.get("model"), str) or not settings["model"]):
             raise Unavailable("no_soportado")
         # Expanded writable roots and profile changes cannot be reconstructed
         # safely from just the three CLI flags. Reject, don't widen permissions.
@@ -381,11 +388,12 @@ class TargetWorker:
         process = matches[0]
         effective = self.native_id(provider, process, hook, pane)
         self.quiescent_configuration(provider, process, effective, hook)
-        # The root must remain as an interactive shell after its agent exits.
-        # Supervisors/custom shell scripts can restart independently: excluded.
+        launcher = None
+        # Only the exact bundled recovery launcher has a known wait/restart
+        # protocol. All other supervisors remain excluded.
         if Path(root["argv"][0]).name.lstrip("-") not in ("bash", "zsh", "sh"):
-            raise Unavailable("no_soportado")
-        if any(arg not in ("-l", "-i", "--login", "--noprofile", "--norc") for arg in root["argv"][1:]):
+            launcher = self.recovery_launcher(root, process, effective)
+        elif any(arg not in ("-l", "-i", "--login", "--noprofile", "--norc") for arg in root["argv"][1:]):
             # Only our known bootstrap ends deterministically in an interactive
             # shell. Do not stop an agent owned by a recovery/custom supervisor.
             if not (len(root["argv"]) == 3 and root["argv"][1] == "-lc"
@@ -397,9 +405,48 @@ class TargetWorker:
         proof = {"key": "linux:" + self.digest(pane) + "|gen:" + str(generation), "generation": generation,
                  "pane": pane, "pid": process["pid"], "start": process["start"], "effective_id": effective,
                  "configuration": self.digest({"cwd": process["cwd"], "argv": resume})}
+        if launcher:
+            proof["launcher"] = launcher
         if runtime:
             return proof, root, process, resume
         return proof
+
+    def recovery_launcher(self, root, process, effective):
+        """Recognize code and manifest; never execute a supervisor to probe it."""
+        args = root["argv"]
+        if (self.request.get("provider") != "codex" or len(args) != 6
+                or Path(args[0]).name not in ("python", "python3")
+                or args[2] != "--manifest" or args[4:] != ["launch", self.request["session"]]):
+            raise Unavailable("no_soportado")
+        expected = self.request.get("recovery_sha256")
+        if not isinstance(expected, str) or not re.fullmatch(r"[a-f0-9]{64}", expected):
+            raise Unavailable("no_soportado")
+        descriptor = os.open(args[1], os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(descriptor, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+                    or info.st_mode & 0o022 or info.st_size > 262144):
+                raise Unavailable("sin_autoridad")
+            if hashlib.sha256(handle.read()).hexdigest() != expected:
+                raise Unavailable("no_soportado")
+        data = self.read(Path(args[3]))
+        entries = [w for w in data.get("windows", []) if w.get("tmux") == self.request["session"]]
+        if len(entries) != 1 or data.get("tmuxSocket") != self.request["socket"]:
+            raise Unavailable("identidad_ambigua")
+        entry = entries[0]
+        if entry.get("agent") != "codex" or entry.get("sessionId") != effective or entry.get("cwd") != process["cwd"]:
+            raise Unavailable("identidad_ambigua")
+        # Match what this reviewed launcher would run with what is actually
+        # running. A stale/on-disk-only manifest is not sufficient authority.
+        command = ["resume", "-C", entry["cwd"]]
+        if entry.get("model"):
+            command += ["-m", entry["model"]]
+        if entry.get("reasoningEffort"):
+            command += ["-c", "model_reasoning_effort=" + json.dumps(entry["reasoningEffort"])]
+        command += ["--dangerously-bypass-approvals-and-sandbox", effective]
+        if command != process["argv"][1:]:
+            raise Unavailable("no_soportado")
+        return {"source": expected, "manifest": self.digest(entry), "session_id": effective}
 
     def paths(self):
         operation = self.request.get("operation_id")
@@ -472,7 +519,19 @@ class TargetWorker:
                 os.dup2(null, target)
             os.close(null)
             try:
-                self.perform(journal)
+                # Codex clients share SQLite databases. Serialize the bounded
+                # close/start transaction on the destination, across viewers,
+                # rather than starting every pane concurrently after login.
+                account = os.open(lock_path.with_name("account-startup.lock"),
+                                  os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+                try:
+                    info = os.fstat(account)
+                    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+                        raise Unavailable("sin_autoridad")
+                    fcntl.flock(account, fcntl.LOCK_EX)
+                    self.perform(journal)
+                finally:
+                    os.close(account)
             except BaseException as error:
                 if self.read(journal).get("state") == "planificado":
                     # No close was attempted. Allow a NEW confirmed plan once
@@ -490,8 +549,15 @@ class TargetWorker:
         if proof != self.request["expected"]:
             raise Unavailable("generacion_cambiada")
         self.require_empty_composer(proof)
+        if proof.get("launcher"):
+            events = TmuxOutputEvents(self.binary, self.request["session"])
+            try:
+                self.restart_recovery(proof, root, process, journal, events)
+            finally:
+                events.close()
+            return
         # pidfd binds the signal to this exact process, not a potentially reused PID.
-        if not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
+        if not hasattr(os, "pidfd_open"):
             raise Unavailable("no_soportado")
         # Capture before closing; the capsule is an anonymous sealed memory fd,
         # never a disk file, shell argument, journal or RPC result.
@@ -532,19 +598,8 @@ class TargetWorker:
             os.close(descriptor)
 
     def restart(self, proof, root, process, capsule_path, journal, events):
-        descriptor = os.pidfd_open(process["pid"])
-        try:
-            if self.inspect() != proof:
-                raise Unavailable("generacion_cambiada")
-            self.require_empty_composer(proof)
-            owned = self.descendants(process["pid"])
-            self.write(journal, {"state": "cerrando"})
-            signal.pidfd_send_signal(descriptor, signal.SIGTERM)
-            ready, _, _ = select.select([descriptor], [], [], 15)
-            if not ready:
-                raise Unavailable("dialogo_desconocido")  # Never escalate to SIGKILL.
-        finally:
-            os.close(descriptor)
+        owned = self.descendants(process["pid"])
+        self.exit_codex(proof, process, journal, events)
         deadline = self.clock() + 5
         while self.clock() < deadline:
             after = self.process(root["pid"])
@@ -589,12 +644,93 @@ class TargetWorker:
         except OSError:
             return False
 
+    def exit_codex(self, proof, process, journal, events):
+        """Submit a recognized exit command; observe death without force-killing."""
+        if self.request.get("provider") != "codex":
+            raise Unavailable("no_soportado")
+        if not hasattr(os, "pidfd_open"):
+            raise Unavailable("no_soportado")
+        descriptor = os.pidfd_open(process["pid"])
+        try:
+            if self.inspect() != proof:
+                raise Unavailable("generacion_cambiada")
+            self.require_empty_composer(proof)
+            self.write(journal, {"state": "cerrando"})
+            pane = proof["pane"]["pane"]
+            self.tmux("send-keys", "-t", pane, "-l", "--", "/exit")
+            deadline = self.clock() + 8
+            while True:
+                row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
+                lines = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
+                if row < len(lines) and lines[row].strip() == "› /exit":
+                    break
+                events.wait(deadline, self.clock)
+            if self.inspect() != proof:
+                raise Unavailable("generacion_cambiada")
+            self.tmux("send-keys", "-t", pane, "Enter")
+            ready, _, _ = select.select([descriptor], [], [], 75)
+            if not ready:
+                raise Unavailable("dialogo_desconocido")
+        finally:
+            os.close(descriptor)
+
+    def restart_recovery(self, proof, root, process, journal, events):
+        """Use the reviewed launcher's normal exit/wait path, not respawn-pane."""
+        self.exit_codex(proof, process, journal, events)
+        pane = proof["pane"]["pane"]
+        deadline = self.clock() + 10
+        while True:
+            if not self.same_process(root) or self.pane()[0] != proof["pane"]:
+                raise Unavailable("generacion_cambiada")
+            lines = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
+            if (not self.descendants(root["pid"]) and lines
+                    and lines[-1].strip() == "Sesión cerrada. Pulsa Intro para recuperar el mismo historial:"):
+                break
+            # A non-zero exit may trigger the launcher's existing retry. Do
+            # not inject Enter into a new agent or an unknown failure screen.
+            events.wait(deadline, self.clock)
+        self.recovery_launcher(root, process, proof["effective_id"])
+        self.write(journal, {"state": "reabriendo"})
+        tty = self.tmux("display-message", "-p", "-t", pane, "#{pane_tty}")
+        if not re.fullmatch(r"/dev/pts/[0-9]+", tty):
+            raise Unavailable("no_soportado")
+        # A clean Codex exit can leave raw input behind. Only repair it after
+        # proving the launcher is alone and at its exact known input prompt.
+        self.run(["stty", "sane", "-F", tty], check=True, timeout=3, capture_output=True)
+        if self.descendants(root["pid"]) or not self.same_process(root):
+            raise Unavailable("generacion_cambiada")
+        self.tmux("send-keys", "-t", pane, "C-j")
+        deadline = self.clock() + 120
+        while True:
+            try:
+                current = self.inspect()
+                if (current["pane"] == proof["pane"] and current["generation"] != proof["generation"]
+                        and current["effective_id"] == proof["effective_id"]
+                        and current["configuration"] == proof["configuration"]
+                        and current.get("launcher") == proof["launcher"]):
+                    self.require_empty_composer(current)
+                    self.write(journal, {"state": "verificado", "effective_id": proof["effective_id"]})
+                    return
+            except (Unavailable, OSError):
+                pass
+            events.wait(deadline, self.clock)
+
     def require_empty_composer(self, proof):
         """Fail closed on drafts/dialogs; never use a footer as ready evidence."""
         pane = proof["pane"]["pane"]
         row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
         lines = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
-        if row >= len(lines) or re.fullmatch(r"\s*[›❯>]\s*", lines[row]) is None:
+        empty = row < len(lines) and re.fullmatch(r"\s*[›❯>]\s*", lines[row]) is not None
+        if (not empty and self.request.get("provider") == "codex" and row < len(lines)
+                and lines[row] == "› Ask Codex to do anything"
+                and self.tmux("display-message", "-p", "-t", pane, "#{cursor_x}") == "2"):
+            styled = self.tmux("capture-pane", "-e", "-p", "-t", pane).splitlines()
+            # Dim placeholder + cursor before it, not a user draft that merely
+            # happens to contain the same words (even with cursor at Home).
+            empty = (row < len(styled) and re.fullmatch(
+                r"(?:\x1b\[[0-9;]*m)*›(?:\x1b\[[0-9;]*m)* \x1b\[2mAsk Codex to do anything(?:\x1b\[[0-9;]*m)*",
+                styled[row]) is not None)
+        if not empty:
             raise Unavailable("dialogo_desconocido")
         visible = "\n".join(lines).lower()
         if any(value in visible for value in ("do you trust", "trust this", "allow once", "allow execution",

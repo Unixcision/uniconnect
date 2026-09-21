@@ -5,6 +5,7 @@ treated as evidence that their effective conversation can be recovered safely.
 """
 
 import base64
+import hashlib
 import json
 from pathlib import Path
 import shlex
@@ -32,6 +33,8 @@ class RelaunchAgents:
         self.catalog = catalog or AgentResumeCatalog()
         self.source = Path(__file__).with_name("relaunch_worker.py").read_text()
         self.identity_helper = base64.b64encode(Path(__file__).with_name("agent_identity_hook.py").read_bytes()).decode()
+        recovery = Path(__file__).resolve().parents[1] / "scripts/recovery.py"
+        self.recovery_sha256 = hashlib.sha256(recovery.read_bytes()).hexdigest() if recovery.is_file() else None
 
     def close(self):
         # Stop observation, not the already admitted target-side close/reopen.
@@ -44,6 +47,7 @@ class RelaunchAgents:
                    "socket": record.get("tmuxSocket") or ("uniconnect" if candidate.get("connection") else "uniconnect-local"),
                    "provider": candidate["provider"], "window_id": record["id"],
                    "catalog": self.catalog.providers, **values}
+        request["recovery_sha256"] = self.recovery_sha256
         if action == "start":
             request["identity_helper"] = self.identity_helper
         payload = base64.b64encode(json.dumps(request).encode()).decode()

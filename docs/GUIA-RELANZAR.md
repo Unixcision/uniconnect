@@ -123,11 +123,30 @@ cierre automático hasta disponer de esa comprobación de ciclo de vida.
   vida propios. No se ejecuta un comando aproximado.
 - Supervisores personalizados, sesiones con múltiples paneles ambiguos, argumentos
   no reconocidos, falta de evidencia o plataforma remota no Linux: se excluyen.
-- Un supervisor externo puede relanzar por su cuenta; el adaptador no lo modifica.
+- Se admite el supervisor **recovery.py de UniConnect** cuando su código coincide
+  con la versión distribuida, su manifiesto coincide con el proceso real y apunta
+  a la conversación viva. Se usa su cierre normal y su espera de Intro, sin matar
+  ni reemplazar el panel. Si el ID del manifiesto está anticuado, se excluye: no se
+  recupera silenciosamente una conversación anterior. Otros supervisores siguen
+  excluidos.
+- Codex se cierra mediante `/exit`, después de verificar que no hay turno activo
+  ni borrador. El texto gris «Ask Codex to do anything» cuenta como cuadro vacío
+  solo con el estilo y la posición del cursor propios del placeholder; un texto
+  escrito por el usuario no se descarta por coincidir con esas palabras.
+- Tras el cierre del cliente, si el launcher conocido queda solo esperando Intro
+  con el terminal en modo raw, se restaura la entrada antes de reabrir. No se
+  envía Intro a un diálogo de Codex ni se responde a permisos o login.
+- Los cierres/reaperturas se serializan por usuario en el destino para reducir
+  bloqueos de la base de datos compartida de Codex. Una cola pendiente no equivale
+  a fallo ni permite repetir la operación: consulta su estado original.
 - Una IA cuyo cierre no termina limpiamente no recibe SIGKILL ni pulsaciones a ciegas.
 - Los argumentos explícitos se conservan; no se añade bypass de permisos. Si el
   modelo, esfuerzo, carpeta o política efectivos de Codex no coinciden con la
   configuración comprobable del lanzamiento, el objetivo se excluye antes de cerrar.
+  Los ajustes nativos registrados al reanudar prevalecen sobre la configuración
+  histórica de un turno antiguo; no es necesario mandar un mensaje nuevo para
+  reconocer la sesión recién recuperada. El turno terminado sigue comprobándose
+  por separado: un evento de ajustes no demuestra que la IA esté parada.
   También se excluyen perfiles/configuraciones que este adaptador no sabe acreditar,
   incluidos permisos de escritura con raíces ampliadas. No se cambia su configuración
   para hacerlos compatibles.

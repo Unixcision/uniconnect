@@ -263,7 +263,10 @@ int main(int argc, char **argv) {
   signal(SIGTERM, stop);
   signal(SIGUSR1, draft); signal(SIGUSR2, clear);
   printf("\033[2J\033[H› "); fflush(stdout);
-  while (!stopped) pause();
+  char input[128];
+  while (!stopped) {
+    if (fgets(input, sizeof input, stdin) && !strcmp(input, "/exit\n")) break;
+  }
   close(fd);
   return 0;
 }
