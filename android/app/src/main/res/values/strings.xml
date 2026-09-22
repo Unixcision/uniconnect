@@ -222,6 +222,9 @@
     <string name="diagnostics_open">Ver informe de conexión</string>
     <string name="diagnostics_title">Informe de conexión</string>
     <string name="diagnostics_share">Compartir</string>
+    <string name="diagnostics_copy">Copiar</string>
+    <string name="diagnostics_copied">Informe copiado</string>
+    <string name="diagnostics_share_failed">No se pudo abrir el menú de compartir. Usa Copiar.</string>
     <string name="diagnostics_send">Enviar al equipo</string>
     <string name="diagnostics_close">Cerrar</string>
     <string name="settings">Ajustes</string>
@@ -319,6 +322,7 @@
     <string name="close">Cerrar</string>
     <string name="key_enter">⏎ Intro</string>
     <string name="key_enter_desc">Intro</string>
+    <string name="key_ctrl_b_desc">Control+B, prefijo de tmux</string>
     <string name="key_ctrl_c_desc">Control C: interrumpir</string>
     <string name="key_ctrl_d_desc">Control D: fin de entrada</string>
     <string name="key_ctrl_z_desc">Control Z: suspender</string>

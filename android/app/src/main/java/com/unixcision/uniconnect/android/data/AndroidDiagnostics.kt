@@ -1,5 +1,7 @@
 package com.unixcision.uniconnect.android.data
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
@@ -117,18 +119,48 @@ class AndroidDiagnostics(private val context: Context) {
      * para pegarlo en un chat sin abrir nada. Compartir funciona sin conexión, que es justo cuando
      * este informe hace falta.
      */
-    fun share(events: List<ConnectionEvent>, crashes: List<CrashReport> = emptyList()) {
-        val file = writeReport(events, crashes)
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+    fun share(events: List<ConnectionEvent>, crashes: List<CrashReport> = emptyList()): Boolean {
+        val texto = runCatching { DiagnosticReport.render(runCatching { environment() }.getOrNull(), events, crashes = crashes) }
+            .getOrElse { return false }
         val send = Intent(Intent.ACTION_SEND)
             .setType("text/plain")
-            .putExtra(Intent.EXTRA_STREAM, uri)
             .putExtra(Intent.EXTRA_SUBJECT, "UniConnect · ${DiagnosticReport.headline(events, crashes)}")
-            .putExtra(Intent.EXTRA_TEXT, file.readText().take(60_000))
+            // El texto va **siempre**, adjunto o no: es lo que sobrevive a cualquier fallo del
+            // fichero, y lo que se puede pegar en un chat sin abrir nada.
+            .putExtra(Intent.EXTRA_TEXT, texto.take(60_000))
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        context.startActivity(
-            Intent.createChooser(send, "Compartir informe de conexión")
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
+
+        // El adjunto es una mejora, no un requisito. Antes un fallo aquí tumbaba el compartir
+        // entero y, envuelto en un `runCatching` de fuera, lo dejaba **mudo**: el botón no hacía
+        // nada y no había forma de saber por qué. Un informe que no se puede sacar del móvil no
+        // es un informe.
+        runCatching {
+            val file = writeReport(events, crashes)
+            send.putExtra(Intent.EXTRA_STREAM, FileProvider.getUriForFile(context, "${context.packageName}.files", file))
+        }
+
+        return runCatching {
+            context.startActivity(
+                Intent.createChooser(send, "Compartir informe de conexión")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            true
+        }.getOrDefault(false)
     }
+
+    /**
+     * Deja el informe en el portapapeles.
+     *
+     * Existe porque compartir depende de que haya alguna app que reciba el texto, y de que el
+     * sistema abra el selector. Copiar no depende de nada: funciona en avión, sin cuenta y sin
+     * permisos. Cuando el informe se pide **porque no hay conexión**, esa diferencia importa.
+     *
+     * - Returns: `false` si el sistema no dejó copiar; nunca lanza.
+     */
+    fun copy(events: List<ConnectionEvent>, crashes: List<CrashReport> = emptyList()): Boolean = runCatching {
+        val texto = DiagnosticReport.render(runCatching { environment() }.getOrNull(), events, crashes = crashes)
+        val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
+        manager.setPrimaryClip(ClipData.newPlainText("UniConnect · informe de conexión", texto))
+        true
+    }.getOrDefault(false)
 }

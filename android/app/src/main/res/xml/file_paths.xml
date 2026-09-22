@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Only the photos a camera app writes for "Enviar archivos"; nothing else of the app is shared. -->
 <paths>
+    <!-- Las fotos que escribe la cámara para "Enviar archivos". -->
     <cache-path name="photos" path="photos/" />
+    <!-- El informe de conexión. Sin esta línea `getUriForFile` lanza IllegalArgumentException
+         y el botón de compartir se quedaba mudo: la carpeta existía, pero no estaba declarada
+         como compartible. Nada más de la app se expone. -->
+    <cache-path name="diagnostico" path="diagnostico/" />
 </paths>

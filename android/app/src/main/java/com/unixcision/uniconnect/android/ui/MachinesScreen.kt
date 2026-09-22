@@ -241,7 +241,11 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
             environment = state.diagnosticEnvironment,
             events = model.connectionEvents(),
             crashes = state.crashes,
-            onShare = { model.shareDiagnostics(); model.showDiagnostics(false) },
+            notice = state.diagnosticsNotice,
+            onCopy = model::copyDiagnostics,
+            // No se cierra al compartir: si el selector no abre, hace falta seguir aquí para
+            // poder copiar. Cerrarlo dejaba a quien lo pulsó sin informe y sin explicación.
+            onShare = model::shareDiagnostics,
             // Enviar al equipo se ofrecerá cuando haya a dónde; compartir siempre funciona,
             // y este informe nace justamente de no haber conexión.
             onSend = null,

@@ -74,12 +74,17 @@ fun TerminalExtraKeys(
         // Third row: the control shortcuts a terminal lives on, sent as their control byte without
         // arming Ctrl first, and Enter as a wide key of its own — the one thing the bar was missing.
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // ^B es el prefijo de tmux: sin él, desde el móvil no hay forma de cambiar de ventana,
+            // soltar la sesión o entrar en modo copia — todo lo que hace falta cuando la IA de esa
+            // caja se queda pensando y hay que moverse a otra. Va como byte de control directo,
+            // así que después basta con pulsar la letra del comando en el teclado normal.
+            KeyCap("^B", stringResource(R.string.key_ctrl_b_desc), enabled, Modifier.weight(1f)) { onText("\u0002") }
             KeyCap("^C", stringResource(R.string.key_ctrl_c_desc), enabled, Modifier.weight(1f)) { onText("\u0003") }
             KeyCap("^D", stringResource(R.string.key_ctrl_d_desc), enabled, Modifier.weight(1f)) { onText("\u0004") }
             KeyCap("^Z", stringResource(R.string.key_ctrl_z_desc), enabled, Modifier.weight(1f)) { onText("\u001a") }
             KeyCap("^L", stringResource(R.string.key_ctrl_l_desc), enabled, Modifier.weight(1f)) { onText("\u000c") }
             KeyCap(stringResource(R.string.key_del), stringResource(R.string.key_delete_desc), enabled, Modifier.weight(1f)) { onKey(TerminalKey.DELETE) }
-            KeyCap(stringResource(R.string.key_enter), stringResource(R.string.key_enter_desc), enabled, Modifier.weight(2f)) { onKey(TerminalKey.ENTER) }
+            KeyCap(stringResource(R.string.key_enter), stringResource(R.string.key_enter_desc), enabled, Modifier.weight(1.6f)) { onKey(TerminalKey.ENTER) }
         }
     }
 }

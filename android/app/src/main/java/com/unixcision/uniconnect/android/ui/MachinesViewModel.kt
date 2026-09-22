@@ -133,6 +133,8 @@ class MachinesViewModel(
         val diagnosticEnvironment: DiagnosticEnvironment? = null,
         /** Cierres inesperados que quedaron apuntados de arranques anteriores. */
         val crashes: List<CrashReport> = emptyList(),
+        /** Lo que hay que decir tras copiar o compartir. Nunca se calla un fallo. */
+        val diagnosticsNotice: Int? = null,
         val notificationLinks: Map<String, NotificationLinkState> = emptyMap(),
         val realTerminal: RealTerminal? = null,
         /** Machines whose host has no attach RPC yet; the mirror is used without asking again. */
@@ -372,7 +374,7 @@ class MachinesViewModel(
      */
     fun showDiagnostics(visible: Boolean) {
         val entorno = if (visible) runCatching { diagnostics?.environment() }.getOrNull() else null
-        mutableState.update { it.copy(diagnosticsOpen = visible, diagnosticEnvironment = entorno) }
+        mutableState.update { it.copy(diagnosticsOpen = visible, diagnosticEnvironment = entorno, diagnosticsNotice = null) }
     }
 
     /** Lo apuntado hasta ahora, para el informe. */
@@ -380,9 +382,33 @@ class MachinesViewModel(
 
 
 
-    /** Saca el informe por el menú de compartir. Funciona sin conexión, que es cuando hace falta. */
+    /**
+     * Saca el informe por el menú de compartir.
+     *
+     * Dice si no pudo. La versión anterior envolvía la llamada en un `runCatching` mudo, así que
+     * cuando fallaba —y fallaba siempre, por una carpeta sin declarar en `file_paths`— el botón
+     * simplemente no hacía nada. Un botón que no hace nada ni explica por qué es peor que uno roto.
+     */
     fun shareDiagnostics() {
-        runCatching { diagnostics?.share(connectionEvents(), state.value.crashes) }
+        val ok = diagnostics?.share(connectionEvents(), state.value.crashes) ?: false
+        mutableState.update { it.copy(diagnosticsNotice = if (ok) null else R.string.diagnostics_share_failed) }
+    }
+
+    /**
+     * Copia el informe al portapapeles.
+     *
+     * El plan B que no depende de nada: ni de que haya una app que reciba el texto, ni de que el
+     * sistema abra el selector. El informe se pide justo cuando la conexión falla; poder pegarlo
+     * en cualquier sitio no puede depender de más piezas.
+     */
+    fun copyDiagnostics() {
+        val ok = diagnostics?.copy(connectionEvents(), state.value.crashes) ?: false
+        mutableState.update { it.copy(diagnosticsNotice = if (ok) R.string.diagnostics_copied else R.string.diagnostics_share_failed) }
+    }
+
+    /** Da el aviso por leído. */
+    fun clearDiagnosticsNotice() {
+        if (state.value.diagnosticsNotice != null) mutableState.update { it.copy(diagnosticsNotice = null) }
     }
 
     /**

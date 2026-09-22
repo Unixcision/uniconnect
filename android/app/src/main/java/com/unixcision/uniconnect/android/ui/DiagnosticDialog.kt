@@ -2,6 +2,7 @@ package com.unixcision.uniconnect.android.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -37,6 +38,9 @@ fun DiagnosticDialog(
     environment: DiagnosticEnvironment?,
     events: List<ConnectionEvent>,
     crashes: List<CrashReport> = emptyList(),
+    /** Qué decir tras copiar o compartir: copiado, o por qué no se pudo. */
+    notice: Int? = null,
+    onCopy: () -> Unit,
     onShare: () -> Unit,
     onSend: (() -> Unit)?,
     onDismiss: () -> Unit,
@@ -56,6 +60,11 @@ fun DiagnosticDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = UniTheme.colors.warning,
                 )
+                // El resultado se dice aquí, junto a los botones que lo produjeron. Un compartir
+                // que falla en silencio es indistinguible de un botón roto.
+                notice?.let {
+                    Text(stringResource(it), style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.accent)
+                }
                 // Monoespaciada y con desplazamiento lateral: las columnas del historial solo se
                 // leen si no se parten, y partirlas convierte una tabla en un muro.
                 Text(
@@ -67,7 +76,14 @@ fun DiagnosticDialog(
                 )
             }
         },
-        confirmButton = { TextButton(onClick = onShare) { Text(stringResource(R.string.diagnostics_share)) } },
+        // Copiar antes que compartir: no depende de que haya una app que reciba el texto ni de
+        // que el sistema abra el selector, y este informe nace de que algo no funciona.
+        confirmButton = {
+            Row {
+                TextButton(onClick = onCopy) { Text(stringResource(R.string.diagnostics_copy)) }
+                TextButton(onClick = onShare) { Text(stringResource(R.string.diagnostics_share)) }
+            }
+        },
         dismissButton = {
             Column {
                 // Enviar solo se ofrece cuando hay a dónde: un botón que falla en el momento en que
