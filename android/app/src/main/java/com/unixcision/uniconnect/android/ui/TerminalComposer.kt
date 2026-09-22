@@ -20,7 +20,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
@@ -215,6 +218,7 @@ fun TerminalComposer(
                     .padding(horizontal = 16.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                val tecladoVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
                 BasicTextField(
                     value = draft,
                     // Keyboard Enter writes a line break into the draft; only the floating button sends.
@@ -224,7 +228,12 @@ fun TerminalComposer(
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = UniTheme.colors.text, fontFamily = FontFamily.Monospace),
                     cursorBrush = SolidColor(UniTheme.colors.accent),
                     minLines = 1,
-                    maxLines = 6,
+                    // Seis líneas caben cuando el teclado está bajado; con el teclado subido, no.
+                    // Pegar un texto largo —un informe, una traza— estiraba el compositor hasta
+                    // seis líneas y, sumado al teclado y a cualquier aviso, dejaba el terminal
+                    // reducido a una tira de cinco líneas: justo la pantalla que se quería mirar
+                    // antes de enviar. El texto no se pierde, se desplaza dentro del campo.
+                    maxLines = if (tecladoVisible) 3 else 6,
                     keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Default),
                     decorationBox = { field ->
                         Box {
