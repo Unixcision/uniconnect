@@ -10,6 +10,7 @@ import com.unixcision.uniconnect.android.domain.RelaunchPlan
 import com.unixcision.uniconnect.android.domain.RelaunchVerb
 import com.unixcision.uniconnect.android.domain.RelaunchScope
 import com.unixcision.uniconnect.android.domain.MachineFailure
+import com.unixcision.uniconnect.android.domain.MirrorSubscription
 import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.data.AndroidDiagnostics
 import com.unixcision.uniconnect.android.data.CrashVault
@@ -693,7 +694,13 @@ class MachinesViewModel(
 
     fun connect(machine: Machine) = startObserving(machine, force = false)
 
-    private fun startObserving(machine: Machine, force: Boolean) {
+    /**
+     * - Parameter keepConnected: conserva el estado visible de la conexión mientras se rehace.
+     *   Lo usan los reinicios **deliberados** —entrar y salir del terminal real, que cambian a qué
+     *   se suscribe— donde la conexión no se ha perdido: marcarla como caída ahí encendía el aviso
+     *   de «sin conexión» un instante por una decisión nuestra, no por un fallo.
+     */
+    private fun startObserving(machine: Machine, force: Boolean, keepConnected: Boolean = false) {
         if (!foreground) {
             resumeMachineID = machine.id
             mutableState.update { it.copy(connections = it.connections + (machine.id to (it.connections[machine.id] ?: Connection()).copy(connected = false, checking = false))) }
@@ -702,8 +709,15 @@ class MachinesViewModel(
         if (!force && requests[machine.id]?.isActive == true) return
         requests.remove(machine.id)?.cancel()
         val selected = state.value
-        val target = if (selected.selectedWorkspace != null && selected.selectedWindow != null) TerminalTarget(selected.selectedWorkspace, selected.selectedWindow) else null
-        mutableState.update { it.copy(connections = it.connections + (machine.id to (it.connections[machine.id] ?: Connection()).copy(checking = true, connected = false, error = null))) }
+        // Ver ``MirrorSubscription``: con el terminal real adjuntado, pedir además el espejo llena
+        // la cola de eventos y mata el transporte cada pocos segundos.
+        val target = MirrorSubscription.target(selected.selectedWorkspace, selected.selectedWindow, selected.realTerminal != null)
+        mutableState.update { current ->
+            val previa = current.connections[machine.id] ?: Connection()
+            current.copy(connections = current.connections + (machine.id to previa.copy(
+                checking = true, connected = keepConnected && previa.connected, error = null,
+            )))
+        }
         requests[machine.id] = viewModelScope.launch {
             var retry = 0
             var wasConnected = false
@@ -986,6 +1000,9 @@ class MachinesViewModel(
                 attachedAtNanos = System.nanoTime()
                 if (live.columns != columns || live.rows != rows) terminal.resize(live.columns, live.rows)
                 mutableState.update { it.copy(realTerminal = RealTerminal(snapshot = terminal.snapshot(), connecting = false)) }
+                // Ya llega la pantalla por el PTY: se rehace la observación sin el espejo, que a
+                // partir de aquí solo serviría para desbordar la cola y tirar el transporte entero.
+                startObserving(machine, force = true, keepConnected = true)
                 // Rendering is decoupled from reading. A busy TUI (Codex redrawing with a spinner)
                 // pushes well over 100 KB/s; taking a full snapshot per chunk made this collector
                 // slower than the network, the socket reader stalled behind it, and the host saw
@@ -1075,7 +1092,12 @@ class MachinesViewModel(
         attachJob?.cancel(); attachJob = null
         attachment?.close(); attachment = null
         emulator = null
-        if (state.value.realTerminal != null) mutableState.update { it.copy(realTerminal = null) }
+        if (state.value.realTerminal != null) {
+            mutableState.update { it.copy(realTerminal = null) }
+            // De vuelta al espejo: ahora sí hay quien mire esa pantalla, así que se vuelve a pedir.
+            state.value.machines.firstOrNull { it.id == state.value.selectedMachine }
+                ?.let { startObserving(it, force = true, keepConnected = true) }
+        }
     }
 
     /** Raw bytes to the attached client: keys, typed text, pasted text. */

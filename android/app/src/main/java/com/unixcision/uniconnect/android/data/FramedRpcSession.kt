@@ -32,7 +32,10 @@ import org.json.JSONObject
 class FramedRpcSession(private val socket: Socket, private val scope: CoroutineScope) : AutoCloseable {
     private val closed = AtomicBoolean(false)
     private val pending = ConcurrentHashMap<String, CompletableDeferred<RpcEnvelope>>()
-    private val events = Channel<RpcEnvelope>(64)
+    // 64 se llenaban en medio segundo con un TUI redibujando, y un desbordamiento aquí no descarta
+    // un evento: **mata el transporte entero**. El tope real sigue siendo el de bytes, así que
+    // ampliar el número de huecos da margen para una ráfaga sin permitir que la memoria crezca.
+    private val events = Channel<RpcEnvelope>(EVENT_SLOTS)
     private val bufferedBytes = AtomicInteger()
     private val writeLock = Mutex()
     // Buffered on purpose. `DataOutputStream.writeInt` on a raw socket stream is four one-byte
@@ -151,5 +154,8 @@ class FramedRpcSession(private val socket: Socket, private val scope: CoroutineS
     companion object {
         /** Socket buffer for both directions: one syscall per frame instead of one per field. */
         const val FRAME_BUFFER_BYTES = 32 * 1024
+
+        /** Huecos de la cola de eventos. El límite que de verdad acota la memoria es el de bytes. */
+        const val EVENT_SLOTS = 256
     }
 }

@@ -14,6 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -45,8 +46,16 @@ fun DiagnosticDialog(
     onSend: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
-    // Se arma fuera de cualquier lectura del sistema: aquí ya está todo leído.
-    val report = DiagnosticReport.render(environment, events, crashes = crashes)
+    // Se arma **una vez**, no en cada redibujado.
+    //
+    // Sin esto la marca de «generado» cambiaba cada milisegundo: `render` tomaba la hora actual
+    // por defecto y se le llamaba desde la composición, así que cualquier recomposición —pulsar
+    // Copiar, que llegue un evento nuevo— rehacía el informe entero con otra hora. Además de
+    // quedar absurdo, era formatear 200 líneas por fotograma.
+    val generado = remember { System.currentTimeMillis() }
+    val report = remember(environment, events, crashes, generado) {
+        DiagnosticReport.render(environment, events, now = generado, crashes = crashes)
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.diagnostics_title)) },
