@@ -114,3 +114,25 @@ class LiveOwnershipTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClaudeProjectFolderTest(unittest.TestCase):
+    """Claude guarda cada conversación en una carpeta con TODO lo no alfanumérico convertido en guion.
+
+    El supervisor solo convertía `/` y `_`, así que una conversación de `/var/www/pre.totalradarvo.es`
+    se buscaba en `-var-www-pre.totalradarvo.es` y se daba por perdida: «The original Claude
+    conversation is missing», reintentando cada 30 segundos sin recuperar nunca la ventana.
+    """
+
+    def test_conversation_in_a_folder_with_dots_is_found(self):
+        with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as base:
+            cwd = Path(base) / "pre.totalradarvo.es" / "mi_app"
+            cwd.mkdir(parents=True)
+            session = "cc08331a-fc7d-4944-b642-d0ca1dc37901"
+            # Así la guarda Claude Code: cada carácter no alfanumérico pasa a ser un guion.
+            folder = Path(home) / ".claude/projects" / "".join(
+                c if c.isalnum() else "-" for c in os.path.realpath(cwd))
+            folder.mkdir(parents=True)
+            (folder / (session + ".jsonl")).write_text("{}\n")
+            with patch.object(recovery.Path, "home", return_value=Path(home)):
+                recovery.verify_session({"agent": "claude", "cwd": str(cwd), "sessionId": session})
