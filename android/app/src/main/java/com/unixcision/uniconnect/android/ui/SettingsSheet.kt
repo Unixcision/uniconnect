@@ -558,6 +558,7 @@ private val DesignTheme.label: Int
         DesignTheme.SENAL -> R.string.theme_senal
         DesignTheme.TINTA -> R.string.theme_tinta
         DesignTheme.TERMINAL -> R.string.theme_terminal
+        DesignTheme.AURORA -> R.string.theme_aurora
     }
 
 /** The visible name of a colour mode. */

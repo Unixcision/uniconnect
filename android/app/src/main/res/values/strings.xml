@@ -164,7 +164,7 @@
     <string name="creation_target_terminal_summary">Shell interactiva en la carpeta elegida.</string>
     <string name="creation_target_agent_summary">Se inicia en la carpeta de la ventana.</string>
     <string name="creation_name_placeholder">Como en tu escritorio: claude, logs, deploy…</string>
-    <string name="terminal_reconnect">Reconectar ventana</string>
+    <string name="terminal_reconnect">Reenganchar en el equipo</string>
     <string name="reconnect_failed">La máquina no ha confirmado la reconexión. Revisa la ventana en el escritorio antes de repetir.</string>
     <string name="reconnect_not_durable">Esta ventana no tiene una sesión recuperable: la máquina no puede reconectarla.</string>
     <string name="window_gone">Esa ventana ya no existe en la máquina. No se ha creado ninguna otra.</string>
@@ -219,6 +219,18 @@
     <string name="activity_working">La IA está trabajando</string>
     <string name="activity_waiting">La IA espera tu respuesta</string>
     <string name="box_local_only">Este equipo aún no sincroniza favoritos ni orden: se guardan solo en este móvil</string>
+    <string name="terminal_more">Más opciones</string>
+    <string name="menu_view_note">Cambia cómo encaja la pantalla en el móvil.</string>
+    <string name="menu_select_note">También manteniendo pulsado el terminal.</string>
+    <string name="menu_refresh_note">Solo en el móvil: vuelve a pedir lo que se ve. No toca nada en el equipo.</string>
+    <string name="menu_reattach_note">Rehace el enganche tmux de esta ventana en el Mac o Linux y vuelve a traer la pantalla.</string>
+    <string name="menu_reconnect_real">Reconectar este móvil</string>
+    <string name="menu_reconnect_real_note">Vuelve a enganchar el terminal real del móvil a la sesión.</string>
+    <string name="menu_stop_real_note">Deja el terminal real y enseña la copia de la pantalla del equipo.</string>
+    <string name="terminal_select_title">Seleccionar texto</string>
+    <string name="terminal_select_note">Mantén pulsado sobre el texto para elegir un trozo, o cópialo todo. Para llegar más atrás, sube en el terminal y vuelve a mantener pulsado.</string>
+    <string name="terminal_select_copy_all">Copiar todo</string>
+    <string name="terminal_select_copied">Copiado</string>
     <string name="diagnostics_open">Ver informe de conexión</string>
     <string name="diagnostics_title">Informe de conexión</string>
     <string name="diagnostics_share">Compartir</string>
@@ -248,6 +260,7 @@
     <string name="theme_senal">Señal</string>
     <string name="theme_tinta">Tinta</string>
     <string name="theme_terminal">Terminal</string>
+    <string name="theme_aurora">Aurora</string>
     <string name="color_mode_light">Claro</string>
     <string name="color_mode_dark">Oscuro</string>
     <string name="color_mode_system">Sistema</string>

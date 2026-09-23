@@ -3,6 +3,7 @@ package com.unixcision.uniconnect.android
 import android.content.Context
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.preferencesDataStoreFile
+import com.unixcision.uniconnect.android.data.AndroidClipboard
 import com.unixcision.uniconnect.android.data.AndroidDiagnostics
 import com.unixcision.uniconnect.android.data.CrashVault
 import com.unixcision.uniconnect.android.data.FileConnectionDiaryStore
@@ -62,6 +63,7 @@ class AppContainer(context: Context) {
     val rpc = FramedRpcClient(ioScope)
     /** Lo que se contará cuando falle una conexión. Ver ``ConnectionDiary``. */
     val diagnostics = AndroidDiagnostics(context)
+    val clipboard = AndroidClipboard(context)
     val connectionDiary = ConnectionDiary(store = FileConnectionDiaryStore(context))
     /** Los cierres inesperados, guardados en el propio móvil. Ver ``CrashVault``. */
     val crashVault = CrashVault(

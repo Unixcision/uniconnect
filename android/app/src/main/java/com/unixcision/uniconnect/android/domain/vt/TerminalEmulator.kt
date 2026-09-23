@@ -13,7 +13,8 @@ import com.unixcision.uniconnect.android.domain.TerminalSnapshot
 class TerminalEmulator(columns: Int, rows: Int) {
     val screen = VtScreen(columns, rows)
     private val responses = StringBuilder()
-    private val parser = VtParser(screen, responses)
+    private var copied: String? = null
+    private val parser = VtParser(screen, responses) { copied = it }
     private val decoder = Utf8Decoder()
     private var revision = 0uL
 
@@ -25,6 +26,12 @@ class TerminalEmulator(columns: Int, rows: Int) {
     fun feed(text: String) = feed(text.toByteArray(Charsets.UTF_8))
 
     fun snapshot(): TerminalSnapshot = screen.snapshot(revision)
+
+    /**
+     * The last text the program put on the clipboard with OSC 52 since the previous call, or null.
+     * Only the last one counts: two copies in the same burst mean the reader kept the second.
+     */
+    fun drainClipboard(): String? = copied.also { copied = null }
 
     /** Bytes the program is waiting for (DSR/DA answers); empty when nothing is pending. */
     fun drainResponses(): String = responses.toString().also { responses.setLength(0) }

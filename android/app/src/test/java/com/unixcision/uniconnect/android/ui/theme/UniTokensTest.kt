@@ -11,7 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * What every one of the ten theme readings must hold, checked through the same pure function
+ * What every one of the twelve theme readings must hold, checked through the same pure function
  * the screens use. Contrast is the WCAG ratio, so a palette that stops reading fails here.
  */
 class UniTokensTest {
@@ -109,7 +109,7 @@ class UniTokensTest {
         listOf(DesignTheme.NIEVE, DesignTheme.SERENO).forEach { theme ->
             assertEquals("$theme is a rail", WorkspaceLayout.RAIL, UniTokens.tokensFor(theme, dark = false).layout.workspacesAs)
         }
-        listOf(DesignTheme.SENAL to 2, DesignTheme.TINTA to 1, DesignTheme.TERMINAL to 3).forEach { (theme, columns) ->
+        listOf(DesignTheme.SENAL to 2, DesignTheme.TINTA to 1, DesignTheme.TERMINAL to 3, DesignTheme.AURORA to 2).forEach { (theme, columns) ->
             val layout = UniTokens.tokensFor(theme, dark = false).layout
             assertEquals("$theme is a grid", WorkspaceLayout.GRID, layout.workspacesAs)
             assertEquals("$theme columns", columns, layout.workspaceColumns)
@@ -147,6 +147,7 @@ class UniTokensTest {
         assertEquals(12f, UniTokens.tokensFor(DesignTheme.SENAL, dark = false).shapes.cardRadius.value)
         assertEquals(4f, UniTokens.tokensFor(DesignTheme.TINTA, dark = false).shapes.cardRadius.value)
         assertEquals(8f, UniTokens.tokensFor(DesignTheme.TERMINAL, dark = false).shapes.cardRadius.value)
+        assertEquals(20f, UniTokens.tokensFor(DesignTheme.AURORA, dark = false).shapes.cardRadius.value)
     }
 
     @Test
@@ -178,11 +179,14 @@ class UniTokensTest {
     }
 
     @Test
-    fun onlyNieveSeparatesASurfaceWithLight() {
-        listOf(false, true).forEach { dark ->
-            assertTrue("nieve dark=$dark floats", UniTokens.tokensFor(DesignTheme.NIEVE, dark).elevation.floats)
+    fun onlyNieveAndAuroraSeparateASurfaceWithLight() {
+        val floating = setOf(DesignTheme.NIEVE, DesignTheme.AURORA)
+        floating.forEach { theme ->
+            listOf(false, true).forEach { dark ->
+                assertTrue("$theme dark=$dark floats", UniTokens.tokensFor(theme, dark).elevation.floats)
+            }
         }
-        (themes - DesignTheme.NIEVE).forEach { theme ->
+        (themes - floating).forEach { theme ->
             listOf(false, true).forEach { dark ->
                 val elevation = UniTokens.tokensFor(theme, dark).elevation
                 assertFalse("$theme dark=$dark stays flat", elevation.floats)
@@ -231,5 +235,27 @@ class UniTokensTest {
         val la = a.luminance() + .05f
         val lb = b.luminance() + .05f
         return maxOf(la, lb) / minOf(la, lb)
+    }
+
+    @Test
+    fun auroraGlowsWithItsOwnAccentInTheDarkInsteadOfCastingAShadow() {
+        val dark = UniTokens.tokensFor(DesignTheme.AURORA, dark = true)
+        assertTrue("the glow spreads", dark.elevation.ambient.value > 0f)
+        assertEquals(
+            "the glow is the accent, not black",
+            dark.colors.accent.copy(alpha = dark.elevation.ambientColor.alpha), dark.elevation.ambientColor,
+        )
+        assertTrue("a glow is faint, not a second fill", dark.elevation.ambientColor.alpha < .5f)
+        assertEquals("no dark key shadow on a dark ground", 0f, dark.elevation.key.value)
+    }
+
+    @Test
+    fun auroraSpacesItsCapitalsWiderThanAnyOtherThemeAndItsChipsArePills() {
+        val aurora = UniTokens.tokensFor(DesignTheme.AURORA, dark = false)
+        assertTrue(aurora.type.labelUppercase)
+        (themes - DesignTheme.AURORA).forEach { theme ->
+            assertTrue("$theme tracks narrower than aurora", UniTokens.tokensFor(theme, dark = false).type.labelLetterSpacing.value < aurora.type.labelLetterSpacing.value)
+        }
+        assertTrue("aurora chips are pills", aurora.shapes.chipRadius.value >= 999f)
     }
 }

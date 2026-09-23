@@ -21,7 +21,7 @@ data class UniTokens(
     companion object {
         /**
          * The tokens of [theme] shown [dark] or light. Pure: the same pair always gives the same
-         * tokens, which is what lets a test walk all ten combinations.
+         * tokens, which is what lets a test walk all twelve combinations.
          */
         fun tokensFor(theme: DesignTheme, dark: Boolean): UniTokens = when (theme) {
             // Snow: white surfaces floating over an off-white page, pill chips and buttons, wide
@@ -83,6 +83,26 @@ data class UniTokens(
                 type = UniType(headlineFamily = FontFamily.SansSerif, identifierFamily = FontFamily.Monospace, labelUppercase = true, labelLetterSpacing = 0.8.sp),
                 layout = UniLayout(density = RowDensity.COMPACT, workspacesAs = WorkspaceLayout.GRID, workspaceColumns = 3, cardsAs = CardStyle.CARD, rowsAs = CardStyle.CARD),
                 elevation = UniElevation.flat,
+            )
+            // Aurora: en oscuro las tarjetas brillan con un halo de su acento en vez de sombra —
+            // una sombra no se ve sobre la noche, la luz sí—; en claro, sombra suave teñida de
+            // violeta. Píldoras, versalitas espaciadas y dos columnas de cajas.
+            DesignTheme.AURORA -> UniTokens(
+                theme = theme,
+                colors = if (dark) UniPalettes.auroraDark else UniPalettes.auroraLight,
+                shapes = UniShapes(cardRadius = 20.dp, sheetRadius = 28.dp, chipRadius = 999.dp, buttonRadius = 16.dp),
+                spacing = UniSpacing(page = 18.dp, gap = 12.dp, gapSmall = 8.dp),
+                type = UniType(headlineFamily = FontFamily.SansSerif, identifierFamily = FontFamily.SansSerif, labelUppercase = true, labelLetterSpacing = 1.6.sp),
+                layout = UniLayout(density = RowDensity.COMFORTABLE, workspacesAs = WorkspaceLayout.GRID, workspaceColumns = 2, cardsAs = CardStyle.CARD, rowsAs = CardStyle.CARD),
+                elevation = if (dark) UniElevation(
+                    ambient = 22.dp, ambientColor = Color(0xFF6EF2CF).copy(alpha = .38f),
+                    key = 0.dp, keyColor = Color.Transparent,
+                    surfaceLift = .03f, hairline = 0.5.dp,
+                ) else UniElevation(
+                    ambient = 16.dp, ambientColor = Color(0xFF4B2FD6).copy(alpha = .28f),
+                    key = 2.dp, keyColor = Color(0xFF0C1030).copy(alpha = .45f),
+                    surfaceLift = 0f, hairline = 0.5.dp,
+                ),
             )
         }
     }

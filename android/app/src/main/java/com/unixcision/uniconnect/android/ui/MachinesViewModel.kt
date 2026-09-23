@@ -15,6 +15,7 @@ import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.data.AndroidDiagnostics
 import com.unixcision.uniconnect.android.data.CrashVault
 import com.unixcision.uniconnect.android.domain.CrashReport
+import com.unixcision.uniconnect.android.domain.ClipboardSink
 import com.unixcision.uniconnect.android.domain.ConnectionDiary
 import com.unixcision.uniconnect.android.domain.ConnectionEvent
 import com.unixcision.uniconnect.android.domain.DiagnosticEnvironment
@@ -75,6 +76,8 @@ class MachinesViewModel(
     private val diagnostics: AndroidDiagnostics? = null,
     /** Los cierres inesperados guardados en el móvil. Ver ``CrashVault``. */
     private val crashVault: CrashVault? = null,
+    /** Adónde va lo que tmux o un programa copian con OSC 52. Ver ``ClipboardSink``. */
+    private val clipboard: ClipboardSink? = null,
 ) : ViewModel() {
     data class Connection(val checking: Boolean = false, val connected: Boolean = false, val snapshot: MachineSnapshot? = null, val error: Int? = null)
     /** A phone-sized tmux client attached to the selected window; the emulator lives in the model. */
@@ -1023,6 +1026,9 @@ class MachinesViewModel(
                     when (event) {
                         is PtyEvent.Output -> {
                             terminal.feed(event.bytes)
+                            // Lo que se copió en tmux (o con el `/copy` de Claude) llega como
+                            // OSC 52; sin esto se perdía y desde el móvil no se podía copiar nada.
+                            terminal.drainClipboard()?.let { copiado -> clipboard?.copy(copiado) }
                             // Answer the program's queries (cursor position, device attributes) right away.
                             val answer = terminal.drainResponses()
                             if (answer.isNotEmpty()) runCatching { live.send(answer.toByteArray(Charsets.UTF_8)) }

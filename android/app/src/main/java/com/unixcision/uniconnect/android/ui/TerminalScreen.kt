@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.CloseFullscreen
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowDown
 import androidx.compose.material.icons.rounded.Link
@@ -160,6 +161,7 @@ private fun RealTerminalScreen(
     transcribers: List<TranscriptionCandidate>, onDiagnostics: (() -> Unit)?,
 ) {
     var keysVisible by rememberSaveable { mutableStateOf(startWithKeys) }
+    var selecting by remember { mutableStateOf(false) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
     var alt by rememberSaveable { mutableStateOf(ModifierState.OFF) }
     val modifiers = TerminalModifiers(ctrl = ctrl != ModifierState.OFF, alt = alt != ModifierState.OFF)
@@ -183,9 +185,7 @@ private fun RealTerminalScreen(
             StatusPill(stringResource(R.string.real_terminal_pill), if (ready) PillTone.Busy else PillTone.Idle)
             ActivityMark(activity, Modifier.padding(start = 10.dp), size = 18.dp)
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = onTogglePin) {
-                Icon(if (windowPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder, stringResource(if (windowPinned) R.string.box_unpin else R.string.box_pin), tint = if (windowPinned) UniTheme.colors.warning else UniTheme.colors.muted)
-            }
+            // A la vista solo lo que se usa todo el rato; el resto, con nombre, en el menú ⋮.
             // The clip: attach to this window, and paste the path or link into the composer.
             if (attachments != null && attachTarget != null) AttachButton(attachments, attachTarget, draft, onDraftChange)
             // One tap back to the live screen, handled by the model: it walks the pane out with
@@ -193,14 +193,25 @@ private fun RealTerminalScreen(
             if (real.copyMode) IconButton(onClick = onLeaveCopyMode) {
                 Icon(Icons.Rounded.KeyboardDoubleArrowDown, stringResource(R.string.terminal_leave_copy_mode), tint = UniTheme.colors.warning)
             }
-            if (real.snapshot != null) IconButton(onClick = { onView(viewMode.next) }) {
-                Icon(
-                    when (viewMode) { TerminalView.FIT -> Icons.Rounded.ZoomIn; TerminalView.WRAP -> Icons.Rounded.OpenInFull; TerminalView.PAN -> Icons.Rounded.ZoomOutMap },
-                    stringResource(when (viewMode) { TerminalView.FIT -> R.string.screen_actual_size; TerminalView.WRAP -> R.string.screen_pan; TerminalView.PAN -> R.string.screen_fit_width }),
-                    tint = UniTheme.colors.muted,
-                )
-            }
-            IconButton(onClick = onStopReal) { Icon(Icons.Rounded.LinkOff, stringResource(R.string.real_terminal_stop), tint = UniTheme.colors.muted) }
+            if (real.connecting) LoadingIndicator(Modifier.size(20.dp), color = UniTheme.colors.accent)
+            TerminalOverflowMenu(buildList {
+                add(TerminalMenuEntry(
+                    if (windowPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                    stringResource(if (windowPinned) R.string.box_unpin else R.string.box_pin),
+                    tint = if (windowPinned) UniTheme.colors.warning else null, onClick = onTogglePin,
+                ))
+                if (real.snapshot != null) {
+                    add(TerminalMenuEntry(
+                        when (viewMode) { TerminalView.FIT -> Icons.Rounded.ZoomIn; TerminalView.WRAP -> Icons.Rounded.OpenInFull; TerminalView.PAN -> Icons.Rounded.ZoomOutMap },
+                        stringResource(when (viewMode) { TerminalView.FIT -> R.string.screen_actual_size; TerminalView.WRAP -> R.string.screen_pan; TerminalView.PAN -> R.string.screen_fit_width }),
+                        stringResource(R.string.menu_view_note),
+                    ) { onView(viewMode.next) })
+                    add(TerminalMenuEntry(Icons.Rounded.ContentCopy, stringResource(R.string.terminal_select_title), stringResource(R.string.menu_select_note)) { selecting = true })
+                }
+                add(TerminalMenuEntry(Icons.Rounded.Refresh, stringResource(R.string.menu_reconnect_real), stringResource(R.string.menu_reconnect_real_note), enabled = !real.connecting, onClick = onReconnect))
+                add(TerminalMenuEntry(Icons.Rounded.LinkOff, stringResource(R.string.real_terminal_stop), stringResource(R.string.menu_stop_real_note), onClick = onStopReal))
+                if (onDiagnostics != null) add(TerminalMenuEntry(Icons.Rounded.BugReport, stringResource(R.string.diagnostics_open), onClick = onDiagnostics))
+            })
         }
         real.error?.let {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
@@ -239,8 +250,12 @@ private fun RealTerminalScreen(
             }
         }
         val frameShape = UniTheme.shapes.card
+        // Mantener pulsado = seleccionar y copiar. Ver ``selectOnLongPress``.
+        if (selecting) real.snapshot?.let { TerminalSelectionSheet(it) { selecting = false } } ?: run { selecting = false }
         Box(
-            Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp).clip(frameShape)
+            Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
+                .selectOnLongPress { if (real.snapshot != null) selecting = true }
+                .clip(frameShape)
                 .background(Color(parseColor(real.snapshot?.background, 0xFF070D20.toInt())))
                 .border(1.dp, UniTheme.colors.outlineFade, frameShape),
         ) {
@@ -393,6 +408,7 @@ private fun MirrorTerminalScreen(
 ) {
     var viewMode by rememberSaveable { mutableStateOf(TerminalView.FIT) }
     var keysVisible by rememberSaveable { mutableStateOf(false) }
+    var selecting by remember { mutableStateOf(false) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
     var alt by rememberSaveable { mutableStateOf(ModifierState.OFF) }
     val modifiers = TerminalModifiers(ctrl = ctrl != ModifierState.OFF, alt = alt != ModifierState.OFF)
@@ -406,9 +422,7 @@ private fun MirrorTerminalScreen(
             StatusPill(stringResource(if (connected) R.string.terminal_live else R.string.terminal_offline), if (connected) PillTone.Live else PillTone.Idle)
             ActivityMark(activity, Modifier.padding(start = 10.dp), size = 18.dp)
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = onTogglePin) {
-                Icon(if (windowPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder, stringResource(if (windowPinned) R.string.box_unpin else R.string.box_pin), tint = if (windowPinned) UniTheme.colors.warning else UniTheme.colors.muted)
-            }
+            // A la vista solo lo que se usa todo el rato; el resto, con nombre, en el menú ⋮.
             // The clip: attach to this window, and paste the path or link into the composer.
             if (attachments != null && attachTarget != null) AttachButton(attachments, attachTarget, draft, onDraftChange)
             // Mismo criterio que en el terminal real: el bicho sale cuando el fallo está delante,
@@ -417,10 +431,7 @@ private fun MirrorTerminalScreen(
             if (onDiagnostics != null && (error != null || !connected)) IconButton(onClick = onDiagnostics) {
                 Icon(Icons.Rounded.BugReport, stringResource(R.string.diagnostics_open), tint = UniTheme.colors.warning)
             }
-            IconButton(onClick = onReconnect, enabled = (connected || error != null) && !reconnecting) {
-                if (reconnecting) LoadingIndicator(Modifier.size(20.dp), color = UniTheme.colors.accent)
-                else Icon(Icons.Rounded.Sync, stringResource(R.string.terminal_reconnect), tint = UniTheme.colors.muted)
-            }
+            if (loading || reconnecting) LoadingIndicator(Modifier.size(20.dp), color = UniTheme.colors.accent)
             // Real terminal: a tmux client of the phone's size. The readable geometry is measured
             // here so the attach asks the host for exactly the size this screen can draw.
             var armReal by remember { mutableStateOf(false) }
@@ -428,18 +439,26 @@ private fun MirrorTerminalScreen(
                 Icon(Icons.Rounded.Link, stringResource(R.string.real_terminal_start), tint = UniTheme.colors.muted)
             }
             RealTerminalStarter(armReal) { columns, rows -> armReal = false; onRequestReal(columns, rows) }
-            if (snapshot != null) IconButton(onClick = { viewMode = viewMode.next }) {
-                // The icon announces the mode the tap switches to.
-                Icon(
-                    when (viewMode) { TerminalView.FIT -> Icons.Rounded.ZoomIn; TerminalView.WRAP -> Icons.Rounded.OpenInFull; TerminalView.PAN -> Icons.Rounded.ZoomOutMap },
-                    stringResource(when (viewMode) { TerminalView.FIT -> R.string.screen_actual_size; TerminalView.WRAP -> R.string.screen_pan; TerminalView.PAN -> R.string.screen_fit_width }),
-                    tint = UniTheme.colors.muted,
-                )
-            }
-            IconButton(onClick = onRefresh, enabled = !loading) {
-                if (loading) LoadingIndicator(Modifier.size(20.dp), color = UniTheme.colors.accent)
-                else Icon(Icons.Rounded.Refresh, stringResource(R.string.screen_refresh), tint = UniTheme.colors.muted)
-            }
+            TerminalOverflowMenu(buildList {
+                add(TerminalMenuEntry(
+                    if (windowPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                    stringResource(if (windowPinned) R.string.box_unpin else R.string.box_pin),
+                    tint = if (windowPinned) UniTheme.colors.warning else null, onClick = onTogglePin,
+                ))
+                if (snapshot != null) {
+                    add(TerminalMenuEntry(
+                        when (viewMode) { TerminalView.FIT -> Icons.Rounded.ZoomIn; TerminalView.WRAP -> Icons.Rounded.OpenInFull; TerminalView.PAN -> Icons.Rounded.ZoomOutMap },
+                        stringResource(when (viewMode) { TerminalView.FIT -> R.string.screen_actual_size; TerminalView.WRAP -> R.string.screen_pan; TerminalView.PAN -> R.string.screen_fit_width }),
+                        stringResource(R.string.menu_view_note),
+                    ) { viewMode = viewMode.next })
+                    add(TerminalMenuEntry(Icons.Rounded.ContentCopy, stringResource(R.string.terminal_select_title), stringResource(R.string.menu_select_note)) { selecting = true })
+                }
+                // Los dos «refrescos», por fin distinguibles: uno solo pide la pantalla otra vez;
+                // el otro rehace el enganche tmux de la ventana en el equipo.
+                add(TerminalMenuEntry(Icons.Rounded.Refresh, stringResource(R.string.screen_refresh), stringResource(R.string.menu_refresh_note), enabled = !loading, onClick = onRefresh))
+                add(TerminalMenuEntry(Icons.Rounded.Sync, stringResource(R.string.terminal_reconnect), stringResource(R.string.menu_reattach_note), enabled = (connected || error != null) && !reconnecting, onClick = onReconnect))
+                if (onDiagnostics != null) add(TerminalMenuEntry(Icons.Rounded.BugReport, stringResource(R.string.diagnostics_open), onClick = onDiagnostics))
+            })
         }
         error?.let {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
@@ -456,8 +475,10 @@ private fun MirrorTerminalScreen(
             )
         }
         val frameShape = UniTheme.shapes.card
+        if (selecting) snapshot?.let { TerminalSelectionSheet(it) { selecting = false } } ?: run { selecting = false }
         Box(
             Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
+                .selectOnLongPress { if (snapshot != null) selecting = true }
                 .clip(frameShape)
                 .background(Color(parseColor(snapshot?.background, 0xFF070D20.toInt())))
                 .border(1.dp, UniTheme.colors.outlineFade, frameShape),

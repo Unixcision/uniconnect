@@ -23,7 +23,15 @@ enum class DesignTheme {
     TINTA,
 
     /** Terminal: technical, monospaced identifiers, dense grid, muted phosphor green on graphite. */
-    TERMINAL;
+    TERMINAL,
+
+    /**
+     * Aurora: noche polar. Un fondo azul casi negro, un acento menta de aurora boreal y, en
+     * oscuro, tarjetas que no proyectan sombra sino **un halo de su propio color**, como luz que
+     * sale del cristal. En claro es cielo glaciar con una sombra teñida de violeta. Etiquetas en
+     * versalitas espaciadas, chips en píldora, cuadrícula de dos columnas.
+     */
+    AURORA;
 
     companion object {
         /** Reads a stored name, falling back to [SERENO] for anything unrecognised. */

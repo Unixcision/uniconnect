@@ -7,8 +7,16 @@ import com.unixcision.uniconnect.android.domain.TerminalSnapshot
  * clients: C0 controls, ESC sequences, CSI with private markers and sub-parameters (SGR
  * 38/48 in both `;` and `:` forms), OSC titles, DEC private modes, and the queries whose
  * answers a program may wait for (DSR, DA). Everything unknown is ignored, never crashes.
+ *
+ * OSC 52 (set clipboard) goes to [onClipboard]: it is how tmux hands over what was copied in
+ * copy mode, and how a program such as Claude Code's `/copy` reaches the phone. Reading the
+ * clipboard (`52;c;?`) is never answered — a remote program has no business reading the phone's.
  */
-class VtParser(private val screen: VtScreen, private val responses: StringBuilder) {
+class VtParser(
+    private val screen: VtScreen,
+    private val responses: StringBuilder,
+    private val onClipboard: (String) -> Unit = {},
+) {
     private enum class State { GROUND, ESCAPE, ESCAPE_INTERMEDIATE, CSI, OSC, OSC_ESC, DCS, DCS_ESC, CHARSET }
 
     private var state = State.GROUND
@@ -16,6 +24,9 @@ class VtParser(private val screen: VtScreen, private val responses: StringBuilde
     private val intermediates = StringBuilder()
     private var privateMarker = 0
     private val osc = StringBuilder()
+    // A clipboard OSC carries base64 and may be long; everything else stays small. A payload that
+    // does not fit is dropped whole: half a base64 string decodes to garbage, not to half the text.
+    private var oscOverflow = false
     private var charsetSlot = 0.toChar()
     private var g0LineDrawing = false
     private var g1LineDrawing = false
@@ -37,7 +48,7 @@ class VtParser(private val screen: VtScreen, private val responses: StringBuilde
             State.OSC -> when (codePoint) {
                 0x07 -> { oscDispatch(); state = State.GROUND }
                 0x1B -> state = State.OSC_ESC
-                else -> if (osc.length < 4096) osc.appendCodePoint(codePoint)
+                else -> if (osc.length < oscLimit()) osc.appendCodePoint(codePoint) else oscOverflow = true
             }
             State.OSC_ESC -> { if (codePoint == '\\'.code) oscDispatch(); state = if (codePoint == '\\'.code) State.GROUND else State.OSC }
             State.DCS -> if (codePoint == 0x1B) state = State.DCS_ESC else if (codePoint == 0x07) state = State.GROUND
@@ -70,7 +81,7 @@ class VtParser(private val screen: VtScreen, private val responses: StringBuilde
         state = State.GROUND
         when (codePoint.toChar()) {
             '[' -> { state = State.CSI; params.clear(); intermediates.clear(); privateMarker = 0 }
-            ']' -> { state = State.OSC; osc.clear() }
+            ']' -> { state = State.OSC; osc.clear(); oscOverflow = false }
             'P', 'X', '^', '_' -> state = State.DCS
             '(', ')', '*', '+' -> { charsetSlot = codePoint.toChar(); state = State.CHARSET }
             '7' -> screen.saveCursor()
@@ -244,7 +255,10 @@ class VtParser(private val screen: VtScreen, private val responses: StringBuilde
         }
     }
 
+    private fun oscLimit(): Int = if (osc.startsWith("52;")) MAX_CLIPBOARD_OSC else 4096
+
     private fun oscDispatch() {
+        if (oscOverflow) return
         val text = osc.toString()
         val code = text.substringBefore(';').toIntOrNull() ?: return
         val payload = text.substringAfter(';', "")
@@ -253,11 +267,23 @@ class VtParser(private val screen: VtScreen, private val responses: StringBuilde
             // 10/11 colour queries expect an answer; tmux forwards them and programs may wait.
             10 -> if (payload == "?") responses.append("]10;rgb:eeee/f3f3/ffff\\")
             11 -> if (payload == "?") responses.append("]11;rgb:0707/0d0d/2020\\")
+            52 -> clipboard(payload)
             else -> {}
         }
     }
 
+    /** `Pc;Pd`: selection targets, then the base64 text. Only writes are honoured. */
+    private fun clipboard(payload: String) {
+        val data = payload.substringAfter(';', "")
+        if (data.isEmpty() || data == "?") return
+        val decoded = runCatching { java.util.Base64.getMimeDecoder().decode(data) }.getOrNull() ?: return
+        val text = String(decoded, Charsets.UTF_8)
+        if (text.isNotEmpty()) onClipboard(text)
+    }
+
     companion object {
+        /** About 750 KB of copied text once decoded: a whole screenful of scrollback, and then some. */
+        const val MAX_CLIPBOARD_OSC = 1 shl 20
         private const val LINE_DRAWING = "◆▒␉␌␍␊°±␤␋┘┐┌└┼⎺⎻─⎼⎽├┤┴┬│≤≥π≠£·"
     }
 }

@@ -3,7 +3,7 @@ package com.unixcision.uniconnect.android.ui.theme
 import androidx.compose.ui.graphics.Color
 
 /**
- * The ten palettes: five themes, each light and dark, as the design mock-ups fix them. Only
+ * The twelve palettes: six themes, each light and dark, as the design mock-ups fix them. Only
  * [UniTokens.tokensFor] reads them.
  *
  * Outlines are white or black at a small alpha so one rule reads on page, surface and raised
@@ -134,6 +134,32 @@ internal object UniPalettes {
         tones = listOf(
             Color(0xFF2E7D4F), Color(0xFF2B6CB0), Color(0xFF8A5A00), Color(0xFFB23B3B),
             Color(0xFF5E60A8), Color(0xFF0E7490), Color(0xFF6B7280), Color(0xFF7C5E10),
+        ),
+    )
+
+    // Aurora: noche polar con un solo acento menta. En oscuro, fondo, superficie y superficie
+    // elevada son tres escalones del mismo azul noche, y el acento es lo único que brilla. En
+    // claro, un cielo glaciar con el mismo acento llevado a verde azulado para que lea sobre blanco.
+    val auroraLight = UniColors(
+        isDark = false,
+        background = Color(0xFFF2F4FB), surface = Color(0xFFFFFFFF), surfaceRaised = Color(0xFFE7EBF7),
+        outline = black.copy(alpha = .06f), text = Color(0xFF0C1030), muted = Color(0xFF525B80),
+        accent = Color(0xFF0A7F68), onAccent = Color(0xFFFFFFFF), accentSoft = Color(0xFF0A7F68).copy(alpha = .12f),
+        success = Color(0xFF1B7F49), warning = Color(0xFF9A6110), danger = Color(0xFFC22E5B),
+        tones = listOf(
+            Color(0xFF0A7F68), Color(0xFF6246D8), Color(0xFF1F63B8), Color(0xFFB8327A),
+            Color(0xFF4A7512), Color(0xFF9A6110), Color(0xFFB8452A), Color(0xFF0B7282),
+        ),
+    )
+    val auroraDark = UniColors(
+        isDark = true,
+        background = Color(0xFF0A0C18), surface = Color(0xFF131832), surfaceRaised = Color(0xFF1B2144),
+        outline = white.copy(alpha = .08f), text = Color(0xFFEEF1FF), muted = Color(0xFF98A1C8),
+        accent = Color(0xFF6EF2CF), onAccent = Color(0xFF03201A), accentSoft = Color(0xFF6EF2CF).copy(alpha = .14f),
+        success = Color(0xFF7BE495), warning = Color(0xFFFFC46B), danger = Color(0xFFFF7A9A),
+        tones = listOf(
+            Color(0xFF6EF2CF), Color(0xFFB69CFF), Color(0xFF7DC8FF), Color(0xFFFF8FC7),
+            Color(0xFFC3F27A), Color(0xFFFFC46B), Color(0xFFFF9E80), Color(0xFF6FE7F5),
         ),
     )
 }
