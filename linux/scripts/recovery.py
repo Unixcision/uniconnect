@@ -43,7 +43,9 @@ def boot_id():
 
 
 def project_folder(cwd):
-    return Path.home() / ".claude/projects" / re.sub(r"[/_]", "-", os.path.realpath(cwd))
+    # Como lo hace Claude Code: TODO lo que no sea letra o numero pasa a ser un guion. Cambiar
+    # solo `/` y `_` perdia las conversaciones de carpetas con puntos (dominios, versiones).
+    return Path.home() / ".claude/projects" / re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(cwd))
 
 
 # ---------------------------------------------------------------- agents
