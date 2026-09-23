@@ -8,7 +8,15 @@ import com.unixcision.uniconnect.android.domain.Machine
  * over the private connection at all. Without [supportsFilePut] the sheet says so and only sends
  * the file to the transfer service of "Enviar archivos" on an explicit tap.
  */
-data class AttachTarget(val machine: Machine, val workspaceID: String, val windowID: String, val isSSH: Boolean?, val supportsFilePut: Boolean) {
+data class AttachTarget(
+    val machine: Machine,
+    val workspaceID: String,
+    val windowID: String,
+    val isSSH: Boolean?,
+    val supportsFilePut: Boolean,
+    /** The host lists what it already received (`inbox.v1`): the sheet shows it to paste again. */
+    val supportsInbox: Boolean = false,
+) {
     /** The same window, whichever snapshot it came from. */
     fun sameWindow(other: AttachTarget): Boolean = machine.id == other.machine.id && workspaceID == other.workspaceID && windowID == other.windowID
 }

@@ -24,6 +24,7 @@ import com.unixcision.uniconnect.android.notifications.AndroidNoticePublisher
 import com.unixcision.uniconnect.android.notifications.NoticeCounters
 import java.util.UUID
 import com.unixcision.uniconnect.android.ui.AttachViewModel
+import com.unixcision.uniconnect.android.ui.InboxViewModel
 import com.unixcision.uniconnect.android.ui.DictationViewModel
 import com.unixcision.uniconnect.android.ui.MachinesScreen
 import com.unixcision.uniconnect.android.ui.MachinesViewModel
@@ -54,6 +55,7 @@ class MainActivity : ComponentActivity() {
                     MachinesViewModel::class.java -> MachinesViewModel(container.machines, container.machineClient, container.notificationConnections, container.settings, container.noticeNames, container.drafts, container.boxOverrides, container.connectionDiary, container.diagnostics, container.crashVault, container.clipboard)
                     UploadViewModel::class.java -> UploadViewModel(container.fileSender, container.settings, container.uploadHistory, container.contentReader)
                     AttachViewModel::class.java -> AttachViewModel(container.filePutClient, container.fileSender, container.settings, container.contentReader)
+                    InboxViewModel::class.java -> InboxViewModel(container.inboxClient, container.inboxPreviews)
                     DictationViewModel::class.java -> DictationViewModel(container.dictation, container.hostDictation, container.localDictation, container.speechModels)
                     else -> throw IllegalArgumentException("unknown model ${modelClass.name}")
                 } as T
@@ -63,6 +65,7 @@ class MainActivity : ComponentActivity() {
         val uploads = ViewModelProvider(this, factory)[UploadViewModel::class.java]
         val attachments = ViewModelProvider(this, factory)[AttachViewModel::class.java]
         val dictation = ViewModelProvider(this, factory)[DictationViewModel::class.java]
+        val inbox = ViewModelProvider(this, factory)[InboxViewModel::class.java]
         handleNotice(intent)
         setContent {
             // The theme wraps the whole app and follows the stored preference as it changes, so a
@@ -71,7 +74,7 @@ class MainActivity : ComponentActivity() {
             UniTheme(state.settings.designTheme, state.settings.colorMode) {
                 val dark = UniTheme.colors.isDark
                 LaunchedEffect(dark) { applySystemBars(dark) }
-                MachinesScreen(model, uploads, attachments, dictation, ::requestNotifications)
+                MachinesScreen(model, uploads, attachments, inbox, dictation, ::requestNotifications)
             }
         }
     }

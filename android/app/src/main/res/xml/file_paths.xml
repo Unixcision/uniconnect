@@ -6,4 +6,6 @@
          y el botón de compartir se quedaba mudo: la carpeta existía, pero no estaba declarada
          como compartible. Nada más de la app se expone. -->
     <cache-path name="diagnostico" path="diagnostico/" />
+    <!-- Copias de la bandeja de un equipo, para «Abrir con…» un documento con otra app. -->
+    <cache-path name="bandeja" path="bandeja/" />
 </paths>

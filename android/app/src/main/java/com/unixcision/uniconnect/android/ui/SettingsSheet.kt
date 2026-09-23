@@ -45,6 +45,7 @@ import com.unixcision.uniconnect.android.domain.TranscriptionCandidate
 import com.unixcision.uniconnect.android.domain.TranscriptionMode
 import com.unixcision.uniconnect.android.domain.UploadService
 import com.unixcision.uniconnect.android.domain.UploadStyle
+import com.unixcision.uniconnect.android.domain.InboxCandidate
 import com.unixcision.uniconnect.android.ui.theme.CardStyle
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import com.unixcision.uniconnect.android.ui.theme.UniTokens
@@ -64,6 +65,9 @@ fun SettingsSheet(
     dictation: DictationViewModel?,
     onChange: (AppSettings) -> Unit,
     onDismiss: () -> Unit,
+    /** La bandeja de los equipos; sin ella no se ofrece el medidor de Adjuntos. */
+    inbox: InboxViewModel? = null,
+    inboxCandidates: List<InboxCandidate> = emptyList(),
 ) {
     val context = LocalContext.current
     val version = remember(context) {
@@ -217,6 +221,8 @@ fun SettingsSheet(
                 Text(stringResource(R.string.settings_terminal_upload_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
                 TerminalUploadPicker(settings, onChange)
             }
+
+            if (inbox != null) SettingsSection(stringResource(R.string.settings_inbox)) { InboxSettingsSection(inbox, inboxCandidates) }
 
             SettingsSection(stringResource(R.string.settings_connections)) {
                 SettingsSwitch(

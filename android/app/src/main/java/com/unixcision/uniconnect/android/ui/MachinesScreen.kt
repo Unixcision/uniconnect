@@ -49,6 +49,7 @@ import com.unixcision.uniconnect.android.domain.ActivityState
 import com.unixcision.uniconnect.android.domain.BoxOverrides
 import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.domain.TranscriptionCandidate
+import com.unixcision.uniconnect.android.domain.InboxCandidate
 import com.unixcision.uniconnect.android.ui.components.BoxMonogram
 import com.unixcision.uniconnect.android.ui.components.GlassCard
 import com.unixcision.uniconnect.android.ui.components.PillTone
@@ -59,7 +60,7 @@ private enum class Level { LOADING, LIST, UPLOADS, MACHINE, TERMINAL }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachments: AttachViewModel, dictation: DictationViewModel, onEnableNotifications: (String) -> Unit) {
+fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachments: AttachViewModel, inbox: InboxViewModel, dictation: DictationViewModel, onEnableNotifications: (String) -> Unit) {
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.pauseLiveConnection() }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { model.resumeLiveConnection() }
     val state by model.state.collectAsStateWithLifecycle()
@@ -203,8 +204,9 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                             onTogglePin = { window?.let { model.toggleWindowPinned(it.id) } },
                             activity = window?.activity?.state ?: ActivityState.UNKNOWN,
                             attachments = attachments,
+                            inbox = inbox,
                             dictation = dictation,
-                            attachTarget = if (machine != null && workspace != null && window != null) AttachTarget(machine, workspace.id, window.id, workspace.isSSH, connection?.snapshot?.putsFiles == true) else null,
+                            attachTarget = if (machine != null && workspace != null && window != null) AttachTarget(machine, workspace.id, window.id, workspace.isSSH, connection?.snapshot?.putsFiles == true, connection?.snapshot?.keepsInbox == true) else null,
                             transcribers = transcribers,
                             onDiagnostics = { model.showDiagnostics(true) },
                         )
@@ -255,7 +257,13 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
     state.relaunch?.let { relaunch ->
         RelaunchDialog(relaunch, onConfirm = model::confirmRelaunch, onDismiss = model::dismissRelaunch)
     }
-    if (state.showingSettings) SettingsSheet(state.settings, transcribers, dictation, model::updateSettings, model::dismissSettings)
+    if (state.showingSettings) {
+        val inboxCandidates = state.machines.map { saved ->
+            val link = state.connections[saved.id]
+            InboxCandidate(saved, connected = link?.connected == true, keepsInbox = link?.snapshot?.keepsInbox == true)
+        }
+        SettingsSheet(state.settings, transcribers, dictation, model::updateSettings, model::dismissSettings, inbox = inbox, inboxCandidates = inboxCandidates)
+    }
     if (state.adding) MachineSheet(state.saving, state.formError, onDismiss = model::dismissAdd, onSave = model::saveMachine)
     state.editing?.let { target ->
         MachineSheet(state.saving, state.formError, machine = target, onDismiss = model::dismissEdit, onSave = model::saveMachine)

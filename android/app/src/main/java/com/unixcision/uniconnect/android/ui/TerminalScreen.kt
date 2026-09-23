@@ -111,6 +111,7 @@ fun TerminalScreen(
     onTogglePin: () -> Unit = {},
     activity: ActivityState = ActivityState.UNKNOWN,
     attachments: AttachViewModel? = null,
+    inbox: InboxViewModel? = null,
     attachTarget: AttachTarget? = null,
     dictation: DictationViewModel? = null,
     transcribers: List<TranscriptionCandidate> = emptyList(),
@@ -129,7 +130,7 @@ fun TerminalScreen(
             onPty = onPty, onPtyWheel = onPtyWheel, onPtyResize = onPtyResize,
             onLeaveCopyMode = onLeaveCopyMode, onView = onView, onZoom = onZoom, onReconnect = onReconnectReal,
             draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity,
-            attachments = attachments, attachTarget = attachTarget, dictation = dictation, settings = settings,
+            attachments = attachments, inbox = inbox, attachTarget = attachTarget, dictation = dictation, settings = settings,
             transcribers = transcribers, onDiagnostics = onDiagnostics,
         )
         return
@@ -144,7 +145,7 @@ fun TerminalScreen(
         attachFallbackDetail = attachFallbackDetail,
         onRequestReal = { columns, rows -> realRequested = true; manuallyLeft = false; onStartReal(columns, rows, false) },
         draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity,
-        attachments = attachments, attachTarget = attachTarget, dictation = dictation, settings = settings,
+        attachments = attachments, inbox = inbox, attachTarget = attachTarget, dictation = dictation, settings = settings,
         transcribers = transcribers, onDiagnostics = onDiagnostics)
 }
 
@@ -157,7 +158,7 @@ private fun RealTerminalScreen(
     onStopReal: () -> Unit, onPty: (String, Boolean) -> Unit, onPtyWheel: (Boolean, Int) -> Unit, onPtyResize: (Int, Int) -> Unit,
     onLeaveCopyMode: () -> Unit, onView: (TerminalView) -> Unit, onZoom: (Float) -> Unit, onReconnect: () -> Unit,
     draft: String, onDraftChange: (String) -> Unit, windowPinned: Boolean, onTogglePin: () -> Unit, activity: ActivityState,
-    attachments: AttachViewModel?, attachTarget: AttachTarget?, dictation: DictationViewModel?, settings: AppSettings,
+    attachments: AttachViewModel?, inbox: InboxViewModel?, attachTarget: AttachTarget?, dictation: DictationViewModel?, settings: AppSettings,
     transcribers: List<TranscriptionCandidate>, onDiagnostics: (() -> Unit)?,
 ) {
     var keysVisible by rememberSaveable { mutableStateOf(startWithKeys) }
@@ -187,7 +188,7 @@ private fun RealTerminalScreen(
             Spacer(Modifier.weight(1f))
             // A la vista solo lo que se usa todo el rato; el resto, con nombre, en el menú ⋮.
             // The clip: attach to this window, and paste the path or link into the composer.
-            if (attachments != null && attachTarget != null) AttachButton(attachments, attachTarget, draft, onDraftChange)
+            if (attachments != null && attachTarget != null) AttachButton(attachments, inbox, attachTarget, draft, onDraftChange)
             // One tap back to the live screen, handled by the model: it walks the pane out with
             // wheel steps and stops as soon as tmux's indicator clears.
             if (real.copyMode) IconButton(onClick = onLeaveCopyMode) {
@@ -403,7 +404,7 @@ private fun MirrorTerminalScreen(
     onRefresh: () -> Unit, onReconnect: () -> Unit, onScroll: (Int) -> Unit, onSend: (String, Boolean, (Boolean) -> Unit) -> Unit,
     attachFallbackDetail: String?, onRequestReal: (Int, Int) -> Unit, draft: String, onDraftChange: (String) -> Unit,
     windowPinned: Boolean, onTogglePin: () -> Unit, activity: ActivityState,
-    attachments: AttachViewModel?, attachTarget: AttachTarget?, dictation: DictationViewModel?, settings: AppSettings,
+    attachments: AttachViewModel?, inbox: InboxViewModel?, attachTarget: AttachTarget?, dictation: DictationViewModel?, settings: AppSettings,
     transcribers: List<TranscriptionCandidate>, onDiagnostics: (() -> Unit)?,
 ) {
     var viewMode by rememberSaveable { mutableStateOf(TerminalView.FIT) }
@@ -424,7 +425,7 @@ private fun MirrorTerminalScreen(
             Spacer(Modifier.weight(1f))
             // A la vista solo lo que se usa todo el rato; el resto, con nombre, en el menú ⋮.
             // The clip: attach to this window, and paste the path or link into the composer.
-            if (attachments != null && attachTarget != null) AttachButton(attachments, attachTarget, draft, onDraftChange)
+            if (attachments != null && attachTarget != null) AttachButton(attachments, inbox, attachTarget, draft, onDraftChange)
             // Mismo criterio que en el terminal real: el bicho sale cuando el fallo está delante,
             // sin esperar a acumular nada. Estar «sin conexión» ya es motivo: esa es la pantalla
             // desde la que se pidió poder mandar las trazas.

@@ -15,6 +15,8 @@ import com.unixcision.uniconnect.android.data.AndroidNotificationConnections
 import com.unixcision.uniconnect.android.data.ContentReader
 import com.unixcision.uniconnect.android.data.HttpFileSender
 import com.unixcision.uniconnect.android.data.NativeFilePutClient
+import com.unixcision.uniconnect.android.data.NativeInboxClient
+import com.unixcision.uniconnect.android.data.InboxPreviewCache
 import com.unixcision.uniconnect.android.data.HttpSpeechModelStore
 import com.unixcision.uniconnect.android.data.MediaCodecAudioDecoder
 import com.unixcision.uniconnect.android.data.MediaRecorderVoice
@@ -31,6 +33,7 @@ import com.unixcision.uniconnect.android.domain.AudioDecoder
 import com.unixcision.uniconnect.android.domain.Dictation
 import com.unixcision.uniconnect.android.domain.FilePutClient
 import com.unixcision.uniconnect.android.domain.FileSender
+import com.unixcision.uniconnect.android.domain.InboxClient
 import com.unixcision.uniconnect.android.domain.HostDictation
 import com.unixcision.uniconnect.android.domain.HostTranscription
 import com.unixcision.uniconnect.android.domain.LocalDictation
@@ -81,6 +84,9 @@ class AppContainer(context: Context) {
     val uploadHistory: UploadHistoryRepository = StoredUploadHistoryRepository(store)
     val contentReader = ContentReader(context.contentResolver)
     val filePutClient: FilePutClient = NativeFilePutClient(rpc)
+    val inboxClient: InboxClient = NativeInboxClient(rpc)
+    /** Copias de lo mirado en la bandeja de cada equipo; en la caché, que Android puede vaciar. */
+    val inboxPreviews = InboxPreviewCache(File(context.cacheDir, "bandeja"))
     val dictation: Dictation = AndroidDictation(context)
     val voiceRecorder: VoiceRecorder = MediaRecorderVoice(context)
     val hostTranscription: HostTranscription = NativeHostTranscription(rpc)

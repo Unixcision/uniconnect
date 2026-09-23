@@ -36,6 +36,14 @@ data class MachineSnapshot(val serverName: String, val workspaces: List<RemoteWo
      */
     val relaunches: Boolean get() = RELAUNCH in capabilities
 
+    /**
+     * Whether this machine lists, reads and deletes what the phone has sent it (`inbox.v1`).
+     *
+     * Without it the attach sheet shows no gallery and the settings no meter for this machine:
+     * there is nothing to ask it and no way to free its space from here.
+     */
+    val keepsInbox: Boolean get() = INBOX in capabilities
+
     companion object {
         /** The host implements mobile.workspace.update and mobile.terminal.update. */
         const val BOX_UPDATE = "box_update"
@@ -51,5 +59,8 @@ data class MachineSnapshot(val serverName: String, val workspaces: List<RemoteWo
 
         /** The host implements relaunch.plan/apply/status (relaunch.v1). */
         const val RELAUNCH = "relaunch.v1"
+
+        /** The host implements mobile.inbox.list/read/delete (inbox.v1). */
+        const val INBOX = "inbox.v1"
     }
 }

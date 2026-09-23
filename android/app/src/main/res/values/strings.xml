@@ -428,4 +428,65 @@
     <string name="dictation_local_failed_handed_over">Whisper del móvil ha fallado: lo grabado va a %1$s</string>
     <string name="transcriber_phone_whisper">Whisper del móvil</string>
     <string name="transcriber_phone_recogniser">el reconocedor del móvil</string>
+
+    <!-- Bandeja de entrada del equipo (inbox.v1): galería del clip y medidor de Ajustes. -->
+    <string name="inbox_on_machine">Ya en %1$s</string>
+    <string name="inbox_refresh">Actualizar la bandeja</string>
+    <string name="inbox_empty">Aún no has mandado nada a %1$s.</string>
+    <string name="inbox_loading">Mirando qué hay en %1$s…</string>
+    <string name="inbox_show_more">Ver más (%1$d de %2$d)</string>
+    <string name="inbox_paste">Pegar en el chat</string>
+    <string name="inbox_paste_short">Pegar</string>
+    <string name="inbox_pasted">Ruta pegada en la cajita</string>
+    <string name="inbox_copy_path">Copiar ruta</string>
+    <string name="inbox_not_pasted_ssh">Está en %1$s, no en el servidor SSH de esta ventana: se copia la ruta en vez de pegarla.</string>
+    <string name="inbox_open_with">Abrir con…</string>
+    <string name="inbox_play">Reproducir</string>
+    <string name="inbox_pause">Pausa</string>
+    <string name="inbox_download_to_open">Traer al móvil para abrirlo</string>
+    <string name="inbox_downloading">Trayendo %1$s de %2$s…</string>
+    <string name="inbox_no_app">No hay ninguna app en el móvil que abra este archivo.</string>
+    <string name="inbox_delete_one">Borrar del equipo</string>
+    <string name="inbox_delete_one_confirm">¿Seguro? Toca otra vez para borrarlo</string>
+    <string name="inbox_deleted_one">Borrado de %1$s</string>
+    <string name="inbox_meta">%1$s · %2$s</string>
+    <string name="inbox_kind_image">Imagen</string>
+    <string name="inbox_kind_video">Vídeo</string>
+    <string name="inbox_kind_audio">Audio</string>
+    <string name="inbox_kind_document">Documento</string>
+    <string name="inbox_kind_other">Archivo</string>
+    <string name="inbox_failed_approval">%1$s no ha aprobado este móvil: apruébalo en el equipo.</string>
+    <string name="inbox_failed_locked">UniConnect está bloqueado en %1$s.</string>
+    <string name="inbox_failed_gone">El archivo ya no está en %1$s.</string>
+    <string name="inbox_failed_transport">No se ha podido hablar con %1$s.</string>
+    <string name="inbox_failed_other">%1$s ha dicho que no: %2$s</string>
+
+    <string name="settings_inbox">Adjuntos</string>
+    <string name="settings_inbox_note">Lo que mandas desde el móvil se queda en ~/UniConnect/Entrada de cada equipo. Aquí ves cuánto ocupa y lo puedes limpiar.</string>
+    <string name="settings_inbox_offline">%1$s: sin conexión ahora mismo</string>
+    <string name="settings_inbox_unsupported">%1$s: su UniConnect aún no lo admite (actualízalo)</string>
+    <string name="settings_inbox_none">No hay ningún equipo guardado.</string>
+    <string name="settings_inbox_since">desde el %1$s</string>
+    <string name="settings_inbox_free">Liberar espacio</string>
+    <string name="inbox_cleanup_title">Liberar espacio en %1$s</string>
+    <string name="inbox_cleanup_note">Elige qué borrar. Si marcas los dos criterios, solo se borra lo que cumpla ambos. Antes de borrar verás cuánto se va.</string>
+    <string name="inbox_cleanup_everything">Todo</string>
+    <string name="inbox_cleanup_older">Anteriores a</string>
+    <string name="inbox_cleanup_larger">Mayores de</string>
+    <string name="inbox_cleanup_day">1 día</string>
+    <string name="inbox_cleanup_week">1 semana</string>
+    <string name="inbox_cleanup_month">1 mes</string>
+    <string name="inbox_cleanup_quarter">3 meses</string>
+    <string name="inbox_cleanup_pick">Marca al menos un criterio.</string>
+    <string name="inbox_cleanup_estimating">Calculando…</string>
+    <string name="inbox_cleanup_nothing">Con esto no se borraría nada.</string>
+    <string name="inbox_cleanup_estimate">Se borrarían %1$s (%2$s). Quedarían %3$s (%4$s).</string>
+    <string name="inbox_cleanup_confirm">Borrar %1$s</string>
+    <string name="inbox_cleanup_running">Borrando…</string>
+    <string name="inbox_cleanup_done">Borrados %1$s: %2$s liberados.</string>
+    <plurals name="inbox_files">
+        <item quantity="one">%d archivo</item>
+        <item quantity="many">%d archivos</item>
+        <item quantity="other">%d archivos</item>
+    </plurals>
 </resources>

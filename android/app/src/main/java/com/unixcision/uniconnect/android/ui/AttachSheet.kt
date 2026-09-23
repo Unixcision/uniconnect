@@ -30,6 +30,7 @@ import com.unixcision.uniconnect.android.domain.AttachCapture
 import com.unixcision.uniconnect.android.domain.AttachDecision
 import com.unixcision.uniconnect.android.domain.AttachRoute
 import com.unixcision.uniconnect.android.domain.HostLostCapability
+import com.unixcision.uniconnect.android.domain.InboxEntry
 import com.unixcision.uniconnect.android.domain.MachineFailure
 import com.unixcision.uniconnect.android.domain.UploadFailure
 import com.unixcision.uniconnect.android.domain.UploadService
@@ -44,7 +45,7 @@ import com.unixcision.uniconnect.android.ui.theme.UniTheme
  * when the file sits where the window's agent runs, or tells the reader it was kept on the host.
  */
 @Composable
-fun AttachButton(model: AttachViewModel, target: AttachTarget, draft: String, onDraftChange: (String) -> Unit) {
+fun AttachButton(model: AttachViewModel, inbox: InboxViewModel?, target: AttachTarget, draft: String, onDraftChange: (String) -> Unit) {
     val state by model.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var open by rememberSaveable { mutableStateOf(false) }
@@ -69,7 +70,13 @@ fun AttachButton(model: AttachViewModel, target: AttachTarget, draft: String, on
     IconButton(onClick = { open = true }) {
         Icon(Icons.Rounded.AttachFile, stringResource(R.string.attach_title), tint = if (busy) UniTheme.colors.accent else UniTheme.colors.muted)
     }
-    if (open) AttachSheet(model, target, mine, state.service, onDismiss = { open = false })
+    // Volver a pegar algo que ya está en el equipo: la ruta va a la cajita y la hoja se cierra.
+    val pasteAgain: (InboxEntry) -> Unit = { entry ->
+        latestChange(AttachPaste.pasteInto(latestDraft, entry.absolute))
+        Toast.makeText(context, R.string.inbox_pasted, Toast.LENGTH_SHORT).show()
+        open = false
+    }
+    if (open) AttachSheet(model, inbox, target, mine, state.service, onPasteAgain = pasteAgain, onDismiss = { open = false })
 }
 
 /**
@@ -79,7 +86,15 @@ fun AttachButton(model: AttachViewModel, target: AttachTarget, draft: String, on
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AttachSheet(model: AttachViewModel, target: AttachTarget, transfers: List<AttachViewModel.Transfer>, service: UploadService, onDismiss: () -> Unit) {
+private fun AttachSheet(
+    model: AttachViewModel,
+    inbox: InboxViewModel?,
+    target: AttachTarget,
+    transfers: List<AttachViewModel.Transfer>,
+    service: UploadService,
+    onPasteAgain: (InboxEntry) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var localError by remember { mutableStateOf<Int?>(null) }
     val route = AttachRoute.forHost(takesFiles = target.supportsFilePut)
     // What the reader saw when tapping is what happens when the picker returns: the route and the
@@ -134,6 +149,7 @@ private fun AttachSheet(model: AttachViewModel, target: AttachTarget, transfers:
                     }
                 }
             }
+            if (inbox != null && target.supportsInbox) InboxGallery(inbox, target, onPaste = onPasteAgain)
             TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.close), color = UniTheme.colors.muted) }
         }
     }
