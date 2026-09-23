@@ -418,7 +418,7 @@ class RPCTests(unittest.TestCase):
 
     def test_workspace_list_advertises_the_capability(self):
         self.assertEqual(self.call("workspace.list", {})["capabilities"],
-                         ["activity.v1", "box_update", "file_put.v1", "transcribe.v1", "ssh_create.v1"])
+                         ["activity.v1", "box_update", "file_put.v1", "inbox.v1", "transcribe.v1", "ssh_create.v1"])
 
     def test_full_transfer_through_the_rpc_boundary(self):
         data = b"linea uno\nfin"

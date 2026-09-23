@@ -18,6 +18,7 @@ from .mobile_protocol import RPCError
 from .activity import activity_snapshot, workspace_activity
 from .arrangement import WorkspaceArrangement
 from .file_put import FilePutStore, RemoteInbox
+from .inbox import Inbox
 from .mobile_pty import MobilePTYAttachments
 from .mobile_pty_process import MobilePTYProcess
 from .mobile_render_grid import (MAX_CAPTURE_BYTES, MAX_SCROLLBACK_ROWS, capture_dependencies_ready,
@@ -28,16 +29,19 @@ from .transport import SSHCommand, Transport
 
 class MobileRPC:
     FILE_OPERATIONS = ("file.begin", "file.chunk", "file.commit", "file.abort")
+    INBOX_OPERATIONS = ("inbox.list", "inbox.read", "inbox.delete")
 
     def __init__(self, window, access, schedule, *, transport_factory=Transport,
                  clock=time.monotonic, wait=time.sleep, pty_factory=MobilePTYProcess,
-                 file_put=None, remote_inbox=None, transcription=None):
+                 file_put=None, remote_inbox=None, transcription=None, inbox=None):
         self.window, self.access, self.schedule = window, access, schedule
         self.transport_factory = transport_factory
         self.clock, self.wait = clock, wait
         self.host = None
         self.file_put = file_put if file_put is not None else FilePutStore(Path.home() / "UniConnect" / "Entrada")
         self.remote_inbox = remote_inbox if remote_inbox is not None else RemoteInbox()
+        # La misma carpeta en la que file_put deja lo que llega: inbox.v1 la enseña y la limpia.
+        self.inbox = inbox if inbox is not None else Inbox(self.file_put.root)
         self.transcription = transcription if transcription is not None else TranscriptionEngine()
         self.viewports, self.original_sizes = {}, {}
         self.revisions = {}
@@ -97,6 +101,8 @@ class MobileRPC:
             # Conversión y motor fuera de GTK: solo el bloqueo y el permiso se
             # comprueban en el hilo dueño del modelo, como en las transferencias.
             return self.transcribe_dispatch(params, connection_id, authorized)
+        if operation in self.INBOX_OPERATIONS:
+            return self.inbox_dispatch(operation, params, authorized)
         if operation in self.FILE_OPERATIONS:
             # Trozos, verificación y salto SSH fuera de GTK; solo la identidad de
             # la caja y el bloqueo se comprueban en el hilo dueño del modelo.
@@ -113,6 +119,32 @@ class MobileRPC:
                 (monitor.note_resize if kind == "resize" else monitor.note_input)(surface_id)
             return False
         self.schedule(note)
+
+    # ----- inbox.v1 -----
+
+    def inbox_dispatch(self, operation, params, authorized):
+        """Bandeja de entrada: permiso y bloqueo en el hilo dueño; el disco, fuera de GTK."""
+        def check():
+            if not authorized():
+                raise RPCError("approval_required", "El permiso de este dispositivo ha sido revocado")
+            if self.window.locked:
+                raise RPCError("locked", "UniConnect está bloqueado")
+        self.on_main(check)
+        if operation == "inbox.list":
+            limit, offset = params.get("limit", 200), params.get("offset", 0)
+            if type(limit) is not int or type(offset) is not int or limit < 0 or offset < 0:
+                raise RPCError("invalid_params", "Paginación no válida")
+            return self.inbox.list(limit=limit, offset=offset)
+        if operation == "inbox.read":
+            return self.inbox.read(params.get("path"), params.get("offset", 0), params.get("length", 1024 * 1024))
+        older, larger = params.get("older_than_days"), params.get("larger_than_bytes")
+        if older is not None and (type(older) not in (int, float) or older < 0):
+            raise RPCError("invalid_params", "Antigüedad no válida")
+        if larger is not None and (type(larger) is not int or larger < 0):
+            raise RPCError("invalid_params", "Tamaño no válido")
+        return self.inbox.delete(everything=params.get("all") is True, older_than_days=older,
+                                 larger_than_bytes=larger, paths=params.get("paths"),
+                                 dry_run=params.get("dry_run") is True)
 
     # ----- file_put.v1 -----
 
@@ -415,7 +447,7 @@ class MobileRPC:
         if terminals_filter and not any(box["terminals"] for box in boxes):
             raise RPCError("not_found", "No se encontró la terminal")
         return {"workspaces": boxes, "display_name": socket.gethostname(),
-                "capabilities": ["activity.v1", "box_update", "file_put.v1", "transcribe.v1",
+                "capabilities": ["activity.v1", "box_update", "file_put.v1", "inbox.v1", "transcribe.v1",
                                  "ssh_create.v1"]}
 
     def invalidate_terminal(self, panel_id):
