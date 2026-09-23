@@ -440,6 +440,8 @@
 		4E673EDE464BF3AB80E94C1D /* MobileHostRPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47BDC06F004C02A52B05E4A0 /* MobileHostRPC.swift */; };
 		F67FBC88671C40AC3A3284CE /* MobileHostService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ACA497A6831165EA879C642 /* MobileHostService.swift */; };
 		C0DE10510000000000000001 /* MobileHostServiceSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10510000000000000002 /* MobileHostServiceSettingsTests.swift */; };
+		A14EC2DB1F4BAB9C6074939F /* MobileInboxService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2566868A7C252F630077D775 /* MobileInboxService.swift */; };
+		506502CE610B3785390CC756 /* MobileInboxServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31064D23F9E8777B9989FAFF /* MobileInboxServiceTests.swift */; };
 		9B08F916D7FF7626C6820727 /* MobilePairingConnectionTransitionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4880BD05924400E5279D632 /* MobilePairingConnectionTransitionTests.swift */; };
 		0099C2865D9D468747D14593 /* MobilePairingModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04CE82AE8B39EA0C1395F696 /* MobilePairingModel.swift */; };
 		325AF8814443BDA97AC3CC98 /* MobilePairingQRImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B76EC5E03C345BEAC25828A7 /* MobilePairingQRImageView.swift */; };
@@ -1462,6 +1464,8 @@
 		47BDC06F004C02A52B05E4A0 /* MobileHostRPC.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileHostRPC.swift; sourceTree = "<group>"; };
 		7ACA497A6831165EA879C642 /* MobileHostService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileHostService.swift; sourceTree = "<group>"; };
 		C0DE10510000000000000002 /* MobileHostServiceSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileHostServiceSettingsTests.swift; sourceTree = "<group>"; };
+		2566868A7C252F630077D775 /* MobileInboxService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileInboxService.swift; sourceTree = "<group>"; };
+		31064D23F9E8777B9989FAFF /* MobileInboxServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileInboxServiceTests.swift; sourceTree = "<group>"; };
 		A4880BD05924400E5279D632 /* MobilePairingConnectionTransitionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePairingConnectionTransitionTests.swift; sourceTree = "<group>"; };
 		04CE82AE8B39EA0C1395F696 /* MobilePairingModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "Pairing/MobilePairingModel.swift"; sourceTree = "<group>"; };
 		B76EC5E03C345BEAC25828A7 /* MobilePairingQRImageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "Pairing/MobilePairingQRImageView.swift"; sourceTree = "<group>"; };
@@ -2407,6 +2411,7 @@
 				7D8B2B8ADB3B3442BE6ADEE1 /* MobileFilePutTypes.swift */,
 				D6C1CCAF7A276C4981FD5C30 /* MobileFileSSHCopier.swift */,
 				3D087EA8606165C5280ECAF6 /* MobileFilePutService.swift */,
+				2566868A7C252F630077D775 /* MobileInboxService.swift */,
 				5537A1728E22484663B5244A /* MobileTranscriptionAdmission.swift */,
 				B23C3A2916C2DF69E43B89D4 /* MobileTranscriptionAudioFormat.swift */,
 				1365AC47D1BE6D374F820E1A /* MobileTranscriptionAvailability.swift */,
@@ -3065,6 +3070,7 @@
 				4E5F60720000000000000002 /* NotificationSoundSettingsTests.swift */,
 				42092CDB2109E250F7F2A76E /* TabManagerUnitTests.swift */,
 				41777CC1F441E625114CF7B1 /* MobileFilePutServiceTests.swift */,
+				31064D23F9E8777B9989FAFF /* MobileInboxServiceTests.swift */,
 				41777CC1F441E625114CFRL1 /* UniConnectRelaunchOperationStoreTests.swift */,
 				B72E5A0C81D6470FA33EBRL2 /* UniConnectRelaunchInventoryTests.swift */,
 				E6B03F91C72D45A0942FBRL3 /* UniConnectRelaunchTmuxDriverTests.swift */,
@@ -3765,6 +3771,7 @@
 				26F81666C317D8A107A0A790 /* MobileHostPeerIdentity.swift in Sources */,
 				4E673EDE464BF3AB80E94C1D /* MobileHostRPC.swift in Sources */,
 				F67FBC88671C40AC3A3284CE /* MobileHostService.swift in Sources */,
+				A14EC2DB1F4BAB9C6074939F /* MobileInboxService.swift in Sources */,
 				0099C2865D9D468747D14593 /* MobilePairingModel.swift in Sources */,
 				325AF8814443BDA97AC3CC98 /* MobilePairingQRImageView.swift in Sources */,
 				A2538FE83AE79539E3BF9248 /* MobilePairingView.swift in Sources */,
@@ -4362,6 +4369,7 @@
 				6AA2F2E8BEB19ED6B8E125DB /* MobileHostAuthorizationTests.swift in Sources */,
 				A90622000000000000000004 /* MobileHostOutboundQueueTests.swift in Sources */,
 				C0DE10510000000000000001 /* MobileHostServiceSettingsTests.swift in Sources */,
+				506502CE610B3785390CC756 /* MobileInboxServiceTests.swift in Sources */,
 				9B08F916D7FF7626C6820727 /* MobilePairingConnectionTransitionTests.swift in Sources */,
 				A6092606BB00000000000101 /* MobilePTYProcessTests.swift in Sources */,
 				A6092606BB00000000000103 /* MobileTmuxAttachmentControllerTests.swift in Sources */,

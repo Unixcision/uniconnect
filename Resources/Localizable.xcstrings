@@ -37717,6 +37717,50 @@
         }
       }
     },
+    "uniconnect.mobile.inbox.invalidParams": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parámetros de la bandeja no válidos."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.inbox.missingCriterion": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falta un criterio de borrado."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.inbox.notFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El archivo ya no está en la bandeja de entrada."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.inbox.outside": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ruta fuera de la bandeja de entrada."
+          }
+        }
+      }
+    },
     "uniconnect.mobile.invalidCreation": {
       "extractionState": "manual",
       "localizations": {

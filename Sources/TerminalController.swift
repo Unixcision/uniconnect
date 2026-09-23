@@ -20930,6 +20930,12 @@ class TerminalController {
             result = await v2MobileFileCommit(params: request.params, peer: peer)
         case "mobile.file.abort":
             result = await v2MobileFileAbort(params: request.params, peer: peer)
+        case "mobile.inbox.list":
+            result = await v2MobileInboxList(params: request.params)
+        case "mobile.inbox.read":
+            result = await v2MobileInboxRead(params: request.params)
+        case "mobile.inbox.delete":
+            result = await v2MobileInboxDelete(params: request.params)
         case "mobile.audio.transcribe":
             result = await v2MobileAudioTranscribe(params: request.params, peer: peer)
         case "mobile.workspace.list", "workspace.list":
@@ -21485,7 +21491,7 @@ class TerminalController {
     /// aquí hay motor y modelo: anunciarlo sin ellos dejaría al móvil sin dictado, en vez de
     /// hacerle usar el suyo local.
     private var mobileWorkspaceListCapabilities: [String] {
-        var capabilities = ["activity.v1", "box_update", "file_put.v1", "ssh_create.v1", "relaunch.v1"]
+        var capabilities = ["activity.v1", "box_update", "file_put.v1", "inbox.v1", "ssh_create.v1", "relaunch.v1"]
         if mobileTranscriptionAvailability.isAvailable() {
             capabilities.append("transcribe.v1")
         }
@@ -21881,6 +21887,98 @@ class TerminalController {
             return mobileFilePutResult(error)
         } catch {
             return .err(code: "io_failed", message: String(describing: error), data: nil)
+        }
+    }
+
+    // MARK: - inbox.v1
+
+    /// Bandeja de entrada del móvil: la carpeta en la que `file_put.v1` deja lo que llega.
+    /// El permiso del dispositivo ya lo exige `MobileHostConnection` antes de cada petición;
+    /// aquí solo falta el bloqueo, como en `file_put.v1`.
+    private let mobileInboxService = MobileInboxService()
+
+    private func mobileInboxResult(_ error: Error) -> V2CallResult {
+        let inbox = (error as? MobileInboxError) ?? .invalidParams
+        return .err(code: inbox.code, message: inbox.message, data: nil)
+    }
+
+    /// Entero no negativo de los parámetros; un booleano JSON no cuenta como número.
+    private func mobileInboxInteger(_ value: Any?, default fallback: Int) -> Int? {
+        guard let value else { return fallback }
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+              number.doubleValue >= 0, number.doubleValue == number.doubleValue.rounded() else { return nil }
+        return number.intValue
+    }
+
+    private func v2MobileInboxList(params: [String: Any]) async -> V2CallResult {
+        if let error = mobileFilePutLockedError() { return error }
+        guard let limit = mobileInboxInteger(params["limit"], default: 200),
+              let offset = mobileInboxInteger(params["offset"], default: 0) else {
+            return mobileInboxResult(MobileInboxError.invalidParams)
+        }
+        let listing = await mobileInboxService.list(limit: limit, offset: offset)
+        return .ok([
+            "root": listing.root,
+            "count": listing.count,
+            "total_bytes": listing.totalBytes,
+            "oldest": listing.oldest.map { Int($0.timeIntervalSince1970) } as Any? ?? NSNull(),
+            "newest": listing.newest.map { Int($0.timeIntervalSince1970) } as Any? ?? NSNull(),
+            "entries": listing.entries.map { entry in
+                [
+                    "path": entry.path, "absolute": entry.absolute, "name": entry.name, "size": entry.size,
+                    "modified": Int(entry.modified.timeIntervalSince1970), "kind": entry.kind.rawValue,
+                ] as [String: Any]
+            },
+        ])
+    }
+
+    private func v2MobileInboxRead(params: [String: Any]) async -> V2CallResult {
+        if let error = mobileFilePutLockedError() { return error }
+        guard let path = params["path"] as? String,
+              let offset = mobileInboxInteger(params["offset"], default: 0),
+              let length = mobileInboxInteger(params["length"], default: MobileInboxService.readChunkBytes) else {
+            return mobileInboxResult(MobileInboxError.invalidParams)
+        }
+        do {
+            let chunk = try await mobileInboxService.read(path: path, offset: offset, length: length)
+            return .ok([
+                "path": chunk.path, "size": chunk.size, "offset": chunk.offset,
+                "data": chunk.data.base64EncodedString(), "eof": chunk.endOfFile,
+            ])
+        } catch {
+            return mobileInboxResult(error)
+        }
+    }
+
+    private func v2MobileInboxDelete(params: [String: Any]) async -> V2CallResult {
+        if let error = mobileFilePutLockedError() { return error }
+        var criteria = MobileInboxDeletion()
+        criteria.everything = (params["all"] as? Bool) == true
+        criteria.dryRun = (params["dry_run"] as? Bool) == true
+        if let older = params["older_than_days"], !(older is NSNull) {
+            guard let number = older as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue >= 0 else {
+                return mobileInboxResult(MobileInboxError.invalidParams)
+            }
+            criteria.olderThanDays = number.doubleValue
+        }
+        if let larger = params["larger_than_bytes"], !(larger is NSNull) {
+            guard let bytes = mobileInboxInteger(larger, default: 0) else {
+                return mobileInboxResult(MobileInboxError.invalidParams)
+            }
+            criteria.largerThanBytes = bytes
+        }
+        if let paths = params["paths"], !(paths is NSNull) {
+            guard let list = paths as? [String] else { return mobileInboxResult(MobileInboxError.invalidParams) }
+            criteria.paths = list
+        }
+        do {
+            let result = try await mobileInboxService.delete(criteria)
+            return .ok([
+                "dry_run": result.dryRun, "deleted": result.deleted, "freed_bytes": result.freedBytes,
+                "remaining_count": result.remainingCount, "remaining_bytes": result.remainingBytes,
+            ])
+        } catch {
+            return mobileInboxResult(error)
         }
     }
 
