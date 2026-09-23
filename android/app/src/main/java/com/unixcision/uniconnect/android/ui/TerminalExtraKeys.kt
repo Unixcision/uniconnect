@@ -80,9 +80,10 @@ fun TerminalExtraKeys(
             // así que después basta con pulsar la letra del comando en el teclado normal.
             KeyCap("^B", stringResource(R.string.key_ctrl_b_desc), enabled, Modifier.weight(1f)) { onText("\u0002") }
             KeyCap("^C", stringResource(R.string.key_ctrl_c_desc), enabled, Modifier.weight(1f)) { onText("\u0003") }
-            KeyCap("^D", stringResource(R.string.key_ctrl_d_desc), enabled, Modifier.weight(1f)) { onText("\u0004") }
-            KeyCap("^Z", stringResource(R.string.key_ctrl_z_desc), enabled, Modifier.weight(1f)) { onText("\u001a") }
-            KeyCap("^L", stringResource(R.string.key_ctrl_l_desc), enabled, Modifier.weight(1f)) { onText("\u000c") }
+            // ^D, ^Z y ^L fuera: con IAs en cada caja, un ^Z suelto suspende Claude y se pierde la
+            // ventana hasta recuperarla a mano, y ^D la cierra. ^X y ^S son los que se usan.
+            KeyCap("^X", stringResource(R.string.key_ctrl_x_desc), enabled, Modifier.weight(1f)) { onText("\u0018") }
+            KeyCap("^S", stringResource(R.string.key_ctrl_s_desc), enabled, Modifier.weight(1f)) { onText("\u0013") }
             KeyCap(stringResource(R.string.key_del), stringResource(R.string.key_delete_desc), enabled, Modifier.weight(1f)) { onKey(TerminalKey.DELETE) }
             KeyCap(stringResource(R.string.key_enter), stringResource(R.string.key_enter_desc), enabled, Modifier.weight(1.6f)) { onKey(TerminalKey.ENTER) }
         }

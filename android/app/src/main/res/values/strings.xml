@@ -324,9 +324,8 @@
     <string name="key_enter_desc">Intro</string>
     <string name="key_ctrl_b_desc">Control+B, prefijo de tmux</string>
     <string name="key_ctrl_c_desc">Control C: interrumpir</string>
-    <string name="key_ctrl_d_desc">Control D: fin de entrada</string>
-    <string name="key_ctrl_z_desc">Control Z: suspender</string>
-    <string name="key_ctrl_l_desc">Control L: limpiar pantalla</string>
+    <string name="key_ctrl_x_desc">Control X</string>
+    <string name="key_ctrl_s_desc">Control S</string>
     <string name="real_terminal_reconnect">Reconectar</string>
     <string name="dictation_start">Dictar</string>
     <string name="dictation_stop">Parar</string>
