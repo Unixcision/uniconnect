@@ -86,13 +86,15 @@ class RelaunchReasonsTest {
     fun `una causa que esta version no conoce conserva su identificador`() {
         // Esta prueba antes afirmaba `named("sin_ia") == null`, que es justo lo CONTRARIO de lo
         // que su nombre promete: se quedaba verde mientras el diagnóstico se perdía.
-        val futura = RelaunchReason.of("sin_ia")
+        // `sin_ia` ya es conocida desde el árbol IA (24-09): hace falta una causa que no exista.
+        val futura = RelaunchReason.of("causa_de_una_version_futura")
 
-        assertEquals("sin_ia", futura?.wire)
+        assertEquals("causa_de_una_version_futura", futura?.wire)
         assertEquals(null, futura?.cause)
 
         val resultados = listOf(resultado("a", RelaunchTargetState.SKIPPED).copy(reason = futura))
-        assertEquals(listOf("sin_ia"), RelaunchReasons.distinctReasons(resultados).map { it.wire })
+        assertEquals(listOf("causa_de_una_version_futura"), RelaunchReasons.distinctReasons(resultados).map { it.wire })
+        assertEquals(RelaunchCause.NO_AGENT, RelaunchReason.of("sin_ia")?.cause)
     }
 
     @Test
