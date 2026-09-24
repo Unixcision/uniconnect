@@ -343,6 +343,47 @@ final class UniConnectCoordinator: ObservableObject {
     private var relaunchCoordinator: UniConnectRelaunchCoordinator?
     private var relaunchInFlight = false
 
+    /// The single relaunch service shared by the desktop menus and the phone (`relaunch.v1`), so
+    /// both see the same panes in flight.
+    var relaunchService: UniConnectRelaunchCoordinator {
+        if let relaunchCoordinator { return relaunchCoordinator }
+        let service = UniConnectRelaunchCoordinator(machineID: Host.current().localizedName ?? "mac")
+        relaunchCoordinator = service
+        return service
+    }
+
+    /// Writes the conversation each verified relaunch actually came back on into its window.
+    ///
+    /// The id printed on the way out (or proven before) is the effective one; the window's record
+    /// takes it as its active conversation, and the previous one stays in the history.
+    func recordRelaunchedConversations(_ operation: RelaunchOperation) {
+        let verified = operation.results.filter { $0.state == .verified && $0.effectiveID != nil }
+        guard !verified.isEmpty else { return }
+        for manager in allTabManagers() {
+            for workspace in manager.tabs where workspace.uniConnectProfile?.isSSH != true {
+                for (panelID, record) in workspace.uniConnectLocalWindowsByPanelId {
+                    guard let binding = record.tmuxBinding,
+                          let result = verified.first(where: {
+                              $0.key.pane == binding.name && $0.key.tmuxServer == binding.socketName
+                          }),
+                          let effectiveID = result.effectiveID else { continue }
+                    let directory = record.activeConversation?.resumeWorkingDirectory
+                        ?? record.latestConversation?.resumeWorkingDirectory
+                        ?? record.workingDirectory
+                    _ = workspace.uniConnectRecordLocalAgent(
+                        panelId: panelID,
+                        snapshot: SessionRestorableAgentSnapshot(
+                            kind: .claude,
+                            sessionId: effectiveID,
+                            workingDirectory: directory,
+                            launchCommand: nil
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     /// Cierra y reabre las IA de `workspaces`, dejándolas como estaban.
     ///
     /// Un solo camino para el menú, el contextual y el móvil. Antes de tocar nada enseña lo que va a
@@ -364,23 +405,17 @@ final class UniConnectCoordinator: ObservableObject {
             ))
             return
         }
-        let coordinator = relaunchCoordinator ?? UniConnectRelaunchCoordinator(
-            machineID: Host.current().localizedName ?? "mac"
-        )
-        relaunchCoordinator = coordinator
+        let coordinator = relaunchService
         var preview = coordinator.preview(workspaces: workspaces)
         if let onlyPanels {
             // Filtrar por panel y no por caja: una ventana suelta es su propio alcance, y el resto
-            // de su caja no tiene por qué enterarse.
+            // de su caja no tiene por qué enterarse. Las exclusiones también, por identidad del panel.
             let wanted = Set(workspaces.flatMap { workspace in
                 workspace.uniConnectLocalWindowsByPanelId
                     .filter { onlyPanels.contains($0.key) }
                     .compactMap { $0.value.tmuxBinding?.name }
             })
-            preview = UniConnectRelaunchCoordinator.Preview(
-                targets: preview.targets.filter { wanted.contains($0.session) },
-                exclusions: preview.exclusions
-            )
+            preview = preview.restricted(toPanels: onlyPanels, sessions: wanted)
         }
 
         guard !preview.targets.isEmpty else {
@@ -404,6 +439,7 @@ final class UniConnectCoordinator: ObservableObject {
         Task { @MainActor [weak self] in
             let operation = await coordinator.run(preview)
             self?.relaunchInFlight = false
+            self?.recordRelaunchedConversations(operation)
             self?.reportRelaunch(operation)
         }
     }

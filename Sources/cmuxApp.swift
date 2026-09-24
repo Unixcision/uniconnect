@@ -1377,7 +1377,10 @@ struct cmuxApp: App {
             .disabled(activeTabManager.selectedWorkspace == nil)
 
             Button {
-                UniConnectCoordinator.shared.relaunchAgents(in: activeTabManager.tabs)
+                // «Este equipo» son todas las ventanas de la app, no solo las de la ventana activa.
+                UniConnectCoordinator.shared.relaunchAgents(
+                    in: UniConnectCoordinator.shared.allTabManagers().flatMap(\.tabs)
+                )
             } label: {
                 Label(
                     String(localized: "menu.box.relaunchAgentsEverywhere", defaultValue: "Relanzar todas las IA de este equipo"),

@@ -18184,6 +18184,39 @@
         }
       }
     },
+    "menu.box.relaunchAgentWindow": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relanzar la IA de esta ventana"
+          }
+        }
+      }
+    },
+    "menu.box.relaunchAgents": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relanzar las IA de esta caja"
+          }
+        }
+      }
+    },
+    "menu.box.relaunchAgentsEverywhere": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relanzar todas las IA de este equipo"
+          }
+        }
+      }
+    },
     "menu.box.removeColor": {
       "extractionState": "manual",
       "localizations": {
@@ -38538,6 +38571,116 @@
           "stringUnit": {
             "state": "translated",
             "value": "La autorización del plan no es válida"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.confirm.excluded": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se quedan fuera %lld, intactas."
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.confirm.go": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relanzar"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.confirm.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Relanzar %lld ventanas?"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.done.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld sin confirmar. Revisa esas ventanas: puede haber cambios."
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.done.needsUser": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld esperan a que contestes algo en su ventana: un permiso o la confianza de una carpeta. No se contestan solas a propósito."
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.done.skipped": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld se quedaron como estaban, sin tocarlas."
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.done.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relanzadas %lld de %lld"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.error.allExcluded": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ninguna de estas ventanas se puede relanzar todavía: o no se sabe qué conversación llevan, o su IA aún no tiene adaptador. Se quedan como están."
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.error.alreadyRunning": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ya hay un relanzado en marcha. Espera a que termine."
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.error.nothingToDo": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay ninguna IA que relanzar aquí."
           }
         }
       }
