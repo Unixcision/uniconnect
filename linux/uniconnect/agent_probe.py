@@ -17,6 +17,22 @@ Criterio (contracts/agent-tree-v1/deteccion-casos.json):
   o por ``resume <uuid>``; agy por ``--conversation``; grok por ``-r``/``--resume``.
 
 Nunca escribe, nunca envía teclas ni cambia opciones de tmux y nunca usa sudo.
+
+CLI: ``[--socket NOMBRE|default] [--session NOMBRE]...`` (``default`` no pasa ``-L``).
+Sale siempre con 0 e imprime una línea JSON (<= 256 KB); el mal uso sale con 2:
+
+    {"version": 1, "checked_at": "2026-09-24T14:30:04Z", "socket": "default",
+     "host": {"hostname": "...", "uid": 0, "platform": "linux"},
+     "server": true, "error": null, "truncated": false,
+     "sessions": [{"name": "claudebets", "session_id": "$0", "pane_id": "%0", "pane_pid": 123,
+                   "live": true, "reason": null | "sin_ia" | "identidad_ambigua" | "sin_id" | "panel_muerto",
+                   "agent": null | {"provider": "claude", "session_id": "...", "cwd": "/root/xunis",
+                                    "as_root": true, "source": "ficha", "pid": 456, "status": "idle",
+                                    "version": "2.1.280", "proc_start": "..."},
+                   "panes": [{"pane_id": "%0", "window_index": 0, "pane_pid": 123, "dead": false,
+                              "current_path": "/root", "current_command": "claude"}]}]}
+
+``server: false`` sin error significa que ese servidor tmux no tiene sesiones.
 """
 
 import datetime
