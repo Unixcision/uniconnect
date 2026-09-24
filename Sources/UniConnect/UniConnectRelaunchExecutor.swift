@@ -115,7 +115,10 @@ struct UniConnectRelaunchExecutor: Sendable {
 
         switch await close(target: target, pane: pane, dialect: dialect) {
         case let .failure(cause):
-            return .init(key: target.key, state: cause == .folderTrust ? .needsUser : .failed, cause: cause)
+            // Con la carpeta sin confiar o con tareas de fondo no se ha cerrado nada: la IA sigue como
+            // estaba y lo decide una persona. No es un fallo.
+            let untouched = cause == .folderTrust || cause == .backgroundTasks
+            return .init(key: target.key, state: untouched ? .needsUser : .failed, cause: cause)
         case let .success(printed):
             // What an agent prints on its way out beats anything guessed beforehand.
             conversation = printed ?? conversation
@@ -297,6 +300,9 @@ struct UniConnectRelaunchExecutor: Sendable {
             case .done:
                 return .success(nil)
             case let .stop(cause):
+                return .failure(cause)
+            case let .cancelAndStop(cause):
+                await driver.pressEscape(socket: target.socket, pane: pane)
                 return .failure(cause)
             case let .type(text):
                 await driver.type(socket: target.socket, pane: pane, text: text)

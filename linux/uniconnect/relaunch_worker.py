@@ -783,6 +783,20 @@ class TargetWorker:
                 return int(digits.group(1)) if digits else None
         return None
 
+    # Un hijo directo de Claude que no es un servidor MCP es trabajo suyo en marcha: una orden en
+    # segundo plano o un monitor (la sonda del árbol IA los cuenta igual).
+    MCP_SERVER = re.compile(r"mcp|_server|server\.(py|js)")
+
+    @classmethod
+    def is_background_task(cls, argv):
+        """True si este hijo directo de Claude es una tarea o un monitor, no un servidor MCP."""
+        return not cls.MCP_SERVER.search(" ".join(argv))
+
+    def claude_background_work(self, pid):
+        """Tareas y monitores vivos de este Claude: sus hijos directos que no son servidores MCP."""
+        return [child for child in self.descendants(pid).values()
+                if child["parent"] == pid and self.is_background_task(child["argv"])]
+
     @staticmethod
     def claude_printed_id(screen):
         """The conversation Claude prints on its way out («Resume this session with»), or None."""
@@ -791,12 +805,17 @@ class TargetWorker:
         return match.group(0).lower() if match else None
 
     def exit_claude(self, proof, process, journal, events):
-        """D7: type /exit literally, check the line, Enter; answer only «Exit and stop tasks» by its text.
+        """D7: type /exit literally, check the line, Enter, and wait for Claude to leave by itself.
 
-        Never Ctrl+C and never force-killing: the process must die by itself (≤ 75 s).
+        Never Ctrl+C and never force-killing: the process must die by itself (≤ 75 s). Never with
+        work running either: a Claude with tasks or monitors is not closed (tareas_de_fondo), because
+        both answers of its «Background work is running» dialog lose them (stopped, or stranded
+        outside the conversation). Dani's rule: monitors are saved before a close, never killed.
         """
         if self.request.get("provider") != "claude" or not hasattr(os, "pidfd_open"):
             raise Unavailable("no_soportado")
+        if self.claude_background_work(process["pid"]):
+            raise Unavailable("tareas_de_fondo")
         descriptor = os.pidfd_open(process["pid"])
         try:
             if self.inspect() != proof:
@@ -815,18 +834,16 @@ class TargetWorker:
             if self.inspect() != proof:
                 raise Unavailable("generacion_cambiada")
             self.tmux("send-keys", "-t", pane, "Enter")
-            deadline, answered = self.clock() + 75, False
+            deadline = self.clock() + 75
             while not events.wait(deadline, self.clock, also=descriptor):
                 screen = self.tmux("capture-pane", "-p", "-t", pane)
                 if "Yes, I trust this folder" in screen:
                     raise Unavailable("confianza_carpeta")
-                if "Background work is running" in screen and not answered:
-                    option = self.claude_exit_option(screen)
-                    if option is None:
-                        raise Unavailable("dialogo_desconocido")
-                    self.tmux("send-keys", "-t", pane, "-l", "--", str(option))
-                    self.tmux("send-keys", "-t", pane, "Enter")
-                    answered = True
+                if "Background work is running" in screen:
+                    # Work started between the check and the /exit. Neither answer is safe: Escape
+                    # cancels the close, Claude stays as it was, and a person decides.
+                    self.tmux("send-keys", "-t", pane, "Escape")
+                    raise Unavailable("tareas_de_fondo")
             printed = self.claude_printed_id(self.tmux("capture-pane", "-p", "-t", pane))
             if printed is not None and printed != proof["effective_id"].lower():
                 # It left on another conversation than its ficha said: never resume a guess.

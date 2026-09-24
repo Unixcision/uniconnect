@@ -38553,6 +38553,17 @@
         }
       }
     },
+    "uniconnect.relaunch.cause.tareas_de_fondo": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La IA tiene tareas o monitores en marcha. No se cierra, porque se perderían: guárdalos o espera a que terminen."
+          }
+        }
+      }
+    },
     "uniconnect.relaunch.cause.token_caducado": {
       "extractionState": "manual",
       "localizations": {

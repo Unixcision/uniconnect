@@ -32,4 +32,7 @@ public enum RelaunchCause: String, Sendable, Codable, CaseIterable, Error {
     /// The window has no agent running: it is at a shell, or stopped. There is nothing to relaunch,
     /// and starting one that was not there is not "leave it as it was".
     case noAgent = "sin_ia"
+    /// The agent has tasks or monitors running. Closing it would stop them or strand them outside
+    /// the conversation, so it is not closed: they are saved first or allowed to finish.
+    case backgroundTasks = "tareas_de_fondo"
 }

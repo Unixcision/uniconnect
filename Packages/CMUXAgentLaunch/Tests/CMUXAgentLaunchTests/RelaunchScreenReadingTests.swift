@@ -87,7 +87,8 @@ struct RelaunchPaneSequencerTests {
     @Test("Cerrar: se escribe /exit, y el diálogo se contesta con el número que toca")
     func closingWalksTheRightPath() {
         #expect(sequencer.stepToClose(reading: .agentReady) == .type("/exit"))
-        #expect(sequencer.stepToClose(reading: .backgroundWorkQuestion(exitOption: 2)) == .type("2"))
+        // Con tareas o monitores en marcha no se cierra: se cancela la pregunta y decide una persona.
+        #expect(sequencer.stepToClose(reading: .backgroundWorkQuestion(exitOption: 2)) == .cancelAndStop(.backgroundTasks))
         #expect(sequencer.stepToClose(reading: .shellPrompt) == .done)
     }
 

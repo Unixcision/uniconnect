@@ -196,6 +196,14 @@ class ClaudeDialectTests(unittest.TestCase):
                                                         "--dangerously-skip-permissions"], self.SESSION, self.worker.request["catalog"])
         self.assertEqual(args, [executable, "--resume", self.SESSION, "--model", "opus", "--dangerously-skip-permissions"])
 
+    def test_background_work_is_any_direct_child_but_an_mcp_server(self):
+        # Dani: los monitores se guardan antes de cerrar, nunca se matan. Un Claude con una orden de
+        # fondo o un monitor no se cierra; sus servidores MCP no cuentan como trabajo.
+        self.assertTrue(TargetWorker.is_background_task(["/bin/bash", "-c", "tail -f /var/log/app.log"]))
+        self.assertTrue(TargetWorker.is_background_task(["python3", "vigila.py"]))
+        self.assertFalse(TargetWorker.is_background_task(["node", "/usr/lib/node_modules/@x/mcp-server-git/dist/index.js"]))
+        self.assertFalse(TargetWorker.is_background_task(["python3", "-m", "chrome_mcp_server"]))
+
     def test_screen_reading_for_the_exit(self):
         screen = "Background work is running\n  1. Keep it running\n❯ 2. Exit and stop tasks\n"
         self.assertEqual(TargetWorker.claude_exit_option(screen), 2)

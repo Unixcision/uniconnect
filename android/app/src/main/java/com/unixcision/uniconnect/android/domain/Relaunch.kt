@@ -72,7 +72,10 @@ enum class RelaunchCause(val wire: String) {
     UNSUPPORTED("no_soportado"),
 
     /** La ventana no tiene ninguna IA en marcha: no hay nada que relanzar. No es un fallo. */
-    NO_AGENT("sin_ia");
+    NO_AGENT("sin_ia"),
+
+    /** La IA tiene tareas o monitores en marcha: cerrarla los perdería, así que no se toca. */
+    BACKGROUND_TASKS("tareas_de_fondo");
 
     companion object {
         fun named(raw: String?): RelaunchCause? = entries.firstOrNull { it.wire == raw }

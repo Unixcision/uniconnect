@@ -25,6 +25,8 @@ protocol UniConnectRelaunchPaneAccess: Sendable {
     func typeLiteral(socket: String, pane: String, text: String) async
     /// Presses return on its own.
     func pressEnter(socket: String, pane: String) async
+    /// Presses Escape, to back out of a question without answering it.
+    func pressEscape(socket: String, pane: String) async
     /// Whether the pane's foreground process is its shell again.
     func isAtShell(socket: String, pane: String) async -> Bool
 }
@@ -36,6 +38,8 @@ extension UniConnectRelaunchPaneAccess {
     func typeLiteral(socket: String, pane: String, text: String) async {}
     /// Nothing is pressed by a pane access that does not implement it.
     func pressEnter(socket: String, pane: String) async {}
+    /// Nothing is pressed by a pane access that does not implement it.
+    func pressEscape(socket: String, pane: String) async {}
     /// Unknown counts as "not at the shell", so nothing is typed.
     func isAtShell(socket: String, pane: String) async -> Bool { false }
 }

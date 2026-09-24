@@ -188,6 +188,11 @@ struct UniConnectRelaunchTmuxDriver: Sendable {
         _ = await run(socket: socket, ["send-keys", "-t", pane, "Enter"])
     }
 
+    /// Presses Escape on its own, to back out of a question without answering it.
+    func pressEscape(socket: String, pane: String) async {
+        _ = await run(socket: socket, ["send-keys", "-t", pane, "Escape"])
+    }
+
     /// The pane's text with its cursor (`#{cursor_y}`, `#{cursor_x}`) and its styled capture.
     func screen(socket: String, pane: String) async -> RelaunchPaneScreen? {
         guard let cursor = await run(socket: socket, ["display-message", "-p", "-t", pane, "#{cursor_y} #{cursor_x}"]),

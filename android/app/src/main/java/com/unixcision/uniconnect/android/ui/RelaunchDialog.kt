@@ -190,6 +190,7 @@ private fun textOf(reason: RelaunchReason): String = when (reason.cause) {
     RelaunchCause.GENERATION_CHANGED -> stringResource(R.string.relaunch_cause_generation_changed)
     RelaunchCause.DUPLICATE -> stringResource(R.string.relaunch_cause_duplicate)
     RelaunchCause.NO_AGENT -> stringResource(R.string.relaunch_cause_no_agent)
+    RelaunchCause.BACKGROUND_TASKS -> stringResource(R.string.relaunch_cause_background_tasks)
     // Una causa que esta versión no interpreta llega aquí con su identificador intacto, y se
     // enseña tal cual en vez de desaparecer.
     null -> stringResource(R.string.relaunch_cause_unknown, reason.wire)

@@ -10,6 +10,9 @@ public enum RelaunchPaneStep: Sendable, Equatable {
     case done
     /// Stop and tell the reader why. Nothing is sent.
     case stop(RelaunchCause)
+    /// Back out of the question on screen (Escape), leaving the agent as it was, then stop and
+    /// tell the reader why.
+    case cancelAndStop(RelaunchCause)
 }
 
 /// Walks one pane from "agent running" to "agent running again on the same conversation".
@@ -25,11 +28,11 @@ public struct RelaunchPaneSequencer: Sendable {
         switch reading {
         case .agentReady:
             .type("/exit")
-        case let .backgroundWorkQuestion(option):
-            // Chosen by its number, read from the option's own text. Leaving the watchers running
-            // would strand them: the resumed conversation starts its own and two end up looking at
-            // the same thing.
-            .type(String(option))
+        case .backgroundWorkQuestion:
+            // Neither answer is safe: «Exit and stop tasks» kills the agent's monitors and «Keep it
+            // running» strands them outside the conversation. Dani's rule is that monitors are
+            // saved before a close, never killed, so the close is cancelled and a person decides.
+            .cancelAndStop(.backgroundTasks)
         case .exitedShowingResume, .shellPrompt:
             .done
         case .folderTrustQuestion:

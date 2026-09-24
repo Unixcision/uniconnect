@@ -112,6 +112,7 @@
     <string name="relaunch_cause_generation_changed">La ventana cambió entre la previsualización y el relanzado. Vuelve a pedirlo.</string>
     <string name="relaunch_cause_duplicate">Otro ya estaba relanzando esa misma ventana; aquí no se repitió.</string>
     <string name="relaunch_cause_no_agent">No hay ninguna IA en marcha en esa ventana: no hay nada que relanzar.</string>
+    <string name="relaunch_cause_background_tasks">La IA tiene tareas o monitores en marcha. No se cierra, porque se perderían: guárdalos o espera a que terminen.</string>
     <string name="menu_relaunch_window">Relanzar IA de esta ventana</string>
     <string name="menu_relaunch_window_note">La cierra y la vuelve a abrir en su misma conversación, sin preguntas.</string>
     <string name="relaunch_failed">No se ha podido pedir el relanzado.</string>
