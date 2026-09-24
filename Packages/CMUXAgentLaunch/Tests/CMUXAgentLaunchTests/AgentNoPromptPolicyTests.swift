@@ -8,7 +8,7 @@ struct AgentNoPromptPolicyTests {
     private let claudeID = "473ed1de-4397-45ef-b00b-6b17fd7382b0"
     private let codexID = "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17"
 
-    private func policy() throws -> AgentNoPromptPolicy {
+    private func makePolicy() throws -> AgentNoPromptPolicy {
         try AgentNoPromptPolicy()
     }
 
@@ -34,7 +34,7 @@ struct AgentNoPromptPolicyTests {
             return
         }
         #expect(!cases.isEmpty)
-        let policy = try policy()
+        let policy = try makePolicy()
         for entry in cases {
             let provider = try #require((entry["provider"] ?? entry["proveedor"]) as? String)
             let sessionID = try #require((entry["session_id"] ?? entry["sessionId"]) as? String)
@@ -62,7 +62,7 @@ struct AgentNoPromptPolicyTests {
 
     @Test("Claude como root lleva IS_SANDBOX y la bandera al final")
     func claudeAsRoot() throws {
-        let resume = try #require(try policy().resume(provider: "claude", sessionID: claudeID, asRoot: true))
+        let resume = try #require(try makePolicy().resume(provider: "claude", sessionID: claudeID, asRoot: true))
         #expect(resume.argv == ["claude", "--resume", claudeID, "--dangerously-skip-permissions"])
         #expect(resume.environment == ["IS_SANDBOX": "1"])
         #expect(resume.noPromptVerified)
@@ -74,7 +74,7 @@ struct AgentNoPromptPolicyTests {
 
     @Test("Claude sin root no exporta nada")
     func claudeWithoutRoot() throws {
-        let resume = try #require(try policy().resume(provider: "claude", sessionID: claudeID, asRoot: false))
+        let resume = try #require(try makePolicy().resume(provider: "claude", sessionID: claudeID, asRoot: false))
         #expect(resume.environment.isEmpty)
         #expect(
             resume.shellLine(workingDirectory: "/Users/dani/Desktop/PROYECTOS/MULTIGRAM")
@@ -84,7 +84,7 @@ struct AgentNoPromptPolicyTests {
 
     @Test("Codex pone --yolo tras el ejecutable")
     func codexPrefix() throws {
-        let resume = try #require(try policy().resume(provider: "codex", sessionID: codexID, asRoot: true))
+        let resume = try #require(try makePolicy().resume(provider: "codex", sessionID: codexID, asRoot: true))
         #expect(resume.argv == ["codex", "--yolo", "resume", codexID])
         #expect(resume.environment.isEmpty)
         #expect(resume.shellLine(workingDirectory: "/home/u/multigram")
@@ -93,7 +93,7 @@ struct AgentNoPromptPolicyTests {
 
     @Test("agy es el alias de Antigravity y viaja como agy")
     func antigravityAlias() throws {
-        let policy = try policy()
+        let policy = try makePolicy()
         let resume = try #require(policy.resume(provider: "agy", sessionID: "conv-1", asRoot: false))
         #expect(resume.argv == ["agy", "--dangerously-skip-permissions", "--conversation", "conv-1"])
         #expect(policy.wireProvider("antigravity") == "agy")
@@ -103,7 +103,7 @@ struct AgentNoPromptPolicyTests {
 
     @Test("Grok se reanuda sin bandera y sin verificar")
     func grokIsNotVerified() throws {
-        let policy = try policy()
+        let policy = try makePolicy()
         let resume = try #require(policy.resume(provider: "grok", sessionID: "g-1", asRoot: true))
         #expect(resume.argv == ["grok", "-r", "g-1"])
         #expect(resume.environment.isEmpty)
@@ -116,7 +116,7 @@ struct AgentNoPromptPolicyTests {
 
     @Test("Aplicar dos veces da lo mismo que una")
     func applyingIsIdempotent() throws {
-        let policy = try policy()
+        let policy = try makePolicy()
         for provider in ["claude", "codex", "antigravity", "grok"] {
             let base = try #require(policy.resume(provider: provider, sessionID: "abc", asRoot: true))
             let again = policy.applying(to: base.argv, provider: provider, asRoot: true)
@@ -126,7 +126,7 @@ struct AgentNoPromptPolicyTests {
 
     @Test("Un codex con la bandera antigua queda con un único --yolo tras el ejecutable")
     func codexLegacyFlagIsReplaced() throws {
-        let adjusted = try policy().applying(
+        let adjusted = try makePolicy().applying(
             to: ["codex", "resume", codexID, "--dangerously-bypass-approvals-and-sandbox", "--yolo", "-m", "gpt-5.4"],
             provider: "codex",
             asRoot: false
@@ -136,7 +136,7 @@ struct AgentNoPromptPolicyTests {
 
     @Test("Las opciones de ventana van detrás del id")
     func windowOptionsFollowTheID() throws {
-        let resume = try #require(try policy().resume(
+        let resume = try #require(try makePolicy().resume(
             provider: "codex", sessionID: codexID, asRoot: false, arguments: ["-C", "/home/u/mi carpeta"]
         ))
         #expect(resume.argv == ["codex", "--yolo", "resume", codexID, "-C", "/home/u/mi carpeta"])
@@ -146,7 +146,7 @@ struct AgentNoPromptPolicyTests {
 
     @Test("Un id de conversación inválido no produce orden")
     func invalidSessionIDIsRejected() throws {
-        let policy = try policy()
+        let policy = try makePolicy()
         #expect(policy.resume(provider: "claude", sessionID: "", asRoot: false) == nil)
         #expect(policy.resume(provider: "claude", sessionID: "a b", asRoot: false) == nil)
         #expect(policy.resume(provider: "claude", sessionID: "$(rm)", asRoot: false) == nil)
@@ -187,7 +187,7 @@ struct AgentNoPromptPolicyTests {
 
     @Test("Relanzar Claude fuerza la bandera aunque la ventana no la trajera")
     func claudeRelaunchAlwaysAddsTheFlag() throws {
-        let dialect = ClaudeRelaunchDialect(policy: try policy())
+        let dialect = ClaudeRelaunchDialect(policy: try makePolicy())
         #expect(dialect.invocation(conversation: "abc", previousArgv: ["claude"])
             == ["claude", "--resume", "abc", "--dangerously-skip-permissions"])
         #expect(dialect.invocation(

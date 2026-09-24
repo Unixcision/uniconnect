@@ -28,7 +28,7 @@ struct UniConnectRemoteResumeCommandTests {
     @Test("Claude como root se reanuda con IS_SANDBOX y sin preguntas, detrás de la guarda")
     func claudeAsRoot() throws {
         let line = try #require(UniConnectRemoteResumeCommand().line(
-            record: record("claude", claudeID), sshUser: "root", guardSource: guardSource,
+            record: try record("claude", claudeID), sshUser: "root", guardSource: guardSource,
             policy: try AgentNoPromptPolicy()
         ))
         #expect(line.hasPrefix("if cd -- '/root/xunis' && python3 -c "))
@@ -57,7 +57,7 @@ struct UniConnectRemoteResumeCommandTests {
     @Test("Codex se reanuda con --yolo tras el ejecutable")
     func codex() throws {
         let line = try #require(UniConnectRemoteResumeCommand().line(
-            record: record("codex", codexID, cwd: "/root/scrapper"), sshUser: "root",
+            record: try record("codex", codexID, cwd: "/root/scrapper"), sshUser: "root",
             guardSource: guardSource, policy: try AgentNoPromptPolicy()
         ))
         #expect(line.contains("then codex --yolo resume \(codexID);"))

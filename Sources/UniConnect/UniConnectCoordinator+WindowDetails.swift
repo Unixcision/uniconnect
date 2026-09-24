@@ -74,11 +74,15 @@ extension UniConnectCoordinator {
         let tmux: UniConnectWindowDetailsSnapshot.Tmux?
         if isSSH {
             tmux = remoteSession.map {
-                .init(socket: UniConnectRemoteAgentMonitor.tmuxSocket, session: $0, sessionID: nil, paneID: nil, live: false)
+                UniConnectWindowDetailsSnapshot.Tmux(
+                    socket: UniConnectRemoteAgentMonitor.tmuxSocket, session: $0, sessionID: nil, paneID: nil, live: false
+                )
             }
         } else {
             tmux = record?.tmuxBinding.map {
-                .init(socket: $0.socketName, session: $0.name, sessionID: nil, paneID: nil, live: false)
+                UniConnectWindowDetailsSnapshot.Tmux(
+                    socket: $0.socketName, session: $0.name, sessionID: nil, paneID: nil, live: false
+                )
             }
         }
         let policy = try? AgentNoPromptPolicy()

@@ -195,18 +195,18 @@ public struct AgentProcessDiscovery: Sendable {
                 return found(id, nil, .argv)
             }
         case .codex:
-            let branch = branch(of: root, processes: processes)
+            let members = self.branch(of: root, processes: processes)
             var rollouts: [String: String] = [:]
-            for member in branch {
+            for member in members {
                 for path in openFiles[member.pid] ?? [] {
                     if let id = Self.rolloutID(path: path) { rollouts[id] = path }
                 }
             }
             if rollouts.count == 1, let rollout = rollouts.first {
-                let directory = rolloutFirstLine(rollout.value).flatMap(Self.rolloutWorkingDirectory(firstLine:))
-                return found(rollout.key, directory, .rollout)
+                let reported = rolloutFirstLine(rollout.value).flatMap(Self.rolloutWorkingDirectory(firstLine:))
+                return found(rollout.key, reported, .rollout)
             }
-            for member in branch {
+            for member in members {
                 if let id = Self.codexResumeID(member.arguments) { return found(id, nil, .argv) }
             }
         case .agy:
