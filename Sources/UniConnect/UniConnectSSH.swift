@@ -94,13 +94,28 @@ enum UniConnectSSH {
 
     /// Opciones no persistentes que UniConnect fija en el servidor tmux remoto en cada
     /// attach (viven mientras vive ese servidor; válidas en tmux 3.2a y 3.4+): títulos
-    /// propagados con el comando en primer plano, y `set-clipboard` apagado porque el
-    /// OSC 52 mata a tmux 3.2a al seleccionar.
+    /// propagados con el comando en primer plano, y la política de portapapeles.
+    ///
+    /// Portapapeles: `external` desde tmux 3.3, de modo que lo que se selecciona en el
+    /// remoto viaja por OSC 52 hasta el Mac o el móvil —y un programa remoto no puede
+    /// escribir en él por su cuenta—; `off` solo en versiones anteriores, porque el OSC 52
+    /// mata a tmux 3.2a al seleccionar. Antes era `off` en todos por culpa de un servidor,
+    /// y copiar en cualquier VPS no llegaba nunca. Los índices fijos de `terminal-features`
+    /// declaran que el cliente (el tmux del Mac, `tmux-256color`) acepta OSC 52 sin crecer
+    /// en cada attach.
     static let remoteTmuxAttachOptions: [[String]] = [
         ["set-option", "-g", "set-titles", "on"],
         ["set-option", "-g", "set-titles-string", shellQuote(remoteTitleFormat)],
-        ["set-option", "-s", "set-clipboard", "off"],
+        ["if-shell", shellQuote(remoteClipboardVersionCheck),
+         shellQuote("set-option -s set-clipboard external"), shellQuote("set-option -s set-clipboard off")],
+        ["set-option", "-s", "terminal-features[20]", shellQuote("tmux*:clipboard")],
+        ["set-option", "-s", "terminal-features[21]", shellQuote("screen*:clipboard")],
     ]
+
+    /// Si el tmux remoto es 3.3 o posterior. Sin `$` a propósito: atraviesa Swift, ssh, el
+    /// shell remoto y tmux, y un `$` se expandiría en la capa equivocada.
+    static let remoteClipboardVersionCheck =
+        "tmux -V | grep -qE 'tmux (3[.]([3-9]|[1-9][0-9])|[4-9][.]|[1-9][0-9][.])'"
 
     /// The remote command used only for an explicit new window. `-A` attaches if the
     /// named session exists and otherwise creates it; `-c` seeds that first directory.

@@ -440,6 +440,7 @@
 		4E673EDE464BF3AB80E94C1D /* MobileHostRPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47BDC06F004C02A52B05E4A0 /* MobileHostRPC.swift */; };
 		F67FBC88671C40AC3A3284CE /* MobileHostService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ACA497A6831165EA879C642 /* MobileHostService.swift */; };
 		C0DE10510000000000000001 /* MobileHostServiceSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10510000000000000002 /* MobileHostServiceSettingsTests.swift */; };
+		A70D3E9C24B1478FA6E2CRL9 /* MobileHostWakefulness.swift in Sources */ = {isa = PBXBuildFile; fileRef = C18B45D0F7629A34ED01CRL9 /* MobileHostWakefulness.swift */; };
 		A14EC2DB1F4BAB9C6074939F /* MobileInboxService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2566868A7C252F630077D775 /* MobileInboxService.swift */; };
 		506502CE610B3785390CC756 /* MobileInboxServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31064D23F9E8777B9989FAFF /* MobileInboxServiceTests.swift */; };
 		9B08F916D7FF7626C6820727 /* MobilePairingConnectionTransitionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4880BD05924400E5279D632 /* MobilePairingConnectionTransitionTests.swift */; };
@@ -1464,6 +1465,7 @@
 		47BDC06F004C02A52B05E4A0 /* MobileHostRPC.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileHostRPC.swift; sourceTree = "<group>"; };
 		7ACA497A6831165EA879C642 /* MobileHostService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileHostService.swift; sourceTree = "<group>"; };
 		C0DE10510000000000000002 /* MobileHostServiceSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileHostServiceSettingsTests.swift; sourceTree = "<group>"; };
+		C18B45D0F7629A34ED01CRL9 /* MobileHostWakefulness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileHostWakefulness.swift; sourceTree = "<group>"; };
 		2566868A7C252F630077D775 /* MobileInboxService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MobileInboxService.swift; sourceTree = "<group>"; };
 		31064D23F9E8777B9989FAFF /* MobileInboxServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileInboxServiceTests.swift; sourceTree = "<group>"; };
 		A4880BD05924400E5279D632 /* MobilePairingConnectionTransitionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePairingConnectionTransitionTests.swift; sourceTree = "<group>"; };
@@ -2400,6 +2402,7 @@
 				A6092606AA00000000000009 /* MobileTmuxAttachmentController.swift */,
 				A90613000000000000000002 /* MobileHostOutboundQueue.swift */,
 				7ACA497A6831165EA879C642 /* MobileHostService.swift */,
+				C18B45D0F7629A34ED01CRL9 /* MobileHostWakefulness.swift */,
 				7A956C76162B79EC74AF9965 /* MobileRouteResolver.swift */,
 				04CE82AE8B39EA0C1395F696 /* MobilePairingModel.swift */,
 				B76EC5E03C345BEAC25828A7 /* MobilePairingQRImageView.swift */,
@@ -3771,6 +3774,7 @@
 				26F81666C317D8A107A0A790 /* MobileHostPeerIdentity.swift in Sources */,
 				4E673EDE464BF3AB80E94C1D /* MobileHostRPC.swift in Sources */,
 				F67FBC88671C40AC3A3284CE /* MobileHostService.swift in Sources */,
+				A70D3E9C24B1478FA6E2CRL9 /* MobileHostWakefulness.swift in Sources */,
 				A14EC2DB1F4BAB9C6074939F /* MobileInboxService.swift in Sources */,
 				0099C2865D9D468747D14593 /* MobilePairingModel.swift in Sources */,
 				325AF8814443BDA97AC3CC98 /* MobilePairingQRImageView.swift in Sources */,

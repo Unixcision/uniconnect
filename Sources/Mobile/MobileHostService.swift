@@ -98,6 +98,8 @@ private final class MobileHostConnectionRegistry: @unchecked Sendable {
 
     private let lock = NSLock()
     private var connections: [UUID: MobileHostConnection] = [:]
+    /// Mantiene el equipo despierto mientras haya alguien conectado. Ver ``MobileHostWakefulness``.
+    private let wakefulness = MobileHostWakefulness()
 
     var count: Int {
         lock.lock()
@@ -112,7 +114,9 @@ private final class MobileHostConnectionRegistry: @unchecked Sendable {
             return false
         }
         connections[id] = connection
+        let attached = connections.count
         lock.unlock()
+        wakefulness.update(attachedClients: attached)
         // Notify after the authoritative count actually changes (this registry
         // backs `MobileHostServiceStatus.activeConnectionCount`), so the Mobile
         // settings diagnostics reflect the real count rather than a stale one.
@@ -123,13 +127,16 @@ private final class MobileHostConnectionRegistry: @unchecked Sendable {
     func remove(id: UUID) {
         lock.lock()
         let didRemove = connections.removeValue(forKey: id) != nil
+        let attached = connections.count
         lock.unlock()
+        wakefulness.update(attachedClients: attached)
         if didRemove {
             NotificationCenter.default.post(name: .mobileHostStatusDidChange, object: nil)
         }
     }
 
     func removeAll() -> [MobileHostConnection] {
+        defer { wakefulness.update(attachedClients: 0) }
         lock.lock()
         let values = Array(connections.values)
         connections.removeAll()
