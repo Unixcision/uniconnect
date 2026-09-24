@@ -22,6 +22,10 @@ from typing import Mapping
 from .resume_catalog import AgentResumeCatalog
 
 
+# Same bootstrap as the Mac and the probe callers: the script travels as base64 in argv.
+PYTHON_BOOTSTRAP = "import base64,sys;s=sys.argv.pop(1);exec(base64.b64decode(s))"
+
+
 class TransportError(RuntimeError):
     """A transport operation failed; code is stable and suitable for UI translation."""
 
@@ -259,6 +263,12 @@ class TmuxCommand:
         model = result.get("model")
         if model is not None and (not isinstance(model, str) or not re.fullmatch(r"[A-Za-z0-9._:/-]{1,120}", model)):
             raise TransportError("invalid_agent_model")
+        resume_cwd = result.get("resumeCwd")
+        if resume_cwd is not None and (not isinstance(resume_cwd, str) or not resume_cwd.startswith("/")
+                                       or any(c in resume_cwd for c in ("\0", "\n", "\r"))):
+            raise TransportError("invalid_directory")
+        if result.get("asRoot") is not None and not isinstance(result["asRoot"], bool):
+            raise TransportError("invalid_agent_session")
         return result
 
     @staticmethod
@@ -278,22 +288,54 @@ class TmuxCommand:
             code = "unsupported_agent_model" if str(error) == "unsupported_agent_model" else "invalid_agent_catalog"
             raise TransportError(code, agent) from error
 
+    GUARD_OPEN = "[UniConnect] No se reanuda: la conversación sigue abierta en otra ventana."
+    GUARD_UNKNOWN = "[UniConnect] No se reanuda: no se pudo comprobar si la conversación sigue abierta."
+
+    @staticmethod
+    def guard_command(agent: str, session_id: str) -> str:
+        """Run agent_guard.py on the destination host: exit 0 only when the conversation is free."""
+        source = Path(__file__).with_name("agent_guard.py").read_bytes()
+        encoded = base64.b64encode(source).decode("ascii")
+        return shlex.join(["python3", "-c", PYTHON_BOOTSTRAP, encoded, agent, session_id])
+
     @staticmethod
     def pane_command(window: Mapping) -> str:
         window = TmuxCommand.validate_window(window)
-        args = TmuxCommand.agent_argv(window)
+        session = window.get("sessionId")
+        resume_cwd = window.get("resumeCwd") if session else None
+        # A resumed conversation runs in its own real folder, including Codex's -C option.
+        args = TmuxCommand.agent_argv(dict(window, cwd=resume_cwd) if resume_cwd else window)
         script = "cd -- " + shlex.quote(window["cwd"]) + " || exit 72; "
         # Running the agent as a child leaves a usable shell when the agent exits.
         if args:
+            if window["agent"] == "claude":
+                # Claude refuses --dangerously-skip-permissions as root unless told it is sandboxed.
+                # Decided on the destination host at launch time, never from a saved value.
+                script += '[ "$(id -u)" = 0 ] && export IS_SANDBOX=1; '
             if window["agent"] in ("claude", "codex") and window.get("id"):
                 from .agent_identity_hook import BOOTSTRAP
                 source = Path(__file__).with_name("agent_identity_hook.py").read_bytes()
                 encoded = base64.b64encode(source).decode("ascii")
                 request = json.dumps({"argv": args, "agent": window["agent"], "window_id": window["id"]})
                 tracked = "UNICONNECT_NATIVE_HELPER=" + shlex.quote(encoded) + " " + shlex.join(["python3", "-c", BOOTSTRAP, "launch", request])
-                script += "if command -v python3 >/dev/null 2>&1; then " + tracked + "; else " + shlex.join(args) + "; fi; "
+                launch = "if command -v python3 >/dev/null 2>&1; then " + tracked + "; else " + shlex.join(args) + "; fi"
             else:
-                script += shlex.join(args) + "; "
+                launch = shlex.join(args)
+            if session:
+                # Never resume a conversation still open elsewhere on this host. Without python3
+                # the guard cannot run, so the window becomes a shell with a notice, not an agent.
+                guarded = (TmuxCommand.guard_command(window["agent"], session) + "; uc_guard=$?; "
+                           'if [ "$uc_guard" = 0 ]; then ' + launch + "; "
+                           'elif [ "$uc_guard" = 1 ]; then printf \'%s\\n\' ' + shlex.quote(TmuxCommand.GUARD_OPEN) + "; "
+                           "else printf '%s\\n' " + shlex.quote(TmuxCommand.GUARD_UNKNOWN) + "; fi; ")
+                if resume_cwd and resume_cwd != window["cwd"]:
+                    missing = "[UniConnect] No se reanuda: falta la carpeta " + resume_cwd + "."
+                    script += ("if cd -- " + shlex.quote(resume_cwd) + "; then " + guarded
+                               + "else printf '%s\\n' " + shlex.quote(missing) + "; fi; ")
+                else:
+                    script += guarded
+            else:
+                script += launch + "; "
         script += 'exec "${SHELL:-/bin/sh}" -l'
         return shlex.join(["/bin/bash", "-lc", script])
 

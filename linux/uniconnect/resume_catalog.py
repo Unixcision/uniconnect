@@ -1,14 +1,19 @@
-"""Thin decoder for CMUXAgentLaunch's canonical command syntax resource.
+"""Decoder for CMUXAgentLaunch's shared resume catalogue, including its no-prompt policy.
 
-This does not sanitize captured provider arguments or choose approval modes.
-Those policies remain in Swift; Linux supplies only its validated window fields.
+The same resource drives the Mac (AgentResumeArgv / AgentNoPromptPolicy) and Linux:
+the resume template of each provider and ``noPrompt``, the flags that relaunch it
+without permission questions. Linux never keeps a copy of that policy; captured
+provider arguments are never persisted, only the validated window fields.
 """
 
 import json
 from pathlib import Path
+import re
 
 
 class AgentResumeCatalog:
+    NO_PROMPT_KEYS = ("prefix", "suffix", "legacy", "rootEnvironment")
+
     def __init__(self, resource=None):
         self.resource = Path(resource) if resource is not None else (
             Path(__file__).resolve().parents[2] / "Packages/CMUXAgentLaunch/Sources/CMUXAgentLaunch/Resources/agent-resume-v1.json"
@@ -34,9 +39,50 @@ class AgentResumeCatalog:
             for option in provider.get("windowOptions", []):
                 if option.get("field") not in ("cwd", "model") or not option.get("option", "").startswith("-"):
                     raise ValueError("invalid_agent_catalog")
+            self._validate_no_prompt(provider.get("noPrompt"))
+
+    @classmethod
+    def _validate_no_prompt(cls, policy):
+        """Same shape the Mac accepts: flag lists and a root-only, shell-safe environment."""
+        if policy is None:
+            return
+        if not isinstance(policy, dict) or not policy or any(key not in cls.NO_PROMPT_KEYS for key in policy):
+            raise ValueError("invalid_agent_catalog")
+        for key in ("prefix", "suffix", "legacy"):
+            flags = policy.get(key, [])
+            if not isinstance(flags, list) or any(
+                    not isinstance(flag, str) or not re.fullmatch(r"-[A-Za-z0-9][A-Za-z0-9_=.-]*|--[A-Za-z0-9][A-Za-z0-9_=.-]*", flag)
+                    for flag in flags) or len(set(flags)) != len(flags):
+                raise ValueError("invalid_agent_catalog")
+        environment = policy.get("rootEnvironment", {})
+        if not isinstance(environment, dict) or any(
+                not isinstance(name, str) or not re.fullmatch(r"[A-Z_][A-Z0-9_]*", name)
+                or not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_.:/-]*", value)
+                for name, value in environment.items()):
+            raise ValueError("invalid_agent_catalog")
+
+    def canonical(self, kind):
+        return self.aliases.get(kind, kind)
 
     def provider(self, kind):
-        return self.providers[self.aliases.get(kind, kind)]
+        return self.providers[self.canonical(kind)]
+
+    def no_prompt(self, kind):
+        """The provider's no-prompt policy (a copy), or None when the catalogue has none (grok)."""
+        policy = self.provider(kind).get("noPrompt")
+        if policy is None:
+            return None
+        return {"prefix": list(policy.get("prefix", [])), "suffix": list(policy.get("suffix", [])),
+                "legacy": list(policy.get("legacy", [])), "rootEnvironment": dict(policy.get("rootEnvironment", {}))}
+
+    def apply_no_prompt(self, kind, argv):
+        """Remove earlier policy flags, put prefix right after argv[0] and suffix at the end, once."""
+        policy = self.no_prompt(kind)
+        if policy is None or not argv:
+            return list(argv)
+        known = set(policy["prefix"]) | set(policy["suffix"]) | set(policy["legacy"])
+        rest = [argument for argument in argv[1:] if argument not in known]
+        return [argv[0], *policy["prefix"], *rest, *policy["suffix"]]
 
     def resume_argv(self, kind, session_id, arguments=(), *, executable=None):
         provider = self.provider(kind)
@@ -44,7 +90,34 @@ class AgentResumeCatalog:
                          "{sessionId}": [session_id], "{arguments}": list(arguments)}
         return [arg for token in provider["resume"] for arg in substitutions.get(token, [token])]
 
+    def no_prompt_resume(self, kind, session_id, as_root, arguments=()):
+        """(argv, env) that resumes ``session_id`` without questions; env only when running as root."""
+        argv = self.apply_no_prompt(kind, self.resume_argv(kind, session_id, arguments))
+        policy = self.no_prompt(kind)
+        environment = dict(policy["rootEnvironment"]) if policy and as_root else {}
+        return argv, environment
+
+    @staticmethod
+    def shell_command(argv, environment=None, cwd=None):
+        """Canonical copyable command: ``cd -- '<cwd>' && [K=V ]argv`` (contracts/agent-tree-v1).
+
+        The folder is always single-quoted; an argv token is quoted only when it holds a
+        character outside ``[A-Za-z0-9@%_+=:,./-]``; ``K=V`` pairs are validated, unquoted.
+        """
+        def quote(value, always=False):
+            if not always and value and re.fullmatch(r"[A-Za-z0-9@%_+=:,./-]+", value):
+                return value
+            return "'" + value.replace("'", "'\\''") + "'"
+        parts = []
+        for name, value in (environment or {}).items():
+            if not re.fullmatch(r"[A-Z_][A-Z0-9_]*", name) or not re.fullmatch(r"[A-Za-z0-9_.:/-]*", value):
+                raise ValueError("invalid_agent_environment")
+            parts.append(name + "=" + value)
+        command = " ".join(parts + [quote(token) for token in argv])
+        return ("cd -- " + quote(cwd, always=True) + " && " + command) if cwd else command
+
     def window_argv(self, window):
+        """Launch argv for a saved window; always in no-prompt mode, with or without sessionId."""
         provider = self.provider(window["agent"])
         options = provider.get("windowOptions", [])
         if window.get("model") and not any(option["field"] == "model" for option in options):
@@ -52,5 +125,5 @@ class AgentResumeCatalog:
         arguments = [part for option in options if window.get(option["field"])
                      for part in (option["option"], window[option["field"]])]
         if window.get("sessionId"):
-            return self.resume_argv(window["agent"], window["sessionId"], arguments)
-        return [provider["executable"], *arguments]
+            return self.apply_no_prompt(window["agent"], self.resume_argv(window["agent"], window["sessionId"], arguments))
+        return self.apply_no_prompt(window["agent"], [provider["executable"], *arguments])

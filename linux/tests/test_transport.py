@@ -1,5 +1,6 @@
 """Behavioral transport checks using isolated tmux and OpenSSH SFTP servers."""
 
+import json
 import os
 import pty
 import select
@@ -17,6 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from uniconnect.transport import SSHCommand, TmuxCommand, Transport, TransportError, terminal_launch
 from uniconnect.transfers import SFTPTransfer
+
+SESSION = "473ed1de-4397-45ef-b00b-6b17fd7382b0"
 
 
 class SSHCommandTests(unittest.TestCase):
@@ -43,13 +46,14 @@ class SSHCommandTests(unittest.TestCase):
         if shutil.which("sshpass"):
             self.assertNotIn("secret pass", command.argv("true"))
 
-    def test_resume_keeps_requested_cwd_model_and_approval_settings(self):
+    def test_resume_keeps_requested_cwd_and_model_and_runs_without_questions(self):
         window = {"tmux": "test", "cwd": "/home/ec2-user", "repo": "/var/www/project",
                   "agent": "codex", "sessionId": "01a070d7-5f44-7f33-aee1-867c845860ef",
                   "model": "gpt-6-astra"}
-        self.assertEqual(TmuxCommand.agent_argv(window), ["codex", "resume", window["sessionId"],
+        self.assertEqual(TmuxCommand.agent_argv(window), ["codex", "--yolo", "resume", window["sessionId"],
                                                          "-C", "/home/ec2-user", "-m", "gpt-6-astra"])
-        self.assertNotIn("yolo", TmuxCommand.pane_command(window))
+        self.assertIn("--yolo", TmuxCommand.pane_command(window))
+        self.assertNotIn("IS_SANDBOX", TmuxCommand.pane_command(window))
         for name in ("", "bad.name", "bad:name", "a" * 41):
             with self.assertRaises(TransportError):
                 TmuxCommand.validate_name(name)
@@ -63,6 +67,22 @@ class SSHCommandTests(unittest.TestCase):
                     command = TmuxCommand.attach(window, socket_name=socket, create=create)
                     self.assertEqual("set-option -s set-clipboard off" in command,
                                      socket in ("uniconnect", "uniconnect-local"))
+
+    def test_pane_command_guards_resume_and_sets_is_sandbox_for_claude_as_root_only(self):
+        claude = {"tmux": "t", "cwd": "/w", "agent": "claude", "sessionId": SESSION}
+        script = shlex.split(TmuxCommand.pane_command(claude))[2]
+        self.assertIn('[ "$(id -u)" = 0 ] && export IS_SANDBOX=1;', script)
+        self.assertLess(script.index("IS_SANDBOX"), script.index("uc_guard"))
+        self.assertIn(TmuxCommand.guard_command("claude", SESSION), script)
+        self.assertLess(script.index("uc_guard"), script.index("--resume"))
+        fresh = shlex.split(TmuxCommand.pane_command({"tmux": "t", "cwd": "/w", "agent": "claude"}))[2]
+        self.assertNotIn("uc_guard", fresh)
+        self.assertIn("--dangerously-skip-permissions", fresh)
+        shell = shlex.split(TmuxCommand.pane_command({"tmux": "t", "cwd": "/w", "agent": "shell"}))[2]
+        self.assertNotIn("IS_SANDBOX", shell)
+        for bad in ({"resumeCwd": "relative"}, {"resumeCwd": "/a\nb"}, {"asRoot": "yes"}):
+            with self.assertRaises(TransportError):
+                TmuxCommand.validate_window({**claude, **bad})
 
     def test_missing_local_root_is_a_recoverable_shell_not_an_agent_launch(self):
         with tempfile.TemporaryDirectory(prefix="uc-missing-root-") as directory:
@@ -81,6 +101,87 @@ class SSHCommandTests(unittest.TestCase):
                                      capture_output=True, cwd=launch.cwd, env=launch.env, timeout=5)
             self.assertEqual(process.returncode, 0)
             self.assertIn("UC_RECOVERABLE", process.stdout)
+
+
+class PaneCommandExecutionTests(unittest.TestCase):
+    """Runs the real pane script with bash (no tmux) and fake agents that print what they received."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory(prefix="uc-pane-command-")
+        self.root = Path(self.directory.name)
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        for name in ("claude", "codex"):
+            fake = self.bin / name
+            fake.write_text('#!/bin/sh\nprintf \'UC_AGENT %s\\n\' "$0 $*"\nprintf \'UC_SANDBOX=%s\\n\' "${IS_SANDBOX:-}"\n'
+                            'printf \'UC_PWD=%s\\n\' "$(pwd -P)"\n')
+            fake.chmod(0o755)
+        self.home = self.root / "home"
+        (self.home / ".claude" / "sessions").mkdir(parents=True)
+        self.work = self.root / "work"
+        self.work.mkdir()
+        self.children = []
+
+    def tearDown(self):
+        for child in self.children:
+            child.kill()
+            child.wait(timeout=5)
+        self.directory.cleanup()
+
+    def run_pane(self, window, *, path_first=None):
+        script = shlex.split(TmuxCommand.pane_command(window))[2]
+        environment = {"PATH": ":".join(filter(None, (path_first, str(self.bin), os.environ.get("PATH", "")))),
+                       "HOME": str(self.home), "SHELL": "/usr/bin/true", "TERM": "dumb"}
+        return subprocess.run(["/bin/bash", "--noprofile", "--norc", "-c", script], env=environment,
+                              capture_output=True, text=True, timeout=30)
+
+    def test_free_conversation_is_resumed_without_questions(self):
+        result = self.run_pane({"tmux": "t", "cwd": str(self.work), "agent": "claude", "sessionId": SESSION, "id": "w1"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--resume " + SESSION, result.stdout)
+        self.assertIn("--dangerously-skip-permissions", result.stdout)
+        expected = "UC_SANDBOX=1" if os.geteuid() == 0 else "UC_SANDBOX=\n"
+        self.assertIn(expected, result.stdout + "\n")
+
+    def test_open_conversation_is_not_resumed(self):
+        live = self.root / "live"
+        live.mkdir()
+        (live / "claude").symlink_to("/bin/sleep")
+        holder = subprocess.Popen([str(live / "claude"), "60"])
+        self.children.append(holder)
+        (self.home / ".claude" / "sessions" / ("%d.json" % holder.pid)).write_text(
+            json.dumps({"pid": holder.pid, "sessionId": SESSION}))
+        result = self.run_pane({"tmux": "t", "cwd": str(self.work), "agent": "claude", "sessionId": SESSION})
+        self.assertNotIn("UC_AGENT", result.stdout)
+        self.assertIn(TmuxCommand.GUARD_OPEN, result.stdout)
+
+    def test_without_a_working_python_there_is_no_resume(self):
+        broken = self.root / "broken"
+        broken.mkdir()
+        fake = broken / "python3"
+        fake.write_text("#!/bin/sh\nexit 127\n")
+        fake.chmod(0o755)
+        result = self.run_pane({"tmux": "t", "cwd": str(self.work), "agent": "claude", "sessionId": SESSION},
+                               path_first=str(broken))
+        self.assertNotIn("UC_AGENT", result.stdout)
+        self.assertIn(TmuxCommand.GUARD_UNKNOWN, result.stdout)
+
+    def test_resume_folder_is_used_and_a_missing_one_opens_a_shell_with_a_notice(self):
+        other = self.root / "real-folder"
+        other.mkdir()
+        window = {"tmux": "t", "cwd": str(self.work), "agent": "claude", "sessionId": SESSION, "resumeCwd": str(other)}
+        result = self.run_pane(window)
+        self.assertIn("UC_PWD=" + str(other.resolve()), result.stdout)
+        codex = dict(window, agent="codex")
+        self.assertIn(shlex.join(["--yolo", "resume", SESSION, "-C", str(other)]), TmuxCommand.pane_command(codex))
+        if os.path.isdir("/proc/self/fd"):
+            self.assertIn("-C " + str(other), self.run_pane(codex).stdout)
+        else:
+            # Sin /proc la guarda de Codex no puede comprobar nada: shell con aviso, nunca la IA.
+            self.assertIn(TmuxCommand.GUARD_UNKNOWN, self.run_pane(codex).stdout)
+        result = self.run_pane(dict(window, resumeCwd=str(self.root / "gone")))
+        self.assertNotIn("UC_AGENT", result.stdout)
+        self.assertIn("falta la carpeta", result.stdout)
 
 
 @unittest.skipUnless(shutil.which("tmux"), "tmux unavailable")
