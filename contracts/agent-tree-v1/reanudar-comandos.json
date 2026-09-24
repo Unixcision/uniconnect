@@ -4,6 +4,7 @@
     {
       "nombre": "claude_no_root",
       "provider": "claude",
+      "display_name": "Claude Code",
       "session_id": "714b0eae-b568-4e0c-a70b-c87c0d0a801a",
       "cwd": "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM",
       "as_root": false,
@@ -15,6 +16,7 @@
     {
       "nombre": "claude_root",
       "provider": "claude",
+      "display_name": "Claude Code",
       "session_id": "473ed1de-4397-45ef-b00b-6b17fd7382b0",
       "cwd": "/root/xunis",
       "as_root": true,
@@ -26,6 +28,7 @@
     {
       "nombre": "codex",
       "provider": "codex",
+      "display_name": "Codex",
       "session_id": "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17",
       "cwd": "/home/dani/multigram",
       "as_root": false,
@@ -37,6 +40,7 @@
     {
       "nombre": "codex_root_no_lleva_is_sandbox",
       "provider": "codex",
+      "display_name": "Codex",
       "session_id": "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17",
       "cwd": "/root/scrapper",
       "as_root": true,
@@ -48,6 +52,7 @@
     {
       "nombre": "agy",
       "provider": "agy",
+      "display_name": "Antigravity",
       "session_id": "8e3c1a57-2b4d-4f90-a6e8-7c5d3b1f0e29",
       "cwd": "/home/dani/gemini",
       "as_root": false,
@@ -59,6 +64,7 @@
     {
       "nombre": "grok_sin_modo_sin_preguntas_verificado",
       "provider": "grok",
+      "display_name": "Grok",
       "session_id": "3f6a9c12-8d4e-4b7a-b5c1-0e2f7d9a6b84",
       "cwd": "/home/dani/grokbot",
       "as_root": false,
@@ -70,12 +76,55 @@
     {
       "nombre": "cwd_con_espacio_y_comilla_simple",
       "provider": "claude",
+      "display_name": "Claude Code",
       "session_id": "5b7e2d41-0c9a-4f6e-8b13-9d2a7c4e1f60",
       "cwd": "/home/dani/Mis proyectos/l'atelier",
       "as_root": false,
       "argv": ["claude", "--resume", "5b7e2d41-0c9a-4f6e-8b13-9d2a7c4e1f60", "--dangerously-skip-permissions"],
       "environment": {},
       "command": "cd -- '/home/dani/Mis proyectos/l'\\''atelier' && claude --resume 5b7e2d41-0c9a-4f6e-8b13-9d2a7c4e1f60 --dangerously-skip-permissions",
+      "no_prompt_verified": true
+    },
+    {
+      "nombre": "codex_yolo_sustituye_aprobacion_y_sandbox_separados",
+      "descripcion": "Opciones conservadas del lanzamiento con -a, --sandbox y --full-auto: Codex rechaza cualquiera de ellas junto a --yolo, así que la política las quita con su valor. -C y -m se quedan.",
+      "provider": "codex",
+      "display_name": "Codex",
+      "session_id": "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17",
+      "cwd": "/home/dani/multigram",
+      "as_root": false,
+      "arguments": ["-C", "/home/dani/multigram", "-a", "on-request", "--sandbox", "workspace-write", "--full-auto", "-m", "gpt-5-codex"],
+      "argv": ["codex", "--yolo", "resume", "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17", "-C", "/home/dani/multigram", "-m", "gpt-5-codex"],
+      "environment": {},
+      "command": "cd -- '/home/dani/multigram' && codex --yolo resume 01a0ac81-57c7-7af3-8ac2-fe8a957c8b17 -C /home/dani/multigram -m gpt-5-codex",
+      "no_prompt_verified": true
+    },
+    {
+      "nombre": "codex_yolo_sustituye_formas_con_igual_legacy_y_repetidas",
+      "descripcion": "Las mismas opciones escritas como --opción=valor (también la corta, -s=valor), la bandera antigua y un --yolo repetido: sale un solo --yolo detrás del ejecutable. El -c con comillas se conserva y se entrecomilla en la orden.",
+      "provider": "codex",
+      "display_name": "Codex",
+      "session_id": "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17",
+      "cwd": "/root/scrapper",
+      "as_root": true,
+      "arguments": ["--ask-for-approval=never", "-s=danger-full-access", "--dangerously-bypass-approvals-and-sandbox", "--yolo", "-c", "model_reasoning_effort=\"high\""],
+      "argv": ["codex", "--yolo", "resume", "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17", "-c", "model_reasoning_effort=\"high\""],
+      "environment": {},
+      "command": "cd -- '/root/scrapper' && codex --yolo resume 01a0ac81-57c7-7af3-8ac2-fe8a957c8b17 -c 'model_reasoning_effort=\"high\"'",
+      "no_prompt_verified": true
+    },
+    {
+      "nombre": "claude_argumentos_van_antes_del_sufijo",
+      "descripcion": "Las opciones de ventana de Claude van en {arguments}, detrás del id; la bandera sin preguntas va al final y una sola vez aunque ya viniera entre los argumentos.",
+      "provider": "claude",
+      "display_name": "Claude Code",
+      "session_id": "473ed1de-4397-45ef-b00b-6b17fd7382b0",
+      "cwd": "/root/xunis",
+      "as_root": true,
+      "arguments": ["--model", "opus", "--dangerously-skip-permissions"],
+      "argv": ["claude", "--resume", "473ed1de-4397-45ef-b00b-6b17fd7382b0", "--model", "opus", "--dangerously-skip-permissions"],
+      "environment": {"IS_SANDBOX": "1"},
+      "command": "cd -- '/root/xunis' && IS_SANDBOX=1 claude --resume 473ed1de-4397-45ef-b00b-6b17fd7382b0 --model opus --dangerously-skip-permissions",
       "no_prompt_verified": true
     }
   ]

@@ -274,6 +274,137 @@
       "enlaces": {"/Users/danielgomezmartin/Desktop/NOTBETTING": "/Users/danielgomezmartin/Developer/NOTBETTING"},
       "pane_current_path": "/Users/danielgomezmartin/Desktop/NOTBETTING",
       "espera": {"provider": "claude", "session_id": "c41e7a90-3b2d-4f5e-8a61-0d9c2b7e5f13", "cwd": "/Users/danielgomezmartin/Developer/NOTBETTING", "as_root": false, "source": "ficha"}
+    },
+    {
+      "nombre": "claude_tras_doble_guion_no_hay_opciones_da_sin_id",
+      "descripcion": "Lo que va detrás de «--» es texto para la IA, no opciones: aquí «--resume <id>» es el primer mensaje. Sin ficha no hay conversación que reanudar.",
+      "pane_pid": 1000,
+      "home": "/home/dani",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 1000, "argv": ["-bash"]},
+        {"pid": 1100, "ppid": 1000, "uid": 1000, "argv": ["claude", "--dangerously-skip-permissions", "--", "--resume", "5b7e2d41-0c9a-4f6e-8b13-9d2a7c4e1f60"]}
+      ],
+      "fichas": {},
+      "abiertos": {},
+      "rollouts": {},
+      "cwds": {"1100": "/home/dani/web"},
+      "pane_current_path": "/home/dani/web",
+      "espera": {"provider": "claude", "session_id": null, "cwd": "/home/dani/web", "as_root": false, "source": null, "cause": "sin_id"}
+    },
+    {
+      "nombre": "claude_resume_y_session_id_distintos_da_sin_id",
+      "descripcion": "Con --fork-session la conversación viva es la de --session-id; sin él, la de --resume. La línea de órdenes sola no lo dice, y reanudar la equivocada es peor que no reanudar: dos identificadores distintos dan sin_id. Con ficha no hay duda, porque manda la ficha.",
+      "pane_pid": 1000,
+      "home": "/home/dani",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 1000, "argv": ["-bash"]},
+        {"pid": 1100, "ppid": 1000, "uid": 1000, "argv": ["claude", "--resume", "5b7e2d41-0c9a-4f6e-8b13-9d2a7c4e1f60", "--fork-session", "--session-id", "9d4b2e6f-1a3c-4e8b-b7d0-5f2c8a1e6b93"]}
+      ],
+      "fichas": {},
+      "abiertos": {},
+      "rollouts": {},
+      "cwds": {"1100": "/home/dani/web"},
+      "pane_current_path": "/home/dani/web",
+      "espera": {"provider": "claude", "session_id": null, "cwd": "/home/dani/web", "as_root": false, "source": null, "cause": "sin_id"}
+    },
+    {
+      "nombre": "codex_dos_rollouts_vale_el_que_coincide_con_su_resume",
+      "descripcion": "Además del rollout de su conversación, la rama tiene abierto el de un «codex exec» que la propia sesión lanzó con su herramienta de órdenes. El más reciente no es el de la ventana. Con más de un rollout abierto solo vale el que coincide con el «resume <uuid>» de la línea de órdenes, y cuenta como rollout.",
+      "pane_pid": 1000,
+      "home": "/home/dani",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 1000, "argv": ["-bash"]},
+        {"pid": 1100, "ppid": 1000, "uid": 1000, "argv": ["codex", "--yolo", "resume", "019a4e2b-6c3d-7f81-9a05-3e7b1c8d2f46"]},
+        {"pid": 1150, "ppid": 1100, "uid": 1000, "argv": ["/bin/bash", "-lc", "codex exec --yolo 'pasa los tests'"]},
+        {"pid": 1160, "ppid": 1150, "uid": 1000, "argv": ["codex", "exec", "--yolo", "pasa los tests"]}
+      ],
+      "fichas": {},
+      "abiertos": {
+        "1100": ["/dev/pts/5", "/home/dani/.codex/sessions/2026/09/24/rollout-2026-09-24T09-05-12-019a4e2b-6c3d-7f81-9a05-3e7b1c8d2f46.jsonl"],
+        "1160": ["/home/dani/.codex/sessions/2026/09/24/rollout-2026-09-24T11-40-03-0199f3c2-8d1e-7b40-a6f5-2c9e4d7b1a08.jsonl"]
+      },
+      "rollouts": {
+        "/home/dani/.codex/sessions/2026/09/24/rollout-2026-09-24T09-05-12-019a4e2b-6c3d-7f81-9a05-3e7b1c8d2f46.jsonl": "{\"timestamp\":\"2026-09-24T09:05:12.104Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"019a4e2b-6c3d-7f81-9a05-3e7b1c8d2f46\",\"timestamp\":\"2026-09-24T09:05:12.090Z\",\"cwd\":\"/home/dani/api\",\"originator\":\"codex_cli_rs\",\"cli_version\":\"0.63.0\"}}",
+        "/home/dani/.codex/sessions/2026/09/24/rollout-2026-09-24T11-40-03-0199f3c2-8d1e-7b40-a6f5-2c9e4d7b1a08.jsonl": "{\"timestamp\":\"2026-09-24T11:40:03.771Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"0199f3c2-8d1e-7b40-a6f5-2c9e4d7b1a08\",\"timestamp\":\"2026-09-24T11:40:03.760Z\",\"cwd\":\"/home/dani/api/tests\",\"originator\":\"codex_exec\",\"cli_version\":\"0.63.0\"}}"
+      },
+      "cwds": {"1100": "/home/dani/api", "1160": "/home/dani/api/tests"},
+      "pane_current_path": "/home/dani/api",
+      "espera": {"provider": "codex", "session_id": "019a4e2b-6c3d-7f81-9a05-3e7b1c8d2f46", "cwd": "/home/dani/api", "as_root": false, "source": "rollout"}
+    },
+    {
+      "nombre": "codex_dos_rollouts_sin_resume_que_coincida_da_sin_id",
+      "descripcion": "Dos rollouts abiertos y la línea de órdenes apunta a una conversación que ya no está abierta (se hizo /new). Ni el más reciente ni el de la línea de órdenes: sin_id, y lo guardado no se toca.",
+      "pane_pid": 1000,
+      "home": "/home/dani",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 1000, "argv": ["-bash"]},
+        {"pid": 1100, "ppid": 1000, "uid": 1000, "argv": ["codex", "--yolo", "resume", "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17"]},
+        {"pid": 1150, "ppid": 1100, "uid": 1000, "argv": ["/bin/bash", "-lc", "codex exec --yolo 'pasa los tests'"]},
+        {"pid": 1160, "ppid": 1150, "uid": 1000, "argv": ["codex", "exec", "--yolo", "pasa los tests"]}
+      ],
+      "fichas": {},
+      "abiertos": {
+        "1100": ["/home/dani/.codex/sessions/2026/09/24/rollout-2026-09-24T09-05-12-019a4e2b-6c3d-7f81-9a05-3e7b1c8d2f46.jsonl"],
+        "1160": ["/home/dani/.codex/sessions/2026/09/24/rollout-2026-09-24T11-40-03-0199f3c2-8d1e-7b40-a6f5-2c9e4d7b1a08.jsonl"]
+      },
+      "rollouts": {},
+      "cwds": {"1100": "/home/dani/api"},
+      "pane_current_path": "/home/dani/api",
+      "espera": {"provider": "codex", "session_id": null, "cwd": "/home/dani/api", "as_root": false, "source": null, "cause": "sin_id"}
+    },
+    {
+      "nombre": "ficha_de_otro_pid_no_vale_y_manda_argv",
+      "descripcion": "La ficha se llama <pid>.json y Claude escribe dentro su propio pid. Si el de dentro es otro, el fichero no es de este proceso (copiado o restaurado de una copia) y su conversación sería la de otro: no vale, y se pasa a la línea de órdenes. Una ficha sin pid dentro sí vale.",
+      "pane_pid": 1000,
+      "home": "/home/dani",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 1000, "argv": ["-bash"]},
+        {"pid": 1100, "ppid": 1000, "uid": 1000, "argv": ["claude", "--resume", "5b7e2d41-0c9a-4f6e-8b13-9d2a7c4e1f60", "--dangerously-skip-permissions"]}
+      ],
+      "fichas": {
+        "1100": {"pid": 4242, "sessionId": "9d4b2e6f-1a3c-4e8b-b7d0-5f2c8a1e6b93", "cwd": "/home/dani/otra", "status": "idle", "version": "2.1.280"}
+      },
+      "abiertos": {},
+      "rollouts": {},
+      "cwds": {"1100": "/home/dani/web"},
+      "pane_current_path": "/home/dani/web",
+      "espera": {"provider": "claude", "session_id": "5b7e2d41-0c9a-4f6e-8b13-9d2a7c4e1f60", "cwd": "/home/dani/web", "as_root": false, "source": "argv"}
+    },
+    {
+      "nombre": "claude_md_en_un_argumento_no_hace_claude_a_un_proceso",
+      "descripcion": "Queda la ficha de un Claude que ya salió y su pid lo reutiliza un vim que edita ~/.claude/CLAUDE.md. Que un argumento contenga «claude» no hace Claude a nadie, y la ficha nunca clasifica: solo da identidad a un proceso que ya es Claude.",
+      "pane_pid": 1000,
+      "home": "/home/dani",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 1000, "argv": ["-bash"]},
+        {"pid": 1100, "ppid": 1000, "uid": 1000, "argv": ["vim", "/home/dani/.claude/CLAUDE.md"]}
+      ],
+      "fichas": {
+        "1100": {"pid": 1100, "sessionId": "9d4b2e6f-1a3c-4e8b-b7d0-5f2c8a1e6b93", "cwd": "/home/dani", "status": "idle", "version": "2.1.279"}
+      },
+      "abiertos": {},
+      "rollouts": {},
+      "cwds": {"1100": "/home/dani"},
+      "pane_current_path": "/home/dani",
+      "espera": {"cause": "sin_ia"}
+    },
+    {
+      "nombre": "claude_de_npm_lanzado_por_shebang_da_claude",
+      "descripcion": "Claude instalado con npm y lanzado por su shebang: el núcleo ejecuta «node /opt/homebrew/bin/claude», sin la ruta del paquete. Es Claude porque un argumento de node tiene «claude» como nombre de fichero.",
+      "pane_pid": 1000,
+      "home": "/Users/danielgomezmartin",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 501, "argv": ["-zsh"]},
+        {"pid": 1100, "ppid": 1000, "uid": 501, "argv": ["node", "/opt/homebrew/bin/claude", "--dangerously-skip-permissions"]}
+      ],
+      "fichas": {
+        "1100": {"pid": 1100, "sessionId": "714b0eae-b568-4e0c-a70b-c87c0d0a801a", "cwd": "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM", "status": "idle", "version": "2.1.280"}
+      },
+      "abiertos": {},
+      "rollouts": {},
+      "cwds": {"1100": "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM"},
+      "pane_current_path": "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM",
+      "espera": {"provider": "claude", "session_id": "714b0eae-b568-4e0c-a70b-c87c0d0a801a", "cwd": "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM", "as_root": false, "source": "ficha"}
     }
   ],
   "guarda": [
@@ -306,6 +437,18 @@
       "home": "/root",
       "fichas_vivas": {"2100": {"sessionId": "473ed1de-4397-45ef-b00b-6b17fd7382b0", "cwd": "/root/xunis"}},
       "procesos": [{"pid": 2100, "argv": ["python3", "/root/hgabot/bot.py"]}],
+      "abiertos": {},
+      "cerrojos": [],
+      "espera": 0
+    },
+    {
+      "nombre": "claude_pid_reciclado_que_edita_claude_md_no_bloquea",
+      "descripcion": "La ficha es de un Claude que ya salió y su pid lo tiene ahora un vim con ~/.claude/CLAUDE.md. La guarda usa el mismo criterio estricto de «es Claude» que la detección: un argumento que contiene «claude» no basta.",
+      "proveedor": "claude",
+      "id": "473ed1de-4397-45ef-b00b-6b17fd7382b0",
+      "home": "/root",
+      "fichas_vivas": {"2100": {"pid": 2100, "sessionId": "473ed1de-4397-45ef-b00b-6b17fd7382b0", "cwd": "/root/xunis"}},
+      "procesos": [{"pid": 2100, "argv": ["vim", "/root/.claude/CLAUDE.md"]}],
       "abiertos": {},
       "cerrojos": [],
       "espera": 0

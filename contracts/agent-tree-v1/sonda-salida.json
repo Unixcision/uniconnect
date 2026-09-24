@@ -1,20 +1,23 @@
 {
   "version": 1,
-  "host": "xunis-scrapper",
-  "uid": 0,
-  "user": "root",
+  "checked_at": "2026-09-24T14:30:04Z",
   "socket": "default",
+  "host": {
+    "hostname": "xunis-scrapper",
+    "uid": 0,
+    "platform": "linux"
+  },
+  "server": true,
   "error": null,
-  "panes": [
+  "truncated": false,
+  "sessions": [
     {
-      "session": "claudebets",
+      "name": "claudebets",
       "session_id": "$0",
-      "window_index": 0,
       "pane_id": "%0",
       "pane_pid": 41230,
-      "pane_dead": false,
-      "pane_current_path": "/root/xunis",
-      "pane_current_command": "claude",
+      "live": true,
+      "reason": null,
       "agent": {
         "provider": "claude",
         "session_id": "473ed1de-4397-45ef-b00b-6b17fd7382b0",
@@ -23,19 +26,27 @@
         "source": "ficha",
         "pid": 41251,
         "status": "busy",
-        "version": "2.1.280"
+        "version": "2.1.280",
+        "proc_start": "Thu Sep 24 14:02:11 2026"
       },
-      "cause": null
+      "panes": [
+        {
+          "pane_id": "%0",
+          "window_index": 0,
+          "pane_pid": 41230,
+          "dead": false,
+          "current_path": "/root/xunis",
+          "current_command": "claude"
+        }
+      ]
     },
     {
-      "session": "scrapper-codex",
+      "name": "scrapper-codex",
       "session_id": "$1",
-      "window_index": 0,
       "pane_id": "%1",
       "pane_pid": 41390,
-      "pane_dead": false,
-      "pane_current_path": "/root",
-      "pane_current_command": "node",
+      "live": true,
+      "reason": null,
       "agent": {
         "provider": "codex",
         "session_id": "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17",
@@ -44,19 +55,27 @@
         "source": "rollout",
         "pid": 41402,
         "status": null,
-        "version": null
+        "version": null,
+        "proc_start": null
       },
-      "cause": null
+      "panes": [
+        {
+          "pane_id": "%1",
+          "window_index": 0,
+          "pane_pid": 41390,
+          "dead": false,
+          "current_path": "/root",
+          "current_command": "node"
+        }
+      ]
     },
     {
-      "session": "ufabetbot",
+      "name": "ufabetbot",
       "session_id": "$2",
-      "window_index": 0,
       "pane_id": "%2",
       "pane_pid": 41510,
-      "pane_dead": false,
-      "pane_current_path": "/root/ufabetbot",
-      "pane_current_command": "claude",
+      "live": true,
+      "reason": "sin_id",
       "agent": {
         "provider": "claude",
         "session_id": null,
@@ -65,45 +84,113 @@
         "source": null,
         "pid": 41522,
         "status": null,
-        "version": null
+        "version": null,
+        "proc_start": null
       },
-      "cause": "sin_id"
+      "panes": [
+        {
+          "pane_id": "%2",
+          "window_index": 0,
+          "pane_pid": 41510,
+          "dead": false,
+          "current_path": "/root/ufabetbot",
+          "current_command": "claude"
+        }
+      ]
     },
     {
-      "session": "hgabot",
+      "name": "hgabot",
       "session_id": "$3",
-      "window_index": 0,
       "pane_id": "%3",
       "pane_pid": 41600,
-      "pane_dead": false,
-      "pane_current_path": "/root/hgabot",
-      "pane_current_command": "python3",
+      "live": true,
+      "reason": "sin_ia",
       "agent": null,
-      "cause": "sin_ia"
+      "panes": [
+        {
+          "pane_id": "%3",
+          "window_index": 0,
+          "pane_pid": 41600,
+          "dead": false,
+          "current_path": "/root/hgabot",
+          "current_command": "python3"
+        }
+      ]
     },
     {
-      "session": "pruebas",
+      "name": "pruebas",
       "session_id": "$4",
-      "window_index": 0,
       "pane_id": "%4",
       "pane_pid": 41700,
-      "pane_dead": false,
-      "pane_current_path": "/root/pruebas",
-      "pane_current_command": "bash",
+      "live": true,
+      "reason": "identidad_ambigua",
       "agent": null,
-      "cause": "identidad_ambigua"
+      "panes": [
+        {
+          "pane_id": "%4",
+          "window_index": 0,
+          "pane_pid": 41700,
+          "dead": false,
+          "current_path": "/root/pruebas",
+          "current_command": "bash"
+        }
+      ]
     },
     {
-      "session": "caida",
+      "name": "caida",
       "session_id": "$5",
-      "window_index": 0,
       "pane_id": "%5",
       "pane_pid": 41800,
-      "pane_dead": true,
-      "pane_current_path": "/root",
-      "pane_current_command": "bash",
+      "live": true,
+      "reason": "panel_muerto",
       "agent": null,
-      "cause": null
+      "panes": [
+        {
+          "pane_id": "%5",
+          "window_index": 0,
+          "pane_pid": 41800,
+          "dead": true,
+          "current_path": "/root/caida",
+          "current_command": "claude"
+        }
+      ]
+    },
+    {
+      "name": "api",
+      "session_id": "$6",
+      "pane_id": "%7",
+      "pane_pid": 41950,
+      "live": true,
+      "reason": null,
+      "agent": {
+        "provider": "codex",
+        "session_id": "019a4e2b-6c3d-7f81-9a05-3e7b1c8d2f46",
+        "cwd": "/root/api",
+        "as_root": true,
+        "source": "argv",
+        "pid": 41960,
+        "status": null,
+        "version": null,
+        "proc_start": null
+      },
+      "panes": [
+        {
+          "pane_id": "%6",
+          "window_index": 0,
+          "pane_pid": 41900,
+          "dead": false,
+          "current_path": "/root/api",
+          "current_command": "bash"
+        },
+        {
+          "pane_id": "%7",
+          "window_index": 1,
+          "pane_pid": 41950,
+          "dead": false,
+          "current_path": "/root/api",
+          "current_command": "codex"
+        }
+      ]
     }
   ]
 }

@@ -1,0 +1,237 @@
+{
+  "version": 1,
+  "descripcion": "Cómo se lee la sonda. «sesiones»: qué hace quien lee con cada sesión de sonda-salida.json. «salidas»: salidas de error y de límite, generadas con agent_probe.main, y qué se puede deducir de cada una.",
+  "sesiones": [
+    {
+      "sesion": "claudebets",
+      "efecto": "ia",
+      "provider": "claude",
+      "session_id": "473ed1de-4397-45ef-b00b-6b17fd7382b0",
+      "cwd": "/root/xunis",
+      "as_root": true,
+      "source": "ficha",
+      "pane_id": "%0"
+    },
+    {
+      "sesion": "scrapper-codex",
+      "efecto": "ia",
+      "provider": "codex",
+      "session_id": "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17",
+      "cwd": "/root/scrapper",
+      "as_root": true,
+      "source": "rollout",
+      "pane_id": "%1"
+    },
+    {
+      "sesion": "ufabetbot",
+      "efecto": "sin_id",
+      "provider": "claude",
+      "pane_id": "%2"
+    },
+    {
+      "sesion": "hgabot",
+      "efecto": "shell",
+      "pane_id": "%3"
+    },
+    {
+      "sesion": "pruebas",
+      "efecto": "nada",
+      "pane_id": "%4"
+    },
+    {
+      "sesion": "caida",
+      "efecto": "nada",
+      "pane_id": "%5"
+    },
+    {
+      "sesion": "api",
+      "efecto": "ia",
+      "provider": "codex",
+      "session_id": "019a4e2b-6c3d-7f81-9a05-3e7b1c8d2f46",
+      "cwd": "/root/api",
+      "as_root": true,
+      "source": "argv",
+      "pane_id": "%7"
+    }
+  ],
+  "salidas": [
+    {
+      "nombre": "sin_tmux_instalado",
+      "descripcion": "No hay binario de tmux en el host (o no se pudo ejecutar).",
+      "argumentos": [
+        "--socket",
+        "default"
+      ],
+      "salida": {
+        "version": 1,
+        "checked_at": "2026-09-24T14:30:04Z",
+        "socket": "default",
+        "host": {
+          "hostname": "xunis-scrapper",
+          "uid": 0,
+          "platform": "linux"
+        },
+        "server": false,
+        "error": "tmux_no_disponible",
+        "truncated": false,
+        "sessions": []
+      },
+      "espera": {
+        "error": "tmux_no_disponible",
+        "ausente_es_desaparecida": false
+      }
+    },
+    {
+      "nombre": "tmux_respondio_con_error",
+      "descripcion": "tmux contestó con un error que no es «no server running».",
+      "argumentos": [
+        "--socket",
+        "default"
+      ],
+      "salida": {
+        "version": 1,
+        "checked_at": "2026-09-24T14:30:04Z",
+        "socket": "default",
+        "host": {
+          "hostname": "xunis-scrapper",
+          "uid": 0,
+          "platform": "linux"
+        },
+        "server": false,
+        "error": "tmux_fallo",
+        "truncated": false,
+        "sessions": []
+      },
+      "espera": {
+        "error": "tmux_fallo",
+        "ausente_es_desaparecida": false
+      }
+    },
+    {
+      "nombre": "sin_servidor_en_ese_socket",
+      "descripcion": "No hay servidor tmux en ese socket: no es un error, es que no hay ninguna sesión.",
+      "argumentos": [
+        "--socket",
+        "uniconnect"
+      ],
+      "salida": {
+        "version": 1,
+        "checked_at": "2026-09-24T14:30:04Z",
+        "socket": "uniconnect",
+        "host": {
+          "hostname": "xunis-scrapper",
+          "uid": 0,
+          "platform": "linux"
+        },
+        "server": false,
+        "error": null,
+        "truncated": false,
+        "sessions": []
+      },
+      "espera": {
+        "error": null,
+        "ausente_es_desaparecida": true
+      }
+    },
+    {
+      "nombre": "la_sonda_fallo",
+      "descripcion": "Una excepción dentro de la sonda. Nunca sale con traza: el error viaja en el JSON, con el tipo detrás.",
+      "argumentos": [
+        "--socket",
+        "default"
+      ],
+      "salida": {
+        "version": 1,
+        "checked_at": "2026-09-24T14:30:04Z",
+        "socket": "default",
+        "host": null,
+        "server": false,
+        "error": "sonda_fallo: KeyError",
+        "truncated": false,
+        "sessions": []
+      },
+      "espera": {
+        "error": "sonda_fallo",
+        "ausente_es_desaparecida": false
+      }
+    },
+    {
+      "nombre": "sesion_pedida_que_no_existe",
+      "descripcion": "Se pidió una sesión con --session y el servidor vive, pero esa sesión no está.",
+      "argumentos": [
+        "--socket",
+        "default",
+        "--session",
+        "claudebets"
+      ],
+      "salida": {
+        "version": 1,
+        "checked_at": "2026-09-24T14:30:04Z",
+        "socket": "default",
+        "host": {
+          "hostname": "xunis-scrapper",
+          "uid": 0,
+          "platform": "linux"
+        },
+        "server": true,
+        "error": null,
+        "truncated": false,
+        "sessions": []
+      },
+      "espera": {
+        "error": null,
+        "ausente_es_desaparecida": true
+      }
+    },
+    {
+      "nombre": "salida_recortada",
+      "descripcion": "Había más procesos o paneles de los que la sonda lee: la lista puede estar incompleta.",
+      "argumentos": [
+        "--socket",
+        "default",
+        "--session",
+        "claudebets",
+        "--session",
+        "hgabot"
+      ],
+      "salida": {
+        "version": 1,
+        "checked_at": "2026-09-24T14:30:04Z",
+        "socket": "default",
+        "host": {
+          "hostname": "xunis-scrapper",
+          "uid": 0,
+          "platform": "linux"
+        },
+        "server": true,
+        "error": null,
+        "truncated": true,
+        "sessions": [
+          {
+            "name": "hgabot",
+            "session_id": "$3",
+            "pane_id": "%3",
+            "pane_pid": 41230,
+            "live": true,
+            "reason": "sin_ia",
+            "agent": null,
+            "panes": [
+              {
+                "pane_id": "%3",
+                "window_index": 0,
+                "pane_pid": 41230,
+                "dead": false,
+                "current_path": "/root/hgabot",
+                "current_command": "bash"
+              }
+            ]
+          }
+        ]
+      },
+      "espera": {
+        "error": null,
+        "ausente_es_desaparecida": false
+      }
+    }
+  ]
+}

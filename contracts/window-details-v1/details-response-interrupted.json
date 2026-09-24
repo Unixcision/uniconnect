@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "workspace_id": "b3a1c9e2-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+  "terminal_id": "7f3e1d5c-9b2a-4e8f-a6d4-2c0b8e7f5a31",
+  "checked_at": "2026-09-24T14:30:05Z",
+  "workspace": {"name": "PROYECTOS", "kind": "local", "host": null, "host_label": null},
+  "window": {"name": "TIPSTERTRUST-CLAUDE"},
+  "tmux": {"socket": "uniconnect-local", "session": "uc-7f3e1d5c9b2a4e8fa6d42c0b8e7f5a31", "session_id": null, "pane_id": null, "live": false},
+  "agent": {
+    "provider": "claude",
+    "display_name": "Claude Code",
+    "session_id": "9d4b2e6f-1a3c-4e8b-b7d0-5f2c8a1e6b93",
+    "cwd": "/Users/danielgomezmartin/Desktop/PROYECTOS/TIPSTERTRUST",
+    "as_root": false,
+    "source": "registro",
+    "state": "interrumpido",
+    "observed_at": "2026-09-24T13:58:12Z",
+    "resume": {
+      "argv": ["claude", "--resume", "9d4b2e6f-1a3c-4e8b-b7d0-5f2c8a1e6b93", "--dangerously-skip-permissions"],
+      "environment": {},
+      "command": "cd -- '/Users/danielgomezmartin/Desktop/PROYECTOS/TIPSTERTRUST' && claude --resume 9d4b2e6f-1a3c-4e8b-b7d0-5f2c8a1e6b93 --dangerously-skip-permissions",
+      "no_prompt_verified": true
+    }
+  },
+  "reason": null
+}

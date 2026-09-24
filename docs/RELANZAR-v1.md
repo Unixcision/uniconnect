@@ -195,6 +195,20 @@ AgentAdapter
 
 Mismos tres verbos para caja local y SSH; cambia el transporte, no el contrato.
 
+**Qué dialecto tiene cada equipo (D7, 24-09-2026).** Hasta ahora el Mac solo sabía cerrar Claude y
+Linux solo Codex, y los dos anunciaban `relaunch.v1` igual: desde el móvil, la misma entrada hacía
+cosas opuestas según el equipo. D7 porta a cada lado el dialecto que le faltaba:
+
+| Proveedor | Mac, ventana local | Mac, ventana SSH | Linux, ventana local | Linux, caja SSH |
+|---|---|---|---|---|
+| Claude | sí | `no_soportado` | sí (calca `ClaudeRelaunchDialect`: ficha en `idle`, compositor vacío, `/exit`, reabre con `--dangerously-skip-permissions` e `IS_SANDBOX=1` si es root) | sí, con el mismo trabajador en el destino |
+| Codex | sí (calca `exit_codex` de Linux: `/exit` comprobado en pantalla, Intro, espera la muerte del proceso ≤ 75 s, reabre con `--yolo` y `supersedes`) | `no_soportado` | sí | sí |
+| agy, grok, resto | `no_soportado` | `no_soportado` | `no_soportado` | `no_soportado` |
+
+Lo que exige cada dialecto, paso a paso, está en `contracts/relaunch-v1/LEEME.md`, y la matriz como
+dato en `contracts/relaunch-v1/proveedores.json`. El id verificado se guarda con el proveedor del
+objetivo, nunca con `claude` fijo.
+
 **Y una suposición que hay que nombrar, porque ya ha mordido:** cerrar una IA deja un intérprete de
 órdenes esperando. Es cierto cuando la ventana lanzó la IA desde su shell, y **falso cuando la lanzó
 un supervisor**. Los servidores con `recovery.py` tienen encima un vigilante que espera a su hijo y
@@ -216,6 +230,15 @@ exactamente esto.
 
 Un host anuncia `relaunch.v1` en `capabilities`. Quien no lo anuncie no recibe estas peticiones y el
 cliente no ofrece la acción, igual que con `ssh_create.v1`.
+
+Además anuncia, desde D7, un token por cada proveedor y tipo de ventana que sabe relanzar:
+`relaunch.v1.<proveedor>.<tipo>` (`local` o `ssh`). El Mac: `relaunch.v1.claude.local` y
+`relaunch.v1.codex.local`. Linux: esos dos y `relaunch.v1.claude.ssh` y `relaunch.v1.codex.ssh`. Van
+en las mismas listas de `capabilities` que `relaunch.v1` (`mobile.workspace.list`, y en Linux también
+`mobile.host.status` y el `status` del socket de control). Android ofrece «Relanzar IA de esta
+ventana» solo si está anunciado el par de esa ventana; si el equipo no anuncia ningún token
+(versión anterior), lo ofrece como antes y deja que el plan excluya con causa. El token es una pista
+para la interfaz: el plan sigue siendo quien decide.
 
 ## 8. Forma normativa: nombres, campos y errores
 
@@ -273,11 +296,14 @@ La lista viva es `contracts/relaunch-v1/causes.json`.
   falta un plan nuevo si todavía se quiere.
 - `sin_ia` (24-09-2026): la ventana no tiene ninguna IA en marcha. No es un fallo ni una ambigüedad:
   no hay nada que relanzar.
-- `no_soportado` sigue siendo la causa de:
-  - toda ventana **SSH**: la política de cierre del Mac sigue rechazando `.ssh`, y una ventana SSH
-    pedida por id desde el móvil devuelve esta exclusión, no `alcance_no_valido`;
-  - Codex, agy y grok **en el Mac**: no hay dialecto de cierre verificado para ellos. Su
-    recuperación al abrir (tmux caído) sí funciona, con la orden sin preguntas.
+- `no_soportado` sigue siendo la causa de (tras D7):
+  - toda ventana **SSH del Mac**: su política de cierre sigue rechazando `.ssh`, y una ventana SSH
+    pedida por id desde el móvil devuelve esta exclusión, no `alcance_no_valido`. Linux sí relanza
+    en cajas SSH con destino Linux;
+  - agy, grok y el resto del catálogo **en todos los equipos**: no hay dialecto de cierre
+    verificado para ellos. Su recuperación al abrir (tmux caído) sí funciona, con la orden sin
+    preguntas.
+  - Claude y Codex ya no: los dos equipos los relanzan en ventanas locales (sección 6).
 
 **Seguir una operación.** `apply` puede devolver `operation_state: "en_curso"`. Android pregunta
 entonces con `relaunch.status` cada 2 s, como mucho 90 veces, y solo cuando `operation_state` deja de

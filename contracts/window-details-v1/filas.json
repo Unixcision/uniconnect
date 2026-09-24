@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "descripcion": "Texto exacto de cada fila del modal «Detalles» (Mac, Linux y Android) para cada respuesta de este directorio. «aviso» va encima de las filas; «nota_orden», debajo de la orden. Las reglas están en LEEME.md.",
+  "casos": [
+    {
+      "fixture": "details-response-interrupted.json",
+      "aviso": null,
+      "filas": [
+        ["Espacio de trabajo", "PROYECTOS"],
+        ["Tipo", "Local"],
+        ["Ventana", "TIPSTERTRUST-CLAUDE"],
+        ["Socket tmux", "uniconnect-local"],
+        ["Sesión tmux", "uc-7f3e1d5c9b2a4e8fa6d42c0b8e7f5a31"],
+        ["ID tmux", "No está en marcha ahora"],
+        ["IA", "Claude Code"],
+        ["Estado", "Interrumpida: se reanudará al abrir"],
+        ["ID de conversación", "9d4b2e6f-1a3c-4e8b-b7d0-5f2c8a1e6b93"],
+        ["Carpeta", "/Users/danielgomezmartin/Desktop/PROYECTOS/TIPSTERTRUST"],
+        ["Origen del dato", "Guardado en UniConnect"],
+        ["Orden para reanudarla", "cd -- '/Users/danielgomezmartin/Desktop/PROYECTOS/TIPSTERTRUST' && claude --resume 9d4b2e6f-1a3c-4e8b-b7d0-5f2c8a1e6b93 --dangerously-skip-permissions"]
+      ],
+      "nota_orden": null
+    },
+    {
+      "fixture": "details-response-local-unreachable.json",
+      "aviso": "No se pudo comprobar tmux en este equipo; se muestra lo guardado",
+      "filas": [
+        ["Espacio de trabajo", "PROYECTOS"],
+        ["Tipo", "Local"],
+        ["Ventana", "MULTIGRAM-CLAUDE"],
+        ["Socket tmux", "uniconnect-local"],
+        ["Sesión tmux", "uc-e86e9114031c4752941d1079c170a639"],
+        ["ID tmux", "Sin comprobar"],
+        ["IA", "Claude Code"],
+        ["Estado", "Guardada (no comprobada ahora)"],
+        ["ID de conversación", "714b0eae-b568-4e0c-a70b-c87c0d0a801a"],
+        ["Carpeta", "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM"],
+        ["Origen del dato", "Guardado en UniConnect"],
+        ["Orden para reanudarla", "cd -- '/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM' && claude --resume 714b0eae-b568-4e0c-a70b-c87c0d0a801a --dangerously-skip-permissions"]
+      ],
+      "nota_orden": null
+    },
+    {
+      "fixture": "details-response-local.json",
+      "aviso": null,
+      "filas": [
+        ["Espacio de trabajo", "PROYECTOS"],
+        ["Tipo", "Local"],
+        ["Ventana", "MULTIGRAM-CLAUDE"],
+        ["Socket tmux", "uniconnect-local"],
+        ["Sesión tmux", "uc-e86e9114031c4752941d1079c170a639"],
+        ["ID tmux", "$12 · %14"],
+        ["IA", "Claude Code"],
+        ["Estado", "En marcha"],
+        ["ID de conversación", "714b0eae-b568-4e0c-a70b-c87c0d0a801a"],
+        ["Carpeta", "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM"],
+        ["Origen del dato", "Ficha de sesión de Claude"],
+        ["Orden para reanudarla", "cd -- '/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM' && claude --resume 714b0eae-b568-4e0c-a70b-c87c0d0a801a --dangerously-skip-permissions"]
+      ],
+      "nota_orden": null
+    },
+    {
+      "fixture": "details-response-no-agent.json",
+      "aviso": null,
+      "filas": [
+        ["Espacio de trabajo", "XUNISSCRAPPER"],
+        ["Tipo", "VPS (root@167.233.192.135:22)"],
+        ["Ventana", "hgabot"],
+        ["Socket tmux", "Servidor tmux por defecto"],
+        ["Sesión tmux", "hgabot"],
+        ["ID tmux", "$3 · %3"],
+        ["IA", "Sin IA detectada"]
+      ],
+      "nota_orden": null
+    },
+    {
+      "fixture": "details-response-no-tmux.json",
+      "aviso": null,
+      "filas": [
+        ["Espacio de trabajo", "PROYECTOS"],
+        ["Tipo", "Local"],
+        ["Ventana", "Terminal antigua"],
+        ["Sesión tmux", "Sin tmux: terminal directa sin sesión recuperable"],
+        ["IA", "Sin IA detectada"]
+      ],
+      "nota_orden": null
+    },
+    {
+      "fixture": "details-response-saved-shell.json",
+      "aviso": null,
+      "filas": [
+        ["Espacio de trabajo", "XUNISSCRAPPER"],
+        ["Tipo", "VPS (root@167.233.192.135:22)"],
+        ["Ventana", "bets-codex"],
+        ["Socket tmux", "Servidor tmux por defecto"],
+        ["Sesión tmux", "bets-codex"],
+        ["ID tmux", "$8 · %9"],
+        ["IA", "Codex"],
+        ["Estado", "Guardada; ahora no hay ninguna IA en marcha"],
+        ["ID de conversación", "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17"],
+        ["Carpeta", "/root/bets"],
+        ["Como root", "Sí"],
+        ["Origen del dato", "Guardado en UniConnect"],
+        ["Orden para reanudarla", "cd -- '/root/bets' && codex --yolo resume 01a0ac81-57c7-7af3-8ac2-fe8a957c8b17"]
+      ],
+      "nota_orden": null
+    },
+    {
+      "fixture": "details-response-sin-id.json",
+      "aviso": null,
+      "filas": [
+        ["Espacio de trabajo", "XUNISSCRAPPER"],
+        ["Tipo", "VPS (root@167.233.192.135:22)"],
+        ["Ventana", "ufabetbot"],
+        ["Socket tmux", "Servidor tmux por defecto"],
+        ["Sesión tmux", "ufabetbot"],
+        ["ID tmux", "$2 · %2"],
+        ["IA", "Claude Code: IA detectada, sin identificador todavía"],
+        ["Estado", "En marcha"],
+        ["ID de conversación", "—"],
+        ["Carpeta", "/root/ufabetbot"],
+        ["Como root", "Sí"],
+        ["Origen del dato", "—"]
+      ],
+      "nota_orden": null
+    },
+    {
+      "fixture": "details-response-ssh.json",
+      "aviso": null,
+      "filas": [
+        ["Espacio de trabajo", "XUNISSCRAPPER"],
+        ["Tipo", "VPS (root@167.233.192.135:22)"],
+        ["Ventana", "claudebets"],
+        ["Socket tmux", "Servidor tmux por defecto"],
+        ["Sesión tmux", "claudebets"],
+        ["ID tmux", "$0 · %0"],
+        ["IA", "Claude Code"],
+        ["Estado", "En marcha"],
+        ["ID de conversación", "473ed1de-4397-45ef-b00b-6b17fd7382b0"],
+        ["Carpeta", "/root/xunis"],
+        ["Como root", "Sí"],
+        ["Origen del dato", "Ficha de sesión de Claude"],
+        ["Orden para reanudarla", "cd -- '/root/xunis' && IS_SANDBOX=1 claude --resume 473ed1de-4397-45ef-b00b-6b17fd7382b0 --dangerously-skip-permissions"]
+      ],
+      "nota_orden": null
+    },
+    {
+      "fixture": "details-response-vault-closed.json",
+      "aviso": "No se pudo comprobar el servidor; se muestra lo guardado",
+      "filas": [
+        ["Espacio de trabajo", "XUNISSCRAPPER"],
+        ["Tipo", "VPS (root@167.233.192.135:22)"],
+        ["Ventana", "claudebets"],
+        ["Socket tmux", "Servidor tmux por defecto"],
+        ["Sesión tmux", "claudebets"],
+        ["ID tmux", "Sin comprobar"],
+        ["IA", "Claude Code"],
+        ["Estado", "Guardada (no comprobada ahora)"],
+        ["ID de conversación", "473ed1de-4397-45ef-b00b-6b17fd7382b0"],
+        ["Carpeta", "/root/xunis"],
+        ["Como root", "Sí"],
+        ["Origen del dato", "Guardado en UniConnect"],
+        ["Orden para reanudarla", "cd -- '/root/xunis' && IS_SANDBOX=1 claude --resume 473ed1de-4397-45ef-b00b-6b17fd7382b0 --dangerously-skip-permissions"]
+      ],
+      "nota_orden": null
+    }
+  ]
+}

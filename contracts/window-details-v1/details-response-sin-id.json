@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "workspace_id": "5d6f2c1e-8a4b-4f0e-9c3d-2b1a0e9f8c7d",
+  "terminal_id": "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f",
+  "checked_at": "2026-09-24T14:30:05Z",
+  "workspace": {
+    "name": "XUNISSCRAPPER",
+    "kind": "ssh",
+    "host": {"user": "root", "hostname": "167.233.192.135", "port": 22},
+    "host_label": "root@167.233.192.135:22"
+  },
+  "window": {"name": "ufabetbot"},
+  "tmux": {"socket": "default", "session": "ufabetbot", "session_id": "$2", "pane_id": "%2", "live": true},
+  "agent": {
+    "provider": "claude",
+    "display_name": "Claude Code",
+    "session_id": null,
+    "cwd": "/root/ufabetbot",
+    "as_root": true,
+    "source": null,
+    "state": "activo",
+    "observed_at": "2026-09-24T14:30:04Z",
+    "resume": null
+  },
+  "reason": "sin_id"
+}

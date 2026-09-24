@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "workspace_id": "b3a1c9e2-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+  "terminal_id": "0e9d8c7b-6a5f-4e3d-9c2b-1a0f9e8d7c6b",
+  "checked_at": "2026-09-24T14:30:05Z",
+  "workspace": {"name": "PROYECTOS", "kind": "local", "host": null, "host_label": null},
+  "window": {"name": "Terminal antigua"},
+  "tmux": null,
+  "agent": null,
+  "reason": "sin_tmux"
+}

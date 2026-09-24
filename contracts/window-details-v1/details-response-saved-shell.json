@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "workspace_id": "5d6f2c1e-8a4b-4f0e-9c3d-2b1a0e9f8c7d",
+  "terminal_id": "3e5a7c9b-1d2f-4a6e-8b0c-5d7f9a1b3c4e",
+  "checked_at": "2026-09-24T14:30:05Z",
+  "workspace": {
+    "name": "XUNISSCRAPPER",
+    "kind": "ssh",
+    "host": {"user": "root", "hostname": "167.233.192.135", "port": 22},
+    "host_label": "root@167.233.192.135:22"
+  },
+  "window": {"name": "bets-codex"},
+  "tmux": {"socket": "default", "session": "bets-codex", "session_id": "$8", "pane_id": "%9", "live": true},
+  "agent": {
+    "provider": "codex",
+    "display_name": "Codex",
+    "session_id": "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17",
+    "cwd": "/root/bets",
+    "as_root": true,
+    "source": "registro",
+    "state": "guardado",
+    "observed_at": "2026-09-24T12:05:31Z",
+    "resume": {
+      "argv": ["codex", "--yolo", "resume", "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17"],
+      "environment": {},
+      "command": "cd -- '/root/bets' && codex --yolo resume 01a0ac81-57c7-7af3-8ac2-fe8a957c8b17",
+      "no_prompt_verified": true
+    }
+  },
+  "reason": "sin_ia"
+}

@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "descripcion": "Qué IA sabe relanzar cada equipo (agent.relaunch), por tipo de ventana, tras la decisión D7 del 24-09-2026. Cada celda se anuncia con un token relaunch.v1.<proveedor>.<tipo> en capabilities, junto a relaunch.v1. Lo que no está aquí se excluye del plan con la causa no_soportado. Claude en Linux y Codex en el Mac están escritos pero pendientes de prueba en vivo: no se anuncian y el plan los excluye con no_soportado hasta probarlos contra una IA real (relanzar la cierra).",
+  "token": "relaunch.v1.<proveedor>.<tipo>",
+  "tipos": [
+    "local",
+    "ssh"
+  ],
+  "equipos": {
+    "macos": {
+      "local": [
+        "claude"
+      ],
+      "ssh": []
+    },
+    "linux": {
+      "local": [
+        "codex"
+      ],
+      "ssh": [
+        "codex"
+      ]
+    }
+  },
+  "capacidades": {
+    "macos": [
+      "relaunch.v1",
+      "relaunch.v1.claude.local"
+    ],
+    "linux": [
+      "relaunch.v1",
+      "relaunch.v1.codex.local",
+      "relaunch.v1.codex.ssh"
+    ]
+  },
+  "no_soportado": {
+    "macos": {
+      "local": [
+        "codex",
+        "agy",
+        "grok",
+        "otros"
+      ],
+      "ssh": [
+        "claude",
+        "codex",
+        "agy",
+        "grok",
+        "otros"
+      ]
+    },
+    "linux": {
+      "local": [
+        "claude",
+        "agy",
+        "grok",
+        "otros"
+      ],
+      "ssh": [
+        "claude",
+        "agy",
+        "grok",
+        "otros"
+      ]
+    }
+  },
+  "pendiente_prueba_en_vivo": {
+    "macos": {
+      "local": [
+        "codex"
+      ]
+    },
+    "linux": {
+      "local": [
+        "claude"
+      ],
+      "ssh": [
+        "claude"
+      ]
+    }
+  }
+}

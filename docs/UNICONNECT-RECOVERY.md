@@ -180,6 +180,13 @@ nativo canónico guardado y de su carpeta de reanudación registrada; UniConnect
 nunca los sustituye por `--continue` ni adivina la conversación más reciente.
 La ausencia de identidad no debe notificarse como una sesión de IA recuperada.
 
+En una ventana SSH, la IA solo se reanuda sola al recrear su tmux si la última
+lectura en vivo vio esa sesión hace como mucho dos vueltas de sondeo (≤ 120 s)
+y nadie la cerró a propósito: ni desde UniConnect ni a mano en el servidor
+(servidor tmux vivo con otras sesiones y solo falta esa). Cada socket tiene un
+solo dueño de esa recuperación. Las reglas completas están en
+`docs/ARBOL-IA-v1.md` (sección 7) y en `contracts/agent-tree-v1/LEEME.md`.
+
 Si un agente local termina, permanece en el shell y usa el menú de acciones de
 la ventana para reanudar una conversación registrada o iniciar otro agente. No
 elimines la conversación salvo que confirmes explícitamente **Olvidar la

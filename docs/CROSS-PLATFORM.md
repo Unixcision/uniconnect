@@ -100,15 +100,23 @@ cada ventana y qué IA corre dentro. Está en `docs/ARBOL-IA-v1.md` y sus ejempl
 - **Un criterio de detección**, probado con `contracts/agent-tree-v1/deteccion-casos.json`: subárbol
   de procesos del shell del panel, exactamente una raíz de proveedor, ficha de Claude, rollout de
   Codex y, como último recurso, la línea de órdenes.
-- **Una sonda compartida**: `linux/uniconnect/agent_probe.py`. Linux la ejecutará en local y por
-  SSH con `Transport.run`; el Mac la **empaquetará como recurso del .app** y la mandará por stdin a
-  cada caja SSH. El Mac local no la usa: aplica el mismo criterio en Swift (`Packages/CMUXAgentLaunch`,
-  `AgentProcessDiscovery`), probado con el mismo fixture. A 24-09-2026 ni la sonda ni
-  `AgentProcessDiscovery` están todavía en el repositorio: es el diseño acordado, no código compartido.
+- **Una sonda compartida**: `linux/uniconnect/agent_probe.py`. Linux la ejecuta en local y por SSH
+  con `Transport.run`; el Mac la empaqueta como recurso del .app y la manda por stdin a cada caja
+  SSH. Su salida es `contracts/agent-tree-v1/sonda-salida.json` y cómo se lee,
+  `sonda-lectura.json`. El Mac local no la usa: aplica el mismo criterio en Swift
+  (`Packages/CMUXAgentLaunch`, `AgentProcessDiscovery`), probado con el mismo fixture. Es el mismo
+  **criterio**, no el mismo código: el script es compartido entre Linux y el Mac en SSH; el Swift es
+  otra implementación que solo se demuestra igual con los casos del contrato.
 - **Una copia** en `linux/scripts/recovery.py`, porque el supervisor se despliega solo en el VPS y no
-  puede importar. Esta sí existe y pasa todos los casos del fixture (`linux/tests/test_recovery_v2.py`).
-- **Una política de reanudación** (`noPrompt`) y una forma de orden, probadas con
-  `contracts/agent-tree-v1/reanudar-comandos.json`.
+  puede importar. Se prueba con el mismo fixture (`linux/tests/test_recovery_v2.py`).
+- **Una política de reanudación** (`noPrompt`, con `supersedes` para Codex) y una forma de orden,
+  probadas con `contracts/agent-tree-v1/reanudar-comandos.json`. El nombre de cada IA sale del
+  `displayName` del mismo catálogo.
+- **Un dueño por socket** para la recuperación automática, y las reglas de opciones de tmux en
+  caliente e interrumpida: `contracts/agent-tree-v1/LEEME.md`, «Quién recupera cada sesión».
+- **Relanzar**: la misma matriz de proveedores en los dos escritorios (Claude y Codex en ventanas
+  locales; Linux también por SSH), anunciada con `relaunch.v1.<proveedor>.<tipo>`:
+  `contracts/relaunch-v1/proveedores.json`.
 - **Sockets tmux**: no se unifican, porque no se pueden mover sesiones vivas de un servidor a otro. El
   árbol dice siempre cuál es:
 
@@ -122,8 +130,10 @@ cada ventana y qué IA corre dentro. Está en `docs/ARBOL-IA-v1.md` y sus ejempl
 
 Lo que es de cada plataforma y no se comparte: la lectura de procesos (`/proc` en Linux; `ps` y
 `lsof` en macOS), dónde se persiste el árbol (sesión del Mac, `state.json` de Linux, `manifest.json`
-del VPS) y cómo se pinta el modal «Detalles». Que los fixtures pasen en un lado no demuestra nada del
-otro: cada plataforma tiene que ejecutarlos con su propia implementación.
+del VPS) y cómo se pinta el modal «Detalles». Los **textos** del modal sí son comunes, letra por
+letra, en Mac, Linux y Android: `contracts/window-details-v1/filas.json`. Que los fixtures pasen en
+un lado no demuestra nada del otro: cada plataforma tiene que ejecutarlos con su propia
+implementación, y un test que no encuentra `contracts/` tiene que fallar, no salir en verde.
 
 ### Menú contextual y Ajustes de macOS
 

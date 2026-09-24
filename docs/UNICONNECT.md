@@ -194,7 +194,11 @@ SSH windows: the Mac cannot see the remote process and remote tmux servers keep
 options in the same `tmux … \; …` invocation on every attach (create, existing and
 recoverable paths; tmux 3.2a and 3.4+): `set-option -g set-titles on`,
 `set-option -g set-titles-string '#{pane_current_command}|#{pane_title}'` and
-`set-option -s set-clipboard off` (OSC 52 kills tmux 3.2a on selection). The OSC title
+`set-option -s set-clipboard off` (OSC 52 kills tmux 3.2a on selection). Since decision D4
+(2026-09-24) the automatic paths (restore on launch, `reconnectNow` with `recoverMissingSession`)
+must not change server options (`-s`/`-g`) or key tables on a tmux server that already existed: they
+only run `new-session -d`, and apply server options only when `list-sessions` reported
+`no server running` (see `docs/ARBOL-IA-v1.md`, 7.2). The OSC title
 of an SSH surface then arrives as `command|title`; `UniConnectRemotePaneTitle` splits
 it when the prefix looks like a process name: the command feeds `agent` (`claude`,
 `codex`, `gemini`, `agy`; `node`/`python3` count as a live agent without a name; a
