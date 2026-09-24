@@ -463,6 +463,15 @@ class Transport:
             raise TransportError("remote_command_failed", result.stderr.strip()[-2000:] or str(result.returncode))
         return result
 
+    def run_python(self, source: bytes, args=(), *, timeout: float = 10) -> subprocess.CompletedProcess:
+        """Run a self-contained Python script on this destination (local bash or this box's SSH).
+
+        The source travels as base64 in argv with the same bootstrap as the identity hook,
+        so nothing is installed or written on the host. Never raises for a non-zero exit.
+        """
+        encoded = base64.b64encode(source).decode("ascii")
+        return self.run(shlex.join(["python3", "-c", PYTHON_BOOTSTRAP, encoded, *args]), timeout=timeout, check=False)
+
     def probe(self) -> dict:
         script = ("printf 'UC_HOST\\t'; hostname; "
                   "printf 'UC_USER\\t'; id -un; "

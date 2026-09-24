@@ -11,6 +11,8 @@ from .transport import TmuxCommand, Transport
 
 
 class NativeSessions:
+    AUTHORITATIVE = ("ficha", "rollout")
+
     def __init__(self, owner, *, transport=Transport, clock=time.time):
         self.owner, self.transport, self.clock = owner, transport, clock
         self.pending = set()
@@ -84,6 +86,10 @@ class NativeSessions:
                                 and proof["tmux"] == record["tmux"] and proof["agent"] == record["agent"]]
                     if len(matching) != 1:
                         continue
+                    if record.get("agentSource") in self.AUTHORITATIVE:
+                        # La sonda viva (ficha o rollout) manda: tras un /resume el hook
+                        # y la sonda se pisarían en bucle (L6). Tampoco cambian los dueños.
+                        continue
                     proof = matching[0]
                     tmux_key = next((item for item in surface._ownership_keys if item[0] == "tmux"), None)
                     if tmux_key is None:
@@ -106,7 +112,7 @@ class NativeSessions:
     def persist(self, record, proof):
         """Commit ID and history together; imported history entries remain untouched."""
         session = proof["session_id"]
-        if record.get("sessionId") == session:
+        if record.get("sessionId") == session or record.get("agentSource") in self.AUTHORITATIVE:
             return False
         before = copy.deepcopy(record)
         history = copy.deepcopy(record.get("history", []))
@@ -115,7 +121,7 @@ class NativeSessions:
             if identifier and not any(item.get("agent") == record["agent"] and item.get("sessionId") == identifier for item in history):
                 history.append({"id": str(uuid.uuid4()), "agent": record["agent"], "sessionId": identifier,
                                 "firstSeenAt": now, "lastSeenAt": now})
-        record.update(sessionId=session, history=history)
+        record.update(sessionId=session, history=history, agentSource="hook")
         try:
             self.owner.store.save()
         except Exception:

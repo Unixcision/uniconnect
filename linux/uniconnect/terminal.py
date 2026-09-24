@@ -15,6 +15,7 @@ gi.require_version("Gdk", "3.0")
 gi.require_version("Vte", "2.91")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango, Vte
 
+from .agent_tree import AgentTree
 from .transport import SSHCommand, Transport, TransportError, terminal_launch
 from .terminal_copy import TerminalCopy
 from .selection_drag import SelectionDrag
@@ -354,8 +355,8 @@ class TerminalSurface(Gtk.Box):
         if self.disposed:
             self._release_ownership()
             return
-        if self.workspace["kind"] == "local":
-            self.record["runtimeState"] = "stopped"
+        # Local: stopped, y si la IA estaba activa queda interrumpida para reanudarse al abrir.
+        AgentTree.client_exited(self.workspace, self.record)
         if self._pending_launch is not None:
             # Do not start another VTE child until the old child's exit signal has
             # been consumed: child-exited carries no PID/generation identifier.

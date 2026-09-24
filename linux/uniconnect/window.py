@@ -27,6 +27,7 @@ from .transport import SSHCommand, Transport, TmuxCommand
 from .window_commands import WindowCommands
 from .window_notifications import WindowNotifications
 from .native_sessions import NativeSessions
+from .agent_tree import AgentTree
 from .sidebar import WorkspaceSidebar
 
 
@@ -49,6 +50,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         self.last_input, self.last_saved = time.monotonic(), 0
         self.locked = False
         self.native_sessions = NativeSessions(self)
+        self.agent_tree = AgentTree(self)
         from .activity_monitor import ActivityMonitor
         self.activity = ActivityMonitor(self)
         self.activity.start()
@@ -550,6 +552,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             return False
         self.persist()
         self.native_sessions.poll()
+        self.agent_tree.poll()
         auto = self.store.data.get("settings", {}).get("autoLockMinutes", 0)
         if auto and not self.locked and time.monotonic() - self.last_input >= auto * 60:
             self.action_lock()
@@ -985,8 +988,15 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         return operation
 
     def action_save(self):
-        self.persist()
-        self.store.checkpoint("manual")
+        # «Guardar» persiste el árbol entero: primero una lectura viva de todas las cajas
+        # (10 s como máximo); se guarda igual si la sonda falla o vence.
+        def finish():
+            try:
+                self.persist()
+                self.store.checkpoint("manual")
+            except Exception as error:
+                self.error(error)
+        self.agent_tree.refresh_all(finish)
 
     def action_rename_workspace(self):
         workspace = self.current_workspace()
