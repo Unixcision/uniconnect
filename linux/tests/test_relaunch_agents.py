@@ -72,6 +72,17 @@ class ArgumentsTests(unittest.TestCase):
             worker.inspect()
         self.assertEqual(error.exception.cause, "no_soportado")
 
+    def test_window_without_agent_is_excluded_as_sin_ia_without_touching_the_host(self):
+        calls = []
+        adapter = RelaunchAgents(transport_factory=lambda *args, **kwargs: calls.append(args) or self.fail("sin SSH"))
+        for provider in ("shell", "terminal", None):
+            candidate = {"provider": provider, "connection": None, "record": {"id": "w", "tmux": "t"}}
+            for verb in ("agent.relaunch", "agent.continue"):
+                with self.subTest(provider=provider, verb=verb), self.assertRaises(RelaunchUnavailable) as error:
+                    adapter.probe(candidate, verb)
+                self.assertEqual(error.exception.cause, "sin_ia")
+        self.assertEqual(calls, [])
+
     def test_footer_or_unknown_dialog_does_not_prove_an_empty_composer(self):
         worker = TargetWorker({"session": "fixture", "socket": "fixture"})
         for screen in ("some output\nbypass permissions", "❯ draft", "Do you trust this folder?\n❯ "):

@@ -72,6 +72,9 @@ class RelaunchAgents:
     def probe(self, candidate, verb):
         if not candidate["record"].get("tmux"):
             raise RelaunchUnavailable("no_soportado")
+        if verb != "transport.reconnect" and candidate.get("provider") in (None, "", "shell", "terminal"):
+            # Ventana sin IA: se excluye con su causa, sin abrir SSH ni tocar el destino.
+            raise RelaunchUnavailable("sin_ia")
         return self.request(candidate, "inspect", verb=verb)
 
     def recover(self, target, operation_id):
