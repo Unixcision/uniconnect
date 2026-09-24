@@ -40,7 +40,7 @@ class WindowCommands:
             return bool(self.notifications)
         if name == "notifications_toggle_workspace":
             return bool(workspace and windows)
-        if name == "notifications_toggle_window":
+        if name in ("notifications_toggle_window", "window_details"):
             return surface is not None
         for prefix, values in (("workspace_", WorkspaceArrangement.ordered(self.store.workspaces)), ("window_", windows)):
             if name.startswith(prefix) and name[len(prefix):].isdigit():
@@ -151,6 +151,10 @@ class WindowCommands:
 
     def action_new_conversation_window(self):
         self.action_new_window(conversation=True)
+
+    def action_window_details(self):
+        if self.focused_surface is not None:
+            self.show_window_details(self.focused_surface)
 
     @staticmethod
     def arrangement_group(items, record):

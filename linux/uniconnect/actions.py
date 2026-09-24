@@ -42,6 +42,7 @@ ACTIONS = (
     Action("reconnect_all", "Reconnect all SSH", "<Primary><Alt>r"),
     Action("rename_workspace", "Rename workspace"),
     Action("rename_window", "Rename window"),
+    Action("window_details", "Detalles…"),
     Action("reset_window_name", "Reset window name"),
     Action("pin_workspace", "Pin workspace"),
     Action("pin_window", "Pin window"),

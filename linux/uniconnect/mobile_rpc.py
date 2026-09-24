@@ -2,6 +2,7 @@
 
 import base64
 import binascii
+import copy
 import datetime
 import hashlib
 import json
@@ -25,6 +26,9 @@ from .mobile_render_grid import (MAX_CAPTURE_BYTES, MAX_SCROLLBACK_ROWS, capture
                                  render_grid_from_tmux_capture)
 from .transcribe import TranscriptionEngine
 from .transport import SSHCommand, Transport
+from .agent_tree import AgentTree
+from .resume_catalog import AgentResumeCatalog
+from .window_details import WindowDetails
 
 
 class MobileRPC:
@@ -82,7 +86,7 @@ class MobileRPC:
             return action()
         if method == "mobile.host.status":
             ready = capture_dependencies_ready()
-            capabilities = ["events.v1", "terminal.viewport.v1", "notifications.v1", "terminal.pty.v1"]
+            capabilities = ["events.v1", "terminal.viewport.v1", "notifications.v1", "terminal.pty.v1", "window_details.v1"]
             if ready:
                 capabilities += ["terminal.replay.v1", "terminal.render_grid.v1"]
             return {"machine_id": self.access.machine_id, "display_name": socket.gethostname(), "platform": "linux",
@@ -97,6 +101,9 @@ class MobileRPC:
             return self.attachments.dispatch(operation, params, connection_id, authorized)
         if operation == "terminal.replay":
             return self.replay(params, authorized=authorized)
+        if operation == "terminal.details":
+            # Resolución en el hilo GTK; la sonda (hasta 8 s) nunca bloquea GTK ni el plazo de 5 s.
+            return self.details_dispatch(params, authorized)
         if operation == "audio.transcribe":
             # Conversión y motor fuera de GTK: solo el bloqueo y el permiso se
             # comprueban en el hilo dueño del modelo, como en las transferencias.
@@ -108,6 +115,56 @@ class MobileRPC:
             # la caja y el bloqueo se comprueban en el hilo dueño del modelo.
             return self.file_dispatch(operation, params, connection_id, authorized)
         return self.on_main(lambda: checked(lambda: self._dispatch_main(operation, params, connection_id)))
+
+    # ----- window_details.v1 -----
+
+    def details_dispatch(self, params, authorized):
+        """`mobile.terminal.details`: solo lectura; con la sonda caída responde con lo guardado."""
+        workspace_id = params.get("workspace_id")
+        ids = [params[key] for key in ("terminal_id", "surface_id") if params.get(key) is not None]
+        if (not isinstance(workspace_id, str) or not workspace_id or not ids
+                or not all(isinstance(value, str) and value and value == ids[0] for value in ids)):
+            raise RPCError("invalid_params", "Indica el espacio de trabajo y la ventana.")
+
+        def resolve():
+            if not authorized():
+                raise RPCError("approval_required", "El permiso de este dispositivo ha sido revocado")
+            if self.window.locked:
+                raise RPCError("locked", "UniConnect está bloqueado.")
+            workspace = next((item for item in self.window.store.workspaces if item["id"] == workspace_id), None)
+            record = next((item for item in (workspace or {}).get("windows", []) if item["id"] == ids[0]), None)
+            if record is None:
+                raise RPCError("not_found", "No se encontró esa ventana.")
+            connection = transport = key = None
+            vault = getattr(self.window, "vault", None)
+            if workspace["kind"] == "ssh" and vault is not None and not vault.locked:
+                try:
+                    connection = SSHCommand.parse(self.window.connection(workspace))
+                except Exception:
+                    connection = None
+            if record.get("tmux"):
+                key = AgentTree.group_key(workspace, record)
+                transport = AgentTree.open_transport(self.window, self.transport_factory, key, workspace)
+            return (copy.deepcopy({name: value for name, value in workspace.items() if name != "windows"}),
+                    copy.deepcopy(record), connection, transport, key)
+
+        workspace, record, connection, transport, key = self.on_main(resolve)
+        live = None
+        if record.get("tmux"):
+            live = {"ok": False, "error": "host_inaccesible", "checked_at": None, "session": None}
+            if transport is not None:
+                try:
+                    result = AgentTree.probe(transport, key[1], [record["tmux"]], timeout=8)
+                    if not result.get("error"):
+                        entry = next((item for item in result["sessions"] if item.get("name") == record["tmux"]), None)
+                        live = {"ok": True, "error": None, "checked_at": result.get("checked_at"), "session": entry}
+                except Exception:
+                    pass  # Nunca un error por la sonda: se responde con lo guardado.
+        try:
+            catalog = AgentResumeCatalog()
+        except Exception:
+            catalog = None
+        return WindowDetails.snapshot(workspace, record, live, catalog, time.time, connection=connection)
 
     # ----- activity.v1 -----
 
@@ -448,7 +505,7 @@ class MobileRPC:
             raise RPCError("not_found", "No se encontró la terminal")
         return {"workspaces": boxes, "display_name": socket.gethostname(),
                 "capabilities": ["activity.v1", "box_update", "file_put.v1", "inbox.v1", "transcribe.v1",
-                                 "ssh_create.v1"]}
+                                 "ssh_create.v1", "window_details.v1"]}
 
     def invalidate_terminal(self, panel_id):
         with self.revision_lock:

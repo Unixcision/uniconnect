@@ -514,8 +514,9 @@ class TerminalSurface(Gtk.Box):
         # without remote copy-mode or a fresh SSH connection on every motion.
         if event.button == 3:
             self.on_focus()
-            self.owner.context_menu(["copy", "show_history", "cancel_selection", "paste", "find", "new_window", "rename_window",
-                                     "split_right", "split_down", "reconnect", "upload", "close_window"], event)
+            self.owner.context_menu(["copy", "show_history", "cancel_selection", "paste", "find", "window_details",
+                                     "new_window", "rename_window", "split_right", "split_down", "reconnect", "upload",
+                                     "close_window"], event)
             return True
         return False
 

@@ -29,6 +29,8 @@ from .window_notifications import WindowNotifications
 from .native_sessions import NativeSessions
 from .agent_tree import AgentTree
 from .session_recovery import SessionRecovery
+from .window_details import CHECKING, UNREACHABLE, WindowDetails
+from .clipboard_text import publish_text
 from .sidebar import WorkspaceSidebar
 
 
@@ -319,7 +321,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         if action:
             self.run_action(action)
         else:
-            self.context_menu(["rename_window", "pin_window", "window_up", "window_down", "window_first", "notifications_toggle_window", "reconnect", "close_window"], event)
+            self.context_menu(["window_details", "rename_window", "pin_window", "window_up", "window_down", "window_first", "notifications_toggle_window", "reconnect", "close_window"], event)
 
     def workspace_context(self, _, event, workspace):
         if event.button == 3:
@@ -494,7 +496,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                 self._notification_preserve_focus_id = surface.record["id"]
             finally:
                 self._notification_context_selection = False
-            self.context_menu(["new_conversation_window", "rename_window", "reset_window_name", "pin_window", "window_up", "window_down", "window_first", "move_window_left", "move_window_right",
+            self.context_menu(["window_details", "new_conversation_window", "rename_window", "reset_window_name", "pin_window", "window_up", "window_down", "window_first", "move_window_left", "move_window_right",
                                "maximize_pane", "notifications_toggle_window", "close_window", "close_left_windows", "close_right_windows",
                                "close_other_windows", "kill_tmux"], event)
             return True
@@ -584,6 +586,109 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             GLib.idle_add(deliver)
         future.add_done_callback(finished)
 
+    def details_connection(self, workspace):
+        """Destino SSH para Detalles sin pedir la bóveda: None si está cerrada."""
+        if workspace["kind"] != "ssh" or self.vault.locked:
+            return None
+        try:
+            return SSHCommand.parse(self.connection(workspace))
+        except Exception:
+            return None
+
+    def window_details(self, workspace, record):
+        """Detalles con lo guardado y la última lectura viva del árbol IA, sin sondear ahora."""
+        return WindowDetails.snapshot(workspace, record, self.agent_tree.live.get(record["id"]),
+                                      self._details_catalog(), time.time,
+                                      connection=self.details_connection(workspace))
+
+    def show_window_details(self, surface):
+        """Modal «Detalles»: abre al instante con lo guardado y se actualiza con la sonda (≤ 8 s)."""
+        workspace, record = surface.workspace, surface.record
+        dialog = Gtk.Dialog(title="Detalles de la ventana", transient_for=self, modal=True)
+        dialog.add_button("Cerrar", Gtk.ResponseType.CLOSE)
+        dialog.set_default_size(620, -1)
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=20)
+        grid = Gtk.Grid(column_spacing=18, row_spacing=8)
+        status = Gtk.Label(xalign=0)
+        status.get_style_context().add_class("dim-label")
+        content.pack_start(grid, False, False, 0)
+        content.pack_start(status, False, False, 0)
+        dialog.get_content_area().add(content)
+        state = {"open": True}
+
+        def render(details, note):
+            for child in grid.get_children():
+                grid.remove(child)
+            for index, (key, label, value) in enumerate(WindowDetails.rows(details)):
+                name = Gtk.Label(label=label, xalign=0, yalign=0)
+                name.get_style_context().add_class("dim-label")
+                grid.attach(name, 0, index, 1, 1)
+                if key == "command":
+                    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+                    command = Gtk.Label(xalign=0, selectable=True, wrap=True)
+                    command.set_markup("<tt>" + GLib.markup_escape_text(value) + "</tt>")
+                    command.set_line_wrap_mode(Pango.WrapMode.CHAR)
+                    button = Gtk.Button(label="Copiar orden", halign=Gtk.Align.START)
+                    button.connect("clicked", lambda *_, text=value: publish_text(text))
+                    box.pack_start(command, False, False, 0)
+                    box.pack_start(button, False, False, 0)
+                    grid.attach(box, 1, index, 1, 1)
+                else:
+                    grid.attach(Gtk.Label(label=value, xalign=0, selectable=True, wrap=True), 1, index, 1, 1)
+            status.set_text(note)
+            grid.show_all()
+
+        def closed(*_):
+            state["open"] = False
+            dialog.destroy()
+
+        def snapshot(live):
+            return WindowDetails.snapshot(workspace, record, live, self._details_catalog(), time.time,
+                                          connection=self.details_connection(workspace))
+
+        dialog.connect("response", closed)
+        render(snapshot(None), CHECKING)
+        dialog.show_all()
+        if not record.get("tmux"):
+            status.set_text("")
+            return dialog
+        key = AgentTree.group_key(workspace, record)
+        transport = AgentTree.open_transport(self, Transport, key, workspace)
+        if transport is None:
+            status.set_text(UNREACHABLE)
+            return dialog
+        name = record["tmux"]
+
+        def work():
+            # Fuera del hilo GTK: una lectura de la sonda de este grupo, como mucho 8 s.
+            try:
+                result = AgentTree.probe(transport, key[1], [name], timeout=8)
+            except Exception:
+                return None
+            if result.get("error"):
+                return None
+            entry = next((item for item in result["sessions"] if item.get("name") == name), None)
+            return {"ok": True, "error": None, "checked_at": result.get("checked_at"), "session": entry}
+
+        def done(live):
+            if not state["open"] or self._closed:
+                return
+            if live is None:
+                render(snapshot({"ok": False, "error": "probe"}), UNREACHABLE)
+            else:
+                render(snapshot(live), "")
+
+        self.background(work, done)
+        return dialog
+
+    @staticmethod
+    def _details_catalog():
+        from .resume_catalog import AgentResumeCatalog
+        try:
+            return AgentResumeCatalog()
+        except Exception:
+            return None
+
     def error(self, error):
         dialog = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.ERROR,
                                    buttons=Gtk.ButtonsType.NONE, text=self._("Error"))
@@ -652,7 +757,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         if workspace["kind"] == "ssh":
             command = SSHCommand.parse(result["connect"])
             workspace["credentialId"] = self.vault.put(result["connect"])
-            workspace["hostLabel"] = str(command.endpoint_key())
+            workspace["hostLabel"] = "%s@%s:%s" % command.endpoint_key()
         elif not Path(workspace["cwd"]).expanduser().is_dir():
             raise ValueError(self._("The folder does not exist"))
         self.commit_new_workspace(workspace, select=True)
@@ -700,7 +805,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                 except Exception as error:
                     raise RPCError("invalid_params", self._("Comando de conexión no válido")) from error
                 workspace["credentialId"] = self.vault.put(connect)
-                workspace["hostLabel"] = str(command.endpoint_key())
+                workspace["hostLabel"] = "%s@%s:%s" % command.endpoint_key()
             else:
                 source = next((item for item in self.store.workspaces
                                if item["id"] == params.get("source_workspace_id") and item["kind"] == "ssh"), None)

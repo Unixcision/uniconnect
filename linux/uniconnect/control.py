@@ -99,6 +99,12 @@ class ControlServer:
         if command in ("save", "persist"):
             self.window.action_save()
             return "saved"
+        if command in ("surface.details", "details"):
+            # Sin sondear ahora (el socket corre en GTK): lo guardado y la última lectura viva.
+            record = next((item for item in (workspace or {}).get("windows", []) if item["id"] == surface_id), None)
+            if record is None:
+                raise ValueError("Unknown surface")
+            return self.window.window_details(workspace, record)
         surface = self.window.surfaces.get(surface_id)
         if surface is None:
             raise ValueError("Select the workspace before controlling its surface")

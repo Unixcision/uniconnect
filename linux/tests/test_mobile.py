@@ -633,5 +633,89 @@ class LongCallTests(unittest.TestCase):
         self.assertTrue(self.host.connection_lost(self.client.identifier))
         self.assertTrue(self.host.connection_lost("una-conexion-que-no-existe"))
 
+
+class WindowDetailsRPCTests(unittest.TestCase):
+    """mobile.terminal.details: resolución en el hilo dueño, sonda fuera y nunca un error por la sonda."""
+
+    SESSION = "714b0eae-b568-4e0c-a70b-c87c0d0a801a"
+
+    def setUp(self):
+        self.record = {"id": "window", "name": "MULTIGRAM-CLAUDE", "tmux": "uc-window", "tmuxSocket": "uniconnect-local",
+                       "cwd": "/work", "agent": "claude", "sessionId": self.SESSION, "resumeCwd": "/work/multigram"}
+        self.workspace = {"id": "workspace", "name": "PROYECTOS", "kind": "local", "cwd": "/work", "windows": [self.record]}
+        self.window = types.SimpleNamespace(store=types.SimpleNamespace(workspaces=[self.workspace], data={}),
+                                            locked=False, surfaces={}, focused_surface=None)
+        self.probes, self.fail_probe = [], False
+
+        def schedule(callback):
+            callback()
+
+        def transport(command, *, socket_name):
+            def run_python(source, args, *, timeout):
+                self.probes.append((socket_name, list(args), timeout))
+                if self.fail_probe:
+                    raise TimeoutError("sonda vencida")
+                payload = {"version": 1, "checked_at": "2026-09-24T14:30:04Z", "error": None, "sessions": [
+                    {"name": "uc-window", "session_id": "$12", "pane_id": "%14", "reason": None,
+                     "agent": {"provider": "claude", "session_id": self.SESSION, "cwd": "/work/multigram",
+                               "as_root": False, "source": "ficha"}}]}
+                return types.SimpleNamespace(returncode=0, stdout=json.dumps(payload) + "\n", stderr="")
+            return types.SimpleNamespace(run_python=run_python)
+        self.rpc = MobileRPC(self.window, types.SimpleNamespace(machine_id="fixture"), schedule, transport_factory=transport)
+
+    def details(self, **params):
+        return self.rpc.dispatch("mobile.terminal.details", {"workspace_id": "workspace", **params}, "peer")
+
+    def test_details_by_terminal_id_or_surface_alias(self):
+        before = json.dumps(self.workspace, sort_keys=True)
+        for params in ({"terminal_id": "window"}, {"surface_id": "window"}, {"terminal_id": "window", "surface_id": "window"}):
+            with self.subTest(params=params):
+                result = self.details(**params)
+                self.assertEqual((result["version"], result["workspace_id"], result["terminal_id"]), (1, "workspace", "window"))
+                self.assertEqual(result["tmux"], {"socket": "uniconnect-local", "session": "uc-window",
+                                                  "session_id": "$12", "pane_id": "%14", "live": True})
+                self.assertEqual((result["agent"]["state"], result["agent"]["source"], result["agent"]["session_id"]),
+                                 ("activo", "ficha", self.SESSION))
+                self.assertIsNone(result["reason"])
+        self.assertEqual(self.probes[0], ("uniconnect-local", ["--socket", "uniconnect-local", "--session", "uc-window"], 8))
+        self.assertEqual(json.dumps(self.workspace, sort_keys=True), before)  # Solo lectura.
+        self.assertEqual(self.rpc.dispatch("terminal.details", {"workspace_id": "workspace", "terminal_id": "window"},
+                                           "peer")["terminal_id"], "window")
+
+    def test_contradictory_or_missing_ids_are_invalid_params(self):
+        for params in ({"terminal_id": "window", "surface_id": "other"}, {}, {"terminal_id": ""}):
+            with self.subTest(params=params), self.assertRaises(RPCError) as caught:
+                self.details(**params)
+            self.assertEqual(caught.exception.code, "invalid_params")
+        with self.assertRaises(RPCError) as caught:
+            self.details(terminal_id="nope")
+        self.assertEqual(caught.exception.code, "not_found")
+        self.assertEqual(self.probes, [])
+
+    def test_locked_desktop_answers_locked(self):
+        self.window.locked = True
+        with self.assertRaises(RPCError) as caught:
+            self.details(terminal_id="window")
+        self.assertEqual(caught.exception.code, "locked")
+        self.assertEqual(self.probes, [])
+
+    def test_failed_probe_answers_with_saved_values(self):
+        self.fail_probe = True
+        result = self.details(terminal_id="window")
+        self.assertEqual((result["agent"]["state"], result["agent"]["source"], result["agent"]["cwd"]),
+                         ("guardado", "registro", "/work/multigram"))
+        self.assertFalse(result["tmux"]["live"])
+        self.assertIsNone(result["reason"])
+        self.record.update(agent="shell")
+        self.record.pop("sessionId")
+        result = self.details(terminal_id="window")
+        self.assertEqual((result["agent"], result["reason"]), (None, "host_inaccesible"))
+
+    def test_capability_is_advertised(self):
+        self.assertIn("window_details.v1", self.rpc.dispatch("mobile.workspace.list", {}, "peer")["capabilities"])
+        self.rpc.host = types.SimpleNamespace(address="100.64.0.1", port=58465)
+        self.assertIn("window_details.v1", self.rpc.dispatch("mobile.host.status", {}, "peer")["capabilities"])
+
+
 if __name__ == "__main__":
     unittest.main()
