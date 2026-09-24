@@ -33,6 +33,10 @@ def verified_tailscale_address(*, run=subprocess.run):
 
 
 class MobileHost:
+    # A phone uses separate sockets for terminal, observation, notifications and
+    # short RPCs. Two fully active phones need more than the old eight slots.
+    MAX_CLIENTS = 16
+
     def __init__(self, access, rpc, *, port=58465, resolve=verified_tailscale_address, translate=lambda value: value,
                  clock=time.monotonic):
         self.access, self.rpc, self.port, self.resolve = access, rpc, port, resolve
@@ -61,8 +65,17 @@ class MobileHost:
                 raise RuntimeError("Dirección de Tailscale no válida")
             listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            # Linux inherits these options on accept. Kernel ACKs keep a live,
+            # silent terminal subscribed without requiring a new Android APK.
+            # An unreachable peer expires even with streams or unacked output;
+            # _Client.run then releases only that connection's private resources.
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            listener.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 30)
+            listener.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)
+            listener.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
+            listener.setsockopt(socket.IPPROTO_TCP, socket.TCP_USER_TIMEOUT, 90000)
             listener.bind((address, self.port))
-            listener.listen(8)
+            listener.listen(self.MAX_CLIENTS)
             listener.settimeout(0.5)
             with self.lock:
                 if generation != self.generation:
@@ -81,7 +94,7 @@ class MobileHost:
                     continue
                 peer = tailnet_address(remote[0])
                 with self.lock:
-                    if not peer or len(self.clients) >= 8 or generation != self.generation:
+                    if not peer or len(self.clients) >= self.MAX_CLIENTS or generation != self.generation:
                         connection.close()
                         continue
                     client = _Client(self, connection, peer)

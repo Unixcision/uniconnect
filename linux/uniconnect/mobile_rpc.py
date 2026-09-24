@@ -87,6 +87,8 @@ class MobileRPC:
         if method == "mobile.host.status":
             ready = capture_dependencies_ready()
             capabilities = ["events.v1", "terminal.viewport.v1", "notifications.v1", "terminal.pty.v1", "window_details.v1"]
+            if getattr(self.window, "relaunch", None) is not None:
+                capabilities.append("relaunch.v1")
             if ready:
                 capabilities += ["terminal.replay.v1", "terminal.render_grid.v1"]
             return {"machine_id": self.access.machine_id, "display_name": socket.gethostname(), "platform": "linux",
@@ -95,6 +97,14 @@ class MobileRPC:
                     "routes": [{"id": "tailscale", "kind": "tailscale", "priority": 0,
                                 "endpoint": {"type": "host_port", "host": self.host.address, "port": self.host.port}}]}
         operation = method.removeprefix("mobile.")
+        if operation in ("relaunch.plan", "relaunch.apply", "relaunch.status"):
+            checked(lambda: None)
+            owner = self.file_owner(connection_id)
+            relaunch = getattr(self.window, "relaunch", None)
+            if relaunch is None:
+                raise RPCError("no_soportado", "Este equipo no admite relanzado")
+            # Accepted work survives a TCP cut, not permission revocation.
+            return relaunch.dispatch(operation, params, owner, lambda: self.access.is_approved(owner))
         if operation in ("terminal.attach", "terminal.pty_input", "terminal.pty_resize", "terminal.detach"):
             # PTY spawn/readiness and stream I/O stay off GTK. Only durable
             # identity/approval snapshots are checked on the UI model owner.
@@ -505,7 +515,8 @@ class MobileRPC:
             raise RPCError("not_found", "No se encontró la terminal")
         return {"workspaces": boxes, "display_name": socket.gethostname(),
                 "capabilities": ["activity.v1", "box_update", "file_put.v1", "inbox.v1", "transcribe.v1",
-                                 "ssh_create.v1", "window_details.v1"]}
+                                 "ssh_create.v1", "window_details.v1"]
+                + (["relaunch.v1"] if getattr(self.window, "relaunch", None) is not None else [])}
 
     def invalidate_terminal(self, panel_id):
         with self.revision_lock:

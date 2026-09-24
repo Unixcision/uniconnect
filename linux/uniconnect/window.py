@@ -142,6 +142,8 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         lock.pack_start(button, False, False, 12)
         self.overlay.add_named(lock, "locked")
         self.overlay.set_visible_child_name("content")
+        from .relaunch_desktop import RelaunchDesktop
+        self.relaunch = RelaunchDesktop(self, GLib.idle_add)
         self.refresh_sidebar()
         self.show_all()
         self.apply_sidebar_mode()
@@ -181,6 +183,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             "Edit": ["copy", "show_history", "cancel_selection", "paste", "find", "find_next", "find_previous", "hide_find", "find_selection", "send_ctrl_f"],
             "View": ["sidebar", "palette", "notifications", "notifications_latest_unread", "notifications_mark_all_read", "notifications_dismiss_all", "font_larger", "font_smaller", "font_reset", "split_right", "split_down", "equalize_panes", "maximize_pane", "focus_left", "focus_right", "focus_up", "focus_down", "fullscreen"],
             "Workspace": ["rename_workspace", "pin_workspace", "edit_ssh", "workspace_previous", "workspace_next", "workspace_up", "workspace_down", "workspace_first", "window_previous", "window_next", "rename_window", "pin_window", "window_up", "window_down", "window_first", "reconnect", "reconnect_all", "notifications_toggle_workspace", "notifications_toggle_window", "upload", "kill_tmux"],
+            "IA": ["relaunch_window", "relaunch_workspace", "relaunch_machine", "relaunch_history"],
             "Help": ["help", "help_shortcuts", "help_settings", "report_issue"],
         }
         for label, names in groups.items():
@@ -321,7 +324,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         if action:
             self.run_action(action)
         else:
-            self.context_menu(["window_details", "rename_window", "pin_window", "window_up", "window_down", "window_first", "notifications_toggle_window", "reconnect", "close_window"], event)
+            self.context_menu(["window_details", "rename_window", "pin_window", "window_up", "window_down", "window_first", "notifications_toggle_window", "reconnect", "relaunch_window", "close_window"], event)
 
     def workspace_context(self, _, event, workspace):
         if event.button == 3:
@@ -332,7 +335,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                     self._notification_preserve_focus_id = self.focused_surface.record["id"]
             finally:
                 self._notification_context_selection = False
-            self.context_menu(["new_window", "rename_workspace", "pin_workspace", "edit_ssh", "workspace_up", "workspace_down", "workspace_first", "reconnect_all", "notifications_toggle_workspace", "close_workspace"], event)
+            self.context_menu(["new_window", "rename_workspace", "pin_workspace", "edit_ssh", "workspace_up", "workspace_down", "workspace_first", "reconnect_all", "relaunch_workspace", "notifications_toggle_workspace", "close_workspace"], event)
             return True
         return False
 
@@ -498,7 +501,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                 self._notification_context_selection = False
             self.context_menu(["window_details", "new_conversation_window", "rename_window", "reset_window_name", "pin_window", "window_up", "window_down", "window_first", "move_window_left", "move_window_right",
                                "maximize_pane", "notifications_toggle_window", "close_window", "close_left_windows", "close_right_windows",
-                               "close_other_windows", "kill_tmux"], event)
+                               "close_other_windows", "relaunch_window", "kill_tmux"], event)
             return True
         return False
 
@@ -1509,6 +1512,8 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             self._tick_source = 0
         if hasattr(self, "activity"):
             self.activity.stop()
+        if hasattr(self, "relaunch"):
+            self.relaunch.close()
         self.persist()
         if hasattr(self, "mobile"):
             self.mobile.close()
