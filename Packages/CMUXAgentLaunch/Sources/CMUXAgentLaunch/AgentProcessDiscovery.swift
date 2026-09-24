@@ -165,34 +165,16 @@ public struct AgentProcessDiscovery: Sendable {
         guard roots.count == 1, let root = roots.first else { return .ambiguous }
         let process = root.process
         let asRoot = process.userID == 0
-        // The session file's or rollout's folder, else the root process's, else the pane's.
-        func directory(_ reported: String?) -> String? {
-            let chosen = [reported, processDirectory(process.pid), fallbackDirectory]
-                .compactMap { $0 }
-                .first { $0.hasPrefix("/") }
-            return chosen.map(resolvingPath)
-        }
-        func found(_ id: String, _ reported: String?, _ source: AgentObservedConversation.Source,
-                   status: String? = nil, version: String? = nil) -> AgentDiscoveryOutcome {
-            .found(AgentObservedConversation(
-                provider: root.provider,
-                sessionID: Self.normalizedID(id),
-                workingDirectory: directory(reported),
-                asRoot: asRoot,
-                source: source,
-                status: status,
-                version: version,
-                processID: process.pid
-            ))
-        }
 
+        // First the identity (from the first source available), then the folder.
+        var identity: Identity?
         switch root.provider {
         case .claude:
             if let file = sessionFiles[process.pid] ?? claudeSession(process.pid) {
-                return found(file.sessionId, file.cwd, .sessionFile, status: file.status, version: file.version)
-            }
-            if let id = Self.uniqueOptionValue(["--resume", "-r", "--session-id"], in: process.arguments, requireUUID: true) {
-                return found(id, nil, .argv)
+                identity = Identity(id: file.sessionId, reportedDirectory: file.cwd, source: .sessionFile,
+                                    status: file.status, version: file.version)
+            } else if let id = Self.uniqueOptionValue(["--resume", "-r", "--session-id"], in: process.arguments, requireUUID: true) {
+                identity = Identity(id: id, source: .argv)
             }
         case .codex:
             let members = self.branch(of: root, processes: processes)
@@ -203,22 +185,54 @@ public struct AgentProcessDiscovery: Sendable {
                 }
             }
             if rollouts.count == 1, let rollout = rollouts.first {
-                let reported = rolloutFirstLine(rollout.value).flatMap(Self.rolloutWorkingDirectory(firstLine:))
-                return found(rollout.key, reported, .rollout)
-            }
-            for member in members {
-                if let id = Self.codexResumeID(member.arguments) { return found(id, nil, .argv) }
+                let firstLine = rolloutFirstLine(rollout.value)
+                identity = Identity(
+                    id: rollout.key,
+                    reportedDirectory: firstLine.flatMap { Self.rolloutWorkingDirectory(firstLine: $0) },
+                    source: .rollout
+                )
+            } else if let id = members.compactMap({ Self.codexResumeID($0.arguments) }).first {
+                identity = Identity(id: id, source: .argv)
             }
         case .agy:
             if let id = Self.uniqueOptionValue(["--conversation"], in: process.arguments, requireUUID: false) {
-                return found(id, nil, .argv)
+                identity = Identity(id: id, source: .argv)
             }
         case .grok:
             if let id = Self.uniqueOptionValue(["-r", "--resume"], in: process.arguments, requireUUID: false) {
-                return found(id, nil, .argv)
+                identity = Identity(id: id, source: .argv)
             }
         }
-        return .unidentified(root.provider, processID: process.pid, workingDirectory: directory(nil), asRoot: asRoot)
+
+        // The session file's or rollout's folder, else the root process's, else the pane's.
+        let candidates = [identity?.reportedDirectory, processDirectory(process.pid), fallbackDirectory]
+        var directory: String?
+        if let chosen = candidates.compactMap({ $0 }).first(where: { $0.hasPrefix("/") }) {
+            directory = resolvingPath(chosen)
+        }
+
+        guard let identity else {
+            return .unidentified(root.provider, processID: process.pid, workingDirectory: directory, asRoot: asRoot)
+        }
+        return .found(AgentObservedConversation(
+            provider: root.provider,
+            sessionID: Self.normalizedID(identity.id),
+            workingDirectory: directory,
+            asRoot: asRoot,
+            source: identity.source,
+            status: identity.status,
+            version: identity.version,
+            processID: process.pid
+        ))
+    }
+
+    /// The conversation a root was identified by, before its folder is resolved.
+    private struct Identity {
+        let id: String
+        var reportedDirectory: String? = nil
+        let source: AgentObservedConversation.Source
+        var status: String? = nil
+        var version: String? = nil
     }
 
     /// The conversation id of a Codex rollout path, or `nil` when it is not one.
