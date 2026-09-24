@@ -38377,6 +38377,292 @@
         }
       }
     },
+    "uniconnect.relaunch.cause.approval_required": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falta autorización en el equipo de destino"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.cause.confianza_carpeta": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La IA pide confirmar la confianza en la carpeta"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.cause.dialogo_desconocido": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revisa la ventana: hay un diálogo, borrador o estado no reconocido"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.cause.duplicado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El mismo objetivo ya se está atendiendo"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.cause.generacion_cambiada": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La ventana o el proceso cambió; prepara un plan nuevo"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.cause.host_inaccesible": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El equipo no responde; consulta de nuevo el estado"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.cause.identidad_ambigua": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se puede confirmar la conversación actual"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.cause.no_enviado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No enviado; prepara un plan nuevo si quieres relanzarlo"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.cause.no_soportado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este proveedor o forma de arranque aún no tiene relanzado verificado"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.cause.operacion_desconocida": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se reconoce la operación en este equipo"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.cause.permisos": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revisa los permisos o el inicio de sesión"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.cause.sin_autoridad": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se puede garantizar un único ejecutor seguro"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.cause.sin_ia": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La ventana no tiene ninguna IA en marcha."
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.cause.token_caducado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El plan caducó; prepara otro"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.cause.token_no_valido": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La autorización del plan no es válida"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.state.cerrando": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cerrando la IA"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.state.entregando": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entregando la petición"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.state.fallido": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No completado"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.state.necesita_usuario": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Necesita tu intervención"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.state.omitido": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Omitido"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.state.planificado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pendiente"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.state.reabriendo": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reabriendo la misma conversación"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.state.reenganchando": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconectando"
+          }
+        }
+      }
+    },
+    "uniconnect.relaunch.state.verificado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verificado"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.a.adir.equipo": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir equipo"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.a.adir.equipo.uniconnect": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir equipo UniConnect"
+          }
+        }
+      }
+    },
     "uniconnect.shared.about.uniconnect": {
       "extractionState": "manual",
       "localizations": {
@@ -38384,6 +38670,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Acerca de UniConnect"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.actualizar.estado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualizar estado"
           }
         }
       }
@@ -38916,6 +39213,28 @@
         }
       }
     },
+    "uniconnect.shared.detalles": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detalles…"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.direcci.n.tailscale.o.magicdns": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dirección Tailscale o MagicDNS"
+          }
+        }
+      }
+    },
     "uniconnect.shared.disconnected": {
       "extractionState": "manual",
       "localizations": {
@@ -39110,6 +39429,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Igualar paneles"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.equipos.del.alcance.global": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Equipos del alcance global…"
           }
         }
       }
@@ -39473,6 +39803,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Historial para copiar"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.ia": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IA"
           }
         }
       }
@@ -40137,6 +40478,28 @@
         }
       }
     },
+    "uniconnect.shared.no.hay.agentes.que.puedan.relanzarse.con.seguridad": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay agentes que puedan relanzarse con seguridad"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.no.hay.relanzados.guardados.en.este.equipo": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay relanzados guardados en este equipo"
+          }
+        }
+      }
+    },
     "uniconnect.shared.no.le.das": {
       "extractionState": "manual",
       "localizations": {
@@ -40478,6 +40841,28 @@
         }
       }
     },
+    "uniconnect.shared.plan.de.relanzado.preparado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan de relanzado preparado"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.preparando.el.plan.de.relanzado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparando el plan de relanzado…"
+          }
+        }
+      }
+    },
     "uniconnect.shared.previous.window": {
       "extractionState": "manual",
       "localizations": {
@@ -40511,6 +40896,17 @@
         }
       }
     },
+    "uniconnect.shared.puerto": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Puerto"
+          }
+        }
+      }
+    },
     "uniconnect.shared.quit": {
       "extractionState": "manual",
       "localizations": {
@@ -40518,6 +40914,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Salir"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.quitar.de.la.lista": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar de la lista"
           }
         }
       }
@@ -40584,6 +40991,61 @@
           "stringUnit": {
             "state": "translated",
             "value": "No disponible"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.relanzar.ia.de.esta.ventana": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relanzar IA de esta ventana…"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.relanzar.ia.de.este.equipo": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relanzar IA de este equipo…"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.relanzar.ia.de.este.espacio": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relanzar IA de este espacio…"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.relanzar.ia.globalmente": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relanzar IA globalmente…"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.relanzar.las.ia.seleccionadas": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relanzar las IA seleccionadas"
           }
         }
       }
@@ -40698,6 +41160,28 @@
         }
       }
     },
+    "uniconnect.shared.resultado.del.relanzado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resultado del relanzado"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.resultados.de.relanzados": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resultados de relanzados…"
+          }
+        }
+      }
+    },
     "uniconnect.shared.revisa.las.comillas.del.comando.personalizado": {
       "extractionState": "manual",
       "localizations": {
@@ -40760,6 +41244,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Guardado"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.se.cerrar.y.reabrir.la.ia.conservando.su.conversaci.n.tmux.y.tus.archivos.no.se.borran": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se cerrará y reabrirá la IA conservando su conversación. tmux y tus archivos no se borran."
           }
         }
       }
@@ -41189,6 +41684,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Usar selección para buscar"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.ver.resultado": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ver resultado"
           }
         }
       }
