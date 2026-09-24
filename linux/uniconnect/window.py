@@ -28,6 +28,7 @@ from .window_commands import WindowCommands
 from .window_notifications import WindowNotifications
 from .native_sessions import NativeSessions
 from .agent_tree import AgentTree
+from .session_recovery import SessionRecovery
 from .sidebar import WorkspaceSidebar
 
 
@@ -51,6 +52,10 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         self.locked = False
         self.native_sessions = NativeSessions(self)
         self.agent_tree = AgentTree(self)
+        self.session_recovery = SessionRecovery(self)
+        # Se copia lo leído del disco antes de lanzar ninguna superficie: al conectar,
+        # _prepared y on_exit cambian runtimeState y la recuperación perdería la IA activa.
+        recovery_snapshot = SessionRecovery.snapshot(store)
         from .activity_monitor import ActivityMonitor
         self.activity = ActivityMonitor(self)
         self.activity.start()
@@ -138,6 +143,9 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         self.refresh_sidebar()
         self.show_all()
         self.apply_sidebar_mode()
+        # Recupera en segundo plano las sesiones tmux que falten en todas las cajas; un
+        # cliente que sale con 72 mientras tanto espera a esta misma operación.
+        self.session_recovery.run_all(recovery_snapshot)
         self.select_workspace(self.store.data.get("selectedWorkspaceId"))
         # Cadence is product behavior; immediate mutations also persist synchronously.
         self._tick_source = GLib.timeout_add_seconds(8, self.tick)

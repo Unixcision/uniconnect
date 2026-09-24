@@ -86,18 +86,22 @@ class AgentTree:
             raise TransportError("probe_invalid")
         return data
 
-    def transport_for(self, key, workspace):
-        """Transporte del grupo, o None si no se puede abrir sin preguntar (bóveda cerrada)."""
+    @staticmethod
+    def open_transport(owner, factory, key, workspace):
+        """Transporte de un grupo, o None si no se puede abrir sin preguntar (bóveda cerrada)."""
         command = None
         if key[0] != "local":
-            vault = getattr(self.owner, "vault", None)
+            vault = getattr(owner, "vault", None)
             if vault is None or vault.locked:
                 return None
             try:
-                command = SSHCommand.parse(self.owner.connection(workspace))
+                command = SSHCommand.parse(owner.connection(workspace))
             except Exception:
                 return None
-        return self.transport(command, socket_name=key[1])
+        return factory(command, socket_name=key[1])
+
+    def transport_for(self, key, workspace):
+        return self.open_transport(self.owner, self.transport, key, workspace)
 
     def poll(self, *, force=False):
         """Lanza las lecturas que tocan (local cada 8 s, SSH cada 60 s); nunca dos por grupo."""

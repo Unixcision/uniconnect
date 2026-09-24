@@ -37,6 +37,7 @@ class TerminalSurface(Gtk.Box):
         self._exit_during_spawn = None
         self._launch_notice = None
         self._launch_crash_markers = 0
+        self.recovery_notice = None
         self._clock = clock
         self._schedule = schedule or (lambda delay, callback: GLib.timeout_add(max(1, int(delay * 1000)), callback))
         self._cancel_timer = cancel_timer or GLib.source_remove
@@ -338,7 +339,9 @@ class TerminalSurface(Gtk.Box):
         else:
             self.pid = pid
             self._activity_reset()  # Proceso nuevo: nada del anterior (título, comando) sigue valiendo.
-            self.update_status("Folder missing" if self._launch_notice else "Running", self._launch_notice or "")
+            notice = self._launch_notice or self.recovery_notice or ""
+            self.recovery_notice = None
+            self.update_status("Folder missing" if self._launch_notice else "Running", notice)
             self._emit_lifecycle("spawned")
             self._watch_stability(generation, pid)
             self.owner.persist()
@@ -363,6 +366,12 @@ class TerminalSurface(Gtk.Box):
             GLib.idle_add(self._prepare_launch)
             return
         code = os.waitstatus_to_exitcode(status)
+        recovery = getattr(self.owner, "session_recovery", None)
+        if code == 72 and recovery is not None and recovery.on_missing_session(self):
+            # La sesión tmux ya no existe: se recrea (con la IA si estaba activa) y se vuelve a enganchar.
+            self.update_status("Reconnecting", "Recreando la sesión tmux…")
+            self.owner.persist()
+            return
         transient = code == 255 or (code == 1 and self._server_crash_marker_count() > self._launch_crash_markers)
         if self._allow_auto_retry and self.workspace["kind"] == "ssh" and transient:
             if self._schedule_retry():
