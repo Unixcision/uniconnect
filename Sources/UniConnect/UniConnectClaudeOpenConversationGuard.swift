@@ -19,10 +19,12 @@ struct UniConnectClaudeOpenConversationGuard: Sendable {
             .appendingPathComponent(".claude", isDirectory: true)
     ) {
         directory = AgentClaudeSessionDirectory(root: configDirectory) { pid in
-            // A session file only counts while its pid is alive and is still Claude.
+            // A session file only counts while its pid is alive and is Claude by the strict criterion
+            // of agent_guard.py: an argument that merely mentions `claude` (`vim CLAUDE.md` on a
+            // recycled pid) does not make it Claude.
             guard let live = CmuxTopProcessSnapshot.processArgumentsAndEnvironment(for: pid) else { return false }
             let sample = AgentProcessSample(pid: pid, parentPID: 0, userID: -1, arguments: live.arguments)
-            return AgentObservedProvider.classify(sample, hasClaudeSession: true) == .claude
+            return AgentObservedProvider.classify(sample) == .claude
         }
     }
 

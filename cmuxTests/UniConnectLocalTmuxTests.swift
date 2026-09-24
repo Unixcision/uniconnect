@@ -354,7 +354,9 @@ struct UniConnectLocalTmuxTests {
         case "ambiguousAgents":
             #expect(observations.map(\.state) == [.ambiguous])
         case "ambiguousUUID", "afterTerminator":
-            #expect(observations.map(\.state) == [.unidentified(.claude)])
+            #expect(observations.map(\.state) == [
+                .unidentified(.claude, workingDirectory: AgentResumeWorkingDirectory().realPath("/tmp")),
+            ])
         case "shell":
             #expect(observations.map(\.state) == [.shell])
         default:

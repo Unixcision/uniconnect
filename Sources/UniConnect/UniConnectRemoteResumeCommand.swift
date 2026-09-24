@@ -4,13 +4,17 @@ import Foundation
 /// The command a missing remote tmux session is recreated with, so its agent comes back.
 ///
 /// It is handed to `tmux new-session -A` as the pane's command. tmux only runs it when it creates
-/// the session; with `-A` and the session alive it just attaches and ignores it. The command:
+/// the session; with `-A` and the session alive it just attaches and ignores it. tmux runs it with
+/// the VPS's `default-shell`, which may be fish or tcsh, so the whole line goes inside
+/// `/bin/sh -c '<line>'` (docs/ARBOL-IA-v1.md §7.3). The inner line:
 ///
 /// 1. changes to the agent's folder and runs the shared open-conversation guard
 ///    (`agent_guard.py`, sent inline as base64) for that provider and conversation;
 /// 2. only when the guard says the conversation is free (exit 0) resumes it without questions
 ///    (`IS_SANDBOX=1` for Claude as root), from the shared `noPrompt` policy;
-/// 3. otherwise prints a Spanish notice; either way it ends in a login shell.
+/// 3. otherwise prints a Spanish notice; either way it ends in a login shell:
+///    `command -v bash >/dev/null && exec bash -l; exec sh -l` (a failed `exec` would end a
+///    non-interactive sh, so `exec bash -l || exec sh -l` was no fallback at all).
 ///
 /// It never contains `$` (it crosses Swift, ssh, the remote shell and tmux) and never ends in
 /// `;` (tmux would read that as a command separator). Without `python3` on the host there is no
@@ -47,15 +51,17 @@ struct UniConnectRemoteResumeCommand {
             localized: "uniconnect.ssh.resume.guardRefused",
             defaultValue: "[UniConnect] No se reanuda: la conversación sigue abierta en otra ventana o falta la carpeta."
         )
-        let line = [
+        let inner = [
             "if cd --", UniConnectSSH.shellQuote(directory),
             "&& python3 -c 'import base64,sys;s=sys.argv.pop(1);exec(base64.b64decode(s))'",
             encodedGuard, UniConnectSSH.shellQuote(wireProvider), UniConnectSSH.shellQuote(sessionID) + ";",
             "then", resume.shellLine(workingDirectory: nil) + ";",
             "else printf '%s\\n'", UniConnectSSH.shellQuote(notice) + ";",
-            "fi; exec bash -l || exec sh -l",
+            "fi; command -v bash >/dev/null && exec bash -l; exec sh -l",
         ].joined(separator: " ")
-        guard !line.contains("$"), !line.hasSuffix(";"), !line.contains("\n") else { return nil }
+        guard !inner.contains("$"), !inner.contains("\n"), !inner.contains("!") else { return nil }
+        let line = "/bin/sh -c " + UniConnectSSH.shellQuote(inner)
+        guard !line.hasSuffix(";") else { return nil }
         return line
     }
 
@@ -64,18 +70,22 @@ struct UniConnectRemoteResumeCommand {
     /// - Parameters:
     ///   - record: The window's saved remote agent, if any.
     ///   - sshUser: The SSH user of the box.
+    ///   - seenLiveRecently: Whether a live reading saw the session at most two ticks ago and no
+    ///     deliberate close was seen since (D6, ``UniConnectRemoteAgentMonitor/resumeAllowed(panelID:now:)``).
     ///   - autoResumeEnabled: The «reanudar IA al abrir» setting.
     ///   - guardSource: The text of `agent_guard.py` (bundled from `linux/uniconnect/`).
     ///   - policy: The shared no-prompt policy.
-    /// - Returns: `nil` when nothing should be resumed; the restore then keeps today's behaviour.
+    /// - Returns: `nil` when nothing should be resumed; the window then reattaches, or comes back as
+    ///   a shell when its session is gone.
     func startup(
         record: UniConnectRemoteAgentRecord?,
         sshUser: String?,
+        seenLiveRecently: Bool,
         autoResumeEnabled: Bool = AgentSessionAutoResumeSettings.isEnabled(),
         guardSource: String? = UniConnectRemoteAgentProbe.bundledScript(named: "agent_guard"),
         policy: AgentNoPromptPolicy? = try? AgentNoPromptPolicy()
     ) -> (directory: String, initialCommand: String)? {
-        guard autoResumeEnabled, let record, let directory = record.workingDirectory,
+        guard autoResumeEnabled, seenLiveRecently, let record, let directory = record.workingDirectory,
               let command = line(record: record, sshUser: sshUser, guardSource: guardSource, policy: policy) else {
             return nil
         }

@@ -181,10 +181,24 @@ struct UniConnectRelaunchInventoryTests {
         #expect(reading.exclusions.first?.cause == .noAgent)
     }
 
-    @Test("Una ventana local con Codex sale como no_soportado y la lista dice qué IA es")
-    func localCodexWindowIsUnsupportedAndNamed() throws {
+    @Test("Una ventana local con Codex entra en el relanzado desde D7, con su conversación")
+    func localCodexWindowIsRelaunchable() throws {
         let (workspace, _) = try localWorkspace(
             name: "api", agent: .codex, sessionID: "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17", backToShell: false
+        )
+
+        let reading = UniConnectRelaunchInventory(machineID: "mac").read(workspaces: [workspace])
+
+        #expect(reading.exclusions.isEmpty)
+        let target = try #require(reading.items.first?.target)
+        #expect(target.provider == "codex")
+        #expect(target.evidence?.provenConversation == "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17")
+    }
+
+    @Test("Una ventana local con Grok sale como no_soportado y la lista dice qué IA es")
+    func localGrokWindowIsUnsupportedAndNamed() throws {
+        let (workspace, _) = try localWorkspace(
+            name: "bot", agent: .grok, sessionID: "3f6a9c12-8d4e-4b7a-b5c1-0e2f7d9a6b84", backToShell: false
         )
 
         let reading = UniConnectRelaunchInventory(machineID: "mac").read(workspaces: [workspace])
@@ -192,7 +206,7 @@ struct UniConnectRelaunchInventoryTests {
         #expect(reading.items.isEmpty)
         let exclusion = try #require(reading.exclusions.first)
         #expect(exclusion.cause == .unsupported)
-        #expect(exclusion.label.contains("Codex"))
+        #expect(exclusion.label.contains("Grok"))
     }
 
     @Test("Pedir una sola ventana deja solo su exclusión, por identidad del panel")

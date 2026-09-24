@@ -14,6 +14,7 @@ struct ControlCommandExecutionPolicyTests {
             "browser.download.wait", "system.top", "system.memory",
             "workspace.remote.pty_bridge", "sidebar.custom.reload",
             "debug.sidebar.simulate_drag", "mobile.attach_ticket.create",
+            "terminal.details", "mobile.terminal.details",
         ] {
             #expect(ControlCommandExecutionPolicy(forMethod: method).runsOnSocketWorker, "\(method)")
         }

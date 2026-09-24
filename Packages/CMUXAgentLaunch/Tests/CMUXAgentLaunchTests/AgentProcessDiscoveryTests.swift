@@ -33,20 +33,12 @@ struct AgentProcessDiscoveryTests {
 
     @Test("Cada caso del contrato da el mismo resultado")
     func everyContractCase() throws {
-        let url = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("contracts/agent-tree-v1/deteccion-casos.json")
-        guard let data = try? Data(contentsOf: url) else {
-            // El paquete se compila también fuera del repo; sin el fichero no hay nada que comparar.
-            return
-        }
         // Forma: {version, casos: [{nombre, pane_pid, home, procesos, fichas, abiertos, rollouts,
         // cwds?, enlaces?, pane_current_path?, espera}], guarda: [...]}. Solo se comparan las
         // claves que trae `espera`.
-        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let root = try ContractFixtures().object("agent-tree-v1/deteccion-casos.json")
         #expect(root["version"] as? Int == 1)
-        let cases = try #require(root["casos"] as? [[String: Any]])
+        let cases = try #require(root["casos"] as? [[String: Any]], "deteccion-casos.json sin «casos»")
         #expect(!cases.isEmpty)
         for entry in cases {
             let name = entry["nombre"] as? String ?? "?"
@@ -60,13 +52,15 @@ struct AgentProcessDiscoveryTests {
                 )
             }
             // El arnés sirve la ficha donde la buscaría la implementación (en /root si la raíz es
-            // de uid 0): aquí basta con indexarla por pid.
+            // de uid 0): aquí basta con indexarla por el pid de su nombre. El `pid` de dentro va tal
+            // cual, para que la implementación decida si la ficha es de ese proceso.
             var sessions: [Int: AgentClaudeSessionFile] = [:]
             for (key, value) in (entry["fichas"] as? [String: [String: Any]]) ?? [:] {
                 guard let pid = Int(key), let id = value["sessionId"] as? String else { continue }
                 sessions[pid] = AgentClaudeSessionFile(
                     sessionId: id, cwd: value["cwd"] as? String, status: value["status"] as? String,
-                    version: value["version"] as? String, procStart: value["procStart"] as? String
+                    version: value["version"] as? String, procStart: value["procStart"] as? String,
+                    pid: Self.int(value["pid"])
                 )
             }
             var openFiles: [Int: [String]] = [:]
@@ -119,6 +113,43 @@ struct AgentProcessDiscoveryTests {
             if let value = expected["as_root"] as? Bool { #expect(asRoot == value, "\(name)") }
             if let value = expected["cwd"] as? String { #expect(directory == value, "\(name)") }
         }
+    }
+
+    @Test("La guarda de Claude del contrato usa el criterio estricto de «es Claude»")
+    func claudeGuardContractCases() throws {
+        // Solo los casos de Claude con id válido: la guarda del Mac (y liveHolders) solo sabe de
+        // fichas de Claude. 1 = abierta en otra parte (hay titular vivo), 0 = libre.
+        let root = try ContractFixtures().object("agent-tree-v1/deteccion-casos.json")
+        let cases = try #require(root["guarda"] as? [[String: Any]], "deteccion-casos.json sin «guarda»")
+        var compared = 0
+        for entry in cases {
+            let name = entry["nombre"] as? String ?? "?"
+            guard entry["proveedor"] as? String == "claude",
+                  let id = entry["id"] as? String, AgentNoPromptPolicy.isValidSessionID(id),
+                  let expected = Self.int(entry["espera"]), expected == 0 || expected == 1 else { continue }
+            let folder = FileManager.default.temporaryDirectory
+                .appendingPathComponent("agent-guard-\(UUID().uuidString)", isDirectory: true)
+            let sessionsFolder = folder.appendingPathComponent("sessions", isDirectory: true)
+            try FileManager.default.createDirectory(at: sessionsFolder, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: folder) }
+            for (key, value) in (entry["fichas_vivas"] as? [String: Any]) ?? [:] {
+                let body = try JSONSerialization.data(withJSONObject: value)
+                try body.write(to: sessionsFolder.appendingPathComponent("\(key).json"))
+            }
+            var live: [Int: AgentProcessSample] = [:]
+            for row in (entry["procesos"] as? [[String: Any]]) ?? [] {
+                guard let pid = Self.int(row["pid"]) else { continue }
+                live[pid] = AgentProcessSample(pid: pid, parentPID: 1, userID: 0, arguments: row["argv"] as? [String] ?? [])
+            }
+            let table = live
+            let directory = AgentClaudeSessionDirectory(root: folder) { pid in
+                table[pid].map { AgentObservedProvider.classify($0) == .claude } ?? false
+            }
+            let open = !directory.liveHolders(sessionID: id).isEmpty
+            #expect((open ? 1 : 0) == expected, "\(name)")
+            compared += 1
+        }
+        #expect(compared > 0)
     }
 
     private static func int(_ value: Any?) -> Int? {
@@ -258,12 +289,67 @@ struct AgentProcessDiscoveryTests {
 
     @Test("Node sin marca, sudo y env no son IA")
     func unmarkedProcessesAreNotAgents() {
-        for argv in [["node", "server.js"], ["sudo", "ls"], ["env", "A=1", "top"], ["login", "-pf", "u"]] {
-            #expect(AgentObservedProvider.classify(p(1, 0, argv), hasClaudeSession: false) == nil, "\(argv)")
+        for argv in [
+            ["node", "server.js"], ["sudo", "ls"], ["env", "A=1", "top"], ["login", "-pf", "u"],
+            ["vim", "/home/u/.claude/CLAUDE.md"], ["nodemon", "/opt/homebrew/bin/claude"],
+            ["less", "/tmp/claude"],
+        ] {
+            #expect(AgentObservedProvider.classify(p(1, 0, argv)) == nil, "\(argv)")
         }
-        #expect(AgentObservedProvider.classify(p(1, 0, ["node", "/x/@anthropic-ai/claude-code/cli.js"]), hasClaudeSession: false) == .claude)
-        #expect(AgentObservedProvider.classify(p(1, 0, ["/Users/u/.local/share/claude/versions/2.1.280"]), hasClaudeSession: false) == .claude)
-        #expect(AgentObservedProvider.classify(p(1, 0, ["codex-x86_64-unknown-linux-musl"]), hasClaudeSession: false) == .codex)
+        #expect(AgentObservedProvider.classify(p(1, 0, ["node", "/x/@anthropic-ai/claude-code/cli.js"])) == .claude)
+        #expect(AgentObservedProvider.classify(p(1, 0, ["/Users/u/.local/share/claude/versions/2.1.280"])) == .claude)
+        #expect(AgentObservedProvider.classify(p(1, 0, ["node22", "/opt/homebrew/bin/claude"])) == .claude)
+        #expect(AgentObservedProvider.classify(p(1, 0, ["bun", "/u/.bun/bin/claude"])) == .claude)
+        #expect(AgentObservedProvider.classify(p(1, 0, ["codex-x86_64-unknown-linux-musl"])) == .codex)
+    }
+
+    @Test("Tras «--» no hay opciones y un valor que empieza por guion no es valor")
+    func optionValuesFollowTheContractRules() {
+        #expect(discover([p(100, 1, ["zsh"]), p(200, 100, ["claude", "--", "--resume", claudeID])])
+            == .unidentified(.claude, processID: 200, workingDirectory: "/pane", asRoot: false))
+        #expect(discover([p(100, 1, ["zsh"]), p(200, 100, ["claude", "--resume", "--session-id", claudeID])])
+            .reason == nil)
+        // `-r=…` no es una forma válida; `--resume=…` sí.
+        #expect(discover([p(100, 1, ["zsh"]), p(200, 100, ["claude", "-r=\(claudeID)"])]).reason == "sin_id")
+        #expect(discover([p(100, 1, ["zsh"]), p(200, 100, ["claude", "--resume=\(claudeID)"])]).reason == nil)
+        #expect(discover([p(100, 1, ["zsh"]), p(200, 100, ["claude", "--resume", claudeID, "--session-id", otherID])])
+            .reason == "sin_id")
+    }
+
+    @Test("Una ficha con otro pid dentro no vale; sin pid dentro, sí")
+    func sessionFileOfAnotherProcess() {
+        let table = [p(100, 1, ["zsh"]), p(200, 100, ["claude", "--resume", otherID])]
+        guard case let .found(foreign) = discover(table, sessions: [200: AgentClaudeSessionFile(sessionId: claudeID, pid: 4242)]),
+              case let .found(own) = discover(table, sessions: [200: AgentClaudeSessionFile(sessionId: claudeID, pid: 200)]),
+              case let .found(legacy) = discover(table, sessions: [200: AgentClaudeSessionFile(sessionId: claudeID)]) else {
+            Issue.record("debería identificarse en los tres casos")
+            return
+        }
+        #expect(foreign.sessionID == otherID && foreign.source == .argv)
+        #expect(own.sessionID == claudeID && own.source == .sessionFile)
+        #expect(legacy.sessionID == claudeID && legacy.source == .sessionFile)
+    }
+
+    @Test("Con dos rollouts abiertos solo vale el de su `resume`; si ninguno coincide, sin id")
+    func codexWithTwoRollouts() {
+        let other = "0199f3c2-8d1e-7b40-a6f5-2c9e4d7b1a08"
+        let mine = "/h/.codex/sessions/2026/09/24/rollout-2026-09-24T09-05-12-\(codexID).jsonl"
+        let theirs = "/h/.codex/sessions/2026/09/24/rollout-2026-09-24T11-40-03-\(other).jsonl"
+        let table = [
+            p(100, 1, ["bash"]),
+            p(200, 100, ["codex", "--yolo", "resume", codexID]),
+            p(300, 200, ["/bin/bash", "-lc", "codex exec x"]),
+            p(301, 300, ["codex", "exec", "x"]),
+        ]
+        let matching = discover(table, openFiles: [200: [mine], 301: [theirs]])
+        guard case let .found(conversation) = matching else {
+            Issue.record("\(matching)")
+            return
+        }
+        #expect(conversation.sessionID == codexID)
+        #expect(conversation.source == .rollout)
+        let stale = [p(100, 1, ["bash"]), p(200, 100, ["codex", "resume", otherID])] + table.suffix(2)
+        #expect(discover(stale, openFiles: [200: [mine], 301: [theirs]]).reason == "sin_id")
     }
 
     @Test("El rollout solo vale con su nombre y su carpeta")

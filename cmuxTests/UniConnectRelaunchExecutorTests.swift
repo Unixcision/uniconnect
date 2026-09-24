@@ -482,3 +482,148 @@ struct UniConnectRelaunchExecutorTests {
         #expect(resultado.cause == .folderTrust)
     }
 }
+
+/// Codex en el Mac (D7), calcado de `exit_codex` de Linux: identidad antes de cerrar, `/exit`
+/// confirmado en el compositor, espera sin matar y vuelta con `--yolo resume`.
+@Suite("Ejecutor de relanzado: Codex")
+struct UniConnectRelaunchExecutorCodexTests {
+    /// Un panel de Codex de mentira: responde con guion y apunta todo lo que se le hace.
+    private final class FakeCodexPane: UniConnectRelaunchPaneAccess, @unchecked Sendable {
+        // Las llamadas del ejecutor son secuenciales; no hay concurrencia real en una prueba.
+        private(set) var typed: [String] = []
+        private(set) var typedLiteral: [String] = []
+        private(set) var enters = 0
+        private var lookups: [UniConnectRelaunchAgentLookup]
+        private var screens: [RelaunchPaneScreen]
+        private let shell: Bool
+
+        init(lookups: [UniConnectRelaunchAgentLookup], screens: [RelaunchPaneScreen], shell: Bool = true) {
+            self.lookups = lookups
+            self.screens = screens
+            self.shell = shell
+        }
+
+        func firstPane(socket: String, session: String) async -> String? { "%4" }
+        func panePID(socket: String, pane: String) async -> Int32? { 7001 }
+        func agent(socket: String, pane: String, provider: String) async -> UniConnectRelaunchAgentLookup {
+            lookups.count > 1 ? lookups.removeFirst() : (lookups.first ?? .noAgent)
+        }
+        func capture(socket: String, pane: String) async -> String? { screens.first?.text }
+        func type(socket: String, pane: String, text: String) async { typed.append(text) }
+        func screen(socket: String, pane: String) async -> RelaunchPaneScreen? {
+            screens.count > 1 ? screens.removeFirst() : screens.first
+        }
+        func typeLiteral(socket: String, pane: String, text: String) async { typedLiteral.append(text) }
+        func pressEnter(socket: String, pane: String) async { enters += 1 }
+        func isAtShell(socket: String, pane: String) async -> Bool { shell }
+    }
+
+    private let conversation = "019a4e2b-6c3d-7f81-9a05-3e7b1c8d2f46"
+    private let empty = RelaunchPaneScreen(text: "OpenAI Codex\n\n›\n  ⏎ send", cursorRow: 2, cursorColumn: 2)
+    private let exitShown = RelaunchPaneScreen(text: "OpenAI Codex\n\n› /exit\n", cursorRow: 2, cursorColumn: 7)
+
+    private func objetivo(proven: Bool = true) -> UniConnectRelaunchExecutor.Target {
+        .init(
+            key: RelaunchTargetKey(
+                destination: .local(machineID: "mac"), tmuxServer: "uniconnect-local", pane: "uc-api", generation: 1
+            ),
+            label: "PROYECTOS · API",
+            provider: "codex",
+            socket: "uniconnect-local",
+            session: "uc-api",
+            previousArgv: [],
+            evidence: proven
+                ? RelaunchIdentityEvidence(
+                    processID: 0, pane: "uc-api", hook: .init(conversationID: conversation, processID: 0, pane: "uc-api")
+                )
+                : nil
+        )
+    }
+
+    private func codex(_ pid: Int32, _ start: String, _ argv: [String]) -> UniConnectRelaunchAgentLookup {
+        .found(.init(pid: pid, startedAt: start, argv: argv))
+    }
+
+    @Test("Cierra con /exit confirmado, espera a que salga y vuelve con --yolo resume")
+    func closesConfirmedAndComesBack() async {
+        let before = codex(700, "Wed Sep 24 09:00:00 2026", ["node", "/usr/local/bin/codex", "--yolo", "-m", "gpt-5-codex"])
+        let pane = FakeCodexPane(
+            lookups: [
+                before,  // la IA de antes
+                before,  // sigue siendo ella antes de pulsar Intro
+                .noAgent,  // salió sola
+                codex(800, "Wed Sep 24 09:01:10 2026", ["node", "/usr/local/bin/codex", "--yolo", "resume", conversation, "-m", "gpt-5-codex"]),
+            ],
+            screens: [empty, exitShown, empty]
+        )
+
+        let result = await UniConnectRelaunchExecutor(driver: pane, settle: {}).relaunch(objetivo())
+
+        #expect(result.state == .verified)
+        #expect(result.effectiveID == conversation)
+        #expect(result.provider == "codex")
+        #expect(pane.typedLiteral == ["/exit"])
+        #expect(pane.enters == 1)
+        #expect(pane.typed == ["codex --yolo resume \(conversation) -m gpt-5-codex"])
+    }
+
+    @Test("Sin conversación acreditada no se escribe nada: Codex no la dice al salir")
+    func withoutProvenIdentityNothingIsTyped() async {
+        let pane = FakeCodexPane(
+            lookups: [codex(700, "Wed Sep 24 09:00:00 2026", ["codex", "--yolo"])],
+            screens: [empty]
+        )
+
+        let result = await UniConnectRelaunchExecutor(driver: pane, settle: {}).relaunch(objetivo(proven: false))
+
+        #expect(result.state == .skipped)
+        #expect(result.cause == .ambiguousIdentity)
+        #expect(pane.typedLiteral.isEmpty && pane.typed.isEmpty && pane.enters == 0)
+    }
+
+    @Test("Con un borrador en el compositor no se toca la ventana")
+    func aDraftLeavesTheWindowAlone() async {
+        let draft = RelaunchPaneScreen(text: "OpenAI Codex\n\n› arregla los tests\n", cursorRow: 2, cursorColumn: 19)
+        let pane = FakeCodexPane(
+            lookups: [codex(700, "Wed Sep 24 09:00:00 2026", ["codex", "--yolo"])],
+            screens: [draft]
+        )
+
+        let result = await UniConnectRelaunchExecutor(driver: pane, settle: {}).relaunch(objetivo())
+
+        #expect(result.state == .skipped)
+        #expect(result.cause == .unknownDialog)
+        #expect(pane.typedLiteral.isEmpty && pane.typed.isEmpty && pane.enters == 0)
+    }
+
+    @Test("Si «› /exit» no aparece en la línea del cursor, Intro no se pulsa")
+    func enterIsNeverPressedBlindly() async {
+        let elsewhere = RelaunchPaneScreen(text: "OpenAI Codex\n\n› /exi\n", cursorRow: 2, cursorColumn: 6)
+        let pane = FakeCodexPane(
+            lookups: [codex(700, "Wed Sep 24 09:00:00 2026", ["codex", "--yolo"])],
+            screens: [empty, elsewhere]
+        )
+
+        let result = await UniConnectRelaunchExecutor(driver: pane, settle: {}).relaunch(objetivo())
+
+        #expect(result.state == .needsUser)
+        #expect(result.cause == .unknownDialog)
+        #expect(pane.typedLiteral == ["/exit"])
+        #expect(pane.enters == 0)
+    }
+
+    @Test("Una pregunta de permisos en pantalla la contesta una persona")
+    func aPermissionQuestionIsForAPerson() async {
+        let question = RelaunchPaneScreen(text: "Allow once?\n›\n", cursorRow: 1, cursorColumn: 2)
+        let pane = FakeCodexPane(
+            lookups: [codex(700, "Wed Sep 24 09:00:00 2026", ["codex", "--yolo"])],
+            screens: [question]
+        )
+
+        let result = await UniConnectRelaunchExecutor(driver: pane, settle: {}).relaunch(objetivo())
+
+        #expect(result.state == .needsUser)
+        #expect(result.cause == .permissions)
+        #expect(pane.typedLiteral.isEmpty)
+    }
+}

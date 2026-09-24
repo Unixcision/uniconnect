@@ -19,17 +19,30 @@ public struct RelaunchOperation: Sendable, Equatable {
         public let cause: RelaunchCause?
         /// The conversation proven live afterwards. Only ``RelaunchVerb/agentRelaunch`` has one.
         public let effectiveID: String?
+        /// The agent the target runs (`claude`, `codex`, …), so ``effectiveID`` is recorded as a
+        /// conversation of that agent and never of a fixed one.
+        public let provider: String?
 
+        /// Creates the result of one target.
+        ///
+        /// - Parameters:
+        ///   - key: The target.
+        ///   - state: Where it got to.
+        ///   - cause: Why it stopped, if it did.
+        ///   - effectiveID: The conversation proven live afterwards.
+        ///   - provider: The target's agent.
         public init(
             key: RelaunchTargetKey,
             state: RelaunchTargetState,
             cause: RelaunchCause? = nil,
-            effectiveID: String? = nil
+            effectiveID: String? = nil,
+            provider: String? = nil
         ) {
             self.key = key
             self.state = state
             self.cause = cause
             self.effectiveID = effectiveID
+            self.provider = provider
         }
     }
 

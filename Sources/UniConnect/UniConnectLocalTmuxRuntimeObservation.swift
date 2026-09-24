@@ -14,8 +14,9 @@ struct UniConnectLocalTmuxRuntimeObservation: Sendable {
         case agent(conversationID: UUID)
         /// Exactly one agent in the pane's process subtree, on a known conversation.
         case discovered(AgentObservedConversation)
-        /// Exactly one agent, but without a conversation id yet (`sin_id`). Never persisted.
-        case unidentified(AgentObservedProvider)
+        /// Exactly one agent, but without a conversation id yet (`sin_id`), with its folder when
+        /// known. Never persisted.
+        case unidentified(AgentObservedProvider, workingDirectory: String?)
         /// More than one independent agent in the pane (`identidad_ambigua`). Never persisted.
         case ambiguous
         case shell

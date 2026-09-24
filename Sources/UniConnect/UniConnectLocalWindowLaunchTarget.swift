@@ -1,3 +1,4 @@
+import CMUXAgentLaunch
 import Foundation
 
 /// A terminal or coding-agent destination that can be launched inside a local UniConnect window.
@@ -117,6 +118,12 @@ enum UniConnectLocalWindowLaunchTarget: Hashable, Identifiable, Sendable {
         }
     }
 
+    /// The new agent's argv from the shared `noPrompt` policy of the resume catalogue, never
+    /// written by hand; the bare executable (same name as the provider) if the catalogue is missing.
+    static func noPromptArgv(provider: String) -> [String] {
+        (try? AgentNoPromptPolicy())?.launch(provider: provider)?.argv ?? [provider]
+    }
+
     /// Builds a start command in a validated per-window cwd without replacing the shell.
     func startupCommand(
         boxRoot: String,
@@ -127,13 +134,13 @@ enum UniConnectLocalWindowLaunchTarget: Hashable, Identifiable, Sendable {
         case .terminal:
             return nil
         case .claude:
-            argv = ["claude", "--dangerously-skip-permissions"]
+            argv = Self.noPromptArgv(provider: "claude")
         case .codex:
-            argv = ["codex", "--yolo"]
+            argv = Self.noPromptArgv(provider: "codex")
         case .agy:
-            argv = ["agy", "--dangerously-skip-permissions"]
+            argv = Self.noPromptArgv(provider: "agy")
         case .grok:
-            argv = ["grok"]
+            argv = Self.noPromptArgv(provider: "grok")
         case .command(_, let executable):
             let normalizedExecutable = executable.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !normalizedExecutable.isEmpty,

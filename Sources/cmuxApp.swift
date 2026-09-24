@@ -322,9 +322,13 @@ struct cmuxApp: App {
             UniConnectVault.shared.credentialRecord(for: credentialID)
         }
         let processRunner = UniConnectControlledProcessRunner()
+        // The agent probe may print 256 KiB of JSON plus its final newline: its own runner.
+        let probeRunner = UniConnectControlledProcessRunner(
+            maximumOutputBytes: UniConnectRemoteAgentProbe.maximumOutputBytes
+        )
         UniConnectCoordinator.shared.configureRemoteAgentProbe(
             UniConnectRemoteAgentProbe(
-                processRunner: processRunner,
+                processRunner: probeRunner,
                 credentialResolver: credentialResolver
             )
         )
@@ -407,6 +411,7 @@ struct cmuxApp: App {
             updateCoordinator,
             shutdown: {
                 processRunner.shutdown()
+                probeRunner.shutdown()
                 Task { await sessionRegistry.stop() }
             }
         )

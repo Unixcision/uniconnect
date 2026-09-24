@@ -10,14 +10,8 @@ struct RelaunchCauseCatalogueTests {
     func everyCauseInTheContractExists() throws {
         // El fichero que consume el motor Linux. Si añade una causa y esta versión no la tiene, se
         // cae aquí en vez de descubrirse cuando un equipo la mande y el móvil no sepa nombrarla.
-        let url = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("contracts/relaunch-v1/causes.json")
-        guard let data = try? Data(contentsOf: url) else {
-            // El paquete se compila también fuera del repo; sin el fichero no hay nada que comparar.
-            return
-        }
+        // Sube hasta encontrar contracts/ y falla si no está: un verde sin comparar no vale (D8).
+        let data = try ContractFixtures().data("relaunch-v1/causes.json")
         let contract = try #require(
             try JSONSerialization.jsonObject(with: data) as? [String: String]
         )

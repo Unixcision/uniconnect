@@ -6,7 +6,8 @@ import Foundation
 ///
 /// - Claude: `--dangerously-skip-permissions` at the end, and `IS_SANDBOX=1` when running as root.
 /// - Codex: `--yolo` right after the executable; the older `--dangerously-bypass-approvals-and-sandbox`
-///   is removed first.
+///   is removed first, and so are the flags `--yolo` replaces and the CLI refuses next to it
+///   (`-a`/`--ask-for-approval` and `-s`/`--sandbox` with their value, and `--full-auto`).
 /// - Antigravity (`agy`): `--dangerously-skip-permissions` right after the executable.
 /// - Grok: no verified flag, so it resumes with the catalogue syntax and
 ///   ``AgentNoPromptResume/noPromptVerified`` set to `false`.
@@ -72,12 +73,39 @@ public struct AgentNoPromptPolicy: Sendable, Equatable {
         return applying(to: argv, provider: canonical, asRoot: asRoot)
     }
 
+    /// The argv that starts a **new** conversation of `provider` without questions.
+    ///
+    /// The catalogue's executable with the same `noPrompt` flags a resume gets, so a new window and
+    /// a resumed one never drift apart: `claude --dangerously-skip-permissions`, `codex --yolo`,
+    /// `agy --dangerously-skip-permissions`, and plain `grok`.
+    ///
+    /// ```swift
+    /// try AgentNoPromptPolicy().launch(provider: "codex")?.argv  // ["codex", "--yolo"]
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - provider: The provider id or alias.
+    ///   - asRoot: Whether the agent runs as uid 0, which adds the provider's root environment.
+    /// - Returns: The command, or `nil` for a provider the catalogue does not know.
+    public func launch(provider: String, asRoot: Bool = false) -> AgentNoPromptResume? {
+        guard let canonical = catalog.canonicalKind(provider),
+              let entry = catalog.providers[canonical] else { return nil }
+        return applying(to: [entry.executable], provider: canonical, asRoot: asRoot)
+    }
+
     /// Applies the provider's no-prompt mode to an argv that already resumes a conversation.
     ///
-    /// Previous occurrences of the prefix, suffix and legacy flags are removed from everything after
-    /// the executable; then the prefix is inserted right after `argv[0]` and the suffix appended, once
-    /// each. Applying it twice gives the same result as applying it once. A provider without a
-    /// `noPrompt` entry keeps its argv unchanged.
+    /// Everything after the executable is walked left to right: a prefix, suffix or legacy flag is
+    /// removed; a superseded flag is removed together with its value when it takes one (the next
+    /// token, or `flag=value`, short flags included); everything else stays in order. Then the prefix
+    /// is inserted right after `argv[0]` and the suffix appended, once each. Applying it twice gives
+    /// the same result as applying it once. A provider without a `noPrompt` entry keeps its argv
+    /// unchanged. The glued short form (`-anever`) is not recognised: the catalogue never produces it.
+    ///
+    /// ```swift
+    /// policy.applying(to: ["codex", "resume", id, "-a", "never", "-m", "gpt-5"], provider: "codex", asRoot: false).argv
+    /// // ["codex", "--yolo", "resume", id, "-m", "gpt-5"]
+    /// ```
     ///
     /// - Parameters:
     ///   - argv: The argument vector, executable first.
@@ -90,7 +118,28 @@ public struct AgentNoPromptPolicy: Sendable, Equatable {
             return AgentNoPromptResume(argv: argv, environment: [:], noPromptVerified: false)
         }
         let known = policy.allFlags
-        let rest = argv.dropFirst().filter { !known.contains($0) }
+        var takesValue: [String: Bool] = [:]
+        for entry in policy.supersedes ?? [] {
+            takesValue[entry.flag] = entry.takesValue
+        }
+        var rest: [String] = []
+        var index = argv.index(after: argv.startIndex)
+        while index < argv.endIndex {
+            let token = argv[index]
+            index = argv.index(after: index)
+            if known.contains(token) { continue }
+            if let consumesNext = takesValue[token] {
+                if consumesNext, index < argv.endIndex {
+                    index = argv.index(after: index)
+                }
+                continue
+            }
+            if let separator = token.firstIndex(of: "="),
+               takesValue[String(token[..<separator])] == true {
+                continue
+            }
+            rest.append(token)
+        }
         let adjusted = [executable] + (policy.prefix ?? []) + rest + (policy.suffix ?? [])
         return AgentNoPromptResume(
             argv: adjusted,
@@ -106,6 +155,19 @@ public struct AgentNoPromptPolicy: Sendable, Equatable {
     public func isVerified(provider: String) -> Bool {
         guard let canonical = catalog.canonicalKind(provider) else { return false }
         return catalog.providers[canonical]?.noPrompt != nil
+    }
+
+    /// The name people read for a provider, from the catalogue's `displayName`.
+    ///
+    /// Mac, Linux and Android show the same text (`Claude Code`, `Codex`, `Antigravity`, `Grok`);
+    /// no platform keeps its own table of names.
+    ///
+    /// - Parameter provider: A catalogue id or alias (`agy` and `antigravity` both work).
+    /// - Returns: The catalogue's `displayName`, or `provider` itself when the catalogue has none.
+    public func displayName(provider: String) -> String {
+        guard let canonical = catalog.canonicalKind(provider),
+              let name = catalog.providers[canonical]?.displayName else { return provider }
+        return name
     }
 
     /// The provider id used on the wire (`antigravity` travels as `agy`).

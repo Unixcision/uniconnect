@@ -2,18 +2,31 @@
   "schemaVersion": 1,
   "providers": {
     "claude": {
+      "displayName": "Claude Code",
       "executable": "claude",
       "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"],
       "windowOptions": [{"field": "model", "option": "--model"}],
       "noPrompt": {"suffix": ["--dangerously-skip-permissions"], "rootEnvironment": {"IS_SANDBOX": "1"}}
     },
     "codex": {
+      "displayName": "Codex",
       "executable": "codex",
       "resume": ["{executable}", "resume", "{sessionId}", "{arguments}"],
       "windowOptions": [{"field": "cwd", "option": "-C"}, {"field": "model", "option": "-m"}],
-      "noPrompt": {"prefix": ["--yolo"], "legacy": ["--dangerously-bypass-approvals-and-sandbox"]}
+      "noPrompt": {
+        "prefix": ["--yolo"],
+        "legacy": ["--dangerously-bypass-approvals-and-sandbox"],
+        "supersedes": [
+          {"flag": "-a", "takesValue": true},
+          {"flag": "--ask-for-approval", "takesValue": true},
+          {"flag": "-s", "takesValue": true},
+          {"flag": "--sandbox", "takesValue": true},
+          {"flag": "--full-auto", "takesValue": false}
+        ]
+      }
     },
     "grok": {
+      "displayName": "Grok",
       "executable": "grok",
       "resume": ["{executable}", "-r", "{sessionId}", "{arguments}"],
       "windowOptions": [{"field": "model", "option": "--model"}]
@@ -24,7 +37,7 @@
     "cursor": {"executable": "cursor-agent", "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"]},
     "gemini": {"executable": "gemini", "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"]},
     "kiro": {"executable": "kiro-cli", "resume": ["{executable}", "chat", "--resume-id", "{sessionId}", "{arguments}"]},
-    "antigravity": {"aliases": ["agy"], "executable": "agy", "resume": ["{executable}", "--conversation", "{sessionId}", "{arguments}"], "noPrompt": {"prefix": ["--dangerously-skip-permissions"]}},
+    "antigravity": {"displayName": "Antigravity", "aliases": ["agy"], "executable": "agy", "resume": ["{executable}", "--conversation", "{sessionId}", "{arguments}"], "noPrompt": {"prefix": ["--dangerously-skip-permissions"]}},
     "opencode": {"executable": "opencode", "resume": ["{executable}", "--session", "{sessionId}", "{arguments}"]},
     "rovodev": {"executable": "acli", "resume": ["{executable}", "rovodev", "run", "--restore", "{sessionId}", "{arguments}"]},
     "hermes-agent": {"executable": "hermes", "resume": ["{executable}", "{arguments}", "--resume", "{sessionId}"]},

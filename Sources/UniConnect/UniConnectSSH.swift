@@ -107,30 +107,57 @@ enum UniConnectSSH {
         return parts.joined(separator: " ")
     }
 
+    /// Options of one session only (`-t =<session>`), never of the whole server: the only ones an
+    /// automatic path may set on a tmux server that already existed (D4). Mouse, titles and the
+    /// title format are session options in tmux 3.2a and 3.4+.
+    static func remoteTmuxSessionOptions(session: String) -> [[String]] {
+        let target = shellQuote("=" + session)
+        return [
+            ["set-option", "-t", target, "mouse", "on"],
+            ["set-option", "-t", target, "set-titles", "on"],
+            ["set-option", "-t", target, "set-titles-string", shellQuote(remoteTitleFormat)],
+        ]
+    }
+
     /// Restores a saved session atomically, creating it only if its exact name is absent.
     /// Existing panes and clients are preserved; failures leave a usable remote shell.
+    ///
+    /// Automatic paths (restore at launch, reconnect) never change server options (`-g`, `-s`) of
+    /// a tmux server that already existed (D4): `tmux list-sessions` tells first. On a server that
+    /// was already running only the window's own session options are set, and `initialCommand` is
+    /// never used there either: a session missing from a live server with other sessions was closed
+    /// on purpose (`missing_is_deliberate`, D6), so it comes back as a shell. Only when the server
+    /// itself was gone (a crash or a reboot) is the session recreated with `initialCommand`, and
+    /// the server options are set because the server is new.
     static func remoteRecoverableTmuxCommand(
         session: String,
         directory: String?,
         initialCommand: String? = nil
     ) -> String {
-        let createOrAttach = remoteTmuxCommand(session: session, directory: nil, initialCommand: initialCommand)
-        let operation: String
-        if let directory = directory?.trimmingCharacters(in: .whitespacesAndNewlines), !directory.isEmpty {
-            // Starting the client in the saved directory seeds a newly created session
-            // without depending on version-specific handling of -A with -c. Existing
-            // panes stay untouched; a vanished directory must not prevent attaching.
-            let attachOptions = remoteTmuxAttachOptions.map { $0.joined(separator: " ") }.joined(separator: " \\; ")
-            operation = [
-                "if cd \(shellQuote(directory)); then",
-                "\(createOrAttach);",
-                "else",
-                "tmux \(attachOptions) \\; attach-session -t \(shellQuote("=" + session));",
-                "fi"
-            ].joined(separator: " ")
-        } else {
-            operation = createOrAttach
-        }
+        let exactTarget = shellQuote("=" + session)
+        let serverOptions: String = remoteTmuxAttachOptions
+            .map { $0.joined(separator: " ") }
+            .joined(separator: " \\; ")
+        let freshServer = recoverableOperation(
+            directory: directory,
+            createOrAttach: remoteTmuxCommand(session: session, directory: nil, initialCommand: initialCommand),
+            attachOnly: "tmux \(serverOptions) \\; attach-session -t \(exactTarget)"
+        )
+        let sessionOptions: String = remoteTmuxSessionOptions(session: session)
+            .map { " \\; " + $0.joined(separator: " ") }
+            .joined()
+        let existingServer = recoverableOperation(
+            directory: directory,
+            createOrAttach: "tmux new-session -A -s \(shellQuote(session))\(sessionOptions)",
+            attachOnly: "tmux attach-session -t \(exactTarget)\(sessionOptions)"
+        )
+        let operation = [
+            "if tmux list-sessions >/dev/null 2>&1; then",
+            "\(existingServer);",
+            "else",
+            "\(freshServer);",
+            "fi",
+        ].joined(separator: " ")
         let missingTmuxMessage = String(
             localized: "uniconnect.ssh.tmux.missing",
             defaultValue: "tmux is not installed on the server."
@@ -144,6 +171,28 @@ enum UniConnectSSH {
             "printf '%s\\n' \(shellQuote("[UniConnect] \(missingTmuxMessage)")) >&2;",
             "false;",
             "fi || exec \"${SHELL:-/bin/sh}\" -l"
+        ].joined(separator: " ")
+    }
+
+    /// Create-or-attach in the saved directory, or only attach when that directory is gone.
+    ///
+    /// Starting the client in the saved directory seeds a newly created session without depending
+    /// on version-specific handling of -A with -c. Existing panes stay untouched; a vanished
+    /// directory must not prevent attaching.
+    private static func recoverableOperation(
+        directory: String?,
+        createOrAttach: String,
+        attachOnly: String
+    ) -> String {
+        guard let directory = directory?.trimmingCharacters(in: .whitespacesAndNewlines), !directory.isEmpty else {
+            return createOrAttach
+        }
+        return [
+            "if cd \(shellQuote(directory)); then",
+            "\(createOrAttach);",
+            "else",
+            "\(attachOnly);",
+            "fi",
         ].joined(separator: " ")
     }
 

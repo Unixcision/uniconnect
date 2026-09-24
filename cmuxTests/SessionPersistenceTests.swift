@@ -2338,6 +2338,8 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
         )
     }
 
+    // --yolo sustituye a --sandbox y --ask-for-approval (supersedes del catálogo, D2): Codex los
+    // rechaza juntos, así que la política los quita con su valor.
     func testCodexResumeCommandPreservesFlagsAndDropsOriginalPrompt() {
         let snapshot = SessionRestorableAgentSnapshot(
             kind: .codex,
@@ -2368,7 +2370,7 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
 
         XCTAssertEqual(
             snapshot.resumeCommand,
-            "{ cd -- '/Users/example/repo' 2>/dev/null || [ ! -d '/Users/example/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex home' '/Users/example/.bun/bin/codex' '--yolo' 'resume' '019dad34-d218-7943-b81a-eddac5c87951' '--model' 'gpt-5.4' '--sandbox' 'danger-full-access' '--ask-for-approval' 'never' '--search'"
+            "{ cd -- '/Users/example/repo' 2>/dev/null || [ ! -d '/Users/example/repo' ]; } && 'env' 'CODEX_HOME=/tmp/codex home' '/Users/example/.bun/bin/codex' '--yolo' 'resume' '019dad34-d218-7943-b81a-eddac5c87951' '--model' 'gpt-5.4' '--search'"
         )
     }
 

@@ -12622,6 +12622,9 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     /// Keeps an exited local window as a stopped, recoverable logical window.
+    ///
+    /// When an agent was active, the coordinator checks afterwards whether the stop was an
+    /// anomalous close (D5) and only then marks the conversation interrupted.
     @discardableResult
     func uniConnectMarkLocalWindowStopped(
         panelId: UUID,
@@ -12630,6 +12633,7 @@ final class Workspace: Identifiable, ObservableObject {
         guard var record = uniConnectEnsureLocalWindowRecord(panelId: panelId, at: timestamp) else {
             return false
         }
+        let activeBeforeStop = record.runtimeState == .agent ? record.activeConversationID : nil
         let changed = record.markStopped(at: timestamp)
         if changed {
             uniConnectLocalWindowsByPanelId[panelId] = record
@@ -12639,8 +12643,30 @@ final class Workspace: Identifiable, ObservableObject {
         }
         if UniConnectCoordinator.isEnabled {
             UniConnectCoordinator.shared.localWindowDidStop(panelID: panelId, workspace: self)
+            if let activeBeforeStop, let binding = record.tmuxBinding {
+                UniConnectCoordinator.shared.evaluateLocalInterruption(
+                    panelID: panelId,
+                    workspace: self,
+                    conversationID: activeBeforeStop,
+                    binding: binding,
+                    stoppedAt: Date(timeIntervalSince1970: timestamp)
+                )
+            }
         }
         return changed
+    }
+
+    /// Marks a stopped local window's conversation as interrupted after an anomalous close (D5).
+    @discardableResult
+    func uniConnectMarkLocalWindowInterrupted(
+        panelId: UUID,
+        conversationID: UUID,
+        at timestamp: TimeInterval = Date().timeIntervalSince1970
+    ) -> Bool {
+        guard var record = uniConnectLocalWindowsByPanelId[panelId],
+              record.markInterrupted(conversationID: conversationID, at: timestamp) else { return false }
+        uniConnectLocalWindowsByPanelId[panelId] = record
+        return true
     }
 
     /// Stores (or clears) the verified remote agent of an SSH window and announces the change.

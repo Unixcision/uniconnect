@@ -188,6 +188,33 @@ struct UniConnectRelaunchTmuxDriver: Sendable {
         _ = await run(socket: socket, ["send-keys", "-t", pane, "Enter"])
     }
 
+    /// The pane's text with its cursor (`#{cursor_y}`, `#{cursor_x}`) and its styled capture.
+    func screen(socket: String, pane: String) async -> RelaunchPaneScreen? {
+        guard let cursor = await run(socket: socket, ["display-message", "-p", "-t", pane, "#{cursor_y} #{cursor_x}"]),
+              let text = await capture(socket: socket, pane: pane) else { return nil }
+        let parts = cursor.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ")
+        guard parts.count == 2, let row = Int(parts[0]), let column = Int(parts[1]) else { return nil }
+        let styled = await run(socket: socket, ["capture-pane", "-e", "-p", "-t", pane])
+        return RelaunchPaneScreen(text: text, cursorRow: row, cursorColumn: column, styledText: styled)
+    }
+
+    /// Types `text` literally (`send-keys -l`), without return.
+    func typeLiteral(socket: String, pane: String, text: String) async {
+        _ = await run(socket: socket, ["send-keys", "-t", pane, "-l", "--", text])
+    }
+
+    /// Presses return.
+    func pressEnter(socket: String, pane: String) async {
+        _ = await run(socket: socket, ["send-keys", "-t", pane, "Enter"])
+    }
+
+    /// Whether `#{pane_current_command}` is a shell.
+    func isAtShell(socket: String, pane: String) async -> Bool {
+        guard let command = await currentCommand(socket: socket, pane: pane) else { return false }
+        let name = (command as NSString).lastPathComponent.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return ["zsh", "bash", "sh", "fish", "dash", "ksh", "tcsh"].contains(name)
+    }
+
     private func run(socket: String, _ arguments: [String]) async -> String? {
         let result = await commands.run(
             directory: NSHomeDirectory(),

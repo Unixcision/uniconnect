@@ -86,10 +86,10 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
                 guard let identity = scopedAgentIdentity(pid: conversation.processID, owner: owner) else { continue }
                 peer = identity
                 state = .discovered(conversation)
-            case .unidentified(let provider, let pid, _, _):
+            case .unidentified(let provider, let pid, let directory, _):
                 guard let identity = scopedAgentIdentity(pid: pid, owner: owner) else { continue }
                 peer = identity
-                state = .unidentified(provider)
+                state = .unidentified(provider, workingDirectory: directory)
             case .ambiguous:
                 peer = rootIdentity
                 state = .ambiguous
@@ -165,10 +165,10 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
                 arguments: live?.arguments ?? []
             ))
         }
-        // A session file only counts for a live process whose command line mentions Claude: a
-        // stale <pid>.json of a recycled pid says nothing (contract case 13).
+        // A session file only counts for a live process that already is Claude by the strict
+        // criterion: a stale <pid>.json of a recycled pid (even `vim ~/.claude/CLAUDE.md`) says nothing.
         let liveClaude = Set(samples.filter {
-            AgentObservedProvider.classify($0, hasClaudeSession: true) == .claude
+            AgentObservedProvider.classify($0) == .claude
         }.map(\.pid))
         let defaultDirectory = claudeConfigDirectory
         let claudeSession: (Int) -> AgentClaudeSessionFile? = { pid in
@@ -178,7 +178,7 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
         }
         var openFiles = knownOpenFiles ?? [:]
         if knownOpenFiles == nil {
-            let roots = discovery.providerRoots(rootPID: rootPID, processes: samples) { claudeSession($0) != nil }
+            let roots = discovery.providerRoots(rootPID: rootPID, processes: samples)
             if roots.count == 1, let root = roots.first, root.provider == .codex {
                 // lsof only for the single Codex root and its own branch, never for every pane.
                 for member in discovery.branch(of: root, processes: samples) {
@@ -281,6 +281,21 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
         guard let executable else { return false }
         let name = (executable as NSString).lastPathComponent.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
         return ["sh", "bash", "zsh", "fish", "dash", "ksh"].contains(name)
+    }
+
+    func serverIsRunning(socketName: String) async -> Bool? {
+        // -N: never start a server just to ask; list-sessions only reads.
+        let result = await commands.run(
+            directory: "/", executable: "tmux", arguments: ["-N", "-L", socketName, "list-sessions", "-F", "#{session_id}"],
+            timeout: 2
+        )
+        guard result.executionError == nil, !result.timedOut, let status = result.exitStatus else { return nil }
+        if status == 0 { return true }
+        let error = (result.stderr ?? "").lowercased()
+        if error.contains("no server running") || error.contains("error connecting") || error.contains("no such file") {
+            return false
+        }
+        return nil
     }
 
     func liveIdentity(binding: UniConnectLocalTmuxBinding) async -> UniConnectLocalTmuxLiveIdentity? {

@@ -8,7 +8,7 @@ import Testing
 #endif
 
 /// Si el tmux cae con la IA activa y la app abierta, la ventana recuerda qué conversación se
-/// interrumpió y al volver a abrirla la reanuda.
+/// interrumpió y al volver a abrirla la reanuda. Solo en un cierre anómalo (D5): parar no basta.
 @Suite("UniConnect: IA interrumpida en una ventana local")
 struct UniConnectLocalWindowInterruptionTests {
     private let claudeID = "714b0eae-b568-4e0c-a70b-c87c0d0a801a"
@@ -33,16 +33,55 @@ struct UniConnectLocalWindowInterruptionTests {
         return record
     }
 
-    @Test("Parar con la IA activa la deja como interrumpida")
-    func stoppingWithAnActiveAgentInterruptsIt() throws {
+    @Test("Parar con la IA activa no la marca interrumpida; solo un cierre anómalo probado")
+    func stoppingWithAnActiveAgentDoesNotInterruptIt() throws {
         var record = windowWithActiveClaude()
         let active = try #require(record.activeConversationID)
         let stopped = record.markStopped(at: 102)
         #expect(stopped)
         #expect(record.runtimeState == .stopped)
         #expect(record.activeConversationID == nil)
-        #expect(record.interruptedConversationID == active)
+        #expect(record.interruptedConversationID == nil)
         #expect(record.latestConversationID == active)
+        let interrupted = record.markInterrupted(conversationID: active, at: 103)
+        #expect(interrupted)
+        #expect(record.interruptedConversationID == active)
+        // Una sola vez.
+        let again = record.markInterrupted(conversationID: active, at: 104)
+        #expect(!again)
+    }
+
+    @Test("Un veredicto tardío no marca nada si la ventana ya siguió adelante")
+    func lateVerdictIsIgnored() throws {
+        var agentWindow = windowWithActiveClaude()
+        let active = try #require(agentWindow.activeConversationID)
+        // Sin parar: sigue en marcha.
+        let whileRunning = agentWindow.markInterrupted(conversationID: active, at: 102)
+        #expect(!whileRunning)
+        var shell = windowWithActiveClaude()
+        _ = shell.markStopped(at: 102)
+        _ = shell.transitionToShell(at: 103)
+        let afterShell = shell.markInterrupted(conversationID: active, at: 104)
+        let unknown = shell.markInterrupted(conversationID: UUID(), at: 104)
+        #expect(!afterShell)
+        #expect(!unknown)
+    }
+
+    @Test("Solo servidor caído y una observación de como mucho un tick cuentan como cierre anómalo")
+    func anomalousCloseRule() {
+        let seen = Date(timeIntervalSince1970: 1_000)
+        #expect(UniConnectLocalWindowRecord.stopInterruptsAgent(
+            lastLiveObservation: seen, stoppedAt: seen.addingTimeInterval(5), serverRunning: false))
+        // /exit + Ctrl+D o cerrar la ventana: el servidor sigue vivo.
+        #expect(!UniConnectLocalWindowRecord.stopInterruptsAgent(
+            lastLiveObservation: seen, stoppedAt: seen.addingTimeInterval(5), serverRunning: true))
+        #expect(!UniConnectLocalWindowRecord.stopInterruptsAgent(
+            lastLiveObservation: seen, stoppedAt: seen.addingTimeInterval(5), serverRunning: nil))
+        // Observación de hace más de un tick (8 s), o ninguna.
+        #expect(!UniConnectLocalWindowRecord.stopInterruptsAgent(
+            lastLiveObservation: seen, stoppedAt: seen.addingTimeInterval(9), serverRunning: false))
+        #expect(!UniConnectLocalWindowRecord.stopInterruptsAgent(
+            lastLiveObservation: nil, stoppedAt: seen, serverRunning: false))
     }
 
     @Test("Parar un shell no inventa una interrumpida")
@@ -62,6 +101,7 @@ struct UniConnectLocalWindowInterruptionTests {
         var record = windowWithActiveClaude()
         let active = try #require(record.activeConversationID)
         _ = record.markStopped(at: 102)
+        _ = record.markInterrupted(conversationID: active, at: 102)
         let revived = record.reviveInterruptedConversation(at: 103)
         #expect(revived)
         #expect(record.runtimeState == .agent)
@@ -75,15 +115,19 @@ struct UniConnectLocalWindowInterruptionTests {
     }
 
     @Test("Volver al shell o registrar otra IA limpian la interrumpida")
-    func shellAndRecordClearTheInterruption() {
+    func shellAndRecordClearTheInterruption() throws {
         var toShell = windowWithActiveClaude()
+        let active = try #require(toShell.activeConversationID)
         _ = toShell.markStopped(at: 102)
+        _ = toShell.markInterrupted(conversationID: active, at: 102)
+        #expect(toShell.interruptedConversationID == active)
         let leftToShell = toShell.transitionToShell(at: 103)
         #expect(leftToShell)
         #expect(toShell.interruptedConversationID == nil)
 
         var recorded = windowWithActiveClaude()
         _ = recorded.markStopped(at: 102)
+        _ = recorded.markInterrupted(conversationID: active, at: 102)
         _ = recorded.record(
             SessionRestorableAgentSnapshot(kind: .codex, sessionId: "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17",
                                            workingDirectory: "/Users/test/PROYECTOS", launchCommand: nil),
@@ -108,7 +152,10 @@ struct UniConnectLocalWindowInterruptionTests {
         #expect(encodedOld["version"] as? Int == 4)
 
         var record = windowWithActiveClaude()
+        let active = try #require(record.activeConversationID)
         _ = record.markStopped(at: 102)
+        _ = record.markInterrupted(conversationID: active, at: 102)
+        #expect(record.interruptedConversationID == active)
         let roundTrip = try JSONDecoder().decode(
             UniConnectLocalWindowRecord.self,
             from: JSONEncoder().encode(record)

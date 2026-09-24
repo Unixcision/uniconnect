@@ -427,20 +427,61 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
     }
 
     /// Marks the terminal child as exited without discarding the logical window or history.
+    ///
+    /// Stopping never marks the conversation as interrupted by itself: the client exits the same
+    /// way after `/exit` + Ctrl+D as after a tmux crash. Only an anomalous close proven afterwards
+    /// does (``markInterrupted(conversationID:at:)``, D5).
     @discardableResult
     mutating func markStopped(
         at timestamp: TimeInterval = Date().timeIntervalSince1970
     ) -> Bool {
         guard runtimeState != .stopped || activeConversationID != nil else { return false }
-        // The tmux client exited while an agent was active: remember which conversation was
-        // interrupted so reopening the window resumes it (reviveInterruptedConversation).
-        if runtimeState == .agent, let activeConversationID {
-            interruptedConversationID = activeConversationID
-        }
         runtimeState = .stopped
         activeConversationID = nil
         touch(timestamp)
         return true
+    }
+
+    /// Remembers that `conversationID` was interrupted by an anomalous close (D5), so reopening the
+    /// window resumes it (``reviveInterruptedConversation(at:)``).
+    ///
+    /// Only a stopped window whose latest conversation is still `conversationID` changes: if the
+    /// window moved on (another agent, a shell, a manual choice) the late verdict is ignored.
+    @discardableResult
+    mutating func markInterrupted(
+        conversationID: UUID,
+        at timestamp: TimeInterval = Date().timeIntervalSince1970
+    ) -> Bool {
+        guard runtimeState == .stopped,
+              latestConversationID == conversationID,
+              interruptedConversationID != conversationID,
+              conversation(id: conversationID) != nil else { return false }
+        interruptedConversationID = conversationID
+        touch(timestamp)
+        return true
+    }
+
+    /// Whether a stop is the anomalous close that marks the agent interrupted (D5).
+    ///
+    /// Only when the tmux server is known to be down (a crash, not `/exit` + Ctrl+D nor a closed
+    /// window, which leave the server running) **and** the agent was seen live at most one tick
+    /// before the stop. A shell exiting cleanly also makes the session vanish, so a vanished
+    /// session with the server alive is never enough on its own.
+    ///
+    /// - Parameters:
+    ///   - lastLiveObservation: When the reconciliation last saw this window's agent live.
+    ///   - stoppedAt: When the tmux client exited.
+    ///   - serverRunning: Whether the window's tmux server answers; `nil` when unknown.
+    ///   - tick: The local reconciliation period (8 s).
+    static func stopInterruptsAgent(
+        lastLiveObservation: Date?,
+        stoppedAt: Date,
+        serverRunning: Bool?,
+        tick: TimeInterval = 8
+    ) -> Bool {
+        guard serverRunning == false, let lastLiveObservation else { return false }
+        let age = stoppedAt.timeIntervalSince(lastLiveObservation)
+        return age >= 0 && age <= tick
     }
 
     /// Brings back the conversation that was interrupted when the window stopped.

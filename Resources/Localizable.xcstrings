@@ -42986,13 +42986,13 @@
         }
       }
     },
-    "uniconnect.windowDetails.agent.noID": {
+    "uniconnect.windowDetails.agent.liveNoID": {
       "extractionState": "manual",
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "IA detectada, sin identificador todavía"
+            "value": "%@: IA detectada, sin identificador todavía"
           }
         }
       }
@@ -43008,13 +43008,24 @@
         }
       }
     },
+    "uniconnect.windowDetails.agent.savedNoID": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: sin identificador guardado"
+          }
+        }
+      }
+    },
     "uniconnect.windowDetails.agent.unreachable": {
       "extractionState": "manual",
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sin IA guardada; el servidor no respondió"
+            "value": "Sin IA guardada"
           }
         }
       }
@@ -43026,6 +43037,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "No se pudo comprobar el servidor; se muestra lo guardado"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.checkFailedLocal": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo comprobar tmux en este equipo; se muestra lo guardado"
           }
         }
       }
@@ -43048,6 +43070,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cerrar"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.copied": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Orden copiada"
           }
         }
       }
@@ -43092,6 +43125,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "No se encontró esa ventana."
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.error.unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudieron leer los detalles de esa ventana."
           }
         }
       }
@@ -43393,6 +43437,17 @@
         }
       }
     },
+    "uniconnect.windowDetails.state.savedAtShell": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardada; ahora no hay ninguna IA en marcha"
+          }
+        }
+      }
+    },
     "uniconnect.windowDetails.title": {
       "extractionState": "manual",
       "localizations": {
@@ -43410,7 +43465,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sin tmux (ventana antigua)"
+            "value": "Sin tmux: terminal directa sin sesión recuperable"
           }
         }
       }
@@ -43422,6 +43477,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "No está en marcha ahora"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.tmuxID.unchecked": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin comprobar"
           }
         }
       }

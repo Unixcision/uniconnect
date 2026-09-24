@@ -56,6 +56,10 @@ public enum ControlCommandExecutionPolicy: Sendable, Equatable {
         "browser.profiles.delete",
         "browser.import.cookies",
         "mobile.attach_ticket.create",
+        // «Detalles» of a window (window_details.v1): read-only, bounded by an SSH probe of up to
+        // 10 s, so it must not hold the main actor.
+        "terminal.details",
+        "mobile.terminal.details",
         "system.top",
         "system.memory",
         "workspace.remote.pty_sessions",

@@ -5,9 +5,10 @@ import Foundation
 ///
 /// It runs the shared, read-only `agent_probe.py` (bundled from `linux/uniconnect/`) as
 /// `python3 - --socket default`, with the script on stdin, through the same pinned SSH invocation
-/// every other UniConnect remote probe uses. One connection per call, at most 10 s and 256 KB of
-/// output. Any failure — no credential, no script in the bundle, no python3, a timeout, a
-/// malformed or version-2 report — yields `nil`, and callers then change nothing.
+/// every other UniConnect remote probe uses. One connection per call, at most 10 s and 256 KiB of
+/// JSON plus its final newline (``AgentProbeReport/maximumOutputBytes``). Any failure — no
+/// credential, no script in the bundle, no python3, a timeout, a malformed or version-2 report —
+/// yields `nil`, and callers then change nothing.
 actor UniConnectRemoteAgentProbe {
     typealias CredentialResolver = @Sendable (UUID) async -> UniConnectSSHCredentialRecord?
 
@@ -16,7 +17,8 @@ actor UniConnectRemoteAgentProbe {
     private let probeScript: @Sendable () -> String?
     private let ambientEnvironment: @Sendable () -> [String: String]
     private let timeout: Duration
-    private static let maximumOutputBytes = 256 * 1_024
+    /// The largest probe output accepted, for the runner that carries it (262 144 bytes + `\n`).
+    static let maximumOutputBytes = AgentProbeReport.maximumOutputBytes
 
     init(
         processRunner: any UniConnectProcessRunning,
@@ -59,9 +61,9 @@ actor UniConnectRemoteAgentProbe {
             environment: invocation.environment,
             standardInput: Data(script.utf8),
             timeout: deadline ?? timeout
-        ), result.terminationStatus == 0, !result.outputWasTruncated,
-              result.standardOutput.count <= Self.maximumOutputBytes else { return nil }
-        return try? JSONDecoder().decode(AgentProbeReport.self, from: result.standardOutput)
+        ), result.terminationStatus == 0, !result.outputWasTruncated else { return nil }
+        // The probe guarantees at most 262 144 bytes of JSON plus its final "\n".
+        return AgentProbeReport.decode(output: result.standardOutput)
     }
 
     /// The text of a helper script bundled from `linux/uniconnect/` (`agent_probe`, `agent_guard`).

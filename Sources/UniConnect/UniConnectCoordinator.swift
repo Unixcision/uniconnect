@@ -37,6 +37,9 @@ final class UniConnectCoordinator: ObservableObject {
     private var localAgentLaunchAttempts: [LocalAgentOwner: LocalAgentLaunchAttempt] = [:]
     private var localAgentLaunchTimeouts: [LocalAgentOwner: Task<Void, Never>] = [:]
     private var rejectedLocalAgentObservations: [LocalAgentOwner: UniConnectLocalAgentRestoreClaimPolicy.Claim] = [:]
+    /// When the 8 s reconciliation last saw each local window's agent live; never persisted. An
+    /// interruption (D5) needs an observation at most one tick old.
+    private var localAgentObservedAt: [LocalAgentOwner: Date] = [:]
     private var localAgentObservers: [NSObjectProtocol] = []
     private var sshCommandExecutor: (any UniConnectSSHCommandExecuting)?
     private var sshTargetResolver: (any UniConnectSSHTargetResolving)?
@@ -163,16 +166,42 @@ final class UniConnectCoordinator: ObservableObject {
         in workspace: Workspace
     ) async -> UniConnectLocalTmuxRuntimeObservation.State? {
         guard Self.isEnabled, let inspector = localTmuxInspector,
-              workspace.uniConnectProfile?.kind == .local, workspace.remoteConfiguration == nil,
+              let target = localObservationTarget(panelID: panelID, in: workspace) else { return nil }
+        return await inspector.runtimeObservations(for: [target]).first?.state
+    }
+
+    /// Reads a local window live for «Detalles» through the injected inspector (read-only): its
+    /// live `$N`/`%N`, then one guarded observation of its pane.
+    func localWindowDetailsCheck(
+        panelID: UUID,
+        in workspace: Workspace,
+        savedDirectory: String?
+    ) async -> UniConnectWindowDetailsResolver.LiveCheck {
+        guard Self.isEnabled, let inspector = localTmuxInspector,
+              let binding = workspace.uniConnectLocalWindowsByPanelId[panelID]?.tmuxBinding else { return .failed }
+        return await UniConnectWindowDetailsResolver.localCheck(
+            inspector: inspector,
+            binding: binding,
+            target: localObservationTarget(panelID: panelID, in: workspace),
+            savedDirectory: savedDirectory
+        )
+    }
+
+    /// The pane a local window's observation targets, or `nil` when it cannot be observed (no tmux,
+    /// hibernated, remote configuration or no surface generation).
+    private func localObservationTarget(
+        panelID: UUID,
+        in workspace: Workspace
+    ) -> UniConnectLocalTmuxRuntimeObservation.Target? {
+        guard workspace.uniConnectProfile?.kind == .local, workspace.remoteConfiguration == nil,
               let record = workspace.uniConnectLocalWindowsByPanelId[panelID],
               let binding = record.tmuxBinding,
               let panel = workspace.panels[panelID] as? TerminalPanel, !panel.isAgentHibernated,
               let generation = workspace.uniConnectSurfaceGeneration(panelId: panelID) else { return nil }
-        let target = UniConnectLocalTmuxRuntimeObservation.Target(
+        return UniConnectLocalTmuxRuntimeObservation.Target(
             owner: .init(workspaceID: workspace.id, panelID: panelID, binding: binding, surfaceGeneration: generation),
             record: record
         )
-        return await inspector.runtimeObservations(for: [target]).first?.state
     }
 
     /// Repairs durable runtime state from existing panes without focusing, launching, or sending input.
@@ -222,6 +251,7 @@ final class UniConnectCoordinator: ObservableObject {
                     ) else { continue }
                     _ = workspace.uniConnectRecordLocalAgent(panelId: owner.panelID, snapshot: snapshot)
                 case .discovered(let observed):
+                    self.localAgentObservedAt[.init(workspaceID: owner.workspaceID, panelID: owner.panelID)] = Date()
                     // The process itself says which conversation it is on (Claude's session file,
                     // Codex's open rollout): no dependency on the wrapper hooks, which do not run in
                     // tmux panes. After /clear or /resume the new id enters and the old one stays
@@ -393,13 +423,17 @@ final class UniConnectCoordinator: ObservableObject {
                               $0.key.pane == binding.name && $0.key.tmuxServer == binding.socketName
                           }),
                           let effectiveID = result.effectiveID else { continue }
+                    // The target's own agent: a Codex id is never recorded as a Claude conversation.
+                    guard let kind = result.provider.flatMap({
+                        RestorableAgentKind(rawValue: $0 == "agy" ? "antigravity" : $0)
+                    }) ?? record.activeConversation?.kind else { continue }
                     let directory = record.activeConversation?.resumeWorkingDirectory
                         ?? record.latestConversation?.resumeWorkingDirectory
                         ?? record.workingDirectory
                     _ = workspace.uniConnectRecordLocalAgent(
                         panelId: panelID,
                         snapshot: SessionRestorableAgentSnapshot(
-                            kind: .claude,
+                            kind: kind,
                             sessionId: effectiveID,
                             workingDirectory: directory,
                             launchCommand: nil
@@ -2161,6 +2195,40 @@ final class UniConnectCoordinator: ObservableObject {
         cancelLocalAgentLaunchAttempt(for: owner, transitionToShell: false)
     }
 
+    /// When the reconciliation last saw this local window's agent live, if it did in this run.
+    func localAgentLastObservation(panelID: UUID, workspace: Workspace) -> Date? {
+        localAgentObservedAt[LocalAgentOwner(workspaceID: workspace.id, panelID: panelID)]
+    }
+
+    /// Decides, after a local window stopped with its agent active, whether that was an anomalous
+    /// close (D5) and only then marks the conversation interrupted.
+    ///
+    /// Needs a live observation of the agent at most one tick (8 s) before the stop and the tmux
+    /// server of the window's socket known to be down. `/exit` + Ctrl+D, a closed window or a
+    /// respawn leave the server running (or the window already at a shell), so they never mark it.
+    func evaluateLocalInterruption(
+        panelID: UUID,
+        workspace: Workspace,
+        conversationID: UUID,
+        binding: UniConnectLocalTmuxBinding,
+        stoppedAt: Date
+    ) {
+        let owner = LocalAgentOwner(workspaceID: workspace.id, panelID: panelID)
+        let observedAt = localAgentObservedAt.removeValue(forKey: owner)
+        guard let inspector = localTmuxInspector,
+              UniConnectLocalWindowRecord.stopInterruptsAgent(
+                  lastLiveObservation: observedAt, stoppedAt: stoppedAt, serverRunning: false
+              ) else { return }
+        Task { @MainActor [weak workspace] in
+            let running = await inspector.serverIsRunning(socketName: binding.socketName)
+            guard let workspace,
+                  UniConnectLocalWindowRecord.stopInterruptsAgent(
+                      lastLiveObservation: observedAt, stoppedAt: stoppedAt, serverRunning: running
+                  ) else { return }
+            _ = workspace.uniConnectMarkLocalWindowInterrupted(panelId: panelID, conversationID: conversationID)
+        }
+    }
+
     /// Ends the old surface generation before a stable panel ID is reused by respawn.
     func localWindowWillRespawn(panelID: UUID, workspace: Workspace) {
         let owner = LocalAgentOwner(workspaceID: workspace.id, panelID: panelID)
@@ -2651,9 +2719,12 @@ final class UniConnectCoordinator: ObservableObject {
             windowName: title,
             tmuxSession: session
         )
+        // D6: the agent comes back by itself only if a live reading saw its session ≤ 2 ticks ago
+        // and nobody closed it on purpose; otherwise the window reattaches (or opens a shell).
         let remoteResume = UniConnectRemoteResumeCommand().startup(
             record: workspace.uniConnectRemoteAgentsByPanelId[panelId],
-            sshUser: credentialRecord.effectiveTarget?.user
+            sshUser: credentialRecord.effectiveTarget?.user,
+            seenLiveRecently: remoteAgentResumeAllowed(panelID: panelId)
         )
         guard let commandLine = UniConnectSSH.attachCommandLine(
             credentialRecord: credentialRecord,
@@ -5346,9 +5417,12 @@ extension Workspace {
         )
         // If the remote tmux session died, recreate it with its agent resumed without questions
         // (guarded against a conversation still open elsewhere). A live session just attaches.
+        // D6: at launch no live reading has seen the session yet, so a restore never resumes the
+        // agent by itself; the window reattaches, or comes back as a shell if its session is gone.
         let remoteResume = UniConnectRemoteResumeCommand().startup(
             record: panelSnapshot.terminal?.uniConnectRemoteAgent,
-            sshUser: effectiveTarget.user
+            sshUser: effectiveTarget.user,
+            seenLiveRecently: UniConnectCoordinator.shared.remoteAgentResumeAllowed(panelID: panelSnapshot.id)
         )
         guard let commandLine = UniConnectSSH.attachCommandLine(
             credentialRecord: credentialRecord,

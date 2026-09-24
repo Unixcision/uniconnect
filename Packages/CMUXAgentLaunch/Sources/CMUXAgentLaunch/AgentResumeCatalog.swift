@@ -6,6 +6,8 @@ struct AgentResumeCatalog: Decodable, Sendable, Equatable {
     let providers: [String: Provider]
 
     struct Provider: Decodable, Sendable, Equatable {
+        /// The name people read (`Claude Code`, `Codex`, `Antigravity`, `Grok`); absent means the id.
+        let displayName: String?
         let executable: String
         let aliases: [String]?
         let resume: [String]
@@ -15,15 +17,25 @@ struct AgentResumeCatalog: Decodable, Sendable, Equatable {
         let noPrompt: NoPrompt?
     }
 
+    /// A flag the no-prompt mode replaces and the CLI refuses next to it (Codex's `-a`, `--sandbox`…).
+    struct Supersede: Decodable, Sendable, Equatable {
+        /// The flag, short or long (`-s`, `--sandbox`).
+        let flag: String
+        /// Whether the flag carries a value, as the next token or as `flag=value`.
+        let takesValue: Bool
+    }
+
     /// The provider's "never stop on a question" mode, shared with Linux and the VPS supervisor.
     ///
     /// `prefix` goes right after the executable, `suffix` at the end, `legacy` lists older
-    /// spellings of the same mode that are removed before inserting the current ones, and
+    /// spellings of the same mode that are removed before inserting the current ones,
+    /// `supersedes` lists the flags the mode replaces (removed with their value), and
     /// `rootEnvironment` is only exported when the agent runs as root.
     struct NoPrompt: Decodable, Sendable, Equatable {
         let prefix: [String]?
         let suffix: [String]?
         let legacy: [String]?
+        let supersedes: [Supersede]?
         let rootEnvironment: [String: String]?
 
         /// Every flag the policy knows, current or legacy, so previous occurrences can be removed.
@@ -32,6 +44,9 @@ struct AgentResumeCatalog: Decodable, Sendable, Equatable {
         }
 
         /// Whether every flag is a plain option and every environment entry is a safe `K=V`.
+        ///
+        /// A superseded flag matches `^--?[A-Za-z0-9][A-Za-z0-9-]*$`, appears once and is none of
+        /// the prefix, suffix or legacy flags.
         var isValid: Bool {
             let flags = (prefix ?? []) + (suffix ?? []) + (legacy ?? [])
             let flagsAreOptions = flags.allSatisfy { flag in
@@ -39,6 +54,12 @@ struct AgentResumeCatalog: Decodable, Sendable, Equatable {
                     && !flag.contains(where: \.isWhitespace)
             }
             guard flagsAreOptions else { return false }
+            var superseded: Set<String> = []
+            for entry in supersedes ?? [] {
+                guard entry.flag.range(of: #"^--?[A-Za-z0-9][A-Za-z0-9-]*$"#, options: .regularExpression) != nil,
+                      !allFlags.contains(entry.flag),
+                      superseded.insert(entry.flag).inserted else { return false }
+            }
             for (key, value) in rootEnvironment ?? [:] {
                 guard key.range(of: #"^[A-Z_][A-Z0-9_]*$"#, options: .regularExpression) != nil,
                       value.range(of: #"^[A-Za-z0-9._-]{1,64}$"#, options: .regularExpression) != nil else {
@@ -90,6 +111,11 @@ struct AgentResumeCatalog: Decodable, Sendable, Equatable {
                 }
             }
             if let noPrompt = provider.noPrompt, !noPrompt.isValid {
+                throw CatalogError.invalidSchema
+            }
+            if let displayName = provider.displayName,
+               displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || displayName.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
                 throw CatalogError.invalidSchema
             }
         }

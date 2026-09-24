@@ -19,6 +19,11 @@ public struct AgentClaudeSessionFile: Sendable, Equatable, Decodable {
     public let version: String?
     /// The process start time as Claude printed it, used to tell a recycled pid apart.
     public let procStart: String?
+    /// The pid Claude wrote inside the file, `nil` in older files that do not carry it.
+    ///
+    /// The file is named `<pid>.json`; a different pid inside means it belongs to another process
+    /// (copied or restored from a backup), so its conversation is somebody else's.
+    public let pid: Int?
 
     /// Creates a session file value, for tests and fixtures.
     ///
@@ -28,16 +33,33 @@ public struct AgentClaudeSessionFile: Sendable, Equatable, Decodable {
     ///   - status: The reported status.
     ///   - version: The Claude Code version.
     ///   - procStart: The process start time.
-    public init(sessionId: String, cwd: String? = nil, status: String? = nil, version: String? = nil, procStart: String? = nil) {
+    ///   - pid: The pid written inside the file, when it has one.
+    public init(
+        sessionId: String,
+        cwd: String? = nil,
+        status: String? = nil,
+        version: String? = nil,
+        procStart: String? = nil,
+        pid: Int? = nil
+    ) {
         self.sessionId = sessionId
         self.cwd = cwd
         self.status = status
         self.version = version
         self.procStart = procStart
+        self.pid = pid
+    }
+
+    /// Whether this file may describe the process `processID`: its inner pid matches, or it has none.
+    ///
+    /// - Parameter processID: The pid the file was looked up for (the `<pid>` of its name).
+    /// - Returns: `false` when the file names another process.
+    public func belongs(toProcess processID: Int) -> Bool {
+        pid.map { $0 == processID } ?? true
     }
 
     private enum CodingKeys: String, CodingKey {
-        case sessionId, cwd, status, version, procStart
+        case sessionId, cwd, status, version, procStart, pid
     }
 
     public init(from decoder: any Decoder) throws {
@@ -48,6 +70,7 @@ public struct AgentClaudeSessionFile: Sendable, Equatable, Decodable {
         status = try? container.decodeIfPresent(String.self, forKey: .status)
         version = try? container.decodeIfPresent(String.self, forKey: .version)
         procStart = try? container.decodeIfPresent(String.self, forKey: .procStart)
+        pid = (try? container.decodeIfPresent(Int.self, forKey: .pid)) ?? nil
     }
 
     /// Reads and decodes one session file, refusing anything larger than ``maximumSize``.

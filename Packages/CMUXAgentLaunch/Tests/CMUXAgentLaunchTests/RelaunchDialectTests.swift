@@ -9,10 +9,22 @@ struct RelaunchDialectTests {
     func anUnknownAgentIsRefusedNotGuessed() {
         let dialects = RelaunchDialects.known
         #expect(dialects.dialect(for: "claude") != nil)
-        // Codex tiene documentado `/exit` y `codex resume <id>`, y aun asi no basta: la sintaxis no
-        // acredita el ciclo de vida, ni la identidad, ni que haya un proceso nuevo detras.
+        // Codex (D7, 24-09) está escrito pero fuera de los anunciados hasta probarlo en vivo: relanzar
+        // cierra la IA. Su adaptador sí confirma `/exit` en el compositor y espera a que muera.
         #expect(dialects.dialect(for: "codex") == nil)
+        #expect(CodexRelaunchDialect().closing == .confirmedCommand("/exit"))
+        #expect(dialects.dialect(for: "claude")?.closing == .sequenced)
         #expect(dialects.dialect(for: "grok") == nil)
+        #expect(dialects.dialect(for: "agy") == nil)
+    }
+
+    @Test("Lo que anuncia el Mac es exactamente su fila de proveedores.json")
+    func macCapabilitiesMatchTheContract() throws {
+        let contract = try ContractFixtures().object("relaunch-v1/proveedores.json")
+        let capabilities = try #require(contract["capacidades"] as? [String: [String]], "proveedores.json sin «capacidades»")
+        let mac = try #require(capabilities["macos"], "proveedores.json sin fila macos")
+        let announced = ["relaunch.v1"] + RelaunchDialects.known.capabilityTokens(windowKind: "local")
+        #expect(announced.sorted() == mac.sorted())
     }
 
     @Test("Claude vuelve con su conversación y sus banderas, como argumentos y no como frase")
@@ -27,6 +39,78 @@ struct RelaunchDialectTests {
         // antes, se añade igual, una vez y al final.
         #expect(claude.invocation(conversation: "abc", previousArgv: ["claude"])
             == ["claude", "--resume", "abc", "--dangerously-skip-permissions"])
+    }
+}
+
+/// Codex se cierra como en Linux (`exit_codex`) y vuelve con `--yolo` y `supersedes` aplicado.
+@Suite("Adaptador de Codex")
+struct CodexRelaunchDialectTests {
+    private let id = "019a4e2b-6c3d-7f81-9a05-3e7b1c8d2f46"
+
+    @Test("Vuelve con --yolo, su conversación y las opciones que se pueden devolver tal cual")
+    func invocationKeepsReproducibleOptions() {
+        let codex = CodexRelaunchDialect()
+        #expect(codex.invocation(conversation: id, previousArgv: ["node", "/usr/local/bin/codex", "--yolo"])
+            == ["codex", "--yolo", "resume", id])
+        #expect(codex.invocation(
+            conversation: id,
+            previousArgv: ["codex", "resume", "0199f3c2-8d1e-7b40-a6f5-2c9e4d7b1a08", "-a", "on-request",
+                           "--sandbox", "workspace-write", "--full-auto", "-m", "gpt-5-codex", "-C", "/home/u/api"]
+        ) == ["codex", "--yolo", "resume", id, "-m", "gpt-5-codex", "-C", "/home/u/api"])
+        #expect(codex.invocation(conversation: id, previousArgv: [])
+            == ["codex", "--yolo", "resume", id])
+    }
+
+    @Test("Lo que no se puede devolver tal cual se niega, antes de cerrar nada")
+    func irreproducibleOptionsAreRefused() {
+        let codex = CodexRelaunchDialect()
+        // Un mensaje inicial, una opción desconocida o un valor con comillas que `ps` pudo partir.
+        #expect(codex.invocation(conversation: id, previousArgv: ["codex", "--yolo", "arregla", "los", "tests"]) == nil)
+        #expect(codex.invocation(conversation: id, previousArgv: ["codex", "--image", "a.png"]) == nil)
+        #expect(codex.invocation(conversation: id, previousArgv: ["codex", "-c", "effort=\"high\""]) == nil)
+        #expect(codex.invocation(conversation: id, previousArgv: ["codex", "exec", "hola"]) == nil)
+        #expect(codex.invocation(conversation: "no válido", previousArgv: ["codex"]) == nil)
+        // Sin política no se sabe quitar lo que --yolo sustituye.
+        #expect(CodexRelaunchDialect(policy: nil).invocation(conversation: id, previousArgv: ["codex"]) == nil)
+    }
+
+    @Test("Solo se cierra con el compositor vacío; una pregunta es de una persona")
+    func closesOnlyAnEmptyComposer() {
+        let codex = CodexRelaunchDialect()
+        let empty = RelaunchPaneScreen(text: "Codex\n\n›\n  ⏎ send", cursorRow: 2, cursorColumn: 2)
+        #expect(codex.refusalToClose(screen: empty) == nil)
+        let draft = RelaunchPaneScreen(text: "Codex\n\n› arregla esto\n", cursorRow: 2, cursorColumn: 14)
+        #expect(codex.refusalToClose(screen: draft) == .unknownDialog)
+        let placeholder = RelaunchPaneScreen(
+            text: "Codex\n› Ask Codex to do anything\n", cursorRow: 1, cursorColumn: 2,
+            styledText: "Codex\n\u{1b}[1m›\u{1b}[0m \u{1b}[2mAsk Codex to do anything\u{1b}[0m\n"
+        )
+        #expect(codex.refusalToClose(screen: placeholder) == nil)
+        // Las mismas palabras escritas por alguien (sin atenuar) son un borrador.
+        let typed = RelaunchPaneScreen(
+            text: "Codex\n› Ask Codex to do anything\n", cursorRow: 1, cursorColumn: 2,
+            styledText: "Codex\n›  Ask Codex to do anything\n"
+        )
+        #expect(codex.refusalToClose(screen: typed) == .unknownDialog)
+        let question = RelaunchPaneScreen(text: "Allow once?\n›\n", cursorRow: 1, cursorColumn: 2)
+        #expect(codex.refusalToClose(screen: question) == .permissions)
+    }
+
+    @Test("Intro solo cuando «› /exit» está en la línea del cursor")
+    func enterOnlyWhenTheCommandIsShown() {
+        let codex = CodexRelaunchDialect()
+        #expect(codex.showsCloseCommand(screen: .init(text: "x\n› /exit  \n", cursorRow: 1, cursorColumn: 7)))
+        #expect(!codex.showsCloseCommand(screen: .init(text: "x\n› /exi\n", cursorRow: 1, cursorColumn: 6)))
+        #expect(!codex.showsCloseCommand(screen: .init(text: "› /exit\n›\n", cursorRow: 1, cursorColumn: 2)))
+    }
+
+    @Test("La conversación del proceso nuevo sale de su `resume <id>`")
+    func resumesReadsTheSubcommand() {
+        let codex = CodexRelaunchDialect()
+        #expect(codex.resumes(conversation: id, argv: ["node", "/usr/local/bin/codex", "--yolo", "resume", id]))
+        #expect(!codex.resumes(conversation: id, argv: ["codex", "--yolo", "--", "resume", id]))
+        #expect(!codex.resumes(conversation: id, argv: ["codex", "--yolo"]))
+        #expect(ClaudeRelaunchDialect().resumes(conversation: id, argv: ["claude", "--resume", id]))
     }
 }
 

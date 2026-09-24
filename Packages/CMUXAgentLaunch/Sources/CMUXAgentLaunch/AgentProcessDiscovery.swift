@@ -9,12 +9,17 @@ import Foundation
 /// 1. The subtree is every descendant of `#{pane_pid}` (the pane's **shell**, not the agent),
 ///    walked breadth-first over a process table, at most ``maximumDepth`` levels and
 ///    ``maximumNodes`` processes. Inherited environment never adds a process from outside it.
-/// 2. Each process is classified with ``AgentObservedProvider/classify(_:hasClaudeSession:)``.
+/// 2. Each process is classified with ``AgentObservedProvider/classify(_:)``. A Claude session file
+///    never classifies a process; it only gives identity to one that already is Claude.
 /// 3. The roots are the agent processes without an agent ancestor inside the subtree: a Codex run
 ///    by Claude's Bash tool, or Codex's native binary under its `node` launcher, is not a root.
 ///    No root is ``AgentDiscoveryOutcome/noAgent``; two or more is ``AgentDiscoveryOutcome/ambiguous``.
-/// 4. The identity of the single root comes from the first available source: Claude's session file,
-///    the rollout a Codex process holds open, then the command line.
+/// 4. The identity of the single root comes from the first available source: Claude's session file
+///    (only when the pid written inside it is the root's, or absent), the rollout a Codex branch holds
+///    open (with several, only the one its `resume <uuid>` names), then the command line (before
+///    `--`, a token starting with `-` is never a value, and two different ids give none). When in
+///    doubt there is no id: a `sin_id` keeps what was saved, a wrong id resumes somebody else's
+///    conversation.
 ///
 /// It is pure: the process table, session files, open files and rollout heads are passed in, so the
 /// same fixture drives the tests on every platform.
@@ -85,18 +90,16 @@ public struct AgentProcessDiscovery: Sendable {
     /// - Parameters:
     ///   - rootPID: The pane's `#{pane_pid}`.
     ///   - processes: The whole process table.
-    ///   - hasClaudeSession: Whether a live Claude session file exists for a pid.
     /// - Returns: The roots in breadth-first order.
     public func providerRoots(
         rootPID: Int,
-        processes: [AgentProcessSample],
-        hasClaudeSession: (Int) -> Bool
+        processes: [AgentProcessSample]
     ) -> [ProviderRoot] {
         let tree = subtree(rootPID: rootPID, processes: processes)
         let byPID = Dictionary(tree.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
         var providers: [Int: AgentObservedProvider] = [:]
         for process in tree {
-            if let provider = AgentObservedProvider.classify(process, hasClaudeSession: hasClaudeSession(process.pid)) {
+            if let provider = AgentObservedProvider.classify(process) {
                 providers[process.pid] = provider
             }
         }
@@ -121,13 +124,13 @@ public struct AgentProcessDiscovery: Sendable {
     /// branch is inspected, not only the root.
     ///
     /// - Parameters:
-    ///   - root: An agent root from ``providerRoots(rootPID:processes:hasClaudeSession:)``.
+    ///   - root: An agent root from ``providerRoots(rootPID:processes:)``.
     ///   - processes: The whole process table.
     /// - Returns: The root and every descendant classified as the same provider.
     public func branch(of root: ProviderRoot, processes: [AgentProcessSample]) -> [AgentProcessSample] {
         subtree(rootPID: root.process.pid, processes: processes).filter { process in
             process.pid == root.process.pid
-                || AgentObservedProvider.classify(process, hasClaudeSession: false) == root.provider
+                || AgentObservedProvider.classify(process) == root.provider
         }
     }
 
@@ -137,6 +140,7 @@ public struct AgentProcessDiscovery: Sendable {
     ///   - rootPID: The pane's `#{pane_pid}`.
     ///   - processes: The whole process table.
     ///   - claudeSession: The live session file of a Claude pid (see ``AgentClaudeSessionDirectory``).
+    ///     It is only asked about the root, once it is known to be Claude.
     ///   - openFiles: Paths each pid holds open; only Codex processes need an entry.
     ///   - rolloutFirstLine: The first line (≤ 64 KB) of a rollout file, to read its `payload.cwd`.
     ///   - fallbackDirectory: `#{pane_current_path}`, used when no better folder is known.
@@ -155,12 +159,7 @@ public struct AgentProcessDiscovery: Sendable {
         processDirectory: (Int) -> String? = { _ in nil },
         resolvingPath: (String) -> String = { $0 }
     ) -> AgentDiscoveryOutcome {
-        var sessionFiles: [Int: AgentClaudeSessionFile] = [:]
-        let roots = providerRoots(rootPID: rootPID, processes: processes) { pid in
-            guard let file = claudeSession(pid) else { return false }
-            sessionFiles[pid] = file
-            return true
-        }
+        let roots = providerRoots(rootPID: rootPID, processes: processes)
         guard !roots.isEmpty else { return .noAgent }
         guard roots.count == 1, let root = roots.first else { return .ambiguous }
         let process = root.process
@@ -170,7 +169,9 @@ public struct AgentProcessDiscovery: Sendable {
         var identity: Identity?
         switch root.provider {
         case .claude:
-            if let file = sessionFiles[process.pid] ?? claudeSession(process.pid) {
+            // The session file only counts when the pid written inside it is the root's (or absent).
+            if let file = claudeSession(process.pid), file.belongs(toProcess: process.pid),
+               AgentNoPromptPolicy.isValidSessionID(file.sessionId) {
                 identity = Identity(id: file.sessionId, reportedDirectory: file.cwd, source: .sessionFile,
                                     status: file.status, version: file.version)
             } else if let id = Self.uniqueOptionValue(["--resume", "-r", "--session-id"], in: process.arguments, requireUUID: true) {
@@ -184,15 +185,27 @@ public struct AgentProcessDiscovery: Sendable {
                     if let id = Self.rolloutID(path: path) { rollouts[id] = path }
                 }
             }
-            if rollouts.count == 1, let rollout = rollouts.first {
+            // The `resume <uuid>` of the root, else of its branch in breadth-first order.
+            let resumed = members.compactMap({ Self.codexResumeID($0.arguments) }).first
+            // One rollout open: that one. Several (a `codex exec` launched by the session opens its
+            // own, newer one): only the one `resume <uuid>` names, else no id. None: argv.
+            let chosen: (key: String, value: String)?
+            if rollouts.count == 1 {
+                chosen = rollouts.first
+            } else if let resumed, let path = rollouts[resumed] {
+                chosen = (key: resumed, value: path)
+            } else {
+                chosen = nil
+            }
+            if let rollout = chosen {
                 let firstLine = rolloutFirstLine(rollout.value)
                 identity = Identity(
                     id: rollout.key,
                     reportedDirectory: firstLine.flatMap { Self.rolloutWorkingDirectory(firstLine: $0) },
                     source: .rollout
                 )
-            } else if let id = members.compactMap({ Self.codexResumeID($0.arguments) }).first {
-                identity = Identity(id: id, source: .argv)
+            } else if rollouts.isEmpty, let resumed {
+                identity = Identity(id: resumed, source: .argv)
             }
         case .agy:
             if let id = Self.uniqueOptionValue(["--conversation"], in: process.arguments, requireUUID: false) {
@@ -263,14 +276,20 @@ public struct AgentProcessDiscovery: Sendable {
         return cwd
     }
 
+    /// The UUID after the first `resume` before `--`, in lowercase, or `nil`.
     private static func codexResumeID(_ arguments: [String]) -> String? {
-        guard let index = arguments.dropFirst().firstIndex(of: "resume"),
-              arguments.indices.contains(index + 1) else { return nil }
-        let candidate = arguments[index + 1]
-        return UUID(uuidString: candidate) != nil ? candidate : nil
+        let options = arguments.dropFirst().prefix { $0 != "--" }
+        guard let index = options.firstIndex(of: "resume"),
+              options.indices.contains(index + 1) else { return nil }
+        let candidate = options[index + 1]
+        return UUID(uuidString: candidate) != nil ? candidate.lowercased() : nil
     }
 
     /// The single value given to any of `options`, or `nil` when there is none or they disagree.
+    ///
+    /// Only what comes before the first `--` counts (the rest is text for the agent). `<option>
+    /// <value>` takes the next token unless it starts with `-`; `<option>=<value>` is only a long
+    /// option's form (`--resume=…`, never `-r=…`). Any invalid value voids the command line.
     private static func uniqueOptionValue(_ options: [String], in arguments: [String], requireUUID: Bool) -> String? {
         var found: Set<String> = []
         var index = 1
@@ -278,10 +297,12 @@ public struct AgentProcessDiscovery: Sendable {
             let argument = arguments[index]
             if argument == "--" { break }
             var value: String?
-            if options.contains(argument), index + 1 < arguments.count {
-                value = arguments[index + 1]
-                index += 1
-            } else if let option = options.first(where: { argument.hasPrefix($0 + "=") }) {
+            if options.contains(argument) {
+                if index + 1 < arguments.count, !arguments[index + 1].hasPrefix("-") {
+                    value = arguments[index + 1]
+                    index += 1
+                }
+            } else if let option = options.first(where: { $0.hasPrefix("--") && argument.hasPrefix($0 + "=") }) {
                 value = String(argument.dropFirst(option.count + 1))
             }
             if let value {

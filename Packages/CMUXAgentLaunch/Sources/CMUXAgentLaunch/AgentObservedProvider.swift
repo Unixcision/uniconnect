@@ -21,27 +21,35 @@ public enum AgentObservedProvider: String, Sendable, Codable, CaseIterable {
 
     /// Classifies one process, or returns `nil` when it is not an agent.
     ///
-    /// `sudo`, `env`, shells, `login` and an unmarked `node` are never an agent: their children are
-    /// already part of the subtree being inspected. A Claude session file alone does not make a
-    /// process Claude, because its pid may have been recycled: it also needs an argument that
-    /// mentions `claude`.
+    /// The strict criterion of `contracts/agent-tree-v1` (rule 2), shared with `agent_probe.py`,
+    /// `agent_guard.py` and the VPS supervisor. A "node" is a basename of `argv[0]` matching
+    /// `^(node|nodejs|bun)(\d+(\.\d+)*)?$`.
     ///
-    /// - Parameters:
-    ///   - process: The process row.
-    ///   - hasClaudeSession: Whether a Claude session file exists for this pid.
+    /// - claude: basename `claude`; or `argv[0]` under `/claude/versions/`; or node with an argument
+    ///   that contains `@anthropic-ai/claude-code` or whose basename is exactly `claude` (Claude from
+    ///   npm launched through its shebang).
+    /// - codex: basename starting with `codex` (the native `codex-x86_64-unknown-linux-musl` too); or
+    ///   node with an argument that contains `@openai/codex` or whose basename is `codex`/`codex.js`.
+    /// - agy: basename `agy` or `antigravity`. grok: basename `grok` or starting with `grok-`.
+    ///
+    /// `sudo`, `env`, shells, `login`, `tmux`, `python` and an unmarked node are never an agent: their
+    /// children are already part of the subtree. A Claude session file **never** classifies a process
+    /// (its pid may have been recycled by `vim ~/.claude/CLAUDE.md`); it only gives identity to a
+    /// process that already is Claude.
+    ///
+    /// - Parameter process: The process row.
     /// - Returns: The provider the process belongs to.
-    public static func classify(_ process: AgentProcessSample, hasClaudeSession: Bool) -> AgentObservedProvider? {
-        if hasClaudeSession, process.arguments.contains(where: { $0.contains("claude") }) {
-            return .claude
-        }
+    public static func classify(_ process: AgentProcessSample) -> AgentObservedProvider? {
         let name = process.executableName
         let executable = process.arguments.first ?? ""
         let rest = process.arguments.dropFirst()
-        let isScriptHost = ["node", "bun"].contains(name) || name.hasPrefix("node")
-        if name == "claude" || executable.contains("/.local/share/claude/versions/") {
+        let isScriptHost = name.range(of: #"^(node|nodejs|bun)([0-9]+(\.[0-9]+)*)?$"#, options: .regularExpression) != nil
+        if name == "claude" || executable.contains("/claude/versions/") {
             return .claude
         }
-        if isScriptHost, rest.contains(where: { $0.contains("@anthropic-ai/claude-code") }) {
+        if isScriptHost, rest.contains(where: { argument in
+            argument.contains("@anthropic-ai/claude-code") || (argument as NSString).lastPathComponent == "claude"
+        }) {
             return .claude
         }
         if name.hasPrefix("codex") {

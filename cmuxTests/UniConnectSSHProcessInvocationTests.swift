@@ -290,6 +290,25 @@ struct UniConnectSSHProcessInvocationTests {
         #expect(!result.trace.contains("unsafe-arguments"))
     }
 
+    @Test("En un servidor que ya existía no se tocan sus opciones ni se lanza la IA; en uno nuevo, sí (D4, D6)")
+    func existingServerKeepsItsOptionsAndNeverResumes() async throws {
+        let existing = try await runTmuxFixture(existingSession: "otra") { _ in
+            UniConnectSSH.remoteRecoverableTmuxCommand(session: "saved-session", directory: nil, initialCommand: "echo hola")
+        }
+        #expect(existing.trace.contains("call:list-sessions"))
+        #expect(existing.trace.contains("created:saved-session"))
+        #expect(!existing.trace.contains(where: { $0.hasPrefix("server-option:") }))
+        #expect(!existing.trace.contains("initial-command"))
+
+        let fresh = try await runTmuxFixture(existingSession: "") { _ in
+            UniConnectSSH.remoteRecoverableTmuxCommand(session: "saved-session", directory: nil, initialCommand: "echo hola")
+        }
+        #expect(fresh.trace.contains("created:saved-session"))
+        #expect(fresh.trace.contains("server-option:history-limit"))
+        #expect(fresh.trace.contains("server-option:set-clipboard"))
+        #expect(fresh.trace.contains("initial-command"))
+    }
+
     @Test("Saved directory seeds only new sessions without passing attach's cwd override")
     func recoveryPreservesSavedDirectoryAndExistingSessionDefaults() async throws {
         for existingSession in ["", "saved-session"] {
@@ -414,50 +433,82 @@ struct UniConnectSSHProcessInvocationTests {
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: loginShell.path)
         if tmuxAvailable {
             let tmux = temporary.appendingPathComponent("tmux")
+            // Runs each `;`-separated command in order and stops at the first failure, like tmux.
+            // `list-sessions` answers like a live server only when some session exists.
             let script = #"""
             #!/bin/sh
-            action=$1
-            shift
-            if [ "$action" = set-option ] && [ "$#" -ge 5 ]; then
-                [ "$1" = -g ] && [ "$2" = history-limit ] && [ "$3" = 50000 ] && [ "$4" = ';' ] || exit 65
-                shift 4
+            run() {
                 action=$1
                 shift
-            fi
-            printf 'call:%s\n' "$action" >> "$UC_TRACE"
-            printf 'arg:%s\n' "$@" >> "$UC_TRACE"
-            case "$action" in
-            new-session)
-                [ "$1" = -A ] && [ "$2" = -s ] || { printf 'unsafe-arguments\n' >> "$UC_TRACE"; exit 65; }
-                name=$3
-                shift 3
+                printf 'call:%s\n' "$action" >> "$UC_TRACE"
+                case "$action" in
+                set-option)
+                    if [ "$1" = -g ] || [ "$1" = -s ]; then
+                        printf 'server-option:%s\n' "$2" >> "$UC_TRACE"
+                    fi
+                    return 0
+                    ;;
+                list-sessions)
+                    if [ -n "$UC_EXISTING" ]; then
+                        printf '%s\n' "$UC_EXISTING"
+                        return 0
+                    fi
+                    printf 'no server running on /tmp/tmux-test/default\n' >&2
+                    return 1
+                    ;;
+                new-session)
+                    printf 'arg:%s\n' "$@" >> "$UC_TRACE"
+                    [ "$1" = -A ] && [ "$2" = -s ] || { printf 'unsafe-arguments\n' >> "$UC_TRACE"; exit 65; }
+                    name=$3
+                    shift 3
+                    for argument do
+                        case "$argument" in -c|-D|-d|-X|kill-session|kill-server|send-keys)
+                            printf 'unsafe-arguments\n' >> "$UC_TRACE"; exit 65;;
+                        esac
+                    done
+                    [ "$#" -eq 0 ] || printf 'initial-command\n' >> "$UC_TRACE"
+                    printf 'cwd:%s\n' "$(pwd -P)" >> "$UC_TRACE"
+                    [ "$UC_STATUS" = 0 ] || exit "$UC_STATUS"
+                    if [ "$UC_EXISTING" = "$name" ]; then
+                        printf 'attached:%s\n' "$name" >> "$UC_TRACE"
+                    else
+                        printf 'created:%s\n' "$name" >> "$UC_TRACE"
+                    fi
+                    return 0
+                    ;;
+                attach-session|has-session)
+                    printf 'arg:%s\n' "$@" >> "$UC_TRACE"
+                    [ "$1" = -t ] || exit 65
+                    case "$2" in =*) name=${2#=};; *) printf 'unsafe-arguments\n' >> "$UC_TRACE"; exit 65;; esac
+                    if [ "$UC_EXISTING" != "$name" ]; then
+                        printf 'missing:%s\n' "$name" >> "$UC_TRACE"
+                        return 1
+                    fi
+                    if [ "$action" = attach-session ]; then
+                        printf 'attached:%s\n' "$name" >> "$UC_TRACE"
+                    fi
+                    return 0
+                    ;;
+                *) printf 'unsafe-arguments\n' >> "$UC_TRACE"; exit 65;;
+                esac
+            }
+            while [ "$#" -gt 0 ]; do
+                count=0
                 for argument do
-                    case "$argument" in -c|-D|-d|-X|kill-session|kill-server|send-keys)
-                        printf 'unsafe-arguments\n' >> "$UC_TRACE"; exit 65;;
-                    esac
+                    [ "$argument" = ';' ] && break
+                    count=$((count + 1))
                 done
-                printf 'cwd:%s\n' "$(pwd -P)" >> "$UC_TRACE"
-                [ "$UC_STATUS" = 0 ] || exit "$UC_STATUS"
-                if [ "$UC_EXISTING" = "$name" ]; then
-                    printf 'attached:%s\n' "$name" >> "$UC_TRACE"
-                else
-                    printf 'created:%s\n' "$name" >> "$UC_TRACE"
-                fi
-                ;;
-            attach-session|has-session)
-                [ "$1" = -t ] || exit 65
-                case "$2" in =*) name=${2#=};; *) printf 'unsafe-arguments\n' >> "$UC_TRACE"; exit 65;; esac
-                if [ "$UC_EXISTING" != "$name" ]; then
-                    printf 'missing:%s\n' "$name" >> "$UC_TRACE"
-                    exit 1
-                fi
-                if [ "$action" = attach-session ]; then
-                    printf 'attached:%s\n' "$name" >> "$UC_TRACE"
-                fi
-                ;;
-            set-option) ;;
-            *) printf 'unsafe-arguments\n' >> "$UC_TRACE"; exit 65;;
-            esac
+                words=""
+                index=1
+                while [ "$index" -le "$count" ]; do
+                    words="$words \"\${$index}\""
+                    index=$((index + 1))
+                done
+                eval "run $words" || exit 1
+                shift "$count"
+                [ "$#" -gt 0 ] && shift
+            done
+            exit 0
             """#
             try script.write(to: tmux, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: tmux.path)

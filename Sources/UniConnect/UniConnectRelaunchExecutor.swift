@@ -95,6 +95,15 @@ struct UniConnectRelaunchExecutor: Sendable {
         // Identity first: nothing is closed before it is known what would have to come back.
         var conversation = target.evidence.flatMap { dialect.conversation(from: $0) }
 
+        // Codex: identity and the way back proven before anything is typed, `/exit` confirmed on
+        // the composer, and the process waited for, never killed (calcado de `exit_codex`).
+        if case let .confirmedCommand(command) = dialect.closing {
+            return await relaunchConfirmingClose(
+                target: target, pane: pane, dialect: dialect, before: before,
+                conversation: conversation, command: command
+            )
+        }
+
         // Y fidelidad primero también: si estas opciones no se pueden devolver tal y como estaban,
         // esta ventana no se cierra. Comprobarlo **después** de cerrar —que es donde estaba— dejaba
         // la IA muerta y luego anunciaba que no se podía reabrir, exactamente el orden que este
@@ -157,7 +166,116 @@ struct UniConnectRelaunchExecutor: Sendable {
             }
             switch dialect.verify(proof: proof, reading: reading) {
             case .success:
-                return .init(key: target.key, state: .verified, effectiveID: conversation)
+                return .init(key: target.key, state: .verified, effectiveID: conversation, provider: target.provider)
+            case let .failure(cause):
+                return .init(key: target.key, state: .failed, cause: cause)
+            }
+        }
+        return .init(key: target.key, state: .failed, cause: .unknownDialog)
+    }
+
+    /// Closes an agent that confirms its exit command on the composer (Codex) and brings the same
+    /// conversation back.
+    ///
+    /// Nothing is typed unless the conversation and the whole way back are known and the composer
+    /// is empty. The exit command is typed without return, return is pressed only once it is seen
+    /// on the cursor line and the same process is still there, and the process is then waited for
+    /// (at most 75 settles) without killing it.
+    private func relaunchConfirmingClose(
+        target: Target,
+        pane: String,
+        dialect: any RelaunchAgentDialect,
+        before: UniConnectRelaunchAgentProcess,
+        conversation: String?,
+        command: String
+    ) async -> RelaunchOperation.Result {
+        let previousArgv = before.argv.isEmpty ? target.previousArgv : before.argv
+        guard let conversation,
+              let argv = dialect.invocation(conversation: conversation, previousArgv: previousArgv) else {
+            // Codex does not print its conversation on the way out: without it, nothing is closed.
+            return .init(key: target.key, state: .skipped, cause: .ambiguousIdentity)
+        }
+        let line = AgentNoPromptResume(argv: argv, environment: [:], noPromptVerified: true)
+            .shellLine(workingDirectory: nil)
+
+        guard let screen = await driver.screen(socket: target.socket, pane: pane) else {
+            return .init(key: target.key, state: .failed, cause: .hostUnreachable)
+        }
+        if let refusal = dialect.refusalToClose(screen: screen) {
+            // Nothing was typed: a question is for a person, anything else is left as it was.
+            return .init(key: target.key, state: refusal == .permissions ? .needsUser : .skipped, cause: refusal)
+        }
+
+        await driver.typeLiteral(socket: target.socket, pane: pane, text: command)
+        var shown = false
+        for _ in 0..<8 {
+            await settle()
+            if let current = await driver.screen(socket: target.socket, pane: pane),
+               dialect.showsCloseCommand(screen: current) {
+                shown = true
+                break
+            }
+        }
+        // Typed but not seen where it belongs: return is never pressed blindly.
+        guard shown else { return .init(key: target.key, state: .needsUser, cause: .unknownDialog) }
+        guard case let .found(current) = await driver.agent(
+            socket: target.socket, pane: pane, provider: target.provider
+        ), current.isSameProcess(as: before) else {
+            return .init(key: target.key, state: .needsUser, cause: .generationChanged)
+        }
+        await driver.pressEnter(socket: target.socket, pane: pane)
+
+        var ended = false
+        for _ in 0..<75 {
+            await settle()
+            switch await driver.agent(socket: target.socket, pane: pane, provider: target.provider) {
+            case .noAgent:
+                ended = true
+            case let .found(process):
+                // Another process of the same agent is not this one ending: say so, touch nothing.
+                if !process.isSameProcess(as: before) {
+                    return .init(key: target.key, state: .needsUser, cause: .ambiguousIdentity)
+                }
+            case .ambiguous, .unreadable:
+                break
+            }
+            if ended { break }
+        }
+        guard ended else { return .init(key: target.key, state: .failed, cause: .unknownDialog) }
+
+        var atShell = false
+        for _ in 0..<10 {
+            if await driver.isAtShell(socket: target.socket, pane: pane) {
+                atShell = true
+                break
+            }
+            await settle()
+        }
+        guard atShell else { return .init(key: target.key, state: .needsUser, cause: .unknownDialog) }
+
+        await driver.type(socket: target.socket, pane: pane, text: line)
+        for _ in 0..<30 {
+            await settle()
+            guard let current = await driver.screen(socket: target.socket, pane: pane) else { continue }
+            let refusal = dialect.refusalToClose(screen: current)
+            if refusal == .permissions {
+                return .init(key: target.key, state: .needsUser, cause: .permissions)
+            }
+            guard refusal == nil,
+                  case let .found(after) = await driver.agent(
+                      socket: target.socket, pane: pane, provider: target.provider
+                  ) else { continue }
+            let proof = RelaunchProcessProof(
+                replacedProcess: !after.isSameProcess(as: before),
+                before: before.pid,
+                after: after.pid
+            )
+            guard after.argv.isEmpty || dialect.resumes(conversation: conversation, argv: after.argv) else {
+                return .init(key: target.key, state: .needsUser, cause: .ambiguousIdentity)
+            }
+            switch dialect.verify(proof: proof, reading: .agentReady) {
+            case .success:
+                return .init(key: target.key, state: .verified, effectiveID: conversation, provider: target.provider)
             case let .failure(cause):
                 return .init(key: target.key, state: .failed, cause: cause)
             }

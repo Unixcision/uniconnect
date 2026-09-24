@@ -453,16 +453,16 @@ struct UniConnectLocalAgentConversation: Codable, Equatable, Identifiable, Senda
         switch kind {
         case .claude:
             executable = "claude"
-            arguments = [executable, "--dangerously-skip-permissions"]
+            arguments = UniConnectLocalWindowLaunchTarget.noPromptArgv(provider: "claude")
         case .codex:
             executable = "codex"
-            arguments = [executable, "--yolo"]
+            arguments = UniConnectLocalWindowLaunchTarget.noPromptArgv(provider: "codex")
         case .antigravity:
             executable = "agy"
-            arguments = [executable, "--dangerously-skip-permissions"]
+            arguments = UniConnectLocalWindowLaunchTarget.noPromptArgv(provider: "agy")
         case .grok:
             executable = "grok"
-            arguments = [executable]
+            arguments = UniConnectLocalWindowLaunchTarget.noPromptArgv(provider: "grok")
         case .custom:
             guard let registration else { return nil }
             executable = registration.defaultExecutable

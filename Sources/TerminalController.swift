@@ -976,6 +976,20 @@ class TerminalController {
             }
             semaphore.wait()
             return v2Ok(id: request.id, result: v2AuthStatusPayload(timedOut: false))
+        case "terminal.details", "mobile.terminal.details":
+            // Read-only and up to 10 s (the SSH probe): on the socket worker, never the main actor.
+            let semaphore = DispatchSemaphore(value: 0)
+            nonisolated(unsafe) var outcome: V2CallResult?
+            let params = request.params
+            Task { @MainActor [weak self] in
+                outcome = await self?.v2MobileTerminalDetails(params: params)
+                semaphore.signal()
+            }
+            semaphore.wait()
+            return v2Result(id: request.id, outcome ?? .err(code: "unavailable", message: String(
+                localized: "uniconnect.windowDetails.error.unavailable",
+                defaultValue: "No se pudieron leer los detalles de esa ventana."
+            ), data: nil))
         case "feedback.submit":
             return v2Result(id: request.id, v2FeedbackSubmit(params: request.params))
         case "feed.push":
@@ -2377,12 +2391,14 @@ class TerminalController {
             "mobile.terminal.create",
             "mobile.terminal.reconnect",
             "mobile.terminal.reset",
+            "mobile.terminal.details",
             "mobile.terminal.input",
             "mobile.terminal.replay",
             "mobile.terminal.viewport",
             "terminal.create",
             "terminal.reconnect",
             "terminal.reset",
+            "terminal.details",
             "terminal.input",
             "terminal.replay",
             "terminal.viewport",
@@ -21497,6 +21513,9 @@ class TerminalController {
             "activity.v1", "box_update", "file_put.v1", "inbox.v1", "ssh_create.v1", "relaunch.v1",
             "window_details.v1",
         ]
+        // What this Mac can relaunch, per provider and window kind (contracts/relaunch-v1/
+        // proveedores.json): Claude and Codex in local windows; SSH windows are no_soportado.
+        capabilities += Self.relaunchCapabilityTokens
         if mobileTranscriptionAvailability.isAvailable() {
             capabilities.append("transcribe.v1")
         }
@@ -21508,6 +21527,11 @@ class TerminalController {
     nonisolated private static let mobileConnectCommandMaxBytes = 4096
 
     // MARK: - relaunch.v1
+
+    /// `relaunch.v1.<proveedor>.<tipo>` for every cell this Mac relaunches, from the dialects it has.
+    private static var relaunchCapabilityTokens: [String] {
+        RelaunchDialects.known.capabilityTokens(windowKind: "local")
+    }
 
     /// Planes entregados y operaciones aceptadas, para que un segundo `apply` recupere en vez de
     /// volver a cerrar.
@@ -22547,11 +22571,12 @@ class TerminalController {
         ), data: nil)
     }
 
-    /// Reset/reconnect reuse the desktop's durable identity, without clearing a pane or starting another agent.
     /// `mobile.terminal.details` (window_details.v1): the «Detalles» of one window, read-only.
     ///
     /// Same value as the desktop modal. The live check is bounded (local observation, or an 8 s
-    /// probe of the SSH box); when it fails the answer is what was saved, never an error.
+    /// probe of the SSH box); when it fails the answer is what was saved, never an error. The
+    /// phone reaches it through the mobile host; the local socket answers `terminal.details` (and
+    /// `mobile.terminal.details`) with the same JSON, like Linux's `details` in `control.py`.
     private func v2MobileTerminalDetails(params: [String: Any]) async -> V2CallResult {
         if UniConnectAppLock.shared.isLocked {
             return .err(code: "locked", message: String(
@@ -22581,6 +22606,7 @@ class TerminalController {
         return .ok(details.details.mobilePayload)
     }
 
+    /// Reset/reconnect reuse the desktop's durable identity, without clearing a pane or starting another agent.
     private func v2MobileTerminalReconnect(params: [String: Any]) -> V2CallResult {
         if let error = mobileMutationUnavailable() { return error }
         guard v2UUID(params, "workspace_id") != nil,

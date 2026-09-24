@@ -1,3 +1,4 @@
+import CMUXAgentLaunch
 import Foundation
 
 /// SSH windows: which agent runs in each remote tmux session, kept by ``UniConnectRemoteAgentMonitor``.
@@ -34,12 +35,22 @@ extension UniConnectCoordinator {
     }
 
     /// Reads one SSH window's box right now, for Detalles (nothing is persisted).
+    ///
+    /// - Returns: The box's report, or `nil` when it could not be read within `timeout`.
     func probeRemoteAgentWindow(
         panelID: UUID,
         in workspace: Workspace,
         timeout: Duration = .seconds(8)
-    ) async -> UniConnectRemoteAgentMonitor.LiveWindow? {
+    ) async -> AgentProbeReport? {
         guard Self.isEnabled, let monitor = remoteAgentMonitor else { return nil }
         return await monitor.probeWindow(panelID: panelID, in: workspace, timeout: timeout)
+    }
+
+    /// Whether a missing remote session of this SSH window may be recreated with its agent (D6).
+    ///
+    /// Restore and automatic reconnect ask this before handing a resume command to tmux; without a
+    /// recent live sighting, or after a deliberate close, the window comes back as a shell.
+    func remoteAgentResumeAllowed(panelID: UUID) -> Bool {
+        remoteAgentMonitor?.resumeAllowed(panelID: panelID) ?? false
     }
 }

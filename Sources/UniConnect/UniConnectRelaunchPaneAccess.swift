@@ -1,3 +1,4 @@
+import CMUXAgentLaunch
 import Foundation
 
 /// What a relaunch needs from the terminal a window lives in.
@@ -17,6 +18,26 @@ protocol UniConnectRelaunchPaneAccess: Sendable {
     func capture(socket: String, pane: String) async -> String?
     /// Types `text` into the pane and presses return.
     func type(socket: String, pane: String, text: String) async
+
+    /// The pane's text with its cursor and styling, for agents whose composer needs them (Codex).
+    func screen(socket: String, pane: String) async -> RelaunchPaneScreen?
+    /// Types `text` literally, **without** pressing return.
+    func typeLiteral(socket: String, pane: String, text: String) async
+    /// Presses return on its own.
+    func pressEnter(socket: String, pane: String) async
+    /// Whether the pane's foreground process is its shell again.
+    func isAtShell(socket: String, pane: String) async -> Bool
+}
+
+extension UniConnectRelaunchPaneAccess {
+    /// A pane access that cannot read cursors never lets a confirmed close start.
+    func screen(socket: String, pane: String) async -> RelaunchPaneScreen? { nil }
+    /// Nothing is typed by a pane access that does not implement literal typing.
+    func typeLiteral(socket: String, pane: String, text: String) async {}
+    /// Nothing is pressed by a pane access that does not implement it.
+    func pressEnter(socket: String, pane: String) async {}
+    /// Unknown counts as "not at the shell", so nothing is typed.
+    func isAtShell(socket: String, pane: String) async -> Bool { false }
 }
 
 extension UniConnectRelaunchTmuxDriver: UniConnectRelaunchPaneAccess {}

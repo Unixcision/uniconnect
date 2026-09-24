@@ -12,51 +12,37 @@ struct AgentNoPromptPolicyTests {
         try AgentNoPromptPolicy()
     }
 
-    @Test("Cada caso del contrato da la misma argv, entorno y orden de shell")
+    @Test("Cada caso del contrato da la misma argv, entorno, orden de shell y nombre")
     func everyContractCaseMatches() throws {
-        let url = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("contracts/agent-tree-v1/reanudar-comandos.json")
-        guard let data = try? Data(contentsOf: url) else {
-            // El paquete se compila también fuera del repo; sin el fichero no hay nada que comparar.
-            return
-        }
-        let root = try JSONSerialization.jsonObject(with: data)
-        let cases: [[String: Any]]
-        if let list = root as? [[String: Any]] {
-            cases = list
-        } else if let object = root as? [String: Any],
-                  let list = (object["casos"] ?? object["cases"]) as? [[String: Any]] {
-            cases = list
-        } else {
-            Issue.record("forma desconocida de reanudar-comandos.json")
-            return
-        }
+        // Forma: {version, casos: [{nombre, provider, display_name, session_id, cwd, as_root,
+        // arguments?, argv, environment, command, no_prompt_verified}]}. `arguments` falta = [].
+        let root = try ContractFixtures().object("agent-tree-v1/reanudar-comandos.json")
+        let cases = try #require(root["casos"] as? [[String: Any]], "reanudar-comandos.json sin «casos»")
         #expect(!cases.isEmpty)
         let policy = try makePolicy()
         for entry in cases {
-            let provider = try #require((entry["provider"] ?? entry["proveedor"]) as? String)
-            let sessionID = try #require((entry["session_id"] ?? entry["sessionId"]) as? String)
-            let asRoot = ((entry["as_root"] ?? entry["asRoot"] ?? entry["como_root"]) as? Bool) ?? false
-            let cwd = (entry["cwd"] as? String)
+            let name = entry["nombre"] as? String ?? "?"
+            let provider = try #require(entry["provider"] as? String, "\(name): provider")
+            let sessionID = try #require(entry["session_id"] as? String, "\(name): session_id")
+            let asRoot = try #require(entry["as_root"] as? Bool, "\(name): as_root")
+            let cwd = entry["cwd"] as? String
             let arguments = (entry["arguments"] as? [String]) ?? []
             let resume = try #require(
                 policy.resume(provider: provider, sessionID: sessionID, asRoot: asRoot, arguments: arguments),
-                "\(provider) \(sessionID)"
+                "\(name)"
             )
-            if let argv = entry["argv"] as? [String] {
-                #expect(resume.argv == argv, "\(provider)")
-            }
-            if let environment = (entry["environment"] ?? entry["entorno"]) as? [String: String] {
-                #expect(resume.environment == environment, "\(provider)")
-            }
-            if let verified = entry["no_prompt_verified"] as? Bool {
-                #expect(resume.noPromptVerified == verified, "\(provider)")
-            }
-            if let command = (entry["command"] ?? entry["orden"]) as? String {
-                #expect(resume.shellLine(workingDirectory: cwd) == command, "\(provider)")
-            }
+            let argv = try #require(entry["argv"] as? [String], "\(name): argv")
+            let environment = try #require(entry["environment"] as? [String: String], "\(name): environment")
+            let verified = try #require(entry["no_prompt_verified"] as? Bool, "\(name): no_prompt_verified")
+            let command = try #require(entry["command"] as? String, "\(name): command")
+            let displayName = try #require(entry["display_name"] as? String, "\(name): display_name")
+            #expect(resume.argv == argv, "\(name)")
+            #expect(resume.environment == environment, "\(name)")
+            #expect(resume.noPromptVerified == verified, "\(name)")
+            #expect(resume.shellLine(workingDirectory: cwd) == command, "\(name)")
+            #expect(policy.displayName(provider: provider) == displayName, "\(name)")
+            // Idempotente también con opciones conservadas.
+            #expect(policy.applying(to: resume.argv, provider: provider, asRoot: asRoot) == resume, "\(name)")
         }
     }
 
@@ -183,6 +169,54 @@ struct AgentNoPromptPolicyTests {
         let resume = try #require(policy.resume(provider: "claude", sessionID: "abc", asRoot: true))
         #expect(resume.argv == ["claude", "--resume", "abc"])
         #expect(!resume.noPromptVerified)
+    }
+
+    @Test("--yolo sustituye aprobación y sandbox, con valor separado o con igual, cortas incluidas")
+    func codexSupersedesApprovalAndSandbox() throws {
+        let policy = try makePolicy()
+        let adjusted = policy.applying(
+            to: ["codex", "-a", "never", "resume", codexID, "--sandbox=workspace-write", "-s", "read-only",
+                 "--full-auto", "-a=on-request", "--ask-for-approval", "untrusted", "-m", "gpt-5"],
+            provider: "codex",
+            asRoot: false
+        )
+        #expect(adjusted.argv == ["codex", "--yolo", "resume", codexID, "-m", "gpt-5"])
+        // Una bandera sustituida sin valor detrás no se come nada más.
+        #expect(policy.applying(to: ["codex", "resume", codexID, "-s"], provider: "codex", asRoot: false).argv
+            == ["codex", "--yolo", "resume", codexID])
+        // Claude no tiene «supersedes»: sus opciones quedan como estaban.
+        #expect(policy.applying(to: ["claude", "--resume", claudeID, "-a", "x"], provider: "claude", asRoot: false).argv
+            == ["claude", "--resume", claudeID, "-a", "x", "--dangerously-skip-permissions"])
+    }
+
+    @Test("El nombre de cada proveedor sale del catálogo, y sin él se enseña su id")
+    func displayNamesComeFromTheCatalog() throws {
+        let policy = try makePolicy()
+        #expect(policy.displayName(provider: "claude") == "Claude Code")
+        #expect(policy.displayName(provider: "codex") == "Codex")
+        #expect(policy.displayName(provider: "agy") == "Antigravity")
+        #expect(policy.displayName(provider: "antigravity") == "Antigravity")
+        #expect(policy.displayName(provider: "grok") == "Grok")
+        #expect(policy.displayName(provider: "pi") == "pi")
+        #expect(policy.displayName(provider: "no-existe") == "no-existe")
+    }
+
+    @Test("Un catálogo con «supersedes» o «displayName» inválidos se rechaza", arguments: [
+        #""noPrompt": {"prefix": ["--yolo"], "supersedes": [{"flag": "sandbox", "takesValue": true}]}"#,
+        #""noPrompt": {"prefix": ["--yolo"], "supersedes": [{"flag": "--yolo", "takesValue": false}]}"#,
+        #""noPrompt": {"prefix": ["--yolo"], "supersedes": [{"flag": "-s", "takesValue": true}, {"flag": "-s", "takesValue": false}]}"#,
+        #""noPrompt": {"prefix": ["--yolo"], "supersedes": [{"flag": "-s x", "takesValue": true}]}"#,
+        #""noPrompt": {"prefix": ["--yolo"], "supersedes": [{"flag": "-s"}]}"#,
+        #""displayName": "   ""#,
+    ])
+    func invalidSupersedesOrDisplayNameIsRejected(fragment: String) {
+        let data = Data(#"""
+        {"schemaVersion": 1, "providers": {"codex": {"executable": "codex",
+          "resume": ["{executable}", "resume", "{sessionId}", "{arguments}"], \#(fragment)}}}
+        """#.utf8)
+        #expect(throws: (any Error).self) {
+            _ = try AgentNoPromptPolicy(data: data)
+        }
     }
 
     @Test("Relanzar Claude fuerza la bandera aunque la ventana no la trajera")
