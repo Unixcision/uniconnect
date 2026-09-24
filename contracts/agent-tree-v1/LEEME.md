@@ -16,8 +16,8 @@ Solo se apunta aquí lo que existe en el repositorio. Lo que está en camino va 
 
 | Archivo | Lo lee hoy | Tiene que leerlo |
 |---|---|---|
-| `deteccion-casos.json` | Nadie todavía. | `linux/tests/test_recovery_v2.py` (contra la detección de `recovery.py`), las pruebas de `AgentProcessDiscovery` (Mac) y las de `agent_probe.py` y `agent_guard.py` (Linux). |
-| `reanudar-comandos.json` | Nadie todavía. | `linux/tests/test_recovery_v2.py` (contra `recovery.py`), `AgentNoPromptPolicy` (Mac) y `AgentResumeCatalog.no_prompt` (Linux). |
+| `deteccion-casos.json` | `linux/tests/test_recovery_v2.py`: todos los casos contra `detect_agent` y `guard` de `linux/scripts/recovery.py`. | Las pruebas de `AgentProcessDiscovery` (Mac) y las de `agent_probe.py` y `agent_guard.py` (Linux). |
+| `reanudar-comandos.json` | `linux/tests/test_recovery_v2.py`: contra `canonical_resume` y `command_for` de `recovery.py`. | `AgentNoPromptPolicy` (Mac) y `AgentResumeCatalog.no_prompt` (Linux). |
 | `sonda-salida.json` | Nadie todavía. | El decodificador de `UniConnectRemoteAgentProbe` (Mac SSH) y `AgentTree` (Linux). |
 | `arbol-ejemplo.json` | Nadie todavía. | Referencia de forma; ninguna llamada lo devuelve entero hoy. |
 
