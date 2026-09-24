@@ -71,6 +71,27 @@ class AgentGuardTests(unittest.TestCase):
         (self.sessions / "roto.json").write_text("{no es json")
         self.assertEqual(self.guard("claude", SESSION), 0)
 
+    def spawn_as(self, name, *arguments):
+        """Un /bin/bash real que se presenta como ``name`` (argv[0]) con ``arguments`` detrás.
+
+        bash conserva argv[0] en macOS y Linux (el python de framework del Mac se reejecuta y lo pierde).
+        """
+        child = subprocess.Popen([name, "-c", "echo listo; sleep 60; :", *arguments], executable="/bin/bash",
+                                 stdout=subprocess.PIPE)
+        self.children.append(child)
+        self.assertEqual(child.stdout.readline().strip(), b"listo")
+        return child.pid
+
+    def test_strict_claude_criterion_like_detection(self):
+        # contracts/agent-tree-v1 (guarda): la ficha de un pid reciclado que ahora es `vim CLAUDE.md`
+        # no bloquea; un Claude de npm lanzado por su shebang (`node …/bin/claude`) sí.
+        self.ficha(self.spawn_as("vim", str(self.home / ".claude" / "CLAUDE.md")))
+        self.assertEqual(self.guard("claude", SESSION), 0)
+        for path in self.sessions.glob("*.json"):
+            path.unlink()
+        self.ficha(self.spawn_as("node", "/opt/homebrew/bin/claude"))
+        self.assertEqual(self.guard("claude", SESSION), 1)
+
     def test_missing_directory_is_free_and_unreadable_directory_cannot_be_checked(self):
         empty = tempfile.TemporaryDirectory(prefix="uc-guard-empty-")
         self.addCleanup(empty.cleanup)

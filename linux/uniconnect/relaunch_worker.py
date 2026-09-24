@@ -2,8 +2,12 @@
 
 Private per-pane journals and a target-side flock arbitrate *all* viewing hosts.
 No login/permission edits, tmux destruction, generic control keys or --last.
-Only freshly proved native Claude/Codex processes can be stopped. Everything
+Only freshly proved native Claude/Codex processes can be stopped (D7: Codex by its
+open rollout, Claude by its ~/.claude/sessions/<pid>.json in ``idle``). Everything
 else is explicitly excluded until a provider-specific evidence adapter exists.
+
+It travels as source text: RelaunchAgents puts resume_catalog.py in front of it, so
+the no-prompt rule is the very same ``AgentResumeCatalog.apply_policy`` as on the desktop.
 """
 
 import base64
@@ -21,6 +25,17 @@ import sys
 import time
 import uuid
 
+try:
+    from .resume_catalog import AgentResumeCatalog
+except ImportError:
+    # Sent as text (python3 -c): resume_catalog.py travels in front of this file.
+    AgentResumeCatalog = globals()["AgentResumeCatalog"]
+
+UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+# Claude's prompt line, with or without the box border of older versions.
+CLAUDE_EXIT_LINE = re.compile(r"\s*│?\s*[›❯>]\s*/exit\s*│?\s*")
+EMPTY_PROMPT_LINE = re.compile(r"\s*│?\s*[›❯>]\s*│?\s*")
+
 
 class Unavailable(Exception):
     def __init__(self, cause):
@@ -34,13 +49,17 @@ class TmuxOutputEvents:
                                          "-f", "read-only,ignore-size"], stdin=subprocess.PIPE,
                                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
 
-    def wait(self, deadline, clock):
+    def wait(self, deadline, clock, also=None):
+        """Wait for pane output; True instead when ``also`` (a pidfd) becomes readable first."""
         remaining = deadline - clock()
         if remaining <= 0:
             raise Unavailable("dialogo_desconocido")
-        ready, _, _ = select.select([self.process.stdout], [], [], remaining)
+        ready, _, _ = select.select([self.process.stdout] + ([also] if also is not None else []), [], [], remaining)
+        if also is not None and also in ready:
+            return True
         if not ready or not os.read(self.process.stdout.fileno(), 65536):
             raise Unavailable("dialogo_desconocido")
+        return False
 
     def close(self):
         self.process.stdin.close()
@@ -127,7 +146,50 @@ class TargetWorker:
     def digest(value):
         return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
+    @staticmethod
+    def is_provider(provider, argv):
+        """Native process of ``provider``: Claude by name or its versions path, the rest by name."""
+        first = argv[0] if argv else ""
+        if provider == "claude":
+            return Path(first).name == "claude" or "/claude/versions/" in first
+        return Path(first).name == provider
+
+    def claude_ficha(self, process):
+        """``<CLAUDE_CONFIG_DIR or ~/.claude>/sessions/<pid>.json`` of this very process, or None.
+
+        A ficha whose inner ``pid`` is another process (copied or restored) is not its own.
+        """
+        pid = process["pid"]
+        try:
+            raw = (self.proc / str(pid) / "environ").read_bytes()[:1048576]
+            environ = dict(item.split("=", 1) for item in raw.decode(errors="replace").split("\0") if "=" in item)
+        except OSError:
+            environ = {}
+        base = Path(environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+        try:
+            descriptor = os.open(base / "sessions" / ("%d.json" % pid), os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError:
+            return None
+        with os.fdopen(descriptor, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_size > 65536:
+                return None
+            try:
+                data = json.loads(handle.read(65537))
+            except ValueError:
+                return None
+        if not isinstance(data, dict) or data.get("pid") not in (None, pid, str(pid)):
+            return None
+        return data
+
     def native_id(self, agent, process, hook, pane):
+        if agent == "claude":
+            # D7: only the ficha proves which conversation a live Claude has; argv lies after /clear.
+            ficha = self.claude_ficha(process)
+            identifier = ficha.get("sessionId") if ficha else None
+            if not isinstance(identifier, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", identifier):
+                raise Unavailable("identidad_ambigua")
+            return identifier
         identifiers = set()
         if hook:
             try:
@@ -172,7 +234,15 @@ class TargetWorker:
         A visible prompt can coexist with active work. Until an adapter can prove
         lifecycle and effective settings, identity alone does not authorize exit.
         Reads metadata only; no transcript contents leave the target.
+        Claude (D7): its own ficha says ``idle`` for that same conversation.
         """
+        if provider == "claude":
+            ficha = self.claude_ficha(process)
+            if not ficha or ficha.get("sessionId") != identifier:
+                raise Unavailable("identidad_ambigua")
+            if ficha.get("status") != "idle":
+                raise Unavailable("dialogo_desconocido")
+            return
         if provider != "codex":
             raise Unavailable("no_soportado")
         paths = set()
@@ -356,29 +426,11 @@ class TargetWorker:
     def no_prompt(provider, argv, catalog):
         """Relaunch always without questions (Dani, 24-09), with the shared catalogue's ``noPrompt``.
 
-        Same rule as AgentResumeCatalog.apply_no_prompt, which this self-contained worker
-        cannot import: drop earlier policy flags, prefix after argv[0], suffix at the end.
-        For Codex, ``--yolo`` supersedes the approval/sandbox choice and its CLI rejects
-        both together, so ``-a``/``-s``/``--full-auto`` are dropped with it.
+        The very same function as the desktop (AgentResumeCatalog.apply_policy), fed with
+        the catalogue received in the request: ``supersedes`` (Codex: -a/-s/--full-auto,
+        which its CLI rejects next to --yolo) comes from there, never from a list here.
         """
-        policy = catalog.get(provider, {}).get("noPrompt")
-        if not policy or not argv:
-            return list(argv)
-        known = set(policy.get("prefix", [])) | set(policy.get("suffix", [])) | set(policy.get("legacy", []))
-        superseded = ("-a", "--ask-for-approval", "-s", "--sandbox") if provider == "codex" else ()
-        rest, index = [], 1
-        while index < len(argv):
-            arg = argv[index]
-            option = arg.split("=", 1)[0]
-            if arg in known or (provider == "codex" and arg == "--full-auto"):
-                index += 1
-                continue
-            if option in superseded:
-                index += 1 if "=" in arg else 2
-                continue
-            rest.append(arg)
-            index += 1
-        return [argv[0], *policy.get("prefix", []), *rest, *policy.get("suffix", [])]
+        return AgentResumeCatalog.apply_policy((catalog.get(provider) or {}).get("noPrompt"), argv)
 
     @staticmethod
     def managed_hook(provider, option, value):
@@ -410,7 +462,7 @@ class TargetWorker:
         if mode != "0":
             raise Unavailable("dialogo_desconocido")
         children = self.descendants(root["pid"])
-        matches = [p for p in children.values() if Path(p["argv"][0]).name == provider]
+        matches = [p for p in children.values() if self.is_provider(provider, p["argv"])]
         if len(matches) != 1:
             raise Unavailable("identidad_ambigua")
         process = matches[0]
@@ -442,9 +494,18 @@ class TargetWorker:
     def recovery_launcher(self, root, process, effective):
         """Recognize code and manifest; never execute a supervisor to probe it."""
         args = root["argv"]
-        if (self.request.get("provider") != "codex" or len(args) != 6
+        # Dos formas del lanzador: la de siempre (6 argumentos) y la de recovery.launch_command,
+        # que añade --socket S (8). El socket explícito tiene que ser el de esta petición.
+        if len(args) == 8 and args[4] == "--socket":
+            socket, tail = args[5], args[6:]
+        elif len(args) == 6:
+            socket, tail = None, args[4:]
+        else:
+            raise Unavailable("no_soportado")
+        if (self.request.get("provider") != "codex"
                 or Path(args[0]).name not in ("python", "python3")
-                or args[2] != "--manifest" or args[4:] != ["launch", self.request["session"]]):
+                or args[2] != "--manifest" or tail != ["launch", self.request["session"]]
+                or (socket is not None and socket != self.request["socket"])):
             raise Unavailable("no_soportado")
         expected = self.request.get("recovery_sha256")
         if not isinstance(expected, str) or not re.fullmatch(r"[a-f0-9]{64}", expected):
@@ -459,7 +520,8 @@ class TargetWorker:
                 raise Unavailable("no_soportado")
         data = self.read(Path(args[3]))
         entries = [w for w in data.get("windows", []) if w.get("tmux") == self.request["session"]]
-        if len(entries) != 1 or data.get("tmuxSocket") != self.request["socket"]:
+        # Con varios sockets vigilados, cada entrada puede llevar el suyo; si no, manda el del manifiesto.
+        if len(entries) != 1 or (entries[0].get("tmuxSocket") or data.get("tmuxSocket")) != self.request["socket"]:
             raise Unavailable("identidad_ambigua")
         entry = entries[0]
         if entry.get("agent") != "codex" or entry.get("sessionId") != effective or entry.get("cwd") != process["cwd"]:
@@ -599,6 +661,11 @@ class TargetWorker:
             raise Unavailable("no_soportado")
         for key in ("CODEX_THREAD_ID", "CODEX_SESSION_ID", "UNICONNECT_NATIVE_BINDING"):
             env.pop(key, None)
+        # Claude refuses its no-prompt flag as root unless told it is sandboxed (IS_SANDBOX=1):
+        # rootEnvironment of the shared policy, only when this pane's agent runs as root.
+        if os.geteuid() == 0:
+            policy = (self.request["catalog"].get(self.request["provider"]) or {}).get("noPrompt") or {}
+            env.update(policy.get("rootEnvironment", {}))
         # Reuse the checked-in hook rather than executing source from a pane.
         helper = self.request.get("identity_helper")
         if not isinstance(helper, str) or len(helper) > 32768:
@@ -629,7 +696,10 @@ class TargetWorker:
 
     def restart(self, proof, root, process, capsule_path, journal, events):
         owned = self.descendants(process["pid"])
-        self.exit_codex(proof, process, journal, events)
+        if self.request.get("provider") == "claude":
+            self.exit_claude(proof, process, journal, events)
+        else:
+            self.exit_codex(proof, process, journal, events)
         deadline = self.clock() + 5
         while self.clock() < deadline:
             after = self.process(root["pid"])
@@ -704,6 +774,66 @@ class TargetWorker:
         finally:
             os.close(descriptor)
 
+    @staticmethod
+    def claude_exit_option(screen):
+        """Number of Claude's «Exit and stop tasks» option, read from its own text (never its position)."""
+        for line in screen.splitlines():
+            if "Exit and stop tasks" in line:
+                digits = re.search(r"(\d+)", line)
+                return int(digits.group(1)) if digits else None
+        return None
+
+    @staticmethod
+    def claude_printed_id(screen):
+        """The conversation Claude prints on its way out («Resume this session with»), or None."""
+        _, found, after = screen.partition("Resume this session with")
+        match = UUID.search(after) if found else None
+        return match.group(0).lower() if match else None
+
+    def exit_claude(self, proof, process, journal, events):
+        """D7: type /exit literally, check the line, Enter; answer only «Exit and stop tasks» by its text.
+
+        Never Ctrl+C and never force-killing: the process must die by itself (≤ 75 s).
+        """
+        if self.request.get("provider") != "claude" or not hasattr(os, "pidfd_open"):
+            raise Unavailable("no_soportado")
+        descriptor = os.pidfd_open(process["pid"])
+        try:
+            if self.inspect() != proof:
+                raise Unavailable("generacion_cambiada")
+            self.require_empty_composer(proof)
+            self.write(journal, {"state": "cerrando"})
+            pane = proof["pane"]["pane"]
+            self.tmux("send-keys", "-t", pane, "-l", "--", "/exit")
+            deadline = self.clock() + 8
+            while True:
+                row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
+                lines = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
+                if row < len(lines) and CLAUDE_EXIT_LINE.fullmatch(lines[row]):
+                    break
+                events.wait(deadline, self.clock)
+            if self.inspect() != proof:
+                raise Unavailable("generacion_cambiada")
+            self.tmux("send-keys", "-t", pane, "Enter")
+            deadline, answered = self.clock() + 75, False
+            while not events.wait(deadline, self.clock, also=descriptor):
+                screen = self.tmux("capture-pane", "-p", "-t", pane)
+                if "Yes, I trust this folder" in screen:
+                    raise Unavailable("confianza_carpeta")
+                if "Background work is running" in screen and not answered:
+                    option = self.claude_exit_option(screen)
+                    if option is None:
+                        raise Unavailable("dialogo_desconocido")
+                    self.tmux("send-keys", "-t", pane, "-l", "--", str(option))
+                    self.tmux("send-keys", "-t", pane, "Enter")
+                    answered = True
+            printed = self.claude_printed_id(self.tmux("capture-pane", "-p", "-t", pane))
+            if printed is not None and printed != proof["effective_id"].lower():
+                # It left on another conversation than its ficha said: never resume a guess.
+                raise Unavailable("identidad_ambigua")
+        finally:
+            os.close(descriptor)
+
     def restart_recovery(self, proof, root, process, journal, events):
         """Use the reviewed launcher's normal exit/wait path, not respawn-pane."""
         self.exit_codex(proof, process, journal, events)
@@ -750,7 +880,7 @@ class TargetWorker:
         pane = proof["pane"]["pane"]
         row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
         lines = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
-        empty = row < len(lines) and re.fullmatch(r"\s*[›❯>]\s*", lines[row]) is not None
+        empty = row < len(lines) and EMPTY_PROMPT_LINE.fullmatch(lines[row]) is not None
         if (not empty and self.request.get("provider") == "codex" and row < len(lines)
                 and lines[row] == "› Ask Codex to do anything"
                 and self.tmux("display-message", "-p", "-t", pane, "#{cursor_x}") == "2"):
@@ -760,9 +890,11 @@ class TargetWorker:
             empty = (row < len(styled) and re.fullmatch(
                 r"(?:\x1b\[[0-9;]*m)*›(?:\x1b\[[0-9;]*m)* \x1b\[2mAsk Codex to do anything(?:\x1b\[[0-9;]*m)*",
                 styled[row]) is not None)
+        visible = "\n".join(lines).lower()
+        if "yes, i trust this folder" in visible or "do you trust the files in this folder" in visible:
+            raise Unavailable("confianza_carpeta")  # A person answers it; never on their behalf.
         if not empty:
             raise Unavailable("dialogo_desconocido")
-        visible = "\n".join(lines).lower()
         if any(value in visible for value in ("do you trust", "trust this", "allow once", "allow execution",
                     "would you like to run", "do you want to proceed", "[y/n]", "sign in", "log in")):
             raise Unavailable("permisos")

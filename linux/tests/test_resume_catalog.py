@@ -15,15 +15,20 @@ from uniconnect.resume_catalog import AgentResumeCatalog
 from uniconnect.transport import TmuxCommand, TransportError
 
 
-REPO = Path(__file__).resolve().parents[2]
-PARITY = REPO / "contracts" / "agent-tree-v1" / "reanudar-comandos.json"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from contracts_dir import contract
+
+SUPERSEDES = [{"flag": "-a", "takesValue": True}, {"flag": "--ask-for-approval", "takesValue": True},
+              {"flag": "-s", "takesValue": True}, {"flag": "--sandbox", "takesValue": True},
+              {"flag": "--full-auto", "takesValue": False}]
 NO_PROMPT_FIXTURE = {"schemaVersion": 1, "providers": {
-    "claude": {"executable": "claude", "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"],
+    "claude": {"displayName": "Claude Code", "executable": "claude", "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"],
                "windowOptions": [{"field": "model", "option": "--model"}],
                "noPrompt": {"suffix": ["--dangerously-skip-permissions"], "rootEnvironment": {"IS_SANDBOX": "1"}}},
-    "codex": {"executable": "codex", "resume": ["{executable}", "resume", "{sessionId}", "{arguments}"],
+    "codex": {"displayName": "Codex", "executable": "codex", "resume": ["{executable}", "resume", "{sessionId}", "{arguments}"],
               "windowOptions": [{"field": "cwd", "option": "-C"}, {"field": "model", "option": "-m"}],
-              "noPrompt": {"prefix": ["--yolo"], "legacy": ["--dangerously-bypass-approvals-and-sandbox"]}},
+              "noPrompt": {"prefix": ["--yolo"], "legacy": ["--dangerously-bypass-approvals-and-sandbox"],
+                           "supersedes": SUPERSEDES}},
     "grok": {"executable": "grok", "resume": ["{executable}", "-r", "{sessionId}", "{arguments}"]},
     "antigravity": {"aliases": ["agy"], "executable": "agy", "resume": ["{executable}", "--conversation", "{sessionId}", "{arguments}"],
                     "noPrompt": {"prefix": ["--dangerously-skip-permissions"]}}}}
@@ -77,10 +82,44 @@ class ResumeCatalogTests(unittest.TestCase):
         self.assertEqual(catalog.window_argv({"agent": "codex", "sessionId": "SID", "cwd": "/w", "model": "m"}),
                          ["codex", "--yolo", "resume", "SID", "-C", "/w", "-m", "m"])
 
+    def test_supersedes_drops_approval_and_sandbox_with_their_values_in_every_form(self):
+        # D2: Codex rechaza --yolo junto a -a/--ask-for-approval, -s/--sandbox y --full-auto.
+        catalog = catalog_from(NO_PROMPT_FIXTURE)
+        argv = ["codex", "resume", "SID", "-C", "/w", "-a", "never", "--sandbox", "workspace-write", "--full-auto",
+                "--ask-for-approval=on-request", "-s=danger-full-access", "--yolo", "-m", "m"]
+        expected = ["codex", "--yolo", "resume", "SID", "-C", "/w", "-m", "m"]
+        self.assertEqual(catalog.apply_no_prompt("codex", argv), expected)
+        self.assertEqual(catalog.apply_no_prompt("codex", expected), expected)  # Dos veces = una.
+        # La forma corta pegada no se reconoce (el catálogo nunca la produce) y Claude no tiene supersedes.
+        self.assertEqual(catalog.apply_no_prompt("codex", ["codex", "-anever"]), ["codex", "--yolo", "-anever"])
+        self.assertEqual(catalog.apply_no_prompt("claude", ["claude", "-a", "x"]),
+                         ["claude", "-a", "x", "--dangerously-skip-permissions"])
+        self.assertEqual(AgentResumeCatalog.apply_policy(None, ["grok", "-r", "x"]), ["grok", "-r", "x"])
+
+    def test_display_name_comes_from_the_catalogue(self):
+        catalog = catalog_from(NO_PROMPT_FIXTURE)
+        self.assertEqual((catalog.display_name("claude"), catalog.display_name("codex")), ("Claude Code", "Codex"))
+        # Sin displayName (o proveedor desconocido) se enseña su id tal cual.
+        self.assertEqual((catalog.display_name("grok"), catalog.display_name("agy"), catalog.display_name("otro")),
+                         ("grok", "agy", "otro"))
+        for name in ("", "  ", 3):
+            with self.subTest(name=name):
+                data = json.loads(json.dumps(NO_PROMPT_FIXTURE))
+                data["providers"]["grok"]["displayName"] = name
+                with self.assertRaises(ValueError):
+                    catalog_from(data)
+
     def test_invalid_no_prompt_policy_rejects_the_catalogue(self):
         for policy in ({"prefix": "--yolo"}, {"prefix": ["yolo"]}, {"suffix": ["--a b"]}, {"unknown": []}, {},
                        {"rootEnvironment": {"is_sandbox": "1"}}, {"rootEnvironment": {"IS_SANDBOX": "$(id)"}},
-                       {"prefix": ["--yolo", "--yolo"]}, ["--yolo"]):
+                       {"prefix": ["--yolo", "--yolo"]}, ["--yolo"],
+                       {"prefix": ["--yolo"], "supersedes": "-a"},
+                       {"prefix": ["--yolo"], "supersedes": [{"flag": "a", "takesValue": True}]},
+                       {"prefix": ["--yolo"], "supersedes": [{"flag": "-a", "takesValue": "sí"}]},
+                       {"prefix": ["--yolo"], "supersedes": [{"flag": "-a"}]},
+                       {"prefix": ["--yolo"], "supersedes": [{"flag": "-a", "takesValue": True, "extra": 1}]},
+                       {"prefix": ["--yolo"], "supersedes": [{"flag": "-a", "takesValue": True}, {"flag": "-a", "takesValue": False}]},
+                       {"prefix": ["--yolo"], "supersedes": [{"flag": "--yolo", "takesValue": False}]}):
             with self.subTest(policy=policy):
                 data = json.loads(json.dumps(NO_PROMPT_FIXTURE))
                 data["providers"]["codex"]["noPrompt"] = policy
@@ -102,27 +141,20 @@ class ResumeCatalogTests(unittest.TestCase):
             AgentResumeCatalog.shell_command(["claude"], {"IS_SANDBOX": "1; rm"}, "/x")
 
     def test_parity_with_shared_resume_commands(self):
-        self.assertTrue(PARITY.is_file(), "Falta %s (CONTRATO-1): la paridad de órdenes no se puede comprobar." % PARITY)
-        data = json.loads(PARITY.read_text(encoding="utf-8"))
-        cases = data if isinstance(data, list) else next(data[key] for key in ("casos", "cases", "comandos") if key in data)
-        self.assertTrue(cases)
+        # contracts/agent-tree-v1/reanudar-comandos.json con el catálogo real, pasando sus arguments.
+        data = json.loads(contract("agent-tree-v1", "reanudar-comandos.json").read_text(encoding="utf-8"))
+        self.assertTrue(data["casos"])
         catalog = AgentResumeCatalog()
-
-        def pick(case, *names):
-            for name in names:
-                if name in case:
-                    return case[name]
-            raise AssertionError("reanudar-comandos.json: al caso %r le falta %s" % (case, " o ".join(names)))
-        for case in cases:
-            provider = pick(case, "provider", "proveedor")
-            with self.subTest(provider=provider, root=case.get("as_root", case.get("como_root"))):
-                argv, environment = catalog.no_prompt_resume(provider, pick(case, "session_id", "sessionId", "id"),
-                                                             bool(pick(case, "as_root", "como_root", "asRoot")))
-                self.assertEqual(argv, pick(case, "argv"))
-                self.assertEqual(environment, pick(case, "environment", "entorno", "env"))
-                command = next((case[key] for key in ("command", "orden") if key in case), None)
-                if command is not None:
-                    self.assertEqual(AgentResumeCatalog.shell_command(argv, environment, pick(case, "cwd", "carpeta")), command)
+        for case in data["casos"]:
+            with self.subTest(caso=case["nombre"]):
+                argv, environment = catalog.no_prompt_resume(case["provider"], case["session_id"], case["as_root"],
+                                                             case.get("arguments", []))
+                self.assertEqual(argv, case["argv"])
+                self.assertEqual(environment, case["environment"])
+                self.assertEqual(AgentResumeCatalog.shell_command(argv, environment, case["cwd"]), case["command"])
+                self.assertEqual(catalog.no_prompt(case["provider"]) is not None, case["no_prompt_verified"])
+                self.assertEqual(catalog.display_name(case["provider"]), case["display_name"])
+                self.assertEqual(catalog.apply_no_prompt(case["provider"], argv), argv)
         with self.assertRaises(TransportError) as caught:
             TmuxCommand.agent_argv({"tmux": "fixture", "cwd": "/exact/root", "agent": "agy", "model": "unsupported"})
         self.assertEqual(caught.exception.code, "unsupported_agent_model")

@@ -4,23 +4,29 @@ Es una operación aparte: la reconexión sigue siendo solo enganchar. Por grupo 
 equipo local, socket) se lista tmux una vez y cada ventana guardada cuya sesión falte se
 recrea con ``Transport.ensure_session``: si la IA estaba activa (o interrumpida) y hay id,
 con la orden de reanudar sin preguntas y la guarda de conversación abierta; si no, como
-shell en su carpeta. Nunca toca sesiones vivas ni ventanas cerradas por el usuario.
+shell en su carpeta. Nunca toca sesiones vivas ni ventanas cerradas por el usuario, y en
+un servidor tmux que ya existía solo hace ``new-session -d`` (D4, en ensure_session).
+
+Cajas SSH (D6, contracts/agent-tree-v1/LEEME.md): la IA solo se reanuda sola si una
+lectura viva vio esa sesión hace ≤ 2 ticks y nadie la cerró a propósito (desde UniConnect,
+o el servidor sigue vivo con otras sesiones y falta solo esta). Si no, se recrea el shell.
 """
 
 import logging
 
 from .agent_tree import AgentTree
+from .resume_catalog import AgentResumeCatalog
 from .transport import Transport, TransportError
 
 RESUMABLE = ("claude", "codex", "agy", "grok")
-DISPLAY_NAMES = {"claude": "Claude Code", "codex": "Codex", "agy": "Agy", "grok": "Grok"}
 FIELDS = ("runtimeState", "interrupted", "agent", "sessionId", "resumeCwd")
 LOG = logging.getLogger("uniconnect.recovery")
 
 
 class SessionRecovery:
-    def __init__(self, owner, *, transport=Transport):
+    def __init__(self, owner, *, transport=Transport, catalog=None):
         self.owner, self.transport = owner, transport
+        self._catalog = catalog
         self.inflight = {}
         self.attempted = {}
         self.events = []
@@ -32,11 +38,12 @@ class SessionRecovery:
                 for workspace in store.workspaces for record in workspace.get("windows", [])}
 
     @staticmethod
-    def effective(record, saved=None):
-        """Ventana con la que se recrea la sesión: la IA si estaba activa o interrumpida, si no un shell."""
+    def effective(record, saved=None, *, allowed=True):
+        """Ventana con la que se recrea la sesión: la IA si estaba activa o interrumpida (y ``allowed``),
+        si no un shell en su carpeta."""
         saved = saved if saved is not None else {key: record.get(key) for key in FIELDS}
         window = dict(record)
-        resumable = bool((saved.get("runtimeState") == "agent" or saved.get("interrupted"))
+        resumable = bool(allowed and (saved.get("runtimeState") == "agent" or saved.get("interrupted"))
                          and saved.get("sessionId") and saved.get("agent") in RESUMABLE)
         if resumable:
             window.update(agent=saved["agent"], sessionId=saved["sessionId"])
@@ -51,12 +58,33 @@ class SessionRecovery:
                 window.pop(key, None)
         return window, resumable
 
-    @staticmethod
-    def notice(window, resumable):
+    def display_name(self, agent):
+        """``displayName`` del catálogo compartido (sin tabla propia); el id si no se puede leer."""
+        try:
+            if self._catalog is None:
+                self._catalog = AgentResumeCatalog()
+            return self._catalog.display_name(agent)
+        except Exception:
+            return agent
+
+    def notice(self, window, resumable):
         if resumable:
-            name = DISPLAY_NAMES.get(window["agent"], window["agent"])
-            return "Sesión tmux recreada; reanudando %s %s" % (name, window["sessionId"][:8])
+            return "Sesión tmux recreada; reanudando %s %s" % (self.display_name(window["agent"]), window["sessionId"][:8])
         return "Sesión tmux recreada como terminal"
+
+    def tree_allows(self, workspace, record):
+        """D6 en memoria (hilo GTK): en local siempre; en SSH, vista viva hace ≤ 2 ticks y sin marca."""
+        if workspace.get("kind") != "ssh":
+            return True
+        tree = getattr(self.owner, "agent_tree", None)
+        return bool(tree is not None and tree.remote_resume_allowed(record))
+
+    @staticmethod
+    def still_allowed(workspace, record, allowed, alive):
+        """D6 con la lista de sesiones de ahora: servidor vivo con otras y falta esta -> cierre deliberado."""
+        if workspace.get("kind") != "ssh" or not allowed:
+            return allowed
+        return alive is not None and not (alive and record["tmux"] not in alive)
 
     def closed_ids(self):
         identifiers = set()
@@ -105,20 +133,22 @@ class SessionRecovery:
                 transport = None
             if transport is None:
                 continue
-            windows = [(record["id"], dict(record), snapshot.get(record["id"])) for record in records]
-            for identifier, _, _ in windows:
+            windows = [(record["id"], dict(record), snapshot.get(record["id"]), self.tree_allows(workspace, record))
+                       for record in records]
+            for identifier, _, _, _ in windows:
                 self.inflight.setdefault(identifier, [])
 
-            def work(transport=transport, windows=windows):
+            def work(transport=transport, windows=windows, workspace=workspace):
                 try:
                     alive = {item["name"] for item in transport.list_sessions()}
                 except Exception as error:
                     return {"error": getattr(error, "code", type(error).__name__)}
                 results = {}
-                for identifier, record, saved in windows:
+                for identifier, record, saved, allowed in windows:
                     if record["tmux"] in alive:
                         continue
-                    window, resumable = SessionRecovery.effective(record, saved)
+                    allowed = SessionRecovery.still_allowed(workspace, record, allowed, alive)
+                    window, resumable = SessionRecovery.effective(record, saved, allowed=allowed)
                     try:
                         created = transport.ensure_session(window)["created"]
                         results[identifier] = ("created" if created else "exists", window, resumable)
@@ -138,7 +168,7 @@ class SessionRecovery:
                         elif result[0] == "failed":
                             self.record_event(identifier, result[1], result[2])
                 finally:
-                    for identifier, _, _ in windows:
+                    for identifier, _, _, _ in windows:
                         self.finish(identifier)
 
             self.owner.background(work, done)
@@ -156,21 +186,30 @@ class SessionRecovery:
         transport = self.transport_for(AgentTree.group_key(workspace, record), workspace)
         if transport is None:
             return False
-        window, resumable = self.effective(dict(record))
+        saved, allowed = dict(record), self.tree_allows(workspace, record)
         self.inflight[identifier] = [then]
 
         def work():
+            decided = allowed
+            if decided and workspace.get("kind") == "ssh":
+                # Lectura de ahora del socket entero: solo lista, nunca cambia nada.
+                try:
+                    alive = {item["name"] for item in transport.list_sessions()}
+                except Exception:
+                    alive = None
+                decided = SessionRecovery.still_allowed(workspace, saved, decided, alive)
+            window, resumable = SessionRecovery.effective(saved, allowed=decided)
             try:
-                return ("created" if transport.ensure_session(window)["created"] else "exists", "")
+                return ("created" if transport.ensure_session(window)["created"] else "exists", "", window, resumable)
             except TransportError as error:
-                return ("failed", error.code)
+                return ("failed", error.code, window, resumable)
             except Exception as error:
-                return ("failed", type(error).__name__)
+                return ("failed", type(error).__name__, window, resumable)
 
         def done(result):
             try:
                 if result[0] == "created":
-                    self.show_notice(identifier, self.notice(window, resumable))
+                    self.show_notice(identifier, self.notice(result[2], result[3]))
                 elif result[0] == "failed":
                     self.record_event(identifier, result[1])
             finally:

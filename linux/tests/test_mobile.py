@@ -700,12 +700,14 @@ class WindowDetailsRPCTests(unittest.TestCase):
         self.assertEqual(self.probes, [])
 
     def test_failed_probe_answers_with_saved_values(self):
+        # contracts/window-details-v1: si la comprobación falla, lo guardado y host_inaccesible,
+        # haya o no algo guardado (así Android enseña el mismo aviso que el escritorio).
         self.fail_probe = True
         result = self.details(terminal_id="window")
         self.assertEqual((result["agent"]["state"], result["agent"]["source"], result["agent"]["cwd"]),
                          ("guardado", "registro", "/work/multigram"))
         self.assertFalse(result["tmux"]["live"])
-        self.assertIsNone(result["reason"])
+        self.assertEqual(result["reason"], "host_inaccesible")
         self.record.update(agent="shell")
         self.record.pop("sessionId")
         result = self.details(terminal_id="window")
@@ -715,6 +717,21 @@ class WindowDetailsRPCTests(unittest.TestCase):
         self.assertIn("window_details.v1", self.rpc.dispatch("mobile.workspace.list", {}, "peer")["capabilities"])
         self.rpc.host = types.SimpleNamespace(address="100.64.0.1", port=58465)
         self.assertIn("window_details.v1", self.rpc.dispatch("mobile.host.status", {}, "peer")["capabilities"])
+
+    def test_relaunch_cells_and_agent_names_come_from_the_shared_files(self):
+        # D7: relaunch.v1 más un token por celda (proveedores.json); nombres de IA del catálogo (D2).
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from contracts_dir import contract
+        cells = json.loads(contract("relaunch-v1", "proveedores.json").read_text(encoding="utf-8"))["capacidades"]["linux"]
+        self.window.relaunch = object()
+        self.rpc.host = types.SimpleNamespace(address="100.64.0.1", port=58465)
+        for method in ("mobile.workspace.list", "mobile.host.status"):
+            with self.subTest(method=method):
+                announced = self.rpc.dispatch(method, {}, "peer")["capabilities"]
+                self.assertEqual([item for item in announced if item.startswith("relaunch.v1")], cells)
+        box = self.rpc.dispatch("mobile.workspace.list", {}, "peer")["workspaces"][0]
+        self.assertEqual([target["title"] for target in box["available_agent_targets"]],
+                         ["Terminal", "Claude Code", "Codex", "Antigravity", "Grok"])
 
 
 if __name__ == "__main__":

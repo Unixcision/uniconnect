@@ -59,14 +59,16 @@ class SSHCommandTests(unittest.TestCase):
                 TmuxCommand.validate_name(name)
         self.assertLessEqual(len(TmuxCommand.suggested_name("Long window" * 50)), 40)
 
-    def test_clipboard_workaround_only_changes_dedicated_sockets(self):
+    def test_clipboard_workaround_only_changes_dedicated_sockets_it_starts(self):
+        # D4: solo al crear en un socket propio, y solo si ese servidor no existía; reenganchar nunca.
         window = {"tmux": "window", "cwd": "/tmp", "agent": "terminal"}
         for socket in ("uniconnect", "uniconnect-local", "user-custom", None):
             for create in (True, False):
                 with self.subTest(socket=socket, create=create):
                     command = TmuxCommand.attach(window, socket_name=socket, create=create)
                     self.assertEqual("set-option -s set-clipboard off" in command,
-                                     socket in ("uniconnect", "uniconnect-local"))
+                                     create and socket in ("uniconnect", "uniconnect-local"))
+                    self.assertNotIn("bind-key", command.split('if [ "$uc_fresh" = 1 ]')[0])
 
     def test_pane_command_guards_resume_and_sets_is_sandbox_for_claude_as_root_only(self):
         claude = {"tmux": "t", "cwd": "/w", "agent": "claude", "sessionId": SESSION}
@@ -362,6 +364,29 @@ class TmuxHistoryBehaviorTests(unittest.TestCase):
                     self.assertEqual("9000", self.tmux(socket, "show-options", "-gv", "history-limit"))
                     # No per-session override is introduced on another server.
                     self.assertEqual("", self.tmux(socket, "show-options", "-v", "-t", "=" + route + ":", "history-limit"))
+
+    def test_a_server_that_already_existed_keeps_its_options_and_keys(self):
+        # D4: recuperación al arrancar, salida 72 y reenganche solo hacen new-session -d / attach
+        # en un servidor vivo: ni set-option -s/-g ni bind-key (el 23-09 un set-clipboard en
+        # caliente mató un tmux con 27 IA dentro).
+        tables = ("copy-mode", "copy-mode-vi")
+        for socket in ("uniconnect", "uniconnect-local"):
+            with self.subTest(socket=socket):
+                self.tmux(socket, "new-session", "-d", "-s", "keeper", "/bin/bash --noprofile --norc")
+                self.tmux(socket, "set-option", "-s", "set-clipboard", "on")
+                keys = [self.tmux(socket, "list-keys", "-T", table, "MouseDragEnd1Pane") for table in tables]
+                limit = self.tmux(socket, "show-options", "-gv", "history-limit")
+                for route, create in (("ensure", True), ("attach", True), ("attach", False)):
+                    self.create(socket, route, create=create)
+                    self.assertEqual("on", self.tmux(socket, "show-options", "-sv", "set-clipboard"), route)
+                    self.assertEqual(keys, [self.tmux(socket, "list-keys", "-T", table, "MouseDragEnd1Pane")
+                                            for table in tables], route)
+                    self.assertEqual(limit, self.tmux(socket, "show-options", "-gv", "history-limit"), route)
+                self.tmux(socket, "kill-server")
+                # Un servidor que arranca esta misma llamada sí recibe la protección.
+                self.create(socket, "ensure")
+                self.assertEqual("off", self.tmux(socket, "show-options", "-sv", "set-clipboard"))
+                self.tmux(socket, "kill-server")
 
     def test_selection_copy_only_changes_default_bindings_on_dedicated_servers(self):
         for socket in ("uniconnect", "uniconnect-local", "custom", None):

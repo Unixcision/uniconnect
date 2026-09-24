@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from uniconnect.mobile_protocol import RPCError
 from uniconnect.transport import SSHCommand
 from uniconnect.window import MainWindow
+from uniconnect.window_details import WindowDetails
 
 
 class Vault:
@@ -51,7 +52,9 @@ class MobileSSHCreateTests(unittest.TestCase):
         self.assertEqual(self.vault.stored, ["ssh root@eltemploacademy.com"])
         self.assertEqual(workspace["credentialId"], "cred-1")
         # The same label the desktop dialog writes for the same command, not a second spelling.
-        self.assertEqual(workspace["hostLabel"], str(SSHCommand.parse("ssh root@eltemploacademy.com").endpoint_key()))
+        # contracts/window-details-v1: usuario@host:puerto del destino resuelto (ssh -G).
+        self.assertEqual(workspace["hostLabel"],
+                         WindowDetails.endpoint_label(*SSHCommand.parse("ssh root@eltemploacademy.com").endpoint_key()))
         self.assertEqual(workspace["kind"], "ssh")
         self.assertEqual(self.committed, [workspace])
 
@@ -59,7 +62,7 @@ class MobileSSHCreateTests(unittest.TestCase):
         command = "sshpass -p 'secreta' ssh dani@example.com"
         workspace = self.create({"name": "VPS", "kind": "ssh", "connect_command": command})
         self.assertEqual(self.vault.stored, [command])
-        self.assertEqual(workspace["hostLabel"], str(SSHCommand.parse(command).endpoint_key()))
+        self.assertEqual(workspace["hostLabel"], WindowDetails.endpoint_label(*SSHCommand.parse(command).endpoint_key()))
 
     def test_what_the_parser_refuses_never_reaches_the_vault(self):
         for command in ("rm -rf /", "ssh", "ssh root@x; rm -rf /", "curl http://x | sh"):

@@ -12,76 +12,49 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from uniconnect import agent_probe
 from uniconnect.agent_probe import combine, discover, provider_of
 
-REPO = Path(__file__).resolve().parents[2]
-CASES = REPO / "contracts" / "agent-tree-v1" / "deteccion-casos.json"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from contracts_dir import contract
 
 CLAUDE_ID = "473ed1de-4397-45ef-b00b-6b17fd7382b0"
 OLD_ID = "11111111-2222-4333-8444-555555555555"
 CODEX_ID = "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17"
+PROBE_HOST = {"hostname": "xunis-scrapper", "uid": 0, "platform": "linux"}
 
 
 def proc(pid, ppid, argv, uid=1000):
     return {"pid": pid, "ppid": ppid, "uid": uid, "argv": argv}
 
 
-def run(processes, pane_pid=100, fichas=None, opened=None, lines=None, cwds=None, pane_path="/pane"):
-    fichas, opened, lines, cwds = fichas or {}, opened or {}, lines or {}, cwds or {}
+def run(processes, pane_pid=100, fichas=None, opened=None, lines=None, cwds=None, pane_path="/pane", links=None):
+    fichas, opened, lines, cwds, links = fichas or {}, opened or {}, lines or {}, cwds or {}, links or {}
     return discover(pane_pid, processes, lambda pid, uid: fichas.get(pid), lambda pid: opened.get(pid, []),
-                    lambda path: lines.get(path), lambda pid: cwds.get(pid), pane_path=pane_path)
-
-
-def first(mapping, *names, required=True, case="?"):
-    for name in names:
-        if name in mapping:
-            return mapping[name]
-    if required:
-        raise AssertionError("contracts/agent-tree-v1/deteccion-casos.json: al caso %r le falta %s" % (case, " o ".join(names)))
-    return None
+                    lambda path: lines.get(path), lambda pid: cwds.get(pid), pane_path=pane_path,
+                    realpath=lambda path: links.get(path, path))
 
 
 class ContractCaseTests(unittest.TestCase):
-    """Todos los casos compartidos; si el fichero falta, el test falla (no se salta)."""
+    """Todos los casos de contracts/agent-tree-v1/deteccion-casos.json, con sus claves tal cual."""
 
     def test_every_shared_detection_case(self):
-        self.assertTrue(CASES.is_file(), "Falta %s (CONTRATO-1): sin él no se puede probar el criterio común." % CASES)
-        data = json.loads(CASES.read_text(encoding="utf-8"))
-        cases = data if isinstance(data, list) else first(data, "casos", "cases", case="(raíz)")
-        self.assertTrue(cases, "deteccion-casos.json no trae ningún caso")
-        for index, case in enumerate(cases):
-            name = case.get("id") or case.get("nombre") or case.get("name") or str(index)
-            with self.subTest(caso=name):
-                processes = first(case, "procesos", "processes", case=name)
-                table = {}
-                for item in processes:
-                    argv = item.get("argv")
-                    if isinstance(argv, str):
-                        argv = argv.split()
-                    table[int(item["pid"])] = proc(int(item["pid"]), int(item["ppid"]), argv or [], int(item.get("uid", 1000)))
-                fichas = {int(key): value for key, value in (first(case, "fichas", "claude_sessions", required=False, case=name) or {}).items()}
-                opened = {int(key): value for key, value in (first(case, "abiertos", "open_files", required=False, case=name) or {}).items()}
-                lines = first(case, "primeras_lineas", "first_lines", "primera_linea", required=False, case=name) or {}
-                lines = {path: (value if isinstance(value, str) else json.dumps(value)) for path, value in lines.items()}
-                cwds = {int(key): value for key, value in (first(case, "cwd_procesos", "process_cwd", required=False, case=name) or {}).items()}
-                pane_path = first(case, "pane_current_path", "pane_path", required=False, case=name)
-                panes = first(case, "paneles", "panes", required=False, case=name)
-                if panes:
-                    results = [({"pane_id": pane.get("pane_id", "%" + str(i)), "dead": bool(pane.get("dead") or pane.get("muerto"))},
-                                run(table, int(pane["pane_pid"]), fichas, opened, lines, cwds, pane_path)) for i, pane in enumerate(panes)]
-                    result = combine(results)[1]
-                else:
-                    pane_pid = int(first(case, "pane_pid", "panel_pid", case=name))
-                    result = run(table, pane_pid, fichas, opened, lines, cwds, pane_path)
-                expected = first(case, "esperado", "expected", case=name)
-                reason = first(expected, "reason", "razon", "motivo", required=False, case=name)
-                self.assertEqual(result["reason"], reason)
+        data = json.loads(contract("agent-tree-v1", "deteccion-casos.json").read_text(encoding="utf-8"))
+        self.assertTrue(data["casos"], "deteccion-casos.json no trae ningún caso")
+        for case in data["casos"]:
+            with self.subTest(caso=case["nombre"]):
+                table = {int(item["pid"]): proc(int(item["pid"]), int(item["ppid"]), item["argv"], int(item.get("uid", 1000)))
+                         for item in case["procesos"]}
+                result = run(table, int(case["pane_pid"]),
+                             {int(key): value for key, value in case.get("fichas", {}).items()},
+                             {int(key): value for key, value in case.get("abiertos", {}).items()},
+                             case.get("rollouts", {}),
+                             {int(key): value for key, value in case.get("cwds", {}).items()},
+                             case.get("pane_current_path"), case.get("enlaces", {}))
                 agent = result["agent"] or {}
-                for keys, actual in ((("provider", "proveedor"), agent.get("provider")),
-                                     (("session_id", "id"), agent.get("session_id")),
-                                     (("source", "fuente"), agent.get("source")),
-                                     (("as_root", "como_root"), agent.get("as_root")),
-                                     (("cwd",), agent.get("cwd"))):
-                    if any(key in expected for key in keys):
-                        self.assertEqual(actual, first(expected, *keys, case=name), keys[0])
+                actual = {"provider": agent.get("provider"), "session_id": agent.get("session_id"),
+                          "cwd": agent.get("cwd"), "as_root": agent.get("as_root"), "source": agent.get("source"),
+                          "cause": result["reason"]}
+                # Solo se comparan las claves que trae «espera».
+                for key, expected in case["espera"].items():
+                    self.assertEqual(actual[key], expected, key)
 
 
 class OwnDetectionTests(unittest.TestCase):
@@ -165,20 +138,46 @@ class OwnDetectionTests(unittest.TestCase):
         self.assertEqual(provider_of(["codex-aarch64-apple-darwin"]), "codex")
         self.assertEqual(provider_of(["antigravity"]), "agy")
         self.assertEqual(provider_of(["grok-cli"]), "grok")
-        for argv in (["node", "server.js"], ["sudo", "claude"], ["python3", "codex.py"], ["-zsh"], []):
+        # Criterio estricto: node/bun con un argumento de basename «claude» sí; CLAUDE.md en un argumento, no.
+        self.assertEqual(provider_of(["node", "/opt/homebrew/bin/claude", "--resume", CLAUDE_ID]), "claude")
+        self.assertEqual(provider_of(["node22.3", "/x/claude"]), "claude")
+        self.assertEqual(provider_of(["/home/u/.local/share/claude/versions/2.1.280"]), "claude")
+        for argv in (["node", "server.js"], ["sudo", "claude"], ["python3", "codex.py"], ["-zsh"], [],
+                     ["vim", "/root/.claude/CLAUDE.md"], ["node", "/x/claude.md"], ["nodemon", "/x/claude"]):
             self.assertIsNone(provider_of(argv), argv)
+
+    def test_argv_ids_are_conservative(self):
+        claude = [proc(100, 1, ["bash"])]
+        for argv, expected in ((["claude", "--", "--resume", CLAUDE_ID], None),
+                               (["claude", "--resume", CLAUDE_ID, "--session-id", OLD_ID], None),
+                               (["claude", "--resume", CLAUDE_ID.upper(), "-r", CLAUDE_ID], CLAUDE_ID),
+                               (["claude", "--resume=" + CLAUDE_ID], CLAUDE_ID),
+                               (["claude", "-r=" + CLAUDE_ID], None),
+                               (["claude", "--resume", "--model", "opus"], None),
+                               (["claude", "--resume", "no-es-uuid"], None)):
+            with self.subTest(argv=argv):
+                result = run(claude + [proc(200, 100, argv)])
+                self.assertEqual(result["agent"]["session_id"], expected)
+                self.assertEqual(result["reason"], None if expected else "sin_id")
 
 
 class FakeReader:
-    truncated = False
+    """Lector inyectado: nada de tmux, /proc, ps ni lsof del host de pruebas."""
 
-    def __init__(self, panes, processes, fichas=None):
+    def __init__(self, panes, processes, fichas=None, *, opened=None, cwds=None, lines=None, error=None,
+                 truncated=False, host=None):
         self._panes, self._processes, self._fichas = panes, processes, fichas or {}
+        self._opened, self._cwds, self._lines, self._error = opened or {}, cwds or {}, lines or {}, error
+        self.truncated = truncated
+        self._host = host or PROBE_HOST
         self.calls = []
+
+    def host(self):
+        return dict(self._host)
 
     def panes(self, socket_name):
         self.calls.append(("panes", socket_name))
-        return self._panes, None
+        return self._panes, self._error
 
     def processes(self):
         return {item["pid"]: item for item in self._processes}
@@ -187,24 +186,109 @@ class FakeReader:
         return self._fichas.get(pid)
 
     def open_files(self, pid):
-        return []
+        return self._opened.get(pid, [])
 
     def cwd(self, pid):
-        return None
+        return self._cwds.get(pid)
 
-    @staticmethod
-    def first_line(path):
-        return None
+    def first_line(self, path):
+        return self._lines.get(path)
 
     @staticmethod
     def realpath(path):
         return path
 
 
+def pane(session, session_id, window, pane_id, pid, dead, path, command):
+    return {"session": session, "session_id": session_id, "window_index": window, "pane_id": pane_id,
+            "pane_pid": pid, "dead": dead, "current_path": path, "current_command": command}
+
+
+CODEX_2 = "019a4e2b-6c3d-7f81-9a05-3e7b1c8d2f46"
+ROLLOUT = "/root/.codex/sessions/2026/09/24/rollout-2026-09-24T10-12-40-" + CODEX_ID + ".jsonl"
+EXAMPLE_PANES = [
+    pane("claudebets", "$0", 0, "%0", 41230, False, "/root/xunis", "claude"),
+    pane("scrapper-codex", "$1", 0, "%1", 41390, False, "/root", "node"),
+    pane("ufabetbot", "$2", 0, "%2", 41510, False, "/root/ufabetbot", "claude"),
+    pane("hgabot", "$3", 0, "%3", 41600, False, "/root/hgabot", "python3"),
+    pane("pruebas", "$4", 0, "%4", 41700, False, "/root/pruebas", "bash"),
+    pane("caida", "$5", 0, "%5", 41800, True, "/root/caida", "claude"),
+    pane("api", "$6", 0, "%6", 41900, False, "/root/api", "bash"),
+    pane("api", "$6", 1, "%7", 41950, False, "/root/api", "codex"),
+]
+EXAMPLE_PROCESSES = [
+    proc(41230, 1, ["-bash"], 0), proc(41251, 41230, ["claude", "--dangerously-skip-permissions"], 0),
+    proc(41390, 1, ["-bash"], 0),
+    proc(41402, 41390, ["node", "/usr/lib/node_modules/@openai/codex/bin/codex.js", "--yolo"], 0),
+    proc(41410, 41402, ["/usr/lib/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl/codex/"
+                        "codex-x86_64-unknown-linux-musl", "--yolo"], 0),
+    proc(41510, 1, ["-bash"], 0), proc(41522, 41510, ["claude", "login"], 0),
+    proc(41600, 1, ["-bash"], 0), proc(41611, 41600, ["python3", "/root/hgabot/bot.py"], 0),
+    proc(41700, 1, ["-bash"], 0), proc(41711, 41700, ["claude"], 0), proc(41712, 41700, ["claude", "--resume", CLAUDE_ID], 0),
+    proc(41900, 1, ["-bash"], 0),
+    proc(41950, 1, ["-bash"], 0), proc(41960, 41950, ["codex", "--yolo", "resume", CODEX_2], 0),
+]
+
+
+def example_reader():
+    """El host del ejemplo de contracts/agent-tree-v1/sonda-salida.json (el lector falso con el que se generó)."""
+    return FakeReader(
+        EXAMPLE_PANES, EXAMPLE_PROCESSES,
+        {41251: {"pid": 41251, "sessionId": CLAUDE_ID, "cwd": "/root/xunis", "status": "busy", "version": "2.1.280",
+                 "procStart": "Thu Sep 24 14:02:11 2026"}},
+        opened={41410: ["/dev/pts/1", "/root/.codex/log/codex-tui.log", ROLLOUT]},
+        cwds={41522: "/root/ufabetbot", 41960: "/root/api", 41402: "/root", 41410: "/root"},
+        lines={ROLLOUT: json.dumps({"timestamp": "2026-09-24T10:12:40.512Z", "type": "session_meta",
+                                    "payload": {"id": CODEX_ID, "cwd": "/root/scrapper", "originator": "codex_cli_rs"}})})
+
+
+class SharedOutputContractTests(unittest.TestCase):
+    """probe()/main() dan exactamente sonda-salida.json y las salidas de sonda-lectura.json."""
+
+    NOW = 1790260204  # 2026-09-24T14:30:04Z
+
+    def test_probe_matches_the_shared_output_example(self):
+        expected = json.loads(contract("agent-tree-v1", "sonda-salida.json").read_text(encoding="utf-8"))
+        self.assertEqual(agent_probe.probe("default", reader=example_reader(), now=self.NOW), expected)
+        out = io.StringIO()
+        self.assertEqual(agent_probe.main(["--socket", "default"], reader=example_reader(), stdout=out, now=self.NOW), 0)
+        line = out.getvalue()
+        self.assertTrue(line.endswith("\n") and line.count("\n") == 1)
+        self.assertEqual(json.loads(line), expected)
+        self.assertLessEqual(len(line.encode()), agent_probe.MAX_OUTPUT + 1)
+
+    def test_error_and_limit_outputs_and_what_can_be_deduced(self):
+        data = json.loads(contract("agent-tree-v1", "sonda-lectura.json").read_text(encoding="utf-8"))
+        hgabot = pane("hgabot", "$3", 0, "%3", 41230, False, "/root/hgabot", "bash")
+
+        class Broken(FakeReader):
+            def panes(self, socket_name):
+                raise KeyError("fixture")
+
+        readers = {
+            "sin_tmux_instalado": lambda: FakeReader([], [], error="tmux_no_disponible"),
+            "tmux_respondio_con_error": lambda: FakeReader([], [], error="tmux_fallo"),
+            "sin_servidor_en_ese_socket": lambda: FakeReader([], []),
+            "la_sonda_fallo": lambda: Broken([], []),
+            "sesion_pedida_que_no_existe": lambda: FakeReader([hgabot], [proc(41230, 1, ["-bash"], 0)]),
+            "salida_recortada": lambda: FakeReader([hgabot], [proc(41230, 1, ["-bash"], 0)], truncated=True),
+        }
+        self.assertEqual({item["nombre"] for item in data["salidas"]}, set(readers))
+        for item in data["salidas"]:
+            with self.subTest(salida=item["nombre"]):
+                out = io.StringIO()
+                self.assertEqual(agent_probe.main(item["argumentos"], reader=readers[item["nombre"]](), stdout=out,
+                                                  now=self.NOW), 0)
+                result = json.loads(out.getvalue())
+                self.assertEqual(result, item["salida"])
+                code = result["error"].split(":", 1)[0] if result["error"] else None
+                self.assertEqual({"error": code, "ausente_es_desaparecida": code is None and not result["truncated"]},
+                                 item["espera"])
+
+
 class CommandLineTests(unittest.TestCase):
     def pane(self, session, pane_id, pid, path="/root"):
-        return {"session": session, "session_id": "$" + pane_id[1:], "window_index": 0, "pane_id": pane_id,
-                "pane_pid": pid, "dead": False, "current_path": path, "current_command": "bash"}
+        return pane(session, "$" + pane_id[1:], 0, pane_id, pid, False, path, "bash")
 
     def test_cli_with_injected_tables_prints_json_v1(self):
         reader = FakeReader([self.pane("claudebets", "%0", 100, "/root/xunis"), self.pane("hgabot", "%3", 300)],

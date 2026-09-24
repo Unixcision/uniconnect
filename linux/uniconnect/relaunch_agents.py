@@ -16,6 +16,16 @@ from .resume_catalog import AgentResumeCatalog
 from .transport import Transport
 
 
+# What this machine knows how to relaunch (contracts/relaunch-v1/proveedores.json, D7): the
+# capability plus one relaunch.v1.<provider>.<kind> token per supported cell. The same worker
+# runs locally and on an SSH box, so both kinds are announced. Only Codex for now: the Claude
+# dialect is written (exit_claude) but relaunching closes the agent, and it has never run against
+# a real Claude, so it stays out of the plan until a live test.
+RELAUNCHABLE = ("codex",)
+CAPABILITIES = ("relaunch.v1",) + tuple(f"relaunch.v1.{provider}.{kind}"
+                                        for provider in RELAUNCHABLE for kind in ("local", "ssh"))
+
+
 class RelaunchUnavailable(Exception):
     def __init__(self, cause):
         self.cause = cause
@@ -31,10 +41,17 @@ class RelaunchAgents:
         self.validate = validate
         self.resolve = resolve
         self.catalog = catalog or AgentResumeCatalog()
-        self.source = Path(__file__).with_name("relaunch_worker.py").read_text()
+        self.source = self.worker_source()
         self.identity_helper = base64.b64encode(Path(__file__).with_name("agent_identity_hook.py").read_bytes()).decode()
         recovery = Path(__file__).resolve().parents[1] / "scripts/recovery.py"
         self.recovery_sha256 = hashlib.sha256(recovery.read_bytes()).hexdigest() if recovery.is_file() else None
+
+    @staticmethod
+    def worker_source():
+        """Self-contained worker text: the catalogue module first, so the destination applies the
+        no-prompt policy with the very same AgentResumeCatalog.apply_policy as this desktop."""
+        here = Path(__file__)
+        return here.with_name("resume_catalog.py").read_text() + "\n\n" + here.with_name("relaunch_worker.py").read_text()
 
     def close(self):
         # Stop observation, not the already admitted target-side close/reopen.
@@ -75,6 +92,9 @@ class RelaunchAgents:
         if verb != "transport.reconnect" and candidate.get("provider") in (None, "", "shell", "terminal"):
             # Ventana sin IA: se excluye con su causa, sin abrir SSH ni tocar el destino.
             raise RelaunchUnavailable("sin_ia")
+        if verb != "transport.reconnect" and candidate.get("provider") not in RELAUNCHABLE:
+            # Una IA que este equipo no relanza aún (ver RELAUNCHABLE): fuera, sin tocar el destino.
+            raise RelaunchUnavailable("no_soportado")
         return self.request(candidate, "inspect", verb=verb)
 
     def recover(self, target, operation_id):

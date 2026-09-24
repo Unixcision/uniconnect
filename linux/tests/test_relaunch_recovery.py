@@ -77,6 +77,11 @@ class RecoveryRelaunchTests(unittest.TestCase):
             current = {"cwd": directory, "argv": ["/bin/codex", "--yolo", "resume", "native", "-C", directory, "-m", "m",
                                                   "-c", 'model_reasoning_effort="max"']}
             self.assertEqual(worker.recovery_launcher(root, current, "native"), proof)
+            # El lanzador de recovery.launch_command lleva --socket S: se admite si es el de la petición.
+            with_socket = {"argv": [*root["argv"][:4], "--socket", "fixture", *root["argv"][4:]]}
+            self.assertEqual(worker.recovery_launcher(with_socket, current, "native"), proof)
+            with self.assertRaises(Unavailable):
+                worker.recovery_launcher({"argv": [*root["argv"][:4], "--socket", "otro", *root["argv"][4:]]}, current, "native")
             with self.assertRaises(Unavailable):
                 worker.recovery_launcher(root, {**current, "argv": [*current["argv"], "--dangerously-bypass-approvals-and-sandbox"]}, "native")
             for mutation in ("id", "script", "arguments"):

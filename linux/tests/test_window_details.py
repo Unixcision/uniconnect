@@ -13,18 +13,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from uniconnect.resume_catalog import AgentResumeCatalog
-from uniconnect.transport import SSHCommand
 from uniconnect.window_details import LIVE_REASONS, WindowDetails
 
-CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "window-details-v1"
+from contracts_dir import contract
+
 CLAUDE_ID = "473ed1de-4397-45ef-b00b-6b17fd7382b0"
 LOCAL_ID = "714b0eae-b568-4e0c-a70b-c87c0d0a801a"
 CATALOG_FIXTURE = {"schemaVersion": 1, "providers": {
-    "claude": {"executable": "claude", "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"],
+    "claude": {"displayName": "Claude Code", "executable": "claude", "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"],
                "noPrompt": {"suffix": ["--dangerously-skip-permissions"], "rootEnvironment": {"IS_SANDBOX": "1"}}},
-    "codex": {"executable": "codex", "resume": ["{executable}", "resume", "{sessionId}", "{arguments}"],
+    "codex": {"displayName": "Codex", "executable": "codex", "resume": ["{executable}", "resume", "{sessionId}", "{arguments}"],
               "noPrompt": {"prefix": ["--yolo"], "legacy": ["--dangerously-bypass-approvals-and-sandbox"]}},
-    "grok": {"executable": "grok", "resume": ["{executable}", "-r", "{sessionId}", "{arguments}"]}}}
+    "grok": {"displayName": "Grok", "executable": "grok", "resume": ["{executable}", "-r", "{sessionId}", "{arguments}"]}}}
+RESPONSES = ("details-response-local.json", "details-response-ssh.json", "details-response-no-agent.json",
+             "details-response-saved-shell.json", "details-response-sin-id.json", "details-response-interrupted.json",
+             "details-response-no-tmux.json", "details-response-local-unreachable.json",
+             "details-response-vault-closed.json")
 
 
 def epoch(value):
@@ -41,151 +45,182 @@ def fixture_catalog():
         directory.cleanup()
 
 
-SSH_EXPECTED = {
-    "version": 1, "workspace_id": "5d6f2c1e-8a4b-4f0e-9c3d-2b1a0e9f8c7d",
-    "terminal_id": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", "checked_at": "2026-09-24T14:30:05Z",
-    "workspace": {"name": "XUNISSCRAPPER", "kind": "ssh", "host": {"user": "root", "hostname": "167.233.192.135", "port": 22},
-                  "host_label": "root@167.233.192.135:22"},
-    "window": {"name": "claudebets"},
-    "tmux": {"socket": "default", "session": "claudebets", "session_id": "$0", "pane_id": "%0", "live": True},
-    "agent": {"provider": "claude", "display_name": "Claude Code", "session_id": CLAUDE_ID, "cwd": "/root/xunis",
-              "as_root": True, "source": "ficha", "state": "activo", "observed_at": "2026-09-24T14:30:04Z",
-              "resume": {"argv": ["claude", "--resume", CLAUDE_ID, "--dangerously-skip-permissions"],
-                         "environment": {"IS_SANDBOX": "1"},
-                         "command": "cd -- '/root/xunis' && IS_SANDBOX=1 claude --resume " + CLAUDE_ID + " --dangerously-skip-permissions",
-                         "no_prompt_verified": True}},
-    "reason": None}
-LOCAL_EXPECTED = {
-    "version": 1, "workspace_id": "3c2b1a09-8f7e-4d6c-9b5a-4f3e2d1c0b9a", "terminal_id": "e86e9114-031c-4752-941d-1079c170a639",
-    "checked_at": "2026-09-24T14:30:05Z",
-    "workspace": {"name": "PROYECTOS", "kind": "local", "host": None, "host_label": None},
-    "window": {"name": "MULTIGRAM-CLAUDE"},
-    "tmux": {"socket": "uniconnect-local", "session": "uc-e86e9114031c4752941d1079c170a639", "session_id": "$12",
-             "pane_id": "%14", "live": True},
-    "agent": {"provider": "claude", "display_name": "Claude Code", "session_id": LOCAL_ID,
-              "cwd": "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM", "as_root": False, "source": "ficha",
-              "state": "activo", "observed_at": "2026-09-24T14:30:04Z",
-              "resume": {"argv": ["claude", "--resume", LOCAL_ID, "--dangerously-skip-permissions"], "environment": {},
-                         "command": "cd -- '/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM' && claude --resume "
-                                    + LOCAL_ID + " --dangerously-skip-permissions",
-                         "no_prompt_verified": True}},
-    "reason": None}
-NO_AGENT_EXPECTED = dict(SSH_EXPECTED, window={"name": "hgabot"},
-                         tmux={"socket": "default", "session": "hgabot", "session_id": "$3", "pane_id": "%3", "live": True},
-                         agent=None, reason="sin_ia")
+def response(name):
+    return json.loads(contract("window-details-v1", name).read_text(encoding="utf-8"))
 
 
 def inputs_from(expected):
-    """Ventana guardada, lectura viva y conexión que deben producir exactamente ``expected``."""
+    """Ventana guardada, lectura viva y destino resuelto que deben producir exactamente ``expected``."""
     box = expected["workspace"]
     workspace = {"id": expected["workspace_id"], "name": box["name"], "kind": box["kind"]}
-    connection = None
+    endpoint = None
     if box["kind"] == "ssh":
         if box["host"]:
-            host = box["host"]
-            connection = SSHCommand.parse("ssh -p %s %s@%s" % (host["port"], host["user"], host["hostname"]))
+            endpoint = (box["host"]["user"], box["host"]["hostname"], str(box["host"]["port"]))
         else:
             workspace["hostLabel"] = box["host_label"]
     record = {"id": expected["terminal_id"], "name": expected["window"]["name"], "agent": "shell", "cwd": "/"}
-    tmux, agent = expected["tmux"], expected["agent"]
+    tmux, agent, reason = expected["tmux"], expected["agent"], expected["reason"]
+    live = None
     if tmux:
         record.update(tmux=tmux["session"], tmuxSocket=tmux["socket"])
-    live = None
-    if tmux and tmux["live"]:
-        entry = {"name": tmux["session"], "session_id": tmux["session_id"], "pane_id": tmux["pane_id"],
-                 "reason": expected["reason"] if expected["reason"] in LIVE_REASONS else None, "agent": None}
-        if agent and agent["state"] == "activo":
-            entry["agent"] = {key: agent[key] for key in ("provider", "session_id", "cwd", "as_root", "source")}
-        live = {"ok": True, "error": None, "checked_at": agent["observed_at"] if agent else expected["checked_at"],
-                "session": entry}
-    elif agent:
+        if tmux["live"]:
+            entry = {"name": tmux["session"], "session_id": tmux["session_id"], "pane_id": tmux["pane_id"], "live": True,
+                     "reason": reason if reason in LIVE_REASONS else None, "agent": None}
+            if agent and agent["state"] == "activo":
+                entry["agent"] = {key: agent[key] for key in ("provider", "session_id", "cwd", "as_root", "source")}
+            live = {"ok": True, "error": None, "checked_at": agent["observed_at"] if agent and agent["state"] == "activo"
+                    else expected["checked_at"], "session": entry}
+        elif reason == "host_inaccesible":
+            live = {"ok": False, "error": "host_inaccesible", "checked_at": None, "session": None}
+        else:
+            live = {"ok": True, "error": None, "checked_at": expected["checked_at"], "session": None}
+    if agent and agent["state"] != "activo":
         record.update(agent=agent["provider"], sessionId=agent["session_id"], resumeCwd=agent["cwd"],
-                      asRoot=agent["as_root"], interrupted=agent["state"] == "interrumpido")
+                      interrupted=agent["state"] == "interrumpido", runtimeState="shell")
+        if not (box["kind"] == "ssh" and box["host"] is None):
+            record["asRoot"] = agent["as_root"]  # Con la bóveda cerrada, as_root sale de la etiqueta.
         if agent["observed_at"]:
             record["agentObservedAt"] = epoch(agent["observed_at"])
-    return workspace, record, live, connection, lambda: epoch(expected["checked_at"])
+    return workspace, record, live, endpoint, lambda: epoch(expected["checked_at"])
 
 
-class SnapshotTests(unittest.TestCase):
-    def check(self, expected, catalog):
-        workspace, record, live, connection, clock = inputs_from(expected)
-        self.assertEqual(WindowDetails.snapshot(workspace, record, live, catalog, clock, connection=connection), expected)
+class SnapshotContractTests(unittest.TestCase):
+    """Las nueve respuestas de contracts/window-details-v1 y sus filas literales (filas.json)."""
 
-    def test_contract_examples_from_the_agreed_design(self):
+    def test_every_contract_response(self):
+        catalog = AgentResumeCatalog()
+        for name in RESPONSES:
+            with self.subTest(respuesta=name):
+                expected = response(name)
+                workspace, record, live, endpoint, clock = inputs_from(expected)
+                self.assertEqual(WindowDetails.snapshot(workspace, record, live, catalog, clock, endpoint=endpoint), expected)
+
+    def test_rows_warning_and_note_are_the_literal_texts(self):
+        cases = json.loads(contract("window-details-v1", "filas.json").read_text(encoding="utf-8"))["casos"]
+        self.assertEqual({case["fixture"] for case in cases}, set(RESPONSES))
+        for case in cases:
+            with self.subTest(respuesta=case["fixture"]):
+                details = response(case["fixture"])
+                self.assertEqual([[label, value] for _, label, value in WindowDetails.rows(details)], case["filas"])
+                self.assertEqual(WindowDetails.warning(details), case["aviso"])
+                self.assertEqual(WindowDetails.command_note(details), case["nota_orden"])
+
+
+class SnapshotRuleTests(unittest.TestCase):
+    def test_host_label_is_always_user_host_port(self):
+        for value, expected in (("('ec2-user', 'host.example', '2222')", "ec2-user@host.example:2222"),
+                                ("root@167.233.192.135", "root@167.233.192.135:22"), ("root@h:2222", "root@h:2222"),
+                                ("root@[2001:db8::1]:2200", "root@[2001:db8::1]:2200"),
+                                ("root@2001:db8::1", "root@[2001:db8::1]:22"), ("xunis", "xunis:22"),
+                                ("(roto", "(roto"), (None, None), ("", None)):
+            with self.subTest(value=value):
+                self.assertEqual(WindowDetails.host_label(value), expected)
+        self.assertEqual(WindowDetails.endpoint_label("root", "2001:db8::1", "22"), "root@[2001:db8::1]:22")
+
+    def test_saved_agent_survives_a_shell_and_uses_history_when_the_active_one_has_no_id(self):
         catalog = fixture_catalog()
-        for name, expected in (("ssh", SSH_EXPECTED), ("local", LOCAL_EXPECTED), ("sin IA", NO_AGENT_EXPECTED)):
-            with self.subTest(name=name):
-                self.check(expected, catalog)
-
-    def test_shared_contract_files(self):
-        for name in ("details-response-ssh.json", "details-response-local.json", "details-response-no-agent.json"):
-            path = CONTRACT / name
-            with self.subTest(name=name):
-                self.assertTrue(path.is_file(), "Falta %s (CONTRATO-1)." % path)
-                self.check(json.loads(path.read_text(encoding="utf-8")), AgentResumeCatalog())
-
-    def test_saved_values_when_the_probe_fails_or_nothing_is_saved(self):
-        catalog = fixture_catalog()
-        workspace = {"id": "box", "name": "XUNIS", "kind": "ssh", "hostLabel": "('root', '167.233.192.135', '22')"}
-        record = {"id": "w", "name": "claudebets", "tmux": "claudebets", "tmuxSocket": "default", "agent": "claude",
-                  "sessionId": CLAUDE_ID, "resumeCwd": "/root/xunis", "interrupted": True, "agentObservedAt": 1790260204}
-        details = WindowDetails.snapshot(workspace, record, {"ok": False, "error": "connection_timeout"}, catalog, lambda: 1790260205)
-        self.assertEqual(details["workspace"], {"name": "XUNIS", "kind": "ssh", "host": None,
-                                                "host_label": "root@167.233.192.135:22"})
-        self.assertEqual((details["agent"]["state"], details["agent"]["source"], details["agent"]["observed_at"],
-                          details["agent"]["as_root"], details["reason"]),
-                         ("interrumpido", "registro", "2026-09-24T14:30:04Z", False, None))
-        self.assertEqual(details["tmux"]["live"], False)
-        self.assertEqual(details["agent"]["resume"]["command"],
-                         "cd -- '/root/xunis' && claude --resume " + CLAUDE_ID + " --dangerously-skip-permissions")
-        shell = {"id": "s", "name": "hgabot", "tmux": "hgabot", "agent": "shell", "cwd": "/root"}
-        failed = WindowDetails.snapshot(workspace, shell, {"ok": False}, catalog, lambda: 0)
-        self.assertEqual((failed["agent"], failed["reason"]), (None, "host_inaccesible"))
-        legacy = WindowDetails.snapshot({"id": "l", "name": "L", "kind": "local"}, {"id": "p", "name": "pty", "cwd": "/"},
-                                        None, catalog, lambda: 0)
-        self.assertEqual((legacy["tmux"], legacy["reason"]), (None, "sin_tmux"))
+        workspace = {"id": "box", "name": "PROYECTOS", "kind": "local"}
+        record = {"id": "w", "name": "codex", "tmux": "uc-w", "agent": "shell", "cwd": "/w", "runtimeState": "shell",
+                  "history": [{"agent": "claude", "sessionId": LOCAL_ID, "cwd": "/w/a", "lastSeenAt": 10},
+                              {"agent": "codex", "sessionId": "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17", "cwd": "/w/b",
+                               "lastSeenAt": 20}]}
+        live = {"ok": True, "checked_at": "2026-09-24T14:30:04Z",
+                "session": {"name": "uc-w", "session_id": "$1", "pane_id": "%1", "reason": "panel_muerto", "agent": None}}
+        details = WindowDetails.snapshot(workspace, record, live, catalog, lambda: 0)
+        self.assertEqual((details["agent"]["provider"], details["agent"]["cwd"], details["agent"]["state"],
+                          details["agent"]["as_root"], details["reason"]), ("codex", "/w/b", "guardado", False, "sin_ia"))
+        # Una IA guardada sin id no cambia reason (sin_id solo sale de una IA en marcha).
+        fresh = {"id": "f", "name": "claude", "tmux": "uc-f", "agent": "claude", "cwd": "/w"}
+        details = WindowDetails.snapshot(workspace, fresh, {"ok": True, "checked_at": None, "session": None}, catalog, lambda: 0)
+        self.assertEqual((details["agent"]["session_id"], details["agent"]["resume"], details["reason"]), (None, None, None))
+        self.assertIn(["IA", "Claude Code: sin identificador guardado"], [[l, v] for _, l, v in WindowDetails.rows(details)])
 
     def test_live_ambiguity_missing_id_and_unverified_policy(self):
         catalog = fixture_catalog()
         workspace = {"id": "box", "name": "PROYECTOS", "kind": "local"}
-        record = {"id": "w", "name": "grok", "tmux": "uc-w", "agent": "shell", "cwd": "/w"}
+        record = {"id": "w", "name": "grok", "tmux": "uc-w", "agent": "claude", "sessionId": LOCAL_ID, "cwd": "/w"}
         live = {"ok": True, "checked_at": "2026-09-24T14:30:04Z",
                 "session": {"name": "uc-w", "session_id": "$1", "pane_id": "%1", "reason": "identidad_ambigua", "agent": None}}
-        self.assertEqual(WindowDetails.snapshot(workspace, record, live, catalog, lambda: 0)["reason"], "identidad_ambigua")
-        live["session"].update(reason="sin_id", agent={"provider": "codex", "session_id": None, "cwd": "/w",
-                                                      "as_root": False, "source": None})
         details = WindowDetails.snapshot(workspace, record, live, catalog, lambda: 0)
-        self.assertEqual((details["reason"], details["agent"]["resume"]), ("sin_id", None))
+        self.assertEqual((details["reason"], details["agent"]["state"]), ("identidad_ambigua", "guardado"))
+        self.assertIn(["IA", "Hay más de una IA en esta ventana"], [[l, v] for _, l, v in WindowDetails.rows(details)])
+        live["session"].update(reason="sin_id", agent={"provider": "codex", "session_id": None, "cwd": "/w",
+                                                      "as_root": False, "source": "argv"})
+        details = WindowDetails.snapshot(workspace, record, live, catalog, lambda: 0)
+        self.assertEqual((details["reason"], details["agent"]["resume"], details["agent"]["source"]), ("sin_id", None, None))
         live["session"].update(reason=None, agent={"provider": "grok", "session_id": "conv_1", "cwd": "/w",
                                                   "as_root": False, "source": "argv"})
         details = WindowDetails.snapshot(workspace, record, live, catalog, lambda: 0)
         self.assertEqual(details["agent"]["resume"], {"argv": ["grok", "-r", "conv_1"], "environment": {},
                                                       "command": "cd -- '/w' && grok -r conv_1", "no_prompt_verified": False})
-        rows = dict((key, value) for key, _, value in WindowDetails.rows(details))
-        self.assertEqual(rows["no_prompt"], "Sin modo sin preguntas verificado para esta IA")
+        self.assertEqual(WindowDetails.command_note(details), "Sin modo sin preguntas verificado para esta IA")
 
-    def test_old_tuple_host_label_is_formatted(self):
-        self.assertEqual(WindowDetails.host_label("('ec2-user', 'host.example', '2222')"), "ec2-user@host.example:2222")
-        self.assertEqual(WindowDetails.host_label("root@h:22"), "root@h:22")
-        self.assertEqual(WindowDetails.host_label("(roto"), "(roto")
-        self.assertIsNone(WindowDetails.host_label(None))
 
-    def test_modal_rows_are_spanish_and_in_the_agreed_order(self):
-        rows = WindowDetails.rows(SSH_EXPECTED)
-        self.assertEqual([label for _, label, _ in rows],
-                         ["Espacio de trabajo", "Tipo", "Ventana", "Socket tmux", "Sesión tmux", "ID tmux", "IA", "Estado",
-                          "ID de conversación", "Carpeta", "Como root", "Origen del dato", "Orden para reanudarla"])
-        values = dict((key, value) for key, _, value in rows)
-        self.assertEqual((values["kind"], values["socket"], values["tmux_id"], values["agent"], values["state"],
-                          values["as_root"], values["source"]),
-                         ("VPS (root@167.233.192.135:22)", "Servidor tmux por defecto", "$0 · %0", "Claude Code",
-                          "En marcha", "Sí", "Ficha de sesión de Claude"))
-        local = dict((key, value) for key, _, value in WindowDetails.rows(LOCAL_EXPECTED))
-        self.assertEqual((local["kind"], local["socket"]), ("Local", "uniconnect-local"))
-        self.assertNotIn("as_root", local)
-        empty = dict((key, value) for key, _, value in WindowDetails.rows(NO_AGENT_EXPECTED))
-        self.assertEqual(empty["agent"], "Sin IA detectada")
-        self.assertNotIn("command", empty)
+class FakeConnection:
+    def __init__(self, endpoint):
+        self.endpoint, self.calls = endpoint, []
+
+    def endpoint_key(self, *, resolve=True):
+        self.calls.append(resolve)
+        return self.endpoint
+
+
+class GatherTests(unittest.TestCase):
+    """La ruta común (modal, RPC y CLI): ssh -G y sonda fuera de GTK, nunca un error por la sonda."""
+
+    def setUp(self):
+        self.workspace = {"id": "box", "name": "XUNIS", "kind": "ssh", "hostLabel": "xunis-alias"}
+        self.record = {"id": "w", "name": "claudebets", "tmux": "claudebets", "tmuxSocket": "default", "agent": "claude",
+                       "sessionId": CLAUDE_ID, "resumeCwd": "/root/xunis", "runtimeState": "agent"}
+        self.probes = []
+
+    def probe(self, transport, socket_name, sessions, *, timeout):
+        self.probes.append((transport, socket_name, list(sessions), timeout))
+        if transport == "caida":
+            raise TimeoutError("sonda vencida")
+        return {"version": 1, "error": None, "checked_at": "2026-09-24T14:30:04Z", "sessions": [
+            {"name": "claudebets", "session_id": "$0", "pane_id": "%0", "live": True, "reason": None,
+             "agent": {"provider": "claude", "session_id": CLAUDE_ID, "cwd": "/root/xunis", "as_root": True, "source": "ficha"}}]}
+
+    def gather(self, connection, transport):
+        return WindowDetails.gather(self.workspace, self.record, connection=connection, transport=transport,
+                                    catalog=fixture_catalog(), clock=lambda: 0, probe=self.probe)
+
+    def test_host_is_the_resolved_destination_not_the_alias(self):
+        connection = FakeConnection(("root", "167.233.192.135", "22"))
+        details = self.gather(connection, "transporte")
+        self.assertEqual(connection.calls, [True])  # Resuelto con ssh -G.
+        self.assertEqual(details["workspace"]["host"], {"user": "root", "hostname": "167.233.192.135", "port": 22})
+        self.assertEqual(details["workspace"]["host_label"], "root@167.233.192.135:22")
+        self.assertEqual((details["agent"]["state"], details["reason"]), ("activo", None))
+        self.assertEqual(self.probes, [("transporte", "default", ["claudebets"], 8)])
+
+    def test_locked_vault_or_failed_probe_answer_with_the_saved_values(self):
+        closed = self.gather(None, None)
+        self.assertEqual((closed["workspace"]["host"], closed["workspace"]["host_label"]), (None, "xunis-alias:22"))
+        self.assertEqual((closed["reason"], closed["agent"]["state"], closed["agent"]["source"]),
+                         ("host_inaccesible", "guardado", "registro"))
+        self.assertEqual(self.probes, [])
+        self.workspace["hostLabel"] = "root@167.233.192.135:22"
+        closed = self.gather(None, None)
+        self.assertTrue(closed["agent"]["as_root"])  # Por el usuario de la etiqueta.
+        self.assertIn("IS_SANDBOX=1", closed["agent"]["resume"]["command"])
+        failed = self.gather(FakeConnection(("dani", "10.0.0.2", "2222")), "caida")
+        self.assertEqual((failed["reason"], failed["tmux"]["live"], failed["agent"]["as_root"]),
+                         ("host_inaccesible", False, False))
+        self.assertEqual(WindowDetails.warning(failed), "No se pudo comprobar el servidor; se muestra lo guardado")
+        local = WindowDetails.gather({"id": "l", "name": "L", "kind": "local"}, dict(self.record, tmuxSocket="uniconnect-local"),
+                                     connection=None, transport="caida", catalog=fixture_catalog(), clock=lambda: 0,
+                                     probe=self.probe)
+        self.assertEqual(WindowDetails.warning(local), "No se pudo comprobar tmux en este equipo; se muestra lo guardado")
+
+    def test_window_without_tmux_is_not_probed(self):
+        legacy = WindowDetails.gather({"id": "l", "name": "L", "kind": "local"}, {"id": "p", "name": "pty", "cwd": "/"},
+                                      connection=None, transport=None, catalog=fixture_catalog(), clock=lambda: 0,
+                                      probe=self.probe)
+        self.assertEqual((legacy["tmux"], legacy["agent"], legacy["reason"]), (None, None, "sin_tmux"))
+        self.assertEqual(self.probes, [])
 
 
 try:

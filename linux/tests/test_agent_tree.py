@@ -11,10 +11,13 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from uniconnect.agent_tree import AgentTree
 from uniconnect.state import StateStore
 from uniconnect.transport import TransportError
+
+from contracts_dir import contract
 
 CLAUDE_ID = "473ed1de-4397-45ef-b00b-6b17fd7382b0"
 NEW_ID = "714b0eae-b568-4e0c-a70b-c87c0d0a801a"
@@ -66,8 +69,9 @@ class TreeFixture(unittest.TestCase):
         self.store.save()
         self.now = [1000.0]
         self.scheduled = []
+        self.surfaces = {}
         self.owner = SimpleNamespace(
-            store=self.store, locked=False, _closed=False, _runtime_operation=None, surfaces={},
+            store=self.store, locked=False, _closed=False, _runtime_operation=None, surfaces=self.surfaces,
             vault=SimpleNamespace(locked=False),
             connection=lambda workspace: {"cred": "ssh root@167.233.192.135", "cred2": "ssh root@10.0.0.2"}[workspace["credentialId"]],
             background=lambda work, done: done(work()))
@@ -76,6 +80,12 @@ class TreeFixture(unittest.TestCase):
 
     def tearDown(self):
         self.directory.cleanup()
+
+    def connect(self, *identifiers):
+        """Superficies construidas con su cliente en marcha (lo que hace sondear una caja SSH)."""
+        for identifier in identifiers:
+            self.surfaces[identifier] = SimpleNamespace(disposed=False, pid=4321, status="Running",
+                                                        update_status=lambda *args: None)
 
     def saved(self, identifier):
         disk = StateStore(Path(self.directory.name) / "state")
@@ -103,6 +113,7 @@ class AgentTreeTests(TreeFixture):
             save.assert_not_called()
 
     def test_changed_conversation_enters_and_old_one_stays_in_history(self):
+        self.connect("w-remote")
         FakeTransport.replies[("root@167.233.192.135", "default")] = {"sessions": [
             session("claudebets", agent=agent("claude", NEW_ID, "/root/xunis", as_root=True))]}
         self.tree.poll()
@@ -111,9 +122,10 @@ class AgentTreeTests(TreeFixture):
         self.assertEqual([item["sessionId"] for item in record["history"]], [CLAUDE_ID, NEW_ID])
 
     def test_shell_keeps_last_agent_and_ambiguous_or_missing_id_change_nothing(self):
+        self.connect("w-remote")
         before = copy.deepcopy(self.remote)
         for reply in (session("claudebets", "identidad_ambigua"), session("claudebets", "sin_id", agent("claude", None)),
-                      session("claudebets", "panel_muerto")):
+                      session("claudebets", "panel_muerto"), dict(session("claudebets", "sin_ia"), live=False)):
             FakeTransport.replies[("root@167.233.192.135", "default")] = {"sessions": [reply]}
             with patch.object(self.store, "save") as save:
                 self.tree.poll(force=True)
@@ -125,6 +137,7 @@ class AgentTreeTests(TreeFixture):
         self.assertEqual((record["runtimeState"], record["agent"], record["sessionId"]), ("shell", "claude", CLAUDE_ID))
 
     def test_missing_session_or_failed_probe_changes_nothing(self):
+        self.connect("w-remote")
         before = copy.deepcopy(self.store.data)
         FakeTransport.replies[("root@167.233.192.135", "default")] = TransportError("connection_timeout")
         FakeTransport.replies[("local", "uniconnect-local")] = {"sessions": []}
@@ -142,6 +155,7 @@ class AgentTreeTests(TreeFixture):
         self.assertNotIn("sessionId", self.saved("w-local"))
 
     def test_ssh_is_not_repeated_before_sixty_seconds_but_local_every_tick(self):
+        self.connect("w-remote")
         self.tree.poll()
         self.now[0] += 8
         self.tree.poll()
@@ -152,11 +166,16 @@ class AgentTreeTests(TreeFixture):
         self.tree.poll()
         self.assertEqual([call[0] for call in FakeTransport.calls].count(("root@167.233.192.135", "default")), 2)
 
-    def test_every_box_is_probed_not_only_the_selected_one_and_never_twice_at_once(self):
+    def test_local_always_and_ssh_only_with_a_connected_window_never_twice_at_once(self):
         pending = []
         self.owner.background = lambda work, done: pending.append((work, done))
-        self.assertEqual(len(self.tree.poll()), 3)  # Local, XUNIS y la otra caja SSH (con su socket por defecto).
-        self.assertEqual(self.tree.poll(force=True), [])
+        # Sin ventanas SSH conectadas solo se lee el equipo local: nada de SSH a cajas sin usar.
+        self.assertEqual(self.tree.poll(), [("local", "uniconnect-local")])
+        self.connect("w-remote", "w-other")
+        self.surfaces["w-other"].pid = 0  # Construida pero sin cliente (desconectada): no cuenta.
+        self.assertEqual(self.tree.poll(force=True), [("box-ssh", "default")])
+        self.surfaces["w-other"].pid = 99
+        self.assertEqual(self.tree.poll(force=True), [("box-ssh-2", "uniconnect")])
         for work, done in pending:
             done(work())
         self.assertEqual(sorted(call[0] for call in FakeTransport.calls),
@@ -165,6 +184,7 @@ class AgentTreeTests(TreeFixture):
         self.assertIn("--session", FakeTransport.calls[0][1])
 
     def test_locked_vault_transaction_or_lock_skip_the_probe(self):
+        self.connect("w-remote", "w-other")
         self.owner.vault.locked = True
         self.tree.poll()
         self.assertEqual([call[0] for call in FakeTransport.calls], [("local", "uniconnect-local")])
@@ -172,6 +192,7 @@ class AgentTreeTests(TreeFixture):
         self.assertEqual(self.tree.poll(force=True), [])
 
     def test_refresh_all_calls_back_even_when_probe_fails_or_times_out(self):
+        self.connect("w-remote")
         FakeTransport.replies[("root@167.233.192.135", "default")] = TransportError("connection_timeout")
         calls = []
         self.tree.refresh_all(lambda: calls.append("guardado"))
@@ -191,18 +212,108 @@ class AgentTreeTests(TreeFixture):
         self.tree.refresh_all(lambda: calls.append("bloqueado"))
         self.assertEqual(calls[-1], "bloqueado")
 
-    def test_client_exit_with_active_agent_leaves_it_interrupted(self):
+    def test_client_exit_is_interrupted_only_when_the_server_died_with_the_agent_seen_recently(self):
+        # D5: nunca por una salida limpia del cliente (shell que sale, cerrar, terminar tmux).
         workspace = self.store.workspaces[0]
-        record = dict(self.local, runtimeState="agent", agent="claude", sessionId=NEW_ID)
-        AgentTree.client_exited(workspace, record)
-        self.assertEqual((record["runtimeState"], record["interrupted"]), ("stopped", True))
+        for server_died, recent, interrupted in ((True, True, True), (False, True, None), (True, False, None)):
+            with self.subTest(server_died=server_died, recent=recent):
+                record = dict(self.local, runtimeState="agent", agent="claude", sessionId=NEW_ID)
+                AgentTree.client_exited(workspace, record, server_died=server_died, recent=recent)
+                self.assertEqual((record["runtimeState"], record.get("interrupted")), ("stopped", interrupted))
         shell = dict(self.local, runtimeState="shell")
-        AgentTree.client_exited(workspace, shell)
-        self.assertEqual(shell["runtimeState"], "stopped")
-        self.assertNotIn("interrupted", shell)
+        AgentTree.client_exited(workspace, shell, server_died=True, recent=True)
+        self.assertEqual((shell["runtimeState"], shell.get("interrupted")), ("stopped", None))
         remote = dict(self.remote)
-        AgentTree.client_exited(self.store.workspaces[1], remote)
+        AgentTree.client_exited(self.store.workspaces[1], remote, server_died=True, recent=True)
         self.assertEqual(remote["runtimeState"], "agent")
+
+    def seen_running(self):
+        self.local.update(agent="claude", sessionId=NEW_ID, runtimeState="agent", resumeCwd="/work", agentSource="ficha",
+                          asRoot=False)
+        self.store.save()
+        FakeTransport.replies[("local", "uniconnect-local")] = {"sessions": [session("uc-local", agent=agent("claude", NEW_ID))]}
+        self.tree.poll(force=True)
+        self.assertTrue(self.tree.agent_recent(self.store.workspaces[0], self.local))
+
+    def test_session_lost_one_tick_after_the_agent_was_seen_is_interrupted(self):
+        self.seen_running()
+        FakeTransport.replies[("local", "uniconnect-local")] = {"server": False, "sessions": []}  # Servidor caído.
+        self.now[0] += 8
+        self.tree.poll()
+        self.assertEqual((self.saved("w-local")["runtimeState"], self.saved("w-local")["interrupted"]), ("stopped", True))
+
+    def test_a_missing_session_with_the_server_alive_is_not_interrupted(self):
+        # D5, igual que el Mac: con el servidor vivo (tiene otra sesión), que falte esta es lo mismo
+        # que un /exit seguido de exit o Ctrl+D. No se marca: no se reanuda sola al abrir.
+        self.seen_running()
+        FakeTransport.replies[("local", "uniconnect-local")] = {"sessions": [session("otra")]}
+        self.now[0] += 8
+        self.tree.poll()
+        self.assertFalse(self.saved("w-local").get("interrupted"))
+
+    def test_stale_observation_truncated_read_or_deliberate_close_never_interrupt(self):
+        self.seen_running()
+        FakeTransport.replies[("local", "uniconnect-local")] = {"sessions": [], "truncated": True}
+        self.now[0] += 8
+        self.tree.poll()  # Con truncated, que falte no dice nada.
+        self.assertFalse(self.saved("w-local").get("interrupted"))
+        FakeTransport.replies[("local", "uniconnect-local")] = {"server": False, "sessions": []}
+        self.now[0] += 8
+        self.tree.poll()  # La IA se vio hace dos ticks: no es una observación reciente.
+        self.assertFalse(self.saved("w-local").get("interrupted"))
+        self.seen_running()
+        self.tree.mark_closed_by_user(self.local)
+        self.now[0] += 8
+        self.tree.poll()
+        self.assertFalse(self.saved("w-local").get("interrupted"))
+
+    def test_remote_recovery_needs_a_recent_live_read_and_no_deliberate_mark(self):
+        # D6: ≤ 2 ticks (120 s) desde la última lectura que la vio y sin marca de cierre deliberado.
+        self.connect("w-remote")
+        self.assertFalse(self.tree.remote_resume_allowed(self.remote))  # Nunca vista (p. ej. al arrancar).
+        FakeTransport.replies[("root@167.233.192.135", "default")] = {"sessions": [session("claudebets", agent=agent("claude", CLAUDE_ID))]}
+        self.tree.poll()
+        self.assertTrue(self.tree.remote_resume_allowed(self.remote))
+        self.now[0] += 121.5
+        self.assertFalse(self.tree.remote_resume_allowed(self.remote))
+        self.tree.poll()
+        self.assertTrue(self.tree.remote_resume_allowed(self.remote))
+        self.tree.mark_closed_by_user(self.remote)
+        self.assertFalse(self.tree.remote_resume_allowed(self.remote))
+        self.now[0] += 60
+        self.tree.poll()  # Vuelve a verse: la marca se va.
+        self.assertTrue(self.tree.remote_resume_allowed(self.remote))
+        # missing_is_deliberate: el servidor sigue con otras sesiones y falta solo esta.
+        FakeTransport.replies[("root@167.233.192.135", "default")] = {"server": True, "sessions": []}
+        self.now[0] += 60
+        self.tree.poll()
+        self.assertFalse(self.tree.remote_resume_allowed(self.remote))
+
+    def test_each_session_of_the_shared_example_has_its_contract_effect(self):
+        # contracts/agent-tree-v1/sonda-lectura.json: qué hace el lector con cada sesión de sonda-salida.json.
+        output = json.loads(contract("agent-tree-v1", "sonda-salida.json").read_text(encoding="utf-8"))
+        effects = json.loads(contract("agent-tree-v1", "sonda-lectura.json").read_text(encoding="utf-8"))["sesiones"]
+        entries = {item["name"]: item for item in output["sessions"]}
+        old = "0d8f0000-0000-4000-8000-000000000000"
+        for effect in effects:
+            with self.subTest(sesion=effect["sesion"]):
+                record = {"id": "w", "name": effect["sesion"], "tmux": effect["sesion"], "cwd": "/root", "agent": "claude",
+                          "sessionId": old, "runtimeState": "agent"}
+                before = copy.deepcopy(record)
+                changed = self.tree.transition(record, entries[effect["sesion"]])
+                if effect["efecto"] == "ia":
+                    self.assertTrue(changed)
+                    self.assertEqual((record["agent"], record["sessionId"], record["resumeCwd"], record["asRoot"],
+                                      record["agentSource"], record["runtimeState"]),
+                                     (effect["provider"], effect["session_id"], effect["cwd"], effect["as_root"],
+                                      effect["source"], "agent"))
+                    self.assertIn(old, [item["sessionId"] for item in record["history"]])
+                elif effect["efecto"] == "shell":
+                    self.assertTrue(changed)
+                    self.assertEqual((record["runtimeState"], record["sessionId"]), ("shell", old))
+                else:  # sin_id y nada: lo guardado no se toca.
+                    self.assertFalse(changed)
+                    self.assertEqual(record, before)
 
     def test_a_conversation_already_owned_by_another_window_is_not_copied(self):
         # XUNIS: la misma conversación corriendo en dos ventanas no se anota en la segunda.

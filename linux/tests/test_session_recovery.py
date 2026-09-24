@@ -87,11 +87,27 @@ class RunAllTests(RecoveryFixture):
         self.assertIn("--resume " + CLAUDE_ID, TmuxCommand.pane_command(agent))
         self.assertIn("uc_guard", TmuxCommand.pane_command(agent))
         self.assertEqual((created["uc-int"]["agent"], created["uc-int"]["sessionId"]), ("codex", CODEX_ID))
-        for name in ("uc-shell", "uc-custom", "hgabot"):
+        # D6: al arrancar no hay ninguna lectura viva reciente de las cajas SSH, así que su IA no se
+        # reanuda sola; la ventana se recrea como shell y el usuario la reabre si quiere.
+        for name in ("uc-shell", "uc-custom", "hgabot", "claudebets"):
             self.assertEqual(created[name]["agent"], "shell", name)
             self.assertNotIn("sessionId", created[name])
             self.assertNotIn("commandArgv", created[name])
-        self.assertEqual(created["claudebets"]["sessionId"], CLAUDE_ID)
+
+    def test_ssh_agent_is_resumed_only_with_a_recent_live_read_and_no_deliberate_close(self):
+        allowed = {"w-remote"}
+        self.owner.agent_tree = SimpleNamespace(remote_resume_allowed=lambda record: record["id"] in allowed)
+        self.recovery.run_all(SessionRecovery.snapshot(self.owner.store))
+        self.assertEqual(self.created()["claudebets"]["sessionId"], CLAUDE_ID)
+        # missing_is_deliberate: el servidor sigue con otras sesiones y falta solo esta -> shell.
+        FakeTransport.created = []
+        FakeTransport.alive[("root@167.233.192.135", "default")] = ["otra-sesion"]
+        self.recovery.run_all(SessionRecovery.snapshot(self.owner.store))
+        self.assertEqual(self.created()["claudebets"]["agent"], "shell")
+        FakeTransport.created, allowed = [], set()
+        FakeTransport.alive[("root@167.233.192.135", "default")] = []
+        self.recovery.run_all(SessionRecovery.snapshot(self.owner.store))
+        self.assertEqual(self.created()["claudebets"]["agent"], "shell")
 
     def test_live_and_closed_sessions_are_never_touched(self):
         self.recovery.run_all(SessionRecovery.snapshot(self.owner.store))
@@ -181,6 +197,23 @@ class MissingSessionExitTests(RecoveryFixture):
         for work, done in self.pending:
             done(work())
         self.assertEqual(surface.launches, 0)
+
+    def test_exit_72_on_ssh_checks_the_socket_now_before_resuming(self):
+        self.owner.agent_tree = SimpleNamespace(remote_resume_allowed=lambda record: True)
+        surface = self.surface(self.remote, self.workspaces[1])
+        self.assertTrue(self.recovery.on_missing_session(surface))
+        self.assertEqual(self.created()["claudebets"]["sessionId"], CLAUDE_ID)  # Servidor caído: se reanuda.
+        FakeTransport.created = []
+        FakeTransport.alive[("root@167.233.192.135", "default")] = ["otra-sesion"]
+        surface.generation += 1
+        self.assertTrue(self.recovery.on_missing_session(surface))
+        self.assertEqual(self.created()["claudebets"]["agent"], "shell")  # Alguien la cerró a propósito.
+        FakeTransport.created = []
+        FakeTransport.alive[("root@167.233.192.135", "default")] = []
+        FakeTransport.failures[("list", "root@167.233.192.135", "default")] = TransportError("connection_timeout")
+        surface.generation += 1
+        self.assertTrue(self.recovery.on_missing_session(surface))
+        self.assertEqual(self.created()["claudebets"]["agent"], "shell")  # Sin poder mirar, no se reanuda.
 
     def test_window_without_tmux_is_not_recovered(self):
         record = {"id": "legacy", "name": "pty", "cwd": "/work", "agent": "shell"}

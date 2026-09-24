@@ -358,6 +358,17 @@ class TmuxCommand:
         return setup, f'{binary} set-option -g history-limit "$uc_history_limit" \\;'
 
     @staticmethod
+    def fresh_server_check(binary: str) -> str:
+        """Shell that sets ``uc_fresh=1`` only when no tmux server listens on that socket (D4).
+
+        Server options (``-s``/``-g``) and key tables are applied only then. On a server
+        that already existed, automatic paths just run ``new-session -d``: on 23-09 a
+        live ``set-clipboard`` killed a tmux server with 27 agents inside.
+        """
+        return ("uc_fresh=0; uc_state=$(" + binary + " list-sessions 2>&1 >/dev/null) || case \"$uc_state\" in "
+                '*"no server running"*|*"error connecting"*|*"No such file"*) uc_fresh=1 ;; esac; ')
+
+    @staticmethod
     def selection_policy(socket_name: str | None) -> str:
         """Preserve copy-mode selection on our servers, never overwrite user keys.
 
@@ -382,7 +393,8 @@ class TmuxCommand:
         socket_name = window.get("tmuxSocket", socket_name)
         binary = TmuxCommand._binary(socket_name)
         # OSC52 crashes tmux 3.2a with recent ncurses. Apply only to UniConnect's
-        # dedicated servers, never to the user's default or custom tmux socket.
+        # dedicated servers, never to the user's default or custom tmux socket, and
+        # only to a server this very command starts (D4): never to one already running.
         clipboard = "set-option -s set-clipboard off" if socket_name in ("uniconnect", "uniconnect-local") else ""
         selection = TmuxCommand.selection_policy(socket_name)
         name = shlex.quote(window["tmux"])
@@ -392,18 +404,20 @@ class TmuxCommand:
             # -A passes the initial command only on creation, never into an existing pane.
             creation = (f"new-session -A -s {name} -c {shlex.quote(window['cwd'])} "
                         f"{shlex.quote(TmuxCommand.pane_command(window))} "
-                        f"\\; set-option -t {option_target} mouse on"
-                        + (f" \\; {clipboard}" if clipboard else "")
-                        + (f" \\; run-shell {shlex.quote(selection)}" if selection else ""))
+                        f"\\; set-option -t {option_target} mouse on")
+            server_setup = ((f" \\; {clipboard}" if clipboard else "")
+                            + (f" \\; run-shell {shlex.quote(selection)}" if selection else ""))
             setup, creator = TmuxCommand._creation_prefix(socket_name)
-            existing = (f"if {binary} has-session -t {target} 2>/dev/null; then exec {binary} {creation}; fi; "
-                        if setup else "")
-            return f"test -d {shlex.quote(window['cwd'])} || exit 72; {existing}{setup}exec {creator} {creation}"
+            directory = f"test -d {shlex.quote(window['cwd'])} || exit 72; "
+            if not setup and not server_setup:
+                return f"{directory}exec {binary} {creation}"
+            return (directory + TmuxCommand.fresh_server_check(binary)
+                    + f'if [ "$uc_fresh" = 1 ]; then {setup}exec {creator} {creation}{server_setup}; fi; '
+                    + f"exec {binary} {creation}")
+        # Reattaching never touches server options or key tables: the server already exists.
         return (f"command -v tmux >/dev/null 2>&1 || exit 127; "
                 f"{binary} has-session -t {target} 2>/dev/null || exit 72; "
                 f"{binary} set-option -t {option_target} mouse on; "
-                + (f"{binary} {clipboard}; " if clipboard else "") +
-                selection +
                 f"exec {binary} attach-session -t {target}")
 
 
@@ -545,7 +559,7 @@ class Transport:
         if args:
             script += f"command -v {shlex.quote(args[0])} >/dev/null 2>&1 || exit 127; "
         selection = TmuxCommand.selection_policy(socket_name)
-        body = selection + (f"if {binary} has-session -t {target} 2>/dev/null; then "
+        body = (f"if {binary} has-session -t {target} 2>/dev/null; then "
                 "printf 'UC_EXISTS\\n'; exit 0; fi; ")
         if session_id:
             owner = shlex.quote(window["agent"] + ":" + session_id.lower())
@@ -553,13 +567,19 @@ class Transport:
                      f"if {binary} list-sessions -F '#{{@uniconnect_agent_owner}}' 2>/dev/null | "
                      "grep -Fx -- \"$uc_owner\" >/dev/null; then exit 73; fi; ")
         setup, creator = TmuxCommand._creation_prefix(socket_name)
-        body += setup
-        body += (f"if {creator} new-session -d -s {name} -c {shlex.quote(window['cwd'])} "
-                 f"{shlex.quote(TmuxCommand.pane_command(window))}; then "
+        new_session = (f"new-session -d -s {name} -c {shlex.quote(window['cwd'])} "
+                       f"{shlex.quote(TmuxCommand.pane_command(window))}")
+        # D4: server options and key tables only when this call starts the server; on a server
+        # that already existed (other sessions alive), just new-session -d.
+        body += TmuxCommand.fresh_server_check(binary)
+        body += (f'if [ "$uc_fresh" = 1 ]; then {setup}{creator} {new_session}; else {binary} {new_session}; fi; '
+                 "uc_made=$?; "
+                 'if [ "$uc_made" = 0 ]; then '
                  f"{binary} set-option -t {option_target} mouse on; ")
-        if socket_name in ("uniconnect", "uniconnect-local"):
-            body += f"{binary} set-option -s set-clipboard off; "
-        body += selection
+        server_setup = (f"{binary} set-option -s set-clipboard off; "
+                        if socket_name in ("uniconnect", "uniconnect-local") else "") + selection
+        if server_setup:
+            body += f'if [ "$uc_fresh" = 1 ]; then {server_setup}fi; '
         if session_id:
             body += f"{binary} set-option -t {option_target} @uniconnect_agent_owner \"$uc_owner\"; "
         body += ("printf 'UC_CREATED\\n'; "

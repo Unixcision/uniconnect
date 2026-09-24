@@ -1,9 +1,14 @@
 """Decoder for CMUXAgentLaunch's shared resume catalogue, including its no-prompt policy.
 
 The same resource drives the Mac (AgentResumeArgv / AgentNoPromptPolicy) and Linux:
-the resume template of each provider and ``noPrompt``, the flags that relaunch it
-without permission questions. Linux never keeps a copy of that policy; captured
-provider arguments are never persisted, only the validated window fields.
+the resume template of each provider, its ``displayName`` and ``noPrompt``, the flags
+that relaunch it without permission questions (contracts/agent-tree-v1/LEEME.md).
+Linux never keeps a copy of that policy; captured provider arguments are never
+persisted, only the validated window fields.
+
+``AgentResumeCatalog.apply_policy`` is the only Linux implementation of the rule: the
+self-contained relaunch worker receives this module's source in front of its own
+(RelaunchAgents) and calls the very same function on the destination host.
 """
 
 import json
@@ -12,7 +17,7 @@ import re
 
 
 class AgentResumeCatalog:
-    NO_PROMPT_KEYS = ("prefix", "suffix", "legacy", "rootEnvironment")
+    NO_PROMPT_KEYS = ("prefix", "suffix", "legacy", "rootEnvironment", "supersedes")
 
     def __init__(self, resource=None):
         self.resource = Path(resource) if resource is not None else (
@@ -39,6 +44,9 @@ class AgentResumeCatalog:
             for option in provider.get("windowOptions", []):
                 if option.get("field") not in ("cwd", "model") or not option.get("option", "").startswith("-"):
                     raise ValueError("invalid_agent_catalog")
+            name = provider.get("displayName")
+            if name is not None and (not isinstance(name, str) or not name.strip() or "\0" in name):
+                raise ValueError("invalid_agent_catalog")
             self._validate_no_prompt(provider.get("noPrompt"))
 
     @classmethod
@@ -60,6 +68,17 @@ class AgentResumeCatalog:
                 or not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_.:/-]*", value)
                 for name, value in environment.items()):
             raise ValueError("invalid_agent_catalog")
+        # Banderas que el modo sin preguntas sustituye y que la CLI rechaza junto a él (D2).
+        superseded = policy.get("supersedes", [])
+        known = set(policy.get("prefix", [])) | set(policy.get("suffix", [])) | set(policy.get("legacy", []))
+        if not isinstance(superseded, list) or any(
+                not isinstance(item, dict) or set(item) != {"flag", "takesValue"}
+                or not isinstance(item["flag"], str) or not re.fullmatch(r"--?[A-Za-z0-9][A-Za-z0-9-]*", item["flag"])
+                or not isinstance(item["takesValue"], bool) or item["flag"] in known
+                for item in superseded):
+            raise ValueError("invalid_agent_catalog")
+        if len({item["flag"] for item in superseded}) != len(superseded):
+            raise ValueError("invalid_agent_catalog")
 
     def canonical(self, kind):
         return self.aliases.get(kind, kind)
@@ -67,22 +86,54 @@ class AgentResumeCatalog:
     def provider(self, kind):
         return self.providers[self.canonical(kind)]
 
+    def display_name(self, kind):
+        """``displayName`` of the provider in the catalogue; its id as given when it has none."""
+        try:
+            name = self.provider(kind).get("displayName")
+        except KeyError:
+            return kind
+        return name if isinstance(name, str) and name.strip() else kind
+
     def no_prompt(self, kind):
         """The provider's no-prompt policy (a copy), or None when the catalogue has none (grok)."""
         policy = self.provider(kind).get("noPrompt")
         if policy is None:
             return None
         return {"prefix": list(policy.get("prefix", [])), "suffix": list(policy.get("suffix", [])),
-                "legacy": list(policy.get("legacy", [])), "rootEnvironment": dict(policy.get("rootEnvironment", {}))}
+                "legacy": list(policy.get("legacy", [])), "rootEnvironment": dict(policy.get("rootEnvironment", {})),
+                "supersedes": [dict(item) for item in policy.get("supersedes", [])]}
+
+    @staticmethod
+    def apply_policy(policy, argv):
+        """The one no-prompt rule (contracts/agent-tree-v1/LEEME.md), shared with the relaunch worker.
+
+        Walks ``argv[1:]`` left to right: drops every prefix/suffix/legacy token, every
+        ``supersedes`` flag (with its value when it takes one, also as ``--flag=value`` or
+        ``-f=value``) and keeps the rest in order. Result: argv[0] + prefix + rest + suffix.
+        Applying it twice gives the same argv. ``policy`` None (grok) leaves argv as it is.
+        """
+        if not policy or not argv:
+            return list(argv)
+        known = set(policy.get("prefix", [])) | set(policy.get("suffix", [])) | set(policy.get("legacy", []))
+        superseded = {item["flag"]: bool(item.get("takesValue")) for item in policy.get("supersedes", [])}
+        rest, index = [], 1
+        while index < len(argv):
+            argument = argv[index]
+            flag, separator, _ = argument.partition("=")
+            if argument in known:
+                index += 1
+            elif argument in superseded:
+                index += 2 if superseded[argument] else 1
+            elif separator and superseded.get(flag):
+                index += 1
+            else:
+                rest.append(argument)
+                index += 1
+        return [argv[0], *policy.get("prefix", []), *rest, *policy.get("suffix", [])]
 
     def apply_no_prompt(self, kind, argv):
         """Remove earlier policy flags, put prefix right after argv[0] and suffix at the end, once."""
-        policy = self.no_prompt(kind)
-        if policy is None or not argv:
-            return list(argv)
-        known = set(policy["prefix"]) | set(policy["suffix"]) | set(policy["legacy"])
-        rest = [argument for argument in argv[1:] if argument not in known]
-        return [argv[0], *policy["prefix"], *rest, *policy["suffix"]]
+        return self.apply_policy(self.no_prompt(kind), argv)
 
     def resume_argv(self, kind, session_id, arguments=(), *, executable=None):
         provider = self.provider(kind)

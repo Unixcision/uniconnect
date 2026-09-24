@@ -5,10 +5,13 @@ import os
 import socket
 import stat
 import struct
+import time
 
 from gi.repository import GLib
 
 from .arrangement import WorkspaceArrangement
+from .relaunch_agents import CAPABILITIES as RELAUNCH_CAPABILITIES
+from .window_details import WindowDetails
 
 
 class ControlServer:
@@ -67,6 +70,12 @@ class ControlServer:
                 self.window.background(work, lambda result: self.respond(client, result))
                 self.clients[client][1] = None  # This read watch is removed on return.
                 return False
+            if request.get("command") in ("save", "persist", "surface.details", "details"):
+                # Guardar espera a la sonda (≤ 10 s) y Detalles la lee: la respuesta llega
+                # cuando está hecho, sin bloquear GTK. Nunca «saved» antes de persistir.
+                self.clients[client][1] = None  # This read watch is removed on return.
+                self.dispatch_later(request, lambda result: self.respond(client, result))
+                return False
             result = {"ok": True, "result": self.dispatch(request)}
         except Exception as error:
             result = {"ok": False, "error": str(error)}
@@ -88,19 +97,53 @@ class ControlServer:
         self.clients.pop(client, None)
         client.close()
 
-    def dispatch(self, request):
-        command = request.get("command", "ping")
-        if command == "ping":
-            return {"app": "UniConnect", "platform": "linux", "locked": self.window.locked,
-                    "capabilities": ["relaunch.v1"] if hasattr(self.window, "relaunch") else []}
-        if self.window.locked:
-            raise ValueError("UniConnect is locked")
+    def target(self, request):
+        """(espacios ordenados, id del espacio, espacio, id de la ventana) que nombra la petición."""
         workspaces = WorkspaceArrangement.ordered(self.window.store.workspaces)
         workspace_id = request.get("workspace") or self.window.store.data.get("selectedWorkspaceId")
         if isinstance(workspace_id, str) and workspace_id.startswith("workspace:"):
             workspace_id = workspaces[int(workspace_id.split(":")[1]) - 1]["id"]
         workspace = next((w for w in workspaces if w["id"] == workspace_id), None)
         surface_id = request.get("surface") or (workspace.get("selectedWindowId") if workspace else None)
+        return workspaces, workspace_id, workspace, surface_id
+
+    def dispatch_later(self, request, reply):
+        """«save» y «details»: se contestan cuando terminan de verdad (hilo GTK)."""
+        try:
+            if self.window.locked:
+                raise ValueError("UniConnect is locked")
+            if request["command"] in ("save", "persist"):
+                def saved(error=None):
+                    reply({"ok": True, "result": "saved"} if error is None else {"ok": False, "error": str(error)})
+                self.window.action_save(done=saved)
+                return
+            _, _, workspace, surface_id = self.target(request)
+            record = next((item for item in (workspace or {}).get("windows", []) if item["id"] == surface_id), None)
+            if record is None:
+                raise ValueError("Unknown surface")
+            # Mismo JSON que mobile.terminal.details: resolución aquí, ssh -G y sonda fuera de GTK.
+            workspace_copy, record_copy, connection, transport = self.window.details_inputs(workspace, record)
+            catalog = self.window._details_catalog()
+
+            def work():
+                try:
+                    return {"ok": True, "result": WindowDetails.gather(
+                        workspace_copy, record_copy, connection=connection, transport=transport,
+                        catalog=catalog, clock=time.time)}
+                except Exception as error:
+                    return {"ok": False, "error": str(error)}
+            self.window.background(work, reply)
+        except Exception as error:
+            reply({"ok": False, "error": str(error)})
+
+    def dispatch(self, request):
+        command = request.get("command", "ping")
+        if command == "ping":
+            return {"app": "UniConnect", "platform": "linux", "locked": self.window.locked,
+                    "capabilities": list(RELAUNCH_CAPABILITIES) if hasattr(self.window, "relaunch") else []}
+        if self.window.locked:
+            raise ValueError("UniConnect is locked")
+        workspaces, workspace_id, workspace, surface_id = self.target(request)
         if command in ("list-workspaces", "workspace.list"):
             return [{"id": w["id"], "name": w["name"], "kind": w["kind"], "windows": len(w["windows"]),
                      "selected": w["id"] == self.window.store.data.get("selectedWorkspaceId")} for w in workspaces]
@@ -115,15 +158,6 @@ class ControlServer:
                 raise ValueError("Unknown workspace")
             self.window.select_workspace(workspace_id)
             return workspace_id
-        if command in ("save", "persist"):
-            self.window.action_save()
-            return "saved"
-        if command in ("surface.details", "details"):
-            # Sin sondear ahora (el socket corre en GTK): lo guardado y la última lectura viva.
-            record = next((item for item in (workspace or {}).get("windows", []) if item["id"] == surface_id), None)
-            if record is None:
-                raise ValueError("Unknown surface")
-            return self.window.window_details(workspace, record)
         surface = self.window.surfaces.get(surface_id)
         if surface is None:
             raise ValueError("Select the workspace before controlling its surface")

@@ -15,6 +15,9 @@ Criterio (contracts/agent-tree-v1/deteccion-casos.json):
 - Identidad: Claude por su ficha ``<config>/sessions/<pid>.json`` (``ficha``) o por
   argv (``argv``, puede estar desfasado); Codex por el rollout abierto (``rollout``)
   o por ``resume <uuid>``; agy por ``--conversation``; grok por ``-r``/``--resume``.
+- Ante la duda no se da id (decisiones del 24-09): tras ``--`` no hay opciones, dos ids
+  distintos en argv dan ``sin_id``, con varios rollouts abiertos solo vale el que coincide
+  con ``resume <uuid>`` y la ficha nunca clasifica a un proceso como Claude.
 
 Nunca escribe, nunca envía teclas ni cambia opciones de tmux y nunca usa sudo.
 
@@ -56,6 +59,7 @@ MAX_FIRST_LINE = 64 * 1024
 
 SESSION_ID = re.compile(r"[A-Za-z0-9_-]{1,160}\Z")
 UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+NODE = re.compile(r"(node|nodejs|bun)(\d+(\.\d+)*)?\Z")
 ROLLOUT = re.compile(r"rollout-.*-(" + UUID.pattern + r")\.jsonl\Z")
 SOCKET_NAME = re.compile(r"[A-Za-z0-9_.-]{1,64}\Z")
 TMUX_NAME = re.compile(r"[^\t\n\r\0]{1,256}\Z")
@@ -79,14 +83,18 @@ def canonical_id(value):
 
 
 def provider_of(argv):
-    """Proveedor canónico de un proceso por su línea de órdenes, o None."""
+    """Proveedor canónico de un proceso por su línea de órdenes, o None.
+
+    Criterio estricto (regla 2 del contrato): la ficha nunca clasifica; un argumento que
+    solo contiene «claude» (``vim ~/.claude/CLAUDE.md``) no hace Claude a nadie.
+    """
     if not argv:
         return None
     first = argv[0]
     base = basename(first)
     if base in NOT_AGENTS or re.match(r"python\d", base):
         return None
-    if base == "claude" or "/.local/share/claude/versions/" in first:
+    if base == "claude" or "/claude/versions/" in first:
         return "claude"
     if base.startswith("codex"):
         return "codex"
@@ -94,30 +102,63 @@ def provider_of(argv):
         return "agy"
     if base == "grok" or base.startswith("grok-"):
         return "grok"
-    if base in ("bun", "nodejs") or re.match(r"node\d*\Z", base):
+    if NODE.match(base):
         for argument in argv[1:]:
-            if "@anthropic-ai/claude-code" in argument:
+            # Claude de npm lanzado por su shebang: ``node /opt/homebrew/bin/claude``.
+            if "@anthropic-ai/claude-code" in argument or os.path.basename(argument) == "claude":
                 return "claude"
-            if "@openai/codex" in argument or basename(argument) in ("codex", "codex.js"):
+            if "@openai/codex" in argument or os.path.basename(argument) in ("codex", "codex.js"):
                 return "codex"
     return None
 
 
-def option_value(argv, names):
-    """Valor de la primera opción de ``names`` (``--x v`` o ``--x=v``), o None."""
-    for index, argument in enumerate(argv[1:], 1):
-        for name in names:
-            if argument == name and index + 1 < len(argv) and not argv[index + 1].startswith("-"):
-                return argv[index + 1]
-            if name.startswith("--") and argument.startswith(name + "="):
-                return argument[len(name) + 1:]
-    return None
+def option_value(argv, names, valid):
+    """El único valor de las opciones ``names`` en argv, o None.
+
+    - Solo cuenta lo que va antes del primer ``--``: lo de detrás es texto para la IA.
+    - ``--x v``: el valor es el token siguiente, salvo que empiece por ``-``.
+    - ``--x=v``: solo en opciones largas (``-r=…`` no es una forma válida).
+    - Un valor que no cumple ``valid`` o dos valores distintos (los UUID, en minúsculas)
+      anulan la línea de órdenes como fuente: ante la duda no se da id.
+    """
+    values, index = set(), 1
+    while index < len(argv):
+        argument = argv[index]
+        if argument == "--":
+            break
+        value = None
+        if argument in names:
+            if index + 1 < len(argv) and not argv[index + 1].startswith("-"):
+                value = argv[index + 1]
+                index += 1
+        else:
+            for name in names:
+                if name.startswith("--") and argument.startswith(name + "="):
+                    value = argument[len(name) + 1:]
+        if value is not None:
+            if not valid(value):
+                return None
+            values.add(canonical_id(value))
+        index += 1
+    return values.pop() if len(values) == 1 else None
+
+
+def is_claude_id(value):
+    return bool(UUID.fullmatch(value))
+
+
+def is_session_id(value):
+    return canonical_id(value) is not None
 
 
 def codex_resume_argument(argv):
-    for index, argument in enumerate(argv[:-1]):
-        if argument == "resume" and UUID.fullmatch(argv[index + 1]):
-            return argv[index + 1]
+    """El UUID que sigue al primer ``resume`` antes de ``--``, o None."""
+    for index, argument in enumerate(argv[1:], 1):
+        if argument == "--":
+            return None
+        if argument == "resume":
+            following = argv[index + 1] if index + 1 < len(argv) else ""
+            return following.lower() if UUID.fullmatch(following) else None
     return None
 
 
@@ -193,9 +234,9 @@ def discover(pane_pid, procesos, ficha_de, abiertos_de, primera_linea_de, cwd_de
             agent.update(session_id=session, source="ficha", cwd=ficha.get("cwd") if isinstance(ficha.get("cwd"), str) else None,
                          status=ficha.get("status"), version=ficha.get("version"), proc_start=ficha.get("procStart"))
         else:
-            value = option_value(argv, ("--resume", "-r", "--session-id"))
-            if value and UUID.fullmatch(value):
-                agent.update(session_id=value.lower(), source="argv")
+            value = option_value(argv, ("--resume", "-r", "--session-id"), is_claude_id)
+            if value:
+                agent.update(session_id=value, source="argv")
     elif provider == "codex":
         branch = [pid for pid in order if kinds[pid] == "codex" and _descends(pid, root, parent)]
         found = {}
@@ -203,29 +244,32 @@ def discover(pane_pid, procesos, ficha_de, abiertos_de, primera_linea_de, cwd_de
             for path in abiertos_de(pid) or ():
                 match = ROLLOUT.search(path or "")
                 if match and "/.codex/sessions/" in path:
-                    found[os.path.basename(path)] = (match.group(1).lower(), path)
-        if found:
-            session, path = found[max(found)]
-            agent.update(session_id=session, source="rollout")
+                    found.setdefault(match.group(1).lower(), path)
+        resumed = next((value for value in (codex_resume_argument(procesos[pid].get("argv") or []) for pid in branch)
+                        if value), None)
+        chosen = None
+        if len(found) == 1:
+            chosen = next(iter(found))
+        elif len(found) > 1 and resumed in found:
+            # Un ``codex exec`` de la propia sesión abre su rollout, más reciente: solo vale el suyo.
+            chosen = resumed
+        if chosen:
+            agent.update(session_id=chosen, source="rollout")
             try:
-                line = primera_linea_de(path)
+                line = primera_linea_de(found[chosen])
                 payload = json.loads(line).get("payload", {}) if line else {}
                 if isinstance(payload, dict) and isinstance(payload.get("cwd"), str):
                     agent["cwd"] = payload["cwd"]
             except (ValueError, AttributeError, TypeError):
                 pass
-        else:
-            for pid in branch:
-                value = codex_resume_argument(procesos[pid].get("argv") or [])
-                if value:
-                    agent.update(session_id=value.lower(), source="argv")
-                    break
+        elif not found and resumed:
+            agent.update(session_id=resumed, source="argv")
     elif provider == "agy":
-        value = canonical_id(option_value(argv, ("--conversation",)))
+        value = option_value(argv, ("--conversation",), is_session_id)
         if value:
             agent.update(session_id=value, source="argv")
     elif provider == "grok":
-        value = canonical_id(option_value(argv, ("-r", "--resume")))
+        value = option_value(argv, ("-r", "--resume"), is_session_id)
         if value:
             agent.update(session_id=value, source="argv")
     if not agent["cwd"]:
@@ -384,6 +428,11 @@ class HostReader:
     def realpath(path):
         return os.path.realpath(path)
 
+    @staticmethod
+    def host():
+        """Quién sondea: ``{hostname, uid, platform}`` (``uid`` 0 = root)."""
+        return {"hostname": socket_module.gethostname(), "uid": os.geteuid(), "platform": sys.platform}
+
     def panes(self, socket_name):
         """(paneles, error). Sin servidor tmux no es un error: no hay sesiones."""
         argv = ["tmux"] + ([] if socket_name == "default" else ["-L", socket_name]) + [
@@ -419,8 +468,8 @@ def iso_now(now=None):
 def probe(socket_name="default", sessions=(), reader=None, now=None):
     """Lee el host y devuelve el JSON v1 (dict) de contracts/agent-tree-v1/sonda-salida.json."""
     reader = reader or HostReader()
-    output = {"version": VERSION, "checked_at": iso_now(now), "socket": socket_name,
-              "host": {"hostname": socket_module.gethostname(), "uid": os.geteuid(), "platform": sys.platform},
+    host = reader.host() if hasattr(reader, "host") else HostReader.host()
+    output = {"version": VERSION, "checked_at": iso_now(now), "socket": socket_name, "host": host,
               "server": True, "error": None, "truncated": False, "sessions": []}
     panes, error = reader.panes(socket_name)
     if error:

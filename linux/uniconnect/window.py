@@ -29,7 +29,7 @@ from .window_notifications import WindowNotifications
 from .native_sessions import NativeSessions
 from .agent_tree import AgentTree
 from .session_recovery import SessionRecovery
-from .window_details import CHECKING, UNREACHABLE, WindowDetails
+from .window_details import CHECKING, TITLE, WindowDetails
 from .clipboard_text import publish_text
 from .sidebar import WorkspaceSidebar
 
@@ -551,14 +551,18 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         if self._runtime_rendering:
             return
         try:
-            self.store.save()
-            self.last_saved = time.time()
-            if hasattr(self, "status_label"):
-                count = sum(len(w.get("windows", [])) for w in self.store.workspaces)
-                self.status_label.set_text(f'{self._("Saved")} {time.strftime("%H:%M:%S")}  ·  {len(self.store.workspaces)} / {count}')
+            self.save_now()
         except Exception as error:
             if hasattr(self, "status_label"):
                 self.status_label.set_text(self._(str(error)))
+
+    def save_now(self):
+        """Guarda ya y lo dice en la barra de estado; lanza si no se pudo guardar."""
+        self.store.save()
+        self.last_saved = time.time()
+        if hasattr(self, "status_label"):
+            count = sum(len(w.get("windows", [])) for w in self.store.workspaces)
+            self.status_label.set_text(f'{self._("Saved")} {time.strftime("%H:%M:%S")}  ·  {len(self.store.workspaces)} / {count}')
 
     def tick(self):
         if self._closed:
@@ -590,7 +594,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         future.add_done_callback(finished)
 
     def details_connection(self, workspace):
-        """Destino SSH para Detalles sin pedir la bóveda: None si está cerrada."""
+        """Destino SSH para Detalles sin pedir la bóveda: None si está cerrada (o es local)."""
         if workspace["kind"] != "ssh" or self.vault.locked:
             return None
         try:
@@ -598,24 +602,35 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         except Exception:
             return None
 
+    def details_inputs(self, workspace, record, transport_factory=Transport):
+        """Hilo GTK: copias de la ventana y lo que hace falta para comprobarla, sin preguntar nada.
+
+        Devuelve (espacio, ventana, conexión, transporte) para WindowDetails.gather, que corre
+        fuera de GTK: ahí se resuelve el destino con ssh -G y se lee la sonda.
+        """
+        transport = None
+        if record.get("tmux"):
+            key = AgentTree.group_key(workspace, record)
+            transport = AgentTree.open_transport(self, transport_factory, key, workspace)
+        return (copy.deepcopy({name: value for name, value in workspace.items() if name != "windows"}),
+                copy.deepcopy(record), self.details_connection(workspace), transport)
+
     def window_details(self, workspace, record):
-        """Detalles con lo guardado y la última lectura viva del árbol IA, sin sondear ahora."""
-        return WindowDetails.snapshot(workspace, record, self.agent_tree.live.get(record["id"]),
-                                      self._details_catalog(), time.time,
-                                      connection=self.details_connection(workspace))
+        """Detalles con lo guardado, sin comprobar ahora (lo que se enseña mientras llega la sonda)."""
+        return WindowDetails.snapshot(workspace, record, None, self._details_catalog(), time.time)
 
     def show_window_details(self, surface):
         """Modal «Detalles»: abre al instante con lo guardado y se actualiza con la sonda (≤ 8 s)."""
         workspace, record = surface.workspace, surface.record
-        dialog = Gtk.Dialog(title="Detalles de la ventana", transient_for=self, modal=True)
+        dialog = Gtk.Dialog(title=TITLE, transient_for=self, modal=True)
         dialog.add_button("Cerrar", Gtk.ResponseType.CLOSE)
         dialog.set_default_size(620, -1)
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=20)
-        grid = Gtk.Grid(column_spacing=18, row_spacing=8)
-        status = Gtk.Label(xalign=0)
+        status = Gtk.Label(xalign=0, wrap=True)
         status.get_style_context().add_class("dim-label")
-        content.pack_start(grid, False, False, 0)
+        grid = Gtk.Grid(column_spacing=18, row_spacing=8)
         content.pack_start(status, False, False, 0)
+        content.pack_start(grid, False, False, 0)
         dialog.get_content_area().add(content)
         state = {"open": True}
 
@@ -631,55 +646,42 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                     command = Gtk.Label(xalign=0, selectable=True, wrap=True)
                     command.set_markup("<tt>" + GLib.markup_escape_text(value) + "</tt>")
                     command.set_line_wrap_mode(Pango.WrapMode.CHAR)
-                    button = Gtk.Button(label="Copiar orden", halign=Gtk.Align.START)
-                    button.connect("clicked", lambda *_, text=value: publish_text(text))
                     box.pack_start(command, False, False, 0)
+                    unverified = WindowDetails.command_note(details)
+                    if unverified:
+                        box.pack_start(Gtk.Label(label=unverified, xalign=0, wrap=True), False, False, 0)
+                    button = Gtk.Button(label="Copiar orden", halign=Gtk.Align.START)
+
+                    def copied(button, text=value):
+                        publish_text(text)
+                        button.set_label("Orden copiada")
+                    button.connect("clicked", copied)
                     box.pack_start(button, False, False, 0)
                     grid.attach(box, 1, index, 1, 1)
                 else:
                     grid.attach(Gtk.Label(label=value, xalign=0, selectable=True, wrap=True), 1, index, 1, 1)
-            status.set_text(note)
+            status.set_text(note or "")
+            status.set_visible(bool(note))
             grid.show_all()
 
         def closed(*_):
             state["open"] = False
             dialog.destroy()
 
-        def snapshot(live):
-            return WindowDetails.snapshot(workspace, record, live, self._details_catalog(), time.time,
-                                          connection=self.details_connection(workspace))
-
         dialog.connect("response", closed)
-        render(snapshot(None), CHECKING)
         dialog.show_all()
-        if not record.get("tmux"):
-            status.set_text("")
-            return dialog
-        key = AgentTree.group_key(workspace, record)
-        transport = AgentTree.open_transport(self, Transport, key, workspace)
-        if transport is None:
-            status.set_text(UNREACHABLE)
-            return dialog
-        name = record["tmux"]
+        render(self.window_details(workspace, record), CHECKING if record.get("tmux") else "")
+        workspace_copy, record_copy, connection, transport = self.details_inputs(workspace, record)
+        catalog = self._details_catalog()
 
         def work():
-            # Fuera del hilo GTK: una lectura de la sonda de este grupo, como mucho 8 s.
-            try:
-                result = AgentTree.probe(transport, key[1], [name], timeout=8)
-            except Exception:
-                return None
-            if result.get("error"):
-                return None
-            entry = next((item for item in result["sessions"] if item.get("name") == name), None)
-            return {"ok": True, "error": None, "checked_at": result.get("checked_at"), "session": entry}
+            # Fuera del hilo GTK: ssh -G para el destino y una lectura de la sonda, como mucho 8 s.
+            return WindowDetails.gather(workspace_copy, record_copy, connection=connection, transport=transport,
+                                        catalog=catalog, clock=time.time)
 
-        def done(live):
-            if not state["open"] or self._closed:
-                return
-            if live is None:
-                render(snapshot({"ok": False, "error": "probe"}), UNREACHABLE)
-            else:
-                render(snapshot(live), "")
+        def done(details):
+            if state["open"] and not self._closed:
+                render(details, WindowDetails.warning(details))
 
         self.background(work, done)
         return dialog
@@ -760,7 +762,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         if workspace["kind"] == "ssh":
             command = SSHCommand.parse(result["connect"])
             workspace["credentialId"] = self.vault.put(result["connect"])
-            workspace["hostLabel"] = "%s@%s:%s" % command.endpoint_key()
+            workspace["hostLabel"] = WindowDetails.endpoint_label(*command.endpoint_key())
         elif not Path(workspace["cwd"]).expanduser().is_dir():
             raise ValueError(self._("The folder does not exist"))
         self.commit_new_workspace(workspace, select=True)
@@ -808,7 +810,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                 except Exception as error:
                     raise RPCError("invalid_params", self._("Comando de conexión no válido")) from error
                 workspace["credentialId"] = self.vault.put(connect)
-                workspace["hostLabel"] = "%s@%s:%s" % command.endpoint_key()
+                workspace["hostLabel"] = WindowDetails.endpoint_label(*command.endpoint_key())
             else:
                 source = next((item for item in self.store.workspaces
                                if item["id"] == params.get("source_workspace_id") and item["kind"] == "ssh"), None)
@@ -1103,15 +1105,24 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             raise
         return operation
 
-    def action_save(self):
-        # «Guardar» persiste el árbol entero: primero una lectura viva de todas las cajas
-        # (10 s como máximo); se guarda igual si la sonda falla o vence.
+    def action_save(self, done=None):
+        """«Guardar» persiste el árbol entero: primero una lectura viva de las cajas (10 s como
+        máximo) y se guarda igual si la sonda falla o vence. ``done(error=None)`` se llama
+        cuando ya está en disco (o con el error): así el socket no dice «saved» antes de tiempo."""
         def finish():
             try:
-                self.persist()
+                if self._runtime_rendering:
+                    raise RuntimeError("Hay una operación en curso; vuelve a intentarlo")
+                self.save_now()
                 self.store.checkpoint("manual")
             except Exception as error:
-                self.error(error)
+                if done is None:
+                    self.error(error)
+                else:
+                    done(error)
+                return
+            if done is not None:
+                done()
         self.agent_tree.refresh_all(finish)
 
     def action_rename_workspace(self):
@@ -1409,11 +1420,14 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                 result = transport.preflight(window)
                 if not (result["sessionExists"] and result["directoryExists"] and result["tmuxInstalled"]):
                     raise ValueError(self._("The saved remote tmux session is unavailable") + " · " + window["name"])
-        def apply(_):
+            # Fuera de GTK: la etiqueta se guarda ya resuelta (ssh -G), usuario@host:puerto.
+            return WindowDetails.endpoint_label(*parsed.endpoint_key())
+        def apply(label):
             if self.store.workspace(workspace["id"]) is not workspace or workspace != proposed:
                 raise ValueError("El espacio cambió durante la comprobación. Repite la operación.")
             def mutate():
                 workspace["credentialId"] = self.vault.put(result["connect"])
+                workspace["hostLabel"] = label
                 return workspace["credentialId"]
             self.stage_runtime([proposed], {workspace["id"]: result["connect"]}, mutate,
                                reason="runtime-endpoint-edit")
@@ -1487,6 +1501,8 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         dialog.destroy()
         if confirmed:
             command = SSHCommand.parse(self.connection(surface.workspace))
+            # Cierre deliberado desde UniConnect: ni «interrumpida» ni recuperación automática (D5, D6).
+            self.agent_tree.mark_closed_by_user(surface.record)
             remote = shlex.join(["tmux", "-L", surface.record.get("tmuxSocket", "uniconnect"), "kill-session", "-t", "=" + surface.record["tmux"]])
             self.background(lambda: subprocess.run(command.argv(remote, batch=True), env={**os.environ, **command.environment()}, capture_output=True, check=True, timeout=20))
 

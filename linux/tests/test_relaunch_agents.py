@@ -7,6 +7,7 @@ from pathlib import Path
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from types import SimpleNamespace
@@ -111,6 +112,115 @@ class ArgumentsTests(unittest.TestCase):
                 TargetWorker.validate_quiescence(rows, process)
         with self.assertRaises(Unavailable):
             TargetWorker.validate_quiescence([context, complete], {**process, "argv": ["codex"]})
+
+
+class SharedPolicyTests(unittest.TestCase):
+    """El trabajador usa la misma función que el escritorio y el catálogo que recibe (D2)."""
+
+    def test_worker_has_no_policy_of_its_own(self):
+        argv = ["codex", "resume", "x", "-a", "never", "--full-auto"]
+        without = {"codex": {"noPrompt": {"prefix": ["--yolo"]}}}
+        self.assertEqual(TargetWorker.no_prompt("codex", argv, without), ["codex", "--yolo", "resume", "x", "-a", "never", "--full-auto"])
+        self.assertEqual(TargetWorker.no_prompt("codex", argv, AgentResumeCatalog().providers), ["codex", "--yolo", "resume", "x"])
+
+    def test_self_contained_source_carries_the_catalogue_rule(self):
+        # Lo que viaja por SSH: resume_catalog.py delante del trabajador, sin importar nada del paquete.
+        source = RelaunchAgents.worker_source()
+        payload = base64.b64encode(json.dumps({"action": "inspect", "session": "no valida", "socket": "x"}).encode()).decode()
+        with tempfile.TemporaryDirectory(prefix="uc-worker-") as directory:
+            result = subprocess.run([sys.executable, "-c", source, payload], cwd=directory, capture_output=True,
+                                    text=True, timeout=30)
+        self.assertEqual(result.stdout.strip(), 'UC_RELAUNCH_V1 {"error": "no_soportado"}', result.stderr)
+        probe = source.replace('if __name__ == "__main__":', "if False:") + (
+            "\nprint(json.dumps(TargetWorker.no_prompt('codex', ['codex', 'resume', 'x', '-s=read-only'], "
+            "{'codex': {'noPrompt': {'prefix': ['--yolo'], 'supersedes': [{'flag': '-s', 'takesValue': True}]}}})))")
+        result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=30)
+        self.assertEqual(json.loads(result.stdout), ["codex", "--yolo", "resume", "x"], result.stderr)
+
+    def test_announced_cells_are_exactly_the_linux_row_of_the_contract(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from contracts_dir import contract
+        from uniconnect.relaunch_agents import CAPABILITIES
+        matrix = json.loads(contract("relaunch-v1", "proveedores.json").read_text(encoding="utf-8"))
+        self.assertEqual(list(CAPABILITIES), matrix["capacidades"]["linux"])
+
+
+class ClaudeDialectTests(unittest.TestCase):
+    """D7 en Linux: identidad por la ficha de la raíz en idle, compositor vacío y /exit; nada vivo se toca."""
+
+    SESSION = "473ed1de-4397-45ef-b00b-6b17fd7382b0"
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory(prefix="uc-claude-dialect-")
+        root = Path(self.directory.name)
+        self.proc, self.config = root / "proc", root / "config"
+        (self.config / "sessions").mkdir(parents=True)
+        (self.proc / "4242").mkdir(parents=True)
+        (self.proc / "4242" / "environ").write_bytes(b"HOME=/root\0CLAUDE_CONFIG_DIR=" + str(self.config).encode() + b"\0")
+        self.worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "claude",
+                                    "catalog": AgentResumeCatalog().providers}, proc=self.proc)
+        self.process = {"pid": 4242, "argv": ["claude", "--dangerously-skip-permissions"], "cwd": "/w"}
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def ficha(self, **values):
+        data = {"pid": 4242, "sessionId": self.SESSION, "cwd": "/w", "status": "idle", **values}
+        (self.config / "sessions" / "4242.json").write_text(json.dumps(data))
+
+    def test_identity_only_from_its_own_ficha_and_only_when_idle(self):
+        with self.assertRaises(Unavailable) as missing:
+            self.worker.native_id("claude", self.process, "", {})
+        self.assertEqual(missing.exception.cause, "identidad_ambigua")
+        self.ficha()
+        self.assertEqual(self.worker.native_id("claude", self.process, "", {}), self.SESSION)
+        self.worker.quiescent_configuration("claude", self.process, self.SESSION, "")
+        self.ficha(status="busy")
+        with self.assertRaises(Unavailable) as busy:
+            self.worker.quiescent_configuration("claude", self.process, self.SESSION, "")
+        self.assertEqual(busy.exception.cause, "dialogo_desconocido")
+        self.ficha(pid=999)  # Ficha copiada de otro proceso: no es la suya.
+        with self.assertRaises(Unavailable) as foreign:
+            self.worker.native_id("claude", self.process, "", {})
+        self.assertEqual(foreign.exception.cause, "identidad_ambigua")
+
+    def test_native_claude_is_recognised_by_name_or_versions_path(self):
+        self.assertTrue(TargetWorker.is_provider("claude", ["claude"]))
+        self.assertTrue(TargetWorker.is_provider("claude", ["/root/.local/share/claude/versions/2.1.280", "--resume", "x"]))
+        self.assertFalse(TargetWorker.is_provider("claude", ["vim", "/root/.claude/CLAUDE.md"]))
+        self.assertTrue(TargetWorker.is_provider("codex", ["/usr/bin/codex"]))
+
+    def test_resume_keeps_window_options_and_forces_no_prompt_with_the_versions_executable(self):
+        executable = "/root/.local/share/claude/versions/2.1.280"
+        args = TargetWorker.resume_arguments("claude", [executable, "--resume", "old", "--model", "opus",
+                                                        "--dangerously-skip-permissions"], self.SESSION, self.worker.request["catalog"])
+        self.assertEqual(args, [executable, "--resume", self.SESSION, "--model", "opus", "--dangerously-skip-permissions"])
+
+    def test_screen_reading_for_the_exit(self):
+        screen = "Background work is running\n  1. Keep it running\n❯ 2. Exit and stop tasks\n"
+        self.assertEqual(TargetWorker.claude_exit_option(screen), 2)
+        self.assertIsNone(TargetWorker.claude_exit_option("Background work is running\n  Exit and stop tasks"))
+        printed = "old " + "11111111-2222-4333-8444-555555555555\nResume this session with:\nclaude --resume " + self.SESSION
+        self.assertEqual(TargetWorker.claude_printed_id(printed), self.SESSION)
+        self.assertIsNone(TargetWorker.claude_printed_id("sin anuncio " + self.SESSION))
+
+    def test_empty_claude_prompt_passes_and_folder_trust_is_left_to_a_person(self):
+        for line in ("│ >                                          │", "> ", "❯ "):
+            with self.subTest(line=line):
+                self.worker.tmux = lambda *args, line=line: "1" if args[0] == "display-message" else "────\n" + line
+                self.worker.require_empty_composer({"pane": {"pane": "%1"}})
+        self.worker.tmux = lambda *args: ("1" if args[0] == "display-message"
+                                          else "Do you trust the files in this folder?\n❯ 1. Yes, I trust this folder")
+        with self.assertRaises(Unavailable) as trust:
+            self.worker.require_empty_composer({"pane": {"pane": "%1"}})
+        self.assertEqual(trust.exception.cause, "confianza_carpeta")
+
+    def test_other_providers_are_still_excluded_before_touching_anything(self):
+        worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "agy",
+                               "catalog": AgentResumeCatalog().providers}, proc=self.proc)
+        with self.assertRaises(Unavailable) as error:
+            worker.quiescent_configuration("agy", self.process, "x", "")
+        self.assertEqual(error.exception.cause, "no_soportado")
 
 
 class FleetTests(unittest.TestCase):

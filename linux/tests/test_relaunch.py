@@ -3,6 +3,7 @@
 import copy
 import json
 from pathlib import Path
+import sys
 import tempfile
 import threading
 import unittest
@@ -10,6 +11,9 @@ import unittest
 from uniconnect.mobile_protocol import RPCError
 from uniconnect.relaunch import RelaunchService
 from uniconnect.relaunch_agents import RelaunchUnavailable
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from contracts_dir import contract  # D8: sube hasta contracts/ y falla si no está.
 
 
 class Adapter:
@@ -115,7 +119,7 @@ class RelaunchTests(unittest.TestCase):
         self.assertEqual(self.jobs, [])
 
     def test_same_fixture_shapes_and_no_extra_window_after_plan(self):
-        fixtures = Path(__file__).resolve().parents[2] / "contracts/relaunch-v1"
+        fixtures = contract("relaunch-v1")
         request = json.loads((fixtures / "plan-request.json").read_text())
         workspace = {"id": request["scope"]["id"], "windows": [{"id": "one"}]}
         selection = RelaunchService.scope(request["scope"], "machine", [workspace])
@@ -132,7 +136,7 @@ class RelaunchTests(unittest.TestCase):
                 RelaunchService.scope(scope, "machine", [workspace])
 
     def test_shared_window_request_is_resolved_and_admitted_without_workspace_id(self):
-        path = Path(__file__).resolve().parents[2] / "contracts/relaunch-v1/plan-window-request.json"
+        path = contract("relaunch-v1", "plan-window-request.json")
         request = json.loads(path.read_text())
         window = {"id": request["scope"]["id"]}
         workspace = {"id": "workspace-context", "windows": [window, {"id": "not-selected"}]}

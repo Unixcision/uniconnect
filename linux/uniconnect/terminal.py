@@ -358,21 +358,25 @@ class TerminalSurface(Gtk.Box):
         if self.disposed:
             self._release_ownership()
             return
-        # Local: stopped, y si la IA estaba activa queda interrumpida para reanudarse al abrir.
-        AgentTree.client_exited(self.workspace, self.record)
+        code = os.waitstatus_to_exitcode(status)
+        server_died = self._server_crash_marker_count() > self._launch_crash_markers
+        # Local: stopped. Interrumpida (D5) solo si murió el servidor tmux y la IA se vio en
+        # marcha hace ≤ 1 tick; una sesión desaparecida sin más la decide la sonda.
+        tree = getattr(self.owner, "agent_tree", None)
+        AgentTree.client_exited(self.workspace, self.record, server_died=server_died,
+                                recent=bool(tree is not None and tree.agent_recent(self.workspace, self.record)))
         if self._pending_launch is not None:
             # Do not start another VTE child until the old child's exit signal has
             # been consumed: child-exited carries no PID/generation identifier.
             GLib.idle_add(self._prepare_launch)
             return
-        code = os.waitstatus_to_exitcode(status)
         recovery = getattr(self.owner, "session_recovery", None)
         if code == 72 and recovery is not None and recovery.on_missing_session(self):
             # La sesión tmux ya no existe: se recrea (con la IA si estaba activa) y se vuelve a enganchar.
             self.update_status("Reconnecting", "Recreando la sesión tmux…")
             self.owner.persist()
             return
-        transient = code == 255 or (code == 1 and self._server_crash_marker_count() > self._launch_crash_markers)
+        transient = code == 255 or (code == 1 and server_died)
         if self._allow_auto_retry and self.workspace["kind"] == "ssh" and transient:
             if self._schedule_retry():
                 self.owner.persist()

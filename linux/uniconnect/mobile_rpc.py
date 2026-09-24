@@ -27,6 +27,7 @@ from .mobile_render_grid import (MAX_CAPTURE_BYTES, MAX_SCROLLBACK_ROWS, capture
 from .transcribe import TranscriptionEngine
 from .transport import SSHCommand, Transport
 from .agent_tree import AgentTree
+from .relaunch_agents import CAPABILITIES as RELAUNCH_CAPABILITIES
 from .resume_catalog import AgentResumeCatalog
 from .window_details import WindowDetails
 
@@ -88,7 +89,7 @@ class MobileRPC:
             ready = capture_dependencies_ready()
             capabilities = ["events.v1", "terminal.viewport.v1", "notifications.v1", "terminal.pty.v1", "window_details.v1"]
             if getattr(self.window, "relaunch", None) is not None:
-                capabilities.append("relaunch.v1")
+                capabilities += RELAUNCH_CAPABILITIES
             if ready:
                 capabilities += ["terminal.replay.v1", "terminal.render_grid.v1"]
             return {"machine_id": self.access.machine_id, "display_name": socket.gethostname(), "platform": "linux",
@@ -126,6 +127,16 @@ class MobileRPC:
             return self.file_dispatch(operation, params, connection_id, authorized)
         return self.on_main(lambda: checked(lambda: self._dispatch_main(operation, params, connection_id)))
 
+    def agent_title(self, kind):
+        """``displayName`` del catálogo compartido (Mac y Linux lo leen de ahí); el id si no carga."""
+        catalog = getattr(self, "_agent_catalog", None)
+        if catalog is None:
+            try:
+                catalog = self._agent_catalog = AgentResumeCatalog()
+            except Exception:
+                return kind
+        return catalog.display_name(kind)
+
     # ----- window_details.v1 -----
 
     def details_dispatch(self, params, authorized):
@@ -145,7 +156,7 @@ class MobileRPC:
             record = next((item for item in (workspace or {}).get("windows", []) if item["id"] == ids[0]), None)
             if record is None:
                 raise RPCError("not_found", "No se encontró esa ventana.")
-            connection = transport = key = None
+            connection = transport = None
             vault = getattr(self.window, "vault", None)
             if workspace["kind"] == "ssh" and vault is not None and not vault.locked:
                 try:
@@ -156,25 +167,16 @@ class MobileRPC:
                 key = AgentTree.group_key(workspace, record)
                 transport = AgentTree.open_transport(self.window, self.transport_factory, key, workspace)
             return (copy.deepcopy({name: value for name, value in workspace.items() if name != "windows"}),
-                    copy.deepcopy(record), connection, transport, key)
+                    copy.deepcopy(record), connection, transport)
 
-        workspace, record, connection, transport, key = self.on_main(resolve)
-        live = None
-        if record.get("tmux"):
-            live = {"ok": False, "error": "host_inaccesible", "checked_at": None, "session": None}
-            if transport is not None:
-                try:
-                    result = AgentTree.probe(transport, key[1], [record["tmux"]], timeout=8)
-                    if not result.get("error"):
-                        entry = next((item for item in result["sessions"] if item.get("name") == record["tmux"]), None)
-                        live = {"ok": True, "error": None, "checked_at": result.get("checked_at"), "session": entry}
-                except Exception:
-                    pass  # Nunca un error por la sonda: se responde con lo guardado.
+        workspace, record, connection, transport = self.on_main(resolve)
         try:
             catalog = AgentResumeCatalog()
         except Exception:
             catalog = None
-        return WindowDetails.snapshot(workspace, record, live, catalog, time.time, connection=connection)
+        # Fuera de GTK: destino resuelto con ssh -G y la sonda (≤ 8 s); nunca un error por la sonda.
+        return WindowDetails.gather(workspace, record, connection=connection, transport=transport,
+                                    catalog=catalog, clock=time.time)
 
     # ----- activity.v1 -----
 
@@ -504,7 +506,8 @@ class MobileRPC:
                                   if record.get("tmux") else None})
             targets = [("terminal", "Terminal")]
             if workspace["kind"] == "local":
-                targets += [("claude", "Claude Code"), ("codex", "Codex"), ("agy", "Agy"), ("grok", "Grok")]
+                # Nombres del catálogo compartido (displayName), sin tabla propia.
+                targets += [(kind, self.agent_title(kind)) for kind in ("claude", "codex", "agy", "grok")]
             boxes.append({"id": workspace["id"], "title": workspace["name"], "kind": workspace["kind"],
                           "current_directory": workspace.get("cwd"), "is_pinned": workspace.get("pinned", False),
                           "is_selected": workspace["id"] == self.window.store.data.get("selectedWorkspaceId"),
@@ -516,7 +519,7 @@ class MobileRPC:
         return {"workspaces": boxes, "display_name": socket.gethostname(),
                 "capabilities": ["activity.v1", "box_update", "file_put.v1", "inbox.v1", "transcribe.v1",
                                  "ssh_create.v1", "window_details.v1"]
-                + (["relaunch.v1"] if getattr(self.window, "relaunch", None) is not None else [])}
+                + (list(RELAUNCH_CAPABILITIES) if getattr(self.window, "relaunch", None) is not None else [])}
 
     def invalidate_terminal(self, panel_id):
         with self.revision_lock:
