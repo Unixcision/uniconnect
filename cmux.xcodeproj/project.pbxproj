@@ -750,6 +750,7 @@
 		C1A0DE200000000000000005 /* UniConnectClaudeBridgeTokenVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0DE100000000000000005 /* UniConnectClaudeBridgeTokenVault.swift */; };
 		D26B20000000000000000003 /* UniConnectClaudeInstallationIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000003 /* UniConnectClaudeInstallationIdentity.swift */; };
 		D26B20000000000000000004 /* UniConnectClaudeLocalProcessInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000004 /* UniConnectClaudeLocalProcessInspector.swift */; };
+		7D566B440EFEB801D3091B24 /* UniConnectClaudeOpenConversationGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 625E066D06499D00B985AE68 /* UniConnectClaudeOpenConversationGuard.swift */; };
 		D26B20000000000000000005 /* UniConnectClaudeRemoteSessionControlling.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000005 /* UniConnectClaudeRemoteSessionControlling.swift */; };
 		D26B20000000000000000006 /* UniConnectClaudeRemoteTargetResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000006 /* UniConnectClaudeRemoteTargetResolution.swift */; };
 		D26B20000000000000000007 /* UniConnectClaudeRemoteTargetResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000007 /* UniConnectClaudeRemoteTargetResolver.swift */; };
@@ -840,6 +841,7 @@
 		D26F20000000000000000007 /* UniConnectLocalWindowActionMenuSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26F10000000000000000007 /* UniConnectLocalWindowActionMenuSnapshot.swift */; };
 		D26F20000000000000000008 /* UniConnectLocalWindowActionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26F10000000000000000008 /* UniConnectLocalWindowActionPolicy.swift */; };
 		D26F40000000000000000001 /* UniConnectLocalWindowActionPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26F30000000000000000001 /* UniConnectLocalWindowActionPolicyTests.swift */; };
+		D6632DFE676B84453D0F3E13 /* UniConnectLocalWindowInterruptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FC90235DC6F361282FF1D1C /* UniConnectLocalWindowInterruptionTests.swift */; };
 		D26F20000000000000000002 /* UniConnectLocalWindowLaunchTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26F10000000000000000002 /* UniConnectLocalWindowLaunchTarget.swift */; };
 		D26E20000000000000000003 /* UniConnectLocalWindowRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26E10000000000000000003 /* UniConnectLocalWindowRecord.swift */; };
 		D26E20000000000000000004 /* UniConnectLocalWindowRecordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26E10000000000000000004 /* UniConnectLocalWindowRecordTests.swift */; };
@@ -1765,6 +1767,7 @@
 		C1A0DE100000000000000005 /* UniConnectClaudeBridgeTokenVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeBridgeTokenVault.swift; sourceTree = "<group>"; };
 		D26B10000000000000000003 /* UniConnectClaudeInstallationIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeInstallationIdentity.swift; sourceTree = "<group>"; };
 		D26B10000000000000000004 /* UniConnectClaudeLocalProcessInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeLocalProcessInspector.swift; sourceTree = "<group>"; };
+		625E066D06499D00B985AE68 /* UniConnectClaudeOpenConversationGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeOpenConversationGuard.swift; sourceTree = "<group>"; };
 		D26B10000000000000000005 /* UniConnectClaudeRemoteSessionControlling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeRemoteSessionControlling.swift; sourceTree = "<group>"; };
 		D26B10000000000000000006 /* UniConnectClaudeRemoteTargetResolution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeRemoteTargetResolution.swift; sourceTree = "<group>"; };
 		D26B10000000000000000007 /* UniConnectClaudeRemoteTargetResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeRemoteTargetResolver.swift; sourceTree = "<group>"; };
@@ -1853,6 +1856,7 @@
 		D26F10000000000000000007 /* UniConnectLocalWindowActionMenuSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalWindowActionMenuSnapshot.swift; sourceTree = "<group>"; };
 		D26F10000000000000000008 /* UniConnectLocalWindowActionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalWindowActionPolicy.swift; sourceTree = "<group>"; };
 		D26F30000000000000000001 /* UniConnectLocalWindowActionPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalWindowActionPolicyTests.swift; sourceTree = "<group>"; };
+		3FC90235DC6F361282FF1D1C /* UniConnectLocalWindowInterruptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalWindowInterruptionTests.swift; sourceTree = "<group>"; };
 		D26F10000000000000000002 /* UniConnectLocalWindowLaunchTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalWindowLaunchTarget.swift; sourceTree = "<group>"; };
 		D26E10000000000000000003 /* UniConnectLocalWindowRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalWindowRecord.swift; sourceTree = "<group>"; };
 		D26E10000000000000000004 /* UniConnectLocalWindowRecordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectLocalWindowRecordTests.swift; sourceTree = "<group>"; };
@@ -2153,6 +2157,7 @@
 				A90610000000000000000002 /* UniConnectLocalTmuxLaunchPlan.swift */,
 				A90610000000000000000003 /* UniConnectLocalTmuxInspecting.swift */,
 				A90610000000000000000004 /* UniConnectLocalTmuxService.swift */,
+				625E066D06499D00B985AE68 /* UniConnectClaudeOpenConversationGuard.swift */,
 				A90610000000000000000005 /* UniConnectLocalTmuxOwner.swift */,
 				A6092606AA0000000000000A /* UniConnectLocalTmuxRuntimeObservation.swift */,
 				A90610000000000000000006 /* UniConnectLocalTmuxProcessIdentity.swift */,
@@ -2924,6 +2929,7 @@
 			isa = PBXGroup;
 			children = (
 				D26E10000000000000000004 /* UniConnectLocalWindowRecordTests.swift */,
+				3FC90235DC6F361282FF1D1C /* UniConnectLocalWindowInterruptionTests.swift */,
 				A90612000000000000000004 /* MobileHostOutboundQueueTests.swift */,
 				A90612000000000000000003 /* UniConnectLocalTmuxIntegrationTests.swift */,
 				13EC33DB2A3A485401D825F1 /* UniConnectLocalTmuxSocketAccessTests.swift */,
@@ -3983,6 +3989,7 @@
 				C1A0DE200000000000000005 /* UniConnectClaudeBridgeTokenVault.swift in Sources */,
 				D26B20000000000000000003 /* UniConnectClaudeInstallationIdentity.swift in Sources */,
 				D26B20000000000000000004 /* UniConnectClaudeLocalProcessInspector.swift in Sources */,
+				7D566B440EFEB801D3091B24 /* UniConnectClaudeOpenConversationGuard.swift in Sources */,
 				D26B20000000000000000005 /* UniConnectClaudeRemoteSessionControlling.swift in Sources */,
 				D26B20000000000000000006 /* UniConnectClaudeRemoteTargetResolution.swift in Sources */,
 				D26B20000000000000000007 /* UniConnectClaudeRemoteTargetResolver.swift in Sources */,
@@ -4449,6 +4456,7 @@
 				812D977F2346B10160E3C8CA /* UniConnectLocalTmuxSocketAccessTests.swift in Sources */,
 				A90622000000000000000001 /* UniConnectLocalTmuxTests.swift in Sources */,
 				D26F40000000000000000001 /* UniConnectLocalWindowActionPolicyTests.swift in Sources */,
+				D6632DFE676B84453D0F3E13 /* UniConnectLocalWindowInterruptionTests.swift in Sources */,
 				D26E20000000000000000004 /* UniConnectLocalWindowRecordTests.swift in Sources */,
 				D26F40000000000000000002 /* UniConnectMarkdownDetailedTests.swift in Sources */,
 				A90622000000000000000002 /* UniConnectMobileAccessTests.swift in Sources */,

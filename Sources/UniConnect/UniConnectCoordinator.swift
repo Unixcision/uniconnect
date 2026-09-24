@@ -1766,13 +1766,17 @@ final class UniConnectCoordinator: ObservableObject {
         panelID: UUID, in workspace: Workspace, focus: Bool = true
     ) -> TerminalPanel? {
         guard permitsImportSensitiveMutation(), workspace.uniConnectProfile?.kind == .local,
-              let record = workspace.uniConnectLocalWindowsByPanelId[panelID],
+              var record = workspace.uniConnectLocalWindowsByPanelId[panelID],
               let binding = record.tmuxBinding else { return nil }
+        // «Reabrir terminal» follows the restore rule: an agent interrupted by a tmux crash comes
+        // back as the active conversation before deciding whether to resume.
+        let revived = record.reviveInterruptedConversation()
         let registry = CmuxVaultAgentRegistry.load(workingDirectory: record.workingDirectory)
         let snapshot = record.runtimeState == .agent ? record.latestRestorableSnapshot(registry: registry) : nil
         reconcileActiveLocalAgentClaims()
         let resume = snapshot.flatMap { snapshot in
             guard snapshot.workingDirectory.map({ UniConnectLocalBoxRootPolicy.isAvailableDirectory($0) }) == true,
+                  !UniConnectClaudeOpenConversationGuard().isOpenElsewhere(snapshot),
                   let claim = UniConnectLocalAgentRestoreClaimPolicy.claim(for: snapshot),
                   localAgentClaimRegistry.conflictingOwner(
                       for: claim, requester: .init(workspaceID: workspace.id, panelID: panelID)
@@ -1792,6 +1796,11 @@ final class UniConnectCoordinator: ObservableObject {
         guard let panel = workspace.respawnTerminalSurface(
             panelId: panelID, command: command, workingDirectory: localDirectory, focus: focus
         ) else { return nil }
+        if revived, resume == nil {
+            // Revived but not resumable now (folder missing, open elsewhere, claimed): a shell,
+            // with the conversation kept as the latest one for a manual resume.
+            _ = record.transitionToShell()
+        }
         workspace.uniConnectInstallLocalWindowRecord(record, panelId: panelID, visibleName: record.visibleName)
         requestSave()
         return panel

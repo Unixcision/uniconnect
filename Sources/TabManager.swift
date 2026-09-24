@@ -9565,6 +9565,7 @@ extension TabManager {
         hasher.combine(record.runtimeState.rawValue)
         hasher.combine(record.latestConversationID)
         hasher.combine(record.activeConversationID)
+        hasher.combine(record.interruptedConversationID)
         hasher.combine(record.createdAt)
         hasher.combine(record.updatedAt)
         hasher.combine(record.conversations.count)

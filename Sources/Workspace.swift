@@ -1763,10 +1763,17 @@ extension Workspace {
             // A saved direct PTY has no live runtime here. Restore it through tmux
             // with the same resume record; saving an already running PTY never
             // takes this path and cannot silently move or terminate its process.
-            let persistedLocalWindow = savedLocalWindow?.preparingRestoredRuntime(
-                panelID: snapshot.id,
-                bundleIdentifier: Bundle.main.bundleIdentifier ?? "com.unixcision.uniconnect"
-            )
+            let persistedLocalWindow: UniConnectLocalWindowRecord? = {
+                guard var record = savedLocalWindow?.preparingRestoredRuntime(
+                    panelID: snapshot.id,
+                    bundleIdentifier: Bundle.main.bundleIdentifier ?? "com.unixcision.uniconnect"
+                ) else { return nil }
+                // If tmux died under an active agent while the app stayed open, the window was
+                // saved as stopped with that conversation interrupted: reopening resumes it like
+                // an agent that was running at quit, under the same guards below.
+                _ = record.reviveInterruptedConversation(at: record.updatedAt)
+                return record
+            }()
             let restorableAgent: SessionRestorableAgentSnapshot? = {
                 guard let persistedLocalWindow else { return snapshot.terminal?.agent }
                 let registry = CmuxVaultAgentRegistry.load(
@@ -1806,13 +1813,19 @@ extension Workspace {
             let agentWasRunningAtQuit = persistedLocalWindow.map {
                 $0.runtimeState == .agent
             } ?? (snapshot.terminal?.wasAgentRunning ?? true)
+            // Never resume a Claude conversation another live process still has open (P10): the
+            // window opens as a shell and the conversation stays as its latest one.
+            let restorableAgentIsOpenElsewhere = autoResumeAgentSessions
+                && persistedLocalWindow?.runtimeState == .agent
+                && restorableAgent?.kind == .claude
+                && UniConnectClaudeOpenConversationGuard().isOpenElsewhere(restorableAgent)
             let shouldAutoResumeAgent = UniConnectLocalBoxRootPolicy.allowsAutomaticResume(
                 settingEnabled: autoResumeAgentSessions,
                 agentWasRunningAtQuit: agentWasRunningAtQuit,
                 boxRootIsAvailable: localBoxRootIsAvailable
                     && localWorkingDirectoryIsAvailable
                     && localResumeWorkingDirectoryIsAvailable
-            )
+            ) && !restorableAgentIsOpenElsewhere
             let resumeBindingForStartup =
                 savedLocalWindow?.tmuxBinding != nil ||
                 restoredHibernation != nil ||
