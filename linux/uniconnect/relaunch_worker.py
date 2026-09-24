@@ -302,13 +302,7 @@ class TargetWorker:
         never replay the original prompt, fork, exec, login, or --last.
         """
         arguments = list(argv[1:])
-        resumed = provider == "codex" and arguments[:1] == ["resume"]
-        removed_id = False
-        if resumed:
-            arguments.pop(0)
-            if arguments and not arguments[0].startswith("-"):
-                arguments.pop(0)
-                removed_id = True
+        resumed = removed_id = False
         values = ({"-c", "--config", "-m", "--model", "-C", "--cd", "-s", "--sandbox", "-a", "--ask-for-approval",
                    "-p", "--profile", "--add-dir", "--enable", "--disable"} if provider == "codex" else
                   {"--model", "--permission-mode", "--settings", "--setting-sources", "--add-dir", "--allowedTools",
@@ -318,6 +312,11 @@ class TargetWorker:
         kept, index = [], 0
         while index < len(arguments):
             arg = arguments[index]
+            if provider == "codex" and not resumed and arg == "resume":
+                # The subcommand may follow global switches: ``codex --yolo resume <id>``.
+                resumed = True
+                index += 1
+                continue
             if resumed and not removed_id and not arg.startswith("-") and re.fullmatch(r"[A-Za-z0-9_-]{1,160}", arg):
                 removed_id = True
                 index += 1
@@ -350,7 +349,36 @@ class TargetWorker:
                 raise Unavailable("no_soportado")
             index += 1
         substitutions = {"{executable}": [argv[0]], "{sessionId}": [identifier], "{arguments}": kept}
-        return [part for token in catalog[provider]["resume"] for part in substitutions.get(token, [token])]
+        return TargetWorker.no_prompt(provider, [part for token in catalog[provider]["resume"]
+                                                 for part in substitutions.get(token, [token])], catalog)
+
+    @staticmethod
+    def no_prompt(provider, argv, catalog):
+        """Relaunch always without questions (Dani, 24-09), with the shared catalogue's ``noPrompt``.
+
+        Same rule as AgentResumeCatalog.apply_no_prompt, which this self-contained worker
+        cannot import: drop earlier policy flags, prefix after argv[0], suffix at the end.
+        For Codex, ``--yolo`` supersedes the approval/sandbox choice and its CLI rejects
+        both together, so ``-a``/``-s``/``--full-auto`` are dropped with it.
+        """
+        policy = catalog.get(provider, {}).get("noPrompt")
+        if not policy or not argv:
+            return list(argv)
+        known = set(policy.get("prefix", [])) | set(policy.get("suffix", [])) | set(policy.get("legacy", []))
+        superseded = ("-a", "--ask-for-approval", "-s", "--sandbox") if provider == "codex" else ()
+        rest, index = [], 1
+        while index < len(argv):
+            arg = argv[index]
+            option = arg.split("=", 1)[0]
+            if arg in known or (provider == "codex" and arg == "--full-auto"):
+                index += 1
+                continue
+            if option in superseded:
+                index += 1 if "=" in arg else 2
+                continue
+            rest.append(arg)
+            index += 1
+        return [argv[0], *policy.get("prefix", []), *rest, *policy.get("suffix", [])]
 
     @staticmethod
     def managed_hook(provider, option, value):
@@ -438,13 +466,15 @@ class TargetWorker:
             raise Unavailable("identidad_ambigua")
         # Match what this reviewed launcher would run with what is actually
         # running. A stale/on-disk-only manifest is not sufficient authority.
-        command = ["resume", "-C", entry["cwd"]]
+        options = ["-C", entry["cwd"]]
         if entry.get("model"):
-            command += ["-m", entry["model"]]
+            options += ["-m", entry["model"]]
         if entry.get("reasoningEffort"):
-            command += ["-c", "model_reasoning_effort=" + json.dumps(entry["reasoningEffort"])]
-        command += ["--dangerously-bypass-approvals-and-sandbox", effective]
-        if command != process["argv"][1:]:
+            options += ["-c", "model_reasoning_effort=" + json.dumps(entry["reasoningEffort"])]
+        # Previous launcher form and the current no-prompt one (codex --yolo resume <id> -C ...).
+        forms = (["resume", *options, "--dangerously-bypass-approvals-and-sandbox", effective],
+                 ["--yolo", "resume", effective, *options])
+        if process["argv"][1:] not in forms:
             raise Unavailable("no_soportado")
         return {"source": expected, "manifest": self.digest(entry), "session_id": effective}
 

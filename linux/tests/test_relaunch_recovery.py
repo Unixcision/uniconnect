@@ -73,6 +73,12 @@ class RecoveryRelaunchTests(unittest.TestCase):
                        "--dangerously-bypass-approvals-and-sandbox", "native"]}
             proof = worker.recovery_launcher(root, process, "native")
             self.assertEqual(proof["session_id"], "native")
+            # Forma nueva del lanzador (recovery.py sin preguntas): codex --yolo resume <id> -C ...
+            current = {"cwd": directory, "argv": ["/bin/codex", "--yolo", "resume", "native", "-C", directory, "-m", "m",
+                                                  "-c", 'model_reasoning_effort="max"']}
+            self.assertEqual(worker.recovery_launcher(root, current, "native"), proof)
+            with self.assertRaises(Unavailable):
+                worker.recovery_launcher(root, {**current, "argv": [*current["argv"], "--dangerously-bypass-approvals-and-sandbox"]}, "native")
             for mutation in ("id", "script", "arguments"):
                 with self.subTest(mutation=mutation):
                     changed = dict(process)

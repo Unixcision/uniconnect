@@ -24,21 +24,33 @@ class ArgumentsTests(unittest.TestCase):
     def setUp(self):
         self.catalog = AgentResumeCatalog().providers
 
-    def test_replaces_effective_id_keeps_model_permissions_and_quoted_arguments(self):
+    def test_replaces_effective_id_keeps_model_and_quoted_arguments_and_forces_no_prompt(self):
+        # Decisión de Dani (24-09): se relanza siempre sin preguntas; --yolo sustituye a -s/-a.
         args = TargetWorker.resume_arguments("codex", ["/bin/codex", "resume", "-C", "/work with spaces",
             "-m", "model", "--sandbox", "workspace-write", "--ask-for-approval", "on-request", "old"], "current", self.catalog)
-        self.assertEqual(args, ["/bin/codex", "resume", "current", "-C", "/work with spaces", "-m", "model",
-                               "--sandbox", "workspace-write", "--ask-for-approval", "on-request"])
+        self.assertEqual(args, ["/bin/codex", "--yolo", "resume", "current", "-C", "/work with spaces", "-m", "model"])
         args = TargetWorker.resume_arguments("claude", ["/bin/claude", "--resume", "old", "--model", "model",
             "--permission-mode", "default", "--append-system-prompt", "x; $(not a shell command)"], "current", self.catalog)
         self.assertEqual(args, ["/bin/claude", "--resume", "current", "--model", "model", "--permission-mode", "default",
-                                "--append-system-prompt", "x; $(not a shell command)"])
-        self.assertFalse(any("dangerously" in part for part in args))
+                                "--append-system-prompt", "x; $(not a shell command)", "--dangerously-skip-permissions"])
 
-    def test_codex_yolo_is_retained_for_resume(self):
-        args = TargetWorker.resume_arguments("codex", ["codex", "resume", "old", "--yolo"],
-                                             "current", self.catalog)
-        self.assertEqual(args, ["codex", "resume", "current", "--yolo"])
+    def test_codex_resume_is_codex_yolo_resume_id_in_every_launch_form(self):
+        for argv in (["codex", "resume", "old", "--yolo"], ["codex", "--yolo", "resume", "old"],
+                     ["codex", "resume", "old", "--dangerously-bypass-approvals-and-sandbox"],
+                     ["codex", "--full-auto"], ["codex", "-a", "never", "-s", "danger-full-access"]):
+            with self.subTest(argv=argv):
+                self.assertEqual(TargetWorker.resume_arguments("codex", argv, "current", self.catalog),
+                                 ["codex", "--yolo", "resume", "current"])
+
+    def test_worker_policy_matches_the_shared_catalogue_rule(self):
+        catalog = AgentResumeCatalog()
+        for provider, arguments in (("codex", ["-C", "/w", "-m", "m"]), ("claude", ["--model", "m"])):
+            with self.subTest(provider=provider):
+                expected = catalog.apply_no_prompt(provider, catalog.resume_argv(provider, "current", arguments))
+                self.assertEqual(TargetWorker.no_prompt(provider, catalog.resume_argv(provider, "current", arguments),
+                                                        catalog.providers), expected)
+        # Sin noPrompt en el catálogo (petición antigua o proveedor sin política) no se añade nada.
+        self.assertEqual(TargetWorker.no_prompt("codex", ["codex", "resume", "x"], {"codex": {}}), ["codex", "resume", "x"])
 
     def test_prompt_subcommand_and_unknown_option_are_not_replayed(self):
         for argv in (["codex", "exec", "fix"], ["codex", "resume", "old", "do anything"],
@@ -51,7 +63,7 @@ class ArgumentsTests(unittest.TestCase):
         hook = json.dumps(["/usr/bin/python3", "-c", BOOTSTRAP, "signal"])
         args = TargetWorker.resume_arguments("codex", ["codex", "resume", "old", "-c", "notify=" + hook,
             "-c", 'model_reasoning_effort="high"'], "current", self.catalog)
-        self.assertEqual(args, ["codex", "resume", "current", "-c", 'model_reasoning_effort="high"'])
+        self.assertEqual(args, ["codex", "--yolo", "resume", "current", "-c", 'model_reasoning_effort="high"'])
 
     def test_unknown_provider_is_visible_but_does_not_issue_any_process_command(self):
         worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "grok", "catalog": self.catalog})
@@ -261,8 +273,24 @@ static void draft(int ignored) { const char text[]="\033[2J\033[H› borrador"; 
 static void clear(int ignored) { const char text[]="\033[2J\033[H› "; write(1,text,sizeof(text)-1); }
 int main(int argc, char **argv) {
   const char *id = getenv("UC_FIXTURE_ID");
-  if (argc > 2 && !strcmp(argv[1], "resume")) id = argv[2];
+  int yolo = 0;
+  for (int i = 1; i < argc; i++) {
+    if (!strcmp(argv[i], "resume") && i + 1 < argc) id = argv[i + 1];
+    if (!strcmp(argv[i], "--yolo")) yolo = 1;
+  }
   char file[4096];
+  if (yolo) {
+    /* Like Codex: a --yolo resume records the settings it now runs with. */
+    char path[4096], cwd[2048];
+    snprintf(path, sizeof path, "%s/.codex/sessions/2026/09/14/rollout-fixture-%s.jsonl", getenv("UC_FIXTURE_ROOT"), id);
+    FILE *rollout = getcwd(cwd, sizeof cwd) ? fopen(path, "a") : NULL;
+    if (rollout) {
+      fprintf(rollout, "{\"type\":\"event_msg\",\"payload\":{\"type\":\"thread_settings_applied\",\"thread_settings\":"
+              "{\"permission_profile\":{\"type\":\"disabled\"},\"model\":\"fixture-model\",\"reasoning_effort\":null,"
+              "\"cwd\":\"%s\",\"approval_policy\":\"never\"}}}\n", cwd);
+      fclose(rollout);
+    }
+  }
   snprintf(file, sizeof file, "%s/.codex/thread-writer-locks/%s.lock", getenv("UC_FIXTURE_ROOT"), id);
   int fd = open(file, O_CREAT|O_RDWR, 0600);
   struct flock lock = {.l_type=F_WRLCK, .l_whence=SEEK_SET, .l_start=0, .l_len=0};
