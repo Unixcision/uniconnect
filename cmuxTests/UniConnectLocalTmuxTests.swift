@@ -1,4 +1,5 @@
 import AppKit
+import CMUXAgentLaunch
 import CmuxProcess
 import Foundation
 import Testing
@@ -270,12 +271,12 @@ struct UniConnectLocalTmuxTests {
         #expect(await inspector.verifiedOwner(of: peer, among: [owner]) == nil)
     }
 
-    @Test("Current native argv repairs stale hook state only for the exact known pane conversation", arguments: [
+    @Test("The live process subtree reports the pane's agent and conversation, never a guess", arguments: [
         "matching", "differentUUID", "differentCWD", "foreignScope", "recycledPID", "changedArgv",
         "missingArgv", "ambiguousAgents", "ambiguousUUID", "afterTerminator", "shell", "shellWithChildren", "missingTmux", "replacedPane",
     ])
     func reconcilesKnownLiveRuntimeWithoutHookPID(_ scenario: String) async throws {
-        let workspace = UUID(), panel = UUID(), generation = UUID(), sessionID = UUID()
+        let workspace = UUID(), panel = UUID(), generation = UUID(), sessionID = UUID(), otherSessionID = UUID()
         let binding = try #require(UniConnectLocalTmuxBinding(name: "owned", socketName: "test-local"))
         var record = UniConnectLocalWindowRecord(id: panel, boxRoot: "/tmp", tmuxBinding: binding)
         _ = record.record(.init(kind: .claude, sessionId: sessionID.uuidString, workingDirectory: "/tmp"))
@@ -290,7 +291,7 @@ struct UniConnectLocalTmuxTests {
         var peerEnvironment = environment
         if scenario == "foreignScope" { peerEnvironment["CMUX_SURFACE_ID"] = UUID().uuidString }
         let argv = ["claude"] + (scenario == "afterTerminator" ? ["--"] : [])
-            + ["--resume", scenario == "differentUUID" ? UUID().uuidString : sessionID.uuidString]
+            + ["--resume", scenario == "differentUUID" ? otherSessionID.uuidString : sessionID.uuidString]
             + (scenario == "ambiguousUUID" ? ["--session-id", UUID().uuidString] : [])
         let peerArguments = CmuxTopProcessArguments(arguments: argv, environment: peerEnvironment)
         let rootArguments = CmuxTopProcessArguments(arguments: ["-zsh"], environment: environment)
@@ -324,13 +325,33 @@ struct UniConnectLocalTmuxTests {
             isProcessDescendant: { ($0 == 234 || $0 == 235) && $1 == 123 },
             processSnapshot: { snapshot },
             processArguments: { pid in scenario == "missingArgv" && pid == 234 ? nil : argumentReads.read(pid) },
-            isForegroundWithoutChildren: { $0 == 123 && scenario == "shell" }
+            isForegroundWithoutChildren: { $0 == 123 && scenario == "shell" },
+            claudeConfigDirectory: FileManager.default.temporaryDirectory
+                .appendingPathComponent("uc-no-claude-\(UUID().uuidString)", isDirectory: true)
         )
         let observations = await inspector.runtimeObservations(for: [target])
+        // The live process decides the conversation (agent-tree.v1), not the saved record: a new
+        // id or folder is reported so it can enter the history; one without id or two agents
+        // are reported without an identity and never persisted by the coordinator.
+        func discovered(_ id: UUID, _ cwd: String) -> UniConnectLocalTmuxRuntimeObservation.State {
+            .discovered(AgentObservedConversation(
+                provider: .claude, sessionID: id.uuidString.lowercased(), workingDirectory: cwd,
+                asRoot: false, source: .argv, processID: 234
+            ))
+        }
+        _ = conversationID
         switch scenario {
         case "matching":
-            #expect(observations.map(\.state) == [.agent(conversationID: conversationID)])
+            #expect(observations.map(\.state) == [discovered(sessionID, "/tmp")])
             #expect(observations.first?.target.record.runtimeState == .shell)
+        case "differentUUID":
+            #expect(observations.map(\.state) == [discovered(otherSessionID, "/tmp")])
+        case "differentCWD":
+            #expect(observations.map(\.state) == [discovered(sessionID, "/different")])
+        case "ambiguousAgents":
+            #expect(observations.map(\.state) == [.ambiguous])
+        case "ambiguousUUID", "afterTerminator":
+            #expect(observations.map(\.state) == [.unidentified(.claude)])
         case "shell":
             #expect(observations.map(\.state) == [.shell])
         default:
@@ -387,10 +408,17 @@ struct UniConnectLocalTmuxTests {
             commands: commands, processEnvironment: { environments.read($0) }, processIdentity: { identities.read($0) },
             isProcessDescendant: { scenario != "wrongAncestor" && $0 == 234 && $1 == 123 },
             processSnapshot: { snapshot }, processArguments: { $0 == 234 ? peerArguments : rootArguments },
-            isForegroundWithoutChildren: { $0 == 123 && shell }
+            isForegroundWithoutChildren: { $0 == 123 && shell },
+            claudeConfigDirectory: FileManager.default.temporaryDirectory
+                .appendingPathComponent("uc-no-claude-\(UUID().uuidString)", isDirectory: true)
         )
         let observations = await inspector.runtimeObservations(for: [.init(owner: owner, record: record)])
-        #expect(observations.map(\.state) == (scenario == "legacy" ? [.agent(conversationID: conversationID)] : []))
+        _ = conversationID
+        let expected = UniConnectLocalTmuxRuntimeObservation.State.discovered(AgentObservedConversation(
+            provider: .claude, sessionID: sessionID.uuidString.lowercased(), workingDirectory: "/tmp",
+            asRoot: false, source: .argv, processID: 234
+        ))
+        #expect(observations.map(\.state) == (scenario == "legacy" ? [expected] : []))
         // A read-only persistence observation must never loosen the socket-command ACL.
         #expect(await inspector.verifiedOwner(of: peer, among: [owner]) == nil)
         #expect(await commands.onlyReadExistingOwnedPane())

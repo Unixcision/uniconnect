@@ -193,6 +193,23 @@ final class UniConnectCoordinator: ObservableObject {
                         for: conversationID, registry: CmuxVaultAgentRegistry(registrations: [])
                     ) else { continue }
                     _ = workspace.uniConnectRecordLocalAgent(panelId: owner.panelID, snapshot: snapshot)
+                case .discovered(let observed):
+                    // The process itself says which conversation it is on (Claude's session file,
+                    // Codex's open rollout): no dependency on the wrapper hooks, which do not run in
+                    // tmux panes. After /clear or /resume the new id enters and the old one stays
+                    // in the history. The claim registry inside uniConnectRecordLocalAgent keeps a
+                    // conversation from being owned by two windows.
+                    guard let snapshot = Self.localAgentSnapshot(for: observed) else { continue }
+                    if target.record.runtimeState == .agent,
+                       let active = target.record.activeConversation,
+                       let candidate = UniConnectLocalAgentConversation(snapshot: snapshot),
+                       active.identityKey == candidate.identityKey {
+                        continue
+                    }
+                    _ = workspace.uniConnectRecordLocalAgent(panelId: owner.panelID, snapshot: snapshot)
+                case .unidentified, .ambiguous:
+                    // An agent without an id yet, or more than one: nothing saved is touched.
+                    continue
                 case .shell:
                     // A pending auto-resume may not have reached its pane yet.
                     guard self.localAgentLaunchAttempts[.init(workspaceID: owner.workspaceID, panelID: owner.panelID)] == nil else { continue }
@@ -203,6 +220,27 @@ final class UniConnectCoordinator: ObservableObject {
         localTmuxReconciliationTask = task
         await task.value
         localTmuxReconciliationTask = nil
+    }
+
+    /// The secret-free snapshot of a conversation discovered in a live local process.
+    ///
+    /// The folder is stored as its physical path (realpath), which is where the agent files its
+    /// conversation; no argv or environment is kept, only the kind, id and folder.
+    static func localAgentSnapshot(for observed: AgentObservedConversation) -> SessionRestorableAgentSnapshot? {
+        let kind: RestorableAgentKind
+        switch observed.provider {
+        case .claude: kind = .claude
+        case .codex: kind = .codex
+        case .agy: kind = .antigravity
+        case .grok: kind = .grok
+        }
+        let directory = observed.workingDirectory.map { AgentResumeWorkingDirectory().realPath($0) }
+        return SessionRestorableAgentSnapshot(
+            kind: kind,
+            sessionId: observed.sessionID,
+            workingDirectory: directory,
+            launchCommand: nil
+        )
     }
 
     private func scheduleLocalTmuxRuntimeReconciliation() {
@@ -3186,6 +3224,9 @@ final class UniConnectCoordinator: ObservableObject {
     func persistNow(showConfirmation: Bool = true) {
         guard manualSaveTask == nil, permitsImportSensitiveMutation() else { return }
         manualSaveTask = Task { @MainActor [weak self] in
+            // «Guardar» persiste el árbol entero: primero se lee qué IA corre en cada ventana
+            // local (proceso, ficha y rollout) para que lo escrito sea lo de ahora.
+            await self?.reconcileLocalTmuxRuntime()
             let resumeIndexes = await ProcessDetectedResumeIndexes.load()
             guard let self else { return }
             defer { self.manualSaveTask = nil }
