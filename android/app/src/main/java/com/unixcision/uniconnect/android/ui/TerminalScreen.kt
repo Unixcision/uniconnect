@@ -252,7 +252,8 @@ private fun RealTerminalScreen(
         }
         val frameShape = UniTheme.shapes.card
         // Mantener pulsado = seleccionar y copiar. Ver ``selectOnLongPress``.
-        if (selecting) real.snapshot?.let { TerminalSelectionSheet(it) { selecting = false } } ?: run { selecting = false }
+        // La hoja saca su propia foto al abrir; la pantalla viva solo se vuelve a leer con «Actualizar».
+        if (selecting) TerminalSelectionSheet({ real.snapshot }) { selecting = false }
         Box(
             Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
                 .selectOnLongPress { if (real.snapshot != null) selecting = true }
@@ -476,7 +477,7 @@ private fun MirrorTerminalScreen(
             )
         }
         val frameShape = UniTheme.shapes.card
-        if (selecting) snapshot?.let { TerminalSelectionSheet(it) { selecting = false } } ?: run { selecting = false }
+        if (selecting) TerminalSelectionSheet({ snapshot }) { selecting = false }
         Box(
             Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
                 .selectOnLongPress { if (snapshot != null) selecting = true }

@@ -10,6 +10,7 @@ import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Refresh
@@ -30,7 +31,6 @@ import com.unixcision.uniconnect.android.domain.AttachCapture
 import com.unixcision.uniconnect.android.domain.AttachDecision
 import com.unixcision.uniconnect.android.domain.AttachRoute
 import com.unixcision.uniconnect.android.domain.HostLostCapability
-import com.unixcision.uniconnect.android.domain.InboxEntry
 import com.unixcision.uniconnect.android.domain.MachineFailure
 import com.unixcision.uniconnect.android.domain.UploadFailure
 import com.unixcision.uniconnect.android.domain.UploadService
@@ -70,10 +70,10 @@ fun AttachButton(model: AttachViewModel, inbox: InboxViewModel?, target: AttachT
     IconButton(onClick = { open = true }) {
         Icon(Icons.Rounded.AttachFile, stringResource(R.string.attach_title), tint = if (busy) UniTheme.colors.accent else UniTheme.colors.muted)
     }
-    // Volver a pegar algo que ya está en el equipo: la ruta va a la cajita y la hoja se cierra.
-    val pasteAgain: (InboxEntry) -> Unit = { entry ->
-        latestChange(AttachPaste.pasteInto(latestDraft, entry.absolute))
-        Toast.makeText(context, R.string.inbox_pasted, Toast.LENGTH_SHORT).show()
+    // Volver a pegar algo ya enviado (de esta ventana o de la bandeja del equipo): va a la cajita y la hoja se cierra.
+    val pasteAgain: (String) -> Unit = { reference ->
+        latestChange(AttachPaste.pasteInto(latestDraft, reference))
+        Toast.makeText(context, if (reference.startsWith("http")) R.string.attach_pasted_link else R.string.inbox_pasted, Toast.LENGTH_SHORT).show()
         open = false
     }
     if (open) AttachSheet(model, inbox, target, mine, state.service, onPasteAgain = pasteAgain, onDismiss = { open = false })
@@ -92,7 +92,7 @@ private fun AttachSheet(
     target: AttachTarget,
     transfers: List<AttachViewModel.Transfer>,
     service: UploadService,
-    onPasteAgain: (InboxEntry) -> Unit,
+    onPasteAgain: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var localError by remember { mutableStateOf<Int?>(null) }
@@ -145,11 +145,11 @@ private fun AttachSheet(
                 SectionLabel(stringResource(R.string.attach_transfers))
                 Column(verticalArrangement = Arrangement.spacedBy(UniTheme.layout.rowGap(UniTheme.spacing))) {
                     transfers.asReversed().forEach { transfer ->
-                        key(transfer.id) { TransferRow(transfer, onRetry = { model.retry(transfer.id) }, onDismiss = { model.dismiss(transfer.id) }) }
+                        key(transfer.id) { TransferRow(transfer, onRetry = { model.retry(transfer.id) }, onDismiss = { model.dismiss(transfer.id) }, onPasteAgain = onPasteAgain) }
                     }
                 }
             }
-            if (inbox != null && target.supportsInbox) InboxGallery(inbox, target, onPaste = onPasteAgain)
+            if (inbox != null && target.supportsInbox) InboxGallery(inbox, target, onPaste = { onPasteAgain(it.absolute) })
             TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.close), color = UniTheme.colors.muted) }
         }
     }
@@ -166,7 +166,7 @@ private fun PickerTiles(pickers: AttachmentPickers) {
 
 /** One attachment: queued, a progress bar, the pasted reference, a kept host copy, or why it failed. */
 @Composable
-private fun TransferRow(transfer: AttachViewModel.Transfer, onRetry: () -> Unit, onDismiss: () -> Unit) {
+private fun TransferRow(transfer: AttachViewModel.Transfer, onRetry: () -> Unit, onDismiss: () -> Unit, onPasteAgain: (String) -> Unit) {
     val context = LocalContext.current
     val colors = UniTheme.colors
     val accent = when (transfer.status) {
@@ -178,6 +178,7 @@ private fun TransferRow(transfer: AttachViewModel.Transfer, onRetry: () -> Unit,
     GlassCard(Modifier.fillMaxWidth(), style = UniTheme.layout.rowsAs, accent = accent) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = UniTheme.layout.rowPadding), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LocalThumbnail(transfer.uri)
                 Text(transfer.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, fontFamily = UniTheme.type.identifierFamily, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(formatSize(transfer.size), style = MaterialTheme.typography.labelSmall, color = colors.muted)
                 if (transfer.status != AttachViewModel.Status.SENDING) IconButton(onClick = onDismiss, Modifier.size(28.dp)) {
@@ -194,6 +195,11 @@ private fun TransferRow(transfer: AttachViewModel.Transfer, onRetry: () -> Unit,
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(Icons.Rounded.Check, null, Modifier.size(16.dp), tint = colors.success)
                         Text(stringResource(R.string.attach_done, transfer.reference.orEmpty()), style = MaterialTheme.typography.bodySmall, fontFamily = UniTheme.type.identifierFamily, color = colors.text, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    }
+                    transfer.reference?.let { reference ->
+                        TextButton(onClick = { onPasteAgain(reference) }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
+                            Icon(Icons.Rounded.ContentPaste, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.attach_paste_again), style = MaterialTheme.typography.labelMedium)
+                        }
                     }
                     transfer.remoteError?.let { Text(stringResource(R.string.attach_remote_error, it), style = MaterialTheme.typography.labelSmall, color = colors.warning) }
                 } else {

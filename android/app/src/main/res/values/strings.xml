@@ -228,7 +228,9 @@
     <string name="menu_reconnect_real_note">Vuelve a enganchar el terminal real del móvil a la sesión.</string>
     <string name="menu_stop_real_note">Deja el terminal real y enseña la copia de la pantalla del equipo.</string>
     <string name="terminal_select_title">Seleccionar texto</string>
-    <string name="terminal_select_note">Mantén pulsado sobre el texto para elegir un trozo, o cópialo todo. Para llegar más atrás, sube en el terminal y vuelve a mantener pulsado.</string>
+    <string name="terminal_select_note">Es una foto de la pantalla: no se mueve aunque la IA siga escribiendo. Mantén pulsado para elegir un trozo, o cópialo todo. «Actualizar» saca otra foto de lo que haya ahora; para llegar más atrás, sube en el terminal y vuelve a abrirla.</string>
+    <string name="terminal_select_frozen_at">Foto de las %1$s</string>
+    <string name="terminal_select_refresh">Actualizar</string>
     <string name="terminal_select_copy_all">Copiar todo</string>
     <string name="terminal_select_copied">Copiado</string>
     <string name="diagnostics_open">Ver informe de conexión</string>
@@ -437,6 +439,7 @@
     <string name="inbox_show_more">Ver más (%1$d de %2$d)</string>
     <string name="inbox_paste">Pegar en el chat</string>
     <string name="inbox_paste_short">Pegar</string>
+    <string name="attach_paste_again">Pegar otra vez</string>
     <string name="inbox_pasted">Ruta pegada en la cajita</string>
     <string name="inbox_copy_path">Copiar ruta</string>
     <string name="inbox_not_pasted_ssh">Está en %1$s, no en el servidor SSH de esta ventana: se copia la ruta en vez de pegarla.</string>
