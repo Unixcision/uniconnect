@@ -145,7 +145,9 @@ fun RelaunchDialog(state: RelaunchUI, onConfirm: () -> Unit, onDismiss: () -> Un
                                 style = MaterialTheme.typography.bodyMedium, color = UniTheme.colors.muted,
                             )
                         }
-                        val motivos = RelaunchReasons.distinctReasons(skipped + state.operation.retryable)
+                        // También los de quien espera a una persona: «2 esperan a que contestes» sin
+                        // decir a qué (¿la carpeta?, ¿los permisos?) obliga a ir ventana por ventana.
+                        val motivos = RelaunchReasons.distinctReasons(state.operation.needingUser + skipped + state.operation.retryable)
                         for (reason in motivos.map { textOf(it) }) {
                             Text(
                                 reason,
@@ -181,7 +183,14 @@ private fun textOf(reason: RelaunchReason): String = when (reason.cause) {
     RelaunchCause.AMBIGUOUS_IDENTITY -> stringResource(R.string.relaunch_cause_ambiguous)
     RelaunchCause.NO_AUTHORITY -> stringResource(R.string.relaunch_cause_no_authority)
     RelaunchCause.HOST_UNREACHABLE -> stringResource(R.string.relaunch_cause_unreachable)
-    // Incluye `null`: una causa que esta versión no interpreta llega aquí con su identificador
-    // intacto, y se enseña tal cual en vez de desaparecer.
-    else -> stringResource(R.string.relaunch_cause_unknown, reason.wire)
+    RelaunchCause.FOLDER_TRUST -> stringResource(R.string.relaunch_cause_folder_trust)
+    RelaunchCause.PERMISSIONS -> stringResource(R.string.relaunch_cause_permissions)
+    RelaunchCause.UNKNOWN_DIALOG -> stringResource(R.string.relaunch_cause_unknown_dialog)
+    RelaunchCause.NOT_SENT -> stringResource(R.string.relaunch_cause_not_sent)
+    RelaunchCause.GENERATION_CHANGED -> stringResource(R.string.relaunch_cause_generation_changed)
+    RelaunchCause.DUPLICATE -> stringResource(R.string.relaunch_cause_duplicate)
+    RelaunchCause.NO_AGENT -> stringResource(R.string.relaunch_cause_no_agent)
+    // Una causa que esta versión no interpreta llega aquí con su identificador intacto, y se
+    // enseña tal cual en vez de desaparecer.
+    null -> stringResource(R.string.relaunch_cause_unknown, reason.wire)
 }

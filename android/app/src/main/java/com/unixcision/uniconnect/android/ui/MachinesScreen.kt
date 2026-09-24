@@ -213,6 +213,10 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                             onDetails = if (connection?.snapshot?.describesWindows == true && machine != null && workspace != null && window != null) {
                                 { model.showWindowDetails(machine.id, workspace.id, window.id) }
                             } else null,
+                            // Mismo criterio que la pulsación larga: sin relaunch.v1 no se ofrece.
+                            onRelaunchWindow = if (connection?.snapshot?.relaunches == true && machine != null && workspace != null && window != null) {
+                                { model.relaunch(machine.id, RelaunchScope.Window(machine.id, workspace.id, window.id)) }
+                            } else null,
                         )
                     }
                     Level.MACHINE -> if (machine != null) MachineBoxesScreen(

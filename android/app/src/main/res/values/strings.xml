@@ -105,6 +105,15 @@
     <string name="relaunch_cause_no_authority">Otra cosa manda sobre esa ventana ahora mismo.</string>
     <string name="relaunch_cause_unreachable">El equipo no contestó.</string>
     <string name="relaunch_cause_unknown">Motivo no reconocido por esta versión: %1$s</string>
+    <string name="relaunch_cause_folder_trust">La IA pide confirmar que confías en la carpeta. Contéstalo en su ventana, en el equipo.</string>
+    <string name="relaunch_cause_permissions">La IA pide permisos. Contéstalo en su ventana, en el equipo.</string>
+    <string name="relaunch_cause_unknown_dialog">La ventana enseñaba algo que no se reconoce, así que no se contestó a ciegas.</string>
+    <string name="relaunch_cause_not_sent">Se canceló antes de enviarlo: no se tocó nada. Pídelo otra vez si todavía hace falta.</string>
+    <string name="relaunch_cause_generation_changed">La ventana cambió entre la previsualización y el relanzado. Vuelve a pedirlo.</string>
+    <string name="relaunch_cause_duplicate">Otro ya estaba relanzando esa misma ventana; aquí no se repitió.</string>
+    <string name="relaunch_cause_no_agent">No hay ninguna IA en marcha en esa ventana: no hay nada que relanzar.</string>
+    <string name="menu_relaunch_window">Relanzar IA de esta ventana</string>
+    <string name="menu_relaunch_window_note">La cierra y la vuelve a abrir en su misma conversación, sin preguntas.</string>
     <string name="relaunch_failed">No se ha podido pedir el relanzado.</string>
     <string name="relaunch_nothing">Aquí no hay ninguna IA que relanzar, o su tipo todavía no se sabe cerrar sin riesgo.</string>
     <string name="relaunch_unknown">Se perdió la respuesta y no se ha podido saber cómo quedó. No se ha repetido nada: míralo en el equipo.</string>

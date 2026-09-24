@@ -1,5 +1,6 @@
 package com.unixcision.uniconnect.android.data
 
+import com.unixcision.uniconnect.android.domain.RelaunchCause
 import com.unixcision.uniconnect.android.domain.RelaunchDecision
 import com.unixcision.uniconnect.android.domain.RelaunchPresentation
 import com.unixcision.uniconnect.android.domain.RelaunchVerb
@@ -40,9 +41,10 @@ class RelaunchPlanContractTest {
         // Etiqueta y causa, las dos, que es lo que hace falta para saber qué le pasa a qué ventana.
         assertEquals("NOTBETTING · Notifications", plan.exclusions[0].label)
         assertEquals("no_soportado", plan.exclusions[0].reason?.wire)
-        // Y una causa que esta versión no interpreta llega entera igualmente.
+        // `sin_ia` ya es una causa del contrato (24-09-2026): cambiado a propósito de «no se
+        // interpreta» a su caso. El identificador crudo sigue llegando entero.
         assertEquals("sin_ia", plan.exclusions[2].reason?.wire)
-        assertEquals(null, plan.exclusions[2].reason?.cause)
+        assertEquals(RelaunchCause.NO_AGENT, plan.exclusions[2].reason?.cause)
 
         assertTrue(RelaunchPresentation.decide(plan) is RelaunchDecision.Show)
     }

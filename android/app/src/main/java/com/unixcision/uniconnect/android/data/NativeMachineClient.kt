@@ -261,6 +261,9 @@ class NativeMachineClient(
                     effectiveID = item.optString("effective_id").takeIf { it.isNotEmpty() },
                 )
             },
+            // Lo que dice si terminó. Un equipo que no lo manda (el `apply` bloqueante del Mac
+            // antiguo) deja que decidan los objetivos.
+            operationState = result.text("operation_state"),
         )
     }
 
