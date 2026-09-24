@@ -149,6 +149,32 @@ final class UniConnectCoordinator: ObservableObject {
         await localTmuxInspector?.generation(for: binding, workspaceID: workspaceID, panelID: panelID)
     }
 
+    /// Reads the live `$N`/`%N` of a local window's tmux session (Detalles; read-only).
+    func localTmuxLiveIdentity(binding: UniConnectLocalTmuxBinding) async -> UniConnectLocalTmuxLiveIdentity? {
+        await localTmuxInspector?.liveIdentity(binding: binding)
+    }
+
+    /// One read-only observation of a single local window, with the reconciliation's guards.
+    ///
+    /// Nothing is persisted: Detalles shows what it reads and the 8 s reconciliation stays the only
+    /// writer. `nil` when the window has no tmux, is hibernated, or the pane could not be verified.
+    func observeLocalWindow(
+        panelID: UUID,
+        in workspace: Workspace
+    ) async -> UniConnectLocalTmuxRuntimeObservation.State? {
+        guard Self.isEnabled, let inspector = localTmuxInspector,
+              workspace.uniConnectProfile?.kind == .local, workspace.remoteConfiguration == nil,
+              let record = workspace.uniConnectLocalWindowsByPanelId[panelID],
+              let binding = record.tmuxBinding,
+              let panel = workspace.panels[panelID] as? TerminalPanel, !panel.isAgentHibernated,
+              let generation = workspace.uniConnectSurfaceGeneration(panelId: panelID) else { return nil }
+        let target = UniConnectLocalTmuxRuntimeObservation.Target(
+            owner: .init(workspaceID: workspace.id, panelID: panelID, binding: binding, surfaceGeneration: generation),
+            record: record
+        )
+        return await inspector.runtimeObservations(for: [target]).first?.state
+    }
+
     /// Repairs durable runtime state from existing panes without focusing, launching, or sending input.
     func reconcileLocalTmuxRuntime() async {
         if let task = localTmuxReconciliationTask {

@@ -520,6 +520,10 @@ struct UniConnectRailSidebar: View {
             },
             toggleGroup: groupID.map { resolvedGroupID in
                 { tabManager.toggleWorkspaceGroupCollapsed(groupId: resolvedGroupID) }
+            },
+            showWindowDetails: { targetWorkspaceID, panelID in
+                guard let workspace = tabManager.tabs.first(where: { $0.id == targetWorkspaceID }) else { return }
+                UniConnectCoordinator.shared.showWindowDetails(panelID: panelID, in: workspace)
             }
         )
     }

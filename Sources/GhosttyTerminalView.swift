@@ -11774,6 +11774,27 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             appendLocalWindowActions(localMenu, to: menu)
         }
 
+        if let context, UniConnectCoordinator.isEnabled {
+            addTerminalMenuSeparatorIfNeeded(to: menu)
+            addTerminalMenuItem(
+                to: menu,
+                title: String(localized: "uniconnect.shared.detalles", defaultValue: "Detalles…"),
+                action: #selector(showWindowDetailsFromTerminalContextMenu(_:)),
+                systemImage: "info.circle"
+            )
+            if context.workspace.uniConnectLocalWindowsByPanelId[context.panelId]?.tmuxBinding != nil {
+                addTerminalMenuItem(
+                    to: menu,
+                    title: String(
+                        localized: "uniconnect.shared.relanzar.ia.de.esta.ventana",
+                        defaultValue: "Relanzar IA de esta ventana…"
+                    ),
+                    action: #selector(relaunchAgentFromTerminalContextMenu(_:)),
+                    systemImage: "arrow.clockwise"
+                )
+            }
+        }
+
         if let context {
             addTerminalMenuSeparatorIfNeeded(to: menu)
             addTerminalMenuItem(
@@ -11969,6 +11990,22 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             preferredWindow: window,
             source: "terminal.contextMenu.renameWindow"
         )
+    }
+
+    @objc private func showWindowDetailsFromTerminalContextMenu(_ sender: Any?) {
+        guard let context = terminalMenuContext() else {
+            NSSound.beep()
+            return
+        }
+        UniConnectCoordinator.shared.showWindowDetails(panelID: context.panelId, in: context.workspace)
+    }
+
+    @objc private func relaunchAgentFromTerminalContextMenu(_ sender: Any?) {
+        guard let context = terminalMenuContext() else {
+            NSSound.beep()
+            return
+        }
+        UniConnectCoordinator.shared.relaunchAgent(panelID: context.panelId, in: context.workspace)
     }
 
     @objc private func updateClaudeFromTerminalContextMenu(_ sender: Any?) {

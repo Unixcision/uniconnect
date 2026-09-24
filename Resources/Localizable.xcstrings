@@ -42975,6 +42975,490 @@
         }
       }
     },
+    "uniconnect.windowDetails.agent.ambiguous": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hay más de una IA en esta ventana"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.agent.noID": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IA detectada, sin identificador todavía"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.agent.none": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin IA detectada"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.agent.unreachable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin IA guardada; el servidor no respondió"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.checkFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo comprobar el servidor; se muestra lo guardado"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.checking": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comprobando…"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.close": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cerrar"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar orden"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.error.invalidParams": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indica el espacio de trabajo y la ventana."
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.error.locked": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UniConnect está bloqueado."
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.error.notFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se encontró esa ventana."
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.kind.local": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.kind.vps": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VPS (%@)"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.kind.vpsUnknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VPS"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.no": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.notVerified": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin modo sin preguntas verificado para esta IA"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.row.agent": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IA"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.row.asRoot": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Como root"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.row.conversation": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ID de conversación"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.row.folder": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Carpeta"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.row.kind": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tipo"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.row.resume": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Orden para reanudarla"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.row.source": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Origen del dato"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.row.state": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estado"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.row.tmuxID": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ID tmux"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.row.tmuxSession": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sesión tmux"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.row.tmuxSocket": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Socket tmux"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.row.window": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ventana"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.row.workspace": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espacio de trabajo"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.source.argv": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Línea de órdenes del proceso (puede estar desfasada)"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.source.ficha": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ficha de sesión de Claude"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.source.hook": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aviso del propio agente"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.source.manifiesto": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supervisor del servidor"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.source.registro": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardado en UniConnect"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.source.rollout": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Registro abierto de Codex"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.state.active": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En marcha"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.state.interrupted": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Interrumpida: se reanudará al abrir"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.state.saved": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardada (no comprobada ahora)"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detalles de la ventana"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.tmux.none": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin tmux (ventana antigua)"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.tmuxID.notRunning": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No está en marcha ahora"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.tmuxSocket.default": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servidor tmux por defecto"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.unnamedWindow": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ventana"
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.yes": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sí"
+          }
+        }
+      }
+    },
     "uniconnect.workspace.action.connect": {
       "extractionState": "manual",
       "localizations": {

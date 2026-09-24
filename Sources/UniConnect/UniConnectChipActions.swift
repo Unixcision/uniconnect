@@ -23,4 +23,6 @@ struct UniConnectChipActions {
     let ungroup: (@MainActor () -> Void)?
     let closeBox: @MainActor () -> Void
     let toggleGroup: (@MainActor () -> Void)?
+    /// Opens «Detalles» for one window (workspace, window, tmux and agent).
+    var showWindowDetails: @MainActor (_ workspaceID: UUID, _ panelID: UUID) -> Void = { _, _ in }
 }

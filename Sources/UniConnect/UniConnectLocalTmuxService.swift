@@ -283,6 +283,23 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
         return ["sh", "bash", "zsh", "fish", "dash", "ksh"].contains(name)
     }
 
+    func liveIdentity(binding: UniConnectLocalTmuxBinding) async -> UniConnectLocalTmuxLiveIdentity? {
+        // -N: never start a server just to read it; display-message only reads.
+        let arguments = [
+            "-N", "-L", binding.socketName, "display-message", "-p", "-t", "=" + binding.name + ":",
+            "#{session_id}\t#{pane_id}",
+        ]
+        guard let output = await commands.runStandardOutput(
+            directory: "/", executable: "tmux", arguments: arguments, timeout: 2
+        ), output.utf8.count <= 256 else { return nil }
+        let fields = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "\t", omittingEmptySubsequences: false)
+        guard fields.count == 2,
+              fields[0].range(of: #"^\$[0-9]+$"#, options: .regularExpression) != nil,
+              fields[1].range(of: #"^%[0-9]+$"#, options: .regularExpression) != nil else { return nil }
+        return UniConnectLocalTmuxLiveIdentity(sessionID: String(fields[0]), paneID: String(fields[1]))
+    }
+
     func generation(
         for binding: UniConnectLocalTmuxBinding,
         workspaceID: UUID,

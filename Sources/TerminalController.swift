@@ -20952,6 +20952,8 @@ class TerminalController {
             result = v2MobileTerminalCreate(params: request.params)
         case "mobile.terminal.reconnect", "terminal.reconnect", "mobile.terminal.reset", "terminal.reset":
             result = v2MobileTerminalReconnect(params: request.params)
+        case "mobile.terminal.details", "terminal.details":
+            result = await v2MobileTerminalDetails(params: request.params)
         case "mobile.terminal.input", "terminal.input":
             result = v2MobileTerminalInput(params: request.params)
         case "mobile.terminal.paste_image", "terminal.paste_image":
@@ -21491,7 +21493,10 @@ class TerminalController {
     /// aquí hay motor y modelo: anunciarlo sin ellos dejaría al móvil sin dictado, en vez de
     /// hacerle usar el suyo local.
     private var mobileWorkspaceListCapabilities: [String] {
-        var capabilities = ["activity.v1", "box_update", "file_put.v1", "inbox.v1", "ssh_create.v1", "relaunch.v1"]
+        var capabilities = [
+            "activity.v1", "box_update", "file_put.v1", "inbox.v1", "ssh_create.v1", "relaunch.v1",
+            "window_details.v1",
+        ]
         if mobileTranscriptionAvailability.isAvailable() {
             capabilities.append("transcribe.v1")
         }
@@ -22543,6 +22548,39 @@ class TerminalController {
     }
 
     /// Reset/reconnect reuse the desktop's durable identity, without clearing a pane or starting another agent.
+    /// `mobile.terminal.details` (window_details.v1): the «Detalles» of one window, read-only.
+    ///
+    /// Same value as the desktop modal. The live check is bounded (local observation, or an 8 s
+    /// probe of the SSH box); when it fails the answer is what was saved, never an error.
+    private func v2MobileTerminalDetails(params: [String: Any]) async -> V2CallResult {
+        if UniConnectAppLock.shared.isLocked {
+            return .err(code: "locked", message: String(
+                localized: "uniconnect.windowDetails.error.locked",
+                defaultValue: "UniConnect está bloqueado."
+            ), data: nil)
+        }
+        guard let workspaceID = v2UUID(params, "workspace_id"),
+              case let .value(terminalID) = mobileTerminalAliasUUID(params: params) else {
+            return .err(code: "invalid_params", message: String(
+                localized: "uniconnect.windowDetails.error.invalidParams",
+                defaultValue: "Indica el espacio de trabajo y la ventana."
+            ), data: nil)
+        }
+        let notFound = V2CallResult.err(code: "not_found", message: String(
+            localized: "uniconnect.windowDetails.error.notFound",
+            defaultValue: "No se encontró esa ventana."
+        ), data: nil)
+        let managers = UniConnectCoordinator.shared.allTabManagers()
+        let fallback = v2ResolveTabManager(params: params).map { [$0] } ?? []
+        guard let workspace = (managers.isEmpty ? fallback : managers)
+            .flatMap(\.tabs)
+            .first(where: { $0.id == workspaceID }) else { return notFound }
+        guard let details = await UniConnectCoordinator.shared.windowDetails(
+            panelID: terminalID, in: workspace, refresh: true
+        ) else { return notFound }
+        return .ok(details.details.mobilePayload)
+    }
+
     private func v2MobileTerminalReconnect(params: [String: Any]) -> V2CallResult {
         if let error = mobileMutationUnavailable() { return error }
         guard v2UUID(params, "workspace_id") != nil,
