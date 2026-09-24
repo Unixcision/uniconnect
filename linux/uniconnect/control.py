@@ -54,9 +54,27 @@ class ControlServer:
             if b"\n" not in buffer:
                 return True
             request = json.loads(bytes(buffer).split(b"\n", 1)[0])
+            if request.get("command") in ("relaunch.plan", "relaunch.apply", "relaunch.status"):
+                # This socket is delivered on GTK: probing processes/SSH must
+                # run on a worker, not block keyboard input or repainting.
+                def work():
+                    try:
+                        return {"ok": True, "result": self.window.relaunch.dispatch(
+                            request["command"], request.get("params", {}))}
+                    except Exception as error:
+                        return {"ok": False, "error": {"code": getattr(error, "code", "internal_error"),
+                                                        "message": str(error)}}
+                self.window.background(work, lambda result: self.respond(client, result))
+                self.clients[client][1] = None  # This read watch is removed on return.
+                return False
             result = {"ok": True, "result": self.dispatch(request)}
         except Exception as error:
             result = {"ok": False, "error": str(error)}
+        return self.respond(client, result)
+
+    def respond(self, client, result):
+        if client not in self.clients:
+            return False
         try:
             # Bounded response and tiny deadline prevent a client from blocking GTK.
             client.settimeout(0.05)
@@ -73,7 +91,8 @@ class ControlServer:
     def dispatch(self, request):
         command = request.get("command", "ping")
         if command == "ping":
-            return {"app": "UniConnect", "platform": "linux", "locked": self.window.locked}
+            return {"app": "UniConnect", "platform": "linux", "locked": self.window.locked,
+                    "capabilities": ["relaunch.v1"] if hasattr(self.window, "relaunch") else []}
         if self.window.locked:
             raise ValueError("UniConnect is locked")
         workspaces = WorkspaceArrangement.ordered(self.window.store.workspaces)
@@ -99,6 +118,12 @@ class ControlServer:
         if command in ("save", "persist"):
             self.window.action_save()
             return "saved"
+        if command in ("surface.details", "details"):
+            # Sin sondear ahora (el socket corre en GTK): lo guardado y la última lectura viva.
+            record = next((item for item in (workspace or {}).get("windows", []) if item["id"] == surface_id), None)
+            if record is None:
+                raise ValueError("Unknown surface")
+            return self.window.window_details(workspace, record)
         surface = self.window.surfaces.get(surface_id)
         if surface is None:
             raise ValueError("Select the workspace before controlling its surface")
@@ -132,7 +157,8 @@ class ControlServer:
     def close(self):
         GLib.source_remove(self.watch)
         for client, (_, watch) in list(self.clients.items()):
-            GLib.source_remove(watch)
+            if watch is not None:
+                GLib.source_remove(watch)
             self.drop(client)
         self.socket.close()
         if self.path.exists() and self.path.stat().st_ino == self.identity:

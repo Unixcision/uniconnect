@@ -26,10 +26,20 @@ class WindowCommands:
         return self._(self.action_map[name].label)
 
     def action_enabled(self, name):
+        # Retired desktop actions must not remain callable through saved shortcuts.
+        # Existing fleet receipts keep their read-only result recovery path.
+        if name in ("relaunch_global", "relaunch_machines"):
+            return False
         if self.locked:
             return name in ("lock", "quit")
         workspace, surface = self.current_workspace(), self.focused_surface
         windows = WorkspaceArrangement.ordered(workspace.get("windows", [])) if workspace else []
+        if name.startswith("relaunch_"):
+            relaunch = getattr(self, "relaunch", None)
+            if not relaunch or not relaunch.allowed():
+                return False
+            return (surface is not None if name == "relaunch_window" else
+                    bool(workspace and windows) if name == "relaunch_workspace" else True)
         if name == "new_conversation_window":
             return bool(workspace and surface and surface.workspace is workspace)
         if name == "notifications_latest_unread":
@@ -40,7 +50,7 @@ class WindowCommands:
             return bool(self.notifications)
         if name == "notifications_toggle_workspace":
             return bool(workspace and windows)
-        if name == "notifications_toggle_window":
+        if name in ("notifications_toggle_window", "window_details"):
             return surface is not None
         for prefix, values in (("workspace_", WorkspaceArrangement.ordered(self.store.workspaces)), ("window_", windows)):
             if name.startswith(prefix) and name[len(prefix):].isdigit():
@@ -151,6 +161,22 @@ class WindowCommands:
 
     def action_new_conversation_window(self):
         self.action_new_window(conversation=True)
+
+    def action_relaunch_window(self):
+        self.relaunch.show("window")
+
+    def action_relaunch_workspace(self):
+        self.relaunch.show("workspace")
+
+    def action_relaunch_machine(self):
+        self.relaunch.show("machine")
+
+    def action_relaunch_history(self):
+        self.relaunch.show_history()
+
+    def action_window_details(self):
+        if self.focused_surface is not None:
+            self.show_window_details(self.focused_surface)
 
     @staticmethod
     def arrangement_group(items, record):

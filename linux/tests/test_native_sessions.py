@@ -162,5 +162,30 @@ class NativeSessionIntegrationTests(unittest.TestCase):
         self.assertEqual(execute.call_args.args[:2], ("claude", ["claude", "--resume", "existing"]))
 
 
+class ProbeAuthorityTests(unittest.TestCase):
+    def test_window_confirmed_by_ficha_or_rollout_is_not_overwritten_by_the_hook(self):
+        with tempfile.TemporaryDirectory(prefix="uc-native-authority-") as directory:
+            store = StateStore(directory)
+            records = [{"id": "w-" + source, "name": source, "tmux": "t-" + source, "agent": "claude",
+                        "sessionId": "probe-id", "agentSource": source} for source in ("ficha", "rollout", "hook")]
+            workspace = {"id": "box", "name": "Caja", "kind": "local", "windows": records}
+            store.data["workspaces"] = [workspace]
+            store.save()
+            surfaces = {record["id"]: SimpleNamespace(
+                record=record, workspace=workspace, generation=1, disposed=False, pid=1, status="Running",
+                update_status=lambda status: None,
+                _ownership_keys=[("tmux", ("local",), "uniconnect-local", record["tmux"])]) for record in records}
+            owner = SimpleNamespace(store=store, surfaces=surfaces, _closed=False, locked=False,
+                                    background=lambda work, done: done(work()), _terminal_owners={})
+            proofs = [{"window_id": record["id"], "tmux": record["tmux"], "agent": "claude", "session_id": "hook-id"}
+                      for record in records]
+            with patch.object(NativeSessions, "read", return_value=proofs):
+                NativeSessions(owner, transport=lambda command, socket_name: None).poll()
+            self.assertEqual([record["sessionId"] for record in records], ["probe-id", "probe-id", "hook-id"])
+            self.assertEqual(records[2]["agentSource"], "hook")
+            self.assertEqual(surfaces["w-ficha"]._ownership_keys, [("tmux", ("local",), "uniconnect-local", "t-ficha")])
+            self.assertFalse(NativeSessions(owner).persist(records[0], proofs[0]))
+
+
 if __name__ == "__main__":
     unittest.main()
