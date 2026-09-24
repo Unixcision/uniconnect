@@ -1069,17 +1069,17 @@ private enum SessionTranscriptLoader {
     private static let maxTurnTextCharacters = 40_000
     private static let newlineByte: UInt8 = 10
 
-    private static let claudeUserNeedles = [
+    private static let claudeUserNeedles: [Data] = [
         Data(#""type":"user""#.utf8),
         Data(#""type": "user""#.utf8),
         Data(#""type":"assistant""#.utf8),
         Data(#""type": "assistant""#.utf8)
     ]
-    private static let codexResponseItemNeedles = [
+    private static let codexResponseItemNeedles: [Data] = [
         Data(#""type":"response_item""#.utf8),
         Data(#""type": "response_item""#.utf8)
     ]
-    private static let codexPreviewNeedles = [
+    private static let codexPreviewNeedles: [Data] = [
         Data(#""role":"user""#.utf8),
         Data(#""role": "user""#.utf8),
         Data(#""role":"assistant""#.utf8),
@@ -1089,23 +1089,23 @@ private enum SessionTranscriptLoader {
         Data(#""type":"function_call_output""#.utf8),
         Data(#""type": "function_call_output""#.utf8)
     ]
-    private static let genericRoleNeedles = [
+    private static let genericRoleNeedles: [Data] = [
         Data(#""role":"#.utf8),
         Data(#""role": "#.utf8)
     ]
-    private static let grokAssistantRoleNeedles = [
+    private static let grokAssistantRoleNeedles: [Data] = [
         Data(#""role":"assistant""#.utf8),
         Data(#""role": "assistant""#.utf8),
         Data(#""type":"assistant""#.utf8),
         Data(#""type": "assistant""#.utf8)
     ]
-    private static let grokUserRoleNeedles = [
+    private static let grokUserRoleNeedles: [Data] = [
         Data(#""role":"user""#.utf8),
         Data(#""role": "user""#.utf8),
         Data(#""type":"user""#.utf8),
         Data(#""type": "user""#.utf8)
     ]
-    private static let grokSystemRoleNeedles = [
+    private static let grokSystemRoleNeedles: [Data] = [
         Data(#""role":"system""#.utf8),
         Data(#""role": "system""#.utf8),
         Data(#""role":"developer""#.utf8),
@@ -1115,7 +1115,7 @@ private enum SessionTranscriptLoader {
         Data(#""type":"developer""#.utf8),
         Data(#""type": "developer""#.utf8)
     ]
-    private static let grokToolRoleNeedles = [
+    private static let grokToolRoleNeedles: [Data] = [
         Data(#""role":"tool""#.utf8),
         Data(#""role": "tool""#.utf8),
         Data(#""role":"tool_use""#.utf8),
@@ -1137,7 +1137,7 @@ private enum SessionTranscriptLoader {
         Data(#""type":"function_call_output""#.utf8),
         Data(#""type": "function_call_output""#.utf8)
     ]
-    private static let grokRoleNeedles = [
+    private static let grokRoleNeedles: [Data] = [
         Data(#""role":"#.utf8),
         Data(#""role": "#.utf8)
     ]
