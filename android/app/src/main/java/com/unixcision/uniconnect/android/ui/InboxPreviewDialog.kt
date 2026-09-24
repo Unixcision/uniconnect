@@ -3,6 +3,7 @@ package com.unixcision.uniconnect.android.ui
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.compose.foundation.Image
@@ -51,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -120,8 +122,8 @@ internal fun InboxPreviewDialog(
                             )
                             Text(stringResource(R.string.inbox_downloading, formatSize(preview.received), formatSize(entry.size)), style = MaterialTheme.typography.labelSmall, color = colors.muted)
                         }
-                        file != null && entry.kind == InboxKind.IMAGE -> ZoomableImage(file, entry.name)
-                        file != null && (entry.kind == InboxKind.VIDEO || entry.kind == InboxKind.AUDIO) -> InboxMediaPlayer(file, audio = entry.kind == InboxKind.AUDIO)
+                        file != null && entry.kind == InboxKind.IMAGE -> ZoomableImage(rememberInboxBitmap(file, InboxKind.IMAGE, FULL_SIDE).value, entry.name)
+                        file != null && (entry.kind == InboxKind.VIDEO || entry.kind == InboxKind.AUDIO) -> InboxMediaPlayer(Uri.fromFile(file), audio = entry.kind == InboxKind.AUDIO)
                         else -> Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Icon(entry.kind.icon, null, Modifier.size(56.dp), tint = colors.muted)
                             if (file == null) {
@@ -176,10 +178,9 @@ internal fun InboxPreviewDialog(
     }
 }
 
-/** La imagen entera, que se amplía y se mueve con dos dedos. */
+/** La imagen entera, que se amplía y se mueve con dos dedos; mientras se decodifica, un indicador. */
 @Composable
-private fun ZoomableImage(file: File, description: String) {
-    val bitmap by rememberInboxBitmap(file, InboxKind.IMAGE, FULL_SIDE)
+internal fun ZoomableImage(bitmap: ImageBitmap?, description: String) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     val transform = rememberTransformableState { zoom, pan, _ ->
@@ -211,4 +212,4 @@ private fun openWith(context: Context, file: File) {
     }
 }
 
-private const val FULL_SIDE = 2048
+internal const val FULL_SIDE = 2048

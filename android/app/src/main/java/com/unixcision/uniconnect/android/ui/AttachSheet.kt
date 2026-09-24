@@ -169,6 +169,10 @@ private fun PickerTiles(pickers: AttachmentPickers) {
 private fun TransferRow(transfer: AttachViewModel.Transfer, onRetry: () -> Unit, onDismiss: () -> Unit, onPasteAgain: (String) -> Unit) {
     val context = LocalContext.current
     val colors = UniTheme.colors
+    var previewing by remember { mutableStateOf(false) }
+    // Solo se vuelve a pegar lo que ya llegó y está donde la IA de esta ventana lo puede leer.
+    val pasteAgain = onPasteAgain.takeIf { transfer.status == AttachViewModel.Status.DONE && transfer.pasteable }
+    if (previewing) LocalPreviewDialog(transfer, pasteAgain, onDismiss = { previewing = false })
     val accent = when (transfer.status) {
         AttachViewModel.Status.DONE -> if (transfer.pasteable) colors.success else colors.warning
         AttachViewModel.Status.FAILED -> colors.danger
@@ -178,7 +182,7 @@ private fun TransferRow(transfer: AttachViewModel.Transfer, onRetry: () -> Unit,
     GlassCard(Modifier.fillMaxWidth(), style = UniTheme.layout.rowsAs, accent = accent) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = UniTheme.layout.rowPadding), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LocalThumbnail(transfer.uri)
+                LocalThumbnail(transfer.uri, onClick = { previewing = true })
                 Text(transfer.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, fontFamily = UniTheme.type.identifierFamily, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(formatSize(transfer.size), style = MaterialTheme.typography.labelSmall, color = colors.muted)
                 if (transfer.status != AttachViewModel.Status.SENDING) IconButton(onClick = onDismiss, Modifier.size(28.dp)) {

@@ -63,9 +63,9 @@ class AttachRouteTest {
     fun aRemoteCopyIsPastedIntoTheSshWindowAndAHostCopyIntoALocalOne() {
         val remote = FilePutOutcome("/Users/d/UniConnect/Entrada/20260909/a.png", FilePutLocation.REMOTE, remotePath = "/home/d/uniconnect-entrada/a.png")
         assertTrue(AttachPaste.shouldPaste(remote.location, windowIsSSH = true))
-        assertEquals("mira esto /home/d/uniconnect-entrada/a.png", AttachPaste.pasteInto("mira esto", remote.pastePath))
+        assertEquals("mira esto '/home/d/uniconnect-entrada/a.png'", AttachPaste.pasteInto("mira esto", remote.pastePath))
         val local = FilePutOutcome("/Users/d/UniConnect/Entrada/20260909/a.png", FilePutLocation.HOST)
         assertTrue(AttachPaste.shouldPaste(local.location, windowIsSSH = false))
-        assertEquals("/Users/d/UniConnect/Entrada/20260909/a.png", AttachPaste.pasteInto("", local.pastePath))
+        assertEquals("'/Users/d/UniConnect/Entrada/20260909/a.png'", AttachPaste.pasteInto("", local.pastePath))
     }
 }

@@ -9,20 +9,21 @@ import org.junit.Test
 class AttachPasteTest {
     @Test
     fun anEmptyDraftBecomesThePath() {
-        assertEquals("/home/d/UniConnect/Entrada/a.png", AttachPaste.pasteInto("", "/home/d/UniConnect/Entrada/a.png"))
+        assertEquals("'/home/d/UniConnect/Entrada/a.png'", AttachPaste.pasteInto("", "/home/d/UniConnect/Entrada/a.png"))
     }
 
     @Test
     fun textAlreadyTypedGetsOneSpaceThenThePath() {
-        assertEquals("mira esto /tmp/a.png", AttachPaste.pasteInto("mira esto", "/tmp/a.png"))
-        assertEquals("mira esto /tmp/a.png", AttachPaste.pasteInto("mira esto ", "/tmp/a.png"))
-        assertEquals("linea\n/tmp/a.png", AttachPaste.pasteInto("linea\n", "/tmp/a.png"))
+        assertEquals("mira esto '/tmp/a.png'", AttachPaste.pasteInto("mira esto", "/tmp/a.png"))
+        assertEquals("mira esto '/tmp/a.png'", AttachPaste.pasteInto("mira esto ", "/tmp/a.png"))
+        assertEquals("linea\n'/tmp/a.png'", AttachPaste.pasteInto("linea\n", "/tmp/a.png"))
     }
 
     @Test
-    fun aPathWithSpacesIsQuoted() {
-        assertEquals("ver \"/tmp/mi foto.png\"", AttachPaste.pasteInto("ver", "/tmp/mi foto.png"))
-        assertEquals("https://sendit.sh/x/y.txt", AttachPaste.pasteInto("", "https://sendit.sh/x/y.txt"))
+    fun everythingGoesInSingleQuotesAndAQuoteInsideIsEscapedLikeTheShell() {
+        assertEquals("ver '/tmp/mi foto.png'", AttachPaste.pasteInto("ver", "/tmp/mi foto.png"))
+        assertEquals("'https://sendit.sh/x/y.txt'", AttachPaste.pasteInto("", "https://sendit.sh/x/y.txt"))
+        assertEquals("'/tmp/l'\\''oreal.png'", AttachPaste.pasteInto("", "/tmp/l'oreal.png"))
     }
 
     @Test

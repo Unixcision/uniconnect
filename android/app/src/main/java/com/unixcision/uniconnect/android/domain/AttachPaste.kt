@@ -2,14 +2,15 @@ package com.unixcision.uniconnect.android.domain
 
 /**
  * How an attachment's path or link lands in the composer: appended to what is already typed with
- * one space between, quoted when it carries a space so the agent reads it as one path. And
+ * one space between, always between single quotes (Dani's choice, 24-09-2026: the agent reads it as
+ * one path whatever it carries, and a quote inside is escaped as the shell does, `'\''`). And
  * whether it lands there on its own at all: only when the file sits where the window's agent
  * runs, which is the server for an SSH box and the host for a local one.
  */
 object AttachPaste {
-    /** [draft] with [reference] pasted at the end. */
+    /** [draft] with [reference] pasted at the end, between single quotes. */
     fun pasteInto(draft: String, reference: String): String {
-        val token = if (reference.any { it.isWhitespace() }) "\"" + reference.replace("\"", "\\\"") + "\"" else reference
+        val token = "'" + reference.replace("'", "'\\''") + "'"
         return when {
             draft.isEmpty() -> token
             draft.last().isWhitespace() -> draft + token

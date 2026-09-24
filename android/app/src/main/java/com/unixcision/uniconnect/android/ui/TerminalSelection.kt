@@ -132,8 +132,10 @@ fun TerminalSelectionSheet(current: () -> TerminalSnapshot?, onDismiss: () -> Un
             Text(stringResource(R.string.terminal_select_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
             // La clave es la foto: al actualizar, la selección vieja no se queda sobre texto nuevo.
             key(photo?.takenAt) {
+                // El doble que antes (440 dp se quedaba corto), pero cediendo lo que haga falta para
+                // que los botones de abajo sigan a la vista en pantallas más bajas.
                 SelectionContainer(
-                    Modifier.fillMaxWidth().heightIn(max = 440.dp)
+                    Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 880.dp)
                         .verticalScroll(rememberScrollState()).horizontalScroll(rememberScrollState()),
                 ) {
                     Text(texto, fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 16.sp, color = UniTheme.colors.text)

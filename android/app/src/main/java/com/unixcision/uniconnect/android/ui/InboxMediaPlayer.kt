@@ -1,5 +1,6 @@
 package com.unixcision.uniconnect.android.ui
 
+import android.net.Uri
 import android.widget.VideoView
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -36,15 +37,15 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import kotlinx.coroutines.delay
-import java.io.File
 import java.util.Locale
 
 /**
- * Reproduce un vídeo o un audio ya traído al móvil, con play/pausa y barra para moverse. Un
+ * Reproduce un vídeo o un audio del móvil (traído del equipo o recién adjuntado), con play/pausa
+ * y barra para moverse. Un
  * audio no tiene imagen: se enseña su icono y el reproductor queda reducido a los controles.
  */
 @Composable
-internal fun InboxMediaPlayer(file: File, audio: Boolean) {
+internal fun InboxMediaPlayer(source: Uri, audio: Boolean) {
     val colors = UniTheme.colors
     var player by remember { mutableStateOf<VideoView?>(null) }
     var playing by remember { mutableStateOf(false) }
@@ -72,7 +73,7 @@ internal fun InboxMediaPlayer(file: File, audio: Boolean) {
                     }
                     setOnCompletionListener { playing = false; position = duration }
                     setOnErrorListener { _, _, _ -> playing = false; false }
-                    setVideoPath(file.path)
+                    setVideoURI(source)
                     player = this
                 }
             },
