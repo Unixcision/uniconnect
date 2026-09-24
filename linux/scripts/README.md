@@ -39,13 +39,16 @@ cliente; `repo` puede ser `null` si el inventario original no asigna un producto
 No se convierten conversaciones entre proveedores.
 
 Instalación en el servidor SSH, con Codex/agy disponibles en el PATH de un shell
-de login y tmux, Python 3 y systemd de usuario instalados:
+de login y tmux, Python 3 y systemd de usuario instalados. La unidad va en el repo
+como `uniconnect-recovery.service.in`: con la extensión `.service` a secas, macOS la
+toma por una app de Servicios y sale rota en el buscador de apps del Mac que tiene el
+repo; al instalarla recupera su nombre de systemd:
 
 ```sh
 install -d -m 700 "$HOME/.uniconnect/recovery" "$HOME/.config/systemd/user"
 install -m 700 recovery.py "$HOME/.uniconnect/recovery/recovery.py"
 install -m 600 manifest.json "$HOME/.uniconnect/recovery/manifest.json"
-install -m 600 uniconnect-recovery.service "$HOME/.config/systemd/user/uniconnect-recovery.service"
+install -m 600 uniconnect-recovery.service.in "$HOME/.config/systemd/user/uniconnect-recovery.service"
 python3 "$HOME/.uniconnect/recovery/recovery.py" --manifest "$HOME/.uniconnect/recovery/manifest.json" validate
 systemctl --user daemon-reload
 systemctl --user enable --now uniconnect-recovery.service
