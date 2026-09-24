@@ -15,7 +15,7 @@ discrepan, manda el ejemplo. El modelo que hay detrás está en `docs/ARBOL-IA-v
 
 | Archivo | Lo lee hoy | Tiene que leerlo |
 |---|---|---|
-| `details-response-*.json` | Nadie todavía. | Android (`WindowDetailsContractTest`) y las pruebas del RPC del Mac (`TerminalController`) y de `linux/uniconnect/mobile_rpc.py`. |
+| `details-response-*.json` | Android: `WindowDetailsContractTest` los pasa por `NativeMachineClient.decodeDetails` (`android/app/build.gradle.kts` los copia a los recursos de prueba). Escrito el 24-09-2026 sin ejecutarlo: Gradle está prohibido hasta nuevo aviso. | Las pruebas del RPC del Mac (`TerminalController`) y de `linux/uniconnect/mobile_rpc.py`. |
 | `details-request.json`, `errors.json` | Nadie todavía. | Las mismas pruebas del Mac y de Linux. |
 
 ## Llamada

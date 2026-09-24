@@ -50,8 +50,9 @@ tasks.named("preBuild").configure { dependsOn(syncBrandArtwork) }
 // Android leen los mismos ficheros. Copiarlos a los recursos de prueba es lo que impide que este
 // lado se aleje del acordado sin que nadie se entere.
 val syncContractFixtures by tasks.registering(Copy::class) {
-    from(rootProject.file("../contracts/relaunch-v1"))
-    into(layout.buildDirectory.dir("generated/contracts/relaunch-v1"))
+    into(layout.buildDirectory.dir("generated/contracts"))
+    from(rootProject.file("../contracts/relaunch-v1")) { into("relaunch-v1") }
+    from(rootProject.file("../contracts/window-details-v1")) { into("window-details-v1") }
     include("*.json")
 }
 android.sourceSets["test"].resources.srcDir(layout.buildDirectory.dir("generated/contracts"))
