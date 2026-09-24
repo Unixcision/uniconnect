@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "host": "xunis-scrapper",
+  "uid": 0,
+  "user": "root",
+  "socket": "default",
+  "error": null,
+  "panes": [
+    {
+      "session": "claudebets",
+      "session_id": "$0",
+      "window_index": 0,
+      "pane_id": "%0",
+      "pane_pid": 41230,
+      "pane_dead": false,
+      "pane_current_path": "/root/xunis",
+      "pane_current_command": "claude",
+      "agent": {
+        "provider": "claude",
+        "session_id": "473ed1de-4397-45ef-b00b-6b17fd7382b0",
+        "cwd": "/root/xunis",
+        "as_root": true,
+        "source": "ficha",
+        "pid": 41251,
+        "status": "busy",
+        "version": "2.1.280"
+      },
+      "cause": null
+    },
+    {
+      "session": "scrapper-codex",
+      "session_id": "$1",
+      "window_index": 0,
+      "pane_id": "%1",
+      "pane_pid": 41390,
+      "pane_dead": false,
+      "pane_current_path": "/root",
+      "pane_current_command": "node",
+      "agent": {
+        "provider": "codex",
+        "session_id": "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17",
+        "cwd": "/root/scrapper",
+        "as_root": true,
+        "source": "rollout",
+        "pid": 41402,
+        "status": null,
+        "version": null
+      },
+      "cause": null
+    },
+    {
+      "session": "ufabetbot",
+      "session_id": "$2",
+      "window_index": 0,
+      "pane_id": "%2",
+      "pane_pid": 41510,
+      "pane_dead": false,
+      "pane_current_path": "/root/ufabetbot",
+      "pane_current_command": "claude",
+      "agent": {
+        "provider": "claude",
+        "session_id": null,
+        "cwd": "/root/ufabetbot",
+        "as_root": true,
+        "source": null,
+        "pid": 41522,
+        "status": null,
+        "version": null
+      },
+      "cause": "sin_id"
+    },
+    {
+      "session": "hgabot",
+      "session_id": "$3",
+      "window_index": 0,
+      "pane_id": "%3",
+      "pane_pid": 41600,
+      "pane_dead": false,
+      "pane_current_path": "/root/hgabot",
+      "pane_current_command": "python3",
+      "agent": null,
+      "cause": "sin_ia"
+    },
+    {
+      "session": "pruebas",
+      "session_id": "$4",
+      "window_index": 0,
+      "pane_id": "%4",
+      "pane_pid": 41700,
+      "pane_dead": false,
+      "pane_current_path": "/root/pruebas",
+      "pane_current_command": "bash",
+      "agent": null,
+      "cause": "identidad_ambigua"
+    },
+    {
+      "session": "caida",
+      "session_id": "$5",
+      "window_index": 0,
+      "pane_id": "%5",
+      "pane_pid": 41800,
+      "pane_dead": true,
+      "pane_current_path": "/root",
+      "pane_current_command": "bash",
+      "agent": null,
+      "cause": null
+    }
+  ]
+}

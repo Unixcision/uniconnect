@@ -1,0 +1,18 @@
+{
+  "invalid_params": {
+    "cuando": "Falta workspace_id o terminal_id (o su alias surface_id), o vienen terminal_id y surface_id y no coinciden.",
+    "mensaje": "Indica el espacio de trabajo y la ventana."
+  },
+  "not_found": {
+    "cuando": "No existe ese espacio de trabajo o esa ventana en este equipo.",
+    "mensaje": "No se encontró esa ventana."
+  },
+  "locked": {
+    "cuando": "La app está bloqueada (Mac: patrón mobileFilePutLockedError; Linux: window.locked).",
+    "mensaje": "UniConnect está bloqueado."
+  },
+  "method_not_found": {
+    "cuando": "Equipo antiguo, sin window_details.v1. Android no llega a llamar: sin la capacidad no enseña la entrada.",
+    "mensaje": "Este equipo todavía no da los detalles de sus ventanas."
+  }
+}

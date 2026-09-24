@@ -1,0 +1,427 @@
+{
+  "version": 1,
+  "casos": [
+    {
+      "nombre": "ficha_manda_sobre_argv_tras_clear",
+      "descripcion": "Claude arrancó con --resume de otra conversación y después se hizo /clear. La línea de órdenes miente; la ficha no.",
+      "pane_pid": 1000,
+      "home": "/Users/danielgomezmartin",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 501, "argv": ["-zsh"]},
+        {"pid": 1100, "ppid": 1000, "uid": 501, "argv": ["claude", "--resume", "2c9f5e10-7a3b-4d8e-9f21-6b0c4d7e8a95", "--dangerously-skip-permissions"]},
+        {"pid": 1150, "ppid": 1100, "uid": 501, "argv": ["node", "/Users/danielgomezmartin/.npm/_npx/mcp-server/index.js"]}
+      ],
+      "fichas": {
+        "1100": {"sessionId": "714b0eae-b568-4e0c-a70b-c87c0d0a801a", "cwd": "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM", "status": "busy", "version": "2.1.280"}
+      },
+      "abiertos": {},
+      "rollouts": {},
+      "cwds": {"1100": "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM"},
+      "pane_current_path": "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM",
+      "espera": {"provider": "claude", "session_id": "714b0eae-b568-4e0c-a70b-c87c0d0a801a", "cwd": "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM", "as_root": false, "source": "ficha"}
+    },
+    {
+      "nombre": "claude_sin_ficha_con_resume_da_argv",
+      "descripcion": "Claude lanzado con node y el paquete de npm, sin ficha legible. Solo queda la línea de órdenes, que se marca como fuente menos fiable.",
+      "pane_pid": 1000,
+      "home": "/home/dani",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 1000, "argv": ["-bash"]},
+        {"pid": 1100, "ppid": 1000, "uid": 1000, "argv": ["node", "/usr/lib/node_modules/@anthropic-ai/claude-code/cli.js", "--resume", "5b7e2d41-0c9a-4f6e-8b13-9d2a7c4e1f60"]}
+      ],
+      "fichas": {},
+      "abiertos": {},
+      "rollouts": {},
+      "cwds": {"1100": "/home/dani/web"},
+      "pane_current_path": "/home/dani",
+      "espera": {"provider": "claude", "session_id": "5b7e2d41-0c9a-4f6e-8b13-9d2a7c4e1f60", "cwd": "/home/dani/web", "as_root": false, "source": "argv"}
+    },
+    {
+      "nombre": "claude_login_sin_ficha_da_sin_id",
+      "descripcion": "Un «claude login» a medias, como el de ufabetbot: hay IA, pero ninguna conversación que reanudar.",
+      "pane_pid": 1000,
+      "home": "/root",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 0, "argv": ["-bash"]},
+        {"pid": 1100, "ppid": 1000, "uid": 0, "argv": ["claude", "login"]}
+      ],
+      "fichas": {},
+      "abiertos": {},
+      "rollouts": {},
+      "cwds": {"1100": "/root/ufabetbot"},
+      "pane_current_path": "/root/ufabetbot",
+      "espera": {"provider": "claude", "session_id": null, "cwd": "/root/ufabetbot", "as_root": true, "source": null, "cause": "sin_id"}
+    },
+    {
+      "nombre": "sudo_uid0_ficha_en_root_da_as_root",
+      "descripcion": "Quien sondea es un usuario normal; Claude corre como root a través de sudo y su ficha está en /root/.claude/sessions. sudo no es la IA: su hijo sí.",
+      "pane_pid": 1000,
+      "home": "/home/dani",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 1000, "argv": ["-bash"]},
+        {"pid": 1100, "ppid": 1000, "uid": 0, "argv": ["sudo", "-E", "claude", "--dangerously-skip-permissions"]},
+        {"pid": 1200, "ppid": 1100, "uid": 0, "argv": ["claude", "--dangerously-skip-permissions"]}
+      ],
+      "fichas": {
+        "1200": {"sessionId": "473ed1de-4397-45ef-b00b-6b17fd7382b0", "cwd": "/root/xunis", "status": "idle", "version": "2.1.280"}
+      },
+      "abiertos": {},
+      "rollouts": {},
+      "cwds": {},
+      "pane_current_path": "/home/dani",
+      "espera": {"provider": "claude", "session_id": "473ed1de-4397-45ef-b00b-6b17fd7382b0", "cwd": "/root/xunis", "as_root": true, "source": "ficha"}
+    },
+    {
+      "nombre": "codex_node_con_nativo_nieto_y_rollout_abierto",
+      "descripcion": "El lanzador node de Codex y, debajo, el binario nativo, que es quien tiene abierto el rollout. Hay una sola raíz (el lanzador) y el identificador sale del fichero abierto por su rama.",
+      "pane_pid": 1000,
+      "home": "/home/dani",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 1000, "argv": ["-bash"]},
+        {"pid": 1100, "ppid": 1000, "uid": 1000, "argv": ["node", "/usr/local/lib/node_modules/@openai/codex/bin/codex.js", "--yolo"]},
+        {"pid": 1200, "ppid": 1100, "uid": 1000, "argv": ["/usr/local/lib/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl/codex/codex-x86_64-unknown-linux-musl", "--yolo"]}
+      ],
+      "fichas": {},
+      "abiertos": {
+        "1200": [
+          "/dev/pts/3",
+          "/home/dani/.codex/log/codex-tui.log",
+          "/home/dani/.codex/sessions/2026/09/24/rollout-2026-09-24T10-12-40-01a0ac81-57c7-7af3-8ac2-fe8a957c8b17.jsonl"
+        ]
+      },
+      "rollouts": {
+        "/home/dani/.codex/sessions/2026/09/24/rollout-2026-09-24T10-12-40-01a0ac81-57c7-7af3-8ac2-fe8a957c8b17.jsonl": "{\"timestamp\":\"2026-09-24T10:12:40.512Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"01a0ac81-57c7-7af3-8ac2-fe8a957c8b17\",\"timestamp\":\"2026-09-24T10:12:40.498Z\",\"cwd\":\"/home/dani/multigram\",\"originator\":\"codex_cli_rs\",\"cli_version\":\"0.63.0\"}}"
+      },
+      "cwds": {"1100": "/home/dani", "1200": "/home/dani"},
+      "pane_current_path": "/home/dani",
+      "espera": {"provider": "codex", "session_id": "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17", "cwd": "/home/dani/multigram", "as_root": false, "source": "rollout"}
+    },
+    {
+      "nombre": "codex_nuevo_sin_rollout_da_sin_id",
+      "descripcion": "Codex recién abierto, antes de su primer turno: todavía no hay rollout y la línea de órdenes no trae id.",
+      "pane_pid": 1000,
+      "home": "/home/dani",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 1000, "argv": ["-bash"]},
+        {"pid": 1100, "ppid": 1000, "uid": 1000, "argv": ["codex", "--yolo"]}
+      ],
+      "fichas": {},
+      "abiertos": {"1100": ["/dev/pts/4", "/home/dani/.codex/log/codex-tui.log"]},
+      "rollouts": {},
+      "cwds": {"1100": "/home/dani/nuevo"},
+      "pane_current_path": "/home/dani",
+      "espera": {"provider": "codex", "session_id": null, "cwd": "/home/dani/nuevo", "as_root": false, "source": null, "cause": "sin_id"}
+    },
+    {
+      "nombre": "codex_yolo_resume_da_argv",
+      "descripcion": "codex --yolo resume <uuid> sin rollout abierto todavía: el id sale de la línea de órdenes.",
+      "pane_pid": 1000,
+      "home": "/home/dani",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 1000, "argv": ["-bash"]},
+        {"pid": 1100, "ppid": 1000, "uid": 1000, "argv": ["codex", "--yolo", "resume", "019a4e2b-6c3d-7f81-9a05-3e7b1c8d2f46"]}
+      ],
+      "fichas": {},
+      "abiertos": {},
+      "rollouts": {},
+      "cwds": {"1100": "/home/dani/api"},
+      "pane_current_path": "/home/dani/api",
+      "espera": {"provider": "codex", "session_id": "019a4e2b-6c3d-7f81-9a05-3e7b1c8d2f46", "cwd": "/home/dani/api", "as_root": false, "source": "argv"}
+    },
+    {
+      "nombre": "dos_claude_dan_identidad_ambigua",
+      "descripcion": "Dos Claude colgando del mismo shell. No se elige uno: no se toca nada guardado.",
+      "pane_pid": 1000,
+      "home": "/home/dani",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 1000, "argv": ["-bash"]},
+        {"pid": 1100, "ppid": 1000, "uid": 1000, "argv": ["claude", "--resume", "714b0eae-b568-4e0c-a70b-c87c0d0a801a"]},
+        {"pid": 1101, "ppid": 1000, "uid": 1000, "argv": ["claude"]}
+      ],
+      "fichas": {
+        "1100": {"sessionId": "714b0eae-b568-4e0c-a70b-c87c0d0a801a", "cwd": "/home/dani/multigram", "status": "idle", "version": "2.1.280"},
+        "1101": {"sessionId": "9d4b2e6f-1a3c-4e8b-b7d0-5f2c8a1e6b93", "cwd": "/home/dani/multigram", "status": "busy", "version": "2.1.280"}
+      },
+      "abiertos": {},
+      "rollouts": {},
+      "cwds": {},
+      "pane_current_path": "/home/dani/multigram",
+      "espera": {"cause": "identidad_ambigua"}
+    },
+    {
+      "nombre": "claude_con_codex_de_su_herramienta_bash_da_claude",
+      "descripcion": "Claude lanzó un codex con su herramienta Bash. Ese codex tiene un antepasado de proveedor, así que no es raíz: la ventana es de Claude.",
+      "pane_pid": 1000,
+      "home": "/home/dani",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 1000, "argv": ["-bash"]},
+        {"pid": 1100, "ppid": 1000, "uid": 1000, "argv": ["/home/dani/.local/share/claude/versions/2.1.280", "--dangerously-skip-permissions"]},
+        {"pid": 1200, "ppid": 1100, "uid": 1000, "argv": ["/bin/bash", "-c", "codex exec --yolo 'revisa los tests'"]},
+        {"pid": 1300, "ppid": 1200, "uid": 1000, "argv": ["codex", "exec", "--yolo", "revisa los tests"]}
+      ],
+      "fichas": {
+        "1100": {"sessionId": "714b0eae-b568-4e0c-a70b-c87c0d0a801a", "cwd": "/home/dani/multigram", "status": "busy", "version": "2.1.280"}
+      },
+      "abiertos": {
+        "1300": ["/home/dani/.codex/sessions/2026/09/24/rollout-2026-09-24T11-00-00-01a0ac81-57c7-7af3-8ac2-fe8a957c8b17.jsonl"]
+      },
+      "rollouts": {},
+      "cwds": {"1100": "/home/dani/multigram"},
+      "pane_current_path": "/home/dani/multigram",
+      "espera": {"provider": "claude", "session_id": "714b0eae-b568-4e0c-a70b-c87c0d0a801a", "cwd": "/home/dani/multigram", "as_root": false, "source": "ficha"}
+    },
+    {
+      "nombre": "npm_sin_ia_da_sin_ia",
+      "descripcion": "Un servidor de desarrollo. node sin marca de proveedor no es IA.",
+      "pane_pid": 1000,
+      "home": "/home/dani",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 1000, "argv": ["-bash"]},
+        {"pid": 1100, "ppid": 1000, "uid": 1000, "argv": ["npm", "run", "dev"]},
+        {"pid": 1200, "ppid": 1100, "uid": 1000, "argv": ["node", "/home/dani/web/node_modules/.bin/vite"]}
+      ],
+      "fichas": {},
+      "abiertos": {},
+      "rollouts": {},
+      "cwds": {"1100": "/home/dani/web"},
+      "pane_current_path": "/home/dani/web",
+      "espera": {"cause": "sin_ia"}
+    },
+    {
+      "nombre": "agy_conversation_da_argv",
+      "descripcion": "Antigravity dice su conversación en la línea de órdenes.",
+      "pane_pid": 1000,
+      "home": "/home/dani",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 1000, "argv": ["-bash"]},
+        {"pid": 1100, "ppid": 1000, "uid": 1000, "argv": ["agy", "--dangerously-skip-permissions", "--conversation", "8e3c1a57-2b4d-4f90-a6e8-7c5d3b1f0e29"]}
+      ],
+      "fichas": {},
+      "abiertos": {},
+      "rollouts": {},
+      "cwds": {"1100": "/home/dani/gemini"},
+      "pane_current_path": "/home/dani/gemini",
+      "espera": {"provider": "agy", "session_id": "8e3c1a57-2b4d-4f90-a6e8-7c5d3b1f0e29", "cwd": "/home/dani/gemini", "as_root": false, "source": "argv"}
+    },
+    {
+      "nombre": "grok_r_da_argv",
+      "descripcion": "Grok reanudado con -r.",
+      "pane_pid": 1000,
+      "home": "/home/dani",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 1000, "argv": ["-bash"]},
+        {"pid": 1100, "ppid": 1000, "uid": 1000, "argv": ["grok", "-r", "3f6a9c12-8d4e-4b7a-b5c1-0e2f7d9a6b84"]}
+      ],
+      "fichas": {},
+      "abiertos": {},
+      "rollouts": {},
+      "cwds": {"1100": "/home/dani/grokbot"},
+      "pane_current_path": "/home/dani/grokbot",
+      "espera": {"provider": "grok", "session_id": "3f6a9c12-8d4e-4b7a-b5c1-0e2f7d9a6b84", "cwd": "/home/dani/grokbot", "as_root": false, "source": "argv"}
+    },
+    {
+      "nombre": "ficha_de_pid_reciclado_da_sin_ia",
+      "descripcion": "Quedó la ficha de un Claude que ya salió y su pid lo reutiliza ahora un node cualquiera. Una ficha solo cuenta si el proceso vivo es de Claude.",
+      "pane_pid": 1000,
+      "home": "/home/dani",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 1000, "argv": ["-bash"]},
+        {"pid": 1250, "ppid": 1000, "uid": 1000, "argv": ["node", "/srv/api/server.js"]}
+      ],
+      "fichas": {
+        "1250": {"sessionId": "6d1f8b3a-4c2e-4a97-9b50-e3f1c7a2d846", "cwd": "/srv/api", "status": "idle", "version": "2.1.279"}
+      },
+      "abiertos": {},
+      "rollouts": {},
+      "cwds": {"1250": "/srv/api"},
+      "pane_current_path": "/srv/api",
+      "espera": {"cause": "sin_ia"}
+    },
+    {
+      "nombre": "proceso_fuera_del_subarbol_con_mismo_surface_da_sin_ia",
+      "descripcion": "Un Claude abierto desde Terminal.app hereda CMUX_SURFACE_ID y TMUX de la ventana, pero no cuelga de su shell. No cuenta (P12).",
+      "pane_pid": 1000,
+      "home": "/Users/danielgomezmartin",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 501, "argv": ["-zsh"]},
+        {"pid": 4200, "ppid": 4100, "uid": 501, "argv": ["claude", "--resume", "714b0eae-b568-4e0c-a70b-c87c0d0a801a"], "entorno": {"CMUX_SURFACE_ID": "e86e9114-031c-4752-941d-1079c170a639", "TMUX": "/private/tmp/tmux-501/uniconnect-local,812,12"}},
+        {"pid": 4100, "ppid": 1, "uid": 501, "argv": ["-zsh"], "entorno": {"CMUX_SURFACE_ID": "e86e9114-031c-4752-941d-1079c170a639"}}
+      ],
+      "fichas": {
+        "4200": {"sessionId": "714b0eae-b568-4e0c-a70b-c87c0d0a801a", "cwd": "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM", "status": "busy", "version": "2.1.280"}
+      },
+      "abiertos": {},
+      "rollouts": {},
+      "cwds": {},
+      "pane_current_path": "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM",
+      "espera": {"cause": "sin_ia"}
+    },
+    {
+      "nombre": "cwd_con_enlace_se_resuelve",
+      "descripcion": "La carpeta de la ficha es un enlace simbólico (en el Mac, ~/Desktop/NOTBETTING apunta a ~/Developer/NOTBETTING). El cwd viaja siempre resuelto.",
+      "pane_pid": 1000,
+      "home": "/Users/danielgomezmartin",
+      "procesos": [
+        {"pid": 1000, "ppid": 1, "uid": 501, "argv": ["-zsh"]},
+        {"pid": 1100, "ppid": 1000, "uid": 501, "argv": ["claude", "--dangerously-skip-permissions"]}
+      ],
+      "fichas": {
+        "1100": {"sessionId": "c41e7a90-3b2d-4f5e-8a61-0d9c2b7e5f13", "cwd": "/Users/danielgomezmartin/Desktop/NOTBETTING", "status": "idle", "version": "2.1.280"}
+      },
+      "abiertos": {},
+      "rollouts": {},
+      "cwds": {},
+      "enlaces": {"/Users/danielgomezmartin/Desktop/NOTBETTING": "/Users/danielgomezmartin/Developer/NOTBETTING"},
+      "pane_current_path": "/Users/danielgomezmartin/Desktop/NOTBETTING",
+      "espera": {"provider": "claude", "session_id": "c41e7a90-3b2d-4f5e-8a61-0d9c2b7e5f13", "cwd": "/Users/danielgomezmartin/Developer/NOTBETTING", "as_root": false, "source": "ficha"}
+    }
+  ],
+  "guarda": [
+    {
+      "nombre": "claude_abierta_en_otra_ventana",
+      "proveedor": "claude",
+      "id": "473ed1de-4397-45ef-b00b-6b17fd7382b0",
+      "home": "/root",
+      "fichas_vivas": {"2100": {"sessionId": "473ed1de-4397-45ef-b00b-6b17fd7382b0", "cwd": "/root/xunis"}},
+      "procesos": [{"pid": 2100, "argv": ["claude", "--dangerously-skip-permissions"]}],
+      "abiertos": {},
+      "cerrojos": [],
+      "espera": 1
+    },
+    {
+      "nombre": "claude_ficha_de_pid_muerto",
+      "proveedor": "claude",
+      "id": "473ed1de-4397-45ef-b00b-6b17fd7382b0",
+      "home": "/root",
+      "fichas_vivas": {"2100": {"sessionId": "473ed1de-4397-45ef-b00b-6b17fd7382b0", "cwd": "/root/xunis"}},
+      "procesos": [],
+      "abiertos": {},
+      "cerrojos": [],
+      "espera": 0
+    },
+    {
+      "nombre": "claude_ficha_de_pid_reciclado",
+      "proveedor": "claude",
+      "id": "473ed1de-4397-45ef-b00b-6b17fd7382b0",
+      "home": "/root",
+      "fichas_vivas": {"2100": {"sessionId": "473ed1de-4397-45ef-b00b-6b17fd7382b0", "cwd": "/root/xunis"}},
+      "procesos": [{"pid": 2100, "argv": ["python3", "/root/hgabot/bot.py"]}],
+      "abiertos": {},
+      "cerrojos": [],
+      "espera": 0
+    },
+    {
+      "nombre": "claude_argv_viejo_no_bloquea",
+      "descripcion": "Un Claude arrancado con --resume de esta conversación que después hizo /clear ya no la tiene abierta: manda la ficha, no la línea de órdenes.",
+      "proveedor": "claude",
+      "id": "473ed1de-4397-45ef-b00b-6b17fd7382b0",
+      "home": "/root",
+      "fichas_vivas": {"2100": {"sessionId": "e2a7c5b1-9f3d-4c6e-a804-1b7d9e3f5c20", "cwd": "/root/xunis"}},
+      "procesos": [{"pid": 2100, "argv": ["claude", "--resume", "473ed1de-4397-45ef-b00b-6b17fd7382b0"]}],
+      "abiertos": {},
+      "cerrojos": [],
+      "espera": 0
+    },
+    {
+      "nombre": "codex_rollout_abierto",
+      "proveedor": "codex",
+      "id": "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17",
+      "home": "/home/dani",
+      "fichas_vivas": {},
+      "procesos": [{"pid": 2200, "argv": ["codex", "--yolo"]}],
+      "abiertos": {"2200": ["/home/dani/.codex/sessions/2026/09/24/rollout-2026-09-24T10-12-40-01a0ac81-57c7-7af3-8ac2-fe8a957c8b17.jsonl"]},
+      "cerrojos": [],
+      "espera": 1
+    },
+    {
+      "nombre": "codex_cerrojo_del_kernel",
+      "proveedor": "codex",
+      "id": "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17",
+      "home": "/home/dani",
+      "fichas_vivas": {},
+      "procesos": [{"pid": 2200, "argv": ["codex", "--yolo"]}],
+      "abiertos": {},
+      "cerrojos": ["/home/dani/.codex/thread-writer-locks/01a0ac81-57c7-7af3-8ac2-fe8a957c8b17.lock"],
+      "espera": 1
+    },
+    {
+      "nombre": "codex_libre",
+      "proveedor": "codex",
+      "id": "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17",
+      "home": "/home/dani",
+      "fichas_vivas": {},
+      "procesos": [{"pid": 2200, "argv": ["codex", "--yolo"]}],
+      "abiertos": {"2200": ["/home/dani/.codex/sessions/2026/09/24/rollout-2026-09-24T11-30-00-019a4e2b-6c3d-7f81-9a05-3e7b1c8d2f46.jsonl"]},
+      "cerrojos": [],
+      "espera": 0
+    },
+    {
+      "nombre": "codex_sin_proc_legible",
+      "descripcion": "No se pueden leer los ficheros abiertos de los procesos: no se sabe, así que no se reanuda.",
+      "proveedor": "codex",
+      "id": "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17",
+      "home": "/home/dani",
+      "proc_legible": false,
+      "fichas_vivas": {},
+      "procesos": [],
+      "abiertos": {},
+      "cerrojos": [],
+      "espera": 2
+    },
+    {
+      "nombre": "agy_cerrojo_de_presencia",
+      "proveedor": "agy",
+      "id": "8e3c1a57-2b4d-4f90-a6e8-7c5d3b1f0e29",
+      "home": "/home/dani",
+      "fichas_vivas": {},
+      "procesos": [{"pid": 2300, "argv": ["agy", "--conversation", "8e3c1a57-2b4d-4f90-a6e8-7c5d3b1f0e29"]}],
+      "abiertos": {},
+      "cerrojos": ["/home/dani/.gemini/antigravity-cli/presence/8e3c1a57-2b4d-4f90-a6e8-7c5d3b1f0e29.lock"],
+      "espera": 1
+    },
+    {
+      "nombre": "grok_vivo_con_su_id",
+      "proveedor": "grok",
+      "id": "3f6a9c12-8d4e-4b7a-b5c1-0e2f7d9a6b84",
+      "home": "/home/dani",
+      "fichas_vivas": {},
+      "procesos": [{"pid": 2400, "argv": ["grok", "-r", "3f6a9c12-8d4e-4b7a-b5c1-0e2f7d9a6b84"]}],
+      "abiertos": {},
+      "cerrojos": [],
+      "espera": 1
+    },
+    {
+      "nombre": "grok_libre",
+      "proveedor": "grok",
+      "id": "3f6a9c12-8d4e-4b7a-b5c1-0e2f7d9a6b84",
+      "home": "/home/dani",
+      "fichas_vivas": {},
+      "procesos": [],
+      "abiertos": {},
+      "cerrojos": [],
+      "espera": 0
+    },
+    {
+      "nombre": "proveedor_desconocido",
+      "proveedor": "copiloto-inventado",
+      "id": "3f6a9c12-8d4e-4b7a-b5c1-0e2f7d9a6b84",
+      "home": "/home/dani",
+      "fichas_vivas": {},
+      "procesos": [],
+      "abiertos": {},
+      "cerrojos": [],
+      "espera": 2
+    },
+    {
+      "nombre": "id_no_valido",
+      "proveedor": "claude",
+      "id": "../../etc/passwd",
+      "home": "/home/dani",
+      "fichas_vivas": {},
+      "procesos": [],
+      "abiertos": {},
+      "cerrojos": [],
+      "espera": 2
+    }
+  ]
+}

@@ -12,8 +12,12 @@ evolve together, reusing as much code as possible to minimize maintenance.
   second dictionary in Python. The product's Spanish-only policy is in `IDIOMA.md`.
 - `Packages/CMUXAgentLaunch/Sources/CMUXAgentLaunch/Resources/agent-resume-v1.json`:
   the shared provider command syntax, consumed by Swift and the thin Linux decoder.
-  Argument sanitization and existing approval choices remain in their adapters;
-  sharing syntax must not silently broaden a provider's permissions.
+  Argument sanitization remains in the adapters. Since 2026-09-24 the same file
+  also carries the single `noPrompt` policy (resume and relaunch always without
+  prompts, by explicit user decision); no adapter may add or drop approval flags
+  on its own. See `ARBOL-IA-v1.md`, section 6.
+- `contracts/agent-tree-v1/` and `contracts/window-details-v1/`: the common agent
+  tree, detection criterion, resume commands and «Detalles» wire format.
 - `docs/UNICONNECT.md` and `docs/MENUS.md`: one product contract and action inventory.
 - `Sources/`: the macOS presentation/composition adapter, using SwiftUI/AppKit,
   Ghostty bindings and the system credential store.
@@ -86,6 +90,39 @@ on macOS and Ubuntu, and the Linux adapter suite on an isolated display. It does
 not build the complete macOS application or assert full feature parity.
 
 ## Resumen
+
+### Árbol IA común (`agent-tree.v1`, 24-09-2026)
+
+Mac, Linux, Android y el supervisor de los VPS usan el mismo modelo para saber qué tmux sostiene
+cada ventana y qué IA corre dentro. Está en `docs/ARBOL-IA-v1.md` y sus ejemplos normativos en
+`contracts/agent-tree-v1/`.
+
+- **Un criterio de detección**, probado con `contracts/agent-tree-v1/deteccion-casos.json`: subárbol
+  de procesos del shell del panel, exactamente una raíz de proveedor, ficha de Claude, rollout de
+  Codex y, como último recurso, la línea de órdenes.
+- **Una sonda compartida**: `linux/uniconnect/agent_probe.py`. Linux la ejecuta en local y por SSH
+  con `Transport.run`; el Mac la **empaqueta como recurso del .app** y la manda por stdin a cada caja
+  SSH. El Mac local no la usa: aplica el mismo criterio en Swift (`Packages/CMUXAgentLaunch`,
+  `AgentProcessDiscovery`), probado con el mismo fixture.
+- **Una copia** en `linux/scripts/recovery.py`, porque el supervisor se despliega solo en el VPS y no
+  puede importar. Se prueba con el mismo fixture (`linux/tests/test_recovery_v2.py`).
+- **Una política de reanudación** (`noPrompt`) y una forma de orden, probadas con
+  `contracts/agent-tree-v1/reanudar-comandos.json`.
+- **Sockets tmux**: no se unifican, porque no se pueden mover sesiones vivas de un servidor a otro. El
+  árbol dice siempre cuál es:
+
+  | Dónde | Socket |
+  |---|---|
+  | Mac local | `uniconnect-local` (`uniconnect-local-<sha8>` en builds con tag) |
+  | Linux local | `uniconnect-local` |
+  | Mac SSH | `default` (el servidor por defecto) |
+  | Linux SSH | `record.tmuxSocket` o `uniconnect` |
+  | VPS | `manifest.tmuxSocket` y la lista opcional `tmuxSockets` |
+
+Lo que es de cada plataforma y no se comparte: la lectura de procesos (`/proc` en Linux; `ps` y
+`lsof` en macOS), dónde se persiste el árbol (sesión del Mac, `state.json` de Linux, `manifest.json`
+del VPS) y cómo se pinta el modal «Detalles». Que los fixtures pasen en un lado no demuestra nada del
+otro: cada plataforma tiene que ejecutarlos con su propia implementación.
 
 ### Menú contextual y Ajustes de macOS
 

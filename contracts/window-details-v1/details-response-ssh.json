@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "workspace_id": "5d6f2c1e-8a4b-4f0e-9c3d-2b1a0e9f8c7d",
+  "terminal_id": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+  "checked_at": "2026-09-24T14:30:05Z",
+  "workspace": {
+    "name": "XUNISSCRAPPER",
+    "kind": "ssh",
+    "host": {"user": "root", "hostname": "167.233.192.135", "port": 22},
+    "host_label": "root@167.233.192.135:22"
+  },
+  "window": {"name": "claudebets"},
+  "tmux": {"socket": "default", "session": "claudebets", "session_id": "$0", "pane_id": "%0", "live": true},
+  "agent": {
+    "provider": "claude",
+    "display_name": "Claude Code",
+    "session_id": "473ed1de-4397-45ef-b00b-6b17fd7382b0",
+    "cwd": "/root/xunis",
+    "as_root": true,
+    "source": "ficha",
+    "state": "activo",
+    "observed_at": "2026-09-24T14:30:04Z",
+    "resume": {
+      "argv": ["claude", "--resume", "473ed1de-4397-45ef-b00b-6b17fd7382b0", "--dangerously-skip-permissions"],
+      "environment": {"IS_SANDBOX": "1"},
+      "command": "cd -- '/root/xunis' && IS_SANDBOX=1 claude --resume 473ed1de-4397-45ef-b00b-6b17fd7382b0 --dangerously-skip-permissions",
+      "no_prompt_verified": true
+    }
+  },
+  "reason": null
+}
