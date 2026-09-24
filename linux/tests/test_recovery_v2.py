@@ -133,7 +133,8 @@ class ResumeCommandsContractTest(unittest.TestCase):
     def test_canonical_resume_matches_the_contract(self):
         for caso in contract("reanudar-comandos.json")["casos"]:
             with self.subTest(caso=caso["nombre"]):
-                got = recovery.canonical_resume(caso["provider"], caso["session_id"], caso["cwd"], caso["as_root"])
+                got = recovery.canonical_resume(caso["provider"], caso["session_id"], caso["cwd"], caso["as_root"],
+                                                caso.get("arguments", []))
                 self.assertEqual(got["argv"], caso["argv"])
                 self.assertEqual(got["environment"], caso["environment"])
                 self.assertEqual(got["command"], caso["command"])
@@ -141,7 +142,9 @@ class ResumeCommandsContractTest(unittest.TestCase):
 
     def test_command_for_launches_the_canonical_argv(self):
         # Lo que se lanza de verdad empieza por la forma canónica; Codex añade detrás -C <cwd>.
-        for caso in contract("reanudar-comandos.json")["casos"]:
+        # command_for saca sus argumentos del manifiesto (-C, -m, -c), no de `arguments`: los casos
+        # con `arguments` (supersedes de --yolo) se comprueban en canonical_resume.
+        for caso in (c for c in contract("reanudar-comandos.json")["casos"] if not c.get("arguments")):
             with self.subTest(caso=caso["nombre"]):
                 entry = {"agent": caso["provider"], "sessionId": caso["session_id"], "cwd": caso["cwd"]}
                 with patch.object(recovery, "claude_executable", return_value="claude"), \
@@ -283,7 +286,8 @@ class FakeTmux:
         if args[0] == "list-panes":
             return subprocess.CompletedProcess(args, 0, "", "")
         if args[0] == "list-sessions":
-            return subprocess.CompletedProcess(args, 0 if live else 1, "", "")
+            # Como tmux de verdad: sin sesiones no hay servidor, y lo dice.
+            return subprocess.CompletedProcess(args, 0 if live else 1, "", "" if live else "no server running on /tmp/tmux-0/" + socket)
         if args[0] == "new-session":
             live[args[args.index("-s") + 1]] = ""
             return subprocess.CompletedProcess(args, 0, "", "")
@@ -339,17 +343,28 @@ class EnsureTest(unittest.TestCase):
         self.assertNotIn("rota", fake.sessions["s"])
         self.assertIn("sana", fake.sessions["s"])
 
-    def test_no_set_clipboard_on_existing_sessions(self):
+    def test_no_set_clipboard_on_a_server_that_was_already_alive(self):
+        # D4: el servidor ya tiene otra sesión viva, así que una opción -s le afectaría: no se pone
+        # ni suelta ni con el new-session de la que faltaba.
         data = self.write({"tmuxSocket": "s", "windows": [self.entry("viva"), self.entry("caida")]})
         fake = FakeTmux({"s": {"viva": "viva-id"}})
         with patch.object(recovery, "tmux", side_effect=fake), \
              patch.object(recovery, "verify_session"), patch.object(recovery, "command_for"), \
              patch.object(recovery, "boot_id", return_value="boot-1"):
             recovery.ensure_windows(data, self.manifest)
-        clipboard = [c for c in fake.calls if "set-clipboard" in c]
-        # Solo en la orden que crea la sesión que faltaba, nunca suelto sobre el servidor.
-        self.assertEqual([c[1] for c in clipboard], ["new-session"])
+        self.assertEqual([c for c in fake.calls if "set-clipboard" in c], [])
+        self.assertIn("caida", fake.sessions["s"])
         self.assertFalse([c for c in fake.mutations() if "=viva" in " ".join(c) or "=viva:" in " ".join(c)])
+
+    def test_set_clipboard_only_with_the_new_session_that_starts_the_server(self):
+        data = self.write({"tmuxSocket": "s", "windows": [self.entry("caida")]})
+        fake = FakeTmux({"s": {}})
+        with patch.object(recovery, "tmux", side_effect=fake), \
+             patch.object(recovery, "verify_session"), patch.object(recovery, "command_for"), \
+             patch.object(recovery, "boot_id", return_value="boot-1"):
+            recovery.ensure_windows(data, self.manifest)
+        clipboard = [c for c in fake.calls if "set-clipboard" in c]
+        self.assertEqual([c[1] for c in clipboard], ["new-session"])
 
     def test_two_watched_sockets(self):
         data = self.write({"tmuxSocket": "uniconnect", "tmuxSockets": ["uniconnect", "default"],

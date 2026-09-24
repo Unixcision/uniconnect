@@ -16,7 +16,13 @@ La detección es una **copia** del criterio común (`contracts/agent-tree-v1/det
 este fichero se despliega solo en el VPS y no puede importar la sonda compartida
 (`linux/uniconnect/agent_probe.py`). Las dos se prueban con el mismo fixture.
 
-Nunca envía teclas, nunca cambia opciones de una sesión que ya existía y nunca usa sudo.
+Nunca envía teclas, nunca usa sudo y nunca cambia opciones de una sesión que ya existía ni de un
+servidor tmux que ya estaba en marcha: las opciones de servidor solo acompañan al `new-session` que
+lo arranca (D4, `contracts/agent-tree-v1/LEEME.md`).
+
+Solo recupera las entradas de **su** manifiesto (D6). Una sesión viva cuyo `@uniconnect_session_id`
+es de otro dueño se salta; una que vive sin dueño (la creó otro, por ejemplo UniConnect desde un
+escritorio) se vigila como adoptada y nunca se reconfigura.
 
 Acciones: validate, snapshot, ensure, supervise, launch <tmux>, status, forget <tmux>.
 """
@@ -26,24 +32,30 @@ from pathlib import Path
 
 # ---------------------------------------------------------------- política sin preguntas
 #
-# Copia de `noPrompt` en Packages/CMUXAgentLaunch/Sources/CMUXAgentLaunch/Resources/agent-resume-v1.json.
-# Se aplica así: se quitan las apariciones previas de prefix, suffix y legacy, prefix va justo detrás
-# del ejecutable y suffix al final, una sola vez. rootEnvironment, solo como root.
+# Copia de `noPrompt` en Packages/CMUXAgentLaunch/Sources/CMUXAgentLaunch/Resources/agent-resume-v1.json
+# (este fichero se despliega solo y no puede leer el catálogo). test_recovery_v2 la compara con él.
+# La regla de aplicación está en `apply_no_prompt` y es la de contracts/agent-tree-v1/LEEME.md.
 NO_PROMPT = {
     "claude": {"suffix": ["--dangerously-skip-permissions"], "rootEnvironment": {"IS_SANDBOX": "1"}},
-    "codex": {"prefix": ["--yolo"], "legacy": ["--dangerously-bypass-approvals-and-sandbox"]},
+    "codex": {"prefix": ["--yolo"], "legacy": ["--dangerously-bypass-approvals-and-sandbox"],
+              # Codex rechaza --yolo junto a cualquiera de estas (D2): se quitan con su valor.
+              "supersedes": [{"flag": "-a", "takesValue": True}, {"flag": "--ask-for-approval", "takesValue": True},
+                             {"flag": "-s", "takesValue": True}, {"flag": "--sandbox", "takesValue": True},
+                             {"flag": "--full-auto", "takesValue": False}]},
     "agy": {"prefix": ["--dangerously-skip-permissions"]},
 }
-# Plantillas `resume` del catálogo, en la forma canónica (sin opciones de ventana).
+# Plantillas `resume` del catálogo. `{arguments}` son las opciones conservadas (en Codex, las de la
+# ventana: -C, -m, -c); sin ellas es la forma canónica que enseña Detalles.
 RESUME = {
-    "claude": ["claude", "--resume", "{sessionId}"],
-    "codex": ["codex", "resume", "{sessionId}"],
-    "agy": ["agy", "--conversation", "{sessionId}"],
-    "grok": ["grok", "-r", "{sessionId}"],
+    "claude": ["claude", "--resume", "{sessionId}", "{arguments}"],
+    "codex": ["codex", "resume", "{sessionId}", "{arguments}"],
+    "agy": ["agy", "--conversation", "{sessionId}", "{arguments}"],
+    "grok": ["grok", "-r", "{sessionId}", "{arguments}"],
 }
 AGENTS = tuple(RESUME)
 
-UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+# Los UUID de argv se aceptan en mayúsculas y se comparan y guardan en minúsculas.
+UUID_CI = re.compile(r"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$")
 UUID_ANY = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 SESSION_ID = re.compile(r"^[A-Za-z0-9_-]{1,160}$")
 SAFE_TOKEN = re.compile(r"^[A-Za-z0-9@%_+=:,./-]+$")
@@ -125,21 +137,46 @@ def project_folder(cwd):
 # ---------------------------------------------------------------- órdenes
 
 def canonical_argv(provider, session_id, arguments=()):
-    """argv de reanudar con la política sin preguntas, sin opciones de ventana delante."""
+    """argv de reanudar: la plantilla del catálogo con `arguments` y la política sin preguntas."""
     if provider not in RESUME:
         raise ValueError("IA desconocida: " + str(provider))
     if not SESSION_ID.match(session_id or ""):
         raise ValueError("Identificador de conversación no válido")
-    policy = NO_PROMPT.get(provider, {})
-    flags = set(policy.get("prefix", [])) | set(policy.get("suffix", [])) | set(policy.get("legacy", []))
     argv = []
     for token in RESUME[provider]:
         if token == "{sessionId}":
             argv.append(session_id)
+        elif token == "{arguments}":
+            argv.extend(str(argument) for argument in arguments)
         else:
             argv.append(token)
-    extra = [a for a in arguments if a not in flags]
-    return [argv[0], *policy.get("prefix", []), *[a for a in argv[1:] if a not in flags], *extra, *policy.get("suffix", [])]
+    return apply_no_prompt(provider, argv)
+
+
+def apply_no_prompt(provider, argv):
+    """La regla única de `noPrompt` (contracts/agent-tree-v1/LEEME.md), igual que en el Mac y Linux.
+
+    De argv[1:] se quitan prefix, suffix y legacy, y cada bandera de `supersedes` con su valor
+    (`-a never`, `-a=never`, `--sandbox=…`, también las cortas con `=`). Después prefix va justo
+    detrás del ejecutable y suffix al final, una sola vez. Aplicarla dos veces da lo mismo que una.
+    """
+    policy = NO_PROMPT.get(provider, {})
+    plain = set(policy.get("prefix", [])) | set(policy.get("suffix", [])) | set(policy.get("legacy", []))
+    supersedes = {item["flag"]: bool(item["takesValue"]) for item in policy.get("supersedes", [])}
+    kept, rest, index = [], list(argv[1:]), 0
+    while index < len(rest):
+        token = rest[index]
+        index += 1
+        if token in plain:
+            continue
+        if token in supersedes:
+            if supersedes[token] and index < len(rest):
+                index += 1                # su valor va con ella
+            continue
+        if "=" in token and supersedes.get(token.split("=", 1)[0]):
+            continue
+        kept.append(token)
+    return [argv[0], *policy.get("prefix", []), *kept, *policy.get("suffix", [])]
 
 
 def resume_environment(provider, as_root):
@@ -159,9 +196,12 @@ def shell_command(cwd, argv, environment):
     return "cd -- '" + cwd.replace("'", "'\\''") + "' && " + prefix + " ".join(quote_token(a) for a in argv)
 
 
-def canonical_resume(provider, session_id, cwd, as_root):
-    """Lo que Detalles enseña como «Orden para reanudarla»: argv, entorno y orden de shell."""
-    argv = canonical_argv(provider, session_id)
+def canonical_resume(provider, session_id, cwd, as_root, arguments=()):
+    """argv, entorno y orden de shell, como en contracts/agent-tree-v1/reanudar-comandos.json.
+
+    Sin `arguments` es la forma canónica que Detalles enseña como «Orden para reanudarla».
+    """
+    argv = canonical_argv(provider, session_id, arguments)
     environment = resume_environment(provider, as_root)
     return {"argv": argv, "environment": environment, "command": shell_command(cwd, argv, environment),
             "no_prompt_verified": provider in NO_PROMPT}
@@ -202,14 +242,21 @@ def trust_folder_for_claude(cwd):
 
 
 def command_for(entry):
-    """argv con el que se lanza de verdad: la forma canónica con el ejecutable resuelto y, en Codex,
-    las opciones de la ventana detrás (-C, -m, -c)."""
+    """argv con el que se lanza de verdad: el ejecutable resuelto y, en Codex, las opciones de la
+    ventana (-C, -m, -c) como `{arguments}` de la plantilla, con la misma política que el resto."""
     agent = entry["agent"]
     if agent == "command":
         return ["bash", "-lc", entry["command"]]
     if agent not in RESUME:
         raise ValueError("IA desconocida en el manifiesto: " + str(agent))
-    argv = canonical_argv(agent, entry["sessionId"])
+    arguments = []
+    if agent == "codex":
+        arguments += ["-C", entry["cwd"]]
+        if entry.get("model"):
+            arguments += ["-m", entry["model"]]
+        if entry.get("reasoningEffort"):
+            arguments += ["-c", "model_reasoning_effort=" + json.dumps(entry["reasoningEffort"])]
+    argv = canonical_argv(agent, entry["sessionId"], arguments)
     if agent == "claude":
         executable = claude_executable(entry)
     else:
@@ -217,12 +264,6 @@ def command_for(entry):
         if executable is None:
             raise ValueError("El cliente de " + agent + " no está instalado o no está en el PATH")
     argv[0] = executable
-    if agent == "codex":
-        argv += ["-C", entry["cwd"]]
-        if entry.get("model"):
-            argv += ["-m", entry["model"]]
-        if entry.get("reasoningEffort"):
-            argv += ["-c", "model_reasoning_effort=" + json.dumps(entry["reasoningEffort"])]
     return argv
 
 
@@ -379,8 +420,13 @@ def read_ficha(readers, pid, uid):
     return None
 
 
-def provider_of(proc, has_ficha):
-    """Qué IA es este proceso, o None. Una ficha sola no basta: el pid puede estar reciclado."""
+def provider_of(proc):
+    """Qué IA es este proceso por su línea de órdenes, o None (regla 2 del contrato).
+
+    La ficha de Claude nunca clasifica: solo da identidad a un proceso que ya es Claude. Con la
+    regla vieja («tiene ficha y algún argumento contiene claude») un pid reciclado por
+    `vim ~/.claude/CLAUDE.md` pasaba por Claude y bloqueaba la reanudación.
+    """
     argv = proc.get("argv") or []
     if not argv:
         return None
@@ -388,9 +434,8 @@ def provider_of(proc, has_ficha):
     base = os.path.basename(argv0)
     rest = argv[1:]
     node = bool(NODE.match(base))
-    if (base == "claude" or "/.local/share/claude/versions/" in argv0
-            or (node and any("@anthropic-ai/claude-code" in a for a in rest))
-            or (has_ficha and any("claude" in a.lower() for a in argv))):
+    if (base == "claude" or "/claude/versions/" in argv0
+            or (node and any("@anthropic-ai/claude-code" in a or os.path.basename(a) == "claude" for a in rest))):
         return "claude"
     if base.startswith("codex") or (node and any("@openai/codex" in a or os.path.basename(a) in ("codex", "codex.js") for a in rest)):
         return "codex"
@@ -422,27 +467,44 @@ def subtree(table, root_pid):
     return order
 
 
-def _argv_value(argv, names):
-    for index, token in enumerate(argv):
+def _options(argv):
+    """argv[1:] hasta el primer `--`: lo de detrás es texto para la IA, no opciones."""
+    rest = list(argv[1:])
+    return rest[:rest.index("--")] if "--" in rest else rest
+
+
+def _canonical_id(value):
+    return value.lower() if UUID_CI.match(value) else value
+
+
+def _argv_id(argv, names, valid):
+    """El id que da la línea de órdenes, con la regla 4 del contrato, o None.
+
+    `<opción> <valor>` solo si el valor no empieza por `-`; `<opción>=<valor>` solo en las largas.
+    Se reúnen todos los valores: si alguno no es válido o hay más de uno distinto (por ejemplo
+    `--resume X --session-id Y`), la línea de órdenes no da id. Ante la duda, no se da id.
+    """
+    options, values = _options(argv), []
+    for index, token in enumerate(options):
         for name in names:
-            if token == name and index + 1 < len(argv):
-                value = argv[index + 1]
-                if not value.startswith("-") and SESSION_ID.match(value):
-                    return value
-            if token.startswith(name + "="):
-                value = token.split("=", 1)[1]
-                if SESSION_ID.match(value):
-                    return value
-    return None
+            if token == name:
+                if index + 1 < len(options) and not options[index + 1].startswith("-"):
+                    values.append(options[index + 1])
+            elif name.startswith("--") and token.startswith(name + "="):
+                values.append(token[len(name) + 1:])
+    if not values or not all(valid(value) for value in values):
+        return None
+    ids = {_canonical_id(value) for value in values}
+    return ids.pop() if len(ids) == 1 else None
 
 
 def _codex_argv_id(argv):
-    if "resume" not in argv:
+    """El `<uuid>` que sigue al primer `resume` antes de `--`, o None."""
+    options = _options(argv)
+    if "resume" not in options:
         return None
-    for token in argv[argv.index("resume") + 1:]:
-        if UUID.match(token):
-            return token
-    return None
+    index = options.index("resume") + 1
+    return options[index].lower() if index < len(options) and UUID_CI.match(options[index]) else None
 
 
 def _rollout_id(path):
@@ -474,17 +536,14 @@ def detect_agent(pane_pid, table, readers, pane_current_path=None):
     """Qué IA corre bajo el shell de un panel, con el criterio común.
 
     Devuelve {provider, session_id, cwd, as_root, source, pid, status, version, argv, cause} o
-    {"cause": "sin_ia" | "identidad_ambigua"}. `cause` es "sin_id" cuando hay IA pero no conversación.
+    {"cause": "sin_ia" | "identidad_ambigua" | "panel_muerto"}. `cause` es "sin_id" cuando hay IA
+    pero no conversación. "panel_muerto": el shell del panel ya no está en la tabla de procesos.
     """
     pids = subtree(table, pane_pid)
+    if not pids:
+        return {"cause": "panel_muerto"}
     inside = set(pids)
-    fichas, providers = {}, {}
-    for pid in pids:
-        proc = table[pid]
-        ficha = read_ficha(readers, pid, proc.get("uid"))
-        if ficha is not None:
-            fichas[pid] = ficha
-        providers[pid] = provider_of(proc, ficha is not None)
+    providers = {pid: provider_of(table[pid]) for pid in pids}
 
     def has_provider_ancestor(pid):
         parent, steps = table[pid]["ppid"], 0
@@ -508,39 +567,46 @@ def detect_agent(pane_pid, table, readers, pane_current_path=None):
     session_id, source, cwd, status, version = None, None, None, None, None
 
     if provider == "claude":
-        ficha = fichas.get(root)
-        if ficha and SESSION_ID.match(str(ficha.get("sessionId") or "")):
-            session_id, source = ficha["sessionId"], "ficha"
-            cwd = ficha.get("cwd") or None
+        ficha = read_ficha(readers, root, proc.get("uid"))
+        found = ficha.get("sessionId") if ficha else None
+        # Claude escribe su propio pid dentro de la ficha. Si es otro, el fichero es de otro proceso
+        # (copiado o restaurado) y su conversación sería la de otro. Sin pid dentro (fichas
+        # antiguas), vale.
+        if isinstance(found, str) and SESSION_ID.match(found) and ficha.get("pid") in (None, root, str(root)):
+            session_id, source = _canonical_id(found), "ficha"
+            cwd = ficha.get("cwd") if isinstance(ficha.get("cwd"), str) else None
             status, version = ficha.get("status"), ficha.get("version")
         else:
-            session_id = _argv_value(argv, ("--resume", "-r", "--session-id"))
+            session_id = _argv_id(argv, ("--resume", "-r", "--session-id"), UUID_CI.match)
             source = "argv" if session_id else None
     elif provider == "codex":
         branch = [root] + [pid for pid in pids if pid != root and providers.get(pid) == "codex" and _descends(table, pid, root)]
-        rollouts = []
+        opened = {}
         for pid in branch:
             for path in readers.open_files(pid) or []:
                 found = _rollout_id(path)
                 if found:
-                    rollouts.append((os.path.basename(path), path, found))
-        if rollouts:
-            # Si hubiera varios, el de nombre mayor es el más reciente (el nombre empieza por la fecha).
-            _, path, session_id = max(rollouts)
+                    opened.setdefault(found.lower(), path)
+        resume = next((found for found in (_codex_argv_id(table[pid].get("argv") or []) for pid in branch) if found), None)
+        if len(opened) == 1 or (len(opened) > 1 and resume in opened):
+            # Con varios rollouts abiertos (un `codex exec` lanzado por la propia sesión abre el
+            # suyo, más reciente) solo vale el que coincide con su `resume <uuid>`. Nunca «el más
+            # reciente» ni argv a solas: pisaría el id bueno guardado cuando solo había uno.
+            session_id = resume if len(opened) > 1 else next(iter(opened))
             source = "rollout"
-            first = (readers.read_text(path) or "").split("\n", 1)[0]
+            first = (readers.read_text(opened[session_id]) or "").split("\n", 1)[0]
             try:
                 cwd = (json.loads(first).get("payload") or {}).get("cwd") or None
             except (ValueError, AttributeError):
                 cwd = None
-        else:
-            session_id = _codex_argv_id(argv)
+        elif not opened:
+            session_id = resume
             source = "argv" if session_id else None
     elif provider == "agy":
-        session_id = _argv_value(argv, ("--conversation",))
+        session_id = _argv_id(argv, ("--conversation",), SESSION_ID.match)
         source = "argv" if session_id else None
     elif provider == "grok":
-        session_id = _argv_value(argv, ("-r", "--resume"))
+        session_id = _argv_id(argv, ("-r", "--resume"), SESSION_ID.match)
         source = "argv" if session_id else None
 
     cwd = cwd or readers.cwd(root) or pane_current_path
@@ -562,16 +628,25 @@ def _descends(table, pid, ancestor):
 
 
 def detect_session(panes, table, readers):
-    """Una sesión con varios paneles: cuenta el único panel con IA; con IA en más de uno, ambigua."""
-    found = []
+    """Una sesión con varios paneles: cuenta el único panel con IA; con IA en más de uno, ambigua.
+
+    Todos los paneles muertos (o sin su shell en la tabla) dan `panel_muerto`: no dice que la IA se
+    cerrara, así que lo guardado no se toca.
+    """
+    found, alive = [], False
     for pane in panes:
         if pane.get("dead"):
             continue
         result = detect_agent(pane["pane_pid"], table, readers, pane.get("cwd"))
+        if result.get("cause") == "panel_muerto":
+            continue
+        alive = True
         if result.get("cause") == "identidad_ambigua":
             return result
         if result.get("provider"):
             found.append(result)
+    if not alive:
+        return {"cause": "panel_muerto"}
     if not found:
         return {"cause": "sin_ia"}
     if len(found) > 1:
@@ -601,7 +676,10 @@ def guard(provider, session_id, readers):
                     ficha = json.loads(readers.read_text(os.path.join(directory, name)) or "")
                 except ValueError:
                     continue
-                if isinstance(ficha, dict) and ficha.get("sessionId") == session_id and provider_of(proc, True) == "claude":
+                # Criterio estricto de «es Claude» (el de agent_guard.py): un vim con CLAUDE.md
+                # en un pid reciclado no bloquea. El pid interior de la ficha no se mira: ante la
+                # duda, la guarda bloquea.
+                if isinstance(ficha, dict) and ficha.get("sessionId") == session_id and provider_of(proc) == "claude":
                     return 1
         return 0
     if provider == "codex":
@@ -616,12 +694,12 @@ def guard(provider, session_id, readers):
         lock = os.path.join(readers.home, ".gemini/antigravity-cli/presence", session_id + ".lock")
         if readers.locked(lock):
             return 1
-        if table and any(provider_of(p, False) == "agy" and session_id in p["argv"] for p in table.values()):
+        if table and any(provider_of(p) == "agy" and session_id in p["argv"] for p in table.values()):
             return 1
         return 0
     if table is None:
         return 2
-    return 1 if any(provider_of(p, False) == "grok" and session_id in p["argv"] for p in table.values()) else 0
+    return 1 if any(provider_of(p) == "grok" and session_id in p["argv"] for p in table.values()) else 0
 
 
 def processes():
@@ -690,8 +768,13 @@ def tmux(socket, *args, check=True):
                           text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=check, timeout=15)
 
 
+# El último campo es el pid del **servidor** tmux: si cambia entre dos vueltas, el servidor se
+# reinició (D6, `missing_is_deliberate`).
 PANE_FORMAT = "\t".join(("#{session_name}", "#{session_id}", "#{window_index}", "#{pane_id}", "#{pane_pid}",
-                         "#{pane_dead}", "#{pane_current_path}", "#{pane_current_command}"))
+                         "#{pane_dead}", "#{pane_current_path}", "#{pane_current_command}", "#{pid}"))
+
+# Lo que dice `tmux list-sessions` cuando en ese socket no hay servidor (D4).
+NO_SERVER = ("no server running", "error connecting", "No such file")
 
 
 def live_sessions(socket):
@@ -700,16 +783,34 @@ def live_sessions(socket):
     out = {}
     for line in result.stdout.splitlines():
         fields = line.split("\t")
-        if len(fields) != 8:
+        if len(fields) not in (8, 9):
             continue
-        name, session_id, window_index, pane_id, pane_pid, dead, cwd, command = fields
+        name, session_id, window_index, pane_id, pane_pid, dead, cwd, command = fields[:8]
         try:
             pid = int(pane_pid)
         except ValueError:
             continue
-        out.setdefault(name, []).append({"session_id": session_id, "window_index": window_index, "pane_id": pane_id,
-                                         "pane_pid": pid, "dead": dead == "1", "cwd": cwd, "command": command})
+        pane = {"session_id": session_id, "window_index": window_index, "pane_id": pane_id,
+                "pane_pid": pid, "dead": dead == "1", "cwd": cwd, "command": command}
+        if len(fields) == 9 and fields[8].isdigit():
+            pane["server_pid"] = fields[8]
+        out.setdefault(name, []).append(pane)
     return out
+
+
+def server_running(socket):
+    """True si el servidor tmux de `socket` existe, False si seguro que no, None si no se sabe.
+
+    Solo False permite poner opciones de servidor (D4): con la duda se trata como vivo.
+    """
+    try:
+        result = tmux(socket, "list-sessions", "-F", "#{pid}", check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode == 0:
+        return True
+    text = (result.stderr or "") + (result.stdout or "")
+    return False if any(marker in text for marker in NO_SERVER) else None
 
 
 # ---------------------------------------------------------------- acciones
@@ -721,10 +822,13 @@ def snapshot(data, manifest_path, readers=None):
     """
     readers = readers or ProcReaders()
     table = readers.process_table() or {}
-    learned, live_by_socket = [], {}
+    learned, live_by_socket, servers = [], {}, {}
     for socket in watched_sockets(data):
         sessions = live_sessions(socket)
         live_by_socket[socket] = sorted(sessions)
+        pids = {pane["server_pid"] for panes in sessions.values() for pane in panes if pane.get("server_pid")}
+        if len(pids) == 1:
+            servers[socket] = pids.pop()
         for name, panes in sessions.items():
             try:
                 found = detect_session(panes, table, readers)
@@ -744,6 +848,8 @@ def snapshot(data, manifest_path, readers=None):
     seen = {"bootId": boot_id(), "at": time.time(), "sessions": live_by_socket.get(primary, [])}
     if len(live_by_socket) > 1:
         seen["sockets"] = live_by_socket
+    if servers:
+        seen["servers"] = servers
 
     def merge(current):
         changed = False
@@ -771,8 +877,8 @@ def snapshot(data, manifest_path, readers=None):
 
 
 def missing_is_deliberate(data, missing):
-    """Un cierre a mano: mismo arranque, su servidor tmux sigue vivo y solo faltan algunas ventanas
-    de ese servidor."""
+    """Un cierre a mano: mismo arranque, **el mismo** servidor tmux sigue vivo y solo faltan algunas
+    ventanas de ese servidor (la marca de cierre deliberado de D6)."""
     seen = data.get("seen") or {}
     if seen.get("bootId") != boot_id():
         return False                      # reinicio: murió todo, se devuelve todo
@@ -780,8 +886,16 @@ def missing_is_deliberate(data, missing):
     for entry in missing:
         by_socket.setdefault(entry_socket(data, entry), []).append(entry)
     for socket, gone in by_socket.items():
-        if tmux(socket, "list-sessions", check=False).returncode != 0:
+        result = tmux(socket, "list-sessions", "-F", "#{pid}", check=False)
+        if result.returncode != 0:
             return False                  # el propio servidor tmux cayó: se devuelve todo
+        before = (seen.get("servers") or {}).get(socket)
+        now = {line.strip() for line in (result.stdout or "").splitlines() if line.strip()}
+        if before and now and now != {before}:
+            # Otro servidor en el mismo socket: el de antes cayó y alguien (UniConnect desde un
+            # escritorio, por ejemplo) ya levantó uno nuevo con alguna ventana. Lo que falta murió
+            # con el viejo; darlo por cerrado a mano lo olvidaría para siempre.
+            return False
         total = sum(1 for entry in data["windows"] if entry_socket(data, entry) == socket)
         if len(gone) >= total:
             return False
@@ -861,6 +975,11 @@ def ensure_one(data, manifest_path, entry, exists):
             return
         if entry.get("adopted"):
             return
+        if not entry.get("tmuxOwner"):
+            # La creó un supervisor anterior a `tmuxOwner` (su dueño es el sessionId de entonces).
+            # Se fija ya, mientras coinciden: el primer /clear que cambie sessionId la dejaría como
+            # «de otro dueño» y el supervisor dejaría de reabrir su panel.
+            _record_owner(data, manifest_path, entry, owner)
         panes = tmux(socket, "list-panes", "-t", target + ":", "-F", "#{pane_id}\t#{pane_dead}").stdout.splitlines()
         if len(panes) == 1 and panes[0].endswith("\t1"):
             # Sin -k: tmux se niega a sustituir un panel vivo si cambia durante esta comprobación.
@@ -869,26 +988,39 @@ def ensure_one(data, manifest_path, entry, exists):
         return
     verify_session(entry)
     command_for(entry)
-    # Las opciones de creación solo tocan lo recién creado. set-clipboard evita el fallo de tmux
-    # viejo con ncurses nuevo al exportar la selección por OSC 52; va aquí y nunca en la vuelta.
-    result = tmux(socket, "new-session", "-d", "-s", entry["tmux"], "-n", entry.get("name", entry["tmux"]),
-                  "-c", entry["cwd"], "-x", "160", "-y", "45", "exec " + launch,
-                  ";", "set-option", "-s", "set-clipboard", "off", check=False)
+    create = ["new-session", "-d", "-s", entry["tmux"], "-n", entry.get("name", entry["tmux"]),
+              "-c", entry["cwd"], "-x", "160", "-y", "45", "exec " + launch]
+    # D4: una opción de servidor (-s) afecta a todas las sesiones de ese tmux, a menudo un 3.2a con
+    # otras IA dentro; un set-clipboard en caliente mató el tmux del Mac con 27 IA el 23-09. Así que
+    # set-clipboard off (el arreglo del fallo de tmux viejo con ncurses nuevo al exportar por OSC 52)
+    # solo va con el new-session que **arranca** el servidor: si ya existía, o no se sabe, nada.
+    if server_running(socket) is False:
+        create += [";", "set-option", "-s", "set-clipboard", "off"]
+    result = tmux(socket, *create, check=False)
     if result.returncode != 0:
         if tmux(socket, "has-session", "-t", target, check=False).returncode == 0:
             return
         raise RuntimeError("tmux no pudo crear " + entry["tmux"] + ": " + result.stderr.strip())
     owner = entry.get("sessionId", "")
+    # Solo opciones de la sesión y la ventana recién creadas (-t): nunca del servidor.
     for option, value in (("@uniconnect_session_id", owner),
                           ("@uniconnect_workspace", entry.get("workspace", "")), ("mouse", "on")):
         tmux(socket, "set-option", "-t", target + ":", option, value)
     tmux(socket, "set-window-option", "-t", target + ":", "automatic-rename", "off")
     tmux(socket, "set-window-option", "-t", target + ":", "remain-on-exit", "on")
+    _record_owner(data, manifest_path, entry, owner)
+    print("Creada " + entry["tmux"], flush=True)
+
+
+def _record_owner(data, manifest_path, entry, owner):
+    """Apunta en el manifiesto que esta entrada es del supervisor, con el dueño que lleva en tmux."""
     key = entry_key(data, entry)
 
     def own(current):
         for other in current["windows"]:
             if entry_key(current, other) == key:
+                if other.get("tmuxOwner") == owner and "adopted" not in other:
+                    return False
                 other.pop("adopted", None)
                 other["tmuxOwner"] = owner
                 return True
@@ -897,7 +1029,6 @@ def ensure_one(data, manifest_path, entry, exists):
     entry.pop("adopted", None)
     entry["tmuxOwner"] = owner
     update_manifest(manifest_path, own, fallback=data)
-    print("Creada " + entry["tmux"], flush=True)
 
 
 def launch(entry, manifest_path):
