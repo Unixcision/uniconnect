@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.CloseFullscreen
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowDown
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Star
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.LinkOff
 import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material.icons.rounded.ZoomOutMap
@@ -117,6 +119,10 @@ fun TerminalScreen(
     transcribers: List<TranscriptionCandidate> = emptyList(),
     /** Abre el informe de conexión. Se ofrece **aquí**, que es donde se ve el fallo. */
     onDiagnostics: (() -> Unit)? = null,
+    /** Abre «Detalles» de esta ventana. Nulo si el equipo no anuncia `window_details.v1`. */
+    onDetails: (() -> Unit)? = null,
+    /** Relanza la IA de esta ventana (alcance `window`). Nulo si el equipo no anuncia `relaunch.v1`. */
+    onRelaunchWindow: (() -> Unit)? = null,
 ) {
     var realRequested by rememberSaveable { mutableStateOf(false) }
     // Default way in: attach to the window's own tmux session. Only a host without the attach RPC,
@@ -131,7 +137,7 @@ fun TerminalScreen(
             onLeaveCopyMode = onLeaveCopyMode, onView = onView, onZoom = onZoom, onReconnect = onReconnectReal,
             draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity,
             attachments = attachments, inbox = inbox, attachTarget = attachTarget, dictation = dictation, settings = settings,
-            transcribers = transcribers, onDiagnostics = onDiagnostics,
+            transcribers = transcribers, onDiagnostics = onDiagnostics, onDetails = onDetails, onRelaunchWindow = onRelaunchWindow,
         )
         return
     }
@@ -146,7 +152,7 @@ fun TerminalScreen(
         onRequestReal = { columns, rows -> realRequested = true; manuallyLeft = false; onStartReal(columns, rows, false) },
         draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity,
         attachments = attachments, inbox = inbox, attachTarget = attachTarget, dictation = dictation, settings = settings,
-        transcribers = transcribers, onDiagnostics = onDiagnostics)
+        transcribers = transcribers, onDiagnostics = onDiagnostics, onDetails = onDetails, onRelaunchWindow = onRelaunchWindow)
 }
 
 /** The attached tmux client: the phone owns a real PTY of its own size; tmux keeps the desktop's. */
@@ -159,7 +165,7 @@ private fun RealTerminalScreen(
     onLeaveCopyMode: () -> Unit, onView: (TerminalView) -> Unit, onZoom: (Float) -> Unit, onReconnect: () -> Unit,
     draft: String, onDraftChange: (String) -> Unit, windowPinned: Boolean, onTogglePin: () -> Unit, activity: ActivityState,
     attachments: AttachViewModel?, inbox: InboxViewModel?, attachTarget: AttachTarget?, dictation: DictationViewModel?, settings: AppSettings,
-    transcribers: List<TranscriptionCandidate>, onDiagnostics: (() -> Unit)?,
+    transcribers: List<TranscriptionCandidate>, onDiagnostics: (() -> Unit)?, onDetails: (() -> Unit)?, onRelaunchWindow: (() -> Unit)?,
 ) {
     var keysVisible by rememberSaveable { mutableStateOf(startWithKeys) }
     var selecting by remember { mutableStateOf(false) }
@@ -211,6 +217,8 @@ private fun RealTerminalScreen(
                 }
                 add(TerminalMenuEntry(Icons.Rounded.Refresh, stringResource(R.string.menu_reconnect_real), stringResource(R.string.menu_reconnect_real_note), enabled = !real.connecting, onClick = onReconnect))
                 add(TerminalMenuEntry(Icons.Rounded.LinkOff, stringResource(R.string.real_terminal_stop), stringResource(R.string.menu_stop_real_note), onClick = onStopReal))
+                if (onDetails != null) add(TerminalMenuEntry(Icons.Rounded.Info, stringResource(R.string.menu_details), stringResource(R.string.menu_details_note), enabled = connected, onClick = onDetails))
+                if (onRelaunchWindow != null) add(TerminalMenuEntry(Icons.Rounded.RestartAlt, stringResource(R.string.menu_relaunch_window), stringResource(R.string.menu_relaunch_window_note), enabled = connected, onClick = onRelaunchWindow))
                 if (onDiagnostics != null) add(TerminalMenuEntry(Icons.Rounded.BugReport, stringResource(R.string.diagnostics_open), onClick = onDiagnostics))
             })
         }
@@ -406,7 +414,7 @@ private fun MirrorTerminalScreen(
     attachFallbackDetail: String?, onRequestReal: (Int, Int) -> Unit, draft: String, onDraftChange: (String) -> Unit,
     windowPinned: Boolean, onTogglePin: () -> Unit, activity: ActivityState,
     attachments: AttachViewModel?, inbox: InboxViewModel?, attachTarget: AttachTarget?, dictation: DictationViewModel?, settings: AppSettings,
-    transcribers: List<TranscriptionCandidate>, onDiagnostics: (() -> Unit)?,
+    transcribers: List<TranscriptionCandidate>, onDiagnostics: (() -> Unit)?, onDetails: (() -> Unit)?, onRelaunchWindow: (() -> Unit)?,
 ) {
     var viewMode by rememberSaveable { mutableStateOf(TerminalView.FIT) }
     var keysVisible by rememberSaveable { mutableStateOf(false) }
@@ -459,6 +467,8 @@ private fun MirrorTerminalScreen(
                 // el otro rehace el enganche tmux de la ventana en el equipo.
                 add(TerminalMenuEntry(Icons.Rounded.Refresh, stringResource(R.string.screen_refresh), stringResource(R.string.menu_refresh_note), enabled = !loading, onClick = onRefresh))
                 add(TerminalMenuEntry(Icons.Rounded.Sync, stringResource(R.string.terminal_reconnect), stringResource(R.string.menu_reattach_note), enabled = (connected || error != null) && !reconnecting, onClick = onReconnect))
+                if (onDetails != null) add(TerminalMenuEntry(Icons.Rounded.Info, stringResource(R.string.menu_details), stringResource(R.string.menu_details_note), enabled = connected, onClick = onDetails))
+                if (onRelaunchWindow != null) add(TerminalMenuEntry(Icons.Rounded.RestartAlt, stringResource(R.string.menu_relaunch_window), stringResource(R.string.menu_relaunch_window_note), enabled = connected, onClick = onRelaunchWindow))
                 if (onDiagnostics != null) add(TerminalMenuEntry(Icons.Rounded.BugReport, stringResource(R.string.diagnostics_open), onClick = onDiagnostics))
             })
         }

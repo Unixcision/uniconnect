@@ -44,6 +44,14 @@ data class MachineSnapshot(val serverName: String, val workspaces: List<RemoteWo
      */
     val keepsInbox: Boolean get() = INBOX in capabilities
 
+    /**
+     * Whether this machine answers `mobile.terminal.details` (`window_details.v1`).
+     *
+     * Without it the terminal menu shows no «Detalles»: an older host would answer
+     * `method_not_found`, and an entry that only ever fails is worse than no entry.
+     */
+    val describesWindows: Boolean get() = WINDOW_DETAILS in capabilities
+
     companion object {
         /** The host implements mobile.workspace.update and mobile.terminal.update. */
         const val BOX_UPDATE = "box_update"
@@ -62,5 +70,8 @@ data class MachineSnapshot(val serverName: String, val workspaces: List<RemoteWo
 
         /** The host implements mobile.inbox.list/read/delete (inbox.v1). */
         const val INBOX = "inbox.v1"
+
+        /** The host implements mobile.terminal.details (window_details.v1). */
+        const val WINDOW_DETAILS = "window_details.v1"
     }
 }

@@ -209,6 +209,14 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                             attachTarget = if (machine != null && workspace != null && window != null) AttachTarget(machine, workspace.id, window.id, workspace.isSSH, connection?.snapshot?.putsFiles == true, connection?.snapshot?.keepsInbox == true) else null,
                             transcribers = transcribers,
                             onDiagnostics = { model.showDiagnostics(true) },
+                            // Solo si el equipo sabe darlos: uno antiguo contestaría method_not_found.
+                            onDetails = if (connection?.snapshot?.describesWindows == true && machine != null && workspace != null && window != null) {
+                                { model.showWindowDetails(machine.id, workspace.id, window.id) }
+                            } else null,
+                            // Mismo criterio que la pulsación larga: sin relaunch.v1 no se ofrece.
+                            onRelaunchWindow = if (connection?.snapshot?.relaunches == true && machine != null && workspace != null && window != null) {
+                                { model.relaunch(machine.id, RelaunchScope.Window(machine.id, workspace.id, window.id)) }
+                            } else null,
                         )
                     }
                     Level.MACHINE -> if (machine != null) MachineBoxesScreen(
@@ -256,6 +264,9 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
     }
     state.relaunch?.let { relaunch ->
         RelaunchDialog(relaunch, onConfirm = model::confirmRelaunch, onDismiss = model::dismissRelaunch)
+    }
+    state.windowDetails?.let { details ->
+        WindowDetailsDialog(details, onCopy = model::copyResumeCommand, onDismiss = model::dismissWindowDetails)
     }
     if (state.showingSettings) {
         val inboxCandidates = state.machines.map { saved ->

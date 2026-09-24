@@ -116,6 +116,8 @@ class MachinesViewModel(
         val creation: CreationContext? = null, val creating: Boolean = false, val creationError: Int? = null,
         /** Un relanzado a la espera de que alguien lo confirme, o en marcha, o recién terminado. */
         val relaunch: RelaunchUI? = null,
+        /** El diálogo «Detalles» de una ventana, si está abierto. */
+        val windowDetails: WindowDetailsUI? = null,
         /** El informe de conexión está abierto. */
         val diagnosticsOpen: Boolean = false,
         /**
@@ -340,6 +342,50 @@ class MachinesViewModel(
         mutableState.update { it.copy(relaunch = null) }
     }
 
+    private var detailsJob: Job? = null
+
+    /**
+     * Pide al equipo los detalles de una ventana y los enseña.
+     *
+     * Es solo lectura en los dos lados. Una respuesta que llega después de cerrar el diálogo, o de
+     * pedir los de otra ventana, se descarta: enseñar los detalles de la ventana equivocada es peor
+     * que no enseñar nada.
+     */
+    fun showWindowDetails(machineID: String, workspaceID: String, windowID: String) {
+        val machine = state.value.machines.firstOrNull { it.id == machineID } ?: return
+        val pending = WindowDetailsUI.Loading(machineID, workspaceID, windowID)
+        detailsJob?.cancel()
+        mutableState.update { it.copy(windowDetails = pending) }
+        detailsJob = viewModelScope.launch {
+            val next = try {
+                WindowDetailsUI.Ready(client.windowDetails(machine, workspaceID, windowID))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (rejected: MachineFailure.Rejected) {
+                WindowDetailsUI.Failed(R.string.details_failed, rejected.detail?.takeIf { it.isNotBlank() } ?: rejected.code)
+            } catch (failure: Exception) {
+                WindowDetailsUI.Failed(R.string.details_failed)
+            }
+            mutableState.update { current -> if (current.windowDetails == pending) current.copy(windowDetails = next) else current }
+        }
+    }
+
+    fun dismissWindowDetails() {
+        detailsJob?.cancel()
+        detailsJob = null
+        mutableState.update { it.copy(windowDetails = null) }
+    }
+
+    /** Copia la orden para reanudar la IA de la ventana, y lo dice en el propio diálogo. */
+    fun copyResumeCommand() {
+        val ready = state.value.windowDetails as? WindowDetailsUI.Ready ?: return
+        val command = ready.details.agent?.resume?.command ?: return
+        clipboard?.copy(command)
+        mutableState.update { current ->
+            if (current.windowDetails == ready) current.copy(windowDetails = ready.copy(copied = true)) else current
+        }
+    }
+
     private suspend fun apply(machineID: String, plan: RelaunchPlan) {
         // Que el diálogo no ofrezca el botón no es una defensa: `Show` y `Confirm` viven en el mismo
         // estado, así que una confirmación obsoleta —o una llamada directa— alcanzaría el equipo con
@@ -353,7 +399,7 @@ class MachinesViewModel(
         mutableState.update {
             it.copy(relaunch = RelaunchUI.Running(machineID, plan.operationID, plan.targets.size))
         }
-        val operation = try {
+        var operation = try {
             client.relaunchApply(machine, plan)
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -365,6 +411,29 @@ class MachinesViewModel(
                     mutableState.update { it.copy(relaunch = RelaunchUI.Failed(machineID, R.string.relaunch_unknown)) }
                     return
                 }
+        }
+        // `apply` puede volver con la operación todavía `en_curso`: se sigue con `relaunch.status`
+        // hasta que termine. Enseñar «Relanzadas 1 de 26» mientras las otras 25 se están cerrando
+        // sería contar como hecho lo que todavía no ha pasado.
+        var consultas = 0
+        while (!operation.finished) {
+            if (consultas >= RELAUNCH_STATUS_MAX_POLLS) {
+                mutableState.update { it.copy(relaunch = RelaunchUI.Failed(machineID, R.string.relaunch_unknown)) }
+                return
+            }
+            // Una espera acotada entre consultas, cancelable con el viewModelScope: es el ritmo del
+            // seguimiento, no un sustituto de una señal (el equipo no empuja el estado).
+            delay(RELAUNCH_STATUS_INTERVAL_MS)
+            consultas += 1
+            operation = try {
+                client.relaunchStatus(machine, plan.operationID)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                // Un corte momentáneo no convierte la operación en fallida: cuenta como consulta
+                // y se vuelve a preguntar, hasta el límite.
+                operation
+            }
         }
         mutableState.update { it.copy(relaunch = RelaunchUI.Done(machineID, operation)) }
         startObserving(machine, force = true)
@@ -1270,5 +1339,14 @@ class MachinesViewModel(
          * con la espera que crece (1 s, 2 s, 4 s…) sin dejar a nadie mirando una pantalla muerta.
          */
         const val CAIDA_VISIBLE_MILLIS = 12_000L
+
+        /**
+         * Seguimiento de un relanzado en curso: una consulta cada 2 s, como mucho 90 (tres minutos).
+         *
+         * Pasado eso se dice que no se sabe cómo quedó, en vez de esperar para siempre o de dar por
+         * hecho lo que no se ha visto terminar.
+         */
+        const val RELAUNCH_STATUS_INTERVAL_MS = 2_000L
+        const val RELAUNCH_STATUS_MAX_POLLS = 90
     }
 }

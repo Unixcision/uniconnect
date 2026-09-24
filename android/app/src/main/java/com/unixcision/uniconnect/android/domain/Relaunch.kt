@@ -69,7 +69,10 @@ enum class RelaunchCause(val wire: String) {
     GENERATION_CHANGED("generacion_cambiada"),
     HOST_UNREACHABLE("host_inaccesible"),
     DUPLICATE("duplicado"),
-    UNSUPPORTED("no_soportado");
+    UNSUPPORTED("no_soportado"),
+
+    /** La ventana no tiene ninguna IA en marcha: no hay nada que relanzar. No es un fallo. */
+    NO_AGENT("sin_ia");
 
     companion object {
         fun named(raw: String?): RelaunchCause? = entries.firstOrNull { it.wire == raw }
@@ -86,7 +89,8 @@ data class RelaunchExclusion(val label: String, val reason: RelaunchReason?)
  * Un motivo tal y como llegó, con su interpretación si esta versión la tiene.
  *
  * El identificador **crudo** se guarda siempre. Quedarse solo con el enum es como una causa nueva
- * del contrato (`sin_ia`, por ejemplo) desaparece por el camino: `named()` devuelve nulo, el nulo
+ * del contrato (le pasó a `sin_ia` antes de que esta versión la conociera) desaparece por el
+ * camino: `named()` devuelve nulo, el nulo
  * se filtra, y quien mira la pantalla ve una exclusión sin motivo. Tolerar un valor que no se
  * entiende no es lo mismo que conservarlo, y perder el diagnóstico es peor que no saber leerlo.
  */
@@ -144,13 +148,38 @@ data class RelaunchOperation(
      */
     val recovered: Boolean,
     val results: List<RelaunchResult>,
+    /**
+     * `operation_state` tal como lo manda el equipo: `en_curso`, `terminada` o nulo si no lo manda.
+     *
+     * Es el campo que dice si la operación terminó, no [recovered]. Se guarda crudo para que un
+     * valor nuevo del contrato no se pierda por el camino.
+     */
+    val operationState: String? = null,
 ) {
-    /** Termina cuando ningún objetivo tiene fases por delante. */
-    val finished: Boolean get() = results.all { it.state.settled }
+    /**
+     * Si la operación ya no va a cambiar sola.
+     *
+     * Manda el equipo: `en_curso` es que no, cualquier otro valor (`terminada`) es que sí. Un equipo
+     * que no lo manda deja la decisión en los objetivos, y termina cuando ninguno tiene fases por
+     * delante: es lo que devuelve el `apply` bloqueante del Mac, que responde con todo ya asentado.
+     */
+    val finished: Boolean get() = when (operationState) {
+        RUNNING -> false
+        null -> results.all { it.state.settled }
+        else -> true
+    }
 
     /** Los que necesitan que una persona conteste algo. */
     val needingUser: List<RelaunchResult> get() = results.filter { it.state == RelaunchTargetState.NEEDS_USER }
 
     /** Solo lo fallido se reintenta: lo verificado no se vuelve a tocar y lo que espera a alguien no se arregla solo. */
     val retryable: List<RelaunchResult> get() = results.filter { it.state == RelaunchTargetState.FAILED }
+
+    companion object {
+        /** `operation_state` de una operación que sigue en marcha. */
+        const val RUNNING = "en_curso"
+
+        /** `operation_state` de una operación terminada. */
+        const val FINISHED = "terminada"
+    }
 }

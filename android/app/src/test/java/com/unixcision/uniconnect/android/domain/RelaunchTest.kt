@@ -18,6 +18,15 @@ class RelaunchTest {
         assertFalse(media.finished)
     }
 
+    @Test fun `manda el estado de la operacion cuando el equipo lo dice`() {
+        val asentados = listOf(result(RelaunchTargetState.VERIFIED), result(RelaunchTargetState.SKIPPED, RelaunchCause.NO_AGENT))
+        // `en_curso` gana aunque los objetivos que ya vinieron parezcan hechos: puede faltar alguno.
+        assertFalse(RelaunchOperation("op", recovered = false, results = asentados, operationState = "en_curso").finished)
+        assertTrue(RelaunchOperation("op", recovered = false, results = asentados, operationState = "terminada").finished)
+        // Sin `operation_state` (el apply bloqueante del Mac) deciden los objetivos.
+        assertTrue(RelaunchOperation("op", recovered = false, results = asentados).finished)
+    }
+
     @Test fun `termina cuando ningun objetivo tiene fases por delante`() {
         val fin = RelaunchOperation("op", recovered = false, results = listOf(
             result(RelaunchTargetState.VERIFIED),

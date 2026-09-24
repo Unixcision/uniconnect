@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "workspace_id": "b3a1c9e2-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+  "terminal_id": "e86e9114-031c-4752-941d-1079c170a639",
+  "checked_at": "2026-09-24T14:30:05Z",
+  "workspace": {"name": "PROYECTOS", "kind": "local", "host": null, "host_label": null},
+  "window": {"name": "MULTIGRAM-CLAUDE"},
+  "tmux": {"socket": "uniconnect-local", "session": "uc-e86e9114031c4752941d1079c170a639", "session_id": "$12", "pane_id": "%14", "live": true},
+  "agent": {
+    "provider": "claude",
+    "display_name": "Claude Code",
+    "session_id": "714b0eae-b568-4e0c-a70b-c87c0d0a801a",
+    "cwd": "/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM",
+    "as_root": false,
+    "source": "ficha",
+    "state": "activo",
+    "observed_at": "2026-09-24T14:30:04Z",
+    "resume": {
+      "argv": ["claude", "--resume", "714b0eae-b568-4e0c-a70b-c87c0d0a801a", "--dangerously-skip-permissions"],
+      "environment": {},
+      "command": "cd -- '/Users/danielgomezmartin/Desktop/PROYECTOS/MULTIGRAM' && claude --resume 714b0eae-b568-4e0c-a70b-c87c0d0a801a --dangerously-skip-permissions",
+      "no_prompt_verified": true
+    }
+  },
+  "reason": null
+}

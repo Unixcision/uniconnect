@@ -8,5 +8,6 @@
   "generacion_cambiada": "El objetivo cambió entre el plan y la ejecución. Hace falta un plan nuevo.",
   "host_inaccesible": "El equipo no respondió.",
   "duplicado": "El mismo objetivo ya lo ejecuta otro; aquí no se repite.",
-  "no_soportado": "El equipo no anuncia relaunch.v1 o el proveedor no admite este verbo."
+  "no_soportado": "El equipo no anuncia relaunch.v1 o el proveedor no admite este verbo.",
+  "sin_ia": "La ventana no tiene ninguna IA en marcha. No hay nada que relanzar."
 }

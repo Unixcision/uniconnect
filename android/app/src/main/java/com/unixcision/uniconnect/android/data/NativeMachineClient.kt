@@ -145,6 +145,76 @@ class NativeMachineClient(
     override suspend fun relaunchStatus(machine: Machine, operationID: String): RelaunchOperation =
         decodeOperation(call(machine, "relaunch.status", JSONObject().put("operation_id", operationID)))
 
+    override suspend fun windowDetails(machine: Machine, workspaceID: String, windowID: String): WindowDetails {
+        val params = JSONObject().put("workspace_id", workspaceID).put("terminal_id", windowID)
+        val details = decodeDetails(call(machine, "mobile.terminal.details", params))
+        // La respuesta tiene que ser de la ventana que se pidió. El Mac manda los UUID en mayúsculas.
+        require(details.windowID.isEmpty() || details.windowID.equals(windowID, ignoreCase = true))
+        return details
+    }
+
+    /**
+     * Lee una respuesta de `window_details.v1`.
+     *
+     * Los `null` del contrato se miran con `isNull`: en Android, `optString` de un `null` de JSON
+     * devuelve el texto `"null"`, y una carpeta llamada «null» es peor que ninguna.
+     */
+    internal fun decodeDetails(result: JSONObject): WindowDetails {
+        val workspace = result.optJSONObject("workspace") ?: JSONObject()
+        val tmux = result.optJSONObject("tmux")
+        val agent = result.optJSONObject("agent")
+        return WindowDetails(
+            workspaceID = result.text("workspace_id").orEmpty(),
+            windowID = result.text("terminal_id").orEmpty(),
+            checkedAt = result.text("checked_at"),
+            workspaceName = workspace.text("name").orEmpty(),
+            workspaceKind = workspace.text("kind") ?: "local",
+            host = workspace.optJSONObject("host")?.let { host ->
+                host.text("hostname")?.let { hostname ->
+                    DetailsHost(host.text("user"), hostname, if (host.has("port") && !host.isNull("port")) host.optInt("port") else null)
+                }
+            },
+            hostLabel = workspace.text("host_label"),
+            windowName = result.optJSONObject("window")?.text("name").orEmpty(),
+            tmux = tmux?.let {
+                DetailsTmux(
+                    socket = it.text("socket") ?: "default",
+                    session = it.text("session").orEmpty(),
+                    sessionID = it.text("session_id"),
+                    paneID = it.text("pane_id"),
+                    live = it.optBoolean("live", false),
+                )
+            },
+            agent = agent?.let {
+                DetailsAgent(
+                    provider = it.text("provider").orEmpty(),
+                    displayName = it.text("display_name"),
+                    sessionID = it.text("session_id"),
+                    cwd = it.text("cwd"),
+                    asRoot = if (it.has("as_root") && !it.isNull("as_root")) it.optBoolean("as_root") else null,
+                    source = it.text("source"),
+                    state = it.text("state"),
+                    observedAt = it.text("observed_at"),
+                    resume = it.optJSONObject("resume")?.let { resume ->
+                        val argv = resume.optJSONArray("argv") ?: JSONArray()
+                        val environment = resume.optJSONObject("environment") ?: JSONObject()
+                        DetailsResume(
+                            argv = List(argv.length()) { index -> argv.optString(index) },
+                            environment = environment.keys().asSequence().associateWith { key -> environment.optString(key) },
+                            command = resume.text("command").orEmpty(),
+                            noPromptVerified = resume.optBoolean("no_prompt_verified", false),
+                        )
+                    }?.takeIf { resume -> resume.command.isNotEmpty() },
+                )
+            },
+            reason = result.text("reason"),
+        )
+    }
+
+    /** El texto de [key], o nulo si falta, es `null` o está vacío. */
+    private fun JSONObject.text(key: String): String? =
+        if (!has(key) || isNull(key)) null else optString(key).takeIf { it.isNotEmpty() }
+
     internal fun scopeParameters(scope: RelaunchScope): JSONObject = when (scope) {
         // Solo `kind` e `id` viajan. El espacio al que pertenece una ventana se queda en el modelo
         // y en la pantalla: mandarlo invitaría a que el equipo decidiera con él, y quien resuelve
@@ -191,6 +261,9 @@ class NativeMachineClient(
                     effectiveID = item.optString("effective_id").takeIf { it.isNotEmpty() },
                 )
             },
+            // Lo que dice si terminó. Un equipo que no lo manda (el `apply` bloqueante del Mac
+            // antiguo) deja que decidan los objetivos.
+            operationState = result.text("operation_state"),
         )
     }
 

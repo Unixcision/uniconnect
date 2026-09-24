@@ -17,7 +17,7 @@ usuario las pide en momentos distintos.
 | Verbo | Qué hace | Qué NO hace |
 |---|---|---|
 | `transport.reconnect` | Reengancha el cliente a lo que ya está corriendo. | No cierra la IA. No toca el proceso. |
-| `agent.relaunch` | Cierra el agente y lo reabre **sobre la misma conversación**. | No mata tmux. No cambia permisos, modelo ni carpeta. |
+| `agent.relaunch` | Cierra el agente y lo reabre **sobre la misma conversación**, siempre sin preguntas. | No mata tmux. No cambia modelo ni carpeta. |
 | `agent.continue` | Le dice a un agente vivo que retome el encargo anterior. | No es un OK en blanco: va acotado a ese encargo. |
 
 `transport.reconnect` es el caso mayoritario: quien ve una ventana en blanco casi siempre quiere
@@ -171,7 +171,13 @@ operación, no `recovered`.
 5. **El ID efectivo sale del proceso vivo**, no de los argumentos de arranque. Ni `--last`, ni
    fiarse de lo guardado en la ventana. Medido: de 26 ventanas del Mac, **5 se habían lanzado sin
    `--resume`** y su línea de comandos no decía qué conversación seguir.
-6. **Relanzar no cambia nada más**: ni permisos, ni modelo, ni carpeta. Se vuelve como estaba.
+6. **Relanzar reabre siempre sin preguntas, y no cambia nada más**: ni modelo ni carpeta.
+   Decisión de Dani del 24-09-2026, que sustituye a «ni permisos»: una IA recuperada que se para a
+   pedir permiso es una ventana muerta. Claude vuelve con `--dangerously-skip-permissions` (e
+   `IS_SANDBOX=1` si corre como root), Codex con `--yolo`, agy con `--dangerously-skip-permissions`.
+   Grok no tiene bandera verificada y se reabre con su sintaxis normal. La política única es
+   `noPrompt` en `agent-resume-v1.json`; las órdenes exactas, en
+   `contracts/agent-tree-v1/reanudar-comandos.json` y en `docs/ARBOL-IA-v1.md`.
 
 ## 6. Adaptadores por proveedor
 
@@ -203,8 +209,10 @@ exactamente esto.
 
 ## 7. Superficies
 
-- **Mac y Linux**: menú contextual de la ventana / del espacio, y menú superior.
-- **Android**: pulsación larga en la ventana o el espacio, y menú de la máquina.
+- **Mac y Linux**: menú contextual de la ventana / del espacio, y menú superior. Junto a
+  «Detalles…», la entrada «Relanzar IA de esta ventana…».
+- **Android**: pulsación larga en la ventana o el espacio, menú de la máquina y, dentro del
+  terminal, «Relanzar IA de esta ventana» en el menú ⋮ (alcance `window`).
 
 Un host anuncia `relaunch.v1` en `capabilities`. Quien no lo anuncie no recibe estas peticiones y el
 cliente no ofrece la acción, igual que con `ssh_create.v1`.
@@ -248,6 +256,7 @@ esos mismos archivos**. Si un ejemplo y una implementación discrepan, manda el 
 {
   "operation_id": "<uuid>",
   "recovered": false,                      // true = ya existía; no se ejecutó nada nuevo
+  "operation_state": "terminada",          // o "en_curso": el cliente sigue con relaunch.status
   "results": [
     { "key": "<identidad>", "state": "verificado", "effective_id": "<id conversación>" },
     { "key": "<identidad>", "state": "necesita_usuario", "cause": "dialogo_desconocido" }
@@ -257,7 +266,24 @@ esos mismos archivos**. Si un ejemplo y una implementación discrepan, manda el 
 
 **Causas estables** (identificador en el protocolo; el texto en español lo pone el cliente):
 `identidad_ambigua`, `dialogo_desconocido`, `confianza_carpeta`, `permisos`, `sin_autoridad`,
-`generacion_cambiada`, `host_inaccesible`, `duplicado`, `no_soportado`.
+`no_enviado`, `generacion_cambiada`, `host_inaccesible`, `duplicado`, `no_soportado`, `sin_ia`.
+La lista viva es `contracts/relaunch-v1/causes.json`.
+
+- `no_enviado`: la app aceptó el trabajo y lo canceló antes de despacharlo. No se relanzó nada; hace
+  falta un plan nuevo si todavía se quiere.
+- `sin_ia` (24-09-2026): la ventana no tiene ninguna IA en marcha. No es un fallo ni una ambigüedad:
+  no hay nada que relanzar.
+- `no_soportado` sigue siendo la causa de:
+  - toda ventana **SSH**: la política de cierre del Mac sigue rechazando `.ssh`, y una ventana SSH
+    pedida por id desde el móvil devuelve esta exclusión, no `alcance_no_valido`;
+  - Codex, agy y grok **en el Mac**: no hay dialecto de cierre verificado para ellos. Su
+    recuperación al abrir (tmux caído) sí funciona, con la orden sin preguntas.
+
+**Seguir una operación.** `apply` puede devolver `operation_state: "en_curso"`. Android pregunta
+entonces con `relaunch.status` cada 2 s, como mucho 90 veces, y solo cuando `operation_state` deja de
+ser `en_curso` enseña el resultado. Si la respuesta no trae `operation_state` (equipo antiguo), manda
+lo que digan los objetivos: terminada cuando ninguno tiene fases por delante. Con el `apply`
+bloqueante del Mac, que devuelve todos los objetivos asentados, eso es terminada al primer intento.
 
 **Errores de la llamada** (distintos de una causa por objetivo, que no es un error):
 `token_caducado`, `token_no_valido`, `operacion_desconocida`, `alcance_no_valido`.

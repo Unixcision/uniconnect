@@ -27,6 +27,16 @@ interface MachineClient {
 
     /** Consulta una operación por su identificador (`relaunch.status`). No caduca. */
     suspend fun relaunchStatus(machine: Machine, operationID: String): RelaunchOperation
+
+    /**
+     * Pide al equipo lo que sabe de una ventana (`mobile.terminal.details`, `window_details.v1`).
+     *
+     * Es solo lectura: el equipo no guarda ni lanza nada. Si no puede comprobar en vivo, contesta con
+     * lo guardado. El cuerpo por defecto existe para que los clientes falsos de las pruebas no
+     * tengan que implementarlo; solo se llama si el equipo anuncia la capacidad.
+     */
+    suspend fun windowDetails(machine: Machine, workspaceID: String, windowID: String): WindowDetails =
+        throw UnsupportedOperationException("mobile.terminal.details")
     suspend fun inspect(machine: Machine): MachineSnapshot
     /** One-shot authorized check for the machine list; never creates or attaches anything. */
     suspend fun probe(machine: Machine): MachineSnapshot

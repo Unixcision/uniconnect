@@ -1,18 +1,13 @@
 """Regression checks for preserving an agent thread owned by another process."""
 
+import json
 import os
-import fcntl
 from pathlib import Path
-import pty
-import select
 import shlex
 import shutil
-import struct
 import subprocess
 import sys
 import tempfile
-import termios
-import time
 import unittest
 from unittest.mock import patch
 
@@ -27,48 +22,34 @@ _SPEC.loader.exec_module(recovery)
 
 class LiveOwnershipTest(unittest.TestCase):
     @unittest.skipUnless(shutil.which("tmux"), "tmux required")
-    def test_recovery_clipboard_policy_preserves_copy_buffer_and_running_pane(self):
-        with tempfile.TemporaryDirectory(prefix="uc-copy-regression-") as directory:
+    def test_existing_session_keeps_its_options_and_running_pane(self):
+        # Antes la vuelta ponía `set-clipboard off` en el servidor cada 15 segundos, también sobre
+        # sesiones vivas. Ahora solo al crear: una sesión que ya existe no se reconfigura.
+        # Todo ocurre en un servidor tmux propio, en un socket temporal; nunca en el del usuario.
+        with tempfile.TemporaryDirectory(prefix="uc-owner-regression-") as directory:
             sock = str(Path(directory) / "socket")
             base = ["tmux", "-S", sock, "-f", "/dev/null"]
+            env = {k: v for k, v in os.environ.items() if k != "TMUX"}
+
             def run(*args, **kwargs):
-                return subprocess.run(base + list(args), text=True, capture_output=True, timeout=10, **kwargs)
-            master, slave = pty.openpty()
-            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 35, 119, 0, 0))
-            client = None
+                return subprocess.run(base + list(args), text=True, capture_output=True, timeout=10, env=env, **kwargs)
+
             try:
-                command = shlex.join([sys.executable, "-c", "import sys; print('UC_COPY_FIXTURE',flush=True); sys.stdin.readline()"])
+                command = shlex.join([sys.executable, "-c", "import sys; sys.stdin.readline()"])
                 run("new-session", "-d", "-s", "fixture", "-x", "119", "-y", "35", command, check=True)
                 run("set-option", "-t", "=fixture:", "@uniconnect_session_id", "fixture-id", check=True)
-                before = run("display-message", "-p", "-t", "=fixture:", "#{pid}|#{pane_pid}", check=True).stdout
+                before_pane = run("display-message", "-p", "-t", "=fixture:", "#{pid}|#{pane_pid}", check=True).stdout
+                before_clipboard = run("show-options", "-s", "-v", "set-clipboard", check=True).stdout
                 data = {"tmuxSocket": "test-only", "windows": [{"tmux": "fixture", "sessionId": "fixture-id"}]}
-                # Route the production recovery policy exclusively to this owned fixture socket.
-                with patch.object(recovery, "tmux", side_effect=lambda data, *args, **kw: run(*args, **kw)):
+                # La política real, dirigida solo a este socket de prueba.
+                with patch.object(recovery, "tmux", side_effect=lambda socket, *args, **kw: run(*args, **kw)):
                     recovery.ensure_windows(data, Path(directory) / "unused-manifest.json")
-                self.assertEqual(run("show-options", "-s", "-v", "set-clipboard", check=True).stdout.strip(), "off")
-                client = subprocess.Popen(base + ["attach-session", "-t", "=fixture"], stdin=slave, stdout=slave, stderr=slave,
-                                          env={**os.environ, "TERM": "xterm-256color"}, close_fds=True)
-                os.close(slave)
-                slave = None
-                deadline, output = time.monotonic() + 10, b""
-                while b"UC_COPY_FIXTURE" not in output and time.monotonic() < deadline:
-                    readable, _, _ = select.select([master], [], [], max(0, deadline - time.monotonic()))
-                    if readable:
-                        output += os.read(master, 65536)
-                self.assertIn(b"UC_COPY_FIXTURE", output)
-                run("copy-mode", "-t", "=fixture:", check=True)
-                for action in ("history-top", "start-of-line", "begin-selection", "end-of-line", "copy-pipe-and-cancel"):
-                    run("send-keys", "-t", "=fixture:", "-X", action, check=True)
-                self.assertEqual(run("show-buffer", check=True).stdout.strip(), "UC_COPY_FIXTURE")
-                self.assertEqual(run("display-message", "-p", "-t", "=fixture:", "#{pid}|#{pane_pid}", check=True).stdout, before)
+                self.assertEqual(run("show-options", "-s", "-v", "set-clipboard", check=True).stdout, before_clipboard)
+                self.assertEqual(run("display-message", "-p", "-t", "=fixture:", "#{pid}|#{pane_pid}", check=True).stdout, before_pane)
             finally:
-                run("kill-server", check=False)  # Only the uniquely created fixture socket.
-                if client:
-                    client.wait(timeout=10)
-                if slave is not None:
-                    os.close(slave)
-                os.close(master)
+                run("kill-server", check=False)  # Solo el socket de prueba creado aquí.
 
+    @unittest.skipUnless(os.path.isdir("/proc/self/fd"), "/proc de Linux necesario")
     def test_kernel_lock_blocks_recovery_until_actual_owner_exits(self):
         with tempfile.TemporaryFile() as handle:
             path = Path("/proc") / str(os.getpid()) / "fd" / str(handle.fileno())
@@ -96,24 +77,45 @@ class LiveOwnershipTest(unittest.TestCase):
                 child.stdout.close()
                 child.wait(timeout=5)
 
-    def test_existing_unowned_tmux_target_is_never_replaced(self):
-        data = {"tmuxSocket": "uniconnect", "windows": [{
-            "tmux": "uc-test-01a070d7", "sessionId": "01a070d7-5f44-7f33-aee1-867c845860ef",
-        }]}
-        calls = []
+    def test_existing_unowned_tmux_target_is_adopted_without_exception(self):
+        # Cambiado a propósito (24-09-2026). Antes una sesión aprendida sin dueño lanzaba
+        # «different ownership» y esa excepción cortaba la vuelta entera: ninguna ventana posterior
+        # del manifiesto se vigilaba. Ahora queda `adopted: true`, sin tocarla.
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "manifest.json"
+            data = {"tmuxSocket": "uniconnect", "windows": [{
+                "tmux": "uc-test-01a070d7", "sessionId": "01a070d7-5f44-7f33-aee1-867c845860ef",
+            }]}
+            manifest.write_text(json.dumps(data))
+            calls = []
 
-        def fake_tmux(data, *args, **kwargs):
-            calls.append(args)
-            return subprocess.CompletedProcess(args, 0, stdout="another-owner\n", stderr="")
+            def fake_tmux(socket, *args, **kwargs):
+                calls.append(args)
+                return subprocess.CompletedProcess(args, 0, stdout="\n", stderr="")
 
-        with patch.object(recovery, "tmux", side_effect=fake_tmux):
-            with self.assertRaisesRegex(RuntimeError, "different ownership"):
-                recovery.ensure_windows(data, Path("/tmp/unused-manifest.json"))
-        self.assertEqual([call[0] for call in calls], ["has-session", "show-option"])
+            with patch.object(recovery, "tmux", side_effect=fake_tmux):
+                recovery.ensure_windows(data, manifest)
+            # Solo se pregunta: ni set-option, ni respawn, ni new-session.
+            self.assertEqual([call[0] for call in calls], ["has-session", "show-option"])
+            self.assertTrue(json.loads(manifest.read_text())["windows"][0]["adopted"])
 
+    def test_existing_target_of_another_owner_is_skipped_without_exception(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "manifest.json"
+            data = {"tmuxSocket": "uniconnect", "windows": [{
+                "tmux": "uc-test-01a070d7", "sessionId": "01a070d7-5f44-7f33-aee1-867c845860ef",
+            }]}
+            manifest.write_text(json.dumps(data))
+            calls = []
 
-if __name__ == "__main__":
-    unittest.main()
+            def fake_tmux(socket, *args, **kwargs):
+                calls.append(args)
+                return subprocess.CompletedProcess(args, 0, stdout="another-owner\n", stderr="")
+
+            with patch.object(recovery, "tmux", side_effect=fake_tmux):
+                recovery.ensure_windows(data, manifest)
+            self.assertEqual([call[0] for call in calls], ["has-session", "show-option"])
+            self.assertNotIn("adopted", json.loads(manifest.read_text())["windows"][0])
 
 
 class ClaudeProjectFolderTest(unittest.TestCase):
@@ -136,3 +138,7 @@ class ClaudeProjectFolderTest(unittest.TestCase):
             (folder / (session + ".jsonl")).write_text("{}\n")
             with patch.object(recovery.Path, "home", return_value=Path(home)):
                 recovery.verify_session({"agent": "claude", "cwd": str(cwd), "sessionId": session})
+
+
+if __name__ == "__main__":
+    unittest.main()

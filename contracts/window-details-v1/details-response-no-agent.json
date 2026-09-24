@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "workspace_id": "5d6f2c1e-8a4b-4f0e-9c3d-2b1a0e9f8c7d",
+  "terminal_id": "c7d8e9f0-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+  "checked_at": "2026-09-24T14:30:05Z",
+  "workspace": {
+    "name": "XUNISSCRAPPER",
+    "kind": "ssh",
+    "host": {"user": "root", "hostname": "167.233.192.135", "port": 22},
+    "host_label": "root@167.233.192.135:22"
+  },
+  "window": {"name": "hgabot"},
+  "tmux": {"socket": "default", "session": "hgabot", "session_id": "$3", "pane_id": "%3", "live": true},
+  "agent": null,
+  "reason": "sin_ia"
+}
