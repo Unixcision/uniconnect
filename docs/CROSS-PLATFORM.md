@@ -100,12 +100,13 @@ cada ventana y qué IA corre dentro. Está en `docs/ARBOL-IA-v1.md` y sus ejempl
 - **Un criterio de detección**, probado con `contracts/agent-tree-v1/deteccion-casos.json`: subárbol
   de procesos del shell del panel, exactamente una raíz de proveedor, ficha de Claude, rollout de
   Codex y, como último recurso, la línea de órdenes.
-- **Una sonda compartida**: `linux/uniconnect/agent_probe.py`. Linux la ejecuta en local y por SSH
-  con `Transport.run`; el Mac la **empaqueta como recurso del .app** y la manda por stdin a cada caja
-  SSH. El Mac local no la usa: aplica el mismo criterio en Swift (`Packages/CMUXAgentLaunch`,
-  `AgentProcessDiscovery`), probado con el mismo fixture.
+- **Una sonda compartida**: `linux/uniconnect/agent_probe.py`. Linux la ejecutará en local y por
+  SSH con `Transport.run`; el Mac la **empaquetará como recurso del .app** y la mandará por stdin a
+  cada caja SSH. El Mac local no la usa: aplica el mismo criterio en Swift (`Packages/CMUXAgentLaunch`,
+  `AgentProcessDiscovery`), probado con el mismo fixture. A 24-09-2026 ni la sonda ni
+  `AgentProcessDiscovery` están todavía en el repositorio: es el diseño acordado, no código compartido.
 - **Una copia** en `linux/scripts/recovery.py`, porque el supervisor se despliega solo en el VPS y no
-  puede importar. Se prueba con el mismo fixture (`linux/tests/test_recovery_v2.py`).
+  puede importar. Esta sí existe y pasa todos los casos del fixture (`linux/tests/test_recovery_v2.py`).
 - **Una política de reanudación** (`noPrompt`) y una forma de orden, probadas con
   `contracts/agent-tree-v1/reanudar-comandos.json`.
 - **Sockets tmux**: no se unifican, porque no se pueden mover sesiones vivas de un servidor a otro. El

@@ -125,7 +125,8 @@ por pid y los ficheros abiertos por pid.
 
 ### La sonda compartida
 
-`linux/uniconnect/agent_probe.py` implementa este criterio en solo lectura (`list-panes`, `ps`,
+`linux/uniconnect/agent_probe.py` implementará este criterio en solo lectura (ver la sección 11 para
+lo que ya existe) (`list-panes`, `ps`,
 `/proc`, `lsof`, lectura de fichas y de la primera línea del rollout; nunca `send-keys`,
 `set-option`, sudo ni escritura en `~/.claude` o `~/.codex`). Su salida es
 `contracts/agent-tree-v1/sonda-salida.json`.
@@ -252,3 +253,16 @@ para reanudarla con «Copiar orden».
 9. Solo se escribe en `~/.claude` o `~/.codex` lo que ya hacen los propios agentes. Excepción que
    queda como riesgo conocido: `recovery.py` conserva `trust_folder_for_claude`, que marca la carpeta
    como de confianza en `~/.claude.json` antes de reanudar.
+
+## 11. Estado a 24-09-2026
+
+Lo que está en el repositorio y lo que no. Un apartado de este documento no es código.
+
+| Pieza | Estado |
+|---|---|
+| `contracts/agent-tree-v1/` y `contracts/window-details-v1/` | Escritos. |
+| `linux/scripts/recovery.py` (copia del criterio, guarda, órdenes sin preguntas) | Hecho; pasa todos los casos del fixture en `linux/tests/test_recovery_v2.py`. No desplegado en ningún VPS. |
+| Android: «Detalles» y «Relanzar IA de esta ventana» en el ⋮, seguimiento de `en_curso` | Escrito; sin compilar ni ejecutar (Gradle prohibido hasta nuevo aviso). |
+| `linux/uniconnect/agent_probe.py`, `agent_guard.py`, `AgentTree`, `SessionRecovery` | Pendiente (Linux). |
+| `AgentProcessDiscovery`, `AgentNoPromptPolicy`, `UniConnectRemoteAgentProbe`, modal «Detalles» del Mac | Pendiente (Mac). |
+| `noPrompt` en `agent-resume-v1.json` | Pendiente; `recovery.py` lleva su copia y la prueba la compara en cuanto exista. |
