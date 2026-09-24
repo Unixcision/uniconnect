@@ -37,6 +37,35 @@ data class MachineSnapshot(val serverName: String, val workspaces: List<RemoteWo
     val relaunches: Boolean get() = RELAUNCH in capabilities
 
     /**
+     * Whether «Relanzar IA de esta ventana» is worth offering for one window (`relaunch-v1`, D7).
+     *
+     * A host after D7 announces, next to `relaunch.v1`, one [RelaunchCell] token per agent and kind
+     * of window it can relaunch (`relaunch.v1.claude.local`, …). Then the entry shows only when the
+     * pair of this window is announced or, when the phone does not know which agent runs there,
+     * when some pair of its kind is. A host from before D7 announces no pair at all: the entry shows
+     * as it always did and the plan explains, target by target, what it cannot do.
+     *
+     * The token is a hint for the interface, never an authorisation: the plan still excludes with a
+     * cause. Workspace and machine scopes keep asking for `relaunch.v1` alone ([relaunches]).
+     *
+     * @param isSSH the kind of the window's workspace, or null when the host did not say.
+     * @param provider the agent the host sees in that window (`activity.agent`), or null.
+     */
+    fun relaunchesWindow(isSSH: Boolean?, provider: String?): Boolean {
+        if (!relaunches) return false
+        val cells = capabilities.mapNotNull(RelaunchCell::parse)
+        if (cells.isEmpty()) return true
+        val kind = when (isSSH) {
+            true -> RelaunchCell.SSH
+            false -> RelaunchCell.LOCAL
+            null -> null
+        }
+        // The Mac names Antigravity by its catalogue id; on the wire it is `agy`.
+        val agent = provider?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }?.let { if (it == "antigravity") "agy" else it }
+        return cells.any { cell -> (kind == null || cell.kind == kind) && (agent == null || cell.provider == agent) }
+    }
+
+    /**
      * Whether this machine lists, reads and deletes what the phone has sent it (`inbox.v1`).
      *
      * Without it the attach sheet shows no gallery and the settings no meter for this machine:

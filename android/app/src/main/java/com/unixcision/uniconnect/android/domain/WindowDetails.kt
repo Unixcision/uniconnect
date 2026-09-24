@@ -74,7 +74,7 @@ data class DetailsAgent(
     val sessionID: String?,
     val cwd: String?,
     val asRoot: Boolean?,
-    /** `ficha`, `rollout`, `argv`, `hook`, `manifiesto` o `registro`. */
+    /** `ficha`, `rollout`, `argv`, `hook`, `manifiesto` o `registro`; nulo en una IA en marcha sin id (D3). */
     val source: String?,
     /** `activo`, `guardado` o `interrumpido`. */
     val state: String?,

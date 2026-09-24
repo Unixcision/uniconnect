@@ -122,7 +122,8 @@ fun MachineBoxesScreen(
         BoxActionsSheet(held.name, R.string.box_actions_window, held.isPinned || held.id in overrides.pinnedWindows,
             onTogglePin = { onToggleWindowPin(held.id) }, onMoveTop = { onMoveWindow(held.id, Int.MIN_VALUE) },
             onMoveUp = { onMoveWindow(held.id, -1) }, onMoveDown = { onMoveWindow(held.id, 1) }, onDismiss = { heldWindow = null },
-            onRelaunch = onRelaunch?.let { relaunch ->
+            // Una ventana sola: solo si el equipo sabe relanzar su IA en ese tipo de ventana (D7).
+            onRelaunch = onRelaunch?.takeIf { snapshot?.relaunchesWindow(selected?.isSSH, held.activity?.agent) == true }?.let { relaunch ->
                 { relaunch(RelaunchScope.Window(machine.id, selectedWorkspaceID.orEmpty(), held.id)) }
             })
     }

@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -110,6 +111,87 @@ class WindowDetailsContractTest {
         assertNull(details.agent)
         assertEquals("sin_ia", details.reason)
         assertEquals(DetailsReason.NO_AGENT, details.reasonKind)
+    }
+
+    @Test fun `una IA guardada con la ventana ahora en un shell conserva lo guardado`() {
+        // D3: no se descarta lo guardado porque ahora no haya IA; se dice las dos cosas.
+        val details = client.decodeDetails(fixture("details-response-saved-shell.json"))
+
+        assertTrue(details.isSSH)
+        assertEquals(true, details.tmux?.live)
+        val agent = requireNotNull(details.agent)
+        assertEquals("codex", agent.provider)
+        assertEquals("Codex", agent.name)
+        assertEquals("01a0ac81-57c7-7af3-8ac2-fe8a957c8b17", agent.sessionID)
+        assertEquals(DetailsAgentState.SAVED, agent.stateKind)
+        assertEquals(DetailsSource.RECORD, agent.sourceKind)
+        assertEquals(true, agent.asRoot)
+        assertEquals("2026-09-24T12:05:31Z", agent.observedAt)
+        val resume = requireNotNull(agent.resume)
+        assertEquals(listOf("codex", "--yolo", "resume", "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17"), resume.argv)
+        // Codex como root no lleva IS_SANDBOX: eso es solo de Claude.
+        assertTrue(resume.environment.isEmpty())
+        assertEquals(DetailsReason.NO_AGENT, details.reasonKind)
+    }
+
+    @Test fun `una IA en marcha sin identificador no trae origen ni orden`() {
+        val details = client.decodeDetails(fixture("details-response-sin-id.json"))
+
+        val agent = requireNotNull(details.agent)
+        assertEquals("claude", agent.provider)
+        assertNull(agent.sessionID)
+        // D3: sin id, el origen es null en todas las plataformas (antes Linux mandaba «registro»).
+        assertNull(agent.source)
+        assertNull(agent.sourceKind)
+        assertNull(agent.resume)
+        assertEquals(DetailsAgentState.ACTIVE, agent.stateKind)
+        assertEquals("/root/ufabetbot", agent.cwd)
+        assertEquals(DetailsReason.NO_ID, details.reasonKind)
+    }
+
+    @Test fun `una ventana interrumpida con su tmux parado`() {
+        val details = client.decodeDetails(fixture("details-response-interrupted.json"))
+
+        val tmux = requireNotNull(details.tmux)
+        assertFalse(tmux.live)
+        assertNull(tmux.sessionID)
+        assertNull(tmux.paneID)
+        val agent = requireNotNull(details.agent)
+        assertEquals(DetailsAgentState.INTERRUPTED, agent.stateKind)
+        assertEquals(DetailsSource.RECORD, agent.sourceKind)
+        assertEquals("9d4b2e6f-1a3c-4e8b-b7d0-5f2c8a1e6b93", agent.sessionID)
+        assertNull(details.reason)
+    }
+
+    @Test fun `una ventana antigua sin tmux`() {
+        val details = client.decodeDetails(fixture("details-response-no-tmux.json"))
+
+        assertNull(details.tmux)
+        assertNull(details.agent)
+        assertEquals(DetailsReason.NO_TMUX, details.reasonKind)
+    }
+
+    @Test fun `una comprobacion local fallida ensena lo guardado`() {
+        val details = client.decodeDetails(fixture("details-response-local-unreachable.json"))
+
+        assertFalse(details.isSSH)
+        assertEquals(false, details.tmux?.live)
+        assertEquals(DetailsAgentState.SAVED, details.agent?.stateKind)
+        assertNotNull(details.agent?.resume)
+        assertEquals(DetailsReason.HOST_UNREACHABLE, details.reasonKind)
+    }
+
+    @Test fun `con la boveda cerrada no hay destino pero si etiqueta y root`() {
+        val details = client.decodeDetails(fixture("details-response-vault-closed.json"))
+
+        assertTrue(details.isSSH)
+        assertNull(details.host)
+        assertEquals("root@167.233.192.135:22", details.hostLabel)
+        val agent = requireNotNull(details.agent)
+        // as_root sale del usuario de host_label: la orden lleva IS_SANDBOX aunque host sea null.
+        assertEquals(true, agent.asRoot)
+        assertEquals(mapOf("IS_SANDBOX" to "1"), agent.resume?.environment)
+        assertEquals(DetailsReason.HOST_UNREACHABLE, details.reasonKind)
     }
 
     @Test fun `los null del contrato llegan como null y no como el texto null`() {

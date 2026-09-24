@@ -213,8 +213,11 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                             onDetails = if (connection?.snapshot?.describesWindows == true && machine != null && workspace != null && window != null) {
                                 { model.showWindowDetails(machine.id, workspace.id, window.id) }
                             } else null,
-                            // Mismo criterio que la pulsación larga: sin relaunch.v1 no se ofrece.
-                            onRelaunchWindow = if (connection?.snapshot?.relaunches == true && machine != null && workspace != null && window != null) {
+                            // Mismo criterio que la pulsación larga: sin relaunch.v1 no se ofrece, y
+                            // con los tokens de D7 solo si el equipo sabe relanzar esa IA en ese
+                            // tipo de ventana (contracts/relaunch-v1/proveedores.json).
+                            onRelaunchWindow = if (machine != null && workspace != null && window != null &&
+                                connection?.snapshot?.relaunchesWindow(workspace.isSSH, window.activity?.agent) == true) {
                                 { model.relaunch(machine.id, RelaunchScope.Window(machine.id, workspace.id, window.id)) }
                             } else null,
                         )
