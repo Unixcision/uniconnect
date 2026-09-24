@@ -204,6 +204,16 @@ class AgentTreeTests(TreeFixture):
         AgentTree.client_exited(self.store.workspaces[1], remote)
         self.assertEqual(remote["runtimeState"], "agent")
 
+    def test_a_conversation_already_owned_by_another_window_is_not_copied(self):
+        # XUNIS: la misma conversación corriendo en dos ventanas no se anota en la segunda.
+        FakeTransport.replies[("local", "uniconnect-local")] = {"sessions": [
+            session("uc-local", agent=agent("claude", CLAUDE_ID.upper()))]}
+        with patch.object(self.store, "save") as save:
+            self.tree.poll()
+            save.assert_not_called()
+        self.assertNotIn("sessionId", self.local)
+        self.assertEqual(self.tree.live["w-local"]["session"]["agent"]["session_id"], CLAUDE_ID.upper())
+
     def test_interrupted_is_cleared_when_the_agent_is_seen_again(self):
         self.local.update(agent="claude", sessionId=NEW_ID, runtimeState="stopped", interrupted=True, resumeCwd="/work",
                           agentSource="ficha", asRoot=False)

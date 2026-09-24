@@ -198,7 +198,7 @@ class AgentTree:
             if error or entry is None or self.busy():
                 continue
             before = copy.deepcopy(record)
-            if self.transition(record, entry):
+            if self.transition(record, entry, self.claimed(record)):
                 changed.append((record, before))
         if not changed:
             return []
@@ -215,7 +215,17 @@ class AgentTree:
                 surface.update_status(surface.status)
         return [record for record, _ in changed]
 
-    def transition(self, record, entry):
+    def claimed(self, record):
+        """Conversaciones ya anotadas en otras ventanas: una conversación tiene una sola dueña.
+
+        Si dos ventanas corren hoy la misma conversación, la segunda no la hereda: si no,
+        el registro de dueños impediría volver a enganchar una de las dos al abrir.
+        """
+        return {(item.get("agent"), str(item.get("sessionId")).lower())
+                for workspace in self.owner.store.workspaces for item in workspace.get("windows", [])
+                if item is not record and item.get("sessionId")}
+
+    def transition(self, record, entry, claimed=frozenset()):
         """Aplica una lectura viva a una ventana guardada; True si cambió algo."""
         reason, agent = entry.get("reason"), entry.get("agent")
         if reason == "sin_ia":
@@ -231,6 +241,8 @@ class AgentTree:
         provider, session = agent.get("provider"), agent.get("session_id")
         if provider not in AGENTS or not isinstance(session, str) or not session:
             return False
+        if (provider, session.lower()) in claimed and record.get("sessionId") != session:
+            return False  # La misma conversación ya es de otra ventana: como si fuera ambigua.
         cwd = agent.get("cwd") if isinstance(agent.get("cwd"), str) and agent["cwd"].startswith("/") else None
         source = agent.get("source") if agent.get("source") in SOURCES else "registro"
         updates = {"agent": provider, "sessionId": session, "runtimeState": "agent",
