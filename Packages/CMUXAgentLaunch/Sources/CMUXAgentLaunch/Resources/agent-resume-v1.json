@@ -4,12 +4,14 @@
     "claude": {
       "executable": "claude",
       "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"],
-      "windowOptions": [{"field": "model", "option": "--model"}]
+      "windowOptions": [{"field": "model", "option": "--model"}],
+      "noPrompt": {"suffix": ["--dangerously-skip-permissions"], "rootEnvironment": {"IS_SANDBOX": "1"}}
     },
     "codex": {
       "executable": "codex",
       "resume": ["{executable}", "resume", "{sessionId}", "{arguments}"],
-      "windowOptions": [{"field": "cwd", "option": "-C"}, {"field": "model", "option": "-m"}]
+      "windowOptions": [{"field": "cwd", "option": "-C"}, {"field": "model", "option": "-m"}],
+      "noPrompt": {"prefix": ["--yolo"], "legacy": ["--dangerously-bypass-approvals-and-sandbox"]}
     },
     "grok": {
       "executable": "grok",
@@ -22,7 +24,7 @@
     "cursor": {"executable": "cursor-agent", "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"]},
     "gemini": {"executable": "gemini", "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"]},
     "kiro": {"executable": "kiro-cli", "resume": ["{executable}", "chat", "--resume-id", "{sessionId}", "{arguments}"]},
-    "antigravity": {"aliases": ["agy"], "executable": "agy", "resume": ["{executable}", "--conversation", "{sessionId}", "{arguments}"]},
+    "antigravity": {"aliases": ["agy"], "executable": "agy", "resume": ["{executable}", "--conversation", "{sessionId}", "{arguments}"], "noPrompt": {"prefix": ["--dangerously-skip-permissions"]}},
     "opencode": {"executable": "opencode", "resume": ["{executable}", "--session", "{sessionId}", "{arguments}"]},
     "rovodev": {"executable": "acli", "resume": ["{executable}", "rovodev", "run", "--restore", "{sessionId}", "{arguments}"]},
     "hermes-agent": {"executable": "hermes", "resume": ["{executable}", "{arguments}", "--resume", "{sessionId}"]},

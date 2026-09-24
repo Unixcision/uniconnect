@@ -10,7 +10,7 @@ struct AgentResumeArgvTests {
         ("omp", "omp", ["omp", "--session", "SID"]),
         ("cursor", "cursor-agent", ["cursor-agent", "--resume", "SID"]),
         ("gemini", "gemini", ["gemini", "--resume", "SID"]),
-        ("antigravity", "agy", ["agy", "--conversation", "SID", "--dangerously-skip-permissions"]),
+        ("antigravity", "agy", ["agy", "--dangerously-skip-permissions", "--conversation", "SID"]),
         ("copilot", "copilot", ["copilot", "--resume", "SID"]),
         ("codebuddy", "codebuddy", ["codebuddy", "--resume", "SID"]),
         ("factory", "droid", ["droid", "--resume", "SID"]),
@@ -28,7 +28,7 @@ struct AgentResumeArgvTests {
     func builtInSpecialShapes() {
         #expect(
             AgentResumeArgv().builtInKind(kind: "codex", sessionId: "SID", executablePath: nil, arguments: ["codex"])
-                == ["codex", "resume", "SID", "--yolo"]
+                == ["codex", "--yolo", "resume", "SID"]
         )
         #expect(
             AgentResumeArgv().builtInKind(kind: "amp", sessionId: "SID", executablePath: nil, arguments: ["amp"])
@@ -63,7 +63,7 @@ struct AgentResumeArgvTests {
                 sessionId: "SID",
                 executablePath: nil,
                 arguments: ["agy", "--dangerously-skip-permissions"]
-            ) == ["agy", "--conversation", "SID", "--dangerously-skip-permissions"]
+            ) == ["agy", "--dangerously-skip-permissions", "--conversation", "SID"]
         )
         #expect(
             AgentResumeArgv().builtInKind(
@@ -71,7 +71,7 @@ struct AgentResumeArgvTests {
                 sessionId: "SID",
                 executablePath: nil,
                 arguments: ["codex", "--yolo"]
-            ) == ["codex", "resume", "SID", "--yolo"]
+            ) == ["codex", "--yolo", "resume", "SID"]
         )
     }
 
@@ -84,7 +84,7 @@ struct AgentResumeArgvTests {
                 sessionId: "SID",
                 executablePath: "/opt/bin/codex",
                 arguments: ["/opt/bin/codex"]
-            ) == ["/opt/bin/codex", "resume", "SID", "--yolo"]
+            ) == ["/opt/bin/codex", "--yolo", "resume", "SID"]
         )
     }
 

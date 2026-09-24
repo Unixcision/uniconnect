@@ -113,8 +113,8 @@ struct UniConnectRelaunchExecutor: Sendable {
         }
 
         // Las opciones que tenía puestas, leídas del proceso vivo antes de cerrarlo y no del
-        // registro, que no las guarda. Relanzar no es el momento de cambiar lo que una IA puede
-        // hacer, ni para darle más ni para quitarle.
+        // registro, que no las guarda. Desde el 24-09 (decisión de Dani) el dialecto añade
+        // siempre el modo sin preguntas de la política compartida; el resto vuelve como estaba.
         let previousArgv = before.argv.isEmpty ? target.previousArgv : before.argv
         guard let conversation,
               let argv = dialect.invocation(conversation: conversation, previousArgv: previousArgv) else {

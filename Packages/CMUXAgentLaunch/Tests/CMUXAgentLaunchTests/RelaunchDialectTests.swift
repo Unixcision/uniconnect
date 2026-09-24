@@ -23,8 +23,10 @@ struct RelaunchDialectTests {
             previousArgv: ["claude", "--resume", "otra", "--dangerously-skip-permissions"]
         ) == ["claude", "--resume", "eba669f0-e4cb-4e15-8661-fab7ff1b022e", "--dangerously-skip-permissions"])
 
-        // Sin esa bandera antes, no se añade.
-        #expect(claude.invocation(conversation: "abc", previousArgv: ["claude"]) == ["claude", "--resume", "abc"])
+        // Desde el 24-09 (decisión de Dani) relanzar va siempre sin preguntas: sin esa bandera
+        // antes, se añade igual, una vez y al final.
+        #expect(claude.invocation(conversation: "abc", previousArgv: ["claude"])
+            == ["claude", "--resume", "abc", "--dangerously-skip-permissions"])
     }
 }
 

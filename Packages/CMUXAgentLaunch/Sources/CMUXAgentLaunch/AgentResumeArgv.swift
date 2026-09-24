@@ -7,8 +7,8 @@ import Foundation
 /// publisher (`agentSurfaceResumeCommand`), so both emit identical resume commands. It is pure value
 /// logic over primitives (no `AppKit`, `Process`, or socket), so it is testable in isolation.
 ///
-/// Command syntax comes from the package resource also consumed by Linux. This value keeps
-/// captured-argument sanitization, cmux wrappers and the existing macOS trust policy in Swift.
+/// Command syntax and the no-prompt flags (``AgentNoPromptPolicy``) come from the package resource
+/// also consumed by Linux. This value keeps captured-argument sanitization and cmux wrappers in Swift.
 ///
 /// Resolution order mirrors the historical app builder: a cmux wrapper launcher
 /// (``launcherResolution(launcher:sessionId:executablePath:arguments:)``) is checked first, then the
@@ -108,6 +108,9 @@ public struct AgentResumeArgv: Sendable, Equatable {
     /// Builds the resume argv for a built-in agent kind, or `nil` if the kind is unknown or its launch
     /// arguments cannot be preserved.
     ///
+    /// The shared ``AgentNoPromptPolicy`` is applied last, so Codex resumes as
+    /// `codex --yolo resume <id> …` and Antigravity as `agy --dangerously-skip-permissions --conversation <id> …`.
+    ///
     /// - Parameters:
     ///   - kind: the agent's raw kind identifier (e.g. `"claude"`, `"codex"`, `"hermes-agent"`).
     ///   - sessionId: the session/thread id to resume.
@@ -129,11 +132,9 @@ public struct AgentResumeArgv: Sendable, Equatable {
             : AgentLaunchSanitizer.preservedArguments(kind: kind, args: parts.tail)
         guard let preserved,
               let argv = catalog.argv(kind: kind, sessionId: sessionId, executable: parts.executable, arguments: preserved) else { return nil }
-        switch kind {
-        case "codex": return appendingRequiredOption("--yolo", to: argv)
-        case "antigravity": return appendingRequiredOption("--dangerously-skip-permissions", to: argv)
-        default: return argv
-        }
+        // UniConnect: la politica compartida (noPrompt del catalogo) decide las banderas sin
+        // preguntas: `codex --yolo resume <id>`, `agy --dangerously-skip-permissions --conversation <id>`.
+        return AgentNoPromptPolicy(catalog: catalog).applying(to: argv, provider: kind, asRoot: false).argv
     }
 
     /// Builds the claude resume argv, routing it through cmux's `claude` wrapper
@@ -163,14 +164,14 @@ public struct AgentResumeArgv: Sendable, Equatable {
         guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: "claude", args: parts.tail) else {
             return nil
         }
-        guard let argv = catalog?.argv(kind: "claude", sessionId: sessionId, executable: "claude", arguments: preserved) else {
+        guard let catalog,
+              let argv = catalog.argv(kind: "claude", sessionId: sessionId, executable: "claude", arguments: preserved) else {
             return nil
         }
-        // UniConnect: restored sessions must never stop on a permission prompt.
-        return appendingRequiredOption(
-            "--dangerously-skip-permissions",
-            to: argv
-        )
+        // UniConnect: restored sessions must never stop on a permission prompt. The shared noPrompt
+        // policy puts `--dangerously-skip-permissions` last, once. The Mac never resumes locally as
+        // root, so `IS_SANDBOX` is not part of this argv.
+        return AgentNoPromptPolicy(catalog: catalog).applying(to: argv, provider: "claude", asRoot: false).argv
     }
 
     /// Appends a UniConnect trust-mode option exactly once to a reconstructed launch.
