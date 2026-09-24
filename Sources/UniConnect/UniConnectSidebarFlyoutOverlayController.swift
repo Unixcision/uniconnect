@@ -216,6 +216,10 @@ final class UniConnectSidebarFlyoutOverlayController: NSObject {
             onReconnectSSHWindow: { workspaceID, panelID in
                 context.actions.reconnectSSHWindowNow(workspaceID, panelID)
             },
+            onShowWindowDetails: { [weak self] workspaceID, panelID in
+                self?.dismiss()
+                context.actions.showWindowDetails(workspaceID, panelID)
+            },
             onHoverChanged: { [weak self] isInside in
                 self?.handle(.corridorChanged(isInside: isInside))
             },

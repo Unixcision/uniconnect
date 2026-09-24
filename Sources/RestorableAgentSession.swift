@@ -1348,11 +1348,11 @@ struct RestorableAgentSessionIndex: Sendable {
     }
 
     static func encodeClaudeProjectDir(_ path: String) -> String {
-        // Claude derives a project directory name by replacing both "/" and "." with "-"
-        // (e.g. "/Users/x/repo/.claude" -> "-Users-x-repo--claude"). Missing the "." case
-        // sent dotted paths to the wrong project directory.
-        path.replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: ".", with: "-")
+        // Claude files a project under its physical cwd (realpath) with EVERY character that is
+        // not an ASCII letter or digit replaced by "-" (e.g. "/Users/x/my_repo/.claude" ->
+        // "-Users-x-my-repo--claude"). Replacing only "/" and "." lost conversations in folders
+        // with "_", spaces or symlinks. Same rule as linux/scripts/recovery.py project_folder.
+        AgentResumeWorkingDirectory().claudeProjectFolderName(path)
     }
 
     private static func claudeTranscriptFileExists(

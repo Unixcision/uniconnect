@@ -9478,6 +9478,16 @@ extension TabManager {
                     workspace.uniConnectLocalWindowsByPanelId[panelId],
                     into: &hasher
                 )
+                if let remoteAgent = workspace.uniConnectRemoteAgentsByPanelId[panelId] {
+                    hasher.combine(true)
+                    hasher.combine(remoteAgent.provider)
+                    Self.hashOptionalString(remoteAgent.sessionID, into: &hasher)
+                    Self.hashOptionalString(remoteAgent.workingDirectory, into: &hasher)
+                    hasher.combine(remoteAgent.runtimeState.rawValue)
+                    hasher.combine(remoteAgent.history.count)
+                } else {
+                    hasher.combine(false)
+                }
                 hasher.combine(workspace.pinnedPanelIds.contains(panelId))
                 hasher.combine(workspace.uniConnectDisconnectedPanelIds.contains(panelId))
                 hasher.combine(workspace.manualUnreadPanelIds.contains(panelId))
@@ -9565,6 +9575,7 @@ extension TabManager {
         hasher.combine(record.runtimeState.rawValue)
         hasher.combine(record.latestConversationID)
         hasher.combine(record.activeConversationID)
+        hasher.combine(record.interruptedConversationID)
         hasher.combine(record.createdAt)
         hasher.combine(record.updatedAt)
         hasher.combine(record.conversations.count)

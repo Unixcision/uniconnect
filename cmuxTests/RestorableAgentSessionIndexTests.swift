@@ -493,12 +493,19 @@ final class RestorableAgentSessionIndexTests: XCTestCase {
         )
     }
 
-    /// Mirrors Claude's external project-directory naming rule ("/" and "." both become "-")
-    /// independently of the production `encodeClaudeProjectDir`, so these regression tests fail if
-    /// that helper regresses instead of masking it by sharing the same code path.
+    /// Mirrors Claude's external project-directory naming rule (physical path, every character
+    /// that is not an ASCII letter or digit becomes "-") independently of the production
+    /// `encodeClaudeProjectDir`, so these regression tests fail if that helper regresses instead of
+    /// masking it by sharing the same code path.
     private func expectedClaudeProjectDirName(_ path: String) -> String {
-        path.replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: ".", with: "-")
+        let physical = URL(fileURLWithPath: path).withUnsafeFileSystemRepresentation { pointer -> String in
+            guard let pointer, let resolved = realpath(pointer, nil) else { return path }
+            defer { free(resolved) }
+            return String(cString: resolved)
+        }
+        return String(physical.map { character -> Character in
+            character.isASCII && (character.isLetter || character.isNumber) ? character : "-"
+        })
     }
 
     // A custom Vault agent defaults to cwd: .preserve and can expand {{cwd}} in its resume template,

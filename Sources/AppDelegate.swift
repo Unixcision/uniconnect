@@ -4248,6 +4248,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #endif
         let resumeIndexes = await ProcessDetectedResumeIndexes.load()
         await UniConnectCoordinator.shared.reconcileLocalTmuxRuntime()
+        // SSH boxes: background probe, at most once a minute per box (never blocks this tick).
+        UniConnectCoordinator.shared.refreshRemoteAgentsIfDue(now: now)
         guard !isTerminatingApp,
               isCurrentProcessDetectedSessionSaveGeneration(generation) else {
 #if DEBUG

@@ -22,7 +22,11 @@ struct UniConnectRelaunchInventory {
     /// The result of looking at a scope.
     struct Reading {
         var items: [Item] = []
-        var exclusions: [RelaunchPlan.Exclusion] = []
+        /// Every window set aside, with the panel it belongs to, so a single-window request can
+        /// keep only its own exclusion by identity rather than by matching label text.
+        var excluded: [UniConnectRelaunchCoordinator.ExcludedWindow] = []
+
+        var exclusions: [RelaunchPlan.Exclusion] { excluded.map(\.exclusion) }
     }
 
     /// One window set aside, before its label has been made unique.
@@ -30,6 +34,8 @@ struct UniConnectRelaunchInventory {
         let panelID: UUID
         let name: String
         let cause: RelaunchCause
+        /// The agent the window runs, when known, so the list says which one was left out.
+        var agentName: String? = nil
     }
 
     private let machineID: String
@@ -50,7 +56,7 @@ struct UniConnectRelaunchInventory {
             // can be closed or verified. Named window by window all the same.
             if workspace.uniConnectProfile?.isSSH == true {
                 let host = workspace.uniConnectProfile?.hostLabel
-                reading.exclusions.append(contentsOf: labelled(
+                reading.excluded.append(contentsOf: labelled(
                     remoteWindows(of: workspace),
                     boxName: boxName,
                     host: host
@@ -70,13 +76,21 @@ struct UniConnectRelaunchInventory {
                 }
 
                 guard let conversation = activeConversation(of: record) else {
-                    pending.append(.init(panelID: panelID, name: name, cause: .ambiguousIdentity))
+                    // A window at its shell (or stopped) has no agent to relaunch: that is its own
+                    // answer, not an identity that could not be established.
+                    let cause: RelaunchCause = record.runtimeState == .agent ? .ambiguousIdentity : .noAgent
+                    pending.append(.init(panelID: panelID, name: name, cause: cause))
                     continue
                 }
                 let provider = conversation.kind.rawValue
                 guard dialects.dialect(for: provider) != nil else {
-                    // Knowing how an agent is spelled is not knowing how it lives.
-                    pending.append(.init(panelID: panelID, name: name, cause: .unsupported))
+                    // Knowing how an agent is spelled is not knowing how it lives. Codex, agy and
+                    // grok still come back when their window is reopened; they are only left out
+                    // of a live close-and-reopen, and the list says which agent it was.
+                    pending.append(.init(
+                        panelID: panelID, name: name, cause: .unsupported,
+                        agentName: conversation.displayName
+                    ))
                     continue
                 }
 
@@ -102,7 +116,7 @@ struct UniConnectRelaunchInventory {
             }
 
             pending.append(contentsOf: unrecordedLocalWindows(of: workspace))
-            reading.exclusions.append(contentsOf: labelled(pending, boxName: boxName, host: nil))
+            reading.excluded.append(contentsOf: labelled(pending, boxName: boxName, host: nil))
         }
         return reading
     }
@@ -158,16 +172,17 @@ struct UniConnectRelaunchInventory {
         _ pending: [PendingExclusion],
         boxName: String,
         host: String?
-    ) -> [RelaunchPlan.Exclusion] {
+    ) -> [UniConnectRelaunchCoordinator.ExcludedWindow] {
         let place = host.map { " (\($0))" } ?? ""
         var occurrences: [String: Int] = [:]
         for entry in pending { occurrences[entry.name, default: 0] += 1 }
         return pending.map { entry in
-            let base = "\(boxName) · \(entry.name)\(place)"
+            let agent = entry.agentName.map { " — \($0)" } ?? ""
+            let base = "\(boxName) · \(entry.name)\(place)\(agent)"
             let label = (occurrences[entry.name] ?? 0) > 1
                 ? "\(base) [\(entry.panelID.uuidString.prefix(8).lowercased())]"
                 : base
-            return RelaunchPlan.Exclusion(label: label, cause: entry.cause)
+            return .init(panelID: entry.panelID, exclusion: RelaunchPlan.Exclusion(label: label, cause: entry.cause))
         }
     }
 

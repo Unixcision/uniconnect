@@ -227,7 +227,7 @@ struct UniConnectLocalWindowActionPolicyTests {
         #expect(resumePlan.workingDirectory == root.path)
         #expect(resumeCommand.contains("cd -- '\(root.path)'"))
         #expect(!resumeCommand.contains(missing))
-        #expect(resumeCommand.contains("'codex' 'resume' 'codex-fallback-thread' '--yolo'"))
+        #expect(resumeCommand.contains("'codex' '--yolo' 'resume' 'codex-fallback-thread'"))
         let resolvedResume = try #require(
             UniConnectLocalWindowAction.resumeConversation(conversationID)
                 .resolvedResumeSnapshot(
@@ -456,7 +456,7 @@ struct UniConnectLocalWindowActionPolicyTests {
         }
         #expect(command.contains("cd -- '/Users/test/Trusted Root/api'"))
         #expect(!command.contains("/tmp/wrong-cwd"))
-        #expect(command.contains("'codex' 'resume' 'codex-thread-2' '--yolo'"))
+        #expect(command.contains("'codex' '--yolo' 'resume' 'codex-thread-2'"))
         #expect(plan.startupInput?.hasSuffix("\n") == true)
     }
 

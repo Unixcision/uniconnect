@@ -20952,6 +20952,8 @@ class TerminalController {
             result = v2MobileTerminalCreate(params: request.params)
         case "mobile.terminal.reconnect", "terminal.reconnect", "mobile.terminal.reset", "terminal.reset":
             result = v2MobileTerminalReconnect(params: request.params)
+        case "mobile.terminal.details", "terminal.details":
+            result = await v2MobileTerminalDetails(params: request.params)
         case "mobile.terminal.input", "terminal.input":
             result = v2MobileTerminalInput(params: request.params)
         case "mobile.terminal.paste_image", "terminal.paste_image":
@@ -21491,7 +21493,10 @@ class TerminalController {
     /// aquí hay motor y modelo: anunciarlo sin ellos dejaría al móvil sin dictado, en vez de
     /// hacerle usar el suyo local.
     private var mobileWorkspaceListCapabilities: [String] {
-        var capabilities = ["activity.v1", "box_update", "file_put.v1", "inbox.v1", "ssh_create.v1", "relaunch.v1"]
+        var capabilities = [
+            "activity.v1", "box_update", "file_put.v1", "inbox.v1", "ssh_create.v1", "relaunch.v1",
+            "window_details.v1",
+        ]
         if mobileTranscriptionAvailability.isAvailable() {
             capabilities.append("transcribe.v1")
         }
@@ -21518,19 +21523,25 @@ class TerminalController {
     ) -> (workspaces: [Workspace], onlyPanel: UUID?)? {
         let kind = v2RawString(params, "kind") ?? ""
         let identifier = v2RawString(params, "id") ?? ""
+        // Todas las ventanas de la app, no solo las de la ventana que atiende la llamada: «este
+        // equipo» son todas, y una caja abierta en otra ventana del Mac también es de este equipo.
+        let managers = UniConnectCoordinator.shared.allTabManagers()
+        let allWorkspaces = managers.isEmpty ? tabManager.tabs : managers.flatMap(\.tabs)
         switch kind {
         case "machine":
-            return (tabManager.tabs, nil)
+            return (allWorkspaces, nil)
         case "workspace":
             guard let id = UUID(uuidString: identifier),
-                  let workspace = tabManager.tabs.first(where: { $0.id == id }) else { return nil }
+                  let workspace = allWorkspaces.first(where: { $0.id == id }) else { return nil }
             return ([workspace], nil)
         case "window":
             guard let id = UUID(uuidString: identifier) else { return nil }
             // Una ventana se resuelve por sí misma: su caja no viaja por el cable a propósito, para
             // que el equipo no resuelva el objetivo con un dato que el cliente pudo equivocarse.
-            guard let workspace = tabManager.tabs.first(where: {
-                $0.uniConnectLocalWindowsByPanelId[id] != nil
+            // Local o SSH: una ventana SSH pedida por id devuelve un plan con su exclusión
+            // (no_soportado), no un alcance inválido.
+            guard let workspace = allWorkspaces.first(where: {
+                $0.uniConnectLocalWindowsByPanelId[id] != nil || $0.panels[id] is TerminalPanel
             }) else { return nil }
             // La caja se devuelve porque es donde vive la ventana, **y el panel con ella**: sin eso
             // quien pide una ventana recibe un plan con todas las de su caja, que es exactamente lo
@@ -21541,8 +21552,9 @@ class TerminalController {
         }
     }
 
+    /// El mismo servicio que el escritorio: un único conjunto de panes en vuelo para los dos.
     private func mobileRelaunchCoordinator() -> UniConnectRelaunchCoordinator {
-        UniConnectRelaunchCoordinator(machineID: Host.current().localizedName ?? "mac")
+        UniConnectCoordinator.shared.relaunchService
     }
 
     private func v2MobileRelaunchPlan(params: [String: Any], peer: MobileHostPeerIdentity?) -> V2CallResult {
@@ -21563,18 +21575,9 @@ class TerminalController {
             let wanted = Set(resolved.workspaces.compactMap {
                 $0.uniConnectLocalWindowsByPanelId[panel]?.tmuxBinding?.name
             })
-            // También las exclusiones: quien pide una ventana no tiene por qué enterarse de lo que
-            // le pasa a sus vecinas, y una lista con B dentro al pedir A es la misma fuga de
-            // alcance por la otra puerta.
-            let etiqueta = resolved.workspaces.first.map { workspace in
-                "\(workspace.customTitle ?? workspace.title) · "
-            } ?? ""
-            preview = UniConnectRelaunchCoordinator.Preview(
-                targets: preview.targets.filter { wanted.contains($0.session) },
-                exclusions: preview.exclusions.filter { exclusion in
-                    wanted.contains { exclusion.label.hasPrefix(etiqueta) && exclusion.label.contains($0) }
-                }
-            )
+            // También las exclusiones, y por identidad del panel, no por texto de etiqueta: quien
+            // pide una ventana no tiene por qué enterarse de lo que le pasa a sus vecinas.
+            preview = preview.restricted(toPanels: [panel], sessions: wanted)
         }
         // La indisponibilidad va en el PLAN, no solo en el resultado. Ofrecer veintiséis ventanas
         // como «planificado» para devolverlas omitidas después es prometer un trabajo que no se va
@@ -21637,7 +21640,8 @@ class TerminalController {
         // objetivo vivo y la puerta la rechaza.
         var live: [String: RelaunchTargetKey] = [:]
         if let tabManager = v2ResolveTabManager(params: params) {
-            for workspace in tabManager.tabs {
+            let managers = UniConnectCoordinator.shared.allTabManagers()
+            for workspace in managers.isEmpty ? tabManager.tabs : managers.flatMap(\.tabs) {
                 for (_, record) in workspace.uniConnectLocalWindowsByPanelId {
                     guard let binding = record.tmuxBinding else { continue }
                     let key = RelaunchTargetKey(
@@ -21671,6 +21675,8 @@ class TerminalController {
             let preview = UniConnectRelaunchCoordinator.Preview(targets: chosen, exclusions: [])
             let coordinator = mobileRelaunchCoordinator()
             let operation = await coordinator.run(preview)
+            // El id con el que volvió de verdad cada IA pasa a su ventana, como en el escritorio.
+            UniConnectCoordinator.shared.recordRelaunchedConversations(operation)
             var results = operation.results
             results.append(contentsOf: excluded.map {
                 RelaunchOperation.Result(key: $0.key, state: .skipped, cause: $0.cause)
@@ -22542,6 +22548,39 @@ class TerminalController {
     }
 
     /// Reset/reconnect reuse the desktop's durable identity, without clearing a pane or starting another agent.
+    /// `mobile.terminal.details` (window_details.v1): the «Detalles» of one window, read-only.
+    ///
+    /// Same value as the desktop modal. The live check is bounded (local observation, or an 8 s
+    /// probe of the SSH box); when it fails the answer is what was saved, never an error.
+    private func v2MobileTerminalDetails(params: [String: Any]) async -> V2CallResult {
+        if UniConnectAppLock.shared.isLocked {
+            return .err(code: "locked", message: String(
+                localized: "uniconnect.windowDetails.error.locked",
+                defaultValue: "UniConnect está bloqueado."
+            ), data: nil)
+        }
+        guard let workspaceID = v2UUID(params, "workspace_id"),
+              case let .value(terminalID) = mobileTerminalAliasUUID(params: params) else {
+            return .err(code: "invalid_params", message: String(
+                localized: "uniconnect.windowDetails.error.invalidParams",
+                defaultValue: "Indica el espacio de trabajo y la ventana."
+            ), data: nil)
+        }
+        let notFound = V2CallResult.err(code: "not_found", message: String(
+            localized: "uniconnect.windowDetails.error.notFound",
+            defaultValue: "No se encontró esa ventana."
+        ), data: nil)
+        let managers = UniConnectCoordinator.shared.allTabManagers()
+        let fallback = v2ResolveTabManager(params: params).map { [$0] } ?? []
+        guard let workspace = (managers.isEmpty ? fallback : managers)
+            .flatMap(\.tabs)
+            .first(where: { $0.id == workspaceID }) else { return notFound }
+        guard let details = await UniConnectCoordinator.shared.windowDetails(
+            panelID: terminalID, in: workspace, refresh: true
+        ) else { return notFound }
+        return .ok(details.details.mobilePayload)
+    }
+
     private func v2MobileTerminalReconnect(params: [String: Any]) -> V2CallResult {
         if let error = mobileMutationUnavailable() { return error }
         guard v2UUID(params, "workspace_id") != nil,

@@ -247,9 +247,9 @@ struct UniConnectRelaunchExecutorTests {
         #expect(panel.typed.contains { $0.contains("--dangerously-skip-permissions") })
     }
 
-    @Test("Una IA sin ese permiso no lo gana al relanzarse")
-    func anagentWithoutThatPermissionDoesNotGainIt() async {
-        // Relanzar tampoco es el momento de dar permisos que no había.
+    @Test("Relanzar va siempre sin preguntas, aunque la IA no trajera la bandera")
+    func anagentWithoutThatPermissionGainsItOnRelaunch() async {
+        // Decisión de Dani del 24-09: relanzar deja la IA en modo sin preguntas siempre, una vez.
         let panel = FakePane(
             lookups: [
                 proceso(52938, "Mon Sep 15 09:00:00 2026",
@@ -261,7 +261,11 @@ struct UniConnectRelaunchExecutorTests {
 
         _ = await UniConnectRelaunchExecutor(driver: panel, settle: {}).relaunch(objetivo())
 
-        #expect(panel.typed.allSatisfy { !$0.contains("--dangerously-skip-permissions") })
+        let escrito = panel.typed.filter { $0.contains("--resume") }
+        #expect(escrito.count == 1)
+        #expect(escrito.allSatisfy {
+            $0.components(separatedBy: "--dangerously-skip-permissions").count == 2
+        })
     }
 
     @Test("Mismo proceso con la linea de comandos leida distinta NO es un reemplazo")

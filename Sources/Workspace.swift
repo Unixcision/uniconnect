@@ -716,7 +716,8 @@ extension Workspace {
                 uniConnectTmuxSession: uniConnectTmuxSessionsByPanelId[panelId],
                 uniConnectClaudeSession: localWindowRecord?.legacyClaudeSession
                     ?? uniConnectClaudeSessionsByPanelId[panelId],
-                uniConnectLocalWindow: localWindowRecord
+                uniConnectLocalWindow: localWindowRecord,
+                uniConnectRemoteAgent: uniConnectRemoteAgentsByPanelId[panelId]
             )
             browserSnapshot = nil
             markdownSnapshot = nil
@@ -1763,10 +1764,17 @@ extension Workspace {
             // A saved direct PTY has no live runtime here. Restore it through tmux
             // with the same resume record; saving an already running PTY never
             // takes this path and cannot silently move or terminate its process.
-            let persistedLocalWindow = savedLocalWindow?.preparingRestoredRuntime(
-                panelID: snapshot.id,
-                bundleIdentifier: Bundle.main.bundleIdentifier ?? "com.unixcision.uniconnect"
-            )
+            let persistedLocalWindow: UniConnectLocalWindowRecord? = {
+                guard var record = savedLocalWindow?.preparingRestoredRuntime(
+                    panelID: snapshot.id,
+                    bundleIdentifier: Bundle.main.bundleIdentifier ?? "com.unixcision.uniconnect"
+                ) else { return nil }
+                // If tmux died under an active agent while the app stayed open, the window was
+                // saved as stopped with that conversation interrupted: reopening resumes it like
+                // an agent that was running at quit, under the same guards below.
+                _ = record.reviveInterruptedConversation(at: record.updatedAt)
+                return record
+            }()
             let restorableAgent: SessionRestorableAgentSnapshot? = {
                 guard let persistedLocalWindow else { return snapshot.terminal?.agent }
                 let registry = CmuxVaultAgentRegistry.load(
@@ -1806,13 +1814,19 @@ extension Workspace {
             let agentWasRunningAtQuit = persistedLocalWindow.map {
                 $0.runtimeState == .agent
             } ?? (snapshot.terminal?.wasAgentRunning ?? true)
+            // Never resume a Claude conversation another live process still has open (P10): the
+            // window opens as a shell and the conversation stays as its latest one.
+            let restorableAgentIsOpenElsewhere = autoResumeAgentSessions
+                && persistedLocalWindow?.runtimeState == .agent
+                && restorableAgent?.kind == .claude
+                && UniConnectClaudeOpenConversationGuard().isOpenElsewhere(restorableAgent)
             let shouldAutoResumeAgent = UniConnectLocalBoxRootPolicy.allowsAutomaticResume(
                 settingEnabled: autoResumeAgentSessions,
                 agentWasRunningAtQuit: agentWasRunningAtQuit,
                 boxRootIsAvailable: localBoxRootIsAvailable
                     && localWorkingDirectoryIsAvailable
                     && localResumeWorkingDirectoryIsAvailable
-            )
+            ) && !restorableAgentIsOpenElsewhere
             let resumeBindingForStartup =
                 savedLocalWindow?.tmuxBinding != nil ||
                 restoredHibernation != nil ||
@@ -2091,6 +2105,9 @@ extension Workspace {
             }
             if let uniConnectSession = snapshot.terminal?.uniConnectTmuxSession {
                 uniConnectTmuxSessionsByPanelId[terminalPanel.id] = UniConnectSSH.sanitizedTmuxName(uniConnectSession)
+            }
+            if let remoteAgent = snapshot.terminal?.uniConnectRemoteAgent {
+                uniConnectRemoteAgentsByPanelId[terminalPanel.id] = remoteAgent
             }
             if uniConnectSSHRestoreUnavailable {
                 uniConnectDisconnectedPanelIds.insert(terminalPanel.id)
@@ -10971,6 +10988,10 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var uniConnectClaudeSessionsByPanelId: [UUID: String] = [:]
     /// Durable local windows. Agent history is independent from the current shell/process state.
     @Published var uniConnectLocalWindowsByPanelId: [UUID: UniConnectLocalWindowRecord] = [:]
+    /// Durable remote (SSH) windows: the agent the remote probe last verified in each one.
+    /// Plain storage on purpose (no new @Published): a change is announced with
+    /// `.uniConnectRemoteAgentChanged` so a probe every minute never invalidates sidebar rows.
+    private(set) var uniConnectRemoteAgentsByPanelId: [UUID: UniConnectRemoteAgentRecord] = [:]
     private enum LocalTmuxReportKind: Hashable { case shell, lifecycle(String) }
     private var localTmuxReportTokens: [UUID: [LocalTmuxReportKind: UUID]] = [:]
     @Published var uniConnectPlaceholderPanelIds: Set<UUID> = []
@@ -12622,6 +12643,23 @@ final class Workspace: Identifiable, ObservableObject {
         return changed
     }
 
+    /// Stores (or clears) the verified remote agent of an SSH window and announces the change.
+    ///
+    /// Only an actual change is announced, so the persistence observer requests a save exactly
+    /// when the tree changed ("window-remote-agent"), never on a repeated probe.
+    @discardableResult
+    func uniConnectSetRemoteAgent(_ record: UniConnectRemoteAgentRecord?, panelId: UUID) -> Bool {
+        guard panels[panelId] is TerminalPanel || record == nil,
+              uniConnectRemoteAgentsByPanelId[panelId] != record else { return false }
+        if let record {
+            uniConnectRemoteAgentsByPanelId[panelId] = record
+        } else {
+            uniConnectRemoteAgentsByPanelId.removeValue(forKey: panelId)
+        }
+        NotificationCenter.default.post(name: .uniConnectRemoteAgentChanged, object: id)
+        return true
+    }
+
     /// Selects one saved conversation as the next manual resume target.
     @discardableResult
     func uniConnectSelectLocalConversation(
@@ -14108,6 +14146,9 @@ final class Workspace: Identifiable, ObservableObject {
             validSurfaceIds.contains($0.key)
         }
         uniConnectLocalWindowsByPanelId = uniConnectLocalWindowsByPanelId.filter {
+            validSurfaceIds.contains($0.key)
+        }
+        uniConnectRemoteAgentsByPanelId = uniConnectRemoteAgentsByPanelId.filter {
             validSurfaceIds.contains($0.key)
         }
         localTmuxReportTokens = localTmuxReportTokens.filter { validSurfaceIds.contains($0.key) }

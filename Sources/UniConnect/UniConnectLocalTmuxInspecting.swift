@@ -18,4 +18,7 @@ protocol UniConnectLocalTmuxInspecting: Sendable {
         of peer: UniConnectLocalTmuxProcessIdentity,
         among owners: [UniConnectLocalTmuxOwner]
     ) async -> UniConnectLocalTmuxOwner?
+
+    /// Reads the live `$N`/`%N` of an existing session, read-only; `nil` when it is not running.
+    func liveIdentity(binding: UniConnectLocalTmuxBinding) async -> UniConnectLocalTmuxLiveIdentity?
 }

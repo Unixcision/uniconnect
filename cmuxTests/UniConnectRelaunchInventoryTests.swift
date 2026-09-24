@@ -147,4 +147,70 @@ struct UniConnectRelaunchInventoryTests {
         #expect(reading.exclusions.first?.cause == .unsupported)
         #expect(reading.exclusions.first?.label.contains("sin tmux") == true)
     }
+
+    private func localWorkspace(
+        name: String,
+        agent kind: RestorableAgentKind,
+        sessionID: String,
+        backToShell: Bool
+    ) throws -> (Workspace, UUID) {
+        let workspace = Workspace()
+        workspace.customTitle = "PROYECTOS"
+        workspace.uniConnectProfile = UniConnectWorkspaceProfile(kind: .local, localRoot: "/tmp")
+        let panelId = try #require(workspace.focusedPanelId)
+        let binding = try #require(UniConnectLocalTmuxBinding(name: "uc-\(name)", socketName: "uniconnect-local"))
+        var record = UniConnectLocalWindowRecord(id: panelId, visibleName: name, boxRoot: "/tmp", tmuxBinding: binding)
+        _ = record.record(SessionRestorableAgentSnapshot(
+            kind: kind, sessionId: sessionID, workingDirectory: "/tmp", launchCommand: nil
+        ))
+        if backToShell { _ = record.transitionToShell() }
+        workspace.uniConnectLocalWindowsByPanelId[panelId] = record
+        return (workspace, panelId)
+    }
+
+    @Test("Una ventana local en su shell sale como sin_ia, no como identidad ambigua")
+    func localShellWindowHasNoAgent() throws {
+        let (workspace, _) = try localWorkspace(
+            name: "shell", agent: .claude, sessionID: "714b0eae-b568-4e0c-a70b-c87c0d0a801a", backToShell: true
+        )
+
+        let reading = UniConnectRelaunchInventory(machineID: "mac").read(workspaces: [workspace])
+
+        #expect(reading.items.isEmpty)
+        #expect(reading.exclusions.count == 1)
+        #expect(reading.exclusions.first?.cause == .noAgent)
+    }
+
+    @Test("Una ventana local con Codex sale como no_soportado y la lista dice qué IA es")
+    func localCodexWindowIsUnsupportedAndNamed() throws {
+        let (workspace, _) = try localWorkspace(
+            name: "api", agent: .codex, sessionID: "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17", backToShell: false
+        )
+
+        let reading = UniConnectRelaunchInventory(machineID: "mac").read(workspaces: [workspace])
+
+        #expect(reading.items.isEmpty)
+        let exclusion = try #require(reading.exclusions.first)
+        #expect(exclusion.cause == .unsupported)
+        #expect(exclusion.label.contains("Codex"))
+    }
+
+    @Test("Pedir una sola ventana deja solo su exclusión, por identidad del panel")
+    func aSingleWindowKeepsOnlyItsOwnExclusion() throws {
+        let workspace = try sshWorkspace(
+            title: "NOTBETTING",
+            host: "root@15.217.153.205",
+            sessions: ["claude", "claude"]
+        )
+        let wanted = try #require(workspace.focusedPanelId)
+
+        let preview = UniConnectRelaunchCoordinator(machineID: "mac")
+            .preview(workspaces: [workspace])
+            .restricted(toPanels: [wanted], sessions: [])
+
+        #expect(preview.targets.isEmpty)
+        #expect(preview.excluded.count == 1)
+        #expect(preview.excluded.first?.panelID == wanted)
+        #expect(preview.exclusions.first?.cause == .unsupported)
+    }
 }

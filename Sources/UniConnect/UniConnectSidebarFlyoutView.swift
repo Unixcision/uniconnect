@@ -21,6 +21,7 @@ struct UniConnectSidebarFlyoutView: View {
         _ action: UniConnectLocalWindowAction
     ) -> Void
     let onReconnectSSHWindow: (_ workspaceID: UUID, _ panelID: UUID) -> Void
+    let onShowWindowDetails: (_ workspaceID: UUID, _ panelID: UUID) -> Void
     let onHoverChanged: (Bool) -> Void
     let onDismiss: () -> Void
 
@@ -193,6 +194,8 @@ struct UniConnectSidebarFlyoutView: View {
                                     )
                                 }
                             }
+                            Divider()
+                            windowDetailsButton(window)
                         }
 
                         if let localActionMenu = window.localActionMenu,
@@ -204,6 +207,8 @@ struct UniConnectSidebarFlyoutView: View {
                                         onPerformLocalWindowAction(window.workspaceID, window.id, action)
                                     }
                                 )
+                                Divider()
+                                windowDetailsButton(window)
                             } label: {
                                 Image(systemName: "ellipsis")
                                     .font(.system(size: 10, weight: .semibold))
@@ -260,6 +265,18 @@ struct UniConnectSidebarFlyoutView: View {
 
     private func onPerformSSHReconnect(_ workspaceID: UUID, _ panelID: UUID) {
         onReconnectSSHWindow(workspaceID, panelID)
+    }
+
+    /// «Detalles…» for one window, in its context menu and in its ⋯ menu.
+    private func windowDetailsButton(_ window: UniConnectWindowSnapshot) -> some View {
+        Button {
+            onShowWindowDetails(window.workspaceID, window.id)
+        } label: {
+            Label(
+                String(localized: "uniconnect.shared.detalles", defaultValue: "Detalles…"),
+                systemImage: "info.circle"
+            )
+        }
     }
 
     private func badge(text: String, systemImage: String, tint: Color) -> some View {

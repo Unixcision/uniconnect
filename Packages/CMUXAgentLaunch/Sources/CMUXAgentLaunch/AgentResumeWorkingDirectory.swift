@@ -64,6 +64,37 @@ public struct AgentResumeWorkingDirectory: Sendable, Equatable {
         }
     }
 
+    /// The physical path of an existing folder, with every symlink resolved, like POSIX `realpath`.
+    ///
+    /// Agents record the physical folder they run in (`getcwd`), so `~/Desktop/NOTBETTING` that
+    /// links to `~/Developer/NOTBETTING` must be stored as the latter. Unlike
+    /// `URL.resolvingSymlinksInPath`, `/private/tmp` stays `/private/tmp`.
+    ///
+    /// - Parameter path: An absolute path.
+    /// - Returns: The resolved path, or `path` unchanged when it does not exist or cannot be read.
+    public func realPath(_ path: String) -> String {
+        guard path.hasPrefix("/"), let resolved = realpath(path, nil) else { return path }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+
+    /// The folder name Claude Code files a working directory's transcripts under in `projects/`.
+    ///
+    /// Claude replaces every character that is not an ASCII letter or digit with `-` in the physical
+    /// path, the same rule `linux/scripts/recovery.py` (`project_folder`) applies:
+    /// `/Users/x/my_repo/.claude` becomes `-Users-x-my-repo--claude`.
+    ///
+    /// - Parameter workingDirectory: The folder Claude runs in.
+    /// - Returns: The project folder name.
+    public func claudeProjectFolderName(_ workingDirectory: String) -> String {
+        var name = String.UnicodeScalarView()
+        for scalar in realPath(workingDirectory).unicodeScalars {
+            let isASCIIAlphanumeric = scalar.isASCII && CharacterSet.alphanumerics.contains(scalar)
+            name.append(isASCIIAlphanumeric ? scalar : Unicode.Scalar(UInt8(ascii: "-")))
+        }
+        return String(name)
+    }
+
     private func normalized(_ value: String?) -> String? {
         guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty else {

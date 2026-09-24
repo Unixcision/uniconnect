@@ -29,4 +29,7 @@ public enum RelaunchCause: String, Sendable, Codable, CaseIterable, Error {
     case duplicate = "duplicado"
     /// The machine does not announce `relaunch.v1`, or the provider has no such verb.
     case unsupported = "no_soportado"
+    /// The window has no agent running: it is at a shell, or stopped. There is nothing to relaunch,
+    /// and starting one that was not there is not "leave it as it was".
+    case noAgent = "sin_ia"
 }

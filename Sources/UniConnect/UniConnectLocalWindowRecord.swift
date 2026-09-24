@@ -17,6 +17,7 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         case conversations
         case latestConversationID
         case activeConversationID
+        case interruptedConversationID
         case createdAt
         case updatedAt
     }
@@ -32,6 +33,10 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
     private(set) var conversations: [UniConnectLocalAgentConversation]
     private(set) var latestConversationID: UUID?
     private(set) var activeConversationID: UUID?
+    /// The conversation that was active when the tmux client exited under it (the app stayed
+    /// open, tmux died). Reopening the window revives it. Optional and additive: builds that
+    /// predate it ignore the key, so the record version stays at 4.
+    private(set) var interruptedConversationID: UUID?
     let createdAt: TimeInterval
     private(set) var updatedAt: TimeInterval
 
@@ -47,6 +52,7 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         conversations: [UniConnectLocalAgentConversation] = [],
         latestConversationID: UUID? = nil,
         activeConversationID: UUID? = nil,
+        interruptedConversationID: UUID? = nil,
         createdAt: TimeInterval = Date().timeIntervalSince1970,
         updatedAt: TimeInterval? = nil
     ) {
@@ -73,6 +79,7 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         )
         self.latestConversationID = latestConversationID
         self.activeConversationID = activeConversationID
+        self.interruptedConversationID = interruptedConversationID
         self.createdAt = createdAt.isFinite ? createdAt : 0
         self.updatedAt = (updatedAt ?? createdAt).isFinite ? (updatedAt ?? createdAt) : 0
         repairReferences()
@@ -150,6 +157,10 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         )
         self.latestConversationID = try container.decodeIfPresent(UUID.self, forKey: .latestConversationID)
         self.activeConversationID = try container.decodeIfPresent(UUID.self, forKey: .activeConversationID)
+        self.interruptedConversationID = try container.decodeIfPresent(
+            UUID.self,
+            forKey: .interruptedConversationID
+        )
         self.createdAt = decodedCreatedAt.isFinite ? decodedCreatedAt : 0
         let decodedUpdatedAt = try container.decodeIfPresent(TimeInterval.self, forKey: .updatedAt)
             ?? self.createdAt
@@ -296,6 +307,9 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         activeConversationID = runtimeState == .agent
             ? (mergedID(for: imported.activeConversationID) ?? latestConversationID)
             : nil
+        interruptedConversationID = runtimeState == .stopped
+            ? mergedID(for: imported.interruptedConversationID)
+            : nil
         repairReferences()
         touch(max(timestamp, imported.updatedAt))
         return self != original
@@ -340,11 +354,13 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
             || runtimeState != .agent
             || inserted
             || refreshed
+        let wasInterrupted = interruptedConversationID != nil
         latestConversationID = conversation.id
         activeConversationID = conversation.id
+        interruptedConversationID = nil
         runtimeState = .agent
-        if changed { touch(timestamp) }
-        return changed
+        if changed || wasInterrupted { touch(timestamp) }
+        return changed || wasInterrupted
     }
 
     /// Retains a discovered conversation for manual recovery without claiming it as live.
@@ -386,11 +402,13 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
             || runtimeState != .shell
             || inserted
             || refreshed
+        let wasInterrupted = interruptedConversationID != nil
         latestConversationID = conversation.id
         activeConversationID = nil
+        interruptedConversationID = nil
         runtimeState = .shell
-        if changed { touch(timestamp) }
-        return changed
+        if changed || wasInterrupted { touch(timestamp) }
+        return changed || wasInterrupted
     }
 
     /// Returns to the login shell while retaining the complete resumable history.
@@ -398,9 +416,12 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
     mutating func transitionToShell(
         at timestamp: TimeInterval = Date().timeIntervalSince1970
     ) -> Bool {
-        guard runtimeState != .shell || activeConversationID != nil else { return false }
+        guard runtimeState != .shell || activeConversationID != nil || interruptedConversationID != nil else {
+            return false
+        }
         runtimeState = .shell
         activeConversationID = nil
+        interruptedConversationID = nil
         touch(timestamp)
         return true
     }
@@ -411,8 +432,33 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         at timestamp: TimeInterval = Date().timeIntervalSince1970
     ) -> Bool {
         guard runtimeState != .stopped || activeConversationID != nil else { return false }
+        // The tmux client exited while an agent was active: remember which conversation was
+        // interrupted so reopening the window resumes it (reviveInterruptedConversation).
+        if runtimeState == .agent, let activeConversationID {
+            interruptedConversationID = activeConversationID
+        }
         runtimeState = .stopped
         activeConversationID = nil
+        touch(timestamp)
+        return true
+    }
+
+    /// Brings back the conversation that was interrupted when the window stopped.
+    ///
+    /// Only a stopped window with an interrupted conversation changes: it becomes an agent window
+    /// again, with that conversation active and latest, exactly as if the agent had been running
+    /// when the app quit. Reopening then resumes it under the usual guards.
+    @discardableResult
+    mutating func reviveInterruptedConversation(
+        at timestamp: TimeInterval = Date().timeIntervalSince1970
+    ) -> Bool {
+        guard runtimeState == .stopped,
+              let interruptedConversationID,
+              conversation(id: interruptedConversationID) != nil else { return false }
+        runtimeState = .agent
+        activeConversationID = interruptedConversationID
+        latestConversationID = interruptedConversationID
+        self.interruptedConversationID = nil
         touch(timestamp)
         return true
     }
@@ -426,11 +472,13 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         guard conversation(id: conversationID) != nil else { return false }
         guard latestConversationID != conversationID
                 || activeConversationID != nil
+                || interruptedConversationID != nil
                 || runtimeState != .shell else {
             return false
         }
         latestConversationID = conversationID
         activeConversationID = nil
+        interruptedConversationID = nil
         runtimeState = .shell
         touch(timestamp)
         return true
@@ -446,6 +494,7 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
             return false
         }
         conversations.remove(at: index)
+        interruptedConversationID = nil
         if activeConversationID == conversationID {
             activeConversationID = nil
             runtimeState = .shell
@@ -584,6 +633,9 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
     private mutating func repairReferences() {
         if conversation(id: latestConversationID) == nil {
             latestConversationID = conversations.last?.id
+        }
+        if runtimeState != .stopped || conversation(id: interruptedConversationID) == nil {
+            interruptedConversationID = nil
         }
         if runtimeState != .agent || conversation(id: activeConversationID) == nil {
             activeConversationID = nil
