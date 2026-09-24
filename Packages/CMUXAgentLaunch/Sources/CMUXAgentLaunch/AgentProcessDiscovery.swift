@@ -140,6 +140,10 @@ public struct AgentProcessDiscovery: Sendable {
     ///   - openFiles: Paths each pid holds open; only Codex processes need an entry.
     ///   - rolloutFirstLine: The first line (≤ 64 KB) of a rollout file, to read its `payload.cwd`.
     ///   - fallbackDirectory: `#{pane_current_path}`, used when no better folder is known.
+    ///   - processDirectory: The current folder of a pid (`/proc/<pid>/cwd`, `proc_pidinfo`), used
+    ///     when the session file or rollout has none. Defaults to unknown.
+    ///   - resolvingPath: Resolves symlinks in the chosen folder (`realpath`). Defaults to identity,
+    ///     so pure callers and fixtures decide how paths resolve.
     /// - Returns: The outcome; only ``AgentDiscoveryOutcome/found(_:)`` identifies a conversation.
     public func discover(
         rootPID: Int,
@@ -147,7 +151,9 @@ public struct AgentProcessDiscovery: Sendable {
         claudeSession: (Int) -> AgentClaudeSessionFile?,
         openFiles: [Int: [String]],
         rolloutFirstLine: (String) -> String?,
-        fallbackDirectory: String?
+        fallbackDirectory: String?,
+        processDirectory: (Int) -> String? = { _ in nil },
+        resolvingPath: (String) -> String = { $0 }
     ) -> AgentDiscoveryOutcome {
         var sessionFiles: [Int: AgentClaudeSessionFile] = [:]
         let roots = providerRoots(rootPID: rootPID, processes: processes) { pid in
@@ -159,12 +165,19 @@ public struct AgentProcessDiscovery: Sendable {
         guard roots.count == 1, let root = roots.first else { return .ambiguous }
         let process = root.process
         let asRoot = process.userID == 0
-        func found(_ id: String, _ directory: String?, _ source: AgentObservedConversation.Source,
+        // The session file's or rollout's folder, else the root process's, else the pane's.
+        func directory(_ reported: String?) -> String? {
+            let chosen = [reported, processDirectory(process.pid), fallbackDirectory]
+                .compactMap { $0 }
+                .first { $0.hasPrefix("/") }
+            return chosen.map(resolvingPath)
+        }
+        func found(_ id: String, _ reported: String?, _ source: AgentObservedConversation.Source,
                    status: String? = nil, version: String? = nil) -> AgentDiscoveryOutcome {
             .found(AgentObservedConversation(
                 provider: root.provider,
                 sessionID: Self.normalizedID(id),
-                workingDirectory: directory ?? fallbackDirectory,
+                workingDirectory: directory(reported),
                 asRoot: asRoot,
                 source: source,
                 status: status,
@@ -205,7 +218,7 @@ public struct AgentProcessDiscovery: Sendable {
                 return found(id, nil, .argv)
             }
         }
-        return .unidentified(root.provider, processID: process.pid)
+        return .unidentified(root.provider, processID: process.pid, workingDirectory: directory(nil), asRoot: asRoot)
     }
 
     /// The conversation id of a Codex rollout path, or `nil` when it is not one.

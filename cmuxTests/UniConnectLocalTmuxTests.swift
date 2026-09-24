@@ -327,15 +327,18 @@ struct UniConnectLocalTmuxTests {
             processArguments: { pid in scenario == "missingArgv" && pid == 234 ? nil : argumentReads.read(pid) },
             isForegroundWithoutChildren: { $0 == 123 && scenario == "shell" },
             claudeConfigDirectory: FileManager.default.temporaryDirectory
-                .appendingPathComponent("uc-no-claude-\(UUID().uuidString)", isDirectory: true)
+                .appendingPathComponent("uc-no-claude-\(UUID().uuidString)", isDirectory: true),
+            processDirectory: { _ in nil }
         )
         let observations = await inspector.runtimeObservations(for: [target])
         // The live process decides the conversation (agent-tree.v1), not the saved record: a new
         // id or folder is reported so it can enter the history; one without id or two agents
-        // are reported without an identity and never persisted by the coordinator.
+        // are reported without an identity and never persisted by the coordinator. The folder is
+        // the physical one (/tmp is /private/tmp on macOS).
         func discovered(_ id: UUID, _ cwd: String) -> UniConnectLocalTmuxRuntimeObservation.State {
             .discovered(AgentObservedConversation(
-                provider: .claude, sessionID: id.uuidString.lowercased(), workingDirectory: cwd,
+                provider: .claude, sessionID: id.uuidString.lowercased(),
+                workingDirectory: AgentResumeWorkingDirectory().realPath(cwd),
                 asRoot: false, source: .argv, processID: 234
             ))
         }
@@ -410,12 +413,14 @@ struct UniConnectLocalTmuxTests {
             processSnapshot: { snapshot }, processArguments: { $0 == 234 ? peerArguments : rootArguments },
             isForegroundWithoutChildren: { $0 == 123 && shell },
             claudeConfigDirectory: FileManager.default.temporaryDirectory
-                .appendingPathComponent("uc-no-claude-\(UUID().uuidString)", isDirectory: true)
+                .appendingPathComponent("uc-no-claude-\(UUID().uuidString)", isDirectory: true),
+            processDirectory: { _ in nil }
         )
         let observations = await inspector.runtimeObservations(for: [.init(owner: owner, record: record)])
         _ = conversationID
         let expected = UniConnectLocalTmuxRuntimeObservation.State.discovered(AgentObservedConversation(
-            provider: .claude, sessionID: sessionID.uuidString.lowercased(), workingDirectory: "/tmp",
+            provider: .claude, sessionID: sessionID.uuidString.lowercased(),
+            workingDirectory: AgentResumeWorkingDirectory().realPath("/tmp"),
             asRoot: false, source: .argv, processID: 234
         ))
         #expect(observations.map(\.state) == (scenario == "legacy" ? [expected] : []))

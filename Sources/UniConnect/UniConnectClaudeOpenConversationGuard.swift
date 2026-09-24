@@ -22,7 +22,7 @@ struct UniConnectClaudeOpenConversationGuard: Sendable {
             // A session file only counts while its pid is alive and is still Claude.
             guard let live = CmuxTopProcessSnapshot.processArgumentsAndEnvironment(for: pid) else { return false }
             let sample = AgentProcessSample(pid: pid, parentPID: 0, userID: -1, arguments: live.arguments)
-            return AgentObservedProvider.classify(sample, hasClaudeSession: false) == .claude
+            return AgentObservedProvider.classify(sample, hasClaudeSession: true) == .claude
         }
     }
 

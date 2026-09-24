@@ -1,6 +1,7 @@
 import CMUXAgentLaunch
 import CmuxProcess
 import CmuxControlSocket
+import Darwin
 import Foundation
 
 /// Performs bounded, read-only tmux inspection away from the main actor.
@@ -14,6 +15,8 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
     private let isForegroundWithoutChildren: @Sendable (Int) -> Bool
     /// Claude's configuration folder when a process has no `CLAUDE_CONFIG_DIR` of its own.
     private let claudeConfigDirectory: URL
+    /// A process's current folder, the agent's cwd when its session file or rollout has none.
+    private let processDirectory: @Sendable (Int) -> String?
 
     init(
         commands: any CommandRunning,
@@ -35,7 +38,10 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
             UniConnectLocalTmuxProcessIdentity.isForegroundWithoutChildren(processID: $0)
         },
         claudeConfigDirectory: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-            .appendingPathComponent(".claude", isDirectory: true)
+            .appendingPathComponent(".claude", isDirectory: true),
+        processDirectory: @escaping @Sendable (Int) -> String? = {
+            UniConnectLocalTmuxService.currentDirectory(ofProcess: $0)
+        }
     ) {
         self.commands = commands
         self.processEnvironment = processEnvironment
@@ -45,6 +51,7 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
         self.processArguments = processArguments
         self.isForegroundWithoutChildren = isForegroundWithoutChildren
         self.claudeConfigDirectory = claudeConfigDirectory
+        self.processDirectory = processDirectory
     }
 
     func runtimeObservations(
@@ -79,7 +86,7 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
                 guard let identity = scopedAgentIdentity(pid: conversation.processID, owner: owner) else { continue }
                 peer = identity
                 state = .discovered(conversation)
-            case .unidentified(let provider, let pid):
+            case .unidentified(let provider, let pid, _, _):
                 guard let identity = scopedAgentIdentity(pid: pid, owner: owner) else { continue }
                 peer = identity
                 state = .unidentified(provider)
@@ -158,15 +165,14 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
                 arguments: live?.arguments ?? []
             ))
         }
-        let byPID = Dictionary(samples.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
+        // A session file only counts for a live process whose command line mentions Claude: a
+        // stale <pid>.json of a recycled pid says nothing (contract case 13).
         let liveClaude = Set(samples.filter {
-            AgentObservedProvider.classify($0, hasClaudeSession: false) == .claude
+            AgentObservedProvider.classify($0, hasClaudeSession: true) == .claude
         }.map(\.pid))
         let defaultDirectory = claudeConfigDirectory
         let claudeSession: (Int) -> AgentClaudeSessionFile? = { pid in
-            // Only a live process whose command line is Claude's may own a session file:
-            // a stale <pid>.json of a recycled pid says nothing.
-            guard liveClaude.contains(pid), byPID[pid] != nil else { return nil }
+            guard liveClaude.contains(pid) else { return nil }
             let root = configDirectories[pid].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? defaultDirectory
             return AgentClaudeSessionDirectory(root: root, isLiveClaude: { liveClaude.contains($0) }).file(pid: pid)
         }
@@ -186,9 +192,25 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
             claudeSession: claudeSession,
             openFiles: openFiles,
             rolloutFirstLine: Self.firstLine(ofFileAt:),
-            fallbackDirectory: paneDirectory.hasPrefix("/") ? paneDirectory : nil
+            fallbackDirectory: paneDirectory.hasPrefix("/") ? paneDirectory : nil,
+            processDirectory: { processDirectory($0) },
+            resolvingPath: { AgentResumeWorkingDirectory().realPath($0) }
         )
         return AgentDiscoveryPass(outcome: outcome, openFiles: openFiles)
+    }
+
+    /// A process's current folder through `proc_pidinfo` (read-only, no subprocess).
+    static func currentDirectory(ofProcess pid: Int) -> String? {
+        guard let processID = pid_t(exactly: pid), processID > 0 else { return nil }
+        var info = proc_vnodepathinfo()
+        let expectedSize = MemoryLayout<proc_vnodepathinfo>.stride
+        guard proc_pidinfo(processID, PROC_PIDVNODEPATHINFO, 0, &info, Int32(expectedSize)) == expectedSize else {
+            return nil
+        }
+        let path = withUnsafeBytes(of: &info.pvi_cdir.vip_path) { buffer -> String in
+            String(decoding: buffer.prefix { $0 != 0 }, as: UTF8.self)
+        }
+        return path.hasPrefix("/") ? path : nil
     }
 
     /// The kernel identity of an agent root that carries this window's CMUX scope.
@@ -217,7 +239,7 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
         switch (lhs, rhs) {
         case let (.found(a), .found(b)):
             return a.provider == b.provider && a.sessionID == b.sessionID && a.processID == b.processID
-        case let (.unidentified(a, pidA), .unidentified(b, pidB)):
+        case let (.unidentified(a, pidA, _, _), .unidentified(b, pidB, _, _)):
             return a == b && pidA == pidB
         case (.ambiguous, .ambiguous), (.noAgent, .noAgent):
             return true

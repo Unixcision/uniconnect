@@ -10,11 +10,14 @@ public enum AgentDiscoveryOutcome: Sendable, Equatable {
     /// More than one independent agent under the pane (`identidad_ambigua`).
     case ambiguous
     /// One agent, but no conversation id yet (`sin_id`), such as a fresh Codex before its first turn.
-    case unidentified(AgentObservedProvider, processID: Int)
+    ///
+    /// Carries the agent's root pid, its resolved folder and whether it runs as root, which the
+    /// details view still shows.
+    case unidentified(AgentObservedProvider, processID: Int, workingDirectory: String?, asRoot: Bool)
     /// One agent on one known conversation.
     case found(AgentObservedConversation)
 
-    /// The contract's `reason` for this outcome, or `nil` when the agent was identified.
+    /// The contract's `cause` for this outcome, or `nil` when the agent was identified.
     public var reason: String? {
         switch self {
         case .noAgent: "sin_ia"

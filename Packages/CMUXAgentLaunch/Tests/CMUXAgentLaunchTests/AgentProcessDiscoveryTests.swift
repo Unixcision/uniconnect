@@ -41,29 +41,28 @@ struct AgentProcessDiscoveryTests {
             // El paquete se compila también fuera del repo; sin el fichero no hay nada que comparar.
             return
         }
-        let root = try JSONSerialization.jsonObject(with: data)
-        let cases: [[String: Any]]
-        if let list = root as? [[String: Any]] {
-            cases = list
-        } else if let object = root as? [String: Any],
-                  let list = (object["casos"] ?? object["cases"]) as? [[String: Any]] {
-            cases = list
-        } else {
-            Issue.record("forma desconocida de deteccion-casos.json")
-            return
-        }
+        // Forma: {version, casos: [{nombre, pane_pid, home, procesos, fichas, abiertos, rollouts,
+        // cwds?, enlaces?, pane_current_path?, espera}], guarda: [...]}. Solo se comparan las
+        // claves que trae `espera`.
+        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(root["version"] as? Int == 1)
+        let cases = try #require(root["casos"] as? [[String: Any]])
         #expect(!cases.isEmpty)
         for entry in cases {
-            let name = (entry["nombre"] ?? entry["name"] ?? entry["id"]) as? String ?? "?"
-            let pane = try #require(Self.int(entry["pane_pid"] ?? entry["panePid"]), "\(name): pane_pid")
-            let rows = try #require((entry["procesos"] ?? entry["processes"]) as? [[String: Any]], "\(name): procesos")
+            let name = entry["nombre"] as? String ?? "?"
+            let pane = try #require(Self.int(entry["pane_pid"]), "\(name): pane_pid")
+            let rows = try #require(entry["procesos"] as? [[String: Any]], "\(name): procesos")
             let table = rows.compactMap { row -> AgentProcessSample? in
-                guard let pid = Self.int(row["pid"]), let ppid = Self.int(row["ppid"] ?? row["parent_pid"]) else { return nil }
-                let argv = (row["argv"] ?? row["args"]) as? [String] ?? []
-                return AgentProcessSample(pid: pid, parentPID: ppid, userID: Self.int(row["uid"]) ?? 501, arguments: argv)
+                guard let pid = Self.int(row["pid"]), let ppid = Self.int(row["ppid"]) else { return nil }
+                return AgentProcessSample(
+                    pid: pid, parentPID: ppid, userID: Self.int(row["uid"]) ?? 501,
+                    arguments: row["argv"] as? [String] ?? []
+                )
             }
+            // El arnés sirve la ficha donde la buscaría la implementación (en /root si la raíz es
+            // de uid 0): aquí basta con indexarla por pid.
             var sessions: [Int: AgentClaudeSessionFile] = [:]
-            for (key, value) in ((entry["fichas"] ?? entry["claude_sessions"]) as? [String: [String: Any]]) ?? [:] {
+            for (key, value) in (entry["fichas"] as? [String: [String: Any]]) ?? [:] {
                 guard let pid = Int(key), let id = value["sessionId"] as? String else { continue }
                 sessions[pid] = AgentClaudeSessionFile(
                     sessionId: id, cwd: value["cwd"] as? String, status: value["status"] as? String,
@@ -71,37 +70,54 @@ struct AgentProcessDiscoveryTests {
                 )
             }
             var openFiles: [Int: [String]] = [:]
-            for (key, value) in ((entry["abiertos"] ?? entry["open_files"]) as? [String: [String]]) ?? [:] {
+            for (key, value) in (entry["abiertos"] as? [String: [String]]) ?? [:] {
                 if let pid = Int(key) { openFiles[pid] = value }
             }
-            let firstLines = ((entry["primeras_lineas"] ?? entry["rollout_first_lines"]) as? [String: String]) ?? [:]
-            let cwd = (entry["pane_current_path"] ?? entry["cwd"]) as? String
-            let outcome = discover(table, sessions: sessions, openFiles: openFiles, firstLines: firstLines, pane: pane, cwd: cwd)
-            let expected = try #require((entry["esperado"] ?? entry["expected"]) as? [String: Any], "\(name): esperado")
-            let reason = (expected["reason"] ?? expected["resultado"]) as? String
-            if let reason, reason != "found", reason != "encontrada" {
-                #expect(outcome.reason == reason, "\(name)")
+            var directories: [Int: String] = [:]
+            for (key, value) in (entry["cwds"] as? [String: String]) ?? [:] {
+                if let pid = Int(key) { directories[pid] = value }
+            }
+            let links = (entry["enlaces"] as? [String: String]) ?? [:]
+            let firstLines = (entry["rollouts"] as? [String: String]) ?? [:]
+            let outcome = AgentProcessDiscovery().discover(
+                rootPID: pane,
+                processes: table,
+                claudeSession: { sessions[$0] },
+                openFiles: openFiles,
+                rolloutFirstLine: { firstLines[$0] },
+                fallbackDirectory: entry["pane_current_path"] as? String,
+                processDirectory: { directories[$0] },
+                resolvingPath: { links[$0] ?? $0 }
+            )
+            let expected = try #require(entry["espera"] as? [String: Any], "\(name): espera")
+            let cause = expected["cause"] as? String
+            #expect(outcome.reason == cause, "\(name): \(outcome)")
+            let provider: AgentObservedProvider?
+            let sessionID: String?
+            let directory: String?
+            let asRoot: Bool?
+            let source: String?
+            switch outcome {
+            case let .found(conversation):
+                provider = conversation.provider
+                sessionID = conversation.sessionID
+                directory = conversation.workingDirectory
+                asRoot = conversation.asRoot
+                source = conversation.source.rawValue
+            case let .unidentified(found, _, workingDirectory, root):
+                provider = found
+                sessionID = nil
+                directory = workingDirectory
+                asRoot = root
+                source = nil
+            case .noAgent, .ambiguous:
                 continue
             }
-            guard case let .found(conversation) = outcome else {
-                Issue.record("\(name): se esperaba una IA identificada y salió \(outcome)")
-                continue
-            }
-            if let provider = (expected["provider"] ?? expected["proveedor"]) as? String {
-                #expect(conversation.provider.rawValue == provider, "\(name)")
-            }
-            if let id = (expected["session_id"] ?? expected["sessionId"]) as? String {
-                #expect(conversation.sessionID == id, "\(name)")
-            }
-            if let source = (expected["source"] ?? expected["fuente"]) as? String {
-                #expect(conversation.source.rawValue == source, "\(name)")
-            }
-            if let asRoot = (expected["as_root"] ?? expected["como_root"]) as? Bool {
-                #expect(conversation.asRoot == asRoot, "\(name)")
-            }
-            if let cwd = expected["cwd"] as? String {
-                #expect(conversation.workingDirectory == cwd, "\(name)")
-            }
+            if let value = expected["provider"] as? String { #expect(provider?.rawValue == value, "\(name)") }
+            if expected.keys.contains("session_id") { #expect(sessionID == expected["session_id"] as? String, "\(name)") }
+            if expected.keys.contains("source") { #expect(source == expected["source"] as? String, "\(name)") }
+            if let value = expected["as_root"] as? Bool { #expect(asRoot == value, "\(name)") }
+            if let value = expected["cwd"] as? String { #expect(directory == value, "\(name)") }
         }
     }
 
@@ -142,7 +158,8 @@ struct AgentProcessDiscoveryTests {
 
     @Test("Claude sin id todavía queda sin_id")
     func claudeWithoutID() {
-        #expect(discover([p(100, 1, ["zsh"]), p(200, 100, ["claude", "login"])]) == .unidentified(.claude, processID: 200))
+        #expect(discover([p(100, 1, ["zsh"]), p(200, 100, ["claude", "login"])])
+            == .unidentified(.claude, processID: 200, workingDirectory: "/pane", asRoot: false))
     }
 
     @Test("Claude bajo sudo como root sigue siendo una sola IA y va como root")
@@ -191,7 +208,8 @@ struct AgentProcessDiscoveryTests {
 
     @Test("Un codex nuevo antes de su primer turno queda sin_id")
     func freshCodex() {
-        #expect(discover([p(100, 1, ["zsh"]), p(200, 100, ["codex"])]) == .unidentified(.codex, processID: 200))
+        #expect(discover([p(100, 1, ["zsh"]), p(200, 100, ["codex"])])
+            == .unidentified(.codex, processID: 200, workingDirectory: "/pane", asRoot: false))
     }
 
     @Test("Un codex lanzado por la herramienta Bash de Claude no es raíz")

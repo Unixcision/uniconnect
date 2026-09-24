@@ -22,14 +22,18 @@ public enum AgentObservedProvider: String, Sendable, Codable, CaseIterable {
     /// Classifies one process, or returns `nil` when it is not an agent.
     ///
     /// `sudo`, `env`, shells, `login` and an unmarked `node` are never an agent: their children are
-    /// already part of the subtree being inspected.
+    /// already part of the subtree being inspected. A Claude session file alone does not make a
+    /// process Claude, because its pid may have been recycled: it also needs an argument that
+    /// mentions `claude`.
     ///
     /// - Parameters:
     ///   - process: The process row.
-    ///   - hasClaudeSession: Whether a live Claude session file exists for this pid.
+    ///   - hasClaudeSession: Whether a Claude session file exists for this pid.
     /// - Returns: The provider the process belongs to.
     public static func classify(_ process: AgentProcessSample, hasClaudeSession: Bool) -> AgentObservedProvider? {
-        if hasClaudeSession { return .claude }
+        if hasClaudeSession, process.arguments.contains(where: { $0.contains("claude") }) {
+            return .claude
+        }
         let name = process.executableName
         let executable = process.arguments.first ?? ""
         let rest = process.arguments.dropFirst()
