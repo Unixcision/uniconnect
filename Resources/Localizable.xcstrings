@@ -42150,6 +42150,17 @@
         }
       }
     },
+    "uniconnect.ssh.resume.guardRefused": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "[UniConnect] No se reanuda: la conversación sigue abierta en otra ventana o falta la carpeta."
+          }
+        }
+      }
+    },
     "uniconnect.ssh.setup.action.checkAgain": {
       "extractionState": "manual",
       "localizations": {

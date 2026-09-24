@@ -4,30 +4,6 @@ import UniConnectClaudeBridge
 // MARK: - Command construction
 
 enum UniConnectSSH {
-    /// `claude --resume` only finds a session from the folder it was created in, so the
-    /// window always cds first. The folder may be gone (renamed project): fall back to home
-    /// instead of leaving the user with a dead shell.
-    static func claudeResumeCommandLine(session: String, directory: String?) -> String {
-        // `claude --resume` only finds the session from the folder it was created in, so a
-        // missing folder must stop the command, not silently resume from $HOME (which fails
-        // with a confusing error). The window is left in a usable login shell instead.
-        var command = ""
-        if let directory, !directory.isEmpty {
-            let quoted = singleQuoted(directory)
-            let message = String(
-                format: String(
-                    localized: "uniconnect.ssh.resume.folderMissing",
-                    defaultValue: "The folder %@ no longer exists; this session cannot be resumed from here."
-                ),
-                directory
-            )
-            command += "if ! cd \(quoted) 2>/dev/null; then "
-            command += "printf '%s\\n' \(shellQuote("[UniConnect] \(message)")); "
-            command += "exec \"$SHELL\" -l; fi; "
-        }
-        command += "exec claude --dangerously-skip-permissions --resume \(singleQuoted(session))"
-        return command
-    }
 
     /// POSIX single-quoting for a path or argument embedded in a shell command.
     static func singleQuoted(_ value: String) -> String {
@@ -104,7 +80,12 @@ enum UniConnectSSH {
 
     /// The remote command used only for an explicit new window. `-A` attaches if the
     /// named session exists and otherwise creates it; `-c` seeds that first directory.
-    static func remoteTmuxCommand(session: String, directory: String?) -> String {
+    ///
+    /// `initialCommand` becomes the new pane's command, which tmux only runs when it creates the
+    /// session: with `-A` and the session alive it attaches and ignores it. Restore uses it to
+    /// bring a saved agent back (``UniConnectRemoteResumeCommand``). `nil` keeps the byte-exact
+    /// command every other caller has always sent.
+    static func remoteTmuxCommand(session: String, directory: String?, initialCommand: String? = nil) -> String {
         // Do not pass `-D`: detaching another client would disrupt terminals outside
         // UniConnect. Restore and reconnect use `remoteRecoverableTmuxCommand` instead.
         // A pane snapshots history-limit when its grid is created. Setting it first
@@ -112,6 +93,10 @@ enum UniConnectSSH {
         var parts = ["tmux", "set-option", "-g", "history-limit", "50000", "\\;", "new-session", "-A", "-s", shellQuote(session)]
         if let directory = directory?.trimmingCharacters(in: .whitespacesAndNewlines), !directory.isEmpty {
             parts += ["-c", shellQuote(directory)]
+        }
+        if let initialCommand = initialCommand?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !initialCommand.isEmpty, !initialCommand.hasSuffix(";") {
+            parts.append(shellQuote(initialCommand))
         }
         // Wheel scrolling inside tmux needs mouse mode on attach as well as create.
         parts += ["\\;", "set-option", "-g", "mouse", "on"]
@@ -124,8 +109,12 @@ enum UniConnectSSH {
 
     /// Restores a saved session atomically, creating it only if its exact name is absent.
     /// Existing panes and clients are preserved; failures leave a usable remote shell.
-    static func remoteRecoverableTmuxCommand(session: String, directory: String?) -> String {
-        let createOrAttach = remoteTmuxCommand(session: session, directory: nil)
+    static func remoteRecoverableTmuxCommand(
+        session: String,
+        directory: String?,
+        initialCommand: String? = nil
+    ) -> String {
+        let createOrAttach = remoteTmuxCommand(session: session, directory: nil, initialCommand: initialCommand)
         let operation: String
         if let directory = directory?.trimmingCharacters(in: .whitespacesAndNewlines), !directory.isEmpty {
             // Starting the client in the saved directory seeds a newly created session
@@ -202,12 +191,17 @@ enum UniConnectSSH {
         bridge: ClaudeBridgeConnectionPlan? = nil,
         existingSessionOnly: Bool = false,
         recoverMissingSession: Bool = false,
-        effectiveTarget: UniConnectSSHEffectiveTarget? = nil
+        effectiveTarget: UniConnectSSHEffectiveTarget? = nil,
+        initialCommand: String? = nil
     ) -> String? {
         let options = ["-t"] + baseClientOptions + (bridge?.sshOptions ?? [])
         let tmux: String
         if recoverMissingSession {
-            tmux = remoteRecoverableTmuxCommand(session: session, directory: directory)
+            tmux = remoteRecoverableTmuxCommand(
+                session: session,
+                directory: directory,
+                initialCommand: initialCommand
+            )
         } else if existingSessionOnly {
             tmux = remoteExistingTmuxCommand(session: session)
         } else {
@@ -245,7 +239,8 @@ enum UniConnectSSH {
         directory: String?,
         bridge: ClaudeBridgeConnectionPlan? = nil,
         existingSessionOnly: Bool = false,
-        recoverMissingSession: Bool = false
+        recoverMissingSession: Bool = false,
+        initialCommand: String? = nil
     ) -> String? {
         guard let effectiveTarget = credentialRecord.effectiveTarget else { return nil }
         return attachCommandLine(
@@ -255,7 +250,8 @@ enum UniConnectSSH {
             bridge: bridge,
             existingSessionOnly: existingSessionOnly,
             recoverMissingSession: recoverMissingSession,
-            effectiveTarget: effectiveTarget
+            effectiveTarget: effectiveTarget,
+            initialCommand: initialCommand
         )
     }
 

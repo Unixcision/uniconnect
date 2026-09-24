@@ -2589,13 +2589,18 @@ final class UniConnectCoordinator: ObservableObject {
             windowName: title,
             tmuxSession: session
         )
+        let remoteResume = UniConnectRemoteResumeCommand().startup(
+            record: workspace.uniConnectRemoteAgentsByPanelId[panelId],
+            sshUser: credentialRecord.effectiveTarget?.user
+        )
         guard let commandLine = UniConnectSSH.attachCommandLine(
             credentialRecord: credentialRecord,
             session: session,
-            directory: nil,
+            directory: remoteResume?.directory,
             bridge: bridge,
             existingSessionOnly: true,
-            recoverMissingSession: true
+            recoverMissingSession: true,
+            initialCommand: remoteResume?.initialCommand
         ), let launcher = UniConnectSSH.writeLauncherScript(commandLine: commandLine, label: session) else {
             // Keep the existing route/token alive. A failed reconnect preparation must not
             // sever notifications from the logical window that still owns this panel ID.
@@ -5277,13 +5282,20 @@ extension Workspace {
             windowName: windowName,
             tmuxSession: safe
         )
+        // If the remote tmux session died, recreate it with its agent resumed without questions
+        // (guarded against a conversation still open elsewhere). A live session just attaches.
+        let remoteResume = UniConnectRemoteResumeCommand().startup(
+            record: panelSnapshot.terminal?.uniConnectRemoteAgent,
+            sshUser: effectiveTarget.user
+        )
         guard let commandLine = UniConnectSSH.attachCommandLine(
             credentialRecord: credentialRecord,
             session: safe,
-            directory: nil,
+            directory: remoteResume?.directory,
             bridge: bridge,
             existingSessionOnly: true,
-            recoverMissingSession: true
+            recoverMissingSession: true,
+            initialCommand: remoteResume?.initialCommand
         ), let launcher = UniConnectSSH.writeLauncherScript(
             commandLine: commandLine,
             label: safe,
