@@ -79,6 +79,10 @@ final class UniConnectSessionPersistenceObserver {
                 .filter { $0.workspaceID == workspace.id }
                 .map { _ in "window-claude-runtime-state" }
                 .eraseToAnyPublisher(),
+            NotificationCenter.default.publisher(for: .uniConnectRemoteAgentChanged)
+                .filter { ($0.object as? UUID) == workspace.id }
+                .map { _ in "window-remote-agent" }
+                .eraseToAnyPublisher(),
         ]
 
         var subscriptions: Set<AnyCancellable> = []

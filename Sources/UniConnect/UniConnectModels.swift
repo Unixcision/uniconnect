@@ -82,6 +82,9 @@ struct UniConnectDocument: Codable, Equatable {
         var isPinned: Bool?
         /// Durable local-window state. Nil for SSH and version-1 documents.
         var localWindow: UniConnectLocalWindowRecord? = nil
+        /// SSH windows: the agent the remote probe last verified (provider, conversation, folder,
+        /// root). Nil for local windows and older documents; the resume command is never stored.
+        var remoteAgent: UniConnectRemoteAgentRecord? = nil
     }
 
     struct Workspace: Codable, Equatable {

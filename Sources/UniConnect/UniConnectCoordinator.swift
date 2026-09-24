@@ -42,6 +42,8 @@ final class UniConnectCoordinator: ObservableObject {
     private var sshTargetResolver: (any UniConnectSSHTargetResolving)?
     private var localTmuxInspector: (any UniConnectLocalTmuxInspecting)?
     private var localTmuxReconciliationTask: Task<Void, Never>?
+    /// SSH windows' verified agents (UniConnectCoordinator+RemoteAgents); set by the composition root.
+    var remoteAgentMonitor: UniConnectRemoteAgentMonitor?
     private var sshWorkspaceCreationTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private var sshWorkspaceCreationTokens: [ObjectIdentifier: UUID] = [:]
     private var sshCredentialEditTasks: [UUID: Task<Void, Never>] = [:]
@@ -3236,6 +3238,8 @@ final class UniConnectCoordinator: ObservableObject {
             // «Guardar» persiste el árbol entero: primero se lee qué IA corre en cada ventana
             // local (proceso, ficha y rollout) para que lo escrito sea lo de ahora.
             await self?.reconcileLocalTmuxRuntime()
+            // Y cada caja SSH con ventanas conectadas: sonda forzada, 10 s como máximo por caja.
+            await self?.refreshRemoteAgents(force: true)
             let resumeIndexes = await ProcessDetectedResumeIndexes.load()
             guard let self else { return }
             defer { self.manualSaveTask = nil }

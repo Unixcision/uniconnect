@@ -122,7 +122,8 @@ enum UniConnectBackup {
                 claudeSession: claude,
                 cwd: profile.isSSH ? nil : cwd,
                 isPinned: workspace.isPanelPinned(panelId) ? true : nil,
-                localWindow: localWindow
+                localWindow: localWindow,
+                remoteAgent: profile.isSSH ? workspace.uniConnectRemoteAgentsByPanelId[panelId] : nil
             ))
         }
         return UniConnectDocument.Workspace(

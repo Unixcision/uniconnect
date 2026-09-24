@@ -322,6 +322,12 @@ struct cmuxApp: App {
             UniConnectVault.shared.credentialRecord(for: credentialID)
         }
         let processRunner = UniConnectControlledProcessRunner()
+        UniConnectCoordinator.shared.configureRemoteAgentProbe(
+            UniConnectRemoteAgentProbe(
+                processRunner: processRunner,
+                credentialResolver: credentialResolver
+            )
+        )
         let applicationStateReader = UniConnectClaudeUpdateApplicationStateReader(
             tabManagersProvider: tabManagersProvider
         )

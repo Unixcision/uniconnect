@@ -2462,6 +2462,9 @@ struct SessionTerminalPanelSnapshot: Codable, Sendable {
     var uniConnectClaudeSession: String? = nil
     /// UniConnect: logical local-window identity, runtime mode, and non-destructive agent history.
     var uniConnectLocalWindow: UniConnectLocalWindowRecord? = nil
+    /// UniConnect: the agent a remote (SSH) tmux window runs, as the probe last verified it.
+    /// Optional and additive: older builds ignore the key.
+    var uniConnectRemoteAgent: UniConnectRemoteAgentRecord? = nil
 
     init(
         workingDirectory: String? = nil,
@@ -2476,11 +2479,13 @@ struct SessionTerminalPanelSnapshot: Codable, Sendable {
         wasAgentRunning: Bool? = nil,
         uniConnectTmuxSession: String? = nil,
         uniConnectClaudeSession: String? = nil,
-        uniConnectLocalWindow: UniConnectLocalWindowRecord? = nil
+        uniConnectLocalWindow: UniConnectLocalWindowRecord? = nil,
+        uniConnectRemoteAgent: UniConnectRemoteAgentRecord? = nil
     ) {
         self.uniConnectTmuxSession = uniConnectTmuxSession
         self.uniConnectClaudeSession = uniConnectClaudeSession
         self.uniConnectLocalWindow = uniConnectLocalWindow
+        self.uniConnectRemoteAgent = uniConnectRemoteAgent
         self.workingDirectory = workingDirectory
         self.scrollback = scrollback
         self.agent = agent

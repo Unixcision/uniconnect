@@ -716,7 +716,8 @@ extension Workspace {
                 uniConnectTmuxSession: uniConnectTmuxSessionsByPanelId[panelId],
                 uniConnectClaudeSession: localWindowRecord?.legacyClaudeSession
                     ?? uniConnectClaudeSessionsByPanelId[panelId],
-                uniConnectLocalWindow: localWindowRecord
+                uniConnectLocalWindow: localWindowRecord,
+                uniConnectRemoteAgent: uniConnectRemoteAgentsByPanelId[panelId]
             )
             browserSnapshot = nil
             markdownSnapshot = nil
@@ -2104,6 +2105,9 @@ extension Workspace {
             }
             if let uniConnectSession = snapshot.terminal?.uniConnectTmuxSession {
                 uniConnectTmuxSessionsByPanelId[terminalPanel.id] = UniConnectSSH.sanitizedTmuxName(uniConnectSession)
+            }
+            if let remoteAgent = snapshot.terminal?.uniConnectRemoteAgent {
+                uniConnectRemoteAgentsByPanelId[terminalPanel.id] = remoteAgent
             }
             if uniConnectSSHRestoreUnavailable {
                 uniConnectDisconnectedPanelIds.insert(terminalPanel.id)
@@ -10984,6 +10988,10 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var uniConnectClaudeSessionsByPanelId: [UUID: String] = [:]
     /// Durable local windows. Agent history is independent from the current shell/process state.
     @Published var uniConnectLocalWindowsByPanelId: [UUID: UniConnectLocalWindowRecord] = [:]
+    /// Durable remote (SSH) windows: the agent the remote probe last verified in each one.
+    /// Plain storage on purpose (no new @Published): a change is announced with
+    /// `.uniConnectRemoteAgentChanged` so a probe every minute never invalidates sidebar rows.
+    private(set) var uniConnectRemoteAgentsByPanelId: [UUID: UniConnectRemoteAgentRecord] = [:]
     private enum LocalTmuxReportKind: Hashable { case shell, lifecycle(String) }
     private var localTmuxReportTokens: [UUID: [LocalTmuxReportKind: UUID]] = [:]
     @Published var uniConnectPlaceholderPanelIds: Set<UUID> = []
@@ -12635,6 +12643,23 @@ final class Workspace: Identifiable, ObservableObject {
         return changed
     }
 
+    /// Stores (or clears) the verified remote agent of an SSH window and announces the change.
+    ///
+    /// Only an actual change is announced, so the persistence observer requests a save exactly
+    /// when the tree changed ("window-remote-agent"), never on a repeated probe.
+    @discardableResult
+    func uniConnectSetRemoteAgent(_ record: UniConnectRemoteAgentRecord?, panelId: UUID) -> Bool {
+        guard panels[panelId] is TerminalPanel || record == nil,
+              uniConnectRemoteAgentsByPanelId[panelId] != record else { return false }
+        if let record {
+            uniConnectRemoteAgentsByPanelId[panelId] = record
+        } else {
+            uniConnectRemoteAgentsByPanelId.removeValue(forKey: panelId)
+        }
+        NotificationCenter.default.post(name: .uniConnectRemoteAgentChanged, object: id)
+        return true
+    }
+
     /// Selects one saved conversation as the next manual resume target.
     @discardableResult
     func uniConnectSelectLocalConversation(
@@ -14121,6 +14146,9 @@ final class Workspace: Identifiable, ObservableObject {
             validSurfaceIds.contains($0.key)
         }
         uniConnectLocalWindowsByPanelId = uniConnectLocalWindowsByPanelId.filter {
+            validSurfaceIds.contains($0.key)
+        }
+        uniConnectRemoteAgentsByPanelId = uniConnectRemoteAgentsByPanelId.filter {
             validSurfaceIds.contains($0.key)
         }
         localTmuxReportTokens = localTmuxReportTokens.filter { validSurfaceIds.contains($0.key) }
