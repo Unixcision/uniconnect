@@ -259,9 +259,10 @@ struct UniConnectWindowDetailsResolverTests {
 
     private func localTarget(_ fixture: [String: Any]) throws -> (UniConnectLocalTmuxBinding, UniConnectLocalTmuxRuntimeObservation.Target) {
         let tmux = try #require(fixture["tmux"] as? [String: Any])
-        let binding = try #require(UniConnectLocalTmuxBinding(
-            name: try #require(tmux["session"] as? String), socketName: try #require(tmux["socket"] as? String)
-        ))
+        // Sin #require anidados: Swift 6.4 (Xcode 27) los rechaza como expansión recursiva.
+        let session = try #require(tmux["session"] as? String)
+        let socket = try #require(tmux["socket"] as? String)
+        let binding = try #require(UniConnectLocalTmuxBinding(name: session, socketName: socket))
         let panel = try #require((fixture["terminal_id"] as? String).flatMap(UUID.init(uuidString:)))
         let workspace = try #require((fixture["workspace_id"] as? String).flatMap(UUID.init(uuidString:)))
         let record = UniConnectLocalWindowRecord(id: panel, boxRoot: "/Users/danielgomezmartin/Desktop/PROYECTOS", tmuxBinding: binding)
