@@ -1223,7 +1223,7 @@ struct UniConnectImportPlanner {
 
     private func isValidTmuxSession(_ value: String) -> Bool {
         let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
-        return !value.isEmpty && value.count <= 40 && value.allSatisfy(allowed.contains)
+        return !value.isEmpty && value.count <= 40 && value.allSatisfy({ allowed.contains($0) })
     }
 
     private func unique<Element: Hashable>(_ values: [Element]) -> [Element] {

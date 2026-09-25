@@ -57,7 +57,7 @@ struct UniConnectSSHEffectiveTarget: Equatable, Hashable, Sendable {
         let allowed = CharacterSet(
             charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._+:-"
         )
-        guard host.unicodeScalars.allSatisfy(allowed.contains) else { return nil }
+        guard host.unicodeScalars.allSatisfy({ allowed.contains($0) }) else { return nil }
         return host.lowercased()
     }
 
@@ -78,6 +78,6 @@ struct UniConnectSSHEffectiveTarget: Equatable, Hashable, Sendable {
         let allowed = CharacterSet(
             charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._+-"
         )
-        return value.unicodeScalars.allSatisfy(allowed.contains) ? value : nil
+        return value.unicodeScalars.allSatisfy({ allowed.contains($0) }) ? value : nil
     }
 }

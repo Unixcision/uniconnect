@@ -315,7 +315,7 @@ struct UniConnectSSHValidatedCommand: Sendable {
     }
 
     private static func isSafeArgument(_ value: String) -> Bool {
-        !value.contains("\0") && !value.unicodeScalars.contains(where: CharacterSet.newlines.contains)
+        !value.contains("\0") && !value.unicodeScalars.contains(where: { CharacterSet.newlines.contains($0) })
     }
 
     private static func areSafeInjectedOptions(_ options: [String]) -> Bool {
@@ -370,7 +370,7 @@ struct UniConnectSSHValidatedCommand: Sendable {
         let allowed = CharacterSet(
             charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789./:-[]"
         )
-        return value.unicodeScalars.allSatisfy(allowed.contains)
+        return value.unicodeScalars.allSatisfy({ allowed.contains($0) })
     }
 
     private static func expandingHome(in value: String, home: String) -> String {

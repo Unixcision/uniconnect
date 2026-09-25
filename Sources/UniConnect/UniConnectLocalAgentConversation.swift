@@ -165,7 +165,7 @@ struct UniConnectLocalAgentConversation: Codable, Equatable, Identifiable, Senda
                 "sshpass",
                 "token",
             ]
-            if components.contains(where: sensitiveComponents.contains) {
+            if components.contains(where: { sensitiveComponents.contains($0) }) {
                 return true
             }
 

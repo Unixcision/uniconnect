@@ -70,6 +70,9 @@ jobs:
       - name: Validate pbxproj objectVersion pin and normalization
         run: ./scripts/check-pbxproj.sh
 
+      - name: Validate no unapplied .contains references (Swift 6.4 -O miscompile)
+        run: ./scripts/lint-unapplied-contains.sh
+
       - name: Validate bash shell integration job control
         run: python3 tests/test_bash_integration_no_done_notifications.py
 

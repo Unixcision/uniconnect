@@ -22417,7 +22417,7 @@ class TerminalController {
             guard let name = (v2RawString(params, "name") ?? v2RawString(params, "title"))?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
                   !name.isEmpty, name.utf8.count <= 512,
-                  !name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
+                  !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
                 return mobileCreationInvalidParameters()
             }
             let kind = v2RawString(params, "kind") ?? "local"

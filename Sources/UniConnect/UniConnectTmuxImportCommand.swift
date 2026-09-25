@@ -20,7 +20,7 @@ enum UniConnectTmuxImportCommand {
 
     private static func isValidSession(_ value: String) -> Bool {
         let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
-        return !value.isEmpty && value.count <= 40 && value.allSatisfy(allowed.contains)
+        return !value.isEmpty && value.count <= 40 && value.allSatisfy({ allowed.contains($0) })
     }
 
     private static func shellQuote(_ value: String) -> String {

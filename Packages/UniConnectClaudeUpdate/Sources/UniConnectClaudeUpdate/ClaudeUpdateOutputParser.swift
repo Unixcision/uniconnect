@@ -88,6 +88,6 @@ public struct ClaudeUpdateOutputParser: Sendable {
             "no update available",
             "no updates available",
         ]
-        return phrases.contains(where: output.contains)
+        return phrases.contains(where: { output.contains($0) })
     }
 }

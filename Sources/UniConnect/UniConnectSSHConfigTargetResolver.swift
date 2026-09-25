@@ -1005,7 +1005,7 @@ actor UniConnectSSHConfigTargetResolver: UniConnectSSHTargetResolving {
                 charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._+,:-[]*?"
             )
             guard !pattern.isEmpty,
-                  pattern.unicodeScalars.allSatisfy(allowed.contains) else {
+                  pattern.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
                 throw ResolutionFailure.indeterminate
             }
             try loader.chargePatternWork(pattern: pattern, candidate: originalHost)
@@ -1089,7 +1089,7 @@ actor UniConnectSSHConfigTargetResolver: UniConnectSSHTargetResolving {
             )
             guard !pattern.isEmpty,
                   pattern.utf8.count <= 1_022,
-                  pattern.unicodeScalars.allSatisfy(allowed.contains) else {
+                  pattern.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
                 throw ResolutionFailure.indeterminate
             }
             try loader.chargePatternWork(pattern: pattern, candidate: candidate)

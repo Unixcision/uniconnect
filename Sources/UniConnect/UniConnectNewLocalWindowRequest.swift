@@ -30,7 +30,7 @@ struct UniConnectNewLocalWindowRequest: Equatable, Sendable {
         let normalizedName = visibleName?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard normalizedName.map({
             $0.utf8.count <= UniConnectLocalWindowRecord.maximumVisibleNameUTF8Bytes
-                && !$0.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+                && !$0.unicodeScalars.contains(where: { scalar in CharacterSet.controlCharacters.contains(scalar) })
         }) ?? true else { return nil }
         self.visibleName = normalizedName?.isEmpty == false
             ? normalizedName!

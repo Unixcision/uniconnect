@@ -52,7 +52,7 @@ enum KeyboardShortcutSettings {
             .focusRightSidebar,
             .toggleRightSidebar,
             .findInDirectory,
-        ].filter(actions.contains)
+        ].filter({ actions.contains($0) })
         let actionSet = Set(colocatedSidebarActions)
         let baseActions = actions.filter { !actionSet.contains($0) }
 

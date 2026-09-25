@@ -276,7 +276,7 @@ public struct KeyboardShortcutsSection: View {
             .focusRightSidebar,
             .toggleRightSidebar,
             .findInDirectory,
-        ].filter(base.contains)
+        ].filter({ base.contains($0) })
         let colocatedSet = Set(colocated)
         let remaining = base.filter { !colocatedSet.contains($0) }
 

@@ -231,7 +231,7 @@ enum UniConnectImportSnapshotMerger {
             order.append(identity)
             return
         }
-        if let successor = referenceOrder.dropFirst(referenceIndex + 1).first(where: order.contains),
+        if let successor = referenceOrder.dropFirst(referenceIndex + 1).first(where: { order.contains($0) }),
            let insertionIndex = order.firstIndex(of: successor) {
             order.insert(identity, at: insertionIndex)
         } else {

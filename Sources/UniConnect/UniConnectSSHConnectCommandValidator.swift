@@ -124,7 +124,7 @@ struct UniConnectSSHConnectCommandValidator: Sendable {
     private func validationResult(for command: String) -> ValidationResult {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .failure(.empty) }
-        guard !command.unicodeScalars.contains(where: CharacterSet.newlines.contains) else {
+        guard !command.unicodeScalars.contains(where: { CharacterSet.newlines.contains($0) }) else {
             return .failure(.lineBreak)
         }
 
@@ -264,7 +264,7 @@ struct UniConnectSSHConnectCommandValidator: Sendable {
                 continue
             }
 
-            guard optionCharacters.allSatisfy(sshNoValueOptions.contains) else {
+            guard optionCharacters.allSatisfy({ sshNoValueOptions.contains($0) }) else {
                 return .unsupportedSSHOption
             }
             guard optionCharacters.allSatisfy({ !incompatibleNoValueOptions.contains($0) }) else {
@@ -328,13 +328,13 @@ struct UniConnectSSHConnectCommandValidator: Sendable {
 
         let usernameCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._+-%")
         if components.count == 2,
-           !components[0].unicodeScalars.allSatisfy(usernameCharacters.contains) {
+           !components[0].unicodeScalars.allSatisfy({ usernameCharacters.contains($0) }) {
             return false
         }
 
         let host = String(components.last ?? "")
         let hostCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._+:%-[]")
-        guard host.unicodeScalars.allSatisfy(hostCharacters.contains) else { return false }
+        guard host.unicodeScalars.allSatisfy({ hostCharacters.contains($0) }) else { return false }
         if host.contains("[") || host.contains("]") {
             guard host.hasPrefix("["), host.hasSuffix("]") else { return false }
             let inner = host.dropFirst().dropLast()
@@ -347,7 +347,7 @@ struct UniConnectSSHConnectCommandValidator: Sendable {
 
     private func isSafeJumpList(_ value: some StringProtocol) -> Bool {
         let jumpCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._+@:%-[],")
-        return !value.isEmpty && value.unicodeScalars.allSatisfy(jumpCharacters.contains)
+        return !value.isEmpty && value.unicodeScalars.allSatisfy({ jumpCharacters.contains($0) })
     }
 
     private func lex(_ command: String) -> LexicalResult {
