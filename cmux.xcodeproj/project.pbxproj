@@ -791,6 +791,8 @@
 		B25547160DB5CC546C7261A7 /* UniConnectCoordinator+RemoteAgents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23719336AFEE791948AACB3B /* UniConnectCoordinator+RemoteAgents.swift */; };
 		9DC5393D7A8B5709EFD12F5C /* UniConnectCoordinator+WindowDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA1BA471D60DC08EB5DF2357 /* UniConnectCoordinator+WindowDetails.swift */; };
 		C0FFEE0600000000000000B1 /* UniConnectCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE0600000000000000A1 /* UniConnectCoordinator.swift */; };
+		A7D15C0000000000000000A2 /* UniConnectDisconnectedTitle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D15C0000000000000000A1 /* UniConnectDisconnectedTitle.swift */; };
+		A7D15C0000000000000000B2 /* UniConnectDisconnectedTitleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D15C0000000000000000B1 /* UniConnectDisconnectedTitleTests.swift */; };
 		D1320AA0D1320AA0D1320AA2 /* UniConnectDockTilePlugin.plugin in Copy Dock Tile Plugin */ = {isa = PBXBuildFile; fileRef = D1320AA0D1320AA0D1320AA5 /* UniConnectDockTilePlugin.plugin */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		D27020000000000000000001 /* UniConnectDocumentReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D27010000000000000000001 /* UniConnectDocumentReconciler.swift */; };
 		D27020000000000000000002 /* UniConnectExistingTmuxRequirement.swift in Sources */ = {isa = PBXBuildFile; fileRef = D27010000000000000000002 /* UniConnectExistingTmuxRequirement.swift */; };
@@ -1823,6 +1825,8 @@
 		23719336AFEE791948AACB3B /* UniConnectCoordinator+RemoteAgents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UniConnectCoordinator+RemoteAgents.swift"; sourceTree = "<group>"; };
 		EA1BA471D60DC08EB5DF2357 /* UniConnectCoordinator+WindowDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UniConnectCoordinator+WindowDetails.swift"; sourceTree = "<group>"; };
 		C0FFEE0600000000000000A1 /* UniConnectCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectCoordinator.swift; sourceTree = "<group>"; };
+		A7D15C0000000000000000A1 /* UniConnectDisconnectedTitle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDisconnectedTitle.swift; sourceTree = "<group>"; };
+		A7D15C0000000000000000B1 /* UniConnectDisconnectedTitleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDisconnectedTitleTests.swift; sourceTree = "<group>"; };
 		D1320AA0D1320AA0D1320AA5 /* UniConnectDockTilePlugin.plugin */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = UniConnectDockTilePlugin.plugin; sourceTree = BUILT_PRODUCTS_DIR; };
 		D27010000000000000000001 /* UniConnectDocumentReconciler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectDocumentReconciler.swift; sourceTree = "<group>"; };
 		D27010000000000000000002 /* UniConnectExistingTmuxRequirement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectExistingTmuxRequirement.swift; sourceTree = "<group>"; };
@@ -2218,6 +2222,7 @@
 				A77D10000000000000000001 /* UniConnectSSHCredentialRecord.swift */,
 				A77D10000000000000000002 /* UniConnectSSHWorkspaceCreationTransaction.swift */,
 				A76C10000000000000000001 /* UniConnectSSHEffectiveTarget.swift */,
+				A7D15C0000000000000000A1 /* UniConnectDisconnectedTitle.swift */,
 				A76C10000000000000000003 /* UniConnectSSHTargetResolutionOutcome.swift */,
 				A76C10000000000000000002 /* UniConnectSSHTargetResolutionRequest.swift */,
 				A76C10000000000000000004 /* UniConnectSSHTargetResolving.swift */,
@@ -2978,6 +2983,7 @@
 			children = (
 				D26E10000000000000000004 /* UniConnectLocalWindowRecordTests.swift */,
 				9A5F65A284521A81E7BBCBC9 /* UniConnectWindowDetailsSnapshotTests.swift */,
+				A7D15C0000000000000000B1 /* UniConnectDisconnectedTitleTests.swift */,
 				554A3E54293382461EB6C7AF /* UniConnectRemoteResumeCommandTests.swift */,
 				FD8AF8F1929ACCC0BC080ECD /* UniConnectRemoteAgentRecordTests.swift */,
 				3FC90235DC6F361282FF1D1C /* UniConnectLocalWindowInterruptionTests.swift */,
@@ -4074,6 +4080,7 @@
 				B25547160DB5CC546C7261A7 /* UniConnectCoordinator+RemoteAgents.swift in Sources */,
 				9DC5393D7A8B5709EFD12F5C /* UniConnectCoordinator+WindowDetails.swift in Sources */,
 				C0FFEE0600000000000000B1 /* UniConnectCoordinator.swift in Sources */,
+				A7D15C0000000000000000A2 /* UniConnectDisconnectedTitle.swift in Sources */,
 				D27020000000000000000001 /* UniConnectDocumentReconciler.swift in Sources */,
 				D27020000000000000000002 /* UniConnectExistingTmuxRequirement.swift in Sources */,
 				D27020000000000000000003 /* UniConnectExistingTmuxVerification.swift in Sources */,
@@ -4514,6 +4521,7 @@
 				D26B40000000000000000003 /* UniConnectClaudeUpdateJournalTests.swift in Sources */,
 				D26B40000000000000000004 /* UniConnectClaudeUpdateLoggerTests.swift in Sources */,
 				D26B40000000000000000005 /* UniConnectControlledProcessRunnerTests.swift in Sources */,
+				A7D15C0000000000000000B2 /* UniConnectDisconnectedTitleTests.swift in Sources */,
 				C0FFEE7900000000000000B1 /* UniConnectImportPlannerTests.swift in Sources */,
 				D27040000000000000000001 /* UniConnectImportTransactionTests.swift in Sources */,
 				A90622000000000000000003 /* UniConnectLocalTmuxIntegrationTests.swift in Sources */,

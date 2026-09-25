@@ -282,17 +282,6 @@ final class UniConnectLiveImportAdapter: UniConnectImportTransactionApplying {
     }
 
     private static func normalizedSSHPanelTitle(_ title: String?) -> String? {
-        let suffixes = [
-            String(
-                localized: "uniconnect.window.disconnectedSuffix",
-                defaultValue: " · disconnected"
-            ),
-            " · disconnected",
-            " · desconectada",
-        ]
-        return suffixes.reduce(title) { partial, suffix in
-            guard let partial, partial.hasSuffix(suffix) else { return partial }
-            return String(partial.dropLast(suffix.count))
-        }
+        title.map { UniConnectDisconnectedTitle().stripped($0) }
     }
 }

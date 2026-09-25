@@ -2167,6 +2167,16 @@ extension Workspace {
             }
             terminalPanel.restoreSessionTextBoxDraft(snapshot.terminal?.textBoxDraft)
             applySessionPanelMetadata(snapshot, toPanelId: terminalPanel.id)
+            if requiresUniConnectSSHAttach {
+                let savedTitle = panelCustomTitles[terminalPanel.id]
+                let restoredTitle = UniConnectDisconnectedTitle().restoredTitle(
+                    savedTitle,
+                    attaches: !uniConnectSSHRestoreUnavailable
+                )
+                if restoredTitle != savedTitle {
+                    setPanelCustomTitle(panelId: terminalPanel.id, title: restoredTitle)
+                }
+            }
             return terminalPanel.id
         case .browser:
             guard let browserPanel = newBrowserSurface(

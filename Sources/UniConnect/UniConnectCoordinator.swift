@@ -2703,15 +2703,9 @@ final class UniConnectCoordinator: ObservableObject {
             finishReconnectFlight(flight)
             return
         }
-        let disconnectedSuffix = String(
-            localized: "uniconnect.window.disconnectedSuffix",
-            defaultValue: " · disconnected"
-        )
-        let title = [disconnectedSuffix, " · disconnected", " · desconectada"].reduce(
+        let title = UniConnectDisconnectedTitle().stripped(
             workspace.panelCustomTitles[panelId] ?? workspace.panelTitles[panelId] ?? session
-        ) { partial, suffix in
-            partial.hasSuffix(suffix) ? String(partial.dropLast(suffix.count)) : partial
-        }
+        )
         let bridge = claudeBridgePlan(
             workspace: workspace,
             panelID: panelId,
@@ -5446,24 +5440,12 @@ extension Workspace {
     /// Marks a tmux-bound window whose ssh client died so the tab itself says so.
     func uniConnectMarkDisconnected(panelId: UUID, exitCode: UInt32? = nil) {
         guard uniConnectTmuxSessionsByPanelId[panelId] != nil else { return }
-        let suffix = String(
-            localized: "uniconnect.window.disconnectedSuffix",
-            defaultValue: " · disconnected"
-        )
-        let localizedSuffixes = [
-            suffix,
-            " · disconnected",
-            " · desconectada"
-        ]
-        let base = localizedSuffixes.reduce(
-            panelCustomTitles[panelId]
-                ?? panelTitles[panelId]
-                ?? String(localized: "uniconnect.window.fallbackName", defaultValue: "window")
-        ) { partial, candidate in
-            partial.hasSuffix(candidate) ? String(partial.dropLast(candidate.count)) : partial
-        }
-        if !base.hasSuffix(suffix) {
-            setPanelCustomTitle(panelId: panelId, title: base + suffix)
+        let current = panelCustomTitles[panelId]
+            ?? panelTitles[panelId]
+            ?? String(localized: "uniconnect.window.fallbackName", defaultValue: "window")
+        let marked = UniConnectDisconnectedTitle().marked(current)
+        if marked != current {
+            setPanelCustomTitle(panelId: panelId, title: marked)
         }
         uniConnectProfile?.touch()
         uniConnectDisconnectedPanelIds.insert(panelId)
