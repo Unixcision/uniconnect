@@ -73,17 +73,17 @@ class AutomaticReconnectTests(unittest.TestCase):
         if self.watch:
             self.watch()
 
-    def start(self, scripts, *, kind="ssh", create=False):
+    def start(self, scripts, *, kind="ssh", create=False, endpoint=("fixture",), probe=None):
         def prepare(workspace, record, connect, create):
             self.calls.append(create)
             command = scripts[min(len(self.calls) - 1, len(scripts) - 1)]
             launch = TerminalLaunch(["/bin/sh", "-c", command], self.directory.name, dict(os.environ))
-            return launch, [("tmux", ("fixture",), "fixture", "window")]
+            return launch, [("tmux", endpoint, "fixture", "window")]
         self.surface = TerminalSurface(
             self.owner, {"id": "workspace", "kind": kind},
             {"id": "window", "tmux": "window", "name": "Retry fixture", "cwd": self.directory.name},
             create=create, clock=lambda: self.timer.now, schedule=self.timer.schedule,
-            cancel_timer=self.timer.cancel, launch_preparer=prepare,
+            cancel_timer=self.timer.cancel, launch_preparer=prepare, server_probe=probe,
         )
         self.window.add(self.surface)
         self.window.show_all()
@@ -126,6 +126,52 @@ class AutomaticReconnectTests(unittest.TestCase):
         self.assertIn("Reconnect attempts exhausted", self.surface.status_label.get_text())
         self.assertFalse(self.owner._terminal_owners)
         self.assertFalse(self.timer.pending)
+
+    def exhaust_with_server_probe(self, answers):
+        """Ventana SSH con destino real que agota sus 6 reintentos; la sonda es falsa (sin red)."""
+        self.probes = []
+
+        def probe(host, port, timeout, done):
+            self.probes.append((host, port, timeout))
+            done(answers.pop(0) if answers else False)
+
+        self.start(["exit 255"], create=True, endpoint=("dgomezm", "100.123.234.20", "22"), probe=probe)
+        self.until(lambda: self.surface.status == "Reconnecting")
+        for index, delay in enumerate((1, 2, 4, 8, 16, 16)):
+            self.timer.advance(delay)
+            wanted = "Disconnected" if index == 5 else "Reconnecting"
+            self.until(lambda: len(self.calls) == index + 2 and self.surface.status == wanted)
+
+    def test_exhausted_window_waits_for_its_server_and_rearms_when_it_answers(self):
+        # ssh-server-return.v1: el MINIPC no contestaba al agotar (Tailscale sin levantar) y luego sí.
+        self.exhaust_with_server_probe([False, True])
+        self.assertEqual(self.probes, [("100.123.234.20", 22, 5)])
+        self.assertIn("Esperando a que vuelva el servidor", self.surface.status_label.get_text())
+        self.assertEqual([item[1] for item in self.timer.pending.values()], [30])
+        self.timer.advance(30)
+        self.until(lambda: len(self.calls) == 8 and self.surface.status == "Reconnecting")
+        self.assertEqual(len(self.probes), 2)
+        self.assertFalse(self.calls[-1])
+
+    def test_answering_server_gets_one_extra_round_then_stops(self):
+        # Contesta pero no engancha (p. ej. contraseña): un solo rearme, nunca un bucle.
+        self.exhaust_with_server_probe([True, True])
+        self.until(lambda: len(self.calls) == 8 and self.surface.status == "Reconnecting")
+        for index, delay in enumerate((1, 2, 4, 8, 16, 16)):
+            self.timer.advance(delay)
+            wanted = "Disconnected" if index == 5 else "Reconnecting"
+            self.until(lambda: len(self.calls) == index + 9 and self.surface.status == wanted)
+        self.assertEqual(len(self.probes), 2)
+        self.assertEqual(len(self.calls), 14)
+        self.assertIn("Reconnect attempts exhausted", self.surface.status_label.get_text())
+        self.assertFalse(self.timer.pending)
+
+    def test_manual_reconnect_forgets_the_server_wait(self):
+        self.exhaust_with_server_probe([False])
+        self.assertEqual([item[1] for item in self.timer.pending.values()], [30])
+        self.surface.launch()
+        self.until(lambda: len(self.calls) == 8)
+        self.assertNotIn(30, [item[1] for item in self.timer.pending.values()])
 
     def test_detach_missing_tmux_and_local_failures_do_not_retry(self):
         for kind, code in (("ssh", 0), ("ssh", 1), ("ssh", 72), ("local", 255)):

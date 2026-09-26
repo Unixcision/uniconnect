@@ -20,11 +20,14 @@ from .transport import SSHCommand, Transport, TransportError, terminal_launch
 from .terminal_copy import TerminalCopy
 from .selection_drag import SelectionDrag
 from .clipboard_text import publish_text
+from .server_return import (CHECK_INTERVAL_SECONDS, KEEP_WAITING, PROBE_TIMEOUT_SECONDS, REARM,
+                            ServerReturnPolicy, probe_ssh_port)
 
 
 class TerminalSurface(Gtk.Box):
     def __init__(self, owner, workspace, window, create=False, *, clock=time.monotonic,
-                 schedule=None, cancel_timer=None, launch_preparer=None, auto_launch=True):
+                 schedule=None, cancel_timer=None, launch_preparer=None, auto_launch=True,
+                 server_probe=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.owner, self.workspace, self.record = owner, workspace, window
         self.pid, self.generation, self.disposed = 0, 0, False
@@ -47,6 +50,9 @@ class TerminalSurface(Gtk.Box):
         self._outage_started = None
         self._retry_attempts = 0
         self._allow_auto_retry = False
+        self._server_probe = server_probe or probe_ssh_port
+        self._server_policy = None
+        self._server_source = None
         self.status = "Connecting"
         self.terminal = Vte.Terminal()
         self.selection_drag = SelectionDrag(self)
@@ -187,6 +193,7 @@ class TerminalSurface(Gtk.Box):
         """An explicit reconnect starts a new bounded recovery budget."""
         self._reset_selection = self.generation > 0 and not create
         self._cancel_reconnect(reset=True)
+        self._server_policy = None
         if self.selection_drag.busy:
             # An in-flight SSH selection must finish before reconnect cancels
             # copy-mode; otherwise its late begin could re-enter that mode.
@@ -377,16 +384,20 @@ class TerminalSurface(Gtk.Box):
             self.owner.persist()
             return
         transient = code == 255 or (code == 1 and server_died)
+        endpoint = None
         if self._allow_auto_retry and self.workspace["kind"] == "ssh" and transient:
             if self._schedule_retry():
                 self.owner.persist()
                 return
             detail = self.owner._("Reconnect attempts exhausted")
+            endpoint = self._ssh_endpoint()
         else:
             detail = self.owner._("Exit {code}").format(code=code)
             self._cancel_reconnect(reset=True)
         self._release_ownership()
         self.update_status("Disconnected", detail)
+        if endpoint is not None:
+            self._wait_for_server(endpoint)
         self.owner.persist()
 
     def _server_crash_marker_count(self):
@@ -408,6 +419,7 @@ class TerminalSurface(Gtk.Box):
     def _cancel_reconnect(self, *, reset):
         self._clear_timer("_retry_source")
         self._clear_timer("_stable_source")
+        self._clear_timer("_server_source")
         if reset:
             self._outage_started = None
             self._retry_attempts = 0
@@ -427,8 +439,11 @@ class TerminalSurface(Gtk.Box):
                 return False
             self._retry_source = None
             if self._clock() - self._outage_started >= 60:
+                endpoint = self._ssh_endpoint()
                 self._release_ownership()
                 self.update_status("Disconnected", self.owner._("Reconnect attempts exhausted"))
+                if endpoint is not None:
+                    self._wait_for_server(endpoint)
                 self.owner.persist()
                 return False
             self._retry_attempts += 1
@@ -449,11 +464,56 @@ class TerminalSurface(Gtk.Box):
                 self._stable_source = None
                 self._outage_started = None
                 self._retry_attempts = 0
+                self._server_policy = None
             return False
 
         # Spawn success only proves that the local ssh process exists. Requiring a
         # full minute alive prevents ConnectTimeout failures from resetting budget.
         self._stable_source = self._schedule(60, stable)
+
+    def _ssh_endpoint(self):
+        """(host, puerto) del destino SSH efectivo de la ventana, o None si no se conoce."""
+        if self.workspace.get("kind") != "ssh":
+            return None
+        for key in self._ownership_keys:
+            if len(key) >= 2 and key[0] == "tmux" and isinstance(key[1], tuple) and len(key[1]) == 3:
+                try:
+                    return str(key[1][1]), int(key[1][2])
+                except (TypeError, ValueError):
+                    return None
+        return None
+
+    def _wait_for_server(self, endpoint):
+        """Reintentos agotados: vigila el servidor y rearma cuando vuelve (ssh-server-return.v1)."""
+        if self._server_policy is None:
+            self._server_policy = ServerReturnPolicy()
+        self._clear_timer("_server_source")
+        self._check_server(self.generation, endpoint)
+
+    def _waiting_is_stale(self, generation):
+        return (self.disposed or generation != self.generation or self.pid
+                or self._pending_launch is not None or self._server_policy is None)
+
+    def _check_server(self, generation, endpoint):
+        self._server_source = None
+        if not self._waiting_is_stale(generation):
+            host, port = endpoint
+            self._server_probe(host, port, PROBE_TIMEOUT_SECONDS,
+                               lambda answers: self._server_checked(generation, endpoint, answers))
+        return False
+
+    def _server_checked(self, generation, endpoint, answers):
+        if self._waiting_is_stale(generation):
+            return
+        decision = self._server_policy.observe(answers)
+        if decision == KEEP_WAITING:
+            self._server_source = self._schedule(
+                CHECK_INTERVAL_SECONDS, lambda: self._check_server(generation, endpoint))
+            self.update_status("Disconnected", self.owner._("Esperando a que vuelva el servidor…"))
+        elif decision == REARM:
+            # Presupuesto nuevo y solo reenganche a la sesión tmux que ya existe.
+            self._cancel_reconnect(reset=True)
+            self._queue_launch(False)
 
     def _release_ownership(self):
         registry = getattr(self.owner, "_terminal_owners", {})
@@ -479,6 +539,7 @@ class TerminalSurface(Gtk.Box):
             self.history_view.destroy()
         self._allow_auto_retry = False
         self._cancel_reconnect(reset=True)
+        self._server_policy = None
         self.generation += 1
         self._pending_launch = None
         if self.pid:

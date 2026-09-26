@@ -936,18 +936,23 @@
 		D26F20000000000000000019 /* UniConnectSSHCredentialEditTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26F10000000000000000019 /* UniConnectSSHCredentialEditTransaction.swift */; };
 		A77D20000000000000000001 /* UniConnectSSHCredentialRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = A77D10000000000000000001 /* UniConnectSSHCredentialRecord.swift */; };
 		A76C20000000000000000001 /* UniConnectSSHEffectiveTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A76C10000000000000000001 /* UniConnectSSHEffectiveTarget.swift */; };
+		A7D15C0000000000000000D2 /* UniConnectSSHEndpointProbing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D15C0000000000000000C2 /* UniConnectSSHEndpointProbing.swift */; };
 		D26B20000000000000000042 /* UniConnectSSHProcessInvocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000042 /* UniConnectSSHProcessInvocation.swift */; };
 		D26B40000000000000000007 /* UniConnectSSHProcessInvocationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B30000000000000000007 /* UniConnectSSHProcessInvocationTests.swift */; };
 		D26F20000000000000000014 /* UniConnectSSHProcessTerminationPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26F10000000000000000014 /* UniConnectSSHProcessTerminationPlan.swift */; };
 		D26F2000000000000000001A /* UniConnectSSHReconnectFlightRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26F1000000000000000001A /* UniConnectSSHReconnectFlightRegistry.swift */; };
 		D26F20000000000000000013 /* UniConnectSSHReconnectPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26F10000000000000000013 /* UniConnectSSHReconnectPolicy.swift */; };
 		D26F20000000000000000012 /* UniConnectSSHReconnectTrigger.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26F10000000000000000012 /* UniConnectSSHReconnectTrigger.swift */; };
+		A7D15C0000000000000000D1 /* UniConnectSSHServerReturnPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D15C0000000000000000C1 /* UniConnectSSHServerReturnPolicy.swift */; };
+		A7D15C0000000000000000E2 /* UniConnectSSHServerReturnTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D15C0000000000000000E1 /* UniConnectSSHServerReturnTests.swift */; };
+		A7D15C0000000000000000D4 /* UniConnectSSHServerWaiter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D15C0000000000000000C4 /* UniConnectSSHServerWaiter.swift */; };
 		D26F20000000000000000018 /* UniConnectSSHTargetKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26F10000000000000000018 /* UniConnectSSHTargetKey.swift */; };
 		A76C20000000000000000003 /* UniConnectSSHTargetResolutionOutcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A76C10000000000000000003 /* UniConnectSSHTargetResolutionOutcome.swift */; };
 		A76C20000000000000000002 /* UniConnectSSHTargetResolutionRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A76C10000000000000000002 /* UniConnectSSHTargetResolutionRequest.swift */; };
 		A76C20000000000000000004 /* UniConnectSSHTargetResolving.swift in Sources */ = {isa = PBXBuildFile; fileRef = A76C10000000000000000004 /* UniConnectSSHTargetResolving.swift */; };
 		E93A01000000000000000001 /* UniConnectSSHValidatedCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = E93A02000000000000000001 /* UniConnectSSHValidatedCommand.swift */; };
 		A77D20000000000000000002 /* UniConnectSSHWorkspaceCreationTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = A77D10000000000000000002 /* UniConnectSSHWorkspaceCreationTransaction.swift */; };
+		A7D15C0000000000000000D3 /* UniConnectTCPEndpointProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D15C0000000000000000C3 /* UniConnectTCPEndpointProbe.swift */; };
 		C0FFEE7700000000000000B1 /* UniConnectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE7700000000000000A1 /* UniConnectTests.swift */; };
 		D27020000000000000000015 /* UniConnectTmuxImportCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = D27010000000000000000015 /* UniConnectTmuxImportCommand.swift */; };
 		D27020000000000000000016 /* UniConnectTmuxImportPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D27010000000000000000016 /* UniConnectTmuxImportPolicy.swift */; };
@@ -1970,18 +1975,23 @@
 		D26F10000000000000000019 /* UniConnectSSHCredentialEditTransaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHCredentialEditTransaction.swift; sourceTree = "<group>"; };
 		A77D10000000000000000001 /* UniConnectSSHCredentialRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHCredentialRecord.swift; sourceTree = "<group>"; };
 		A76C10000000000000000001 /* UniConnectSSHEffectiveTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHEffectiveTarget.swift; sourceTree = "<group>"; };
+		A7D15C0000000000000000C2 /* UniConnectSSHEndpointProbing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHEndpointProbing.swift; sourceTree = "<group>"; };
 		D26B10000000000000000042 /* UniConnectSSHProcessInvocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHProcessInvocation.swift; sourceTree = "<group>"; };
 		D26B30000000000000000007 /* UniConnectSSHProcessInvocationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHProcessInvocationTests.swift; sourceTree = "<group>"; };
 		D26F10000000000000000014 /* UniConnectSSHProcessTerminationPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHProcessTerminationPlan.swift; sourceTree = "<group>"; };
 		D26F1000000000000000001A /* UniConnectSSHReconnectFlightRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHReconnectFlightRegistry.swift; sourceTree = "<group>"; };
 		D26F10000000000000000013 /* UniConnectSSHReconnectPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHReconnectPolicy.swift; sourceTree = "<group>"; };
 		D26F10000000000000000012 /* UniConnectSSHReconnectTrigger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHReconnectTrigger.swift; sourceTree = "<group>"; };
+		A7D15C0000000000000000C1 /* UniConnectSSHServerReturnPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHServerReturnPolicy.swift; sourceTree = "<group>"; };
+		A7D15C0000000000000000E1 /* UniConnectSSHServerReturnTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHServerReturnTests.swift; sourceTree = "<group>"; };
+		A7D15C0000000000000000C4 /* UniConnectSSHServerWaiter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHServerWaiter.swift; sourceTree = "<group>"; };
 		D26F10000000000000000018 /* UniConnectSSHTargetKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHTargetKey.swift; sourceTree = "<group>"; };
 		A76C10000000000000000003 /* UniConnectSSHTargetResolutionOutcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHTargetResolutionOutcome.swift; sourceTree = "<group>"; };
 		A76C10000000000000000002 /* UniConnectSSHTargetResolutionRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHTargetResolutionRequest.swift; sourceTree = "<group>"; };
 		A76C10000000000000000004 /* UniConnectSSHTargetResolving.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHTargetResolving.swift; sourceTree = "<group>"; };
 		E93A02000000000000000001 /* UniConnectSSHValidatedCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHValidatedCommand.swift; sourceTree = "<group>"; };
 		A77D10000000000000000002 /* UniConnectSSHWorkspaceCreationTransaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectSSHWorkspaceCreationTransaction.swift; sourceTree = "<group>"; };
+		A7D15C0000000000000000C3 /* UniConnectTCPEndpointProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectTCPEndpointProbe.swift; sourceTree = "<group>"; };
 		C0FFEE7700000000000000A1 /* UniConnectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectTests.swift; sourceTree = "<group>"; };
 		D27010000000000000000015 /* UniConnectTmuxImportCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectTmuxImportCommand.swift; sourceTree = "<group>"; };
 		D27010000000000000000016 /* UniConnectTmuxImportPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectTmuxImportPolicy.swift; sourceTree = "<group>"; };
@@ -2223,6 +2233,10 @@
 				A77D10000000000000000002 /* UniConnectSSHWorkspaceCreationTransaction.swift */,
 				A76C10000000000000000001 /* UniConnectSSHEffectiveTarget.swift */,
 				A7D15C0000000000000000A1 /* UniConnectDisconnectedTitle.swift */,
+				A7D15C0000000000000000C1 /* UniConnectSSHServerReturnPolicy.swift */,
+				A7D15C0000000000000000C2 /* UniConnectSSHEndpointProbing.swift */,
+				A7D15C0000000000000000C3 /* UniConnectTCPEndpointProbe.swift */,
+				A7D15C0000000000000000C4 /* UniConnectSSHServerWaiter.swift */,
 				A76C10000000000000000003 /* UniConnectSSHTargetResolutionOutcome.swift */,
 				A76C10000000000000000002 /* UniConnectSSHTargetResolutionRequest.swift */,
 				A76C10000000000000000004 /* UniConnectSSHTargetResolving.swift */,
@@ -2984,6 +2998,7 @@
 				D26E10000000000000000004 /* UniConnectLocalWindowRecordTests.swift */,
 				9A5F65A284521A81E7BBCBC9 /* UniConnectWindowDetailsSnapshotTests.swift */,
 				A7D15C0000000000000000B1 /* UniConnectDisconnectedTitleTests.swift */,
+				A7D15C0000000000000000E1 /* UniConnectSSHServerReturnTests.swift */,
 				554A3E54293382461EB6C7AF /* UniConnectRemoteResumeCommandTests.swift */,
 				FD8AF8F1929ACCC0BC080ECD /* UniConnectRemoteAgentRecordTests.swift */,
 				3FC90235DC6F361282FF1D1C /* UniConnectLocalWindowInterruptionTests.swift */,
@@ -4201,17 +4216,21 @@
 				D26F20000000000000000019 /* UniConnectSSHCredentialEditTransaction.swift in Sources */,
 				A77D20000000000000000001 /* UniConnectSSHCredentialRecord.swift in Sources */,
 				A76C20000000000000000001 /* UniConnectSSHEffectiveTarget.swift in Sources */,
+				A7D15C0000000000000000D2 /* UniConnectSSHEndpointProbing.swift in Sources */,
 				D26B20000000000000000042 /* UniConnectSSHProcessInvocation.swift in Sources */,
 				D26F20000000000000000014 /* UniConnectSSHProcessTerminationPlan.swift in Sources */,
 				D26F2000000000000000001A /* UniConnectSSHReconnectFlightRegistry.swift in Sources */,
 				D26F20000000000000000013 /* UniConnectSSHReconnectPolicy.swift in Sources */,
 				D26F20000000000000000012 /* UniConnectSSHReconnectTrigger.swift in Sources */,
+				A7D15C0000000000000000D1 /* UniConnectSSHServerReturnPolicy.swift in Sources */,
+				A7D15C0000000000000000D4 /* UniConnectSSHServerWaiter.swift in Sources */,
 				D26F20000000000000000018 /* UniConnectSSHTargetKey.swift in Sources */,
 				A76C20000000000000000003 /* UniConnectSSHTargetResolutionOutcome.swift in Sources */,
 				A76C20000000000000000002 /* UniConnectSSHTargetResolutionRequest.swift in Sources */,
 				A76C20000000000000000004 /* UniConnectSSHTargetResolving.swift in Sources */,
 				E93A01000000000000000001 /* UniConnectSSHValidatedCommand.swift in Sources */,
 				A77D20000000000000000002 /* UniConnectSSHWorkspaceCreationTransaction.swift in Sources */,
+				A7D15C0000000000000000D3 /* UniConnectTCPEndpointProbe.swift in Sources */,
 				D27020000000000000000015 /* UniConnectTmuxImportCommand.swift in Sources */,
 				D27020000000000000000016 /* UniConnectTmuxImportPolicy.swift in Sources */,
 				C0FFEE0100000000000000B1 /* UniConnectVault.swift in Sources */,
@@ -4545,6 +4564,7 @@
 				A76C40000000000000000001 /* UniConnectSSHConfigTargetResolverTests.swift in Sources */,
 				C0FFEE7800000000000000B1 /* UniConnectSSHConnectCommandValidatorTests.swift in Sources */,
 				D26B40000000000000000007 /* UniConnectSSHProcessInvocationTests.swift in Sources */,
+				A7D15C0000000000000000E2 /* UniConnectSSHServerReturnTests.swift in Sources */,
 				C0FFEE7700000000000000B1 /* UniConnectTests.swift in Sources */,
 				A77D40000000000000000001 /* UniConnectVaultCredentialRecordTests.swift in Sources */,
 				D1B955ABCBD142ECCE67BB62 /* UniConnectWindowDetailsSnapshotTests.swift in Sources */,

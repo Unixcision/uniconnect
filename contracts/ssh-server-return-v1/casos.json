@@ -1,0 +1,43 @@
+{
+  "contrato": "ssh-server-return.v1",
+  "descripcion": "Qué hace una ventana SSH cuando se le acaban los reintentos automáticos. Cada caso es la secuencia de comprobaciones del puerto SSH (true = el servidor contesta por TCP) que ve la MISMA ventana, y lo que decide tras cada una. El estado se conserva entre esperas y solo se borra cuando la ventana vuelve a quedar estable o alguien la reconecta a mano.",
+  "decisiones": {
+    "rearmar": "Nuevo presupuesto de reintentos y reconexión inmediata.",
+    "esperar": "Sigue caída; se vuelve a comprobar en el siguiente intervalo.",
+    "parar": "Se deja para la persona: el servidor contestaba y aun así no enganchó."
+  },
+  "intervalo_segundos": 30,
+  "timeout_sonda_segundos": 5,
+  "casos": [
+    {
+      "nombre": "red_caida_al_arrancar_y_vuelve",
+      "explicacion": "Anoche: Tailscale no estaba al arrancar la app; el MINIPC no contestaba y luego sí.",
+      "observaciones": [false, false, true],
+      "decisiones": ["esperar", "esperar", "rearmar"]
+    },
+    {
+      "nombre": "contestaba_al_agotar",
+      "explicacion": "El puerto contesta pero no engancha (p. ej. contraseña): un solo intento extra y luego parar, nunca un bucle.",
+      "observaciones": [true, true],
+      "decisiones": ["rearmar", "parar"]
+    },
+    {
+      "nombre": "tras_el_extra_una_caida_real_si_rearma",
+      "explicacion": "Gastado el intento extra, una caída de red de verdad sigue rearmando al volver.",
+      "observaciones": [true, false, true],
+      "decisiones": ["rearmar", "esperar", "rearmar"]
+    },
+    {
+      "nombre": "caidas_repetidas",
+      "explicacion": "Cada vuelta del servidor tras una caída rearma una vez.",
+      "observaciones": [false, true, false, true],
+      "decisiones": ["esperar", "rearmar", "esperar", "rearmar"]
+    },
+    {
+      "nombre": "tras_rearmar_por_caida_contesta_y_no_engancha",
+      "explicacion": "Volvió la red pero el reintento no engancha y el puerto contesta: aún le queda el intento extra, y después para.",
+      "observaciones": [false, true, true, true],
+      "decisiones": ["esperar", "rearmar", "rearmar", "parar"]
+    }
+  ]
+}

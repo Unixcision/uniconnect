@@ -2587,6 +2587,10 @@ final class UniConnectCoordinator: ObservableObject {
     private var reconnectFlightLeases: [ReconnectKey: UniConnectSSHReconnectFlightRegistry.Lease] = [:]
     private var reconnectAllTask: Task<Void, Never>?
     private var reconnectAllGeneration: UInt64 = 0
+    /// Windows whose automatic budget ran out wait here for their server (ssh-server-return.v1).
+    private lazy var serverWaiter = UniConnectSSHServerWaiter()
+    /// Targets stopped by a permanent launcher failure never wait for their server.
+    private var reconnectStoppedPermanently: Set<ReconnectKey> = []
     /// Re-entrancy guard: closing the dead panel and creating the replacement both select
     /// tabs, and bonsplit reports programmatic selections exactly like user clicks. Without
     /// this the app recursed until the stack blew up.
@@ -2666,7 +2670,14 @@ final class UniConnectCoordinator: ObservableObject {
             attemptsSpent: reconnectAttempts[key] ?? 0,
             maximumAutomaticAttempts: Self.maxReconnectAttempts,
             hasReconnectInFlight: reconnectFlights.contains(key)
-        ) else { return }
+        ) else {
+            if !reconnectFlights.contains(key),
+               (reconnectAttempts[key] ?? 0) >= Self.maxReconnectAttempts,
+               !reconnectStoppedPermanently.contains(key) {
+                waitForServerReturn(key: key, panelId: panelId, workspaceID: workspace.id)
+            }
+            return
+        }
         reconnectAttempts[key] = attempt
         let delay = Double(attempt) * 4.0
         reconnectTasks[key] = Task { @MainActor [weak self, weak workspace] in
@@ -2685,6 +2696,28 @@ final class UniConnectCoordinator: ObservableObject {
             }
             self.reconnect(panelId: panelId, in: workspace, attempt: attempt, key: key)
         }
+    }
+
+    /// Once a window's automatic budget is spent, waits for its server to answer again and then
+    /// re-arms it (ssh-server-return.v1): a Mac that boots before its VPN no longer leaves the
+    /// windows of that server dead until someone reconnects them by hand.
+    private func waitForServerReturn(key: ReconnectKey, panelId: UUID, workspaceID: UUID) {
+        let findWorkspace: @MainActor () -> Workspace? = { [weak self] in
+            self?.allTabManagers().flatMap(\.tabs).first(where: { $0.id == workspaceID })
+        }
+        serverWaiter.wait(
+            for: key,
+            isRelevant: { [weak self] in
+                guard let self, let workspace = findWorkspace() else { return false }
+                return workspace.uniConnectDisconnectedPanelIds.contains(panelId)
+                    && self.sshTargetKey(panelID: panelId, in: workspace) == key
+            },
+            onReturn: { [weak self] in
+                guard let self, let workspace = findWorkspace() else { return }
+                self.reconnectAttempts.removeValue(forKey: key)
+                self.scheduleReconnect(panelId: panelId, in: workspace)
+            }
+        )
     }
 
     private func reconnect(panelId: UUID, in workspace: Workspace, attempt: Int, key: ReconnectKey) {
@@ -2786,6 +2819,8 @@ final class UniConnectCoordinator: ObservableObject {
                   workspace.uniConnectTmuxSessionsByPanelId[panelId] == key.tmuxSession,
                   !workspace.uniConnectDisconnectedPanelIds.contains(panelId) else { return }
             self.reconnectAttempts.removeValue(forKey: key)
+            self.serverWaiter.forget(key)
+            self.reconnectStoppedPermanently.remove(key)
         }
     }
 
@@ -2813,6 +2848,8 @@ final class UniConnectCoordinator: ObservableObject {
         reconnectTasks.removeValue(forKey: key)?.cancel()
         cancelReconnectStability(for: key)
         reconnectAttempts[key] = Self.maxReconnectAttempts
+        reconnectStoppedPermanently.insert(key)
+        serverWaiter.forget(key)
     }
 
     /// Reconnects one SSH/tmux window. A user-forced call also replaces a hung connection
@@ -2833,6 +2870,8 @@ final class UniConnectCoordinator: ObservableObject {
             reconnectTasks.removeValue(forKey: key)?.cancel()
             cancelReconnectStability(for: key)
             reconnectAttempts.removeValue(forKey: key)
+            reconnectStoppedPermanently.remove(key)
+            serverWaiter.forget(key)
         }
         guard let attempt = UniConnectSSHReconnectPolicy.nextAttempt(
             trigger: trigger,
