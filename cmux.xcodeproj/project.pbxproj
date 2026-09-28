@@ -361,6 +361,7 @@
 		A11EAF000000000000000000 /* GhosttyNotificationDispatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11EAF000000000000000001 /* GhosttyNotificationDispatcherTests.swift */; };
 		D3571000A1B2C3D4E5F60718 /* GhosttyNSView+IMEComposition.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3571001A1B2C3D4E5F60718 /* GhosttyNSView+IMEComposition.swift */; };
 		D7AB00000000000000000005 /* GhosttyNSView+MoveTabToNewWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7AB00000000000000000006 /* GhosttyNSView+MoveTabToNewWorkspace.swift */; };
+		C0DE12220000000000000003 /* GhosttyNumericLocaleController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE12220000000000000004 /* GhosttyNumericLocaleController.swift */; };
 		3069F1D10000000000000003 /* GhosttyPasteboardFidelityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3069F1D10000000000000004 /* GhosttyPasteboardFidelityTests.swift */; };
 		B84BD7AD94EE485B8DDAB6FF /* GhosttySurfaceConfigurationRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DAB808A8EC74C40B95F7672 /* GhosttySurfaceConfigurationRefresh.swift */; };
 		A11EAC000000000000000000 /* GhosttyTerminalAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11EAC000000000000000001 /* GhosttyTerminalAppearance.swift */; };
@@ -1413,6 +1414,7 @@
 		A11EAF000000000000000001 /* GhosttyNotificationDispatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyNotificationDispatcherTests.swift; sourceTree = "<group>"; };
 		D3571001A1B2C3D4E5F60718 /* GhosttyNSView+IMEComposition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GhosttyNSView+IMEComposition.swift"; sourceTree = "<group>"; };
 		D7AB00000000000000000006 /* GhosttyNSView+MoveTabToNewWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GhosttyNSView+MoveTabToNewWorkspace.swift"; sourceTree = "<group>"; };
+		C0DE12220000000000000004 /* GhosttyNumericLocaleController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyNumericLocaleController.swift; sourceTree = "<group>"; };
 		3069F1D10000000000000004 /* GhosttyPasteboardFidelityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyPasteboardFidelityTests.swift; sourceTree = "<group>"; };
 		9DAB808A8EC74C40B95F7672 /* GhosttySurfaceConfigurationRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/GhosttySurfaceConfigurationRefresh.swift; sourceTree = "<group>"; };
 		A11EAC000000000000000001 /* GhosttyTerminalAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalAppearance.swift; sourceTree = "<group>"; };
@@ -2707,6 +2709,7 @@
 				C4041001000000000000001A /* CommandClickFileOpenRouter.swift */,
 				A5001015 /* GhosttyTerminalView.swift */,
 				C13519000000000000000002 /* TerminalStartupEnvironment.swift */,
+				C0DE12220000000000000004 /* GhosttyNumericLocaleController.swift */,
 				C13519000000000000000006 /* RestorableAgentTypes.swift */,
 				D36A00030000000000000002 /* AgentHibernationLifecycleState.swift */,
 				B3575000000000000000000B /* SessionIndexModels.swift */,
@@ -3797,6 +3800,7 @@
 				C3873003C3873003C3873003 /* GhosttyCrashReportMetadata.swift in Sources */,
 				D3571000A1B2C3D4E5F60718 /* GhosttyNSView+IMEComposition.swift in Sources */,
 				D7AB00000000000000000005 /* GhosttyNSView+MoveTabToNewWorkspace.swift in Sources */,
+				C0DE12220000000000000003 /* GhosttyNumericLocaleController.swift in Sources */,
 				B84BD7AD94EE485B8DDAB6FF /* GhosttySurfaceConfigurationRefresh.swift in Sources */,
 				A11EAC000000000000000000 /* GhosttyTerminalAppearance.swift in Sources */,
 				A5001005 /* GhosttyTerminalView.swift in Sources */,
