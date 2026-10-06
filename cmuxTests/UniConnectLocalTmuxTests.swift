@@ -224,6 +224,52 @@ struct UniConnectLocalTmuxTests {
         #expect(await commands.targets().allSatisfy { $0 == "=owned:" })
     }
 
+    @Test("macOS 27: con la raíz del panel ilegible, la identidad sale de la sesión tmux", arguments: [
+        "sessionMatches", "sessionNamesOtherPanel", "sessionWithoutIdentity", "readableRootNamesOtherPanel",
+    ])
+    func verifiesOwnerWhenThePaneRootHidesItsEnvironment(_ scenario: String) async throws {
+        let workspace = UUID(), panel = UUID(), generation = UUID()
+        let binding = try #require(UniConnectLocalTmuxBinding(name: "owned", socketName: "test-local"))
+        let owner = UniConnectLocalTmuxOwner(workspaceID: workspace, panelID: panel, binding: binding, surfaceGeneration: UUID())
+        let peer = UniConnectLocalTmuxProcessIdentity(pid: 234, parentPID: 123, userID: 501, startSeconds: 20, startMicroseconds: 30)
+        let pane = UniConnectLocalTmuxProcessIdentity(pid: 123, parentPID: 1, userID: 501, startSeconds: 10, startMicroseconds: 20)
+        let scope = ["CMUX_WORKSPACE_ID": workspace.uuidString, "CMUX_SURFACE_ID": panel.uuidString,
+                     "UNICONNECT_SURFACE_GENERATION": generation.uuidString]
+        let sessionEnvironment: String = switch scenario {
+        case "sessionNamesOtherPanel":
+            "CMUX_WORKSPACE_ID=\(workspace.uuidString)\nCMUX_SURFACE_ID=\(UUID().uuidString)\nUNICONNECT_SURFACE_GENERATION=\(generation.uuidString)\n"
+        case "sessionWithoutIdentity": "PATH=/usr/bin\n-CMUX_SURFACE_ID\n"
+        default:
+            "PATH=/usr/bin\nCMUX_WORKSPACE_ID=\(workspace.uuidString)\nCMUX_SURFACE_ID=\(panel.uuidString)\nUNICONNECT_SURFACE_GENERATION=\(generation.uuidString)\n"
+        }
+        // macOS 27 hides /bin/zsh's environment: the root reads as empty, the peer (claude) does not.
+        let rootEnvironment: [String: String] = scenario == "readableRootNamesOtherPanel"
+            ? ["CMUX_WORKSPACE_ID": workspace.uuidString, "CMUX_SURFACE_ID": UUID().uuidString,
+               "UNICONNECT_SURFACE_GENERATION": generation.uuidString]
+            : [:]
+        let paneLine = "$1\t%2\t123\t0\towned\n"
+        let commands = InspectionCommands(outputs: [paneLine, sessionEnvironment, paneLine, sessionEnvironment])
+        let inspector = UniConnectLocalTmuxService(
+            commands: commands,
+            processEnvironment: { $0 == peer.pid ? scope : ($0 == pane.pid ? rootEnvironment : nil) },
+            processIdentity: { $0 == peer.pid ? peer : ($0 == pane.pid ? pane : nil) },
+            isProcessDescendant: { $0 == peer.pid && $1 == pane.pid }
+        )
+        #expect(await inspector.verifiedOwner(of: peer, among: [owner]) == (scenario == "sessionMatches" ? owner : nil))
+        // Only read-only queries on that exact session; never the server's global environment.
+        #expect(await commands.targets().allSatisfy { $0 == "=owned:" || $0 == "=owned" })
+    }
+
+    @Test("macOS 27: la generación de un panel superviviente sale de la sesión tmux si la raíz la esconde")
+    func readsGenerationFromTheSessionWhenTheRootHidesIt() async throws {
+        let workspace = UUID(), panel = UUID(), generation = UUID()
+        let binding = try #require(UniConnectLocalTmuxBinding(name: "window-one", socketName: "test-local"))
+        let session = "CMUX_WORKSPACE_ID=\(workspace.uuidString)\nCMUX_SURFACE_ID=\(panel.uuidString)\nUNICONNECT_SURFACE_GENERATION=\(generation.uuidString)\n"
+        let commands = InspectionCommands(outputs: ["$1\t%2\t123\t0\n", session, "$1\t%2\t123\t0\n", session])
+        let inspector = UniConnectLocalTmuxService(commands: commands, processEnvironment: { _ in [:] })
+        #expect(await inspector.generation(for: binding, workspaceID: workspace, panelID: panel) == generation)
+    }
+
     @Test("Socket ownership rejects recycled process identities and changing pane generations", arguments: [
         "recycledAtAccept", "recycledPeer", "recycledPane", "changedGeneration",
     ])
@@ -450,7 +496,10 @@ struct UniConnectLocalTmuxTests {
             return CommandResult(stdout: output, stderr: nil, exitStatus: 0, timedOut: false, executionError: nil)
         }
         func onlyReadExistingOwnedPane() -> Bool {
-            requests.allSatisfy { $0.first == "-N" && $0.contains("display-message") && $0.contains("=owned:") }
+            requests.allSatisfy {
+                $0.first == "-N" && (($0.contains("display-message") && $0.contains("=owned:"))
+                    || ($0.contains("show-environment") && $0.contains("=owned")))
+            }
         }
     }
 
