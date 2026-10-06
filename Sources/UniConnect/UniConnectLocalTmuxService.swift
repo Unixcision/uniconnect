@@ -105,7 +105,7 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
             let legacyGeneration: UUID?
             switch state {
             case .discovered, .unidentified:
-                legacyGeneration = legacyRuntimePeerGeneration(root: rootIdentity, peer: peer, owner: owner)
+                legacyGeneration = await legacyRuntimePeerGeneration(root: rootIdentity, peer: peer, owner: owner)
             default:
                 legacyGeneration = nil
             }
@@ -117,7 +117,7 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
                   ), after == before, processIdentity(rootPID) == rootIdentity,
                   processIdentity(peer.pid) == peer, !Task.isCancelled else { continue }
             if let legacyGeneration {
-                guard legacyRuntimePeerGeneration(root: rootIdentity, peer: peer, owner: owner) == legacyGeneration else { continue }
+                guard await legacyRuntimePeerGeneration(root: rootIdentity, peer: peer, owner: owner) == legacyGeneration else { continue }
             }
             // exec preserves the PID/start timestamp: the identity is derived again from freshly
             // read argv and session files, and must be the same one.
@@ -263,11 +263,12 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
         root: UniConnectLocalTmuxProcessIdentity,
         peer: UniConnectLocalTmuxProcessIdentity,
         owner: UniConnectLocalTmuxOwner
-    ) -> UUID? {
+    ) async -> UUID? {
         guard let rootEnvironment = processEnvironment(root.pid),
               ["CMUX_WORKSPACE_ID", "CMUX_SURFACE_ID", "UNICONNECT_SURFACE_GENERATION"].allSatisfy({
                 rootEnvironment[$0] == nil
-              }), root.userID == peer.userID, root.pid != peer.pid,
+              }), await sessionIdentityEnvironment(binding: owner.binding).isEmpty,
+              root.userID == peer.userID, root.pid != peer.pid,
               processIdentity(root.pid) == root, processIdentity(peer.pid) == peer,
               let peerEnvironment = processEnvironment(peer.pid),
               UUID(uuidString: peerEnvironment["CMUX_WORKSPACE_ID"] ?? "") == owner.workspaceID,
@@ -275,6 +276,41 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
               let generation = UUID(uuidString: peerEnvironment["UNICONNECT_SURFACE_GENERATION"] ?? ""),
               isProcessDescendant(peer.pid, root.pid) else { return nil }
         return generation
+    }
+
+    /// The pane's UniConnect identity (workspace, surface and generation) for ownership checks.
+    ///
+    /// The pane root's own environment is used when it can be read. macOS 27 no longer exposes the
+    /// environment of Apple's shells (`/bin/zsh`, `/bin/sh`, `/bin/bash`) through KERN_PROCARGS2, and
+    /// every pane root is one of them, so the identity then comes from the tmux session environment
+    /// UniConnect set when it created the session (`new-session -e`). A readable root that names
+    /// another owner is never overridden by tmux.
+    private func paneIdentityEnvironment(
+        panePID: Int,
+        binding: UniConnectLocalTmuxBinding
+    ) async -> [String: String]? {
+        if let environment = processEnvironment(panePID), environment["CMUX_SURFACE_ID"] != nil {
+            return environment
+        }
+        let session = await sessionIdentityEnvironment(binding: binding)
+        return session.isEmpty ? nil : session
+    }
+
+    /// Identity variables of one exact tmux session, read-only; never the server's global environment.
+    private func sessionIdentityEnvironment(binding: UniConnectLocalTmuxBinding) async -> [String: String] {
+        let keys: Set<String> = ["CMUX_WORKSPACE_ID", "CMUX_SURFACE_ID", "UNICONNECT_SURFACE_GENERATION"]
+        guard let output = await commands.runStandardOutput(
+            directory: "/", executable: "tmux",
+            arguments: ["-N", "-L", binding.socketName, "show-environment", "-t", "=" + binding.name],
+            timeout: 2
+        ), output.utf8.count <= 65_536 else { return [:] }
+        var environment: [String: String] = [:]
+        for line in output.split(separator: "\n") {
+            let pair = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard pair.count == 2, keys.contains(String(pair[0])) else { continue }
+            environment[String(pair[0])] = String(pair[1])
+        }
+        return environment
     }
 
     private static func isShell(_ executable: String?) -> Bool {
@@ -331,7 +367,7 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
             .split(separator: "\t", omittingEmptySubsequences: false)
         guard fields.count == 4, fields[0].hasPrefix("$"), fields[1].hasPrefix("%"),
               fields[3] == "0", let pid = Int(fields[2]), pid > 1,
-              let environment = processEnvironment(pid),
+              let environment = await paneIdentityEnvironment(panePID: pid, binding: binding),
               UUID(uuidString: environment["CMUX_WORKSPACE_ID"] ?? "") == workspaceID,
               UUID(uuidString: environment["CMUX_SURFACE_ID"] ?? "") == panelID,
               let generation = UUID(uuidString: environment["UNICONNECT_SURFACE_GENERATION"] ?? "") else {
@@ -342,7 +378,8 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
         guard let after = await commands.runStandardOutput(
             directory: "/", executable: "tmux", arguments: arguments, timeout: 2
         ), after == before,
-              processEnvironment(pid)?["UNICONNECT_SURFACE_GENERATION"] == environment["UNICONNECT_SURFACE_GENERATION"] else {
+              await paneIdentityEnvironment(panePID: pid, binding: binding)?["UNICONNECT_SURFACE_GENERATION"]
+                == environment["UNICONNECT_SURFACE_GENERATION"] else {
             return nil
         }
         return generation
@@ -372,7 +409,7 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
               fields[3] == "0", fields[4] == owner.binding.name,
               let panePID = Int(fields[2]), panePID > 1,
               let paneIdentity = processIdentity(panePID), paneIdentity.userID == peer.userID,
-              let paneEnvironment = processEnvironment(panePID),
+              let paneEnvironment = await paneIdentityEnvironment(panePID: panePID, binding: owner.binding),
               UUID(uuidString: paneEnvironment["CMUX_WORKSPACE_ID"] ?? "") == owner.workspaceID,
               UUID(uuidString: paneEnvironment["CMUX_SURFACE_ID"] ?? "") == owner.panelID,
               let paneGeneration = UUID(uuidString: paneEnvironment["UNICONNECT_SURFACE_GENERATION"] ?? ""),
@@ -385,7 +422,7 @@ actor UniConnectLocalTmuxService: UniConnectLocalTmuxInspecting {
         ), after == before, !Task.isCancelled,
               processIdentity(panePID) == paneIdentity,
               processIdentity(peer.pid) == peer,
-              let finalEnvironment = processEnvironment(panePID),
+              let finalEnvironment = await paneIdentityEnvironment(panePID: panePID, binding: owner.binding),
               UUID(uuidString: finalEnvironment["CMUX_WORKSPACE_ID"] ?? "") == owner.workspaceID,
               UUID(uuidString: finalEnvironment["CMUX_SURFACE_ID"] ?? "") == owner.panelID,
               UUID(uuidString: finalEnvironment["UNICONNECT_SURFACE_GENERATION"] ?? "") == paneGeneration,
