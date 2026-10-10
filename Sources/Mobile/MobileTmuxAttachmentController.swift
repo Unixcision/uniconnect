@@ -5,6 +5,8 @@ import Foundation
 actor MobileTmuxAttachmentController {
     typealias Event = MobileTmuxAttachmentEvent
     typealias Resolver = @Sendable (UUID, UUID, UUID) async throws -> MobileTmuxAttachPlan
+    /// Starts the desktop terminal of a window (workspace ID, surface ID) that is not running yet.
+    typealias TerminalStarter = @Sendable (UUID, UUID) async -> Void
     typealias ProcessFactory = @Sendable () -> any MobilePTYRunning
 
     private struct Attachment {
@@ -24,13 +26,17 @@ actor MobileTmuxAttachmentController {
     }
 
     private let resolve: Resolver
+    private let startDesktopTerminal: TerminalStarter?
     private let makeProcess: ProcessFactory
     private var attachments: [UUID: Attachment] = [:]
     private let maximumAttachments = 4
     private let maximumInputBytes = 64 * 1024
 
-    init(resolve: @escaping Resolver, makeProcess: @escaping ProcessFactory) {
+    /// - Parameter startDesktopTerminal: Called once per new attachment, before resolving it, so a
+    ///   window that the desktop has not drawn yet starts its own terminal and creates its session.
+    init(resolve: @escaping Resolver, startDesktopTerminal: TerminalStarter? = nil, makeProcess: @escaping ProcessFactory) {
         self.resolve = resolve
+        self.startDesktopTerminal = startDesktopTerminal
         self.makeProcess = makeProcess
     }
 
@@ -152,6 +158,8 @@ actor MobileTmuxAttachmentController {
     private func start(_ id: UUID) async -> MobileHostRPCResult {
         guard let initial = attachments[id] else { return Self.closed }
         do {
+            await startDesktopTerminal?(initial.workspaceID, initial.surfaceID)
+            try Task.checkCancellation()
             let plan = try await resolve(initial.workspaceID, initial.surfaceID, id)
             try Task.checkCancellation()
             guard plan.workspaceID == initial.workspaceID, plan.surfaceID == initial.surfaceID,

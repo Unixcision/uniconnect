@@ -30,22 +30,36 @@ struct MobileTmuxAttachPlan: Equatable, Sendable, CustomStringConvertible, Custo
 
     var debugDescription: String { description }
 
+    /// How long an attachment waits for the window's own desktop terminal to create its session.
+    ///
+    /// A window created from the phone, or restored in a workspace that was never shown, starts
+    /// its desktop terminal on demand; locally that takes well under a second, over SSH a few.
+    static let defaultSessionWaitSeconds = 15
+
     /// Links the existing window into an owned presentation session without restarting its panes.
-    static func localCommand(binding: UniConnectLocalTmuxBinding, tmuxExecutable: String? = nil, geometryNonce: UUID? = nil) -> String {
+    static func localCommand(
+        binding: UniConnectLocalTmuxBinding, tmuxExecutable: String? = nil, geometryNonce: UUID? = nil,
+        sessionWaitSeconds: Int = defaultSessionWaitSeconds
+    ) -> String {
         attachScript(
             session: binding.name, socketName: binding.socketName, tmuxExecutable: tmuxExecutable,
-            geometryNonce: geometryNonce
+            geometryNonce: geometryNonce, sessionWaitSeconds: sessionWaitSeconds
         )
     }
 
-    static func sshCommand(record: UniConnectSSHCredentialRecord, session: String, geometryNonce: UUID? = nil) throws -> String {
+    static func sshCommand(
+        record: UniConnectSSHCredentialRecord, session: String, geometryNonce: UUID? = nil,
+        sessionWaitSeconds: Int = defaultSessionWaitSeconds
+    ) throws -> String {
         guard !session.isEmpty, UniConnectSSH.sanitizedTmuxName(session) == session,
               let target = record.effectiveTarget,
               let validated = UniConnectSSHConnectCommandValidator().validatedCommand(record.connectCommand),
               let command = validated.sensitiveCanonicalShellCommand(
                 injecting: ["-t", "-t"] + UniConnectSSH.baseClientOptions,
                 pinnedTo: target,
-                remoteCommand: "/bin/sh -c " + UniConnectSSH.singleQuoted(attachScript(session: session, geometryNonce: geometryNonce))
+                remoteCommand: "/bin/sh -c " + UniConnectSSH.singleQuoted(attachScript(
+                    session: session, geometryNonce: geometryNonce, sessionWaitSeconds: sessionWaitSeconds
+                ))
               ) else {
             throw MobileTmuxAttachError.invalidSSHCredential
         }
@@ -56,7 +70,8 @@ struct MobileTmuxAttachPlan: Equatable, Sendable, CustomStringConvertible, Custo
         session: String,
         socketName: String? = nil,
         tmuxExecutable: String? = nil,
-        geometryNonce: UUID? = nil
+        geometryNonce: UUID? = nil,
+        sessionWaitSeconds: Int
     ) -> String {
         let quote = UniConnectSSH.singleQuoted
         let resolveExecutable = tmuxExecutable.map { "uc_mobile_tmux=\(quote($0))" } ?? """
@@ -117,10 +132,18 @@ struct MobileTmuxAttachPlan: Equatable, Sendable, CustomStringConvertible, Custo
             *) printf '%s\\n' \(unsupported) >&2; exit 78 ;;
         esac
         set -- -N\(socket)
-        if ! "$uc_mobile_tmux" "$@" has-session -t \(exactTarget) 2>/dev/null; then
-            printf '%s\\n' \(sessionMissing) >&2
-            exit 66
-        fi
+        # The window's own desktop terminal creates the session from its saved launch plan when it
+        # starts on demand. Bounded deadline (check-timeout): tmux offers no creation signal to
+        # await, and this script never creates or replaces the session itself.
+        uc_mobile_wait=\(max(0, sessionWaitSeconds))
+        until "$uc_mobile_tmux" "$@" has-session -t \(exactTarget) 2>/dev/null; do
+            if [ "$uc_mobile_wait" -le 0 ]; then
+                printf '%s\\n' \(sessionMissing) >&2
+                exit 66
+            fi
+            uc_mobile_wait=$((uc_mobile_wait - 1))
+            /bin/sleep 1
+        done
         uc_mobile_server_version=$("$uc_mobile_tmux" "$@" display-message -p -t \(exactPaneTarget) '#{version}' 2>/dev/null) || exit 66
         case "$uc_mobile_server_version" in
             3.[2-7]|3.[2-7][a-z]) ;;

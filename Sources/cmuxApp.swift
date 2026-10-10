@@ -157,9 +157,14 @@ struct cmuxApp: App {
             credentialRecord: { UniConnectVault.shared.credentialRecord(for: $0) },
             isLocked: { UniConnectAppLock.shared.isLocked }
         )
-        MobileHostService.shared.configureTmux { workspaceID, surfaceID, nonce in
-            try await tmuxResolver.resolve(workspaceID: workspaceID, surfaceID: surfaceID, geometryNonce: nonce)
-        }
+        MobileHostService.shared.configureTmux(
+            resolve: { workspaceID, surfaceID, nonce in
+                try await tmuxResolver.resolve(workspaceID: workspaceID, surfaceID: surfaceID, geometryNonce: nonce)
+            },
+            startDesktopTerminal: { workspaceID, surfaceID in
+                await tmuxResolver.startDesktopTerminalIfNeeded(workspaceID: workspaceID, surfaceID: surfaceID)
+            }
+        )
         UniConnectAppLock.shared.onLock = { MobileHostService.shared.closeTmuxAttachments() }
         let mobileAccessWindow = UniConnectMobileAccessWindowController(
             model: UniConnectMobileAccessViewModel(

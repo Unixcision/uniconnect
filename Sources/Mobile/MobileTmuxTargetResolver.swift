@@ -95,6 +95,28 @@ final class MobileTmuxTargetResolver {
         )
     }
 
+    /// Starts the desktop terminal of a UniConnect window that has not run yet.
+    ///
+    /// A window created from the phone, or restored in a workspace that was never shown, has no
+    /// running terminal until it is drawn, so its tmux session does not exist and the phone cannot
+    /// link it. Its own terminal then creates or reattaches that session through its saved launch
+    /// plan, the same as when the desktop shows it. Never selects, focuses or activates anything; a
+    /// no-op while locked, for other terminals, and once the terminal is running.
+    func startDesktopTerminalIfNeeded(workspaceID: UUID, surfaceID: UUID) {
+        guard !isLocked() else { return }
+        for manager in tabManagers() {
+            for workspace in manager.tabs where workspace.id == workspaceID {
+                guard !workspace.uniConnectPlaceholderPanelIds.contains(surfaceID),
+                      let panel = workspace.panels[surfaceID] as? TerminalPanel else { continue }
+                let isSSHWindow = workspace.uniConnectProfile?.isSSH == true
+                    && workspace.uniConnectTmuxSessionsByPanelId[surfaceID] != nil
+                let isLocalWindow = workspace.uniConnectLocalWindowsByPanelId[surfaceID]?.tmuxBinding != nil
+                guard isSSHWindow || isLocalWindow else { continue }
+                panel.surface.requestBackgroundSurfaceStartIfNeeded()
+            }
+        }
+    }
+
     /// Call before forwarding input, resize or output to reject a retired binding.
     func validate(_ plan: MobileTmuxAttachPlan) throws {
         guard try resolve(workspaceID: plan.workspaceID, surfaceID: plan.surfaceID, geometryNonce: plan.geometryNonce) == plan else {

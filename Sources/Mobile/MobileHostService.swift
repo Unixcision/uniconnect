@@ -353,10 +353,16 @@ final class MobileHostService {
     private init() {}
 
     private var tmuxResolver: MobileTmuxAttachmentController.Resolver?
+    private var tmuxTerminalStarter: MobileTmuxAttachmentController.TerminalStarter?
 
-    /// The app composition root supplies the authoritative, read-only destination resolver.
-    func configureTmux(resolve: @escaping MobileTmuxAttachmentController.Resolver) {
+    /// The app composition root supplies the authoritative, read-only destination resolver and
+    /// the hook that starts a window's own desktop terminal when the phone opens it first.
+    func configureTmux(
+        resolve: @escaping MobileTmuxAttachmentController.Resolver,
+        startDesktopTerminal: MobileTmuxAttachmentController.TerminalStarter? = nil
+    ) {
         tmuxResolver = resolve
+        tmuxTerminalStarter = startDesktopTerminal
     }
 
     /// A model change invalidates attachments independently of mobile list hash deduplication.
@@ -1039,8 +1045,12 @@ final class MobileHostService {
 
             let id = UUID()
             let tmuxResolver = await MobileHostService.shared.tmuxResolver
+            let tmuxTerminalStarter = await MobileHostService.shared.tmuxTerminalStarter
             let tmux = tmuxResolver.map { resolve in
-                MobileTmuxAttachmentController(resolve: resolve, makeProcess: { MobilePTYProcess() })
+                MobileTmuxAttachmentController(
+                    resolve: resolve, startDesktopTerminal: tmuxTerminalStarter,
+                    makeProcess: { MobilePTYProcess() }
+                )
             }
             let session = MobileHostConnection(
                 id: id,

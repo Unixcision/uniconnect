@@ -22549,6 +22549,10 @@ class TerminalController {
                 defaultValue: "No se pudo crear la ventana. Comprueba la carpeta, la conexión y que esa sesión tmux no esté abierta en otra ventana."
             ), data: nil)
         }
+        // The phone asked for this window: start its terminal now, in the background, so its tmux
+        // session (and its agent, if one was chosen) exists before the phone opens it, instead of
+        // waiting until the desktop happens to draw it.
+        terminal.surface.requestBackgroundSurfaceStartIfNeeded()
         // workspace.updated emit is handled by MobileWorkspaceListObserver.
         return v2MobileWorkspaceList(
             params: ["workspace_id": workspace.id.uuidString], tabManager: tabManager,
