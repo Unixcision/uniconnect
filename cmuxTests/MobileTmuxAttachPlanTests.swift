@@ -45,9 +45,20 @@ struct MobileTmuxAttachPlanTests {
     func refusesMissingSession() throws {
         let fixture = try CommandFixture()
         defer { fixture.remove() }
-        #expect(try fixture.run(sessionExists: false) == 66)
-        #expect(try fixture.read("calls") == "-V\nhas-session\n")
+        #expect(try fixture.run(sessionExists: false, sessionWaitSeconds: 1) == 66)
+        #expect(try fixture.read("calls") == "-V\nhas-session\nhas-session\n")
+        #expect(!fixture.exists("created"))
         #expect(!fixture.exists("attached"))
+        #expect(!fixture.exists("unexpected"))
+    }
+
+    @Test("A session the desktop is still starting is awaited, never created by the phone")
+    func awaitsSessionTheDesktopIsStarting() throws {
+        let fixture = try CommandFixture()
+        defer { fixture.remove() }
+        #expect(try fixture.run(sessionExists: false, sessionAppearsAfter: 2, sessionWaitSeconds: 5) == 0)
+        #expect(try fixture.read("calls").hasPrefix("-V\nhas-session\nhas-session\nhas-session\ndisplay-message\n"))
+        #expect(fixture.exists("attached"))
         #expect(!fixture.exists("unexpected"))
     }
 
@@ -109,7 +120,11 @@ struct MobileTmuxAttachPlanTests {
             case "$1" in
                 has-session)
                     [ "$2" = '-t' ] && [ "$3" = '=owned-session' ] || exit 93
-                    [ "$UC_MOBILE_TEST_SESSION_EXISTS" = '1' ]; exit $?
+                    [ "$UC_MOBILE_TEST_SESSION_EXISTS" = '1' ] && exit 0
+                    misses=$(cat "$UC_MOBILE_TEST_ROOT/misses" 2>/dev/null || echo 0)
+                    [ "$misses" -ge "${UC_MOBILE_TEST_SESSION_APPEARS_AFTER:-999999}" ] && exit 0
+                    printf '%s\n' "$((misses + 1))" > "$UC_MOBILE_TEST_ROOT/misses"
+                    exit 1
                     ;;
                 display-message)
                     [ "$2" = '-p' ] && [ "$3" = '-t' ] && [ "$4" = '=owned-session:' ] || exit 94
@@ -163,11 +178,13 @@ struct MobileTmuxAttachPlanTests {
 
         func run(
             clientVersion: String = "3.7c", serverVersion: String = "3.7c",
-            sessionExists: Bool = true, sourceSessionName: String = "owned-session"
+            sessionExists: Bool = true, sessionAppearsAfter: Int? = nil, sessionWaitSeconds: Int = 0,
+            sourceSessionName: String = "owned-session"
         ) throws -> Int32 {
             let binding = try #require(UniConnectLocalTmuxBinding(name: "owned-session", socketName: "fixture-socket"))
             let command = MobileTmuxAttachPlan.localCommand(
-                binding: binding, tmuxExecutable: root.appendingPathComponent("tmux 'fixture'").path
+                binding: binding, tmuxExecutable: root.appendingPathComponent("tmux 'fixture'").path,
+                sessionWaitSeconds: sessionWaitSeconds
             )
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -178,6 +195,7 @@ struct MobileTmuxAttachPlanTests {
                 "UC_MOBILE_TEST_CLIENT_VERSION": clientVersion,
                 "UC_MOBILE_TEST_SERVER_VERSION": serverVersion,
                 "UC_MOBILE_TEST_SESSION_EXISTS": sessionExists ? "1" : "0",
+                "UC_MOBILE_TEST_SESSION_APPEARS_AFTER": sessionAppearsAfter.map(String.init) ?? "",
                 "UC_MOBILE_TEST_SOURCE_SESSION": sourceSessionName,
             ]
             process.standardOutput = FileHandle.nullDevice

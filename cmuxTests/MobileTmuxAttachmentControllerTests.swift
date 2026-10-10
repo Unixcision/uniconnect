@@ -70,6 +70,32 @@ struct MobileTmuxAttachmentControllerTests {
         #expect(await process.closes == 1)
     }
 
+    /// A window created from the phone (or restored in a background workspace) has no running
+    /// desktop terminal, so its tmux session does not exist yet: attaching must start that
+    /// terminal first, exactly once, and validation must never start anything.
+    @Test func attachStartsTheDesktopTerminalOnceBeforeResolving() async throws {
+        let routes = MobileAttachmentTestRoutes()
+        let process = MobileAttachmentTestPTY()
+        let starts = MobileAttachmentTestStarts(routes: routes)
+        let controller = MobileTmuxAttachmentController(
+            resolve: { workspace, surface, _ in try await routes.resolve(workspace, surface) },
+            startDesktopTerminal: { workspace, surface in await starts.record(workspace, surface) },
+            makeProcess: { process }
+        )
+        let request = Self.attachRequest()
+        let workspaceID = try #require((request.params["workspace_id"] as? String).flatMap(UUID.init(uuidString:)))
+        let surfaceID = try #require((request.params["surface_id"] as? String).flatMap(UUID.init(uuidString:)))
+        let id = try Self.attachID(await controller.prepareAttach(request, subscribed: true))
+        #expect(await starts.targets == [[workspaceID, surfaceID]])
+        #expect(await starts.resolutionsBeforeFirstStart == [0])
+
+        _ = await controller.handle(Self.request("mobile.terminal.pty_input", ["attach_id": id.uuidString, "data": "YQ=="]))
+        _ = await controller.prepareAttach(request, subscribed: true)
+        await controller.revalidateAll()
+        #expect(await starts.targets.count == 1)
+        await controller.closeAll()
+    }
+
     @Test func subscriptionsAndStrictParametersAreRequiredBeforeSpawn() async {
         let routes = MobileAttachmentTestRoutes()
         let process = MobileAttachmentTestPTY()
@@ -485,6 +511,24 @@ private actor MobileAttachmentTestRoutes {
     }
 
     func replaceIdentity() { generation = UUID() }
+}
+
+/// Records which desktop terminals an attachment asked to start, and how many resolutions had
+/// already happened at that moment.
+private actor MobileAttachmentTestStarts {
+    private let routes: MobileAttachmentTestRoutes
+    private(set) var targets: [[UUID]] = []
+    private(set) var resolutionsBeforeFirstStart: [Int] = []
+
+    init(routes: MobileAttachmentTestRoutes) {
+        self.routes = routes
+    }
+
+    func record(_ workspaceID: UUID, _ surfaceID: UUID) async {
+        let resolutions = await routes.calls
+        if targets.isEmpty { resolutionsBeforeFirstStart.append(resolutions) }
+        targets.append([workspaceID, surfaceID])
+    }
 }
 
 private actor MobileAttachmentTestPTY: MobilePTYRunning {
