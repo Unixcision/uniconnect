@@ -196,6 +196,8 @@
     <string name="mobile_notices">Avisos en este móvil</string>
     <string name="notices_connected">Conexión privada activa. Recibirás los avisos de esta máquina.</string>
     <string name="notices_reconnecting">El enlace de avisos está conectando. Android puede retrasar la red durante el reposo.</string>
+    <string name="notices_blocked">Android tiene desactivadas las notificaciones de UniConnect, así que no te pueden llegar avisos. Actívalas y vuelve a la app: se reconecta sola.</string>
+    <string name="open_notification_settings">Abrir ajustes de notificaciones</string>
     <string name="notices_failed">El enlace de avisos se ha detenido. Revisa el permiso de notificaciones y actualiza UniConnect en la máquina.</string>
     <string name="notices_off">Desactivados. Puedes mantener un enlace privado con esta máquina mientras usas otras aplicaciones.</string>
     <string name="enable_notices">Mantener conexión y avisos</string>

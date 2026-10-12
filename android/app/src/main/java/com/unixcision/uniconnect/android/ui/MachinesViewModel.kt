@@ -283,6 +283,8 @@ class MachinesViewModel(
     }
     fun resumeLiveConnection() {
         foreground = true
+        // Back in front, possibly after switching UniConnect's notifications on in Android.
+        notificationControl.restore()
         if (state.value.selectedMachine == null) refreshMachineStates()
         val id = resumeMachineID ?: return
         resumeMachineID = null

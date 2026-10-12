@@ -37,10 +37,13 @@ class ConnectedMachineService : Service() {
                 val machineID = intent.getStringExtra(MACHINE_ID)
                 // ENABLE always arrives through startForegroundService: Android kills the whole app
                 // unless startForeground runs first, even when this request is then refused.
-                val refused = !enterForeground() || machineID == null || !publisher.hasPermission() ||
-                    (jobs.size >= 8 && machineID !in jobs)
-                if (refused) {
-                    machineID?.let { container.notificationConnections.report(it, NotificationLinkState.Failed) }
+                val refused = when {
+                    !enterForeground() || machineID == null || (jobs.size >= 8 && machineID !in jobs) -> NotificationLinkState.Failed
+                    !publisher.hasPermission() -> NotificationLinkState.NotificationsBlocked
+                    else -> null
+                }
+                if (refused != null) {
+                    machineID?.let { container.notificationConnections.report(it, refused) }
                     stopIfIdle()
                     return START_NOT_STICKY
                 }

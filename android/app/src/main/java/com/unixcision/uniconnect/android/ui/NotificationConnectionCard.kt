@@ -9,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.unixcision.uniconnect.android.R
@@ -23,7 +24,7 @@ fun NotificationConnectionCard(link: NotificationLinkState?, canEnable: Boolean,
     val tone = when (link) {
         NotificationLinkState.Connected -> UniTheme.colors.success
         NotificationLinkState.Connecting, NotificationLinkState.Reconnecting -> UniTheme.colors.accent
-        NotificationLinkState.ApprovalRequired, NotificationLinkState.Failed -> UniTheme.colors.warning
+        NotificationLinkState.ApprovalRequired, NotificationLinkState.NotificationsBlocked, NotificationLinkState.Failed -> UniTheme.colors.warning
         null -> UniTheme.colors.muted
     }
     GlassCard(Modifier.fillMaxWidth(), accent = if (active) tone else null) {
@@ -37,9 +38,19 @@ fun NotificationConnectionCard(link: NotificationLinkState?, canEnable: Boolean,
                     NotificationLinkState.Connected -> R.string.notices_connected
                     NotificationLinkState.Connecting, NotificationLinkState.Reconnecting -> R.string.notices_reconnecting
                     NotificationLinkState.ApprovalRequired -> R.string.approval_required
+                    NotificationLinkState.NotificationsBlocked -> R.string.notices_blocked
                     NotificationLinkState.Failed -> R.string.notices_failed
                     null -> R.string.notices_off
                 }), style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted, maxLines = 3)
+                if (link == NotificationLinkState.NotificationsBlocked) {
+                    val context = LocalContext.current
+                    TextButton(onClick = {
+                        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName))
+                    }, contentPadding = PaddingValues(0.dp)) {
+                        Text(stringResource(R.string.open_notification_settings), color = UniTheme.colors.accent)
+                    }
+                }
             }
             Switch(
                 checked = active, enabled = active || canEnable,

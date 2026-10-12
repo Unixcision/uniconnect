@@ -7,6 +7,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+import com.unixcision.uniconnect.android.domain.NoticeLinkRearm
 import com.unixcision.uniconnect.android.domain.NotificationConnectionControl
 import com.unixcision.uniconnect.android.domain.NotificationLinkState
 import com.unixcision.uniconnect.android.notifications.AndroidNoticePublisher
@@ -36,7 +37,7 @@ class AndroidNotificationConnections(
         // With UniConnect's notifications switched off in Android the service would refuse at once:
         // say so instead. The remembered opt-in stays, so [restore] re-arms it once they are back on.
         if (!AndroidNoticePublisher.notificationsAllowed(context)) {
-            report(machineID, NotificationLinkState.Failed)
+            report(machineID, NotificationLinkState.NotificationsBlocked)
             return
         }
         report(machineID, NotificationLinkState.Connecting)
@@ -56,11 +57,11 @@ class AndroidNotificationConnections(
     override fun restore() {
         scope.launch {
             val remembered = runCatching { store.data.first()[enabledKey] }.getOrNull().orEmpty()
-            remembered.filter { mutableStates.value[it] == null }.forEach(::enable)
+            NoticeLinkRearm.machines(remembered, mutableStates.value).forEach(::enable)
         }
     }
 
     fun report(machineID: String, value: NotificationLinkState) { mutableStates.update { it + (machineID to value) } }
     fun remove(machineID: String) { mutableStates.update { it - machineID } }
-    fun clearActive() { mutableStates.update { entries -> entries.filterValues { it == NotificationLinkState.Failed || it == NotificationLinkState.ApprovalRequired } } }
+    fun clearActive() { mutableStates.update { entries -> entries.filterValues { it == NotificationLinkState.Failed || it == NotificationLinkState.ApprovalRequired || it == NotificationLinkState.NotificationsBlocked } } }
 }
