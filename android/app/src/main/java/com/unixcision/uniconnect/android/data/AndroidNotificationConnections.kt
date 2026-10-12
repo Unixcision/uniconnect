@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.unixcision.uniconnect.android.domain.NotificationConnectionControl
 import com.unixcision.uniconnect.android.domain.NotificationLinkState
+import com.unixcision.uniconnect.android.notifications.AndroidNoticePublisher
 import com.unixcision.uniconnect.android.notifications.ConnectedMachineService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +33,12 @@ class AndroidNotificationConnections(
     private val enabledKey = stringSetPreferencesKey("notification_links")
 
     override fun enable(machineID: String) {
+        // With UniConnect's notifications switched off in Android the service would refuse at once:
+        // say so instead. The remembered opt-in stays, so [restore] re-arms it once they are back on.
+        if (!AndroidNoticePublisher.notificationsAllowed(context)) {
+            report(machineID, NotificationLinkState.Failed)
+            return
+        }
         report(machineID, NotificationLinkState.Connecting)
         try {
             ContextCompat.startForegroundService(context, Intent(context, ConnectedMachineService::class.java)

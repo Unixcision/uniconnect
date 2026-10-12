@@ -34,15 +34,17 @@ class ConnectedMachineService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ENABLE -> {
-                val machineID = intent.getStringExtra(MACHINE_ID) ?: return START_NOT_STICKY
-                if (!publisher.hasPermission() || (jobs.size >= 8 && machineID !in jobs)) {
-                    container.notificationConnections.report(machineID, NotificationLinkState.Failed)
-                    if (jobs.isEmpty()) stopSelf()
+                val machineID = intent.getStringExtra(MACHINE_ID)
+                // ENABLE always arrives through startForegroundService: Android kills the whole app
+                // unless startForeground runs first, even when this request is then refused.
+                val refused = !enterForeground() || machineID == null || !publisher.hasPermission() ||
+                    (jobs.size >= 8 && machineID !in jobs)
+                if (refused) {
+                    machineID?.let { container.notificationConnections.report(it, NotificationLinkState.Failed) }
+                    stopIfIdle()
                     return START_NOT_STICKY
                 }
-                ServiceCompat.startForeground(this, FOREGROUND_ID, publisher.connection(false),
-                    if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0)
-                startMachine(machineID)
+                startMachine(checkNotNull(machineID))
             }
             DISABLE -> intent.getStringExtra(MACHINE_ID)?.let { id -> jobs.remove(id)?.cancel(); container.notificationConnections.remove(id); stopIfIdle() }
             STOP_ALL -> { val pending = jobs.values.toList(); jobs.clear(); pending.forEach { it.cancel() }; container.notificationConnections.clearActive(); stopSelf() }
@@ -94,6 +96,13 @@ class ConnectedMachineService : Service() {
         jobs[machineID] = job
         job.start()
     }
+
+    /** `false` when Android refuses the foreground state (for example, a missing type prerequisite). */
+    private fun enterForeground(): Boolean = try {
+        ServiceCompat.startForeground(this, FOREGROUND_ID, publisher.connection(false),
+            if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0)
+        true
+    } catch (_: Exception) { false }
 
     private fun refreshForeground() {
         val connected = container.notificationConnections.states.value.values.any { it == NotificationLinkState.Connected }

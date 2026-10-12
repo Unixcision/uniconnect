@@ -35,9 +35,7 @@ class AndroidNoticePublisher(private val context: Context, private val names: No
         })
     }
 
-    fun hasPermission(): Boolean =
-        (Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) &&
-            NotificationManagerCompat.from(context).areNotificationsEnabled()
+    fun hasPermission(): Boolean = notificationsAllowed(context)
 
     fun connection(connected: Boolean): Notification {
         val stop = PendingIntent.getService(context, 0, Intent(context, ConnectedMachineService::class.java).setAction(ConnectedMachineService.STOP_ALL), PendingIntent.FLAG_IMMUTABLE)
@@ -100,6 +98,11 @@ class AndroidNoticePublisher(private val context: Context, private val names: No
     private fun threadFor(machine: Machine, notice: RemoteNotice): String = "${machine.id}/${notice.workspaceID}/${notice.windowID ?: "-"}"
 
     companion object {
+        /** Android lets UniConnect notify: runtime permission (API 33+) and the app-level switch. */
+        fun notificationsAllowed(context: Context): Boolean =
+            (Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) &&
+                NotificationManagerCompat.from(context).areNotificationsEnabled()
+
         const val CONNECTION_CHANNEL = "private_connections"
         const val NOTICE_CHANNEL = "private_machine_notices"
         const val ATTENTION_CHANNEL = "private_machine_attention"
