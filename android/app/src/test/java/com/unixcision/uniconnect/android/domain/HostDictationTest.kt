@@ -329,6 +329,45 @@ class HostDictationTest {
         dictation.cancel()
     }
 
+    @Test
+    fun theHistoryKeepsTheAudioBeforeItIsSentAndThenItsText() {
+        val clip = FakeClip(120_000)
+        val history = FakeHistory()
+        val host = FakeTranscription { history.events += "sent"; Transcript("git status") }
+        val dictation = HostDictation(FakeRecorder(clip), host, CoroutineScope(Dispatchers.Unconfined), tickMillis = 5, limitMillis = 10_000, history = history)
+        dictation.aim(target)
+        dictation.start(DictationLanguage.ES_ES)
+        dictation.stop()
+        awaitDone(dictation)
+        assertEquals(listOf("keep:MINIPC", "sent", "transcribed:git status"), history.events.toList())
+        assertTrue(clip.deleted)
+    }
+
+    @Test
+    fun aRecordingNoMachineCouldReadStaysInTheHistory() {
+        val clip = FakeClip(200_000)
+        val history = FakeHistory()
+        val host = FakeTranscription { throw TranscribeRefused(TranscribeRefusal.TOO_LARGE) }
+        val dictation = HostDictation(FakeRecorder(clip), host, CoroutineScope(Dispatchers.Unconfined), tickMillis = 5, limitMillis = 10_000, history = history)
+        dictation.aim(target)
+        dictation.start(DictationLanguage.ES_ES)
+        dictation.stop()
+        awaitFailure(dictation)
+        assertEquals(listOf("keep:MINIPC", "unread"), history.events.toList())
+        assertTrue("the engine's own copy still goes", clip.deleted)
+    }
+
+    /** Notes what the history was told, in order. */
+    private class FakeHistory : DictationHistory {
+        val events: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+        override val records = kotlinx.coroutines.flow.MutableStateFlow(emptyList<DictationRecord>())
+        override fun keep(clip: AudioClip, target: DictationTarget?) { events += "keep:${target?.machine?.name}" }
+        override fun transcribed(clip: AudioClip, text: String) { events += "transcribed:$text" }
+        override fun unread(clip: AudioClip) { events += "unread" }
+        override fun delete(ids: Set<String>) {}
+        override fun deleteAudio(ids: Set<String>) {}
+    }
+
     private fun dictation(recorder: VoiceRecorder, host: HostTranscription) =
         HostDictation(recorder, host, CoroutineScope(Dispatchers.Unconfined), tickMillis = 5, limitMillis = 10_000)
 

@@ -39,6 +39,8 @@ class HostDictation(
     private val scope: CoroutineScope,
     private val tickMillis: Long = 250,
     private val limitMillis: Long = 5 * 60 * 1000,
+    /** Keeps every recording and its text; see [DictationHistory]. */
+    private val history: DictationHistory? = null,
 ) : Dictation {
     private val machine = DictationMachine()
     private val finishing = AtomicBoolean(true)
@@ -175,15 +177,25 @@ class HostDictation(
 
     private fun send(clip: AudioClip, cut: Boolean) {
         val aimed = target
-        if (aimed == null) { clip.delete(); machine.fail(DictationFailure.HOST_FAILED); return }
+        if (aimed == null) {
+            history?.keep(clip, null)
+            history?.unread(clip)
+            clip.delete()
+            machine.fail(DictationFailure.HOST_FAILED)
+            return
+        }
         machine.onTranscribing(cut)
         sending = scope.launch {
             try {
+                // Kept before anything is sent: whatever happens next, what was said survives.
+                history?.keep(clip, aimed)
                 if (!AudioPayload.fits(clip.bytes)) throw TranscribeRefused(TranscribeRefusal.TOO_LARGE)
                 val transcript = transcription.transcribe(aimed, clip.read(), MIME, language.code)
+                history?.transcribed(clip, transcript.text)
                 clip.delete()
                 machine.onTranscript(transcript.text)
             } catch (stopped: CancellationException) {
+                history?.unread(clip)
                 clip.delete()
                 throw stopped
             } catch (failure: Exception) {
@@ -243,7 +255,8 @@ class HostDictation(
         } else {
             // Nowhere left to send it: the recording is gone, and the line says so rather than
             // leaving the reader wondering. A phone recogniser needs a live microphone, so what
-            // was captured cannot be handed to it.
+            // was captured cannot be handed to it. The history still has the audio.
+            history?.unread(clip)
             clip.delete()
             val again = when (reason) {
                 DictationFailure.TOO_LONG -> DictationRetry.RERECORD
@@ -255,6 +268,7 @@ class HostDictation(
     }
 
     private fun dropKept() {
+        kept?.let { history?.unread(it) }
         kept?.delete()
         kept = null
     }

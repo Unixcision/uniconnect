@@ -38,6 +38,8 @@ class LocalDictation(
     private val tickMillis: Long = 250,
     private val limitMillis: Long = 5 * 60 * 1000,
     private val worker: CoroutineDispatcher = Dispatchers.Default,
+    /** Keeps every recording and its text; see [DictationHistory]. */
+    private val history: DictationHistory? = null,
 ) : Dictation {
     private val machine = DictationMachine()
     private val finishing = AtomicBoolean(true)
@@ -132,6 +134,8 @@ class LocalDictation(
         stopping.set(false)
         reading = scope.launch {
             try {
+                // Kept before the engine runs: a crash or a failure never costs what was said.
+                history?.keep(clip, null)
                 // Measured around everything, not just the model: opening the weights and decoding
                 // the recording are part of the wait, and the whole wait is what compares with a
                 // machine. The engine still logs its own share for diagnosis.
@@ -142,11 +146,13 @@ class LocalDictation(
                     engine.transcribe(samples, path, language.code, Reporter())
                         ?.copy(seconds = PcmSamples.seconds(samples), tookMillis = System.currentTimeMillis() - started)
                 }
+                if (transcript == null) history?.unread(clip) else history?.transcribed(clip, transcript.text)
                 clip.delete()
                 if (transcript == null) return@launch  // cancelled: the state is already Idle
                 lastRun = transcript
                 machine.onTranscript(transcript.text)
             } catch (stopped: CancellationException) {
+                history?.unread(clip)
                 clip.delete()
                 throw stopped
             } catch (unreadable: AudioDecodeFailed) {
@@ -166,6 +172,9 @@ class LocalDictation(
             machine.reset()
             return
         }
+        // Nobody takes it: the history keeps the audio even though no engine read it.
+        history?.keep(clip, null)
+        history?.unread(clip)
         clip.delete()
         machine.fail(reason, DictationRetry.RERECORD)
     }
