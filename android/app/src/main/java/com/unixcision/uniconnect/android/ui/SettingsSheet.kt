@@ -68,6 +68,8 @@ fun SettingsSheet(
     /** La bandeja de los equipos; sin ella no se ofrece el medidor de Adjuntos. */
     inbox: InboxViewModel? = null,
     inboxCandidates: List<InboxCandidate> = emptyList(),
+    /** El historial de dictados; sin él no se ofrece la sección Dictados. */
+    dictationHistory: DictationHistoryViewModel? = null,
 ) {
     val context = LocalContext.current
     val version = remember(context) {
@@ -223,6 +225,8 @@ fun SettingsSheet(
             }
 
             if (inbox != null) SettingsSection(stringResource(R.string.settings_inbox)) { InboxSettingsSection(inbox, inboxCandidates) }
+
+            if (dictationHistory != null) SettingsSection(stringResource(R.string.settings_dictations)) { DictationSettingsSection(dictationHistory) }
 
             SettingsSection(stringResource(R.string.settings_connections)) {
                 SettingsSwitch(

@@ -277,7 +277,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
             val link = state.connections[saved.id]
             InboxCandidate(saved, connected = link?.connected == true, keepsInbox = link?.snapshot?.keepsInbox == true)
         }
-        SettingsSheet(state.settings, transcribers, dictation, model::updateSettings, model::dismissSettings, inbox = inbox, inboxCandidates = inboxCandidates)
+        SettingsSheet(state.settings, transcribers, dictation, model::updateSettings, model::dismissSettings, inbox = inbox, inboxCandidates = inboxCandidates, dictationHistory = dictationHistory)
     }
     if (state.adding) MachineSheet(state.saving, state.formError, onDismiss = model::dismissAdd, onSave = model::saveMachine)
     state.editing?.let { target ->

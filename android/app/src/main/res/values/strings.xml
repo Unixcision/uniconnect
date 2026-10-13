@@ -199,7 +199,6 @@
     <string name="dictation_history_title">Historial de dictados</string>
     <string name="dictation_history_note">%1$d dictados guardados · %2$s de audio</string>
     <string name="dictation_history_empty">Todavía no hay dictados. Cada vez que dictes se guardará aquí el audio y su texto, para que nunca pierdas lo que dijiste aunque algo falle por el camino.</string>
-    <string name="dictation_history_free">Liberar espacio</string>
     <string name="dictation_history_paste">Pegar</string>
     <string name="dictation_history_copy">Copiar texto</string>
     <string name="dictation_history_copied">Texto copiado</string>
@@ -213,7 +212,14 @@
     <string name="dictation_history_phone">En el móvil</string>
     <string name="dictation_history_today">Hoy %1$s</string>
     <string name="dictation_history_yesterday">Ayer %1$s</string>
-    <string name="dictation_cleanup_title">Liberar espacio de dictados</string>
+    <string name="dictation_history_settings_hint">Para liberar espacio: Ajustes › Dictados.</string>
+    <string name="dictation_history_search">Buscar en tus dictados</string>
+    <string name="dictation_history_no_match">Ningún dictado contiene «%1$s».</string>
+    <string name="dictation_history_more">Ver todo</string>
+    <string name="dictation_history_less">Ver menos</string>
+    <string name="settings_dictations">Dictados</string>
+    <string name="settings_dictations_note">Cada dictado se guarda en el móvil con su audio y su texto, para recuperarlo si algo falla por el camino. Aquí puedes liberar espacio.</string>
+    <string name="dictation_cleanup_what">Qué borrar</string>
     <string name="dictation_cleanup_age">Más antiguos que</string>
     <string name="dictation_cleanup_all_ages">Todos</string>
     <string name="dictation_cleanup_audio_only">Solo el audio (el texto se queda)</string>
