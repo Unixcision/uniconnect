@@ -402,6 +402,7 @@ private fun RealTerminalScreen(
             transcription = settings.transcription, transcriptionMachine = settings.transcriptionMachine, transcribers = transcribers,
             // The window an attachment would go to is the window a recording is transcribed for.
             dictationTarget = attachTarget?.let { DictationTarget(it.machine, it.workspaceID, it.windowID) },
+            bracketedPaste = real.bracketedPaste,
         )
     }
 }

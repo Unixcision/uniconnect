@@ -93,13 +93,15 @@ fun TerminalComposer(
     transcriptionMachine: String? = null,
     transcribers: List<TranscriptionCandidate> = emptyList(),
     dictationTarget: DictationTarget? = null,
+    /** The program in the window accepts bracketed pastes; see [TerminalKeyEncoder.composerText]. */
+    bracketedPaste: Boolean = false,
 ) {
     val context = LocalContext.current
     val send: (String, Boolean) -> Unit = { submitted, withEnter ->
         if (enabled && !sending && submitted.isNotEmpty()) {
             // The text and the Return key travel as separate writes; a single burst ending in CR
             // is read as a paste by TUIs and only inserts a line break. Never replayed on failure.
-            onSend(TerminalKeyEncoder.encodeText(submitted, modifiers), withEnter) { delivered ->
+            onSend(TerminalKeyEncoder.composerText(submitted, modifiers, bracketedPaste), withEnter) { delivered ->
                 if (delivered && draft == submitted) onDraftChange("")
             }
         }
@@ -131,7 +133,7 @@ fun TerminalComposer(
                 val merged = DictationDraft.append(latestDraft, outcome.text)
                 onDraftChange(merged)
                 if (sendOnDictationEnd && enabled && !sending && merged.isNotEmpty()) {
-                    onSend(TerminalKeyEncoder.encodeText(merged, modifiers), true) { delivered -> if (delivered) onDraftChange("") }
+                    onSend(TerminalKeyEncoder.composerText(merged, modifiers, bracketedPaste), true) { delivered -> if (delivered) onDraftChange("") }
                 }
                 retry = DictationRetry.NONE
                 lastFailure = null

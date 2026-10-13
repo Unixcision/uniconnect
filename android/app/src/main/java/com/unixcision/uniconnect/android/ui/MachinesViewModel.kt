@@ -83,6 +83,8 @@ class MachinesViewModel(
     /** A phone-sized tmux client attached to the selected window; the emulator lives in the model. */
     data class RealTerminal(
         val snapshot: TerminalSnapshot? = null, val applicationCursorKeys: Boolean = false,
+        /** The program enabled bracketed paste (DECSET 2004): composed text goes as one paste. */
+        val bracketedPaste: Boolean = false,
         /** Whether tmux is showing its copy-mode indicator, i.e. the pane ignores typing. */
         val copyMode: Boolean = false,
         val connecting: Boolean = true, val ended: Boolean = false, val error: Int? = null, val errorDetail: String? = null,
@@ -1090,7 +1092,7 @@ class MachinesViewModel(
                         if (!dirty || attachment !== live) continue
                         dirty = false
                         val frame = terminal.snapshot()
-                        mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = frame, copyMode = frame.inCopyMode, applicationCursorKeys = terminal.applicationCursorKeys)) }
+                        mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = frame, copyMode = frame.inCopyMode, applicationCursorKeys = terminal.applicationCursorKeys, bracketedPaste = terminal.bracketedPaste)) }
                     }
                 }
                 try { live.events.buffer(Channel.UNLIMITED).collect { event ->
@@ -1129,7 +1131,7 @@ class MachinesViewModel(
                     // Whatever arrived after the last frame is shown before the screen goes quiet.
                     if (attachment === live) {
                         val frame = terminal.snapshot()
-                        mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = frame, copyMode = frame.inCopyMode, applicationCursorKeys = terminal.applicationCursorKeys)) }
+                        mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = frame, copyMode = frame.inCopyMode, applicationCursorKeys = terminal.applicationCursorKeys, bracketedPaste = terminal.bracketedPaste)) }
                     }
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
