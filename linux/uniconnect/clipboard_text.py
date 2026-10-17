@@ -1,34 +1,48 @@
 """Explicit text copies publish both Linux selections for desktop/VNC clients."""
 
+import ctypes
+import ctypes.util
 import os
-import shutil
-import subprocess
-import threading
 
-from gi.repository import Gdk, GLib, Gtk
+from gi.repository import Gdk, Gtk
 
 
-def _x11vnc_resend(binary, display):
-    try:
-        subprocess.run([binary, "-display", display, "-R", "resend_clipboard"],
-                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, check=False, timeout=1)
-    except (OSError, subprocess.TimeoutExpired):
-        # Clipboard publication must still work locally if no controllable
-        # x11vnc server is running on this display.
-        pass
+def _publish_x11_cutbuffer(text):
+    """Publish explicit copies to x11vnc through X11's legacy cut buffer.
 
-
-def _resend_x11vnc_clipboard():
-    """Nudge a local x11vnc server after an explicit app copy, when available."""
-    binary = shutil.which("x11vnc")
-    display = os.environ.get("DISPLAY")
-    if not binary or not display:
+    x11vnc polls PRIMARY/CLIPBOARD selections and deliberately delays its first
+    selection send; its ``resend_clipboard`` control command only resends the
+    server's cached value. XStoreBytes raises the CUT_BUFFER0 property event
+    that x11vnc already forwards immediately, without installing a watcher or
+    depending on an external clipboard utility.
+    """
+    if not os.environ.get("DISPLAY") or "\0" in text:
         return
-    # The X selection owner is this GTK process. A synchronous remote request
-    # here would block the main loop that must answer x11vnc's selection query.
-    GLib.idle_add(lambda: (threading.Thread(target=_x11vnc_resend,
-                                           args=(binary, display), daemon=True).start(), False)[1])
+    library = ctypes.util.find_library("X11")
+    if not library:
+        return
+    try:
+        x11 = ctypes.CDLL(library)
+        x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        x11.XOpenDisplay.restype = ctypes.c_void_p
+        x11.XStoreBytes.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+        x11.XStoreBytes.restype = None
+        x11.XFlush.argtypes = [ctypes.c_void_p]
+        x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+        display = x11.XOpenDisplay(None)
+        if not display:
+            return
+        try:
+            encoded = text.encode("utf-8")
+            if len(encoded) > 2_147_483_647:
+                return
+            x11.XStoreBytes(display, encoded, len(encoded))
+            x11.XFlush(display)
+        finally:
+            x11.XCloseDisplay(display)
+    except (OSError, OverflowError, UnicodeError):
+        # A missing/unavailable X display must not break local clipboard copy.
+        pass
 
 
 def publish_text(text):
@@ -38,4 +52,4 @@ def publish_text(text):
         clipboard = Gtk.Clipboard.get(selection)
         clipboard.set_text(text, -1)
     Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).store()
-    _resend_x11vnc_clipboard()
+    _publish_x11_cutbuffer(text)

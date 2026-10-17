@@ -12,6 +12,12 @@ from vnc_copy_fixture import VNCClipboardPeer
 
 
 class HistoryCopyTests(PointerHistoryFixture):
+    def terminal_text(self):
+        terminal = self.surface.terminal
+        if hasattr(terminal, "get_text_format"):
+            return terminal.get_text_format(Vte.Format.TEXT) or ""
+        return terminal.get_text(None, None)[0] or ""
+
     @unittest.skipUnless(shutil.which("x11vnc"), "x11vnc required for VNC clipboard integration")
     def test_explicit_copy_crosses_vnc_and_viewer_text_can_be_pasted(self):
         from uniconnect.clipboard_text import publish_text
@@ -112,26 +118,20 @@ class HistoryCopyTests(PointerHistoryFixture):
         with SSHCopyFixture() as ssh:
             ssh.tmux("new-session", "-d", "-s", "subject", "-x", "80", "-y", "24", "sleep", "90")
             self.seed_history(ssh.tmux, socket_name=ssh.socket_name, wait_for_terminal=False)
-            # The fixture starts with a local terminal; make the switch an
-            # actual SSH reconnect rather than reusing its existing VTE child.
-            self.surface.stop_client()
-            self.wait_for(lambda: self.surface.pid is None and not self.surface._spawning
-                          and not self.surface._preparing)
+            # Keep the surface alive and use its normal reconnect path. It
+            # queues SSH while the local tmux client exits, then spawns SSH in
+            # this same VTE instead of abandoning an in-flight child.
             self.surface.workspace["kind"] = "ssh"
             self.surface.workspace["credentialId"] = self.window.vault.put(ssh.command)
             self.surface.record["tmuxSocket"] = ssh.socket_name
             # Exercise the actual app's SSH launch, not only a mock transport.
             self.surface.launch()
             self.wait_for(lambda: self.surface.status == "Running" and not self.surface._preparing,
-                          detail=lambda: f"terminal={(self.surface.terminal.get_text_format(Vte.Format.TEXT)
-                                                      if hasattr(self.surface.terminal, 'get_text_format')
-                                                      else self.surface.terminal.get_text(None, None)[0])!r}; "
+                          detail=lambda: f"terminal={self.terminal_text()!r}; "
                           f"remote_pane={ssh.tmux('display-message', '-p', '-t', '=subject:', '#{pane_id}:#{pane_pid}')!r}; "
                           f"workspace_kind={self.surface.workspace['kind']!r}; "
                           f"tmux_socket={self.surface.record.get('tmuxSocket')!r}")
-            self.wait_for(lambda: "ROW0119" in ((self.surface.terminal.get_text_format(Vte.Format.TEXT)
-                                                  if hasattr(self.surface.terminal, "get_text_format")
-                                                  else self.surface.terminal.get_text(None, None)[0]) or ""),
+            self.wait_for(lambda: "ROW0119" in self.terminal_text(),
                           detail=lambda: f"remote_rows={ssh.tmux('capture-pane', '-p', '-t', '=subject:')!r}; "
                           f"workspace_kind={self.surface.workspace['kind']!r}; "
                           f"tmux_socket={self.surface.record.get('tmuxSocket')!r}")
