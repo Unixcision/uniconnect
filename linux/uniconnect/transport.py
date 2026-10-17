@@ -407,8 +407,8 @@ class TmuxCommand:
             return ""
         binary = TmuxCommand._binary(socket_name)
         return (
-            f'if {binary} show-window-options -gv copy-mode-selection-style >/dev/null 2>&1; then '
-            f'uc_selection_style=$({binary} show-window-options -gv copy-mode-selection-style 2>/dev/null); '
+            f'uc_selection_style=$({binary} show-window-options -gv copy-mode-selection-style 2>/dev/null) && '
+            '[ -n "$uc_selection_style" ]; then '
             'case "$uc_selection_style" in "bg=yellow,fg=black"|"fg=black,bg=yellow") '
             f'{binary} set-window-option -g copy-mode-selection-style "fg=white,bg=blue";; esac; '
             'else '

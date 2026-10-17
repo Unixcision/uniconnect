@@ -392,7 +392,12 @@ class TmuxHistoryBehaviorTests(unittest.TestCase):
                                             for table in tables], route)
                     self.assertEqual(limit, self.tmux(socket, "show-options", "-gv", "history-limit"), route)
                     self.assertEqual(drag, self.tmux(socket, "list-keys", "-T", "root", "MouseDrag1Pane"), route)
-                    expected_mode_style = style if selection_style is not None else "fg=white,bg=blue"
+                    # On newer tmux, the dedicated selection-style option is
+                    # migrated while the broader mode-style stays untouched.
+                    # Older tmux uses mode-style for the orange selection.
+                    expected_mode_style = style
+                    if selection_style is None and style in ("bg=yellow,fg=black", "fg=black,bg=yellow"):
+                        expected_mode_style = "fg=white,bg=blue"
                     self.assertEqual(expected_mode_style,
                                      self.tmux(socket, "show-window-options", "-gv", "mode-style"), route)
                     if selection_style is not None:

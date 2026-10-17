@@ -20,6 +20,7 @@ class SSHCopyFixture:
         self.config_file = root / "sshd_config"
         self.log_file = root / "sshd.log"
         self.user = "uc-copy-" + uuid.uuid4().hex[:8]
+        self.socket_name = "uc-copy-" + uuid.uuid4().hex[:12]
         self.user_created = False
         for name in ("host", "client"):
             subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(root / name)], check=True)
@@ -100,6 +101,12 @@ LogLevel DEBUG2
             raise RuntimeError('CI SSH authentication failed: ' + probe.stderr + server_log)
         return self
 
+    def tmux(self, *args):
+        """Run tmux as the isolated SSH account, not the CI runner user."""
+        return subprocess.check_output(["sudo", "-n", "-H", "-u", self.user, "tmux",
+                                        "-L", self.socket_name, *args],
+                                       text=True, timeout=8).strip()
+
     def __exit__(self, *_):
         self._stop_server()
         self._remove_user()
@@ -108,6 +115,10 @@ LogLevel DEBUG2
 
     def _remove_user(self):
         if getattr(self, "user_created", False) and getattr(self, "user", None):
+            if getattr(self, "socket_name", None):
+                subprocess.run(["sudo", "-n", "-H", "-u", self.user, "tmux", "-L",
+                                self.socket_name, "kill-server"], check=False,
+                               capture_output=True, timeout=5)
             subprocess.run(["sudo", "-n", "userdel", "--remove", self.user],
                            check=False, capture_output=True)
             self.user = None

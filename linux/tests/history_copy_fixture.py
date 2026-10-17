@@ -79,15 +79,19 @@ class PointerHistoryFixture(window_fixture.MainWindowCopyTests):
         self.xtst.XTestFakeKeyEvent(self.display, self.shift, False, 0)
         self.x11.XSync(self.display, False)
 
-    def seed_history(self):
-        socket = shlex.quote(self.socket)
+    def seed_history(self, tmux=None, *, socket_name=None, wait_for_terminal=True):
+        tmux = tmux or self.tmux
+        socket_name = socket_name or self.socket
+        socket = shlex.quote(socket_name)
         command = ("i=0; while [ $i -lt 120 ]; do printf 'ROW%04d copia_ñ\\n' $i; i=$((i+1)); done; "
                    f"tmux -L {socket} wait-for -S history-ready; IFS= read -r uc_input; "
                    "printf 'ENTRADA:%s\\n' \"$uc_input\"; "
                    f"tmux -L {socket} wait-for -S typed; exec sleep 90")
-        self.tmux("respawn-pane", "-k", "-t", "=subject:", command)
-        self.tmux("wait-for", "history-ready")
-        self.before = self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_id}:#{pane_pid}")
+        tmux("respawn-pane", "-k", "-t", "=subject:", command)
+        tmux("wait-for", "history-ready")
+        self.before = tmux("display-message", "-p", "-t", "=subject:", "#{pane_id}:#{pane_pid}")
+        if not wait_for_terminal:
+            return
         terminal = self.surface.terminal
         def visible_text():
             return (terminal.get_text_format(Vte.Format.TEXT) if hasattr(terminal, "get_text_format")

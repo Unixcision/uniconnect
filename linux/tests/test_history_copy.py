@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from history_copy_fixture import PointerHistoryFixture
-from gi.repository import Gdk, GLib, Gtk
+from gi.repository import Gdk, GLib, Gtk, Vte
 from ssh_copy_fixture import SSHCopyFixture
 from vnc_copy_fixture import VNCClipboardPeer
 
@@ -91,11 +91,11 @@ class HistoryCopyTests(PointerHistoryFixture):
                       f"drag_error={self.surface.selection_drag.last_error!r}; "
                       f"clipboard_stats={self._clipboard_stats()!r}; "
                       f"tmux={self.tmux('display-message', '-p', '-t', '=subject:', '#{pane_mode}:#{selection_present}:#{copy_cursor_y}')!r}")
-        self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}"), "1")
+        # Copying deliberately leaves tmux copy-mode so the live agent receives
+        # subsequent keystrokes without an extra Cancel action.
+        self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}"), "0")
         self.assertIn("ROW0119", Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY).wait_for_text())
         self.assertIn("ROW0000", Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY).wait_for_text())
-        self.window.run_action("cancel_selection")
-        self.wait_for(lambda: self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}") == "0")
         self.surface.send("UC_BLUE_OK\n")
         self.tmux("wait-for", "typed")
         self.assertIn("ENTRADA:UC_BLUE_OK", self.tmux("capture-pane", "-p", "-t", "=subject:"))
@@ -108,23 +108,28 @@ class HistoryCopyTests(PointerHistoryFixture):
 
     @unittest.skipIf(os.geteuid() == 0, "isolated sshd fixture cannot authenticate the locked root account")
     def test_ssh_history_native_drag_copies_both_clipboards_and_leaves_agent_running(self):
-        self.seed_history()
         self.assertIn("show_history", self.window.action_map)
         with SSHCopyFixture() as ssh:
+            ssh.tmux("new-session", "-d", "-s", "subject", "-x", "80", "-y", "24", "sleep", "90")
+            self.seed_history(ssh.tmux, socket_name=ssh.socket_name, wait_for_terminal=False)
             self.surface.workspace["kind"] = "ssh"
             self.surface.workspace["credentialId"] = self.window.vault.put(ssh.command)
+            self.surface.record["tmuxSocket"] = ssh.socket_name
             # Exercise the actual app's SSH launch, not only a mock transport.
             self.surface.launch()
             self.wait_for(lambda: self.surface.status == "Running" and not self.surface._preparing)
+            self.wait_for(lambda: "ROW0119" in ((self.surface.terminal.get_text_format(Vte.Format.TEXT)
+                                                  if hasattr(self.surface.terminal, "get_text_format")
+                                                  else self.surface.terminal.get_text(None, None)[0]) or ""))
             self.window.run_action("show_history")
             self.wait_for(lambda: self.surface.history_view is not None and self.surface.history_view.ready)
             view = self.surface.history_view
             self.addCleanup(view.destroy)
             self.assertIn("ROW0000", view.text.get_buffer().get_text(*view.text.get_buffer().get_bounds(), False))
             self.assertIn("ROW0119", view.text.get_buffer().get_text(*view.text.get_buffer().get_bounds(), False))
-            self.tmux("new-session", "-d", "-s", "other", "sleep 90")
-            other = self.tmux("display-message", "-p", "-t", "=other:", "#{pane_id}:#{pane_pid}")
-            self.tmux("set-buffer", "OTRA_VENTANA")
+            ssh.tmux("new-session", "-d", "-s", "other", "sleep", "90")
+            other = ssh.tmux("display-message", "-p", "-t", "=other:", "#{pane_id}:#{pane_pid}")
+            ssh.tmux("set-buffer", "OTRA_VENTANA")
             view.resize(800, 450)
             view.move(60, 220)
             view.present()
@@ -158,16 +163,16 @@ class HistoryCopyTests(PointerHistoryFixture):
                 self.assertIn("copia_ñ", copied)
                 self.assertGreater(len(copied.splitlines()), 40)
                 view.destroy()
-            self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}"), "0")
-            self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_id}:#{pane_pid}"), self.before)
-            self.assertEqual(self.tmux("display-message", "-p", "-t", "=other:", "#{pane_id}:#{pane_pid}"), other)
-            self.assertEqual(self.tmux("show-buffer"), "OTRA_VENTANA")
+            self.assertEqual(ssh.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}"), "0")
+            self.assertEqual(ssh.tmux("display-message", "-p", "-t", "=subject:", "#{pane_id}:#{pane_pid}"), self.before)
+            self.assertEqual(ssh.tmux("display-message", "-p", "-t", "=other:", "#{pane_id}:#{pane_pid}"), other)
+            self.assertEqual(ssh.tmux("show-buffer"), "OTRA_VENTANA")
             self.clipboard.set_text("UC_PASTE_OK", -1)
             self.window.run_action("paste")
-            self.wait_for(lambda: "UC_PASTE_OK" in self.tmux("capture-pane", "-p", "-t", "=subject:"))
+            self.wait_for(lambda: "UC_PASTE_OK" in ssh.tmux("capture-pane", "-p", "-t", "=subject:"))
             self.surface.send("\n")
-            self.tmux("wait-for", "typed")
-            self.assertIn("ENTRADA:UC_PASTE_OK", self.tmux("capture-pane", "-p", "-t", "=subject:"))
+            ssh.tmux("wait-for", "typed")
+            self.assertIn("ENTRADA:UC_PASTE_OK", ssh.tmux("capture-pane", "-p", "-t", "=subject:"))
             self.assertEqual(self.errors, [])
             self.surface.stop_client()
 
