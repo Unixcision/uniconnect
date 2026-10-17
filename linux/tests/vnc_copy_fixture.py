@@ -1,12 +1,14 @@
 """A loopback-only RFB clipboard peer on the disposable CI X display."""
 
 import os
+import re
 import socket
 import struct
 import subprocess
 import tempfile
 import threading
 import time
+import ctypes
 
 
 class VNCClipboardPeer:
@@ -20,10 +22,16 @@ class VNCClipboardPeer:
         with socket.socket() as port:
             port.bind(('127.0.0.1', 0))
             self.port = port.getsockname()[1]
+        server_env = os.environ.copy()
+        # In a headless Xvfb there is no window manager to disappear. Without
+        # this x11vnc delays creating its selection-owner window for 45s, so a
+        # clipboard message sent as soon as RFB is ready races initialization.
+        server_env['X11VNC_AVOID_WINDOWS'] = 'never'
         self.server = subprocess.Popen(['x11vnc', '-display', os.environ['DISPLAY'], '-localhost',
             '-rfbport', str(self.port), '-nopw', '-shared', '-forever', '-noxdamage', '-debug_sel',
             '-seldir', self.direction,
-            '-o', self.directory.name + '/log'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            '-o', self.directory.name + '/log'], env=server_env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         # Wait for the bound socket, not a version-specific stdout line.
         deadline = time.monotonic() + 5
         while self.server.poll() is None and time.monotonic() < deadline:
@@ -51,6 +59,7 @@ class VNCClipboardPeer:
         self._read(struct.unpack('!I', header[20:24])[0])
         self.socket.sendall(b'\x02\0\0\x01' + struct.pack('!i', 0))
         self.socket.sendall(b'\x03\0' + struct.pack('!HHHH', 0, 0, 1, 1))
+        self._wait_for_selection_owner()
         # The handshake uses a deadline; the long-lived RFB reader must not
         # time out and silently stop before the desktop changes its clipboard.
         self.socket.settimeout(None)
@@ -59,6 +68,35 @@ class VNCClipboardPeer:
         self.reader = threading.Thread(target=self._receive, daemon=True)
         self.reader.start()
         return self
+
+    def _wait_for_selection_owner(self):
+        self.x11 = ctypes.CDLL('libX11.so.6')
+        self.x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        self.x11.XOpenDisplay.restype = ctypes.c_void_p
+        self.x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+        self.x11.XInternAtom.restype = ctypes.c_ulong
+        self.x11.XGetSelectionOwner.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        self.x11.XGetSelectionOwner.restype = ctypes.c_ulong
+        self.x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+        self.x11.XCloseDisplay.restype = ctypes.c_int
+        self.display = self.x11.XOpenDisplay(None)
+        if not self.display:
+            raise RuntimeError('Cannot open CI X display to inspect VNC clipboard owner')
+        atom = self.x11.XInternAtom(self.display, b'CLIPBOARD', 0)
+        deadline = time.monotonic() + 5
+        self.selection_window = None
+        while self.server.poll() is None and time.monotonic() < deadline:
+            match = re.search(r'created selwin:\s+0x([0-9a-fA-F]+)', self.server_log())
+            if match:
+                self.selection_window = int(match.group(1), 16)
+                owner = self.x11.XGetSelectionOwner(self.display, atom)
+                if owner == self.selection_window:
+                    return
+            time.sleep(0.05)
+        log = self.server_log()
+        self.__exit__(None, None, None)
+        raise RuntimeError('CI VNC selection owner did not become ready: '
+                           f'window={self.selection_window!r}; log={log!r}')
 
     def server_log(self):
         try:
@@ -105,6 +143,9 @@ class VNCClipboardPeer:
     def __exit__(self, *_):
         if getattr(self, 'socket', None):
             self.socket.close()
+        if getattr(self, 'display', None):
+            self.x11.XCloseDisplay(self.display)
+            self.display = None
         if getattr(self, 'server', None):
             if self.server.poll() is None:
                 self.server.terminate()
