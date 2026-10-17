@@ -94,21 +94,26 @@ para adoptar la opción. Si Codex tiene trabajo en curso, el plan de relanzado
 lo avisa: **Aplicar** autoriza interrumpirlo y reabrir la misma conversación.
 El cierre sigue bloqueado cuando hay un borrador o un diálogo sin reconocer.
 
-En servidores nuevos de los sockets dedicados `uniconnect` y `uniconnect-local`,
-arrastra sin Mayús para seleccionar en naranja. Mantén el botón y lleva el
-puntero al borde superior para ampliar la selección por el historial. Al soltar,
-la selección se conserva: usa **clic derecho → Copiar** o **Ctrl+Mayús+C**.
-**Esc** cancela la selección y devuelve el control al programa. **Ctrl+C** sigue
-siendo una tecla del programa, no el atajo predeterminado de Copiar. Los bindings
-o colores personalizados se conservan; Mayús+arrastre selecciona en VTE y no
-sustituye el historial de tmux.
+En una terminal local o SSH con tmux, mantén **Mayús** y arrastra con el botón
+izquierdo para seleccionar el historial, incluso por encima del borde superior
+visible. Mantén pulsado ahí para que la vista avance mientras amplía la
+selección; al soltarla, usa **clic derecho → Copiar** o **Ctrl+Mayús+C**. **Esc**
+cancela el modo de selección; **Ctrl+C** sigue enviándose al programa y no se
+convierte en Copiar. Sin Mayús, la selección sigue el comportamiento y los
+bindings de tmux. UniConnect cambia a azul el estilo naranja predeterminado y
+conserva los colores y bindings personalizados.
 
-La política de selección solo se aplica al crear un servidor tmux dedicado.
-Conectar un terminal o crear otra sesión en un servidor existente no cambia
-sus teclas ni opciones globales; actualizar esos servidores requiere una acción
-explícita de mantenimiento. Estas opciones pertenecen al adaptador Linux y no
-cambian el terminal ni los lanzamientos de macOS. El gesto y el portapapeles
-requieren comprobación manual en la instalación de destino.
+La selección larga depende del historial de tmux. Los lanzamientos gestionados
+de Codex usan `--no-alt-screen` para que su salida permanezca en ese historial;
+las sesiones existentes necesitan un relanzado conservando la misma conversación.
+El relanzado avisa si detecta trabajo en curso y bloquea estados no reconocidos.
+Al reconectar o adjuntarse a un servidor existente, UniConnect no cambia sus
+bindings ni opciones globales; solo migra el color naranja predeterminado. Copiar
+desde UniConnect se publica también al portapapeles X11 que x11vnc reenvía al
+espectador. La dirección inversa depende del servidor VNC: LibVNCServer anterior
+a 0.9.15 tiene un defecto conocido al entregar el texto recibido a GTK, por lo
+que en esos sistemas pegar desde el espectador VNC puede no funcionar. Estas
+opciones pertenecen al adaptador Linux y no cambian macOS.
 
 ### Relanzar Codex
 
