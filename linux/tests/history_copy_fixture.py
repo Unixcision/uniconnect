@@ -83,6 +83,8 @@ class PointerHistoryFixture(window_fixture.MainWindowCopyTests):
         tmux = tmux or self.tmux
         socket_name = socket_name or self.socket
         socket = shlex.quote(socket_name)
+        # Keep the fixture independent of a runner/user tmux.conf.
+        tmux("set-option", "-g", "history-limit", "500")
         command = ("i=0; while [ $i -lt 120 ]; do printf 'ROW%04d copia_ñ\\n' $i; i=$((i+1)); done; "
                    f"tmux -L {socket} wait-for -S history-ready; IFS= read -r uc_input; "
                    "printf 'ENTRADA:%s\\n' \"$uc_input\"; "
