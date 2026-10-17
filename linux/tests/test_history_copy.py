@@ -35,11 +35,14 @@ class HistoryCopyTests(PointerHistoryFixture):
         with VNCClipboardPeer("recv") as peer:
             self.wait_for(lambda: peer.ready)
             peer.send('UC_VNC_PEGADO_456')
-            self.wait_for(lambda: self.clipboard.wait_for_text() == 'UC_VNC_PEGADO_456',
+            # Exercise UniConnect's real async clipboard request rather than
+            # polling Gtk.Clipboard.wait_for_text() independently. Some X11
+            # selection owners (including x11vnc) only serve the requested
+            # target through their SelectionRequest handler.
+            self.window.run_action('paste')
+            self.wait_for(lambda: 'UC_VNC_PEGADO_456' in self.tmux('capture-pane', '-p', '-t', '=subject:'),
                           detail=lambda: f"VNC received={peer.received!r}; peer_error={peer.error!r}; "
                           f"server_log={peer.server_log()!r}")
-            self.window.run_action('paste')
-            self.wait_for(lambda: 'UC_VNC_PEGADO_456' in self.tmux('capture-pane', '-p', '-t', '=subject:'))
             self.surface.send('\n')
             self.tmux('wait-for', 'typed')
             self.assertIn('ENTRADA:UC_VNC_PEGADO_456', self.tmux('capture-pane', '-p', '-t', '=subject:'))
