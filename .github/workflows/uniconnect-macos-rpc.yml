@@ -105,7 +105,7 @@ jobs:
           export PKG_CONFIG_PATH="$(brew --prefix libevent)/lib/pkgconfig:$(brew --prefix ncurses)/lib/pkgconfig:$(brew --prefix utf8proc)/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
           (
             cd "$source_dir"
-            ./configure --prefix="$prefix" --enable-utf8proc
+            ./configure --prefix="$prefix" --enable-utf8proc --disable-jemalloc
             make -j "$(sysctl -n hw.ncpu)"
             make install
           )
