@@ -66,7 +66,7 @@ class HistoryCopyTests(PointerHistoryFixture):
         # Hold the pointer above the viewport: the edge-scroll timer must walk
         # the real tmux history instead of stopping at VTE's visible rows.
         self.xtst.XTestFakeMotionEvent(self.display, -1,
-                                       x + 16 * terminal.get_char_width(),
+                                       x - 8 * terminal.get_char_width(),
                                        top_y + offset_y - 12 * terminal.get_char_height() - 2, 0)
         self.x11.XSync(self.display, False)
         self.wait_for(lambda: any(event[0] == Gdk.EventType.MOTION_NOTIFY

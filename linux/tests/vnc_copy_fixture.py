@@ -6,6 +6,7 @@ import struct
 import subprocess
 import tempfile
 import threading
+import time
 
 
 class VNCClipboardPeer:
@@ -17,11 +18,19 @@ class VNCClipboardPeer:
         self.server = subprocess.Popen(['x11vnc', '-display', os.environ['DISPLAY'], '-localhost',
             '-rfbport', str(self.port), '-nopw', '-shared', '-forever', '-noxdamage', '-debug_sel',
             '-primary', '-clipboard',
-            '-o', self.directory.name + '/log'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-        # x11vnc emits PORT after binding; no arbitrary startup sleep.
-        if not self.server.stdout.readline().startswith('PORT='):
+            '-o', self.directory.name + '/log'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Wait for the bound socket, not a version-specific stdout line.
+        deadline = time.monotonic() + 5
+        while self.server.poll() is None and time.monotonic() < deadline:
+            try:
+                with socket.create_connection(('127.0.0.1', self.port), timeout=0.2):
+                    break
+            except OSError:
+                time.sleep(0.05)
+        else:
+            log = self.server_log()
             self.__exit__(None, None, None)
-            raise RuntimeError('CI VNC server failed to start')
+            raise RuntimeError('CI VNC server failed to start: ' + log)
         self.socket = socket.create_connection(('127.0.0.1', self.port), timeout=8)
         self._read(12)
         self.socket.sendall(b'RFB 003.008\n')
@@ -94,5 +103,4 @@ class VNCClipboardPeer:
         if getattr(self, 'server', None):
             self.server.terminate()
             self.server.wait(timeout=5)
-            self.server.stdout.close()
         self.directory.cleanup()

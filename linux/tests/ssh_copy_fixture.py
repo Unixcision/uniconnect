@@ -51,7 +51,6 @@ class SSHCopyFixture:
 ListenAddress 127.0.0.1
 HostKey {root / 'host'}
 PidFile {self.pid_file}
-AuthorizedKeysFile {root / 'authorized_keys'}
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PubkeyAuthentication yes
