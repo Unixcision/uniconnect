@@ -38564,6 +38564,17 @@
         }
       }
     },
+    "uniconnect.relaunch.warning.active_codex": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tiene trabajo en curso. Al aplicar autorizas interrumpirlo, incluidos sus terminales de fondo, para cerrar Codex y reabrir la misma conversación."
+          }
+        }
+      }
+    },
     "uniconnect.relaunch.cause.token_caducado": {
       "extractionState": "manual",
       "localizations": {

@@ -294,7 +294,7 @@ class NoPromptSupersedesTest(unittest.TestCase):
     def test_the_launch_uses_the_same_policy_as_the_canonical_form(self):
         with patch.object(recovery.shutil, "which", return_value="/usr/bin/codex"):
             argv = recovery.command_for({"agent": "codex", "sessionId": "t1", "cwd": "/w", "model": "m"})
-        self.assertEqual(argv, ["/usr/bin/codex", "--yolo", "resume", "t1", "-C", "/w", "-m", "m"])
+        self.assertEqual(argv, ["/usr/bin/codex", "--yolo", "resume", "t1", "-C", "/w", "-m", "m", "--no-alt-screen"])
 
     def test_the_copy_is_the_catalog_policy(self):
         # La copia no puede decir otra cosa que el catálogo compartido, supersedes incluido. Sin

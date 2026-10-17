@@ -104,7 +104,8 @@ class RelaunchService:
                     "expires_at": datetime.datetime.fromtimestamp(expires, datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
                     "verb": verb, "targets": [
                         {"key": proof["key"], "label": candidate["label"], "provider": candidate["provider"],
-                         "generation": proof["generation"], "state": "planificado"}
+                         "generation": proof["generation"], "state": "planificado",
+                         **({"active": True} if proof.get("active") is True else {})}
                         for candidate, proof in selected], "excluded": excluded}
         self.check(authorized)
         with self.lock:

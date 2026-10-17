@@ -29,7 +29,8 @@ class ArgumentsTests(unittest.TestCase):
         # Decisión de Dani (24-09): se relanza siempre sin preguntas; --yolo sustituye a -s/-a.
         args = TargetWorker.resume_arguments("codex", ["/bin/codex", "resume", "-C", "/work with spaces",
             "-m", "model", "--sandbox", "workspace-write", "--ask-for-approval", "on-request", "old"], "current", self.catalog)
-        self.assertEqual(args, ["/bin/codex", "--yolo", "resume", "current", "-C", "/work with spaces", "-m", "model"])
+        self.assertEqual(args, ["/bin/codex", "--yolo", "resume", "current", "-C", "/work with spaces", "-m", "model",
+                                "--no-alt-screen"])
         args = TargetWorker.resume_arguments("claude", ["/bin/claude", "--resume", "old", "--model", "model",
             "--permission-mode", "default", "--append-system-prompt", "x; $(not a shell command)"], "current", self.catalog)
         self.assertEqual(args, ["/bin/claude", "--resume", "current", "--model", "model", "--permission-mode", "default",
@@ -41,7 +42,33 @@ class ArgumentsTests(unittest.TestCase):
                      ["codex", "--full-auto"], ["codex", "-a", "never", "-s", "danger-full-access"]):
             with self.subTest(argv=argv):
                 self.assertEqual(TargetWorker.resume_arguments("codex", argv, "current", self.catalog),
-                                 ["codex", "--yolo", "resume", "current"])
+                                 ["codex", "--yolo", "resume", "current", "--no-alt-screen"])
+
+    def test_codex_relaunch_keeps_inline_mode_once_across_repeated_relaunches(self):
+        for options in ([], ["--no-alt-screen"], ["--no-alt-screen", "--search"]):
+            with self.subTest(options=options):
+                argv = ["codex", "--yolo", *options, "resume", "old", "-C", "/w", "-m", "model"]
+                args = TargetWorker.resume_arguments("codex", argv, "current", self.catalog)
+                self.assertEqual(args.count("--no-alt-screen"), 1)
+                self.assertEqual(args.count("--yolo"), 1)
+                self.assertEqual(TargetWorker.resume_arguments("codex", args, "current", self.catalog), args)
+                self.assertEqual(args[args.index("-C") + 1], "/w")
+                self.assertEqual(args[args.index("-m") + 1], "model")
+
+    def test_confirmed_active_target_can_finish_before_execution_but_cannot_change_identity(self):
+        proof = {"key": "pane", "generation": 1, "effective_id": "native", "configuration": "same", "active": True}
+        for changed in (False, True):
+            with self.subTest(changed=changed):
+                adapter = RelaunchAgents()
+                current = {key: value for key, value in proof.items() if key != "active"}
+                if changed:
+                    current["effective_id"] = "different"
+                adapter.probe = lambda *args: current
+                calls = []
+                adapter.request = lambda *args, **kwargs: calls.append((args, kwargs)) or {"state": "verificado", "effective_id": "native"}
+                result = adapter.execute({}, "agent.relaunch", proof, "operation", lambda value: None, lambda: True)
+                self.assertEqual(result["state"], "omitido" if changed else "verificado")
+                self.assertEqual(len(calls), 0 if changed else 1)
 
     def test_worker_policy_matches_the_shared_catalogue_rule(self):
         catalog = AgentResumeCatalog()
@@ -64,7 +91,8 @@ class ArgumentsTests(unittest.TestCase):
         hook = json.dumps(["/usr/bin/python3", "-c", BOOTSTRAP, "signal"])
         args = TargetWorker.resume_arguments("codex", ["codex", "resume", "old", "-c", "notify=" + hook,
             "-c", 'model_reasoning_effort="high"'], "current", self.catalog)
-        self.assertEqual(args, ["codex", "--yolo", "resume", "current", "-c", 'model_reasoning_effort="high"'])
+        self.assertEqual(args, ["codex", "--yolo", "resume", "current", "-c", 'model_reasoning_effort="high"',
+                                "--no-alt-screen"])
 
     def test_unknown_provider_is_visible_but_does_not_issue_any_process_command(self):
         worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "grok", "catalog": self.catalog})
@@ -488,10 +516,20 @@ class TargetIntegrationTests(unittest.TestCase):
                 rejected = str(uuid.uuid4())
                 draft_result = adapter.execute(candidate, "agent.relaunch", proof, rejected, phases.append, lambda: True)
                 self.assertEqual(draft_result, {"state": "necesita_usuario", "cause": "dialogo_desconocido"})
-                self.assertEqual(adapter.probe(candidate, "agent.relaunch"), proof)
+                # Inspection itself must refuse to mint/refresh a proof while
+                # the composer contains a draft; only the execute API converts
+                # this safe preflight refusal into the user-facing state.
+                with self.assertRaises(RelaunchUnavailable) as blocked:
+                    adapter.probe(candidate, "agent.relaunch")
+                self.assertEqual(blocked.exception.cause, "dialogo_desconocido")
+                state = adapter.request(candidate, "start", expected=proof, operation_id=rejected)
+                deadline = time.monotonic() + 5
+                while state.get("state") == "planificado" and time.monotonic() < deadline:
+                    events.wait(deadline, time.monotonic)
+                    state = adapter.request(candidate, "status", expected=proof, operation_id=rejected)
+                self.assertEqual(state, draft_result)
                 os.kill(proof["pid"], signal.SIGUSR2)
                 screen_until(lambda screen: screen.splitlines()[0].strip() == "›" and "borrador" not in screen)
-                self.assertEqual(adapter.request(candidate, "start", expected=proof, operation_id=rejected), draft_result)
                 phases.clear()
                 result = adapter.execute(candidate, "agent.relaunch", proof, operation, phases.append, lambda: True)
                 self.assertEqual(result, {"state": "verificado", "effective_id": native})

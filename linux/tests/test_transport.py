@@ -51,7 +51,7 @@ class SSHCommandTests(unittest.TestCase):
                   "agent": "codex", "sessionId": "01a070d7-5f44-7f33-aee1-867c845860ef",
                   "model": "gpt-6-astra"}
         self.assertEqual(TmuxCommand.agent_argv(window), ["codex", "--yolo", "resume", window["sessionId"],
-                                                         "-C", "/home/ec2-user", "-m", "gpt-6-astra"])
+                                                         "-C", "/home/ec2-user", "-m", "gpt-6-astra", "--no-alt-screen"])
         self.assertIn("--yolo", TmuxCommand.pane_command(window))
         self.assertNotIn("IS_SANDBOX", TmuxCommand.pane_command(window))
         for name in ("", "bad.name", "bad:name", "a" * 41):
@@ -288,6 +288,12 @@ class TmuxHistoryBehaviorTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         return result.stdout.strip()
 
+    def copy_selection_style(self, socket):
+        result = subprocess.run([*shlex.split(self.binary(socket)), "show-window-options", "-gv",
+                                 "copy-mode-selection-style"], env=self.environment,
+                                capture_output=True, text=True, timeout=8)
+        return result.stdout.strip() if result.returncode == 0 else None
+
     def create(self, socket, route, name="subject", create=True):
         window = {"tmux": name, "cwd": str(self.root), "agent": "terminal", "tmuxSocket": socket}
         if route == "ensure":
@@ -376,12 +382,21 @@ class TmuxHistoryBehaviorTests(unittest.TestCase):
                 self.tmux(socket, "set-option", "-s", "set-clipboard", "on")
                 keys = [self.tmux(socket, "list-keys", "-T", table, "MouseDragEnd1Pane") for table in tables]
                 limit = self.tmux(socket, "show-options", "-gv", "history-limit")
+                drag = self.tmux(socket, "list-keys", "-T", "root", "MouseDrag1Pane")
+                style = self.tmux(socket, "show-window-options", "-gv", "mode-style")
+                selection_style = self.copy_selection_style(socket)
                 for route, create in (("ensure", True), ("attach", True), ("attach", False)):
                     self.create(socket, route, create=create)
                     self.assertEqual("on", self.tmux(socket, "show-options", "-sv", "set-clipboard"), route)
                     self.assertEqual(keys, [self.tmux(socket, "list-keys", "-T", table, "MouseDragEnd1Pane")
                                             for table in tables], route)
                     self.assertEqual(limit, self.tmux(socket, "show-options", "-gv", "history-limit"), route)
+                    self.assertEqual(drag, self.tmux(socket, "list-keys", "-T", "root", "MouseDrag1Pane"), route)
+                    expected_mode_style = style if selection_style is not None else "fg=white,bg=blue"
+                    self.assertEqual(expected_mode_style,
+                                     self.tmux(socket, "show-window-options", "-gv", "mode-style"), route)
+                    if selection_style is not None:
+                        self.assertEqual("fg=white,bg=blue", self.copy_selection_style(socket), route)
                 self.tmux(socket, "kill-server")
                 # Un servidor que arranca esta misma llamada sí recibe la protección.
                 self.create(socket, "ensure")
@@ -393,8 +408,23 @@ class TmuxHistoryBehaviorTests(unittest.TestCase):
             self.create(socket, "ensure")
             dedicated = socket in ("uniconnect", "uniconnect-local")
             command = "copy-pipe-no-clear" if dedicated else "copy-pipe-and-cancel"
+            drag_condition = "#{pane_in_mode}" if dedicated else "#{||:#{pane_in_mode},#{mouse_any_flag}}"
+            expected_drag = f'bind-key -T root MouseDrag1Pane if-shell -F "{drag_condition}" "send-keys -M" "copy-mode -M"'
+            expected_drag_keys = {
+                expected_drag,
+                expected_drag.replace('"send-keys -M"', '"send -M"'),
+                expected_drag.replace('"send-keys -M" "copy-mode -M"', '{ send-keys -M } { copy-mode -M }'),
+                expected_drag.replace('"send-keys -M" "copy-mode -M"', '{ send -M } { copy-mode -M }'),
+            }
             for route, create in (("ensure", True), ("attach", True), ("attach", False)):
                 self.create(socket, route, create=create)
+                self.assertIn(self.tmux(socket, "list-keys", "-T", "root", "MouseDrag1Pane"), expected_drag_keys)
+                if dedicated and self.copy_selection_style(socket) is not None:
+                    self.assertEqual("fg=white,bg=blue", self.copy_selection_style(socket))
+                else:
+                    expected_mode_style = "fg=white,bg=blue" if dedicated else "bg=yellow,fg=black"
+                    self.assertEqual(expected_mode_style,
+                                     self.tmux(socket, "show-window-options", "-gv", "mode-style"))
                 for table in ("copy-mode", "copy-mode-vi"):
                     self.assertEqual(f"bind-key -T {table} MouseDragEnd1Pane send-keys -X {command}",
                                      self.tmux(socket, "list-keys", "-T", table, "MouseDragEnd1Pane"))
@@ -406,13 +436,44 @@ class TmuxHistoryBehaviorTests(unittest.TestCase):
                 self.assertEqual("1:1", self.tmux(socket, "display-message", "-p", "-t", "=subject:", "#{pane_in_mode}:#{selection_present}"))
                 self.tmux(socket, "send-keys", "-t", "=subject:", "-X", "cancel")
             # A user's customized table is never replaced, even on our server.
+            self.tmux(socket, "bind-key", "-T", "root", "MouseDrag1Pane", "select-pane", "-m")
+            self.tmux(socket, "set-window-option", "-g", "mode-style", "fg=white,bg=red")
+            custom_copy_style = self.copy_selection_style(socket)
+            if dedicated and custom_copy_style is not None:
+                self.tmux(socket, "set-window-option", "-g", "copy-mode-selection-style", "fg=white,bg=green")
             for table in ("copy-mode", "copy-mode-vi"):
                 self.tmux(socket, "bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "cancel")
             for route, create in (("ensure", True), ("attach", True), ("attach", False)):
                 self.create(socket, route, create=create)
+                self.assertEqual("bind-key -T root MouseDrag1Pane select-pane -m",
+                                 self.tmux(socket, "list-keys", "-T", "root", "MouseDrag1Pane"))
+                self.assertEqual("fg=white,bg=red", self.tmux(socket, "show-window-options", "-gv", "mode-style"))
+                if dedicated and custom_copy_style is not None:
+                    self.assertEqual("fg=white,bg=green", self.copy_selection_style(socket))
                 for table in ("copy-mode", "copy-mode-vi"):
                     self.assertEqual(f"bind-key -T {table} MouseDragEnd1Pane send-keys -X cancel",
                                      self.tmux(socket, "list-keys", "-T", table, "MouseDragEnd1Pane"))
+
+    def test_selection_policy_is_idempotent_and_preserves_custom_startup_configuration(self):
+        # Exercise the policy directly only on isolated sacrificial servers.
+        # Application entrypoints are checked above to leave live servers alone.
+        for socket in ("uniconnect", "uniconnect-local"):
+            with self.subTest(socket=socket):
+                self.create(socket, "ensure")
+                bindings = (("root", "MouseDrag1Pane"), ("copy-mode", "MouseDragEnd1Pane"),
+                            ("copy-mode-vi", "MouseDragEnd1Pane"))
+                for customized in (False, True):
+                    if customized:
+                        self.tmux(socket, "bind-key", "-T", "root", "MouseDrag1Pane", "select-pane", "-m")
+                        self.tmux(socket, "set-window-option", "-g", "mode-style", "fg=white,bg=blue")
+                        for table in ("copy-mode", "copy-mode-vi"):
+                            self.tmux(socket, "bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "cancel")
+                    before = [self.tmux(socket, "list-keys", "-T", table, key) for table, key in bindings]
+                    style = self.tmux(socket, "show-window-options", "-gv", "mode-style")
+                    result = self.run_shell(TmuxCommand.selection_policy(socket))
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(before, [self.tmux(socket, "list-keys", "-T", table, key) for table, key in bindings])
+                    self.assertEqual(style, self.tmux(socket, "show-window-options", "-gv", "mode-style"))
 
 
 SFTP_SERVER = next((path for path in ("/usr/lib/openssh/sftp-server", "/usr/libexec/openssh/sftp-server",

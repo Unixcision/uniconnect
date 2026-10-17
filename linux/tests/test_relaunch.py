@@ -62,6 +62,19 @@ class RelaunchTests(unittest.TestCase):
         self.assertEqual(self.jobs, [])
         self.assertEqual(self.adapter.calls, [])
 
+    def test_active_codex_is_warned_in_plan_and_admitted_only_after_apply(self):
+        probe = self.adapter.probe
+        self.adapter.probe = lambda candidate, verb: {**probe(candidate, verb), "active": True}
+        plan = self.plan()
+        self.assertTrue(plan["targets"][0]["active"])
+        self.assertEqual(plan["excluded"], [])
+        self.assertEqual(self.jobs, [])
+        self.assertEqual(self.adapter.calls, [])
+        self.apply(plan)
+        saved = self.service.read(plan["operation_id"])
+        self.assertTrue(saved["targets"][0]["proof"]["active"])
+        self.assertEqual(len(self.jobs), 1)
+
     def test_nonblocking_apply_recovered_expired_token_and_per_verb_phases(self):
         for verb in ("agent.relaunch", "agent.continue", "transport.reconnect"):
             plan = self.plan(verb)

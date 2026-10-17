@@ -83,6 +83,44 @@ also creates a checkpoint. Imports and restores checkpoint the current state.
 
 ## Shortcuts and local control
 
+### Copiar texto arrastrando en tmux
+
+En Linux, los nuevos lanzamientos, recuperaciones y relanzados gestionados de
+Codex usan `--no-alt-screen` para dejar el texto en el historial del terminal.
+La pantalla alternativa puede tener su propio scroll interno mientras tmux
+indica «0 de 0»; cambiar el color de selección no crea ese historial.
+Las instancias ya abiertas necesitan un relanzado con la misma conversación
+para adoptar la opción. Si Codex tiene trabajo en curso, el plan de relanzado
+lo avisa: **Aplicar** autoriza interrumpirlo y reabrir la misma conversación.
+El cierre sigue bloqueado cuando hay un borrador o un diálogo sin reconocer.
+
+En servidores nuevos de los sockets dedicados `uniconnect` y `uniconnect-local`,
+arrastra sin Mayús para seleccionar en naranja. Mantén el botón y lleva el
+puntero al borde superior para ampliar la selección por el historial. Al soltar,
+la selección se conserva: usa **clic derecho → Copiar** o **Ctrl+Mayús+C**.
+**Esc** cancela la selección y devuelve el control al programa. **Ctrl+C** sigue
+siendo una tecla del programa, no el atajo predeterminado de Copiar. Los bindings
+o colores personalizados se conservan; Mayús+arrastre selecciona en VTE y no
+sustituye el historial de tmux.
+
+La política de selección solo se aplica al crear un servidor tmux dedicado.
+Conectar un terminal o crear otra sesión en un servidor existente no cambia
+sus teclas ni opciones globales; actualizar esos servidores requiere una acción
+explícita de mantenimiento. Estas opciones pertenecen al adaptador Linux y no
+cambian el terminal ni los lanzamientos de macOS. El gesto y el portapapeles
+requieren comprobación manual en la instalación de destino.
+
+### Relanzar Codex
+
+**Relanzar IA** permite elegir la ventana actual, todas las ventanas de su
+espacio de trabajo o las del equipo. El plan enumera los objetivos y avisa si
+Codex está trabajando o tiene terminales de fondo. **Aplicar** autoriza
+interrumpir ese trabajo, cerrar Codex con `/exit` y reanudar su conversación en
+el mismo panel y carpeta; la conversación y los archivos ya guardados se
+conservan. Un borrador, un diálogo no reconocido o un cambio de identidad o
+configuración bloquea el cierre. **Reconectar** solo vuelve a conectar el
+terminal a tmux; no reinicia la IA.
+
 The Linux terminal uses Ctrl+Shift combinations so Ctrl+C remains available to
 shell programs. Settings exposes editable shortcuts, font, appearance
 and optional idle locking. Defaults include:

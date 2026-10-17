@@ -107,6 +107,32 @@ se anuncia y el plan lo excluye con `no_soportado` (`pendiente_prueba_en_vivo` e
 
 ### Cómo lo anuncia el equipo
 
+Actualización de Linux (01-10-2026, Codex): el plan puede incluir un objetivo con
+`active: true` cuando reconoce trabajo o terminales de fondo y ha comprobado su
+identidad, configuración efectiva y compositor vacío. Es un aviso, no una causa
+de exclusión: **Aplicar** autoriza interrumpir ese trabajo y relanzar la misma
+conversación. El escritorio muestra el aviso antes de confirmar. El trabajador
+solo envía Esc ante los indicadores reconocidos «Working» o «Waiting for
+background terminal» con «esc to interrupt», y
+observa el final nativo del turno antes de `/exit`. No fuerza la muerte del proceso.
+
+La configuración y el ciclo de turno se leen del archivo nativo acreditado de
+esa conversación, retrocediendo hasta el contexto más reciente aunque quede
+fuera de los últimos 4 MiB. No se descartan finales de turno por incluir una
+respuesta larga. Una instancia recién reanudada también puede acreditar reposo
+con su configuración nativa completa posterior al nacimiento del proceso y sin
+actividad nativa posterior a ese nacimiento; un contexto antiguo interrumpido
+no obliga a inventar un final. Los relojes ambiguos o metadatos insuficientes
+bloquean esa vía. La pantalla por sí sola nunca acredita la configuración.
+
+El compositor vacío de Codex en Linux se reconoce por el marcador atenuado o
+gris y su estructura, sin exigir la columna 2 del cursor. Un borrador o un estado
+ambiguo sigue bloqueando el cierre. Antes de Intro, la línea `/exit` y el resto
+del compositor deben coincidir con la entrada esperada; se revalidan también
+proceso, conversación y configuración. Que un objetivo activo termine su turno
+no invalida por sí solo el plan confirmado. Estos cambios no amplían el soporte
+de otros proveedores ni modifican los dialectos de macOS.
+
 En `capabilities` (de `mobile.workspace.list`, de `mobile.host.status` en Linux y del `status` del
 socket de control de Linux), además de `relaunch.v1`, un token por celda soportada:
 `relaunch.v1.<proveedor>.<tipo>`, con `<tipo>` `local` o `ssh`. La lista exacta de cada equipo es

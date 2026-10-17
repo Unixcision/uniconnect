@@ -11,6 +11,7 @@ the no-prompt rule is the very same ``AgentResumeCatalog.apply_policy`` as on th
 """
 
 import base64
+from datetime import datetime
 import fcntl
 import hashlib
 import json
@@ -228,11 +229,12 @@ class TargetWorker:
             raise Unavailable("identidad_ambigua")
         return identifier
 
-    def quiescent_configuration(self, provider, process, identifier, hook):
-        """Require a native completed turn AND explicit matching launch policy.
+    def quiescent_configuration(self, provider, process, identifier, hook, *, allow_active=False):
+        """Require native effective configuration and, by default, a completed turn.
 
-        A visible prompt can coexist with active work. Until an adapter can prove
-        lifecycle and effective settings, identity alone does not authorize exit.
+        ``allow_active`` admits a known working Codex turn into a relaunch plan;
+        its effective settings still have to match. A confirmed plan interrupts
+        that turn and observes its native end before submitting /exit.
         Reads metadata only; no transcript contents leave the target.
         Claude (D7): its own ficha says ``idle`` for that same conversation.
         """
@@ -268,28 +270,114 @@ class TargetWorker:
             header = json.loads(handle.readline(65537))
             if header.get("type") != "session_meta" or header.get("payload", {}).get("id") != identifier:
                 raise Unavailable("identidad_ambigua")
-            offset = max(handle.tell(), info.st_size - 4 * 1024 * 1024)
-            handle.seek(offset)
-            if offset > 65536:
-                handle.readline()  # Discard partial first record of a bounded tail.
-            rows = []
-            for line in handle.read(4 * 1024 * 1024).splitlines():
-                if len(line) <= 65536:
-                    try:
-                        rows.append(json.loads(line))
-                    except ValueError:
-                        raise Unavailable("no_soportado") from None
-        self.validate_quiescence(rows, process)
+            rows = self.codex_turn_metadata(handle, handle.tell(), info.st_size)
+            latest = os.fstat(handle.fileno())
+            if (latest.st_size, latest.st_mtime_ns) != (info.st_size, info.st_mtime_ns):
+                # Do not omit a newly appended user/turn while reading backwards.
+                raise Unavailable("dialogo_desconocido")
+        return self.validate_quiescence(rows, process, allow_active=allow_active,
+                                        process_birth=self.process_birth_bounds(process))
 
     @staticmethod
-    def validate_quiescence(rows, process):
-        context, settings, completed, active_turn = None, None, False, None
+    def process_birth_bounds(process):
+        """Conservative realtime interval for this Linux process' start tick.
+
+        /proc/stat btime loses up to a second. Sample the realtime/boottime
+        offset instead, including sampling duration and start-tick rounding.
+        Unavailable or anomalous clocks disable only the fresh-instance proof.
+        """
+        try:
+            before = time.time()
+            boot = time.clock_gettime(time.CLOCK_BOOTTIME)
+            after = time.time()
+            ticks, frequency = int(process["start"]), os.sysconf("SC_CLK_TCK")
+            if not 0 <= after - before <= 1 or frequency <= 0 or not 0 < ticks / frequency <= boot:
+                return None
+            return before - boot + ticks / frequency, after - boot + (ticks + 1) / frequency
+        except (AttributeError, KeyError, OSError, TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def native_timestamp(value):
+        if not isinstance(value, str):
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return parsed.timestamp() if parsed.tzinfo is not None else None
+        except (ValueError, OverflowError):
+            return None
+
+    @staticmethod
+    def codex_turn_metadata(handle, start, end):
+        """Read the latest native context, however far back, without retaining transcript text.
+
+        Keep only the newest event of each relevant kind, in file order. Older
+        starts/settings/users are superseded; an older completion can at most
+        make an ambiguous trace fail closed. Memory holds blocks, one JSON
+        record and this small metadata set, never the complete history. Large
+        completion records are parsed too: their message may exceed 64 KiB.
+        """
+        def backwards():
+            position, fragments = end, []
+            while position > start:
+                previous = max(start, position - 65536)
+                handle.seek(previous)
+                block = handle.read(position - previous)
+                if len(block) != position - previous:
+                    raise Unavailable("dialogo_desconocido")
+                position = previous
+                pieces = block.split(b"\n")
+                fragments.append(pieces.pop())
+                while pieces:
+                    yield b"".join(reversed(fragments))
+                    fragments = [pieces.pop()]
+            yield b"".join(reversed(fragments))
+
+        rows, seen = [], set()
+        for line in backwards():
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except (ValueError, UnicodeError):
+                raise Unavailable("no_soportado") from None
+            if not isinstance(row, dict) or not isinstance(row.get("payload"), dict):
+                raise Unavailable("no_soportado")
+            kind, payload = row.get("type"), row["payload"]
+            if kind == "turn_context":
+                rows.append({"type": kind, "timestamp": row.get("timestamp"), "payload": {key: payload[key] for key in
+                    ("turn_id", "model", "effort", "cwd", "approval_policy", "sandbox_policy") if key in payload}})
+                break
+            event = payload.get("type") if kind == "event_msg" else None
+            if event in ("task_started", "task_complete", "turn_aborted"):
+                key = event
+                projected = {"type": event, "turn_id": payload.get("turn_id")}
+            elif event == "thread_settings_applied":
+                key = event
+                projected = {"type": event, "thread_settings": payload.get("thread_settings")}
+            elif event == "user_message" or (kind == "response_item" and payload.get("role") == "user"):
+                key = "user_input"
+                projected = {"type": event, "role": "user"}
+            else:
+                # A new instance must not have produced/received any other
+                # native record either, even a dialect without task_started.
+                key, kind, projected = "instance_activity", "instance_activity", {}
+            if key not in seen:
+                rows.append({"type": kind, "timestamp": row.get("timestamp"), "payload": projected})
+                seen.add(key)
+        rows.reverse()
+        return rows
+
+    @staticmethod
+    def validate_quiescence(rows, process, *, allow_active=False, process_birth=None):
+        context, settings, completed, active_turn, pending_input = None, None, False, None, False
         for row in rows:
             payload = row.get("payload", {})
             if row.get("type") == "turn_context":
                 context = payload
                 settings = None
                 active_turn, completed = payload.get("turn_id"), False
+                pending_input = False
             if row.get("type") == "event_msg":
                 kind = payload.get("type")
                 if kind == "task_started":
@@ -298,11 +386,40 @@ class TargetWorker:
                     if (isinstance(active_turn, str) and active_turn and payload.get("turn_id") == active_turn
                             and context and context.get("turn_id") == active_turn):
                         completed = True
+                        pending_input = False
+                    else:
+                        # A terminal event for another/unknown turn cannot
+                        # leave an earlier active/completed proof in force.
+                        active_turn, completed = None, False
                 elif kind == "thread_settings_applied":
-                    settings = payload.get("thread_settings", {})
-            if row.get("type") == "response_item" and payload.get("role") == "user":
+                    settings = payload.get("thread_settings")
+                    if not isinstance(settings, dict):
+                        raise Unavailable("no_soportado")
+            if ((row.get("type") == "response_item" and payload.get("role") == "user")
+                    or (row.get("type") == "event_msg" and payload.get("type") == "user_message")):
+                # Codex may record the accepted user item just AFTER its turn
+                # context. That is not an unsent draft. Only a user after a
+                # completed turn needs a new context before an active proof.
+                pending_input = pending_input or completed
                 completed = False
-        if not context or not completed:
+        known_active = bool(allow_active and not pending_input and active_turn and context and context.get("turn_id") == active_turn)
+        if known_active and process_birth:
+            context_row = next(row for row in reversed(rows) if row.get("type") == "turn_context")
+            context_time = TargetWorker.native_timestamp(context_row.get("timestamp"))
+            known_active = context_time is not None and context_time >= process_birth[1]
+        fresh_instance = False
+        if process_birth and settings:
+            lower, upper = process_birth
+            timestamps = [TargetWorker.native_timestamp(row.get("timestamp")) for row in rows]
+            if all(value is not None for value in timestamps) and timestamps == sorted(timestamps):
+                fresh_settings = [stamp for row, stamp in zip(rows, timestamps)
+                    if row.get("type") == "event_msg" and row.get("payload", {}).get("type") == "thread_settings_applied"]
+                other = [stamp for row, stamp in zip(rows, timestamps)
+                    if not (row.get("type") == "event_msg" and row.get("payload", {}).get("type") == "thread_settings_applied")]
+                fresh_instance = bool(fresh_settings and fresh_settings[-1] >= upper
+                                      and fresh_settings[-1] <= time.time()
+                                      and all(stamp < lower for stamp in other))
+        if not fresh_instance and (not context or (not completed and not known_active)):
             raise Unavailable("dialogo_desconocido")
         # Do not silently convert an in-UI model/permission change back to argv.
         # Profiles/defaults need a richer effective-settings adapter; exclude now.
@@ -339,7 +456,9 @@ class TargetWorker:
         # A resume emits current settings without creating another turn_context.
         # The old completed turn proves inactivity, not today's launch settings.
         effective = context
-        if settings:
+        if settings is not None:
+            if not all(key in settings for key in ("model", "reasoning_effort", "cwd", "approval_policy", "permission_profile")):
+                raise Unavailable("no_soportado")
             if settings.get("permission_profile") != {"type": "disabled"}:
                 raise Unavailable("no_soportado")
             effective = {"model": settings.get("model"), "effort": settings.get("reasoning_effort"),
@@ -351,18 +470,19 @@ class TargetWorker:
                 or sandbox != actual_sandbox or approval != effective.get("approval_policy")
                 or effective.get("cwd") != process["cwd"]):
             raise Unavailable("no_soportado")
-        if effective.get("effort") != effort and not (effort is None and settings):
+        if effective.get("effort") != effort and not (effort is None and settings is not None):
             raise Unavailable("no_soportado")
-        if settings and (not isinstance(settings.get("model"), str) or not settings["model"]):
+        if not isinstance(effective.get("model"), str) or not effective["model"]:
             raise Unavailable("no_soportado")
         # Expanded writable roots and profile changes cannot be reconstructed
         # safely from just the three CLI flags. Reject, don't widen permissions.
         if sandbox not in ("read-only", "danger-full-access"):
             raise Unavailable("no_soportado")
-        if settings and settings.get("permission_profile"):
+        if settings is not None and settings.get("permission_profile"):
             profile = settings["permission_profile"]
             if profile != {"type": "disabled"} or sandbox != "danger-full-access":
                 raise Unavailable("no_soportado")
+        return {key: effective.get(key) for key in ("model", "effort", "cwd", "approval_policy", "sandbox_policy")}
 
     @staticmethod
     def resume_arguments(provider, argv, identifier, catalog):
@@ -418,6 +538,10 @@ class TargetWorker:
             else:
                 raise Unavailable("no_soportado")
             index += 1
+        # Preserve terminal scrollback across the Linux relaunch, even when the
+        # old Codex instance used its own alternate-screen transcript.
+        if provider == "codex" and "--no-alt-screen" not in kept:
+            kept.append("--no-alt-screen")
         substitutions = {"{executable}": [argv[0]], "{sessionId}": [identifier], "{arguments}": kept}
         return TargetWorker.no_prompt(provider, [part for token in catalog[provider]["resume"]
                                                  for part in substitutions.get(token, [token])], catalog)
@@ -467,7 +591,22 @@ class TargetWorker:
             raise Unavailable("identidad_ambigua")
         process = matches[0]
         effective = self.native_id(provider, process, hook, pane)
-        self.quiescent_configuration(provider, process, effective, hook)
+        activity = {}
+        native_configuration = None
+        if provider == "codex":
+            activity = self.codex_activity(self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines())
+            # Only a relaunch plan or its confirmed active target may admit work.
+            # Identity and effective configuration are still proved natively.
+            allow_active = (self.request.get("verb") == "agent.relaunch"
+                            or self.request.get("expected", {}).get("active") is True)
+            if any(activity.values()) and not allow_active:
+                raise Unavailable("tareas_de_fondo")
+            native_configuration = self.quiescent_configuration(provider, process, effective, hook,
+                                                                allow_active=allow_active and activity["working"])
+            if self.request.get("action") == "inspect":
+                self.require_empty_composer({"pane": pane}, allow_active=allow_active)
+        else:
+            self.quiescent_configuration(provider, process, effective, hook)
         launcher = None
         # Only the exact bundled recovery launcher has a known wait/restart
         # protocol. All other supervisors remain excluded.
@@ -482,11 +621,20 @@ class TargetWorker:
                 raise Unavailable("no_soportado")
         resume = self.resume_arguments(provider, [process["executable"], *process["argv"][1:]], effective, self.request["catalog"])
         generation = int(self.digest({"pane": pane, "pid": process["pid"], "start": process["start"], "id": effective})[:12], 16)
+        configuration = {"cwd": process["cwd"], "argv": resume}
+        if native_configuration is not None:
+            configuration.update({key: native_configuration.get(key) for key in ("model", "effort")})
         proof = {"key": "linux:" + self.digest(pane) + "|gen:" + str(generation), "generation": generation,
                  "pane": pane, "pid": process["pid"], "start": process["start"], "effective_id": effective,
-                 "configuration": self.digest({"cwd": process["cwd"], "argv": resume})}
+                 "configuration": self.digest(configuration)}
         if launcher:
             proof["launcher"] = launcher
+        if native_configuration is not None:
+            # UI model/effort changes can leave argv untouched. Revalidate the
+            # native effective settings before closing, separately from resume argv.
+            proof["native_configuration"] = self.digest(native_configuration)
+        if any(activity.values()):
+            proof["active"] = True
         if runtime:
             return proof, root, process, resume
         return proof
@@ -533,9 +681,10 @@ class TargetWorker:
             options += ["-m", entry["model"]]
         if entry.get("reasoningEffort"):
             options += ["-c", "model_reasoning_effort=" + json.dumps(entry["reasoningEffort"])]
-        # Previous launcher form and the current no-prompt one (codex --yolo resume <id> -C ...).
+        # Keep the previous launch forms and the Linux inline form produced by command_for.
         forms = (["resume", *options, "--dangerously-bypass-approvals-and-sandbox", effective],
-                 ["--yolo", "resume", effective, *options])
+                 ["--yolo", "resume", effective, *options],
+                 ["--yolo", "resume", effective, *options, "--no-alt-screen"])
         if process["argv"][1:] not in forms:
             raise Unavailable("no_soportado")
         return {"source": expected, "manifest": self.digest(entry), "session_id": effective}
@@ -596,7 +745,7 @@ class TargetWorker:
                 result = {"state": "omitido", "cause": "duplicado"}
                 self.write(journal, result)
                 return result
-            if self.inspect() != expected:
+            if not self.same_target(self.inspect(), expected):
                 result = {"state": "omitido", "cause": "generacion_cambiada"}
                 self.write(journal, result)
                 return result
@@ -638,9 +787,11 @@ class TargetWorker:
 
     def perform(self, journal):
         proof, root, process, resume = self.inspect(runtime=True)
-        if proof != self.request["expected"]:
+        if not self.same_target(proof, self.request["expected"]):
             raise Unavailable("generacion_cambiada")
-        self.require_empty_composer(proof)
+        # Keep the consent from the confirmed plan if the turn has just finished.
+        proof = self.request["expected"]
+        self.require_empty_composer(proof, allow_active=proof.get("active") is True)
         if proof.get("launcher"):
             events = TmuxOutputEvents(self.binary, self.request["session"])
             try:
@@ -752,9 +903,15 @@ class TargetWorker:
             raise Unavailable("no_soportado")
         descriptor = os.pidfd_open(process["pid"])
         try:
-            if self.inspect() != proof:
+            if not self.same_target(self.inspect(), proof):
                 raise Unavailable("generacion_cambiada")
-            self.require_empty_composer(proof)
+            approved_active = (proof.get("active") is True
+                               and self.request.get("expected", {}).get("active") is True)
+            self.require_empty_composer(proof, allow_active=approved_active)
+            self.interrupt_codex(proof, process, journal, events, approved_active=approved_active)
+            if not self.same_target(self.inspect(), proof):
+                raise Unavailable("generacion_cambiada")
+            composer = self.require_empty_composer(proof, allow_active=approved_active)
             self.write(journal, {"state": "cerrando"})
             pane = proof["pane"]["pane"]
             self.tmux("send-keys", "-t", pane, "-l", "--", "/exit")
@@ -762,17 +919,81 @@ class TargetWorker:
             while True:
                 row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
                 lines = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
-                if row < len(lines) and lines[row].strip() == "› /exit":
+                if self.codex_exit_composer(lines, row, composer):
                     break
                 events.wait(deadline, self.clock)
-            if self.inspect() != proof:
+            if not self.same_target(self.inspect(), proof):
                 raise Unavailable("generacion_cambiada")
+            # inspect reads native state and can take time. Recheck the entire
+            # input after it, immediately before submission, including continuation lines.
+            row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
+            if not self.codex_exit_composer(self.tmux("capture-pane", "-p", "-t", pane).splitlines(), row, composer):
+                raise Unavailable("dialogo_desconocido")
             self.tmux("send-keys", "-t", pane, "Enter")
             ready, _, _ = select.select([descriptor], [], [], 75)
             if not ready:
                 raise Unavailable("dialogo_desconocido")
         finally:
             os.close(descriptor)
+
+    @staticmethod
+    def same_target(current, expected):
+        """A confirmed active turn may finish; identity, generation and configuration may not change."""
+        if expected.get("active") is not True:
+            return current == expected
+        return ({key: value for key, value in current.items() if key != "active"}
+                == {key: value for key, value in expected.items() if key != "active"})
+
+    @staticmethod
+    def codex_exit_composer(lines, row, original):
+        """Only /exit and the same composer tail, allowing the warning hint hidden by its menu."""
+        prompts = [index for index, line in enumerate(lines) if line.startswith("›")]
+        return (bool(prompts) and row == prompts[-1] and lines[row] == "› /exit"
+                and TargetWorker.codex_composer_tail(lines[row + 1:])
+                == TargetWorker.codex_composer_tail(original["tail"]))
+
+    @staticmethod
+    def codex_composer_tail(lines):
+        """Normalize only the observed footer warning hint; never remove an input line or blank."""
+        return [re.sub(r" {2,}⚠ [1-9][0-9]* warnings? · f2 to view$", "", line)
+                if re.match(r"^  (?:GPT|gpt)-[A-Za-z0-9._-]+(?: [a-z]+)? · ", line) else line
+                for line in lines]
+
+    def interrupt_codex(self, proof, process, journal, events, *, approved_active):
+        """Interrupt only a recognized working turn after confirmation, then observe its native end."""
+        pane = proof["pane"]["pane"]
+        activity = self.codex_activity(self.tmux("capture-pane", "-p", "-t", pane).splitlines())
+        if any(activity.values()) and not approved_active:
+            raise Unavailable("tareas_de_fondo")
+        if not activity["working"]:
+            return
+        if not self.same_target(self.inspect(), proof):
+            raise Unavailable("generacion_cambiada")
+        self.require_empty_composer(proof, allow_active=True)
+        self.write(journal, {"state": "cerrando"})
+        self.tmux("send-keys", "-t", pane, "Escape")
+        deadline = self.clock() + 30
+        while True:
+            try:
+                if not self.same_target(self.inspect(), proof):
+                    raise Unavailable("generacion_cambiada")
+            except Unavailable as error:
+                if error.cause != "dialogo_desconocido":
+                    raise
+                # The status line and the native turn-aborted record can arrive
+                # separately. Wait for output; never manufacture a completed turn.
+                events.wait(deadline, self.clock)
+                continue
+            activity = self.codex_activity(self.tmux("capture-pane", "-p", "-t", pane).splitlines())
+            if not activity["working"]:
+                try:
+                    self.quiescent_configuration("codex", process, proof["effective_id"], "")
+                    self.require_empty_composer(proof, allow_active=True)
+                    return
+                except Unavailable as error:
+                    if error.cause != "dialogo_desconocido":
+                        raise
+            events.wait(deadline, self.clock)
 
     @staticmethod
     def claude_exit_option(screen):
@@ -892,21 +1113,81 @@ class TargetWorker:
                 pass
             events.wait(deadline, self.clock)
 
-    def require_empty_composer(self, proof):
-        """Fail closed on drafts/dialogs; never use a footer as ready evidence."""
+    @staticmethod
+    def codex_activity(lines):
+        """Read known activity near the composer; absence is never proof of native quiescence."""
+        working = background = False
+        for line in lines[-12:]:
+            working |= bool(re.match(r"^\s*[•◦·*]?\s*(?:Working|Waiting for background terminal)\s*\([^)]*\besc to interrupt\)", line))
+            background |= bool(re.search(r"(?:^\s*[•◦·*]?\s*|·\s*)[1-9][0-9]* background terminals? running\b", line))
+        return {"working": working, "background": background}
+
+    @staticmethod
+    def codex_placeholder(styled):
+        """Require dim or neutral-gray foreground on every placeholder character, not just an SGR."""
+        plain, muted = "", []
+        dim = gray = reverse = hidden = False
+        for part in re.split(r"(\x1b\[[0-9;]*m)", styled):
+            if not part.startswith("\x1b["):
+                plain += part
+                muted.extend([bool((dim or gray) and not reverse and not hidden)] * len(part))
+                continue
+            codes = [int(code or 0) for code in part[2:-1].split(";")]
+            index = 0
+            while index < len(codes):
+                code = codes[index]
+                if code == 0:
+                    dim = gray = reverse = hidden = False
+                elif code in (2, 22):
+                    dim = code == 2
+                elif code in (7, 27):
+                    reverse = code == 7
+                elif code in (8, 28):
+                    hidden = code == 8
+                elif code in (38, 48, 58):
+                    # Consume background/underline colors too: their RGB values
+                    # must never be mistaken for SGR 2 (dim).
+                    mode = codes[index + 1] if index + 1 < len(codes) else None
+                    count = 1 if mode == 5 else 3 if mode == 2 else 0
+                    color = codes[index + 2:index + 2 + count]
+                    if not count or len(color) != count or any(value > 255 for value in color):
+                        return False
+                    if code == 38:
+                        gray = (color[0] == 8 or 232 <= color[0] <= 254) if count == 1 else (
+                            color[0] == color[1] == color[2] and 0 < color[0] < 255)
+                    index += count + 1
+                elif code == 39 or 30 <= code <= 37 or 90 <= code <= 97:
+                    gray = code == 90
+                index += 1
+        return plain == "› Ask Codex to do anything" and all(muted[2:])
+
+    def require_empty_composer(self, proof, *, allow_active=False):
+        """Fail closed on drafts/dialogs; a styled placeholder, not a footer, proves empty input."""
         pane = proof["pane"]["pane"]
-        row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
         lines = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
-        empty = row < len(lines) and EMPTY_PROMPT_LINE.fullmatch(lines[row]) is not None
-        if (not empty and self.request.get("provider") == "codex" and row < len(lines)
-                and lines[row] == "› Ask Codex to do anything"
-                and self.tmux("display-message", "-p", "-t", pane, "#{cursor_x}") == "2"):
-            styled = self.tmux("capture-pane", "-e", "-p", "-t", pane).splitlines()
-            # Dim placeholder + cursor before it, not a user draft that merely
-            # happens to contain the same words (even with cursor at Home).
-            empty = (row < len(styled) and re.fullmatch(
-                r"(?:\x1b\[[0-9;]*m)*›(?:\x1b\[[0-9;]*m)* \x1b\[2mAsk Codex to do anything(?:\x1b\[[0-9;]*m)*",
-                styled[row]) is not None)
+        empty = False
+        if self.request.get("provider") == "codex":
+            if any(self.codex_activity(lines).values()) and not allow_active:
+                raise Unavailable("tareas_de_fondo")
+            # The final prompt is the composer. A prompt quoted in older output
+            # cannot authorize a close over a later draft or an unknown dialog.
+            prompts = [index for index, line in enumerate(lines) if line.startswith("›")]
+            if prompts:
+                row = prompts[-1]
+                trailing = lines[row + 1:]
+                footer = all(not line.strip() or re.fullmatch(r"  (?:GPT|gpt)-[A-Za-z0-9._-]+(?: [a-z]+)? · \S.* · \S.*|  \? for shortcuts.*", line)
+                             for line in trailing)
+                if all(not line.strip() for line in trailing) and lines[row].strip() == "›":
+                    empty = True
+                elif footer and lines[row] == "› Ask Codex to do anything":
+                    styled = self.tmux("capture-pane", "-e", "-p", "-t", pane).splitlines()
+                    # Separate reads can race a new draft: require the full same
+                    # screen before trusting the style of that particular row.
+                    if [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in styled] == lines:
+                        empty = self.codex_placeholder(styled[row])
+        else:
+            row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
+            empty = 0 <= row < len(lines) and EMPTY_PROMPT_LINE.fullmatch(lines[row]) is not None
         visible = "\n".join(lines).lower()
         if "yes, i trust this folder" in visible or "do you trust the files in this folder" in visible:
             raise Unavailable("confianza_carpeta")  # A person answers it; never on their behalf.
@@ -915,6 +1196,7 @@ class TargetWorker:
         if any(value in visible for value in ("do you trust", "trust this", "allow once", "allow execution",
                     "would you like to run", "do you want to proceed", "[y/n]", "sign in", "log in")):
             raise Unavailable("permisos")
+        return {"tail": lines[row + 1:]}
 
     def dispatch(self):
         action = self.request["action"]

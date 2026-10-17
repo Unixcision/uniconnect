@@ -48,8 +48,8 @@ class ResumeCatalogTests(unittest.TestCase):
     def test_existing_linux_launches_keep_cwd_model_and_run_without_questions(self):
         # Decisión de Dani (24-09): siempre modo sin preguntas, con la política del catálogo compartido.
         cases = [
-            ("codex", "chosen", ["codex", "--yolo", "resume", "SID", "-C", "/exact/root", "-m", "chosen"],
-             ["codex", "--yolo", "-C", "/exact/root", "-m", "chosen"]),
+            ("codex", "chosen", ["codex", "--yolo", "resume", "SID", "-C", "/exact/root", "-m", "chosen", "--no-alt-screen"],
+             ["codex", "--yolo", "-C", "/exact/root", "-m", "chosen", "--no-alt-screen"]),
             ("claude", "chosen", ["claude", "--resume", "SID", "--model", "chosen", "--dangerously-skip-permissions"],
              ["claude", "--model", "chosen", "--dangerously-skip-permissions"]),
             ("grok", "chosen", ["grok", "-r", "SID", "--model", "chosen"], ["grok", "--model", "chosen"]),
@@ -80,7 +80,21 @@ class ResumeCatalogTests(unittest.TestCase):
         self.assertIsNone(catalog.no_prompt("grok"))
         self.assertEqual(catalog.no_prompt_resume("grok", "SID", True), (["grok", "-r", "SID"], {}))
         self.assertEqual(catalog.window_argv({"agent": "codex", "sessionId": "SID", "cwd": "/w", "model": "m"}),
-                         ["codex", "--yolo", "resume", "SID", "-C", "/w", "-m", "m"])
+                         ["codex", "--yolo", "resume", "SID", "-C", "/w", "-m", "m", "--no-alt-screen"])
+
+    def test_inline_launch_is_repeatable_and_does_not_change_the_shared_resume_command(self):
+        catalog = catalog_from(NO_PROMPT_FIXTURE)
+        for session_id in (None, "SID"):
+            with self.subTest(session_id=session_id):
+                window = {"agent": "codex", "cwd": "/w", "sessionId": session_id}
+                original = dict(window)
+                argv = catalog.window_argv(window)
+                self.assertEqual(argv.count("--no-alt-screen"), 1)
+                self.assertEqual(catalog.window_argv(window), argv)
+                self.assertEqual(catalog.apply_no_prompt("codex", argv), argv)
+                self.assertEqual(window, original)
+        self.assertEqual(catalog.no_prompt_resume("codex", "SID", False),
+                         (["codex", "--yolo", "resume", "SID"], {}))
 
     def test_supersedes_drops_approval_and_sandbox_with_their_values_in_every_form(self):
         # D2: Codex rechaza --yolo junto a -a/--ask-for-approval, -s/--sandbox y --full-auto.
@@ -204,7 +218,8 @@ class ResumeCatalogTests(unittest.TestCase):
             process = subprocess.run([sys.executable, "-c", script], cwd=directory, env=environment,
                                      text=True, capture_output=True, timeout=10)
             self.assertEqual(process.returncode, 0, process.stderr)
-            self.assertEqual(json.loads(process.stdout), ["codex", "--yolo", "resume", "SID", "-C", "/exact/root"])
+            self.assertEqual(json.loads(process.stdout),
+                             ["codex", "--yolo", "resume", "SID", "-C", "/exact/root", "--no-alt-screen"])
 
 
 if __name__ == "__main__":

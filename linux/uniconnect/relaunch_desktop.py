@@ -167,7 +167,10 @@ class RelaunchDesktop:
         window = self.window
         if window._closed:
             return
-        names = ["• " + target["label"] for target in plan["targets"]]
+        names = ["• " + target["label"] + (
+            ": " + window._("uniconnect.relaunch.warning.active_codex")
+            if target.get("active") is True and target.get("provider") == "codex" else "")
+            for target in plan["targets"]]
         names += ["— " + target["label"] + ": " + window._("uniconnect.relaunch.cause." + target["cause"]) for target in plan["excluded"]]
         detail = window._("Se cerrará y reabrirá la IA conservando su conversación. tmux y tus archivos no se borran.")
         window.status_label.set_text(window._("Plan de relanzado preparado"))

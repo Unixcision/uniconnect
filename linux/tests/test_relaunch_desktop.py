@@ -41,6 +41,18 @@ class ReceiptTests(unittest.TestCase):
 
 
 class DesktopModelTests(unittest.TestCase):
+    def test_preview_warns_about_active_work_before_allowing_apply(self):
+        calls = []
+        window = SimpleNamespace(_closed=False, _=lambda value: value,
+                                 status_label=SimpleNamespace(set_text=lambda value: None),
+                                 background=lambda *args: self.fail("Cancelled preview must not apply"))
+        desktop = RelaunchDesktop.__new__(RelaunchDesktop)
+        desktop.window = window
+        desktop.confirm_plan = lambda detail, names, eligible: calls.append((names, eligible)) or False
+        desktop.preview({"targets": [{"label": "TotalVO · TVO", "provider": "codex", "active": True},
+                                     {"label": "Idle", "provider": "codex"}], "excluded": []})
+        self.assertEqual(calls, [(["• TotalVO · TVO: uniconnect.relaunch.warning.active_codex", "• Idle"], True)])
+
     def test_snapshot_never_downgrades_missing_ssh_credentials_and_rejects_changed_model(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

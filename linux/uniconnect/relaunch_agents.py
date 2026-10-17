@@ -13,6 +13,7 @@ import threading
 import time
 
 from .resume_catalog import AgentResumeCatalog
+from .relaunch_worker import TargetWorker
 from .transport import Transport
 
 
@@ -108,8 +109,16 @@ class RelaunchAgents:
             raise RelaunchUnavailable("permisos")
         if not self.validate(candidate):
             return {"state": "omitido", "cause": "generacion_cambiada"}
-        current = self.probe(candidate, verb)
-        if current != proof:
+        try:
+            current = self.probe(candidate, verb)
+        except RelaunchUnavailable as error:
+            # A busy/unknown composer or provider dialog is a human gate, not
+            # an execution failure. Keep the target untouched and surface the
+            # exact reason to the UI so the user can resolve it first.
+            if error.cause in ("dialogo_desconocido", "permisos", "confianza_carpeta", "tareas_de_fondo"):
+                return {"state": "necesita_usuario", "cause": error.cause}
+            raise
+        if not TargetWorker.same_target(current, proof):
             return {"state": "omitido", "cause": "generacion_cambiada"}
         if verb == "transport.reconnect":
             changed({"state": "reenganchando"})

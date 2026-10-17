@@ -1,15 +1,18 @@
-"""Real local selection and history export through SSH, on an isolated CI display."""
+"""tmux scrollback drag selection, clipboard export, and SSH history UI."""
 
+import os
+import shutil
 import unittest
 from unittest.mock import patch
 
 from history_copy_fixture import PointerHistoryFixture
-from gi.repository import Gdk, Gtk
+from gi.repository import Gdk, GLib, Gtk
 from ssh_copy_fixture import SSHCopyFixture
 from vnc_copy_fixture import VNCClipboardPeer
 
 
 class HistoryCopyTests(PointerHistoryFixture):
+    @unittest.skipUnless(shutil.which("x11vnc"), "x11vnc required for VNC clipboard integration")
     def test_explicit_copy_crosses_vnc_and_viewer_text_can_be_pasted(self):
         from uniconnect.clipboard_text import publish_text
         self.seed_history()
@@ -25,42 +28,55 @@ class HistoryCopyTests(PointerHistoryFixture):
             self.tmux('wait-for', 'typed')
             self.assertIn('ENTRADA:UC_VNC_PEGADO_456', self.tmux('capture-pane', '-p', '-t', '=subject:'))
 
-    def test_shift_drag_is_native_and_never_pauses_remote_input(self):
+    def test_shift_drag_selects_tmux_scrollback_and_preserves_agent_input(self):
         self.seed_history()
         terminal = self.surface.terminal
         rows = self.tmux("capture-pane", "-p", "-t", "=subject:").splitlines()
         row = next(i for i, text in enumerate(rows) if "ROW0119" in text)
         top = terminal.get_toplevel()
-        x, y = top.get_window().get_origin()[-2:]
+        top_x, top_y = top.get_window().get_origin()[-2:]
         offset_x, offset_y = terminal.translate_coordinates(top, 0, 0)[-2:]
-        x, y = x + offset_x, y + offset_y
-        padding = terminal.get_style_context().get_padding(Gtk.StateFlags.NORMAL)
-        x += padding.left + terminal.get_char_width() // 2
-        y += padding.top + row * terminal.get_char_height() + terminal.get_char_height() // 2
-        print('Native pointer fixture', {'click': (x, y), 'row': row, 'char':
-              (terminal.get_char_width(), terminal.get_char_height()), 'origin':
-              terminal.get_window().get_origin()[-2:], 'offset': (offset_x, offset_y),
-              'size': (terminal.get_allocated_width(), terminal.get_allocated_height())}, flush=True)
-        presses = []
-        terminal.connect('event', lambda widget, event: (presses.append(True) or False)
-                         if event.type == Gdk.EventType.BUTTON_PRESS else False)
+        x, y = top_x + offset_x + 8 * terminal.get_char_width(), top_y + offset_y
+        y += row * terminal.get_char_height() + terminal.get_char_height() // 2
+        pointer_events = []
+        terminal.connect('event', lambda widget, event: (pointer_events.append(
+            (event.type, event.state, event.x, event.y)) or False)
+            if event.type in (Gdk.EventType.BUTTON_PRESS, Gdk.EventType.MOTION_NOTIFY) else False)
         self.xtst.XTestFakeMotionEvent(self.display, -1, x, y, 0)
-        self.xtst.XTestFakeKeyEvent(self.display, self.shift, True, 0)
-        self.xtst.XTestFakeButtonEvent(self.display, 1, True, 0)
+        self.xtst.XTestFakeKeyEvent(self.display, self.shift, True, 30)
+        self.xtst.XTestFakeButtonEvent(self.display, 1, True, 50)
         self.x11.XSync(self.display, False)
-        self.wait_for(lambda: bool(presses))
-        self.xtst.XTestFakeMotionEvent(self.display, -1, x + 16 * terminal.get_char_width(), y, 0)
+        self.wait_for(lambda: any(event[0] == Gdk.EventType.BUTTON_PRESS for event in pointer_events))
+        self.wait_for(lambda: self.tmux("display-message", "-p", "-t", "=subject:",
+                                        "#{pane_in_mode}:#{selection_present}") == "1:1")
+        # Hold the pointer above the viewport: the edge-scroll timer must walk
+        # the real tmux history instead of stopping at VTE's visible rows.
+        self.xtst.XTestFakeMotionEvent(self.display, -1,
+                                       x + 16 * terminal.get_char_width(),
+                                       top_y + offset_y - 12 * terminal.get_char_height() - 2, 0)
         self.x11.XSync(self.display, False)
-        self.wait_for(terminal.get_has_selection)
+        loop = GLib.MainLoop()
+        GLib.timeout_add(1500, lambda: (loop.quit(), False)[1])
+        loop.run()
+        self.xtst.XTestFakeButtonEvent(self.display, 1, False, 30)
+        self.xtst.XTestFakeKeyEvent(self.display, self.shift, False, 30)
+        self.x11.XSync(self.display, False)
+        self.wait_for(lambda: not self.surface.selection_drag.busy
+                      and self.surface.selection_drag.pending_move is None)
         self.release_pointer()
         self.window.run_action("copy")
-        self.wait_for(lambda: "ROW0119" in (self.clipboard.wait_for_text() or ""))
-        self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}"), "0")
+        self.wait_for(lambda: "ROW0119" in (self.clipboard.wait_for_text() or "")
+                      and "ROW0000" in (self.clipboard.wait_for_text() or ""))
+        self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}"), "1")
         self.assertIn("ROW0119", Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY).wait_for_text())
+        self.assertIn("ROW0000", Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY).wait_for_text())
+        self.window.run_action("cancel_selection")
+        self.wait_for(lambda: self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}") == "0")
         self.surface.send("UC_BLUE_OK\n")
         self.tmux("wait-for", "typed")
         self.assertIn("ENTRADA:UC_BLUE_OK", self.tmux("capture-pane", "-p", "-t", "=subject:"))
 
+    @unittest.skipIf(os.geteuid() == 0, "isolated sshd fixture cannot authenticate the locked root account")
     def test_ssh_history_native_drag_copies_both_clipboards_and_leaves_agent_running(self):
         self.seed_history()
         self.assertIn("show_history", self.window.action_map)

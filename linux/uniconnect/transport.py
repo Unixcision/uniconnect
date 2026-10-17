@@ -370,17 +370,30 @@ class TmuxCommand:
 
     @staticmethod
     def selection_policy(socket_name: str | None) -> str:
-        """Preserve copy-mode selection on our servers, never overwrite user keys.
+        """Start and preserve tmux drag selection on new dedicated servers.
 
         Key tables are server-wide, not per session. Only the two dedicated
-        UniConnect socket names opt in, and only an exact stock binding changes.
-        This does not turn tmux selection into a native VTE selection.
+        UniConnect socket names opt in, and only exact stock bindings change.
+        Callers must keep this within the fresh-server branch (D4).
+        This does not turn tmux selection into a native VTE selection. Its
+        highlight follows UniConnect's blue selection colour while preserving
+        any non-default tmux theme supplied by the user.
         """
         if socket_name not in ("uniconnect", "uniconnect-local"):
             return ""
         binary = TmuxCommand._binary(socket_name)
+        selection_style = TmuxCommand.selection_style_policy(socket_name)
         return (
-            "for uc_copy_table in copy-mode copy-mode-vi; do "
+            f'uc_drag_binding=$({binary} list-keys -T root MouseDrag1Pane 2>/dev/null); '
+            'case "$uc_drag_binding" in '
+            '\'bind-key -T root MouseDrag1Pane if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -M"\'|'
+            '\'bind-key -T root MouseDrag1Pane if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send -M" "copy-mode -M"\'|'
+            '\'bind-key -T root MouseDrag1Pane if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" { send-keys -M } { copy-mode -M }\'|'
+            '\'bind-key -T root MouseDrag1Pane if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" { send -M } { copy-mode -M }\') '
+            f'{binary} bind-key -T root MouseDrag1Pane if-shell -F "#{{pane_in_mode}}" "send-keys -M" "copy-mode -M"; '
+            ';; esac; '
+            + selection_style
+            + "for uc_copy_table in copy-mode copy-mode-vi; do "
             f'uc_copy_binding=$({binary} list-keys -T "$uc_copy_table" MouseDragEnd1Pane 2>/dev/null) || continue; '
             'if [ "$uc_copy_binding" = "bind-key -T $uc_copy_table MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel" ]; then '
             f'{binary} bind-key -T "$uc_copy_table" MouseDragEnd1Pane send-keys -X copy-pipe-no-clear; '
@@ -388,15 +401,34 @@ class TmuxCommand:
         )
 
     @staticmethod
+    def selection_style_policy(socket_name: str | None) -> str:
+        """Migrate only tmux's stock orange selection, preserving custom themes."""
+        if socket_name not in ("uniconnect", "uniconnect-local"):
+            return ""
+        binary = TmuxCommand._binary(socket_name)
+        return (
+            f'if {binary} show-window-options -gv copy-mode-selection-style >/dev/null 2>&1; then '
+            f'uc_selection_style=$({binary} show-window-options -gv copy-mode-selection-style 2>/dev/null); '
+            'case "$uc_selection_style" in "bg=yellow,fg=black"|"fg=black,bg=yellow") '
+            f'{binary} set-window-option -g copy-mode-selection-style "fg=white,bg=blue";; esac; '
+            'else '
+            f'uc_mode_style=$({binary} show-window-options -gv mode-style 2>/dev/null); '
+            'case "$uc_mode_style" in "bg=yellow,fg=black"|"fg=black,bg=yellow") '
+            f'{binary} set-window-option -g mode-style "fg=white,bg=blue";; esac; fi; '
+        )
+
+    @staticmethod
     def attach(window: Mapping, *, create: bool = False, socket_name: str | None = None) -> str:
         window = TmuxCommand.validate_window(window)
         socket_name = window.get("tmuxSocket", socket_name)
         binary = TmuxCommand._binary(socket_name)
-        # OSC52 crashes tmux 3.2a with recent ncurses. Apply only to UniConnect's
-        # dedicated servers, never to the user's default or custom tmux socket, and
-        # only to a server this very command starts (D4): never to one already running.
+        # OSC52 crashes tmux 3.2a with recent ncurses. Apply clipboard and key-table
+        # policies only to a newly started dedicated server; never alter a live
+        # server's clipboard or bindings. The separate style-only migration below
+        # changes only tmux's untouched stock selection colour.
         clipboard = "set-option -s set-clipboard off" if socket_name in ("uniconnect", "uniconnect-local") else ""
         selection = TmuxCommand.selection_policy(socket_name)
+        selection_style = TmuxCommand.selection_style_policy(socket_name)
         name = shlex.quote(window["tmux"])
         target = shlex.quote("=" + window["tmux"])
         option_target = shlex.quote("=" + window["tmux"] + ":")
@@ -412,12 +444,15 @@ class TmuxCommand:
             if not setup and not server_setup:
                 return f"{directory}exec {binary} {creation}"
             return (directory + TmuxCommand.fresh_server_check(binary)
-                    + f'if [ "$uc_fresh" = 1 ]; then {setup}exec {creator} {creation}{server_setup}; fi; '
+                    + f'if [ "$uc_fresh" = 1 ]; then {setup}exec {creator} {creation}{server_setup}; '
+                    + f'else {selection_style}fi; '
                     + f"exec {binary} {creation}")
-        # Reattaching never touches server options or key tables: the server already exists.
+        # Reattaching only migrates the stock selection colour; it does not
+        # change server clipboard options, mouse bindings, or user themes.
         return (f"command -v tmux >/dev/null 2>&1 || exit 127; "
                 f"{binary} has-session -t {target} 2>/dev/null || exit 72; "
-                f"{binary} set-option -t {option_target} mouse on; "
+                + selection_style
+                + f"{binary} set-option -t {option_target} mouse on; "
                 f"exec {binary} attach-session -t {target}")
 
 
