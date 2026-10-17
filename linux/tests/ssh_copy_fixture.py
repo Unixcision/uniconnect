@@ -1,14 +1,15 @@
 """An ephemeral, key-only SSH server for CI; never uses user SSH sessions."""
 
-import getpass
 import os
 from pathlib import Path
+import secrets
 import signal
 import shlex
 import socket
 import subprocess
 import tempfile
 import time
+import uuid
 
 
 class SSHCopyFixture:
@@ -18,12 +19,26 @@ class SSHCopyFixture:
         self.pid_file = root / "pid"
         self.config_file = root / "sshd_config"
         self.log_file = root / "sshd.log"
+        self.user = "uc-copy-" + uuid.uuid4().hex[:8]
         for name in ("host", "client"):
             subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(root / name)], check=True)
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
             port = reservation.getsockname()[1]
-        (root / "authorized_keys").write_bytes((root / "client.pub").read_bytes())
+        # A dedicated unlocked CI account avoids relying on a locked runner
+        # account, while StrictModes still checks a conventional owned ~/.ssh.
+        home = Path("/home") / self.user
+        secret = secrets.token_urlsafe(32).encode()
+        password_hash = subprocess.run(
+            ["openssl", "passwd", "-6", "-salt", uuid.uuid4().hex[:16], "-stdin"],
+            input=secret, capture_output=True, check=True).stdout.decode().strip()
+        subprocess.run(["sudo", "-n", "useradd", "--create-home", "--home-dir", str(home),
+                        "--shell", "/bin/sh", "--password", password_hash, self.user], check=True)
+        key_dir = home / ".ssh"
+        key_dir.mkdir(mode=0o700)
+        (key_dir / "authorized_keys").write_bytes((root / "client.pub").read_bytes())
+        (key_dir / "authorized_keys").chmod(0o600)
+        subprocess.run(["sudo", "-n", "chown", "-R", f"{self.user}:{self.user}", str(home)], check=True)
         (root / "known_hosts").write_text(f"[127.0.0.1]:{port} " + (root / "host.pub").read_text())
         self.config_file.write_text(f"""Port {port}
 ListenAddress 127.0.0.1
@@ -34,9 +49,9 @@ PasswordAuthentication no
 KbdInteractiveAuthentication no
 PubkeyAuthentication yes
 UsePAM no
-StrictModes no
+StrictModes yes
 PermitRootLogin prohibit-password
-AllowUsers {getpass.getuser()}
+AllowUsers {self.user}
 LogLevel DEBUG2
 """)
         # sshd (or sudo's child) may retain inherited stderr after the direct
@@ -58,21 +73,32 @@ LogLevel DEBUG2
                 time.sleep(0.05)
         if not ready:
             server_log = self._stop_server()
+            self._remove_user()
+            self.directory.cleanup()
             raise RuntimeError("Isolated SSH server did not become ready: " + server_log)
         self.command = shlex.join(["ssh", "-p", str(port), "-i", str(root / "client"),
                                    "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes",
                                    "-o", "UserKnownHostsFile=" + str(root / "known_hosts"),
-                                   getpass.getuser() + "@127.0.0.1"])
+                                   self.user + "@127.0.0.1"])
         probe = subprocess.run(shlex.split(self.command) + ['true'], capture_output=True, text=True, timeout=8)
         if probe.returncode:
             server_log = self._stop_server()
+            self._remove_user()
+            self.directory.cleanup()
             raise RuntimeError('CI SSH authentication failed: ' + probe.stderr + server_log)
         return self
 
     def __exit__(self, *_):
         self._stop_server()
+        self._remove_user()
         if getattr(self, "directory", None):
             self.directory.cleanup()
+
+    def _remove_user(self):
+        if getattr(self, "user", None):
+            subprocess.run(["sudo", "-n", "userdel", "--remove", self.user],
+                           check=False, capture_output=True)
+            self.user = None
 
     def _stop_server(self):
         """Stop only this fixture's isolated process group, including sudo's sshd child."""

@@ -41,12 +41,16 @@ class HistoryCopyTests(PointerHistoryFixture):
         x, y = top_x + offset_x + 8 * terminal.get_char_width(), top_y + offset_y
         y += row * terminal.get_char_height() + terminal.get_char_height() // 2
         pointer_events = []
-        terminal.connect('event', lambda widget, event: (pointer_events.append(
-            (event.type, event.state, getattr(event, "x", None), getattr(event, "y", None),
-             self.surface.selection_drag.pressed, self.surface.selection_drag.active,
-             self.surface.selection_drag.busy)) or False)
+        def record_event(widget, event):
             if event.type in (Gdk.EventType.BUTTON_PRESS, Gdk.EventType.MOTION_NOTIFY,
-                              Gdk.EventType.GRAB_BROKEN) else False)
+                              Gdk.EventType.GRAB_BROKEN):
+                drag = self.surface.selection_drag
+                pointer_events.append((event.type, getattr(event, "state", None),
+                                        getattr(event, "x", None), getattr(event, "y", None),
+                                        getattr(event, "implicit", None), getattr(event, "keyboard", None),
+                                        drag.pressed, drag.active, drag.busy))
+            return False
+        terminal.connect('event', record_event)
         self.xtst.XTestFakeMotionEvent(self.display, -1, x, y, 0)
         self.xtst.XTestFakeKeyEvent(self.display, self.shift, True, 30)
         self.xtst.XTestFakeButtonEvent(self.display, 1, True, 50)
@@ -84,6 +88,7 @@ class HistoryCopyTests(PointerHistoryFixture):
         self.wait_for(lambda: "ROW0119" in (self.clipboard.wait_for_text() or "")
                       and "ROW0000" in (self.clipboard.wait_for_text() or ""),
                       detail=lambda: f"pointer_events={pointer_events[-8:]!r}; "
+                      f"clipboard={(self.clipboard.wait_for_text() or '')[:500]!r}; "
                       f"tmux={self.tmux('display-message', '-p', '-t', '=subject:', '#{pane_mode}:#{selection_present}:#{copy_cursor_y}')!r}")
         self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}"), "1")
         self.assertIn("ROW0119", Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY).wait_for_text())
