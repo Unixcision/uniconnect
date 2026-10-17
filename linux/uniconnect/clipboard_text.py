@@ -27,7 +27,7 @@ def _publish_x11_cutbuffer(text):
         x11.XOpenDisplay.restype = ctypes.c_void_p
         x11.XStoreBytes.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
         x11.XStoreBytes.restype = None
-        x11.XFlush.argtypes = [ctypes.c_void_p]
+        x11.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
         x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
         display = x11.XOpenDisplay(None)
         if not display:
@@ -37,7 +37,9 @@ def _publish_x11_cutbuffer(text):
             if len(encoded) > 2_147_483_647:
                 return
             x11.XStoreBytes(display, encoded, len(encoded))
-            x11.XFlush(display)
+            # Ensure the CUT_BUFFER0 PropertyNotify reaches the server before
+            # the display connection is closed; x11vnc forwards that event.
+            x11.XSync(display, False)
         finally:
             x11.XCloseDisplay(display)
     except (OSError, OverflowError, UnicodeError):
