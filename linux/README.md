@@ -110,10 +110,10 @@ El relanzado avisa si detecta trabajo en curso y bloquea estados no reconocidos.
 Al reconectar o adjuntarse a un servidor existente, UniConnect no cambia sus
 bindings ni opciones globales; solo migra el color naranja predeterminado. Copiar
 desde UniConnect se publica también al portapapeles X11 que x11vnc reenvía al
-espectador. La dirección inversa depende del servidor VNC: LibVNCServer anterior
-a 0.9.15 tiene un defecto conocido al entregar el texto recibido a GTK, por lo
-que en esos sistemas pegar desde el espectador VNC puede no funcionar. Estas
-opciones pertenecen al adaptador Linux y no cambian macOS.
+espectador. La prueba automatizada cubre el mensaje RFB clásico con x11vnc. Pegar
+desde el espectador también depende de que el servidor VNC concreto entregue su
+texto entrante al portapapeles GTK; conviene comprobarlo en el equipo de destino.
+Estas opciones pertenecen al adaptador Linux y no cambian macOS.
 
 ### Relanzar Codex
 

@@ -2,7 +2,6 @@
 
 import os
 import shutil
-import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -10,19 +9,6 @@ from history_copy_fixture import PointerHistoryFixture
 from gi.repository import Gdk, GLib, Gtk, Vte
 from ssh_copy_fixture import SSHCopyFixture
 from vnc_copy_fixture import VNCClipboardPeer
-
-
-def _libvncserver_supports_client_clipboard():
-    """Ubuntu's pre-0.9.15 builds advertise UTF-8 clipboard without a handler."""
-    if not shutil.which("dpkg-query") or not shutil.which("dpkg"):
-        return True
-    package = subprocess.run(["dpkg-query", "-W", "-f=${Version}", "libvncserver1"],
-                             capture_output=True, text=True, check=False)
-    if package.returncode:
-        return True
-    version = package.stdout.strip()
-    return subprocess.run(["dpkg", "--compare-versions", version, "ge", "0.9.15"],
-                          check=False).returncode == 0
 
 
 class HistoryCopyTests(PointerHistoryFixture):
@@ -45,8 +31,6 @@ class HistoryCopyTests(PointerHistoryFixture):
 
     @unittest.skipUnless(shutil.which("x11vnc"), "x11vnc required for VNC clipboard integration")
     def test_vnc_viewer_clipboard_reaches_desktop_and_can_be_pasted(self):
-        if not _libvncserver_supports_client_clipboard():
-            self.skipTest("Ubuntu LibVNCServer < 0.9.15 has the upstream UTF-8 clipboard handler bug (PR #639)")
         self.seed_history()
         with VNCClipboardPeer("recv") as peer:
             self.wait_for(lambda: peer.ready)
