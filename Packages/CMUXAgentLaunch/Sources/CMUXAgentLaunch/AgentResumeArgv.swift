@@ -16,10 +16,16 @@ import Foundation
 /// support custom Vault agents slot that resolution between the two.
 public struct AgentResumeArgv: Sendable, Equatable {
     private let catalog: AgentResumeCatalog?
+    /// A caller-supplied catalogue changes command syntax only. Trust flags remain the
+    /// bundled product policy, so a relocated/test syntax resource cannot silently
+    /// turn approval prompts back on (or invent a new bypass flag).
+    private let trustCatalog: AgentResumeCatalog?
 
     /// Creates a resume-argv builder using the bundled cross-platform command catalogue.
     public init() {
-        catalog = try? AgentResumeCatalog()
+        let bundled = try? AgentResumeCatalog()
+        catalog = bundled
+        trustCatalog = bundled
     }
 
     /// Creates a resume-argv builder from an explicit command catalogue for isolated tests.
@@ -28,6 +34,7 @@ public struct AgentResumeArgv: Sendable, Equatable {
     /// - Throws: A decoding or schema error when the catalogue is invalid.
     public init(catalogData: Data) throws {
         catalog = try AgentResumeCatalog(data: catalogData)
+        trustCatalog = try? AgentResumeCatalog()
     }
 
     /// The result of resolving a cmux wrapper launcher (the `claude-teams` / `codex-teams` / `omo`
@@ -134,7 +141,8 @@ public struct AgentResumeArgv: Sendable, Equatable {
               let argv = catalog.argv(kind: kind, sessionId: sessionId, executable: parts.executable, arguments: preserved) else { return nil }
         // UniConnect: la politica compartida (noPrompt del catalogo) decide las banderas sin
         // preguntas: `codex --yolo resume <id>`, `agy --dangerously-skip-permissions --conversation <id>`.
-        return AgentNoPromptPolicy(catalog: catalog).applying(to: argv, provider: kind, asRoot: false).argv
+        guard let trustCatalog else { return nil }
+        return AgentNoPromptPolicy(catalog: trustCatalog).applying(to: argv, provider: kind, asRoot: false).argv
     }
 
     /// Builds the claude resume argv, routing it through cmux's `claude` wrapper
@@ -171,7 +179,8 @@ public struct AgentResumeArgv: Sendable, Equatable {
         // UniConnect: restored sessions must never stop on a permission prompt. The shared noPrompt
         // policy puts `--dangerously-skip-permissions` last, once. The Mac never resumes locally as
         // root, so `IS_SANDBOX` is not part of this argv.
-        return AgentNoPromptPolicy(catalog: catalog).applying(to: argv, provider: "claude", asRoot: false).argv
+        guard let trustCatalog else { return nil }
+        return AgentNoPromptPolicy(catalog: trustCatalog).applying(to: argv, provider: "claude", asRoot: false).argv
     }
 
     /// Appends a UniConnect trust-mode option exactly once to a reconstructed launch.

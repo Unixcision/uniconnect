@@ -19,7 +19,9 @@ class HistoryCopyTests(PointerHistoryFixture):
         with VNCClipboardPeer() as peer:
             self.wait_for(lambda: peer.ready)
             publish_text('UC_VNC_COPIA_123')
-            self.wait_for(lambda: 'UC_VNC_COPIA_123' in peer.received)
+            self.wait_for(lambda: 'UC_VNC_COPIA_123' in peer.received,
+                          detail=lambda: f"VNC received={peer.received!r}; peer_error={peer.error!r}; "
+                          f"server_log={peer.server_log()!r}")
             peer.send('UC_VNC_PEGADO_456')
             self.wait_for(lambda: self.clipboard.wait_for_text() == 'UC_VNC_PEGADO_456')
             self.window.run_action('paste')
@@ -49,6 +51,11 @@ class HistoryCopyTests(PointerHistoryFixture):
         self.wait_for(lambda: any(event[0] == Gdk.EventType.BUTTON_PRESS for event in pointer_events))
         self.wait_for(lambda: self.tmux("display-message", "-p", "-t", "=subject:",
                                         "#{pane_in_mode}:#{selection_present}") == "1:1")
+        # copy-mode starts in a tmux worker; wait until GTK has received the exact
+        # pane identity before sending synthetic pointer motion. Otherwise this
+        # test races the initial metadata roundtrip, unlike a human drag.
+        self.wait_for(lambda: self.surface.selection_drag.pane is not None
+                      and not self.surface.selection_drag.busy)
         # Hold the pointer above the viewport: the edge-scroll timer must walk
         # the real tmux history instead of stopping at VTE's visible rows.
         self.xtst.XTestFakeMotionEvent(self.display, -1,

@@ -38,7 +38,7 @@ struct AgentResumeCatalogTests {
         let data = Data(#"{"schemaVersion":1,"providers":{"codex":{"executable":"codex","resume":["{executable}","fixture-resume","{arguments}","{sessionId}"]}}}"#.utf8)
         let builder = try AgentResumeArgv(catalogData: data)
         #expect(builder.builtInKind(kind: "codex", sessionId: "SID", executablePath: nil,
-                                    arguments: ["codex", "--model", "chosen"]) == ["codex", "fixture-resume", "--model", "chosen", "SID", "--yolo"])
+                                    arguments: ["codex", "--model", "chosen"]) == ["codex", "--yolo", "fixture-resume", "--model", "chosen", "SID"])
         #expect(builder.builtInKind(kind: "grok", sessionId: "SID", executablePath: nil, arguments: ["grok"]) == nil)
     }
 

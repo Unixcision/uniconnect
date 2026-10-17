@@ -13,7 +13,7 @@ from gi.repository import Gdk, GLib, Gtk, Vte
 
 
 class PointerHistoryFixture(window_fixture.MainWindowCopyTests):
-    def wait_for(self, predicate):
+    def wait_for(self, predicate, detail=None):
         deadline = time.monotonic() + 8
         loop = GLib.MainLoop()
         errors = []
@@ -34,7 +34,8 @@ class PointerHistoryFixture(window_fixture.MainWindowCopyTests):
         drag = getattr(self.surface, "selection_drag", None)
         state = {key: getattr(drag, key, None) for key in
                  ("point", "pane", "busy", "pressed", "active", "pending_move", "timer")}
-        self.assertTrue(predicate(), f"GTK deadline: {state}; status={self.surface.status_label.get_text()}; errors={self.errors}")
+        extra = f"; {detail()}" if detail else ""
+        self.assertTrue(predicate(), f"GTK deadline: {state}; status={self.surface.status_label.get_text()}; errors={self.errors}{extra}")
 
     def setUp(self):
         faulthandler.dump_traceback_later(40, exit=True)

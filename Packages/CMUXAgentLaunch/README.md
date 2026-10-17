@@ -1,8 +1,9 @@
 # Agent launch boundary
 
 `AgentResumeArgv` reconstructs native resume commands after the existing Swift
-sanitizer has handled captured arguments. Its default behavior, Claude hook
-wrapper, team wrappers and historical macOS trust options are unchanged.
+sanitizer has handled captured arguments. Its default behavior and Claude hook
+wrapper remain unchanged; the bundled trust policy is applied independently of
+an injected syntax-only catalogue.
 
 `Sources/CMUXAgentLaunch/Resources/agent-resume-v1.json` is the single command
 syntax catalogue. SwiftPM packages it as a resource bundle; Linux reads that exact
@@ -17,16 +18,18 @@ Missing bundles or catalogue files return a failed resume result, never a crash
 or an implicit fallback to source/build paths. The existing Xcode package-resource
 embedding and CLI copy phases need no additional resource copy.
 
-Version 1 declares each provider's executable, optional aliases, and an argv
-template. `{executable}` and `{sessionId}` each substitute one argument;
-`{arguments}` inserts an already approved argument vector at its declared position.
-Substitution never invokes a shell. `windowOptions` maps Linux's explicitly saved
-cwd/model fields to provider options, without importing arbitrary captured argv.
+Version 1 declares each provider's executable, optional aliases, an argv template,
+and the shared no-prompt policy. `{executable}` and `{sessionId}` each substitute
+one argument; `{arguments}` inserts an already approved argument vector at its
+declared position. Substitution never invokes a shell. `windowOptions` maps Linux's
+explicitly saved cwd/model fields to provider options, without importing arbitrary
+captured argv.
 
-The catalogue contains no approval defaults. The Swift adapter retains its
-existing trust policy; Linux retains the provider's configured approval behavior.
-Do not copy Swift's captured-argument sanitizer or these differing existing trust
-choices into the JSON decoder. The shared resource is command syntax, not a claim
+The bundled catalogue is the shared source for no-prompt flags. Swift's in-memory
+`catalogData` injection changes command syntax only; it cannot add, remove, or
+reposition a trust flag. Linux's temporary catalogue injection is reserved for
+isolated portable tests. Do not copy Swift's captured-argument sanitizer into the
+JSON decoder. The shared resource is command syntax and trust policy, not a claim
 that all lifecycle/state services are already shared executable code.
 
 Existing callers still use `AgentResumeArgv()`. Isolated tests can supply an

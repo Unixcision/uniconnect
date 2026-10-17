@@ -42,6 +42,13 @@ class VNCClipboardPeer:
         self.reader.start()
         return self
 
+    def server_log(self):
+        try:
+            with open(self.directory.name + '/log', encoding='utf-8', errors='replace') as log:
+                return log.read()[-4000:]
+        except OSError:
+            return "unavailable"
+
     def _read(self, length):
         data = b''
         while len(data) < length:
