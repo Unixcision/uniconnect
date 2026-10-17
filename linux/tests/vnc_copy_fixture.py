@@ -106,6 +106,11 @@ class VNCClipboardPeer:
         if getattr(self, 'socket', None):
             self.socket.close()
         if getattr(self, 'server', None):
-            self.server.terminate()
-            self.server.wait(timeout=5)
+            if self.server.poll() is None:
+                self.server.terminate()
+                try:
+                    self.server.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.server.kill()
+                    self.server.wait(timeout=5)
         self.directory.cleanup()

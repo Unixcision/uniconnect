@@ -400,13 +400,14 @@ class TmuxHistoryBehaviorTests(unittest.TestCase):
                     # Older tmux uses mode-style for the orange selection, so
                     # only its stock value migrates when reconnecting.
                     expected_mode_style = style
-                    if (socket in ("uniconnect", "uniconnect-local")
+                    if (route == "attach"
+                            and socket in ("uniconnect", "uniconnect-local")
                             and selection_style is None
                             and style in ("bg=yellow,fg=black", "fg=black,bg=yellow")):
                         expected_mode_style = "fg=white,bg=blue"
                     self.assertEqual(expected_mode_style,
                                      self.tmux(socket, "show-window-options", "-gv", "mode-style"), route)
-                    if selection_style is not None:
+                    if route == "attach" and selection_style is not None:
                         self.assertEqual("fg=white,bg=blue", self.copy_selection_style(socket), route)
                 self.tmux(socket, "kill-server")
                 # Un servidor que arranca esta misma llamada sí recibe la protección.

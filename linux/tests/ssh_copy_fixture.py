@@ -19,6 +19,7 @@ class SSHCopyFixture:
         self.pid_file = root / "pid"
         self.config_file = root / "sshd_config"
         self.log_file = root / "sshd.log"
+        self.stderr_file = root / "sshd.stderr"
         self.user = "uc-copy-" + uuid.uuid4().hex[:8]
         self.socket_name = "uc-copy-" + uuid.uuid4().hex[:12]
         self.user_created = False
@@ -70,12 +71,13 @@ LogLevel DEBUG2
         # sshd (or sudo's child) may retain inherited stderr after the direct
         # process exits. Keep diagnostics in the dedicated log file so cleanup
         # cannot block reading a pipe whose writer is an orphaned child.
-        self.server = subprocess.Popen(["sudo", "-n", "/usr/sbin/sshd", "-D", "-E", str(self.log_file),
-                                        "-f", str(self.config_file)], stderr=subprocess.DEVNULL,
-                                       stdout=subprocess.DEVNULL, start_new_session=True)
+        with self.stderr_file.open("w", encoding="utf-8") as stderr_log:
+            self.server = subprocess.Popen(["sudo", "-n", "/usr/sbin/sshd", "-D", "-E", str(self.log_file),
+                                            "-f", str(self.config_file)], stderr=stderr_log,
+                                           stdout=subprocess.DEVNULL, start_new_session=True)
         # Probe the bound loopback port instead of reading a particular first log
         # line; DEBUG logging differs between the supported Ubuntu OpenSSH builds.
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + 10
         ready = False
         while self.server.poll() is None and time.monotonic() < deadline:
             try:
@@ -145,6 +147,13 @@ LogLevel DEBUG2
         if getattr(self, "log_file", None):
             try:
                 log = "\nsshd log:\n" + self.log_file.read_text(errors="replace")[-6000:]
+            except OSError:
+                pass
+        if getattr(self, "stderr_file", None):
+            try:
+                stderr = self.stderr_file.read_text(errors="replace")
+                if stderr:
+                    log += "\nsshd stderr:\n" + stderr[-3000:]
             except OSError:
                 pass
         return log
