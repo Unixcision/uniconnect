@@ -69,7 +69,11 @@ class TerminalSurface(Gtk.Box):
         self.terminal.connect("bell", lambda *_: self.owner.notify_window(self.workspace, self.record))
         self.terminal.connect("focus-in-event", self.on_focus)
         self.terminal.connect("button-press-event", self.on_button)
-        self.terminal.add_events(Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK)
+        # POINTER_MOTION_MASK covers hover motion only on X11/GDK. Dragging
+        # while a button is held needs the matching button-motion masks or VTE
+        # never receives the events once Shift+drag starts.
+        self.terminal.add_events(Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.BUTTON_MOTION_MASK |
+                                 Gdk.EventMask.BUTTON1_MOTION_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK)
         self.terminal.connect("motion-notify-event", self.on_selection_motion)
         self.terminal.connect("grab-broken-event", self.on_selection_grab_broken)
         self.terminal.connect("button-release-event", self.on_selection_release)

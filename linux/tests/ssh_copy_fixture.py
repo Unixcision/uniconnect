@@ -3,6 +3,7 @@
 import getpass
 import os
 from pathlib import Path
+import signal
 import shlex
 import socket
 import subprocess
@@ -37,8 +38,12 @@ PermitRootLogin prohibit-password
 AllowUsers {getpass.getuser()}
 LogLevel DEBUG2
 """)
+        # sshd (or sudo's child) may retain inherited stderr after the direct
+        # process exits. Keep diagnostics in the dedicated log file so cleanup
+        # cannot block reading a pipe whose writer is an orphaned child.
         self.server = subprocess.Popen(["sudo", "-n", "/usr/sbin/sshd", "-D", "-E", str(self.log_file),
-                                        "-f", str(self.config_file)], stderr=subprocess.PIPE, text=True)
+                                        "-f", str(self.config_file)], stderr=subprocess.DEVNULL,
+                                       stdout=subprocess.DEVNULL, start_new_session=True)
         # Probe the bound loopback port instead of reading a particular first log
         # line; DEBUG logging differs between the supported Ubuntu OpenSSH builds.
         deadline = time.monotonic() + 5
@@ -69,37 +74,26 @@ LogLevel DEBUG2
             self.directory.cleanup()
 
     def _stop_server(self):
-        """Stop only the disposable sshd started by this fixture, including sudo's child."""
+        """Stop only this fixture's isolated process group, including sudo's sshd child."""
         if not getattr(self, "server", None):
             return ""
-        pid = None
         try:
-            candidate = int(self.pid_file.read_text().strip())
-            command = Path(f"/proc/{candidate}/cmdline").read_bytes().split(b"\0")
-            if any(b"/usr/sbin/sshd" in item for item in command) and str(self.config_file).encode() in command:
-                pid = candidate
-        except (OSError, ValueError):
+            os.killpg(self.server.pid, signal.SIGTERM)
+        except ProcessLookupError:
             pass
-        if self.server.poll() is None and pid is not None:
-            subprocess.run(["sudo", "-n", "kill", "-TERM", str(pid)], check=False, capture_output=True)
         if self.server.poll() is None:
             try:
                 self.server.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                if pid is not None:
-                    subprocess.run(["sudo", "-n", "kill", "-KILL", str(pid)], check=False, capture_output=True)
-                self.server.kill()
+                try:
+                    os.killpg(self.server.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 self.server.wait(timeout=5)
         log = ""
         if getattr(self, "log_file", None):
             try:
                 log = "\nsshd log:\n" + self.log_file.read_text(errors="replace")[-6000:]
-            except OSError:
-                pass
-        if self.server.stderr:
-            try:
-                log += self.server.stderr.read()[-1000:]
-                self.server.stderr.close()
             except OSError:
                 pass
         return log

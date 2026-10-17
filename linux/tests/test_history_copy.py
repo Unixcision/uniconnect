@@ -62,6 +62,9 @@ class HistoryCopyTests(PointerHistoryFixture):
                                        x + 16 * terminal.get_char_width(),
                                        top_y + offset_y - 12 * terminal.get_char_height() - 2, 0)
         self.x11.XSync(self.display, False)
+        self.wait_for(lambda: any(event[0] == Gdk.EventType.MOTION_NOTIFY
+                                  and event[1] & Gdk.ModifierType.BUTTON1_MASK for event in pointer_events),
+                      detail=lambda: f"pointer_events={pointer_events[-8:]!r}")
         loop = GLib.MainLoop()
         GLib.timeout_add(1500, lambda: (loop.quit(), False)[1])
         loop.run()
@@ -73,7 +76,9 @@ class HistoryCopyTests(PointerHistoryFixture):
         self.release_pointer()
         self.window.run_action("copy")
         self.wait_for(lambda: "ROW0119" in (self.clipboard.wait_for_text() or "")
-                      and "ROW0000" in (self.clipboard.wait_for_text() or ""))
+                      and "ROW0000" in (self.clipboard.wait_for_text() or ""),
+                      detail=lambda: f"pointer_events={pointer_events[-8:]!r}; "
+                      f"tmux={self.tmux('display-message', '-p', '-t', '=subject:', '#{pane_mode}:#{selection_present}:#{copy_cursor_y}')!r}")
         self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}"), "1")
         self.assertIn("ROW0119", Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY).wait_for_text())
         self.assertIn("ROW0000", Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY).wait_for_text())
