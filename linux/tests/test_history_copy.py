@@ -112,6 +112,11 @@ class HistoryCopyTests(PointerHistoryFixture):
         with SSHCopyFixture() as ssh:
             ssh.tmux("new-session", "-d", "-s", "subject", "-x", "80", "-y", "24", "sleep", "90")
             self.seed_history(ssh.tmux, socket_name=ssh.socket_name, wait_for_terminal=False)
+            # The fixture starts with a local terminal; make the switch an
+            # actual SSH reconnect rather than reusing its existing VTE child.
+            self.surface.stop_client()
+            self.wait_for(lambda: self.surface.pid is None and not self.surface._spawning
+                          and not self.surface._preparing)
             self.surface.workspace["kind"] = "ssh"
             self.surface.workspace["credentialId"] = self.window.vault.put(ssh.command)
             self.surface.record["tmuxSocket"] = ssh.socket_name
@@ -120,7 +125,10 @@ class HistoryCopyTests(PointerHistoryFixture):
             self.wait_for(lambda: self.surface.status == "Running" and not self.surface._preparing)
             self.wait_for(lambda: "ROW0119" in ((self.surface.terminal.get_text_format(Vte.Format.TEXT)
                                                   if hasattr(self.surface.terminal, "get_text_format")
-                                                  else self.surface.terminal.get_text(None, None)[0]) or ""))
+                                                  else self.surface.terminal.get_text(None, None)[0]) or ""),
+                          detail=lambda: f"remote_rows={ssh.tmux('capture-pane', '-p', '-t', '=subject:')!r}; "
+                          f"workspace_kind={self.surface.workspace['kind']!r}; "
+                          f"tmux_socket={self.surface.record.get('tmuxSocket')!r}")
             self.window.run_action("show_history")
             self.wait_for(lambda: self.surface.history_view is not None and self.surface.history_view.ready)
             view = self.surface.history_view
