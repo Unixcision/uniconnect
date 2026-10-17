@@ -106,7 +106,8 @@ class HistoryView(Gtk.Window):
             x, y = self.text.window_to_buffer_coords(Gtk.TextWindowType.TEXT,
                                                      int(event.x), int(event.y))
             buffer = self.text.get_buffer()
-            self._history_drag_mark = buffer.create_mark(None, buffer.get_iter_at_location(x, y), True)
+            _, start = self.text.get_iter_at_location(x, y)
+            self._history_drag_mark = buffer.create_mark(None, start, True)
             self._history_drag_pointer = (event.x, event.y)
         return False
 
@@ -148,7 +149,7 @@ class HistoryView(Gtk.Window):
         buffer_x, _ = self.text.window_to_buffer_coords(
             Gtk.TextWindowType.TEXT, min(max(int(x), 0), max(0, width - 1)), 0)
         buffer_y = visible.y if y < 0 else visible.y + visible.height - 1
-        current = self.text.get_iter_at_location(buffer_x, buffer_y)
+        _, current = self.text.get_iter_at_location(buffer_x, buffer_y)
         self.text.get_buffer().select_range(current, self.text.get_buffer().get_iter_at_mark(
             self._history_drag_mark))
         return True
