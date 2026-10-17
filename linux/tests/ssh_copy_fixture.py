@@ -72,7 +72,7 @@ LogLevel DEBUG2
         # process exits. Keep diagnostics in the dedicated log file so cleanup
         # cannot block reading a pipe whose writer is an orphaned child.
         with self.stderr_file.open("w", encoding="utf-8") as stderr_log:
-        self.server = subprocess.Popen(["sudo", "-n", "/usr/sbin/sshd", "-D", "-e", "-E", str(self.log_file),
+            self.server = subprocess.Popen(["sudo", "-n", "/usr/sbin/sshd", "-D", "-e", "-E", str(self.log_file),
                                             "-f", str(self.config_file)], stderr=stderr_log,
                                            stdout=subprocess.DEVNULL, start_new_session=True)
         # Probe the bound loopback port instead of reading a particular first log
