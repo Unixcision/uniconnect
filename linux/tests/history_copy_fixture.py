@@ -33,7 +33,7 @@ class PointerHistoryFixture(window_fixture.MainWindowCopyTests):
             raise errors[0]
         drag = getattr(self.surface, "selection_drag", None)
         state = {key: getattr(drag, key, None) for key in
-                 ("point", "pane", "busy", "pressed", "active", "pending_move", "timer")}
+                 ("point", "pane", "busy", "pressed", "active", "pending_move", "timer", "last_error")}
         extra = f"; {detail()}" if detail else ""
         self.assertTrue(predicate(), f"GTK deadline: {state}; status={self.surface.status_label.get_text()}; errors={self.errors}{extra}")
 

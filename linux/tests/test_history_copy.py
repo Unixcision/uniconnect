@@ -88,7 +88,8 @@ class HistoryCopyTests(PointerHistoryFixture):
         self.wait_for(lambda: "ROW0119" in (self.clipboard.wait_for_text() or "")
                       and "ROW0000" in (self.clipboard.wait_for_text() or ""),
                       detail=lambda: f"pointer_events={pointer_events[-8:]!r}; "
-                      f"clipboard={(self.clipboard.wait_for_text() or '')[:500]!r}; "
+                      f"drag_error={self.surface.selection_drag.last_error!r}; "
+                      f"clipboard_stats={self._clipboard_stats()!r}; "
                       f"tmux={self.tmux('display-message', '-p', '-t', '=subject:', '#{pane_mode}:#{selection_present}:#{copy_cursor_y}')!r}")
         self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}"), "1")
         self.assertIn("ROW0119", Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY).wait_for_text())
@@ -98,6 +99,12 @@ class HistoryCopyTests(PointerHistoryFixture):
         self.surface.send("UC_BLUE_OK\n")
         self.tmux("wait-for", "typed")
         self.assertIn("ENTRADA:UC_BLUE_OK", self.tmux("capture-pane", "-p", "-t", "=subject:"))
+
+    def _clipboard_stats(self):
+        text = self.clipboard.wait_for_text() or ""
+        rows = [line for line in text.splitlines() if line.startswith("ROW")]
+        return {"length": len(text), "first": rows[:2], "last": rows[-2:],
+                "has_start": "ROW0000" in text, "has_end": "ROW0119" in text}
 
     @unittest.skipIf(os.geteuid() == 0, "isolated sshd fixture cannot authenticate the locked root account")
     def test_ssh_history_native_drag_copies_both_clipboards_and_leaves_agent_running(self):

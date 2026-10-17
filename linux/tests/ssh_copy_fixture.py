@@ -20,6 +20,7 @@ class SSHCopyFixture:
         self.config_file = root / "sshd_config"
         self.log_file = root / "sshd.log"
         self.user = "uc-copy-" + uuid.uuid4().hex[:8]
+        self.user_created = False
         for name in ("host", "client"):
             subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(root / name)], check=True)
         with socket.socket() as reservation:
@@ -32,13 +33,19 @@ class SSHCopyFixture:
         password_hash = subprocess.run(
             ["openssl", "passwd", "-6", "-salt", uuid.uuid4().hex[:16], "-stdin"],
             input=secret, capture_output=True, check=True).stdout.decode().strip()
-        subprocess.run(["sudo", "-n", "useradd", "--create-home", "--home-dir", str(home),
-                        "--shell", "/bin/sh", "--password", password_hash, self.user], check=True)
-        key_dir = home / ".ssh"
-        key_dir.mkdir(mode=0o700)
-        (key_dir / "authorized_keys").write_bytes((root / "client.pub").read_bytes())
-        (key_dir / "authorized_keys").chmod(0o600)
-        subprocess.run(["sudo", "-n", "chown", "-R", f"{self.user}:{self.user}", str(home)], check=True)
+        try:
+            subprocess.run(["sudo", "-n", "useradd", "--create-home", "--home-dir", str(home),
+                            "--shell", "/bin/sh", "--password", password_hash, self.user], check=True)
+            self.user_created = True
+            key_dir = home / ".ssh"
+            subprocess.run(["sudo", "-n", "install", "-d", "-m", "700", "-o", self.user,
+                            "-g", self.user, str(key_dir)], check=True)
+            subprocess.run(["sudo", "-n", "install", "-m", "600", "-o", self.user,
+                            "-g", self.user, str(root / "client.pub"), str(key_dir / "authorized_keys")], check=True)
+        except Exception:
+            self._remove_user()
+            self.directory.cleanup()
+            raise
         (root / "known_hosts").write_text(f"[127.0.0.1]:{port} " + (root / "host.pub").read_text())
         self.config_file.write_text(f"""Port {port}
 ListenAddress 127.0.0.1
@@ -95,10 +102,11 @@ LogLevel DEBUG2
             self.directory.cleanup()
 
     def _remove_user(self):
-        if getattr(self, "user", None):
+        if getattr(self, "user_created", False) and getattr(self, "user", None):
             subprocess.run(["sudo", "-n", "userdel", "--remove", self.user],
                            check=False, capture_output=True)
             self.user = None
+            self.user_created = False
 
     def _stop_server(self):
         """Stop only this fixture's isolated process group, including sudo's sshd child."""

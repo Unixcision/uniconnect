@@ -16,6 +16,7 @@ class VNCClipboardPeer:
             self.port = port.getsockname()[1]
         self.server = subprocess.Popen(['x11vnc', '-display', os.environ['DISPLAY'], '-localhost',
             '-rfbport', str(self.port), '-nopw', '-shared', '-forever', '-noxdamage', '-debug_sel',
+            '-primary', '-clipboard',
             '-o', self.directory.name + '/log'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         # x11vnc emits PORT after binding; no arbitrary startup sleep.
         if not self.server.stdout.readline().startswith('PORT='):
