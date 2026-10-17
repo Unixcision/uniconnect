@@ -292,7 +292,10 @@ class TmuxHistoryBehaviorTests(unittest.TestCase):
         result = subprocess.run([*shlex.split(self.binary(socket)), "show-window-options", "-gv",
                                  "copy-mode-selection-style"], env=self.environment,
                                 capture_output=True, text=True, timeout=8)
-        return result.stdout.strip() if result.returncode == 0 else None
+        if result.returncode:
+            return None
+        value = result.stdout.strip()
+        return value or None
 
     def create(self, socket, route, name="subject", create=True):
         window = {"tmux": name, "cwd": str(self.root), "agent": "terminal", "tmuxSocket": socket}
@@ -394,9 +397,12 @@ class TmuxHistoryBehaviorTests(unittest.TestCase):
                     self.assertEqual(drag, self.tmux(socket, "list-keys", "-T", "root", "MouseDrag1Pane"), route)
                     # On newer tmux, the dedicated selection-style option is
                     # migrated while the broader mode-style stays untouched.
-                    # Older tmux uses mode-style for the orange selection.
+                    # Older tmux uses mode-style for the orange selection, so
+                    # only its stock value migrates when reconnecting.
                     expected_mode_style = style
-                    if selection_style is None and style in ("bg=yellow,fg=black", "fg=black,bg=yellow"):
+                    if (socket in ("uniconnect", "uniconnect-local")
+                            and selection_style is None
+                            and style in ("bg=yellow,fg=black", "fg=black,bg=yellow")):
                         expected_mode_style = "fg=white,bg=blue"
                     self.assertEqual(expected_mode_style,
                                      self.tmux(socket, "show-window-options", "-gv", "mode-style"), route)
