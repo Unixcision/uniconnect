@@ -35,7 +35,9 @@ class HistoryCopyTests(PointerHistoryFixture):
         with VNCClipboardPeer("recv") as peer:
             self.wait_for(lambda: peer.ready)
             peer.send('UC_VNC_PEGADO_456')
-            self.wait_for(lambda: self.clipboard.wait_for_text() == 'UC_VNC_PEGADO_456')
+            self.wait_for(lambda: self.clipboard.wait_for_text() == 'UC_VNC_PEGADO_456',
+                          detail=lambda: f"VNC received={peer.received!r}; peer_error={peer.error!r}; "
+                          f"server_log={peer.server_log()!r}")
             self.window.run_action('paste')
             self.wait_for(lambda: 'UC_VNC_PEGADO_456' in self.tmux('capture-pane', '-p', '-t', '=subject:'))
             self.surface.send('\n')
@@ -178,7 +180,14 @@ class HistoryCopyTests(PointerHistoryFixture):
             with patch("uniconnect.transport.Transport.run", side_effect=AssertionError("Dragging/copying must be local")):
                 self.wait_for(lambda: buffer.get_has_selection() and
                               abs(buffer.get_iter_at_mark(buffer.get_insert()).get_line() -
-                                  buffer.get_iter_at_mark(buffer.get_selection_bound()).get_line()) > 40)
+                                  buffer.get_iter_at_mark(buffer.get_selection_bound()).get_line()) > 40,
+                              detail=lambda: f"history_drag_mark={view._history_drag_mark!r}; "
+                              f"pointer={view._history_drag_pointer!r}; timer={view._history_drag_timer!r}; "
+                              f"selection={buffer.get_has_selection()}; "
+                              f"insert={buffer.get_iter_at_mark(buffer.get_insert()).get_line()}; "
+                              f"bound={buffer.get_iter_at_mark(buffer.get_selection_bound()).get_line()}; "
+                              f"adjustment={adjustment.get_value()}/{adjustment.get_upper()}"
+                              )
                 self.release_pointer()
                 view.copy()
                 copied = buffer.get_text(*buffer.get_selection_bounds(), False) if buffer.get_has_selection() else self.clipboard.wait_for_text()
