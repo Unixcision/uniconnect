@@ -30,7 +30,7 @@ struct MobileTmuxPTYIntegrationTests {
             "PATH": "/usr/bin:/bin", "SHELL": "/bin/sh", "TERM": "xterm-256color",
         ]
         let version = try await tmux(executable, binding, environment, ["-V"])
-        #require(version == "tmux 3.7c", "The integration fixture must use supported tmux 3.7c; found \(version).")
+        try #require(version == "tmux 3.7c", "The integration fixture must use supported tmux 3.7c; found \(version).")
         let desktop = MobilePTYProcess(environment: environment)
         let mobile = MobilePTYProcess(environment: environment)
         var desktopOutput: Task<Void, Never>?
