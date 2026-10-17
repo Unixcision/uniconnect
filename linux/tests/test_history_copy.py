@@ -2,6 +2,7 @@
 
 import os
 import shutil
+import subprocess
 import unittest
 from unittest.mock import patch
 
