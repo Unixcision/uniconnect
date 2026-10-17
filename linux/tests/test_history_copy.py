@@ -42,8 +42,11 @@ class HistoryCopyTests(PointerHistoryFixture):
         y += row * terminal.get_char_height() + terminal.get_char_height() // 2
         pointer_events = []
         terminal.connect('event', lambda widget, event: (pointer_events.append(
-            (event.type, event.state, event.x, event.y)) or False)
-            if event.type in (Gdk.EventType.BUTTON_PRESS, Gdk.EventType.MOTION_NOTIFY) else False)
+            (event.type, event.state, getattr(event, "x", None), getattr(event, "y", None),
+             self.surface.selection_drag.pressed, self.surface.selection_drag.active,
+             self.surface.selection_drag.busy)) or False)
+            if event.type in (Gdk.EventType.BUTTON_PRESS, Gdk.EventType.MOTION_NOTIFY,
+                              Gdk.EventType.GRAB_BROKEN) else False)
         self.xtst.XTestFakeMotionEvent(self.display, -1, x, y, 0)
         self.xtst.XTestFakeKeyEvent(self.display, self.shift, True, 30)
         self.xtst.XTestFakeButtonEvent(self.display, 1, True, 50)
@@ -64,6 +67,9 @@ class HistoryCopyTests(PointerHistoryFixture):
         self.x11.XSync(self.display, False)
         self.wait_for(lambda: any(event[0] == Gdk.EventType.MOTION_NOTIFY
                                   and event[1] & Gdk.ModifierType.BUTTON1_MASK for event in pointer_events),
+                      detail=lambda: f"pointer_events={pointer_events[-8:]!r}")
+        self.wait_for(lambda: self.surface.selection_drag.pressed
+                      and self.surface.selection_drag.pane is not None,
                       detail=lambda: f"pointer_events={pointer_events[-8:]!r}")
         loop = GLib.MainLoop()
         GLib.timeout_add(1500, lambda: (loop.quit(), False)[1])

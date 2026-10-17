@@ -33,7 +33,8 @@ AuthorizedKeysFile {root / 'authorized_keys'}
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PubkeyAuthentication yes
-UsePAM yes
+UsePAM no
+StrictModes no
 PermitRootLogin prohibit-password
 AllowUsers {getpass.getuser()}
 LogLevel DEBUG2

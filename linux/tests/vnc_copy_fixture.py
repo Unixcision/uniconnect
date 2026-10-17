@@ -36,6 +36,9 @@ class VNCClipboardPeer:
         self._read(struct.unpack('!I', header[20:24])[0])
         self.socket.sendall(b'\x02\0\0\x01' + struct.pack('!i', 0))
         self.socket.sendall(b'\x03\0' + struct.pack('!HHHH', 0, 0, 1, 1))
+        # The handshake uses a deadline; the long-lived RFB reader must not
+        # time out and silently stop before the desktop changes its clipboard.
+        self.socket.settimeout(None)
         self.received, self.error = [], None
         self.ready = False
         self.reader = threading.Thread(target=self._receive, daemon=True)
