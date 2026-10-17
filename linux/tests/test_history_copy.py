@@ -35,6 +35,12 @@ class HistoryCopyTests(PointerHistoryFixture):
         with VNCClipboardPeer("recv") as peer:
             self.wait_for(lambda: peer.ready)
             peer.send('UC_VNC_PEGADO_456')
+            # sendall only queues RFB data. Wait until x11vnc has handled it and
+            # the X selection owner is ready before issuing GTK's SelectionRequest.
+            self.wait_for(lambda: 'UC_VNC_PEGADO_456' in peer.server_log()
+                          and peer.clipboard_owner() == peer.selection_window,
+                          detail=lambda: f"owner=0x{peer.clipboard_owner():x}; "
+                          f"expected=0x{peer.selection_window:x}; server_log={peer.server_log()!r}")
             from uniconnect.clipboard import ClipboardImages
             self.window.clipboard_images = ClipboardImages(self.window.store.root / "clipboard")
             clipboard = self.window.clipboard_images

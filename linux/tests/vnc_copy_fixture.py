@@ -1,5 +1,6 @@
 """A loopback-only RFB clipboard peer on the disposable CI X display."""
 
+import ctypes
 import os
 import re
 import socket
@@ -8,7 +9,6 @@ import subprocess
 import tempfile
 import threading
 import time
-import ctypes
 
 
 class VNCClipboardPeer:
@@ -59,7 +59,7 @@ class VNCClipboardPeer:
         self._read(struct.unpack('!I', header[20:24])[0])
         self.socket.sendall(b'\x02\0\0\x01' + struct.pack('!i', 0))
         self.socket.sendall(b'\x03\0' + struct.pack('!HHHH', 0, 0, 1, 1))
-        self._wait_for_selection_owner()
+        self._wait_for_selection_window()
         # The handshake uses a deadline; the long-lived RFB reader must not
         # time out and silently stop before the desktop changes its clipboard.
         self.socket.settimeout(None)
@@ -69,7 +69,7 @@ class VNCClipboardPeer:
         self.reader.start()
         return self
 
-    def _wait_for_selection_owner(self):
+    def _wait_for_selection_window(self):
         self.x11 = ctypes.CDLL('libX11.so.6')
         self.x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
         self.x11.XOpenDisplay.restype = ctypes.c_void_p
@@ -82,21 +82,22 @@ class VNCClipboardPeer:
         self.display = self.x11.XOpenDisplay(None)
         if not self.display:
             raise RuntimeError('Cannot open CI X display to inspect VNC clipboard owner')
-        atom = self.x11.XInternAtom(self.display, b'CLIPBOARD', 0)
         deadline = time.monotonic() + 5
         self.selection_window = None
         while self.server.poll() is None and time.monotonic() < deadline:
             match = re.search(r'created selwin:\s+0x([0-9a-fA-F]+)', self.server_log())
             if match:
                 self.selection_window = int(match.group(1), 16)
-                owner = self.x11.XGetSelectionOwner(self.display, atom)
-                if owner == self.selection_window:
-                    return
+                return
             time.sleep(0.05)
         log = self.server_log()
         self.__exit__(None, None, None)
-        raise RuntimeError('CI VNC selection owner did not become ready: '
+        raise RuntimeError('CI VNC selection window was not created: '
                            f'window={self.selection_window!r}; log={log!r}')
+
+    def clipboard_owner(self):
+        atom = self.x11.XInternAtom(self.display, b'CLIPBOARD', 0)
+        return self.x11.XGetSelectionOwner(self.display, atom)
 
     def server_log(self):
         try:
