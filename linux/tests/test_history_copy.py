@@ -122,7 +122,13 @@ class HistoryCopyTests(PointerHistoryFixture):
             self.surface.record["tmuxSocket"] = ssh.socket_name
             # Exercise the actual app's SSH launch, not only a mock transport.
             self.surface.launch()
-            self.wait_for(lambda: self.surface.status == "Running" and not self.surface._preparing)
+            self.wait_for(lambda: self.surface.status == "Running" and not self.surface._preparing,
+                          detail=lambda: f"terminal={(self.surface.terminal.get_text_format(Vte.Format.TEXT)
+                                                      if hasattr(self.surface.terminal, 'get_text_format')
+                                                      else self.surface.terminal.get_text(None, None)[0])!r}; "
+                          f"remote_pane={ssh.tmux('display-message', '-p', '-t', '=subject:', '#{pane_id}:#{pane_pid}')!r}; "
+                          f"workspace_kind={self.surface.workspace['kind']!r}; "
+                          f"tmux_socket={self.surface.record.get('tmuxSocket')!r}")
             self.wait_for(lambda: "ROW0119" in ((self.surface.terminal.get_text_format(Vte.Format.TEXT)
                                                   if hasattr(self.surface.terminal, "get_text_format")
                                                   else self.surface.terminal.get_text(None, None)[0]) or ""),
