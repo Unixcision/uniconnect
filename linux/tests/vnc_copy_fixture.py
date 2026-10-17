@@ -17,7 +17,6 @@ class VNCClipboardPeer:
             self.port = port.getsockname()[1]
         self.server = subprocess.Popen(['x11vnc', '-display', os.environ['DISPLAY'], '-localhost',
             '-rfbport', str(self.port), '-nopw', '-shared', '-forever', '-noxdamage', '-debug_sel',
-            '-primary', '-clipboard',
             '-o', self.directory.name + '/log'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         # Wait for the bound socket, not a version-specific stdout line.
         deadline = time.monotonic() + 5

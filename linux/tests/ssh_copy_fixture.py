@@ -34,15 +34,21 @@ class SSHCopyFixture:
             ["openssl", "passwd", "-6", "-salt", uuid.uuid4().hex[:16], "-stdin"],
             input=secret, capture_output=True, check=True).stdout.decode().strip()
         try:
-            subprocess.run(["sudo", "-n", "useradd", "--create-home", "--home-dir", str(home),
-                            "--shell", "/bin/sh", "--password", password_hash, self.user], check=True)
+            subprocess.run(["sudo", "-n", "useradd", "--no-create-home", "--no-user-group",
+                            "--gid", "nogroup", "--home-dir", str(home), "--shell", "/bin/sh",
+                            "--password", password_hash, self.user], check=True, timeout=10)
             self.user_created = True
+            subprocess.run(["sudo", "-n", "install", "-d", "-m", "755", "-o", self.user,
+                            "-g", "nogroup", str(home)], check=True, timeout=10)
             key_dir = home / ".ssh"
             subprocess.run(["sudo", "-n", "install", "-d", "-m", "700", "-o", self.user,
-                            "-g", self.user, str(key_dir)], check=True)
+                            "-g", "nogroup", str(key_dir)], check=True, timeout=10)
             subprocess.run(["sudo", "-n", "install", "-m", "600", "-o", self.user,
-                            "-g", self.user, str(root / "client.pub"), str(key_dir / "authorized_keys")], check=True)
+                            "-g", "nogroup", str(root / "client.pub"), str(key_dir / "authorized_keys")],
+                           check=True, timeout=10)
         except Exception:
+            if subprocess.run(["getent", "passwd", self.user], check=False, capture_output=True).returncode == 0:
+                self.user_created = True
             self._remove_user()
             self.directory.cleanup()
             raise
