@@ -35,13 +35,29 @@ class HistoryCopyTests(PointerHistoryFixture):
         with VNCClipboardPeer("recv") as peer:
             self.wait_for(lambda: peer.ready)
             peer.send('UC_VNC_PEGADO_456')
+            from uniconnect.clipboard import ClipboardImages
+            self.window.clipboard_images = ClipboardImages(self.window.store.root / "clipboard")
+            clipboard = self.window.clipboard_images
+            clipboard_trace = []
+            request_targets = clipboard._targets
+            request_text = clipboard._text
+            def trace_targets(source, targets, count, request_id):
+                clipboard_trace.append(("targets", count, tuple(atom.name() for atom in (targets or ()))))
+                return request_targets(source, targets, count, request_id)
+            def trace_text(source, text, request_id):
+                clipboard_trace.append(("text", text or ""))
+                return request_text(source, text, request_id)
+            clipboard._targets = trace_targets
+            clipboard._text = trace_text
             # Exercise UniConnect's real async clipboard request rather than
             # polling Gtk.Clipboard.wait_for_text() independently. Some X11
             # selection owners (including x11vnc) only serve the requested
             # target through their SelectionRequest handler.
             self.window.run_action('paste')
             self.wait_for(lambda: 'UC_VNC_PEGADO_456' in self.tmux('capture-pane', '-p', '-t', '=subject:'),
-                          detail=lambda: f"VNC received={peer.received!r}; peer_error={peer.error!r}; "
+                          detail=lambda: f"clipboard_trace={clipboard_trace!r}; "
+                          f"pending_clipboard_requests={len(clipboard._requests)}; "
+                          f"VNC received={peer.received!r}; peer_error={peer.error!r}; "
                           f"server_log={peer.server_log()!r}")
             self.surface.send('\n')
             self.tmux('wait-for', 'typed')
