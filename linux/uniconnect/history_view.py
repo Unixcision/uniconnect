@@ -32,7 +32,7 @@ class HistoryView(Gtk.Window):
         self.search.set_placeholder_text(self._('Buscar en el historial'))
         self.search.connect('activate', self._find)
         layout.pack_start(self.search, False, False, 0)
-        scroll = Gtk.ScrolledWindow()
+        self.scroller = Gtk.ScrolledWindow()
         self.text = Gtk.TextView(editable=False, cursor_visible=True, monospace=True,
                                  wrap_mode=Gtk.WrapMode.WORD_CHAR, left_margin=8, right_margin=8)
         self.text.override_font(Pango.FontDescription(surface.owner.store.data.get('settings', {}).get('font', 'Monospace 11')))
@@ -41,8 +41,8 @@ class HistoryView(Gtk.Window):
         provider.load_from_data(b'textview text selection { background-color: #3584e4; color: white; }')
         self.text.get_style_context().add_provider(provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
         self.text.connect('copy-clipboard', self._copy_signal)
-        scroll.add(self.text)
-        layout.pack_start(scroll, True, True, 0)
+        self.scroller.add(self.text)
+        layout.pack_start(self.scroller, True, True, 0)
         buttons = Gtk.Box(spacing=8)
         for label, callback in (('Copy', self.copy), ('Actualizar historial', self.load), ('Volver al terminal', self.destroy)):
             button = Gtk.Button(label=self._(label))
@@ -79,9 +79,18 @@ class HistoryView(Gtk.Window):
         end = buffer.get_end_iter()
         buffer.place_cursor(end)
         self.text.scroll_to_iter(end, 0, True, 0, 1)
+        GLib.idle_add(self._scroll_to_end)
         self.ready = True
         self.message.set_text(self._('Selecciona arrastrando, también fuera del borde. Copia con Ctrl+C o el botón Copiar. La sesión sigue activa.'))
         self.text.grab_focus()
+        return False
+
+    def _scroll_to_end(self):
+        if self.closed:
+            return False
+        adjustment = self.scroller.get_vadjustment()
+        adjustment.set_value(max(adjustment.get_lower(),
+                                 adjustment.get_upper() - adjustment.get_page_size()))
         return False
 
     def _copy_signal(self, widget):

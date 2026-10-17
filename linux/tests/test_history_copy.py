@@ -19,15 +19,21 @@ class HistoryCopyTests(PointerHistoryFixture):
         return terminal.get_text(None, None)[0] or ""
 
     @unittest.skipUnless(shutil.which("x11vnc"), "x11vnc required for VNC clipboard integration")
-    def test_explicit_copy_crosses_vnc_and_viewer_text_can_be_pasted(self):
+    def test_explicit_copy_crosses_vnc(self):
         from uniconnect.clipboard_text import publish_text
         self.seed_history()
-        with VNCClipboardPeer() as peer:
+        with VNCClipboardPeer("send") as peer:
             self.wait_for(lambda: peer.ready)
             publish_text('UC_VNC_COPIA_123')
             self.wait_for(lambda: 'UC_VNC_COPIA_123' in peer.received,
                           detail=lambda: f"VNC received={peer.received!r}; peer_error={peer.error!r}; "
                           f"server_log={peer.server_log()!r}")
+
+    @unittest.skipUnless(shutil.which("x11vnc"), "x11vnc required for VNC clipboard integration")
+    def test_vnc_viewer_clipboard_reaches_desktop_and_can_be_pasted(self):
+        self.seed_history()
+        with VNCClipboardPeer("recv") as peer:
+            self.wait_for(lambda: peer.ready)
             peer.send('UC_VNC_PEGADO_456')
             self.wait_for(lambda: self.clipboard.wait_for_text() == 'UC_VNC_PEGADO_456')
             self.window.run_action('paste')
@@ -152,7 +158,7 @@ class HistoryCopyTests(PointerHistoryFixture):
             end = buffer.get_end_iter()
             buffer.place_cursor(end)
             view.text.scroll_to_iter(end, 0, True, 0, 1)
-            adjustment = view.text.get_vadjustment()
+            adjustment = view.scroller.get_vadjustment()
             self.wait_for(lambda: adjustment.get_upper() > adjustment.get_page_size())
             adjustment.set_value(adjustment.get_upper() - adjustment.get_page_size())
             self.wait_for(lambda: adjustment.get_value() > 0)

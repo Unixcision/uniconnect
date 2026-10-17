@@ -10,6 +10,11 @@ import time
 
 
 class VNCClipboardPeer:
+    def __init__(self, direction="send"):
+        if direction not in ("send", "recv"):
+            raise ValueError("VNC test direction must be send or recv")
+        self.direction = direction
+
     def __enter__(self):
         self.directory = tempfile.TemporaryDirectory(prefix='uc-vnc-copy-')
         with socket.socket() as port:
@@ -17,6 +22,7 @@ class VNCClipboardPeer:
             self.port = port.getsockname()[1]
         self.server = subprocess.Popen(['x11vnc', '-display', os.environ['DISPLAY'], '-localhost',
             '-rfbport', str(self.port), '-nopw', '-shared', '-forever', '-noxdamage', '-debug_sel',
+            '-seldir', self.direction,
             '-o', self.directory.name + '/log'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         # Wait for the bound socket, not a version-specific stdout line.
         deadline = time.monotonic() + 5
