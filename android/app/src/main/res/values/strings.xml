@@ -435,6 +435,7 @@
     <string name="key_ctrl_c_desc">Control C: interrumpir</string>
     <string name="key_ctrl_x_desc">Control X</string>
     <string name="key_ctrl_s_desc">Control S</string>
+    <string name="key_ctrl_k_desc">Control K: borrar hasta el final de la línea</string>
     <string name="real_terminal_reconnect">Reconectar</string>
     <string name="dictation_start">Dictar</string>
     <string name="dictation_stop">Parar</string>

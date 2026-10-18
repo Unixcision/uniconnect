@@ -84,6 +84,8 @@ fun TerminalExtraKeys(
             // ventana hasta recuperarla a mano, y ^D la cierra. ^X y ^S son los que se usan.
             KeyCap("^X", stringResource(R.string.key_ctrl_x_desc), enabled, Modifier.weight(1f)) { onText("\u0018") }
             KeyCap("^S", stringResource(R.string.key_ctrl_s_desc), enabled, Modifier.weight(1f)) { onText("\u0013") }
+            // ^K: borrar desde el cursor hasta el final de la línea (Claude Code, Codex y la terminal).
+            KeyCap("^K", stringResource(R.string.key_ctrl_k_desc), enabled, Modifier.weight(1f)) { onText("\u000b") }
             KeyCap(stringResource(R.string.key_del), stringResource(R.string.key_delete_desc), enabled, Modifier.weight(1f)) { onKey(TerminalKey.DELETE) }
             KeyCap(stringResource(R.string.key_enter), stringResource(R.string.key_enter_desc), enabled, Modifier.weight(1.6f)) { onKey(TerminalKey.ENTER) }
         }
