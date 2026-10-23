@@ -19,6 +19,8 @@ data class DictationRecord(
     val audioBytes: Long,
     /** Machine the dictation was meant for; null when it was read on the phone itself. */
     val machineName: String?,
+    /** Id of that machine, to send the audio there again; null in entries kept before it was stored. */
+    val machineId: String? = null,
 ) {
     enum class State {
         /** Sent to an engine; nothing came back yet. */

@@ -114,6 +114,20 @@ class FileDictationHistoryTest {
         assertEquals("viejo", oldest.text)
     }
 
+    @Test
+    fun aNewTranscriptionReplacesTheTextAndBothSurviveARestart() {
+        val history = history()
+        val clip = FakeClip(byteArrayOf(5))
+        history.keep(clip, target)
+        history.transcribed(clip, "Vamos a ver qué encuentras.")
+        val id = history.records.value.single().id
+        history.replaceText(id, "Vale amigo, revisa los logs. Vamos a ver qué encuentras.")
+        val reopened = history().records.value.single()
+        assertEquals("Vale amigo, revisa los logs. Vamos a ver qué encuentras.", reopened.text)
+        assertEquals(DictationRecord.State.DONE, reopened.state)
+        assertEquals("m1", reopened.machineId)
+    }
+
     private class FakeClip(private val content: ByteArray) : AudioClip {
         private var deleted = false
         override val bytes: Long get() = content.size.toLong()
