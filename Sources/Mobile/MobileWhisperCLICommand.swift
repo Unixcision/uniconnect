@@ -37,7 +37,8 @@ struct MobileWhisperCLICommand: Equatable, Sendable {
             "-f", audio.path,
             "-l", language ?? "auto",
             "-t", String(threads),
-            "-nt",
+            // Nunca `-nt`: sin marcas de tiempo, large-v3-turbo se salta casi todo un dictado largo
+            // y devuelve solo la última frase. Las marcas las quita MobileWhisperTranscript.
             "-np",
         ]
     }
