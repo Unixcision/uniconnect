@@ -238,7 +238,8 @@ class CommandTests(EngineTestCase):
         self.assertEqual(order[order.index("--file") + 1], conversion[-1])
         self.assertEqual(order[order.index("--language") + 1], "es")
         self.assertEqual(order[order.index("--threads") + 1], "3")
-        self.assertIn("--no-timestamps", order)
+        # Sin marcas de tiempo, large-v3-turbo se salta casi todo un dictado largo (solo la última frase).
+        self.assertNotIn("--no-timestamps", order)
         self.assertEqual(result["text"], "Hola desde el movil")
         self.assertEqual(result["engine"], "whisper.cpp/ggml-base.bin")
         self.assertEqual(result["seconds"], 1.0)
