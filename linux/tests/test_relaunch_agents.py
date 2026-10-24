@@ -670,11 +670,25 @@ class TargetIntegrationTests(unittest.TestCase):
                         markers = ("do you trust", "trust this", "allow once", "allow execution",
                                    "would you like to run", "do you want to proceed", "[y/n]", "sign in", "log in")
                         visible = "\n".join(screen).lower()
+                        raw_identity = subprocess.run(["tmux", "-L", socket_name, "show-options", "-p", "-v",
+                                                       "-t", "=fixture:", "@uniconnect_native_identity"],
+                                                      capture_output=True, text=True, timeout=5).stdout.strip()
+                        try:
+                            snapshot = json.loads(raw_identity)
+                            runtime = snapshot.get("runtime_status") or {}
+                            runtime_summary = {key: runtime.get(key) for key in (
+                                "state", "version", "pending_input_count", "tool_confirmation_pending",
+                                "task_count", "model_id", "effort", "cycle_mode", "sandbox_enabled")}
+                            observed = runtime.get("observed_at")
+                            runtime_summary["age_seconds"] = round(time.time() - observed, 2) if isinstance(
+                                observed, (int, float)) and not isinstance(observed, bool) else None
+                        except (ValueError, TypeError, AttributeError):
+                            runtime_summary = "unavailable"
                         self.fail("Antigravity isolated relaunch returned %r; cursor_y=%r; cursor_line=%r; "
-                                  "composer_match=%r; rejection_markers=%r; visible_fixture_rows=%r"
+                                  "composer_match=%r; rejection_markers=%r; runtime_status=%r; visible_fixture_rows=%r"
                                   % (result, cursor, screen[row] if 0 <= row < len(screen) else None,
                                      bool(0 <= row < len(screen) and re.fullmatch(r"\s*│?\s*[›❯>]\s*│?\s*", screen[row])),
-                                     [marker for marker in markers if marker in visible], screen[-8:]))
+                                     [marker for marker in markers if marker in visible], runtime_summary, screen[-8:]))
                     current = adapter.probe(candidate, "agent.relaunch")
                     self.assertEqual(current["pane"], proof["pane"])
                     self.assertNotEqual((current["pid"], current["start"]), (proof["pid"], proof["start"]))
