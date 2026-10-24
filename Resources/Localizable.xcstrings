@@ -41908,6 +41908,17 @@
         }
       }
     },
+    "uniconnect.shared.vincular.gemini.abierta.de.esta.ventana": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vincular GEMINI abierta de esta ventana…"
+          }
+        }
+      }
+    },
     "uniconnect.shared.volver.al.terminal": {
       "extractionState": "manual",
       "localizations": {
