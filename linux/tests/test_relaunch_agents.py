@@ -574,6 +574,7 @@ AGY_IDLE_FIXTURE = r'''
 #include <stdlib.h>
 #include <sys/select.h>
 #include <time.h>
+#include <unistd.h>
 
 static void publish_statusline(void) {
     const char *statusline = getenv("UNICONNECT_AGY_TEST_STATUSLINE");
