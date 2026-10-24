@@ -4,6 +4,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import subprocess
@@ -665,8 +666,15 @@ class TargetIntegrationTests(unittest.TestCase):
                         cursor = subprocess.run(["tmux", "-L", socket_name, "display-message", "-p", "-t",
                                                  "=fixture:", "#{cursor_y}"], check=True, capture_output=True,
                                                 text=True, timeout=5).stdout.strip()
-                        self.fail("Antigravity isolated relaunch returned %r; cursor_y=%r; visible_fixture_rows=%r"
-                                  % (result, cursor, screen[-8:]))
+                        row = int(cursor) if cursor.isdigit() else -1
+                        markers = ("do you trust", "trust this", "allow once", "allow execution",
+                                   "would you like to run", "do you want to proceed", "[y/n]", "sign in", "log in")
+                        visible = "\n".join(screen).lower()
+                        self.fail("Antigravity isolated relaunch returned %r; cursor_y=%r; cursor_line=%r; "
+                                  "composer_match=%r; rejection_markers=%r; visible_fixture_rows=%r"
+                                  % (result, cursor, screen[row] if 0 <= row < len(screen) else None,
+                                     bool(0 <= row < len(screen) and re.fullmatch(r"\s*│?\s*[›❯>]\s*│?\s*", screen[row])),
+                                     [marker for marker in markers if marker in visible], screen[-8:]))
                     current = adapter.probe(candidate, "agent.relaunch")
                     self.assertEqual(current["pane"], proof["pane"])
                     self.assertNotEqual((current["pid"], current["start"]), (proof["pid"], proof["start"]))
