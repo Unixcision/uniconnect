@@ -695,6 +695,14 @@ class TargetIntegrationTests(unittest.TestCase):
                                 self.fail("Antigravity probe unavailable (%s); status=%r, identity_bound=%r"
                                           % (last_error, metadata, bound))
                     phases = []
+                    worker = TargetWorker({"session": "fixture", "socket": socket_name,
+                                           "window_id": "fixture-window"})
+                    pane, _, _, hook = worker.pane()
+                    native_process = worker.process(proof["pid"])
+                    process_env = dict(item.split("=", 1) for item in
+                                       (Path("/proc") / str(proof["pid"]) / "environ").read_bytes()
+                                       .decode(errors="replace").split("\0") if "=" in item)
+                    managed_at_probe = worker.managed_antigravity(process_env, native_process, pane, hook)
                     result = adapter.execute(candidate, "agent.relaunch", proof, str(uuid.uuid4()),
                                              phases.append, lambda: True)
                     if result != {"state": "verificado", "effective_id": native}:
@@ -742,12 +750,13 @@ class TargetIntegrationTests(unittest.TestCase):
                         self.fail("Antigravity isolated relaunch returned %r; cursor_y=%r; cursor_line=%r; "
                                   "composer_match=%r; rejection_markers=%r; runtime_status=%r; statusline_runs=%r; "
                                   "fixture_processes=%r; fixture_generations=%r; pane_generation_matches_fixture=%r; phases=%r; "
+                                  "managed_at_probe=%r; "
                                   "visible_fixture_rows=%r"
                                   % (result, cursor, screen[row] if 0 <= row < len(screen) else None,
                                      bool(0 <= row < len(screen) and re.fullmatch(r"\s*│?\s*[›❯>]\s*│?\s*", screen[row])),
                                      [marker for marker in markers if marker in visible], runtime_summary,
                                      statusline_runs, len(fixture_pids), len(fixture_generations),
-                                     pane_generation_matches_fixture, phases,
+                                     pane_generation_matches_fixture, phases, managed_at_probe,
                                      screen[-8:]))
                     current = adapter.probe(candidate, "agent.relaunch")
                     self.assertEqual(current["pane"], proof["pane"])
