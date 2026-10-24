@@ -761,7 +761,11 @@ class TargetWorker:
             generation = int(self.digest(pane)[:12], 16)
             return {"key": "linux:" + self.digest(pane), "generation": generation, "pane": pane}
         provider = self.request.get("provider")
-        if provider not in ("codex", "claude", "agy") or provider not in self.request["catalog"]:
+        catalog = self.request.get("catalog")
+        catalogued = (isinstance(catalog, dict) and (provider in catalog or any(
+            isinstance(entry, dict) and isinstance(entry.get("aliases"), list)
+            and provider in entry["aliases"] for entry in catalog.values())))
+        if provider not in ("codex", "claude", "agy") or not catalogued:
             raise Unavailable("no_soportado")
         if self.request.get("verb") in ("agent.continue", "agent.recover") and provider != "codex":
             raise Unavailable("no_soportado")
