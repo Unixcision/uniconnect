@@ -723,6 +723,11 @@ class TargetIntegrationTests(unittest.TestCase):
                             post_probe_summary["cwd_matches"] = post_process["cwd"] == native_process["cwd"]
                             post_probe_summary["resume_arguments_match"] = post_resume == initial_resume
                             post_probe_summary["resume_argument_counts"] = (len(initial_resume), len(post_resume))
+                            def display_args(arguments):
+                                return ["<agy>" if index == 0 else "<conversation>" if value == native else value
+                                        for index, value in enumerate(arguments)]
+                            post_probe_summary["effective_resume_args"] = {
+                                "initial": display_args(initial_resume), "reopened": display_args(post_resume)}
                         except RelaunchUnavailable as error:
                             post_probe_summary = {"cause": error.cause}
                         screen = subprocess.run(["tmux", "-L", socket_name, "capture-pane", "-p", "-t", "=fixture:"],
