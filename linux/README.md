@@ -140,14 +140,17 @@ cuota. El resultado solo queda verificado cuando la misma sesión muestra que
 Codex empezó a trabajar. Un error de inicio de sesión, diálogo, borrador o estado
 sin prueba queda excluido o requiere intervención; no se escribe en esos cuadros.
 
-La telemetría de identidad y estado Antigravity es opt-in y reversible. Para
-revisarla, activarla o retirarla en el usuario Linux actual, usa
+La telemetría de identidad y estado Antigravity es opt-in y reversible. En cada
+host Linux que vaya a gestionar ventanas Antigravity, usa
 `uniconnect-cli antigravity-integration status|enable|disable`. La activación
 añade un hook con nombre propio y una status line; conserva las demás claves y
-rechaza conflictos con una status line existente. Esto todavía no habilita
-relanzar ni continuar ventanas GEMINI: esa acción permanece excluida hasta que
-UniConnect pueda comprobar también el estado del prompt, los diálogos y una
-salida/reapertura segura.
+rechaza conflictos con una status line existente. Linux anuncia relanzado AGY,
+pero cada ventana solo entra en el plan si prueba el binding gestionado, la
+conversación nativa, una status line `idle` reciente, el prompt vacío, ausencia
+de diálogos y la misma configuración efectiva tras reabrir. Las ventanas sin
+esas señales quedan excluidas sin recibir teclas. Esta integración habilita
+`agent.relaunch`; no habilita `agent.continue` ni `agent.recover` para AGY,
+operaciones que siguen limitadas a Codex.
 
 Para consultar o compartir los datos de una terminal, abre su menú contextual y
 elige **Detalles…**. El modal Linux presenta el proveedor, el identificador
