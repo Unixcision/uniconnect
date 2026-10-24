@@ -569,9 +569,11 @@ class TargetWorker:
             added.append("--sandbox")
         elif sandbox_enabled is not False:
             raise Unavailable("no_soportado")
-        # Resume selectors can safely follow options; keeping them adjacent
-        # makes the effective command easy to reason about and test.
-        return [argv[0], *added, *arguments]
+        # Keep the catalogue's resume selector and validated arguments in their
+        # canonical order, then append missing effective settings. This makes a
+        # second inspection of the reopened argv produce the same configuration
+        # digest instead of reordering options around the conversation selector.
+        return [argv[0], *arguments, *added]
 
     def managed_antigravity(self, env, process, pane, hook):
         """Rewrap only a pane whose current native proof matches its live launch binding."""

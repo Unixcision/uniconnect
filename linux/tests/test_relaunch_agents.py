@@ -335,8 +335,13 @@ class AntigravityDialectTests(unittest.TestCase):
         result = TargetWorker.preserve_antigravity_configuration(argv, {
             "model": "Gemini 4 Argon (Medium)", "effort": "high", "cycle_mode": "accept-edits",
             "sandbox_enabled": True})
-        self.assertEqual(result, ["/usr/bin/agy", "--model", "Gemini 4 Argon (Medium)", "--effort", "high",
-            "--mode", "accept-edits", "--sandbox", "--conversation", self.SESSION, "--project", "/work"])
+        self.assertEqual(result, ["/usr/bin/agy", "--conversation", self.SESSION, "--project", "/work",
+            "--model", "Gemini 4 Argon (Medium)", "--effort", "high", "--mode", "accept-edits", "--sandbox"])
+        resumed_again = TargetWorker.preserve_antigravity_configuration(
+            TargetWorker.antigravity_resume_arguments(result, self.SESSION, catalog), {
+                "model": "Gemini 4 Argon (Medium)", "effort": "high", "cycle_mode": "accept-edits",
+                "sandbox_enabled": True})
+        self.assertEqual(resumed_again, result)
         with self.assertRaises(Unavailable):
             TargetWorker.preserve_antigravity_configuration(["agy", "--sandbox", "--conversation", self.SESSION],
                 {"model": "model", "effort": None, "cycle_mode": None, "sandbox_enabled": False})
