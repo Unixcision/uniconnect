@@ -105,11 +105,11 @@ class ArgumentsTests(unittest.TestCase):
     def test_antigravity_resume_preserves_validated_session_options_without_adding_permissions(self):
         identifier = "4a1ec7f2-126f-4e63-a347-92ab4576fdda"
         argv = ["/usr/bin/agy", "--conversation", identifier, "--model", "gemini-3-pro",
-                "--effort", "high", "--mode", "agent", "--sandbox", "workspace-write",
+                "--effort", "high", "--mode", "accept-edits", "--sandbox", "--remote-control",
                 "--project", "/work/project", "--agent", "reviewer", "--add-dir", "/work/shared"]
         self.assertEqual(TargetWorker.resume_arguments("agy", argv, identifier, self.catalog),
                          ["/usr/bin/agy", "--conversation", identifier, "--model", "gemini-3-pro",
-                          "--effort", "high", "--mode", "agent", "--sandbox", "workspace-write",
+                          "--effort", "high", "--mode", "accept-edits", "--sandbox", "--remote-control",
                           "--project", "/work/project", "--agent", "reviewer", "--add-dir", "/work/shared"])
         restricted = TargetWorker.resume_arguments("antigravity", argv, identifier, self.catalog)
         self.assertNotIn("--dangerously-skip-permissions", restricted)

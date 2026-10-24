@@ -571,9 +571,10 @@ class TargetWorker:
             raise Unavailable("no_soportado")
 
         arguments = list(argv[1:])
-        value_options = {"--model", "--effort", "--mode", "--sandbox", "--project", "--agent", "--add-dir"}
+        value_options = {"--model", "--effort", "--mode", "--project", "--agent", "--add-dir"}
+        boolean_options = {"--sandbox", "--remote-control", "--dangerously-skip-permissions"}
         kept, seen_conversation, seen_single, index = [], False, set(), 0
-        preserve_skip_permissions = False
+        seen_boolean = set()
         while index < len(arguments):
             arg = arguments[index]
             option, separator, inline_value = arg.partition("=")
@@ -598,10 +599,10 @@ class TargetWorker:
                     index += 1
                 index += 1
                 continue
-            if arg == "--dangerously-skip-permissions":
-                if preserve_skip_permissions:
+            if arg in boolean_options:
+                if arg in seen_boolean:
                     raise Unavailable("no_soportado")
-                preserve_skip_permissions = True
+                seen_boolean.add(arg)
                 kept.append(arg)
             else:
                 # Includes --continue, prompts, subcommands, and options whose
