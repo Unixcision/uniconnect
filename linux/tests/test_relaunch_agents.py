@@ -204,9 +204,15 @@ class ArgumentsTests(unittest.TestCase):
             with self.assertRaises(Unavailable):
                 worker.require_empty_composer({"pane": {"pane": "%1"}})
 
-    def test_antigravity_busy_model_footer_blocks_adoption_even_with_empty_composer(self):
+    def test_antigravity_model_effort_is_not_mistaken_for_activity(self):
         worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "agy"})
         screen = "existing output\n› \n? for shortcuts                         Claude Sonnet 4.6 (Thinking)"
+        worker.tmux = lambda *args: "1" if args[0] == "display-message" else screen
+        worker.require_empty_composer({"pane": {"pane": "%1"}})
+
+    def test_antigravity_explicit_busy_indicator_blocks_adoption_with_empty_composer(self):
+        worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "agy"})
+        screen = "existing output\n› \n✳ Working (12s)"
         worker.tmux = lambda *args: "1" if args[0] == "display-message" else screen
         with self.assertRaises(Unavailable) as busy:
             worker.require_empty_composer({"pane": {"pane": "%1"}})

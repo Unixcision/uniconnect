@@ -1476,10 +1476,14 @@ class TargetWorker:
 
         An empty prompt alone is not enough during first-time statusLine adoption:
         the TUI can still be generating output while its composer remains blank.
-        Only positive activity evidence blocks; absence is not treated as native idle proof.
+        The model footer may contain ``(Thinking)`` as its reasoning tier, so only
+        a standalone activity marker is evidence of work. Absence is not treated
+        as native idle proof.
         """
-        busy = re.compile(r"\((?:thinking|working|generating|executing|running|streaming)\)\s*$", re.IGNORECASE)
-        return any(busy.search(line) for line in lines[-12:])
+        busy = re.compile(
+            r"^\s*(?:[✳*•◦·]\s*)?(?:thinking|working|generating|executing|running|streaming)"
+            r"(?:\s*\([^)]*\))?\s*(?:…|\.{1,3})?\s*$", re.IGNORECASE)
+        return any(busy.fullmatch(line) for line in lines[-12:])
 
     @staticmethod
     def codex_placeholder(styled):
