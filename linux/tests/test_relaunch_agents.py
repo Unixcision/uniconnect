@@ -640,7 +640,23 @@ class TargetIntegrationTests(unittest.TestCase):
                             last_error = error.cause
                             if time.monotonic() >= deadline:
                                 self.fail("Antigravity probe remained unavailable: " + str(last_error))
-                            events.wait(deadline, time.monotonic)
+                            try:
+                                events.wait(deadline, time.monotonic)
+                            except Unavailable:
+                                raw = subprocess.run(["tmux", "-L", socket_name, "show-options", "-p", "-v",
+                                                      "-t", "=fixture:", "@uniconnect_native_identity"],
+                                                     capture_output=True, text=True, timeout=5).stdout.strip()
+                                try:
+                                    snapshot = json.loads(raw)
+                                    runtime = snapshot.get("runtime_status") or {}
+                                    metadata = {key: runtime.get(key) for key in (
+                                        "state", "version", "pending_input_count", "tool_confirmation_pending",
+                                        "task_count", "model_id", "effort", "cycle_mode", "sandbox_enabled")}
+                                    bound = snapshot.get("agent") == "agy" and snapshot.get("window_id") == "fixture-window"
+                                except (ValueError, TypeError, AttributeError):
+                                    metadata, bound = {}, False
+                                self.fail("Antigravity probe unavailable (%s); status=%r, identity_bound=%r"
+                                          % (last_error, metadata, bound))
                     result = adapter.execute(candidate, "agent.relaunch", proof, str(uuid.uuid4()),
                                              lambda _: None, lambda: True)
                     self.assertEqual(result, {"state": "verificado", "effective_id": native})
