@@ -95,6 +95,26 @@ class TargetWorker:
             raise Unavailable("host_inaccesible")
         return result.stdout.rstrip("\n")
 
+    @staticmethod
+    def staged_control_matches(before, after, row, expected_line):
+        """Verify the staged control line and unchanged transcript without trusting volatile footers."""
+        return (0 <= row < len(before) and row < len(after)
+                and before[:row] == after[:row]
+                and re.fullmatch(expected_line, after[row]) is not None)
+
+    def clear_staged_control(self, pane, process):
+        """Undo our exact unsubmitted adoption command after a failed verification."""
+        try:
+            if self.pane()[0] != pane or not self.same_process(process):
+                return
+            lines = self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines()
+            row = int(self.tmux("display-message", "-p", "-t", pane["pane"], "#{cursor_y}"))
+            if self.staged_control_matches(
+                    lines, lines, row, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"):
+                self.tmux("send-keys", "-t", pane["pane"], "C-u")
+        except (Unavailable, OSError, ProcessLookupError, ValueError):
+            return
+
     def process(self, pid):
         path = self.proc / str(pid)
         if path.stat().st_uid != os.geteuid():
@@ -1686,6 +1706,7 @@ class TargetWorker:
             raise Unavailable("generacion_cambiada")
 
         adopted = False
+        staged_control = False
         try:
             # Antigravity may have loaded its statusLine command before UniConnect
             # refreshed settings.json. In the explicitly confirmed adoption flow,
@@ -1697,7 +1718,7 @@ class TargetWorker:
                     raise Unavailable("generacion_cambiada")
                 initial = self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines()
                 try:
-                    composer = self.require_empty_composer({"pane": pane})
+                    self.require_empty_composer({"pane": pane})
                 except Unavailable as error:
                     if error.cause != "dialogo_desconocido" or self.clock() >= deadline:
                         raise
@@ -1714,10 +1735,10 @@ class TargetWorker:
                 raise Unavailable("dialogo_desconocido")
             self.tmux("send-keys", "-t", pane["pane"], "-l", "--", "/statusline enable")
             typed = self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines()
-            if (row >= len(typed)
-                    or not re.fullmatch(r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*", typed[row])
-                    or typed[row + 1:] != composer["tail"]):
+            if not self.staged_control_matches(
+                    initial, typed, row, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"):
                 raise Unavailable("dialogo_desconocido")
+            staged_control = True
             if (self.pane()[0] != pane or not self.same_process(process)
                     or self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines() != typed):
                 raise Unavailable("generacion_cambiada")
@@ -1750,6 +1771,8 @@ class TargetWorker:
             raise Unavailable("dialogo_desconocido")
         finally:
             if not adopted:
+                if staged_control:
+                    self.clear_staged_control(pane, process)
                 clear = (shlex.join(["set-option", "-u", "-p", "-t", pane["pane"], AGY_ADOPT_REQUEST]) + " ; " +
                          shlex.join(["set-option", "-u", "-p", "-t", pane["pane"], AGY_ADOPT_NONCE]) +
                          " ; display-message -p UC_ADOPTION_EXPIRED")

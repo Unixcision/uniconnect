@@ -218,6 +218,40 @@ class ArgumentsTests(unittest.TestCase):
             worker.require_empty_composer({"pane": {"pane": "%1"}})
         self.assertEqual(busy.exception.cause, "tareas_de_fondo")
 
+    def test_antigravity_staged_control_ignores_only_volatile_footer_changes(self):
+        before = ["transcript line", "› ", "? for shortcuts", "Claude Sonnet 4.6 (Thinking)"]
+        after = ["transcript line", "› /statusline enable", "? for shortcuts", "Claude Sonnet 4.6 (Thinking)"]
+        refreshed_footer = [*after[:2], "? for shortcuts", "Claude Sonnet 4.6 (Thinking · refreshed)"]
+        self.assertTrue(TargetWorker.staged_control_matches(
+            before, refreshed_footer, 1, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"))
+        changed_history = ["different transcript", *refreshed_footer[1:]]
+        self.assertFalse(TargetWorker.staged_control_matches(
+            before, changed_history, 1, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"))
+        wrong_input = ["transcript line", "› /statusline enable now", *refreshed_footer[2:]]
+        self.assertFalse(TargetWorker.staged_control_matches(
+            before, wrong_input, 1, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"))
+
+    def test_antigravity_failed_adoption_clears_only_its_exact_staged_control(self):
+        pane = {"pane": "%1"}
+        process = {"pid": 123}
+        for screen, expected in (("history\n› /statusline enable\nfooter", True),
+                                 ("history\n› user draft\nfooter", False)):
+            with self.subTest(expected=expected):
+                worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "agy"})
+                calls = []
+                worker.pane = lambda: (pane, {}, "0", "")
+                worker.same_process = lambda _process: True
+                def tmux(*args):
+                    if args[0] == "capture-pane":
+                        return screen
+                    if args[0] == "display-message":
+                        return "1"
+                    calls.append(args)
+                    return ""
+                worker.tmux = tmux
+                worker.clear_staged_control(pane, process)
+                self.assertEqual(any(call[-1] == "C-u" for call in calls), expected)
+
     def test_native_turn_activity_and_runtime_settings_are_required_before_exit(self):
         process = {"cwd": "/work", "argv": ["codex", "-m", "fixture-model", "-s", "read-only", "-a", "never"]}
         context = {"type": "turn_context", "payload": {"turn_id": "current-turn", "model": "fixture-model", "cwd": "/work",
