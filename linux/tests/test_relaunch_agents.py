@@ -102,6 +102,36 @@ class ArgumentsTests(unittest.TestCase):
         self.assertEqual(args, ["codex", "--yolo", "resume", "current", "-c", 'model_reasoning_effort="high"',
                                 "--no-alt-screen"])
 
+    def test_antigravity_resume_preserves_validated_session_options_without_adding_permissions(self):
+        identifier = "4a1ec7f2-126f-4e63-a347-92ab4576fdda"
+        argv = ["/usr/bin/agy", "--conversation", identifier, "--model", "gemini-3-pro",
+                "--effort", "high", "--mode", "agent", "--sandbox", "workspace-write",
+                "--project", "/work/project", "--agent", "reviewer", "--add-dir", "/work/shared"]
+        self.assertEqual(TargetWorker.resume_arguments("agy", argv, identifier, self.catalog),
+                         ["/usr/bin/agy", "--conversation", identifier, "--model", "gemini-3-pro",
+                          "--effort", "high", "--mode", "agent", "--sandbox", "workspace-write",
+                          "--project", "/work/project", "--agent", "reviewer", "--add-dir", "/work/shared"])
+        restricted = TargetWorker.resume_arguments("antigravity", argv, identifier, self.catalog)
+        self.assertNotIn("--dangerously-skip-permissions", restricted)
+        explicitly_permissive = TargetWorker.resume_arguments("agy", [*argv, "--dangerously-skip-permissions"],
+                                                               identifier, self.catalog)
+        self.assertEqual(explicitly_permissive[-1], "--dangerously-skip-permissions")
+        self.assertEqual(TargetWorker.no_prompt("agy", ["agy", "--conversation", identifier], self.catalog),
+                         ["agy", "--conversation", identifier])
+
+    def test_antigravity_resume_rejects_ambiguous_identity_prompts_and_unknown_options(self):
+        identifier = "4a1ec7f2-126f-4e63-a347-92ab4576fdda"
+        for argv in (["agy", "--model", "m"],
+                     ["agy", "--conversation", "other"],
+                     ["agy", "--conversation", identifier, "--conversation", identifier],
+                     ["agy", "--conversation", identifier, "--continue"],
+                     ["agy", "--conversation", identifier, "--unknown", "x"],
+                     ["agy", "--conversation", identifier, "do this task"],
+                     ["agy", "--conversation", identifier, "--dangerously-skip-permissions",
+                      "--dangerously-skip-permissions"]):
+            with self.subTest(argv=argv), self.assertRaises(Unavailable):
+                TargetWorker.resume_arguments("agy", argv, identifier, self.catalog)
+
     def test_unknown_provider_is_visible_but_does_not_issue_any_process_command(self):
         worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "grok", "catalog": self.catalog})
         worker.pane = lambda: ({}, {}, "0", "")

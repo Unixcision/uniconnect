@@ -499,6 +499,9 @@ class TargetWorker:
         Unknown positional inputs or noninteractive subcommands are excluded;
         never replay the original prompt, fork, exec, login, or --last.
         """
+        if provider in ("agy", "antigravity"):
+            return TargetWorker.antigravity_resume_arguments(argv, identifier, catalog)
+
         arguments = list(argv[1:])
         resumed = removed_id = False
         values = ({"-c", "--config", "-m", "--model", "-C", "--cd", "-s", "--sandbox", "-a", "--ask-for-approval",
@@ -555,6 +558,63 @@ class TargetWorker:
                                                  for part in substitutions.get(token, [token])], catalog)
 
     @staticmethod
+    def antigravity_resume_arguments(argv, identifier, catalog):
+        """Build an AGY resume without replaying a prompt or widening permissions.
+
+        Antigravity's no-prompt catalog flag is a launch default, not proof that
+        an existing session used it. Keep it only when it was present in that
+        exact process's argv; never add it during a resume.
+        """
+        provider = next((value for value in catalog.values()
+                         if "agy" in value.get("aliases", []) or value.get("executable") == "agy"), None)
+        if not provider or not isinstance(identifier, str) or not identifier:
+            raise Unavailable("no_soportado")
+
+        arguments = list(argv[1:])
+        value_options = {"--model", "--effort", "--mode", "--sandbox", "--project", "--agent", "--add-dir"}
+        kept, seen_conversation, seen_single, index = [], False, set(), 0
+        preserve_skip_permissions = False
+        while index < len(arguments):
+            arg = arguments[index]
+            option, separator, inline_value = arg.partition("=")
+            if option == "--conversation":
+                value = inline_value if separator else (arguments[index + 1] if index + 1 < len(arguments) else "")
+                if seen_conversation or value != identifier:
+                    raise Unavailable("identidad_ambigua")
+                seen_conversation = True
+                index += 1 if separator else 2
+                continue
+            if option in value_options:
+                value = inline_value if separator else (arguments[index + 1] if index + 1 < len(arguments) else "")
+                if not value or value.startswith("-"):
+                    raise Unavailable("no_soportado")
+                if option != "--add-dir" and option in seen_single:
+                    raise Unavailable("no_soportado")
+                if option != "--add-dir":
+                    seen_single.add(option)
+                kept.append(arg)
+                if not separator:
+                    kept.append(value)
+                    index += 1
+                index += 1
+                continue
+            if arg == "--dangerously-skip-permissions":
+                if preserve_skip_permissions:
+                    raise Unavailable("no_soportado")
+                preserve_skip_permissions = True
+                kept.append(arg)
+            else:
+                # Includes --continue, prompts, subcommands, and options whose
+                # semantics this adapter has not explicitly verified.
+                raise Unavailable("no_soportado")
+            index += 1
+        if not seen_conversation:
+            raise Unavailable("identidad_ambigua")
+
+        substitutions = {"{executable}": [argv[0]], "{sessionId}": [identifier], "{arguments}": kept}
+        return [part for token in provider["resume"] for part in substitutions.get(token, [token])]
+
+    @staticmethod
     def no_prompt(provider, argv, catalog):
         """Relaunch always without questions (Dani, 24-09), with the shared catalogue's ``noPrompt``.
 
@@ -562,6 +622,12 @@ class TargetWorker:
         the catalogue received in the request: ``supersedes`` (Codex: -a/-s/--full-auto,
         which its CLI rejects next to --yolo) comes from there, never from a list here.
         """
+        if provider in ("agy", "antigravity"):
+            # Do not turn a previously restricted live Antigravity process into
+            # --dangerously-skip-permissions merely because its catalogue has a
+            # default for newly-created windows. resume_arguments preserves the
+            # flag only if it was already present in the original argv.
+            return list(argv)
         return AgentResumeCatalog.apply_policy((catalog.get(provider) or {}).get("noPrompt"), argv)
 
     @staticmethod
