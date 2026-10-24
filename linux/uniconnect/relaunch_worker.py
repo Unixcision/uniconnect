@@ -485,6 +485,14 @@ class TargetWorker:
         return {key: effective.get(key) for key in ("model", "effort", "cwd", "approval_policy", "sandbox_policy")}
 
     @staticmethod
+    def preserve_resume_permissions(provider, native_configuration, resume):
+        """Reject when Codex's forced no-prompt dialect would widen its access."""
+        if (provider == "codex" and native_configuration is not None and "--yolo" in resume
+                and (native_configuration.get("sandbox_policy", {}).get("type") != "danger-full-access"
+                     or native_configuration.get("approval_policy") != "never")):
+            raise Unavailable("no_soportado")
+
+    @staticmethod
     def resume_arguments(provider, argv, identifier, catalog):
         """Retain explicit options, remove ONLY the previous conversation selector.
 
@@ -626,6 +634,7 @@ class TargetWorker:
                     and root["argv"][2].endswith('exec "${SHELL:-/bin/sh}" -l')):
                 raise Unavailable("no_soportado")
         resume = self.resume_arguments(provider, [process["executable"], *process["argv"][1:]], effective, self.request["catalog"])
+        self.preserve_resume_permissions(provider, native_configuration, resume)
         generation = int(self.digest({"pane": pane, "pid": process["pid"], "start": process["start"], "id": effective})[:12], 16)
         configuration = {"cwd": process["cwd"], "argv": resume}
         if native_configuration is not None:

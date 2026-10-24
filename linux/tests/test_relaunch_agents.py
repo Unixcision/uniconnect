@@ -55,6 +55,14 @@ class ArgumentsTests(unittest.TestCase):
                 self.assertEqual(args[args.index("-C") + 1], "/w")
                 self.assertEqual(args[args.index("-m") + 1], "model")
 
+    def test_codex_no_prompt_resume_does_not_widen_read_only_sandbox(self):
+        restricted = {"sandbox_policy": {"type": "read-only"}, "approval_policy": "never"}
+        with self.assertRaises(Unavailable) as error:
+            TargetWorker.preserve_resume_permissions("codex", restricted, ["codex", "--yolo", "resume", "id"])
+        self.assertEqual(error.exception.cause, "no_soportado")
+        unrestricted = {"sandbox_policy": {"type": "danger-full-access"}, "approval_policy": "never"}
+        TargetWorker.preserve_resume_permissions("codex", unrestricted, ["codex", "--yolo", "resume", "id"])
+
     def test_confirmed_active_target_can_finish_before_execution_but_cannot_change_identity(self):
         proof = {"key": "pane", "generation": 1, "effective_id": "native", "configuration": "same", "active": True}
         for changed in (False, True):
@@ -496,7 +504,7 @@ class TargetIntegrationTests(unittest.TestCase):
             (transcripts / ("rollout-fixture-" + native + ".jsonl")).write_text("\n".join(json.dumps(row) for row in (
                 {"type": "session_meta", "payload": {"id": native}},
                 {"type": "turn_context", "payload": {"turn_id": "fixture-turn", "model": "fixture-model", "cwd": directory,
-                    "sandbox_policy": {"type": "read-only"}, "approval_policy": "never"}},
+                    "sandbox_policy": {"type": "danger-full-access"}, "approval_policy": "never"}},
                 {"type": "event_msg", "payload": {"type": "task_complete", "turn_id": "fixture-turn"}})) + "\n")
             transport = Transport(socket_name=socket_name)
             candidate = {"label": "Fixture · Codex", "provider": "codex", "connection": None,
@@ -507,7 +515,7 @@ class TargetIntegrationTests(unittest.TestCase):
             events = TmuxOutputEvents(["tmux", "-L", socket_name], "fixture")
             try:
                 command = shlex.join(["env", "UC_FIXTURE_ID=" + native, "UC_FIXTURE_ROOT=" + directory,
-                                      str(executable), "-m", "fixture-model", "-s", "read-only", "-a", "never"])
+                                      str(executable), "--yolo", "-m", "fixture-model"])
                 subprocess.run(["tmux", "-L", socket_name, "send-keys", "-t", "=fixture:", "-l", command + "\n"],
                                check=True, capture_output=True, timeout=5)
                 deadline = time.monotonic() + 8

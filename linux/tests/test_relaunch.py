@@ -90,7 +90,7 @@ class RelaunchTests(unittest.TestCase):
             status = self.service.status(plan["operation_id"], "owner", self.authorized)
             self.assertEqual(status["operation_state"], "terminada")
             self.assertEqual(status["results"][0]["state"], "verificado")
-        self.assertEqual(len(self.adapter.calls), 3)
+        self.assertEqual(len(self.adapter.calls), 4)
 
     def test_expired_new_apply_wrong_token_owner_and_revocation_have_no_effect(self):
         plan = self.plan()
