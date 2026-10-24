@@ -11,6 +11,7 @@ from pathlib import Path
 import shlex
 import threading
 import time
+import zlib
 
 from .resume_catalog import AgentResumeCatalog
 from .relaunch_worker import TargetWorker
@@ -43,7 +44,8 @@ class RelaunchAgents:
         self.resolve = resolve
         self.catalog = catalog or AgentResumeCatalog()
         self.source = self.worker_source()
-        self.identity_helper = base64.b64encode(Path(__file__).with_name("agent_identity_hook.py").read_bytes()).decode()
+        self.identity_helper = base64.b64encode(zlib.compress(
+            Path(__file__).with_name("agent_identity_hook.py").read_bytes(), 9)).decode()
         recovery = Path(__file__).resolve().parents[1] / "scripts/recovery.py"
         self.recovery_sha256 = hashlib.sha256(recovery.read_bytes()).hexdigest() if recovery.is_file() else None
 

@@ -16,6 +16,7 @@ import shlex
 import subprocess
 import unicodedata
 import uuid
+import zlib
 from pathlib import Path
 from typing import Mapping
 
@@ -312,10 +313,10 @@ class TmuxCommand:
                 # Claude refuses --dangerously-skip-permissions as root unless told it is sandboxed.
                 # Decided on the destination host at launch time, never from a saved value.
                 script += '[ "$(id -u)" = 0 ] && export IS_SANDBOX=1; '
-            if window["agent"] in ("claude", "codex") and window.get("id"):
+            if window["agent"] in ("claude", "codex", "agy") and window.get("id"):
                 from .agent_identity_hook import BOOTSTRAP
                 source = Path(__file__).with_name("agent_identity_hook.py").read_bytes()
-                encoded = base64.b64encode(source).decode("ascii")
+                encoded = base64.b64encode(zlib.compress(source, 9)).decode("ascii")
                 request = json.dumps({"argv": args, "agent": window["agent"], "window_id": window["id"]})
                 tracked = "UNICONNECT_NATIVE_HELPER=" + shlex.quote(encoded) + " " + shlex.join(["python3", "-c", BOOTSTRAP, "launch", request])
                 launch = "if command -v python3 >/dev/null 2>&1; then " + tracked + "; else " + shlex.join(args) + "; fi"

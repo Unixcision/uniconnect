@@ -27,8 +27,11 @@ args = sys.argv[3:]
 if agent == "claude":
     settings = json.loads(args[args.index("--settings") + 1])
     hook = shlex.split(settings["hooks"]["SessionStart"][0]["hooks"][0]["command"])
-else:
+elif agent == "codex":
     hook = json.loads(args[args.index("-c") + 1].removeprefix("notify="))
+else:
+    settings = json.loads((pathlib.Path.home() / ".gemini/antigravity-cli/settings.json").read_text())
+    hook = shlex.split(settings["statusLine"]["command"])
 last = None
 deadline = time.monotonic() + 30
 while time.monotonic() < deadline:
@@ -46,20 +49,26 @@ while time.monotonic() < deadline:
         env["TMUX_PANE"] = "%999999"
     payload = json.dumps(event["payload"])
     result = subprocess.run(hook + ([payload] if agent == "codex" else []),
-        input=payload if agent == "claude" else None, env=env, text=True,
+        input=payload if agent in ("claude", "agy") else None, env=env, text=True,
         capture_output=True, timeout=5)
     # The bridge must never echo provider payloads, prompts or transcript paths.
     (root / "done.json").write_text(json.dumps({"number": last,
-        "quiet": not result.stdout and not result.stderr, "code": result.returncode}))
+        "quiet": (not result.stdout if agent != "agy" else "Gemini fixture" in result.stdout)
+                and not result.stderr, "code": result.returncode}))
 '''
 
 
 @unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("tmux"), "Linux tmux required")
 class NativeSessionIntegrationTests(unittest.TestCase):
     def test_real_hook_pane_and_model_for_each_provider_without_touching_existing_history(self):
-        for agent in ("claude", "codex"):
+        for agent in ("claude", "codex", "agy"):
             with self.subTest(agent=agent), tempfile.TemporaryDirectory(prefix="uc-native-") as directory:
                 root = Path(directory)
+                home = root / "home"
+                home.mkdir()
+                if agent == "agy":
+                    from uniconnect.antigravity_integration import AntigravityIntegration
+                    AntigravityIntegration(home=home).enable()
                 socket = "uc-native-" + uuid.uuid4().hex[:12]
                 transport = Transport(socket_name=socket)
                 provider = root / "provider.py"
@@ -82,7 +91,11 @@ class NativeSessionIntegrationTests(unittest.TestCase):
                 native = str(uuid.uuid4())
 
                 def event(number, identifier, *, foreign=False):
-                    payload = ({"hook_event_name": "SessionStart", "session_id": identifier,
+                    payload = ({"conversation_id": identifier, "agent_state": "idle", "pending_input_count": 0,
+                                "tool_confirmation_pending": False, "task_count": 0,
+                                "model": {"id": "gemini-fixture", "display_name": "Gemini fixture", "effort": "high"}}
+                               if agent == "agy" else
+                               {"hook_event_name": "SessionStart", "session_id": identifier,
                                 "source": "startup" if number == 1 else "clear"}
                                if agent == "claude" else {"type": "agent-turn-complete", "thread-id": identifier})
                     payload["prompt"] = "private fixture text never retained"
@@ -103,30 +116,31 @@ class NativeSessionIntegrationTests(unittest.TestCase):
                 try:
                     # Only substitute the provider executable. Hook injection,
                     # subprocess ancestry, tmux CAS, transport and store are real.
-                    with patch.object(TmuxCommand, "agent_argv", return_value=[sys.executable, str(provider), directory, agent]):
+                    with patch.object(TmuxCommand, "agent_argv", return_value=[sys.executable, str(provider), directory, agent]), \
+                            patch.dict("os.environ", {"HOME": str(home)}):
                         transport.ensure_session(window)
-                    event(1, native)
-                    proofs = tracker.read(transport)
-                    self.assertEqual([proof["session_id"] for proof in proofs], [native])
-                    tracker.poll()
-                    self.assertEqual(window["sessionId"], native)
-                    self.assertEqual(window["history"][:1], original_history)
-                    self.assertIs(owner._terminal_owners[("agent", ("local",), agent, native)], surface)
-                    self.assertEqual(StateStore(root / "state").workspaces[0]["windows"][0]["sessionId"], native)
-                    before = transport.run(TmuxCommand._binary(socket) + " display-message -p -t '=fixture:' '#{pane_pid}'").stdout
-                    event(2, str(uuid.uuid4()), foreign=True)
-                    self.assertEqual(tracker.read(transport)[0]["session_id"], native)
-                    replacement = str(uuid.uuid4())
-                    event(3, replacement)
-                    tracker.poll()
-                    self.assertEqual(window["sessionId"], replacement)
-                    event(4, native)  # Retired thread cannot roll the pane back.
-                    self.assertEqual(tracker.read(transport)[0]["session_id"], replacement)
-                    after = transport.run(TmuxCommand._binary(socket) + " display-message -p -t '=fixture:' '#{pane_pid}'").stdout
-                    self.assertEqual(before, after)
-                    self.assertEqual(window["history"][0], original_history[0])
-                    self.assertNotIn("private fixture", store.path.read_text())
-                    self.assertEqual([item["sessionId"] for item in window["history"]], ["imported-old", native, replacement])
+                        event(1, native)
+                        proofs = tracker.read(transport)
+                        self.assertEqual([proof["session_id"] for proof in proofs], [native])
+                        tracker.poll()
+                        self.assertEqual(window["sessionId"], native)
+                        self.assertEqual(window["history"][:1], original_history)
+                        self.assertIs(owner._terminal_owners[("agent", ("local",), agent, native)], surface)
+                        self.assertEqual(StateStore(root / "state").workspaces[0]["windows"][0]["sessionId"], native)
+                        before = transport.run(TmuxCommand._binary(socket) + " display-message -p -t '=fixture:' '#{pane_pid}'").stdout
+                        event(2, str(uuid.uuid4()), foreign=True)
+                        self.assertEqual(tracker.read(transport)[0]["session_id"], native)
+                        replacement = str(uuid.uuid4())
+                        event(3, replacement)
+                        tracker.poll()
+                        self.assertEqual(window["sessionId"], replacement)
+                        event(4, native)  # Retired thread cannot roll the pane back.
+                        self.assertEqual(tracker.read(transport)[0]["session_id"], replacement)
+                        after = transport.run(TmuxCommand._binary(socket) + " display-message -p -t '=fixture:' '#{pane_pid}'").stdout
+                        self.assertEqual(before, after)
+                        self.assertEqual(window["history"][0], original_history[0])
+                        self.assertNotIn("private fixture", store.path.read_text())
+                        self.assertEqual([item["sessionId"] for item in window["history"]], ["imported-old", native, replacement])
                 finally:
                     subprocess.run(["tmux", "-L", socket, "kill-server"], capture_output=True, timeout=3)
                     (Path.home() / ".local/state/uniconnect" / ("tmux-create-" + socket + ".lock")).unlink(missing_ok=True)

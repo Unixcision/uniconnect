@@ -633,7 +633,7 @@ class TargetWorker:
 
     @staticmethod
     def managed_hook(provider, option, value):
-        bootstrap = 'import base64,os;exec(base64.b64decode(os.environ["UNICONNECT_NATIVE_HELPER"]))'
+        bootstrap = 'import base64,os,zlib;exec(zlib.decompress(base64.b64decode(os.environ["UNICONNECT_NATIVE_HELPER"])))'
         try:
             if provider == "codex" and option in ("-c", "--config") and value.startswith("notify="):
                 hook = json.loads(value.removeprefix("notify="))
@@ -970,11 +970,11 @@ class TargetWorker:
         self.write(journal, {"state": "reabriendo"})
         # Only the fixed launcher and an anonymous memory descriptor enter the
         # proved shell. No credential or provider argument appears in scrollback.
-        launcher = ('import os,json,sys,base64; p=sys.argv[1]; '
+        launcher = ('import os,json,sys,base64,zlib; p=sys.argv[1]; '
                     'f=open(p); d=json.load(f); f.close(); '
                     'os.chdir(d["cwd"]); os.environ.clear(); os.environ.update(d["env"]); '
                     'n={"__name__":"uniconnect_launch"}; '
-                    'exec(base64.b64decode(os.environ["UNICONNECT_NATIVE_HELPER"]),n); '
+                    'exec(zlib.decompress(base64.b64decode(os.environ["UNICONNECT_NATIVE_HELPER"])),n) if d["managed_identity"] else None; '
                     'n["launch"](d) if d["managed_identity"] else os.execvpe(d["argv"][0],d["argv"],os.environ)')
         command = shlex.join([sys.executable, "-c", launcher, str(capsule_path)])
         if self.pane()[0] != proof["pane"] or self.descendants(root["pid"]):

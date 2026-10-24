@@ -15,7 +15,7 @@ import time
 import uuid
 
 
-BOOTSTRAP = 'import base64,os;exec(base64.b64decode(os.environ["UNICONNECT_NATIVE_HELPER"]))'
+BOOTSTRAP = 'import base64,os,zlib;exec(zlib.decompress(base64.b64decode(os.environ["UNICONNECT_NATIVE_HELPER"])))'
 GENERATION = "@uniconnect_native_generation"
 IDENTITY = "@uniconnect_native_identity"
 REVISION = "@uniconnect_native_revision"
@@ -30,11 +30,15 @@ def proc_identity(pid):
     return int(fields[1]), fields[19]
 
 
-def native_id(agent, payload):
+def native_id(agent, payload, event=None):
     if agent == "claude" and payload.get("hook_event_name") == "SessionStart":
         value = payload.get("session_id")
     elif agent == "codex" and payload.get("type") == "agent-turn-complete":
         value = payload.get("thread-id")
+    elif agent in ("agy", "antigravity") and event == "statusline":
+        value = payload.get("conversation_id") or payload.get("session_id")
+    elif agent in ("agy", "antigravity") and event in ("SessionStart", "PreInvocation", "PostInvocation", "Stop"):
+        value = payload.get("conversationId")
     else:
         return None
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", value):
@@ -51,10 +55,61 @@ def tmux(*args):
                           text=True, timeout=0.5, check=True).stdout.strip()
 
 
-def signal(payload):
+def agy_status(payload, event):
+    """Project documented AGY metadata; never persist prompts or transcript content."""
+    if event == "statusline":
+        state = payload.get("agent_state")
+        model = payload.get("model") if isinstance(payload.get("model"), dict) else {}
+        model_name = model.get("display_name") or model.get("id")
+        effort = model.get("effort")
+        pending = payload.get("pending_input_count")
+        tasks = payload.get("task_count")
+        confirmation = payload.get("tool_confirmation_pending", False)
+        quota = payload.get("quota")
+        quota_paused = isinstance(quota, dict) and any(
+            isinstance(bucket, dict) and (bucket.get("disabled") is True
+                or (isinstance(bucket.get("remaining_fraction"), (int, float))
+                    and bucket["remaining_fraction"] <= 0)
+                or (isinstance(bucket.get("remaining_amount"), (int, float))
+                    and bucket["remaining_amount"] <= 0)) for bucket in quota.values())
+    else:
+        model_name, effort = payload.get("modelName"), None
+        pending, confirmation, tasks, quota_paused = None, None, None, None
+        if event == "PreInvocation":
+            state = "working"
+        elif event == "PostInvocation":
+            # A finished model call may be followed by tools or another invocation.
+            state = "working"
+        elif event == "Stop":
+            if payload.get("fullyIdle") is True and not payload.get("error"):
+                state, tasks = "idle", 0
+            elif payload.get("error"):
+                state = "error"
+            else:
+                state = "working"
+        else:
+            state = "initializing"
+    if state not in ("idle", "working", "tool_use", "reviewing", "authenticating", "initializing", "error"):
+        state = "unknown"
+    if not isinstance(model_name, str) or not model_name.strip() or len(model_name) > 160:
+        model_name = None
+    if not isinstance(effort, str) or len(effort) > 32:
+        effort = None
+    if not isinstance(pending, int) or isinstance(pending, bool) or not 0 <= pending <= 10000:
+        pending = None
+    if not isinstance(tasks, int) or isinstance(tasks, bool) or not 0 <= tasks <= 10000:
+        tasks = None
+    if not isinstance(confirmation, bool):
+        confirmation = None
+    return {"state": state, "model": model_name, "effort": effort, "pending_input_count": pending,
+            "tool_confirmation_pending": confirmation, "task_count": tasks, "quota_paused": quota_paused,
+            "fully_idle": payload.get("fullyIdle") is True if event == "Stop" else None}
+
+
+def signal(payload, event=None):
     emitted = time.time_ns()
     binding = json.loads(os.environ["UNICONNECT_NATIVE_BINDING"])
-    session = native_id(binding["agent"], payload)
+    session = native_id(binding["agent"], payload, event)
     pane = os.environ.get("TMUX_PANE", "")
     if not session or pane != binding["tmux_pane"] or not re.fullmatch(r"%[0-9]+", pane):
         return
@@ -88,14 +143,24 @@ def signal(payload):
         if old and old != session:
             # Startup/resume/compact may arrive late; only an explicit clear can
             # replace a confirmed Claude thread within this launcher generation.
+            # For AGY only SessionStart/statusline provide a current-ID boundary.
             if binding["agent"] == "claude" and payload.get("source") != "clear":
                 return
+            if binding["agent"] in ("agy", "antigravity") and event not in ("SessionStart", "statusline"):
+                return
             retired = [*retired, old][-64:]
-        if old == session:
+        runtime = agy_status(payload, event) if binding["agent"] in ("agy", "antigravity") else None
+        if old == session and previous.get("runtime_status") == runtime:
             return
         proof = {**binding, "session_id": session, "retired_ids": retired,
                  "observed_at": time.time(), "emitted_at_ns": emitted}
+        if runtime is not None:
+            proof["runtime_status"] = runtime
         command = shlex.join(["set-option", "-p", "-t", pane, IDENTITY, compact(proof)])
+        if runtime is not None:
+            command += " ; " + shlex.join(["set-option", "-p", "-t", pane,
+                                            "@uniconnect_native_status", compact({"generation": binding["generation"],
+                                                "session_id": session, **runtime})])
         command += " ; " + shlex.join(["set-option", "-p", "-t", pane, REVISION, uuid.uuid4().hex])
         command += " ; " + shlex.join(["set-option", "-t", binding["tmux_session_id"],
                                        "@uniconnect_agent_owner", binding["agent"] + ":" + session.lower()])
@@ -105,6 +170,20 @@ def signal(payload):
         condition = "#{&&:#{==:#{" + GENERATION + "}," + binding["generation"] + "},#{==:#{" + REVISION + "}," + current[2] + "}}"
         if tmux("if-shell", "-F", "-t", pane, condition, command) == "UC_PUBLISHED":
             return
+
+
+def statusline(payload):
+    """Emit a concise statusline and update only a bound UniConnect pane."""
+    state = agy_status(payload, "statusline")
+    session = native_id("agy", payload, "statusline")
+    if session:
+        try:
+            signal(payload, "statusline")
+        except Exception:
+            pass
+    model = state.get("model") or "Antigravity"
+    effort = " · " + state["effort"] if state.get("effort") else ""
+    return "%s · %s%s · %s" % (state["state"], model, effort, session[:8] if session else "sin ID")
 
 
 def launch(request):
@@ -117,7 +196,7 @@ def launch(request):
     os.environ["UNICONNECT_WINDOW_ID"] = request["window_id"]
     try:
         pane = os.environ.get("TMUX_PANE", "")
-        if request["agent"] not in ("claude", "codex") or not re.fullmatch(r"%[0-9]+", pane):
+        if request["agent"] not in ("claude", "codex", "agy") or not re.fullmatch(r"%[0-9]+", pane):
             raise ValueError("unmanaged-pane")
         binding = {"version": 1, "window_id": request["window_id"], "agent": request["agent"],
                    "generation": uuid.uuid4().hex, "tmux_pane": pane,
@@ -146,10 +225,35 @@ def launch(request):
 if __name__ == "__main__":
     if len(sys.argv) == 3 and sys.argv[1] == "launch":
         launch(json.loads(sys.argv[2]))
-    else:
+    elif len(sys.argv) == 2 and sys.argv[1] == "statusline":
         try:
-            raw = sys.argv[2] if len(sys.argv) == 3 else sys.stdin.read(1024 * 1024 + 1)
+            raw = sys.stdin.read(1024 * 1024 + 1)
+            if len(raw) <= 1024 * 1024:
+                payload = json.loads(raw)
+                print(statusline(payload))
+        except Exception:
+            pass
+    elif len(sys.argv) == 3 and sys.argv[1] == "signal" and sys.argv[2] in (
+            "SessionStart", "PreInvocation", "PostInvocation", "Stop"):
+        try:
+            raw = sys.stdin.read(1024 * 1024 + 1)
+            if len(raw) <= 1024 * 1024:
+                signal(json.loads(raw), sys.argv[2])
+        except Exception:
+            pass  # No payload, prompt, error output, or blocking agent decision.
+    elif len(sys.argv) == 3 and sys.argv[1] == "signal":
+        # Codex appends its notify payload as the final argv item. Keep that
+        # provider protocol separate from stdin-based Claude/Antigravity hooks.
+        try:
+            raw = sys.argv[2]
             if len(raw) <= 1024 * 1024:
                 signal(json.loads(raw))
         except Exception:
-            pass  # No payload, prompt, error output, or blocking agent decision.
+            pass
+    else:
+        try:
+            raw = sys.stdin.read(1024 * 1024 + 1)
+            if len(raw) <= 1024 * 1024:
+                signal(json.loads(raw))
+        except Exception:
+            pass
