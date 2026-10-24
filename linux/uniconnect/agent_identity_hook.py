@@ -258,7 +258,12 @@ def launch(request):
         # statusLine publish metadata; never pass Codex's notify syntax to agy.
     except Exception:
         # Identity integration is optional. A missing Python/tmux facility must
-        # never prevent the user's agent from running in its existing terminal.
+        # never prevent a first launch from running in its existing terminal.
+        # During a managed relaunch, however, silently falling back would start
+        # an unbound process after the old one was closed. Fail visibly instead
+        # of leaving UniConnect with stale identity and runtime metadata.
+        if request.get("managed_identity") is True:
+            raise
         argv = original
     os.execvpe(argv[0], argv, os.environ)
 
