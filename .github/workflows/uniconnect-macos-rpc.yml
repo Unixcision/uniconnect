@@ -110,6 +110,9 @@ jobs:
             make install
           )
           test "$("$prefix/bin/tmux" -V)" = 'tmux 3.7c'
+          # Xcode's app-hosted test process does not reliably inherit arbitrary
+          # GITHUB_ENV variables; the fixture also probes Homebrew's normal path.
+          ln -sf "$prefix/bin/tmux" "$(brew --prefix)/bin/tmux"
           echo "UNICONNECT_TEST_TMUX_EXECUTABLE=$prefix/bin/tmux" >> "$GITHUB_ENV"
 
       - name: Caché de dependencias Swift
