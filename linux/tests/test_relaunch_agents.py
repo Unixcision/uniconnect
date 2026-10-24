@@ -581,6 +581,12 @@ static void publish_statusline(void) {
         FILE *count = fopen(count_path, "a");
         if (count) { fputs("run\n", count); fclose(count); }
     }
+    const char *binding_path = getenv("UNICONNECT_AGY_TEST_BINDING_LOG");
+    const char *binding = getenv("UNICONNECT_NATIVE_BINDING");
+    if (binding_path && binding) {
+        FILE *log = fopen(binding_path, "a");
+        if (log) { fprintf(log, "%ld\t%s\n", (long)getpid(), binding); fclose(log); }
+    }
     const char *statusline = getenv("UNICONNECT_AGY_TEST_STATUSLINE");
     if (statusline) {
         FILE *pipe = popen(statusline, "w");
@@ -640,8 +646,10 @@ class TargetIntegrationTests(unittest.TestCase):
             # while preserving its stdin telemetry contract.
             statusline_command = shlex.join(statusline) + " >/dev/null"
             statusline_count = root / "statusline-runs"
+            binding_log = root / "fixture-bindings"
             env = dict(os.environ, HOME=str(home), UNICONNECT_AGY_TEST_STATUSLINE=statusline_command,
-                       UNICONNECT_AGY_TEST_STATUSLINE_COUNT=str(statusline_count))
+                       UNICONNECT_AGY_TEST_STATUSLINE_COUNT=str(statusline_count),
+                       UNICONNECT_AGY_TEST_BINDING_LOG=str(binding_log))
             subprocess.run(["tmux", "-L", socket_name, "new-session", "-d", "-s", "fixture", "-c", directory,
                             "/bin/bash", "--noprofile", "--norc", "-i"], check=True, capture_output=True,
                            timeout=5, env=env)
@@ -702,6 +710,7 @@ class TargetIntegrationTests(unittest.TestCase):
                         raw_identity = subprocess.run(["tmux", "-L", socket_name, "show-options", "-p", "-v",
                                                        "-t", "=fixture:", "@uniconnect_native_identity"],
                                                       capture_output=True, text=True, timeout=5).stdout.strip()
+                        snapshot = {}
                         try:
                             snapshot = json.loads(raw_identity)
                             runtime = snapshot.get("runtime_status") or {}
@@ -717,13 +726,28 @@ class TargetIntegrationTests(unittest.TestCase):
                             statusline_runs = len(statusline_count.read_text().splitlines())
                         except OSError:
                             statusline_runs = 0
+                        fixture_bindings = []
+                        try:
+                            for line in binding_log.read_text().splitlines():
+                                _, raw_binding = line.split("\t", 1)
+                                fixture_bindings.append(json.loads(raw_binding))
+                        except (OSError, ValueError, TypeError):
+                            pass
+                        fixture_generations = {item.get("generation") for item in fixture_bindings
+                                               if isinstance(item, dict) and isinstance(item.get("generation"), str)}
+                        fixture_pids = {item.get("agent_pid") for item in fixture_bindings
+                                        if isinstance(item, dict) and isinstance(item.get("agent_pid"), int)}
+                        pane_generation_matches_fixture = (isinstance(snapshot, dict)
+                            and snapshot.get("generation") in fixture_generations)
                         self.fail("Antigravity isolated relaunch returned %r; cursor_y=%r; cursor_line=%r; "
-                                  "composer_match=%r; rejection_markers=%r; runtime_status=%r; statusline_runs=%r; phases=%r; "
+                                  "composer_match=%r; rejection_markers=%r; runtime_status=%r; statusline_runs=%r; "
+                                  "fixture_processes=%r; fixture_generations=%r; pane_generation_matches_fixture=%r; phases=%r; "
                                   "visible_fixture_rows=%r"
                                   % (result, cursor, screen[row] if 0 <= row < len(screen) else None,
                                      bool(0 <= row < len(screen) and re.fullmatch(r"\s*│?\s*[›❯>]\s*│?\s*", screen[row])),
                                      [marker for marker in markers if marker in visible], runtime_summary,
-                                     statusline_runs, phases,
+                                     statusline_runs, len(fixture_pids), len(fixture_generations),
+                                     pane_generation_matches_fixture, phases,
                                      screen[-8:]))
                     current = adapter.probe(candidate, "agent.relaunch")
                     self.assertEqual(current["pane"], proof["pane"])
