@@ -576,6 +576,11 @@ AGY_IDLE_FIXTURE = r'''
 #include <time.h>
 
 static void publish_statusline(void) {
+    const char *count_path = getenv("UNICONNECT_AGY_TEST_STATUSLINE_COUNT");
+    if (count_path) {
+        FILE *count = fopen(count_path, "a");
+        if (count) { fputs("run\n", count); fclose(count); }
+    }
     const char *statusline = getenv("UNICONNECT_AGY_TEST_STATUSLINE");
     if (statusline) {
         FILE *pipe = popen(statusline, "w");
@@ -634,7 +639,9 @@ class TargetIntegrationTests(unittest.TestCase):
             # composer. Keep the synthetic command's stdout out of the pane
             # while preserving its stdin telemetry contract.
             statusline_command = shlex.join(statusline) + " >/dev/null"
-            env = dict(os.environ, HOME=str(home), UNICONNECT_AGY_TEST_STATUSLINE=statusline_command)
+            statusline_count = root / "statusline-runs"
+            env = dict(os.environ, HOME=str(home), UNICONNECT_AGY_TEST_STATUSLINE=statusline_command,
+                       UNICONNECT_AGY_TEST_STATUSLINE_COUNT=str(statusline_count))
             subprocess.run(["tmux", "-L", socket_name, "new-session", "-d", "-s", "fixture", "-c", directory,
                             "/bin/bash", "--noprofile", "--norc", "-i"], check=True, capture_output=True,
                            timeout=5, env=env)
@@ -706,12 +713,17 @@ class TargetIntegrationTests(unittest.TestCase):
                                 observed, (int, float)) and not isinstance(observed, bool) else None
                         except (ValueError, TypeError, AttributeError):
                             runtime_summary = "unavailable"
+                        try:
+                            statusline_runs = len(statusline_count.read_text().splitlines())
+                        except OSError:
+                            statusline_runs = 0
                         self.fail("Antigravity isolated relaunch returned %r; cursor_y=%r; cursor_line=%r; "
-                                  "composer_match=%r; rejection_markers=%r; runtime_status=%r; phases=%r; "
+                                  "composer_match=%r; rejection_markers=%r; runtime_status=%r; statusline_runs=%r; phases=%r; "
                                   "visible_fixture_rows=%r"
                                   % (result, cursor, screen[row] if 0 <= row < len(screen) else None,
                                      bool(0 <= row < len(screen) and re.fullmatch(r"\s*│?\s*[›❯>]\s*│?\s*", screen[row])),
-                                     [marker for marker in markers if marker in visible], runtime_summary, phases,
+                                     [marker for marker in markers if marker in visible], runtime_summary,
+                                     statusline_runs, phases,
                                      screen[-8:]))
                     current = adapter.probe(candidate, "agent.relaunch")
                     self.assertEqual(current["pane"], proof["pane"])
