@@ -703,6 +703,11 @@ class TargetIntegrationTests(unittest.TestCase):
                                        (Path("/proc") / str(proof["pid"]) / "environ").read_bytes()
                                        .decode(errors="replace").split("\0") if "=" in item)
                     managed_at_probe = worker.managed_antigravity(process_env, native_process, pane, hook)
+                    initial_configuration = worker.antigravity_configuration(native_process, native, hook)
+                    initial_resume = TargetWorker.preserve_antigravity_configuration(
+                        TargetWorker.antigravity_resume_arguments(
+                            [native_process["executable"], *native_process["argv"][1:]], native,
+                            AgentResumeCatalog().providers), initial_configuration)
                     result = adapter.execute(candidate, "agent.relaunch", proof, str(uuid.uuid4()),
                                              phases.append, lambda: True)
                     if result != {"state": "verificado", "effective_id": native}:
@@ -715,11 +720,6 @@ class TargetIntegrationTests(unittest.TestCase):
                                 "window_id": "fixture-window", "provider": "agy",
                                 "catalog": AgentResumeCatalog().providers, "verb": "agent.relaunch"})
                             _, _, post_process, post_resume = diagnostic_worker.inspect(runtime=True)
-                            initial_configuration = worker.antigravity_configuration(native_process, native, hook)
-                            initial_resume = TargetWorker.preserve_antigravity_configuration(
-                                TargetWorker.antigravity_resume_arguments(
-                                [native_process["executable"], *native_process["argv"][1:]], native,
-                                AgentResumeCatalog().providers), initial_configuration)
                             post_probe_summary["cwd_matches"] = post_process["cwd"] == native_process["cwd"]
                             post_probe_summary["resume_arguments_match"] = post_resume == initial_resume
                             post_probe_summary["resume_argument_counts"] = (len(initial_resume), len(post_resume))
