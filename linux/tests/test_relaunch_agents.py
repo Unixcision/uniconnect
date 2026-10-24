@@ -572,8 +572,10 @@ int main(int argc, char **argv) {
 AGY_IDLE_FIXTURE = r'''
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/select.h>
+#include <time.h>
 
-int main(void) {
+static void publish_statusline(void) {
     const char *statusline = getenv("UNICONNECT_AGY_TEST_STATUSLINE");
     if (statusline) {
         FILE *pipe = popen(statusline, "w");
@@ -582,10 +584,28 @@ int main(void) {
             pclose(pipe);
         }
     }
+}
+
+int main(void) {
+    publish_statusline();
+    time_t last_statusline = time(NULL);
     puts("Antigravity fixture");
     printf("\n❯ ");
     fflush(stdout);
-    while (getchar() != EOF) {}
+    for (;;) {
+        fd_set input;
+        FD_ZERO(&input);
+        FD_SET(STDIN_FILENO, &input);
+        struct timeval timeout = {.tv_sec = 1, .tv_usec = 0};
+        int ready = select(STDIN_FILENO + 1, &input, NULL, NULL, &timeout);
+        if (ready > 0 && getchar() == EOF) break;
+        if (ready < 0) break;
+        time_t now = time(NULL);
+        if (now - last_statusline >= 11) {
+            publish_statusline();
+            last_statusline = now;
+        }
+    }
     return 0;
 }
 '''
@@ -612,7 +632,10 @@ class TargetIntegrationTests(unittest.TestCase):
             socket_name = "uc-agy-" + uuid.uuid4().hex[:12]
             native = "4a1ec7f2-126f-4e63-a347-92ab4576fdda"
             statusline = shlex.split(json.loads(integration.settings_path.read_text())["statusLine"]["command"])
-            statusline_command = shlex.join(statusline)
+            # The terminal UI renders the status line separately from its
+            # composer. Keep the synthetic command's stdout out of the pane
+            # while preserving its stdin telemetry contract.
+            statusline_command = shlex.join(statusline) + " >/dev/null"
             env = dict(os.environ, HOME=str(home), UNICONNECT_AGY_TEST_STATUSLINE=statusline_command)
             subprocess.run(["tmux", "-L", socket_name, "new-session", "-d", "-s", "fixture", "-c", directory,
                             "/bin/bash", "--noprofile", "--norc", "-i"], check=True, capture_output=True,
