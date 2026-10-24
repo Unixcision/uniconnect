@@ -204,6 +204,14 @@ class ArgumentsTests(unittest.TestCase):
             with self.assertRaises(Unavailable):
                 worker.require_empty_composer({"pane": {"pane": "%1"}})
 
+    def test_antigravity_busy_model_footer_blocks_adoption_even_with_empty_composer(self):
+        worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "agy"})
+        screen = "existing output\n› \n? for shortcuts                         Claude Sonnet 4.6 (Thinking)"
+        worker.tmux = lambda *args: "1" if args[0] == "display-message" else screen
+        with self.assertRaises(Unavailable) as busy:
+            worker.require_empty_composer({"pane": {"pane": "%1"}})
+        self.assertEqual(busy.exception.cause, "tareas_de_fondo")
+
     def test_native_turn_activity_and_runtime_settings_are_required_before_exit(self):
         process = {"cwd": "/work", "argv": ["codex", "-m", "fixture-model", "-s", "read-only", "-a", "never"]}
         context = {"type": "turn_context", "payload": {"turn_id": "current-turn", "model": "fixture-model", "cwd": "/work",

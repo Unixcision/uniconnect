@@ -1471,6 +1471,17 @@ class TargetWorker:
         return {"working": working, "background": background}
 
     @staticmethod
+    def antigravity_activity(lines):
+        """Recognize an explicit busy state in the Antigravity model footer.
+
+        An empty prompt alone is not enough during first-time statusLine adoption:
+        the TUI can still be generating output while its composer remains blank.
+        Only positive activity evidence blocks; absence is not treated as native idle proof.
+        """
+        busy = re.compile(r"\((?:thinking|working|generating|executing|running|streaming)\)\s*$", re.IGNORECASE)
+        return any(busy.search(line) for line in lines[-12:])
+
+    @staticmethod
     def codex_placeholder(styled):
         """Require dim or neutral-gray foreground on every placeholder character, not just an SGR."""
         plain, muted = "", []
@@ -1534,6 +1545,8 @@ class TargetWorker:
                     if [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in styled] == lines:
                         empty = self.codex_placeholder(styled[row])
         else:
+            if self.request.get("provider") == "agy" and self.antigravity_activity(lines):
+                raise Unavailable("tareas_de_fondo")
             row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
             empty = 0 <= row < len(lines) and EMPTY_PROMPT_LINE.fullmatch(lines[row]) is not None
         visible = "\n".join(lines).lower()
