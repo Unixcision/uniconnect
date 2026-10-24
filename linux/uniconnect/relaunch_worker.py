@@ -1015,6 +1015,11 @@ class TargetWorker:
         env = dict(item.split("=", 1) for item in raw.decode().split("\0") if "=" in item)
         if not Path(process["cwd"]).is_dir() or not os.access(resume[0], os.X_OK):
             raise Unavailable("no_soportado")
+        # Decide whether this is a managed Antigravity launch while its native
+        # binding is still present. The capsule must scrub that old binding so
+        # launch() creates a fresh generation for the reopened process.
+        managed = (self.request["provider"] == "agy" and
+                   self.managed_antigravity(env, process, proof["pane"], hook=self.pane()[3]))
         for key in ("CODEX_THREAD_ID", "CODEX_SESSION_ID", "UNICONNECT_NATIVE_BINDING"):
             env.pop(key, None)
         # Claude refuses its no-prompt flag as root unless told it is sandboxed (IS_SANDBOX=1):
@@ -1028,11 +1033,9 @@ class TargetWorker:
             raise Unavailable("no_soportado")
         env["UNICONNECT_NATIVE_HELPER"] = helper
         original = process["argv"]
-        managed = any(self.managed_hook(self.request["provider"], option.split("=", 1)[0],
+        managed = managed or any(self.managed_hook(self.request["provider"], option.split("=", 1)[0],
                       option.split("=", 1)[1] if "=" in option else (original[index + 1] if index + 1 < len(original) else ""))
                       for index, option in enumerate(original) if option.split("=", 1)[0] in ("-c", "--config", "--settings"))
-        if self.request["provider"] == "agy":
-            managed = self.managed_antigravity(env, process, proof["pane"], hook=self.pane()[3])
         capsule = {"argv": resume, "env": env, "cwd": process["cwd"],
                    "agent": self.request["provider"], "window_id": self.request["window_id"], "managed_identity": managed}
         if not hasattr(os, "memfd_create"):
