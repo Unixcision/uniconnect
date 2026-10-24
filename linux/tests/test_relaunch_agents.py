@@ -219,17 +219,15 @@ class ArgumentsTests(unittest.TestCase):
         self.assertEqual(busy.exception.cause, "tareas_de_fondo")
 
     def test_antigravity_staged_control_ignores_only_volatile_footer_changes(self):
-        before = ["transcript line", "› ", "? for shortcuts", "Claude Sonnet 4.6 (Thinking)"]
-        after = ["transcript line", "› /statusline enable", "? for shortcuts", "Claude Sonnet 4.6 (Thinking)"]
-        refreshed_footer = [*after[:2], "? for shortcuts", "Claude Sonnet 4.6 (Thinking · refreshed)"]
+        refreshed_footer = ["transcript line", "› /statusline enable", "? for shortcuts",
+                            "Claude Sonnet 4.6 (Thinking · refreshed)"]
         self.assertTrue(TargetWorker.staged_control_matches(
-            before, refreshed_footer, 1, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"))
-        changed_history = ["different transcript", *refreshed_footer[1:]]
-        self.assertFalse(TargetWorker.staged_control_matches(
-            before, changed_history, 1, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"))
+            refreshed_footer, 1, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"))
         wrong_input = ["transcript line", "› /statusline enable now", *refreshed_footer[2:]]
         self.assertFalse(TargetWorker.staged_control_matches(
-            before, wrong_input, 1, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"))
+            wrong_input, 1, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"))
+        self.assertFalse(TargetWorker.staged_control_matches(
+            refreshed_footer, len(refreshed_footer), r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"))
 
     def test_antigravity_failed_adoption_clears_only_its_exact_staged_control(self):
         pane = {"pane": "%1"}

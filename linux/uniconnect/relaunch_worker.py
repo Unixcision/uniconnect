@@ -96,11 +96,9 @@ class TargetWorker:
         return result.stdout.rstrip("\n")
 
     @staticmethod
-    def staged_control_matches(before, after, row, expected_line):
-        """Verify the staged control line and unchanged transcript without trusting volatile footers."""
-        return (0 <= row < len(before) and row < len(after)
-                and before[:row] == after[:row]
-                and re.fullmatch(expected_line, after[row]) is not None)
+    def staged_control_matches(screen, row, expected_line):
+        """Verify the exact control command at the cursor without trusting a volatile TUI redraw."""
+        return 0 <= row < len(screen) and re.fullmatch(expected_line, screen[row]) is not None
 
     def clear_staged_control(self, pane, process):
         """Undo our exact unsubmitted adoption command after a failed verification."""
@@ -110,7 +108,7 @@ class TargetWorker:
             lines = self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines()
             row = int(self.tmux("display-message", "-p", "-t", pane["pane"], "#{cursor_y}"))
             if self.staged_control_matches(
-                    lines, lines, row, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"):
+                    lines, row, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"):
                 self.tmux("send-keys", "-t", pane["pane"], "C-u")
         except (Unavailable, OSError, ProcessLookupError, ValueError):
             return
@@ -1736,9 +1734,11 @@ class TargetWorker:
             self.tmux("send-keys", "-t", pane["pane"], "-l", "--", "/statusline enable")
             typed = self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines()
             if not self.staged_control_matches(
-                    initial, typed, row, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"):
+                    typed, row, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"):
                 raise Unavailable("dialogo_desconocido")
             staged_control = True
+            if self.antigravity_activity(typed):
+                raise Unavailable("tareas_de_fondo")
             if (self.pane()[0] != pane or not self.same_process(process)
                     or self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines() != typed):
                 raise Unavailable("generacion_cambiada")
