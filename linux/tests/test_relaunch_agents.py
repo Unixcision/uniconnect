@@ -631,12 +631,15 @@ class TargetIntegrationTests(unittest.TestCase):
                 events = TmuxOutputEvents(["tmux", "-L", socket_name], "fixture")
                 try:
                     deadline = time.monotonic() + 12
+                    last_error = None
                     while True:
                         try:
                             proof = adapter.probe(candidate, "agent.relaunch")
                             break
-                        except Exception:
-                            self.assertLess(time.monotonic(), deadline)
+                        except RelaunchUnavailable as error:
+                            last_error = error.cause
+                            if time.monotonic() >= deadline:
+                                self.fail("Antigravity probe remained unavailable: " + str(last_error))
                             events.wait(deadline, time.monotonic)
                     result = adapter.execute(candidate, "agent.relaunch", proof, str(uuid.uuid4()),
                                              lambda _: None, lambda: True)
