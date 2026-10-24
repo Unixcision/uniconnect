@@ -659,7 +659,14 @@ class TargetIntegrationTests(unittest.TestCase):
                                           % (last_error, metadata, bound))
                     result = adapter.execute(candidate, "agent.relaunch", proof, str(uuid.uuid4()),
                                              lambda _: None, lambda: True)
-                    self.assertEqual(result, {"state": "verificado", "effective_id": native})
+                    if result != {"state": "verificado", "effective_id": native}:
+                        screen = subprocess.run(["tmux", "-L", socket_name, "capture-pane", "-p", "-t", "=fixture:"],
+                                                check=True, capture_output=True, text=True, timeout=5).stdout.splitlines()
+                        cursor = subprocess.run(["tmux", "-L", socket_name, "display-message", "-p", "-t",
+                                                 "=fixture:", "#{cursor_y}"], check=True, capture_output=True,
+                                                text=True, timeout=5).stdout.strip()
+                        self.fail("Antigravity isolated relaunch returned %r; cursor_y=%r; visible_fixture_rows=%r"
+                                  % (result, cursor, screen[-8:]))
                     current = adapter.probe(candidate, "agent.relaunch")
                     self.assertEqual(current["pane"], proof["pane"])
                     self.assertNotEqual((current["pid"], current["start"]), (proof["pid"], proof["start"]))
