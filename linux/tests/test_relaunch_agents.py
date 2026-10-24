@@ -152,6 +152,20 @@ class ArgumentsTests(unittest.TestCase):
                 self.assertEqual(error.exception.cause, "sin_ia")
         self.assertEqual(calls, [])
 
+    def test_antigravity_is_advertised_but_still_probed_before_planning(self):
+        from uniconnect.relaunch_agents import CAPABILITIES, RELAUNCHABLE
+        self.assertIn("agy", RELAUNCHABLE)
+        self.assertIn("relaunch.v1.agy.local", CAPABILITIES)
+        self.assertIn("relaunch.v1.agy.ssh", CAPABILITIES)
+        adapter = RelaunchAgents()
+        calls = []
+        adapter.request = lambda candidate, action, **values: calls.append((candidate, action, values)) or {"key": "proof"}
+        candidate = {"provider": "agy", "connection": None,
+                     "record": {"id": "fixture", "tmux": "fixture"}}
+        self.assertEqual(adapter.probe(candidate, "agent.relaunch"), {"key": "proof"})
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1], "inspect")
+
     def test_footer_or_unknown_dialog_does_not_prove_an_empty_composer(self):
         worker = TargetWorker({"session": "fixture", "socket": "fixture"})
         for screen in ("some output\nbypass permissions", "❯ draft", "Do you trust this folder?\n❯ "):

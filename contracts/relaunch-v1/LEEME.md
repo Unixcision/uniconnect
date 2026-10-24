@@ -61,13 +61,16 @@ igual. D7 porta el dialecto que falta a cada lado. La matriz resultante, que fij
 |---|---|---|---|---|
 | Claude | sí | `no_soportado` | escrito, **pendiente de prueba en vivo** | escrito, **pendiente de prueba en vivo** |
 | Codex | escrito, **pendiente de prueba en vivo** | `no_soportado` | sí, `agent.continue` y `agent.recover` requieren evidencia exacta de pausa/acuse | sí |
+| Antigravity | `no_soportado` | `no_soportado` | sí, solo con binding gestionado y statusLine nativo fresco que pruebe estado idle | sí, bajo las mismas puertas en el destino Linux |
 
 «Pendiente de prueba en vivo» (decisión del 24-09-2026): el dialecto está escrito y probado con
 dobles, pero relanzar **cierra la IA** y nunca se ha ejecutado contra una real. Hasta esa prueba no
 se anuncia y el plan lo excluye con `no_soportado` (`pendiente_prueba_en_vivo` en
 `proveedores.json`). Se activa añadiéndolo a `RelaunchDialects.known` (Mac) o a `RELAUNCHABLE`
-(Linux) en el mismo commit que la prueba.
-| agy, grok y el resto del catálogo | `no_soportado` | `no_soportado` | `no_soportado` | `no_soportado` |
+(Linux) en el mismo commit que la prueba. Antigravity ya pasó además una fixture aislada de tmux
+que cierra y reabre un proceso sintético con la misma conversación y configuración; no se ha
+operado una cuenta real.
+| grok y el resto del catálogo | `no_soportado` | `no_soportado` | `no_soportado` | `no_soportado` |
 
 - **Mac SSH** sigue en `no_soportado`: la `ClosurePolicy` rechaza `.ssh`. Una ventana SSH pedida por
   id desde el móvil devuelve esa exclusión, no `alcance_no_valido`.

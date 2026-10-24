@@ -18,10 +18,9 @@ from .relaunch_worker import TargetWorker
 from .transport import Transport
 
 
-# Public capability stays off until Antigravity passes an end-to-end live
-# close/reopen check. The worker already has the guarded dialect, but it is not
-# announced or offered in a plan yet.
-RELAUNCHABLE = ("codex",)
+# Antigravity is announced only after its isolated close/reopen integration
+# proves a fresh pane-bound generation and unchanged conversation/configuration.
+RELAUNCHABLE = ("codex", "agy")
 CAPABILITIES = ("relaunch.v1",) + tuple(f"relaunch.v1.{provider}.{kind}"
                                         for provider in RELAUNCHABLE for kind in ("local", "ssh"))
 
