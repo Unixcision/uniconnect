@@ -364,6 +364,7 @@ class HostDictationTest {
         override fun keep(clip: AudioClip, target: DictationTarget?) { events += "keep:${target?.machine?.name}" }
         override fun transcribed(clip: AudioClip, text: String) { events += "transcribed:$text" }
         override fun unread(clip: AudioClip) { events += "unread" }
+        override fun replaceText(id: String, text: String) {}
         override fun delete(ids: Set<String>) {}
         override fun deleteAudio(ids: Set<String>) {}
     }

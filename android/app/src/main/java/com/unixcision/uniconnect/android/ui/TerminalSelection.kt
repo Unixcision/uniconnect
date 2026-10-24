@@ -46,6 +46,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.unixcision.uniconnect.android.R
@@ -138,7 +139,7 @@ fun TerminalSelectionSheet(current: () -> TerminalSnapshot?, onDismiss: () -> Un
                     Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 880.dp)
                         .verticalScroll(rememberScrollState()).horizontalScroll(rememberScrollState()),
                 ) {
-                    Text(texto, fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 16.sp, color = UniTheme.colors.text)
+                    Text(texto, fontFamily = TerminalFontFamily, fontSize = 12.sp, lineHeight = 16.sp, color = UniTheme.colors.text)
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -164,3 +165,6 @@ private fun copiar(context: Context, texto: String) {
         }
     }
 }
+
+/** The terminal's bundled monospace font (see rememberTerminalTypeface): lines keep their columns on every phone. */
+private val TerminalFontFamily = FontFamily(Font(R.font.jetbrains_mono))

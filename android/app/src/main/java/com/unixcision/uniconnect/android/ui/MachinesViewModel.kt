@@ -45,6 +45,7 @@ import com.unixcision.uniconnect.android.domain.NoticeRoute
 import com.unixcision.uniconnect.android.domain.PtyEvent
 import com.unixcision.uniconnect.android.domain.TerminalAttachment
 import com.unixcision.uniconnect.android.domain.vt.GeometryFollower
+import com.unixcision.uniconnect.android.domain.vt.GeometrySync
 import com.unixcision.uniconnect.android.domain.vt.TerminalEmulator
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
@@ -1025,31 +1026,8 @@ class MachinesViewModel(
         }
     }
     private var emulator: TerminalEmulator? = null
-    private val geometry = GeometryFollower()
-    private var pendingGeometryJob: Job? = null
-
-    /** Resizes this attachment's emulator and its host PTY; the call dies with the attachment. */
-    private fun applyGeometry(terminal: TerminalEmulator, live: TerminalAttachment, columns: Int, rows: Int) {
-        pendingGeometryJob?.cancel()
-        terminal.resize(columns, rows)
-        val frame = terminal.snapshot()
-        mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = frame, copyMode = frame.inCopyMode)) }
-        pendingGeometryJob = viewModelScope.launch {
-            if (attachment === live) runCatching { live.resize(columns, rows) }
-        }
-    }
-
-    /** Wakes up after the burst window to apply whatever the follower kept pending. */
-    private fun scheduleGeometry(terminal: TerminalEmulator, live: TerminalAttachment, afterNanos: Long) {
-        pendingGeometryJob?.cancel()
-        pendingGeometryJob = viewModelScope.launch {
-            // Bounded, intended delay: after the burst window there is, by definition, no burst.
-            delay(afterNanos / 1_000_000 + 1)
-            if (attachment !== live) return@launch
-            val decision = geometry.onDeadline(terminal.screen.columns, terminal.screen.rows, System.nanoTime())
-            if (decision is GeometryFollower.Decision.Apply) applyGeometry(terminal, live, decision.columns, decision.rows)
-        }
-    }
+    /** Keeps the emulator and the host PTY the same size for the current attachment. */
+    private var geometrySync: GeometrySync? = null
 
     /** Attaches a phone-sized tmux client to the selected window and mirrors it through the local emulator. */
     /** Attaches a phone-sized tmux client to the selected window and mirrors it through the local emulator. */
@@ -1066,7 +1044,6 @@ class MachinesViewModel(
         val terminal = TerminalEmulator(columns, rows)
         emulator = terminal
         mutableState.update { it.copy(attachFallbackDetail = null, resumeRealTerminal = false) }
-        geometry.reset()
         mutableState.update { it.copy(realTerminal = RealTerminal(connecting = true)) }
         attachJob = viewModelScope.launch {
             var live: TerminalAttachment? = null
@@ -1075,6 +1052,19 @@ class MachinesViewModel(
                 attachment = live
                 attachedAtNanos = System.nanoTime()
                 if (live.columns != columns || live.rows != rows) terminal.resize(live.columns, live.rows)
+                val attached = live
+                geometrySync?.stop()
+                geometrySync = GeometrySync(
+                    scope = viewModelScope,
+                    follower = GeometryFollower(),
+                    canvas = { terminal.screen.columns to terminal.screen.rows },
+                    resizeCanvas = { newColumns, newRows ->
+                        terminal.resize(newColumns, newRows)
+                        val frame = terminal.snapshot()
+                        mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(snapshot = frame, copyMode = frame.inCopyMode)) }
+                    },
+                    resizeHost = { newColumns, newRows -> if (attachment === attached) attached.resize(newColumns, newRows) },
+                )
                 mutableState.update { it.copy(realTerminal = RealTerminal(snapshot = terminal.snapshot(), connecting = false)) }
                 // Ya llega la pantalla por el PTY: se rehace la observación sin el espejo, que a
                 // partir de aquí solo serviría para desbordar la cola y tirar el transporte entero.
@@ -1110,16 +1100,9 @@ class MachinesViewModel(
                         is PtyEvent.Geometry -> {
                             // The host owns the geometry: match the phone's PTY to the canvas it
                             // reports so tmux stops padding rows the window does not have.
-                            // GeometryFollower owns the burst and staleness rules and is unit-tested;
-                            // here we only carry out its decision for this attachment.
-                            when (val decision = geometry.onReport(
-                                event.presentationColumns, event.presentationRows,
-                                terminal.screen.columns, terminal.screen.rows, System.nanoTime(),
-                            )) {
-                                is GeometryFollower.Decision.Apply -> applyGeometry(terminal, live, decision.columns, decision.rows)
-                                is GeometryFollower.Decision.Defer -> scheduleGeometry(terminal, live, decision.afterNanos)
-                                GeometryFollower.Decision.Ignore -> pendingGeometryJob?.cancel()
-                            }
+                            // GeometryFollower owns the burst rules and GeometrySync the order of
+                            // the two resizes; both are unit-tested.
+                            geometrySync?.onReport(event.presentationColumns, event.presentationRows)
                         }
                         PtyEvent.Exit -> {
                             mutableState.update { it.copy(realTerminal = it.realTerminal?.copy(ended = true, connecting = false)) }
@@ -1167,7 +1150,7 @@ class MachinesViewModel(
         reattachJob?.cancel(); reattachJob = null
         leaveCopyModeJob?.cancel(); leaveCopyModeJob = null
         wheelJob?.cancel(); wheelJob = null; wheelBudget.clear()
-        pendingGeometryJob?.cancel(); pendingGeometryJob = null; geometry.reset()
+        geometrySync?.stop(); geometrySync = null
         attachJob?.cancel(); attachJob = null
         attachment?.close(); attachment = null
         emulator = null

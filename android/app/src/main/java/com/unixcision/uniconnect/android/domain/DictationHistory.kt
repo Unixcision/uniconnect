@@ -23,6 +23,9 @@ interface DictationHistory {
     /** Marks [clip] as read by no engine: failed, cancelled or given up on. Its audio stays. */
     fun unread(clip: AudioClip)
 
+    /** Replaces the text of entry [id] with a new transcription of its audio. */
+    fun replaceText(id: String, text: String)
+
     /** Removes these entries with their audio. */
     fun delete(ids: Set<String>)
 

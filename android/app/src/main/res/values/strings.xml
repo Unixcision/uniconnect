@@ -212,6 +212,9 @@
     <string name="dictation_history_phone">En el móvil</string>
     <string name="dictation_history_today">Hoy %1$s</string>
     <string name="dictation_history_yesterday">Ayer %1$s</string>
+    <string name="dictation_retranscribe">Volver a transcribir</string>
+    <string name="dictation_retranscribe_failed">No se pudo transcribir de nuevo. Comprueba que el equipo esté conectado y vuelve a probar.</string>
+    <string name="dictation_retranscribe_no_audio">Este dictado ya no tiene audio que transcribir.</string>
     <string name="dictation_history_settings_hint">Para liberar espacio: Ajustes › Dictados.</string>
     <string name="dictation_history_search">Buscar en tus dictados</string>
     <string name="dictation_history_no_match">Ningún dictado contiene «%1$s».</string>
@@ -435,6 +438,7 @@
     <string name="key_ctrl_c_desc">Control C: interrumpir</string>
     <string name="key_ctrl_x_desc">Control X</string>
     <string name="key_ctrl_s_desc">Control S</string>
+    <string name="key_ctrl_k_desc">Control K: borrar hasta el final de la línea</string>
     <string name="real_terminal_reconnect">Reconectar</string>
     <string name="dictation_start">Dictar</string>
     <string name="dictation_stop">Parar</string>

@@ -281,7 +281,9 @@ struct MobileWhisperModelCatalogTests {
 
 @Suite("transcribe.v1: construcción de las órdenes")
 struct MobileTranscriptionCommandTests {
-    @Test("whisper-cli recibe modelo, audio, idioma e hilos, sin marcas de tiempo")
+    /// Sin marcas de tiempo (`-nt`), large-v3-turbo se salta casi todo un dictado largo y devuelve
+    /// solo la última frase: 23 s reales de Dani salieron como «Vamos a ver qué encuentras.».
+    @Test("whisper-cli recibe modelo, audio, idioma e hilos, y nunca el modo sin marcas de tiempo")
     func whisperArguments() {
         let command = MobileWhisperCLICommand(
             model: URL(fileURLWithPath: "/modelos/ggml-base.bin"),
@@ -294,7 +296,6 @@ struct MobileTranscriptionCommandTests {
             "-f", "/tmp/clip.wav",
             "-l", "es",
             "-t", "6",
-            "-nt",
             "-np",
         ])
     }
@@ -394,6 +395,21 @@ struct MobileWhisperTranscriptTests {
     @Test("un corchete sin cerrar es texto, no un marcador a medias")
     func unclosedBracket() {
         #expect(MobileWhisperTranscript(raw: "abre [ y no cierra").text == "abre [ y no cierra")
+    }
+
+    @Test("las marcas de tiempo de cada tramo se quitan y llega el dictado entero")
+    func timestampedSegmentsBecomeOneLine() {
+        let crudo = """
+
+        [00:00:00.000 --> 00:00:03.380]   Investígame a este tío a fondo si puedes, porfa
+        [00:00:03.380 --> 00:00:05.540]   Que seguro que tiene mierda y cosillas por ahí
+        [00:00:21.820 --> 00:00:23.040]   Bueno, vamos a ver qué encuentras
+
+        """
+        #expect(MobileWhisperTranscript(raw: crudo).text
+            == "Investígame a este tío a fondo si puedes, porfa Que seguro que tiene mierda y cosillas por ahí Bueno, vamos a ver qué encuentras")
+        #expect(MobileWhisperTranscript(raw: "[00:00:00.000 --> 00:00:02.000]   [BLANK_AUDIO]").text.isEmpty)
+        #expect(MobileWhisperTranscript(raw: "[pendiente] y [00:01] no son marcas de tiempo").text == "[pendiente] y [00:01] no son marcas de tiempo")
     }
 
     @Test("una salida vacía da un texto vacío, no un fallo")
@@ -604,7 +620,7 @@ struct MobileTranscriptionJobTests {
         let invocations = await runner.invocations
         #expect(invocations.count == 1)
         #expect(invocations[0].executable == whisper)
-        #expect(invocations[0].arguments.contains("-nt"))
+        #expect(!invocations[0].arguments.contains("-nt"))
         #expect(FileManager.default.fileExists(atPath: root.path))
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
     }

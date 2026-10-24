@@ -891,8 +891,10 @@ class TranscriptionEngine:
         remaining = deadline - self.clock() - CLEANUP_MARGIN
         if remaining <= 0:
             raise RPCError("io_failed", "La transcripción tardó demasiado y se canceló")
+        # Nunca --no-timestamps: sin marcas, large-v3-turbo se salta casi todo un dictado largo y
+        # devuelve solo la última frase. clean_transcript ya quita las marcas de cada tramo.
         argv = [engine.binary, "--model", str(engine.model), "--file", str(wave),
-                "--language", language, "--threads", str(engine.threads), "--no-timestamps"]
+                "--language", language, "--threads", str(engine.threads)]
         result = self.execute(argv, remaining, "El motor de transcripción no respondió a tiempo", cancelled)
         if result.returncode != 0:
             self.invalidate()  # Un motor averiado no se cachea: la próxima llamada vuelve a mirar.

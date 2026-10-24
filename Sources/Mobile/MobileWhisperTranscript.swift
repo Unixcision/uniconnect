@@ -40,7 +40,7 @@ struct MobileWhisperTranscript: Equatable, Sendable {
     var text: String {
         raw
             .split(whereSeparator: \.isNewline)
-            .map { Self.stripMarkers(from: String($0)) }
+            .map { Self.stripMarkers(from: Self.strippingTimestamp(String($0))) }
             .filter { !$0.isEmpty }
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -50,6 +50,18 @@ struct MobileWhisperTranscript: Equatable, Sendable {
     ///
     /// - Parameter inner: Texto entre corchetes, por ejemplo `BLANK_AUDIO` o `_TT_320`.
     /// - Returns: `true` solo para los marcadores de whisper; `pendiente` devuelve `false`.
+    /// Quita la marca `[00:00:00.000 --> 00:00:03.380]` con la que whisper-cli empieza cada tramo.
+    ///
+    /// Solo cuenta como marca un corchete inicial con `-->` y nada más que cifras y separadores, así
+    /// que un dictado que empiece por «[pendiente]» se conserva.
+    static func strippingTimestamp(_ line: String) -> String {
+        let trimmed = line.drop(while: { $0 == " " || $0 == "\t" })
+        guard trimmed.hasPrefix("["), let close = trimmed.firstIndex(of: "]") else { return line }
+        let inner = trimmed[trimmed.index(after: trimmed.startIndex)..<close]
+        guard inner.contains("-->"), inner.allSatisfy({ "0123456789:.,-> ".contains($0) }) else { return line }
+        return String(trimmed[trimmed.index(after: close)...])
+    }
+
     static func isMarker(inner: String) -> Bool {
         let normalized = inner
             .trimmingCharacters(in: .whitespaces)

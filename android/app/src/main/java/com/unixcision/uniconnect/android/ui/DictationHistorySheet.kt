@@ -12,6 +12,7 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -45,7 +46,7 @@ import java.util.Locale
  * still be listened to.
  */
 @Composable
-fun DictationHistoryButton(model: DictationHistoryViewModel, draft: String, onDraftChange: (String) -> Unit) {
+fun DictationHistoryButton(model: DictationHistoryViewModel, draft: String, onDraftChange: (String) -> Unit, language: String? = null) {
     val context = LocalContext.current
     var open by rememberSaveable { mutableStateOf(false) }
     val latestDraft by rememberUpdatedState(draft)
@@ -53,7 +54,7 @@ fun DictationHistoryButton(model: DictationHistoryViewModel, draft: String, onDr
         Icon(Icons.Rounded.History, stringResource(R.string.dictation_history_title), tint = UniTheme.colors.muted)
     }
     if (open) DictationHistorySheet(
-        model,
+        model, language,
         onPaste = { text ->
             onDraftChange(DictationDraft.append(latestDraft, text))
             Toast.makeText(context, R.string.dictation_history_pasted, Toast.LENGTH_SHORT).show()
@@ -65,8 +66,10 @@ fun DictationHistoryButton(model: DictationHistoryViewModel, draft: String, onDr
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DictationHistorySheet(model: DictationHistoryViewModel, onPaste: (String) -> Unit, onDismiss: () -> Unit) {
+private fun DictationHistorySheet(model: DictationHistoryViewModel, language: String?, onPaste: (String) -> Unit, onDismiss: () -> Unit) {
     val records by model.records.collectAsStateWithLifecycle()
+    val busy by model.busy.collectAsStateWithLifecycle()
+    val failed by model.failed.collectAsStateWithLifecycle()
     val colors = UniTheme.colors
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -118,6 +121,9 @@ private fun DictationHistorySheet(model: DictationHistoryViewModel, onPaste: (St
                         Toast.makeText(context, R.string.dictation_history_copied, Toast.LENGTH_SHORT).show()
                     },
                     onDelete = { if (playing == record.id) playing = null; model.delete(setOf(record.id)) },
+                    retranscribing = record.id in busy,
+                    failure = failed[record.id],
+                    onRetranscribe = if (model.canRetranscribe) ({ model.retranscribe(record, language) }) else null,
                 )
             }
         }
@@ -128,6 +134,7 @@ private fun DictationHistorySheet(model: DictationHistoryViewModel, onPaste: (St
 private fun DictationItem(
     record: DictationRecord, now: Long, playing: Boolean,
     onPlay: () -> Unit, onPaste: () -> Unit, onCopy: () -> Unit, onDelete: () -> Unit,
+    retranscribing: Boolean = false, failure: Int? = null, onRetranscribe: (() -> Unit)? = null,
 ) {
     val colors = UniTheme.colors
     var expanded by rememberSaveable(record.id) { mutableStateOf(false) }
@@ -153,6 +160,7 @@ private fun DictationItem(
             if (overflows || expanded) TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(0.dp)) {
                 Text(stringResource(if (expanded) R.string.dictation_history_less else R.string.dictation_history_more), color = colors.accent)
             }
+            if (failure != null) Text(stringResource(failure), style = MaterialTheme.typography.bodySmall, color = colors.danger)
             if (playing && record.audioPath != null) InboxMediaPlayer(Uri.fromFile(File(record.audioPath)), audio = true)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (record.text != null) {
@@ -166,6 +174,12 @@ private fun DictationItem(
                         tint = colors.accent,
                     )
                 } else Text(stringResource(R.string.dictation_history_no_audio), style = MaterialTheme.typography.labelSmall, color = colors.muted)
+                // «Volver a transcribir»: the kept audio goes to its machine again, for a text that
+                // came back short (only the end of a long recording) or never came at all.
+                if (record.audioPath != null && onRetranscribe != null) {
+                    if (retranscribing) CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp), strokeWidth = 2.dp, color = colors.accent)
+                    else IconButton(onClick = onRetranscribe) { Icon(Icons.Rounded.Refresh, stringResource(R.string.dictation_retranscribe), tint = colors.accent) }
+                }
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, stringResource(R.string.dictation_history_delete), tint = colors.muted) }
             }

@@ -48,7 +48,7 @@ class FileDictationHistory(
         val record = DictationRecord(
             id = id, createdAt = clock(), text = null, state = DictationRecord.State.TRANSCRIBING,
             audioPath = if (written != null) audio.path else null, audioBytes = written ?: 0L,
-            machineName = target?.machine?.name,
+            machineName = target?.machine?.name, machineId = target?.machine?.id,
         )
         synchronized(lock) {
             entries[clip] = id
@@ -59,6 +59,10 @@ class FileDictationHistory(
     override fun transcribed(clip: AudioClip, text: String) = finish(clip) { it.copy(text = text, state = DictationRecord.State.DONE) }
 
     override fun unread(clip: AudioClip) = finish(clip) { it.copy(state = DictationRecord.State.UNREAD) }
+
+    override fun replaceText(id: String, text: String) = synchronized(lock) {
+        change { list -> list.map { if (it.id == id) it.copy(text = text, state = DictationRecord.State.DONE) else it } }
+    }
 
     override fun delete(ids: Set<String>) = synchronized(lock) {
         change { list ->
@@ -102,7 +106,8 @@ class FileDictationHistory(
                     .put("id", record.id).put("created_at", record.createdAt)
                     .put("text", record.text ?: JSONObject.NULL).put("state", record.state.name)
                     .put("audio", record.audioPath ?: JSONObject.NULL).put("audio_bytes", record.audioBytes)
-                    .put("machine", record.machineName ?: JSONObject.NULL))
+                    .put("machine", record.machineName ?: JSONObject.NULL)
+                    .put("machine_id", record.machineId ?: JSONObject.NULL))
             }
             val temporary = File(directory, "indice.json.tmp")
             temporary.writeText(array.toString())
@@ -124,6 +129,7 @@ class FileDictationHistory(
                     state = if (state == DictationRecord.State.TRANSCRIBING) DictationRecord.State.UNREAD else state,
                     audioPath = audio, audioBytes = if (audio != null) item.optLong("audio_bytes") else 0L,
                     machineName = if (item.isNull("machine")) null else item.getString("machine"),
+                    machineId = if (!item.has("machine_id") || item.isNull("machine_id")) null else item.getString("machine_id"),
                 )
             }.getOrNull()
         }

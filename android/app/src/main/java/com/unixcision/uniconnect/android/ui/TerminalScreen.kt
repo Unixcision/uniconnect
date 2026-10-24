@@ -2,6 +2,8 @@ package com.unixcision.uniconnect.android.ui
 
 import android.graphics.Paint
 import android.graphics.Typeface
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.res.ResourcesCompat
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -199,7 +201,7 @@ private fun RealTerminalScreen(
             // The clip: attach to this window, and paste the path or link into the composer.
             if (attachments != null && attachTarget != null) AttachButton(attachments, inbox, attachTarget, draft, onDraftChange)
             // Beside the clip: every dictation kept with its audio, to paste again or listen to.
-            if (dictationHistory != null) DictationHistoryButton(dictationHistory, draft, onDraftChange)
+            if (dictationHistory != null) DictationHistoryButton(dictationHistory, draft, onDraftChange, settings.dictationLanguage.code)
             // One tap back to the live screen, handled by the model: it walks the pane out with
             // wheel steps and stops as soon as tmux's indicator clears.
             if (real.copyMode) IconButton(onClick = onLeaveCopyMode) {
@@ -443,7 +445,7 @@ private fun MirrorTerminalScreen(
             // The clip: attach to this window, and paste the path or link into the composer.
             if (attachments != null && attachTarget != null) AttachButton(attachments, inbox, attachTarget, draft, onDraftChange)
             // Beside the clip: every dictation kept with its audio, to paste again or listen to.
-            if (dictationHistory != null) DictationHistoryButton(dictationHistory, draft, onDraftChange)
+            if (dictationHistory != null) DictationHistoryButton(dictationHistory, draft, onDraftChange, settings.dictationLanguage.code)
             // Mismo criterio que en el terminal real: el bicho sale cuando el fallo está delante,
             // sin esperar a acumular nada. Estar «sin conexión» ya es motivo: esa es la pantalla
             // desde la que se pidió poder mandar las trazas.
@@ -606,9 +608,10 @@ private fun RealTerminalStarter(armed: Boolean, onStart: (Int, Int) -> Unit) {
     if (!armed) return
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
+    val terminalTypeface = rememberTerminalTypeface()
     LaunchedEffect(armed) {
         val fontSize = with(density) { 13.sp.toPx() }
-        val cell = Paint().apply { textSize = fontSize; typeface = Typeface.MONOSPACE }.measureText("M")
+        val cell = Paint().apply { textSize = fontSize; typeface = terminalTypeface }.measureText("M")
         val widthPx = with(density) { configuration.screenWidthDp.dp.toPx() } - 36f
         val heightPx = with(density) { configuration.screenHeightDp.dp.toPx() } * 0.55f
         onStart((widthPx / cell).toInt().coerceIn(20, 500), (heightPx / (fontSize * 1.35f)).toInt().coerceIn(8, 200))
@@ -625,6 +628,20 @@ private const val FLING_MAX_LINES = 24
 private const val MIN_ZOOM = 0.6f
 private const val MAX_ZOOM = 5f
 
+/**
+ * The terminal's own monospace font, bundled with the app (JetBrains Mono, OFL; license in
+ * res/raw/jetbrains_mono_ofl.txt).
+ *
+ * `Typeface.MONOSPACE` is whatever the phone maker ships: on ColorOS (OPPO) it is not fixed-width,
+ * so narrow letters fall short of their cells and the grid looks justified. Glyphs the font lacks
+ * (emoji, CJK) still come from the system fallback chain.
+ */
+@Composable
+private fun rememberTerminalTypeface(): Typeface {
+    val context = LocalContext.current
+    return remember(context) { runCatching { ResourcesCompat.getFont(context, R.font.jetbrains_mono) }.getOrNull() ?: Typeface.MONOSPACE }
+}
+
 private class TerminalMetrics(val fontSize: Float, val cellWidth: Float, val lineHeight: Float, val columns: Int, val rows: Int) {
     val widthPx: Float get() = columns * cellWidth + 16f
     val heightPx: Float get() = rows * lineHeight + 16f
@@ -634,8 +651,9 @@ private class TerminalMetrics(val fontSize: Float, val cellWidth: Float, val lin
 private fun rememberTerminalMetrics(snapshot: TerminalSnapshot, fit: IntSize?, zoom: Float = 1f): TerminalMetrics {
     val density = LocalDensity.current
     val normalFontSize = with(density) { 13.sp.toPx() }
-    return remember(snapshot.columns, snapshot.rows, fit, normalFontSize, zoom) {
-        val normalCell = Paint().apply { textSize = normalFontSize; typeface = Typeface.MONOSPACE }.measureText("M")
+    val terminalTypeface = rememberTerminalTypeface()
+    return remember(snapshot.columns, snapshot.rows, fit, normalFontSize, zoom, terminalTypeface) {
+        val normalCell = Paint().apply { textSize = normalFontSize; typeface = terminalTypeface }.measureText("M")
         val normalLine = normalFontSize * 1.35f
         val scale = if (fit == null) 1f else minOf(
             (fit.width - 16f).coerceAtLeast(1f) / (snapshot.columns * normalCell),
@@ -645,7 +663,7 @@ private fun rememberTerminalMetrics(snapshot: TerminalSnapshot, fit: IntSize?, z
         // The fitted scale never magnifies on its own; `zoom` is the reader's own decision and is
         // free to go past 1, which is what makes an 80x23 window usable on a tall phone screen.
         val fontSize = normalFontSize * scale * zoom
-        val cell = Paint().apply { textSize = fontSize; typeface = Typeface.MONOSPACE }.measureText("M")
+        val cell = Paint().apply { textSize = fontSize; typeface = terminalTypeface }.measureText("M")
         TerminalMetrics(fontSize, cell, fontSize * 1.35f, snapshot.columns, snapshot.rows)
     }
 }
@@ -663,8 +681,9 @@ private fun TerminalGrid(
     viewportHeightPx: Int = 0,
 ) {
     val density = LocalDensity.current
-    val paint = remember(metrics.fontSize) { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = metrics.fontSize; typeface = Typeface.MONOSPACE } }
-    val typefaces = remember { listOf(Typeface.NORMAL, Typeface.BOLD, Typeface.ITALIC, Typeface.BOLD_ITALIC).associateWith { Typeface.create(Typeface.MONOSPACE, it) } }
+    val terminalTypeface = rememberTerminalTypeface()
+    val paint = remember(metrics.fontSize, terminalTypeface) { Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = metrics.fontSize; typeface = terminalTypeface } }
+    val typefaces = remember(terminalTypeface) { listOf(Typeface.NORMAL, Typeface.BOLD, Typeface.ITALIC, Typeface.BOLD_ITALIC).associateWith { Typeface.create(terminalTypeface, it) } }
     val cellWidth = metrics.cellWidth
     val lineHeight = metrics.lineHeight
     val wrap = wrapColumns ?: snapshot.columns
