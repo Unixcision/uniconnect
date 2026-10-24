@@ -656,6 +656,7 @@ class TargetIntegrationTests(unittest.TestCase):
                                 except (ValueError, TypeError, AttributeError):
                                     metadata, bound = {}, False
                                 stage = ["inspect"]
+                                details = {}
                                 worker = TargetWorker({"action": "inspect", "session": "fixture", "socket": socket_name,
                                     "provider": "agy", "window_id": "fixture-window",
                                     "catalog": AgentResumeCatalog().providers, "verb": "agent.relaunch"})
@@ -664,6 +665,12 @@ class TargetIntegrationTests(unittest.TestCase):
                                     original_method = getattr(worker, name)
                                     def trace_method(*args, _name=name, _original=original_method, **kwargs):
                                         stage[0] = _name
+                                        if _name == "preserve_antigravity_configuration" and len(args) == 2:
+                                            argv, configuration = args
+                                            details["resume_flags"] = [token for token in argv[1:]
+                                                if token.startswith("--") or token in ("high", "gemini-fixture")]
+                                            details["configuration"] = {key: configuration.get(key) for key in
+                                                ("model", "effort", "cycle_mode", "sandbox_enabled", "version")}
                                         return _original(*args, **kwargs)
                                     setattr(worker, name, trace_method)
                                 try:
@@ -671,8 +678,8 @@ class TargetIntegrationTests(unittest.TestCase):
                                     diagnostic = "direct inspect passed"
                                 except Unavailable as error:
                                     diagnostic = "%s:%s" % (stage[0], error.cause)
-                                self.fail("Antigravity probe unavailable (%s); %s; status=%r, identity_bound=%r"
-                                          % (last_error, diagnostic, metadata, bound))
+                                self.fail("Antigravity probe unavailable (%s); %s; status=%r, identity_bound=%r, details=%r"
+                                          % (last_error, diagnostic, metadata, bound, details))
                     result = adapter.execute(candidate, "agent.relaunch", proof, str(uuid.uuid4()),
                                              lambda _: None, lambda: True)
                     self.assertEqual(result, {"state": "verificado", "effective_id": native})
