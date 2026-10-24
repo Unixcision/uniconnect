@@ -229,6 +229,42 @@ class ArgumentsTests(unittest.TestCase):
         self.assertFalse(TargetWorker.staged_control_matches(
             refreshed_footer, len(refreshed_footer), r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"))
 
+    def test_antigravity_staged_control_waits_for_delayed_tui_echo_and_stable_cursor(self):
+        worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "agy"})
+        pane = {"pane": "%1"}
+        screens = iter(("history\n› \nfooter", "history\n› /statusline enable\nfooter",
+                        "history\n› /statusline enable\nfooter"))
+        worker.pane = lambda: (pane, {}, "0", "")
+        worker.same_process = lambda _process: True
+        captures = []
+        def tmux(*args):
+            if args[0] == "capture-pane":
+                value = next(screens)
+                captures.append(value)
+                return value
+            return "1"
+        worker.tmux = tmux
+
+        lines, row = worker.wait_staged_control(
+            pane, {"pid": 123}, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*", time.monotonic() + 1)
+
+        self.assertEqual(lines[row], "› /statusline enable")
+        self.assertEqual(len(captures), 3)
+
+    def test_antigravity_staged_control_timeout_never_accepts_an_unrecognized_composer(self):
+        worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "agy"},
+                              clock=lambda: 1.0)
+        pane = {"pane": "%1"}
+        worker.pane = lambda: (pane, {}, "0", "")
+        worker.same_process = lambda _process: True
+        worker.tmux = lambda *args: "history\n› /statusline enable now\nfooter" if args[0] == "capture-pane" else "1"
+
+        with self.assertRaises(Unavailable) as blocked:
+            worker.wait_staged_control(
+                pane, {"pid": 123}, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*", 0.0)
+
+        self.assertEqual(blocked.exception.cause, "dialogo_desconocido")
+
     def test_antigravity_failed_adoption_clears_only_its_exact_staged_control(self):
         pane = {"pane": "%1"}
         process = {"pid": 123}

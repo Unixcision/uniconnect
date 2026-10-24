@@ -113,6 +113,32 @@ class TargetWorker:
         except (Unavailable, OSError, ProcessLookupError, ValueError):
             return
 
+    def wait_staged_control(self, pane, process, expected_line, deadline):
+        """Wait for the TUI to render our exact input, then require a stable redraw.
+
+        tmux send-keys writes to the PTY; interactive TUIs may not repaint before
+        the next capture-pane call. A single immediate read can therefore mistake
+        our own still-in-flight keystrokes for an unknown composer. Never press
+        Enter until two consecutive captures show the exact command at the cursor.
+        """
+        while True:
+            if self.pane()[0] != pane or not self.same_process(process):
+                raise Unavailable("generacion_cambiada")
+            lines = self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines()
+            row = int(self.tmux("display-message", "-p", "-t", pane["pane"], "#{cursor_y}"))
+            if self.antigravity_activity(lines):
+                raise Unavailable("tareas_de_fondo")
+            expected = self.staged_control_matches(lines, row, expected_line)
+            if expected:
+                confirmed = self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines()
+                confirmed_row = int(self.tmux("display-message", "-p", "-t", pane["pane"], "#{cursor_y}"))
+                if (confirmed == lines and confirmed_row == row
+                        and self.pane()[0] == pane and self.same_process(process)):
+                    return lines, row
+            if self.clock() >= deadline:
+                raise Unavailable("dialogo_desconocido")
+            time.sleep(0.05)
+
     def process(self, pid):
         path = self.proc / str(pid)
         if path.stat().st_uid != os.geteuid():
@@ -1732,13 +1758,9 @@ class TargetWorker:
                     break
                 raise Unavailable("dialogo_desconocido")
             self.tmux("send-keys", "-t", pane["pane"], "-l", "--", "/statusline enable")
-            typed = self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines()
-            if not self.staged_control_matches(
-                    typed, row, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"):
-                raise Unavailable("dialogo_desconocido")
             staged_control = True
-            if self.antigravity_activity(typed):
-                raise Unavailable("tareas_de_fondo")
+            typed, row = self.wait_staged_control(
+                pane, process, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*", self.clock() + 3)
             if (self.pane()[0] != pane or not self.same_process(process)
                     or self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines() != typed):
                 raise Unavailable("generacion_cambiada")
