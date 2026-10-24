@@ -658,8 +658,9 @@ class TargetIntegrationTests(unittest.TestCase):
                                     metadata, bound = {}, False
                                 self.fail("Antigravity probe unavailable (%s); status=%r, identity_bound=%r"
                                           % (last_error, metadata, bound))
+                    phases = []
                     result = adapter.execute(candidate, "agent.relaunch", proof, str(uuid.uuid4()),
-                                             lambda _: None, lambda: True)
+                                             phases.append, lambda: True)
                     if result != {"state": "verificado", "effective_id": native}:
                         screen = subprocess.run(["tmux", "-L", socket_name, "capture-pane", "-p", "-t", "=fixture:"],
                                                 check=True, capture_output=True, text=True, timeout=5).stdout.splitlines()
@@ -679,16 +680,18 @@ class TargetIntegrationTests(unittest.TestCase):
                             runtime_summary = {key: runtime.get(key) for key in (
                                 "state", "version", "pending_input_count", "tool_confirmation_pending",
                                 "task_count", "model_id", "effort", "cycle_mode", "sandbox_enabled")}
-                            observed = runtime.get("observed_at")
+                            observed = snapshot.get("observed_at")
                             runtime_summary["age_seconds"] = round(time.time() - observed, 2) if isinstance(
                                 observed, (int, float)) and not isinstance(observed, bool) else None
                         except (ValueError, TypeError, AttributeError):
                             runtime_summary = "unavailable"
                         self.fail("Antigravity isolated relaunch returned %r; cursor_y=%r; cursor_line=%r; "
-                                  "composer_match=%r; rejection_markers=%r; runtime_status=%r; visible_fixture_rows=%r"
+                                  "composer_match=%r; rejection_markers=%r; runtime_status=%r; phases=%r; "
+                                  "visible_fixture_rows=%r"
                                   % (result, cursor, screen[row] if 0 <= row < len(screen) else None,
                                      bool(0 <= row < len(screen) and re.fullmatch(r"\s*│?\s*[›❯>]\s*│?\s*", screen[row])),
-                                     [marker for marker in markers if marker in visible], runtime_summary, screen[-8:]))
+                                     [marker for marker in markers if marker in visible], runtime_summary, phases,
+                                     screen[-8:]))
                     current = adapter.probe(candidate, "agent.relaunch")
                     self.assertEqual(current["pane"], proof["pane"])
                     self.assertNotEqual((current["pid"], current["start"]), (proof["pid"], proof["start"]))
