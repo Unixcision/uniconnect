@@ -35,7 +35,7 @@ class AntigravityIntegration:
         self.hooks_path = self.home / ".gemini/config/hooks.json"
         self.settings_path = self.home / ".gemini/antigravity-cli/settings.json"
         self.lock_path = self.home / ".local/state/uniconnect/antigravity-integration.lock"
-        self.helper_source = (Path(helper_source) if helper_source else
+        self.helper_source = (helper_source if isinstance(helper_source, bytes) else Path(helper_source) if helper_source else
                               Path(__file__).with_name("agent_identity_hook.py"))
 
     def _check_paths(self):
@@ -121,7 +121,8 @@ class AntigravityIntegration:
 
     def _command(self, mode, event=None):
         try:
-            source = self.helper_source.read_bytes()
+            source = (self.helper_source if isinstance(self.helper_source, bytes)
+                      else self.helper_source.read_bytes())
         except OSError as error:
             raise IntegrationError("helper_unavailable") from error
         if len(source) > 65536:

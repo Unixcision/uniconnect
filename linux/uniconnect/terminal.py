@@ -601,7 +601,7 @@ class TerminalSurface(Gtk.Box):
         if event.button == 3:
             self.on_focus()
             self.owner.context_menu(["copy", "show_history", "cancel_selection", "paste", "find", "window_details",
-                                     "relaunch_window", "continue_window", "new_window", "rename_window", "split_right", "split_down",
+                                     "relaunch_window", "adopt_antigravity_window", "continue_window", "new_window", "rename_window", "split_right", "split_down",
                                      "reconnect", "upload", "close_window"], event)
             return True
         return False

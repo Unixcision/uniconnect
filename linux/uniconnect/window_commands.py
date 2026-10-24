@@ -40,6 +40,9 @@ class WindowCommands:
                 return False
             return (surface is not None if name == "relaunch_window" else
                     bool(workspace and windows) if name == "relaunch_workspace" else True)
+        if name == "adopt_antigravity_window":
+            relaunch = getattr(self, "relaunch", None)
+            return bool(surface and surface.record.get("agent") == "agy" and relaunch and relaunch.allowed())
         if name.startswith("continue_"):
             relaunch = getattr(self, "relaunch", None)
             if not relaunch or not relaunch.allowed():
@@ -170,6 +173,9 @@ class WindowCommands:
 
     def action_relaunch_window(self):
         self.relaunch.show("window")
+
+    def action_adopt_antigravity_window(self):
+        self.relaunch.adopt_antigravity_window()
 
     def action_relaunch_workspace(self):
         self.relaunch.show("workspace")

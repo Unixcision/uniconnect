@@ -152,6 +152,17 @@ esas señales quedan excluidas sin recibir teclas. Esta integración habilita
 `agent.relaunch`; no habilita `agent.continue` ni `agent.recover` para AGY,
 operaciones que siguen limitadas a Codex.
 
+Para una ventana GEMINI/Antigravity ya abierta que UniConnect no puede vincular,
+elige en su menú contextual **Vincular GEMINI abierta de esta ventana…**. Tras
+confirmarlo, UniConnect actualiza únicamente sus propios hooks/statusLine,
+comprueba que el pane contiene una sola conversación cuyo ID y carpeta coinciden
+con la ficha guardada y, con el compositor vacío, envía el comando de control
+documentado `/statusline enable` a esa sesión para activar el hook sin reiniciarla.
+Verifica el texto exacto antes de enviarlo; nunca lo transforma en un prompt de IA.
+Si la status line no confirma un estado reciente e inactivo, la ventana sigue
+fuera del plan de relanzado; cuando la vinculación se verifica, usa **Relanzar IA
+de esta ventana…** y revisa su vista previa habitual.
+
 Para consultar o compartir los datos de una terminal, abre su menú contextual y
 elige **Detalles…**. El modal Linux presenta el proveedor, el identificador
 nativo de conversación cuando se puede probar, el transporte y los datos de

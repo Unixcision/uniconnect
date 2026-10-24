@@ -165,6 +165,49 @@ class RelaunchDesktop:
         window.status_label.set_text(window._(preparing))
         window.background(lambda: self.dispatch("relaunch.plan", {"verb": verb, "scope": scope}), self.preview)
 
+    def adopt_antigravity_window(self):
+        """Offer an explicit, single-pane Antigravity statusLine binding."""
+        from gi.repository import Gtk
+        window, surface = self.window, self.window.focused_surface
+        if surface is None or surface.record.get("agent") != "agy" or not self.allowed():
+            raise RelaunchUnavailable("no_soportado")
+        candidates = self.snapshot({"kind": "window", "id": surface.record["id"]})
+        if len(candidates) != 1 or (candidates[0]["workspace"]["kind"] == "ssh"
+                                    and candidates[0].get("connection") is None):
+            raise RelaunchUnavailable("permisos")
+        candidate = candidates[0]
+        dialog = Gtk.MessageDialog(transient_for=window, modal=True, message_type=Gtk.MessageType.WARNING,
+                                   buttons=Gtk.ButtonsType.OK_CANCEL,
+                                   text=window._("Vincular la sesión GEMINI abierta"))
+        dialog.format_secondary_text(window._(
+            "Se actualizarán solo los hooks/statusLine de UniConnect en el equipo y se validará el ID nativo "
+            "en esta ventana. Para activar el hook en la sesión abierta, se escribirá y enviará el comando de "
+            "control de Antigravity «/statusline enable» solo si el compositor está vacío y se verifica el texto "
+            "antes de enviarlo. No se enviará ningún prompt a la IA ni se cerrará la conversación. Después podrás "
+            "preparar el relanzado normal de esta ventana."))
+        accepted = dialog.run() == Gtk.ResponseType.OK
+        dialog.destroy()
+        if not accepted:
+            return
+
+        def authorized():
+            return self.main(lambda: self.allowed() and self.current(candidate))
+
+        def adopt():
+            if not authorized():
+                raise RelaunchUnavailable("generacion_cambiada")
+            return self.service.adapter.adopt_legacy_antigravity(candidate, authorized)
+
+        def finished(result):
+            if window._closed:
+                return
+            if result.get("state") == "verificado":
+                window.status_label.set_text(window._("GEMINI vinculada; ya puedes preparar su relanzado"))
+            else:
+                window.status_label.set_text(window._("No se pudo verificar la vinculación de GEMINI"))
+
+        window.background(adopt, finished)
+
     def preview(self, plan):
         window = self.window
         if window._closed:

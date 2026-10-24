@@ -64,13 +64,16 @@ class RelaunchAgents:
                    "socket": record.get("tmuxSocket") or ("uniconnect" if candidate.get("connection") else "uniconnect-local"),
                    "provider": candidate["provider"], "window_id": record["id"],
                    "catalog": self.catalog.providers, **values}
+        if action == "adopt":
+            request.update(expected_session_id=record.get("sessionId"), expected_cwd=record.get("cwd"))
         request["recovery_sha256"] = self.recovery_sha256
         if action == "start":
             request["identity_helper"] = self.identity_helper
         payload = base64.b64encode(json.dumps(request).encode()).decode()
         transport = self.transport_factory(candidate.get("connection"), socket_name=request["socket"])
         try:
-            result = transport.run(shlex.join(["python3", "-c", self.source, payload]), timeout=18)
+            result = transport.run(shlex.join(["python3", "-c", self.source, payload]),
+                                   timeout=25 if action == "adopt" else 18)
         except Exception:
             raise RelaunchUnavailable("host_inaccesible") from None
         # Login-shell banners are allowed; only the bounded, versioned reply is parsed.
@@ -85,6 +88,34 @@ class RelaunchAgents:
         if "error" in response:
             raise RelaunchUnavailable(response["error"])
         return response
+
+    def adopt_legacy_antigravity(self, candidate, authorized=lambda: True):
+        """Explicitly associate one existing AGY pane without closing its conversation."""
+        record = candidate.get("record", {})
+        if (candidate.get("provider") != "agy" or not record.get("tmux")
+                or not isinstance(record.get("sessionId"), str) or not record.get("sessionId")
+                or not isinstance(record.get("cwd"), str) or not record.get("cwd")):
+            raise RelaunchUnavailable("identidad_ambigua")
+        if not authorized() or not self.validate(candidate):
+            raise RelaunchUnavailable("generacion_cambiada")
+        # Update only UniConnect-owned Gemini settings/hooks. The integration
+        # installer preserves unrelated keys and fails unchanged on conflict.
+        source = Path(__file__).with_name("antigravity_integration.py").read_text()
+        source = source.replace("from __future__ import annotations\n", "", 1)
+        helper = base64.b64encode(Path(__file__).with_name("agent_identity_hook.py").read_bytes()).decode("ascii")
+        source += ("\nimport base64,json; print(json.dumps(AntigravityIntegration(helper_source="
+                   "base64.b64decode(" + repr(helper) + ")).enable()))\n")
+        transport = self.transport_factory(candidate.get("connection"),
+            socket_name=record.get("tmuxSocket") or ("uniconnect" if candidate.get("connection") else "uniconnect-local"))
+        try:
+            installed = transport.run(shlex.join(["python3", "-c", source]), timeout=15)
+        except Exception:
+            raise RelaunchUnavailable("host_inaccesible") from None
+        if installed.returncode:
+            raise RelaunchUnavailable("no_soportado")
+        if not authorized() or not self.validate(candidate):
+            raise RelaunchUnavailable("generacion_cambiada")
+        return self.request(candidate, "adopt")
 
     def probe(self, candidate, verb):
         if not candidate["record"].get("tmux"):

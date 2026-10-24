@@ -20,6 +20,8 @@ BOOTSTRAP = 'import base64,os,zlib;exec(zlib.decompress(base64.b64decode(os.envi
 GENERATION = "@uniconnect_native_generation"
 IDENTITY = "@uniconnect_native_identity"
 REVISION = "@uniconnect_native_revision"
+ADOPT_REQUEST = "@uniconnect_adopt_request"
+ADOPT_NONCE = "@uniconnect_adopt_nonce"
 
 
 def compact(value):
@@ -70,27 +72,28 @@ def _process(pid):
 def _agy_binding(payload, session):
     """Adopt only the AGY process that emitted this exact pane's native statusLine.
 
-    Older Antigravity processes may predate UniConnect's pane binding while still
-    inheriting the exact UNICONNECT_WINDOW_ID and TMUX_PANE set by its SSH
-    launcher. A statusLine child can safely establish that binding if its
-    ancestor chain reaches the tmux pane process, the native conversation ID
-    agrees with any explicit --conversation argument, and the pane has no
-    competing UniConnect identity.
+    An already-running process may predate UniConnect's environment binding. It
+    can be adopted either from its inherited window ID or from a short-lived,
+    per-pane request created by an explicit UniConnect action. The latter also
+    pins the expected conversation and exact process generation. In both cases
+    the statusLine child must descend from that process and the pane must have
+    no competing identity.
     """
     pane = os.environ.get("TMUX_PANE", "")
-    window_id = os.environ.get("UNICONNECT_WINDOW_ID", "")
-    if (not re.fullmatch(r"%[0-9]+", pane) or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", window_id)
+    env_window_id = os.environ.get("UNICONNECT_WINDOW_ID", "")
+    if (not re.fullmatch(r"%[0-9]+", pane)
             or not isinstance(session, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", session)):
         return None
     try:
         end_marker = "|UNICONNECT_END"
         formatted = tmux("display-message", "-p", "-t", pane,
                       "#{pane_id}\t#{pane_pid}\t#{session_id}\t#{@uniconnect_native_generation}"
-                      "\t#{@uniconnect_native_identity}\t#{@uniconnect_native_revision}" + end_marker)
+                      "\t#{@uniconnect_native_identity}\t#{@uniconnect_native_revision}"
+                      "\t#{@uniconnect_adopt_request}\t#{@uniconnect_adopt_nonce}" + end_marker)
         if not formatted.endswith(end_marker):
             return None
-        fields = formatted[:-len(end_marker)].split("\t", 5)
-        if len(fields) != 6 or fields[0] != pane or not fields[1].isdigit():
+        fields = formatted[:-len(end_marker)].split("\t", 7)
+        if len(fields) != 8 or fields[0] != pane or not fields[1].isdigit():
             return None
         pane_pid = int(fields[1])
         if not fields[2].startswith("$") or not fields[2][1:].isdigit():
@@ -107,12 +110,37 @@ def _agy_binding(payload, session):
             keys = ("version", "window_id", "agent", "generation", "tmux_pane", "pane_pid",
                     "tmux_session_id", "agent_pid", "agent_start")
             existing = {key: proof.get(key) for key in keys}
-            if (existing["version"] != 1 or existing["window_id"] != window_id or existing["agent"] != "agy"
+            if (existing["version"] != 1 or existing["agent"] != "agy"
                     or existing["generation"] != fields[3] or existing["tmux_pane"] != pane
                     or existing["pane_pid"] != pane_pid or existing["tmux_session_id"] != fields[2]
                     or not isinstance(existing["agent_pid"], int)
                     or not isinstance(existing["agent_start"], str)):
                 return None
+
+        adoption = None
+        if fields[6] or fields[7]:
+            # Adoption requests are one-shot, short lived, and pinned to the
+            # exact pane/process/conversation by an authenticated UniConnect
+            # action. A partial or expired marker is never repaired in place.
+            if not (fields[6] and re.fullmatch(r"[a-f0-9]{32}", fields[7]) and existing is None):
+                return None
+            adoption = json.loads(fields[6])
+            requested_at = adoption.get("requested_at")
+            if (adoption.get("version") != 1 or adoption.get("nonce") != fields[7]
+                    or not isinstance(adoption.get("window_id"), str)
+                    or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", adoption["window_id"])
+                    or adoption.get("session_id") != session or adoption.get("pane") != pane
+                    or adoption.get("pane_pid") != pane_pid or adoption.get("tmux_session_id") != fields[2]
+                    or not isinstance(requested_at, (int, float)) or isinstance(requested_at, bool)
+                    or not math.isfinite(requested_at) or time.time() - requested_at < -2
+                    or time.time() - requested_at > 120):
+                return None
+
+        window_id = env_window_id or (existing or {}).get("window_id") or (adoption or {}).get("window_id", "")
+        if (not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", window_id)
+                or (env_window_id and env_window_id != window_id)
+                or (adoption and env_window_id)):
+            return None
 
         pid, visited, matches = os.getppid(), set(), []
         reached_pane = False
@@ -121,7 +149,8 @@ def _agy_binding(payload, session):
             current = _process(pid)
             if current["environ"].get("TMUX_PANE") != pane:
                 return None
-            if current["environ"].get("UNICONNECT_WINDOW_ID") != window_id:
+            current_window_id = current["environ"].get("UNICONNECT_WINDOW_ID")
+            if current_window_id not in (None, "", window_id):
                 return None
             argv = current["argv"]
             if argv and Path(argv[0]).name == "agy":
@@ -144,6 +173,21 @@ def _agy_binding(payload, session):
         if not reached_pane or len(matches) != 1:
             return None
         process = matches[0]
+        if adoption and (len([value for value in process["argv"] if value == "--conversation"]) > 1
+                         or process["pid"] != adoption.get("agent_pid")
+                         or process["start"] != adoption.get("agent_start")
+                         or process["cwd"] != adoption.get("cwd")
+                         or process["environ"].get("TMUX_PANE") != pane):
+            return None
+        if adoption:
+            explicit = []
+            argv = process["argv"]
+            for index, value in enumerate(argv):
+                option, separator, inline = value.partition("=")
+                if option == "--conversation":
+                    explicit.append(inline if separator else argv[index + 1] if index + 1 < len(argv) else "")
+            if explicit != [session]:
+                return None
         if existing is not None:
             if process["pid"] != existing["agent_pid"] or process["start"] != existing["agent_start"]:
                 return None
@@ -158,11 +202,19 @@ def _agy_binding(payload, session):
                        " ; display-message -p UC_ADOPTED")
             condition = ("#{&&:#{==:#{" + GENERATION + "},},#{==:#{" + IDENTITY + "},},"
                          "#{==:#{" + REVISION + "},}}")
+            if adoption:
+                command = (command.removesuffix(" ; display-message -p UC_ADOPTED") + " ; " +
+                           shlex.join(["set-option", "-u", "-p", "-t", pane, ADOPT_REQUEST]) + " ; " +
+                           shlex.join(["set-option", "-u", "-p", "-t", pane, ADOPT_NONCE]) +
+                           " ; display-message -p UC_ADOPTED")
+                condition = ("#{&&:#{==:#{" + GENERATION + "},},#{==:#{" + IDENTITY + "},},"
+                             "#{==:#{" + REVISION + "},},#{==:#{" + ADOPT_NONCE + "}," + adoption["nonce"] + "}}")
             if tmux("if-shell", "-F", "-t", pane, condition, command,
                     "display-message -p UC_REJECTED") != "UC_ADOPTED":
                 return None
         return binding
-    except (OSError, ValueError, KeyError, IndexError, subprocess.SubprocessError):
+    except (OSError, ValueError, KeyError, IndexError, TypeError, AttributeError, OverflowError,
+            subprocess.SubprocessError):
         return None
 
 

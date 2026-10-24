@@ -39,6 +39,8 @@ UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-
 # quiescence from the statusline, so they remain visible but not relaunchable.
 AGY_MIN_SAFE_VERSION = (1, 2, 17)
 AGY_STATUS_MAX_AGE_SECONDS = 15
+AGY_ADOPT_REQUEST = "@uniconnect_adopt_request"
+AGY_ADOPT_NONCE = "@uniconnect_adopt_nonce"
 # Claude's prompt line, with or without the box border of older versions.
 CLAUDE_EXIT_LINE = re.compile(r"\s*│?\s*[›❯>]\s*/exit\s*│?\s*")
 EMPTY_PROMPT_LINE = re.compile(r"\s*│?\s*[›❯>]\s*│?\s*")
@@ -591,7 +593,7 @@ class TargetWorker:
             # status are instead revalidated from the inherited window ID and
             # the tmux-bound proof before the restart capsule is authorized.
             binding = {key: proof.get(key) for key in required}
-            if (env.get("UNICONNECT_WINDOW_ID") != self.request.get("window_id")
+            if (env.get("UNICONNECT_WINDOW_ID") not in (None, "", self.request.get("window_id"))
                     or env.get("TMUX_PANE") != pane.get("pane")):
                 return False
         return (all(key in binding and proof.get(key) == binding[key] for key in required)
@@ -1548,6 +1550,8 @@ class TargetWorker:
         action = self.request["action"]
         if action == "inspect":
             return self.inspect()
+        if action == "adopt":
+            return self.adopt_antigravity()
         if action == "start":
             return self.start()
         if action == "status":
@@ -1581,6 +1585,160 @@ class TargetWorker:
             finally:
                 os.close(descriptor)
         raise Unavailable("no_soportado")
+
+    def adopt_antigravity(self):
+        """Request a one-shot native statusLine binding for one explicitly selected pane."""
+        if self.request.get("provider") != "agy":
+            raise Unavailable("no_soportado")
+        expected_id = self.request.get("expected_session_id")
+        expected_cwd = self.request.get("expected_cwd")
+        window_id = self.request.get("window_id")
+        if (not isinstance(expected_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", expected_id)
+                or not isinstance(expected_cwd, str) or not Path(expected_cwd).is_absolute()
+                or not isinstance(window_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", window_id)):
+            raise Unavailable("identidad_ambigua")
+        pane, root, mode, hook = self.pane()
+        if mode != "0":
+            raise Unavailable("dialogo_desconocido")
+        children = self.descendants(root["pid"])
+        matches = [process for process in children.values() if self.is_provider("agy", process["argv"])]
+        if len(matches) != 1:
+            raise Unavailable("identidad_ambigua")
+        process = matches[0]
+        try:
+            raw = (self.proc / str(process["pid"]) / "environ").read_bytes()
+            if len(raw) > 1048576:
+                raise Unavailable("no_soportado")
+            env = dict(item.split("=", 1) for item in raw.decode(errors="replace").split("\0") if "=" in item)
+        except OSError:
+            raise Unavailable("generacion_cambiada") from None
+        if (env.get("TMUX_PANE") != pane["pane"]
+                or env.get("UNICONNECT_WINDOW_ID") not in (None, "", window_id)
+                or process["cwd"] != expected_cwd):
+            raise Unavailable("identidad_ambigua")
+        explicit = []
+        argv = process["argv"]
+        index = 1
+        while index < len(argv):
+            option, separator, value = argv[index].partition("=")
+            if option == "--conversation":
+                explicit.append(value if separator else argv[index + 1] if index + 1 < len(argv) else "")
+                index += 1 if separator else 2
+            else:
+                index += 1
+        if explicit != [expected_id]:
+            raise Unavailable("identidad_ambigua")
+        # Adoption itself does not close or relaunch the client. After the
+        # confirmed statusLine control command, its live native status must prove
+        # the effective model and permissions before relaunch planning admits it.
+        options = self.tmux("display-message", "-p", "-t", pane["pane"],
+            "#{@uniconnect_native_generation}\t#{@uniconnect_native_identity}\t#{@uniconnect_native_revision}"
+            "\t#{@uniconnect_adopt_request}\t#{@uniconnect_adopt_nonce}|UC_ADOPT_OPTIONS_END")
+        if not options.endswith("|UC_ADOPT_OPTIONS_END"):
+            raise Unavailable("host_inaccesible")
+        current = options.removesuffix("|UC_ADOPT_OPTIONS_END").split("\t", 4)
+        if len(current) != 5:
+            raise Unavailable("host_inaccesible")
+        if any(current):
+            # A previous successful adoption is idempotent only if its fresh
+            # proof identifies this exact stored window and conversation.
+            try:
+                proof = json.loads(current[1])
+                runtime = self.inspect()
+                if (current[0] == proof.get("generation") and current[2]
+                        and proof.get("window_id") == window_id and runtime.get("effective_id") == expected_id):
+                    return {"state": "verificado", "effective_id": expected_id}
+            except (ValueError, Unavailable, KeyError, TypeError):
+                pass
+            raise Unavailable("identidad_ambigua")
+
+        nonce = uuid.uuid4().hex
+        adoption = {"version": 1, "nonce": nonce, "window_id": window_id, "session_id": expected_id,
+                    "pane": pane["pane"], "pane_pid": pane["pane_pid"],
+                    "tmux_session_id": pane["session"], "agent_pid": process["pid"],
+                    "agent_start": process["start"], "cwd": expected_cwd, "requested_at": time.time()}
+        command = (shlex.join(["set-option", "-p", "-t", pane["pane"], AGY_ADOPT_REQUEST,
+                               json.dumps(adoption, separators=(",", ":"))]) + " ; " +
+                   shlex.join(["set-option", "-p", "-t", pane["pane"], AGY_ADOPT_NONCE, nonce]) +
+                   " ; display-message -p UC_ADOPTION_REQUESTED")
+        condition = ("#{&&:#{==:#{@uniconnect_native_generation},},#{==:#{@uniconnect_native_identity},},"
+                     "#{==:#{@uniconnect_native_revision},},#{==:#{" + AGY_ADOPT_REQUEST + "},},"
+                     "#{==:#{" + AGY_ADOPT_NONCE + "},}}")
+        if self.tmux("if-shell", "-F", "-t", pane["pane"], condition, command,
+                     "display-message -p UC_ADOPTION_REJECTED") != "UC_ADOPTION_REQUESTED":
+            raise Unavailable("generacion_cambiada")
+
+        adopted = False
+        try:
+            # Antigravity may have loaded its statusLine command before UniConnect
+            # refreshed settings.json. In the explicitly confirmed adoption flow,
+            # enable the documented live TUI command once so the new hook can emit
+            # a fresh native proof. Never type it into a draft or changed pane.
+            deadline = self.clock() + 8
+            while True:
+                if self.pane()[0] != pane or not self.same_process(process):
+                    raise Unavailable("generacion_cambiada")
+                initial = self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines()
+                try:
+                    composer = self.require_empty_composer({"pane": pane})
+                except Unavailable as error:
+                    if error.cause != "dialogo_desconocido" or self.clock() >= deadline:
+                        raise
+                    time.sleep(0.1)
+                    continue
+                if self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines() != initial:
+                    if self.clock() >= deadline:
+                        raise Unavailable("generacion_cambiada")
+                    time.sleep(0.1)
+                    continue
+                row = int(self.tmux("display-message", "-p", "-t", pane["pane"], "#{cursor_y}"))
+                if row < len(initial):
+                    break
+                raise Unavailable("dialogo_desconocido")
+            self.tmux("send-keys", "-t", pane["pane"], "-l", "--", "/statusline enable")
+            typed = self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines()
+            if (row >= len(typed)
+                    or not re.fullmatch(r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*", typed[row])
+                    or typed[row + 1:] != composer["tail"]):
+                raise Unavailable("dialogo_desconocido")
+            if (self.pane()[0] != pane or not self.same_process(process)
+                    or self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines() != typed):
+                raise Unavailable("generacion_cambiada")
+            self.tmux("send-keys", "-t", pane["pane"], "Enter")
+
+            deadline = self.clock() + 16
+            while self.clock() < deadline:
+                try:
+                    proof = self.inspect()
+                    if (proof.get("pane") == pane and proof.get("effective_id") == expected_id
+                            and proof.get("pid") == process["pid"]):
+                        try:
+                            self.require_empty_composer(proof)
+                        except Unavailable as error:
+                            if error.cause in ("dialogo_desconocido", "permisos", "tareas_de_fondo"):
+                                if error.cause != "dialogo_desconocido":
+                                    raise
+                                time.sleep(0.1)
+                                continue
+                            time.sleep(0.1)
+                            continue
+                        adopted = True
+                        return {"state": "verificado", "effective_id": expected_id}
+                except Unavailable as error:
+                    if error.cause in ("dialogo_desconocido", "permisos", "tareas_de_fondo"):
+                        raise
+                    time.sleep(0.2)
+                except (OSError, ProcessLookupError):
+                    time.sleep(0.2)
+            raise Unavailable("dialogo_desconocido")
+        finally:
+            if not adopted:
+                clear = (shlex.join(["set-option", "-u", "-p", "-t", pane["pane"], AGY_ADOPT_REQUEST]) + " ; " +
+                         shlex.join(["set-option", "-u", "-p", "-t", pane["pane"], AGY_ADOPT_NONCE]) +
+                         " ; display-message -p UC_ADOPTION_EXPIRED")
+                self.tmux("if-shell", "-F", "-t", pane["pane"],
+                          "#{==:#{" + AGY_ADOPT_NONCE + "}," + nonce + "}", clear,
+                          "display-message -p UC_ADOPTION_SUPERSEDED")
 
 
 if __name__ == "__main__":

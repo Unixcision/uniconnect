@@ -41,6 +41,7 @@ ACTIONS = (
     Action("reconnect", "Reconnect", "<Primary><Shift>r"),
     Action("reconnect_all", "Reconnect all SSH", "<Primary><Alt>r"),
     Action("relaunch_window", "Relanzar IA de esta ventana…"),
+    Action("adopt_antigravity_window", "Vincular GEMINI abierta de esta ventana…"),
     Action("relaunch_workspace", "Relanzar IA de este espacio…"),
     Action("relaunch_machine", "Relanzar IA de este equipo…"),
     Action("continue_window", "Reabrir y continuar Codex pausado de esta ventana…"),
