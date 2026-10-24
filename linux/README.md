@@ -115,25 +115,25 @@ desde el espectador también depende de que el servidor VNC concreto entregue su
 texto entrante al portapapeles GTK; conviene comprobarlo en el equipo de destino.
 Estas opciones pertenecen al adaptador Linux y no cambian macOS.
 
-### Relanzar Codex
+### Relanzar IA
 
 **Relanzar IA** permite elegir la ventana actual, todas las ventanas de su
-espacio de trabajo o las del equipo. El plan enumera los objetivos y avisa si
-Codex está trabajando o tiene terminales de fondo. **Aplicar** autoriza
-interrumpir ese trabajo, cerrar Codex con `/exit` y reanudar su conversación en
-el mismo panel y carpeta; la conversación y los archivos ya guardados se
-conservan. Un borrador, un diálogo no reconocido o un cambio de identidad o
-configuración bloquea el cierre. **Reconectar** solo vuelve a conectar el
-terminal a tmux; no reinicia la IA.
+espacio de trabajo o las del equipo. El plan enumera los objetivos y explica
+por qué excluye cada ventana. **Aplicar** afecta únicamente a las admitidas y
+reanuda la misma conversación en el mismo panel y carpeta, conservando la
+configuración efectiva. Un borrador, un diálogo no reconocido o un cambio de
+identidad o configuración bloquea el cierre. **Reconectar** solo vuelve a
+conectar el terminal a tmux; no reinicia la IA.
 
 Guía rápida: abre el menú contextual de una ventana y elige **Relanzar IA**.
 Selecciona exactamente uno de estos tres alcances: **ventana**, **espacio de
 trabajo** o **equipo** (todo UniConnect en este equipo). «Global» y «equipo» no
 son dos alcances distintos. Revisa la vista previa, que separa las ventanas que
 puede recuperar de las excluidas y explica el motivo; **Aplicar** solo afecta a
-las admitidas. Hoy el relanzador Linux admite Codex; no fuerza Claude, Gemini ni
-otros estados no reconocidos. **Reabrir y continuar Codex pausado** usa los
-mismos tres alcances; solo incluye una sesión con aviso de límite de uso reciente,
+las admitidas. Linux admite Codex y Antigravity cuando la ventana aporta identidad,
+actividad y configuración nativas verificables; no fuerza Claude ni otros estados
+no reconocidos. **Reabrir y continuar Codex pausado** usa los mismos tres alcances;
+solo incluye una sesión con aviso de límite de uso reciente,
 sin actividad ni borrador. Conserva la conversación al reabrirla y envía
 «continua» una sola vez únicamente si la pantalla limpia conserva el aviso de
 cuota. El resultado solo queda verificado cuando la misma sesión muestra que
@@ -156,8 +156,9 @@ Para una ventana GEMINI/Antigravity ya abierta que UniConnect no puede vincular,
 elige en su menú contextual **Vincular GEMINI abierta de esta ventana…**. Tras
 confirmarlo, UniConnect actualiza únicamente sus propios hooks/statusLine,
 comprueba que el pane contiene una sola conversación cuyo ID y carpeta coinciden
-con la ficha guardada y, con el compositor vacío, envía el comando de control
-documentado `/statusline enable` a esa sesión para activar el hook sin reiniciarla.
+con la ficha guardada y, con el compositor vacío y sin un estado visible de trabajo,
+envía el comando de control documentado `/statusline enable` a esa sesión para
+activar el hook sin reiniciarla.
 Verifica el texto exacto antes de enviarlo; nunca lo transforma en un prompt de IA.
 Si la status line no confirma un estado reciente e inactivo, la ventana sigue
 fuera del plan de relanzado; cuando la vinculación se verifica, usa **Relanzar IA
