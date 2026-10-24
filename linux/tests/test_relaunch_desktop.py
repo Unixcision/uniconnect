@@ -48,7 +48,7 @@ class DesktopModelTests(unittest.TestCase):
                                  background=lambda *args: self.fail("Cancelled preview must not apply"))
         desktop = RelaunchDesktop.__new__(RelaunchDesktop)
         desktop.window = window
-        desktop.confirm_plan = lambda detail, names, eligible: calls.append((names, eligible)) or False
+        desktop.confirm_plan = lambda detail, names, eligible, **kwargs: calls.append((names, eligible)) or False
         desktop.preview({"targets": [{"label": "TotalVO · TVO", "provider": "codex", "active": True},
                                      {"label": "Idle", "provider": "codex"}], "excluded": []})
         self.assertEqual(calls, [(["• TotalVO · TVO: uniconnect.relaunch.warning.active_codex", "• Idle"], True)])
