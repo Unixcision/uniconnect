@@ -706,6 +706,13 @@ class TargetIntegrationTests(unittest.TestCase):
                     result = adapter.execute(candidate, "agent.relaunch", proof, str(uuid.uuid4()),
                                              phases.append, lambda: True)
                     if result != {"state": "verificado", "effective_id": native}:
+                        try:
+                            post_probe = adapter.probe(candidate, "agent.relaunch")
+                            post_probe_summary = {key: post_probe.get(key) == proof.get(key) for key in (
+                                "pane", "effective_id", "configuration", "native_configuration")}
+                            post_probe_summary["generation_changed"] = post_probe.get("generation") != proof.get("generation")
+                        except RelaunchUnavailable as error:
+                            post_probe_summary = {"cause": error.cause}
                         screen = subprocess.run(["tmux", "-L", socket_name, "capture-pane", "-p", "-t", "=fixture:"],
                                                 check=True, capture_output=True, text=True, timeout=5).stdout.splitlines()
                         cursor = subprocess.run(["tmux", "-L", socket_name, "display-message", "-p", "-t",
@@ -764,14 +771,14 @@ class TargetIntegrationTests(unittest.TestCase):
                         self.fail("Antigravity isolated relaunch returned %r; cursor_y=%r; cursor_line=%r; "
                                   "composer_match=%r; rejection_markers=%r; runtime_status=%r; statusline_runs=%r; "
                                   "fixture_processes=%r; fixture_generations=%r; pane_generation_matches_fixture=%r; phases=%r; "
-                                  "managed_at_probe=%r; pane_binding=%r; live_fixture_processes=%r; "
+                                  "managed_at_probe=%r; pane_binding=%r; live_fixture_processes=%r; post_probe=%r; "
                                   "visible_fixture_rows=%r"
                                   % (result, cursor, screen[row] if 0 <= row < len(screen) else None,
                                      bool(0 <= row < len(screen) and re.fullmatch(r"\s*│?\s*[›❯>]\s*│?\s*", screen[row])),
                                      [marker for marker in markers if marker in visible], runtime_summary,
                                      statusline_runs, len(fixture_pids), len(fixture_generations),
                                      pane_generation_matches_fixture, phases, managed_at_probe,
-                                     pane_binding_summary, live_fixture_processes, screen[-16:]))
+                                     pane_binding_summary, live_fixture_processes, post_probe_summary, screen[-16:]))
                     current = adapter.probe(candidate, "agent.relaunch")
                     self.assertEqual(current["pane"], proof["pane"])
                     self.assertNotEqual((current["pid"], current["start"]), (proof["pid"], proof["start"]))
