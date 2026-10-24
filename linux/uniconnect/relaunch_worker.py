@@ -15,6 +15,7 @@ from datetime import datetime
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -33,6 +34,11 @@ except ImportError:
     AgentResumeCatalog = globals()["AgentResumeCatalog"]
 
 UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+# The CLI changelog says v1.2.17 fixed task_count to include timers,
+# recurring jobs and non-shell background work. Earlier versions cannot prove
+# quiescence from the statusline, so they remain visible but not relaunchable.
+AGY_MIN_SAFE_VERSION = (1, 2, 17)
+AGY_STATUS_MAX_AGE_SECONDS = 15
 # Claude's prompt line, with or without the box border of older versions.
 CLAUDE_EXIT_LINE = re.compile(r"\s*│?\s*[›❯>]\s*/exit\s*│?\s*")
 EMPTY_PROMPT_LINE = re.compile(r"\s*│?\s*[›❯>]\s*│?\s*")
@@ -245,6 +251,8 @@ class TargetWorker:
             if ficha.get("status") != "idle":
                 raise Unavailable("dialogo_desconocido")
             return
+        if provider in ("agy", "antigravity"):
+            return self.antigravity_configuration(process, identifier, hook)
         if provider != "codex":
             raise Unavailable("no_soportado")
         paths = set()
@@ -484,6 +492,103 @@ class TargetWorker:
                 raise Unavailable("no_soportado")
         return {key: effective.get(key) for key in ("model", "effort", "cwd", "approval_policy", "sandbox_policy")}
 
+    def antigravity_configuration(self, process, identifier, hook):
+        """Require pane/process-bound recent native idle evidence before AGY exit."""
+        try:
+            proof = json.loads(hook)
+            runtime = proof.get("runtime_status")
+            version = runtime.get("version") if isinstance(runtime, dict) else None
+            version_tuple = tuple(int(part) for part in version.split(".")) if isinstance(version, str) else ()
+            observed = proof.get("observed_at")
+            birth = self.process_birth_bounds(process)
+            now = time.time()
+            if (proof.get("version") != 1 or proof.get("window_id") != self.request.get("window_id")
+                    or proof.get("agent") not in ("agy", "antigravity")
+                    or proof.get("agent_pid") != process["pid"] or proof.get("agent_start") != process["start"]
+                    or proof.get("session_id") != identifier or not isinstance(runtime, dict)
+                    or len(version_tuple) != 3 or version_tuple < AGY_MIN_SAFE_VERSION
+                    or not isinstance(observed, (int, float)) or isinstance(observed, bool) or not math.isfinite(observed)
+                    or observed > now + 2 or now - observed > AGY_STATUS_MAX_AGE_SECONDS
+                    or (birth and observed < birth[0])):
+                raise Unavailable("no_soportado")
+        except (ValueError, TypeError, AttributeError, OverflowError):
+            raise Unavailable("identidad_ambigua") from None
+        if (runtime.get("state") != "idle" or runtime.get("pending_input_count") != 0
+                or runtime.get("tool_confirmation_pending") is not False or runtime.get("task_count") != 0
+                or not isinstance(runtime.get("sandbox_enabled"), bool)):
+            raise Unavailable("dialogo_desconocido")
+        model_id = runtime.get("model_id")
+        if not isinstance(model_id, str) or not model_id.strip() or len(model_id) > 160 or "\0" in model_id:
+            raise Unavailable("no_soportado")
+        effort = runtime.get("effort")
+        if effort is not None and effort not in ("low", "medium", "high", "max"):
+            raise Unavailable("no_soportado")
+        cycle_mode = runtime.get("cycle_mode")
+        if cycle_mode is not None and cycle_mode not in ("accept-edits", "auto", "plan"):
+            raise Unavailable("no_soportado")
+        return {"model": model_id, "effort": effort, "cycle_mode": cycle_mode,
+                "sandbox_enabled": runtime["sandbox_enabled"], "version": version}
+
+    @staticmethod
+    def preserve_antigravity_configuration(argv, configuration):
+        """Resume the observed model/mode/sandbox state; never infer a permission upgrade."""
+        if not isinstance(configuration, dict):
+            raise Unavailable("no_soportado")
+        arguments = list(argv[1:])
+        values = {"--model": configuration.get("model"), "--effort": configuration.get("effort"),
+                  "--mode": configuration.get("cycle_mode")}
+        actual, index = {}, 0
+        sandbox = False
+        while index < len(arguments):
+            token = arguments[index]
+            option, separator, inline = token.partition("=")
+            if option in values:
+                value = inline if separator else (arguments[index + 1] if index + 1 < len(arguments) else None)
+                if option in actual:
+                    raise Unavailable("no_soportado")
+                actual[option] = value
+                index += 1 if separator else 2
+                continue
+            if token == "--sandbox":
+                sandbox = True
+            index += 1
+        added = []
+        for option, expected in values.items():
+            if expected is None:
+                if option in actual:
+                    raise Unavailable("no_soportado")
+            elif option in actual:
+                if actual[option] != expected:
+                    raise Unavailable("no_soportado")
+            else:
+                added.extend((option, expected))
+        sandbox_enabled = configuration.get("sandbox_enabled")
+        if sandbox and sandbox_enabled is not True:
+            raise Unavailable("no_soportado")
+        if sandbox_enabled is True and not sandbox:
+            added.append("--sandbox")
+        elif sandbox_enabled is not False:
+            raise Unavailable("no_soportado")
+        # Resume selectors can safely follow options; keeping them adjacent
+        # makes the effective command easy to reason about and test.
+        return [argv[0], *added, *arguments]
+
+    def managed_antigravity(self, env, process, pane, hook):
+        """Rewrap only a pane whose current native proof matches its live launch binding."""
+        try:
+            binding = json.loads(env.get("UNICONNECT_NATIVE_BINDING", ""))
+            proof = json.loads(hook)
+        except (ValueError, TypeError):
+            return False
+        required = ("version", "window_id", "agent", "generation", "tmux_pane", "pane_pid",
+                    "tmux_session_id", "agent_pid", "agent_start")
+        return (all(key in binding and proof.get(key) == binding[key] for key in required)
+                and binding.get("agent") == "agy" and binding.get("window_id") == self.request.get("window_id")
+                and binding.get("tmux_pane") == pane.get("pane")
+                and binding.get("pane_pid") == pane.get("pane_pid")
+                and binding.get("agent_pid") == process.get("pid")
+                and binding.get("agent_start") == process.get("start"))
+
     @staticmethod
     def preserve_resume_permissions(provider, native_configuration, resume):
         """Reject when Codex's forced no-prompt dialect would widen its access."""
@@ -656,7 +761,7 @@ class TargetWorker:
             generation = int(self.digest(pane)[:12], 16)
             return {"key": "linux:" + self.digest(pane), "generation": generation, "pane": pane}
         provider = self.request.get("provider")
-        if provider not in ("codex", "claude") or provider not in self.request["catalog"]:
+        if provider not in ("codex", "claude", "agy") or provider not in self.request["catalog"]:
             raise Unavailable("no_soportado")
         if self.request.get("verb") in ("agent.continue", "agent.recover") and provider != "codex":
             raise Unavailable("no_soportado")
@@ -684,10 +789,11 @@ class TargetWorker:
             needs_quota = self.request.get("verb") in ("agent.continue", "agent.recover") and not self.request.get("resumed")
             if needs_quota and not self.codex_quota_pause(lines):
                 raise Unavailable("no_soportado")
-            if self.request.get("action") == "inspect":
-                self.require_empty_composer({"pane": pane}, allow_active=allow_active)
         else:
             self.quiescent_configuration(provider, process, effective, hook)
+        if self.request.get("action") == "inspect":
+            self.require_empty_composer({"pane": pane}, allow_active=provider == "codex"
+                                         and self.request.get("verb") == "agent.relaunch")
         launcher = None
         # Only the exact bundled recovery launcher has a known wait/restart
         # protocol. All other supervisors remain excluded.
@@ -701,6 +807,8 @@ class TargetWorker:
                     and root["argv"][2].endswith('exec "${SHELL:-/bin/sh}" -l')):
                 raise Unavailable("no_soportado")
         resume = self.resume_arguments(provider, [process["executable"], *process["argv"][1:]], effective, self.request["catalog"])
+        if provider == "agy":
+            resume = self.preserve_antigravity_configuration(resume, native_configuration)
         self.preserve_resume_permissions(provider, native_configuration, resume)
         generation = int(self.digest({"pane": pane, "pid": process["pid"], "start": process["start"], "id": effective})[:12], 16)
         configuration = {"cwd": process["cwd"], "argv": resume}
@@ -919,6 +1027,8 @@ class TargetWorker:
         managed = any(self.managed_hook(self.request["provider"], option.split("=", 1)[0],
                       option.split("=", 1)[1] if "=" in option else (original[index + 1] if index + 1 < len(original) else ""))
                       for index, option in enumerate(original) if option.split("=", 1)[0] in ("-c", "--config", "--settings"))
+        if self.request["provider"] == "agy":
+            managed = self.managed_antigravity(env, process, proof["pane"], hook=self.pane()[3])
         capsule = {"argv": resume, "env": env, "cwd": process["cwd"],
                    "agent": self.request["provider"], "window_id": self.request["window_id"], "managed_identity": managed}
         if not hasattr(os, "memfd_create"):
@@ -954,6 +1064,8 @@ class TargetWorker:
         owned = self.descendants(process["pid"])
         if self.request.get("provider") == "claude":
             self.exit_claude(proof, process, journal, events)
+        elif self.request.get("provider") == "agy":
+            self.exit_antigravity(proof, process, journal)
         else:
             self.exit_codex(proof, process, journal, events)
         deadline = self.clock() + 5
@@ -1201,6 +1313,28 @@ class TargetWorker:
         _, found, after = screen.partition("Resume this session with")
         match = UUID.search(after) if found else None
         return match.group(0).lower() if match else None
+
+    def exit_antigravity(self, proof, process, journal):
+        """Use documented Ctrl+D only after proving the exact AGY pane is idle and empty."""
+        if self.request.get("provider") != "agy" or not hasattr(os, "pidfd_open"):
+            raise Unavailable("no_soportado")
+        descriptor = os.pidfd_open(process["pid"])
+        try:
+            if not self.same_target(self.inspect(), proof):
+                raise Unavailable("generacion_cambiada")
+            self.require_empty_composer(proof)
+            # The first read can race a state change. Revalidate identity and
+            # composer immediately before Ctrl+D; never send it into a draft.
+            if not self.same_target(self.inspect(), proof):
+                raise Unavailable("generacion_cambiada")
+            self.require_empty_composer(proof)
+            self.write(journal, {"state": "cerrando"})
+            self.tmux("send-keys", "-t", proof["pane"]["pane"], "C-d")
+            ready, _, _ = select.select([descriptor], [], [], 75)
+            if not ready:
+                raise Unavailable("dialogo_desconocido")
+        finally:
+            os.close(descriptor)
 
     def exit_claude(self, proof, process, journal, events):
         """D7: type /exit literally, check the line, Enter, and wait for Claude to leave by itself.

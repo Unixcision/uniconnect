@@ -18,11 +18,9 @@ from .relaunch_worker import TargetWorker
 from .transport import Transport
 
 
-# What this machine knows how to relaunch (contracts/relaunch-v1/proveedores.json, D7): the
-# capability plus one relaunch.v1.<provider>.<kind> token per supported cell. The same worker
-# runs locally and on an SSH box, so both kinds are announced. Only Codex for now: the Claude
-# dialect is written (exit_claude) but relaunching closes the agent, and it has never run against
-# a real Claude, so it stays out of the plan until a live test.
+# Public capability stays off until Antigravity passes an end-to-end live
+# close/reopen check. The worker already has the guarded dialect, but it is not
+# announced or offered in a plan yet.
 RELAUNCHABLE = ("codex",)
 CAPABILITIES = ("relaunch.v1",) + tuple(f"relaunch.v1.{provider}.{kind}"
                                         for provider in RELAUNCHABLE for kind in ("local", "ssh"))
@@ -95,6 +93,8 @@ class RelaunchAgents:
         if verb != "transport.reconnect" and candidate.get("provider") in (None, "", "shell", "terminal"):
             # Ventana sin IA: se excluye con su causa, sin abrir SSH ni tocar el destino.
             raise RelaunchUnavailable("sin_ia")
+        if verb in ("agent.continue", "agent.recover") and candidate.get("provider") != "codex":
+            raise RelaunchUnavailable("no_soportado")
         if verb != "transport.reconnect" and candidate.get("provider") not in RELAUNCHABLE:
             # Una IA que este equipo no relanza aún (ver RELAUNCHABLE): fuera, sin tocar el destino.
             raise RelaunchUnavailable("no_soportado")

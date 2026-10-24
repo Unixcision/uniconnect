@@ -5,6 +5,7 @@ transport. It does not install files or read provider transcripts/configuration.
 """
 
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -60,21 +61,40 @@ def agy_status(payload, event):
     if event == "statusline":
         state = payload.get("agent_state")
         model = payload.get("model") if isinstance(payload.get("model"), dict) else {}
+        model_id = model.get("id")
         model_name = model.get("display_name") or model.get("id")
         effort = model.get("effort")
-        pending = payload.get("pending_input_count")
-        tasks = payload.get("task_count")
+        # Antigravity omits pending/task counts when they are zero, and omits
+        # tool_confirmation_pending unless a confirmation is visible.
+        pending = payload.get("pending_input_count", 0)
+        tasks = payload.get("task_count", 0)
         confirmation = payload.get("tool_confirmation_pending", False)
         quota = payload.get("quota")
-        quota_paused = isinstance(quota, dict) and any(
-            isinstance(bucket, dict) and (bucket.get("disabled") is True
-                or (isinstance(bucket.get("remaining_fraction"), (int, float))
-                    and bucket["remaining_fraction"] <= 0)
-                or (isinstance(bucket.get("remaining_amount"), (int, float))
-                    and bucket["remaining_amount"] <= 0)) for bucket in quota.values())
+        buckets = list(quota.values()) if isinstance(quota, dict) else []
+        exhausted = []
+        for bucket in buckets:
+            if not isinstance(bucket, dict):
+                exhausted.append(None)
+                continue
+            if bucket.get("disabled") is True:
+                exhausted.append(True)
+                continue
+            values = [bucket.get(key) for key in ("remaining_fraction", "remaining_amount")
+                      if isinstance(bucket.get(key), (int, float)) and not isinstance(bucket.get(key), bool)
+                      and math.isfinite(bucket.get(key))]
+            exhausted.append(any(value <= 0 for value in values) if values else None)
+        # One depleted model bucket is not proof that the account is blocked if
+        # another bucket can still accept work. Unknown buckets fail closed.
+        quota_paused = (True if exhausted and all(value is True for value in exhausted) else
+                        False if any(value is False for value in exhausted) else None)
+        sandbox = payload.get("sandbox") if isinstance(payload.get("sandbox"), dict) else {}
+        sandbox_enabled = sandbox.get("enabled")
+        cycle_mode = payload.get("cycle_mode")
+        version = payload.get("version")
     else:
-        model_name, effort = payload.get("modelName"), None
+        model_id, model_name, effort = None, payload.get("modelName"), None
         pending, confirmation, tasks, quota_paused = None, None, None, None
+        sandbox_enabled, cycle_mode, version = None, None, None
         if event == "PreInvocation":
             state = "working"
         elif event == "PostInvocation":
@@ -93,6 +113,8 @@ def agy_status(payload, event):
         state = "unknown"
     if not isinstance(model_name, str) or not model_name.strip() or len(model_name) > 160:
         model_name = None
+    if not isinstance(model_id, str) or not re.fullmatch(r"[A-Za-z0-9._:/-]{1,160}", model_id):
+        model_id = None
     if not isinstance(effort, str) or len(effort) > 32:
         effort = None
     if not isinstance(pending, int) or isinstance(pending, bool) or not 0 <= pending <= 10000:
@@ -101,9 +123,16 @@ def agy_status(payload, event):
         tasks = None
     if not isinstance(confirmation, bool):
         confirmation = None
-    return {"state": state, "model": model_name, "effort": effort, "pending_input_count": pending,
+    if not isinstance(sandbox_enabled, bool):
+        sandbox_enabled = None
+    if cycle_mode not in ("accept-edits", "auto", "plan"):
+        cycle_mode = None
+    if not isinstance(version, str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+        version = None
+    return {"state": state, "model": model_name, "model_id": model_id, "effort": effort, "pending_input_count": pending,
             "tool_confirmation_pending": confirmation, "task_count": tasks, "quota_paused": quota_paused,
-            "fully_idle": payload.get("fullyIdle") is True if event == "Stop" else None}
+            "fully_idle": payload.get("fullyIdle") is True if event == "Stop" else None,
+            "sandbox_enabled": sandbox_enabled, "cycle_mode": cycle_mode, "version": version}
 
 
 def signal(payload, event=None):
@@ -151,7 +180,15 @@ def signal(payload, event=None):
             retired = [*retired, old][-64:]
         runtime = agy_status(payload, event) if binding["agent"] in ("agy", "antigravity") else None
         if old == session and previous.get("runtime_status") == runtime:
-            return
+            if binding["agent"] not in ("agy", "antigravity") or event != "statusline":
+                return
+            # Refresh an unchanged statusLine snapshot occasionally. Otherwise a quiet
+            # pane could retain an old `idle` observation indefinitely and later appear
+            # eligible for a close even if Antigravity stopped rendering updates.
+            last_observed = previous.get("observed_at")
+            if (isinstance(last_observed, (int, float)) and not isinstance(last_observed, bool)
+                    and math.isfinite(last_observed) and time.time() - last_observed < 10):
+                return
         proof = {**binding, "session_id": session, "retired_ids": retired,
                  "observed_at": time.time(), "emitted_at_ns": emitted}
         if runtime is not None:
@@ -212,9 +249,13 @@ def launch(request):
             settings = {"hooks": {"SessionStart": [{"matcher": "", "hooks": [
                 {"type": "command", "command": shlex.join(hook), "timeout": 3}]}]}}
             argv += ["--settings", compact(settings)]
-        else:
-            # notify is scoped to this invocation. No global TOML is rewritten.
+        elif binding["agent"] == "codex":
+            # Codex notify is scoped to this invocation. No global TOML is rewritten.
             argv += ["-c", "notify=" + compact(hook)]
+        # Antigravity CLI hooks/statusLine are loaded from its documented
+        # global/workspace config files, not an invocation flag. Keep the
+        # pane-bound identity in the process environment and let its opt-in
+        # statusLine publish metadata; never pass Codex's notify syntax to agy.
     except Exception:
         # Identity integration is optional. A missing Python/tmux facility must
         # never prevent the user's agent from running in its existing terminal.

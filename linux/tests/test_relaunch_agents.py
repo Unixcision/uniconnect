@@ -12,6 +12,7 @@ import tempfile
 import time
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 import uuid
 
 from uniconnect.relaunch_agents import RelaunchAgents, RelaunchUnavailable
@@ -289,12 +290,62 @@ class ClaudeDialectTests(unittest.TestCase):
             self.worker.require_empty_composer({"pane": {"pane": "%1"}})
         self.assertEqual(trust.exception.cause, "confianza_carpeta")
 
-    def test_other_providers_are_still_excluded_before_touching_anything(self):
-        worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "agy",
-                               "catalog": AgentResumeCatalog().providers}, proc=self.proc)
-        with self.assertRaises(Unavailable) as error:
-            worker.quiescent_configuration("agy", self.process, "x", "")
-        self.assertEqual(error.exception.cause, "no_soportado")
+
+class AntigravityDialectTests(unittest.TestCase):
+    SESSION = "4a1ec7f2-126f-4e63-a347-92ab4576fdda"
+
+    def setUp(self):
+        self.worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "agy",
+                                    "window_id": "window-1", "catalog": AgentResumeCatalog().providers})
+        self.process = {"pid": 4242, "start": "555", "argv": ["agy", "--conversation", self.SESSION]}
+        self.binding = {"version": 1, "window_id": "window-1", "agent": "agy", "generation": "a" * 32,
+                        "tmux_pane": "%1", "pane_pid": 100, "tmux_session_id": "$1",
+                        "agent_pid": 4242, "agent_start": "555", "session_id": self.SESSION,
+                        "observed_at": time.time(), "runtime_status": {"state": "idle", "model": "Gemini",
+                            "model_id": "gemini-fixture", "effort": "high", "pending_input_count": 0,
+                            "tool_confirmation_pending": False, "task_count": 0, "sandbox_enabled": False,
+                            "cycle_mode": "plan", "version": "1.2.17"}}
+        self.hook = json.dumps(self.binding)
+
+    def test_relaunch_requires_bound_idle_status_and_known_task_count_version(self):
+        expected = {"model": "gemini-fixture", "effort": "high", "cycle_mode": "plan",
+                    "sandbox_enabled": False, "version": "1.2.17"}
+        with patch.object(TargetWorker, "process_birth_bounds", return_value=(0, 0)):
+            self.assertEqual(self.worker.quiescent_configuration("agy", self.process, self.SESSION, self.hook), expected)
+            for change, cause in (({"window_id": "other"}, "no_soportado"),
+                                  ({"runtime_status": {**self.binding["runtime_status"], "version": "1.2.14"}}, "no_soportado"),
+                                  ({"runtime_status": {**self.binding["runtime_status"], "state": "working"}}, "dialogo_desconocido"),
+                                  ({"runtime_status": {**self.binding["runtime_status"], "task_count": 1}}, "dialogo_desconocido"),
+                                  ({"runtime_status": {**self.binding["runtime_status"], "pending_input_count": 1}}, "dialogo_desconocido"),
+                                  ({"runtime_status": {**self.binding["runtime_status"], "tool_confirmation_pending": True}}, "dialogo_desconocido")):
+                value = {**self.binding, **change}
+                with self.subTest(change=change), self.assertRaises(Unavailable) as error:
+                    self.worker.quiescent_configuration("agy", self.process, self.SESSION, json.dumps(value))
+                self.assertEqual(error.exception.cause, cause)
+            stale = {**self.binding, "observed_at": time.time() - 30}
+            with self.assertRaises(Unavailable) as error:
+                self.worker.quiescent_configuration("agy", self.process, self.SESSION, json.dumps(stale))
+            self.assertEqual(error.exception.cause, "no_soportado")
+
+    def test_resume_reconstructs_native_model_effort_mode_and_sandbox_only(self):
+        catalog = AgentResumeCatalog().providers
+        argv = TargetWorker.resume_arguments("agy", ["/usr/bin/agy", "--conversation", self.SESSION,
+            "--project", "/work"], self.SESSION, catalog)
+        result = TargetWorker.preserve_antigravity_configuration(argv, {
+            "model": "Gemini 4 Argon (Medium)", "effort": "high", "cycle_mode": "accept-edits",
+            "sandbox_enabled": True})
+        self.assertEqual(result, ["/usr/bin/agy", "--model", "Gemini 4 Argon (Medium)", "--effort", "high",
+            "--mode", "accept-edits", "--sandbox", "--conversation", self.SESSION, "--project", "/work"])
+        with self.assertRaises(Unavailable):
+            TargetWorker.preserve_antigravity_configuration(["agy", "--sandbox", "--conversation", self.SESSION],
+                {"model": "model", "effort": None, "cycle_mode": None, "sandbox_enabled": False})
+
+    def test_binding_must_match_the_live_managed_pane_before_rewrapping(self):
+        env = {"UNICONNECT_NATIVE_BINDING": json.dumps({key: self.binding[key] for key in
+            ("version", "window_id", "agent", "generation", "tmux_pane", "pane_pid", "tmux_session_id", "agent_pid", "agent_start")})}
+        pane = {"pane": "%1", "pane_pid": 100}
+        self.assertTrue(self.worker.managed_antigravity(env, self.process, pane, self.hook))
+        self.assertFalse(self.worker.managed_antigravity(env, self.process, {**pane, "pane": "%2"}, self.hook))
 
 
 class FleetTests(unittest.TestCase):
@@ -517,9 +568,88 @@ int main(int argc, char **argv) {
 '''
 
 
+AGY_IDLE_FIXTURE = r'''
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(void) {
+    const char *statusline = getenv("UNICONNECT_AGY_TEST_STATUSLINE");
+    if (statusline) {
+        FILE *pipe = popen(statusline, "w");
+        if (pipe) {
+            fputs("{\"conversation_id\":\"4a1ec7f2-126f-4e63-a347-92ab4576fdda\",\"agent_state\":\"idle\",\"model\":{\"id\":\"gemini-fixture\",\"display_name\":\"Gemini fixture\",\"effort\":\"high\"},\"version\":\"1.2.17\",\"sandbox\":{\"enabled\":false},\"quota\":{}}", pipe);
+            pclose(pipe);
+        }
+    }
+    puts("Antigravity fixture");
+    printf("\n❯ ");
+    fflush(stdout);
+    while (getchar() != EOF) {}
+    return 0;
+}
+'''
+
+
 @unittest.skipUnless(os.name == "posix" and Path("/proc").exists() and shutil.which("cc") and shutil.which("tmux"),
                      "Needs isolated Linux runner, C compiler and tmux")
 class TargetIntegrationTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("tmux") and shutil.which("cc"),
+                         "Linux tmux and C compiler required")
+    def test_antigravity_closes_only_empty_idle_pane_and_reopens_same_conversation(self):
+        from uniconnect.antigravity_integration import AntigravityIntegration
+        from uniconnect.agent_identity_hook import BOOTSTRAP
+
+        with tempfile.TemporaryDirectory(prefix="uc-relaunch-agy-") as directory:
+            root = Path(directory)
+            home = root / "home"
+            home.mkdir()
+            integration = AntigravityIntegration(home=home)
+            integration.enable()
+            executable = root / "agy"
+            subprocess.run(["cc", "-x", "c", "-", "-o", str(executable)], input=AGY_IDLE_FIXTURE,
+                           text=True, capture_output=True, check=True, timeout=30)
+            socket_name = "uc-agy-" + uuid.uuid4().hex[:12]
+            native = "4a1ec7f2-126f-4e63-a347-92ab4576fdda"
+            statusline = shlex.split(json.loads(integration.settings_path.read_text())["statusLine"]["command"])
+            statusline_command = shlex.join(statusline)
+            env = dict(os.environ, HOME=str(home), UNICONNECT_AGY_TEST_STATUSLINE=statusline_command)
+            subprocess.run(["tmux", "-L", socket_name, "new-session", "-d", "-s", "fixture", "-c", directory,
+                            "/bin/bash", "--noprofile", "--norc", "-i"], check=True, capture_output=True,
+                           timeout=5, env=env)
+            helper = base64.b64encode(__import__("zlib").compress(
+                Path(__file__).parents[1].joinpath("uniconnect/agent_identity_hook.py").read_bytes(), 9)).decode()
+            request = json.dumps({"argv": [str(executable), "--conversation", native], "agent": "agy",
+                                  "window_id": "fixture-window"})
+            launcher = ("UNICONNECT_NATIVE_HELPER=" + shlex.quote(helper) + " "
+                        + shlex.join(["python3", "-c", BOOTSTRAP, "launch", request]))
+            subprocess.run(["tmux", "-L", socket_name, "send-keys", "-t", "=fixture:", "-l", launcher + "\n"],
+                           check=True, capture_output=True, timeout=5)
+            candidate = {"label": "Fixture · Antigravity", "provider": "agy", "connection": None,
+                         "record": {"id": "fixture-window", "tmux": "fixture", "tmuxSocket": socket_name}}
+            adapter = RelaunchAgents()
+            with patch("uniconnect.relaunch_agents.RELAUNCHABLE", ("codex", "agy")):
+                events = TmuxOutputEvents(["tmux", "-L", socket_name], "fixture")
+                try:
+                    deadline = time.monotonic() + 12
+                    while True:
+                        try:
+                            proof = adapter.probe(candidate, "agent.relaunch")
+                            break
+                        except Exception:
+                            self.assertLess(time.monotonic(), deadline)
+                            events.wait(deadline, time.monotonic)
+                    result = adapter.execute(candidate, "agent.relaunch", proof, str(uuid.uuid4()),
+                                             lambda _: None, lambda: True)
+                    self.assertEqual(result, {"state": "verificado", "effective_id": native})
+                    current = adapter.probe(candidate, "agent.relaunch")
+                    self.assertEqual(current["pane"], proof["pane"])
+                    self.assertNotEqual((current["pid"], current["start"]), (proof["pid"], proof["start"]))
+                    self.assertEqual(current["effective_id"], native)
+                    self.assertEqual(current["native_configuration"], proof["native_configuration"])
+                finally:
+                    events.close()
+                    subprocess.run(["tmux", "-L", socket_name, "kill-server"], capture_output=True, timeout=5)
+
     def test_fresh_process_same_conversation_same_pane_and_duplicate_apply(self):
         with tempfile.TemporaryDirectory(prefix="uc-relaunch-runtime-") as directory:
             root = Path(directory)

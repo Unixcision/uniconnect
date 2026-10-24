@@ -17,18 +17,37 @@ class AntigravityMetadataTests(unittest.TestCase):
 
     def test_statusline_snapshot_requires_explicit_idle_and_empty_queues(self):
         payload = {"conversation_id": self.identifier, "agent_state": "idle",
+                   "version": "1.2.17",
                    "pending_input_count": 0, "tool_confirmation_pending": False, "task_count": 0,
                    "model": {"id": "gemini-fixture", "display_name": "Gemini fixture", "effort": "high"},
+                   "cycle_mode": "plan",
                    "sandbox": {"enabled": True},
                    "quota": {"weekly": {"remaining_fraction": 0}}}
         status = agy_status(payload, "statusline")
         self.assertEqual(status["state"], "idle")
         self.assertEqual(status["model"], "Gemini fixture")
+        self.assertEqual(status["model_id"], "gemini-fixture")
         self.assertEqual(status["effort"], "high")
         self.assertEqual(status["pending_input_count"], 0)
         self.assertFalse(status["tool_confirmation_pending"])
         self.assertEqual(status["task_count"], 0)
+        self.assertTrue(status["sandbox_enabled"])
+        self.assertEqual(status["cycle_mode"], "plan")
+        self.assertEqual(status["version"], "1.2.17")
         self.assertTrue(status["quota_paused"])
+
+    def test_missing_zero_counters_are_safe_but_mixed_quota_buckets_are_not_paused(self):
+        payload = {"conversation_id": self.identifier, "agent_state": "idle", "version": "1.2.17",
+                   "model": {"id": "gemini-fixture"}, "sandbox": {"enabled": False},
+                   "quota": {"weekly": {"remaining_fraction": 0},
+                             "fast": {"remaining_fraction": 0.5}}}
+        status = agy_status(payload, "statusline")
+        self.assertEqual(status["pending_input_count"], 0)
+        self.assertEqual(status["task_count"], 0)
+        self.assertIs(status["tool_confirmation_pending"], False)
+        self.assertIs(status["quota_paused"], False)
+        payload["quota"] = {"weekly": {"remaining_fraction": 0}, "fast": {"disabled": True}}
+        self.assertIs(agy_status(payload, "statusline")["quota_paused"], True)
 
     def test_stop_hook_is_idle_only_when_fully_idle_without_error(self):
         self.assertEqual(agy_status({"fullyIdle": True, "error": ""}, "Stop")["state"], "idle")
