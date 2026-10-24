@@ -572,9 +572,8 @@ int main(int argc, char **argv) {
 AGY_IDLE_FIXTURE = r'''
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/select.h>
+#include <pthread.h>
 #include <time.h>
-#include <unistd.h>
 
 static void publish_statusline(void) {
     const char *statusline = getenv("UNICONNECT_AGY_TEST_STATUSLINE");
@@ -587,26 +586,24 @@ static void publish_statusline(void) {
     }
 }
 
+static void *refresh_statusline(void *unused) {
+    (void)unused;
+    for (;;) {
+        struct timespec delay = {.tv_sec = 11, .tv_nsec = 0};
+        while (nanosleep(&delay, &delay) != 0) {}
+        publish_statusline();
+    }
+    return NULL;
+}
+
 int main(void) {
     publish_statusline();
-    time_t last_statusline = time(NULL);
+    pthread_t refresher;
+    if (pthread_create(&refresher, NULL, refresh_statusline, NULL) != 0) return 2;
     puts("Antigravity fixture");
     printf("\n❯ ");
     fflush(stdout);
-    for (;;) {
-        fd_set input;
-        FD_ZERO(&input);
-        FD_SET(STDIN_FILENO, &input);
-        struct timeval timeout = {.tv_sec = 1, .tv_usec = 0};
-        int ready = select(STDIN_FILENO + 1, &input, NULL, NULL, &timeout);
-        if (ready > 0 && getchar() == EOF) break;
-        if (ready < 0) break;
-        time_t now = time(NULL);
-        if (now - last_statusline >= 11) {
-            publish_statusline();
-            last_statusline = now;
-        }
-    }
+    while (getchar() != EOF) {}
     return 0;
 }
 '''
@@ -628,7 +625,7 @@ class TargetIntegrationTests(unittest.TestCase):
             integration = AntigravityIntegration(home=home)
             integration.enable()
             executable = root / "agy"
-            subprocess.run(["cc", "-x", "c", "-", "-o", str(executable)], input=AGY_IDLE_FIXTURE,
+            subprocess.run(["cc", "-pthread", "-x", "c", "-", "-o", str(executable)], input=AGY_IDLE_FIXTURE,
                            text=True, capture_output=True, check=True, timeout=30)
             socket_name = "uc-agy-" + uuid.uuid4().hex[:12]
             native = "4a1ec7f2-126f-4e63-a347-92ab4576fdda"

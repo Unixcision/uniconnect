@@ -1110,7 +1110,20 @@ class TargetWorker:
                     return current
             except (Unavailable, OSError):
                 pass
-            events.wait(deadline, self.clock)
+            if self.request.get("provider") == "agy":
+                # Antigravity can refresh its pane-bound statusLine metadata
+                # by changing tmux options without producing pane output. A
+                # purely output-driven wait would miss fresh idle proof until
+                # the whole deadline expires. Keep the event-driven fast path,
+                # but revalidate at a short bounded interval as well.
+                wait_deadline = min(deadline, self.clock() + 1)
+                try:
+                    events.wait(wait_deadline, self.clock)
+                except Unavailable:
+                    if self.clock() >= deadline:
+                        raise
+            else:
+                events.wait(deadline, self.clock)
 
     @staticmethod
     def codex_quota_pause(lines):
