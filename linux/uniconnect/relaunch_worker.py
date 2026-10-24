@@ -794,7 +794,7 @@ class TargetWorker:
             if needs_quota and not self.codex_quota_pause(lines):
                 raise Unavailable("no_soportado")
         else:
-            self.quiescent_configuration(provider, process, effective, hook)
+            native_configuration = self.quiescent_configuration(provider, process, effective, hook)
         if self.request.get("action") == "inspect":
             self.require_empty_composer({"pane": pane}, allow_active=provider == "codex"
                                          and self.request.get("verb") == "agent.relaunch")

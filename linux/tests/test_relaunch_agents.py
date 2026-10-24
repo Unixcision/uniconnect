@@ -655,31 +655,8 @@ class TargetIntegrationTests(unittest.TestCase):
                                     bound = snapshot.get("agent") == "agy" and snapshot.get("window_id") == "fixture-window"
                                 except (ValueError, TypeError, AttributeError):
                                     metadata, bound = {}, False
-                                stage = ["inspect"]
-                                details = {}
-                                worker = TargetWorker({"action": "inspect", "session": "fixture", "socket": socket_name,
-                                    "provider": "agy", "window_id": "fixture-window",
-                                    "catalog": AgentResumeCatalog().providers, "verb": "agent.relaunch"})
-                                for name in ("pane", "process", "descendants", "native_id", "quiescent_configuration",
-                                             "resume_arguments", "preserve_antigravity_configuration", "require_empty_composer"):
-                                    original_method = getattr(worker, name)
-                                    def trace_method(*args, _name=name, _original=original_method, **kwargs):
-                                        stage[0] = _name
-                                        if _name == "preserve_antigravity_configuration" and len(args) == 2:
-                                            argv, configuration = args
-                                            details["resume_flags"] = [token for token in argv[1:]
-                                                if token.startswith("--") or token in ("high", "gemini-fixture")]
-                                            details["configuration"] = {key: configuration.get(key) for key in
-                                                ("model", "effort", "cycle_mode", "sandbox_enabled", "version")}
-                                        return _original(*args, **kwargs)
-                                    setattr(worker, name, trace_method)
-                                try:
-                                    worker.inspect()
-                                    diagnostic = "direct inspect passed"
-                                except Unavailable as error:
-                                    diagnostic = "%s:%s" % (stage[0], error.cause)
-                                self.fail("Antigravity probe unavailable (%s); %s; status=%r, identity_bound=%r, details=%r"
-                                          % (last_error, diagnostic, metadata, bound, details))
+                                self.fail("Antigravity probe unavailable (%s); status=%r, identity_bound=%r"
+                                          % (last_error, metadata, bound))
                     result = adapter.execute(candidate, "agent.relaunch", proof, str(uuid.uuid4()),
                                              lambda _: None, lambda: True)
                     self.assertEqual(result, {"state": "verificado", "effective_id": native})
