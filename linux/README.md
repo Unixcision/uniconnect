@@ -140,6 +140,15 @@ cuota. El resultado solo queda verificado cuando la misma sesión muestra que
 Codex empezó a trabajar. Un error de inicio de sesión, diálogo, borrador o estado
 sin prueba queda excluido o requiere intervención; no se escribe en esos cuadros.
 
+La telemetría de identidad y estado Antigravity es opt-in y reversible. Para
+revisarla, activarla o retirarla en el usuario Linux actual, usa
+`uniconnect-cli antigravity-integration status|enable|disable`. La activación
+añade un hook con nombre propio y una status line; conserva las demás claves y
+rechaza conflictos con una status line existente. Esto todavía no habilita
+relanzar ni continuar ventanas GEMINI: esa acción permanece excluida hasta que
+UniConnect pueda comprobar también el estado del prompt, los diálogos y una
+salida/reapertura segura.
+
 Para consultar o compartir los datos de una terminal, abre su menú contextual y
 elige **Detalles…**. El modal Linux presenta el proveedor, el identificador
 nativo de conversación cuando se puede probar, el transporte y los datos de
