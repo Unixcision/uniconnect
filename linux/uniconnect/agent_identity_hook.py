@@ -56,6 +56,116 @@ def tmux(*args):
                           text=True, timeout=0.5, check=True).stdout.strip()
 
 
+def _process(pid):
+    """Read only the identity material needed to bind one statusLine child."""
+    base = Path("/proc") / str(pid)
+    parent, started = proc_identity(pid)
+    argv = [part.decode(errors="replace") for part in (base / "cmdline").read_bytes().split(b"\0") if part]
+    environ = dict(item.split("=", 1) for item in
+                   (base / "environ").read_bytes().decode(errors="replace").split("\0") if "=" in item)
+    return {"pid": pid, "parent": parent, "start": started, "argv": argv, "environ": environ,
+            "cwd": os.readlink(base / "cwd")}
+
+
+def _agy_binding(payload, session):
+    """Adopt only the AGY process that emitted this exact pane's native statusLine.
+
+    Older Antigravity processes may predate UniConnect's pane binding while still
+    inheriting the exact UNICONNECT_WINDOW_ID and TMUX_PANE set by its SSH
+    launcher. A statusLine child can safely establish that binding if its
+    ancestor chain reaches the tmux pane process, the native conversation ID
+    agrees with any explicit --conversation argument, and the pane has no
+    competing UniConnect identity.
+    """
+    pane = os.environ.get("TMUX_PANE", "")
+    window_id = os.environ.get("UNICONNECT_WINDOW_ID", "")
+    if (not re.fullmatch(r"%[0-9]+", pane) or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", window_id)
+            or not isinstance(session, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", session)):
+        return None
+    try:
+        end_marker = "|UNICONNECT_END"
+        formatted = tmux("display-message", "-p", "-t", pane,
+                      "#{pane_id}\t#{pane_pid}\t#{session_id}\t#{@uniconnect_native_generation}"
+                      "\t#{@uniconnect_native_identity}\t#{@uniconnect_native_revision}" + end_marker)
+        if not formatted.endswith(end_marker):
+            return None
+        fields = formatted[:-len(end_marker)].split("\t", 5)
+        if len(fields) != 6 or fields[0] != pane or not fields[1].isdigit():
+            return None
+        pane_pid = int(fields[1])
+        if not fields[2].startswith("$") or not fields[2][1:].isdigit():
+            return None
+
+        existing = None
+        if any(fields[index] for index in (3, 4, 5)):
+            # Reuse only a complete binding for this exact window/pane. A
+            # partial or foreign set of options is never overwritten.
+            if not (re.fullmatch(r"[a-f0-9]{32}", fields[3])
+                    and re.fullmatch(r"[a-f0-9]{32}", fields[5]) and fields[4]):
+                return None
+            proof = json.loads(fields[4])
+            keys = ("version", "window_id", "agent", "generation", "tmux_pane", "pane_pid",
+                    "tmux_session_id", "agent_pid", "agent_start")
+            existing = {key: proof.get(key) for key in keys}
+            if (existing["version"] != 1 or existing["window_id"] != window_id or existing["agent"] != "agy"
+                    or existing["generation"] != fields[3] or existing["tmux_pane"] != pane
+                    or existing["pane_pid"] != pane_pid or existing["tmux_session_id"] != fields[2]
+                    or not isinstance(existing["agent_pid"], int)
+                    or not isinstance(existing["agent_start"], str)):
+                return None
+
+        pid, visited, matches = os.getppid(), set(), []
+        reached_pane = False
+        while pid > 1 and pid not in visited and len(visited) < 64:
+            visited.add(pid)
+            current = _process(pid)
+            if current["environ"].get("TMUX_PANE") != pane:
+                return None
+            if current["environ"].get("UNICONNECT_WINDOW_ID") != window_id:
+                return None
+            argv = current["argv"]
+            if argv and Path(argv[0]).name == "agy":
+                explicit, index = [], 1
+                while index < len(argv):
+                    option, separator, inline = argv[index].partition("=")
+                    if option == "--conversation":
+                        value = inline if separator else argv[index + 1] if index + 1 < len(argv) else ""
+                        explicit.append(value)
+                        index += 1 if separator else 2
+                    else:
+                        index += 1
+                if (len(explicit) <= 1 and (not explicit or explicit[0] == session)
+                        and current["cwd"] == payload.get("cwd")):
+                    matches.append(current)
+            if pid == pane_pid:
+                reached_pane = True
+                break
+            pid = current["parent"]
+        if not reached_pane or len(matches) != 1:
+            return None
+        process = matches[0]
+        if existing is not None:
+            if process["pid"] != existing["agent_pid"] or process["start"] != existing["agent_start"]:
+                return None
+            binding = existing
+        else:
+            binding = {"version": 1, "window_id": window_id, "agent": "agy", "generation": uuid.uuid4().hex,
+                       "tmux_pane": pane, "pane_pid": pane_pid, "tmux_session_id": fields[2],
+                       "agent_pid": process["pid"], "agent_start": process["start"]}
+            command = (shlex.join(["set-option", "-p", "-t", pane, GENERATION, binding["generation"]]) + " ; " +
+                       shlex.join(["set-option", "-p", "-t", pane, IDENTITY, compact(binding)]) + " ; " +
+                       shlex.join(["set-option", "-p", "-t", pane, REVISION, uuid.uuid4().hex]) +
+                       " ; display-message -p UC_ADOPTED")
+            condition = ("#{&&:#{==:#{" + GENERATION + "},},#{==:#{" + IDENTITY + "},},"
+                         "#{==:#{" + REVISION + "},}}")
+            if tmux("if-shell", "-F", "-t", pane, condition, command,
+                    "display-message -p UC_REJECTED") != "UC_ADOPTED":
+                return None
+        return binding
+    except (OSError, ValueError, KeyError, IndexError, subprocess.SubprocessError):
+        return None
+
+
 def agy_status(payload, event):
     """Project documented AGY metadata; never persist prompts or transcript content."""
     if event == "statusline":
@@ -137,7 +247,19 @@ def agy_status(payload, event):
 
 def signal(payload, event=None):
     emitted = time.time_ns()
-    binding = json.loads(os.environ["UNICONNECT_NATIVE_BINDING"])
+    session = native_id("agy", payload, event)
+    try:
+        binding = json.loads(os.environ["UNICONNECT_NATIVE_BINDING"])
+    except (KeyError, ValueError):
+        if event != "statusline" or not session:
+            return
+        binding = _agy_binding(payload, session)
+        if binding is None:
+            return
+        # The existing TUI cannot have its process environment edited in place.
+        # Keep the adopted binding only in this statusLine child; subsequent
+        # calls validate it against the pane options and the same process.
+        os.environ["UNICONNECT_NATIVE_BINDING"] = compact(binding)
     session = native_id(binding["agent"], payload, event)
     pane = os.environ.get("TMUX_PANE", "")
     if not session or pane != binding["tmux_pane"] or not re.fullmatch(r"%[0-9]+", pane):

@@ -578,12 +578,22 @@ class TargetWorker:
     def managed_antigravity(self, env, process, pane, hook):
         """Rewrap only a pane whose current native proof matches its live launch binding."""
         try:
-            binding = json.loads(env.get("UNICONNECT_NATIVE_BINDING", ""))
             proof = json.loads(hook)
         except (ValueError, TypeError):
             return False
         required = ("version", "window_id", "agent", "generation", "tmux_pane", "pane_pid",
                     "tmux_session_id", "agent_pid", "agent_start")
+        try:
+            binding = json.loads(env.get("UNICONNECT_NATIVE_BINDING", ""))
+        except (ValueError, TypeError):
+            # A statusLine adoption cannot edit the already-running AGY
+            # process environment. Its exact window/pane ancestry and native
+            # status are instead revalidated from the inherited window ID and
+            # the tmux-bound proof before the restart capsule is authorized.
+            binding = {key: proof.get(key) for key in required}
+            if (env.get("UNICONNECT_WINDOW_ID") != self.request.get("window_id")
+                    or env.get("TMUX_PANE") != pane.get("pane")):
+                return False
         return (all(key in binding and proof.get(key) == binding[key] for key in required)
                 and binding.get("agent") == "agy" and binding.get("window_id") == self.request.get("window_id")
                 and binding.get("tmux_pane") == pane.get("pane")

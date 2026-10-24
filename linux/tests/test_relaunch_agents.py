@@ -593,6 +593,7 @@ AGY_IDLE_FIXTURE = r'''
 #include <stdlib.h>
 #include <pthread.h>
 #include <time.h>
+#include <unistd.h>
 
 static void publish_statusline(void) {
     const char *count_path = getenv("UNICONNECT_AGY_TEST_STATUSLINE_COUNT");
@@ -610,7 +611,13 @@ static void publish_statusline(void) {
     if (statusline) {
         FILE *pipe = popen(statusline, "w");
         if (pipe) {
-            fputs("{\"conversation_id\":\"4a1ec7f2-126f-4e63-a347-92ab4576fdda\",\"agent_state\":\"idle\",\"model\":{\"id\":\"gemini-fixture\",\"display_name\":\"Gemini fixture\",\"effort\":\"high\"},\"version\":\"1.2.17\",\"sandbox\":{\"enabled\":false},\"quota\":{}}", pipe);
+            char cwd[4096] = {0};
+            if (getcwd(cwd, sizeof cwd)) {
+                fprintf(pipe, "{\"conversation_id\":\"4a1ec7f2-126f-4e63-a347-92ab4576fdda\",\"cwd\":\"%s\","
+                        "\"agent_state\":\"idle\",\"model\":{\"id\":\"gemini-fixture\","
+                        "\"display_name\":\"Gemini fixture\",\"effort\":\"high\"},\"version\":\"1.2.17\","
+                        "\"sandbox\":{\"enabled\":false},\"quota\":{}}", cwd);
+            }
             pclose(pipe);
         }
     }
@@ -659,6 +666,7 @@ class TargetIntegrationTests(unittest.TestCase):
                            text=True, capture_output=True, check=True, timeout=30)
             socket_name = "uc-agy-" + uuid.uuid4().hex[:12]
             native = "4a1ec7f2-126f-4e63-a347-92ab4576fdda"
+            window_id = "fixture-window"
             statusline = shlex.split(json.loads(integration.settings_path.read_text())["statusLine"]["command"])
             # The terminal UI renders the status line separately from its
             # composer. Keep the synthetic command's stdout out of the pane
@@ -670,6 +678,8 @@ class TargetIntegrationTests(unittest.TestCase):
                        UNICONNECT_AGY_TEST_STATUSLINE_COUNT=str(statusline_count),
                        UNICONNECT_AGY_TEST_BINDING_LOG=str(binding_log))
             subprocess.run(["tmux", "-L", socket_name, "new-session", "-d", "-s", "fixture", "-c", directory,
+                            "/usr/bin/env", "UNICONNECT_WINDOW_ID=" + window_id,
+                            "UNICONNECT_AGY_TEST_STATUSLINE=" + statusline_command,
                             "/bin/bash", "--noprofile", "--norc", "-i"], check=True, capture_output=True,
                            timeout=5, env=env)
             helper = base64.b64encode(__import__("zlib").compress(
@@ -823,6 +833,80 @@ class TargetIntegrationTests(unittest.TestCase):
                 finally:
                     events.close()
                     subprocess.run(["tmux", "-L", socket_name, "kill-server"], capture_output=True, timeout=5)
+
+    def test_legacy_antigravity_statusline_adopts_only_its_exact_unbound_pane(self):
+        from uniconnect.antigravity_integration import AntigravityIntegration
+
+        with tempfile.TemporaryDirectory(prefix="uc-relaunch-agy-adopt-") as directory:
+            root = Path(directory)
+            home = root / "home"
+            home.mkdir()
+            integration = AntigravityIntegration(home=home)
+            integration.enable()
+            executable = root / "agy"
+            subprocess.run(["cc", "-pthread", "-x", "c", "-", "-o", str(executable)], input=AGY_IDLE_FIXTURE,
+                           text=True, capture_output=True, check=True, timeout=30)
+            socket_name = "uc-agy-adopt-" + uuid.uuid4().hex[:10]
+            native, window_id = "4a1ec7f2-126f-4e63-a347-92ab4576fdda", str(uuid.uuid4())
+            statusline = shlex.split(json.loads(integration.settings_path.read_text())["statusLine"]["command"])
+            statusline_command = shlex.join(statusline) + " >/dev/null"
+            statusline_count = root / "statusline-runs"
+            env = dict(os.environ, HOME=str(home), UNICONNECT_WINDOW_ID=window_id,
+                       UNICONNECT_AGY_TEST_STATUSLINE=statusline_command,
+                       UNICONNECT_AGY_TEST_STATUSLINE_COUNT=str(statusline_count))
+            subprocess.run(["tmux", "-L", socket_name, "new-session", "-d", "-s", "fixture", "-c", directory,
+                            "/bin/bash", "--noprofile", "--norc", "-i"], check=True, capture_output=True,
+                           timeout=5, env=env)
+            subprocess.run(["tmux", "-L", socket_name, "send-keys", "-t", "=fixture:", "-l",
+                            shlex.join([str(executable), "--conversation", native])],
+                           check=True, capture_output=True, timeout=5, env=env)
+            subprocess.run(["tmux", "-L", socket_name, "send-keys", "-t", "=fixture:", "Enter"],
+                           check=True, capture_output=True, timeout=5, env=env)
+            worker = TargetWorker({"session": "fixture", "socket": socket_name, "window_id": window_id,
+                                   "provider": "agy", "catalog": AgentResumeCatalog().providers,
+                                   "verb": "agent.relaunch"})
+            deadline, last_error = time.monotonic() + 12, None
+            try:
+                while True:
+                    try:
+                        proof = worker.inspect()
+                        break
+                    except Unavailable as error:
+                        last_error = error.cause
+                        if time.monotonic() >= deadline:
+                            pane, root_process, _, raw_hook = worker.pane()
+                            agents = [p for p in worker.descendants(root_process["pid"]).values()
+                                      if Path(p["executable"]).name == "agy"]
+                            agent_environment = {}
+                            if len(agents) == 1:
+                                agent_environment = dict(item.split("=", 1) for item in
+                                    (Path("/proc") / str(agents[0]["pid"]) / "environ").read_bytes()
+                                    .decode(errors="replace").split("\0") if "=" in item)
+                            try:
+                                runs = len(statusline_count.read_text().splitlines())
+                            except OSError:
+                                runs = 0
+                            self.fail("legacy Antigravity did not bind: %s; hook=%s; process=%d; "
+                                      "window_env=%s; pane_env=%s; statusline_runs=%d"
+                                      % (last_error, bool(raw_hook), len(agents),
+                                         agent_environment.get("UNICONNECT_WINDOW_ID") == window_id,
+                                         agent_environment.get("TMUX_PANE") == pane["pane"], runs))
+                        time.sleep(0.1)
+                pane, _, _, hook = worker.pane()
+                process = worker.process(proof["pid"])
+                process_env = dict(item.split("=", 1) for item in
+                                   (Path("/proc") / str(proof["pid"]) / "environ").read_bytes()
+                                   .decode(errors="replace").split("\0") if "=" in item)
+                self.assertEqual(proof["effective_id"], native)
+                self.assertRegex(proof["native_configuration"], r"^[a-f0-9]{64}$")
+                self.assertTrue(worker.managed_antigravity(process_env, process, pane, hook))
+                self.assertEqual(process_env.get("UNICONNECT_WINDOW_ID"), window_id)
+                self.assertEqual(process_env.get("TMUX_PANE"), pane["pane"])
+                self.assertNotIn("UNICONNECT_NATIVE_BINDING", process_env)
+                worker.request["window_id"] = str(uuid.uuid4())
+                self.assertFalse(worker.managed_antigravity(process_env, process, pane, hook))
+            finally:
+                subprocess.run(["tmux", "-L", socket_name, "kill-server"], capture_output=True, timeout=5)
 
     def test_fresh_process_same_conversation_same_pane_and_duplicate_apply(self):
         with tempfile.TemporaryDirectory(prefix="uc-relaunch-runtime-") as directory:
