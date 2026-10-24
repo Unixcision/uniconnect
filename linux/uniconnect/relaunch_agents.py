@@ -128,10 +128,6 @@ class RelaunchAgents:
             if self.probe(candidate, verb) != proof:
                 return {"state": "fallido", "cause": "generacion_cambiada"}
             return {"state": "verificado"}
-        if verb == "agent.continue":
-            # Until a provider exposes a verifiable input receipt, never type
-            # into a possibly active permission dialog or claim a queued key is ACKed.
-            return {"state": "necesita_usuario", "cause": "no_soportado"}
         # Probing a remote host can take seconds. Recheck after it, immediately
         # before dispatching the target-side atomic close/reopen operation.
         if not authorized():
@@ -139,7 +135,7 @@ class RelaunchAgents:
         if not self.validate(candidate):
             return {"state": "omitido", "cause": "generacion_cambiada"}
         try:
-            result = self.request(candidate, "start", expected=proof, operation_id=operation_id)
+            result = self.request(candidate, "start", verb=verb, expected=proof, operation_id=operation_id)
         except RelaunchUnavailable as error:
             if error.cause != "host_inaccesible":
                 raise

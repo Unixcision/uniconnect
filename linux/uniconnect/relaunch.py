@@ -20,12 +20,13 @@ from .mobile_protocol import RPCError
 from .vault import atomic_write, private_read
 
 
-VERBS = {"agent.relaunch", "transport.reconnect", "agent.continue"}
+VERBS = {"agent.relaunch", "transport.reconnect", "agent.continue", "agent.recover"}
 TERMINAL = {"verificado", "necesita_usuario", "fallido", "omitido"}
 PHASES = {
     "agent.relaunch": ("planificado", "cerrando", "reabriendo", "verificado"),
     "transport.reconnect": ("planificado", "reenganchando", "verificado"),
     "agent.continue": ("planificado", "entregando", "verificado"),
+    "agent.recover": ("planificado", "cerrando", "reabriendo", "entregando", "verificado"),
 }
 
 

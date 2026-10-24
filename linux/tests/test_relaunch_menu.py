@@ -26,7 +26,7 @@ class RelaunchMenuTests(unittest.TestCase):
             action_palette = MainWindow.action_palette
 
             def action_enabled(self, name):
-                return WindowCommands.action_enabled(self, name) if name.startswith("relaunch_") else True
+                return WindowCommands.action_enabled(self, name) if name.startswith(("relaunch_", "continue_")) else True
 
             def refresh_actions(self):
                 pass
@@ -42,19 +42,27 @@ class RelaunchMenuTests(unittest.TestCase):
         window.current_workspace = lambda: {"id": "box", "windows": [{"id": "window"}]}
         window.notifications_unread = lambda *args, **kwargs: False
         self.calls = []
-        window.relaunch = SimpleNamespace(allowed=lambda: True, show=self.calls.append,
+        window.relaunch = SimpleNamespace(allowed=lambda: True,
+            show=lambda kind, **options: self.calls.append((kind, options)),
             show_history=lambda: self.calls.append("history"), show_machines=lambda: self.calls.append("machines"))
         window.error = lambda error: self.fail(str(error))
 
     def test_menu_exposes_and_dispatches_exactly_window_workspace_machine(self):
         menu = self.window.build_menu()
         self.addCleanup(menu.destroy)
-        items = [(name, item) for name, item in self.window.menu_items if name.startswith("relaunch_")]
+        items = [(name, item) for name, item in self.window.menu_items
+                 if name.startswith(("relaunch_", "continue_"))]
         self.assertEqual([name for name, _ in items],
-                         ["relaunch_window", "relaunch_workspace", "relaunch_machine", "relaunch_history"])
+                         ["relaunch_window", "relaunch_workspace", "relaunch_machine", "continue_window",
+                          "continue_workspace", "continue_machine", "relaunch_history"])
         for _, item in items[:3]:
             item.activate()
-        self.assertEqual(self.calls, ["window", "workspace", "machine"])
+        self.assertEqual(self.calls, [("window", {}), ("workspace", {}), ("machine", {})])
+        for _, item in items[3:6]:
+            item.activate()
+        self.assertEqual(self.calls[3:], [("window", {"verb": "agent.recover"}),
+                                          ("workspace", {"verb": "agent.recover"}),
+                                          ("machine", {"verb": "agent.recover"})])
 
     def test_palette_and_old_shortcuts_cannot_dispatch_global(self):
         observed = []

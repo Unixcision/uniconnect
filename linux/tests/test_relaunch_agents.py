@@ -355,6 +355,20 @@ class RecoveryAndRevocationTests(unittest.TestCase):
                           "record": {"id": "window", "tmux": "fixture", "tmuxSocket": "fixture"}}
         self.proof = {"key": "pane", "generation": 1}
 
+    def test_recover_verb_is_forwarded_to_the_idempotent_target_worker(self):
+        adapter = RelaunchAgents()
+        adapter.probe = lambda candidate, verb: self.proof
+        calls = []
+        def request(candidate, action, **values):
+            calls.append((action, values))
+            return {"state": "verificado"}
+        adapter.request = request
+        result = adapter.execute(self.candidate, "agent.recover", self.proof, str(uuid.uuid4()),
+                                 lambda value: None, lambda: True)
+        self.assertEqual(result["state"], "verificado")
+        self.assertEqual(calls[0][0], "start")
+        self.assertEqual(calls[0][1]["verb"], "agent.recover")
+
     def test_live_target_waiting_for_account_lock_is_not_reported_offline(self):
         clock = [0]
         adapter = RelaunchAgents(clock=lambda: clock[0], wait=lambda delay: clock.__setitem__(0, clock[0] + 50))

@@ -146,12 +146,13 @@ class RelaunchDesktop:
                     surface._launch_preparer = original
             self.main(restore)
 
-    def show(self, kind):
+    def show(self, kind, verb="agent.relaunch"):
         window = self.window
         if kind == "global":
             from .relaunch_fleet import RelaunchFleet
-            window.status_label.set_text(window._("Preparando el plan de relanzado…"))
-            window.background(lambda: RelaunchFleet(self, self.machines.snapshot()).plan(), self.preview)
+            preparing = "Buscando Codex pausados…" if verb == "agent.recover" else "Preparando el plan de relanzado…"
+            window.status_label.set_text(window._(preparing))
+            window.background(lambda: RelaunchFleet(self, self.machines.snapshot()).plan(verb=verb), self.preview)
             return
         if kind == "window":
             identifier = window.focused_surface.record["id"]
@@ -160,8 +161,9 @@ class RelaunchDesktop:
         else:
             identifier = self.machine_id
         scope = {"kind": kind, "id": identifier}
-        window.status_label.set_text(window._("Preparando el plan de relanzado…"))
-        window.background(lambda: self.dispatch("relaunch.plan", {"verb": "agent.relaunch", "scope": scope}), self.preview)
+        preparing = "Buscando Codex pausados…" if verb == "agent.recover" else "Preparando el plan de relanzado…"
+        window.status_label.set_text(window._(preparing))
+        window.background(lambda: self.dispatch("relaunch.plan", {"verb": verb, "scope": scope}), self.preview)
 
     def preview(self, plan):
         window = self.window
@@ -172,9 +174,10 @@ class RelaunchDesktop:
             if target.get("active") is True and target.get("provider") == "codex" else "")
             for target in plan["targets"]]
         names += ["— " + target["label"] + ": " + window._("uniconnect.relaunch.cause." + target["cause"]) for target in plan["excluded"]]
-        detail = window._("Se cerrará y reabrirá la IA conservando su conversación. tmux y tus archivos no se borran.")
-        window.status_label.set_text(window._("Plan de relanzado preparado"))
-        if not self.confirm_plan(detail, names, bool(plan["targets"])):
+        continuing = plan.get("verb") in ("agent.continue", "agent.recover")
+        detail = window._("Se reabrirá la misma conversación y solo se enviará «continua» si aparece un límite de uso explícito y el cuadro está vacío. Se comprobará que Codex lo acepta.") if continuing else window._("Se cerrará y reabrirá la IA conservando su conversación. tmux y tus archivos no se borran.")
+        window.status_label.set_text(window._("Plan de continuación preparado" if continuing else "Plan de relanzado preparado"))
+        if not self.confirm_plan(detail, names, bool(plan["targets"]), continuing=continuing):
             return
         def apply():
             self.history.remember(plan)
@@ -183,14 +186,17 @@ class RelaunchDesktop:
             return self.dispatch("relaunch.apply", {"operation_id": plan["operation_id"], "token": plan["token"]})
         window.background(apply, lambda value: self.result_window(plan, value))
 
-    def confirm_plan(self, detail, names, eligible):
+    def confirm_plan(self, detail, names, eligible, *, continuing=False):
         from gi.repository import Gtk
         window = self.window
-        dialog = Gtk.Dialog(title=window._("Relanzar las IA seleccionadas"), transient_for=window, modal=True)
+        title = "Continuar Codex pausado" if continuing else "Relanzar las IA seleccionadas"
+        dialog = Gtk.Dialog(title=window._(title), transient_for=window, modal=True)
         dialog.set_default_size(680, 430)
         dialog.add_buttons(window._("Cancel"), Gtk.ResponseType.CANCEL, window._("Apply"), Gtk.ResponseType.OK)
         dialog.set_response_sensitive(Gtk.ResponseType.OK, eligible)
-        description = Gtk.Label(label=detail if eligible else window._("No hay agentes que puedan relanzarse con seguridad"))
+        empty = ("No se encontró una sesión Codex pausada por cuota con identidad y cuadro vacíos verificables."
+                 if continuing else "No hay agentes que puedan relanzarse con seguridad")
+        description = Gtk.Label(label=detail if eligible else window._(empty))
         description.set_line_wrap(True)
         dialog.get_content_area().pack_start(description, False, True, 10)
         content = Gtk.TextView(editable=False, cursor_visible=False, wrap_mode=Gtk.WrapMode.WORD_CHAR)

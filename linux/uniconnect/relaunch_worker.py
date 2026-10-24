@@ -583,6 +583,8 @@ class TargetWorker:
         provider = self.request.get("provider")
         if provider not in ("codex", "claude") or provider not in self.request["catalog"]:
             raise Unavailable("no_soportado")
+        if self.request.get("verb") in ("agent.continue", "agent.recover") and provider != "codex":
+            raise Unavailable("no_soportado")
         if mode != "0":
             raise Unavailable("dialogo_desconocido")
         children = self.descendants(root["pid"])
@@ -603,6 +605,10 @@ class TargetWorker:
                 raise Unavailable("tareas_de_fondo")
             native_configuration = self.quiescent_configuration(provider, process, effective, hook,
                                                                 allow_active=allow_active and activity["working"])
+            lines = self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines()
+            needs_quota = self.request.get("verb") in ("agent.continue", "agent.recover") and not self.request.get("resumed")
+            if needs_quota and not self.codex_quota_pause(lines):
+                raise Unavailable("no_soportado")
             if self.request.get("action") == "inspect":
                 self.require_empty_composer({"pane": pane}, allow_active=allow_active)
         else:
@@ -635,6 +641,8 @@ class TargetWorker:
             proof["native_configuration"] = self.digest(native_configuration)
         if any(activity.values()):
             proof["active"] = True
+        if provider == "codex" and self.request.get("verb") in ("agent.continue", "agent.recover"):
+            proof["quota_paused"] = True
         if runtime:
             return proof, root, process, resume
         return proof
@@ -789,15 +797,24 @@ class TargetWorker:
         proof, root, process, resume = self.inspect(runtime=True)
         if not self.same_target(proof, self.request["expected"]):
             raise Unavailable("generacion_cambiada")
+        if self.request.get("verb") == "agent.recover" and self.request.get("provider") != "codex":
+            raise Unavailable("no_soportado")
         # Keep the consent from the confirmed plan if the turn has just finished.
         proof = self.request["expected"]
         self.require_empty_composer(proof, allow_active=proof.get("active") is True)
+        if self.request.get("verb") == "agent.continue":
+            if not self.codex_quota_pause(self.tmux("capture-pane", "-p", "-t", proof["pane"]["pane"]).splitlines()):
+                raise Unavailable("generacion_cambiada")
+            self.continue_codex(proof, process, journal)
+            return
         if proof.get("launcher"):
             events = TmuxOutputEvents(self.binary, self.request["session"])
             try:
                 self.restart_recovery(proof, root, process, journal, events)
             finally:
                 events.close()
+            if self.request.get("verb") == "agent.recover":
+                self.continue_after_reopen(proof, journal)
             return
         # pidfd binds the signal to this exact process, not a potentially reused PID.
         if not hasattr(os, "pidfd_open"):
@@ -844,6 +861,18 @@ class TargetWorker:
         finally:
             events.close()
             os.close(descriptor)
+        if self.request.get("verb") == "agent.recover":
+            self.continue_after_reopen(proof, journal)
+
+    def continue_after_reopen(self, previous, journal):
+        """Revalidate the resumed native conversation before the one exact continuation."""
+        current, _, process, _ = self.inspect(runtime=True)
+        if (current["pane"] != previous["pane"] or current["generation"] == previous["generation"]
+                or current["effective_id"] != previous["effective_id"]
+                or current["configuration"] != previous["configuration"]
+                or current.get("native_configuration") != previous.get("native_configuration")):
+            raise Unavailable("generacion_cambiada")
+        self.continue_codex(current, process, journal)
 
     def restart(self, proof, root, process, capsule_path, journal, events):
         owned = self.descendants(process["pid"])
@@ -875,19 +904,91 @@ class TargetWorker:
         if self.pane()[0] != proof["pane"] or self.descendants(root["pid"]):
             raise Unavailable("generacion_cambiada")
         self.tmux("send-keys", "-t", proof["pane"]["pane"], "-l", "--", command + "\n")
+        self.request["resumed"] = True
         deadline = self.clock() + 45
         while self.clock() < deadline:
             try:
                 current = self.inspect()
                 if (current["effective_id"] == proof["effective_id"] and current["generation"] != proof["generation"]
-                        and current["pane"] == proof["pane"] and current["configuration"] == proof["configuration"]):
+                        and current["pane"] == proof["pane"] and current["configuration"] == proof["configuration"]
+                        and current.get("native_configuration") == proof.get("native_configuration")):
                     self.require_empty_composer(current)
-                    self.write(journal, {"state": "verificado", "effective_id": proof["effective_id"]})
-                    return
+                    if self.request.get("verb") != "agent.recover":
+                        self.write(journal, {"state": "verificado", "effective_id": proof["effective_id"]})
+                    return current
             except (Unavailable, OSError):
                 pass
             events.wait(deadline, self.clock)
+
+    @staticmethod
+    def codex_quota_pause(lines):
+        """Recognize only an explicit, recent Codex usage-limit notice near its composer."""
+        prompts = [index for index, line in enumerate(lines) if line.startswith("›")]
+        if not prompts:
+            return False
+        row = prompts[-1]
+        recent = " ".join(line.strip() for line in lines[max(0, row - 16):row]).casefold()
+        return any(marker in recent for marker in (
+            "you’ve hit your usage limit", "you've hit your usage limit",
+            "you have hit your usage limit", "usage limit reached"))
+
+    def continue_codex(self, proof, process, journal):
+        """Send one fixed continuation only to a verified, empty quota-paused Codex composer."""
+        pane = proof["pane"]["pane"]
+        lines = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
+        if not self.codex_quota_pause(lines) or not self.same_target(self.inspect(), proof):
+            raise Unavailable("generacion_cambiada")
+        original = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
+        composer = self.require_empty_composer(proof)
+        row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
+        self.write(journal, {"state": "entregando"})
+        self.tmux("send-keys", "-t", pane, "-l", "--", "continua")
+        typed = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
+        if (row >= len(typed) or typed[row].strip() != "› continua"
+                or TargetWorker.codex_composer_tail(typed[row + 1:])
+                != TargetWorker.codex_composer_tail(composer["tail"])):
+            raise Unavailable("dialogo_desconocido")
+        # Recheck identity and exact composer immediately before submission.
+        if not self.same_target(self.inspect(), proof):
+            raise Unavailable("generacion_cambiada")
+        typed = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
+        row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
+        if (row >= len(typed) or typed[row].strip() != "› continua"
+                or TargetWorker.codex_composer_tail(typed[row + 1:])
+                != TargetWorker.codex_composer_tail(composer["tail"])):
+            raise Unavailable("dialogo_desconocido")
+        self.tmux("send-keys", "-t", pane, "Enter")
+        # Codex's own activity indicator is the receipt. A queued keystroke or
+        # a changed placeholder alone is never reported as accepted work.
+        deadline = self.clock() + 30
+        while self.clock() < deadline:
+            if not self.same_live_agent(proof, process):
+                raise Unavailable("generacion_cambiada")
+            screen = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
+            activity = self.codex_activity(screen)
+            new_prompt = (any(line.strip() in ("› continua", "continua") for line in screen[-40:])
+                          and not any(line.strip() in ("› continua", "continua") for line in original[-40:]))
+            if activity["working"] and new_prompt:
+                self.write(journal, {"state": "verificado", "effective_id": proof["effective_id"]})
+                return
+            if not self.codex_quota_pause(screen):
+                # The explicit quota notice disappeared but Codex did not
+                # acknowledge by starting. Keep the operation unresolved.
+                raise Unavailable("dialogo_desconocido")
+            time.sleep(0.25)
         raise Unavailable("dialogo_desconocido")
+
+    def same_live_agent(self, proof, expected_process):
+        """After submission, pin to the same pane and Codex PID without requiring an idle transcript."""
+        pane, root, mode, hook = self.pane()
+        if pane != proof["pane"] or mode != "0":
+            return False
+        matches = [item for item in self.descendants(root["pid"]).values()
+                   if self.is_provider("codex", item["argv"])]
+        if len(matches) != 1 or (matches[0]["pid"], matches[0]["start"]) != (
+                expected_process["pid"], expected_process["start"]):
+            return False
+        return self.native_id("codex", matches[0], hook, pane) == proof["effective_id"]
 
     def same_process(self, process):
         try:
@@ -1098,6 +1199,7 @@ class TargetWorker:
         if self.descendants(root["pid"]) or not self.same_process(root):
             raise Unavailable("generacion_cambiada")
         self.tmux("send-keys", "-t", pane, "C-j")
+        self.request["resumed"] = True
         deadline = self.clock() + 120
         while True:
             try:
@@ -1105,10 +1207,12 @@ class TargetWorker:
                 if (current["pane"] == proof["pane"] and current["generation"] != proof["generation"]
                         and current["effective_id"] == proof["effective_id"]
                         and current["configuration"] == proof["configuration"]
+                        and current.get("native_configuration") == proof.get("native_configuration")
                         and current.get("launcher") == proof["launcher"]):
                     self.require_empty_composer(current)
-                    self.write(journal, {"state": "verificado", "effective_id": proof["effective_id"]})
-                    return
+                    if self.request.get("verb") != "agent.recover":
+                        self.write(journal, {"state": "verificado", "effective_id": proof["effective_id"]})
+                    return current
             except (Unavailable, OSError):
                 pass
             events.wait(deadline, self.clock)

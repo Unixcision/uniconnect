@@ -60,7 +60,7 @@ igual. D7 porta el dialecto que falta a cada lado. La matriz resultante, que fij
 | Proveedor | Mac, ventana local | Mac, ventana SSH | Linux, ventana local | Linux, caja SSH |
 |---|---|---|---|---|
 | Claude | sí | `no_soportado` | escrito, **pendiente de prueba en vivo** | escrito, **pendiente de prueba en vivo** |
-| Codex | escrito, **pendiente de prueba en vivo** | `no_soportado` | sí | sí |
+| Codex | escrito, **pendiente de prueba en vivo** | `no_soportado` | sí, `agent.continue` y `agent.recover` requieren evidencia exacta de pausa/acuse | sí |
 
 «Pendiente de prueba en vivo» (decisión del 24-09-2026): el dialecto está escrito y probado con
 dobles, pero relanzar **cierra la IA** y nunca se ha ejecutado contra una real. Hasta esa prueba no

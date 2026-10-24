@@ -76,7 +76,7 @@ class RelaunchTests(unittest.TestCase):
         self.assertEqual(len(self.jobs), 1)
 
     def test_nonblocking_apply_recovered_expired_token_and_per_verb_phases(self):
-        for verb in ("agent.relaunch", "agent.continue", "transport.reconnect"):
+        for verb in ("agent.relaunch", "agent.continue", "agent.recover", "transport.reconnect"):
             plan = self.plan(verb)
             result = self.apply(plan)
             self.assertEqual(result["operation_state"], "en_curso")

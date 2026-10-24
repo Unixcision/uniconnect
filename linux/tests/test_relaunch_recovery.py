@@ -23,6 +23,50 @@ from uniconnect.resume_catalog import AgentResumeCatalog
 
 
 class ActiveCodexRelaunchTests(unittest.TestCase):
+    def test_continue_requires_a_recent_explicit_quota_notice(self):
+        quota = ["You’ve hit your usage limit. Visit settings", "", "› Ask Codex to do anything"]
+        login = ["Your access token could not be refreshed. Please sign in again.", "",
+                 "› Ask Codex to do anything"]
+        stale = ["You’ve hit your usage limit", *("" for _ in range(17)), "› Ask Codex to do anything"]
+        self.assertTrue(TargetWorker.codex_quota_pause(quota))
+        self.assertFalse(TargetWorker.codex_quota_pause(login))
+        self.assertFalse(TargetWorker.codex_quota_pause(stale))
+
+    def test_verified_continue_enters_one_exact_message_and_waits_for_codex_activity(self):
+        worker = TargetWorker({"action": "start", "verb": "agent.continue", "provider": "codex",
+                               "session": "fixture", "socket": "fixture"})
+        proof = {"pane": {"pane": "%1"}, "effective_id": "native"}
+        state = {"typed": False, "started": False}
+        calls, receipts = [], []
+
+        def tmux(*args):
+            calls.append(args)
+            if args[0] == "capture-pane":
+                if state["started"]:
+                    return "You’ve hit your usage limit\n› continua\n• Working (1s • esc to interrupt)\n› Ask Codex to do anything\n  GPT-6 medium · ~ · Conversation"
+                if state["typed"]:
+                    return "You’ve hit your usage limit\n\n› continua\n\n  GPT-6 medium · ~ · Conversation"
+                return "You’ve hit your usage limit\n\n› Ask Codex to do anything\n\n  GPT-6 medium · ~ · Conversation"
+            if args[0] == "display-message":
+                return "2"
+            if args[0] == "send-keys":
+                if args[-1] == "continua":
+                    state["typed"] = True
+                elif args[-1] == "Enter":
+                    state["started"] = True
+                return ""
+            self.fail("Unexpected tmux command: " + repr(args))
+
+        worker.tmux = tmux
+        worker.inspect = lambda **kwargs: proof
+        worker.same_live_agent = lambda *args: True
+        worker.require_empty_composer = lambda *args, **kwargs: {"tail": ["", "  GPT-6 medium · ~ · Conversation"]}
+        worker.write = lambda path, value: receipts.append(value["state"])
+        worker.continue_codex(proof, {"pid": 20, "start": "1"}, "journal")
+        sent = [call[-1] for call in calls if call[0] == "send-keys"]
+        self.assertEqual(sent, ["continua", "Enter"])
+        self.assertEqual(receipts, ["entregando", "verificado"])
+
     def fixture(self, *, working=True, background=True, draft=False, warning=False):
         worker = TargetWorker({"action": "inspect", "verb": "agent.relaunch", "session": "fixture",
                                "socket": "fixture", "provider": "codex", "catalog": AgentResumeCatalog().providers})

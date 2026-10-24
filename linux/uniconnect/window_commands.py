@@ -40,6 +40,12 @@ class WindowCommands:
                 return False
             return (surface is not None if name == "relaunch_window" else
                     bool(workspace and windows) if name == "relaunch_workspace" else True)
+        if name.startswith("continue_"):
+            relaunch = getattr(self, "relaunch", None)
+            if not relaunch or not relaunch.allowed():
+                return False
+            return (surface is not None if name == "continue_window" else
+                    bool(workspace and windows) if name == "continue_workspace" else True)
         if name == "new_conversation_window":
             return bool(workspace and surface and surface.workspace is workspace)
         if name == "notifications_latest_unread":
@@ -170,6 +176,15 @@ class WindowCommands:
 
     def action_relaunch_machine(self):
         self.relaunch.show("machine")
+
+    def action_continue_window(self):
+        self.relaunch.show("window", verb="agent.recover")
+
+    def action_continue_workspace(self):
+        self.relaunch.show("workspace", verb="agent.recover")
+
+    def action_continue_machine(self):
+        self.relaunch.show("machine", verb="agent.recover")
 
     def action_relaunch_history(self):
         self.relaunch.show_history()

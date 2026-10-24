@@ -132,9 +132,13 @@ trabajo** o **equipo** (todo UniConnect en este equipo). «Global» y «equipo»
 son dos alcances distintos. Revisa la vista previa, que separa las ventanas que
 puede recuperar de las excluidas y explica el motivo; **Aplicar** solo afecta a
 las admitidas. Hoy el relanzador Linux admite Codex; no fuerza Claude, Gemini ni
-otros estados no reconocidos. El envío automático de «continua» todavía no está
-implementado con acuse verificable: un relanzado correcto no significa que se
-haya enviado ese mensaje.
+otros estados no reconocidos. **Reabrir y continuar Codex pausado** usa los
+mismos tres alcances; solo incluye una sesión con aviso de límite de uso reciente,
+sin actividad ni borrador. Conserva la conversación al reabrirla y envía
+«continua» una sola vez únicamente si la pantalla limpia conserva el aviso de
+cuota. El resultado solo queda verificado cuando la misma sesión muestra que
+Codex empezó a trabajar. Un error de inicio de sesión, diálogo, borrador o estado
+sin prueba queda excluido o requiere intervención; no se escribe en esos cuadros.
 
 Para consultar o compartir los datos de una terminal, abre su menú contextual y
 elige **Detalles…**. El modal Linux presenta el proveedor, el identificador

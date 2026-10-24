@@ -50,7 +50,7 @@ class RelaunchFleet:
                         raise RPCError(error.get("code", "host_inaccesible"), "El equipo no pudo completar la petición")
                     return response["result"]
 
-    def plan(self):
+    def plan(self, verb="agent.relaunch"):
         self.hosts = [{"id": "local", "label": "Este equipo", "call": self.local.dispatch}]
         seen = set()
         for peer in self.peers:
@@ -74,7 +74,7 @@ class RelaunchFleet:
                     if machine_id == self.local.machine_id:
                         raise RPCError("duplicado", "Este equipo ya está incluido como local")
                 host["plan"] = host["call"]("relaunch.plan", {
-                    "verb": "agent.relaunch", "scope": {"kind": "machine", "id": machine_id}})
+                    "verb": verb, "scope": {"kind": "machine", "id": machine_id}})
             except Exception as error:
                 host["error"] = getattr(error, "code", "host_inaccesible")
         with ThreadPoolExecutor(max_workers=4) as pool:
@@ -89,7 +89,7 @@ class RelaunchFleet:
                                 "label": host["label"] + " · " + target["label"]})
             excluded.extend({**item, "label": host["label"] + " · " + item["label"]}
                             for item in host["plan"]["excluded"])
-        return {"operation_id": str(uuid.uuid4()), "verb": "agent.relaunch", "targets": targets,
+        return {"operation_id": str(uuid.uuid4()), "verb": verb, "targets": targets,
                 "excluded": excluded, "fleet": self}
 
     def operation(self, method):

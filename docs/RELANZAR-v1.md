@@ -19,6 +19,7 @@ usuario las pide en momentos distintos.
 | `transport.reconnect` | Reengancha el cliente a lo que ya está corriendo. | No cierra la IA. No toca el proceso. |
 | `agent.relaunch` | Cierra el agente y lo reabre **sobre la misma conversación**, siempre sin preguntas. | No mata tmux. No cambia modelo ni carpeta. |
 | `agent.continue` | Le dice a un agente vivo que retome el encargo anterior. | No es un OK en blanco: va acotado a ese encargo. |
+| `agent.recover` | Reabre la misma sesión Codex pausada por un límite de uso y, si el aviso sigue presente en un compositor vacío, le envía «continua». | No envía texto a otra causa de pausa, borrador, diálogo o identidad no probados. |
 
 `transport.reconnect` es el caso mayoritario: quien ve una ventana en blanco casi siempre quiere
 esto y no relanzar nada. En SSH es además *el* caso, porque lo que se cae es el transporte mientras
@@ -118,6 +119,7 @@ Resultado **por objetivo**, nunca agregado. Cada verbo recorre sus propias fases
 agent.relaunch      planificado → cerrando → reabriendo → verificado
 transport.reconnect planificado → reenganchando → verificado
 agent.continue      planificado → entregando → verificado
+agent.recover       planificado → cerrando → reabriendo → entregando → verificado
 
 cualquiera de ellas  →  necesita_usuario | fallido | omitido
 ```
