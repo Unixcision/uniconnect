@@ -126,6 +126,24 @@ conservan. Un borrador, un diálogo no reconocido o un cambio de identidad o
 configuración bloquea el cierre. **Reconectar** solo vuelve a conectar el
 terminal a tmux; no reinicia la IA.
 
+Guía rápida: abre el menú contextual de una ventana y elige **Relanzar IA**.
+Selecciona exactamente uno de estos tres alcances: **ventana**, **espacio de
+trabajo** o **equipo** (todo UniConnect en este equipo). «Global» y «equipo» no
+son dos alcances distintos. Revisa la vista previa, que separa las ventanas que
+puede recuperar de las excluidas y explica el motivo; **Aplicar** solo afecta a
+las admitidas. Hoy el relanzador Linux admite Codex; no fuerza Claude, Gemini ni
+otros estados no reconocidos. El envío automático de «continua» todavía no está
+implementado con acuse verificable: un relanzado correcto no significa que se
+haya enviado ese mensaje.
+
+Para consultar o compartir los datos de una terminal, abre su menú contextual y
+elige **Detalles…**. El modal Linux presenta el proveedor, el identificador
+nativo de conversación cuando se puede probar, el transporte y los datos de
+estado disponibles. Linux publica la misma respuesta `window_details.v1` al
+cliente Android; la entrada aparece allí solo cuando la conexión anuncia esa
+capacidad. Comprueba visualmente la recepción en el teléfono, porque la CI no
+puede sustituir esa prueba con el dispositivo real.
+
 The Linux terminal uses Ctrl+Shift combinations so Ctrl+C remains available to
 shell programs. Settings exposes editable shortcuts, font, appearance
 and optional idle locking. Defaults include:
