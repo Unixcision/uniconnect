@@ -711,6 +711,16 @@ class TargetIntegrationTests(unittest.TestCase):
                             post_probe_summary = {key: post_probe.get(key) == proof.get(key) for key in (
                                 "pane", "effective_id", "configuration", "native_configuration")}
                             post_probe_summary["generation_changed"] = post_probe.get("generation") != proof.get("generation")
+                            diagnostic_worker = TargetWorker({"session": "fixture", "socket": socket_name,
+                                "window_id": "fixture-window", "provider": "agy",
+                                "catalog": AgentResumeCatalog().providers, "verb": "agent.relaunch"})
+                            _, _, post_process, post_resume = diagnostic_worker.inspect(runtime=True)
+                            initial_resume = TargetWorker.antigravity_resume_arguments(
+                                [native_process["executable"], *native_process["argv"][1:]], native,
+                                AgentResumeCatalog().providers)
+                            post_probe_summary["cwd_matches"] = post_process["cwd"] == native_process["cwd"]
+                            post_probe_summary["resume_arguments_match"] = post_resume == initial_resume
+                            post_probe_summary["resume_argument_counts"] = (len(initial_resume), len(post_resume))
                         except RelaunchUnavailable as error:
                             post_probe_summary = {"cause": error.cause}
                         screen = subprocess.run(["tmux", "-L", socket_name, "capture-pane", "-p", "-t", "=fixture:"],
