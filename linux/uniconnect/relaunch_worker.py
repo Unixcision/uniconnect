@@ -567,7 +567,7 @@ class TargetWorker:
             raise Unavailable("no_soportado")
         if sandbox_enabled is True and not sandbox:
             added.append("--sandbox")
-        elif sandbox_enabled is not False:
+        elif sandbox_enabled is not True and sandbox_enabled is not False:
             raise Unavailable("no_soportado")
         # Keep the catalogue's resume selector and validated arguments in their
         # canonical order, then append missing effective settings. This makes a
