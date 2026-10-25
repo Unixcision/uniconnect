@@ -37,7 +37,7 @@ class NativeSessions:
                 if (proof.get("version") == 1 and proof.get("tmux_pane") == parts[1]
                         and str(proof.get("pane_pid")) == parts[2] and proof.get("generation") == parts[3]
                         and isinstance(proof.get("window_id"), str) and 0 < len(proof["window_id"]) <= 128
-                        and proof.get("agent") in ("claude", "codex")
+                        and proof.get("agent") in ("claude", "codex", "agy")
                         and re.fullmatch(r"[a-f0-9]{32}", parts[3])
                         and re.fullmatch(r"[A-Za-z0-9_-]{1,160}", proof.get("session_id", ""))):
                     proofs.append({**proof, "tmux": parts[0]})
@@ -52,7 +52,7 @@ class NativeSessions:
         groups = {}
         for surface in tuple(owner.surfaces.values()):
             record, workspace = surface.record, surface.workspace
-            if surface.disposed or not surface.pid or record.get("agent") not in ("claude", "codex") or not record.get("tmux"):
+            if surface.disposed or not surface.pid or record.get("agent") not in ("claude", "codex", "agy") or not record.get("tmux"):
                 continue
             socket = record.get("tmuxSocket") or ("uniconnect" if workspace["kind"] == "ssh" else "uniconnect-local")
             # Local boxes share one server; remote boxes keep their credential scope.
@@ -112,9 +112,23 @@ class NativeSessions:
     def persist(self, record, proof):
         """Commit ID and history together; imported history entries remain untouched."""
         session = proof["session_id"]
-        if record.get("sessionId") == session or record.get("agentSource") in self.AUTHORITATIVE:
+        if record.get("agentSource") in self.AUTHORITATIVE:
             return False
         before = copy.deepcopy(record)
+        if record.get("sessionId") == session:
+            if record.get("agentSource") == "hook":
+                return False
+            # The native hook independently confirmed the same ID that argv
+            # had already found. Promote its provenance without duplicating
+            # the conversation in history.
+            record["agentSource"] = "hook"
+            try:
+                self.owner.store.save()
+            except Exception:
+                record.clear()
+                record.update(before)
+                raise
+            return True
         history = copy.deepcopy(record.get("history", []))
         now = self.clock()
         for identifier in (record.get("sessionId"), session):

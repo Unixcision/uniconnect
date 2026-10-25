@@ -29,6 +29,8 @@ struct MobileTmuxPTYIntegrationTests {
             "HOME": directory.path, "TMPDIR": directory.path, "TMUX_TMPDIR": directory.path,
             "PATH": "/usr/bin:/bin", "SHELL": "/bin/sh", "TERM": "xterm-256color",
         ]
+        let version = try await tmux(executable, binding, environment, ["-V"])
+        try #require(version == "tmux 3.7c", "The integration fixture must use supported tmux 3.7c; found \(version).")
         let desktop = MobilePTYProcess(environment: environment)
         let mobile = MobilePTYProcess(environment: environment)
         var desktopOutput: Task<Void, Never>?
@@ -186,11 +188,16 @@ struct MobileTmuxPTYIntegrationTests {
         _ environment: [String: String], _ arguments: [String]
     ) async throws -> String {
         let runner = UniConnectControlledProcessRunner(maximumOutputBytes: 16 * 1024)
-        let result = try await runner.run(
-            executable: executable, arguments: ["-L", binding.socketName] + arguments,
-            environment: environment, timeout: .seconds(10)
-        )
-        try #require(result.terminationStatus == 0, "tmux fixture command failed: \(String(decoding: result.standardError, as: UTF8.self))")
-        return String(decoding: result.standardOutput, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            let result = try await runner.run(
+                executable: executable, arguments: ["-L", binding.socketName] + arguments,
+                environment: environment, timeout: .seconds(10)
+            )
+            try #require(result.terminationStatus == 0, "tmux fixture command failed: \(String(decoding: result.standardError, as: UTF8.self))")
+            return String(decoding: result.standardOutput, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            throw NSError(domain: "MobileTmuxPTYIntegrationTests", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "tmux fixture command \(arguments.joined(separator: " ")) failed: \(error)"])
+        }
     }
 }

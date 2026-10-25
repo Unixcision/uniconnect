@@ -1,92 +1,194 @@
-"""Real local selection and history export through SSH, on an isolated CI display."""
+"""tmux scrollback drag selection, clipboard export, and SSH history UI."""
 
+import os
+import shutil
 import unittest
 from unittest.mock import patch
 
 from history_copy_fixture import PointerHistoryFixture
-from gi.repository import Gdk, Gtk
+from gi.repository import Gdk, GLib, Gtk, Vte
 from ssh_copy_fixture import SSHCopyFixture
 from vnc_copy_fixture import VNCClipboardPeer
 
 
 class HistoryCopyTests(PointerHistoryFixture):
-    def test_explicit_copy_crosses_vnc_and_viewer_text_can_be_pasted(self):
+    def terminal_text(self):
+        terminal = self.surface.terminal
+        if hasattr(terminal, "get_text_format"):
+            return terminal.get_text_format(Vte.Format.TEXT) or ""
+        return terminal.get_text(None, None)[0] or ""
+
+    @unittest.skipUnless(shutil.which("x11vnc"), "x11vnc required for VNC clipboard integration")
+    def test_explicit_copy_crosses_vnc(self):
         from uniconnect.clipboard_text import publish_text
         self.seed_history()
-        with VNCClipboardPeer() as peer:
+        with VNCClipboardPeer("send") as peer:
             self.wait_for(lambda: peer.ready)
             publish_text('UC_VNC_COPIA_123')
-            self.wait_for(lambda: 'UC_VNC_COPIA_123' in peer.received)
+            self.wait_for(lambda: 'UC_VNC_COPIA_123' in peer.received,
+                          detail=lambda: f"VNC received={peer.received!r}; peer_error={peer.error!r}; "
+                          f"server_log={peer.server_log()!r}")
+
+    @unittest.skipUnless(shutil.which("x11vnc"), "x11vnc required for VNC clipboard integration")
+    def test_vnc_viewer_clipboard_reaches_desktop_and_can_be_pasted(self):
+        self.seed_history()
+        with VNCClipboardPeer("recv") as peer:
+            self.wait_for(lambda: peer.ready)
             peer.send('UC_VNC_PEGADO_456')
-            self.wait_for(lambda: self.clipboard.wait_for_text() == 'UC_VNC_PEGADO_456')
+            # sendall only queues RFB data. Wait until x11vnc has handled it and
+            # the X selection owner is ready before issuing GTK's SelectionRequest.
+            self.wait_for(lambda: 'UC_VNC_PEGADO_456' in peer.server_log()
+                          and peer.clipboard_owner() == peer.selection_window,
+                          detail=lambda: f"owner=0x{peer.clipboard_owner():x}; "
+                          f"expected=0x{peer.selection_window:x}; server_log={peer.server_log()!r}")
+            from uniconnect.clipboard import ClipboardImages
+            self.window.clipboard_images = ClipboardImages(self.window.store.root / "clipboard")
+            clipboard = self.window.clipboard_images
+            clipboard_trace = []
+            request_targets = clipboard._targets
+            request_text = clipboard._text
+            def trace_targets(source, targets, count, request_id):
+                clipboard_trace.append(("targets", count, tuple(atom.name() for atom in (targets or ()))))
+                return request_targets(source, targets, count, request_id)
+            def trace_text(source, text, request_id):
+                clipboard_trace.append(("text", text or ""))
+                return request_text(source, text, request_id)
+            clipboard._targets = trace_targets
+            clipboard._text = trace_text
+            # Exercise UniConnect's real async clipboard request rather than
+            # polling Gtk.Clipboard.wait_for_text() independently. Some X11
+            # selection owners (including x11vnc) only serve the requested
+            # target through their SelectionRequest handler.
             self.window.run_action('paste')
-            self.wait_for(lambda: 'UC_VNC_PEGADO_456' in self.tmux('capture-pane', '-p', '-t', '=subject:'))
+            self.wait_for(lambda: 'UC_VNC_PEGADO_456' in self.tmux('capture-pane', '-p', '-t', '=subject:'),
+                          detail=lambda: f"clipboard_trace={clipboard_trace!r}; "
+                          f"pending_clipboard_requests={len(clipboard._requests)}; "
+                          f"VNC received={peer.received!r}; peer_error={peer.error!r}; "
+                          f"server_log={peer.server_log()!r}")
             self.surface.send('\n')
             self.tmux('wait-for', 'typed')
             self.assertIn('ENTRADA:UC_VNC_PEGADO_456', self.tmux('capture-pane', '-p', '-t', '=subject:'))
 
-    def test_shift_drag_is_native_and_never_pauses_remote_input(self):
+    def test_shift_drag_selects_tmux_scrollback_and_preserves_agent_input(self):
         self.seed_history()
         terminal = self.surface.terminal
         rows = self.tmux("capture-pane", "-p", "-t", "=subject:").splitlines()
         row = next(i for i, text in enumerate(rows) if "ROW0119" in text)
         top = terminal.get_toplevel()
-        x, y = top.get_window().get_origin()[-2:]
+        top_x, top_y = top.get_window().get_origin()[-2:]
         offset_x, offset_y = terminal.translate_coordinates(top, 0, 0)[-2:]
-        x, y = x + offset_x, y + offset_y
-        padding = terminal.get_style_context().get_padding(Gtk.StateFlags.NORMAL)
-        x += padding.left + terminal.get_char_width() // 2
-        y += padding.top + row * terminal.get_char_height() + terminal.get_char_height() // 2
-        print('Native pointer fixture', {'click': (x, y), 'row': row, 'char':
-              (terminal.get_char_width(), terminal.get_char_height()), 'origin':
-              terminal.get_window().get_origin()[-2:], 'offset': (offset_x, offset_y),
-              'size': (terminal.get_allocated_width(), terminal.get_allocated_height())}, flush=True)
-        presses = []
-        terminal.connect('event', lambda widget, event: (presses.append(True) or False)
-                         if event.type == Gdk.EventType.BUTTON_PRESS else False)
+        x, y = top_x + offset_x + 8 * terminal.get_char_width(), top_y + offset_y
+        y += row * terminal.get_char_height() + terminal.get_char_height() // 2
+        pointer_events = []
+        def record_event(widget, event):
+            if event.type in (Gdk.EventType.BUTTON_PRESS, Gdk.EventType.MOTION_NOTIFY,
+                              Gdk.EventType.GRAB_BROKEN):
+                drag = self.surface.selection_drag
+                pointer_events.append((event.type, getattr(event, "state", None),
+                                        getattr(event, "x", None), getattr(event, "y", None),
+                                        getattr(event, "implicit", None), getattr(event, "keyboard", None),
+                                        drag.pressed, drag.active, drag.busy))
+            return False
+        terminal.connect('event', record_event)
         self.xtst.XTestFakeMotionEvent(self.display, -1, x, y, 0)
-        self.xtst.XTestFakeKeyEvent(self.display, self.shift, True, 0)
-        self.xtst.XTestFakeButtonEvent(self.display, 1, True, 0)
+        self.xtst.XTestFakeKeyEvent(self.display, self.shift, True, 30)
+        self.xtst.XTestFakeButtonEvent(self.display, 1, True, 50)
         self.x11.XSync(self.display, False)
-        self.wait_for(lambda: bool(presses))
-        self.xtst.XTestFakeMotionEvent(self.display, -1, x + 16 * terminal.get_char_width(), y, 0)
+        self.wait_for(lambda: any(event[0] == Gdk.EventType.BUTTON_PRESS for event in pointer_events))
+        self.wait_for(lambda: self.tmux("display-message", "-p", "-t", "=subject:",
+                                        "#{pane_in_mode}:#{selection_present}") == "1:1")
+        # copy-mode starts in a tmux worker; wait until GTK has received the exact
+        # pane identity before sending synthetic pointer motion. Otherwise this
+        # test races the initial metadata roundtrip, unlike a human drag.
+        self.wait_for(lambda: self.surface.selection_drag.pane is not None
+                      and not self.surface.selection_drag.busy)
+        # Hold the pointer above the viewport: the edge-scroll timer must walk
+        # the real tmux history instead of stopping at VTE's visible rows.
+        self.xtst.XTestFakeMotionEvent(self.display, -1,
+                                       x - 8 * terminal.get_char_width(),
+                                       top_y + offset_y - 12 * terminal.get_char_height() - 2, 0)
         self.x11.XSync(self.display, False)
-        self.wait_for(terminal.get_has_selection)
+        self.wait_for(lambda: any(event[0] == Gdk.EventType.MOTION_NOTIFY
+                                  and event[1] & Gdk.ModifierType.BUTTON1_MASK for event in pointer_events),
+                      detail=lambda: f"pointer_events={pointer_events[-8:]!r}")
+        self.wait_for(lambda: self.surface.selection_drag.pressed
+                      and self.surface.selection_drag.pane is not None,
+                      detail=lambda: f"pointer_events={pointer_events[-8:]!r}")
+        loop = GLib.MainLoop()
+        GLib.timeout_add(1500, lambda: (loop.quit(), False)[1])
+        loop.run()
+        self.xtst.XTestFakeButtonEvent(self.display, 1, False, 30)
+        self.xtst.XTestFakeKeyEvent(self.display, self.shift, False, 30)
+        self.x11.XSync(self.display, False)
+        self.wait_for(lambda: not self.surface.selection_drag.busy
+                      and self.surface.selection_drag.pending_move is None)
         self.release_pointer()
         self.window.run_action("copy")
-        self.wait_for(lambda: "ROW0119" in (self.clipboard.wait_for_text() or ""))
+        self.wait_for(lambda: "ROW0119" in (self.clipboard.wait_for_text() or "")
+                      and "ROW0000" in (self.clipboard.wait_for_text() or ""),
+                      detail=lambda: f"pointer_events={pointer_events[-8:]!r}; "
+                      f"drag_error={self.surface.selection_drag.last_error!r}; "
+                      f"clipboard_stats={self._clipboard_stats()!r}; "
+                      f"tmux={self.tmux('display-message', '-p', '-t', '=subject:', '#{pane_mode}:#{selection_present}:#{copy_cursor_y}')!r}")
+        # Copying deliberately leaves tmux copy-mode so the live agent receives
+        # subsequent keystrokes without an extra Cancel action.
         self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}"), "0")
         self.assertIn("ROW0119", Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY).wait_for_text())
+        self.assertIn("ROW0000", Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY).wait_for_text())
         self.surface.send("UC_BLUE_OK\n")
         self.tmux("wait-for", "typed")
         self.assertIn("ENTRADA:UC_BLUE_OK", self.tmux("capture-pane", "-p", "-t", "=subject:"))
 
+    def _clipboard_stats(self):
+        text = self.clipboard.wait_for_text() or ""
+        rows = [line for line in text.splitlines() if line.startswith("ROW")]
+        return {"length": len(text), "first": rows[:2], "last": rows[-2:],
+                "has_start": "ROW0000" in text, "has_end": "ROW0119" in text}
+
+    @unittest.skipIf(os.geteuid() == 0, "isolated sshd fixture cannot authenticate the locked root account")
     def test_ssh_history_native_drag_copies_both_clipboards_and_leaves_agent_running(self):
-        self.seed_history()
         self.assertIn("show_history", self.window.action_map)
         with SSHCopyFixture() as ssh:
+            ssh.tmux("new-session", "-d", "-s", "subject", "-x", "80", "-y", "24", "sleep", "90")
+            self.seed_history(ssh.tmux, socket_name=ssh.socket_name, wait_for_terminal=False)
+            # Keep the surface alive and use its normal reconnect path. It
+            # queues SSH while the local tmux client exits, then spawns SSH in
+            # this same VTE instead of abandoning an in-flight child.
             self.surface.workspace["kind"] = "ssh"
             self.surface.workspace["credentialId"] = self.window.vault.put(ssh.command)
+            self.surface.record["tmuxSocket"] = ssh.socket_name
             # Exercise the actual app's SSH launch, not only a mock transport.
             self.surface.launch()
-            self.wait_for(lambda: self.surface.status == "Running" and not self.surface._preparing)
+            self.wait_for(lambda: self.surface.status == "Running" and not self.surface._preparing,
+                          detail=lambda: f"terminal={self.terminal_text()!r}; "
+                          f"remote_pane={ssh.tmux('display-message', '-p', '-t', '=subject:', '#{pane_id}:#{pane_pid}')!r}; "
+                          f"workspace_kind={self.surface.workspace['kind']!r}; "
+                          f"tmux_socket={self.surface.record.get('tmuxSocket')!r}")
+            self.wait_for(lambda: "ROW0119" in self.terminal_text(),
+                          detail=lambda: f"remote_rows={ssh.tmux('capture-pane', '-p', '-t', '=subject:')!r}; "
+                          f"workspace_kind={self.surface.workspace['kind']!r}; "
+                          f"tmux_socket={self.surface.record.get('tmuxSocket')!r}")
             self.window.run_action("show_history")
             self.wait_for(lambda: self.surface.history_view is not None and self.surface.history_view.ready)
             view = self.surface.history_view
             self.addCleanup(view.destroy)
             self.assertIn("ROW0000", view.text.get_buffer().get_text(*view.text.get_buffer().get_bounds(), False))
             self.assertIn("ROW0119", view.text.get_buffer().get_text(*view.text.get_buffer().get_bounds(), False))
-            self.tmux("new-session", "-d", "-s", "other", "sleep 90")
-            other = self.tmux("display-message", "-p", "-t", "=other:", "#{pane_id}:#{pane_pid}")
-            self.tmux("set-buffer", "OTRA_VENTANA")
+            ssh.tmux("new-session", "-d", "-s", "other", "sleep", "90")
+            other = ssh.tmux("display-message", "-p", "-t", "=other:", "#{pane_id}:#{pane_pid}")
+            ssh.tmux("set-buffer", "OTRA_VENTANA")
             view.resize(800, 450)
             view.move(60, 220)
             view.present()
+            self.wait_for(lambda: view.get_mapped() and view.text.get_mapped())
             buffer = view.text.get_buffer()
             end = buffer.get_end_iter()
             buffer.place_cursor(end)
             view.text.scroll_to_iter(end, 0, True, 0, 1)
-            self.wait_for(lambda: view.text.get_vadjustment().get_value() > 0)
+            adjustment = view.scroller.get_vadjustment()
+            self.wait_for(lambda: adjustment.get_upper() > adjustment.get_page_size())
+            adjustment.set_value(adjustment.get_upper() - adjustment.get_page_size())
+            self.wait_for(lambda: adjustment.get_value() > 0)
             visible = view.text.get_visible_rect()
             text_window = view.text.get_window(Gtk.TextWindowType.TEXT)
             x, y = text_window.get_origin()[-2:]
@@ -103,7 +205,14 @@ class HistoryCopyTests(PointerHistoryFixture):
             with patch("uniconnect.transport.Transport.run", side_effect=AssertionError("Dragging/copying must be local")):
                 self.wait_for(lambda: buffer.get_has_selection() and
                               abs(buffer.get_iter_at_mark(buffer.get_insert()).get_line() -
-                                  buffer.get_iter_at_mark(buffer.get_selection_bound()).get_line()) > 40)
+                                  buffer.get_iter_at_mark(buffer.get_selection_bound()).get_line()) > 40,
+                              detail=lambda: f"history_drag_mark={view._history_drag_mark!r}; "
+                              f"pointer={view._history_drag_pointer!r}; timer={view._history_drag_timer!r}; "
+                              f"selection={buffer.get_has_selection()}; "
+                              f"insert={buffer.get_iter_at_mark(buffer.get_insert()).get_line()}; "
+                              f"bound={buffer.get_iter_at_mark(buffer.get_selection_bound()).get_line()}; "
+                              f"adjustment={adjustment.get_value()}/{adjustment.get_upper()}"
+                              )
                 self.release_pointer()
                 view.copy()
                 copied = buffer.get_text(*buffer.get_selection_bounds(), False) if buffer.get_has_selection() else self.clipboard.wait_for_text()
@@ -112,16 +221,16 @@ class HistoryCopyTests(PointerHistoryFixture):
                 self.assertIn("copia_ñ", copied)
                 self.assertGreater(len(copied.splitlines()), 40)
                 view.destroy()
-            self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}"), "0")
-            self.assertEqual(self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_id}:#{pane_pid}"), self.before)
-            self.assertEqual(self.tmux("display-message", "-p", "-t", "=other:", "#{pane_id}:#{pane_pid}"), other)
-            self.assertEqual(self.tmux("show-buffer"), "OTRA_VENTANA")
+            self.assertEqual(ssh.tmux("display-message", "-p", "-t", "=subject:", "#{pane_in_mode}"), "0")
+            self.assertEqual(ssh.tmux("display-message", "-p", "-t", "=subject:", "#{pane_id}:#{pane_pid}"), self.before)
+            self.assertEqual(ssh.tmux("display-message", "-p", "-t", "=other:", "#{pane_id}:#{pane_pid}"), other)
+            self.assertEqual(ssh.tmux("show-buffer"), "OTRA_VENTANA")
             self.clipboard.set_text("UC_PASTE_OK", -1)
             self.window.run_action("paste")
-            self.wait_for(lambda: "UC_PASTE_OK" in self.tmux("capture-pane", "-p", "-t", "=subject:"))
+            self.wait_for(lambda: "UC_PASTE_OK" in ssh.tmux("capture-pane", "-p", "-t", "=subject:"))
             self.surface.send("\n")
-            self.tmux("wait-for", "typed")
-            self.assertIn("ENTRADA:UC_PASTE_OK", self.tmux("capture-pane", "-p", "-t", "=subject:"))
+            ssh.tmux("wait-for", "typed")
+            self.assertIn("ENTRADA:UC_PASTE_OK", ssh.tmux("capture-pane", "-p", "-t", "=subject:"))
             self.assertEqual(self.errors, [])
             self.surface.stop_client()
 

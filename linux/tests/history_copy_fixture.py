@@ -13,7 +13,7 @@ from gi.repository import Gdk, GLib, Gtk, Vte
 
 
 class PointerHistoryFixture(window_fixture.MainWindowCopyTests):
-    def wait_for(self, predicate):
+    def wait_for(self, predicate, detail=None):
         deadline = time.monotonic() + 8
         loop = GLib.MainLoop()
         errors = []
@@ -33,8 +33,9 @@ class PointerHistoryFixture(window_fixture.MainWindowCopyTests):
             raise errors[0]
         drag = getattr(self.surface, "selection_drag", None)
         state = {key: getattr(drag, key, None) for key in
-                 ("point", "pane", "busy", "pressed", "active", "pending_move", "timer")}
-        self.assertTrue(predicate(), f"GTK deadline: {state}; status={self.surface.status_label.get_text()}; errors={self.errors}")
+                 ("point", "pane", "busy", "pressed", "active", "pending_move", "timer", "last_error")}
+        extra = f"; {detail()}" if detail else ""
+        self.assertTrue(predicate(), f"GTK deadline: {state}; status={self.surface.status_label.get_text()}; errors={self.errors}{extra}")
 
     def setUp(self):
         faulthandler.dump_traceback_later(40, exit=True)
@@ -78,15 +79,21 @@ class PointerHistoryFixture(window_fixture.MainWindowCopyTests):
         self.xtst.XTestFakeKeyEvent(self.display, self.shift, False, 0)
         self.x11.XSync(self.display, False)
 
-    def seed_history(self):
-        socket = shlex.quote(self.socket)
+    def seed_history(self, tmux=None, *, socket_name=None, wait_for_terminal=True):
+        tmux = tmux or self.tmux
+        socket_name = socket_name or self.socket
+        socket = shlex.quote(socket_name)
+        # Keep the fixture independent of a runner/user tmux.conf.
+        tmux("set-option", "-g", "history-limit", "500")
         command = ("i=0; while [ $i -lt 120 ]; do printf 'ROW%04d copia_ñ\\n' $i; i=$((i+1)); done; "
                    f"tmux -L {socket} wait-for -S history-ready; IFS= read -r uc_input; "
                    "printf 'ENTRADA:%s\\n' \"$uc_input\"; "
                    f"tmux -L {socket} wait-for -S typed; exec sleep 90")
-        self.tmux("respawn-pane", "-k", "-t", "=subject:", command)
-        self.tmux("wait-for", "history-ready")
-        self.before = self.tmux("display-message", "-p", "-t", "=subject:", "#{pane_id}:#{pane_pid}")
+        tmux("respawn-pane", "-k", "-t", "=subject:", command)
+        tmux("wait-for", "history-ready")
+        self.before = tmux("display-message", "-p", "-t", "=subject:", "#{pane_id}:#{pane_pid}")
+        if not wait_for_terminal:
+            return
         terminal = self.surface.terminal
         def visible_text():
             return (terminal.get_text_format(Vte.Format.TEXT) if hasattr(terminal, "get_text_format")

@@ -256,6 +256,8 @@ def command_for(entry):
             arguments += ["-m", entry["model"]]
         if entry.get("reasoningEffort"):
             arguments += ["-c", "model_reasoning_effort=" + json.dumps(entry["reasoningEffort"])]
+        # Solo el lanzamiento Linux: la orden canónica compartida no cambia.
+        arguments.append("--no-alt-screen")
     argv = canonical_argv(agent, entry["sessionId"], arguments)
     if agent == "claude":
         executable = claude_executable(entry)

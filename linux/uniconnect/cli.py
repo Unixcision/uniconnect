@@ -16,6 +16,18 @@ def main():
     parser.add_argument("command", nargs="?", default="ping")
     parser.add_argument("text", nargs="*", default=[])
     options = parser.parse_args()
+    if options.command == "antigravity-integration":
+        from uniconnect.antigravity_integration import AntigravityIntegration, IntegrationError
+        if len(options.text) != 1 or options.text[0] not in ("enable", "disable", "status"):
+            parser.exit(2, "Usage: uniconnect-cli antigravity-integration enable|disable|status\n")
+        integration = AntigravityIntegration()
+        try:
+            result = {"enable": integration.enable, "disable": integration.disable,
+                      "status": integration.status}[options.text[0]]()
+        except IntegrationError as error:
+            parser.exit(1, "Antigravity integration unchanged: " + str(error) + "\n")
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
     request = {"command": options.command, "workspace": options.workspace, "surface": options.surface, "text": " ".join(options.text)}
     try:
         with socket.socket(socket.AF_UNIX) as client:

@@ -38564,6 +38564,17 @@
         }
       }
     },
+    "uniconnect.relaunch.warning.active_codex": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tiene trabajo en curso. Al aplicar autorizas interrumpirlo, incluidos sus terminales de fondo, para cerrar Codex y reabrir la misma conversación."
+          }
+        }
+      }
+    },
     "uniconnect.relaunch.cause.token_caducado": {
       "extractionState": "manual",
       "localizations": {
@@ -41138,6 +41149,39 @@
         }
       }
     },
+    "uniconnect.shared.reabrir.y.continuar.codex.pausado.de.esta.ventana": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reabrir y continuar Codex pausado de esta ventana…"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.reabrir.y.continuar.codex.pausado.de.este.espacio": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reabrir y continuar Codex pausado de este espacio…"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.reabrir.y.continuar.codex.pausado.de.este.equipo": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reabrir y continuar Codex pausado de este equipo…"
+          }
+        }
+      }
+    },
     "uniconnect.shared.rejected": {
       "extractionState": "manual",
       "localizations": {
@@ -41860,6 +41904,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ver"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.vincular.gemini.abierta.de.esta.ventana": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vincular GEMINI abierta de esta ventana…"
           }
         }
       }

@@ -181,18 +181,18 @@ struct UniConnectRelaunchInventoryTests {
         #expect(reading.exclusions.first?.cause == .noAgent)
     }
 
-    @Test("Una ventana local con Codex entra en el relanzado desde D7, con su conversación")
-    func localCodexWindowIsRelaunchable() throws {
+    @Test("Una ventana local con Codex se enumera, pero no se cierra hasta validar su dialecto")
+    func localCodexWindowAwaitsLiveRelaunchValidation() throws {
         let (workspace, _) = try localWorkspace(
             name: "api", agent: .codex, sessionID: "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17", backToShell: false
         )
 
         let reading = UniConnectRelaunchInventory(machineID: "mac").read(workspaces: [workspace])
 
-        #expect(reading.exclusions.isEmpty)
-        let target = try #require(reading.items.first?.target)
-        #expect(target.provider == "codex")
-        #expect(target.evidence?.provenConversation == "01a0ac81-57c7-7af3-8ac2-fe8a957c8b17")
+        #expect(reading.items.isEmpty)
+        let exclusion = try #require(reading.exclusions.first)
+        #expect(exclusion.cause == .unsupported)
+        #expect(exclusion.label.contains("Codex"))
     }
 
     @Test("Una ventana local con Grok sale como no_soportado y la lista dice qué IA es")

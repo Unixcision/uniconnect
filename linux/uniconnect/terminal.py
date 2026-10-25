@@ -1,5 +1,6 @@
 """Native VTE surface; terminating the frontend only detaches its tmux client."""
 
+import logging
 import os
 import signal
 import threading
@@ -68,7 +69,11 @@ class TerminalSurface(Gtk.Box):
         self.terminal.connect("bell", lambda *_: self.owner.notify_window(self.workspace, self.record))
         self.terminal.connect("focus-in-event", self.on_focus)
         self.terminal.connect("button-press-event", self.on_button)
-        self.terminal.add_events(Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK)
+        # POINTER_MOTION_MASK covers hover motion only on X11/GDK. Dragging
+        # while a button is held needs the matching button-motion masks or VTE
+        # never receives the events once Shift+drag starts.
+        self.terminal.add_events(Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.BUTTON_MOTION_MASK |
+                                 Gdk.EventMask.BUTTON1_MOTION_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK)
         self.terminal.connect("motion-notify-event", self.on_selection_motion)
         self.terminal.connect("grab-broken-event", self.on_selection_grab_broken)
         self.terminal.connect("button-release-event", self.on_selection_release)
@@ -575,19 +580,42 @@ class TerminalSurface(Gtk.Box):
                 self.owner.persist()
 
     def on_button(self, _, event):
-        # Shift+drag belongs to VTE: immediate blue selection and PRIMARY,
-        # without remote copy-mode or a fresh SSH connection on every motion.
+        # Shift+drag selects tmux history, not only the VTE viewport. Keep the
+        # transport worker bounded/coalesced by SelectionDrag so SSH motion
+        # never blocks GTK or sends mouse events to the running agent. If the
+        # pointer grab fails synchronously, returning False leaves VTE's
+        # visible-screen selection behavior available; transport failures that
+        # arrive later are reported by SelectionDrag on the GTK thread.
+        if event.button == 1 and event.state & Gdk.ModifierType.SHIFT_MASK:
+            self.on_focus()
+            try:
+                connection = self.owner.connection(self.workspace) if self.workspace["kind"] == "ssh" else None
+                transport = Transport(connection, socket_name=self.record.get("tmuxSocket"))
+                self.selection_drag.begin(transport, dict(self.record), *self.selection_cell(event), event)
+            except Exception as error:
+                logging.getLogger(__name__).warning(
+                    "Could not begin tmux history selection: %s", type(error).__name__)
+                self.owner.error(self.owner._("No se pudo seleccionar el historial del terminal."))
+                return False  # Let VTE provide its ordinary visible-screen selection as a fallback.
+            return self.selection_drag.active
         if event.button == 3:
             self.on_focus()
             self.owner.context_menu(["copy", "show_history", "cancel_selection", "paste", "find", "window_details",
-                                     "relaunch_window", "new_window", "rename_window", "split_right", "split_down",
+                                     "relaunch_window", "adopt_antigravity_window", "continue_window", "new_window", "rename_window", "split_right", "split_down",
                                      "reconnect", "upload", "close_window"], event)
             return True
         return False
 
     def selection_cell(self, event):
+        # Event root coordinates are measured against the widget allocation;
+        # terminal.get_window() may be an internal VTE child window (with an
+        # offset), so subtract the actual widget's position in its toplevel.
         padding = self.terminal.get_style_context().get_padding(Gtk.StateFlags.NORMAL)
-        origin_x, origin_y = self.terminal.get_window().get_origin()[-2:]
+        top = self.terminal.get_toplevel()
+        origin_x, origin_y = top.get_window().get_origin()[-2:]
+        offset_x, offset_y = self.terminal.translate_coordinates(top, 0, 0)[-2:]
+        origin_x += offset_x
+        origin_y += offset_y
         return (int((event.x_root - origin_x - padding.left) // max(1, self.terminal.get_char_width())),
                 int((event.y_root - origin_y - padding.top) // max(1, self.terminal.get_char_height())))
 

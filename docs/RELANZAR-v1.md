@@ -19,6 +19,7 @@ usuario las pide en momentos distintos.
 | `transport.reconnect` | Reengancha el cliente a lo que ya está corriendo. | No cierra la IA. No toca el proceso. |
 | `agent.relaunch` | Cierra el agente y lo reabre **sobre la misma conversación**, siempre sin preguntas. | No mata tmux. No cambia modelo ni carpeta. |
 | `agent.continue` | Le dice a un agente vivo que retome el encargo anterior. | No es un OK en blanco: va acotado a ese encargo. |
+| `agent.recover` | Reabre la misma sesión Codex pausada por un límite de uso y, si el aviso sigue presente en un compositor vacío, le envía «continua». | No envía texto a otra causa de pausa, borrador, diálogo o identidad no probados. |
 
 `transport.reconnect` es el caso mayoritario: quien ve una ventana en blanco casi siempre quiere
 esto y no relanzar nada. En SSH es además *el* caso, porque lo que se cae es el transporte mientras
@@ -118,6 +119,7 @@ Resultado **por objetivo**, nunca agregado. Cada verbo recorre sus propias fases
 agent.relaunch      planificado → cerrando → reabriendo → verificado
 transport.reconnect planificado → reenganchando → verificado
 agent.continue      planificado → entregando → verificado
+agent.recover       planificado → cerrando → reabriendo → entregando → verificado
 
 cualquiera de ellas  →  necesita_usuario | fallido | omitido
 ```
@@ -195,15 +197,16 @@ AgentAdapter
 
 Mismos tres verbos para caja local y SSH; cambia el transporte, no el contrato.
 
-**Qué dialecto tiene cada equipo (D7, 24-09-2026).** Hasta ahora el Mac solo sabía cerrar Claude y
-Linux solo Codex, y los dos anunciaban `relaunch.v1` igual: desde el móvil, la misma entrada hacía
+**Qué dialecto tiene cada equipo (D7, 24-09-2026).** Antes de esta extensión, el Mac solo sabía
+cerrar Claude y Linux solo anunciaba Codex; desde el móvil, la misma entrada hacía
 cosas opuestas según el equipo. D7 porta a cada lado el dialecto que le faltaba:
 
 | Proveedor | Mac, ventana local | Mac, ventana SSH | Linux, ventana local | Linux, caja SSH |
 |---|---|---|---|---|
 | Claude | sí | `no_soportado` | sí (calca `ClaudeRelaunchDialect`: ficha en `idle`, compositor vacío, `/exit`, reabre con `--dangerously-skip-permissions` e `IS_SANDBOX=1` si es root) | sí, con el mismo trabajador en el destino |
 | Codex | sí (calca `exit_codex` de Linux: `/exit` comprobado en pantalla, Intro, espera la muerte del proceso ≤ 75 s, reabre con `--yolo` y `supersedes`) | `no_soportado` | sí | sí |
-| agy, grok, resto | `no_soportado` | `no_soportado` | `no_soportado` | `no_soportado` |
+| Antigravity | `no_soportado` | `no_soportado` | sí, solo con binding gestionado y statusLine nativo fresco que pruebe estado idle | sí, con las mismas puertas en el destino Linux |
+| grok, resto | `no_soportado` | `no_soportado` | `no_soportado` | `no_soportado` |
 
 Lo que exige cada dialecto, paso a paso, está en `contracts/relaunch-v1/LEEME.md`, y la matriz como
 dato en `contracts/relaunch-v1/proveedores.json`. El id verificado se guarda con el proveedor del
@@ -233,7 +236,12 @@ cliente no ofrece la acción, igual que con `ssh_create.v1`.
 
 Además anuncia, desde D7, un token por cada proveedor y tipo de ventana que sabe relanzar:
 `relaunch.v1.<proveedor>.<tipo>` (`local` o `ssh`). El Mac: `relaunch.v1.claude.local` y
-`relaunch.v1.codex.local`. Linux: esos dos y `relaunch.v1.claude.ssh` y `relaunch.v1.codex.ssh`. Van
+`relaunch.v1.codex.local`. Linux anuncia `relaunch.v1.codex.local`, `relaunch.v1.codex.ssh`,
+`relaunch.v1.agy.local` y `relaunch.v1.agy.ssh`; Claude Linux sigue fuera de soporte. Antigravity
+solo se relanza cuando el pane acredita un binding gestionado vigente y statusLine nativo idle;
+las ventanas sin esa evidencia quedan excluidas por el plan. La integración pasó una fixture
+aislada de tmux (cierre, nueva generación, mismo ID y configuración); no se probó con una cuenta
+real. Van
 en las mismas listas de `capabilities` que `relaunch.v1` (`mobile.workspace.list`, y en Linux también
 `mobile.host.status` y el `status` del socket de control). Android ofrece «Relanzar IA de esta
 ventana» solo si está anunciado el par de esa ventana; si el equipo no anuncia ningún token
@@ -300,10 +308,11 @@ La lista viva es `contracts/relaunch-v1/causes.json`.
   - toda ventana **SSH del Mac**: su política de cierre sigue rechazando `.ssh`, y una ventana SSH
     pedida por id desde el móvil devuelve esta exclusión, no `alcance_no_valido`. Linux sí relanza
     en cajas SSH con destino Linux;
-  - agy, grok y el resto del catálogo **en todos los equipos**: no hay dialecto de cierre
-    verificado para ellos. Su recuperación al abrir (tmux caído) sí funciona, con la orden sin
-    preguntas.
-  - Claude y Codex ya no: los dos equipos los relanzan en ventanas locales (sección 6).
+  - Antigravity en el Mac, y grok/resto del catálogo en todos los equipos: no hay dialecto
+    anunciado. En Linux Antigravity requiere binding gestionado y statusLine idle fresco; sin esa
+    prueba el plan devuelve `no_soportado`. Su recuperación al abrir (tmux caído) sí funciona, con
+    la orden sin preguntas.
+  - Claude y Codex ya no: los equipos los relanzan en las celdas indicadas en la sección 6.
 
 **Seguir una operación.** `apply` puede devolver `operation_state: "en_curso"`. Android pregunta
 entonces con `relaunch.status` cada 2 s, como mucho 90 veces, y solo cuando `operation_state` deja de

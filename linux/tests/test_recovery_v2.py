@@ -141,7 +141,7 @@ class ResumeCommandsContractTest(unittest.TestCase):
                 self.assertEqual(got["no_prompt_verified"], caso["no_prompt_verified"])
 
     def test_command_for_launches_the_canonical_argv(self):
-        # Lo que se lanza de verdad empieza por la forma canónica; Codex añade detrás -C <cwd>.
+        # Lo que se lanza de verdad empieza por la forma canónica; Codex añade cwd y modo inline.
         # command_for saca sus argumentos del manifiesto (-C, -m, -c), no de `arguments`: los casos
         # con `arguments` (supersedes de --yolo) se comprueban en canonical_resume.
         for caso in (c for c in contract("reanudar-comandos.json")["casos"] if not c.get("arguments")):
@@ -152,7 +152,7 @@ class ResumeCommandsContractTest(unittest.TestCase):
                     argv = recovery.command_for(entry)
                 self.assertEqual(argv[:len(caso["argv"])], caso["argv"])
                 if caso["provider"] == "codex":
-                    self.assertEqual(argv[len(caso["argv"]):], ["-C", caso["cwd"]])
+                    self.assertEqual(argv[len(caso["argv"]):], ["-C", caso["cwd"], "--no-alt-screen"])
                 else:
                     self.assertEqual(len(argv), len(caso["argv"]))
 
@@ -184,7 +184,7 @@ class NoPromptFlagsTest(unittest.TestCase):
         with patch.object(recovery.shutil, "which", return_value="/usr/bin/codex"):
             argv = recovery.command_for({"agent": "codex", "sessionId": "t1", "cwd": "/w", "model": "m", "reasoningEffort": "max"})
         self.assertEqual(argv, ["/usr/bin/codex", "--yolo", "resume", "t1", "-C", "/w", "-m", "m",
-                                "-c", 'model_reasoning_effort="max"'])
+                                "-c", 'model_reasoning_effort="max"', "--no-alt-screen"])
 
     def test_gemini_is_resumed_skipping_permissions(self):
         with patch.object(recovery.shutil, "which", return_value="/usr/bin/agy"):

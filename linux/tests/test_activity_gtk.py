@@ -33,6 +33,7 @@ from uniconnect.activity_monitor import ActivityMonitor
 terminal = Vte.Terminal()
 terminal.set_size(40, 6)
 window = Gtk.OffscreenWindow()
+window.set_default_size(800, 240)
 window.add(terminal)
 window.show_all()
 terminal.feed("".join(f"fila {n}\r\n" for n in range(1, 15)).encode() + b"Do you want to proceed?\r\n\x1b[1m\xe2\x9d\xaf 1. Yes\x1b[0m")
