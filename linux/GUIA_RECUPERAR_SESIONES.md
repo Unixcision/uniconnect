@@ -12,6 +12,8 @@
 
 Una ventana con una IA trabajando puede avisar antes de cerrarla. Aplicar el plan puede interrumpir esa generación; espera a que termine si quieres conservarla. Si hay un borrador, diálogo, identidad o configuración no reconocidos, la ventana debe quedar excluida. No fuerces su cierre desde el terminal.
 
+`codex update` actualiza el ejecutable en el equipo donde corre ese Codex; no cambia el TUI que ya está abierto. Después, usa **Relanzar IA** desde UniConnect para reabrir la misma conversación con la versión nueva. Si la vista previa excluye una sesión activa o no reconocida, déjala abierta: la actualización quedará disponible para el siguiente relanzado seguro.
+
 Para una sesión GEMINI/Antigravity ya abierta, usa primero **Vincular GEMINI abierta de esta ventana…** y confirma el cambio de hooks/status line de UniConnect. La vinculación no cierra la conversación; solo se acepta si el pane, el ID y el estado nativo coinciden. Después revisa la vista previa normal de **Relanzar IA**. `agy update` actualiza el binario instalado, pero no cambia el proceso de un TUI que ya estaba abierto. Si ese proceso no emite una señal reciente e inactiva, o la vista previa lo excluye, déjalo abierto hasta poder verificarlo.
 
 ## Continuar una sesión de Codex pausada por cuota
