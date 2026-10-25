@@ -160,10 +160,19 @@ class WindowDetails:
             provider = live_agent["provider"]
             session = canonical_id(live_agent.get("session_id"))
             cwd = live_agent.get("cwd")
+            source = live_agent.get("source")
+            # AGY's argv can carry the same ID as its native statusLine binding.
+            # Keep the stronger provenance already verified for this exact window
+            # when the fresh process probe confirms that same conversation.
+            if (provider == "agy" and session
+                    and record.get("agent") == provider
+                    and canonical_id(record.get("sessionId")) == session
+                    and record.get("agentSource") == "hook"):
+                source = "hook"
             as_root = bool(live_agent.get("as_root"))
             agent = {"provider": provider, "display_name": cls.display_name(catalog, provider),
                      "session_id": session, "cwd": cwd, "as_root": as_root,
-                     "source": live_agent.get("source") if session else None, "state": "activo",
+                     "source": source if session else None, "state": "activo",
                      "observed_at": cls.iso(live.get("checked_at")),
                      "resume": cls.resume(catalog, provider, session, cwd, as_root)}
             live_reason = None if session else "sin_id"
