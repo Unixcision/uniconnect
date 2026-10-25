@@ -49,6 +49,13 @@ class AntigravityMetadataTests(unittest.TestCase):
         payload["quota"] = {"weekly": {"remaining_fraction": 0}, "fast": {"disabled": True}}
         self.assertIs(agy_status(payload, "statusline")["quota_paused"], True)
 
+    def test_documented_human_readable_model_id_is_preserved_but_controls_are_rejected(self):
+        payload = {"model": {"id": "Claude Sonnet 4.6 (Thinking)",
+                             "display_name": "Claude Sonnet 4.6 (Thinking)"}}
+        self.assertEqual(agy_status(payload, "statusline")["model_id"], "Claude Sonnet 4.6 (Thinking)")
+        payload["model"]["id"] = "Gemini 4 Argon (Medium)\n--dangerous"
+        self.assertIsNone(agy_status(payload, "statusline")["model_id"])
+
     def test_stop_hook_is_idle_only_when_fully_idle_without_error(self):
         self.assertEqual(agy_status({"fullyIdle": True, "error": ""}, "Stop")["state"], "idle")
         self.assertEqual(agy_status({"fullyIdle": False}, "Stop")["state"], "working")

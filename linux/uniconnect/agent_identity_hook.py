@@ -275,7 +275,12 @@ def agy_status(payload, event):
         state = "unknown"
     if not isinstance(model_name, str) or not model_name.strip() or len(model_name) > 160:
         model_name = None
-    if not isinstance(model_id, str) or not re.fullmatch(r"[A-Za-z0-9._:/-]{1,160}", model_id):
+    # Antigravity's documented model IDs can be human-readable labels, e.g.
+    # ``Gemini 4 Argon (Medium)``. Preserve the exact value as one argv token;
+    # shlex.join protects spaces, while control characters are never valid IDs.
+    if (not isinstance(model_id, str) or not model_id.strip()
+            or len(model_id.encode("utf-8")) > 160
+            or not model_id.isprintable()):
         model_id = None
     if not isinstance(effort, str) or len(effort) > 32:
         effort = None
