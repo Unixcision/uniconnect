@@ -352,13 +352,26 @@ class RecoveryRelaunchTests(unittest.TestCase):
         settings = {"type": "event_msg", "payload": {"type": "thread_settings_applied", "thread_settings": {
             "model": "current", "reasoning_effort": "max", "cwd": "/work", "approval_policy": "never",
             "permission_profile": {"type": "disabled"}}}}
-        TargetWorker.validate_quiescence([context, complete, settings], process)
-        TargetWorker.validate_quiescence([context, complete, settings], {**process, "argv": ["codex", "resume", "id", "--yolo"]})
+        native = TargetWorker.validate_quiescence([context, complete, settings], process)
+        self.assertTrue(native["settings_applied"])
+        self.assertEqual((native["model"], native["effort"]), ("current", "max"))
+        resume = TargetWorker.resume_arguments("codex", process["argv"], "id", AgentResumeCatalog().providers,
+                                               native)
+        self.assertEqual(resume[resume.index("-m") + 1], "current")
+        self.assertEqual(resume[resume.index("-c") + 1], 'model_reasoning_effort="max"')
+        TargetWorker.validate_quiescence([context, complete, settings],
+                                         {**process, "argv": ["codex", "resume", "id", "--yolo"]})
+        # Native current settings may replace stale model/effort selectors, but
+        # permission policy and cwd must still be proven exactly.
+        for argv in (["codex", "-s", "workspace-write", "-a", "never"],
+                     ["codex", "--yolo", "-C", "/other"]):
+            with self.subTest(argv=argv), self.assertRaises(Unavailable):
+                TargetWorker.validate_quiescence([context, complete, settings], {**process, "argv": argv})
         for rows in ([context, settings], [context, complete, settings, {"type": "event_msg", "payload": {"type": "task_started", "turn_id": "next"}}]):
             with self.assertRaises(Unavailable):
                 TargetWorker.validate_quiescence(rows, process)
         with self.assertRaises(Unavailable):
-            TargetWorker.validate_quiescence([context, complete, settings], {**process, "argv": ["codex", "--yolo", "-m", "wrong"]})
+            TargetWorker.validate_quiescence([context, complete], {**process, "argv": ["codex", "--yolo", "-m", "wrong"]})
 
     def test_only_pinned_recovery_with_same_conversation_and_arguments_is_admitted(self):
         with tempfile.TemporaryDirectory() as directory:

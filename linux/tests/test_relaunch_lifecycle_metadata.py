@@ -122,7 +122,9 @@ class CodexLifecycleMetadataTests(unittest.TestCase):
         rows = [self.context(), self.event("task_complete"), old_settings, self.settings(4)]
         self.assertEqual(self.configuration(rows)["model"], "model")
         rows[-1]["payload"]["thread_settings"]["model"] = "changed-model"
-        self.assert_unavailable(rows, cause="no_soportado")
+        configuration = self.configuration(rows)
+        self.assertEqual(configuration["model"], "changed-model")
+        self.assertTrue(configuration["settings_applied"])
 
     def test_rollout_growth_during_retrospective_read_is_rejected(self):
         original = self.worker.codex_turn_metadata

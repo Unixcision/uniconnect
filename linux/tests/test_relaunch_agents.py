@@ -104,6 +104,23 @@ class ArgumentsTests(unittest.TestCase):
         self.assertEqual(args, ["codex", "--yolo", "resume", "current", "-c", 'model_reasoning_effort="high"',
                                 "--no-alt-screen"])
 
+    def test_codex_resume_uses_proven_current_model_effort_and_keeps_other_config(self):
+        native = {"settings_applied": True, "model": "current-model", "effort": "high"}
+        argv = ["codex", "resume", "old", "-m", "launch-model", "-c", 'model_reasoning_effort="low"',
+                "-c", 'analytics.enabled=false']
+        resumed = TargetWorker.resume_arguments("codex", argv, "native", self.catalog, native)
+        self.assertEqual(resumed[resumed.index("-m") + 1], "current-model")
+        self.assertIn('model_reasoning_effort="high"', resumed)
+        self.assertIn("analytics.enabled=false", resumed)
+        self.assertNotIn("launch-model", resumed)
+        self.assertNotIn('model_reasoning_effort="low"', resumed)
+
+        # A native null means the UI uses its model default; remove a stale
+        # explicit effort instead of restoring it from the old process argv.
+        native["effort"] = None
+        resumed = TargetWorker.resume_arguments("codex", argv, "native", self.catalog, native)
+        self.assertNotIn("model_reasoning_effort=", " ".join(resumed))
+
     def test_antigravity_resume_preserves_validated_session_options_without_adding_permissions(self):
         identifier = "4a1ec7f2-126f-4e63-a347-92ab4576fdda"
         argv = ["/usr/bin/agy", "--conversation", identifier, "--model", "gemini-3-pro",

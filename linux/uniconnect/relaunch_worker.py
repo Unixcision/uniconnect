@@ -289,8 +289,9 @@ class TargetWorker:
         """Require native effective configuration and, by default, a completed turn.
 
         ``allow_active`` admits a known working Codex turn into a relaunch plan;
-        its effective settings still have to match. A confirmed plan interrupts
-        that turn and observes its native end before submitting /exit.
+        its effective settings still have to be proven. A confirmed plan interrupts
+        that turn and observes its native end before submitting /exit. A native
+        settings event may supersede the old argv model/effort, but never permissions.
         Reads metadata only; no transcript contents leave the target.
         Claude (D7): its own ficha says ``idle`` for that same conversation.
         """
@@ -523,12 +524,18 @@ class TargetWorker:
                          "cwd": settings.get("cwd"), "approval_policy": settings.get("approval_policy"),
                          "sandbox_policy": {"type": "danger-full-access"}}
         actual_sandbox = effective.get("sandbox_policy", {}).get("type")
-        if (((not model) and not bypass) or (model and model != effective.get("model"))
+        # A native thread_settings_applied record is newer than the launch argv
+        # and can reflect changes made in Codex's model picker.  It is safe to
+        # follow that record for model/effort only; permission flags still have
+        # to match the live effective policy exactly below.
+        settings_are_current = settings is not None
+        if (((not model) and not bypass and not settings_are_current)
+                or (model and model != effective.get("model") and not settings_are_current)
                 or not sandbox or not approval
                 or sandbox != actual_sandbox or approval != effective.get("approval_policy")
                 or effective.get("cwd") != process["cwd"]):
             raise Unavailable("no_soportado")
-        if effective.get("effort") != effort and not (effort is None and settings is not None):
+        if effective.get("effort") != effort and not settings_are_current:
             raise Unavailable("no_soportado")
         if not isinstance(effective.get("model"), str) or not effective["model"]:
             raise Unavailable("no_soportado")
@@ -540,7 +547,8 @@ class TargetWorker:
             profile = settings["permission_profile"]
             if profile != {"type": "disabled"} or sandbox != "danger-full-access":
                 raise Unavailable("no_soportado")
-        return {key: effective.get(key) for key in ("model", "effort", "cwd", "approval_policy", "sandbox_policy")}
+        return {**{key: effective.get(key) for key in ("model", "effort", "cwd", "approval_policy", "sandbox_policy")},
+                "settings_applied": settings_are_current}
 
     def antigravity_configuration(self, process, identifier, hook):
         """Require pane/process-bound recent native idle evidence before AGY exit."""
@@ -668,7 +676,7 @@ class TargetWorker:
             raise Unavailable("no_soportado")
 
     @staticmethod
-    def resume_arguments(provider, argv, identifier, catalog):
+    def resume_arguments(provider, argv, identifier, catalog, native_configuration=None):
         """Retain explicit options, remove ONLY the previous conversation selector.
 
         Unknown positional inputs or noninteractive subcommands are excluded;
@@ -724,6 +732,36 @@ class TargetWorker:
             else:
                 raise Unavailable("no_soportado")
             index += 1
+        if (provider == "codex" and isinstance(native_configuration, dict)
+                and native_configuration.get("settings_applied") is True):
+            model = native_configuration.get("model")
+            effort = native_configuration.get("effort")
+            if (not isinstance(model, str) or not model
+                    or (effort is not None and (not isinstance(effort, str) or not effort))):
+                raise Unavailable("no_soportado")
+            # Rebuild only the model/effort selectors from the proven current
+            # native settings. Preserve every other recognized launch option.
+            normalized, index = [], 0
+            while index < len(kept):
+                option = kept[index].split("=", 1)[0]
+                inline = "=" in kept[index]
+                if option in ("-m", "--model"):
+                    index += 1 if inline else 2
+                    continue
+                if option in ("-c", "--config"):
+                    value = kept[index].split("=", 1)[1] if inline else (
+                        kept[index + 1] if index + 1 < len(kept) else "")
+                    if value.startswith("model_reasoning_effort="):
+                        index += 1 if inline else 2
+                        continue
+                normalized.append(kept[index])
+                if not inline and option in values:
+                    normalized.append(kept[index + 1])
+                    index += 1
+                index += 1
+            kept = [*normalized, "-m", model]
+            if effort is not None:
+                kept.extend(("-c", "model_reasoning_effort=" + json.dumps(effort)))
         # Preserve terminal scrollback across the Linux relaunch, even when the
         # old Codex instance used its own alternate-screen transcript.
         if provider == "codex" and "--no-alt-screen" not in kept:
@@ -880,7 +918,8 @@ class TargetWorker:
                     and "UNICONNECT_NATIVE_HELPER=" in root["argv"][2]
                     and root["argv"][2].endswith('exec "${SHELL:-/bin/sh}" -l')):
                 raise Unavailable("no_soportado")
-        resume = self.resume_arguments(provider, [process["executable"], *process["argv"][1:]], effective, self.request["catalog"])
+        resume = self.resume_arguments(provider, [process["executable"], *process["argv"][1:]], effective,
+                                       self.request["catalog"], native_configuration)
         if provider == "agy":
             resume = self.preserve_antigravity_configuration(resume, native_configuration)
         self.preserve_resume_permissions(provider, native_configuration, resume)
