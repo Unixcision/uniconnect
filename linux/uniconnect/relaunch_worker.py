@@ -109,7 +109,11 @@ class TargetWorker:
             row = int(self.tmux("display-message", "-p", "-t", pane["pane"], "#{cursor_y}"))
             if self.staged_control_matches(
                     lines, row, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"):
-                self.tmux("send-keys", "-t", pane["pane"], "C-u")
+                # Antigravity's composer does not consistently bind C-u to
+                # clear its input. Backspace only the exact staged command we
+                # just verified, so a failed adoption never leaves a control
+                # string waiting for the user's next Enter.
+                self.tmux("send-keys", "-t", pane["pane"], *(["BSpace"] * len("/statusline enable")))
         except (Unavailable, OSError, ProcessLookupError, ValueError):
             return
 

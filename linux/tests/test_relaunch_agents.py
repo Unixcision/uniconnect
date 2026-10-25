@@ -284,7 +284,10 @@ class ArgumentsTests(unittest.TestCase):
                     return ""
                 worker.tmux = tmux
                 worker.clear_staged_control(pane, process)
-                self.assertEqual(any(call[-1] == "C-u" for call in calls), expected)
+                clears = [call for call in calls if call[0] == "send-keys"]
+                self.assertEqual(bool(clears), expected)
+                if expected:
+                    self.assertEqual(clears[0][3:], ("BSpace",) * len("/statusline enable"))
 
     def test_native_turn_activity_and_runtime_settings_are_required_before_exit(self):
         process = {"cwd": "/work", "argv": ["codex", "-m", "fixture-model", "-s", "read-only", "-a", "never"]}
