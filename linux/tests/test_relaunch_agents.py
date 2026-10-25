@@ -439,7 +439,7 @@ class AntigravityDialectTests(unittest.TestCase):
         self.hook = json.dumps(self.binding)
 
     def test_relaunch_requires_bound_idle_status_and_known_task_count_version(self):
-        expected = {"model": "gemini-fixture", "effort": "high", "cycle_mode": "plan",
+        expected = {"model": "gemini-fixture", "model_label": "Gemini", "effort": "high", "cycle_mode": "plan",
                     "sandbox_enabled": False, "version": "1.2.17"}
         with patch.object(TargetWorker, "process_birth_bounds", return_value=(0, 0)):
             self.assertEqual(self.worker.quiescent_configuration("agy", self.process, self.SESSION, self.hook), expected)
@@ -475,6 +475,22 @@ class AntigravityDialectTests(unittest.TestCase):
         with self.assertRaises(Unavailable):
             TargetWorker.preserve_antigravity_configuration(["agy", "--sandbox", "--conversation", self.SESSION],
                 {"model": "model", "effort": None, "cycle_mode": None, "sandbox_enabled": False})
+
+    def test_missing_model_id_keeps_the_same_conversation_and_verifies_its_display_label(self):
+        configuration = {"model": None, "model_label": "Claude Sonnet 4.6 (Thinking)", "effort": None,
+                         "cycle_mode": None, "sandbox_enabled": False}
+        runtime = {**self.binding["runtime_status"], "model": configuration["model_label"], "model_id": None}
+        proof = {**self.binding, "runtime_status": runtime}
+        with patch.object(TargetWorker, "process_birth_bounds", return_value=(0, 0)):
+            actual = self.worker.quiescent_configuration("agy", self.process, self.SESSION, json.dumps(proof))
+        self.assertEqual(actual["model_label"], configuration["model_label"])
+        argv = TargetWorker.resume_arguments("agy", self.process["argv"], self.SESSION,
+                                             AgentResumeCatalog().providers)
+        self.assertEqual(TargetWorker.preserve_antigravity_configuration(argv, configuration),
+                         ["agy", "--conversation", self.SESSION])
+        with self.assertRaises(Unavailable):
+            TargetWorker.preserve_antigravity_configuration(
+                ["agy", "--conversation", self.SESSION, "--model", "unknown"], configuration)
 
     def test_binding_must_match_the_live_managed_pane_before_rewrapping(self):
         env = {"UNICONNECT_NATIVE_BINDING": json.dumps({key: self.binding[key] for key in

@@ -567,8 +567,16 @@ class TargetWorker:
                 or runtime.get("tool_confirmation_pending") is not False or runtime.get("task_count") != 0
                 or not isinstance(runtime.get("sandbox_enabled"), bool)):
             raise Unavailable("dialogo_desconocido")
+        # Some AGY partner-model status payloads expose a stable display label
+        # but no model ID. The conversation selector retains its model choice;
+        # keep the label in the post-resume proof and do not synthesize --model.
         model_id = runtime.get("model_id")
-        if not isinstance(model_id, str) or not model_id.strip() or len(model_id) > 160 or "\0" in model_id:
+        model_label = runtime.get("model")
+        if (not isinstance(model_label, str) or not model_label.strip()
+                or len(model_label.encode("utf-8")) > 160 or not model_label.isprintable()):
+            raise Unavailable("no_soportado")
+        if (model_id is not None and (not isinstance(model_id, str) or not model_id.strip()
+                or len(model_id.encode("utf-8")) > 160 or not model_id.isprintable())):
             raise Unavailable("no_soportado")
         effort = runtime.get("effort")
         if effort is not None and effort not in ("low", "medium", "high", "max"):
@@ -576,7 +584,7 @@ class TargetWorker:
         cycle_mode = runtime.get("cycle_mode")
         if cycle_mode is not None and cycle_mode not in ("accept-edits", "auto", "plan"):
             raise Unavailable("no_soportado")
-        return {"model": model_id, "effort": effort, "cycle_mode": cycle_mode,
+        return {"model": model_id, "model_label": model_label, "effort": effort, "cycle_mode": cycle_mode,
                 "sandbox_enabled": runtime["sandbox_enabled"], "version": version}
 
     @staticmethod
@@ -879,7 +887,7 @@ class TargetWorker:
         generation = int(self.digest({"pane": pane, "pid": process["pid"], "start": process["start"], "id": effective})[:12], 16)
         configuration = {"cwd": process["cwd"], "argv": resume}
         if native_configuration is not None:
-            configuration.update({key: native_configuration.get(key) for key in ("model", "effort")})
+            configuration.update({key: native_configuration.get(key) for key in ("model", "model_label", "effort")})
         proof = {"key": "linux:" + self.digest(pane) + "|gen:" + str(generation), "generation": generation,
                  "pane": pane, "pid": process["pid"], "start": process["start"], "effective_id": effective,
                  "configuration": self.digest(configuration)}
