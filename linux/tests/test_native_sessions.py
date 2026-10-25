@@ -177,6 +177,20 @@ class NativeSessionIntegrationTests(unittest.TestCase):
 
 
 class ProbeAuthorityTests(unittest.TestCase):
+    def test_matching_native_id_promotes_the_saved_source_to_hook(self):
+        with tempfile.TemporaryDirectory(prefix="uc-native-provenance-") as directory:
+            store = StateStore(directory)
+            record = {"id": "window", "name": "GEMINI", "tmux": "gemini", "agent": "agy",
+                      "sessionId": "conversation", "agentSource": "argv"}
+            store.data["workspaces"] = [{"id": "box", "name": "GEMINI", "kind": "local", "windows": [record]}]
+            store.save()
+            tracker = NativeSessions(SimpleNamespace(store=store))
+            proof = {"agent": "agy", "session_id": "conversation"}
+
+            self.assertTrue(tracker.persist(record, proof))
+            self.assertEqual(record["agentSource"], "hook")
+            self.assertFalse(tracker.persist(record, proof))
+
     def test_window_confirmed_by_ficha_or_rollout_is_not_overwritten_by_the_hook(self):
         with tempfile.TemporaryDirectory(prefix="uc-native-authority-") as directory:
             store = StateStore(directory)
