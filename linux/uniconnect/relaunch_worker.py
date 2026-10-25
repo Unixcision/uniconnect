@@ -759,9 +759,11 @@ class TargetWorker:
                     normalized.append(kept[index + 1])
                     index += 1
                 index += 1
-            kept = [*normalized, "-m", model]
+            selectors = ["-m", model]
             if effort is not None:
-                kept.extend(("-c", "model_reasoning_effort=" + json.dumps(effort)))
+                selectors.extend(("-c", "model_reasoning_effort=" + json.dumps(effort)))
+            insertion = normalized.index("--no-alt-screen") if "--no-alt-screen" in normalized else len(normalized)
+            kept = [*normalized[:insertion], *selectors, *normalized[insertion:]]
         # Preserve terminal scrollback across the Linux relaunch, even when the
         # old Codex instance used its own alternate-screen transcript.
         if provider == "codex" and "--no-alt-screen" not in kept:

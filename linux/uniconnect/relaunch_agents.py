@@ -41,6 +41,7 @@ class RelaunchAgents:
         self.resolve = resolve
         self.catalog = catalog or AgentResumeCatalog()
         self.source = self.worker_source()
+        self.bootstrap = self.worker_bootstrap(self.source)
         self.identity_helper = base64.b64encode(zlib.compress(
             Path(__file__).with_name("agent_identity_hook.py").read_bytes(), 9)).decode()
         recovery = Path(__file__).resolve().parents[1] / "scripts/recovery.py"
@@ -52,6 +53,12 @@ class RelaunchAgents:
         no-prompt policy with the very same AgentResumeCatalog.apply_policy as this desktop."""
         here = Path(__file__)
         return here.with_name("resume_catalog.py").read_text() + "\n\n" + here.with_name("relaunch_worker.py").read_text()
+
+    @staticmethod
+    def worker_bootstrap(source):
+        """Keep the self-contained remote worker below per-argument OS limits."""
+        compressed = base64.b64encode(zlib.compress(source.encode("utf-8"), 9)).decode("ascii")
+        return "import base64,zlib;exec(zlib.decompress(base64.b64decode(" + repr(compressed) + ")))"
 
     def close(self):
         # Stop observation, not the already admitted target-side close/reopen.
@@ -72,7 +79,7 @@ class RelaunchAgents:
         payload = base64.b64encode(json.dumps(request).encode()).decode()
         transport = self.transport_factory(candidate.get("connection"), socket_name=request["socket"])
         try:
-            result = transport.run(shlex.join(["python3", "-c", self.source, payload]),
+            result = transport.run(shlex.join(["python3", "-c", self.bootstrap, payload]),
                                    timeout=25 if action == "adopt" else 18)
         except Exception:
             raise RelaunchUnavailable("host_inaccesible") from None

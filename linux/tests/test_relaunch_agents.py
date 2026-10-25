@@ -114,6 +114,7 @@ class ArgumentsTests(unittest.TestCase):
         self.assertIn("analytics.enabled=false", resumed)
         self.assertNotIn("launch-model", resumed)
         self.assertNotIn('model_reasoning_effort="low"', resumed)
+        self.assertEqual(TargetWorker.resume_arguments("codex", resumed, "native", self.catalog, native), resumed)
 
         # A native null means the UI uses its model default; remove a stale
         # explicit effort instead of restoring it from the old process argv.
@@ -345,6 +346,12 @@ class SharedPolicyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="uc-worker-") as directory:
             result = subprocess.run([sys.executable, "-c", source, payload], cwd=directory, capture_output=True,
                                     text=True, timeout=30)
+        self.assertEqual(result.stdout.strip(), 'UC_RELAUNCH_V1 {"error": "no_soportado"}', result.stderr)
+        adapter = RelaunchAgents()
+        self.assertLess(len(adapter.bootstrap), len(adapter.source))
+        with tempfile.TemporaryDirectory(prefix="uc-worker-compressed-") as directory:
+            result = subprocess.run([sys.executable, "-c", adapter.bootstrap, payload], cwd=directory,
+                                    capture_output=True, text=True, timeout=30)
         self.assertEqual(result.stdout.strip(), 'UC_RELAUNCH_V1 {"error": "no_soportado"}', result.stderr)
         probe = source.replace('if __name__ == "__main__":', "if False:") + (
             "\nprint(json.dumps(TargetWorker.no_prompt('codex', ['codex', 'resume', 'x', '-s=read-only'], "
