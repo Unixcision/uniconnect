@@ -117,6 +117,10 @@ Estas opciones pertenecen al adaptador Linux y no cambian macOS.
 
 ### Relanzar IA
 
+Para los pasos completos, incluida la diferencia entre relanzar, continuar una
+sesión pausada y reconectar solo tmux, consulta la [guía de recuperación de
+sesiones](GUIA_RECUPERAR_SESIONES.md).
+
 **Relanzar IA** permite elegir la ventana actual, todas las ventanas de su
 espacio de trabajo o las del equipo. El plan enumera los objetivos y explica
 por qué excluye cada ventana. **Aplicar** afecta únicamente a las admitidas y
