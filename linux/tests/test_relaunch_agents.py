@@ -459,16 +459,16 @@ class AntigravityDialectTests(unittest.TestCase):
                         "observed_at": time.time(), "runtime_status": {"state": "idle", "model": "Gemini",
                             "model_id": "gemini-fixture", "effort": "high", "pending_input_count": 0,
                             "tool_confirmation_pending": False, "task_count": 0, "sandbox_enabled": False,
-                            "cycle_mode": "plan", "version": "1.2.17"}}
+                            "cycle_mode": "plan", "version": "1.4.4"}}
         self.hook = json.dumps(self.binding)
 
     def test_relaunch_requires_bound_idle_status_and_known_task_count_version(self):
         expected = {"model": "gemini-fixture", "model_label": "Gemini", "effort": "high", "cycle_mode": "plan",
-                    "sandbox_enabled": False, "version": "1.2.17"}
+                    "sandbox_enabled": False, "version": "1.4.4"}
         with patch.object(TargetWorker, "process_birth_bounds", return_value=(0, 0)):
             self.assertEqual(self.worker.quiescent_configuration("agy", self.process, self.SESSION, self.hook), expected)
             for change, cause in (({"window_id": "other"}, "no_soportado"),
-                                  ({"runtime_status": {**self.binding["runtime_status"], "version": "1.2.14"}}, "no_soportado"),
+                                  ({"runtime_status": {**self.binding["runtime_status"], "version": "1.4.3"}}, "no_soportado"),
                                   ({"runtime_status": {**self.binding["runtime_status"], "state": "working"}}, "dialogo_desconocido"),
                                   ({"runtime_status": {**self.binding["runtime_status"], "task_count": 1}}, "dialogo_desconocido"),
                                   ({"runtime_status": {**self.binding["runtime_status"], "pending_input_count": 1}}, "dialogo_desconocido"),
@@ -771,7 +771,7 @@ static void publish_statusline(void) {
             if (getcwd(cwd, sizeof cwd)) {
                 fprintf(pipe, "{\"conversation_id\":\"4a1ec7f2-126f-4e63-a347-92ab4576fdda\",\"cwd\":\"%s\","
                         "\"agent_state\":\"idle\",\"model\":{\"id\":\"gemini-fixture\","
-                        "\"display_name\":\"Gemini fixture\",\"effort\":\"high\"},\"version\":\"1.2.17\","
+                        "\"display_name\":\"Gemini fixture\",\"effort\":\"high\"},\"version\":\"1.4.4\","
                         "\"sandbox\":{\"enabled\":false},\"quota\":{}}", cwd);
             }
             pclose(pipe);

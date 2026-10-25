@@ -34,10 +34,10 @@ except ImportError:
     AgentResumeCatalog = globals()["AgentResumeCatalog"]
 
 UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
-# The CLI changelog says v1.2.17 fixed task_count to include timers,
-# recurring jobs and non-shell background work. Earlier versions cannot prove
-# quiescence from the statusline, so they remain visible but not relaunchable.
-AGY_MIN_SAFE_VERSION = (1, 2, 17)
+# The current CLI docs include scheduled work in task_count, but do not tie
+# that contract to a release. Keep a conservative project floor; older
+# runtimes cannot prove quiescence from the statusline and remain non-relaunchable.
+AGY_MIN_SAFE_VERSION = (1, 4, 4)
 AGY_STATUS_MAX_AGE_SECONDS = 15
 AGY_ADOPT_REQUEST = "@uniconnect_adopt_request"
 AGY_ADOPT_NONCE = "@uniconnect_adopt_nonce"

@@ -17,7 +17,7 @@ class AntigravityMetadataTests(unittest.TestCase):
 
     def test_statusline_snapshot_requires_explicit_idle_and_empty_queues(self):
         payload = {"conversation_id": self.identifier, "agent_state": "idle",
-                   "version": "1.2.17",
+                   "version": "1.4.4",
                    "pending_input_count": 0, "tool_confirmation_pending": False, "task_count": 0,
                    "model": {"id": "gemini-fixture", "display_name": "Gemini fixture", "effort": "high"},
                    "cycle_mode": "plan",
@@ -33,11 +33,11 @@ class AntigravityMetadataTests(unittest.TestCase):
         self.assertEqual(status["task_count"], 0)
         self.assertTrue(status["sandbox_enabled"])
         self.assertEqual(status["cycle_mode"], "plan")
-        self.assertEqual(status["version"], "1.2.17")
+        self.assertEqual(status["version"], "1.4.4")
         self.assertTrue(status["quota_paused"])
 
     def test_missing_zero_counters_are_safe_but_mixed_quota_buckets_are_not_paused(self):
-        payload = {"conversation_id": self.identifier, "agent_state": "idle", "version": "1.2.17",
+        payload = {"conversation_id": self.identifier, "agent_state": "idle", "version": "1.4.4",
                    "model": {"id": "gemini-fixture"}, "sandbox": {"enabled": False},
                    "quota": {"weekly": {"remaining_fraction": 0},
                              "fast": {"remaining_fraction": 0.5}}}
