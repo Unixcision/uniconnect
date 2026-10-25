@@ -112,9 +112,23 @@ class NativeSessions:
     def persist(self, record, proof):
         """Commit ID and history together; imported history entries remain untouched."""
         session = proof["session_id"]
-        if record.get("sessionId") == session or record.get("agentSource") in self.AUTHORITATIVE:
+        if record.get("agentSource") in self.AUTHORITATIVE:
             return False
         before = copy.deepcopy(record)
+        if record.get("sessionId") == session:
+            if record.get("agentSource") == "hook":
+                return False
+            # The native hook independently confirmed the same ID that argv
+            # had already found. Promote its provenance without duplicating
+            # the conversation in history.
+            record["agentSource"] = "hook"
+            try:
+                self.owner.store.save()
+            except Exception:
+                record.clear()
+                record.update(before)
+                raise
+            return True
         history = copy.deepcopy(record.get("history", []))
         now = self.clock()
         for identifier in (record.get("sessionId"), session):

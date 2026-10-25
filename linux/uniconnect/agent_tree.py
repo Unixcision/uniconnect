@@ -343,6 +343,12 @@ class AgentTree:
             return False  # La misma conversación ya es de otra ventana: como si fuera ambigua.
         cwd = agent.get("cwd") if isinstance(agent.get("cwd"), str) and agent["cwd"].startswith("/") else None
         source = agent.get("source") if agent.get("source") in SOURCES else "registro"
+        # A validated AGY statusLine hook is stronger provenance than its
+        # command line when both report the same conversation. Do not let the
+        # periodic process probe downgrade that exact native identity again.
+        if (provider == "agy" and source == "argv" and record.get("agentSource") == "hook"
+                and str(record.get("sessionId", "")).lower() == session.lower()):
+            source = "hook"
         updates = {"agent": provider, "sessionId": session, "runtimeState": "agent",
                    "asRoot": bool(agent.get("as_root")), "agentSource": source}
         if cwd:
