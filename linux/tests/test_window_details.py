@@ -108,6 +108,23 @@ class SnapshotContractTests(unittest.TestCase):
 
 
 class SnapshotRuleTests(unittest.TestCase):
+    def test_live_antigravity_keeps_native_source_only_for_the_same_saved_conversation(self):
+        catalog = fixture_catalog()
+        workspace = {"id": "box", "name": "GEMINI", "kind": "local"}
+        record = {"id": "window", "name": "GEMINI", "tmux": "uc-window", "agent": "agy",
+                  "sessionId": LOCAL_ID, "agentSource": "hook", "cwd": "/work"}
+        live = {"ok": True, "checked_at": "2026-09-24T14:30:04Z", "session": {
+            "name": "uc-window", "session_id": "$1", "pane_id": "%1", "live": True,
+            "reason": None, "agent": {"provider": "agy", "session_id": LOCAL_ID, "cwd": "/work",
+                                         "as_root": False, "source": "argv"}}}
+
+        details = WindowDetails.snapshot(workspace, record, live, catalog, lambda: 0)
+        self.assertEqual(details["agent"]["source"], "hook")
+
+        live["session"]["agent"]["session_id"] = "other-conversation"
+        details = WindowDetails.snapshot(workspace, record, live, catalog, lambda: 0)
+        self.assertEqual(details["agent"]["source"], "argv")
+
     def test_conversation_id_is_the_live_agent_identity_never_the_window_or_tmux_id(self):
         expected = response("details-response-local.json")
         workspace, record, live, endpoint, clock = inputs_from(expected)
