@@ -56,11 +56,12 @@ class ArrangementTests(unittest.TestCase):
 
     def test_cli_lists_follow_the_same_visible_order_without_mutating_state(self):
         from uniconnect.control import ControlServer
-        server = types.SimpleNamespace(window=self.window)
+        server = ControlServer.__new__(ControlServer)
+        server.window = self.window
         before = copy.deepcopy(self.store.data)
-        boxes = ControlServer.dispatch(server, {"command": "list-workspaces"})
+        boxes = server.dispatch({"command": "list-workspaces"})
         self.assertEqual([b["id"] for b in boxes], ["pin", "box", "other"])
-        terminals = ControlServer.dispatch(server, {"command": "list-surfaces", "workspace": "workspace:2"})
+        terminals = server.dispatch({"command": "list-surfaces", "workspace": "workspace:2"})
         self.assertEqual([t["id"] for t in terminals], ["c", "a", "b", "d"])
         self.assertEqual(before, self.store.data)
 

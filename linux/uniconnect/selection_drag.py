@@ -21,6 +21,7 @@ class SelectionDrag:
         self.timer = None
         self.point = (0, 0)
         self.grabbed_seat = None
+        self.last_error = None
 
     def reset(self):
         self.epoch += 1
@@ -33,6 +34,7 @@ class SelectionDrag:
 
     def begin(self, transport, record, column, row, event):
         self.reset()
+        self.last_error = None
         seat = event.get_device().get_seat()
         status = seat.grab(self.surface.terminal.get_window(), Gdk.SeatCapabilities.POINTER,
                            False, None, None, None, None)
@@ -152,6 +154,7 @@ class SelectionDrag:
             if kind == "action":
                 deliver(value, error)
             elif error:
+                self.last_error = f"{kind}:{type(error).__name__}:{getattr(error, 'code', 'none')}"
                 logging.getLogger(__name__).warning(
                     "Selection failed stage=%s type=%s code=%s point=%s bounds=%s",
                     kind, type(error).__name__, getattr(error, "code", "none"), self.point,

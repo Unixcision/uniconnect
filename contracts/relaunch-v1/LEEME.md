@@ -60,14 +60,17 @@ igual. D7 porta el dialecto que falta a cada lado. La matriz resultante, que fij
 | Proveedor | Mac, ventana local | Mac, ventana SSH | Linux, ventana local | Linux, caja SSH |
 |---|---|---|---|---|
 | Claude | sí | `no_soportado` | escrito, **pendiente de prueba en vivo** | escrito, **pendiente de prueba en vivo** |
-| Codex | escrito, **pendiente de prueba en vivo** | `no_soportado` | sí | sí |
+| Codex | escrito, **pendiente de prueba en vivo** | `no_soportado` | sí, `agent.continue` y `agent.recover` requieren evidencia exacta de pausa/acuse | sí |
+| Antigravity | `no_soportado` | `no_soportado` | sí, solo con binding gestionado y statusLine nativo fresco que pruebe estado idle | sí, bajo las mismas puertas en el destino Linux |
 
 «Pendiente de prueba en vivo» (decisión del 24-09-2026): el dialecto está escrito y probado con
 dobles, pero relanzar **cierra la IA** y nunca se ha ejecutado contra una real. Hasta esa prueba no
 se anuncia y el plan lo excluye con `no_soportado` (`pendiente_prueba_en_vivo` en
 `proveedores.json`). Se activa añadiéndolo a `RelaunchDialects.known` (Mac) o a `RELAUNCHABLE`
-(Linux) en el mismo commit que la prueba.
-| agy, grok y el resto del catálogo | `no_soportado` | `no_soportado` | `no_soportado` | `no_soportado` |
+(Linux) en el mismo commit que la prueba. Antigravity ya pasó además una fixture aislada de tmux
+que cierra y reabre un proceso sintético con la misma conversación y configuración; no se ha
+operado una cuenta real.
+| grok y el resto del catálogo | `no_soportado` | `no_soportado` | `no_soportado` | `no_soportado` |
 
 - **Mac SSH** sigue en `no_soportado`: la `ClosurePolicy` rechaza `.ssh`. Una ventana SSH pedida por
   id desde el móvil devuelve esa exclusión, no `alcance_no_valido`.
@@ -106,6 +109,32 @@ se anuncia y el plan lo excluye con `no_soportado` (`pendiente_prueba_en_vivo` e
   nunca con `claude` fijo.
 
 ### Cómo lo anuncia el equipo
+
+Actualización de Linux (01-10-2026, Codex): el plan puede incluir un objetivo con
+`active: true` cuando reconoce trabajo o terminales de fondo y ha comprobado su
+identidad, configuración efectiva y compositor vacío. Es un aviso, no una causa
+de exclusión: **Aplicar** autoriza interrumpir ese trabajo y relanzar la misma
+conversación. El escritorio muestra el aviso antes de confirmar. El trabajador
+solo envía Esc ante los indicadores reconocidos «Working» o «Waiting for
+background terminal» con «esc to interrupt», y
+observa el final nativo del turno antes de `/exit`. No fuerza la muerte del proceso.
+
+La configuración y el ciclo de turno se leen del archivo nativo acreditado de
+esa conversación, retrocediendo hasta el contexto más reciente aunque quede
+fuera de los últimos 4 MiB. No se descartan finales de turno por incluir una
+respuesta larga. Una instancia recién reanudada también puede acreditar reposo
+con su configuración nativa completa posterior al nacimiento del proceso y sin
+actividad nativa posterior a ese nacimiento; un contexto antiguo interrumpido
+no obliga a inventar un final. Los relojes ambiguos o metadatos insuficientes
+bloquean esa vía. La pantalla por sí sola nunca acredita la configuración.
+
+El compositor vacío de Codex en Linux se reconoce por el marcador atenuado o
+gris y su estructura, sin exigir la columna 2 del cursor. Un borrador o un estado
+ambiguo sigue bloqueando el cierre. Antes de Intro, la línea `/exit` y el resto
+del compositor deben coincidir con la entrada esperada; se revalidan también
+proceso, conversación y configuración. Que un objetivo activo termine su turno
+no invalida por sí solo el plan confirmado. Estos cambios no amplían el soporte
+de otros proveedores ni modifican los dialectos de macOS.
 
 En `capabilities` (de `mobile.workspace.list`, de `mobile.host.status` en Linux y del `status` del
 socket de control de Linux), además de `relaunch.v1`, un token por celda soportada:

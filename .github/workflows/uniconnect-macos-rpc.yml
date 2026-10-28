@@ -81,7 +81,39 @@ jobs:
         run: |
           ./scripts/install-zig-ci.sh
           ./scripts/install-rust-ci.sh
-          command -v tmux >/dev/null || brew install tmux
+
+      # MobileTmuxAttachPlan relies on the released tmux 3.2–3.7 client flags.
+      # tmux 3.8 removed active-pane; never let Homebrew's moving `tmux` formula
+      # silently make the real-client integration test exercise an unsupported version.
+      - name: Preparar tmux soportado para la integración móvil
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=3.7c
+          archive="$RUNNER_TEMP/tmux-${version}.tar.gz"
+          source_dir="$RUNNER_TEMP/tmux-${version}-src"
+          prefix="$RUNNER_TEMP/tmux-${version}"
+          brew install libevent ncurses utf8proc pkgconf
+          curl --fail --location --retry 3 --silent --show-error \
+            "https://github.com/tmux/tmux/releases/download/${version}/tmux-${version}.tar.gz" \
+            --output "$archive"
+          printf '%s  %s\n' \
+            '7c60cae9a0e25288e2e24750aafc9e8800fc7fd4555e447e1b29ee4201cfb3bf' "$archive" \
+            | shasum --algorithm 256 --check
+          mkdir -p "$source_dir"
+          tar -xzf "$archive" --strip-components=1 -C "$source_dir"
+          export PKG_CONFIG_PATH="$(brew --prefix libevent)/lib/pkgconfig:$(brew --prefix ncurses)/lib/pkgconfig:$(brew --prefix utf8proc)/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+          (
+            cd "$source_dir"
+            ./configure --prefix="$prefix" --enable-utf8proc --disable-jemalloc
+            make -j "$(sysctl -n hw.ncpu)"
+            make install
+          )
+          test "$("$prefix/bin/tmux" -V)" = 'tmux 3.7c'
+          # Xcode's app-hosted test process does not reliably inherit arbitrary
+          # GITHUB_ENV variables; the fixture also probes Homebrew's normal path.
+          ln -sf "$prefix/bin/tmux" "$(brew --prefix)/bin/tmux"
+          echo "UNICONNECT_TEST_TMUX_EXECUTABLE=$prefix/bin/tmux" >> "$GITHUB_ENV"
 
       - name: Caché de dependencias Swift
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5

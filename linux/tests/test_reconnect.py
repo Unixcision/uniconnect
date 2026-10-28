@@ -11,6 +11,7 @@ import unittest
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -53,6 +54,12 @@ class ManualDeadlines:
 class AutomaticReconnectTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory(prefix="uc-retry-")
+        # These policy tests exercise deterministic shell exits and timers, not
+        # SSH or tmux selection cleanup. Never let a fixture hostname escape
+        # the test process.
+        self.selection_cleanup = patch("uniconnect.terminal.TerminalCopy.cancel_selection", return_value=None)
+        self.selection_cleanup.start()
+        self.addCleanup(self.selection_cleanup.stop)
         self.timer = ManualDeadlines()
         self.calls = []
         self.watch = None
@@ -128,8 +135,9 @@ class AutomaticReconnectTests(unittest.TestCase):
         self.assertFalse(self.timer.pending)
 
     def exhaust_with_server_probe(self, answers):
-        """Ventana SSH con destino real que agota sus 6 reintentos; la sonda es falsa (sin red)."""
+        """SSH fixture that exhausts one bounded retry round with an injected probe."""
         self.probes = []
+        rearm_once = bool(answers and answers[0])
 
         def probe(host, port, timeout, done):
             self.probes.append((host, port, timeout))
@@ -140,7 +148,10 @@ class AutomaticReconnectTests(unittest.TestCase):
         for index, delay in enumerate((1, 2, 4, 8, 16, 16)):
             self.timer.advance(delay)
             wanted = "Disconnected" if index == 5 else "Reconnecting"
-            self.until(lambda: len(self.calls) == index + 2 and self.surface.status == wanted)
+            if index == 5 and rearm_once:
+                self.until(lambda: len(self.calls) == 8 and self.surface.status == "Reconnecting")
+            else:
+                self.until(lambda: len(self.calls) == index + 2 and self.surface.status == wanted)
 
     def test_exhausted_window_waits_for_its_server_and_rearms_when_it_answers(self):
         # ssh-server-return.v1: el MINIPC no contestaba al agotar (Tailscale sin levantar) y luego sí.

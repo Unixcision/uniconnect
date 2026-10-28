@@ -83,6 +83,99 @@ also creates a checkpoint. Imports and restores checkpoint the current state.
 
 ## Shortcuts and local control
 
+### Copiar texto arrastrando en tmux
+
+En Linux, los nuevos lanzamientos, recuperaciones y relanzados gestionados de
+Codex usan `--no-alt-screen` para dejar el texto en el historial del terminal.
+La pantalla alternativa puede tener su propio scroll interno mientras tmux
+indica «0 de 0»; cambiar el color de selección no crea ese historial.
+Las instancias ya abiertas necesitan un relanzado con la misma conversación
+para adoptar la opción. Si Codex tiene trabajo en curso, el plan de relanzado
+lo avisa: **Aplicar** autoriza interrumpirlo y reabrir la misma conversación.
+El cierre sigue bloqueado cuando hay un borrador o un diálogo sin reconocer.
+
+En una terminal local o SSH con tmux, mantén **Mayús** y arrastra con el botón
+izquierdo para seleccionar el historial, incluso por encima del borde superior
+visible. Mantén pulsado ahí para que la vista avance mientras amplía la
+selección; al soltarla, usa **clic derecho → Copiar** o **Ctrl+Mayús+C**. **Esc**
+cancela el modo de selección; **Ctrl+C** sigue enviándose al programa y no se
+convierte en Copiar. Sin Mayús, la selección sigue el comportamiento y los
+bindings de tmux. UniConnect cambia a azul el estilo naranja predeterminado y
+conserva los colores y bindings personalizados.
+
+La selección larga depende del historial de tmux. Los lanzamientos gestionados
+de Codex usan `--no-alt-screen` para que su salida permanezca en ese historial;
+las sesiones existentes necesitan un relanzado conservando la misma conversación.
+El relanzado avisa si detecta trabajo en curso y bloquea estados no reconocidos.
+Al reconectar o adjuntarse a un servidor existente, UniConnect no cambia sus
+bindings ni opciones globales; solo migra el color naranja predeterminado. Copiar
+desde UniConnect se publica también al portapapeles X11 que x11vnc reenvía al
+espectador. La prueba automatizada cubre el mensaje RFB clásico con x11vnc. Pegar
+desde el espectador también depende de que el servidor VNC concreto entregue su
+texto entrante al portapapeles GTK; conviene comprobarlo en el equipo de destino.
+Estas opciones pertenecen al adaptador Linux y no cambian macOS.
+
+### Relanzar IA
+
+Para los pasos completos, incluida la diferencia entre relanzar, continuar una
+sesión pausada y reconectar solo tmux, consulta la [guía de recuperación de
+sesiones](GUIA_RECUPERAR_SESIONES.md).
+
+**Relanzar IA** permite elegir la ventana actual, todas las ventanas de su
+espacio de trabajo o las del equipo. El plan enumera los objetivos y explica
+por qué excluye cada ventana. **Aplicar** afecta únicamente a las admitidas y
+reanuda la misma conversación en el mismo panel y carpeta, conservando la
+configuración efectiva. Un borrador, un diálogo no reconocido o un cambio de
+identidad o configuración bloquea el cierre. **Reconectar** solo vuelve a
+conectar el terminal a tmux; no reinicia la IA.
+
+Guía rápida: abre el menú contextual de una ventana y elige **Relanzar IA**.
+Selecciona exactamente uno de estos tres alcances: **ventana**, **espacio de
+trabajo** o **equipo** (todo UniConnect en este equipo). «Global» y «equipo» no
+son dos alcances distintos. Revisa la vista previa, que separa las ventanas que
+puede recuperar de las excluidas y explica el motivo; **Aplicar** solo afecta a
+las admitidas. Linux admite Codex y Antigravity cuando la ventana aporta identidad,
+actividad y configuración nativas verificables; no fuerza Claude ni otros estados
+no reconocidos. **Reabrir y continuar Codex pausado** usa los mismos tres alcances;
+solo incluye una sesión con aviso de límite de uso reciente,
+sin actividad ni borrador. Conserva la conversación al reabrirla y envía
+«continua» una sola vez únicamente si la pantalla limpia conserva el aviso de
+cuota. El resultado solo queda verificado cuando la misma sesión muestra que
+Codex empezó a trabajar. Un error de inicio de sesión, diálogo, borrador o estado
+sin prueba queda excluido o requiere intervención; no se escribe en esos cuadros.
+
+La telemetría de identidad y estado Antigravity es opt-in y reversible. En cada
+host Linux que vaya a gestionar ventanas Antigravity, usa
+`uniconnect-cli antigravity-integration status|enable|disable`. La activación
+añade un hook con nombre propio y una status line; conserva las demás claves y
+rechaza conflictos con una status line existente. Linux anuncia relanzado AGY,
+pero cada ventana solo entra en el plan si prueba el binding gestionado, la
+conversación nativa, una status line `idle` reciente, el prompt vacío, ausencia
+de diálogos y la misma configuración efectiva tras reabrir. Las ventanas sin
+esas señales quedan excluidas sin recibir teclas. Esta integración habilita
+`agent.relaunch`; no habilita `agent.continue` ni `agent.recover` para AGY,
+operaciones que siguen limitadas a Codex.
+
+Para una ventana GEMINI/Antigravity ya abierta que UniConnect no puede vincular,
+elige en su menú contextual **Vincular GEMINI abierta de esta ventana…**. Tras
+confirmarlo, UniConnect actualiza únicamente sus propios hooks/statusLine,
+comprueba que el pane contiene una sola conversación cuyo ID y carpeta coinciden
+con la ficha guardada y, con el compositor vacío y sin un estado visible de trabajo,
+envía el comando de control documentado `/statusline enable` a esa sesión para
+activar el hook sin reiniciarla.
+Verifica el texto exacto antes de enviarlo; nunca lo transforma en un prompt de IA.
+Si la status line no confirma un estado reciente e inactivo, la ventana sigue
+fuera del plan de relanzado; cuando la vinculación se verifica, usa **Relanzar IA
+de esta ventana…** y revisa su vista previa habitual.
+
+Para consultar o compartir los datos de una terminal, abre su menú contextual y
+elige **Detalles…**. El modal Linux presenta el proveedor, el identificador
+nativo de conversación cuando se puede probar, el transporte y los datos de
+estado disponibles. Linux publica la misma respuesta `window_details.v1` al
+cliente Android; la entrada aparece allí solo cuando la conexión anuncia esa
+capacidad. Comprueba visualmente la recepción en el teléfono, porque la CI no
+puede sustituir esa prueba con el dispositivo real.
+
 The Linux terminal uses Ctrl+Shift combinations so Ctrl+C remains available to
 shell programs. Settings exposes editable shortcuts, font, appearance
 and optional idle locking. Defaults include:

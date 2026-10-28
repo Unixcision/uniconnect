@@ -93,6 +93,20 @@ class TreeFixture(unittest.TestCase):
 
 
 class AgentTreeTests(TreeFixture):
+    def test_matching_agy_hook_provenance_is_not_downgraded_to_argv(self):
+        identifier = "agy-conversation"
+        record = {"id": "w-gemini", "name": "GEMINI", "tmux": "gemini", "agent": "agy",
+                  "sessionId": identifier, "agentSource": "hook", "runtimeState": "agent", "asRoot": False,
+                  "resumeCwd": "/work", "history": [{"agent": "agy", "sessionId": identifier,
+                                                           "cwd": "/work", "lastSeenAt": 1}]}
+        before = copy.deepcopy(record)
+
+        changed = self.tree.transition(record, {"live": True, "reason": None,
+            "agent": agent("agy", identifier, "/work", "argv")})
+
+        self.assertFalse(changed)
+        self.assertEqual(record, before)
+
     def test_detected_agent_is_persisted_with_all_fields(self):
         FakeTransport.replies[("local", "uniconnect-local")] = {"sessions": [
             session("uc-local", agent=agent("codex", CODEX_ID, "/work/multigram", "rollout"))]}

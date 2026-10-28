@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "descripcion": "Qué IA sabe relanzar cada equipo (agent.relaunch), por tipo de ventana, tras la decisión D7 del 24-09-2026. Cada celda se anuncia con un token relaunch.v1.<proveedor>.<tipo> en capabilities, junto a relaunch.v1. Lo que no está aquí se excluye del plan con la causa no_soportado. Claude en Linux y Codex en el Mac están escritos pero pendientes de prueba en vivo: no se anuncian y el plan los excluye con no_soportado hasta probarlos contra una IA real (relanzar la cierra).",
+  "descripcion": "Qué IA sabe relanzar cada equipo (agent.relaunch), por tipo de ventana, tras la decisión D7 del 24-09-2026. Cada celda se anuncia con un token relaunch.v1.<proveedor>.<tipo> en capabilities, junto a relaunch.v1. Lo que no está aquí se excluye del plan con la causa no_soportado. Linux anuncia Codex y Antigravity; Antigravity requiere identidad/statusLine gestionados y evidencia nativa de estado idle vigente antes de cerrar.",
   "token": "relaunch.v1.<proveedor>.<tipo>",
   "tipos": [
     "local",
@@ -15,10 +15,12 @@
     },
     "linux": {
       "local": [
-        "codex"
+        "codex",
+        "agy"
       ],
       "ssh": [
-        "codex"
+        "codex",
+        "agy"
       ]
     }
   },
@@ -30,7 +32,9 @@
     "linux": [
       "relaunch.v1",
       "relaunch.v1.codex.local",
-      "relaunch.v1.codex.ssh"
+      "relaunch.v1.codex.ssh",
+      "relaunch.v1.agy.local",
+      "relaunch.v1.agy.ssh"
     ]
   },
   "no_soportado": {
@@ -52,13 +56,11 @@
     "linux": {
       "local": [
         "claude",
-        "agy",
         "grok",
         "otros"
       ],
       "ssh": [
         "claude",
-        "agy",
         "grok",
         "otros"
       ]

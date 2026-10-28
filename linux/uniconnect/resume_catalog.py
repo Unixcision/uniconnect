@@ -175,6 +175,10 @@ class AgentResumeCatalog:
             raise ValueError("unsupported_agent_model")
         arguments = [part for option in options if window.get(option["field"])
                      for part in (option["option"], window[option["field"]])]
+        # Codex's alternate-screen transcript is not tmux scrollback. Keep the
+        # Linux terminal history available for drag selection and direct copying.
+        if self.canonical(window["agent"]) == "codex":
+            arguments.append("--no-alt-screen")
         if window.get("sessionId"):
             return self.apply_no_prompt(window["agent"], self.resume_argv(window["agent"], window["sessionId"], arguments))
         return self.apply_no_prompt(window["agent"], [provider["executable"], *arguments])

@@ -14,7 +14,7 @@ import gi
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
-from gi.repository import Gdk, Gio, GLib, Gtk, Pango
+from gi.repository import Gdk, Gio, GLib, Gtk
 
 from .actions import ACTIONS
 from .arrangement import WorkspaceArrangement
@@ -29,8 +29,8 @@ from .window_notifications import WindowNotifications
 from .native_sessions import NativeSessions
 from .agent_tree import AgentTree
 from .session_recovery import SessionRecovery
-from .window_details import CHECKING, TITLE, WindowDetails
-from .clipboard_text import publish_text
+from .window_details import WindowDetails
+from .window_details_dialog import WindowDetailsDialog
 from .sidebar import WorkspaceSidebar
 
 
@@ -48,6 +48,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         self._sidebar_refresh = 0
         self._building_workspace = 0
         self._closed = False
+        self._details_dialogs = set()
         self._runtime_rendering = False
         self._runtime_operation = None
         self.last_input, self.last_saved = time.monotonic(), 0
@@ -183,7 +184,8 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             "Edit": ["copy", "show_history", "cancel_selection", "paste", "find", "find_next", "find_previous", "hide_find", "find_selection", "send_ctrl_f"],
             "View": ["sidebar", "palette", "notifications", "notifications_latest_unread", "notifications_mark_all_read", "notifications_dismiss_all", "font_larger", "font_smaller", "font_reset", "split_right", "split_down", "equalize_panes", "maximize_pane", "focus_left", "focus_right", "focus_up", "focus_down", "fullscreen"],
             "Workspace": ["rename_workspace", "pin_workspace", "edit_ssh", "workspace_previous", "workspace_next", "workspace_up", "workspace_down", "workspace_first", "window_previous", "window_next", "rename_window", "pin_window", "window_up", "window_down", "window_first", "reconnect", "reconnect_all", "notifications_toggle_workspace", "notifications_toggle_window", "upload", "kill_tmux"],
-            "IA": ["relaunch_window", "relaunch_workspace", "relaunch_machine", "relaunch_history"],
+            "IA": ["relaunch_window", "adopt_antigravity_window", "relaunch_workspace", "relaunch_machine", "continue_window",
+                   "continue_workspace", "continue_machine", "relaunch_history"],
             "Help": ["help", "help_shortcuts", "help_settings", "report_issue"],
         }
         for label, names in groups.items():
@@ -324,7 +326,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         if action:
             self.run_action(action)
         else:
-            self.context_menu(["window_details", "rename_window", "pin_window", "window_up", "window_down", "window_first", "notifications_toggle_window", "reconnect", "relaunch_window", "close_window"], event)
+            self.context_menu(["window_details", "rename_window", "pin_window", "window_up", "window_down", "window_first", "notifications_toggle_window", "reconnect", "relaunch_window", "adopt_antigravity_window", "continue_window", "close_window"], event)
 
     def workspace_context(self, _, event, workspace):
         if event.button == 3:
@@ -335,7 +337,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                     self._notification_preserve_focus_id = self.focused_surface.record["id"]
             finally:
                 self._notification_context_selection = False
-            self.context_menu(["new_window", "rename_workspace", "pin_workspace", "edit_ssh", "workspace_up", "workspace_down", "workspace_first", "reconnect_all", "relaunch_workspace", "notifications_toggle_workspace", "close_workspace"], event)
+            self.context_menu(["new_window", "rename_workspace", "pin_workspace", "edit_ssh", "workspace_up", "workspace_down", "workspace_first", "reconnect_all", "relaunch_workspace", "continue_workspace", "notifications_toggle_workspace", "close_workspace"], event)
             return True
         return False
 
@@ -501,7 +503,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                 self._notification_context_selection = False
             self.context_menu(["window_details", "new_conversation_window", "rename_window", "reset_window_name", "pin_window", "window_up", "window_down", "window_first", "move_window_left", "move_window_right",
                                "maximize_pane", "notifications_toggle_window", "close_window", "close_left_windows", "close_right_windows",
-                               "close_other_windows", "relaunch_window", "kill_tmux"], event)
+                               "close_other_windows", "relaunch_window", "adopt_antigravity_window", "continue_window", "kill_tmux"], event)
             return True
         return False
 
@@ -620,70 +622,12 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         return WindowDetails.snapshot(workspace, record, None, self._details_catalog(), time.time)
 
     def show_window_details(self, surface):
-        """Modal «Detalles»: abre al instante con lo guardado y se actualiza con la sonda (≤ 8 s)."""
-        workspace, record = surface.workspace, surface.record
-        dialog = Gtk.Dialog(title=TITLE, transient_for=self, modal=True)
-        dialog.add_button("Cerrar", Gtk.ResponseType.CLOSE)
-        dialog.set_default_size(620, -1)
-        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=20)
-        status = Gtk.Label(xalign=0, wrap=True)
-        status.get_style_context().add_class("dim-label")
-        grid = Gtk.Grid(column_spacing=18, row_spacing=8)
-        content.pack_start(status, False, False, 0)
-        content.pack_start(grid, False, False, 0)
-        dialog.get_content_area().add(content)
-        state = {"open": True}
-
-        def render(details, note):
-            for child in grid.get_children():
-                grid.remove(child)
-            for index, (key, label, value) in enumerate(WindowDetails.rows(details)):
-                name = Gtk.Label(label=label, xalign=0, yalign=0)
-                name.get_style_context().add_class("dim-label")
-                grid.attach(name, 0, index, 1, 1)
-                if key == "command":
-                    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-                    command = Gtk.Label(xalign=0, selectable=True, wrap=True)
-                    command.set_markup("<tt>" + GLib.markup_escape_text(value) + "</tt>")
-                    command.set_line_wrap_mode(Pango.WrapMode.CHAR)
-                    box.pack_start(command, False, False, 0)
-                    unverified = WindowDetails.command_note(details)
-                    if unverified:
-                        box.pack_start(Gtk.Label(label=unverified, xalign=0, wrap=True), False, False, 0)
-                    button = Gtk.Button(label="Copiar orden", halign=Gtk.Align.START)
-
-                    def copied(button, text=value):
-                        publish_text(text)
-                        button.set_label("Orden copiada")
-                    button.connect("clicked", copied)
-                    box.pack_start(button, False, False, 0)
-                    grid.attach(box, 1, index, 1, 1)
-                else:
-                    grid.attach(Gtk.Label(label=value, xalign=0, selectable=True, wrap=True), 1, index, 1, 1)
-            status.set_text(note or "")
-            status.set_visible(bool(note))
-            grid.show_all()
-
-        def closed(*_):
-            state["open"] = False
-            dialog.destroy()
-
-        dialog.connect("response", closed)
-        dialog.show_all()
-        render(self.window_details(workspace, record), CHECKING if record.get("tmux") else "")
-        workspace_copy, record_copy, connection, transport = self.details_inputs(workspace, record)
-        catalog = self._details_catalog()
-
-        def work():
-            # Fuera del hilo GTK: ssh -G para el destino y una lectura de la sonda, como mucho 8 s.
-            return WindowDetails.gather(workspace_copy, record_copy, connection=connection, transport=transport,
-                                        catalog=catalog, clock=time.time)
-
-        def done(details):
-            if state["open"] and not self._closed:
-                render(details, WindowDetails.warning(details))
-
-        self.background(work, done)
+        """La misma acción para terminal, pestaña, lateral y paleta; lectura fuera de GTK."""
+        if self.locked or self._closed:
+            return None
+        dialog = WindowDetailsDialog(self, surface)
+        self._details_dialogs.add(dialog)
+        dialog.connect("destroy", lambda closed: self._details_dialogs.discard(closed))
         return dialog
 
     @staticmethod
@@ -1257,6 +1201,8 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
 
     def action_lock(self):
         self.locked = True
+        for dialog in tuple(getattr(self, "_details_dialogs", ())):
+            dialog.destroy()
         self.sidebar_flyout.hide()
         if hasattr(self, "mobile"):
             self.mobile.rpc.close_attachments()

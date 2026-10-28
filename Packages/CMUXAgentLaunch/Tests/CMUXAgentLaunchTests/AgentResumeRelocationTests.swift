@@ -57,7 +57,7 @@ struct AgentResumeRelocationTests {
     private func runProbe(executable: URL, expected: String?) throws {
         let response = try execute(executable, arguments: [])
         let argv = try JSONDecoder().decode([String]?.self, from: response)
-        #expect(argv == expected.map { [$0, "resume", "SID", "--yolo"] })
+        #expect(argv == expected.map { [$0, "--yolo", "resume", "SID"] })
     }
 
     private func execute(_ executable: URL, arguments: [String]) throws -> Data {

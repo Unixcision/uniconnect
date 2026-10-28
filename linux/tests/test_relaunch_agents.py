@@ -4,6 +4,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import subprocess
@@ -12,6 +13,7 @@ import tempfile
 import time
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 import uuid
 
 from uniconnect.relaunch_agents import RelaunchAgents, RelaunchUnavailable
@@ -29,7 +31,8 @@ class ArgumentsTests(unittest.TestCase):
         # Decisión de Dani (24-09): se relanza siempre sin preguntas; --yolo sustituye a -s/-a.
         args = TargetWorker.resume_arguments("codex", ["/bin/codex", "resume", "-C", "/work with spaces",
             "-m", "model", "--sandbox", "workspace-write", "--ask-for-approval", "on-request", "old"], "current", self.catalog)
-        self.assertEqual(args, ["/bin/codex", "--yolo", "resume", "current", "-C", "/work with spaces", "-m", "model"])
+        self.assertEqual(args, ["/bin/codex", "--yolo", "resume", "current", "-C", "/work with spaces", "-m", "model",
+                                "--no-alt-screen"])
         args = TargetWorker.resume_arguments("claude", ["/bin/claude", "--resume", "old", "--model", "model",
             "--permission-mode", "default", "--append-system-prompt", "x; $(not a shell command)"], "current", self.catalog)
         self.assertEqual(args, ["/bin/claude", "--resume", "current", "--model", "model", "--permission-mode", "default",
@@ -41,7 +44,41 @@ class ArgumentsTests(unittest.TestCase):
                      ["codex", "--full-auto"], ["codex", "-a", "never", "-s", "danger-full-access"]):
             with self.subTest(argv=argv):
                 self.assertEqual(TargetWorker.resume_arguments("codex", argv, "current", self.catalog),
-                                 ["codex", "--yolo", "resume", "current"])
+                                 ["codex", "--yolo", "resume", "current", "--no-alt-screen"])
+
+    def test_codex_relaunch_keeps_inline_mode_once_across_repeated_relaunches(self):
+        for options in ([], ["--no-alt-screen"], ["--no-alt-screen", "--search"]):
+            with self.subTest(options=options):
+                argv = ["codex", "--yolo", *options, "resume", "old", "-C", "/w", "-m", "model"]
+                args = TargetWorker.resume_arguments("codex", argv, "current", self.catalog)
+                self.assertEqual(args.count("--no-alt-screen"), 1)
+                self.assertEqual(args.count("--yolo"), 1)
+                self.assertEqual(TargetWorker.resume_arguments("codex", args, "current", self.catalog), args)
+                self.assertEqual(args[args.index("-C") + 1], "/w")
+                self.assertEqual(args[args.index("-m") + 1], "model")
+
+    def test_codex_no_prompt_resume_does_not_widen_read_only_sandbox(self):
+        restricted = {"sandbox_policy": {"type": "read-only"}, "approval_policy": "never"}
+        with self.assertRaises(Unavailable) as error:
+            TargetWorker.preserve_resume_permissions("codex", restricted, ["codex", "--yolo", "resume", "id"])
+        self.assertEqual(error.exception.cause, "no_soportado")
+        unrestricted = {"sandbox_policy": {"type": "danger-full-access"}, "approval_policy": "never"}
+        TargetWorker.preserve_resume_permissions("codex", unrestricted, ["codex", "--yolo", "resume", "id"])
+
+    def test_confirmed_active_target_can_finish_before_execution_but_cannot_change_identity(self):
+        proof = {"key": "pane", "generation": 1, "effective_id": "native", "configuration": "same", "active": True}
+        for changed in (False, True):
+            with self.subTest(changed=changed):
+                adapter = RelaunchAgents()
+                current = {key: value for key, value in proof.items() if key != "active"}
+                if changed:
+                    current["effective_id"] = "different"
+                adapter.probe = lambda *args: current
+                calls = []
+                adapter.request = lambda *args, **kwargs: calls.append((args, kwargs)) or {"state": "verificado", "effective_id": "native"}
+                result = adapter.execute({}, "agent.relaunch", proof, "operation", lambda value: None, lambda: True)
+                self.assertEqual(result["state"], "omitido" if changed else "verificado")
+                self.assertEqual(len(calls), 0 if changed else 1)
 
     def test_worker_policy_matches_the_shared_catalogue_rule(self):
         catalog = AgentResumeCatalog()
@@ -64,7 +101,56 @@ class ArgumentsTests(unittest.TestCase):
         hook = json.dumps(["/usr/bin/python3", "-c", BOOTSTRAP, "signal"])
         args = TargetWorker.resume_arguments("codex", ["codex", "resume", "old", "-c", "notify=" + hook,
             "-c", 'model_reasoning_effort="high"'], "current", self.catalog)
-        self.assertEqual(args, ["codex", "--yolo", "resume", "current", "-c", 'model_reasoning_effort="high"'])
+        self.assertEqual(args, ["codex", "--yolo", "resume", "current", "-c", 'model_reasoning_effort="high"',
+                                "--no-alt-screen"])
+
+    def test_codex_resume_uses_proven_current_model_effort_and_keeps_other_config(self):
+        native = {"settings_applied": True, "model": "current-model", "effort": "high"}
+        argv = ["codex", "resume", "old", "-m", "launch-model", "-c", 'model_reasoning_effort="low"',
+                "-c", 'analytics.enabled=false']
+        resumed = TargetWorker.resume_arguments("codex", argv, "native", self.catalog, native)
+        self.assertEqual(resumed[resumed.index("-m") + 1], "current-model")
+        self.assertIn('model_reasoning_effort="high"', resumed)
+        self.assertIn("analytics.enabled=false", resumed)
+        self.assertNotIn("launch-model", resumed)
+        self.assertNotIn('model_reasoning_effort="low"', resumed)
+        self.assertEqual(TargetWorker.resume_arguments("codex", resumed, "native", self.catalog, native), resumed)
+
+        # A native null means the UI uses its model default; remove a stale
+        # explicit effort instead of restoring it from the old process argv.
+        native["effort"] = None
+        resumed = TargetWorker.resume_arguments("codex", argv, "native", self.catalog, native)
+        self.assertNotIn("model_reasoning_effort=", " ".join(resumed))
+
+    def test_antigravity_resume_preserves_validated_session_options_without_adding_permissions(self):
+        identifier = "4a1ec7f2-126f-4e63-a347-92ab4576fdda"
+        argv = ["/usr/bin/agy", "--conversation", identifier, "--model", "gemini-3-pro",
+                "--effort", "high", "--mode", "accept-edits", "--sandbox", "--remote-control",
+                "--project", "/work/project", "--agent", "reviewer", "--add-dir", "/work/shared"]
+        self.assertEqual(TargetWorker.resume_arguments("agy", argv, identifier, self.catalog),
+                         ["/usr/bin/agy", "--conversation", identifier, "--model", "gemini-3-pro",
+                          "--effort", "high", "--mode", "accept-edits", "--sandbox", "--remote-control",
+                          "--project", "/work/project", "--agent", "reviewer", "--add-dir", "/work/shared"])
+        restricted = TargetWorker.resume_arguments("antigravity", argv, identifier, self.catalog)
+        self.assertNotIn("--dangerously-skip-permissions", restricted)
+        explicitly_permissive = TargetWorker.resume_arguments("agy", [*argv, "--dangerously-skip-permissions"],
+                                                               identifier, self.catalog)
+        self.assertEqual(explicitly_permissive[-1], "--dangerously-skip-permissions")
+        self.assertEqual(TargetWorker.no_prompt("agy", ["agy", "--conversation", identifier], self.catalog),
+                         ["agy", "--conversation", identifier])
+
+    def test_antigravity_resume_rejects_ambiguous_identity_prompts_and_unknown_options(self):
+        identifier = "4a1ec7f2-126f-4e63-a347-92ab4576fdda"
+        for argv in (["agy", "--model", "m"],
+                     ["agy", "--conversation", "other"],
+                     ["agy", "--conversation", identifier, "--conversation", identifier],
+                     ["agy", "--conversation", identifier, "--continue"],
+                     ["agy", "--conversation", identifier, "--unknown", "x"],
+                     ["agy", "--conversation", identifier, "do this task"],
+                     ["agy", "--conversation", identifier, "--dangerously-skip-permissions",
+                      "--dangerously-skip-permissions"]):
+            with self.subTest(argv=argv), self.assertRaises(Unavailable):
+                TargetWorker.resume_arguments("agy", argv, identifier, self.catalog)
 
     def test_unknown_provider_is_visible_but_does_not_issue_any_process_command(self):
         worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "grok", "catalog": self.catalog})
@@ -84,12 +170,142 @@ class ArgumentsTests(unittest.TestCase):
                 self.assertEqual(error.exception.cause, "sin_ia")
         self.assertEqual(calls, [])
 
+    def test_antigravity_is_advertised_but_still_probed_before_planning(self):
+        from uniconnect.relaunch_agents import CAPABILITIES, RELAUNCHABLE
+        self.assertIn("agy", RELAUNCHABLE)
+        self.assertIn("relaunch.v1.agy.local", CAPABILITIES)
+        self.assertIn("relaunch.v1.agy.ssh", CAPABILITIES)
+        adapter = RelaunchAgents()
+        calls = []
+        adapter.request = lambda candidate, action, **values: calls.append((candidate, action, values)) or {"key": "proof"}
+        candidate = {"provider": "agy", "connection": None,
+                     "record": {"id": "fixture", "tmux": "fixture"}}
+        self.assertEqual(adapter.probe(candidate, "agent.relaunch"), {"key": "proof"})
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1], "inspect")
+
+    def test_explicit_legacy_antigravity_adoption_refreshes_only_managed_config_then_binds_one_target(self):
+        from uniconnect.antigravity_integration import AntigravityIntegration
+
+        with tempfile.TemporaryDirectory(prefix="uc-agy-adoption-dispatch-") as directory:
+            home = Path(directory) / "home"
+            home.mkdir()
+            calls = []
+
+            class FakeTransport:
+                def run(self, command, *, timeout):
+                    calls.append((command, timeout))
+                    if timeout == 15:
+                        return subprocess.run(shlex.split(command), env=dict(os.environ, HOME=str(home)),
+                                              capture_output=True, text=True, timeout=timeout)
+                    return SimpleNamespace(returncode=0,
+                        stdout='UC_RELAUNCH_V1 {"state":"verificado","effective_id":"native-id"}')
+
+            adapter = RelaunchAgents(transport_factory=lambda *args, **kwargs: FakeTransport())
+            candidate = {"provider": "agy", "connection": "ssh target",
+                         "record": {"id": "window-id", "tmux": "session-id", "tmuxSocket": "socket-id",
+                                    "sessionId": "native-id", "cwd": "/work"}}
+            actions = []
+            adapter.request = lambda current, action: actions.append((current, action)) or {
+                "state": "verificado", "effective_id": "native-id"}
+            result = adapter.adopt_legacy_antigravity(candidate)
+            self.assertEqual(result["state"], "verificado")
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0][1], 15)
+            self.assertTrue(AntigravityIntegration(home=home).status()["enabled"])
+            self.assertEqual(actions, [(candidate, "adopt")])
+
     def test_footer_or_unknown_dialog_does_not_prove_an_empty_composer(self):
         worker = TargetWorker({"session": "fixture", "socket": "fixture"})
         for screen in ("some output\nbypass permissions", "❯ draft", "Do you trust this folder?\n❯ "):
             worker.tmux = lambda *args, screen=screen: (str(len(screen.splitlines()) - 1) if args[0] == "display-message" else screen)
             with self.assertRaises(Unavailable):
                 worker.require_empty_composer({"pane": {"pane": "%1"}})
+
+    def test_antigravity_model_effort_is_not_mistaken_for_activity(self):
+        worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "agy"})
+        screen = "existing output\n› \n? for shortcuts                         Claude Sonnet 4.6 (Thinking)"
+        worker.tmux = lambda *args: "1" if args[0] == "display-message" else screen
+        worker.require_empty_composer({"pane": {"pane": "%1"}})
+
+    def test_antigravity_explicit_busy_indicator_blocks_adoption_with_empty_composer(self):
+        worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "agy"})
+        screen = "existing output\n› \n✳ Working (12s)"
+        worker.tmux = lambda *args: "1" if args[0] == "display-message" else screen
+        with self.assertRaises(Unavailable) as busy:
+            worker.require_empty_composer({"pane": {"pane": "%1"}})
+        self.assertEqual(busy.exception.cause, "tareas_de_fondo")
+
+    def test_antigravity_staged_control_ignores_only_volatile_footer_changes(self):
+        refreshed_footer = ["transcript line", "› /statusline enable", "? for shortcuts",
+                            "Claude Sonnet 4.6 (Thinking · refreshed)"]
+        self.assertTrue(TargetWorker.staged_control_matches(
+            refreshed_footer, 1, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"))
+        wrong_input = ["transcript line", "› /statusline enable now", *refreshed_footer[2:]]
+        self.assertFalse(TargetWorker.staged_control_matches(
+            wrong_input, 1, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"))
+        self.assertFalse(TargetWorker.staged_control_matches(
+            refreshed_footer, len(refreshed_footer), r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"))
+
+    def test_antigravity_staged_control_waits_for_delayed_tui_echo_and_stable_cursor(self):
+        worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "agy"})
+        pane = {"pane": "%1"}
+        screens = iter(("history\n› \nfooter", "history\n› /statusline enable\nfooter",
+                        "history\n› /statusline enable\nfooter"))
+        worker.pane = lambda: (pane, {}, "0", "")
+        worker.same_process = lambda _process: True
+        captures = []
+        def tmux(*args):
+            if args[0] == "capture-pane":
+                value = next(screens)
+                captures.append(value)
+                return value
+            return "1"
+        worker.tmux = tmux
+
+        lines, row = worker.wait_staged_control(
+            pane, {"pid": 123}, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*", time.monotonic() + 1)
+
+        self.assertEqual(lines[row], "› /statusline enable")
+        self.assertEqual(len(captures), 3)
+
+    def test_antigravity_staged_control_timeout_never_accepts_an_unrecognized_composer(self):
+        worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "agy"},
+                              clock=lambda: 1.0)
+        pane = {"pane": "%1"}
+        worker.pane = lambda: (pane, {}, "0", "")
+        worker.same_process = lambda _process: True
+        worker.tmux = lambda *args: "history\n› /statusline enable now\nfooter" if args[0] == "capture-pane" else "1"
+
+        with self.assertRaises(Unavailable) as blocked:
+            worker.wait_staged_control(
+                pane, {"pid": 123}, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*", 0.0)
+
+        self.assertEqual(blocked.exception.cause, "dialogo_desconocido")
+
+    def test_antigravity_failed_adoption_clears_only_its_exact_staged_control(self):
+        pane = {"pane": "%1"}
+        process = {"pid": 123}
+        for screen, expected in (("history\n› /statusline enable\nfooter", True),
+                                 ("history\n› user draft\nfooter", False)):
+            with self.subTest(expected=expected):
+                worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "agy"})
+                calls = []
+                worker.pane = lambda: (pane, {}, "0", "")
+                worker.same_process = lambda _process: True
+                def tmux(*args):
+                    if args[0] == "capture-pane":
+                        return screen
+                    if args[0] == "display-message":
+                        return "1"
+                    calls.append(args)
+                    return ""
+                worker.tmux = tmux
+                worker.clear_staged_control(pane, process)
+                clears = [call for call in calls if call[0] == "send-keys"]
+                self.assertEqual(bool(clears), expected)
+                if expected:
+                    self.assertEqual(clears[0][3:], ("BSpace",) * len("/statusline enable"))
 
     def test_native_turn_activity_and_runtime_settings_are_required_before_exit(self):
         process = {"cwd": "/work", "argv": ["codex", "-m", "fixture-model", "-s", "read-only", "-a", "never"]}
@@ -130,6 +346,12 @@ class SharedPolicyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="uc-worker-") as directory:
             result = subprocess.run([sys.executable, "-c", source, payload], cwd=directory, capture_output=True,
                                     text=True, timeout=30)
+        self.assertEqual(result.stdout.strip(), 'UC_RELAUNCH_V1 {"error": "no_soportado"}', result.stderr)
+        adapter = RelaunchAgents()
+        self.assertLess(len(adapter.bootstrap), len(adapter.source))
+        with tempfile.TemporaryDirectory(prefix="uc-worker-compressed-") as directory:
+            result = subprocess.run([sys.executable, "-c", adapter.bootstrap, payload], cwd=directory,
+                                    capture_output=True, text=True, timeout=30)
         self.assertEqual(result.stdout.strip(), 'UC_RELAUNCH_V1 {"error": "no_soportado"}', result.stderr)
         probe = source.replace('if __name__ == "__main__":', "if False:") + (
             "\nprint(json.dumps(TargetWorker.no_prompt('codex', ['codex', 'resume', 'x', '-s=read-only'], "
@@ -223,12 +445,83 @@ class ClaudeDialectTests(unittest.TestCase):
             self.worker.require_empty_composer({"pane": {"pane": "%1"}})
         self.assertEqual(trust.exception.cause, "confianza_carpeta")
 
-    def test_other_providers_are_still_excluded_before_touching_anything(self):
-        worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "agy",
-                               "catalog": AgentResumeCatalog().providers}, proc=self.proc)
-        with self.assertRaises(Unavailable) as error:
-            worker.quiescent_configuration("agy", self.process, "x", "")
-        self.assertEqual(error.exception.cause, "no_soportado")
+
+class AntigravityDialectTests(unittest.TestCase):
+    SESSION = "4a1ec7f2-126f-4e63-a347-92ab4576fdda"
+
+    def setUp(self):
+        self.worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "agy",
+                                    "window_id": "window-1", "catalog": AgentResumeCatalog().providers})
+        self.process = {"pid": 4242, "start": "555", "argv": ["agy", "--conversation", self.SESSION]}
+        self.binding = {"version": 1, "window_id": "window-1", "agent": "agy", "generation": "a" * 32,
+                        "tmux_pane": "%1", "pane_pid": 100, "tmux_session_id": "$1",
+                        "agent_pid": 4242, "agent_start": "555", "session_id": self.SESSION,
+                        "observed_at": time.time(), "runtime_status": {"state": "idle", "model": "Gemini",
+                            "model_id": "gemini-fixture", "effort": "high", "pending_input_count": 0,
+                            "tool_confirmation_pending": False, "task_count": 0, "sandbox_enabled": False,
+                            "cycle_mode": "plan", "version": "1.4.4"}}
+        self.hook = json.dumps(self.binding)
+
+    def test_relaunch_requires_bound_idle_status_and_known_task_count_version(self):
+        expected = {"model": "gemini-fixture", "model_label": "Gemini", "effort": "high", "cycle_mode": "plan",
+                    "sandbox_enabled": False, "version": "1.4.4"}
+        with patch.object(TargetWorker, "process_birth_bounds", return_value=(0, 0)):
+            self.assertEqual(self.worker.quiescent_configuration("agy", self.process, self.SESSION, self.hook), expected)
+            for change, cause in (({"window_id": "other"}, "no_soportado"),
+                                  ({"runtime_status": {**self.binding["runtime_status"], "version": "1.4.3"}}, "no_soportado"),
+                                  ({"runtime_status": {**self.binding["runtime_status"], "state": "working"}}, "dialogo_desconocido"),
+                                  ({"runtime_status": {**self.binding["runtime_status"], "task_count": 1}}, "dialogo_desconocido"),
+                                  ({"runtime_status": {**self.binding["runtime_status"], "pending_input_count": 1}}, "dialogo_desconocido"),
+                                  ({"runtime_status": {**self.binding["runtime_status"], "tool_confirmation_pending": True}}, "dialogo_desconocido")):
+                value = {**self.binding, **change}
+                with self.subTest(change=change), self.assertRaises(Unavailable) as error:
+                    self.worker.quiescent_configuration("agy", self.process, self.SESSION, json.dumps(value))
+                self.assertEqual(error.exception.cause, cause)
+            stale = {**self.binding, "observed_at": time.time() - 30}
+            with self.assertRaises(Unavailable) as error:
+                self.worker.quiescent_configuration("agy", self.process, self.SESSION, json.dumps(stale))
+            self.assertEqual(error.exception.cause, "no_soportado")
+
+    def test_resume_reconstructs_native_model_effort_mode_and_sandbox_only(self):
+        catalog = AgentResumeCatalog().providers
+        argv = TargetWorker.resume_arguments("agy", ["/usr/bin/agy", "--conversation", self.SESSION,
+            "--project", "/work"], self.SESSION, catalog)
+        result = TargetWorker.preserve_antigravity_configuration(argv, {
+            "model": "Gemini 4 Argon (Medium)", "effort": "high", "cycle_mode": "accept-edits",
+            "sandbox_enabled": True})
+        self.assertEqual(result, ["/usr/bin/agy", "--conversation", self.SESSION, "--project", "/work",
+            "--model", "Gemini 4 Argon (Medium)", "--effort", "high", "--mode", "accept-edits", "--sandbox"])
+        resumed_again = TargetWorker.preserve_antigravity_configuration(
+            TargetWorker.antigravity_resume_arguments(result, self.SESSION, catalog), {
+                "model": "Gemini 4 Argon (Medium)", "effort": "high", "cycle_mode": "accept-edits",
+                "sandbox_enabled": True})
+        self.assertEqual(resumed_again, result)
+        with self.assertRaises(Unavailable):
+            TargetWorker.preserve_antigravity_configuration(["agy", "--sandbox", "--conversation", self.SESSION],
+                {"model": "model", "effort": None, "cycle_mode": None, "sandbox_enabled": False})
+
+    def test_missing_model_id_keeps_the_same_conversation_and_verifies_its_display_label(self):
+        configuration = {"model": None, "model_label": "Claude Sonnet 4.6 (Thinking)", "effort": None,
+                         "cycle_mode": None, "sandbox_enabled": False}
+        runtime = {**self.binding["runtime_status"], "model": configuration["model_label"], "model_id": None}
+        proof = {**self.binding, "runtime_status": runtime}
+        with patch.object(TargetWorker, "process_birth_bounds", return_value=(0, 0)):
+            actual = self.worker.quiescent_configuration("agy", self.process, self.SESSION, json.dumps(proof))
+        self.assertEqual(actual["model_label"], configuration["model_label"])
+        argv = TargetWorker.resume_arguments("agy", self.process["argv"], self.SESSION,
+                                             AgentResumeCatalog().providers)
+        self.assertEqual(TargetWorker.preserve_antigravity_configuration(argv, configuration),
+                         ["agy", "--conversation", self.SESSION])
+        with self.assertRaises(Unavailable):
+            TargetWorker.preserve_antigravity_configuration(
+                ["agy", "--conversation", self.SESSION, "--model", "unknown"], configuration)
+
+    def test_binding_must_match_the_live_managed_pane_before_rewrapping(self):
+        env = {"UNICONNECT_NATIVE_BINDING": json.dumps({key: self.binding[key] for key in
+            ("version", "window_id", "agent", "generation", "tmux_pane", "pane_pid", "tmux_session_id", "agent_pid", "agent_start")})}
+        pane = {"pane": "%1", "pane_pid": 100}
+        self.assertTrue(self.worker.managed_antigravity(env, self.process, pane, self.hook))
+        self.assertFalse(self.worker.managed_antigravity(env, self.process, {**pane, "pane": "%2"}, self.hook))
 
 
 class FleetTests(unittest.TestCase):
@@ -326,6 +619,20 @@ class RecoveryAndRevocationTests(unittest.TestCase):
         self.candidate = {"provider": "codex", "connection": None,
                           "record": {"id": "window", "tmux": "fixture", "tmuxSocket": "fixture"}}
         self.proof = {"key": "pane", "generation": 1}
+
+    def test_recover_verb_is_forwarded_to_the_idempotent_target_worker(self):
+        adapter = RelaunchAgents()
+        adapter.probe = lambda candidate, verb: self.proof
+        calls = []
+        def request(candidate, action, **values):
+            calls.append((action, values))
+            return {"state": "verificado"}
+        adapter.request = request
+        result = adapter.execute(self.candidate, "agent.recover", self.proof, str(uuid.uuid4()),
+                                 lambda value: None, lambda: True)
+        self.assertEqual(result["state"], "verificado")
+        self.assertEqual(calls[0][0], "start")
+        self.assertEqual(calls[0][1]["verb"], "agent.recover")
 
     def test_live_target_waiting_for_account_lock_is_not_reported_offline(self):
         clock = [0]
@@ -437,9 +744,330 @@ int main(int argc, char **argv) {
 '''
 
 
+AGY_IDLE_FIXTURE = r'''
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <time.h>
+#include <unistd.h>
+
+static void publish_statusline(void) {
+    const char *count_path = getenv("UNICONNECT_AGY_TEST_STATUSLINE_COUNT");
+    if (count_path) {
+        FILE *count = fopen(count_path, "a");
+        if (count) { fputs("run\n", count); fclose(count); }
+    }
+    const char *binding_path = getenv("UNICONNECT_AGY_TEST_BINDING_LOG");
+    const char *binding = getenv("UNICONNECT_NATIVE_BINDING");
+    if (binding_path && binding) {
+        FILE *log = fopen(binding_path, "a");
+        if (log) { fprintf(log, "%ld\t%s\n", (long)getpid(), binding); fclose(log); }
+    }
+    const char *statusline = getenv("UNICONNECT_AGY_TEST_STATUSLINE");
+    if (statusline) {
+        FILE *pipe = popen(statusline, "w");
+        if (pipe) {
+            char cwd[4096] = {0};
+            if (getcwd(cwd, sizeof cwd)) {
+                fprintf(pipe, "{\"conversation_id\":\"4a1ec7f2-126f-4e63-a347-92ab4576fdda\",\"cwd\":\"%s\","
+                        "\"agent_state\":\"idle\",\"model\":{\"id\":\"gemini-fixture\","
+                        "\"display_name\":\"Gemini fixture\",\"effort\":\"high\"},\"version\":\"1.4.4\","
+                        "\"sandbox\":{\"enabled\":false},\"quota\":{}}", cwd);
+            }
+            pclose(pipe);
+        }
+    }
+}
+
+static void *refresh_statusline(void *unused) {
+    (void)unused;
+    const char *stop_path = getenv("UNICONNECT_AGY_TEST_STOPFILE");
+    while (!stop_path || access(stop_path, F_OK) != 0) {
+        for (int i = 0; i < 110; i++) {
+            if (stop_path && access(stop_path, F_OK) == 0) return NULL;
+            struct timespec delay = {.tv_sec = 0, .tv_nsec = 100000000};
+            while (nanosleep(&delay, &delay) != 0) {}
+        }
+        if (!stop_path || access(stop_path, F_OK) != 0) publish_statusline();
+    }
+    return NULL;
+}
+
+int main(void) {
+    publish_statusline();
+    pthread_t refresher;
+    if (pthread_create(&refresher, NULL, refresh_statusline, NULL) != 0) return 2;
+    puts("Antigravity fixture");
+    printf("\n❯ ");
+    fflush(stdout);
+    char input[128];
+    while (fgets(input, sizeof input, stdin)) {
+        if (!strcmp(input, "/exit\n")) break;
+        if (!strcmp(input, "/statusline enable\n")) {
+            const char *count_path = getenv("UNICONNECT_AGY_TEST_CONTROL_COUNT");
+            if (count_path) {
+                FILE *count = fopen(count_path, "a");
+                if (count) { fputs("enable\n", count); fclose(count); }
+            }
+            publish_statusline();
+            printf("\n❯ ");
+            fflush(stdout);
+        }
+    }
+    return 0;
+}
+'''
+
+
 @unittest.skipUnless(os.name == "posix" and Path("/proc").exists() and shutil.which("cc") and shutil.which("tmux"),
                      "Needs isolated Linux runner, C compiler and tmux")
 class TargetIntegrationTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("tmux") and shutil.which("cc"),
+                         "Linux tmux and C compiler required")
+    def test_antigravity_closes_only_empty_idle_pane_and_reopens_same_conversation(self):
+        from uniconnect.antigravity_integration import AntigravityIntegration
+        from uniconnect.agent_identity_hook import BOOTSTRAP
+
+        with tempfile.TemporaryDirectory(prefix="uc-relaunch-agy-") as directory:
+            root = Path(directory)
+            home = root / "home"
+            home.mkdir()
+            integration = AntigravityIntegration(home=home)
+            integration.enable()
+            executable = root / "agy"
+            subprocess.run(["cc", "-pthread", "-x", "c", "-", "-o", str(executable)], input=AGY_IDLE_FIXTURE,
+                           text=True, capture_output=True, check=True, timeout=30)
+            socket_name = "uc-agy-" + uuid.uuid4().hex[:12]
+            native = "4a1ec7f2-126f-4e63-a347-92ab4576fdda"
+            window_id = "fixture-window"
+            statusline = shlex.split(json.loads(integration.settings_path.read_text())["statusLine"]["command"])
+            # The terminal UI renders the status line separately from its
+            # composer. Keep the synthetic command's stdout out of the pane
+            # while preserving its stdin telemetry contract.
+            statusline_command = shlex.join(statusline) + " >/dev/null"
+            statusline_count = root / "statusline-runs"
+            binding_log = root / "fixture-bindings"
+            stop_file = root / "stop-statusline"
+            env = dict(os.environ, HOME=str(home), HISTFILE="/dev/null", UNICONNECT_AGY_TEST_STATUSLINE=statusline_command,
+                       UNICONNECT_AGY_TEST_STATUSLINE_COUNT=str(statusline_count),
+                       UNICONNECT_AGY_TEST_BINDING_LOG=str(binding_log),
+                       UNICONNECT_AGY_TEST_STOPFILE=str(stop_file))
+            subprocess.run(["tmux", "-L", socket_name, "new-session", "-d", "-s", "fixture", "-c", directory,
+                            "/usr/bin/env", "UNICONNECT_WINDOW_ID=" + window_id,
+                            "UNICONNECT_AGY_TEST_STATUSLINE=" + statusline_command,
+                            "/bin/bash", "--noprofile", "--norc", "-i"], check=True, capture_output=True,
+                           timeout=5, env=env)
+            helper = base64.b64encode(__import__("zlib").compress(
+                Path(__file__).parents[1].joinpath("uniconnect/agent_identity_hook.py").read_bytes(), 9)).decode()
+            request = json.dumps({"argv": [str(executable), "--conversation", native], "agent": "agy",
+                                  "window_id": "fixture-window"})
+            launcher = ("UNICONNECT_NATIVE_HELPER=" + shlex.quote(helper) + " "
+                        + shlex.join(["python3", "-c", BOOTSTRAP, "launch", request]))
+            subprocess.run(["tmux", "-L", socket_name, "send-keys", "-t", "=fixture:", "-l", launcher + "\n"],
+                           check=True, capture_output=True, timeout=5)
+            candidate = {"label": "Fixture · Antigravity", "provider": "agy", "connection": None,
+                         "record": {"id": "fixture-window", "tmux": "fixture", "tmuxSocket": socket_name}}
+            adapter = RelaunchAgents()
+            with patch("uniconnect.relaunch_agents.RELAUNCHABLE", ("codex", "agy")):
+                events = TmuxOutputEvents(["tmux", "-L", socket_name], "fixture")
+                try:
+                    deadline = time.monotonic() + 12
+                    last_error = None
+                    while True:
+                        try:
+                            proof = adapter.probe(candidate, "agent.relaunch")
+                            break
+                        except RelaunchUnavailable as error:
+                            last_error = error.cause
+                            if time.monotonic() >= deadline:
+                                self.fail("Antigravity probe remained unavailable: " + str(last_error))
+                            try:
+                                events.wait(deadline, time.monotonic)
+                            except Unavailable:
+                                raw = subprocess.run(["tmux", "-L", socket_name, "show-options", "-p", "-v",
+                                                      "-t", "=fixture:", "@uniconnect_native_identity"],
+                                                     capture_output=True, text=True, timeout=5).stdout.strip()
+                                try:
+                                    snapshot = json.loads(raw)
+                                    runtime = snapshot.get("runtime_status") or {}
+                                    metadata = {key: runtime.get(key) for key in (
+                                        "state", "version", "pending_input_count", "tool_confirmation_pending",
+                                        "task_count", "model_id", "effort", "cycle_mode", "sandbox_enabled")}
+                                    bound = snapshot.get("agent") == "agy" and snapshot.get("window_id") == "fixture-window"
+                                except (ValueError, TypeError, AttributeError):
+                                    metadata, bound = {}, False
+                                self.fail("Antigravity probe unavailable (%s); status=%r, identity_bound=%r"
+                                          % (last_error, metadata, bound))
+                    phases = []
+                    worker = TargetWorker({"session": "fixture", "socket": socket_name,
+                                           "window_id": "fixture-window"})
+                    pane, _, _, hook = worker.pane()
+                    native_process = worker.process(proof["pid"])
+                    process_env = dict(item.split("=", 1) for item in
+                                       (Path("/proc") / str(proof["pid"]) / "environ").read_bytes()
+                                       .decode(errors="replace").split("\0") if "=" in item)
+                    managed_at_probe = worker.managed_antigravity(process_env, native_process, pane, hook)
+                    initial_configuration = worker.antigravity_configuration(native_process, native, hook)
+                    initial_resume = TargetWorker.preserve_antigravity_configuration(
+                        TargetWorker.antigravity_resume_arguments(
+                            [native_process["executable"], *native_process["argv"][1:]], native,
+                            AgentResumeCatalog().providers), initial_configuration)
+                    result = adapter.execute(candidate, "agent.relaunch", proof, str(uuid.uuid4()),
+                                             phases.append, lambda: True)
+                    if result != {"state": "verificado", "effective_id": native}:
+                        try:
+                            post_probe = adapter.probe(candidate, "agent.relaunch")
+                            post_probe_summary = {key: post_probe.get(key) == proof.get(key) for key in (
+                                "pane", "effective_id", "configuration", "native_configuration")}
+                            post_probe_summary["generation_changed"] = post_probe.get("generation") != proof.get("generation")
+                            diagnostic_worker = TargetWorker({"session": "fixture", "socket": socket_name,
+                                "window_id": "fixture-window", "provider": "agy",
+                                "catalog": AgentResumeCatalog().providers, "verb": "agent.relaunch"})
+                            _, _, post_process, post_resume = diagnostic_worker.inspect(runtime=True)
+                            post_probe_summary["cwd_matches"] = post_process["cwd"] == native_process["cwd"]
+                            post_probe_summary["resume_arguments_match"] = post_resume == initial_resume
+                            post_probe_summary["resume_argument_counts"] = (len(initial_resume), len(post_resume))
+                            def display_args(arguments):
+                                return ["<agy>" if index == 0 else "<conversation>" if value == native else value
+                                        for index, value in enumerate(arguments)]
+                            post_probe_summary["effective_resume_args"] = {
+                                "initial": display_args(initial_resume), "reopened": display_args(post_resume)}
+                        except RelaunchUnavailable as error:
+                            post_probe_summary = {"cause": error.cause}
+                        screen = subprocess.run(["tmux", "-L", socket_name, "capture-pane", "-p", "-t", "=fixture:"],
+                                                check=True, capture_output=True, text=True, timeout=5).stdout.splitlines()
+                        cursor = subprocess.run(["tmux", "-L", socket_name, "display-message", "-p", "-t",
+                                                 "=fixture:", "#{cursor_y}"], check=True, capture_output=True,
+                                                text=True, timeout=5).stdout.strip()
+                        row = int(cursor) if cursor.isdigit() else -1
+                        markers = ("do you trust", "trust this", "allow once", "allow execution",
+                                   "would you like to run", "do you want to proceed", "[y/n]", "sign in", "log in")
+                        visible = "\n".join(screen).lower()
+                        raw_identity = subprocess.run(["tmux", "-L", socket_name, "show-options", "-p", "-v",
+                                                       "-t", "=fixture:", "@uniconnect_native_identity"],
+                                                      capture_output=True, text=True, timeout=5).stdout.strip()
+                        snapshot = {}
+                        try:
+                            snapshot = json.loads(raw_identity)
+                            runtime = snapshot.get("runtime_status") or {}
+                            runtime_summary = {key: runtime.get(key) for key in (
+                                "state", "version", "pending_input_count", "tool_confirmation_pending",
+                                "task_count", "model_id", "effort", "cycle_mode", "sandbox_enabled")}
+                            observed = snapshot.get("observed_at")
+                            runtime_summary["age_seconds"] = round(time.time() - observed, 2) if isinstance(
+                                observed, (int, float)) and not isinstance(observed, bool) else None
+                        except (ValueError, TypeError, AttributeError):
+                            runtime_summary = "unavailable"
+                        try:
+                            statusline_runs = len(statusline_count.read_text().splitlines())
+                        except OSError:
+                            statusline_runs = 0
+                        fixture_bindings = []
+                        try:
+                            for line in binding_log.read_text().splitlines():
+                                _, raw_binding = line.split("\t", 1)
+                                fixture_bindings.append(json.loads(raw_binding))
+                        except (OSError, ValueError, TypeError):
+                            pass
+                        fixture_generations = {item.get("generation") for item in fixture_bindings
+                                               if isinstance(item, dict) and isinstance(item.get("generation"), str)}
+                        fixture_pids = {item.get("agent_pid") for item in fixture_bindings
+                                        if isinstance(item, dict) and isinstance(item.get("agent_pid"), int)}
+                        pane_generation_matches_fixture = (isinstance(snapshot, dict)
+                            and snapshot.get("generation") in fixture_generations)
+                        pane_binding_raw = subprocess.run(
+                            ["tmux", "-L", socket_name, "show-options", "-p", "-v", "-t", "=fixture:",
+                             "@uniconnect_native_identity"], capture_output=True, text=True,
+                            timeout=5).stdout.strip()
+                        try:
+                            pane_binding = json.loads(pane_binding_raw)
+                            pane_binding_summary = {key: pane_binding.get(key) for key in (
+                                "agent", "generation", "agent_pid", "pane_pid", "tmux_pane")}
+                        except (ValueError, TypeError):
+                            pane_binding_summary = "unavailable"
+                        live_fixture_processes = []
+                        for item in worker.descendants(worker.pane()[1]["pid"]).values():
+                            if Path(item["executable"]).name == "agy":
+                                live_fixture_processes.append({"pid": item["pid"], "start": item["start"]})
+                        self.fail("Antigravity isolated relaunch returned %r; cursor_y=%r; cursor_line=%r; "
+                                  "composer_match=%r; rejection_markers=%r; runtime_status=%r; statusline_runs=%r; "
+                                  "fixture_processes=%r; fixture_generations=%r; pane_generation_matches_fixture=%r; phases=%r; "
+                                  "managed_at_probe=%r; pane_binding=%r; live_fixture_processes=%r; post_probe=%r; "
+                                  "visible_fixture_rows=%r"
+                                  % (result, cursor, screen[row] if 0 <= row < len(screen) else None,
+                                     bool(0 <= row < len(screen) and re.fullmatch(r"\s*│?\s*[›❯>]\s*│?\s*", screen[row])),
+                                     [marker for marker in markers if marker in visible], runtime_summary,
+                                     statusline_runs, len(fixture_pids), len(fixture_generations),
+                                     pane_generation_matches_fixture, phases, managed_at_probe,
+                                     pane_binding_summary, live_fixture_processes, post_probe_summary, screen[-16:]))
+                    current = adapter.probe(candidate, "agent.relaunch")
+                    self.assertEqual(current["pane"], proof["pane"])
+                    self.assertNotEqual((current["pid"], current["start"]), (proof["pid"], proof["start"]))
+                    self.assertEqual(current["effective_id"], native)
+                    self.assertEqual(current["native_configuration"], proof["native_configuration"])
+                finally:
+                    events.close()
+                    stop_file.touch()
+                    subprocess.run(["tmux", "-L", socket_name, "kill-server"], capture_output=True, timeout=5)
+
+    def test_legacy_antigravity_statusline_adopts_only_its_exact_unbound_pane(self):
+        from uniconnect.antigravity_integration import AntigravityIntegration
+
+        with tempfile.TemporaryDirectory(prefix="uc-relaunch-agy-adopt-") as directory:
+            root = Path(directory)
+            home = root / "home"
+            home.mkdir()
+            integration = AntigravityIntegration(home=home)
+            integration.enable()
+            executable = root / "agy"
+            subprocess.run(["cc", "-pthread", "-x", "c", "-", "-o", str(executable)], input=AGY_IDLE_FIXTURE,
+                           text=True, capture_output=True, check=True, timeout=30)
+            socket_name = "uc-agy-adopt-" + uuid.uuid4().hex[:10]
+            native, window_id = "4a1ec7f2-126f-4e63-a347-92ab4576fdda", str(uuid.uuid4())
+            statusline = shlex.split(json.loads(integration.settings_path.read_text())["statusLine"]["command"])
+            statusline_command = shlex.join(statusline) + " >/dev/null"
+            statusline_count = root / "statusline-runs"
+            control_count = root / "statusline-control-count"
+            stop_file = root / "stop-statusline"
+            env = dict(os.environ, HOME=str(home), HISTFILE="/dev/null", UNICONNECT_AGY_TEST_STOPFILE=str(stop_file),
+                       UNICONNECT_AGY_TEST_STATUSLINE=statusline_command,
+                       UNICONNECT_AGY_TEST_STATUSLINE_COUNT=str(statusline_count),
+                       UNICONNECT_AGY_TEST_CONTROL_COUNT=str(control_count))
+            subprocess.run(["tmux", "-L", socket_name, "new-session", "-d", "-s", "fixture", "-c", directory,
+                            "/bin/bash", "--noprofile", "--norc", "-i"], check=True, capture_output=True,
+                           timeout=5, env=env)
+            subprocess.run(["tmux", "-L", socket_name, "send-keys", "-t", "=fixture:", "-l",
+                            shlex.join([str(executable), "--conversation", native])],
+                           check=True, capture_output=True, timeout=5, env=env)
+            subprocess.run(["tmux", "-L", socket_name, "send-keys", "-t", "=fixture:", "Enter"],
+                           check=True, capture_output=True, timeout=5, env=env)
+            worker = TargetWorker({"action": "adopt", "session": "fixture", "socket": socket_name,
+                                   "window_id": window_id, "provider": "agy",
+                                   "catalog": AgentResumeCatalog().providers,
+                                   "expected_session_id": native, "expected_cwd": directory,
+                                   "verb": "agent.relaunch"})
+            try:
+                result = worker.dispatch()
+                self.assertEqual(result, {"state": "verificado", "effective_id": native})
+                self.assertEqual(control_count.read_text().splitlines(), ["enable"])
+                proof = worker.inspect()
+                pane, _, _, hook = worker.pane()
+                process = worker.process(proof["pid"])
+                process_env = dict(item.split("=", 1) for item in
+                                   (Path("/proc") / str(proof["pid"]) / "environ").read_bytes()
+                                   .decode(errors="replace").split("\0") if "=" in item)
+                self.assertEqual(proof["effective_id"], native)
+                self.assertRegex(proof["native_configuration"], r"^[a-f0-9]{64}$")
+                self.assertTrue(worker.managed_antigravity(process_env, process, pane, hook))
+                self.assertNotIn("UNICONNECT_WINDOW_ID", process_env)
+                self.assertEqual(process_env.get("TMUX_PANE"), pane["pane"])
+                self.assertNotIn("UNICONNECT_NATIVE_BINDING", process_env)
+                worker.request["window_id"] = str(uuid.uuid4())
+                self.assertFalse(worker.managed_antigravity(process_env, process, pane, hook))
+            finally:
+                stop_file.touch()
+                subprocess.run(["tmux", "-L", socket_name, "kill-server"], capture_output=True, timeout=5)
+
     def test_fresh_process_same_conversation_same_pane_and_duplicate_apply(self):
         with tempfile.TemporaryDirectory(prefix="uc-relaunch-runtime-") as directory:
             root = Path(directory)
@@ -454,7 +1082,7 @@ class TargetIntegrationTests(unittest.TestCase):
             (transcripts / ("rollout-fixture-" + native + ".jsonl")).write_text("\n".join(json.dumps(row) for row in (
                 {"type": "session_meta", "payload": {"id": native}},
                 {"type": "turn_context", "payload": {"turn_id": "fixture-turn", "model": "fixture-model", "cwd": directory,
-                    "sandbox_policy": {"type": "read-only"}, "approval_policy": "never"}},
+                    "sandbox_policy": {"type": "danger-full-access"}, "approval_policy": "never"}},
                 {"type": "event_msg", "payload": {"type": "task_complete", "turn_id": "fixture-turn"}})) + "\n")
             transport = Transport(socket_name=socket_name)
             candidate = {"label": "Fixture · Codex", "provider": "codex", "connection": None,
@@ -465,7 +1093,7 @@ class TargetIntegrationTests(unittest.TestCase):
             events = TmuxOutputEvents(["tmux", "-L", socket_name], "fixture")
             try:
                 command = shlex.join(["env", "UC_FIXTURE_ID=" + native, "UC_FIXTURE_ROOT=" + directory,
-                                      str(executable), "-m", "fixture-model", "-s", "read-only", "-a", "never"])
+                                      str(executable), "--yolo", "-m", "fixture-model"])
                 subprocess.run(["tmux", "-L", socket_name, "send-keys", "-t", "=fixture:", "-l", command + "\n"],
                                check=True, capture_output=True, timeout=5)
                 deadline = time.monotonic() + 8
@@ -488,10 +1116,20 @@ class TargetIntegrationTests(unittest.TestCase):
                 rejected = str(uuid.uuid4())
                 draft_result = adapter.execute(candidate, "agent.relaunch", proof, rejected, phases.append, lambda: True)
                 self.assertEqual(draft_result, {"state": "necesita_usuario", "cause": "dialogo_desconocido"})
-                self.assertEqual(adapter.probe(candidate, "agent.relaunch"), proof)
+                # Inspection itself must refuse to mint/refresh a proof while
+                # the composer contains a draft; only the execute API converts
+                # this safe preflight refusal into the user-facing state.
+                with self.assertRaises(RelaunchUnavailable) as blocked:
+                    adapter.probe(candidate, "agent.relaunch")
+                self.assertEqual(blocked.exception.cause, "dialogo_desconocido")
+                state = adapter.request(candidate, "start", expected=proof, operation_id=rejected)
+                deadline = time.monotonic() + 5
+                while state.get("state") == "planificado" and time.monotonic() < deadline:
+                    events.wait(deadline, time.monotonic)
+                    state = adapter.request(candidate, "status", expected=proof, operation_id=rejected)
+                self.assertEqual(state, draft_result)
                 os.kill(proof["pid"], signal.SIGUSR2)
                 screen_until(lambda screen: screen.splitlines()[0].strip() == "›" and "borrador" not in screen)
-                self.assertEqual(adapter.request(candidate, "start", expected=proof, operation_id=rejected), draft_result)
                 phases.clear()
                 result = adapter.execute(candidate, "agent.relaunch", proof, operation, phases.append, lambda: True)
                 self.assertEqual(result, {"state": "verificado", "effective_id": native})

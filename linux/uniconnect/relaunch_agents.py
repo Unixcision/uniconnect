@@ -11,17 +11,16 @@ from pathlib import Path
 import shlex
 import threading
 import time
+import zlib
 
 from .resume_catalog import AgentResumeCatalog
+from .relaunch_worker import TargetWorker
 from .transport import Transport
 
 
-# What this machine knows how to relaunch (contracts/relaunch-v1/proveedores.json, D7): the
-# capability plus one relaunch.v1.<provider>.<kind> token per supported cell. The same worker
-# runs locally and on an SSH box, so both kinds are announced. Only Codex for now: the Claude
-# dialect is written (exit_claude) but relaunching closes the agent, and it has never run against
-# a real Claude, so it stays out of the plan until a live test.
-RELAUNCHABLE = ("codex",)
+# Antigravity is announced only after its isolated close/reopen integration
+# proves a fresh pane-bound generation and unchanged conversation/configuration.
+RELAUNCHABLE = ("codex", "agy")
 CAPABILITIES = ("relaunch.v1",) + tuple(f"relaunch.v1.{provider}.{kind}"
                                         for provider in RELAUNCHABLE for kind in ("local", "ssh"))
 
@@ -42,7 +41,9 @@ class RelaunchAgents:
         self.resolve = resolve
         self.catalog = catalog or AgentResumeCatalog()
         self.source = self.worker_source()
-        self.identity_helper = base64.b64encode(Path(__file__).with_name("agent_identity_hook.py").read_bytes()).decode()
+        self.bootstrap = self.worker_bootstrap(self.source)
+        self.identity_helper = base64.b64encode(zlib.compress(
+            Path(__file__).with_name("agent_identity_hook.py").read_bytes(), 9)).decode()
         recovery = Path(__file__).resolve().parents[1] / "scripts/recovery.py"
         self.recovery_sha256 = hashlib.sha256(recovery.read_bytes()).hexdigest() if recovery.is_file() else None
 
@@ -52,6 +53,12 @@ class RelaunchAgents:
         no-prompt policy with the very same AgentResumeCatalog.apply_policy as this desktop."""
         here = Path(__file__)
         return here.with_name("resume_catalog.py").read_text() + "\n\n" + here.with_name("relaunch_worker.py").read_text()
+
+    @staticmethod
+    def worker_bootstrap(source):
+        """Keep the self-contained remote worker below per-argument OS limits."""
+        compressed = base64.b64encode(zlib.compress(source.encode("utf-8"), 9)).decode("ascii")
+        return "import base64,zlib;exec(zlib.decompress(base64.b64decode(" + repr(compressed) + ")))"
 
     def close(self):
         # Stop observation, not the already admitted target-side close/reopen.
@@ -64,13 +71,16 @@ class RelaunchAgents:
                    "socket": record.get("tmuxSocket") or ("uniconnect" if candidate.get("connection") else "uniconnect-local"),
                    "provider": candidate["provider"], "window_id": record["id"],
                    "catalog": self.catalog.providers, **values}
+        if action == "adopt":
+            request.update(expected_session_id=record.get("sessionId"), expected_cwd=record.get("cwd"))
         request["recovery_sha256"] = self.recovery_sha256
         if action == "start":
             request["identity_helper"] = self.identity_helper
         payload = base64.b64encode(json.dumps(request).encode()).decode()
         transport = self.transport_factory(candidate.get("connection"), socket_name=request["socket"])
         try:
-            result = transport.run(shlex.join(["python3", "-c", self.source, payload]), timeout=18)
+            result = transport.run(shlex.join(["python3", "-c", self.bootstrap, payload]),
+                                   timeout=25 if action == "adopt" else 18)
         except Exception:
             raise RelaunchUnavailable("host_inaccesible") from None
         # Login-shell banners are allowed; only the bounded, versioned reply is parsed.
@@ -86,12 +96,42 @@ class RelaunchAgents:
             raise RelaunchUnavailable(response["error"])
         return response
 
+    def adopt_legacy_antigravity(self, candidate, authorized=lambda: True):
+        """Explicitly associate one existing AGY pane without closing its conversation."""
+        record = candidate.get("record", {})
+        if (candidate.get("provider") != "agy" or not record.get("tmux")
+                or not isinstance(record.get("sessionId"), str) or not record.get("sessionId")
+                or not isinstance(record.get("cwd"), str) or not record.get("cwd")):
+            raise RelaunchUnavailable("identidad_ambigua")
+        if not authorized() or not self.validate(candidate):
+            raise RelaunchUnavailable("generacion_cambiada")
+        # Update only UniConnect-owned Gemini settings/hooks. The integration
+        # installer preserves unrelated keys and fails unchanged on conflict.
+        source = Path(__file__).with_name("antigravity_integration.py").read_text()
+        source = source.replace("from __future__ import annotations\n", "", 1)
+        helper = base64.b64encode(Path(__file__).with_name("agent_identity_hook.py").read_bytes()).decode("ascii")
+        source += ("\nimport base64,json; print(json.dumps(AntigravityIntegration(helper_source="
+                   "base64.b64decode(" + repr(helper) + ")).enable()))\n")
+        transport = self.transport_factory(candidate.get("connection"),
+            socket_name=record.get("tmuxSocket") or ("uniconnect" if candidate.get("connection") else "uniconnect-local"))
+        try:
+            installed = transport.run(shlex.join(["python3", "-c", source]), timeout=15)
+        except Exception:
+            raise RelaunchUnavailable("host_inaccesible") from None
+        if installed.returncode:
+            raise RelaunchUnavailable("no_soportado")
+        if not authorized() or not self.validate(candidate):
+            raise RelaunchUnavailable("generacion_cambiada")
+        return self.request(candidate, "adopt")
+
     def probe(self, candidate, verb):
         if not candidate["record"].get("tmux"):
             raise RelaunchUnavailable("no_soportado")
         if verb != "transport.reconnect" and candidate.get("provider") in (None, "", "shell", "terminal"):
             # Ventana sin IA: se excluye con su causa, sin abrir SSH ni tocar el destino.
             raise RelaunchUnavailable("sin_ia")
+        if verb in ("agent.continue", "agent.recover") and candidate.get("provider") != "codex":
+            raise RelaunchUnavailable("no_soportado")
         if verb != "transport.reconnect" and candidate.get("provider") not in RELAUNCHABLE:
             # Una IA que este equipo no relanza aún (ver RELAUNCHABLE): fuera, sin tocar el destino.
             raise RelaunchUnavailable("no_soportado")
@@ -108,8 +148,16 @@ class RelaunchAgents:
             raise RelaunchUnavailable("permisos")
         if not self.validate(candidate):
             return {"state": "omitido", "cause": "generacion_cambiada"}
-        current = self.probe(candidate, verb)
-        if current != proof:
+        try:
+            current = self.probe(candidate, verb)
+        except RelaunchUnavailable as error:
+            # A busy/unknown composer or provider dialog is a human gate, not
+            # an execution failure. Keep the target untouched and surface the
+            # exact reason to the UI so the user can resolve it first.
+            if error.cause in ("dialogo_desconocido", "permisos", "confianza_carpeta", "tareas_de_fondo"):
+                return {"state": "necesita_usuario", "cause": error.cause}
+            raise
+        if not TargetWorker.same_target(current, proof):
             return {"state": "omitido", "cause": "generacion_cambiada"}
         if verb == "transport.reconnect":
             changed({"state": "reenganchando"})
@@ -119,10 +167,6 @@ class RelaunchAgents:
             if self.probe(candidate, verb) != proof:
                 return {"state": "fallido", "cause": "generacion_cambiada"}
             return {"state": "verificado"}
-        if verb == "agent.continue":
-            # Until a provider exposes a verifiable input receipt, never type
-            # into a possibly active permission dialog or claim a queued key is ACKed.
-            return {"state": "necesita_usuario", "cause": "no_soportado"}
         # Probing a remote host can take seconds. Recheck after it, immediately
         # before dispatching the target-side atomic close/reopen operation.
         if not authorized():
@@ -130,7 +174,7 @@ class RelaunchAgents:
         if not self.validate(candidate):
             return {"state": "omitido", "cause": "generacion_cambiada"}
         try:
-            result = self.request(candidate, "start", expected=proof, operation_id=operation_id)
+            result = self.request(candidate, "start", verb=verb, expected=proof, operation_id=operation_id)
         except RelaunchUnavailable as error:
             if error.cause != "host_inaccesible":
                 raise

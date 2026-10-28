@@ -9,8 +9,10 @@ contracts/window-details-v1/LEEME.md (y filas.json).
 import ast
 import datetime
 import re
+import time
 
 from .agent_tree import AgentTree
+from .agent_probe import canonical_id
 from .resume_catalog import AgentResumeCatalog
 
 AGENTS = ("claude", "codex", "agy", "grok")
@@ -111,14 +113,15 @@ class WindowDetails:
         tampoco hay, la IA guardada sin id. None si la ventana nunca tuvo IA.
         """
         folder = record.get("resumeCwd") or record.get("cwd") or workspace.get("cwd")
-        if record.get("agent") in AGENTS and record.get("sessionId"):
-            return {"provider": record["agent"], "session_id": record["sessionId"], "cwd": folder,
+        session = canonical_id(record.get("sessionId"))
+        if record.get("agent") in AGENTS and session:
+            return {"provider": record["agent"], "session_id": session, "cwd": folder,
                     "observed": record.get("agentObservedAt"), "interrupted": bool(record.get("interrupted"))}
         history = [item for item in record.get("history", []) if isinstance(item, dict)
-                   and item.get("agent") in AGENTS and item.get("sessionId")]
+                   and item.get("agent") in AGENTS and canonical_id(item.get("sessionId"))]
         if history:
             item = max(history, key=lambda entry: entry.get("lastSeenAt") or 0)
-            return {"provider": item["agent"], "session_id": item["sessionId"], "cwd": item.get("cwd") or folder,
+            return {"provider": item["agent"], "session_id": canonical_id(item["sessionId"]), "cwd": item.get("cwd") or folder,
                     "observed": item.get("lastSeenAt"), "interrupted": False}
         if record.get("agent") in AGENTS:
             return {"provider": record["agent"], "session_id": None, "cwd": folder,
@@ -155,14 +158,24 @@ class WindowDetails:
         if live_agent and live_agent.get("provider") and live_reason in (None, "sin_id"):
             # 1. La IA en marcha que vio la comprobación de ahora, con o sin id.
             provider = live_agent["provider"]
-            session = live_agent.get("session_id") or None
+            session = canonical_id(live_agent.get("session_id"))
             cwd = live_agent.get("cwd")
+            source = live_agent.get("source")
+            # AGY's argv can carry the same ID as its native statusLine binding.
+            # Keep the stronger provenance already verified for this exact window
+            # when the fresh process probe confirms that same conversation.
+            if (provider == "agy" and session
+                    and record.get("agent") == provider
+                    and canonical_id(record.get("sessionId")) == session
+                    and record.get("agentSource") == "hook"):
+                source = "hook"
             as_root = bool(live_agent.get("as_root"))
             agent = {"provider": provider, "display_name": cls.display_name(catalog, provider),
                      "session_id": session, "cwd": cwd, "as_root": as_root,
-                     "source": live_agent.get("source") if session else None, "state": "activo",
+                     "source": source if session else None, "state": "activo",
                      "observed_at": cls.iso(live.get("checked_at")),
                      "resume": cls.resume(catalog, provider, session, cwd, as_root)}
+            live_reason = None if session else "sin_id"
         else:
             # 2. La última IA guardada, aunque la ventana esté ahora en un shell.
             saved = cls.saved_conversation(workspace, record)
@@ -192,7 +205,8 @@ class WindowDetails:
                 "window": {"name": record.get("name")}, "tmux": tmux, "agent": agent, "reason": reason}
 
     @classmethod
-    def gather(cls, workspace, record, *, connection, transport, catalog, clock, probe=None):
+    def gather(cls, workspace, record, *, connection, transport, catalog, clock, probe=None,
+               monotonic=time.monotonic):
         """Fuera del hilo GTK: resuelve el destino (ssh -G) y lee la sonda de esa sesión (≤ 8 s).
 
         ``connection``: SSHCommand de la caja, o None (local o bóveda cerrada). ``transport``:
@@ -200,6 +214,7 @@ class WindowDetails:
         si no se pudo comprobar, responde con lo guardado y ``host_inaccesible``.
         """
         probe = probe or AgentTree.probe
+        started = monotonic()
         endpoint = None
         if connection is not None:
             try:
@@ -209,12 +224,15 @@ class WindowDetails:
         live = None
         if record.get("tmux"):
             live = {"ok": False, "error": "host_inaccesible", "checked_at": None, "session": None}
-            if transport is not None:
+            # ssh -G puede gastar hasta 5 s: comparte el presupuesto de 10 s con la sonda.
+            remaining = min(8, 10 - (monotonic() - started))
+            if transport is not None and remaining > 0:
                 try:
-                    result = probe(transport, AgentTree.socket_of(workspace, record), [record["tmux"]], timeout=8)
+                    result = probe(transport, AgentTree.socket_of(workspace, record), [record["tmux"]], timeout=remaining)
                     if not result.get("error"):
                         entry = next((item for item in result["sessions"] if item.get("name") == record["tmux"]), None)
-                        live = {"ok": True, "error": None, "checked_at": result.get("checked_at"), "session": entry}
+                        if entry is not None or not result.get("truncated"):
+                            live = {"ok": True, "error": None, "checked_at": result.get("checked_at"), "session": entry}
                 except Exception:
                     pass  # Nunca un error por la sonda: se responde con lo guardado.
         return cls.snapshot(workspace, record, live, catalog, clock, endpoint=endpoint)
@@ -289,3 +307,23 @@ class WindowDetails:
         agent = details["agent"]
         resume = agent["resume"] if agent else None
         return UNVERIFIED if resume and not resume["no_prompt_verified"] else None
+
+    @classmethod
+    def copy_value(cls, details, kind):
+        """Solo campos presentados del contrato; nunca volcar el registro, argv capturado o credenciales."""
+        agent = details.get("agent")
+        if kind == "session_id":
+            # No hay respaldo en terminal_id, session_id de tmux, nombre de ventana ni título.
+            return canonical_id(agent.get("session_id")) if agent else None
+        if kind == "command":
+            resume = agent.get("resume") if agent else None
+            return resume.get("command") if resume else None
+        if kind == "details":
+            lines = [TITLE]
+            if cls.warning(details):
+                lines.append(cls.warning(details))
+            lines.extend("%s: %s" % (label, value) for _, label, value in cls.rows(details))
+            if cls.command_note(details):
+                lines.append(cls.command_note(details))
+            return "\n".join(lines)
+        return None

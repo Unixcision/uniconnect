@@ -108,6 +108,48 @@ class SnapshotContractTests(unittest.TestCase):
 
 
 class SnapshotRuleTests(unittest.TestCase):
+    def test_live_antigravity_keeps_native_source_only_for_the_same_saved_conversation(self):
+        catalog = fixture_catalog()
+        workspace = {"id": "box", "name": "GEMINI", "kind": "local"}
+        record = {"id": "window", "name": "GEMINI", "tmux": "uc-window", "agent": "agy",
+                  "sessionId": LOCAL_ID, "agentSource": "hook", "cwd": "/work"}
+        live = {"ok": True, "checked_at": "2026-09-24T14:30:04Z", "session": {
+            "name": "uc-window", "session_id": "$1", "pane_id": "%1", "live": True,
+            "reason": None, "agent": {"provider": "agy", "session_id": LOCAL_ID, "cwd": "/work",
+                                         "as_root": False, "source": "argv"}}}
+
+        details = WindowDetails.snapshot(workspace, record, live, catalog, lambda: 0)
+        self.assertEqual(details["agent"]["source"], "hook")
+
+        live["session"]["agent"]["session_id"] = "other-conversation"
+        details = WindowDetails.snapshot(workspace, record, live, catalog, lambda: 0)
+        self.assertEqual(details["agent"]["source"], "argv")
+
+    def test_conversation_id_is_the_live_agent_identity_never_the_window_or_tmux_id(self):
+        expected = response("details-response-local.json")
+        workspace, record, live, endpoint, clock = inputs_from(expected)
+        record.update(agent="claude", sessionId=CLAUDE_ID)
+        details = WindowDetails.snapshot(workspace, record, live, fixture_catalog(), clock, endpoint=endpoint)
+        self.assertEqual(details["agent"]["session_id"], expected["agent"]["session_id"])
+        self.assertNotEqual(details["agent"]["session_id"], record["sessionId"])
+        self.assertNotEqual(details["agent"]["session_id"], details["terminal_id"])
+        self.assertNotEqual(details["agent"]["session_id"], details["tmux"]["session_id"])
+        for invalid in (None, "$1", "%1", "not a session", "id\nsecret"):
+            with self.subTest(invalid=invalid):
+                live["session"]["agent"]["session_id"] = invalid
+                details = WindowDetails.snapshot(workspace, record, live, fixture_catalog(), clock, endpoint=endpoint)
+                self.assertEqual(details["reason"], "sin_id")
+                self.assertIsNone(details["agent"]["session_id"])
+                self.assertIsNone(details["agent"]["resume"])
+                self.assertIsNone(WindowDetails.copy_value(details, "session_id"))
+
+    def test_invalid_saved_tmux_id_does_not_become_a_conversation(self):
+        workspace = {"id": "box", "kind": "local"}
+        record = {"id": "window", "name": "codex", "agent": "codex", "sessionId": "$7", "cwd": "/w"}
+        details = WindowDetails.snapshot(workspace, record, None, fixture_catalog(), lambda: 0)
+        self.assertIsNone(details["agent"]["session_id"])
+        self.assertIsNone(details["agent"]["resume"])
+
     def test_host_label_is_always_user_host_port(self):
         for value, expected in (("('ec2-user', 'host.example', '2222')", "ec2-user@host.example:2222"),
                                 ("root@167.233.192.135", "root@167.233.192.135:22"), ("root@h:2222", "root@h:2222"),
@@ -221,6 +263,56 @@ class GatherTests(unittest.TestCase):
                                       probe=self.probe)
         self.assertEqual((legacy["tmux"], legacy["agent"], legacy["reason"]), (None, None, "sin_tmux"))
         self.assertEqual(self.probes, [])
+
+    def test_truncated_read_cannot_confirm_that_the_target_has_stopped(self):
+        details = WindowDetails.gather(self.workspace, self.record, connection=None, transport="transporte",
+            catalog=fixture_catalog(), clock=lambda: 0,
+            probe=lambda *args, **kwargs: {"sessions": [], "truncated": True, "error": None})
+        self.assertEqual(details["reason"], "host_inaccesible")
+        self.assertEqual(details["agent"]["session_id"], CLAUDE_ID)
+        self.assertEqual(details["agent"]["state"], "guardado")
+        self.assertIn(("tmux_id", "ID tmux", "Sin comprobar"), WindowDetails.rows(details))
+
+    def test_endpoint_resolution_and_probe_share_the_ten_second_budget(self):
+        for elapsed, expected_timeout in ((4, 6), (10, None)):
+            with self.subTest(elapsed=elapsed):
+                self.probes.clear()
+                ticks = iter((0, elapsed))
+                details = WindowDetails.gather(self.workspace, self.record,
+                    connection=FakeConnection(("root", "example.invalid", "22")), transport="transporte",
+                    catalog=fixture_catalog(), clock=lambda: 0, probe=self.probe, monotonic=lambda: next(ticks))
+                if expected_timeout is None:
+                    self.assertEqual(self.probes, [])
+                    self.assertEqual(details["reason"], "host_inaccesible")
+                else:
+                    self.assertEqual(self.probes[0][-1], expected_timeout)
+
+
+class DetailsCopyTests(unittest.TestCase):
+    def test_copy_uses_only_displayed_contract_fields_and_keeps_unverified_notice(self):
+        expected = response("details-response-ssh.json")
+        workspace, record, live, endpoint, clock = inputs_from(expected)
+        workspace.update(credentialId="private-credential", connection="sshpass -p private-password root@host")
+        record.update(commandArgv=["claude", "--api-key", "private-token"], environment={"TOKEN": "private-env"})
+        details = WindowDetails.snapshot(workspace, record, live, fixture_catalog(), clock, endpoint=endpoint)
+        copied = WindowDetails.copy_value(details, "details")
+        for secret in ("private-credential", "private-password", "private-token", "private-env", "commandArgv", "credentialId"):
+            self.assertNotIn(secret, copied)
+        for _, label, value in WindowDetails.rows(details):
+            self.assertIn(label + ": " + value, copied)
+        self.assertEqual(WindowDetails.copy_value(details, "session_id"), CLAUDE_ID)
+        self.assertEqual(WindowDetails.copy_value(details, "command"), details["agent"]["resume"]["command"])
+        self.assertIsNone(WindowDetails.copy_value(details, "credentialId"))
+        offline = response("details-response-vault-closed.json")
+        self.assertIn(WindowDetails.warning(offline), WindowDetails.copy_value(offline, "details"))
+
+    def test_copy_id_and_command_are_unavailable_without_an_agent_id(self):
+        for fixture in ("details-response-sin-id.json", "details-response-no-agent.json", "details-response-no-tmux.json"):
+            with self.subTest(fixture=fixture):
+                details = response(fixture)
+                self.assertIsNone(WindowDetails.copy_value(details, "session_id"))
+                self.assertIsNone(WindowDetails.copy_value(details, "command"))
+                self.assertTrue(WindowDetails.copy_value(details, "details"))
 
 
 try:

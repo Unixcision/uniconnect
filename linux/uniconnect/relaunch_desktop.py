@@ -146,12 +146,13 @@ class RelaunchDesktop:
                     surface._launch_preparer = original
             self.main(restore)
 
-    def show(self, kind):
+    def show(self, kind, verb="agent.relaunch"):
         window = self.window
         if kind == "global":
             from .relaunch_fleet import RelaunchFleet
-            window.status_label.set_text(window._("Preparando el plan de relanzado…"))
-            window.background(lambda: RelaunchFleet(self, self.machines.snapshot()).plan(), self.preview)
+            preparing = "Buscando Codex pausados…" if verb == "agent.recover" else "Preparando el plan de relanzado…"
+            window.status_label.set_text(window._(preparing))
+            window.background(lambda: RelaunchFleet(self, self.machines.snapshot()).plan(verb=verb), self.preview)
             return
         if kind == "window":
             identifier = window.focused_surface.record["id"]
@@ -160,18 +161,66 @@ class RelaunchDesktop:
         else:
             identifier = self.machine_id
         scope = {"kind": kind, "id": identifier}
-        window.status_label.set_text(window._("Preparando el plan de relanzado…"))
-        window.background(lambda: self.dispatch("relaunch.plan", {"verb": "agent.relaunch", "scope": scope}), self.preview)
+        preparing = "Buscando Codex pausados…" if verb == "agent.recover" else "Preparando el plan de relanzado…"
+        window.status_label.set_text(window._(preparing))
+        window.background(lambda: self.dispatch("relaunch.plan", {"verb": verb, "scope": scope}), self.preview)
+
+    def adopt_antigravity_window(self):
+        """Offer an explicit, single-pane Antigravity statusLine binding."""
+        from gi.repository import Gtk
+        window, surface = self.window, self.window.focused_surface
+        if surface is None or surface.record.get("agent") != "agy" or not self.allowed():
+            raise RelaunchUnavailable("no_soportado")
+        candidates = self.snapshot({"kind": "window", "id": surface.record["id"]})
+        if len(candidates) != 1 or (candidates[0]["workspace"]["kind"] == "ssh"
+                                    and candidates[0].get("connection") is None):
+            raise RelaunchUnavailable("permisos")
+        candidate = candidates[0]
+        dialog = Gtk.MessageDialog(transient_for=window, modal=True, message_type=Gtk.MessageType.WARNING,
+                                   buttons=Gtk.ButtonsType.OK_CANCEL,
+                                   text=window._("Vincular la sesión GEMINI abierta"))
+        dialog.format_secondary_text(window._(
+            "Se actualizarán solo los hooks/statusLine de UniConnect en el equipo y se validará el ID nativo "
+            "en esta ventana. Para activar el hook en la sesión abierta, se escribirá y enviará el comando de "
+            "control de Antigravity «/statusline enable» solo si el compositor está vacío y se verifica el texto "
+            "antes de enviarlo. No se enviará ningún prompt a la IA ni se cerrará la conversación. Después podrás "
+            "preparar el relanzado normal de esta ventana."))
+        accepted = dialog.run() == Gtk.ResponseType.OK
+        dialog.destroy()
+        if not accepted:
+            return
+
+        def authorized():
+            return self.main(lambda: self.allowed() and self.current(candidate))
+
+        def adopt():
+            if not authorized():
+                raise RelaunchUnavailable("generacion_cambiada")
+            return self.service.adapter.adopt_legacy_antigravity(candidate, authorized)
+
+        def finished(result):
+            if window._closed:
+                return
+            if result.get("state") == "verificado":
+                window.status_label.set_text(window._("GEMINI vinculada; ya puedes preparar su relanzado"))
+            else:
+                window.status_label.set_text(window._("No se pudo verificar la vinculación de GEMINI"))
+
+        window.background(adopt, finished)
 
     def preview(self, plan):
         window = self.window
         if window._closed:
             return
-        names = ["• " + target["label"] for target in plan["targets"]]
+        names = ["• " + target["label"] + (
+            ": " + window._("uniconnect.relaunch.warning.active_codex")
+            if target.get("active") is True and target.get("provider") == "codex" else "")
+            for target in plan["targets"]]
         names += ["— " + target["label"] + ": " + window._("uniconnect.relaunch.cause." + target["cause"]) for target in plan["excluded"]]
-        detail = window._("Se cerrará y reabrirá la IA conservando su conversación. tmux y tus archivos no se borran.")
-        window.status_label.set_text(window._("Plan de relanzado preparado"))
-        if not self.confirm_plan(detail, names, bool(plan["targets"])):
+        continuing = plan.get("verb") in ("agent.continue", "agent.recover")
+        detail = window._("Se reabrirá la misma conversación y solo se enviará «continua» si aparece un límite de uso explícito y el cuadro está vacío. Se comprobará que Codex lo acepta.") if continuing else window._("Se cerrará y reabrirá la IA conservando su conversación. tmux y tus archivos no se borran.")
+        window.status_label.set_text(window._("Plan de continuación preparado" if continuing else "Plan de relanzado preparado"))
+        if not self.confirm_plan(detail, names, bool(plan["targets"]), continuing=continuing):
             return
         def apply():
             self.history.remember(plan)
@@ -180,14 +229,17 @@ class RelaunchDesktop:
             return self.dispatch("relaunch.apply", {"operation_id": plan["operation_id"], "token": plan["token"]})
         window.background(apply, lambda value: self.result_window(plan, value))
 
-    def confirm_plan(self, detail, names, eligible):
+    def confirm_plan(self, detail, names, eligible, *, continuing=False):
         from gi.repository import Gtk
         window = self.window
-        dialog = Gtk.Dialog(title=window._("Relanzar las IA seleccionadas"), transient_for=window, modal=True)
+        title = "Continuar Codex pausado" if continuing else "Relanzar las IA seleccionadas"
+        dialog = Gtk.Dialog(title=window._(title), transient_for=window, modal=True)
         dialog.set_default_size(680, 430)
         dialog.add_buttons(window._("Cancel"), Gtk.ResponseType.CANCEL, window._("Apply"), Gtk.ResponseType.OK)
         dialog.set_response_sensitive(Gtk.ResponseType.OK, eligible)
-        description = Gtk.Label(label=detail if eligible else window._("No hay agentes que puedan relanzarse con seguridad"))
+        empty = ("No se encontró una sesión Codex pausada por cuota con identidad y cuadro vacíos verificables."
+                 if continuing else "No hay agentes que puedan relanzarse con seguridad")
+        description = Gtk.Label(label=detail if eligible else window._(empty))
         description.set_line_wrap(True)
         dialog.get_content_area().pack_start(description, False, True, 10)
         content = Gtk.TextView(editable=False, cursor_visible=False, wrap_mode=Gtk.WrapMode.WORD_CHAR)

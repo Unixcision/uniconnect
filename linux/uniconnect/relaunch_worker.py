@@ -11,9 +11,11 @@ the no-prompt rule is the very same ``AgentResumeCatalog.apply_policy`` as on th
 """
 
 import base64
+from datetime import datetime
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -32,6 +34,13 @@ except ImportError:
     AgentResumeCatalog = globals()["AgentResumeCatalog"]
 
 UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+# The current CLI docs include scheduled work in task_count, but do not tie
+# that contract to a release. Keep a conservative project floor; older
+# runtimes cannot prove quiescence from the statusline and remain non-relaunchable.
+AGY_MIN_SAFE_VERSION = (1, 4, 4)
+AGY_STATUS_MAX_AGE_SECONDS = 15
+AGY_ADOPT_REQUEST = "@uniconnect_adopt_request"
+AGY_ADOPT_NONCE = "@uniconnect_adopt_nonce"
 # Claude's prompt line, with or without the box border of older versions.
 CLAUDE_EXIT_LINE = re.compile(r"\s*│?\s*[›❯>]\s*/exit\s*│?\s*")
 EMPTY_PROMPT_LINE = re.compile(r"\s*│?\s*[›❯>]\s*│?\s*")
@@ -85,6 +94,54 @@ class TargetWorker:
         if result.returncode or len(result.stdout) > 262144:
             raise Unavailable("host_inaccesible")
         return result.stdout.rstrip("\n")
+
+    @staticmethod
+    def staged_control_matches(screen, row, expected_line):
+        """Verify the exact control command at the cursor without trusting a volatile TUI redraw."""
+        return 0 <= row < len(screen) and re.fullmatch(expected_line, screen[row]) is not None
+
+    def clear_staged_control(self, pane, process):
+        """Undo our exact unsubmitted adoption command after a failed verification."""
+        try:
+            if self.pane()[0] != pane or not self.same_process(process):
+                return
+            lines = self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines()
+            row = int(self.tmux("display-message", "-p", "-t", pane["pane"], "#{cursor_y}"))
+            if self.staged_control_matches(
+                    lines, row, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*"):
+                # Antigravity's composer does not consistently bind C-u to
+                # clear its input. Backspace only the exact staged command we
+                # just verified, so a failed adoption never leaves a control
+                # string waiting for the user's next Enter.
+                self.tmux("send-keys", "-t", pane["pane"], *(["BSpace"] * len("/statusline enable")))
+        except (Unavailable, OSError, ProcessLookupError, ValueError):
+            return
+
+    def wait_staged_control(self, pane, process, expected_line, deadline):
+        """Wait for the TUI to render our exact input, then require a stable redraw.
+
+        tmux send-keys writes to the PTY; interactive TUIs may not repaint before
+        the next capture-pane call. A single immediate read can therefore mistake
+        our own still-in-flight keystrokes for an unknown composer. Never press
+        Enter until two consecutive captures show the exact command at the cursor.
+        """
+        while True:
+            if self.pane()[0] != pane or not self.same_process(process):
+                raise Unavailable("generacion_cambiada")
+            lines = self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines()
+            row = int(self.tmux("display-message", "-p", "-t", pane["pane"], "#{cursor_y}"))
+            if self.antigravity_activity(lines):
+                raise Unavailable("tareas_de_fondo")
+            expected = self.staged_control_matches(lines, row, expected_line)
+            if expected:
+                confirmed = self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines()
+                confirmed_row = int(self.tmux("display-message", "-p", "-t", pane["pane"], "#{cursor_y}"))
+                if (confirmed == lines and confirmed_row == row
+                        and self.pane()[0] == pane and self.same_process(process)):
+                    return lines, row
+            if self.clock() >= deadline:
+                raise Unavailable("dialogo_desconocido")
+            time.sleep(0.05)
 
     def process(self, pid):
         path = self.proc / str(pid)
@@ -228,11 +285,13 @@ class TargetWorker:
             raise Unavailable("identidad_ambigua")
         return identifier
 
-    def quiescent_configuration(self, provider, process, identifier, hook):
-        """Require a native completed turn AND explicit matching launch policy.
+    def quiescent_configuration(self, provider, process, identifier, hook, *, allow_active=False):
+        """Require native effective configuration and, by default, a completed turn.
 
-        A visible prompt can coexist with active work. Until an adapter can prove
-        lifecycle and effective settings, identity alone does not authorize exit.
+        ``allow_active`` admits a known working Codex turn into a relaunch plan;
+        its effective settings still have to be proven. A confirmed plan interrupts
+        that turn and observes its native end before submitting /exit. A native
+        settings event may supersede the old argv model/effort, but never permissions.
         Reads metadata only; no transcript contents leave the target.
         Claude (D7): its own ficha says ``idle`` for that same conversation.
         """
@@ -243,6 +302,8 @@ class TargetWorker:
             if ficha.get("status") != "idle":
                 raise Unavailable("dialogo_desconocido")
             return
+        if provider in ("agy", "antigravity"):
+            return self.antigravity_configuration(process, identifier, hook)
         if provider != "codex":
             raise Unavailable("no_soportado")
         paths = set()
@@ -268,28 +329,114 @@ class TargetWorker:
             header = json.loads(handle.readline(65537))
             if header.get("type") != "session_meta" or header.get("payload", {}).get("id") != identifier:
                 raise Unavailable("identidad_ambigua")
-            offset = max(handle.tell(), info.st_size - 4 * 1024 * 1024)
-            handle.seek(offset)
-            if offset > 65536:
-                handle.readline()  # Discard partial first record of a bounded tail.
-            rows = []
-            for line in handle.read(4 * 1024 * 1024).splitlines():
-                if len(line) <= 65536:
-                    try:
-                        rows.append(json.loads(line))
-                    except ValueError:
-                        raise Unavailable("no_soportado") from None
-        self.validate_quiescence(rows, process)
+            rows = self.codex_turn_metadata(handle, handle.tell(), info.st_size)
+            latest = os.fstat(handle.fileno())
+            if (latest.st_size, latest.st_mtime_ns) != (info.st_size, info.st_mtime_ns):
+                # Do not omit a newly appended user/turn while reading backwards.
+                raise Unavailable("dialogo_desconocido")
+        return self.validate_quiescence(rows, process, allow_active=allow_active,
+                                        process_birth=self.process_birth_bounds(process))
 
     @staticmethod
-    def validate_quiescence(rows, process):
-        context, settings, completed, active_turn = None, None, False, None
+    def process_birth_bounds(process):
+        """Conservative realtime interval for this Linux process' start tick.
+
+        /proc/stat btime loses up to a second. Sample the realtime/boottime
+        offset instead, including sampling duration and start-tick rounding.
+        Unavailable or anomalous clocks disable only the fresh-instance proof.
+        """
+        try:
+            before = time.time()
+            boot = time.clock_gettime(time.CLOCK_BOOTTIME)
+            after = time.time()
+            ticks, frequency = int(process["start"]), os.sysconf("SC_CLK_TCK")
+            if not 0 <= after - before <= 1 or frequency <= 0 or not 0 < ticks / frequency <= boot:
+                return None
+            return before - boot + ticks / frequency, after - boot + (ticks + 1) / frequency
+        except (AttributeError, KeyError, OSError, TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def native_timestamp(value):
+        if not isinstance(value, str):
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return parsed.timestamp() if parsed.tzinfo is not None else None
+        except (ValueError, OverflowError):
+            return None
+
+    @staticmethod
+    def codex_turn_metadata(handle, start, end):
+        """Read the latest native context, however far back, without retaining transcript text.
+
+        Keep only the newest event of each relevant kind, in file order. Older
+        starts/settings/users are superseded; an older completion can at most
+        make an ambiguous trace fail closed. Memory holds blocks, one JSON
+        record and this small metadata set, never the complete history. Large
+        completion records are parsed too: their message may exceed 64 KiB.
+        """
+        def backwards():
+            position, fragments = end, []
+            while position > start:
+                previous = max(start, position - 65536)
+                handle.seek(previous)
+                block = handle.read(position - previous)
+                if len(block) != position - previous:
+                    raise Unavailable("dialogo_desconocido")
+                position = previous
+                pieces = block.split(b"\n")
+                fragments.append(pieces.pop())
+                while pieces:
+                    yield b"".join(reversed(fragments))
+                    fragments = [pieces.pop()]
+            yield b"".join(reversed(fragments))
+
+        rows, seen = [], set()
+        for line in backwards():
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except (ValueError, UnicodeError):
+                raise Unavailable("no_soportado") from None
+            if not isinstance(row, dict) or not isinstance(row.get("payload"), dict):
+                raise Unavailable("no_soportado")
+            kind, payload = row.get("type"), row["payload"]
+            if kind == "turn_context":
+                rows.append({"type": kind, "timestamp": row.get("timestamp"), "payload": {key: payload[key] for key in
+                    ("turn_id", "model", "effort", "cwd", "approval_policy", "sandbox_policy") if key in payload}})
+                break
+            event = payload.get("type") if kind == "event_msg" else None
+            if event in ("task_started", "task_complete", "turn_aborted"):
+                key = event
+                projected = {"type": event, "turn_id": payload.get("turn_id")}
+            elif event == "thread_settings_applied":
+                key = event
+                projected = {"type": event, "thread_settings": payload.get("thread_settings")}
+            elif event == "user_message" or (kind == "response_item" and payload.get("role") == "user"):
+                key = "user_input"
+                projected = {"type": event, "role": "user"}
+            else:
+                # A new instance must not have produced/received any other
+                # native record either, even a dialect without task_started.
+                key, kind, projected = "instance_activity", "instance_activity", {}
+            if key not in seen:
+                rows.append({"type": kind, "timestamp": row.get("timestamp"), "payload": projected})
+                seen.add(key)
+        rows.reverse()
+        return rows
+
+    @staticmethod
+    def validate_quiescence(rows, process, *, allow_active=False, process_birth=None):
+        context, settings, completed, active_turn, pending_input = None, None, False, None, False
         for row in rows:
             payload = row.get("payload", {})
             if row.get("type") == "turn_context":
                 context = payload
                 settings = None
                 active_turn, completed = payload.get("turn_id"), False
+                pending_input = False
             if row.get("type") == "event_msg":
                 kind = payload.get("type")
                 if kind == "task_started":
@@ -298,11 +445,40 @@ class TargetWorker:
                     if (isinstance(active_turn, str) and active_turn and payload.get("turn_id") == active_turn
                             and context and context.get("turn_id") == active_turn):
                         completed = True
+                        pending_input = False
+                    else:
+                        # A terminal event for another/unknown turn cannot
+                        # leave an earlier active/completed proof in force.
+                        active_turn, completed = None, False
                 elif kind == "thread_settings_applied":
-                    settings = payload.get("thread_settings", {})
-            if row.get("type") == "response_item" and payload.get("role") == "user":
+                    settings = payload.get("thread_settings")
+                    if not isinstance(settings, dict):
+                        raise Unavailable("no_soportado")
+            if ((row.get("type") == "response_item" and payload.get("role") == "user")
+                    or (row.get("type") == "event_msg" and payload.get("type") == "user_message")):
+                # Codex may record the accepted user item just AFTER its turn
+                # context. That is not an unsent draft. Only a user after a
+                # completed turn needs a new context before an active proof.
+                pending_input = pending_input or completed
                 completed = False
-        if not context or not completed:
+        known_active = bool(allow_active and not pending_input and active_turn and context and context.get("turn_id") == active_turn)
+        if known_active and process_birth:
+            context_row = next(row for row in reversed(rows) if row.get("type") == "turn_context")
+            context_time = TargetWorker.native_timestamp(context_row.get("timestamp"))
+            known_active = context_time is not None and context_time >= process_birth[1]
+        fresh_instance = False
+        if process_birth and settings:
+            lower, upper = process_birth
+            timestamps = [TargetWorker.native_timestamp(row.get("timestamp")) for row in rows]
+            if all(value is not None for value in timestamps) and timestamps == sorted(timestamps):
+                fresh_settings = [stamp for row, stamp in zip(rows, timestamps)
+                    if row.get("type") == "event_msg" and row.get("payload", {}).get("type") == "thread_settings_applied"]
+                other = [stamp for row, stamp in zip(rows, timestamps)
+                    if not (row.get("type") == "event_msg" and row.get("payload", {}).get("type") == "thread_settings_applied")]
+                fresh_instance = bool(fresh_settings and fresh_settings[-1] >= upper
+                                      and fresh_settings[-1] <= time.time()
+                                      and all(stamp < lower for stamp in other))
+        if not fresh_instance and (not context or (not completed and not known_active)):
             raise Unavailable("dialogo_desconocido")
         # Do not silently convert an in-UI model/permission change back to argv.
         # Profiles/defaults need a richer effective-settings adapter; exclude now.
@@ -339,38 +515,176 @@ class TargetWorker:
         # A resume emits current settings without creating another turn_context.
         # The old completed turn proves inactivity, not today's launch settings.
         effective = context
-        if settings:
+        if settings is not None:
+            if not all(key in settings for key in ("model", "reasoning_effort", "cwd", "approval_policy", "permission_profile")):
+                raise Unavailable("no_soportado")
             if settings.get("permission_profile") != {"type": "disabled"}:
                 raise Unavailable("no_soportado")
             effective = {"model": settings.get("model"), "effort": settings.get("reasoning_effort"),
                          "cwd": settings.get("cwd"), "approval_policy": settings.get("approval_policy"),
                          "sandbox_policy": {"type": "danger-full-access"}}
         actual_sandbox = effective.get("sandbox_policy", {}).get("type")
-        if (((not model) and not bypass) or (model and model != effective.get("model"))
+        # A native thread_settings_applied record is newer than the launch argv
+        # and can reflect changes made in Codex's model picker.  It is safe to
+        # follow that record for model/effort only; permission flags still have
+        # to match the live effective policy exactly below.
+        settings_are_current = settings is not None
+        if (((not model) and not bypass and not settings_are_current)
+                or (model and model != effective.get("model") and not settings_are_current)
                 or not sandbox or not approval
                 or sandbox != actual_sandbox or approval != effective.get("approval_policy")
                 or effective.get("cwd") != process["cwd"]):
             raise Unavailable("no_soportado")
-        if effective.get("effort") != effort and not (effort is None and settings):
+        if effective.get("effort") != effort and not settings_are_current:
             raise Unavailable("no_soportado")
-        if settings and (not isinstance(settings.get("model"), str) or not settings["model"]):
+        if not isinstance(effective.get("model"), str) or not effective["model"]:
             raise Unavailable("no_soportado")
         # Expanded writable roots and profile changes cannot be reconstructed
         # safely from just the three CLI flags. Reject, don't widen permissions.
         if sandbox not in ("read-only", "danger-full-access"):
             raise Unavailable("no_soportado")
-        if settings and settings.get("permission_profile"):
+        if settings is not None and settings.get("permission_profile"):
             profile = settings["permission_profile"]
             if profile != {"type": "disabled"} or sandbox != "danger-full-access":
                 raise Unavailable("no_soportado")
+        return {**{key: effective.get(key) for key in ("model", "effort", "cwd", "approval_policy", "sandbox_policy")},
+                "settings_applied": settings_are_current}
+
+    def antigravity_configuration(self, process, identifier, hook):
+        """Require pane/process-bound recent native idle evidence before AGY exit."""
+        try:
+            proof = json.loads(hook)
+            runtime = proof.get("runtime_status")
+            version = runtime.get("version") if isinstance(runtime, dict) else None
+            version_tuple = tuple(int(part) for part in version.split(".")) if isinstance(version, str) else ()
+            observed = proof.get("observed_at")
+            birth = self.process_birth_bounds(process)
+            now = time.time()
+            if (proof.get("version") != 1 or proof.get("window_id") != self.request.get("window_id")
+                    or proof.get("agent") not in ("agy", "antigravity")
+                    or proof.get("agent_pid") != process["pid"] or proof.get("agent_start") != process["start"]
+                    or proof.get("session_id") != identifier or not isinstance(runtime, dict)
+                    or len(version_tuple) != 3 or version_tuple < AGY_MIN_SAFE_VERSION
+                    or not isinstance(observed, (int, float)) or isinstance(observed, bool) or not math.isfinite(observed)
+                    or observed > now + 2 or now - observed > AGY_STATUS_MAX_AGE_SECONDS
+                    or (birth and observed < birth[0])):
+                raise Unavailable("no_soportado")
+        except (ValueError, TypeError, AttributeError, OverflowError):
+            raise Unavailable("identidad_ambigua") from None
+        if (runtime.get("state") != "idle" or runtime.get("pending_input_count") != 0
+                or runtime.get("tool_confirmation_pending") is not False or runtime.get("task_count") != 0
+                or not isinstance(runtime.get("sandbox_enabled"), bool)):
+            raise Unavailable("dialogo_desconocido")
+        # Some AGY partner-model status payloads expose a stable display label
+        # but no model ID. The conversation selector retains its model choice;
+        # keep the label in the post-resume proof and do not synthesize --model.
+        model_id = runtime.get("model_id")
+        model_label = runtime.get("model")
+        if (not isinstance(model_label, str) or not model_label.strip()
+                or len(model_label.encode("utf-8")) > 160 or not model_label.isprintable()):
+            raise Unavailable("no_soportado")
+        if (model_id is not None and (not isinstance(model_id, str) or not model_id.strip()
+                or len(model_id.encode("utf-8")) > 160 or not model_id.isprintable())):
+            raise Unavailable("no_soportado")
+        effort = runtime.get("effort")
+        if effort is not None and effort not in ("low", "medium", "high", "max"):
+            raise Unavailable("no_soportado")
+        cycle_mode = runtime.get("cycle_mode")
+        if cycle_mode is not None and cycle_mode not in ("accept-edits", "auto", "plan"):
+            raise Unavailable("no_soportado")
+        return {"model": model_id, "model_label": model_label, "effort": effort, "cycle_mode": cycle_mode,
+                "sandbox_enabled": runtime["sandbox_enabled"], "version": version}
 
     @staticmethod
-    def resume_arguments(provider, argv, identifier, catalog):
+    def preserve_antigravity_configuration(argv, configuration):
+        """Resume the observed model/mode/sandbox state; never infer a permission upgrade."""
+        if not isinstance(configuration, dict):
+            raise Unavailable("no_soportado")
+        arguments = list(argv[1:])
+        values = {"--model": configuration.get("model"), "--effort": configuration.get("effort"),
+                  "--mode": configuration.get("cycle_mode")}
+        actual, index = {}, 0
+        sandbox = False
+        while index < len(arguments):
+            token = arguments[index]
+            option, separator, inline = token.partition("=")
+            if option in values:
+                value = inline if separator else (arguments[index + 1] if index + 1 < len(arguments) else None)
+                if option in actual:
+                    raise Unavailable("no_soportado")
+                actual[option] = value
+                index += 1 if separator else 2
+                continue
+            if token == "--sandbox":
+                sandbox = True
+            index += 1
+        added = []
+        for option, expected in values.items():
+            if expected is None:
+                if option in actual:
+                    raise Unavailable("no_soportado")
+            elif option in actual:
+                if actual[option] != expected:
+                    raise Unavailable("no_soportado")
+            else:
+                added.extend((option, expected))
+        sandbox_enabled = configuration.get("sandbox_enabled")
+        if sandbox and sandbox_enabled is not True:
+            raise Unavailable("no_soportado")
+        if sandbox_enabled is True and not sandbox:
+            added.append("--sandbox")
+        elif sandbox_enabled is not True and sandbox_enabled is not False:
+            raise Unavailable("no_soportado")
+        # Keep the catalogue's resume selector and validated arguments in their
+        # canonical order, then append missing effective settings. This makes a
+        # second inspection of the reopened argv produce the same configuration
+        # digest instead of reordering options around the conversation selector.
+        return [argv[0], *arguments, *added]
+
+    def managed_antigravity(self, env, process, pane, hook):
+        """Rewrap only a pane whose current native proof matches its live launch binding."""
+        try:
+            proof = json.loads(hook)
+        except (ValueError, TypeError):
+            return False
+        required = ("version", "window_id", "agent", "generation", "tmux_pane", "pane_pid",
+                    "tmux_session_id", "agent_pid", "agent_start")
+        try:
+            binding = json.loads(env.get("UNICONNECT_NATIVE_BINDING", ""))
+        except (ValueError, TypeError):
+            # A statusLine adoption cannot edit the already-running AGY
+            # process environment. Its exact window/pane ancestry and native
+            # status are instead revalidated from the inherited window ID and
+            # the tmux-bound proof before the restart capsule is authorized.
+            binding = {key: proof.get(key) for key in required}
+            if (env.get("UNICONNECT_WINDOW_ID") not in (None, "", self.request.get("window_id"))
+                    or env.get("TMUX_PANE") != pane.get("pane")):
+                return False
+        return (all(key in binding and proof.get(key) == binding[key] for key in required)
+                and binding.get("agent") == "agy" and binding.get("window_id") == self.request.get("window_id")
+                and binding.get("tmux_pane") == pane.get("pane")
+                and binding.get("pane_pid") == pane.get("pane_pid")
+                and binding.get("agent_pid") == process.get("pid")
+                and binding.get("agent_start") == process.get("start"))
+
+    @staticmethod
+    def preserve_resume_permissions(provider, native_configuration, resume):
+        """Reject when Codex's forced no-prompt dialect would widen its access."""
+        if (provider == "codex" and native_configuration is not None and "--yolo" in resume
+                and (native_configuration.get("sandbox_policy", {}).get("type") != "danger-full-access"
+                     or native_configuration.get("approval_policy") != "never")):
+            raise Unavailable("no_soportado")
+
+    @staticmethod
+    def resume_arguments(provider, argv, identifier, catalog, native_configuration=None):
         """Retain explicit options, remove ONLY the previous conversation selector.
 
         Unknown positional inputs or noninteractive subcommands are excluded;
         never replay the original prompt, fork, exec, login, or --last.
         """
+        if provider in ("agy", "antigravity"):
+            return TargetWorker.antigravity_resume_arguments(argv, identifier, catalog)
+
         arguments = list(argv[1:])
         resumed = removed_id = False
         values = ({"-c", "--config", "-m", "--model", "-C", "--cd", "-s", "--sandbox", "-a", "--ask-for-approval",
@@ -418,9 +732,103 @@ class TargetWorker:
             else:
                 raise Unavailable("no_soportado")
             index += 1
+        if (provider == "codex" and isinstance(native_configuration, dict)
+                and native_configuration.get("settings_applied") is True):
+            model = native_configuration.get("model")
+            effort = native_configuration.get("effort")
+            if (not isinstance(model, str) or not model
+                    or (effort is not None and (not isinstance(effort, str) or not effort))):
+                raise Unavailable("no_soportado")
+            # Rebuild only the model/effort selectors from the proven current
+            # native settings. Preserve every other recognized launch option.
+            normalized, index = [], 0
+            while index < len(kept):
+                option = kept[index].split("=", 1)[0]
+                inline = "=" in kept[index]
+                if option in ("-m", "--model"):
+                    index += 1 if inline else 2
+                    continue
+                if option in ("-c", "--config"):
+                    value = kept[index].split("=", 1)[1] if inline else (
+                        kept[index + 1] if index + 1 < len(kept) else "")
+                    if value.startswith("model_reasoning_effort="):
+                        index += 1 if inline else 2
+                        continue
+                normalized.append(kept[index])
+                if not inline and option in values:
+                    normalized.append(kept[index + 1])
+                    index += 1
+                index += 1
+            selectors = ["-m", model]
+            if effort is not None:
+                selectors.extend(("-c", "model_reasoning_effort=" + json.dumps(effort)))
+            insertion = normalized.index("--no-alt-screen") if "--no-alt-screen" in normalized else len(normalized)
+            kept = [*normalized[:insertion], *selectors, *normalized[insertion:]]
+        # Preserve terminal scrollback across the Linux relaunch, even when the
+        # old Codex instance used its own alternate-screen transcript.
+        if provider == "codex" and "--no-alt-screen" not in kept:
+            kept.append("--no-alt-screen")
         substitutions = {"{executable}": [argv[0]], "{sessionId}": [identifier], "{arguments}": kept}
         return TargetWorker.no_prompt(provider, [part for token in catalog[provider]["resume"]
                                                  for part in substitutions.get(token, [token])], catalog)
+
+    @staticmethod
+    def antigravity_resume_arguments(argv, identifier, catalog):
+        """Build an AGY resume without replaying a prompt or widening permissions.
+
+        Antigravity's no-prompt catalog flag is a launch default, not proof that
+        an existing session used it. Keep it only when it was present in that
+        exact process's argv; never add it during a resume.
+        """
+        provider = next((value for value in catalog.values()
+                         if "agy" in value.get("aliases", []) or value.get("executable") == "agy"), None)
+        if not provider or not isinstance(identifier, str) or not identifier:
+            raise Unavailable("no_soportado")
+
+        arguments = list(argv[1:])
+        value_options = {"--model", "--effort", "--mode", "--project", "--agent", "--add-dir"}
+        boolean_options = {"--sandbox", "--remote-control", "--dangerously-skip-permissions"}
+        kept, seen_conversation, seen_single, index = [], False, set(), 0
+        seen_boolean = set()
+        while index < len(arguments):
+            arg = arguments[index]
+            option, separator, inline_value = arg.partition("=")
+            if option == "--conversation":
+                value = inline_value if separator else (arguments[index + 1] if index + 1 < len(arguments) else "")
+                if seen_conversation or value != identifier:
+                    raise Unavailable("identidad_ambigua")
+                seen_conversation = True
+                index += 1 if separator else 2
+                continue
+            if option in value_options:
+                value = inline_value if separator else (arguments[index + 1] if index + 1 < len(arguments) else "")
+                if not value or value.startswith("-"):
+                    raise Unavailable("no_soportado")
+                if option != "--add-dir" and option in seen_single:
+                    raise Unavailable("no_soportado")
+                if option != "--add-dir":
+                    seen_single.add(option)
+                kept.append(arg)
+                if not separator:
+                    kept.append(value)
+                    index += 1
+                index += 1
+                continue
+            if arg in boolean_options:
+                if arg in seen_boolean:
+                    raise Unavailable("no_soportado")
+                seen_boolean.add(arg)
+                kept.append(arg)
+            else:
+                # Includes --continue, prompts, subcommands, and options whose
+                # semantics this adapter has not explicitly verified.
+                raise Unavailable("no_soportado")
+            index += 1
+        if not seen_conversation:
+            raise Unavailable("identidad_ambigua")
+
+        substitutions = {"{executable}": [argv[0]], "{sessionId}": [identifier], "{arguments}": kept}
+        return [part for token in provider["resume"] for part in substitutions.get(token, [token])]
 
     @staticmethod
     def no_prompt(provider, argv, catalog):
@@ -430,11 +838,17 @@ class TargetWorker:
         the catalogue received in the request: ``supersedes`` (Codex: -a/-s/--full-auto,
         which its CLI rejects next to --yolo) comes from there, never from a list here.
         """
+        if provider in ("agy", "antigravity"):
+            # Do not turn a previously restricted live Antigravity process into
+            # --dangerously-skip-permissions merely because its catalogue has a
+            # default for newly-created windows. resume_arguments preserves the
+            # flag only if it was already present in the original argv.
+            return list(argv)
         return AgentResumeCatalog.apply_policy((catalog.get(provider) or {}).get("noPrompt"), argv)
 
     @staticmethod
     def managed_hook(provider, option, value):
-        bootstrap = 'import base64,os;exec(base64.b64decode(os.environ["UNICONNECT_NATIVE_HELPER"]))'
+        bootstrap = 'import base64,os,zlib;exec(zlib.decompress(base64.b64decode(os.environ["UNICONNECT_NATIVE_HELPER"])))'
         try:
             if provider == "codex" and option in ("-c", "--config") and value.startswith("notify="):
                 hook = json.loads(value.removeprefix("notify="))
@@ -457,7 +871,13 @@ class TargetWorker:
             generation = int(self.digest(pane)[:12], 16)
             return {"key": "linux:" + self.digest(pane), "generation": generation, "pane": pane}
         provider = self.request.get("provider")
-        if provider not in ("codex", "claude") or provider not in self.request["catalog"]:
+        catalog = self.request.get("catalog")
+        catalogued = (isinstance(catalog, dict) and (provider in catalog or any(
+            isinstance(entry, dict) and isinstance(entry.get("aliases"), list)
+            and provider in entry["aliases"] for entry in catalog.values())))
+        if provider not in ("codex", "claude", "agy") or not catalogued:
+            raise Unavailable("no_soportado")
+        if self.request.get("verb") in ("agent.continue", "agent.recover") and provider != "codex":
             raise Unavailable("no_soportado")
         if mode != "0":
             raise Unavailable("dialogo_desconocido")
@@ -467,7 +887,27 @@ class TargetWorker:
             raise Unavailable("identidad_ambigua")
         process = matches[0]
         effective = self.native_id(provider, process, hook, pane)
-        self.quiescent_configuration(provider, process, effective, hook)
+        activity = {}
+        native_configuration = None
+        if provider == "codex":
+            activity = self.codex_activity(self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines())
+            # Only a relaunch plan or its confirmed active target may admit work.
+            # Identity and effective configuration are still proved natively.
+            allow_active = (self.request.get("verb") == "agent.relaunch"
+                            or self.request.get("expected", {}).get("active") is True)
+            if any(activity.values()) and not allow_active:
+                raise Unavailable("tareas_de_fondo")
+            native_configuration = self.quiescent_configuration(provider, process, effective, hook,
+                                                                allow_active=allow_active and activity["working"])
+            lines = self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines()
+            needs_quota = self.request.get("verb") in ("agent.continue", "agent.recover") and not self.request.get("resumed")
+            if needs_quota and not self.codex_quota_pause(lines):
+                raise Unavailable("no_soportado")
+        else:
+            native_configuration = self.quiescent_configuration(provider, process, effective, hook)
+        if self.request.get("action") == "inspect":
+            self.require_empty_composer({"pane": pane}, allow_active=provider == "codex"
+                                         and self.request.get("verb") == "agent.relaunch")
         launcher = None
         # Only the exact bundled recovery launcher has a known wait/restart
         # protocol. All other supervisors remain excluded.
@@ -480,13 +920,28 @@ class TargetWorker:
                     and "UNICONNECT_NATIVE_HELPER=" in root["argv"][2]
                     and root["argv"][2].endswith('exec "${SHELL:-/bin/sh}" -l')):
                 raise Unavailable("no_soportado")
-        resume = self.resume_arguments(provider, [process["executable"], *process["argv"][1:]], effective, self.request["catalog"])
+        resume = self.resume_arguments(provider, [process["executable"], *process["argv"][1:]], effective,
+                                       self.request["catalog"], native_configuration)
+        if provider == "agy":
+            resume = self.preserve_antigravity_configuration(resume, native_configuration)
+        self.preserve_resume_permissions(provider, native_configuration, resume)
         generation = int(self.digest({"pane": pane, "pid": process["pid"], "start": process["start"], "id": effective})[:12], 16)
+        configuration = {"cwd": process["cwd"], "argv": resume}
+        if native_configuration is not None:
+            configuration.update({key: native_configuration.get(key) for key in ("model", "model_label", "effort")})
         proof = {"key": "linux:" + self.digest(pane) + "|gen:" + str(generation), "generation": generation,
                  "pane": pane, "pid": process["pid"], "start": process["start"], "effective_id": effective,
-                 "configuration": self.digest({"cwd": process["cwd"], "argv": resume})}
+                 "configuration": self.digest(configuration)}
         if launcher:
             proof["launcher"] = launcher
+        if native_configuration is not None:
+            # UI model/effort changes can leave argv untouched. Revalidate the
+            # native effective settings before closing, separately from resume argv.
+            proof["native_configuration"] = self.digest(native_configuration)
+        if any(activity.values()):
+            proof["active"] = True
+        if provider == "codex" and self.request.get("verb") in ("agent.continue", "agent.recover"):
+            proof["quota_paused"] = True
         if runtime:
             return proof, root, process, resume
         return proof
@@ -533,9 +988,10 @@ class TargetWorker:
             options += ["-m", entry["model"]]
         if entry.get("reasoningEffort"):
             options += ["-c", "model_reasoning_effort=" + json.dumps(entry["reasoningEffort"])]
-        # Previous launcher form and the current no-prompt one (codex --yolo resume <id> -C ...).
+        # Keep the previous launch forms and the Linux inline form produced by command_for.
         forms = (["resume", *options, "--dangerously-bypass-approvals-and-sandbox", effective],
-                 ["--yolo", "resume", effective, *options])
+                 ["--yolo", "resume", effective, *options],
+                 ["--yolo", "resume", effective, *options, "--no-alt-screen"])
         if process["argv"][1:] not in forms:
             raise Unavailable("no_soportado")
         return {"source": expected, "manifest": self.digest(entry), "session_id": effective}
@@ -596,7 +1052,7 @@ class TargetWorker:
                 result = {"state": "omitido", "cause": "duplicado"}
                 self.write(journal, result)
                 return result
-            if self.inspect() != expected:
+            if not self.same_target(self.inspect(), expected):
                 result = {"state": "omitido", "cause": "generacion_cambiada"}
                 self.write(journal, result)
                 return result
@@ -638,15 +1094,26 @@ class TargetWorker:
 
     def perform(self, journal):
         proof, root, process, resume = self.inspect(runtime=True)
-        if proof != self.request["expected"]:
+        if not self.same_target(proof, self.request["expected"]):
             raise Unavailable("generacion_cambiada")
-        self.require_empty_composer(proof)
+        if self.request.get("verb") == "agent.recover" and self.request.get("provider") != "codex":
+            raise Unavailable("no_soportado")
+        # Keep the consent from the confirmed plan if the turn has just finished.
+        proof = self.request["expected"]
+        self.require_empty_composer(proof, allow_active=proof.get("active") is True)
+        if self.request.get("verb") == "agent.continue":
+            if not self.codex_quota_pause(self.tmux("capture-pane", "-p", "-t", proof["pane"]["pane"]).splitlines()):
+                raise Unavailable("generacion_cambiada")
+            self.continue_codex(proof, process, journal)
+            return
         if proof.get("launcher"):
             events = TmuxOutputEvents(self.binary, self.request["session"])
             try:
                 self.restart_recovery(proof, root, process, journal, events)
             finally:
                 events.close()
+            if self.request.get("verb") == "agent.recover":
+                self.continue_after_reopen(proof, journal)
             return
         # pidfd binds the signal to this exact process, not a potentially reused PID.
         if not hasattr(os, "pidfd_open"):
@@ -659,6 +1126,11 @@ class TargetWorker:
         env = dict(item.split("=", 1) for item in raw.decode().split("\0") if "=" in item)
         if not Path(process["cwd"]).is_dir() or not os.access(resume[0], os.X_OK):
             raise Unavailable("no_soportado")
+        # Decide whether this is a managed Antigravity launch while its native
+        # binding is still present. The capsule must scrub that old binding so
+        # launch() creates a fresh generation for the reopened process.
+        managed = (self.request["provider"] == "agy" and
+                   self.managed_antigravity(env, process, proof["pane"], hook=self.pane()[3]))
         for key in ("CODEX_THREAD_ID", "CODEX_SESSION_ID", "UNICONNECT_NATIVE_BINDING"):
             env.pop(key, None)
         # Claude refuses its no-prompt flag as root unless told it is sandboxed (IS_SANDBOX=1):
@@ -672,7 +1144,7 @@ class TargetWorker:
             raise Unavailable("no_soportado")
         env["UNICONNECT_NATIVE_HELPER"] = helper
         original = process["argv"]
-        managed = any(self.managed_hook(self.request["provider"], option.split("=", 1)[0],
+        managed = managed or any(self.managed_hook(self.request["provider"], option.split("=", 1)[0],
                       option.split("=", 1)[1] if "=" in option else (original[index + 1] if index + 1 < len(original) else ""))
                       for index, option in enumerate(original) if option.split("=", 1)[0] in ("-c", "--config", "--settings"))
         capsule = {"argv": resume, "env": env, "cwd": process["cwd"],
@@ -693,11 +1165,25 @@ class TargetWorker:
         finally:
             events.close()
             os.close(descriptor)
+        if self.request.get("verb") == "agent.recover":
+            self.continue_after_reopen(proof, journal)
+
+    def continue_after_reopen(self, previous, journal):
+        """Revalidate the resumed native conversation before the one exact continuation."""
+        current, _, process, _ = self.inspect(runtime=True)
+        if (current["pane"] != previous["pane"] or current["generation"] == previous["generation"]
+                or current["effective_id"] != previous["effective_id"]
+                or current["configuration"] != previous["configuration"]
+                or current.get("native_configuration") != previous.get("native_configuration")):
+            raise Unavailable("generacion_cambiada")
+        self.continue_codex(current, process, journal)
 
     def restart(self, proof, root, process, capsule_path, journal, events):
         owned = self.descendants(process["pid"])
         if self.request.get("provider") == "claude":
             self.exit_claude(proof, process, journal, events)
+        elif self.request.get("provider") == "agy":
+            self.exit_antigravity(proof, process, journal)
         else:
             self.exit_codex(proof, process, journal, events)
         deadline = self.clock() + 5
@@ -714,29 +1200,114 @@ class TargetWorker:
         self.write(journal, {"state": "reabriendo"})
         # Only the fixed launcher and an anonymous memory descriptor enter the
         # proved shell. No credential or provider argument appears in scrollback.
-        launcher = ('import os,json,sys,base64; p=sys.argv[1]; '
+        launcher = ('import os,json,sys,base64,zlib; p=sys.argv[1]; '
                     'f=open(p); d=json.load(f); f.close(); '
                     'os.chdir(d["cwd"]); os.environ.clear(); os.environ.update(d["env"]); '
                     'n={"__name__":"uniconnect_launch"}; '
-                    'exec(base64.b64decode(os.environ["UNICONNECT_NATIVE_HELPER"]),n); '
+                    'exec(zlib.decompress(base64.b64decode(os.environ["UNICONNECT_NATIVE_HELPER"])),n) if d["managed_identity"] else None; '
                     'n["launch"](d) if d["managed_identity"] else os.execvpe(d["argv"][0],d["argv"],os.environ)')
         command = shlex.join([sys.executable, "-c", launcher, str(capsule_path)])
         if self.pane()[0] != proof["pane"] or self.descendants(root["pid"]):
             raise Unavailable("generacion_cambiada")
         self.tmux("send-keys", "-t", proof["pane"]["pane"], "-l", "--", command + "\n")
+        self.request["resumed"] = True
         deadline = self.clock() + 45
         while self.clock() < deadline:
             try:
                 current = self.inspect()
                 if (current["effective_id"] == proof["effective_id"] and current["generation"] != proof["generation"]
-                        and current["pane"] == proof["pane"] and current["configuration"] == proof["configuration"]):
+                        and current["pane"] == proof["pane"] and current["configuration"] == proof["configuration"]
+                        and current.get("native_configuration") == proof.get("native_configuration")):
                     self.require_empty_composer(current)
-                    self.write(journal, {"state": "verificado", "effective_id": proof["effective_id"]})
-                    return
+                    if self.request.get("verb") != "agent.recover":
+                        self.write(journal, {"state": "verificado", "effective_id": proof["effective_id"]})
+                    return current
             except (Unavailable, OSError):
                 pass
-            events.wait(deadline, self.clock)
+            if self.request.get("provider") == "agy":
+                # Antigravity can refresh its pane-bound statusLine metadata
+                # by changing tmux options without producing pane output. A
+                # purely output-driven wait would miss fresh idle proof until
+                # the whole deadline expires. Keep the event-driven fast path,
+                # but revalidate at a short bounded interval as well.
+                wait_deadline = min(deadline, self.clock() + 1)
+                try:
+                    events.wait(wait_deadline, self.clock)
+                except Unavailable:
+                    if self.clock() >= deadline:
+                        raise
+            else:
+                events.wait(deadline, self.clock)
+
+    @staticmethod
+    def codex_quota_pause(lines):
+        """Recognize only an explicit, recent Codex usage-limit notice near its composer."""
+        prompts = [index for index, line in enumerate(lines) if line.startswith("›")]
+        if not prompts:
+            return False
+        row = prompts[-1]
+        recent = " ".join(line.strip() for line in lines[max(0, row - 16):row]).casefold()
+        return any(marker in recent for marker in (
+            "you’ve hit your usage limit", "you've hit your usage limit",
+            "you have hit your usage limit", "usage limit reached"))
+
+    def continue_codex(self, proof, process, journal):
+        """Send one fixed continuation only to a verified, empty quota-paused Codex composer."""
+        pane = proof["pane"]["pane"]
+        lines = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
+        if not self.codex_quota_pause(lines) or not self.same_target(self.inspect(), proof):
+            raise Unavailable("generacion_cambiada")
+        original = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
+        composer = self.require_empty_composer(proof)
+        row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
+        self.write(journal, {"state": "entregando"})
+        self.tmux("send-keys", "-t", pane, "-l", "--", "continua")
+        typed = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
+        if (row >= len(typed) or typed[row].strip() != "› continua"
+                or TargetWorker.codex_composer_tail(typed[row + 1:])
+                != TargetWorker.codex_composer_tail(composer["tail"])):
+            raise Unavailable("dialogo_desconocido")
+        # Recheck identity and exact composer immediately before submission.
+        if not self.same_target(self.inspect(), proof):
+            raise Unavailable("generacion_cambiada")
+        typed = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
+        row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
+        if (row >= len(typed) or typed[row].strip() != "› continua"
+                or TargetWorker.codex_composer_tail(typed[row + 1:])
+                != TargetWorker.codex_composer_tail(composer["tail"])):
+            raise Unavailable("dialogo_desconocido")
+        self.tmux("send-keys", "-t", pane, "Enter")
+        # Codex's own activity indicator is the receipt. A queued keystroke or
+        # a changed placeholder alone is never reported as accepted work.
+        deadline = self.clock() + 30
+        while self.clock() < deadline:
+            if not self.same_live_agent(proof, process):
+                raise Unavailable("generacion_cambiada")
+            screen = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
+            activity = self.codex_activity(screen)
+            new_prompt = (any(line.strip() in ("› continua", "continua") for line in screen[-40:])
+                          and not any(line.strip() in ("› continua", "continua") for line in original[-40:]))
+            if activity["working"] and new_prompt:
+                self.write(journal, {"state": "verificado", "effective_id": proof["effective_id"]})
+                return
+            if not self.codex_quota_pause(screen):
+                # The explicit quota notice disappeared but Codex did not
+                # acknowledge by starting. Keep the operation unresolved.
+                raise Unavailable("dialogo_desconocido")
+            time.sleep(0.25)
         raise Unavailable("dialogo_desconocido")
+
+    def same_live_agent(self, proof, expected_process):
+        """After submission, pin to the same pane and Codex PID without requiring an idle transcript."""
+        pane, root, mode, hook = self.pane()
+        if pane != proof["pane"] or mode != "0":
+            return False
+        matches = [item for item in self.descendants(root["pid"]).values()
+                   if self.is_provider("codex", item["argv"])]
+        if len(matches) != 1 or (matches[0]["pid"], matches[0]["start"]) != (
+                expected_process["pid"], expected_process["start"]):
+            return False
+        return self.native_id("codex", matches[0], hook, pane) == proof["effective_id"]
 
     def same_process(self, process):
         try:
@@ -752,9 +1323,15 @@ class TargetWorker:
             raise Unavailable("no_soportado")
         descriptor = os.pidfd_open(process["pid"])
         try:
-            if self.inspect() != proof:
+            if not self.same_target(self.inspect(), proof):
                 raise Unavailable("generacion_cambiada")
-            self.require_empty_composer(proof)
+            approved_active = (proof.get("active") is True
+                               and self.request.get("expected", {}).get("active") is True)
+            self.require_empty_composer(proof, allow_active=approved_active)
+            self.interrupt_codex(proof, process, journal, events, approved_active=approved_active)
+            if not self.same_target(self.inspect(), proof):
+                raise Unavailable("generacion_cambiada")
+            composer = self.require_empty_composer(proof, allow_active=approved_active)
             self.write(journal, {"state": "cerrando"})
             pane = proof["pane"]["pane"]
             self.tmux("send-keys", "-t", pane, "-l", "--", "/exit")
@@ -762,17 +1339,81 @@ class TargetWorker:
             while True:
                 row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
                 lines = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
-                if row < len(lines) and lines[row].strip() == "› /exit":
+                if self.codex_exit_composer(lines, row, composer):
                     break
                 events.wait(deadline, self.clock)
-            if self.inspect() != proof:
+            if not self.same_target(self.inspect(), proof):
                 raise Unavailable("generacion_cambiada")
+            # inspect reads native state and can take time. Recheck the entire
+            # input after it, immediately before submission, including continuation lines.
+            row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
+            if not self.codex_exit_composer(self.tmux("capture-pane", "-p", "-t", pane).splitlines(), row, composer):
+                raise Unavailable("dialogo_desconocido")
             self.tmux("send-keys", "-t", pane, "Enter")
             ready, _, _ = select.select([descriptor], [], [], 75)
             if not ready:
                 raise Unavailable("dialogo_desconocido")
         finally:
             os.close(descriptor)
+
+    @staticmethod
+    def same_target(current, expected):
+        """A confirmed active turn may finish; identity, generation and configuration may not change."""
+        if expected.get("active") is not True:
+            return current == expected
+        return ({key: value for key, value in current.items() if key != "active"}
+                == {key: value for key, value in expected.items() if key != "active"})
+
+    @staticmethod
+    def codex_exit_composer(lines, row, original):
+        """Only /exit and the same composer tail, allowing the warning hint hidden by its menu."""
+        prompts = [index for index, line in enumerate(lines) if line.startswith("›")]
+        return (bool(prompts) and row == prompts[-1] and lines[row] == "› /exit"
+                and TargetWorker.codex_composer_tail(lines[row + 1:])
+                == TargetWorker.codex_composer_tail(original["tail"]))
+
+    @staticmethod
+    def codex_composer_tail(lines):
+        """Normalize only the observed footer warning hint; never remove an input line or blank."""
+        return [re.sub(r" {2,}⚠ [1-9][0-9]* warnings? · f2 to view$", "", line)
+                if re.match(r"^  (?:GPT|gpt)-[A-Za-z0-9._-]+(?: [a-z]+)? · ", line) else line
+                for line in lines]
+
+    def interrupt_codex(self, proof, process, journal, events, *, approved_active):
+        """Interrupt only a recognized working turn after confirmation, then observe its native end."""
+        pane = proof["pane"]["pane"]
+        activity = self.codex_activity(self.tmux("capture-pane", "-p", "-t", pane).splitlines())
+        if any(activity.values()) and not approved_active:
+            raise Unavailable("tareas_de_fondo")
+        if not activity["working"]:
+            return
+        if not self.same_target(self.inspect(), proof):
+            raise Unavailable("generacion_cambiada")
+        self.require_empty_composer(proof, allow_active=True)
+        self.write(journal, {"state": "cerrando"})
+        self.tmux("send-keys", "-t", pane, "Escape")
+        deadline = self.clock() + 30
+        while True:
+            try:
+                if not self.same_target(self.inspect(), proof):
+                    raise Unavailable("generacion_cambiada")
+            except Unavailable as error:
+                if error.cause != "dialogo_desconocido":
+                    raise
+                # The status line and the native turn-aborted record can arrive
+                # separately. Wait for output; never manufacture a completed turn.
+                events.wait(deadline, self.clock)
+                continue
+            activity = self.codex_activity(self.tmux("capture-pane", "-p", "-t", pane).splitlines())
+            if not activity["working"]:
+                try:
+                    self.quiescent_configuration("codex", process, proof["effective_id"], "")
+                    self.require_empty_composer(proof, allow_active=True)
+                    return
+                except Unavailable as error:
+                    if error.cause != "dialogo_desconocido":
+                        raise
+            events.wait(deadline, self.clock)
 
     @staticmethod
     def claude_exit_option(screen):
@@ -803,6 +1444,28 @@ class TargetWorker:
         _, found, after = screen.partition("Resume this session with")
         match = UUID.search(after) if found else None
         return match.group(0).lower() if match else None
+
+    def exit_antigravity(self, proof, process, journal):
+        """Use documented Ctrl+D only after proving the exact AGY pane is idle and empty."""
+        if self.request.get("provider") != "agy" or not hasattr(os, "pidfd_open"):
+            raise Unavailable("no_soportado")
+        descriptor = os.pidfd_open(process["pid"])
+        try:
+            if not self.same_target(self.inspect(), proof):
+                raise Unavailable("generacion_cambiada")
+            self.require_empty_composer(proof)
+            # The first read can race a state change. Revalidate identity and
+            # composer immediately before Ctrl+D; never send it into a draft.
+            if not self.same_target(self.inspect(), proof):
+                raise Unavailable("generacion_cambiada")
+            self.require_empty_composer(proof)
+            self.write(journal, {"state": "cerrando"})
+            self.tmux("send-keys", "-t", proof["pane"]["pane"], "C-d")
+            ready, _, _ = select.select([descriptor], [], [], 75)
+            if not ready:
+                raise Unavailable("dialogo_desconocido")
+        finally:
+            os.close(descriptor)
 
     def exit_claude(self, proof, process, journal, events):
         """D7: type /exit literally, check the line, Enter, and wait for Claude to leave by itself.
@@ -877,6 +1540,7 @@ class TargetWorker:
         if self.descendants(root["pid"]) or not self.same_process(root):
             raise Unavailable("generacion_cambiada")
         self.tmux("send-keys", "-t", pane, "C-j")
+        self.request["resumed"] = True
         deadline = self.clock() + 120
         while True:
             try:
@@ -884,29 +1548,108 @@ class TargetWorker:
                 if (current["pane"] == proof["pane"] and current["generation"] != proof["generation"]
                         and current["effective_id"] == proof["effective_id"]
                         and current["configuration"] == proof["configuration"]
+                        and current.get("native_configuration") == proof.get("native_configuration")
                         and current.get("launcher") == proof["launcher"]):
                     self.require_empty_composer(current)
-                    self.write(journal, {"state": "verificado", "effective_id": proof["effective_id"]})
-                    return
+                    if self.request.get("verb") != "agent.recover":
+                        self.write(journal, {"state": "verificado", "effective_id": proof["effective_id"]})
+                    return current
             except (Unavailable, OSError):
                 pass
             events.wait(deadline, self.clock)
 
-    def require_empty_composer(self, proof):
-        """Fail closed on drafts/dialogs; never use a footer as ready evidence."""
+    @staticmethod
+    def codex_activity(lines):
+        """Read known activity near the composer; absence is never proof of native quiescence."""
+        working = background = False
+        for line in lines[-12:]:
+            working |= bool(re.match(r"^\s*[•◦·*]?\s*(?:Working|Waiting for background terminal)\s*\([^)]*\besc to interrupt\)", line))
+            background |= bool(re.search(r"(?:^\s*[•◦·*]?\s*|·\s*)[1-9][0-9]* background terminals? running\b", line))
+        return {"working": working, "background": background}
+
+    @staticmethod
+    def antigravity_activity(lines):
+        """Recognize an explicit busy state in the Antigravity model footer.
+
+        An empty prompt alone is not enough during first-time statusLine adoption:
+        the TUI can still be generating output while its composer remains blank.
+        The model footer may contain ``(Thinking)`` as its reasoning tier, so only
+        a standalone activity marker is evidence of work. Absence is not treated
+        as native idle proof.
+        """
+        busy = re.compile(
+            r"^\s*(?:[✳*•◦·]\s*)?(?:thinking|working|generating|executing|running|streaming)"
+            r"(?:\s*\([^)]*\))?\s*(?:…|\.{1,3})?\s*$", re.IGNORECASE)
+        return any(busy.fullmatch(line) for line in lines[-12:])
+
+    @staticmethod
+    def codex_placeholder(styled):
+        """Require dim or neutral-gray foreground on every placeholder character, not just an SGR."""
+        plain, muted = "", []
+        dim = gray = reverse = hidden = False
+        for part in re.split(r"(\x1b\[[0-9;]*m)", styled):
+            if not part.startswith("\x1b["):
+                plain += part
+                muted.extend([bool((dim or gray) and not reverse and not hidden)] * len(part))
+                continue
+            codes = [int(code or 0) for code in part[2:-1].split(";")]
+            index = 0
+            while index < len(codes):
+                code = codes[index]
+                if code == 0:
+                    dim = gray = reverse = hidden = False
+                elif code in (2, 22):
+                    dim = code == 2
+                elif code in (7, 27):
+                    reverse = code == 7
+                elif code in (8, 28):
+                    hidden = code == 8
+                elif code in (38, 48, 58):
+                    # Consume background/underline colors too: their RGB values
+                    # must never be mistaken for SGR 2 (dim).
+                    mode = codes[index + 1] if index + 1 < len(codes) else None
+                    count = 1 if mode == 5 else 3 if mode == 2 else 0
+                    color = codes[index + 2:index + 2 + count]
+                    if not count or len(color) != count or any(value > 255 for value in color):
+                        return False
+                    if code == 38:
+                        gray = (color[0] == 8 or 232 <= color[0] <= 254) if count == 1 else (
+                            color[0] == color[1] == color[2] and 0 < color[0] < 255)
+                    index += count + 1
+                elif code == 39 or 30 <= code <= 37 or 90 <= code <= 97:
+                    gray = code == 90
+                index += 1
+        return plain == "› Ask Codex to do anything" and all(muted[2:])
+
+    def require_empty_composer(self, proof, *, allow_active=False):
+        """Fail closed on drafts/dialogs; a styled placeholder, not a footer, proves empty input."""
         pane = proof["pane"]["pane"]
-        row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
         lines = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
-        empty = row < len(lines) and EMPTY_PROMPT_LINE.fullmatch(lines[row]) is not None
-        if (not empty and self.request.get("provider") == "codex" and row < len(lines)
-                and lines[row] == "› Ask Codex to do anything"
-                and self.tmux("display-message", "-p", "-t", pane, "#{cursor_x}") == "2"):
-            styled = self.tmux("capture-pane", "-e", "-p", "-t", pane).splitlines()
-            # Dim placeholder + cursor before it, not a user draft that merely
-            # happens to contain the same words (even with cursor at Home).
-            empty = (row < len(styled) and re.fullmatch(
-                r"(?:\x1b\[[0-9;]*m)*›(?:\x1b\[[0-9;]*m)* \x1b\[2mAsk Codex to do anything(?:\x1b\[[0-9;]*m)*",
-                styled[row]) is not None)
+        empty = False
+        if self.request.get("provider") == "codex":
+            if any(self.codex_activity(lines).values()) and not allow_active:
+                raise Unavailable("tareas_de_fondo")
+            # The final prompt is the composer. A prompt quoted in older output
+            # cannot authorize a close over a later draft or an unknown dialog.
+            prompts = [index for index, line in enumerate(lines) if line.startswith("›")]
+            if prompts:
+                row = prompts[-1]
+                trailing = lines[row + 1:]
+                footer = all(not line.strip() or re.fullmatch(r"  (?:GPT|gpt)-[A-Za-z0-9._-]+(?: [a-z]+)? · \S.* · \S.*|  \? for shortcuts.*", line)
+                             for line in trailing)
+                if all(not line.strip() for line in trailing) and lines[row].strip() == "›":
+                    empty = True
+                elif footer and lines[row] == "› Ask Codex to do anything":
+                    styled = self.tmux("capture-pane", "-e", "-p", "-t", pane).splitlines()
+                    # Separate reads can race a new draft: require the full same
+                    # screen before trusting the style of that particular row.
+                    if [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in styled] == lines:
+                        empty = self.codex_placeholder(styled[row])
+        else:
+            if self.request.get("provider") == "agy" and self.antigravity_activity(lines):
+                raise Unavailable("tareas_de_fondo")
+            row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
+            empty = 0 <= row < len(lines) and EMPTY_PROMPT_LINE.fullmatch(lines[row]) is not None
         visible = "\n".join(lines).lower()
         if "yes, i trust this folder" in visible or "do you trust the files in this folder" in visible:
             raise Unavailable("confianza_carpeta")  # A person answers it; never on their behalf.
@@ -915,11 +1658,14 @@ class TargetWorker:
         if any(value in visible for value in ("do you trust", "trust this", "allow once", "allow execution",
                     "would you like to run", "do you want to proceed", "[y/n]", "sign in", "log in")):
             raise Unavailable("permisos")
+        return {"tail": lines[row + 1:]}
 
     def dispatch(self):
         action = self.request["action"]
         if action == "inspect":
             return self.inspect()
+        if action == "adopt":
+            return self.adopt_antigravity()
         if action == "start":
             return self.start()
         if action == "status":
@@ -953,6 +1699,161 @@ class TargetWorker:
             finally:
                 os.close(descriptor)
         raise Unavailable("no_soportado")
+
+    def adopt_antigravity(self):
+        """Request a one-shot native statusLine binding for one explicitly selected pane."""
+        if self.request.get("provider") != "agy":
+            raise Unavailable("no_soportado")
+        expected_id = self.request.get("expected_session_id")
+        expected_cwd = self.request.get("expected_cwd")
+        window_id = self.request.get("window_id")
+        if (not isinstance(expected_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", expected_id)
+                or not isinstance(expected_cwd, str) or not Path(expected_cwd).is_absolute()
+                or not isinstance(window_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", window_id)):
+            raise Unavailable("identidad_ambigua")
+        pane, root, mode, hook = self.pane()
+        if mode != "0":
+            raise Unavailable("dialogo_desconocido")
+        children = self.descendants(root["pid"])
+        matches = [process for process in children.values() if self.is_provider("agy", process["argv"])]
+        if len(matches) != 1:
+            raise Unavailable("identidad_ambigua")
+        process = matches[0]
+        try:
+            raw = (self.proc / str(process["pid"]) / "environ").read_bytes()
+            if len(raw) > 1048576:
+                raise Unavailable("no_soportado")
+            env = dict(item.split("=", 1) for item in raw.decode(errors="replace").split("\0") if "=" in item)
+        except OSError:
+            raise Unavailable("generacion_cambiada") from None
+        if (env.get("TMUX_PANE") != pane["pane"]
+                or env.get("UNICONNECT_WINDOW_ID") not in (None, "", window_id)
+                or process["cwd"] != expected_cwd):
+            raise Unavailable("identidad_ambigua")
+        explicit = []
+        argv = process["argv"]
+        index = 1
+        while index < len(argv):
+            option, separator, value = argv[index].partition("=")
+            if option == "--conversation":
+                explicit.append(value if separator else argv[index + 1] if index + 1 < len(argv) else "")
+                index += 1 if separator else 2
+            else:
+                index += 1
+        if explicit != [expected_id]:
+            raise Unavailable("identidad_ambigua")
+        # Adoption itself does not close or relaunch the client. After the
+        # confirmed statusLine control command, its live native status must prove
+        # the effective model and permissions before relaunch planning admits it.
+        options = self.tmux("display-message", "-p", "-t", pane["pane"],
+            "#{@uniconnect_native_generation}\t#{@uniconnect_native_identity}\t#{@uniconnect_native_revision}"
+            "\t#{@uniconnect_adopt_request}\t#{@uniconnect_adopt_nonce}|UC_ADOPT_OPTIONS_END")
+        if not options.endswith("|UC_ADOPT_OPTIONS_END"):
+            raise Unavailable("host_inaccesible")
+        current = options.removesuffix("|UC_ADOPT_OPTIONS_END").split("\t", 4)
+        if len(current) != 5:
+            raise Unavailable("host_inaccesible")
+        if any(current):
+            # A previous successful adoption is idempotent only if its fresh
+            # proof identifies this exact stored window and conversation.
+            try:
+                proof = json.loads(current[1])
+                runtime = self.inspect()
+                if (current[0] == proof.get("generation") and current[2]
+                        and proof.get("window_id") == window_id and runtime.get("effective_id") == expected_id):
+                    return {"state": "verificado", "effective_id": expected_id}
+            except (ValueError, Unavailable, KeyError, TypeError):
+                pass
+            raise Unavailable("identidad_ambigua")
+
+        nonce = uuid.uuid4().hex
+        adoption = {"version": 1, "nonce": nonce, "window_id": window_id, "session_id": expected_id,
+                    "pane": pane["pane"], "pane_pid": pane["pane_pid"],
+                    "tmux_session_id": pane["session"], "agent_pid": process["pid"],
+                    "agent_start": process["start"], "cwd": expected_cwd, "requested_at": time.time()}
+        command = (shlex.join(["set-option", "-p", "-t", pane["pane"], AGY_ADOPT_REQUEST,
+                               json.dumps(adoption, separators=(",", ":"))]) + " ; " +
+                   shlex.join(["set-option", "-p", "-t", pane["pane"], AGY_ADOPT_NONCE, nonce]) +
+                   " ; display-message -p UC_ADOPTION_REQUESTED")
+        condition = ("#{&&:#{==:#{@uniconnect_native_generation},},#{==:#{@uniconnect_native_identity},},"
+                     "#{==:#{@uniconnect_native_revision},},#{==:#{" + AGY_ADOPT_REQUEST + "},},"
+                     "#{==:#{" + AGY_ADOPT_NONCE + "},}}")
+        if self.tmux("if-shell", "-F", "-t", pane["pane"], condition, command,
+                     "display-message -p UC_ADOPTION_REJECTED") != "UC_ADOPTION_REQUESTED":
+            raise Unavailable("generacion_cambiada")
+
+        adopted = False
+        staged_control = False
+        try:
+            # Antigravity may have loaded its statusLine command before UniConnect
+            # refreshed settings.json. In the explicitly confirmed adoption flow,
+            # enable the documented live TUI command once so the new hook can emit
+            # a fresh native proof. Never type it into a draft or changed pane.
+            deadline = self.clock() + 8
+            while True:
+                if self.pane()[0] != pane or not self.same_process(process):
+                    raise Unavailable("generacion_cambiada")
+                initial = self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines()
+                try:
+                    self.require_empty_composer({"pane": pane})
+                except Unavailable as error:
+                    if error.cause != "dialogo_desconocido" or self.clock() >= deadline:
+                        raise
+                    time.sleep(0.1)
+                    continue
+                if self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines() != initial:
+                    if self.clock() >= deadline:
+                        raise Unavailable("generacion_cambiada")
+                    time.sleep(0.1)
+                    continue
+                row = int(self.tmux("display-message", "-p", "-t", pane["pane"], "#{cursor_y}"))
+                if row < len(initial):
+                    break
+                raise Unavailable("dialogo_desconocido")
+            self.tmux("send-keys", "-t", pane["pane"], "-l", "--", "/statusline enable")
+            staged_control = True
+            typed, row = self.wait_staged_control(
+                pane, process, r"\s*│?\s*[›❯>]\s*/statusline enable\s*│?\s*", self.clock() + 3)
+            if (self.pane()[0] != pane or not self.same_process(process)
+                    or self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines() != typed):
+                raise Unavailable("generacion_cambiada")
+            self.tmux("send-keys", "-t", pane["pane"], "Enter")
+
+            deadline = self.clock() + 16
+            while self.clock() < deadline:
+                try:
+                    proof = self.inspect()
+                    if (proof.get("pane") == pane and proof.get("effective_id") == expected_id
+                            and proof.get("pid") == process["pid"]):
+                        try:
+                            self.require_empty_composer(proof)
+                        except Unavailable as error:
+                            if error.cause in ("dialogo_desconocido", "permisos", "tareas_de_fondo"):
+                                if error.cause != "dialogo_desconocido":
+                                    raise
+                                time.sleep(0.1)
+                                continue
+                            time.sleep(0.1)
+                            continue
+                        adopted = True
+                        return {"state": "verificado", "effective_id": expected_id}
+                except Unavailable as error:
+                    if error.cause in ("dialogo_desconocido", "permisos", "tareas_de_fondo"):
+                        raise
+                    time.sleep(0.2)
+                except (OSError, ProcessLookupError):
+                    time.sleep(0.2)
+            raise Unavailable("dialogo_desconocido")
+        finally:
+            if not adopted:
+                if staged_control:
+                    self.clear_staged_control(pane, process)
+                clear = (shlex.join(["set-option", "-u", "-p", "-t", pane["pane"], AGY_ADOPT_REQUEST]) + " ; " +
+                         shlex.join(["set-option", "-u", "-p", "-t", pane["pane"], AGY_ADOPT_NONCE]) +
+                         " ; display-message -p UC_ADOPTION_EXPIRED")
+                self.tmux("if-shell", "-F", "-t", pane["pane"],
+                          "#{==:#{" + AGY_ADOPT_NONCE + "}," + nonce + "}", clear,
+                          "display-message -p UC_ADOPTION_SUPERSEDED")
 
 
 if __name__ == "__main__":
