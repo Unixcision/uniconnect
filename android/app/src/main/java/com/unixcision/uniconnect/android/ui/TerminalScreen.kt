@@ -176,10 +176,16 @@ private fun RealTerminalScreen(
     var selecting by remember { mutableStateOf(false) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
     var alt by rememberSaveable { mutableStateOf(ModifierState.OFF) }
-    val modifiers = TerminalModifiers(ctrl = ctrl != ModifierState.OFF, alt = alt != ModifierState.OFF)
+    var shift by rememberSaveable { mutableStateOf(ModifierState.OFF) }
+    val modifiers = TerminalModifiers(ctrl = ctrl != ModifierState.OFF, alt = alt != ModifierState.OFF, shift = shift != ModifierState.OFF)
+    // Text uses Ctrl and Alt only, so an armed ⇧ waits for the next key.
     val consumeModifiers = {
         if (ctrl == ModifierState.ARMED) ctrl = ModifierState.OFF
         if (alt == ModifierState.ARMED) alt = ModifierState.OFF
+    }
+    val consumeKeyModifiers = {
+        consumeModifiers()
+        if (shift == ModifierState.ARMED) shift = ModifierState.OFF
     }
     val ready = real.snapshot != null && !real.ended && real.error == null
 
@@ -396,8 +402,8 @@ private fun RealTerminalScreen(
             }
         }
         if (keysVisible) TerminalExtraKeys(
-            ctrl = ctrl, alt = alt, onCtrl = { ctrl = it }, onAlt = { alt = it }, enabled = ready && enlaceUtil,
-            onKey = { key -> onPty(TerminalKeyEncoder.encode(key, modifiers, cursorApplicationMode = real.applicationCursorKeys), false); consumeModifiers() },
+            ctrl = ctrl, alt = alt, shift = shift, onCtrl = { ctrl = it }, onAlt = { alt = it }, onShift = { shift = it }, enabled = ready && enlaceUtil,
+            onKey = { key -> onPty(TerminalKeyEncoder.encode(key, modifiers, cursorApplicationMode = real.applicationCursorKeys), false); consumeKeyModifiers() },
             onText = { text -> onPty(TerminalKeyEncoder.encodeText(text, modifiers), false); consumeModifiers() },
         )
         TerminalComposer(
@@ -430,10 +436,16 @@ private fun MirrorTerminalScreen(
     var selecting by remember { mutableStateOf(false) }
     var ctrl by rememberSaveable { mutableStateOf(ModifierState.OFF) }
     var alt by rememberSaveable { mutableStateOf(ModifierState.OFF) }
-    val modifiers = TerminalModifiers(ctrl = ctrl != ModifierState.OFF, alt = alt != ModifierState.OFF)
+    var shift by rememberSaveable { mutableStateOf(ModifierState.OFF) }
+    val modifiers = TerminalModifiers(ctrl = ctrl != ModifierState.OFF, alt = alt != ModifierState.OFF, shift = shift != ModifierState.OFF)
+    // Text uses Ctrl and Alt only, so an armed ⇧ waits for the next key.
     val consumeModifiers = {
         if (ctrl == ModifierState.ARMED) ctrl = ModifierState.OFF
         if (alt == ModifierState.ARMED) alt = ModifierState.OFF
+    }
+    val consumeKeyModifiers = {
+        consumeModifiers()
+        if (shift == ModifierState.ARMED) shift = ModifierState.OFF
     }
     val ready = connected && snapshot != null
     Column(Modifier.fillMaxSize().imePadding()) {
@@ -563,8 +575,8 @@ private fun MirrorTerminalScreen(
             }
         }
         if (keysVisible) TerminalExtraKeys(
-            ctrl = ctrl, alt = alt, onCtrl = { ctrl = it }, onAlt = { alt = it }, enabled = ready && !sending,
-            onKey = { key -> onSend(TerminalKeyEncoder.encode(key, modifiers), false) {}; consumeModifiers() },
+            ctrl = ctrl, alt = alt, shift = shift, onCtrl = { ctrl = it }, onAlt = { alt = it }, onShift = { shift = it }, enabled = ready && !sending,
+            onKey = { key -> onSend(TerminalKeyEncoder.encode(key, modifiers), false) {}; consumeKeyModifiers() },
             onText = { text -> onSend(TerminalKeyEncoder.encodeText(text, modifiers), false) {}; consumeModifiers() },
         )
         TerminalComposer(

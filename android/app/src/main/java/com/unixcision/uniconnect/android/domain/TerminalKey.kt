@@ -14,6 +14,9 @@ enum class TerminalKey {
 data class TerminalModifiers(val ctrl: Boolean = false, val alt: Boolean = false, val shift: Boolean = false) {
     val isEmpty: Boolean get() = !ctrl && !alt && !shift
 
+    /** Whether typed text comes out different: Ctrl or Alt. Shift only modifies keys. */
+    val changesText: Boolean get() = ctrl || alt
+
     /** xterm's `CSI 1;m` parameter: 1 plus shift=1, alt=2, ctrl=4; null when nothing is held. */
     val xtermParameter: Int? get() = if (isEmpty) null else 1 + (if (shift) 1 else 0) + (if (alt) 2 else 0) + (if (ctrl) 4 else 0)
 

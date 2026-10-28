@@ -37,8 +37,10 @@ enum class ModifierState { OFF, ARMED, LOCKED }
 fun TerminalExtraKeys(
     ctrl: ModifierState,
     alt: ModifierState,
+    shift: ModifierState,
     onCtrl: (ModifierState) -> Unit,
     onAlt: (ModifierState) -> Unit,
+    onShift: (ModifierState) -> Unit,
     enabled: Boolean,
     onKey: (TerminalKey) -> Unit,
     onText: (String) -> Unit,
@@ -62,7 +64,9 @@ fun TerminalExtraKeys(
             }
         } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ToggleCap(stringResource(R.string.keys_functions), false, enabled, Modifier.weight(1f)) { functions = true }
-            KeyCap("~", "~", enabled, Modifier.weight(.8f)) { onText("~") }
+            // ⇧ donde estaba ~ (el teclado ya lo tiene): fijado con una pulsación larga, las
+            // flechas, Inicio y Fin seleccionan, y ⇧TAB cambia de modo en Claude Code.
+            ModifierCap(stringResource(R.string.key_shift), shift, enabled, Modifier.weight(.8f), onShift, stringResource(R.string.key_shift_name))
             KeyCap("|", "|", enabled, Modifier.weight(.8f)) { onText("|") }
             KeyCap("-", "-", enabled, Modifier.weight(.8f)) { onText("-") }
             KeyCap("/", "/", enabled, Modifier.weight(.8f)) { onText("/") }
@@ -121,13 +125,13 @@ private fun ToggleCap(label: String, active: Boolean, enabled: Boolean, modifier
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ModifierCap(label: String, state: ModifierState, enabled: Boolean, modifier: Modifier, onChange: (ModifierState) -> Unit) {
+private fun ModifierCap(label: String, state: ModifierState, enabled: Boolean, modifier: Modifier, onChange: (ModifierState) -> Unit, name: String = label) {
     val shape = UniTheme.shapes.chip
     val armed = state != ModifierState.OFF
     val hint = when (state) {
         ModifierState.OFF -> stringResource(R.string.modifier_hint)
-        ModifierState.ARMED -> stringResource(R.string.modifier_armed, label)
-        ModifierState.LOCKED -> stringResource(R.string.modifier_locked, label)
+        ModifierState.ARMED -> stringResource(R.string.modifier_armed, name)
+        ModifierState.LOCKED -> stringResource(R.string.modifier_locked, name)
     }
     Box(
         modifier.height(42.dp)
@@ -138,7 +142,7 @@ private fun ModifierCap(label: String, state: ModifierState, enabled: Boolean, m
                 onClick = { onChange(if (state == ModifierState.OFF) ModifierState.ARMED else ModifierState.OFF) },
                 onLongClick = { onChange(if (state == ModifierState.LOCKED) ModifierState.OFF else ModifierState.LOCKED) },
             )
-            .semantics { contentDescription = "$label. $hint" },
+            .semantics { contentDescription = "$name. $hint" },
         contentAlignment = Alignment.Center,
     ) {
         Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,

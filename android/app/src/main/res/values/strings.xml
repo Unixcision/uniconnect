@@ -270,6 +270,8 @@
     <string name="keys_functions">Fn</string>
     <string name="key_ctrl">CTRL</string>
     <string name="key_alt">ALT</string>
+    <string name="key_shift">⇧</string>
+    <string name="key_shift_name">Mayúsculas</string>
     <string name="key_home">HOME</string>
     <string name="key_end">END</string>
     <string name="key_pgup">PgUp</string>
