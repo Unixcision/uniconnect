@@ -15,9 +15,13 @@ class DictationRetranscription(
     private val readAudio: (String) -> ByteArray?,
 ) {
     /** The new text, already stored in the history. */
-    suspend fun run(record: DictationRecord, machine: Machine, language: String?): String {
+    suspend fun run(record: DictationRecord, machine: Machine, language: String?): String = run(record, listOf(machine), language)
+
+    /** The new text from the first of [machines], already stored in the history. */
+    suspend fun run(record: DictationRecord, machines: List<Machine>, language: String?): String {
         val path = record.audioPath ?: throw MissingAudio()
         val audio = readAudio(path) ?: throw MissingAudio()
+        val machine = machines.firstOrNull() ?: throw NoMachine()
         val transcript = transcription.transcribe(DictationTarget(machine), audio, MIME, language)
         history.replaceText(record.id, transcript.text)
         return transcript.text
@@ -25,6 +29,9 @@ class DictationRetranscription(
 
     /** The audio of this dictation was cleaned up, so there is nothing to send. */
     class MissingAudio : Exception("the kept audio is gone")
+
+    /** No saved machine to send it to. */
+    class NoMachine : Exception("no saved machine")
 
     companion object {
         /** What the recorder writes and what the contract names for it. */
@@ -38,5 +45,9 @@ class DictationRetranscription(
             machines.firstOrNull { it.id == record.machineId }
                 ?: machines.firstOrNull { it.name == record.machineName }
                 ?: machines.firstOrNull()
+
+        /** The machines to try, in order. */
+        fun machinesFor(record: DictationRecord, machines: List<Machine>, preferredID: String?): List<Machine> =
+            listOfNotNull(machineFor(record, machines))
     }
 }

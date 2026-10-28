@@ -64,6 +64,46 @@ class DictationRetranscriptionTest {
         } catch (_: DictationRetranscription.MissingAudio) {}
     }
 
+    /** The MINIPC announces `transcribe.v1` but has no whisper; the Mac has. */
+    private class MinipcWithoutEngine : HostTranscription {
+        val asked = mutableListOf<String>()
+        override suspend fun transcribe(target: DictationTarget, audio: ByteArray, mime: String, language: String?): Transcript {
+            asked += target.machine.id
+            if (target.machine.id == "mini") throw TranscribeRefused(TranscribeRefusal.UNSUPPORTED)
+            if (target.machine.id == "off") throw MachineFailure.Transport()
+            return Transcript("el dictado entero")
+        }
+    }
+
+    @Test
+    fun aMachineWithoutAnEngineHandsTheAudioToTheNextOne() = runBlocking {
+        val machines = MinipcWithoutEngine()
+        val history = History()
+        val fromLinux = broken.copy(machineName = "MINIPC", machineId = "mini")
+        val order = DictationRetranscription.machinesFor(fromLinux, listOf(minipc, mac), preferredID = null)
+        val text = DictationRetranscription(history, machines) { byteArrayOf(1) }.run(fromLinux, order, "es")
+        assertEquals("el dictado entero", text)
+        assertEquals(listOf("mini", "mac"), machines.asked)
+        assertEquals(listOf("d1" to "el dictado entero"), history.replaced)
+    }
+
+    @Test
+    fun aMachineThatDoesNotAnswerHandsTheAudioToTheNextOne() = runBlocking {
+        val machines = MinipcWithoutEngine()
+        val off = Machine("off", "Portátil apagado", MachineEndpoint.parse("100.64.0.3", "8855")!!)
+        val text = DictationRetranscription(History(), machines) { byteArrayOf(1) }.run(broken, listOf(off, mac), "es")
+        assertEquals("el dictado entero", text)
+        assertEquals(listOf("off", "mac"), machines.asked)
+    }
+
+    @Test
+    fun thePickedTranscriberGoesFirstThenTheDictatedOneThenTheRest() {
+        val spare = Machine("spare", "Portátil viejo", MachineEndpoint.parse("100.64.0.4", "8855")!!)
+        val fromLinux = broken.copy(machineName = "MINIPC", machineId = "mini")
+        assertEquals(listOf(mac, minipc, spare), DictationRetranscription.machinesFor(fromLinux, listOf(spare, minipc, mac), preferredID = "mac"))
+        assertEquals(listOf(minipc, spare, mac), DictationRetranscription.machinesFor(fromLinux, listOf(spare, minipc, mac), preferredID = null))
+    }
+
     @Test
     fun itGoesToTheMachineItWasDictatedForThenByNameThenTheFirst() {
         val machines = listOf(minipc, mac)
