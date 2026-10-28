@@ -35,4 +35,7 @@ data class AppSettings(
 ) {
     /** The fallback service the terminal's clip actually uses: its own choice, or the one of "Enviar archivos". */
     val terminalUpload: UploadService get() = terminalUploadService ?: uploadService
+
+    /** The machine picked to transcribe, only while «Un equipo concreto» is the mode. */
+    val pickedTranscriber: String? get() = transcriptionMachine.takeIf { transcription == TranscriptionMode.MACHINE }
 }

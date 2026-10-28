@@ -49,8 +49,13 @@ class DictationHistoryViewModel(
         if (ids.isNotEmpty()) viewModelScope.launch(Dispatchers.IO) { history.deleteAudio(ids) }
     }
 
-    /** Sends the kept audio of [record] to its machine again; the new text replaces the old one. */
-    fun retranscribe(record: DictationRecord, language: String?) {
+    /**
+     * Sends the kept audio of [record] to be transcribed again; the new text replaces the old one.
+     *
+     * - Parameter preferredMachineID: the transcriber picked in Ajustes, tried first; then the
+     *   machine it was dictated for and every other one, past those with no engine or no answer.
+     */
+    fun retranscribe(record: DictationRecord, language: String?, preferredMachineID: String? = null) {
         val engine = retranscription ?: return
         val saved = machines ?: return
         if (record.id in busyIds.value) return
@@ -58,9 +63,8 @@ class DictationHistoryViewModel(
         failures.update { it - record.id }
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val machine = DictationRetranscription.machineFor(record, saved.machines.first())
-                    ?: throw IllegalStateException("no saved machine")
-                engine.run(record, machine, language)
+                val order = DictationRetranscription.machinesFor(record, saved.machines.first(), preferredMachineID)
+                engine.run(record, order, language)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {

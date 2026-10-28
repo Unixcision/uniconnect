@@ -17,14 +17,35 @@ class DictationRetranscription(
     /** The new text, already stored in the history. */
     suspend fun run(record: DictationRecord, machine: Machine, language: String?): String = run(record, listOf(machine), language)
 
-    /** The new text from the first of [machines], already stored in the history. */
+    /**
+     * The new text from the first of [machines] that reads it, already stored in the history.
+     *
+     * A machine with no engine (it answers `unsupported`) or one that does not answer passes the
+     * audio to the next, as a dictation does; any other refusal is the answer and is thrown.
+     *
+     * - Throws: [MissingAudio] without the kept audio, [NoMachine] with no machine to try, and
+     *   the last machine's failure when none could read it.
+     */
     suspend fun run(record: DictationRecord, machines: List<Machine>, language: String?): String {
         val path = record.audioPath ?: throw MissingAudio()
         val audio = readAudio(path) ?: throw MissingAudio()
-        val machine = machines.firstOrNull() ?: throw NoMachine()
-        val transcript = transcription.transcribe(DictationTarget(machine), audio, MIME, language)
-        history.replaceText(record.id, transcript.text)
-        return transcript.text
+        if (machines.isEmpty()) throw NoMachine()
+        var last: Exception? = null
+        for (machine in machines) {
+            val transcript = try {
+                transcription.transcribe(DictationTarget(machine), audio, MIME, language)
+            } catch (failure: TranscribeRefused) {
+                if (failure.refusal != TranscribeRefusal.UNSUPPORTED) throw failure
+                last = failure
+                continue
+            } catch (failure: MachineFailure) {
+                last = failure
+                continue
+            }
+            history.replaceText(record.id, transcript.text)
+            return transcript.text
+        }
+        throw last ?: NoMachine()
     }
 
     /** The audio of this dictation was cleaned up, so there is nothing to send. */
@@ -46,8 +67,15 @@ class DictationRetranscription(
                 ?: machines.firstOrNull { it.name == record.machineName }
                 ?: machines.firstOrNull()
 
-        /** The machines to try, in order. */
-        fun machinesFor(record: DictationRecord, machines: List<Machine>, preferredID: String?): List<Machine> =
-            listOfNotNull(machineFor(record, machines))
+        /**
+         * The machines to try, in order: the transcriber the reader picked, the one it was
+         * dictated for, then every other saved machine.
+         *
+         * - Parameter preferredID: the machine chosen under «Un equipo concreto», or null.
+         */
+        fun machinesFor(record: DictationRecord, machines: List<Machine>, preferredID: String?): List<Machine> {
+            val preferred = machines.firstOrNull { it.id == preferredID }
+            return (listOfNotNull(preferred, machineFor(record, machines)) + machines).distinct()
+        }
     }
 }

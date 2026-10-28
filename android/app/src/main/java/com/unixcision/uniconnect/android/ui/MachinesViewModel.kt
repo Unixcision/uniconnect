@@ -272,6 +272,32 @@ class MachinesViewModel(
         stopObserving()
         mutableState.update { it.copy(selectedMachine = machine.id, selectedWorkspace = null, selectedWindow = null, terminal = null) }
         startObserving(machine, force = true)
+        learnOtherMachines(except = machine.id)
+    }
+
+    private var learnJob: Job? = null
+
+    /**
+     * Asks once, without watching them, what the saved machines the phone never heard from
+     * announce: opened straight from a notice, the list never asked them, and then the Mac would
+     * not count as the transcriber for a window of the Linux box. Never the open machine, whose
+     * live connection is its own, and never one already known.
+     */
+    private fun learnOtherMachines(except: String) {
+        val unknown = state.value.machines.filter { it.id != except && state.value.connections[it.id]?.snapshot == null }
+        if (unknown.isEmpty()) return
+        learnJob?.cancel()
+        learnJob = viewModelScope.launch {
+            unknown.map { machine ->
+                async {
+                    val snapshot = try { client.probe(machine) } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
+                    if (snapshot != null) mutableState.update { current ->
+                        if (current.selectedMachine == machine.id || current.connections[machine.id]?.snapshot != null) current
+                        else current.copy(connections = current.connections + (machine.id to Connection(snapshot = snapshot)))
+                    }
+                }
+            }.awaitAll()
+        }
     }
     fun pauseLiveConnection() {
         foreground = false
@@ -548,6 +574,7 @@ class MachinesViewModel(
         stopObserving()
         mutableState.update { it.copy(selectedMachine = id, selectedWorkspace = null, selectedWindow = null, terminal = null) }
         if (state.value.connections[id]?.snapshot != null) state.value.machines.firstOrNull { it.id == id }?.let(::connect)
+        learnOtherMachines(except = id)
     }
     fun selectWorkspace(id: String) { mutableState.update { it.copy(selectedWorkspace = id, selectedWindow = null) } }
     /** Opens a window. The reading resets to the setting, since it belonged to the previous one. */

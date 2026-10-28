@@ -201,7 +201,7 @@ private fun RealTerminalScreen(
             // The clip: attach to this window, and paste the path or link into the composer.
             if (attachments != null && attachTarget != null) AttachButton(attachments, inbox, attachTarget, draft, onDraftChange)
             // Beside the clip: every dictation kept with its audio, to paste again or listen to.
-            if (dictationHistory != null) DictationHistoryButton(dictationHistory, draft, onDraftChange, settings.dictationLanguage.code)
+            if (dictationHistory != null) DictationHistoryButton(dictationHistory, draft, onDraftChange, settings.dictationLanguage.code, settings.pickedTranscriber)
             // One tap back to the live screen, handled by the model: it walks the pane out with
             // wheel steps and stops as soon as tmux's indicator clears.
             if (real.copyMode) IconButton(onClick = onLeaveCopyMode) {
@@ -445,7 +445,7 @@ private fun MirrorTerminalScreen(
             // The clip: attach to this window, and paste the path or link into the composer.
             if (attachments != null && attachTarget != null) AttachButton(attachments, inbox, attachTarget, draft, onDraftChange)
             // Beside the clip: every dictation kept with its audio, to paste again or listen to.
-            if (dictationHistory != null) DictationHistoryButton(dictationHistory, draft, onDraftChange, settings.dictationLanguage.code)
+            if (dictationHistory != null) DictationHistoryButton(dictationHistory, draft, onDraftChange, settings.dictationLanguage.code, settings.pickedTranscriber)
             // Mismo criterio que en el terminal real: el bicho sale cuando el fallo está delante,
             // sin esperar a acumular nada. Estar «sin conexión» ya es motivo: esa es la pantalla
             // desde la que se pidió poder mandar las trazas.

@@ -43,10 +43,11 @@ import java.util.Locale
 /**
  * The history button beside the clip. Every dictation is kept with its audio and its text, so
  * one cut short on its way to the window can be pasted again, and one no engine could read can
- * still be listened to.
+ * still be listened to. [preferredMachineID] is the transcriber picked in Ajustes, which
+ * «Volver a transcribir» asks first.
  */
 @Composable
-fun DictationHistoryButton(model: DictationHistoryViewModel, draft: String, onDraftChange: (String) -> Unit, language: String? = null) {
+fun DictationHistoryButton(model: DictationHistoryViewModel, draft: String, onDraftChange: (String) -> Unit, language: String? = null, preferredMachineID: String? = null) {
     val context = LocalContext.current
     var open by rememberSaveable { mutableStateOf(false) }
     val latestDraft by rememberUpdatedState(draft)
@@ -54,7 +55,7 @@ fun DictationHistoryButton(model: DictationHistoryViewModel, draft: String, onDr
         Icon(Icons.Rounded.History, stringResource(R.string.dictation_history_title), tint = UniTheme.colors.muted)
     }
     if (open) DictationHistorySheet(
-        model, language,
+        model, language, preferredMachineID,
         onPaste = { text ->
             onDraftChange(DictationDraft.append(latestDraft, text))
             Toast.makeText(context, R.string.dictation_history_pasted, Toast.LENGTH_SHORT).show()
@@ -66,7 +67,7 @@ fun DictationHistoryButton(model: DictationHistoryViewModel, draft: String, onDr
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DictationHistorySheet(model: DictationHistoryViewModel, language: String?, onPaste: (String) -> Unit, onDismiss: () -> Unit) {
+private fun DictationHistorySheet(model: DictationHistoryViewModel, language: String?, preferredMachineID: String?, onPaste: (String) -> Unit, onDismiss: () -> Unit) {
     val records by model.records.collectAsStateWithLifecycle()
     val busy by model.busy.collectAsStateWithLifecycle()
     val failed by model.failed.collectAsStateWithLifecycle()
@@ -123,7 +124,7 @@ private fun DictationHistorySheet(model: DictationHistoryViewModel, language: St
                     onDelete = { if (playing == record.id) playing = null; model.delete(setOf(record.id)) },
                     retranscribing = record.id in busy,
                     failure = failed[record.id],
-                    onRetranscribe = if (model.canRetranscribe) ({ model.retranscribe(record, language) }) else null,
+                    onRetranscribe = if (model.canRetranscribe) ({ model.retranscribe(record, language, preferredMachineID) }) else null,
                 )
             }
         }

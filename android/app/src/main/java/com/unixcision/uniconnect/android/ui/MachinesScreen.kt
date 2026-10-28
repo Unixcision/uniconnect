@@ -69,11 +69,12 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
     val workspace = connection?.snapshot?.workspaces?.firstOrNull { it.id == state.selectedWorkspace }
     val window = workspace?.windows?.firstOrNull { it.id == state.selectedWindow }
     // Any saved machine may be the one that transcribes, not only the one of the open window: a
-    // laptop with a big model answers far better than a small server with a small one.
+    // laptop with a big model answers far better than a small server with a small one. Opening a
+    // machine stops watching the others, and that must not take the Mac out for a Linux window.
     val transcribers = remember(state.machines, state.connections) {
         state.machines.map { saved ->
             val link = state.connections[saved.id]
-            TranscriptionCandidate(saved, transcribes = link?.snapshot?.transcribes == true, connected = link?.connected == true)
+            TranscriptionCandidate.of(saved, link?.snapshot, watched = link?.connected == true, lastContactFailed = link?.error != null)
         }
     }
     // Against a host that keeps favourites itself, the phone's own copy is not shown.
