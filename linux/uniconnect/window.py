@@ -154,6 +154,11 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         self.select_workspace(self.store.data.get("selectedWorkspaceId"))
         # Cadence is product behavior; immediate mutations also persist synchronously.
         self._tick_source = GLib.timeout_add_seconds(8, self.tick)
+        # Conversaciones de las IAs (transcript-retention-v1): poco después de arrancar y
+        # luego cada hora, en su propio hilo; nunca bloquea ni tumba el escritorio.
+        from .transcript_retention import RetentionSchedule
+        self.transcript_retention = RetentionSchedule(self)
+        self.transcript_retention.start()
 
     def action_button(self, icon, action):
         button = Gtk.Button.new_from_icon_name(icon, Gtk.IconSize.BUTTON)
@@ -1474,6 +1479,8 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             self._tick_source = 0
         if hasattr(self, "activity"):
             self.activity.stop()
+        if hasattr(self, "transcript_retention"):
+            self.transcript_retention.stop()
         if hasattr(self, "relaunch"):
             self.relaunch.close()
         self.persist()

@@ -959,6 +959,8 @@
 		C0FFEE7700000000000000B1 /* UniConnectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE7700000000000000A1 /* UniConnectTests.swift */; };
 		D27020000000000000000015 /* UniConnectTmuxImportCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = D27010000000000000000015 /* UniConnectTmuxImportCommand.swift */; };
 		D27020000000000000000016 /* UniConnectTmuxImportPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D27010000000000000000016 /* UniConnectTmuxImportPolicy.swift */; };
+		D27C00000000000000000003 /* UniConnectTranscriptRetention in Frameworks */ = {isa = PBXBuildFile; productRef = D27C00000000000000000002 /* UniConnectTranscriptRetention */; };
+		D27C00000000000000000004 /* UniConnectTranscriptRetention in Frameworks */ = {isa = PBXBuildFile; productRef = D27C00000000000000000002 /* UniConnectTranscriptRetention */; };
 		C0FFEE0100000000000000B1 /* UniConnectVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE0100000000000000A1 /* UniConnectVault.swift */; };
 		A77D40000000000000000001 /* UniConnectVaultCredentialRecordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A77D30000000000000000001 /* UniConnectVaultCredentialRecordTests.swift */; };
 		C0FFEE0500000000000000B1 /* UniConnectViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE0500000000000000A1 /* UniConnectViews.swift */; };
@@ -2112,6 +2114,7 @@
 				F20F85FC5900550685FA33AD /* StackAuth in Frameworks */,
 				C1A0DE000000000000000003 /* UniConnectClaudeBridge in Frameworks */,
 				D26C00000000000000000003 /* UniConnectClaudeUpdate in Frameworks */,
+				D27C00000000000000000003 /* UniConnectTranscriptRetention in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2153,6 +2156,7 @@
 				C52830000000000000000002 /* CmuxTerminalCopyMode in Frameworks */,
 				C1A0DE000000000000000004 /* UniConnectClaudeBridge in Frameworks */,
 				D26C00000000000000000004 /* UniConnectClaudeUpdate in Frameworks */,
+				D27C00000000000000000004 /* UniConnectTranscriptRetention in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3284,6 +3288,7 @@
 				A5354305A5354305A5354305 /* CmuxSocketControl */,
 				C1A0DE000000000000000002 /* UniConnectClaudeBridge */,
 				D26C00000000000000000002 /* UniConnectClaudeUpdate */,
+				D27C00000000000000000002 /* UniConnectTranscriptRetention */,
 				C52830000000000000000004 /* CmuxTerminalCopyMode */,
 				C5A1FED000000000000000C3 /* CmuxSwiftRender */,
 				C5A1FED100000000000000D3 /* CmuxSwiftRenderUI */,
@@ -3386,6 +3391,7 @@
 				C52830000000000000000004 /* CmuxTerminalCopyMode */,
 				C1A0DE000000000000000002 /* UniConnectClaudeBridge */,
 				D26C00000000000000000002 /* UniConnectClaudeUpdate */,
+				D27C00000000000000000002 /* UniConnectTranscriptRetention */,
 			);
 			productName = cmuxTests;
 			productReference = F1000002A1B2C3D4E5F60718 /* cmuxTests.xctest */;
@@ -3431,6 +3437,7 @@
 				A5354304A5354304A5354304 /* XCLocalSwiftPackageReference "CmuxSocketControl" */,
 				C1A0DE000000000000000001 /* XCLocalSwiftPackageReference "UniConnectClaudeBridge" */,
 				D26C00000000000000000001 /* XCLocalSwiftPackageReference "UniConnectClaudeUpdate" */,
+				D27C00000000000000000001 /* XCLocalSwiftPackageReference "UniConnectTranscriptRetention" */,
 				C52830000000000000000003 /* XCLocalSwiftPackageReference "CmuxTerminalCopyMode" */,
 				C5A1FED000000000000000C4 /* XCLocalSwiftPackageReference "CmuxSwiftRender" */,
 				C5A1FED100000000000000D4 /* XCLocalSwiftPackageReference "CmuxSwiftRenderUI" */,
@@ -5007,6 +5014,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/UniConnectClaudeUpdate;
 		};
+		D27C00000000000000000001 /* XCLocalSwiftPackageReference "UniConnectTranscriptRetention" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/UniConnectTranscriptRetention;
+		};
 		0C69E6A5FA9B0513E68DF443 /* XCLocalSwiftPackageReference "CMUXMobileCore" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/CMUXMobileCore;
@@ -5170,6 +5181,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D26C00000000000000000001 /* XCLocalSwiftPackageReference "UniConnectClaudeUpdate" */;
 			productName = UniConnectClaudeUpdate;
+		};
+		D27C00000000000000000002 /* UniConnectTranscriptRetention */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D27C00000000000000000001 /* XCLocalSwiftPackageReference "UniConnectTranscriptRetention" */;
+			productName = UniConnectTranscriptRetention;
 		};
 		29813FE5A6CBC1019289A251 /* CMUXAuthCore */ = {
 			isa = XCSwiftPackageProductDependency;

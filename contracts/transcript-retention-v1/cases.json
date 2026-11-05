@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "policy": {
+    "compress_after_days": 30,
+    "delete_after_days": 365
+  },
+  "cases": [
+    {
+      "name": "una conversación de esta semana no se toca",
+      "files": [{"path": "claude/-Users-dani/0e01c373-911f-4dd6-8c19-3dd633122c01.jsonl", "age_days": 2}],
+      "protected": [],
+      "compress": [],
+      "delete": []
+    },
+    {
+      "name": "con 30 días exactos todavía no se comprime; con 30 y medio, sí",
+      "files": [
+        {"path": "claude/-Users-dani/11111111-1111-4111-8111-111111111111.jsonl", "age_days": 30},
+        {"path": "claude/-Users-dani/22222222-2222-4222-8222-222222222222.jsonl", "age_days": 30.5}
+      ],
+      "protected": [],
+      "compress": ["claude/-Users-dani/22222222-2222-4222-8222-222222222222.jsonl"],
+      "delete": []
+    },
+    {
+      "name": "más de un año sin tocar se borra, comprimida o no; lo comprimido de menos de un año se queda",
+      "files": [
+        {"path": "claude/-Users-dani/33333333-3333-4333-8333-333333333333.jsonl", "age_days": 400},
+        {"path": "claude/-Users-dani/44444444-4444-4444-8444-444444444444.jsonl.gz", "age_days": 366},
+        {"path": "claude/-Users-dani/55555555-5555-4555-8555-555555555555.jsonl.gz", "age_days": 200}
+      ],
+      "protected": [],
+      "compress": [],
+      "delete": [
+        "claude/-Users-dani/33333333-3333-4333-8333-333333333333.jsonl",
+        "claude/-Users-dani/44444444-4444-4444-8444-444444444444.jsonl.gz"
+      ]
+    },
+    {
+      "name": "la conversación de una ventana no se toca, ni sus subagentes, por vieja que sea",
+      "files": [
+        {"path": "claude/-Users-dani-NOTBETTING/a9391254-c89b-4a93-84bd-4ee48ff6ee1f.jsonl", "age_days": 90},
+        {"path": "claude/-Users-dani-NOTBETTING/a9391254-c89b-4a93-84bd-4ee48ff6ee1f/subagents/agent-a1b2c3.jsonl", "age_days": 500},
+        {"path": "claude/-Users-dani-NOTBETTING/c70ac04e-7d18-437e-b012-95dada22adb0/subagents/agent-d4e5f6.jsonl", "age_days": 45}
+      ],
+      "protected": ["a9391254-c89b-4a93-84bd-4ee48ff6ee1f"],
+      "compress": ["claude/-Users-dani-NOTBETTING/c70ac04e-7d18-437e-b012-95dada22adb0/subagents/agent-d4e5f6.jsonl"],
+      "delete": []
+    },
+    {
+      "name": "Codex: el UUID va al final del nombre del fichero",
+      "files": [
+        {"path": "codex/2026/09/03/rollout-2026-09-03T15-40-16-01a0677f-ae4e-7fb3-8baf-744b2d3de0e5.jsonl", "age_days": 60},
+        {"path": "codex/2026/09/07/rollout-2026-09-07T21-27-29-01a07d57-041b-7840-8b77-02e9789002a7.jsonl", "age_days": 60}
+      ],
+      "protected": ["01a07d57-041b-7840-8b77-02e9789002a7"],
+      "compress": ["codex/2026/09/03/rollout-2026-09-03T15-40-16-01a0677f-ae4e-7fb3-8baf-744b2d3de0e5.jsonl"],
+      "delete": []
+    },
+    {
+      "name": "el UUID se compara sin mirar mayúsculas",
+      "files": [{"path": "claude/-Users-dani/66666666-AAAA-4AAA-8AAA-666666666666.jsonl", "age_days": 90}],
+      "protected": ["66666666-aaaa-4aaa-8aaa-666666666666"],
+      "compress": [],
+      "delete": []
+    },
+    {
+      "name": "una conversación archivada que se retomó: el .jsonl nuevo se comprime aunque ya exista el .gz",
+      "files": [
+        {"path": "claude/-Users-dani/77777777-7777-4777-8777-777777777777.jsonl.gz", "age_days": 120},
+        {"path": "claude/-Users-dani/77777777-7777-4777-8777-777777777777.jsonl", "age_days": 40}
+      ],
+      "protected": [],
+      "compress": ["claude/-Users-dani/77777777-7777-4777-8777-777777777777.jsonl"],
+      "delete": []
+    },
+    {
+      "name": "lo que no es una conversación se ignora, por viejo que sea",
+      "files": [
+        {"path": "claude/-Users-dani/notas.txt", "age_days": 900},
+        {"path": "claude/-Users-dani/88888888-8888-4888-8888-888888888888.json", "age_days": 900},
+        {"path": "claude/-Users-dani/99999999-9999-4999-8999-999999999999.jsonl.gz.tmp", "age_days": 900}
+      ],
+      "protected": [],
+      "compress": [],
+      "delete": []
+    }
+  ]
+}

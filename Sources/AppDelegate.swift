@@ -17,6 +17,7 @@ import Combine
 import ObjectiveC.runtime
 import Darwin
 import CmuxFoundation
+import UniConnectTranscriptRetention
 
 private struct MultiWindowRouteCLIResult {
     let status: String
@@ -1158,6 +1159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     var shouldDeferInitialMainWindowBootstrapForExternalConfirmation = false
     private var didBootstrapInitialMainWindow = false
     private var isTerminatingApp = false
+    private var transcriptRetentionTask: Task<Void, Never>?
     private var closedWindowHistorySuppressedWindowIds: Set<UUID> = []
 #if DEBUG
     var closeMainWindowContainingTabIdObserverForTesting: ((UUID, Bool) -> Void)?
@@ -1447,6 +1449,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         installShortcutDefaultsObserver()
         if !isRunningUnderXCTest {
             GlobalSearchCoordinator.shared.start()
+            startTranscriptRetention()
         }
         SystemWideHotkeyController.shared.start()
         AgentHibernationController.shared.start()
@@ -1908,6 +1911,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationWillTerminate(_ notification: Notification) {
         StartupBreadcrumbLog.append("appDelegate.willTerminate.begin")
         isTerminatingApp = true
+        transcriptRetentionTask?.cancel()
         UniConnectCoordinator.shared.shutdownClaudeUpdater()
         UniConnectCoordinator.shared.shutdownClaudeBridge()
         closeAllWebInspectorsBeforeAppTeardown()
@@ -4517,6 +4521,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
             return lhs.windowId.uuidString < rhs.windowId.uuidString
         }
+    }
+
+    /// Keeps the AI transcripts of this Mac within `contracts/transcript-retention-v1`: compressed
+    /// after a month untouched, deleted after a year, never one that a window or a live AI uses.
+    private func startTranscriptRetention() {
+        guard transcriptRetentionTask == nil else { return }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let liveClaude = ClaudeLiveSessionReader(directory: home.appendingPathComponent(".claude/sessions", isDirectory: true))
+        let archiver = TranscriptArchiver(
+            roots: TranscriptRoot.aiTranscripts(home: home),
+            protectedConversations: { [weak self] in
+                // Every UUID of the session state protects its conversation; without the state
+                // the pass is skipped rather than run unprotected.
+                guard let state = await self?.transcriptRetentionStateText() else { return nil }
+                return ConversationIDScanner().ids(in: state).union(liveClaude.conversationIDs())
+            }
+        )
+        transcriptRetentionTask = Task.detached(priority: .utility) { await archiver.run() }
+    }
+
+    /// The session snapshot as JSON text, for the conversation ids it mentions.
+    private func transcriptRetentionStateText() -> String? {
+        guard let snapshot = buildSessionSnapshot(includeScrollback: false),
+              let data = try? JSONEncoder().encode(snapshot) else { return nil }
+        return String(decoding: data, as: UTF8.self)
     }
 
     private func buildSessionSnapshot(
