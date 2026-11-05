@@ -75,7 +75,8 @@ final class MobileTerminalRenderObserver {
     }
 
     func noteTerminalBytes(surfaceID: UUID) {
-        guard MobileHostService.hasEventSubscribers(topic: "terminal.render_grid") else { return }
+        guard MobileHostService.hasEventSubscribers(topic: "terminal.render_grid"),
+              MobileHostService.wantsTerminalEvents(surfaceID: surfaceID.uuidString) else { return }
         pendingSurfaceIDs.insert(surfaceID)
         // The byte tee runs before Ghostty's VT parser consumes the bytes, and
         // the hop back to the main actor can land after the current tick/frame
@@ -124,6 +125,7 @@ final class MobileTerminalRenderObserver {
             return
         }
         if let surfaceID {
+            guard MobileHostService.wantsTerminalEvents(surfaceID: surfaceID.uuidString) else { return }
             pendingSurfaceIDs.insert(surfaceID)
         } else {
             hasPendingGlobalUpdate = true
@@ -151,7 +153,7 @@ final class MobileTerminalRenderObserver {
         if shouldEmitUpdatedEvents, shouldEmitGlobal {
             MobileHostService.emitEvent(topic: "terminal.updated", payload: [:])
         } else if shouldEmitUpdatedEvents {
-            for surfaceID in surfaceIDs {
+            for surfaceID in surfaceIDs where MobileHostService.wantsTerminalEvents(surfaceID: surfaceID.uuidString) {
                 MobileHostService.emitEvent(
                     topic: "terminal.updated",
                     payload: ["surface_id": surfaceID.uuidString]
@@ -166,7 +168,10 @@ final class MobileTerminalRenderObserver {
         } else {
             renderSurfaceIDs = surfaceIDs
         }
-        for surfaceID in renderSurfaceIDs {
+        // Every Ghostty tick is a global update: rendering the full screen (with history) of
+        // every window for it flooded the phones and kept the main thread busy. Only the windows
+        // a phone watches are rendered.
+        for surfaceID in renderSurfaceIDs where MobileHostService.wantsTerminalEvents(surfaceID: surfaceID.uuidString) {
             emitRenderGrid(surfaceID: surfaceID)
         }
     }

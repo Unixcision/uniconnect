@@ -28,6 +28,9 @@ extension Notification.Name {
 private enum MobileHostEventSubscriptionTracker {
     private static let lock = NSLock()
     private nonisolated(unsafe) static var topicCounts: [String: Int] = [:]
+    // Terminal streams that name no windows (phones from before `surface_ids`) want them all.
+    private nonisolated(unsafe) static var unfilteredTerminalStreams = 0
+    private nonisolated(unsafe) static var watchedSurfaces: [String: Int] = [:]
 
     static func hasSubscribers(topic: String) -> Bool {
         lock.lock()
@@ -35,7 +38,41 @@ private enum MobileHostEventSubscriptionTracker {
         return (topicCounts[topic] ?? 0) > 0
     }
 
-    static func replace(previousTopics: Set<String>?, nextTopics: Set<String>?) {
+    /// Whether some phone wants the screen of `surfaceID`; only those are rendered for phones.
+    static func wantsTerminal(surfaceID: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return unfilteredTerminalStreams > 0 || (watchedSurfaces[surfaceID.uppercased()] ?? 0) > 0
+    }
+
+    static func replace(previous: MobileHostEventSubscription?, next: MobileHostEventSubscription?) {
+        updateSurfaceDemand(previous: previous, next: next)
+        replace(previousTopics: previous?.topics, nextTopics: next?.topics)
+    }
+
+    private static func updateSurfaceDemand(previous: MobileHostEventSubscription?, next: MobileHostEventSubscription?) {
+        lock.lock()
+        defer { lock.unlock() }
+        if let previous, previous.watchesTerminals {
+            if let surfaces = previous.surfaceIDs {
+                for surface in surfaces {
+                    let count = (watchedSurfaces[surface] ?? 0) - 1
+                    watchedSurfaces[surface] = count > 0 ? count : nil
+                }
+            } else {
+                unfilteredTerminalStreams = max(0, unfilteredTerminalStreams - 1)
+            }
+        }
+        if let next, next.watchesTerminals {
+            if let surfaces = next.surfaceIDs {
+                for surface in surfaces { watchedSurfaces[surface, default: 0] += 1 }
+            } else {
+                unfilteredTerminalStreams += 1
+            }
+        }
+    }
+
+    private static func replace(previousTopics: Set<String>?, nextTopics: Set<String>?) {
         let changedTopics = updateCounts(previousTopics: previousTopics, nextTopics: nextTopics)
         guard !changedTopics.isEmpty else { return }
         NotificationCenter.default.post(
@@ -78,6 +115,8 @@ private enum MobileHostEventSubscriptionTracker {
     static func reset() {
         lock.lock()
         topicCounts.removeAll()
+        unfilteredTerminalStreams = 0
+        watchedSurfaces.removeAll()
         lock.unlock()
         NotificationCenter.default.post(
             name: .mobileHostEventSubscriptionsDidChange,
@@ -438,9 +477,10 @@ final class MobileHostService {
         MobileHostEventSubscriptionTracker.hasSubscribers(topic: topic)
     }
 
-    /// Whether some phone wants the screen of `surfaceID`.
+    /// Whether some phone wants the screen of `surfaceID`. Screens nobody watches are not
+    /// rendered for phones at all: rendering every busy window flooded the connections.
     nonisolated static func wantsTerminalEvents(surfaceID: String) -> Bool {
-        hasEventSubscribers(topic: "terminal.render_grid") || hasEventSubscribers(topic: "terminal.updated")
+        MobileHostEventSubscriptionTracker.wantsTerminal(surfaceID: surfaceID)
     }
 
     /// User-default key for the opt-in Mac-side iOS pairing listener.
@@ -1903,9 +1943,9 @@ actor MobileHostConnection {
     private nonisolated let outboundQueue = MobileHostOutboundQueue()
     private var didDecodeFirstFrame = false
     private var isClosed = false
-    /// stream_id → set of topics this connection is subscribed to.
-    /// Populated by `mobile.events.subscribe`; cleared on close.
-    private var subscriptions: [String: Set<String>] = [:]
+    /// stream_id → what each stream asked for. Populated by `mobile.events.subscribe`; cleared
+    /// on close. Readable without the actor, where events are enqueued.
+    private nonisolated let subscriptions = MobileHostEventSubscriptions()
 
     init(
         id: UUID,
@@ -1959,13 +1999,8 @@ actor MobileHostConnection {
         for task in tasks {
             task.cancel()
         }
-        let previousSubscriptions = Array(subscriptions.values)
-        subscriptions.removeAll()
-        for topics in previousSubscriptions where !topics.isEmpty {
-            MobileHostEventSubscriptionTracker.replace(
-                previousTopics: topics,
-                nextTopics: nil
-            )
+        for previous in subscriptions.removeAll() where !previous.topics.isEmpty {
+            MobileHostEventSubscriptionTracker.replace(previous: previous, next: nil)
         }
         mobileHostLog.info("mobile host connection closed \(self.id.uuidString, privacy: .public): \(reason, privacy: .public)")
         connection.stateUpdateHandler = nil
@@ -2252,10 +2287,19 @@ actor MobileHostConnection {
             let topics = Set(topicsArray.filter { !$0.isEmpty })
             guard !topics.isEmpty, topics.count <= 16, topics.allSatisfy({ $0.utf8.count <= 128 }),
                   !streamID.isEmpty, streamID.utf8.count <= 128,
-                  subscriptions[streamID] != nil || subscriptions.count < 8 else {
+                  subscriptions.contains(streamID: streamID) || subscriptions.count < 8 else {
                 return .failure(MobileHostRPCError(code: "invalid_params", message: "topics is required"))
             }
-            await subscribe(streamID: streamID, topics: topics)
+            // Optional: the windows whose screens this stream wants. Without it, every window.
+            var surfaceIDs: Set<String>?
+            if let raw = request.params["surface_ids"] {
+                guard let list = raw as? [String], list.count <= 16,
+                      list.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 128 }) else {
+                    return .failure(MobileHostRPCError(code: "invalid_params", message: "surface_ids must list window ids"))
+                }
+                surfaceIDs = Set(list)
+            }
+            await subscribe(streamID: streamID, topics: topics, surfaceIDs: surfaceIDs)
             #if DEBUG
             cmuxDebugLog("mobile.subscribe streamID=\(streamID) topics=\(topics.sorted()) connID=\(self.id.uuidString)")
             #endif
@@ -2285,14 +2329,13 @@ actor MobileHostConnection {
     }
 
     /// Add a subscription for this connection. Idempotent per stream_id.
+    ///
+    /// - Parameter surfaceIDs: the windows whose screens the stream wants; nil for all of them.
     func subscribe(streamID: String, topics: Set<String>, surfaceIDs: Set<String>? = nil) async {
         guard !isClosed else { return }
-        let previousTopics = subscriptions[streamID]
-        subscriptions[streamID] = topics
-        MobileHostEventSubscriptionTracker.replace(
-            previousTopics: previousTopics,
-            nextTopics: topics
-        )
+        let next = MobileHostEventSubscription(topics: topics, surfaceIDs: surfaceIDs)
+        let previous = subscriptions.replace(streamID: streamID, with: next)
+        MobileHostEventSubscriptionTracker.replace(previous: previous, next: next)
         idleTimeoutTask?.cancel()
         idleTimeoutTask = nil
         if !isSubscribed(to: "terminal.pty") {
@@ -2303,10 +2346,10 @@ actor MobileHostConnection {
     /// Remove a subscription by id. Returns true if it existed.
     @discardableResult
     func unsubscribe(streamID: String) async -> Bool {
-        let previousTopics = subscriptions.removeValue(forKey: streamID)
-        let removed = previousTopics != nil
-        if let previousTopics {
-            MobileHostEventSubscriptionTracker.replace(previousTopics: previousTopics, nextTopics: nil)
+        let previous = subscriptions.replace(streamID: streamID, with: nil)
+        let removed = previous != nil
+        if let previous {
+            MobileHostEventSubscriptionTracker.replace(previous: previous, next: nil)
         }
         if subscriptions.isEmpty {
             startIdleTimeout()
@@ -2319,10 +2362,7 @@ actor MobileHostConnection {
 
     /// Check whether this connection has any subscriber registered for `topic`.
     func isSubscribed(to topic: String) -> Bool {
-        for (_, topics) in subscriptions where topics.contains(topic) {
-            return true
-        }
-        return false
+        subscriptions.isSubscribed(to: topic)
     }
 
     /// Send a server-pushed event envelope to this connection. Returns true
@@ -2357,6 +2397,9 @@ actor MobileHostConnection {
     @discardableResult
     nonisolated func enqueueEvent(topic: String, payload: [String: Any]) -> Bool {
         guard !outboundQueue.isClosed else { return false }
+        // Before encoding and before taking queue budget: another window's screen, or a topic
+        // this connection never asked for, must not fill the queue that would then close it.
+        guard subscriptions.wants(topic: topic, surfaceID: payload["surface_id"] as? String) else { return false }
         do {
             let envelope: [String: Any] = ["kind": "event", "topic": topic, "payload": payload]
             let data = try JSONSerialization.data(withJSONObject: envelope)
