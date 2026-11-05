@@ -436,8 +436,14 @@ class NativeMachineClient(
     private suspend fun subscribe(session: FramedRpcSession, terminal: TerminalTarget?) {
         val streamID = UUID.randomUUID().toString()
         val topics = JSONArray().put("workspace.updated")
-        if (terminal != null) topics.put("terminal.render_grid").put("terminal.updated")
-        val subscribed = session.call("mobile.events.subscribe", JSONObject().put("stream_id", streamID).put("topics", topics))
+        val params = JSONObject().put("stream_id", streamID).put("topics", topics)
+        if (terminal != null) {
+            topics.put("terminal.render_grid").put("terminal.updated")
+            // Only this window's screen. Without it the Mac sent the full screen of every busy
+            // window, the connection's queue overflowed and the mirror died in half a second.
+            params.put("surface_ids", JSONArray().put(terminal.windowID))
+        }
+        val subscribed = session.call("mobile.events.subscribe", params)
         require(subscribed.value.getJSONObject("result").getString("stream_id") == streamID)
     }
 
