@@ -23,6 +23,33 @@ class ReplayRevisionRecoveryTest {
 
     @Test fun staleReplayCannotCompleteRecoveryBelowTheMissingRevision() = runScenario(staleReplay = true)
 
+    /**
+     * The Mac pushed the full screen of every busy window to a phone that watched one; with
+     * several AIs working the queue overflowed and the connection died in half a second. The
+     * mirror names its window, and a machine-level view asks for no screens at all.
+     */
+    @Test fun theMirrorAsksOnlyForTheScreenOfItsOwnWindow() = runBlocking {
+        assertEquals(listOf("surface-a"), subscriptionParams(target).getJSONArray("surface_ids").let { ids -> (0 until ids.length()).map(ids::getString) })
+        val machineLevel = subscriptionParams(null)
+        assertEquals(false, machineLevel.has("surface_ids"))
+    }
+
+    private suspend fun subscriptionParams(terminal: TerminalTarget?): JSONObject {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val pair = SocketPair()
+        try {
+            val host = scope.async { pair.read().getJSONObject("params").also { pair.close() } }
+            withTimeout(4_000) {
+                runCatching {
+                    FramedRpcSession(pair.local, scope).use { session ->
+                        NativeMachineClient(FramedRpcClient(scope)).observeSession(session, machine, terminal).toList()
+                    }
+                }
+            }
+            return withTimeout(2_000) { host.await() }
+        } finally { pair.close(); scope.cancel() }
+    }
+
     private fun runScenario(staleReplay: Boolean) = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val pair = SocketPair()
