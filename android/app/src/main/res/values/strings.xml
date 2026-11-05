@@ -445,6 +445,10 @@
     <string name="dictation_start">Dictar</string>
     <string name="dictation_stop">Parar</string>
     <string name="dictation_cancel">Cancelar</string>
+    <string name="dictation_cancel_confirm_title">¿Cancelar la transcripción?</string>
+    <string name="dictation_cancel_confirm_detail">El texto no llegará al compositor. El audio se queda en el historial y puedes volver a transcribirlo desde allí.</string>
+    <string name="dictation_cancel_confirm">Cancelarla</string>
+    <string name="dictation_cancel_keep">Seguir esperando</string>
     <string name="dictation_done">Listo</string>
     <string name="dictation_listening">Habla; lo dicho se escribe en la cajita</string>
     <string name="dictation_note">Dictando. Listo lo pasa a la cajita; Cancelar lo descarta.</string>

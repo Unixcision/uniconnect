@@ -423,6 +423,9 @@ private fun DictationBar(listening: DictationState.Listening, modifier: Modifier
 @Composable
 private fun TranscribingBar(transcribing: DictationState.Transcribing, modifier: Modifier, onCancel: () -> Unit) {
     val colors = UniTheme.colors
+    // A stray tap on the X threw away a long transcription halfway; it now asks first. The dialog
+    // lives in the bar, so it goes away by itself if the text arrives while it is up.
+    var confirming by remember { mutableStateOf(false) }
     Row(
         modifier.background(colors.surface, UniTheme.shapes.card).border(1.dp, colors.accent.copy(alpha = .5f), UniTheme.shapes.card)
             .padding(start = 14.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
@@ -446,8 +449,16 @@ private fun TranscribingBar(transcribing: DictationState.Transcribing, modifier:
             style = MaterialTheme.typography.labelLarge, fontFamily = FontFamily.Monospace,
             color = colors.accent, fontWeight = FontWeight.Bold,
         )
-        IconButton(onClick = onCancel, Modifier.size(36.dp)) { Icon(Icons.Rounded.Close, stringResource(R.string.dictation_cancel), Modifier.size(18.dp), tint = colors.muted) }
+        IconButton(onClick = { confirming = true }, Modifier.size(36.dp)) { Icon(Icons.Rounded.Close, stringResource(R.string.dictation_cancel), Modifier.size(18.dp), tint = colors.muted) }
     }
+    if (confirming) AlertDialog(
+        onDismissRequest = { confirming = false },
+        containerColor = colors.surfaceRaised,
+        title = { Text(stringResource(R.string.dictation_cancel_confirm_title)) },
+        text = { Text(stringResource(R.string.dictation_cancel_confirm_detail), color = colors.muted) },
+        confirmButton = { TextButton(onClick = { confirming = false; onCancel() }) { Text(stringResource(R.string.dictation_cancel_confirm), color = colors.warning) } },
+        dismissButton = { TextButton(onClick = { confirming = false }) { Text(stringResource(R.string.dictation_cancel_keep)) } },
+    )
 }
 
 /** Five bars that follow the voice level; cheap on purpose, one animated float and no layout churn outside it. */
