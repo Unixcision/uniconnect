@@ -138,6 +138,10 @@ if [[ -d "$PREVIOUS_APP" ]]; then
   /bin/rm -rf -- "$PREVIOUS_APP"
 fi
 
+# Every install leaves a ~330 MB copy of the replaced app; only the newest two are worth keeping.
+"$SCRIPT_DIR/prune-uniconnect-install-backups.sh" "$HOME/.uniconnect/backups/install" "${UNICONNECT_INSTALL_BACKUPS_KEEP:-2}" \
+  || echo "warning: old install backups were not pruned" >&2
+
 echo "INSTALL_OK backup=$BACKUP_ROOT app=$TARGET_APP"
 if [[ "$LAUNCH" == "true" ]]; then
   /usr/bin/open "$TARGET_APP"
