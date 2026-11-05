@@ -438,6 +438,11 @@ final class MobileHostService {
         MobileHostEventSubscriptionTracker.hasSubscribers(topic: topic)
     }
 
+    /// Whether some phone wants the screen of `surfaceID`.
+    nonisolated static func wantsTerminalEvents(surfaceID: String) -> Bool {
+        hasEventSubscribers(topic: "terminal.render_grid") || hasEventSubscribers(topic: "terminal.updated")
+    }
+
     /// User-default key for the opt-in Mac-side iOS pairing listener.
     nonisolated static let listeningEnabledDefaultsKey = SettingCatalog().mobile.iOSPairingHost.userDefaultsKey
 
@@ -2280,7 +2285,7 @@ actor MobileHostConnection {
     }
 
     /// Add a subscription for this connection. Idempotent per stream_id.
-    func subscribe(streamID: String, topics: Set<String>) async {
+    func subscribe(streamID: String, topics: Set<String>, surfaceIDs: Set<String>? = nil) async {
         guard !isClosed else { return }
         let previousTopics = subscriptions[streamID]
         subscriptions[streamID] = topics

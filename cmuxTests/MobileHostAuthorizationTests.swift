@@ -991,6 +991,64 @@ final class MobileHostAuthorizationTests: XCTestCase {
         XCTAssertFalse(observer.debugIsRetainingNotificationDemandForTesting)
     }
 
+    /// A phone mirroring one window was cut off within half a second whenever other windows were
+    /// busy: every changing surface pushed a full render grid (with 5,000 lines of history) into
+    /// that connection's 64-frame queue, it overflowed and the Mac closed the connection.
+    func testRenderGridFloodFromOtherWindowsDoesNotCloseAPhoneWatchingOneWindow() async throws {
+        let recorder = MobileHostConnectionCloseRecorder()
+        let session = makeEventTestSession(recorder: recorder)
+        let watched = UUID().uuidString
+        let busy = UUID().uuidString
+        await session.subscribe(streamID: "mirror", topics: ["terminal.render_grid", "workspace.updated"], surfaceIDs: [watched])
+
+        for revision in 0..<500 {
+            session.enqueueEvent(topic: "terminal.render_grid", payload: ["surface_id": busy, "revision": revision])
+        }
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let closed = await recorder.recordedIDs()
+        XCTAssertTrue(closed.isEmpty, "other windows' screens must not even reach this queue")
+        XCTAssertTrue(session.enqueueEvent(topic: "terminal.render_grid", payload: ["surface_id": watched.lowercased(), "revision": 1]))
+        await session.close(reason: "test finished")
+    }
+
+    /// An older phone does not say which window it watches; it keeps receiving every window.
+    func testSubscriptionWithoutWindowsStillReceivesEveryWindow() async {
+        let session = makeEventTestSession(recorder: MobileHostConnectionCloseRecorder())
+        await session.subscribe(streamID: "mirror", topics: ["terminal.render_grid"])
+        XCTAssertTrue(session.enqueueEvent(topic: "terminal.render_grid", payload: ["surface_id": UUID().uuidString]))
+        await session.close(reason: "test finished")
+    }
+
+    /// The Mac renders full screens only for windows a phone watches, not for every busy one.
+    func testOnlyWatchedWindowsAreRenderedForPhones() async {
+        let service = MobileHostService.shared
+        service.debugResetMobileLifecycleStateForTesting()
+        defer { service.debugResetMobileLifecycleStateForTesting() }
+        let watched = UUID().uuidString
+        let busy = UUID().uuidString
+        let session = makeEventTestSession(recorder: MobileHostConnectionCloseRecorder())
+        await session.subscribe(streamID: "mirror", topics: ["terminal.render_grid"], surfaceIDs: [watched])
+
+        XCTAssertTrue(MobileHostService.wantsTerminalEvents(surfaceID: watched))
+        XCTAssertFalse(MobileHostService.wantsTerminalEvents(surfaceID: busy))
+
+        _ = await session.unsubscribe(streamID: "mirror")
+        XCTAssertFalse(MobileHostService.wantsTerminalEvents(surfaceID: watched))
+        await session.close(reason: "test finished")
+    }
+
+    private func makeEventTestSession(recorder: MobileHostConnectionCloseRecorder) -> MobileHostConnection {
+        MobileHostConnection(
+            id: UUID(),
+            connection: NWConnection(host: NWEndpoint.Host("127.0.0.1"), port: NWEndpoint.Port(rawValue: 9)!, using: .tcp),
+            authorizeRequest: { _ in nil },
+            onAuthorizedRequest: { _ in },
+            handleRequest: { _ in .ok([:]) },
+            onClose: { id in await recorder.record(id) }
+        )
+    }
+
     func testMobileWorkspaceListHashIncludesDisplayedDirectories() {
         let workspace = Workspace(
             title: "Mobile",
