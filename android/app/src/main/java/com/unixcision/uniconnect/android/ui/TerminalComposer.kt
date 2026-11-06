@@ -387,6 +387,9 @@ private enum class Face { SEND, MIC, STOP, SENDING }
 @Composable
 private fun DictationBar(listening: DictationState.Listening, modifier: Modifier, onCancel: () -> Unit, onDone: () -> Unit) {
     val colors = UniTheme.colors
+    // The X sits next to Listo: a slip of the thumb threw away a long recording. It asks first,
+    // and the recording goes on meanwhile; if it ends on its own, the dialog goes with the bar.
+    var confirming by remember { mutableStateOf(false) }
     Row(
         modifier.background(colors.surface, UniTheme.shapes.card).border(1.dp, colors.accent.copy(alpha = .5f), UniTheme.shapes.card)
             .padding(start = 14.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
@@ -410,9 +413,17 @@ private fun DictationBar(listening: DictationState.Listening, modifier: Modifier
             style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace,
             color = if (listening.partial.isEmpty()) colors.muted else colors.text, maxLines = 3, overflow = TextOverflow.Ellipsis,
         )
-        IconButton(onClick = onCancel, Modifier.size(36.dp)) { Icon(Icons.Rounded.Close, stringResource(R.string.dictation_cancel), Modifier.size(18.dp), tint = colors.muted) }
+        IconButton(onClick = { confirming = true }, Modifier.size(36.dp)) { Icon(Icons.Rounded.Close, stringResource(R.string.dictation_cancel), Modifier.size(18.dp), tint = colors.muted) }
         IconButton(onClick = onDone, Modifier.size(36.dp)) { Icon(Icons.Rounded.Check, stringResource(R.string.dictation_done), Modifier.size(20.dp), tint = colors.accent) }
     }
+    if (confirming) AlertDialog(
+        onDismissRequest = { confirming = false },
+        containerColor = colors.surfaceRaised,
+        title = { Text(stringResource(R.string.dictation_discard_confirm_title)) },
+        text = { Text(stringResource(R.string.dictation_discard_confirm_detail), color = colors.muted) },
+        confirmButton = { TextButton(onClick = { confirming = false; onCancel() }) { Text(stringResource(R.string.dictation_discard_confirm), color = colors.warning) } },
+        dismissButton = { TextButton(onClick = { confirming = false }) { Text(stringResource(R.string.dictation_discard_keep)) } },
+    )
 }
 
 /**

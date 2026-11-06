@@ -449,6 +449,10 @@
     <string name="dictation_cancel_confirm_detail">El texto no llegará al compositor. El audio se queda en el historial y puedes volver a transcribirlo desde allí.</string>
     <string name="dictation_cancel_confirm">Cancelarla</string>
     <string name="dictation_cancel_keep">Seguir esperando</string>
+    <string name="dictation_discard_confirm_title">¿Descartar la grabación?</string>
+    <string name="dictation_discard_confirm_detail">Lo grabado se tira: no se transcribe ni queda en el historial.</string>
+    <string name="dictation_discard_confirm">Descartar</string>
+    <string name="dictation_discard_keep">Seguir grabando</string>
     <string name="dictation_done">Listo</string>
     <string name="dictation_listening">Habla; lo dicho se escribe en la cajita</string>
     <string name="dictation_note">Dictando. Listo lo pasa a la cajita; Cancelar lo descarta.</string>
