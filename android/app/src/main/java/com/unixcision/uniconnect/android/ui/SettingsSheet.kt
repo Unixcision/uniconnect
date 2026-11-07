@@ -228,6 +228,8 @@ fun SettingsSheet(
 
             if (dictationHistory != null) SettingsSection(stringResource(R.string.settings_dictations)) { DictationSettingsSection(dictationHistory) }
 
+            if (dictationHistory != null) SettingsSection(stringResource(R.string.history_tab_messages)) { SentMessagesSettingsSection(dictationHistory) }
+
             SettingsSection(stringResource(R.string.settings_connections)) {
                 SettingsSwitch(
                     title = stringResource(R.string.settings_probe_on_open),

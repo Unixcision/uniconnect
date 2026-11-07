@@ -32,6 +32,8 @@ import com.unixcision.uniconnect.android.domain.DictationDraft
 import com.unixcision.uniconnect.android.domain.DictationRecord
 import com.unixcision.uniconnect.android.domain.DictationRetention
 import com.unixcision.uniconnect.android.domain.DictationSearch
+import com.unixcision.uniconnect.android.domain.Machine
+import com.unixcision.uniconnect.android.domain.SentMessage
 import com.unixcision.uniconnect.android.ui.components.GlassCard
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import java.io.File
@@ -43,8 +45,9 @@ import java.util.Locale
 /**
  * The history button beside the clip. Every dictation is kept with its audio and its text, so
  * one cut short on its way to the window can be pasted again, and one no engine could read can
- * still be listened to. [preferredMachineID] is the transcriber picked in Ajustes, which
- * «Volver a transcribir» asks first.
+ * still be listened to; every message sent from the composer is kept too, with whether it
+ * arrived. [preferredMachineID] is the transcriber picked in Ajustes, which «Volver a
+ * transcribir» asks first.
  */
 @Composable
 fun DictationHistoryButton(model: DictationHistoryViewModel, draft: String, onDraftChange: (String) -> Unit, language: String? = null, preferredMachineID: String? = null) {
@@ -52,13 +55,13 @@ fun DictationHistoryButton(model: DictationHistoryViewModel, draft: String, onDr
     var open by rememberSaveable { mutableStateOf(false) }
     val latestDraft by rememberUpdatedState(draft)
     IconButton(onClick = { open = true }) {
-        Icon(Icons.Rounded.History, stringResource(R.string.dictation_history_title), tint = UniTheme.colors.muted)
+        Icon(Icons.Rounded.History, stringResource(R.string.history_title), tint = UniTheme.colors.muted)
     }
     if (open) DictationHistorySheet(
         model, language, preferredMachineID,
-        onPaste = { text ->
+        onPaste = { text, pasted ->
             onDraftChange(DictationDraft.append(latestDraft, text))
-            Toast.makeText(context, R.string.dictation_history_pasted, Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, pasted, Toast.LENGTH_SHORT).show()
             open = false
         },
         onDismiss = { open = false },
@@ -67,9 +70,12 @@ fun DictationHistoryButton(model: DictationHistoryViewModel, draft: String, onDr
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DictationHistorySheet(model: DictationHistoryViewModel, language: String?, preferredMachineID: String?, onPaste: (String) -> Unit, onDismiss: () -> Unit) {
+private fun DictationHistorySheet(model: DictationHistoryViewModel, language: String?, preferredMachineID: String?, onPaste: (String, Int) -> Unit, onDismiss: () -> Unit) {
     val records by model.records.collectAsStateWithLifecycle()
+    val messages by model.sentMessages.collectAsStateWithLifecycle()
+    var tab by rememberSaveable { mutableStateOf(HistoryTab.DICTATIONS) }
     val busy by model.busy.collectAsStateWithLifecycle()
+    val savedMachines by model.savedMachines.collectAsStateWithLifecycle()
     val failed by model.failed.collectAsStateWithLifecycle()
     val colors = UniTheme.colors
     val context = LocalContext.current
@@ -77,7 +83,9 @@ private fun DictationHistorySheet(model: DictationHistoryViewModel, language: St
     var playing by remember { mutableStateOf<String?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
     val shown = remember(records, query) { records.filter { DictationSearch.matches(it, query) } }
-    val now = remember(records) { System.currentTimeMillis() }
+    val shownMessages = remember(messages, query) { messages.filter { DictationSearch.matches(it, query) } }
+    val now = remember(records, messages) { System.currentTimeMillis() }
+    val dictations = tab == HistoryTab.DICTATIONS
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -92,20 +100,48 @@ private fun DictationHistorySheet(model: DictationHistoryViewModel, language: St
             item {
                 SheetHeader(
                     icon = { Icon(Icons.Rounded.History, null, tint = colors.accent) },
-                    title = stringResource(R.string.dictation_history_title),
-                    note = stringResource(R.string.dictation_history_note, records.size, formatSize(DictationRetention.audioBytes(records))),
+                    title = stringResource(R.string.history_title),
+                    note = if (dictations) stringResource(R.string.dictation_history_note, records.size, formatSize(DictationRetention.audioBytes(records)))
+                        else stringResource(R.string.sent_history_note, messages.size),
                     tone = colors.accent,
                 )
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                    HistoryTab.entries.forEachIndexed { index, each ->
+                        SegmentedButton(
+                            selected = tab == each, onClick = { tab = each },
+                            shape = SegmentedButtonDefaults.itemShape(index, HistoryTab.entries.size),
+                        ) { Text(stringResource(each.label)) }
+                    }
+                }
                 Text(stringResource(R.string.dictation_history_settings_hint), style = MaterialTheme.typography.bodySmall, color = colors.muted)
-                if (records.isNotEmpty()) OutlinedTextField(
+                if (if (dictations) records.isNotEmpty() else messages.isNotEmpty()) OutlinedTextField(
                     value = query, onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     singleLine = true,
                     leadingIcon = { Icon(Icons.Rounded.Search, null, tint = colors.muted) },
                     trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, stringResource(R.string.cancel), tint = colors.muted) } },
-                    placeholder = { Text(stringResource(R.string.dictation_history_search), color = colors.muted) },
+                    placeholder = { Text(stringResource(if (dictations) R.string.dictation_history_search else R.string.sent_history_search), color = colors.muted) },
                     shape = UniTheme.shapes.button,
                 )
+            }
+            if (!dictations) {
+                if (messages.isEmpty()) item {
+                    Text(stringResource(R.string.sent_history_empty), style = MaterialTheme.typography.bodyMedium, color = colors.muted)
+                } else if (shownMessages.isEmpty()) item {
+                    Text(stringResource(R.string.sent_history_no_match, query.trim()), style = MaterialTheme.typography.bodyMedium, color = colors.muted)
+                }
+                items(shownMessages, key = { "m-" + it.id }) { message ->
+                    SentMessageItem(
+                        message, now,
+                        onPaste = { onPaste(message.text, R.string.sent_history_pasted) },
+                        onCopy = {
+                            clipboard.setText(AnnotatedString(message.text))
+                            Toast.makeText(context, R.string.dictation_history_copied, Toast.LENGTH_SHORT).show()
+                        },
+                        onDelete = { model.deleteSent(setOf(message.id)) },
+                    )
+                }
+                return@LazyColumn
             }
             if (records.isEmpty()) item {
                 Text(stringResource(R.string.dictation_history_empty), style = MaterialTheme.typography.bodyMedium, color = colors.muted)
@@ -116,7 +152,7 @@ private fun DictationHistorySheet(model: DictationHistoryViewModel, language: St
                 DictationItem(
                     record, now, playing = playing == record.id,
                     onPlay = { playing = if (playing == record.id) null else record.id },
-                    onPaste = { record.text?.let(onPaste) },
+                    onPaste = { record.text?.let { onPaste(it, R.string.dictation_history_pasted) } },
                     onCopy = {
                         record.text?.let { clipboard.setText(AnnotatedString(it)) }
                         Toast.makeText(context, R.string.dictation_history_copied, Toast.LENGTH_SHORT).show()
@@ -124,7 +160,20 @@ private fun DictationHistorySheet(model: DictationHistoryViewModel, language: St
                     onDelete = { if (playing == record.id) playing = null; model.delete(setOf(record.id)) },
                     retranscribing = record.id in busy,
                     failure = failed[record.id],
-                    onRetranscribe = if (model.canRetranscribe) ({ model.retranscribe(record, language, preferredMachineID) }) else null,
+                    // Where to read it again: the automatic rule (the transcriber of Ajustes first),
+                    // one machine in particular, or Whisper on this phone when it is ready.
+                    retranscribeChoices = if (!model.canRetranscribe) emptyList() else buildList {
+                        add(RetranscribeChoice.Automatic)
+                        savedMachines.forEach { add(RetranscribeChoice.OnMachine(it)) }
+                        if (model.phoneCanTranscribe) add(RetranscribeChoice.OnPhone)
+                    },
+                    onRetranscribe = { choice ->
+                        when (choice) {
+                            RetranscribeChoice.Automatic -> model.retranscribe(record, language, preferredMachineID)
+                            is RetranscribeChoice.OnMachine -> model.retranscribeOn(record, language, choice.machine)
+                            RetranscribeChoice.OnPhone -> model.retranscribeOnPhone(record, language)
+                        }
+                    },
                 )
             }
         }
@@ -135,10 +184,12 @@ private fun DictationHistorySheet(model: DictationHistoryViewModel, language: St
 private fun DictationItem(
     record: DictationRecord, now: Long, playing: Boolean,
     onPlay: () -> Unit, onPaste: () -> Unit, onCopy: () -> Unit, onDelete: () -> Unit,
-    retranscribing: Boolean = false, failure: Int? = null, onRetranscribe: (() -> Unit)? = null,
+    retranscribing: Boolean = false, failure: Int? = null,
+    retranscribeChoices: List<RetranscribeChoice> = emptyList(), onRetranscribe: (RetranscribeChoice) -> Unit = {},
 ) {
     val colors = UniTheme.colors
     var expanded by rememberSaveable(record.id) { mutableStateOf(false) }
+    var choosing by remember { mutableStateOf(false) }
     GlassCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             val place = record.machineName ?: stringResource(R.string.dictation_history_phone)
@@ -177,12 +228,90 @@ private fun DictationItem(
                 } else Text(stringResource(R.string.dictation_history_no_audio), style = MaterialTheme.typography.labelSmall, color = colors.muted)
                 // «Volver a transcribir»: the kept audio goes to its machine again, for a text that
                 // came back short (only the end of a long recording) or never came at all.
-                if (record.audioPath != null && onRetranscribe != null) {
+                if (record.audioPath != null && retranscribeChoices.isNotEmpty()) {
                     if (retranscribing) CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp), strokeWidth = 2.dp, color = colors.accent)
-                    else IconButton(onClick = onRetranscribe) { Icon(Icons.Rounded.Refresh, stringResource(R.string.dictation_retranscribe), tint = colors.accent) }
+                    else Box {
+                        IconButton(onClick = { choosing = true }) { Icon(Icons.Rounded.Refresh, stringResource(R.string.dictation_retranscribe), tint = colors.accent) }
+                        DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }, containerColor = colors.surfaceRaised) {
+                            retranscribeChoices.forEach { choice ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            when (choice) {
+                                                RetranscribeChoice.Automatic -> stringResource(R.string.dictation_retranscribe_auto)
+                                                is RetranscribeChoice.OnMachine -> stringResource(R.string.dictation_retranscribe_on, choice.machine.name)
+                                                RetranscribeChoice.OnPhone -> stringResource(R.string.dictation_retranscribe_on_phone)
+                                            },
+                                        )
+                                    },
+                                    onClick = { choosing = false; onRetranscribe(choice) },
+                                )
+                            }
+                        }
+                    }
                 }
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, stringResource(R.string.dictation_history_delete), tint = colors.muted) }
+            }
+        }
+    }
+}
+
+/** Where «Volver a transcribir» reads a kept recording. */
+private sealed interface RetranscribeChoice {
+    /** The automatic rule: the transcriber of Ajustes, then the dictation's machine, then the rest. */
+    data object Automatic : RetranscribeChoice
+
+    /** That machine and no other. */
+    data class OnMachine(val machine: Machine) : RetranscribeChoice
+
+    /** Whisper on this phone. */
+    data object OnPhone : RetranscribeChoice
+}
+
+/** The two lists of the history sheet. */
+private enum class HistoryTab(val label: Int) {
+    DICTATIONS(R.string.history_tab_dictations),
+    MESSAGES(R.string.history_tab_messages),
+}
+
+/** One message sent from the composer: where it went, whether it arrived, and its text to paste again. */
+@Composable
+private fun SentMessageItem(message: SentMessage, now: Long, onPaste: () -> Unit, onCopy: () -> Unit, onDelete: () -> Unit) {
+    val colors = UniTheme.colors
+    var expanded by rememberSaveable(message.id) { mutableStateOf(false) }
+    GlassCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            val place = listOfNotNull(message.machineName, message.windowName).joinToString(" · ")
+            Text(
+                listOf(stamp(message.createdAt, now), place).filter { it.isNotEmpty() }.joinToString(" · "),
+                style = MaterialTheme.typography.labelMedium, color = colors.muted,
+            )
+            val (state, tone) = when (message.state) {
+                SentMessage.State.SENDING -> R.string.sent_state_sending to colors.muted
+                SentMessage.State.DELIVERED -> R.string.sent_state_delivered to colors.success
+                SentMessage.State.FAILED -> R.string.sent_state_failed to colors.danger
+                SentMessage.State.UNCONFIRMED -> R.string.sent_state_unconfirmed to colors.warning
+            }
+            val enter = if (message.withEnter) "" else " · " + stringResource(R.string.sent_history_without_enter)
+            Text(stringResource(state) + enter, style = MaterialTheme.typography.labelMedium, color = tone, fontWeight = FontWeight.SemiBold)
+            var overflows by remember(message.id) { mutableStateOf(false) }
+            Text(
+                message.text,
+                style = MaterialTheme.typography.bodyMedium, color = colors.text,
+                maxLines = if (expanded) Int.MAX_VALUE else COLLAPSED_LINES,
+                overflow = TextOverflow.Ellipsis,
+                onTextLayout = { if (!expanded) overflows = it.hasVisualOverflow },
+                modifier = Modifier.fillMaxWidth().clickable(enabled = overflows || expanded) { expanded = !expanded },
+            )
+            if (overflows || expanded) TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(0.dp)) {
+                Text(stringResource(if (expanded) R.string.dictation_history_less else R.string.dictation_history_more), color = colors.accent)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onPaste) { Text(stringResource(R.string.dictation_history_paste), color = colors.accent, fontWeight = FontWeight.SemiBold) }
+                IconButton(onClick = onCopy) { Icon(Icons.Rounded.ContentCopy, stringResource(R.string.dictation_history_copy), tint = colors.muted) }
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, stringResource(R.string.sent_history_delete), tint = colors.muted) }
             }
         }
     }

@@ -20,6 +20,8 @@ import com.unixcision.uniconnect.android.data.InboxPreviewCache
 import com.unixcision.uniconnect.android.data.HttpSpeechModelStore
 import com.unixcision.uniconnect.android.data.MediaCodecAudioDecoder
 import com.unixcision.uniconnect.android.data.FileDictationHistory
+import com.unixcision.uniconnect.android.data.FileSentMessageHistory
+import com.unixcision.uniconnect.android.data.WhisperPhoneTranscriber
 import com.unixcision.uniconnect.android.data.MediaRecorderVoice
 import com.unixcision.uniconnect.android.data.WhisperTranscription
 import com.unixcision.uniconnect.android.data.NativeHostTranscription
@@ -36,6 +38,8 @@ import com.unixcision.uniconnect.android.domain.FilePutClient
 import com.unixcision.uniconnect.android.domain.FileSender
 import com.unixcision.uniconnect.android.domain.InboxClient
 import com.unixcision.uniconnect.android.domain.DictationHistory
+import com.unixcision.uniconnect.android.domain.SentMessageHistory
+import com.unixcision.uniconnect.android.domain.PhoneTranscriber
 import com.unixcision.uniconnect.android.domain.HostDictation
 import com.unixcision.uniconnect.android.domain.HostTranscription
 import com.unixcision.uniconnect.android.domain.LocalDictation
@@ -94,10 +98,14 @@ class AppContainer(context: Context) {
     val hostTranscription: HostTranscription = NativeHostTranscription(rpc)
     /** Cada dictado con su audio y su texto, en los archivos privados de la app; ver DictationHistory. */
     val dictationHistory: DictationHistory = FileDictationHistory(File(context.filesDir, "dictados"))
+    /** Every text sent from the composer, so one that did not arrive can be sent again. */
+    val sentMessages: SentMessageHistory = FileSentMessageHistory(File(context.filesDir, "enviados"))
     val hostDictation = HostDictation(voiceRecorder, hostTranscription, ioScope, history = dictationHistory)
     // Models live beside the app's own files: uninstalling takes them, and nothing else can read them.
     val speechModels: SpeechModelStore = HttpSpeechModelStore(File(context.filesDir, "whisper"), ioScope)
     val audioDecoder: AudioDecoder = MediaCodecAudioDecoder()
     val localTranscription: LocalTranscription = WhisperTranscription()
     val localDictation = LocalDictation(voiceRecorder, audioDecoder, localTranscription, speechModels, ioScope, history = dictationHistory)
+    /** Whisper on this phone for «Volver a transcribir», with the same decoder, engine and model. */
+    val phoneTranscriber: PhoneTranscriber = WhisperPhoneTranscriber(audioDecoder, localTranscription, speechModels)
 }

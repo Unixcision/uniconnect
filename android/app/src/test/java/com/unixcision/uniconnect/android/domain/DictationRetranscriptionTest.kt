@@ -104,6 +104,36 @@ class DictationRetranscriptionTest {
         assertEquals(listOf(minipc, spare, mac), DictationRetranscription.machinesFor(fromLinux, listOf(spare, minipc, mac), preferredID = null))
     }
 
+    private class Phone(override val ready: Boolean) : PhoneTranscriber {
+        var heard: ByteArray? = null
+        override suspend fun transcribe(audio: ByteArray, language: String?): String {
+            heard = audio
+            return "leído en el móvil"
+        }
+    }
+
+    @Test
+    fun theKeptAudioCanBeReadByWhisperOnThePhoneWithoutAnyMachine() = runBlocking {
+        val history = History()
+        val phone = Phone(ready = true)
+        val audio = byteArrayOf(4, 5, 6)
+        val retranscription = DictationRetranscription(history, MinipcWithoutEngine(), phone) { audio }
+        assertTrue(retranscription.phoneReady)
+        assertEquals("leído en el móvil", retranscription.runOnPhone(broken, "es"))
+        assertArrayEquals(audio, phone.heard)
+        assertEquals(listOf("d1" to "leído en el móvil"), history.replaced)
+    }
+
+    @Test
+    fun withoutAModelThePhoneIsNotAnOption() = runBlocking {
+        val retranscription = DictationRetranscription(History(), Machines(), Phone(ready = false)) { byteArrayOf(1) }
+        assertEquals(false, retranscription.phoneReady)
+        try {
+            retranscription.runOnPhone(broken, "es")
+            fail("the phone cannot transcribe without a model")
+        } catch (_: DictationRetranscription.NoPhoneEngine) {}
+    }
+
     @Test
     fun itGoesToTheMachineItWasDictatedForThenByNameThenTheFirst() {
         val machines = listOf(minipc, mac)

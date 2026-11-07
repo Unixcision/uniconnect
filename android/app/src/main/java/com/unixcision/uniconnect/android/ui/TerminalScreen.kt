@@ -120,6 +120,8 @@ fun TerminalScreen(
     dictation: DictationViewModel? = null,
     /** Every dictation with its audio and text, opened from the button beside the clip. */
     dictationHistory: DictationHistoryViewModel? = null,
+    /** The window's name, kept with every message sent from here. */
+    windowName: String? = null,
     transcribers: List<TranscriptionCandidate> = emptyList(),
     /** Abre el informe de conexión. Se ofrece **aquí**, que es donde se ve el fallo. */
     onDiagnostics: (() -> Unit)? = null,
@@ -129,6 +131,10 @@ fun TerminalScreen(
     onRelaunchWindow: (() -> Unit)? = null,
 ) {
     var realRequested by rememberSaveable { mutableStateOf(false) }
+    // Every text sent from the composer is kept, with whether it arrived, before it leaves.
+    val onSentRecord: ((String, Boolean) -> (Boolean) -> Unit)? = dictationHistory?.let { history ->
+        { text, withEnter -> history.recordSent(text, withEnter, attachTarget?.machine?.name, windowName) }
+    }
     // Default way in: attach to the window's own tmux session. Only a host without the attach RPC,
     // or leaving the mode by hand, falls back to the mirrored screen.
     var autoTried by rememberSaveable { mutableStateOf(false) }
@@ -142,6 +148,7 @@ fun TerminalScreen(
             draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity,
             attachments = attachments, inbox = inbox, attachTarget = attachTarget, dictation = dictation, dictationHistory = dictationHistory, settings = settings,
             transcribers = transcribers, onDiagnostics = onDiagnostics, onDetails = onDetails, onRelaunchWindow = onRelaunchWindow,
+            onSentRecord = onSentRecord,
         )
         return
     }
@@ -156,7 +163,8 @@ fun TerminalScreen(
         onRequestReal = { columns, rows -> realRequested = true; manuallyLeft = false; onStartReal(columns, rows, false) },
         draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity,
         attachments = attachments, inbox = inbox, attachTarget = attachTarget, dictation = dictation, dictationHistory = dictationHistory, settings = settings,
-        transcribers = transcribers, onDiagnostics = onDiagnostics, onDetails = onDetails, onRelaunchWindow = onRelaunchWindow)
+        transcribers = transcribers, onDiagnostics = onDiagnostics, onDetails = onDetails, onRelaunchWindow = onRelaunchWindow,
+        onSentRecord = onSentRecord)
 }
 
 /** The attached tmux client: the phone owns a real PTY of its own size; tmux keeps the desktop's. */
@@ -171,6 +179,7 @@ private fun RealTerminalScreen(
     attachments: AttachViewModel?, inbox: InboxViewModel?, attachTarget: AttachTarget?, dictation: DictationViewModel?,
     dictationHistory: DictationHistoryViewModel?, settings: AppSettings,
     transcribers: List<TranscriptionCandidate>, onDiagnostics: (() -> Unit)?, onDetails: (() -> Unit)?, onRelaunchWindow: (() -> Unit)?,
+    onSentRecord: ((String, Boolean) -> (Boolean) -> Unit)?,
 ) {
     var keysVisible by rememberSaveable { mutableStateOf(startWithKeys) }
     var selecting by remember { mutableStateOf(false) }
@@ -413,6 +422,7 @@ private fun RealTerminalScreen(
             draft = draft, onDraftChange = onDraftChange,
             dictation = dictation, dictationLanguage = settings.dictationLanguage, sendOnDictationEnd = settings.sendOnDictationEnd,
             transcription = settings.transcription, transcriptionMachine = settings.transcriptionMachine, transcribers = transcribers,
+            onSentRecord = onSentRecord,
             // The window an attachment would go to is the window a recording is transcribed for.
             dictationTarget = attachTarget?.let { DictationTarget(it.machine, it.workspaceID, it.windowID) },
             bracketedPaste = real.bracketedPaste,
@@ -430,6 +440,7 @@ private fun MirrorTerminalScreen(
     attachments: AttachViewModel?, inbox: InboxViewModel?, attachTarget: AttachTarget?, dictation: DictationViewModel?,
     dictationHistory: DictationHistoryViewModel?, settings: AppSettings,
     transcribers: List<TranscriptionCandidate>, onDiagnostics: (() -> Unit)?, onDetails: (() -> Unit)?, onRelaunchWindow: (() -> Unit)?,
+    onSentRecord: ((String, Boolean) -> (Boolean) -> Unit)?,
 ) {
     var viewMode by rememberSaveable { mutableStateOf(TerminalView.FIT) }
     var keysVisible by rememberSaveable { mutableStateOf(false) }
@@ -586,6 +597,7 @@ private fun MirrorTerminalScreen(
             draft = draft, onDraftChange = onDraftChange,
             dictation = dictation, dictationLanguage = settings.dictationLanguage, sendOnDictationEnd = settings.sendOnDictationEnd,
             transcription = settings.transcription, transcriptionMachine = settings.transcriptionMachine, transcribers = transcribers,
+            onSentRecord = onSentRecord,
             // The window an attachment would go to is the window a recording is transcribed for.
             dictationTarget = attachTarget?.let { DictationTarget(it.machine, it.workspaceID, it.windowID) },
         )

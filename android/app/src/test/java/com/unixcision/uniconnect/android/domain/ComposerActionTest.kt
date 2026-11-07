@@ -24,6 +24,14 @@ class ComposerActionTest {
     }
 
     @Test
+    fun `with text in the box another dictation can be added to the same message`() {
+        assertEquals(true, ComposerAction.dictatesMore("primera parte dictada", dictationAvailable = true))
+        assertEquals(false, ComposerAction.dictatesMore("", dictationAvailable = true))
+        assertEquals(false, ComposerAction.dictatesMore(" \n ", dictationAvailable = true))
+        assertEquals(false, ComposerAction.dictatesMore("texto", dictationAvailable = false))
+    }
+
+    @Test
     fun `without speech recognition the button always sends`() {
         assertEquals(ComposerAction.SEND, ComposerAction.decide("", dictationAvailable = false))
         assertEquals(ComposerAction.SEND, ComposerAction.decide("ls", dictationAvailable = false))

@@ -22,5 +22,12 @@ enum class ComposerAction {
 
         /** Whether [draft] carries anything worth sending: blank space alone does not. */
         fun hasSomethingToSend(draft: String): Boolean = draft.isNotBlank()
+
+        /**
+         * Whether the box offers a microphone of its own to dictate more into [draft]: while the
+         * floating button sends, a dictation, typed text or both can keep growing the same message,
+         * as a chat does, instead of having to send to dictate again.
+         */
+        fun dictatesMore(draft: String, dictationAvailable: Boolean): Boolean = dictationAvailable && hasSomethingToSend(draft)
     }
 }

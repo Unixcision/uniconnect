@@ -208,6 +208,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                             inbox = inbox,
                             dictation = dictation,
                             dictationHistory = dictationHistory,
+                            windowName = window?.name,
                             attachTarget = if (machine != null && workspace != null && window != null) AttachTarget(machine, workspace.id, window.id, workspace.isSSH, connection?.snapshot?.putsFiles == true, connection?.snapshot?.keepsInbox == true) else null,
                             transcribers = transcribers,
                             onDiagnostics = { model.showDiagnostics(true) },

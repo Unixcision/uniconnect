@@ -1,8 +1,8 @@
 package com.unixcision.uniconnect.android.domain
 
 /**
- * «Volver a transcribir»: sends a dictation's kept audio to a machine again and stores the new text
- * in place of the old one.
+ * «Volver a transcribir»: sends a dictation's kept audio to a machine again, or reads it with
+ * Whisper on this phone, and stores the new text in place of the old one.
  *
  * For the transcription that came back short or broken (only the end of a long recording), or a
  * recording no engine could read at the time. The audio never leaves the history: only a copy of
@@ -11,9 +11,29 @@ package com.unixcision.uniconnect.android.domain
 class DictationRetranscription(
     private val history: DictationHistory,
     private val transcription: HostTranscription,
+    /** Whisper on this phone; null in builds or tests without it. */
+    private val phone: PhoneTranscriber? = null,
     /** Reads the kept audio at a path; null when it is gone. */
     private val readAudio: (String) -> ByteArray?,
 ) {
+    /** Whether the phone itself can transcribe right now. */
+    val phoneReady: Boolean get() = phone?.ready == true
+
+    /**
+     * The new text read by Whisper on this phone, already stored in the history.
+     *
+     * - Throws: [MissingAudio] without the kept audio, [NoPhoneEngine] when the phone cannot
+     *   transcribe, and the engine's own failure when it could not read it.
+     */
+    suspend fun runOnPhone(record: DictationRecord, language: String?): String {
+        val path = record.audioPath ?: throw MissingAudio()
+        val audio = readAudio(path) ?: throw MissingAudio()
+        val engine = phone?.takeIf { it.ready } ?: throw NoPhoneEngine()
+        val text = engine.transcribe(audio, language)
+        history.replaceText(record.id, text)
+        return text
+    }
+
     /** The new text, already stored in the history. */
     suspend fun run(record: DictationRecord, machine: Machine, language: String?): String = run(record, listOf(machine), language)
 
@@ -53,6 +73,9 @@ class DictationRetranscription(
 
     /** No saved machine to send it to. */
     class NoMachine : Exception("no saved machine")
+
+    /** Whisper cannot run on this phone now: no engine or no downloaded model. */
+    class NoPhoneEngine : Exception("whisper is not ready on this phone")
 
     companion object {
         /** What the recorder writes and what the contract names for it. */

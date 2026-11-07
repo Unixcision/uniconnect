@@ -95,13 +95,20 @@ fun TerminalComposer(
     dictationTarget: DictationTarget? = null,
     /** The program in the window accepts bracketed pastes; see [TerminalKeyEncoder.composerText]. */
     bracketedPaste: Boolean = false,
+    /**
+     * Keeps a text in the history of sent messages before it leaves; the function it returns is
+     * told whether it arrived. Null keeps nothing.
+     */
+    onSentRecord: ((String, Boolean) -> (Boolean) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val send: (String, Boolean) -> Unit = { submitted, withEnter ->
         if (enabled && !sending && submitted.isNotEmpty()) {
             // The text and the Return key travel as separate writes; a single burst ending in CR
             // is read as a paste by TUIs and only inserts a line break. Never replayed on failure.
+            val settle = onSentRecord?.invoke(submitted, withEnter)
             onSend(TerminalKeyEncoder.composerText(submitted, modifiers, bracketedPaste), withEnter) { delivered ->
+                settle?.invoke(delivered)
                 if (delivered && draft == submitted) onDraftChange("")
             }
         }
@@ -133,7 +140,11 @@ fun TerminalComposer(
                 val merged = DictationDraft.append(latestDraft, outcome.text)
                 onDraftChange(merged)
                 if (sendOnDictationEnd && enabled && !sending && merged.isNotEmpty()) {
-                    onSend(TerminalKeyEncoder.composerText(merged, modifiers, bracketedPaste), true) { delivered -> if (delivered) onDraftChange("") }
+                    val settle = onSentRecord?.invoke(merged, true)
+                    onSend(TerminalKeyEncoder.composerText(merged, modifiers, bracketedPaste), true) { delivered ->
+                        settle?.invoke(delivered)
+                        if (delivered) onDraftChange("")
+                    }
                 }
                 retry = DictationRetry.NONE
                 lastFailure = null
@@ -244,6 +255,13 @@ fun TerminalComposer(
                         }
                     },
                 )
+                // With text already in the box, a microphone of its own: another dictation is added
+                // to the same message, as in a chat, and the floating button still sends it all.
+                if (ComposerAction.dictatesMore(draft, dictationAvailable = canDictate)) IconButton(
+                    onClick = { startDictation(transcription, false) },
+                    enabled = enabled && !sending,
+                    modifier = Modifier.size(36.dp),
+                ) { Icon(Icons.Rounded.Mic, stringResource(R.string.dictation_add_more), Modifier.size(20.dp), tint = UniTheme.colors.accent) }
             }
             // One floating round button outside the box, Telegram style: send, or the microphone
             // while there is nothing to send, or stop while dictating.
