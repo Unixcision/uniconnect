@@ -37585,6 +37585,72 @@
         }
       }
     },
+    "uniconnect.mobile.close.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El equipo no pudo cerrarlo. Comprueba que no haya un diálogo abierto en el escritorio."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.close.invalidParams": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indica el espacio de trabajo y, para cerrar una ventana, también la ventana."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.close.lastWorkspace": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Es el último espacio de trabajo abierto en UniConnect: cerrarlo cerraría la aplicación en el equipo. Ciérralo desde el escritorio."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.close.pinnedWindow": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta ventana está fijada en el escritorio. Quítala de favoritos para poder cerrarla."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.close.terminalNotFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esa ventana ya no existe en el equipo."
+          }
+        }
+      }
+    },
+    "uniconnect.mobile.close.workspaceNotFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ese espacio de trabajo ya no existe en el equipo."
+          }
+        }
+      }
+    },
     "uniconnect.mobile.createFailed": {
       "extractionState": "manual",
       "localizations": {
@@ -38802,6 +38868,215 @@
           "stringUnit": {
             "state": "translated",
             "value": "Verificado"
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.error.user": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escribe el usuario con el que debe correr la IA."
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.failure.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo cambiar de usuario. La ventana se ha creado sin IA."
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.failure.notAllowed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ese usuario no puede cambiar de usuario en esta máquina. La ventana se ha creado sin IA."
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.failure.passwordIncorrect": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La contraseña no es correcta. La ventana se ha creado sin IA."
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.failure.timeout": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El cambio de usuario no terminó a tiempo. La ventana se ha creado sin IA."
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.failure.userNotFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ese usuario no existe en esta máquina. La ventana se ha creado sin IA."
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.failure.wrongUser": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La ventana no quedó con el usuario pedido, así que no se lanzó la IA."
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La IA arranca sin preguntas. La contraseña se guarda cifrada con la ventana y se borra al cerrarla."
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.method.su": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "su (contraseña del destino)"
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.method.sudo": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sudo (tu contraseña)"
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.mode.current": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mi usuario"
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.mode.root": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "root"
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.mode.user": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Otro usuario"
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.password": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contraseña (vacía si no la pide)"
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.sandbox": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IS_SANDBOX=1"
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.sandbox.forced": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude como root solo arranca sin preguntas con IS_SANDBOX=1, así que va siempre."
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.sshUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En este Mac, «Ejecutar como» todavía solo está disponible en cajas locales."
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ejecutar como"
+          }
+        }
+      }
+    },
+    "uniconnect.runAs.user": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usuario"
           }
         }
       }

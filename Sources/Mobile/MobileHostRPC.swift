@@ -27,6 +27,9 @@ struct MobileHostRPCError: Error, @unchecked Sendable {
         self.message = message
         self.data = data
     }
+
+    /// Fields of `data` that the contracts place at the error's top level.
+    static let flatErrorKeys = ["cause", "created_terminal_id", "created_workspace_id"]
 }
 
 enum MobileHostRPCResult: @unchecked Sendable {
@@ -97,6 +100,13 @@ enum MobileHostRPCEnvelope {
             ]
             if let data = error.data {
                 errorPayload["data"] = jsonValue(data)
+                // Contract fields (run-as.v1 `run_as_failed`) also go flat next to code and
+                // message, where the contracts put them; `data` keeps them for older readers.
+                if let fields = data as? [String: Any] {
+                    for key in MobileHostRPCError.flatErrorKeys {
+                        if let value = fields[key] { errorPayload[key] = jsonValue(value) }
+                    }
+                }
             }
             return jsonData([
                 "id": jsonValue(id),

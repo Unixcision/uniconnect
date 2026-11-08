@@ -120,14 +120,43 @@ enum UniConnectLocalWindowLaunchTarget: Hashable, Identifiable, Sendable {
 
     /// The new agent's argv from the shared `noPrompt` policy of the resume catalogue, never
     /// written by hand; the bare executable (same name as the provider) if the catalogue is missing.
-    static func noPromptArgv(provider: String) -> [String] {
-        (try? AgentNoPromptPolicy())?.launch(provider: provider)?.argv ?? [provider]
+    static func noPromptArgv(provider: String, asRoot: Bool = false) -> [String] {
+        (try? AgentNoPromptPolicy())?.launch(provider: provider, asRoot: asRoot)?.argv ?? [provider]
+    }
+
+    /// The agent's argv under the same no-prompt policy, typed after a user switch (`run-as.v1`);
+    /// `nil` for a plain terminal.
+    func noPromptArgv(asRoot: Bool) -> [String]? {
+        switch self {
+        case .terminal:
+            return nil
+        case .claude:
+            return Self.noPromptArgv(provider: "claude", asRoot: asRoot)
+        case .codex:
+            return Self.noPromptArgv(provider: "codex", asRoot: asRoot)
+        case .agy:
+            return Self.noPromptArgv(provider: "agy", asRoot: asRoot)
+        case .grok:
+            return Self.noPromptArgv(provider: "grok", asRoot: asRoot)
+        case .command(_, let executable), .custom(_, _, let executable, _):
+            let trimmed = executable.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : [trimmed]
+        }
+    }
+
+    /// Arguments that start the agent on a conversation id chosen beforehand, when it takes one
+    /// (`claude --session-id`): the id is then known from the first second, even when the probe
+    /// cannot read the agent's own files (an agent running as root).
+    func chosenSessionArguments(_ sessionID: String?) -> [String] {
+        guard self == .claude, let sessionID else { return [] }
+        return ["--session-id", sessionID]
     }
 
     /// Builds a start command in a validated per-window cwd without replacing the shell.
     func startupCommand(
         boxRoot: String,
-        workingDirectory: String? = nil
+        workingDirectory: String? = nil,
+        extraArguments: [String] = []
     ) -> String? {
         let argv: [String]
         switch self {
@@ -160,7 +189,7 @@ enum UniConnectLocalWindowLaunchTarget: Hashable, Identifiable, Sendable {
             }
             argv = [normalizedExecutable]
         }
-        let command = argv
+        let command = (argv + extraArguments)
             .map(TerminalStartupShellQuoting.singleQuoted)
             .joined(separator: " ")
         return UniConnectLocalBoxRootPolicy.commandRequiringWorkingDirectory(
@@ -172,6 +201,13 @@ enum UniConnectLocalWindowLaunchTarget: Hashable, Identifiable, Sendable {
 
     static var builtInAgents: [UniConnectLocalWindowLaunchTarget] {
         [.claude, .codex, .agy, .grok]
+    }
+
+    /// The built-in agents whose executable `isInstalled` finds: what a local box offers.
+    static func installedBuiltInAgents(isInstalled: (String) -> Bool) -> [UniConnectLocalWindowLaunchTarget] {
+        builtInAgents.filter { target in
+            target.noPromptArgv(asRoot: false)?.first.map(isInstalled) ?? false
+        }
     }
 
     static func customTargets(

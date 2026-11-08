@@ -7,6 +7,26 @@ struct UniConnectNewLocalWindowRequest: Equatable, Sendable {
     /// An explicit per-window folder; `nil` follows the workspace default at creation time.
     let workingDirectory: String?
     let launchTarget: UniConnectLocalWindowLaunchTarget
+    /// The user the agent runs as (`run-as.v1`); `nil` keeps the connected one.
+    var runAs: UniConnectRunAs?
+    /// Whether the agent starts with `IS_SANDBOX=1`.
+    var isSandbox = false
+
+    /// `IS_SANDBOX=1` as it will be applied: forced for Claude as root.
+    var effectiveSandbox: Bool {
+        UniConnectWindowLaunch.effectiveSandbox(requested: isSandbox, agent: launchTarget.id, runAs: runAs)
+    }
+
+    /// Whether the window opens at a shell and is switched to another user, or given
+    /// `IS_SANDBOX`, before its agent is launched by hand.
+    var switchesUser: Bool {
+        (runAs?.mode ?? .current) != .current || (effectiveSandbox && launchTarget != .terminal)
+    }
+
+    /// What the window records about its agent's start.
+    func launch(sessionID: String?) -> UniConnectWindowLaunch {
+        UniConnectWindowLaunch(agent: launchTarget.id, isSandbox: effectiveSandbox, sessionID: sessionID)
+    }
 
     init?(
         visibleName: String?,

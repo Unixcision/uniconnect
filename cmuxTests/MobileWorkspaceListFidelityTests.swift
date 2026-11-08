@@ -193,9 +193,16 @@ struct MobileWorkspaceListFidelityTests {
         #expect(UniConnectMobileTerminalCreation(
             name: "Local", tmuxSession: "other", directory: "/repo", agentID: nil, isSSH: false
         ) == nil)
-        #expect(UniConnectMobileTerminalCreation(
+        // Without a session, SSH gets one like the desktop sheet suggests (what Android sends).
+        let generated = try #require(UniConnectMobileTerminalCreation(
             name: "SSH", tmuxSession: nil, directory: nil, agentID: nil, isSSH: true
-        ) == nil)
+        ))
+        let session = try #require(generated.tmuxSession)
+        #expect(session.hasPrefix("uc-"))
+        #expect(UniConnectSSH.sanitizedTmuxName(session) == session)
+        #expect(UniConnectMobileTerminalCreation(
+            name: "SSH", tmuxSession: "", directory: nil, agentID: "terminal", isSSH: true
+        )?.tmuxSession?.hasPrefix("uc-") == true)
         #expect(UniConnectMobileTerminalCreation(
             name: "SSH", tmuxSession: "valid-session", directory: "/srv/code", agentID: "codex", isSSH: true
         ) == nil)
@@ -256,10 +263,273 @@ struct MobileWorkspaceListFidelityTests {
             #expect(box["kind"] as? String == (kind == .ssh ? "ssh" : "local"))
             let ids = Set(targets.compactMap { $0["id"] })
             #expect(ids.contains("terminal"))
-            if kind == .ssh { #expect(ids == ["terminal"]) }
-            else { #expect(ids.isSuperset(of: ["claude", "codex", "agy", "grok"])) }
+            let resolver = AgentExecutableResolver()
+            let installed = UniConnectLocalWindowLaunchTarget.installedBuiltInAgents {
+                resolver.isInstalled(executableName: $0)
+            }.map(\.id)
+            // Local: only the installed ones.
+            if kind == .ssh {
+                #expect(ids == ["terminal"])
+            } else {
+                let builtIn = Set(UniConnectLocalWindowLaunchTarget.builtInAgents.map(\.id))
+                #expect(ids.intersection(builtIn) == Set(installed))
+            }
             #expect(targets.allSatisfy { Set($0.keys) == ["id", "title"] })
         }
+    }
+
+    @Test("Android: a new local box without a window, then its first window with Claude, attachable and unselected")
+    func androidLocalBoxThenFirstAgentWindow() async throws {
+        // The UniConnect branch of the mobile host (off by default under XCTest), with the
+        // created-window saver replaced so nothing is written outside the test.
+        let previousEnable = ProcessInfo.processInfo.environment["UNICONNECT_TEST_ENABLE"]
+        setenv("UNICONNECT_TEST_ENABLE", "1", 1)
+        let previousPersistence = UniConnectCoordinator.shared.createdWindowPersistence
+        UniConnectCoordinator.shared.configureCreatedWindowPersistence(UniConnectCreatedWindowPersistence(
+            save: {}, capture: { _ in .unavailable }, sleep: { _ in }
+        ))
+        defer {
+            UniConnectCoordinator.shared.configureCreatedWindowPersistence(previousPersistence)
+            if let previousEnable { setenv("UNICONNECT_TEST_ENABLE", previousEnable, 1) } else { unsetenv("UNICONNECT_TEST_ENABLE") }
+        }
+        let previousManager = TerminalController.shared.activeTabManagerForCallerNotification()
+        let manager = TabManager()
+        TerminalController.shared.setActiveTabManager(manager)
+        defer { TerminalController.shared.setActiveTabManager(previousManager) }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("UniConnectAndroidBox-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let selectedBefore = manager.selectedTabId
+
+        // NativeMachineClient.creationParameters(ResourceCreation.Workspace(name, folder, null,
+        // initialTerminal = false)), as CreateResourceSheet builds it.
+        let boxResponse = await TerminalController.shared.mobileHostHandleRPC(.init(
+            id: "android-box", method: "workspace.create",
+            params: ["name": "Proyecto Android", "directory": root.path, "kind": "local", "initial_terminal": false],
+            auth: nil
+        ))
+        guard case let .ok(rawBox) = boxResponse, let boxPayload = rawBox as? [String: Any],
+              let workspaceID = boxPayload["created_workspace_id"] as? String else {
+            Issue.record("Expected the box Android asked for")
+            return
+        }
+        let workspace = try #require(manager.tabs.first { $0.id.uuidString == workspaceID })
+        defer { manager.closeWorkspace(workspace, recordHistory: false) }
+        let createdBoxes = boxPayload["workspaces"] as? [[String: Any]] ?? []
+        let box = try #require(createdBoxes.first(where: { ($0["id"] as? String) == workspaceID }))
+        // Android only asks for the first window when the box is local and empty.
+        #expect(box["kind"] as? String == "local")
+        #expect((box["terminals"] as? [[String: Any]])?.isEmpty == true)
+        let offered = Set((box["available_agent_targets"] as? [[String: String]] ?? []).compactMap { $0["id"] })
+        #expect(offered.contains("terminal"))
+        #expect(manager.selectedTabId == selectedBefore)
+
+        // ResourceCreation.Terminal(workspaceID, "Claude Code", null, null, "claude"): no folder
+        // and no tmux session, the title of the chosen agent as the name.
+        let windowResponse = await TerminalController.shared.mobileHostHandleRPC(.init(
+            id: "android-first-window", method: "mobile.terminal.create",
+            params: ["name": "Claude Code", "workspace_id": workspaceID, "agent": "claude"],
+            auth: nil
+        ))
+        guard case let .ok(rawWindow) = windowResponse, let windowPayload = rawWindow as? [String: Any],
+              let rawID = windowPayload["created_terminal_id"] as? String,
+              let panelID = UUID(uuidString: rawID) else {
+            Issue.record("Expected the first window Android asked for")
+            return
+        }
+        defer { workspace.terminalPanel(for: panelID)?.surface.teardownSurface() }
+        let boxes = windowPayload["workspaces"] as? [[String: Any]] ?? []
+        let listedBox = try #require(boxes.first(where: { ($0["id"] as? String) == workspaceID }))
+        let listed = listedBox["terminals"] as? [[String: Any]] ?? []
+        #expect(listed.compactMap { $0["id"] as? String } == [rawID])
+
+        let record = try #require(workspace.uniConnectLocalWindowsByPanelId[panelID])
+        let binding = try #require(record.tmuxBinding)
+        let expectedRoot = try #require(UniConnectLocalWindowRecord.validatedBoxRoot(root.path))
+        // Claude starts on the conversation id chosen at creation, already saved with the window.
+        let chosen = try #require(record.launch?.sessionID)
+        #expect(record.activeConversation?.sessionID == chosen)
+        let claude = try #require(UniConnectLocalWindowLaunchTarget.claude.startupCommand(
+            boxRoot: expectedRoot, workingDirectory: expectedRoot, extraArguments: ["--session-id", chosen]
+        ))
+        let launch = UniConnectLocalTmuxLaunchPlan(binding: binding, workingDirectory: expectedRoot, initialCommand: claude)
+        #expect(workspace.terminalPanel(for: panelID)?.surface.initialCommand == launch.startupCommand())
+        #expect(record.visibleName == "Claude Code")
+        #expect(workspace.uniConnectPlaceholderPanelIds.isEmpty)
+        #expect(manager.selectedTabId == selectedBefore)
+
+        // mobile.terminal.attach resolves this exact window to its own tmux session.
+        let resolver = MobileTmuxTargetResolver(
+            tabManagers: { [manager] }, credentialRecord: { _ in nil }, isLocked: { false }
+        )
+        let plan = try resolver.resolve(workspaceID: workspace.id, surfaceID: panelID)
+        #expect(plan.command == MobileTmuxAttachPlan.localCommand(binding: binding))
+    }
+
+    @Test("Android: an agent the box advertised is accepted when the window uses another folder")
+    func androidAdvertisedAgentWithAnotherFolder() async throws {
+        // The UniConnect branch of the mobile host (off by default under XCTest), with the
+        // created-window saver replaced so nothing is written outside the test.
+        let previousEnable = ProcessInfo.processInfo.environment["UNICONNECT_TEST_ENABLE"]
+        setenv("UNICONNECT_TEST_ENABLE", "1", 1)
+        let previousPersistence = UniConnectCoordinator.shared.createdWindowPersistence
+        UniConnectCoordinator.shared.configureCreatedWindowPersistence(UniConnectCreatedWindowPersistence(
+            save: {}, capture: { _ in .unavailable }, sleep: { _ in }
+        ))
+        defer {
+            UniConnectCoordinator.shared.configureCreatedWindowPersistence(previousPersistence)
+            if let previousEnable { setenv("UNICONNECT_TEST_ENABLE", previousEnable, 1) } else { unsetenv("UNICONNECT_TEST_ENABLE") }
+        }
+        let previousManager = TerminalController.shared.activeTabManagerForCallerNotification()
+        let manager = TabManager()
+        TerminalController.shared.setActiveTabManager(manager)
+        defer { TerminalController.shared.setActiveTabManager(previousManager) }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("UniConnectAndroidAgent-\(UUID().uuidString)", isDirectory: true)
+        let boxFolder = root.appendingPathComponent("box", isDirectory: true)
+        let otherFolder = root.appendingPathComponent("other", isDirectory: true)
+        let configFolder = boxFolder.appendingPathComponent(".uniconnect", isDirectory: true)
+        try FileManager.default.createDirectory(at: configFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: otherFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try """
+        {
+          "vault": {
+            "agents": [
+              {
+                "id": "local-agent",
+                "name": "Local Agent",
+                "detect": { "processName": "local-agent" },
+                "sessionIdSource": { "type": "argvOption", "argvOption": "--session" },
+                "resumeCommand": "local-agent --session {{sessionId}}",
+                "cwd": "preserve"
+              }
+            ]
+          }
+        }
+        """.write(to: configFolder.appendingPathComponent("uniconnect.json"), atomically: true, encoding: .utf8)
+
+        let boxResponse = await TerminalController.shared.mobileHostHandleRPC(.init(
+            id: "android-agent-box", method: "workspace.create",
+            params: ["name": "Caja con agente", "directory": boxFolder.path, "kind": "local", "initial_terminal": false],
+            auth: nil
+        ))
+        guard case let .ok(rawBox) = boxResponse, let boxPayload = rawBox as? [String: Any],
+              let workspaceID = boxPayload["created_workspace_id"] as? String,
+              let box = (boxPayload["workspaces"] as? [[String: Any]])?.first(where: { ($0["id"] as? String) == workspaceID }),
+              let offered = box["available_agent_targets"] as? [[String: String]] else {
+            Issue.record("Expected the box and its catalogue")
+            return
+        }
+        let workspace = try #require(manager.tabs.first { $0.id.uuidString == workspaceID })
+        defer { manager.closeWorkspace(workspace, recordHistory: false) }
+        let agent = try #require(offered.first { $0["title"] == "Local Agent" })
+        let agentID = try #require(agent["id"])
+
+        // ResourceCreation.Terminal(workspaceID, "Local Agent", otherFolder, null, agentID).
+        let windowResponse = await TerminalController.shared.mobileHostHandleRPC(.init(
+            id: "android-agent-window", method: "mobile.terminal.create",
+            params: ["name": "Local Agent", "directory": otherFolder.path, "workspace_id": workspaceID, "agent": agentID],
+            auth: nil
+        ))
+        guard case let .ok(rawWindow) = windowResponse, let windowPayload = rawWindow as? [String: Any],
+              let rawID = windowPayload["created_terminal_id"] as? String,
+              let panelID = UUID(uuidString: rawID) else {
+            Issue.record("An agent offered by the box must not be rejected because of the window folder")
+            return
+        }
+        defer { workspace.terminalPanel(for: panelID)?.surface.teardownSurface() }
+        let record = try #require(workspace.uniConnectLocalWindowsByPanelId[panelID])
+        let binding = try #require(record.tmuxBinding)
+        let boxRoot = try #require(UniConnectLocalWindowRecord.validatedBoxRoot(boxFolder.path))
+        let windowFolder = try #require(UniConnectLocalWindowRecord.validatedBoxRoot(otherFolder.path))
+        let target = try #require(UniConnectLocalWindowLaunchTarget.customTargets(
+            from: CmuxVaultAgentRegistry.load(workingDirectory: boxRoot)
+        ).first { $0.id == agentID })
+        let command = try #require(target.startupCommand(boxRoot: boxRoot, workingDirectory: windowFolder))
+        let launch = UniConnectLocalTmuxLaunchPlan(binding: binding, workingDirectory: windowFolder, initialCommand: command)
+        #expect(workspace.terminalPanel(for: panelID)?.surface.initialCommand == launch.startupCommand())
+        #expect(record.workingDirectory == windowFolder)
+    }
+
+    @Test("Android: the SSH window params it sends are the ones the Mac accepts")
+    func androidSSHWindowParameters() throws {
+        // CreateResourceSheet for an SSH box: agent "terminal", a lowercase tmux session that
+        // matches ResourceCreation's regex (1–40 of [a-z0-9_-], no dash at the ends), a folder.
+        for session in ["obra", "uc_web-2", "a", String(repeating: "x", count: 40)] {
+            let creation = try #require(UniConnectMobileTerminalCreation(
+                name: "Servidor", tmuxSession: session, directory: "/srv/app", agentID: "terminal", isSSH: true
+            ))
+            #expect(creation.tmuxSession == session)
+            #expect(creation.directory == "/srv/app")
+        }
+        // Without a folder, as when the optional field is left empty.
+        #expect(UniConnectMobileTerminalCreation(
+            name: "Servidor", tmuxSession: "obra", directory: nil, agentID: "terminal", isSSH: true
+        ) != nil)
+    }
+
+    @Test("Only installed agents are offered locally: one missing from every folder is not")
+    func installedAgentsFilter() {
+        let installed = UniConnectLocalWindowLaunchTarget.installedBuiltInAgents { $0 == "claude" || $0 == "codex" }
+        #expect(installed.map(\.id) == ["claude", "codex"])
+        let empty = FileManager.default.temporaryDirectory
+            .appendingPathComponent("UniConnectNoAgents-\(UUID().uuidString)", isDirectory: true)
+        let resolver = AgentExecutableResolver(
+            environment: ["PATH": empty.path, "HOME": empty.path], includeStandardSearchDirectories: false
+        )
+        #expect(!resolver.isInstalled(executableName: "grok"))
+        #expect(!resolver.isInstalled(executableName: "../bin/sh"))
+    }
+
+    @Test("A local box without a folder opens in the home folder, with its terminal for older clients")
+    func localBoxWithoutFolder() async throws {
+        // The UniConnect branch of the mobile host (off by default under XCTest), with the
+        // created-window saver replaced so nothing is written outside the test.
+        let previousEnable = ProcessInfo.processInfo.environment["UNICONNECT_TEST_ENABLE"]
+        setenv("UNICONNECT_TEST_ENABLE", "1", 1)
+        let previousPersistence = UniConnectCoordinator.shared.createdWindowPersistence
+        UniConnectCoordinator.shared.configureCreatedWindowPersistence(UniConnectCreatedWindowPersistence(
+            save: {}, capture: { _ in .unavailable }, sleep: { _ in }
+        ))
+        defer {
+            UniConnectCoordinator.shared.configureCreatedWindowPersistence(previousPersistence)
+            if let previousEnable { setenv("UNICONNECT_TEST_ENABLE", previousEnable, 1) } else { unsetenv("UNICONNECT_TEST_ENABLE") }
+        }
+        let previousManager = TerminalController.shared.activeTabManagerForCallerNotification()
+        let manager = TabManager()
+        TerminalController.shared.setActiveTabManager(manager)
+        defer { TerminalController.shared.setActiveTabManager(previousManager) }
+        let response = await TerminalController.shared.mobileHostHandleRPC(.init(
+            id: "box-without-folder", method: "workspace.create",
+            params: ["name": "Sin carpeta", "kind": "local"], auth: nil
+        ))
+        guard case let .ok(rawPayload) = response, let payload = rawPayload as? [String: Any],
+              let workspaceID = payload["created_workspace_id"] as? String else {
+            Issue.record("A local box without a folder must be created in the home folder")
+            return
+        }
+        let workspace = try #require(manager.tabs.first { $0.id.uuidString == workspaceID })
+        defer {
+            for panel in workspace.panels.values { (panel as? TerminalPanel)?.surface.teardownSurface() }
+            manager.closeWorkspace(workspace, recordHistory: false)
+        }
+        let home = try #require(UniConnectLocalWindowRecord.validatedBoxRoot(
+            FileManager.default.homeDirectoryForCurrentUser.path
+        ))
+        #expect(workspace.uniConnectLocalBoxRoot == home)
+        // No `initial_terminal`: an older client still gets its plain terminal.
+        #expect(workspace.uniConnectLocalWindowsByPanelId.count == 1)
+    }
+
+    @Test("SSH with the default folder starts in the remote home, never in this Mac's")
+    func sshDefaultFolderIsRemote() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let command = UniConnectSSH.remoteTmuxCommand(session: "uc-obra-1a2b", directory: nil)
+        #expect(!command.contains(" -c "))
+        #expect(!command.contains(home))
+        #expect(UniConnectSSH.remoteTmuxCommand(session: "uc-obra-1a2b", directory: "/srv/app").contains("-c '/srv/app'"))
     }
 
     /// Builds a workspace with `count` terminals as tabs in a single pane so that

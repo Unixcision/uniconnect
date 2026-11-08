@@ -26,17 +26,18 @@ struct UniConnectLocalTmuxBinding: Codable, Equatable, Hashable, Sendable {
         self = binding
     }
 
+    /// The tmux socket of an app: the real desktop server for the release bundle, a short
+    /// deterministic namespace for tagged builds so they stay out of it.
+    static func socketName(bundleIdentifier: String) -> String {
+        guard bundleIdentifier != "com.unixcision.uniconnect" else { return "uniconnect-local" }
+        let digest = SHA256.hash(data: Data(bundleIdentifier.utf8))
+            .prefix(8).map { String(format: "%02x", $0) }.joined()
+        return "uniconnect-local-\(digest)"
+    }
+
     /// New windows opt into tmux explicitly; decoding an old PTY never invents a binding.
     static func newWindow(panelID: UUID, bundleIdentifier: String) -> Self {
-        let socketName: String
-        if bundleIdentifier == "com.unixcision.uniconnect" {
-            socketName = "uniconnect-local"
-        } else {
-            // A short deterministic namespace keeps tagged builds out of the real desktop server.
-            let digest = SHA256.hash(data: Data(bundleIdentifier.utf8))
-                .prefix(8).map { String(format: "%02x", $0) }.joined()
-            socketName = "uniconnect-local-\(digest)"
-        }
+        let socketName = socketName(bundleIdentifier: bundleIdentifier)
         return Self(
             name: "uc-" + panelID.uuidString.replacingOccurrences(of: "-", with: "").lowercased(),
             socketName: socketName

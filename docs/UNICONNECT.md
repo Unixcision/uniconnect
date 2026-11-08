@@ -112,6 +112,24 @@ back when the reorder fails); Linux done (f33dc23cc7 on `feat/linux-favorites-or
 installed on the MINIPC and validated from the Pixel over the RPC path on 2026-09-09;
 guide in `docs/LINUX-FAVORITOS.md` of that branch).
 
+### Closing from the phone (`box-close.v1`, 2026-11-08)
+
+Contract in `contracts/box-close-v1/`. The macOS host advertises `box_close` and answers
+`workspace.close {workspace_id}` and `terminal.close {workspace_id, terminal_id}` with the full
+`mobile.workspace.list` object plus `closed_workspace_id` / `closed_terminal_id`. Both run the
+desktop path that follows the close confirmation, which the phone already asked:
+`TabManager.closeWorkspaceAfterConfirmation` (shared with the desktop close actions) for a
+workspace, and the forced bonsplit tab close (`requestCloseTabRecordingHistory`) for a window.
+Desktop rules kept as they are: closed items go to the reopen history; tmux sessions stay alive
+as when a window is closed on the desktop; a pinned window is not closed (`close_failed`, the
+desktop beeps); closing the last panel of a workspace closes the workspace; closing the last
+workspace of a desktop window closes that window. The only refusal the desktop does not have is
+the last workspace of the last window: on the desktop that quits UniConnect (or asks to), so the
+phone gets `close_failed` instead of a dialog or a quit. Errors are `not_found`,
+`invalid_params` and `close_failed`, with Spanish messages. The `log.v1` events
+(`ui.box_closed`, `ui.action_failed`) are pending until the Mac has a `log.v1` writer. Linux:
+not implemented yet.
+
 The local chooser offers Terminal, Claude, Codex, Agy, Grok and a custom command,
 with a visible name and editable **Window Folder**. The folder initially uses the
 workspace default, but may be any existing local directory selected with an

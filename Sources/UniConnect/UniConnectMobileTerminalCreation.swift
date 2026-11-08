@@ -19,10 +19,16 @@ struct UniConnectMobileTerminalCreation: Equatable, Sendable {
         let agentID = agentID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "terminal"
         guard !agentID.isEmpty, agentID.utf8.count <= 128,
               !agentID.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { return nil }
-        let tmuxSession = tmuxSession?.trimmingCharacters(in: .whitespacesAndNewlines)
+        var tmuxSession = tmuxSession?.trimmingCharacters(in: .whitespacesAndNewlines)
         if isSSH {
-            guard let tmuxSession, !tmuxSession.isEmpty,
-                  UniConnectSSH.sanitizedTmuxName(tmuxSession) == tmuxSession,
+            if tmuxSession?.isEmpty ?? true {
+                // As the desktop sheet suggests it, so a phone need not invent one.
+                let suggested = UniConnectSSH.suggestedTmuxName(windowName: name)
+                tmuxSession = UniConnectSSH.sanitizedTmuxName(suggested) == suggested
+                    ? suggested
+                    : "uc-" + String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12)).lowercased()
+            }
+            guard let tmuxSession, UniConnectSSH.sanitizedTmuxName(tmuxSession) == tmuxSession,
                   agentID == "terminal" else { return nil }
         } else if tmuxSession != nil {
             // Local names are assigned from the stable window UUID, not from a remote session.

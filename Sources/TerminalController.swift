@@ -20960,12 +20960,16 @@ class TerminalController {
             result = v2MobileWorkspaceUpdate(params: request.params)
         case "mobile.terminal.update":
             result = v2MobileTerminalUpdate(params: request.params)
+        case "workspace.close":
+            result = v2MobileWorkspaceClose(params: request.params)
+        case "terminal.close":
+            result = v2MobileTerminalClose(params: request.params)
         case "mobile.notifications.list":
             result = v2MobileNotificationsList(params: request.params)
         case "workspace.create":
             result = v2MobileWorkspaceCreate(params: request.params)
         case "mobile.terminal.create", "terminal.create":
-            result = v2MobileTerminalCreate(params: request.params)
+            result = await v2MobileTerminalCreateRunningAs(params: request.params)
         case "mobile.terminal.reconnect", "terminal.reconnect", "mobile.terminal.reset", "terminal.reset":
             result = v2MobileTerminalReconnect(params: request.params)
         case "mobile.terminal.details", "terminal.details":
@@ -21418,6 +21422,11 @@ class TerminalController {
         }
 
         var targetsByRoot: [String: [[String: String]]] = [:]
+        // Local boxes offer the agents installed here.
+        let resolver = AgentExecutableResolver()
+        let installedAgents = UniConnectLocalWindowLaunchTarget.installedBuiltInAgents {
+            resolver.isInstalled(executableName: $0)
+        }
         let workspaces = visibleWorkspaces.enumerated().map { _, workspace in
             let availableTargets: [[String: String]]
             if workspace.uniConnectProfile?.isSSH == true {
@@ -21428,7 +21437,7 @@ class TerminalController {
                     availableTargets = cached
                 } else {
                     let registry = CmuxVaultAgentRegistry.load(workingDirectory: root)
-                    availableTargets = ([.terminal] + UniConnectLocalWindowLaunchTarget.builtInAgents
+                    availableTargets = ([.terminal] + installedAgents
                         + UniConnectLocalWindowLaunchTarget.customTargets(from: registry)).map {
                         ["id": $0.id, "title": $0.displayName]
                     }
@@ -21459,6 +21468,8 @@ class TerminalController {
                     "tmux_binding": tmuxBinding,
                     "runtime_state": v2OrNull(localRecord?.runtimeState.rawValue),
                     "agent": v2OrNull(localRecord?.activeConversation?.kind.rawValue),
+                    // When the person last wrote to this window's AI, never what (recent-prompts.v1).
+                    "last_prompt_at": v2OrNull(mobileLastPrompts.lastPromptAt(localRecord?.activeConversation)),
                     "activity": (workspace.agentActivityByPanelId[terminal.id] ?? .unevaluated).mobilePayload
                 ]
             }
@@ -21504,13 +21515,18 @@ class TerminalController {
     /// `activity.v1`: cada terminal y cada espacio llevan un objeto `activity`.
     /// `box_update`: favoritos y orden compartidos (`mobile.workspace.update`,
     /// `mobile.terminal.update`, `is_pinned` en cada terminal, fijados primero).
+    /// `box_close`: cerrar un espacio o una ventana (`workspace.close`, `terminal.close`), como el
+    /// escritorio.
+    /// `run_as`: crear una ventana que sube de usuario y lanza su IA como él (`run-as.v1`).
+    /// `recent_prompts`: `last_prompt_at` en cada terminal (`recent-prompts.v1`).
     /// `file_put.v1`: adjuntar archivos desde el móvil (`mobile.file.begin/chunk/commit/abort`).
     /// `transcribe.v1`: dictado transcrito en el equipo (`mobile.audio.transcribe`), y solo si
     /// aquí hay motor y modelo: anunciarlo sin ellos dejaría al móvil sin dictado, en vez de
     /// hacerle usar el suyo local.
     private var mobileWorkspaceListCapabilities: [String] {
         var capabilities = [
-            "activity.v1", "box_update", "file_put.v1", "inbox.v1", "ssh_create.v1", "relaunch.v1",
+            "activity.v1", "box_update", "box_close", "file_put.v1", "inbox.v1", "recent_prompts", "run_as",
+            "ssh_create.v1", "relaunch.v1",
             "window_details.v1",
         ]
         // What this Mac can relaunch, per provider and window kind (contracts/relaunch-v1/
@@ -21536,6 +21552,9 @@ class TerminalController {
     /// Planes entregados y operaciones aceptadas, para que un segundo `apply` recupere en vez de
     /// volver a cerrar.
     private let mobileRelaunchStore = UniConnectRelaunchOperationStore()
+
+    /// La hora del último prompt de cada ventana, con caché por fichero (recent-prompts.v1).
+    private let mobileLastPrompts = MobileLastPromptIndex()
 
     /// Las cajas que caen dentro de un alcance.
     ///
@@ -22305,6 +22324,146 @@ class TerminalController {
         }
     }
 
+    // MARK: - box-close.v1
+
+    /// `workspace.close {workspace_id}` (contrato `box-close.v1`): cierra el espacio y todas sus
+    /// ventanas por el camino del escritorio que sigue a su confirmación, porque la confirmación
+    /// ya la pidió el móvil. Las sesiones tmux quedan como las deja el escritorio. Responde la
+    /// lista completa de `mobile.workspace.list` con `closed_workspace_id`.
+    private func v2MobileWorkspaceClose(params: [String: Any]) -> V2CallResult {
+        if let error = mobileCloseUnavailable() { return error }
+        guard let workspaceId = v2UUID(params, "workspace_id") else {
+            return mobileCloseInvalidParameters()
+        }
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return mobileCloseFailed()
+        }
+        return v2MainSync {
+            guard let located = mobileLocateWorkspace(workspaceId, preferring: tabManager) else {
+                return mobileCloseNotFound(String(
+                    localized: "uniconnect.mobile.close.workspaceNotFound",
+                    defaultValue: "Ese espacio de trabajo ya no existe en el equipo."
+                ))
+            }
+            return mobileCloseWorkspace(
+                located.workspace, in: located.tabManager,
+                answer: ["closed_workspace_id": workspaceId.uuidString]
+            )
+        }
+    }
+
+    /// `terminal.close {workspace_id, terminal_id}` (contrato `box-close.v1`): lo mismo que cerrar
+    /// esa pestaña en el escritorio y aceptar su confirmación. Una ventana fijada no se cierra,
+    /// como en el escritorio; si es el último panel del espacio, se cierra el espacio, también
+    /// como en el escritorio. Responde la lista completa con `closed_terminal_id`.
+    private func v2MobileTerminalClose(params: [String: Any]) -> V2CallResult {
+        if let error = mobileCloseUnavailable() { return error }
+        guard let workspaceId = v2UUID(params, "workspace_id"),
+              case let .value(terminalId) = mobileTerminalAliasUUID(params: params) else {
+            return mobileCloseInvalidParameters()
+        }
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return mobileCloseFailed()
+        }
+        return v2MainSync {
+            let notFound = mobileCloseNotFound(String(
+                localized: "uniconnect.mobile.close.terminalNotFound",
+                defaultValue: "Esa ventana ya no existe en el equipo."
+            ))
+            guard let located = mobileLocateWorkspace(workspaceId, preferring: tabManager) else {
+                return notFound
+            }
+            let (manager, workspace) = located
+            guard workspace.terminalPanel(for: terminalId) != nil,
+                  let tabId = workspace.surfaceIdFromPanelId(terminalId) else {
+                return notFound
+            }
+            guard !workspace.isPanelPinned(terminalId) else {
+                return mobileCloseFailed(String(
+                    localized: "uniconnect.mobile.close.pinnedWindow",
+                    defaultValue: "Esta ventana está fijada en el escritorio. Quítala de favoritos para poder cerrarla."
+                ))
+            }
+            let answer = ["closed_terminal_id": terminalId.uuidString]
+            // The desktop closes the whole workspace when its last panel is closed explicitly.
+            guard workspace.panels.count > 1 else {
+                return mobileCloseWorkspace(
+                    workspace, in: manager,
+                    answer: answer.merging(["closed_workspace_id": workspaceId.uuidString]) { $1 }
+                )
+            }
+            workspace.requestCloseTabRecordingHistory(tabId, force: true)
+            guard workspace.panels[terminalId] == nil else { return mobileCloseFailed() }
+            return mobileClosedList(preferring: manager, answer: answer)
+        }
+    }
+
+    /// Cierra un espacio ya localizado. El último espacio de una ventana del escritorio cierra esa
+    /// ventana, como en el escritorio, salvo que sea la única: eso cerraría UniConnect entero.
+    @MainActor
+    private func mobileCloseWorkspace(
+        _ workspace: Workspace,
+        in manager: TabManager,
+        answer: [String: String]
+    ) -> V2CallResult {
+        let managers = UniConnectCoordinator.shared.allTabManagers()
+        let closesDesktopWindow = manager.tabs.count <= 1
+        if closesDesktopWindow {
+            guard managers.contains(where: { $0 === manager }), managers.count > 1 else {
+                return mobileCloseFailed(String(
+                    localized: "uniconnect.mobile.close.lastWorkspace",
+                    defaultValue: "Es el último espacio de trabajo abierto en UniConnect: cerrarlo cerraría la aplicación en el equipo. Ciérralo desde el escritorio."
+                ))
+            }
+        }
+        manager.closeWorkspaceAfterConfirmation(workspace)
+        let closed = closesDesktopWindow
+            ? !UniConnectCoordinator.shared.allTabManagers().contains(where: { $0 === manager })
+            : !manager.tabs.contains(where: { $0.id == workspace.id })
+        guard closed else { return mobileCloseFailed() }
+        UniConnectCoordinator.shared.requestSave()
+        let survivor = closesDesktopWindow
+            ? UniConnectCoordinator.shared.allTabManagers().first ?? manager
+            : manager
+        return mobileClosedList(preferring: survivor, answer: answer)
+    }
+
+    /// La lista completa tras un cierre, con el id cerrado añadido.
+    private func mobileClosedList(preferring manager: TabManager, answer: [String: String]) -> V2CallResult {
+        guard case let .ok(rawPayload) = v2MobileWorkspaceList(params: [:], tabManager: manager),
+              var payload = rawPayload as? [String: Any] else {
+            return mobileCloseFailed()
+        }
+        payload.merge(answer) { $1 }
+        return .ok(payload)
+    }
+
+    private func mobileCloseUnavailable() -> V2CallResult? {
+        guard UniConnectCoordinator.shared.importMutationGate?.allowsMutation == false else { return nil }
+        return mobileCloseFailed(String(
+            localized: "uniconnect.mobile.importBusy",
+            defaultValue: "Hay una importación en curso. Espera a que termine antes de modificar las ventanas."
+        ))
+    }
+
+    private func mobileCloseInvalidParameters() -> V2CallResult {
+        .err(code: "invalid_params", message: String(
+            localized: "uniconnect.mobile.close.invalidParams",
+            defaultValue: "Indica el espacio de trabajo y, para cerrar una ventana, también la ventana."
+        ), data: nil)
+    }
+
+    private func mobileCloseNotFound(_ message: String) -> V2CallResult {
+        .err(code: "not_found", message: message, data: nil)
+    }
+
+    private func mobileCloseFailed(_ message: String? = nil) -> V2CallResult {
+        .err(code: "close_failed", message: message ?? String(
+            localized: "uniconnect.mobile.close.failed",
+            defaultValue: "El equipo no pudo cerrarlo. Comprueba que no haya un diálogo abierto en el escritorio."
+        ), data: nil)
+    }
+
     private enum MobileTerminalAliasUUID {
         case missing
         case value(UUID)
@@ -22423,8 +22582,10 @@ class TerminalController {
             let kind = v2RawString(params, "kind") ?? "local"
             let workspace: Workspace
             if kind == "local" {
-                guard let rawDirectory = v2RawString(params, "directory"),
-                      let directory = UniConnectLocalWindowRecord.validatedBoxRoot(rawDirectory),
+                let requestedDirectory = v2RawString(params, "directory")?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let rawDirectory = requestedDirectory?.isEmpty == false
+                    ? requestedDirectory! : FileManager.default.homeDirectoryForCurrentUser.path
+                guard let directory = UniConnectLocalWindowRecord.validatedBoxRoot(rawDirectory),
                       UniConnectLocalBoxRootPolicy.isAvailableDirectory(directory) else {
                     return mobileCreationInvalidParameters()
                 }
@@ -22451,7 +22612,7 @@ class TerminalController {
                           UniConnectSSH.validateConnectCommand(connect) == nil,
                           let created = UniConnectCoordinator.shared.createSSHWorkspace(
                               name: name, color: nil, connectCommand: connect, in: tabManager,
-                              select: false, finalizeCreation: false
+                              select: false, finalizeCreation: false, showErrors: false
                           ) else { return mobileCreationInvalidParameters() }
                     workspace = created
                     UniConnectCoordinator.shared.requestSave()
@@ -22495,7 +22656,12 @@ class TerminalController {
         }
     }
 
-    private func v2MobileTerminalCreate(params: [String: Any]) -> V2CallResult {
+    private func v2MobileTerminalCreate(
+        params: [String: Any],
+        runAs: UniConnectRunAs? = nil,
+        isSandbox: Bool = false,
+        runAsPassword: String? = nil
+    ) -> V2CallResult {
         if let error = mobileMutationUnavailable() { return error }
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
@@ -22532,15 +22698,19 @@ class TerminalController {
             guard UniConnectLocalBoxRootPolicy.isAvailableDirectory(directory) else {
                 return mobileCreationInvalidParameters()
             }
-            let registry = CmuxVaultAgentRegistry.load(workingDirectory: directory)
+            // The catalogue of the box, the one `mobile.workspace.list` advertised and the desktop
+            // chooser offers: an agent the phone was offered is accepted whatever folder it chose.
+            let registry = CmuxVaultAgentRegistry.load(workingDirectory: boxRoot)
             let targets = UniConnectLocalWindowLaunchTarget.builtInAgents
                 + UniConnectLocalWindowLaunchTarget.customTargets(from: registry)
-            guard let request = creation.localRequest(boxRoot: boxRoot, availableTargets: targets) else {
+            guard var request = creation.localRequest(boxRoot: boxRoot, availableTargets: targets) else {
                 return mobileCreationInvalidParameters()
             }
+            request.runAs = runAs
+            request.isSandbox = isSandbox
             terminal = UniConnectCoordinator.shared.createLocalWindow(
-                in: workspace, request: request, focus: false,
-                placement: .tab(paneID: paneId, afterTabID: nil)
+                in: workspace, request: request, focus: false, showErrors: false,
+                runAsPassword: runAsPassword, placement: .tab(paneID: paneId, afterTabID: nil)
             )
         }
         guard let terminal else {
@@ -22558,6 +22728,68 @@ class TerminalController {
             params: ["workspace_id": workspace.id.uuidString], tabManager: tabManager,
             createdTerminalID: terminal.id.uuidString
         )
+    }
+
+    /// `mobile.terminal.create` with `run_as` / `is_sandbox` (`run-as.v1`), by the desktop's path:
+    /// the window's pane runs the shared wrapper, which switches user, checks `id -un` and only
+    /// then launches the agent. A failed switch answers `run_as_failed` with its cause and the
+    /// created window, left at the connected user's shell and without an agent. The password
+    /// never appears in a command line, the saved state or an answer.
+    private func v2MobileTerminalCreateRunningAs(params: [String: Any]) async -> V2CallResult {
+        guard v2HasNonNullParam(params, "run_as") || v2HasNonNullParam(params, "is_sandbox") else {
+            return v2MobileTerminalCreate(params: params)
+        }
+        var runAs: UniConnectRunAs?
+        var password: String?
+        if v2HasNonNullParam(params, "run_as") {
+            guard let wire = params["run_as"] as? [String: Any],
+                  let parsed = UniConnectRunAs(wire: wire) else { return mobileCreationInvalidParameters() }
+            switch wire["password"] {
+            case nil, is NSNull:
+                password = nil
+            case let value as String:
+                // Kept exactly as typed (spaces included); only its size and line breaks are checked.
+                guard value.utf8.count <= 1_024, !value.contains(where: { $0.isNewline }) else {
+                    return mobileCreationInvalidParameters()
+                }
+                password = value.isEmpty ? nil : value
+            default:
+                return mobileCreationInvalidParameters()
+            }
+            runAs = parsed.mode == .current ? nil : parsed
+        }
+        if v2HasNonNullParam(params, "is_sandbox"), !(params["is_sandbox"] is Bool) {
+            return mobileCreationInvalidParameters()
+        }
+        let isSandbox = params["is_sandbox"] as? Bool ?? false
+        guard let workspaceID = v2UUID(params, "workspace_id"),
+              let tabManager = v2ResolveTabManager(params: params),
+              let workspace = mobileLocateWorkspace(workspaceID, preferring: tabManager)?.workspace else {
+            return v2MobileTerminalCreate(params: params)
+        }
+        if workspace.uniConnectProfile?.isSSH == true, runAs != nil || isSandbox {
+            return .err(code: "invalid_params", message: String(
+                localized: "uniconnect.runAs.sshUnavailable",
+                defaultValue: "En este Mac, «Ejecutar como» todavía solo está disponible en cajas locales."
+            ), data: nil)
+        }
+        let created = v2MobileTerminalCreate(
+            params: params, runAs: runAs, isSandbox: isSandbox, runAsPassword: password
+        )
+        guard runAs != nil,
+              case let .ok(rawPayload) = created,
+              let payload = rawPayload as? [String: Any],
+              let rawID = payload["created_terminal_id"] as? String,
+              let panelID = UUID(uuidString: rawID),
+              let panel = workspace.terminalPanel(for: panelID) else { return created }
+        if let failure = await UniConnectCoordinator.shared.awaitRunAs(panel: panel, in: workspace, password: password) {
+            return .err(code: "run_as_failed", message: failure.message, data: [
+                "cause": failure.rawValue,
+                "workspace_id": workspaceID.uuidString,
+                "created_terminal_id": rawID,
+            ])
+        }
+        return created
     }
 
     private func mobileCreationInvalidParameters() -> V2CallResult {

@@ -1450,6 +1450,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if !isRunningUnderXCTest {
             GlobalSearchCoordinator.shared.start()
             startTranscriptRetention()
+            installLocalTmuxServerAgent()
         }
         SystemWideHotkeyController.shared.start()
         AgentHibernationController.shared.start()
@@ -4539,6 +4540,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         )
         transcriptRetentionTask = Task.detached(priority: .utility) { await archiver.run() }
+    }
+
+    /// Loads the launch agent that starts the local tmux server outside the app's coalition, so a
+    /// Force Quit of UniConnect no longer takes every AI with it. A server already running keeps
+    /// running where it was born; the agent only serves the next one.
+    private func installLocalTmuxServerAgent() {
+        let socketName = UniConnectLocalTmuxBinding.socketName(
+            bundleIdentifier: Bundle.main.bundleIdentifier ?? "com.unixcision.uniconnect"
+        )
+        let agent = UniConnectLocalTmuxServerAgent(
+            socketName: socketName, homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+        )
+        Task.detached(priority: .utility) {
+            if case .failed(let reason) = await agent.install() {
+                NSLog("UniConnect: el agente del servidor tmux no se cargó: %@", reason)
+            }
+        }
     }
 
     /// The session snapshot as JSON text, for the conversation ids it mentions.

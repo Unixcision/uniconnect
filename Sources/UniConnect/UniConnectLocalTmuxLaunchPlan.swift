@@ -7,8 +7,9 @@ struct UniConnectLocalTmuxLaunchPlan: Equatable, Sendable {
     let workingDirectory: String
     let initialCommand: String?
 
-    /// Explicit executable injection lets behavior tests run a fixture without touching a real tmux server.
-    func startupCommand(tmuxExecutable: String? = nil) -> String {
+    /// Explicit executable injection lets behavior tests run a fixture without touching a real tmux
+    /// server or the real launchd.
+    func startupCommand(tmuxExecutable: String? = nil, launchctlExecutable: String = "/bin/launchctl") -> String {
         let quote = TerminalStartupShellQuoting.singleQuoted
         let missingTmux = String(
             localized: "uniconnect.localWindow.tmux.missing",
@@ -30,6 +31,7 @@ struct UniConnectLocalTmuxLaunchPlan: Equatable, Sendable {
             done
         fi
         """
+        let agentLabel = UniConnectLocalTmuxServerAgent.label(socketName: binding.socketName)
         let paneBody = initialCommand.map { $0 + "; exec \"${SHELL:-/bin/zsh}\" -l" }
         let paneCommand = paneBody.map { "exec \"${SHELL:-/bin/zsh}\" -ilc " + quote($0) }
             ?? "exec \"${SHELL:-/bin/zsh}\" -l"
@@ -54,6 +56,19 @@ struct UniConnectLocalTmuxLaunchPlan: Equatable, Sendable {
                 # recovery shell below, never a second agent.
                 "$uc_tmux" "$@" attach-session -t \(quote("=" + binding.name))
             else
+                # With no server, launchd starts it from its agent (UniConnectLocalTmuxServerAgent):
+                # a server born from this terminal would belong to UniConnect's coalition, and a
+                # Force Quit of the app kills the whole coalition. Bounded deadline: launchd
+                # offers no readiness signal a shell can await. Without the agent, or if it does
+                # not answer in time, new-session below starts the server as before.
+                if ! "$uc_tmux" "$@" -N list-sessions >/dev/null 2>&1 \
+                    && \(quote(launchctlExecutable)) kickstart "gui/$(/usr/bin/id -u)/"\(quote(agentLabel)) >/dev/null 2>&1; then
+                    uc_wait=50
+                    until "$uc_tmux" "$@" -N list-sessions >/dev/null 2>&1 || [ "$uc_wait" -le 0 ]; do
+                        /bin/sleep 0.1
+                        uc_wait=$((uc_wait - 1))
+                    done
+                fi
                 # The grid takes its history limit at creation; configure it in the same
                 # tmux command queue before new-session, including on a fresh server.
                 # new-session -A still attaches if another client created it meanwhile.

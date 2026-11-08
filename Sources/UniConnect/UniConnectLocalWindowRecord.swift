@@ -20,6 +20,8 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         case interruptedConversationID
         case createdAt
         case updatedAt
+        case runAs
+        case launch
     }
 
     private(set) var version: Int
@@ -39,6 +41,12 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
     private(set) var interruptedConversationID: UUID?
     let createdAt: TimeInterval
     private(set) var updatedAt: TimeInterval
+    /// The user this window runs as (`run-as.v1`), as asked, never its password. A window-level
+    /// fact, for a plain terminal too; what the probe observes stays apart (`asRoot`).
+    /// Optional and additive like ``interruptedConversationID``: older builds ignore the key.
+    private(set) var runAs: UniConnectRunAs?
+    /// How the window's agent was asked to start (target, `IS_SANDBOX`, chosen conversation id).
+    private(set) var launch: UniConnectWindowLaunch?
 
     static let currentVersion = 4
 
@@ -54,7 +62,9 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         activeConversationID: UUID? = nil,
         interruptedConversationID: UUID? = nil,
         createdAt: TimeInterval = Date().timeIntervalSince1970,
-        updatedAt: TimeInterval? = nil
+        updatedAt: TimeInterval? = nil,
+        runAs: UniConnectRunAs? = nil,
+        launch: UniConnectWindowLaunch? = nil
     ) {
         let normalizedBoxRoot = Self.normalizedRoot(boxRoot)
         let normalizedWorkingDirectory = Self.validatedWorkingDirectory(
@@ -82,6 +92,8 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         self.interruptedConversationID = interruptedConversationID
         self.createdAt = createdAt.isFinite ? createdAt : 0
         self.updatedAt = (updatedAt ?? createdAt).isFinite ? (updatedAt ?? createdAt) : 0
+        self.runAs = runAs
+        self.launch = launch
         repairReferences()
     }
 
@@ -165,6 +177,8 @@ struct UniConnectLocalWindowRecord: Codable, Equatable, Identifiable, Sendable {
         let decodedUpdatedAt = try container.decodeIfPresent(TimeInterval.self, forKey: .updatedAt)
             ?? self.createdAt
         self.updatedAt = decodedUpdatedAt.isFinite ? decodedUpdatedAt : self.createdAt
+        self.runAs = try container.decodeIfPresent(UniConnectRunAs.self, forKey: .runAs)
+        self.launch = try container.decodeIfPresent(UniConnectWindowLaunch.self, forKey: .launch)
         repairReferences()
     }
 

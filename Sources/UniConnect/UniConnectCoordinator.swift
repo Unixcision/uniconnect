@@ -54,6 +54,18 @@ final class UniConnectCoordinator: ObservableObject {
     private var importCheckpoints: (any UniConnectImportCheckpointing)?
     private var importTask: Task<Void, Never>?
     private var manualSaveTask: Task<Void, Never>?
+    /// Saves every window created by the desktop or the phone at once, then again with its
+    /// agent's conversation. Replaceable for tests through ``configureCreatedWindowPersistence(_:)``.
+    private(set) lazy var createdWindowPersistence = UniConnectCreatedWindowPersistence(
+        save: { [weak self] in await self?.persistCreatedWindowState() },
+        capture: { [weak self] owner in
+            await self?.captureCreatedWindowAgent(owner) ?? .unavailable
+        },
+        // A real, cancellable delay between the targeted probes of one new window.
+        sleep: { try await ContinuousClock().sleep(for: $0) }
+    )
+    /// The passwords windows switch user with (`run-as.v1`), sealed with the vault's key.
+    let runAsPasswords = UniConnectRunAsPasswordStore()
     private var didRecoverInterruptedImport = false
     private var isRestoringImportCheckpoint = false
     private(set) var importMutationGate: UniConnectImportMutationGate?
@@ -234,50 +246,61 @@ final class UniConnectCoordinator: ObservableObject {
             let observations = await inspector.runtimeObservations(for: targets)
             guard let self, !Task.isCancelled else { return }
             for observation in observations {
-                let target = observation.target, owner = target.owner
-                guard let workspace = workspaces[owner.workspaceID],
-                      self.workspace(for: owner.workspaceID) === workspace,
-                      workspace.uniConnectProfile?.kind == .local, workspace.remoteConfiguration == nil,
-                      workspace.uniConnectLocalWindowsByPanelId[owner.panelID] == target.record,
-                      workspace.uniConnectSurfaceGeneration(panelId: owner.panelID) == owner.surfaceGeneration,
-                      let panel = workspace.panels[owner.panelID] as? TerminalPanel, !panel.isAgentHibernated,
-                      panel.surface.canAcceptPortalBinding(expectedSurfaceId: owner.panelID, expectedGeneration: nil) else {
+                guard let workspace = workspaces[observation.target.owner.workspaceID],
+                      self.workspace(for: observation.target.owner.workspaceID) === workspace else {
                     continue
                 }
-                switch observation.state {
-                case .agent(let conversationID):
-                    guard let snapshot = target.record.restorableSnapshot(
-                        for: conversationID, registry: CmuxVaultAgentRegistry(registrations: [])
-                    ) else { continue }
-                    _ = workspace.uniConnectRecordLocalAgent(panelId: owner.panelID, snapshot: snapshot)
-                case .discovered(let observed):
-                    self.localAgentObservedAt[.init(workspaceID: owner.workspaceID, panelID: owner.panelID)] = Date()
-                    // The process itself says which conversation it is on (Claude's session file,
-                    // Codex's open rollout): no dependency on the wrapper hooks, which do not run in
-                    // tmux panes. After /clear or /resume the new id enters and the old one stays
-                    // in the history. The claim registry inside uniConnectRecordLocalAgent keeps a
-                    // conversation from being owned by two windows.
-                    guard let snapshot = Self.localAgentSnapshot(for: observed) else { continue }
-                    if target.record.runtimeState == .agent,
-                       let active = target.record.activeConversation,
-                       let candidate = UniConnectLocalAgentConversation(snapshot: snapshot),
-                       active.identityKey == candidate.identityKey {
-                        continue
-                    }
-                    _ = workspace.uniConnectRecordLocalAgent(panelId: owner.panelID, snapshot: snapshot)
-                case .unidentified, .ambiguous:
-                    // An agent without an id yet, or more than one: nothing saved is touched.
-                    continue
-                case .shell:
-                    // A pending auto-resume may not have reached its pane yet.
-                    guard self.localAgentLaunchAttempts[.init(workspaceID: owner.workspaceID, panelID: owner.panelID)] == nil else { continue }
-                    _ = workspace.uniConnectTransitionLocalWindowToShell(panelId: owner.panelID)
-                }
+                self.applyLocalTmuxObservation(observation, in: workspace)
             }
         }
         localTmuxReconciliationTask = task
         await task.value
         localTmuxReconciliationTask = nil
+    }
+
+    /// Records what one pane observation says, when the window is still the one observed.
+    private func applyLocalTmuxObservation(
+        _ observation: UniConnectLocalTmuxRuntimeObservation,
+        in workspace: Workspace
+    ) {
+        let target = observation.target, owner = target.owner
+        guard workspace.id == owner.workspaceID,
+              workspace.uniConnectProfile?.kind == .local, workspace.remoteConfiguration == nil,
+              workspace.uniConnectLocalWindowsByPanelId[owner.panelID] == target.record,
+              workspace.uniConnectSurfaceGeneration(panelId: owner.panelID) == owner.surfaceGeneration,
+              let panel = workspace.panels[owner.panelID] as? TerminalPanel, !panel.isAgentHibernated,
+              panel.surface.canAcceptPortalBinding(expectedSurfaceId: owner.panelID, expectedGeneration: nil) else {
+            return
+        }
+        switch observation.state {
+        case .agent(let conversationID):
+            guard let snapshot = target.record.restorableSnapshot(
+                for: conversationID, registry: CmuxVaultAgentRegistry(registrations: [])
+            ) else { return }
+            _ = workspace.uniConnectRecordLocalAgent(panelId: owner.panelID, snapshot: snapshot)
+        case .discovered(let observed):
+            localAgentObservedAt[.init(workspaceID: owner.workspaceID, panelID: owner.panelID)] = Date()
+            // The process itself says which conversation it is on (Claude's session file,
+            // Codex's open rollout): no dependency on the wrapper hooks, which do not run in
+            // tmux panes. After /clear or /resume the new id enters and the old one stays
+            // in the history. The claim registry inside uniConnectRecordLocalAgent keeps a
+            // conversation from being owned by two windows.
+            guard let snapshot = Self.localAgentSnapshot(for: observed) else { return }
+            if target.record.runtimeState == .agent,
+               let active = target.record.activeConversation,
+               let candidate = UniConnectLocalAgentConversation(snapshot: snapshot),
+               active.identityKey == candidate.identityKey {
+                return
+            }
+            _ = workspace.uniConnectRecordLocalAgent(panelId: owner.panelID, snapshot: snapshot)
+        case .unidentified, .ambiguous:
+            // An agent without an id yet, or more than one: nothing saved is touched.
+            return
+        case .shell:
+            // A pending auto-resume may not have reached its pane yet.
+            guard localAgentLaunchAttempts[.init(workspaceID: owner.workspaceID, panelID: owner.panelID)] == nil else { return }
+            _ = workspace.uniConnectTransitionLocalWindowToShell(panelId: owner.panelID)
+        }
     }
 
     /// The secret-free snapshot of a conversation discovered in a live local process.
@@ -655,10 +678,10 @@ final class UniConnectCoordinator: ObservableObject {
                     boxRoot: boxRoot,
                     availableCustomTargets: customTargets,
                     isFirstWindow: true,
-                    onCreate: { [weak self, weak workspace] request in
+                    onCreate: { [weak self, weak workspace] request, password in
                         dismiss()
                         guard let self, let workspace else { return }
-                        _ = self.createLocalWindow(in: workspace, request: request)
+                        self.createLocalWindowRunningAs(in: workspace, request: request, password: password)
                     },
                     onCancel: { [weak workspace] in
                         dismiss()
@@ -826,6 +849,8 @@ final class UniConnectCoordinator: ObservableObject {
         return workspace
     }
 
+    /// Creates an SSH box from a connection command. `showErrors == false` (the phone) returns
+    /// `nil` on a vault failure instead of a modal alert that would block the main thread.
     @discardableResult
     func createSSHWorkspace(
         name: String,
@@ -835,14 +860,15 @@ final class UniConnectCoordinator: ObservableObject {
         select: Bool = true,
         probeImmediately: Bool = true,
         finalizeCreation: Bool = true,
-        stableIdentity: UUID? = nil
+        stableIdentity: UUID? = nil,
+        showErrors: Bool = true
     ) -> Workspace? {
         guard permitsImportSensitiveMutation() else { return nil }
         let credentialId: UUID
         do {
             credentialId = try UniConnectVault.shared.storeOrThrow(connectCommand: connectCommand)
         } catch {
-            presentError(error.localizedDescription)
+            if showErrors { presentError(error.localizedDescription) }
             return nil
         }
         return installSSHWorkspace(
@@ -1482,10 +1508,12 @@ final class UniConnectCoordinator: ObservableObject {
                     workspaceName: title,
                     boxRoot: boxRoot,
                     availableCustomTargets: customTargets,
-                    onCreate: { [weak self, weak workspace] request in
+                    onCreate: { [weak self, weak workspace] request, password in
                         dismiss()
                         guard let self, let workspace else { return }
-                        self.createLocalWindow(in: workspace, request: request, placement: placement)
+                        self.createLocalWindowRunningAs(
+                            in: workspace, request: request, password: password, placement: placement
+                        )
                     },
                     onCancel: { dismiss() }
                 )
@@ -1508,12 +1536,18 @@ final class UniConnectCoordinator: ObservableObject {
     }
 
     /// Creates a durable local window in its chosen folder, without changing the workspace default.
+    ///
+    /// `showErrors == false` is for remote callers (the phone): a failure is returned as `nil`
+    /// instead of a modal alert, which would block the main thread until someone answered it on
+    /// the desktop and leave the caller waiting.
     @discardableResult
     func createLocalWindow(
         in workspace: Workspace,
         request: UniConnectNewLocalWindowRequest,
         focus: Bool = true,
         requestPersistence: Bool = true,
+        showErrors: Bool = true,
+        runAsPassword: String? = nil,
         placement requestedPlacement: UniConnectNewWindowPlacement? = nil
     ) -> TerminalPanel? {
         guard permitsImportSensitiveMutation() else { return nil }
@@ -1531,6 +1565,7 @@ final class UniConnectCoordinator: ObservableObject {
         // Reassign a missing default only when no explicit folder was chosen.
         if request.workingDirectory == nil,
            !UniConnectLocalBoxRootPolicy.isAvailableDirectory(boxRoot) {
+            guard showErrors else { return nil }
             resolveMissingLocalBoxRoot(in: workspace, missingRoot: boxRoot) { [weak self, weak workspace] in
                 guard let self, let workspace else { return }
                 _ = self.createLocalWindow(
@@ -1548,17 +1583,53 @@ final class UniConnectCoordinator: ObservableObject {
             request.workingDirectory ?? boxRoot,
             within: boxRoot
         ), UniConnectLocalBoxRootPolicy.isAvailableDirectory(workingDirectory) else {
-            presentError(String(
-                localized: "uniconnect.workspace.error.folderMissing",
-                defaultValue: "Choose an existing folder."
-            ))
+            if showErrors {
+                presentError(String(
+                    localized: "uniconnect.workspace.error.folderMissing",
+                    defaultValue: "Choose an existing folder."
+                ))
+            }
             return nil
         }
 
         // Preserve the authoritative workspace identity, while launching in this window's folder.
-        let initialAgentCommand = request.launchTarget
-            .startupCommand(boxRoot: boxRoot, workingDirectory: workingDirectory)
+        // Claude starts on a conversation id chosen now, saved at once with the window.
         let panelID = UUID()
+        let chosenSessionID = request.launchTarget == .claude ? UUID().uuidString.lowercased() : nil
+        let runAsPlan = Self.runAsPlan(request: request, workingDirectory: workingDirectory, sessionID: chosenSessionID)
+        let initialAgentCommand: String?
+        if let runAsPlan, runAsPlan.runAs.mode != .current {
+            // run-as.v1: the shared wrapper switches user, checks `id -un`, and only then runs
+            // the folder, IS_SANDBOX and the agent as that user.
+            guard let wrapper = UniConnectRunAsWrapper(),
+                  let command = wrapper.paneCommand(
+                      runAs: runAsPlan.runAs, panelID: panelID, inner: runAsPlan.innerCommand
+                  ) else {
+                if showErrors { presentError(UniConnectRunAsFailure.failed.message) }
+                return nil
+            }
+            if runAsPlan.runAs.method == .sudo, let runAsPassword, !runAsPassword.isEmpty {
+                // Before the pane can start: the wrapper's askpass reads it once and removes it.
+                do {
+                    try UniConnectLocalRunAsHost.writeSecretNow(
+                        runAsPassword, windowID: UniConnectRunAsWrapper.windowID(panelID)
+                    )
+                } catch {
+                    if showErrors { presentError(UniConnectRunAsFailure.failed.message) }
+                    return nil
+                }
+            }
+            initialAgentCommand = command
+        } else if let runAsPlan {
+            // The connected user with IS_SANDBOX: `current` never uses the wrapper.
+            initialAgentCommand = runAsPlan.launchLine
+        } else {
+            initialAgentCommand = request.launchTarget.startupCommand(
+                boxRoot: boxRoot,
+                workingDirectory: workingDirectory,
+                extraArguments: request.launchTarget.chosenSessionArguments(chosenSessionID)
+            )
+        }
         let tmuxBinding = UniConnectLocalTmuxBinding.newWindow(
             panelID: panelID,
             bundleIdentifier: Bundle.main.bundleIdentifier ?? "uniconnect-development"
@@ -1569,7 +1640,8 @@ final class UniConnectCoordinator: ObservableObject {
             initialCommand: initialAgentCommand
         )
         let launchAttempt: LocalAgentLaunchAttempt?
-        if initialAgentCommand != nil {
+        // An agent behind a user switch is not this user's process: its own wait does not apply.
+        if initialAgentCommand != nil, (runAsPlan?.runAs.mode ?? .current) == .current {
             guard let attempt = beginLocalAgentLaunch(
                 owner: .init(workspaceID: workspace.id, panelID: panelID),
                 snapshot: nil,
@@ -1591,12 +1663,14 @@ final class UniConnectCoordinator: ObservableObject {
             if let launchAttempt {
                 failLocalAgentLaunch(launchAttempt, workspace: workspace)
             }
-            presentError(
-                String(
-                    localized: "uniconnect.localWindow.error.createFailed",
-                    defaultValue: "The local window could not be created."
+            if showErrors {
+                presentError(
+                    String(
+                        localized: "uniconnect.localWindow.error.createFailed",
+                        defaultValue: "The local window could not be created."
+                    )
                 )
-            )
+            }
             return nil
         }
         // Adopt a generic local workspace only after a successful explicit creation.
@@ -1615,14 +1689,31 @@ final class UniConnectCoordinator: ObservableObject {
                 visibleName: request.visibleName,
                 boxRoot: boxRoot,
                 workingDirectory: workingDirectory,
-                tmuxBinding: tmuxBinding
+                tmuxBinding: tmuxBinding,
+                runAs: request.runAs,
+                launch: request.launchTarget == .terminal ? nil : request.launch(sessionID: chosenSessionID)
             ),
             panelId: panel.id,
             visibleName: request.visibleName
         )
+        if let chosenSessionID {
+            _ = workspace.uniConnectRecordLocalAgent(
+                panelId: panel.id,
+                snapshot: SessionRestorableAgentSnapshot(
+                    kind: .claude, sessionId: chosenSessionID,
+                    workingDirectory: workingDirectory, launchCommand: nil
+                )
+            )
+        }
         removePlaceholders(from: workspace, keeping: panel.id)
         workspace.uniConnectProfile?.touch()
-        if requestPersistence { requestSave() }
+        if requestPersistence {
+            requestSave()
+            createdWindowPersistence.windowCreated(
+                .init(workspaceID: workspace.id, panelID: panel.id),
+                expectsAgent: request.launchTarget != .terminal
+            )
+        }
         return panel
     }
 
@@ -2028,6 +2119,9 @@ final class UniConnectCoordinator: ObservableObject {
             panelID: signal.panelID
         )
         if signal.kind == .panelClosed {
+            createdWindowPersistence.windowClosed(.init(workspaceID: signal.workspaceID, panelID: signal.panelID))
+            let closedPanelID = signal.panelID
+            Task { [runAsPasswords] in try? await runAsPasswords.remove(for: closedPanelID) }
             let currentWorkspace = workspace(for: owner.workspaceID)
             let hasCurrentPanel = currentWorkspace?.panels[owner.panelID] != nil
             guard Self.shouldCancelLocalAgentLaunchForPanelClosedSignal(
@@ -2522,7 +2616,13 @@ final class UniConnectCoordinator: ObservableObject {
         workspace.setPanelCustomTitle(panelId: panel.id, title: name)
         removePlaceholders(from: workspace, keeping: panel.id)
         workspace.uniConnectProfile?.touch()
-        if requestPersistence { requestSave() }
+        if requestPersistence {
+            requestSave()
+            createdWindowPersistence.windowCreated(
+                .init(workspaceID: workspace.id, panelID: panel.id),
+                expectsAgent: false
+            )
+        }
         return panel
     }
 
@@ -3419,11 +3519,140 @@ final class UniConnectCoordinator: ObservableObject {
         }
     }
 
+    /// The «Guardar» writer for a window that was just created: the session and the readable tree
+    /// at once, without the global probes (the new window's own probe follows) and without a
+    /// dialog, since the request may come from the phone. Waits for a save already running.
+    func persistCreatedWindowState() async {
+        guard Self.isEnabled else { return }
+        if let running = manualSaveTask { await running.value }
+        guard manualSaveTask == nil, permitsImportSensitiveMutation() else { return }
+        let task = Task { @MainActor [weak self] in
+            let resumeIndexes = await ProcessDetectedResumeIndexes.load()
+            guard let self else { return }
+            defer { self.manualSaveTask = nil }
+            guard !Task.isCancelled, self.permitsImportSensitiveMutation() else { return }
+            self.finishManualSave(resumeIndexes: resumeIndexes, showConfirmation: false, showErrors: false)
+        }
+        manualSaveTask = task
+        await task.value
+    }
+
+    /// Probes one new window now and records its agent's conversation if it has one.
+    func captureCreatedWindowAgent(
+        _ owner: UniConnectCreatedWindowPersistence.Owner
+    ) async -> UniConnectCreatedWindowPersistence.Capture {
+        guard let workspace = workspace(for: owner.workspaceID),
+              workspace.panels[owner.panelID] is TerminalPanel else { return .unavailable }
+        if workspace.uniConnectProfile?.isSSH == true {
+            guard let monitor = remoteAgentMonitor else { return .unavailable }
+            await monitor.refresh(workspaces: [workspace], force: true)
+            return workspace.uniConnectRemoteAgentsByPanelId[owner.panelID] == nil ? .pending : .captured
+        }
+        guard let inspector = localTmuxInspector else { return .unavailable }
+        return await captureLocalAgent(panelID: owner.panelID, in: workspace, inspector: inspector)
+    }
+
+    /// Reads one local window's pane through `inspector` and records the conversation it shows,
+    /// by the same rules as the periodic reconciliation.
+    func captureLocalAgent(
+        panelID: UUID,
+        in workspace: Workspace,
+        inspector: any UniConnectLocalTmuxInspecting
+    ) async -> UniConnectCreatedWindowPersistence.Capture {
+        guard let target = localObservationTarget(panelID: panelID, in: workspace) else { return .unavailable }
+        let observations = await inspector.runtimeObservations(for: [target])
+        for observation in observations where observation.target.owner == target.owner {
+            applyLocalTmuxObservation(observation, in: workspace)
+        }
+        return workspace.uniConnectLocalWindowsByPanelId[panelID]?.activeConversation == nil ? .pending : .captured
+    }
+
+    /// Follows a just-created local window's user switch (`run-as.v1`) until the shared wrapper
+    /// decides. Shared by the desktop sheets and the phone.
+    ///
+    /// The password is kept in ``runAsPasswords`` for relaunch and recovery; `su` gets it pasted
+    /// only while it is the pane's question. The pane is started in the background if hidden.
+    ///
+    /// - Returns: `nil` when the window runs as the requested user (or does not switch); the cause
+    ///   otherwise, the window left at the connected user's shell and without an agent.
+    func awaitRunAs(
+        panel: TerminalPanel,
+        in workspace: Workspace,
+        password: String?,
+        host: (any UniConnectRunAsHost)? = nil,
+        sleep: (@Sendable (Duration) async throws -> Void)? = nil
+    ) async -> UniConnectRunAsFailure? {
+        guard let record = workspace.uniConnectLocalWindowsByPanelId[panel.id],
+              let runAs = record.runAs, runAs.mode != .current,
+              let binding = record.tmuxBinding else { return nil }
+        if let password, !password.isEmpty {
+            // Kept for relaunch and recovery; if the vault cannot take it, they ask again.
+            try? await runAsPasswords.store(password, for: panel.id)
+        }
+        panel.surface.requestBackgroundSurfaceStartIfNeeded()
+        let follower = UniConnectRunAsSwitch(
+            host: host ?? UniConnectLocalRunAsHost(binding: binding),
+            // A real, bounded wait between two readings of the wrapper's diary.
+            sleep: sleep ?? { try await ContinuousClock().sleep(for: $0) }
+        )
+        return await follower.outcome(
+            method: runAs.method, password: password, windowID: UniConnectRunAsWrapper.windowID(panel.id)
+        )
+    }
+
+    /// What a local request must run by hand: through the wrapper when it switches user, or with
+    /// `IS_SANDBOX` as the connected user. `nil` when it opens as usual.
+    static func runAsPlan(
+        request: UniConnectNewLocalWindowRequest,
+        workingDirectory: String,
+        sessionID: String?
+    ) -> UniConnectRunAsPlan? {
+        guard request.switchesUser, let runAs = request.runAs ?? UniConnectRunAs(mode: .current) else { return nil }
+        let target = request.launchTarget
+        return UniConnectRunAsPlan(
+            runAs: runAs,
+            workingDirectory: workingDirectory,
+            isSandbox: request.effectiveSandbox,
+            agentArgv: target.noPromptArgv(asRoot: runAs.mode == .root).map {
+                $0 + target.chosenSessionArguments(sessionID)
+            }
+        )
+    }
+
+    /// The desktop sheet's creation: the window, then its user switch followed in the background,
+    /// with a dialog only when it fails (the window stays, at the connected user's shell).
+    @discardableResult
+    func createLocalWindowRunningAs(
+        in workspace: Workspace,
+        request: UniConnectNewLocalWindowRequest,
+        password: String?,
+        placement: UniConnectNewWindowPlacement? = nil
+    ) -> TerminalPanel? {
+        guard let panel = createLocalWindow(
+            in: workspace, request: request, runAsPassword: password, placement: placement
+        ) else { return nil }
+        if (request.runAs?.mode ?? .current) != .current {
+            Task { @MainActor [weak self, weak workspace] in
+                guard let self, let workspace,
+                      let failure = await self.awaitRunAs(panel: panel, in: workspace, password: password) else { return }
+                self.presentError(failure.message)
+            }
+        }
+        return panel
+    }
+
+    /// Installs the created-window saver; tests pass one with a fake writer and probe.
+    func configureCreatedWindowPersistence(_ persistence: UniConnectCreatedWindowPersistence) {
+        createdWindowPersistence = persistence
+    }
+
     private func finishManualSave(
         resumeIndexes: ProcessDetectedResumeIndexes,
-        showConfirmation: Bool
+        showConfirmation: Bool,
+        showErrors: Bool = true
     ) {
         guard AppDelegate.shared?.uniConnectPersistSessionNow(resumeIndexes: resumeIndexes) == true else {
+            guard showErrors else { return }
             presentError(String(
                 localized: "uniconnect.backup.sessionSaveFailed",
                 defaultValue: "The app session could not be written to disk. No complete backup was confirmed."
@@ -3462,6 +3691,7 @@ final class UniConnectCoordinator: ObservableObject {
                 }
             }
         } catch {
+            guard showErrors else { return }
             presentError(String.localizedStringWithFormat(
                 String(
                     localized: "uniconnect.backup.saveFailed",

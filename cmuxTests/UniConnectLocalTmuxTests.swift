@@ -120,6 +120,115 @@ struct UniConnectLocalTmuxTests {
         #expect(try fixture.read("agents") == "agent\n")
     }
 
+    @Test("With no server, a window asks launchd for it before creating its session, so the server is born outside the app")
+    func asksLaunchdForTheServerBeforeCreating() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let binding = try #require(UniConnectLocalTmuxBinding(name: "window-one", socketName: "test-local"))
+        let plan = UniConnectLocalTmuxLaunchPlan(
+            binding: binding, workingDirectory: fixture.root.path,
+            initialCommand: #"printf 'agent\n' >> "$UC_TEST_ROOT/agents""#
+        )
+        #expect(try fixture.run(plan, agentAnswers: true) == 0)
+        #expect(try fixture.read("launchctl-calls") == "kickstart gui/\(getuid())/com.unixcision.uniconnect.tmux.test-local\n")
+        let invocations = try fixture.read("invocations")
+        let asked = try #require(invocations.range(of: "list-sessions"))
+        let created = try #require(invocations.range(of: "new-session"))
+        #expect(asked.lowerBound < created.lowerBound)
+        #expect(try fixture.read("agents") == "agent\n")
+    }
+
+    @Test("A server that already answers is used as it is: launchd is not asked")
+    func usesARunningServerWithoutLaunchd() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        try Data().write(to: fixture.root.appendingPathComponent("server"))
+        let binding = try #require(UniConnectLocalTmuxBinding(name: "window-one", socketName: "test-local"))
+        let plan = UniConnectLocalTmuxLaunchPlan(
+            binding: binding, workingDirectory: fixture.root.path,
+            initialCommand: #"printf 'agent\n' >> "$UC_TEST_ROOT/agents""#
+        )
+        #expect(try fixture.run(plan) == 0)
+        #expect(!FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("launchctl-calls").path))
+        #expect(try fixture.read("agents") == "agent\n")
+    }
+
+    @Test("Without the launchd agent the window still starts its session, as before")
+    func fallsBackWhenLaunchdHasNoAgent() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let binding = try #require(UniConnectLocalTmuxBinding(name: "window-one", socketName: "test-local"))
+        let plan = UniConnectLocalTmuxLaunchPlan(
+            binding: binding, workingDirectory: fixture.root.path,
+            initialCommand: #"printf 'agent\n' >> "$UC_TEST_ROOT/agents""#
+        )
+        #expect(try fixture.run(plan, agentAnswers: false) == 0)
+        #expect(try fixture.read("launchctl-calls").hasPrefix("kickstart "))
+        #expect(try fixture.read("agents") == "agent\n")
+        #expect(!FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("fallback").path))
+    }
+
+    @Test("The agent installs a foreground tmux server on the app's socket and loads it when launchd lacks it")
+    func serverAgentInstallsAndLoads() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("uc-agent-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let tmux = home.appendingPathComponent("tmux")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try Data("#!/bin/sh\n".utf8).write(to: tmux)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: tmux.path)
+        let launchd = FakeLaunchd(loaded: false, running: false)
+        let agent = UniConnectLocalTmuxServerAgent(
+            socketName: "uniconnect-local", homeDirectory: home, userID: 501,
+            tmuxCandidates: [tmux.path], language: "es_ES.UTF-8", commands: launchd
+        )
+        #expect(await agent.install() == .ready)
+        let plist = try #require(NSDictionary(contentsOf: agent.plistURL) as? [String: Any])
+        #expect(plist["Label"] as? String == "com.unixcision.uniconnect.tmux.uniconnect-local")
+        #expect(plist["ProgramArguments"] as? [String] == [tmux.path, "-D", "-f", "/dev/null", "-L", "uniconnect-local"])
+        #expect(plist["RunAtLoad"] as? Bool == false)
+        #expect(plist["KeepAlive"] == nil)
+        #expect(await launchd.calls() == [
+            ["print", "gui/501/com.unixcision.uniconnect.tmux.uniconnect-local"],
+            ["bootstrap", "gui/501", agent.plistURL.path],
+        ])
+    }
+
+    @Test("A running server is never unloaded, even when the agent's definition changed", arguments: [true, false])
+    func serverAgentNeverUnloadsARunningServer(_ running: Bool) async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("uc-agent-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let tmux = home.appendingPathComponent("tmux")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try Data("#!/bin/sh\n".utf8).write(to: tmux)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: tmux.path)
+        let launchd = FakeLaunchd(loaded: true, running: running)
+        let agent = UniConnectLocalTmuxServerAgent(
+            socketName: "uniconnect-local", homeDirectory: home, userID: 501,
+            tmuxCandidates: [tmux.path], language: "es_ES.UTF-8", commands: launchd
+        )
+        // A fresh home has no plist yet, so the definition counts as changed.
+        #expect(await agent.install() == .ready)
+        let verbs = await launchd.calls().map { $0.first ?? "" }
+        #expect(verbs == (running ? ["print"] : ["print", "bootout", "bootstrap"]))
+        // Unchanged afterwards: nothing is reloaded whatever the state.
+        #expect(await agent.install() == .ready)
+        #expect(await launchd.calls().map { $0.first ?? "" }.suffix(1) == ["print"])
+    }
+
+    @Test("Without tmux the agent writes nothing and asks launchd nothing")
+    func serverAgentWithoutTmux() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("uc-agent-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let launchd = FakeLaunchd(loaded: false, running: false)
+        let agent = UniConnectLocalTmuxServerAgent(
+            socketName: "uniconnect-local", homeDirectory: home, userID: 501,
+            tmuxCandidates: [home.appendingPathComponent("missing").path], commands: launchd
+        )
+        #expect(await agent.install() == .tmuxMissing)
+        #expect(!FileManager.default.fileExists(atPath: agent.plistURL.path))
+        #expect(await launchd.calls().isEmpty)
+    }
+
     @Test("Ghostty's Darwin login wrapper starts the local session and reattaches without rerunning its command")
     func ghosttyDarwinLoginWrapperLaunchesAndReattaches() throws {
         let fixture = try Fixture()
@@ -566,6 +675,29 @@ struct UniConnectLocalTmuxTests {
         func usesOnlyExistingServers() -> Bool { requests.allSatisfy { $0.first == "-N" } }
     }
 
+    /// launchd as `launchctl print/bootout/bootstrap` sees it: loaded or not, running or not.
+    private actor FakeLaunchd: CommandRunning {
+        private var loaded: Bool
+        private let running: Bool
+        private var recorded: [[String]] = []
+        init(loaded: Bool, running: Bool) { self.loaded = loaded; self.running = running }
+        func calls() -> [[String]] { recorded }
+        func run(directory: String, executable: String, arguments: [String], timeout: TimeInterval?) async -> CommandResult {
+            recorded.append(arguments)
+            switch arguments.first {
+            case "print":
+                return CommandResult(stdout: loaded ? "state = \(running ? "running" : "not running")\n" : nil, stderr: nil,
+                                     exitStatus: loaded ? 0 : 113, timedOut: false, executionError: nil)
+            case "bootout":
+                loaded = false
+                return CommandResult(stdout: "", stderr: nil, exitStatus: 0, timedOut: false, executionError: nil)
+            default:
+                loaded = true
+                return CommandResult(stdout: "", stderr: nil, exitStatus: 0, timedOut: false, executionError: nil)
+            }
+        }
+    }
+
     private struct Fixture {
         let root: URL
         let panelID = UUID()
@@ -585,7 +717,12 @@ struct UniConnectLocalTmuxTests {
             shift 2
             [ "$1" = -L ] || exit 82
             shift 2
+            if [ "$1" = -N ]; then shift; fi
             action=$1; shift
+            if [ "$action" = list-sessions ]; then
+                # A server answers once launchd started it or once a session exists.
+                test -e "$UC_TEST_ROOT/server" || ls -d "$UC_TEST_ROOT"/session-* >/dev/null 2>&1; exit $?
+            fi
             if [ "$action" = has-session ]; then
                 [ "$1" = -t ] || exit 89
                 test -d "$UC_TEST_ROOT/session-${2#=}"; exit $?
@@ -615,7 +752,15 @@ struct UniConnectLocalTmuxTests {
             fi
             exit 0
             """#
-            for (name, content) in [("shell", shell), ("tmux", tmux)] {
+            let launchctl = #"""
+            #!/bin/sh
+            printf '%s\n' "$*" >> "$UC_TEST_ROOT/launchctl-calls"
+            [ "$1" = kickstart ] || exit 64
+            [ "${UC_TEST_AGENT-}" = 1 ] || exit 113
+            : > "$UC_TEST_ROOT/server"
+            exit 0
+            """#
+            for (name, content) in [("shell", shell), ("tmux", tmux), ("launchctl", launchctl)] {
                 let path = root.appendingPathComponent(name)
                 try content.write(to: path, atomically: true, encoding: .utf8)
                 try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path.path)
@@ -629,10 +774,14 @@ struct UniConnectLocalTmuxTests {
             _ plan: UniConnectLocalTmuxLaunchPlan,
             executable: String? = nil,
             failCreation: Bool = false,
-            darwinLoginWrapper: Bool = false
+            darwinLoginWrapper: Bool = false,
+            agentAnswers: Bool = false
         ) throws -> Int32 {
             let process = Process()
-            let command = plan.startupCommand(tmuxExecutable: executable ?? root.appendingPathComponent("tmux").path)
+            let command = plan.startupCommand(
+                tmuxExecutable: executable ?? root.appendingPathComponent("tmux").path,
+                launchctlExecutable: root.appendingPathComponent("launchctl").path
+            )
             process.executableURL = URL(fileURLWithPath: darwinLoginWrapper ? "/bin/bash" : "/bin/sh")
             process.arguments = darwinLoginWrapper
                 ? ["--noprofile", "--norc", "-c", "exec -l " + command]
@@ -640,6 +789,7 @@ struct UniConnectLocalTmuxTests {
             process.environment = [
                 "HOME": root.path, "PATH": "/usr/bin:/bin", "SHELL": root.appendingPathComponent("shell").path,
                 "UC_TEST_ROOT": root.path, "UC_TEST_FAIL": failCreation ? "1" : "0",
+                "UC_TEST_AGENT": agentAnswers ? "1" : "0",
                 "CMUX_SURFACE_ID": panelID.uuidString,
             ]
             process.standardOutput = FileHandle.nullDevice

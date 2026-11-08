@@ -52,6 +52,19 @@ struct AgentExecutableResolver {
         )
     }
 
+    /// Whether `executableName` is installed for this user, searched like ``resolve(_:)``
+    /// (PATH, the user's runtime folders and the standard ones), never this app's own shims.
+    func isInstalled(executableName: String) -> Bool {
+        guard !executableName.isEmpty, !executableName.contains("/") else { return false }
+        return resolvedSearchDirectories().contains { directory in
+            guard !shouldSkipSearchDirectory(directory) else { return false }
+            let candidate = URL(fileURLWithPath: directory, isDirectory: true)
+                .appendingPathComponent(executableName, isDirectory: false)
+                .standardizedFileURL
+            return fileManager.isExecutableFile(atPath: candidate.path) && !isBundledProviderExecutable(candidate)
+        }
+    }
+
     static func cmuxConfiguredExecutablePaths(defaults: UserDefaults = .standard) -> [AgentSessionProviderID: String] {
         guard let claudePath = ClaudeCodeIntegrationSettings.customClaudePath(defaults: defaults) else {
             return [:]

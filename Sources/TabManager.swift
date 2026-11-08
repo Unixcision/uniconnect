@@ -5792,6 +5792,12 @@ class TabManager: ObservableObject {
            ) {
             return
         }
+        closeWorkspaceAfterConfirmation(workspace)
+    }
+
+    /// Closes `workspace` once every confirmation has been answered. Shared by the desktop close
+    /// paths and by the phone (`box-close.v1`), whose confirmation already happened on the phone.
+    func closeWorkspaceAfterConfirmation(_ workspace: Workspace) {
         if tabs.count <= 1 {
             // Last workspace in this window: match Close Workspace shortcut behavior.
             if let window {

@@ -21,7 +21,8 @@ struct UniConnectNewLocalWindowView: View {
     let availableCustomTargets: [UniConnectLocalWindowLaunchTarget]
     /// True when this chooser decides the first window of a box that was just created.
     let isFirstWindow: Bool
-    let onCreate: (UniConnectNewLocalWindowRequest) -> Void
+    /// The request and, when it switches user, the password to do it.
+    let onCreate: (UniConnectNewLocalWindowRequest, String?) -> Void
     let onCancel: () -> Void
 
     @State private var selection: Selection = .terminal
@@ -31,13 +32,18 @@ struct UniConnectNewLocalWindowView: View {
     @State private var customName = ""
     @State private var customExecutable = ""
     @State private var errorMessage: String?
+    @State private var runAsMode: UniConnectRunAs.Mode = .current
+    @State private var runAsMethod: UniConnectRunAs.Method = .sudo
+    @State private var runAsUser = ""
+    @State private var runAsPassword = ""
+    @State private var isSandbox = false
 
     init(
         workspaceName: String,
         boxRoot: String,
         availableCustomTargets: [UniConnectLocalWindowLaunchTarget] = [],
         isFirstWindow: Bool = false,
-        onCreate: @escaping (UniConnectNewLocalWindowRequest) -> Void,
+        onCreate: @escaping (UniConnectNewLocalWindowRequest, String?) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.workspaceName = workspaceName
@@ -105,6 +111,12 @@ struct UniConnectNewLocalWindowView: View {
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("UniConnectLocalWindowNameField")
             }
+
+            UniConnectRunAsFields(
+                mode: $runAsMode, method: $runAsMethod, user: $runAsUser,
+                password: $runAsPassword, isSandbox: $isSandbox,
+                sandboxForced: selection == .claude && runAsMode == .root
+            )
 
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -494,7 +506,14 @@ struct UniConnectNewLocalWindowView: View {
             )
             return
         }
-        guard let request = UniConnectNewLocalWindowRequest(
+        guard let runAs = UniConnectRunAsFields.runAs(mode: runAsMode, method: runAsMethod, user: runAsUser) else {
+            errorMessage = String(
+                localized: "uniconnect.runAs.error.user",
+                defaultValue: "Escribe el usuario con el que debe correr la IA."
+            )
+            return
+        }
+        guard var request = UniConnectNewLocalWindowRequest(
             visibleName: visibleName,
             boxRoot: boxRoot,
             workingDirectory: normalizedDirectory,
@@ -506,6 +525,8 @@ struct UniConnectNewLocalWindowView: View {
             )
             return
         }
-        onCreate(request)
+        request.runAs = runAs.mode == .current ? nil : runAs
+        request.isSandbox = isSandbox
+        onCreate(request, runAs.mode == .current || runAsPassword.isEmpty ? nil : runAsPassword)
     }
 }
