@@ -7,7 +7,7 @@ import uuid
 
 from .mobile_protocol import RPCError
 from .relaunch import RelaunchService
-from .relaunch_agents import RelaunchAgents, RelaunchUnavailable
+from .relaunch_agents import RelaunchAgents, RelaunchUnavailable, cause_text
 from .relaunch_history import RelaunchHistory
 from .machine_directory import MachineDirectory
 from .transport import SSHCommand, Transport
@@ -216,7 +216,7 @@ class RelaunchDesktop:
             ": " + window._("uniconnect.relaunch.warning.active_codex")
             if target.get("active") is True and target.get("provider") == "codex" else "")
             for target in plan["targets"]]
-        names += ["— " + target["label"] + ": " + window._("uniconnect.relaunch.cause." + target["cause"]) for target in plan["excluded"]]
+        names += ["— " + target["label"] + ": " + cause_text(window._, target["cause"]) for target in plan["excluded"]]
         continuing = plan.get("verb") in ("agent.continue", "agent.recover")
         detail = window._("Se reabrirá la misma conversación y solo se enviará «continua» si aparece un límite de uso explícito y el cuadro está vacío. Se comprobará que Codex lo acepta.") if continuing else window._("Se cerrará y reabrirá la IA conservando su conversación. tmux y tus archivos no se borran.")
         window.status_label.set_text(window._("Plan de continuación preparado" if continuing else "Plan de relanzado preparado"))
@@ -332,8 +332,8 @@ class RelaunchDesktop:
             if not live[0] or window._closed:
                 return
             lines = [labels.get(item["key"], item["key"]) + " — " + window._("uniconnect.relaunch.state." + item["state"]) +
-                     (": " + window._("uniconnect.relaunch.cause." + item["cause"]) if item.get("cause") else "") for item in value["results"]]
-            lines += [item["label"] + " — " + window._("uniconnect.relaunch.cause." + item["cause"]) for item in plan["excluded"]]
+                     (": " + cause_text(window._, item["cause"]) if item.get("cause") else "") for item in value["results"]]
+            lines += [item["label"] + " — " + cause_text(window._, item["cause"]) for item in plan["excluded"]]
             text.get_buffer().set_text("\n".join(lines))
             if value["operation_state"] == "en_curso":
                 GLib.timeout_add(750, refresh)

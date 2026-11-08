@@ -25,6 +25,41 @@ class WindowCommands:
                 return self._(label).format(number=name[len(prefix):])
         return self._(self.action_map[name].label)
 
+    def action_visible(self, name):
+        """¿Tiene sentido esta acción en la ventana o caja del menú? Si no, el menú no la enseña.
+
+        Distinto de `action_enabled`, que la deja en gris cuando ahora no se puede (subir la
+        primera ventana, cerrar a la izquierda sin nada a la izquierda…). Relanzar en una ventana
+        sin IA relanzable o continuar Codex en una que no es Codex no es «ahora no»: es nunca.
+        """
+        from .relaunch_agents import RELAUNCHABLE
+        workspace, surface = self.current_workspace(), self.focused_surface
+        record = surface.record if surface else {}
+        kind = (surface.workspace if surface else (workspace or {})).get("kind")
+        agent = record.get("agent")
+        windows = workspace.get("windows", []) if workspace else []
+        if name == "relaunch_window":
+            return bool(record.get("tmux")) and agent in RELAUNCHABLE
+        if name == "relaunch_workspace":
+            return any(window.get("tmux") and window.get("agent") in RELAUNCHABLE for window in windows)
+        if name == "continue_window":
+            return bool(record.get("tmux")) and agent == "codex"
+        if name == "continue_workspace":
+            return any(window.get("tmux") and window.get("agent") == "codex" for window in windows)
+        if name == "adopt_antigravity_window":
+            return agent == "agy"
+        if name in ("upload", "kill_tmux"):
+            return kind == "ssh"
+        if name == "edit_ssh":
+            return bool(workspace) and workspace.get("kind") == "ssh"
+        if name == "reconnect":
+            return bool(record.get("tmux"))
+        if name == "reconnect_workspace":
+            return any(window.get("tmux") for window in windows)
+        if name == "reset_window_name":
+            return bool(record.get("originalName"))
+        return True
+
     def action_enabled(self, name):
         # Retired desktop actions must not remain callable through saved shortcuts.
         # Existing fleet receipts keep their read-only result recovery path.
@@ -79,6 +114,8 @@ class WindowCommands:
             return bool(surface and surface.workspace["kind"] == "ssh" and surface.record.get("tmux"))
         if name == "reconnect_all":
             return any(w["kind"] == "ssh" and w["windows"] for w in self.store.workspaces)
+        if name == "reconnect_workspace":
+            return any(window.get("tmux") for window in windows)
         if name in ("copy", "cancel_selection"):
             # tmux owns mouse selections: VTE cannot report them. Check on
             # invocation off-thread; never disable the only route to copy/exit.
