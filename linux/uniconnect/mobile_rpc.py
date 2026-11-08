@@ -7,6 +7,7 @@ import datetime
 import hashlib
 import json
 import shlex
+import shutil
 import socket
 import threading
 import time
@@ -125,7 +126,138 @@ class MobileRPC:
             # Trozos, verificación y salto SSH fuera de GTK; solo la identidad de
             # la caja y el bloqueo se comprueban en el hilo dueño del modelo.
             return self.file_dispatch(operation, params, connection_id, authorized)
+        if operation in ("workspace.create", "terminal.create"):
+            return self.create_dispatch(operation, params, connection_id, checked)
         return self.on_main(lambda: checked(lambda: self._dispatch_main(operation, params, connection_id)))
+
+    # ----- crear desde el móvil (probado de punta a punta el 08-11) -----
+
+    SESSION_WAIT_SECONDS = 25
+    CONVERSATION_WAIT_SECONDS = 45
+
+    def create_dispatch(self, operation, params, connection_id, checked):
+        """Crear y no responder hasta que la sesión tmux exista, o decir por qué no se pudo.
+
+        Antes el móvil recibía «creada» y al adjuntarse un `attach_failed` sin causa: la sesión
+        nace un instante después, o no nace (una SSH con la carpeta local daba un 72). Ahora la
+        respuesta llega con la sesión viva o con `create_failed` y el motivo exacto.
+        """
+        params = dict(params)
+        if operation == "workspace.create" and params.get("kind") == "ssh" and not params.get("directory"):
+            params["directory"] = self.remote_folder(params)
+        if operation == "terminal.create":
+            workspace = self.on_main(lambda: checked(lambda: self.target(params, terminal=False)[0]))
+            if workspace["kind"] == "ssh" and not params.get("directory") and not workspace.get("cwd"):
+                params["directory"] = self.remote_home(self.on_main(lambda: self.window.connection(workspace)))
+        result = self.on_main(lambda: checked(lambda: self._dispatch_main(operation, params, connection_id)))
+        if operation == "workspace.create":
+            workspace_id = result["created_workspace_id"]
+            if params.get("initial_terminal", True) is not False:
+                # Clientes viejos: sin la marca, una terminal (docs/UNICONNECT.md, creación en dos pasos).
+                created = self.on_main(lambda: checked(lambda: self._dispatch_main(
+                    "terminal.create", {"workspace_id": workspace_id, "name": "Terminal", "agent": "terminal"}, connection_id)))
+                self.wait_for_session(workspace_id, created["created_terminal_id"])
+                result = {**self.on_main(lambda: self.workspace_list({"workspace_id": workspace_id})),
+                          "created_workspace_id": workspace_id}
+            return result
+        workspace_id, terminal_id = params.get("workspace_id"), result["created_terminal_id"]
+        self.wait_for_session(workspace_id, terminal_id)
+        self.capture_conversation(terminal_id)
+        return {**self.on_main(lambda: self.workspace_list({"workspace_id": workspace_id})), "created_terminal_id": terminal_id}
+
+    def remote_folder(self, params):
+        """La carpeta de una caja SSH nueva sin carpeta: la de la caja de la que hereda, o la $HOME remota."""
+        if params.get("connect_command"):
+            return self.remote_home(params["connect_command"])
+        source = self.on_main(lambda: next((box for box in self.window.store.workspaces
+                                            if box["id"] == params.get("source_workspace_id") and box["kind"] == "ssh"), None))
+        if source is None:
+            return None  # create_mobile_workspace ya dice que falta la caja de la que heredar.
+        return source.get("cwd") or self.remote_home(self.on_main(lambda: self.window.connection(source)))
+
+    def remote_home(self, connection):
+        """$HOME del servidor (fuera de GTK). Nunca la local: una SSH con /root del MINIPC daba un 72."""
+        try:
+            completed = self.transport_factory(connection, socket_name=None).run('printf %s "$HOME"', timeout=15, check=False)
+            home = completed.stdout.strip() if completed.returncode == 0 else ""
+        except Exception:
+            home = ""
+        if not home.startswith("/") or "\n" in home or len(home) > 4096:
+            raise RPCError("create_failed", "No se pudo saber la carpeta de inicio del servidor; indica la carpeta")
+        return home
+
+    def wait_for_session(self, workspace_id, terminal_id):
+        """Espera acotada a que exista la sesión tmux; si la terminal del escritorio cae antes, su causa."""
+        def snapshot():
+            box = next((item for item in self.window.store.workspaces if item["id"] == workspace_id), None)
+            record = next((item for item in (box or {}).get("windows", []) if item["id"] == terminal_id), None)
+            if box is None or record is None:
+                return None
+            surface = self.window.surfaces.get(terminal_id)
+            label = surface.status_label.get_text() if surface is not None and hasattr(surface, "status_label") else ""
+            return {"kind": box["kind"], "tmux": record.get("tmux"),
+                    "socket": record.get("tmuxSocket") or ("uniconnect" if box["kind"] == "ssh" else "uniconnect-local"),
+                    "status": getattr(surface, "status", None), "label": label,
+                    "connection": self.window.connection(box) if box["kind"] == "ssh" else None}
+        deadline = self.clock() + self.SESSION_WAIT_SECONDS
+        while True:
+            state = self.on_main(snapshot)
+            if state is None:
+                raise RPCError("not_found", "La ventana ya no existe")
+            if state["status"] == "Disconnected":
+                detail = state["label"].split("·", 1)[-1].strip() or "la terminal se cerró al arrancar"
+                if detail.startswith("agent_not_installed:"):
+                    detail = "no está instalada en esa máquina (" + detail.split(":", 1)[1].strip() + ")"
+                elif detail.startswith("tmux_create_failed: 72"):
+                    detail = "la carpeta no existe en esa máquina"
+                raise RPCError("create_failed", "No se pudo crear la sesión: " + detail)
+            if self.session_exists(state):
+                return
+            if self.clock() >= deadline:
+                raise RPCError("create_failed", "La sesión tmux no apareció a tiempo")
+            self.wait(0.5)
+
+    def session_exists(self, state):
+        try:
+            completed = self.transport_factory(state["connection"], socket_name=state["socket"]).run(
+                shlex.join(["tmux", "-L", state["socket"], "has-session", "-t", "=" + state["tmux"]]),
+                timeout=15, check=False)
+            return completed.returncode == 0
+        except Exception:
+            return False
+
+    def capture_conversation(self, terminal_id):
+        """En segundo plano: sonda dirigida a esa ventana hasta tener el id de su conversación y guardarlo."""
+        tree = getattr(self.window, "agent_tree", None)
+        if tree is None:
+            return
+
+        def needs():
+            record = next((item for box in self.window.store.workspaces for item in box.get("windows", [])
+                           if item["id"] == terminal_id), None)
+            return bool(record and record.get("agent") in ("claude", "codex", "agy", "grok") and not record.get("sessionId"))
+
+        def loop():
+            deadline = self.clock() + self.CONVERSATION_WAIT_SECONDS
+            while self.clock() < deadline:
+                try:
+                    if not self.on_main(needs):
+                        return
+                    self.on_main(lambda: tree.probe_window(terminal_id))
+                except Exception:
+                    return
+                self.wait(3)
+
+        threading.Thread(target=loop, name="uc-capturar-conversacion", daemon=True).start()
+
+    def agent_installed(self, kind):
+        """¿Está el ejecutable de esa IA en el PATH de esta máquina? (lo mismo que comprueba crear la sesión)."""
+        try:
+            catalog = getattr(self, "_agent_catalog", None) or AgentResumeCatalog()
+            self._agent_catalog = catalog
+            return shutil.which(catalog.provider(kind)["executable"]) is not None
+        except Exception:
+            return False
 
     def agent_title(self, kind):
         """``displayName`` del catálogo compartido (Mac y Linux lo leen de ahí); el id si no carga."""
@@ -413,6 +545,8 @@ class MobileRPC:
             return self.workspace_list({})
         if operation == "notifications.list":
             return self.notifications(params)
+        if operation in ("workspace.close", "terminal.close"):
+            return self.close_box(operation, params)
         if operation == "workspace.create":
             workspace = self.window.create_mobile_workspace(params)
             return {**self.workspace_list({"workspace_id": workspace["id"]}), "created_workspace_id": workspace["id"]}
@@ -504,10 +638,11 @@ class MobileRPC:
                                   "tmux_binding": {"name": record["tmux"], "socketName": record.get("tmuxSocket") or
                                                    ("uniconnect" if workspace["kind"] == "ssh" else "uniconnect-local")}
                                   if record.get("tmux") else None})
-            targets = [("terminal", "Terminal")]
-            if workspace["kind"] == "local":
-                # Nombres del catálogo compartido (displayName), sin tabla propia.
-                targets += [(kind, self.agent_title(kind)) for kind in ("claude", "codex", "agy", "grok")]
+            # Nombres del catálogo compartido (displayName), sin tabla propia. También en SSH, como el escritorio.
+            # En local, solo las instaladas aquí (si no, crear acaba en agent_not_installed); en SSH no se sabe sin
+            # preguntar al servidor y se ofrecen todas.
+            targets = [("terminal", "Terminal")] + [(kind, self.agent_title(kind)) for kind in ("claude", "codex", "agy", "grok")
+                                                    if workspace["kind"] == "ssh" or self.agent_installed(kind)]
             boxes.append({"id": workspace["id"], "title": workspace["name"], "kind": workspace["kind"],
                           "current_directory": workspace.get("cwd"), "is_pinned": workspace.get("pinned", False),
                           "is_selected": workspace["id"] == self.window.store.data.get("selectedWorkspaceId"),
@@ -517,9 +652,51 @@ class MobileRPC:
         if terminals_filter and not any(box["terminals"] for box in boxes):
             raise RPCError("not_found", "No se encontró la terminal")
         return {"workspaces": boxes, "display_name": socket.gethostname(),
-                "capabilities": ["activity.v1", "box_update", "file_put.v1", "inbox.v1", "transcribe.v1",
+                "capabilities": ["activity.v1", "box_close", "box_update", "file_put.v1", "inbox.v1", "transcribe.v1",
                                  "ssh_create.v1", "window_details.v1"]
                 + (list(RELAUNCH_CAPABILITIES) if getattr(self.window, "relaunch", None) is not None else [])}
+
+    def close_box(self, operation, params):
+        """box-close.v1: el mismo cierre que el escritorio, ya confirmado en el móvil.
+
+        Responde la lista entera (la forma de `workspace.list`) más el id cerrado. La sesión
+        tmux de una ventana queda viva y recuperable, como al cerrarla en el escritorio.
+        """
+        terminal = operation == "terminal.close"
+        workspace_id, terminal_id = params.get("workspace_id"), params.get("terminal_id")
+        if not isinstance(workspace_id, str) or not workspace_id or len(workspace_id) > 128 or (
+                terminal and (not isinstance(terminal_id, str) or not terminal_id or len(terminal_id) > 128)):
+            raise RPCError("invalid_params", "Indica el espacio" + (" y la ventana" if terminal else "") + " que cerrar")
+        workspace = next((box for box in self.window.store.workspaces if box["id"] == workspace_id), None)
+        if workspace is None or (terminal and not any(record["id"] == terminal_id for record in workspace["windows"])):
+            raise RPCError("not_found", "Ya no estaba: se ha cerrado o movido en otro sitio")
+        log = getattr(self.window, "event_log", None)
+        kind = "terminal" if terminal else "workspace"
+        try:
+            if getattr(self.window.store, "_active_transaction", None) is not None:
+                raise RuntimeError("transaction")
+            from gi.repository import Gtk
+            if Gtk.grab_get_current() is not None:
+                raise RuntimeError("modal")  # Un diálogo del escritorio está abierto: no se cierra por debajo.
+            if terminal:
+                self.window.close_window_by_id(workspace_id, terminal_id)
+            else:
+                self.window.close_workspace_by_id(workspace_id)
+        except Exception as error:
+            cause = str(error) if str(error) in ("transaction", "modal") else type(error).__name__
+            if log is not None:
+                log.warn("ui", "ui.action_failed", workspace=workspace_id, window=terminal_id if terminal else None,
+                         detail={"action": "close", "cause": cause, "source": "mobile"})
+            message = {"modal": "Hay un diálogo abierto en el escritorio; ciérralo y vuelve a intentarlo",
+                       "transaction": "Hay un cambio de cajas en preparación; vuelve a intentarlo"}.get(
+                cause, "No se pudo cerrar en el escritorio")
+            raise RPCError("close_failed", message) from error
+        if log is not None:
+            log.info("ui", "ui.box_closed", workspace=workspace_id, window=terminal_id if terminal else None,
+                     detail={"kind": kind, "source": "mobile"})
+        result = self.workspace_list({})
+        result["closed_terminal_id" if terminal else "closed_workspace_id"] = terminal_id if terminal else workspace_id
+        return result
 
     def invalidate_terminal(self, panel_id):
         with self.revision_lock:

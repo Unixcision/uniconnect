@@ -1074,7 +1074,7 @@ class RPCTests(EngineTestCase):
 
     def test_workspace_list_advertises_the_capability(self):
         self.assertEqual(self.rpc.dispatch("mobile.workspace.list", {}, "conn-a")["capabilities"],
-                         ["activity.v1", "box_update", "file_put.v1", "inbox.v1", "transcribe.v1", "ssh_create.v1",
+                         ["activity.v1", "box_close", "box_update", "file_put.v1", "inbox.v1", "transcribe.v1", "ssh_create.v1",
                           "window_details.v1"])
 
     def test_a_transcription_through_the_rpc_boundary(self):
