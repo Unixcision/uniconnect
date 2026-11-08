@@ -1,0 +1,1 @@
+{"workspace_id": "9C1F0B7E-1E0D-4E43-9B3A-3D2F0C1A2B3C", "name": "CLAUDE ROOT", "agent": "claude", "run_as": {"mode": "root", "method": "sudo", "password": "<contraseña de dgomezm>"}, "is_sandbox": true}
