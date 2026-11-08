@@ -117,6 +117,10 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         self.workspace_list.get_style_context().add_class("uc-workspaces")
         self.workspace_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self.workspace_list.connect("row-selected", self.on_workspace_selected)
+        # A ListBoxRow has no GdkWindow, and GTK3 delivers button-press-event from the widget
+        # that owns one upwards, never down to children: a handler on each row never ran and
+        # the box menu never opened. The list owns the window, so it routes the click.
+        self.workspace_list.connect("button-press-event", self.sidebar_list_context)
         self.sidebar_flyout = WorkspaceSidebar(self, self._, self.select_sidebar_surface, self.sidebar_surface_context)
         scroll = Gtk.ScrolledWindow()
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -311,15 +315,19 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                                                for record in WorkspaceArrangement.ordered(workspace.get("windows", [])))})
         self.sidebar_flyout.update(self.workspace_list, snapshots, self.store.data.get("settings", {}).get("compactSidebar", False))
         for row in self.workspace_list.get_children():
-            if not getattr(row, "context_connected", False):
-                row.connect("button-press-event", self.sidebar_workspace_context)
-                row.context_connected = True
             if row.workspace_id == selected:
                 self.workspace_list.select_row(row)
         self.workspace_list.show_all()
         self.refreshing = False
         self.refresh_actions()
         return False
+
+    def sidebar_list_context(self, listing, event):
+        """Right click on the box list: the row under the pointer opens its own menu."""
+        if event.button != 3:
+            return False
+        row = listing.get_row_at_y(int(event.y))
+        return self.sidebar_workspace_context(row, event) if row is not None else False
 
     def sidebar_workspace_context(self, row, event):
         workspace = next((value for value in self.store.workspaces if value["id"] == row.workspace_id), None)
