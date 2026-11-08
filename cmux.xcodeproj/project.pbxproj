@@ -210,6 +210,7 @@
 		3069F1D10000000000000005 /* CMUXPasteboardFidelity in Frameworks */ = {isa = PBXBuildFile; productRef = 3069F1D10000000000000006 /* CMUXPasteboardFidelity */; };
 		C8000303C8000303C8000303 /* CmuxProcess in Frameworks */ = {isa = PBXBuildFile; productRef = C8000302C8000302C8000302 /* CmuxProcess */; };
 		C8000304C8000304C8000304 /* CmuxProcess in Frameworks */ = {isa = PBXBuildFile; productRef = C8000302C8000302C8000302 /* CmuxProcess */; };
+		C8000305C8000305C8000305 /* CmuxProcess in Frameworks */ = {isa = PBXBuildFile; productRef = C8000302C8000302C8000302 /* CmuxProcess */; };
 		A5C0DE0000000000000000A3 /* CMUXProjectModel in Frameworks */ = {isa = PBXBuildFile; productRef = A5C0DE0000000000000000A2 /* CMUXProjectModel */; };
 		A9F200000000000000000005 /* CmuxRuntimeDebugCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000005 /* CmuxRuntimeDebugCapture.swift */; };
 		A9F200000000000000000006 /* CmuxRuntimeDebugCaptureConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000006 /* CmuxRuntimeDebugCaptureConfiguration.swift */; };
@@ -2153,6 +2154,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				EFB18E3C0000000000000001 /* CMUXMobileCore in Frameworks */,
+				C8000305C8000305C8000305 /* CmuxProcess in Frameworks */,
 				C52830000000000000000002 /* CmuxTerminalCopyMode in Frameworks */,
 				C1A0DE000000000000000004 /* UniConnectClaudeBridge in Frameworks */,
 				D26C00000000000000000004 /* UniConnectClaudeUpdate in Frameworks */,
@@ -3388,6 +3390,7 @@
 			packageProductDependencies = (
 				A5B00002A1B2C3D4E5F60718 /* CMUXAgentLaunch */,
 				EFB18E3B3099DFE2ECA3C263 /* CMUXMobileCore */,
+				C8000302C8000302C8000302 /* CmuxProcess */,
 				C52830000000000000000004 /* CmuxTerminalCopyMode */,
 				C1A0DE000000000000000002 /* UniConnectClaudeBridge */,
 				D26C00000000000000000002 /* UniConnectClaudeUpdate */,

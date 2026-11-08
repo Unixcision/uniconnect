@@ -52,13 +52,29 @@ struct AgentActivityEvidence: Equatable, Sendable {
         }
     }
 
-    /// Actividad real de salida de la PTY (sin eco de teclado ni redibujados por tamaño).
+    /// Actividad real de salida de la ventana: la PTY (sin eco de teclado ni redibujados
+    /// por tamaño) o, en las ventanas con tmux local, `#{window_activity}` muestreado.
     struct Output: Equatable, Sendable {
         /// Epoch en segundos de la última salida contada; `nil` si nunca hubo.
         let lastOutputAt: TimeInterval?
+        /// Epoch en segundos del inicio de la racha que acaba en ``lastOutputAt``.
+        /// `nil` equivale a una racha sin duración: una ráfaga suelta.
+        let runStartedAt: TimeInterval?
 
-        init(lastOutputAt: TimeInterval?) {
+        init(lastOutputAt: TimeInterval?, runStartedAt: TimeInterval? = nil) {
             self.lastOutputAt = lastOutputAt
+            self.runStartedAt = runStartedAt
+        }
+
+        /// Salida contada por la celda de la PTY de una superficie.
+        init(_ snapshot: AgentOutputActivityCell.Snapshot) {
+            self.init(lastOutputAt: snapshot.lastOutputAt, runStartedAt: snapshot.runStartedAt)
+        }
+
+        /// Segundos que lleva la racha actual escribiendo; `0` sin salida o sin racha conocida.
+        var runDuration: TimeInterval {
+            guard let lastOutputAt, let runStartedAt else { return 0 }
+            return max(0, lastOutputAt - runStartedAt)
         }
     }
 

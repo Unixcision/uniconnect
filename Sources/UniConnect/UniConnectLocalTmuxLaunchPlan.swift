@@ -1,6 +1,7 @@
 import Foundation
 
-/// Attaches to one durable local pane; its initial command runs only if tmux creates that session.
+/// Attaches to one durable local pane; its initial command and its tmux options run only if
+/// tmux creates that session, so reattaching never redraws the server's other clients.
 struct UniConnectLocalTmuxLaunchPlan: Equatable, Sendable {
     let binding: UniConnectLocalTmuxBinding
     let workingDirectory: String
@@ -46,15 +47,24 @@ struct UniConnectLocalTmuxLaunchPlan: Equatable, Sendable {
         fi
         set -- -f /dev/null -L \(quote(binding.socketName))
         if cd -- \(quote(workingDirectory)); then
-            # The grid takes its history limit at creation; configure it in the same
-            # tmux command queue before new-session, including on a fresh server.
-            set -- "$@" set-option -g history-limit 50000 ';' new-session -A -s \(quote(binding.name))
-            \(environment)
-            "$uc_tmux" "$@" \(quote(paneCommand)) \\; \
-                set-option -t \(quote("=" + binding.name + ":")) destroy-unattached off \\; \
-                set-option -t \(quote("=" + binding.name + ":")) status off \\; \
-                set-option -t \(quote("=" + binding.name + ":")) mouse on \\; \
-                set-option -s exit-unattached off
+            if "$uc_tmux" "$@" has-session -t \(quote("=" + binding.name)) 2>/dev/null; then
+                # The session already carries its options. Every set-option or set-hook
+                # makes tmux redraw every client of the server (all other windows and the
+                # phone), so reattaching only attaches. A session gone in between gets the
+                # recovery shell below, never a second agent.
+                "$uc_tmux" "$@" attach-session -t \(quote("=" + binding.name))
+            else
+                # The grid takes its history limit at creation; configure it in the same
+                # tmux command queue before new-session, including on a fresh server.
+                # new-session -A still attaches if another client created it meanwhile.
+                set -- "$@" set-option -g history-limit 50000 ';' new-session -A -s \(quote(binding.name))
+                \(environment)
+                "$uc_tmux" "$@" \(quote(paneCommand)) \\; \
+                    set-option -t \(quote("=" + binding.name + ":")) destroy-unattached off \\; \
+                    set-option -t \(quote("=" + binding.name + ":")) status off \\; \
+                    set-option -t \(quote("=" + binding.name + ":")) mouse on \\; \
+                    set-option -s exit-unattached off
+            fi
         else
             printf '%s\\n' \(quote(missingDirectory)) >&2
             "$uc_tmux" "$@" attach-session -t \(quote("=" + binding.name))

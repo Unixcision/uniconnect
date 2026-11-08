@@ -1,3 +1,4 @@
+import CmuxProcess
 import Foundation
 import Testing
 
@@ -8,25 +9,33 @@ import Testing
 #endif
 
 /// Lógica pura de la actividad de IA (`activity.v1`): título, pantalla, prioridad de
-/// fuentes, agregación por espacio, sonda de tmux y filtro de eco.
+/// fuentes, agregación por espacio, sonda de tmux, filtro de eco y rachas de salida.
 @Suite("Actividad de IA")
 struct AgentActivityResolverTests {
     private let now: TimeInterval = 1_800_000_000
     private let resolver = AgentActivityResolver()
 
+    /// `outputRun` es lo que lleva escribiendo la racha que acaba hace `outputAge` segundos;
+    /// `0` es una ráfaga suelta. `output` sustituye a ambos (por ejemplo, una celda real).
     private func evidence(
         hooks: AgentActivityEvidence.Hooks? = nil,
         title: String? = nil,
         command: String? = nil,
         knownAgent: AgentActivity.Agent? = nil,
         outputAge: TimeInterval? = nil,
+        outputRun: TimeInterval = 0,
+        output: AgentActivityEvidence.Output? = nil,
         screen: Bool? = nil
     ) -> AgentActivityEvidence {
-        AgentActivityEvidence(
+        let lastOutputAt = outputAge.map { now - $0 }
+        return AgentActivityEvidence(
             hooks: hooks,
             title: AgentActivityEvidence.Title(text: title, currentCommand: command),
             knownAgent: knownAgent,
-            output: AgentActivityEvidence.Output(lastOutputAt: outputAge.map { now - $0 }),
+            output: output ?? AgentActivityEvidence.Output(
+                lastOutputAt: lastOutputAt,
+                runStartedAt: lastOutputAt.map { $0 - outputRun }
+            ),
             screenShowsPermissionPrompt: screen
         )
     }
@@ -108,11 +117,51 @@ struct AgentActivityResolverTests {
         #expect(waiting.source == .hooks)
     }
 
-    @Test("Los hooks de más de 120 s se ignoran")
-    func staleHooksIgnored() {
-        let hooks = AgentActivityEvidence.Hooks(lifecycle: .needsInput, agent: .codex, reportedAt: now - 200)
+    @Test("Un running de los hooks de más de 120 s se ignora")
+    func staleRunningHooksIgnored() {
+        let hooks = AgentActivityEvidence.Hooks(lifecycle: .running, agent: .codex, reportedAt: now - 200)
         let activity = resolve(evidence(hooks: hooks, title: "⠋ codex", command: "codex"))
         #expect(activity.state == .working)
+        #expect(activity.source == .title)
+        let quiet = resolve(evidence(hooks: hooks, command: "codex", outputAge: 30, screen: false))
+        #expect(quiet.state == .idle)
+        #expect(quiet.source == .output)
+    }
+
+    @Test("Un idle o needsInput de los hooks de hace 10 min aguanta una ráfaga y el título")
+    func stickyHooksSurviveBursts() {
+        let idle = AgentActivityEvidence.Hooks(lifecycle: .idle, agent: .claude, reportedAt: now - 600)
+        let burst = resolve(evidence(hooks: idle, title: "✳ tema", command: "claude", outputAge: 0.2, outputRun: 0.05))
+        #expect(burst.state == .idle)
+        #expect(burst.source == .hooks)
+        #expect(burst.agent == .claude)
+        let shortRun = resolve(evidence(hooks: idle, command: "claude", outputAge: 0.5, outputRun: 2))
+        #expect(shortRun.state == .idle)
+        let spinner = resolve(evidence(hooks: idle, title: "⠋ codex", command: "codex", outputAge: 0.5))
+        #expect(spinner.state == .idle)
+        let needsInput = AgentActivityEvidence.Hooks(lifecycle: .needsInput, agent: .claude, reportedAt: now - 600)
+        let waiting = resolve(evidence(hooks: needsInput, command: "claude", outputAge: 0.2, outputRun: 0.05))
+        #expect(waiting.state == .waiting)
+        #expect(waiting.source == .hooks)
+    }
+
+    @Test("Solo una racha de 3 s vence a un idle o needsInput de los hooks")
+    func sustainedOutputOverridesStickyHooks() {
+        for lifecycle in [AgentHibernationLifecycleState.idle, .needsInput] {
+            let hooks = AgentActivityEvidence.Hooks(lifecycle: lifecycle, agent: .claude, reportedAt: now - 600)
+            let activity = resolve(evidence(hooks: hooks, command: "claude", outputAge: 0.3, outputRun: 3.5))
+            #expect(activity.state == .working)
+            #expect(activity.source == .output)
+            #expect(activity.agent == .claude)
+        }
+    }
+
+    @Test("Un idle de los hooks deja de contar cuando la IA muere y queda un shell")
+    func stickyHooksEndWithTheProcess() {
+        let hooks = AgentActivityEvidence.Hooks(lifecycle: .idle, agent: .claude, reportedAt: now - 600)
+        let activity = resolve(evidence(hooks: hooks, title: "✳ tema", command: "zsh", outputAge: 30))
+        #expect(activity.state == .unknown)
+        #expect(activity.agent == nil)
         #expect(activity.source == .title)
     }
 
@@ -166,7 +215,7 @@ struct AgentActivityResolverTests {
 
     @Test("Claude con ✳: salida reciente es working y calma larga es idle")
     func claudeOutputWindows() {
-        let working = resolve(evidence(title: "✳ tema", command: "claude", outputAge: 1))
+        let working = resolve(evidence(title: "✳ tema", command: "claude", outputAge: 1, outputRun: 2))
         #expect(working.state == .working)
         #expect(working.source == .output)
         #expect(working.agent == .claude)
@@ -213,7 +262,7 @@ struct AgentActivityResolverTests {
         let anonymous = AgentActivityTitleSignal(title: "host", currentCommand: "python3")
         #expect(anonymous.isAgentRuntime)
         #expect(anonymous.agent == nil)
-        let working = resolve(evidence(title: "host", command: "python3", outputAge: 1))
+        let working = resolve(evidence(title: "host", command: "python3", outputAge: 1, outputRun: 2))
         #expect(working.state == .working)
         #expect(working.agent == nil)
         let idle = resolve(evidence(title: "host", command: "node", outputAge: 9, screen: false))
@@ -222,7 +271,7 @@ struct AgentActivityResolverTests {
 
     @Test("La conversación activa del registro local identifica al agente")
     func knownAgentFromRecord() {
-        let activity = resolve(evidence(command: "python3", knownAgent: .agy, outputAge: 2))
+        let activity = resolve(evidence(command: "python3", knownAgent: .agy, outputAge: 2, outputRun: 2))
         #expect(activity.state == .working)
         #expect(activity.agent == .agy)
     }
@@ -232,7 +281,7 @@ struct AgentActivityResolverTests {
     @Test("since se conserva mientras el estado no cambia y se renueva al cambiar")
     func sinceTracksStateChanges() {
         let previous = AgentActivity(state: .working, source: .output, agent: .claude, since: now - 90)
-        let same = resolve(evidence(command: "claude", outputAge: 1), previous: previous)
+        let same = resolve(evidence(command: "claude", outputAge: 1, outputRun: 2), previous: previous)
         #expect(same.state == .working)
         #expect(same.since == now - 90)
         let changed = resolve(evidence(command: "claude", outputAge: 30, screen: false), previous: previous)
@@ -308,6 +357,101 @@ struct AgentActivityResolverTests {
         #expect(cell.snapshot().lastOutputAt == now + 5)
     }
 
+    @Test("Una ráfaga suelta (redibujado de tmux) no despierta a una IA parada")
+    func loneBurstIsNotWork() {
+        let cell = AgentOutputActivityCell()
+        cell.noteOutput(byteCount: 724, now: now - 0.30)
+        cell.noteOutput(byteCount: 312, now: now - 0.25)
+        let output = AgentActivityEvidence.Output(cell.snapshot())
+        #expect(output.runStartedAt == now - 0.30)
+        let idle = AgentActivity(state: .idle, source: .output, agent: .claude, since: now - 600)
+        for previous in [nil, idle] {
+            let activity = resolve(evidence(title: "✳ tema", command: "claude", output: output), previous: previous)
+            #expect(activity.state == .idle)
+            #expect(activity.since == previous?.since ?? now)
+        }
+    }
+
+    @Test("La salida sostenida de una IA que trabaja es working")
+    func sustainedOutputIsWork() {
+        let cell = AgentOutputActivityCell()
+        let start = now - 1.6
+        for step in 0...15 {
+            cell.noteOutput(byteCount: 4_000, now: start + Double(step) * 0.1)
+        }
+        let output = AgentActivityEvidence.Output(cell.snapshot())
+        #expect(output.runStartedAt == start)
+        #expect(output.runDuration >= 1)
+        let activity = resolve(evidence(title: "✳ tema", command: "claude", output: output))
+        #expect(activity.state == .working)
+        #expect(activity.source == .output)
+    }
+
+    @Test("Un hueco de más de 1 s corta la racha y lo que sigue vuelve a ser una ráfaga")
+    func gapBreaksTheRun() {
+        let cell = AgentOutputActivityCell()
+        let start = now - 6
+        for step in 0...14 {
+            cell.noteOutput(byteCount: 2_000, now: start + Double(step) * 0.1)
+        }
+        cell.noteOutput(byteCount: 2_000, now: start + 2.3)
+        #expect(cell.snapshot().runStartedAt == start)
+        let burst = now - 0.5
+        cell.noteOutput(byteCount: 312, now: burst)
+        let snapshot = cell.snapshot()
+        #expect(snapshot.runStartedAt == burst)
+        #expect(snapshot.lastOutputAt == burst)
+        let idle = AgentActivity(state: .idle, source: .output, agent: .claude, since: now - 60)
+        let activity = resolve(evidence(command: "claude", output: AgentActivityEvidence.Output(snapshot)), previous: idle)
+        #expect(activity.state == .idle)
+    }
+
+    @Test("Con tmux local manda window_activity: una PTY fresca con window_activity viejo es idle")
+    func tmuxWindowIgnoresTheTee() async {
+        let probe = TmuxPaneActivityProbe(commands: ProbeCommands(outputs: [
+            "uc-aaaa\tclaude\t✳ tema\t\(Int(now) - 600)\n",
+        ]))
+        let monitor = AgentActivityMonitor(probe: probe)
+        let workspaceID = UUID(), panelID = UUID()
+        // La PTY es un cliente `tmux attach`: ve redibujados aunque el panel no escriba.
+        let tee = AgentActivityEvidence.Output(lastOutputAt: now - 0.2, runStartedAt: now - 2.5)
+        let input = AgentActivityTerminalInput(
+            workspaceID: workspaceID,
+            panelID: panelID,
+            tmux: .init(socketName: "test-local", sessionName: "uc-aaaa"),
+            evidence: AgentActivityEvidence(output: tee)
+        )
+        let result = await monitor.evaluate(inputs: [input], now: now) { _ in false }
+        let activity = result[workspaceID]?[panelID]
+        #expect(activity?.state == .idle)
+        #expect(activity?.agent == .claude)
+    }
+
+    @Test("Con tmux la racha se reconstruye entre muestras y un hueco la corta")
+    func tmuxSampledRuns() async {
+        let start = Int(now)
+        let samples = [start, start + 2, start + 2, start + 12, start + 14]
+        let probe = TmuxPaneActivityProbe(commands: ProbeCommands(outputs: samples.map {
+            "uc-aaaa\tclaude\t✳ tema\t\($0)\n"
+        }))
+        let monitor = AgentActivityMonitor(probe: probe)
+        let workspaceID = UUID(), panelID = UUID()
+        let input = AgentActivityTerminalInput(
+            workspaceID: workspaceID,
+            panelID: panelID,
+            tmux: .init(socketName: "test-local", sessionName: "uc-aaaa"),
+            evidence: AgentActivityEvidence()
+        )
+        var states: [AgentActivity.State?] = []
+        for at in [now, now + 2, now + 10, now + 12, now + 14] {
+            let result = await monitor.evaluate(inputs: [input], now: at) { _ in false }
+            states.append(result[workspaceID]?[panelID]?.state)
+        }
+        // 1.ª muestra: una sola marca es una ráfaga. 2.ª: actividad seguida, working.
+        // 3.ª: 8 s sin salida, idle. 4.ª: tras el hueco la racha vuelve a empezar. 5.ª: sigue.
+        #expect(states == [.idle, .working, .idle, .idle, .working])
+    }
+
     // MARK: Contrato móvil
 
     @Test("El objeto activity del snapshot tiene la forma del contrato")
@@ -323,5 +467,19 @@ struct AgentActivityResolverTests {
         #expect(unevaluated["agent"] is NSNull)
         #expect(unevaluated["since"] as? Int == 0)
         #expect(AgentActivity.mobileAggregatePayload(for: .working)["state"] as? String == "working")
+    }
+
+    /// Ejecutor falso de la sonda de tmux: devuelve una salida de `list-panes` por llamada.
+    private actor ProbeCommands: CommandRunning {
+        private var outputs: [String]
+
+        init(outputs: [String]) {
+            self.outputs = outputs
+        }
+
+        func run(directory: String, executable: String, arguments: [String], timeout: TimeInterval?) async -> CommandResult {
+            let output = outputs.isEmpty ? nil : outputs.removeFirst()
+            return CommandResult(stdout: output, stderr: nil, exitStatus: output == nil ? 1 : 0, timedOut: false, executionError: nil)
+        }
     }
 }

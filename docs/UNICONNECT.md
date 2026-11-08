@@ -170,13 +170,19 @@ Rules per window (measured live on 2026-09-09):
    means `unknown` and no indicator, whatever the title says.
 2. **Hooks** already reported through `set_agent_lifecycle` (`running` → `working`,
    `needsInput` → `waiting`, `idle` → `idle`) or, failing that, the newest
-   `set_status` text of the panel, win whenever the report is younger than 120 s;
-   macOS keeps the report time per panel.
+   `set_status` text of the panel, win; macOS keeps the report time per panel.
+   `running` only counts while the report is younger than 120 s. On macOS (since
+   2026-11-08) `needsInput` and `idle` do not expire: they hold until the next report
+   or until the agent dies (a shell in the foreground), and only an output run of at
+   least 3 s overrides them (→ `working`, source `output`).
 3. Otherwise: **(a)** a permission question visible on screen → `waiting`, beating
    everything else; **(b)** a title starting with a braille spinner (U+2800–U+28FF,
-   Codex while working) → `working`; **(c)** PTY output in the last 3 s → `working`;
-   **(d)** no output for more than 5 s with a live agent → `idle` (between 3 and
-   5 s the previous state is kept); **(e)** else `unknown`.
+   Codex while working) → `working`; **(c)** output in the last 3 s → `working`, on
+   macOS only when it belongs to a run of at least 1 s (a gap of more than 1 s starts
+   a new run; a tmux redraw is a burst under 100 ms, a working Claude writes 45–60 KB/s
+   without pause); **(d)** no output for more than 5 s with a live agent → `idle`
+   (between 3 and 5 s, or after a shorter burst, the previous `working`/`idle` is
+   kept); **(e)** else `unknown`.
 4. The title is only **positive** evidence of work. Claude Code titles the window
    `✳ topic` both while working and while stopped (it changes to the topic when the
    prompt is sent and never again), so `✳` never means "stopped"; Gemini and Agy
@@ -206,15 +212,25 @@ shell means `unknown`) and the braille check, and only the title part reaches th
 sidebar, the tab, the window title and the phone. A title without a valid prefix
 stays untouched.
 
-Output activity comes from the PTY tee of every surface (also for tmux and SSH
-windows): keyboard echo (output within 250 ms of a local or mobile key) and resize
-redraws (500 ms) are not counted. Local tmux windows (socket `uniconnect-local`,
-sessions `uc-<hex>`) are probed once per socket every cycle with
+Output activity comes from the PTY tee of SSH and plain surfaces: keyboard echo
+(output within 250 ms of a local or mobile key) and resize redraws (500 ms) are not
+counted, and the tee records the start of the current run. Local tmux windows
+(socket `uniconnect-local`, sessions `uc-<hex>`) are probed once per socket every
+cycle with
 `tmux -L <socket> list-panes -a -F '#{session_name}\t#{pane_current_command}\t#{pane_title}\t#{window_activity}'`
-off the main thread; `#{window_activity}` is only a fallback when the tee has no
-data. Measured with real Claude Code: stopped, the window emits nothing (cursor
-blink does not count); working, the spinner redraws continuously, so the 3 s / 5 s
-thresholds hold. `waiting` only comes from hooks or screen, never from output.
+off the main thread, and since 2026-11-08 their output comes from `#{window_activity}`,
+not from the tee (the tee only stands in when tmux gives no activity). Their PTY is a
+`tmux attach` client: any `set-option`/`set-hook` on the shared server redraws every
+attached client (312–724 bytes each, measured) without touching `window_activity`, and
+that redraw used to put ~36 idle agents in `working` for 4–6 s whenever the phone or a
+window attached. Since tmux only gives the latest activity in whole seconds, the run of
+a tmux window is rebuilt across cycles: it continues while every sample finds activity
+no older than 2 s. For the same reason a local window applies its tmux options
+(`history-limit`, `destroy-unattached`, `status`, `mouse`, `exit-unattached`) only when
+its launch creates the session; reattaching an existing one is a plain
+`attach-session`. Measured with real Claude Code: stopped, the window emits nothing
+(cursor blink does not count); working, the spinner redraws continuously, so the
+3 s / 5 s thresholds hold. `waiting` only comes from hooks or screen, never from output.
 
 macOS UI: the workspace row of the sidebar shows a small spinner while `working`
 and an amber `hand.raised.fill` while `waiting`; each window's tab shows the same
