@@ -4,7 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,22 +18,29 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -41,20 +48,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.unixcision.uniconnect.android.R
@@ -69,13 +82,17 @@ import com.unixcision.uniconnect.android.ui.design.MachineOfflineCard
 import com.unixcision.uniconnect.android.ui.design.MachineStaleBanner
 import com.unixcision.uniconnect.android.ui.design.WindowItem
 import com.unixcision.uniconnect.android.ui.design.WorkspaceSection
+import com.unixcision.uniconnect.android.ui.design.WorkspaceTabSelection
+import com.unixcision.uniconnect.android.ui.design.WorkspaceTabs
 import com.unixcision.uniconnect.android.ui.design.activityText
+import com.unixcision.uniconnect.android.ui.design.rememberWorkspaceTab
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 
 /**
- * Obsidiana's machine screen: a breadcrumb, the machine as a title, the filter tabs with their
- * counts and then every workspace as a compact group of window rows. The tabs stay pinned on top
- * once scrolled past, because with seventy windows the filter is what gets used most.
+ * Obsidiana's machine screen: a breadcrumb, the machine as a title, the workspaces as an editor's
+ * tabs with the filter under them, and then the chosen workspace's windows (or every workspace
+ * as a compact group of rows under «Todos»). Both strips stay pinned on top once scrolled past,
+ * because with seventy windows they are what gets used most.
  *
  * Activity is only drawn while the machine answers; without a connection the rows show names
  * and their AI, never a spinner left over from the last list.
@@ -84,31 +101,29 @@ import com.unixcision.uniconnect.android.ui.theme.UniTheme
 @Composable
 fun ObsidianaMachine(model: MachineModel, actions: MachineActions, menu: @Composable () -> Unit) {
     val spacing = UniTheme.spacing
+    val selection = rememberWorkspaceTab(model)
     var filter by rememberSaveable { mutableStateOf(WindowFilter.ALL) }
     // Activity is only known while connected; filtering by it then would empty a list that is there.
     val active = if (model.connected) filter else WindowFilter.ALL
     var collapsed by rememberSaveable { mutableStateOf(emptySet<String>()) }
-    val counts = remember(model.sections) { TabCounts.of(model.sections) }
-    val lines = remember(model, active, collapsed) { Line.build(model, active, collapsed) }
+    val counts = remember(model, selection.selected) { TabCounts.of(model.visible(selection.selected, WindowFilter.ALL)) }
+    val lines = remember(model, selection.selected, active, collapsed) { Line.build(model, selection.selected, active, collapsed) }
     val list = rememberLazyListState()
-    var tabsHeight by remember { mutableIntStateOf(0) }
 
-    // A notice or a closed window names a workspace: bring its header to the top once, below the
-    // pinned tabs, opening it and lifting a filter that hides it if needed.
-    var pendingFocus by remember(model.focusWorkspaceID) { mutableStateOf(model.focusWorkspaceID) }
-    LaunchedEffect(pendingFocus, lines) {
-        val id = pendingFocus ?: return@LaunchedEffect
-        if (model.sections.none { it.workspace.id == id }) { pendingFocus = null; return@LaunchedEffect }
-        val index = lines.indexOfFirst { it is Line.Header && it.section.workspace.id == id }
-        if (index < 0) {
-            // Hidden by the filter: the lines rebuilt without it run this again.
-            if (active == WindowFilter.ALL) pendingFocus = null else filter = WindowFilter.ALL
-            return@LaunchedEffect
-        }
-        if (id in collapsed) collapsed = collapsed - id
-        list.scrollToItem(index)
-        if (index > lines.indexOf(Line.Tabs)) list.scrollBy(-tabsHeight.toFloat())
-        pendingFocus = null
+    // A notice or a closed window names a workspace and the tab goes there by itself; a filter
+    // that would leave that tab empty is lifted.
+    LaunchedEffect(model.focusWorkspaceID) {
+        val id = model.focusWorkspaceID ?: return@LaunchedEffect
+        if (model.sections.any { it.workspace.id == id } && model.visible(id, active).isEmpty()) filter = WindowFilter.ALL
+    }
+    // Another tab starts at its top, right under the pinned strips. The first run is skipped so a
+    // rotation keeps the place the list was restored to.
+    var shownTab by rememberSaveable { mutableStateOf(selection.selected) }
+    LaunchedEffect(selection.selected) {
+        if (selection.selected == shownTab) return@LaunchedEffect
+        shownTab = selection.selected
+        val tabs = lines.indexOf(Line.Tabs)
+        if (tabs >= 0 && list.firstVisibleItemIndex >= tabs) list.scrollToItem(tabs)
     }
 
     val shortcuts = if (model.canCreateWorkspace) mapOf(Key.N to actions.onCreateWorkspace) else emptyMap()
@@ -127,8 +142,12 @@ fun ObsidianaMachine(model: MachineModel, actions: MachineActions, menu: @Compos
                 ) {
                     lines.forEach { line ->
                         if (line == Line.Tabs) stickyHeader(key = line.key, contentType = "tabs") { _ ->
-                            Box(Modifier.fillMaxWidth().background(UniTheme.colors.background).padding(vertical = 8.dp).onSizeChanged { tabsHeight = it.height }) {
-                                WindowTabs(active, counts, model.connected) { filter = it }
+                            // Edge to edge, so the workspace strip scrolls out under the screen's sides like an editor's.
+                            Column(Modifier.bleed(spacing.page).background(UniTheme.colors.background)) {
+                                WorkspaceTabRow(model, selection, actions.onHoldWorkspace)
+                                Box(Modifier.padding(horizontal = spacing.page, vertical = 8.dp)) {
+                                    WindowTabs(active, counts, model.connected) { filter = it }
+                                }
                             }
                         } else item(key = line.key, contentType = line::class) {
                             LineContent(line, model, actions) { id -> collapsed = if (id in collapsed) collapsed - id else collapsed + id }
@@ -141,7 +160,22 @@ fun ObsidianaMachine(model: MachineModel, actions: MachineActions, menu: @Compos
     }
 }
 
-/** How many windows each tab would show, over every workspace. */
+/**
+ * Lets a block inside the padded list reach both edges of the screen, [inset] past each side.
+ * The list only clips top and bottom, so what lies over its side padding is still drawn.
+ */
+private fun Modifier.bleed(inset: Dp): Modifier = layout { measurable, constraints ->
+    if (!constraints.hasBoundedWidth) {
+        val placeable = measurable.measure(constraints)
+        return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+    }
+    val side = inset.roundToPx()
+    val width = constraints.maxWidth + side * 2
+    val placeable = measurable.measure(constraints.copy(minWidth = width, maxWidth = width))
+    layout(constraints.maxWidth, placeable.height) { placeable.place(-side, 0) }
+}
+
+/** How many windows each filter would show, over the chosen tab. */
 private data class TabCounts(val all: Int, val working: Int, val waiting: Int) {
     fun count(filter: WindowFilter): Int = when (filter) {
         WindowFilter.ALL -> all
@@ -158,8 +192,8 @@ private data class TabCounts(val all: Int, val working: Int, val waiting: Int) {
 }
 
 /**
- * Every row of the screen in order, so the index of a workspace's header is known before it is
- * drawn and a notice can scroll straight to it.
+ * Every row of the screen in order, so the index of the pinned strips is known before they are
+ * drawn and another tab can scroll straight back to them.
  */
 private sealed interface Line {
     val key: String
@@ -177,6 +211,11 @@ private sealed interface Line {
         override val key get() = "workspace:" + section.workspace.id
     }
 
+    /** The bar above a single workspace's windows, which stands in for its header. */
+    data class Bar(val section: WorkspaceSection) : Line {
+        override val key get() = "bar:" + section.workspace.id
+    }
+
     data class Window(val workspaceID: String, val item: WindowItem, val segment: Segment) : Line {
         override val key get() = "window:$workspaceID/${item.window.id}"
     }
@@ -186,7 +225,7 @@ private sealed interface Line {
     }
 
     companion object {
-        fun build(model: MachineModel, filter: WindowFilter, collapsed: Set<String>): List<Line> = buildList {
+        fun build(model: MachineModel, tab: String, filter: WindowFilter, collapsed: Set<String>): List<Line> = buildList {
             add(Hero)
             if (!model.hasSnapshot) add(Offline)
             if (model.hasSnapshot && !model.connected) add(Stale)
@@ -194,15 +233,28 @@ private sealed interface Line {
                 if (model.sections.isNotEmpty()) add(Tabs)
                 if (model.hostKeepsOrder == false) add(LocalOnly)
                 if (model.sections.isEmpty()) add(NoWorkspaces)
-                val sections = model.filtered(filter)
-                if (model.sections.isNotEmpty() && sections.isEmpty()) add(NoMatches)
-                sections.forEachIndexed { index, section ->
-                    val id = section.workspace.id
-                    val folded = id in collapsed
-                    add(Header(section, folded, index == 0))
-                    if (folded) return@forEachIndexed
-                    if (section.windows.isEmpty()) add(EmptyWorkspace(id))
-                    section.windows.forEachIndexed { at, item -> add(Window(id, item, Segment.of(at, section.windows.size))) }
+                val sections = model.visible(tab, filter)
+                // One workspace: its bar stays even when the filter empties it, so «+» and the star do too.
+                val single = model.sections.takeIf { tab != WorkspaceTabs.ALL }?.firstOrNull { it.workspace.id == tab }
+                if (single != null) {
+                    val id = single.workspace.id
+                    val windows = sections.firstOrNull()?.windows.orEmpty()
+                    add(Bar(single))
+                    when {
+                        single.windows.isEmpty() -> add(EmptyWorkspace(id))
+                        windows.isEmpty() -> add(NoMatches)
+                        else -> windows.forEachIndexed { at, item -> add(Window(id, item, Segment.of(at, windows.size))) }
+                    }
+                } else {
+                    if (model.sections.isNotEmpty() && sections.isEmpty()) add(NoMatches)
+                    sections.forEachIndexed { index, section ->
+                        val id = section.workspace.id
+                        val folded = id in collapsed
+                        add(Header(section, folded, index == 0))
+                        if (folded) return@forEachIndexed
+                        if (section.windows.isEmpty()) add(EmptyWorkspace(id))
+                        section.windows.forEachIndexed { at, item -> add(Window(id, item, Segment.of(at, section.windows.size))) }
+                    }
                 }
             }
             if (model.connected || model.noticeLink != null) add(Notices)
@@ -231,6 +283,12 @@ private fun LineContent(line: Line, model: MachineModel, actions: MachineActions
             line.section, line.collapsed, line.first,
             onToggle = { onToggle(line.section.workspace.id) },
             onHold = { actions.onHoldWorkspace(line.section.workspace.id) },
+            onCreateWindow = { actions.onCreateWindow(line.section.workspace.id) },
+        )
+        is Line.Bar -> WorkspaceBar(
+            line.section,
+            onHold = { actions.onHoldWorkspace(line.section.workspace.id) },
+            onTogglePin = { actions.onToggleWorkspacePin(line.section.workspace.id) },
             onCreateWindow = { actions.onCreateWindow(line.section.workspace.id) },
         )
         is Line.Window -> WindowRow(
@@ -298,6 +356,106 @@ private fun Hero(model: MachineModel) {
             }
             Text(model.machine.endpoint.displayAddress, style = MaterialTheme.typography.bodySmall, fontFamily = ObsidianaMono, color = colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+    }
+}
+
+/**
+ * The workspaces as an editor's tabs over a hairline: «Todos» and then one per workspace in the
+ * reader's order, the chosen one underlined in the accent, counts in mono. A long press on a
+ * workspace opens its sheet, as on its header. The chosen tab is brought into view whenever it
+ * changes, the first time included.
+ */
+@Composable
+private fun WorkspaceTabRow(model: MachineModel, selection: WorkspaceTabSelection, onHold: (String) -> Unit) {
+    val row = rememberLazyListState()
+    val selected = selection.selected
+    val index = remember(model.sections, selected) {
+        if (selected == WorkspaceTabs.ALL) 0 else 1 + model.sections.indexOfFirst { it.workspace.id == selected }
+    }
+    LaunchedEffect(selected, index) { row.reveal(index) }
+    val total = remember(model.sections) { model.sections.sumOf { it.windows.size } }
+    Box(Modifier.fillMaxWidth()) {
+        // Under the strip, so the chosen tab's underline covers it.
+        Hairline(Modifier.align(Alignment.BottomStart))
+        LazyRow(
+            Modifier.fillMaxWidth().selectableGroup(),
+            state = row,
+            // A tab pads its own label, so the first name lines up with the page's edge.
+            contentPadding = PaddingValues(horizontal = (UniTheme.spacing.page - TabInset).coerceAtLeast(0.dp)),
+        ) {
+            item(key = "all", contentType = "all") {
+                WorkspaceTab(
+                    name = stringResource(R.string.obsidiana_tab_all), count = total, pinned = false, activity = null,
+                    chosen = selection.showsAll, onClick = { selection.select(WorkspaceTabs.ALL) }, onHold = null,
+                )
+            }
+            items(model.sections, key = { "workspace:" + it.workspace.id }, contentType = { "workspace" }) { section ->
+                val id = section.workspace.id
+                WorkspaceTab(
+                    name = section.workspace.name, count = section.windows.size, pinned = section.pinned,
+                    activity = section.activity?.takeIf { it == ActivityState.WORKING || it == ActivityState.WAITING },
+                    chosen = id == selected, onClick = { selection.select(id) }, onHold = { onHold(id) },
+                )
+            }
+        }
+    }
+}
+
+/** How far a tab's label sits from its edges. */
+private val TabInset = 12.dp
+
+/**
+ * One tab: the name, its window count in mono, the favourite star and what its AIs are doing.
+ * The chosen tab is underlined in the accent and its name and count light up; the rest stay muted.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun WorkspaceTab(name: String, count: Int, pinned: Boolean, activity: ActivityState?, chosen: Boolean, onClick: () -> Unit, onHold: (() -> Unit)?) {
+    val colors = UniTheme.colors
+    val accent = colors.accent
+    val spokenCount = pluralStringResource(R.plurals.window_count, count, count)
+    val press = if (onHold == null) Modifier.selectable(selected = chosen, role = Role.Tab, onClick = onClick)
+    else Modifier.semantics { selected = chosen }.combinedClickable(
+        role = Role.Tab, onLongClickLabel = stringResource(R.string.obsidiana_workspace_options), onLongClick = onHold, onClick = onClick,
+    )
+    Row(
+        Modifier.heightIn(min = 44.dp)
+            .drawBehind {
+                if (!chosen) return@drawBehind
+                val bar = 2.dp.toPx()
+                drawRect(accent, Offset(0f, size.height - bar), Size(size.width, bar))
+            }
+            .clip(UniTheme.shapes.chip).then(press).padding(horizontal = TabInset),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            name, Modifier.widthIn(max = 160.dp), style = MaterialTheme.typography.bodyMedium, fontSize = 13.sp,
+            fontFamily = UniTheme.type.identifierFamily, fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Medium,
+            color = if (chosen) colors.text else colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            count.toString(), Modifier.clearAndSetSemantics { contentDescription = spokenCount }, style = MaterialTheme.typography.bodySmall,
+            fontFamily = ObsidianaMono, color = if (chosen) accent else colors.muted, maxLines = 1, softWrap = false,
+        )
+        if (pinned) Icon(Icons.Rounded.Star, stringResource(R.string.box_pinned), Modifier.size(11.dp), tint = colors.warning)
+        activity?.let { ActivityMark(it, size = 12.dp) }
+    }
+}
+
+/**
+ * Scrolls the tab at [index] fully into view and no further, so a tap on a tab already in sight
+ * never shifts the strip under the finger.
+ */
+private suspend fun LazyListState.reveal(index: Int) {
+    val info = layoutInfo
+    // Before the first layout nothing is measured: jump straight to it.
+    if (info.visibleItemsInfo.isEmpty()) { scrollToItem(index); return }
+    val item = info.visibleItemsInfo.firstOrNull { it.index == index }
+    val end = info.viewportEndOffset - info.afterContentPadding
+    when {
+        item == null -> animateScrollToItem(index)
+        item.offset < 0 -> animateScrollBy(item.offset.toFloat())
+        item.offset + item.size > end -> animateScrollBy((item.offset + item.size - end).toFloat())
     }
 }
 
@@ -375,6 +533,52 @@ private fun WorkspaceHeader(section: WorkspaceSection, collapsed: Boolean, first
         if (section.canCreateWindow) IconButton(onClick = onCreateWindow) {
             Icon(Icons.Rounded.Add, stringResource(R.string.obsidiana_new_window_in, workspace.name), Modifier.size(18.dp), tint = colors.muted)
         }
+    }
+}
+
+/**
+ * What a single workspace's tab puts above its windows instead of the group header, whose name
+ * the tab already shows: a label, its kind, the favourite star as a switch and «Nueva ventana».
+ * A tap or a long press anywhere else on it opens its sheet.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun WorkspaceBar(section: WorkspaceSection, onHold: () -> Unit, onTogglePin: () -> Unit, onCreateWindow: () -> Unit) {
+    val colors = UniTheme.colors
+    val options = stringResource(R.string.obsidiana_workspace_options)
+    Row(
+        Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 6.dp).heightIn(min = 44.dp).clip(UniTheme.shapes.chip)
+            .combinedClickable(onClickLabel = options, onLongClickLabel = options, onLongClick = onHold, onClick = onHold)
+            .padding(start = 2.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        CapsLabel(stringResource(R.string.windows))
+        // Only the remote kind is worth a badge, as on the headers under «Todos».
+        if (section.workspace.isSSH == true) KindBadge(section.workspace)
+        Spacer(Modifier.weight(1f))
+        IconButton(onClick = onTogglePin) {
+            Icon(
+                if (section.pinned) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                stringResource(if (section.pinned) R.string.box_unpin else R.string.box_pin),
+                Modifier.size(18.dp), tint = if (section.pinned) colors.warning else colors.muted,
+            )
+        }
+        if (section.canCreateWindow) NewWindowButton(onCreateWindow)
+    }
+}
+
+/** «+ Nueva ventana» on a single workspace's bar: outlined and quiet beside the accent of the floating button. */
+@Composable
+private fun NewWindowButton(onClick: () -> Unit) {
+    val colors = UniTheme.colors
+    val shape = UniTheme.shapes.chip
+    Row(
+        Modifier.minimumInteractiveComponentSize().height(32.dp).panel(shape, colors.surface, colors.outline)
+            .clickable(role = Role.Button, onClick = onClick).padding(start = 8.dp, end = 10.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(Icons.Rounded.Add, null, Modifier.size(16.dp), tint = colors.text)
+        Text(stringResource(R.string.new_window), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, color = colors.text, maxLines = 1)
     }
 }
 

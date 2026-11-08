@@ -42,6 +42,9 @@
     </plurals>
     <string name="arena_prose_waiting_none">ninguna te espera</string>
 
+    <!-- Índice de capítulos de la máquina: la primera pestaña, la que enseña todos los espacios. -->
+    <string name="arena_tab_all">Todos</string>
+
     <!-- Línea de tiempo «Actividad reciente». -->
     <string name="arena_see_notices">Ver avisos</string>
     <string name="arena_recent_waiting">%1$s te espera</string>

@@ -35,4 +35,5 @@
         <item quantity="other">Y %1$d ventanas más te esperan.</item>
     </plurals>
     <string name="nieve_history_note">Dictados y mensajes</string>
+    <string name="nieve_tab_all">Todos</string>
 </resources>

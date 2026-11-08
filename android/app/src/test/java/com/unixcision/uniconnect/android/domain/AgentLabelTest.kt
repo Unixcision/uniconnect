@@ -19,5 +19,8 @@ class AgentLabelTest {
         assertEquals("Grok", AgentLabel.of("grok"))
         assertNull(AgentLabel.of(null))
         assertNull(AgentLabel.of("  "))
+        // A JSON null read with optString arrives as the text "null": no AI, not an AI called Null.
+        assertNull(AgentLabel.of("null"))
+        assertNull(AgentLabel.of("NULL"))
     }
 }

@@ -235,7 +235,7 @@ class NativeMachineClient(
                 val item = targets.getJSONObject(index)
                 RelaunchTarget(
                     item.getString("key"), item.optString("label"), item.optString("provider"),
-                    warning = item.optString("warning").takeIf { it.isNotEmpty() && !item.isNull("warning") }?.let(::RelaunchReason),
+                    warning = item.text("warning")?.let(::RelaunchReason),
                 )
             },
             // Una exclusión sin motivo se lee como una ventana olvidada, así que el motivo viaja
@@ -246,7 +246,7 @@ class NativeMachineClient(
             },
             // El equipo puede decir que todavía no puede relanzar; si lo dice, se enseña antes de
             // que nadie pulse nada.
-            unavailableReason = result.optString("unavailable_reason").takeIf { it.isNotEmpty() },
+            unavailableReason = result.text("unavailable_reason"),
         )
     }
 
@@ -261,7 +261,7 @@ class NativeMachineClient(
                     key = item.getString("key"),
                     state = RelaunchTargetState.named(item.optString("state")),
                     reason = RelaunchReason.of(item.optString("cause")),
-                    effectiveID = item.optString("effective_id").takeIf { it.isNotEmpty() },
+                    effectiveID = item.text("effective_id"),
                 )
             },
             // Lo que dice si terminó. Un equipo que no lo manda (el `apply` bloqueante del Mac
@@ -405,7 +405,8 @@ class NativeMachineClient(
         }
 
     private fun decodeActivity(json: JSONObject?): RemoteActivity? = json?.let {
-        RemoteActivity(ActivityState.parse(it.optString("state", "")), it.optString("source").ifEmpty { null }, it.optString("agent").ifEmpty { null },
+        // A JSON null is not the text "null": hosts send `"agent": null` for a window with no AI.
+        RemoteActivity(ActivityState.parse(it.optString("state", "")), it.text("source"), it.text("agent"),
             if (it.has("since") && !it.isNull("since")) it.optLong("since") else null)
     }
 

@@ -40,6 +40,27 @@ data class MachineModel(
     /** Whether a new workspace can be asked for now. */
     val canCreateWorkspace: Boolean get() = connected
 
+    /**
+     * The tab the machine screen opens on: the workspace a notice or a closed window pointed at,
+     * else the first one where an AI waits, else the first one. [WorkspaceTabs.ALL] only when
+     * there is no workspace to pick.
+     */
+    fun defaultTab(): String =
+        focusWorkspaceID?.takeIf { id -> sections.any { it.workspace.id == id } }
+            ?: sections.firstOrNull { it.activity == ActivityState.WAITING }?.workspace?.id
+            ?: sections.firstOrNull()?.workspace?.id
+            ?: WorkspaceTabs.ALL
+
+    /** [tab] if it still names a workspace (or is [WorkspaceTabs.ALL]); otherwise [defaultTab]. */
+    fun effectiveTab(tab: String?): String =
+        tab?.takeIf { it == WorkspaceTabs.ALL || sections.any { section -> section.workspace.id == it } } ?: defaultTab()
+
+    /** What the screen lists under [tab] with [filter]: one workspace, or all of them. */
+    fun visible(tab: String, filter: WindowFilter): List<WorkspaceSection> {
+        val shown = filtered(filter)
+        return if (tab == WorkspaceTabs.ALL) shown else shown.filter { it.workspace.id == tab }
+    }
+
     /** The sections with only the windows [filter] accepts; with a filter, empty sections go. */
     fun filtered(filter: WindowFilter): List<WorkspaceSection> =
         if (filter == WindowFilter.ALL) sections

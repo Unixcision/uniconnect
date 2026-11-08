@@ -75,4 +75,28 @@ class MachineModelTest {
         assertEquals(1, model.error)
         assertNull(model.noticeLink)
     }
+
+    @Test
+    fun theScreenOpensOnTheFocusedWorkspaceElseWhereAnAIWaitsElseTheFirst() {
+        val connected = MachinesViewModel.Connection(connected = true, snapshot = snapshot)
+        assertEquals("p", MachineModel.of(mac, connected, BoxOverrides(), null, null, focusWorkspaceID = "p").defaultTab())
+        // NOTBETTING has APP 2 waiting, so it wins over PROYECTOS although it comes second.
+        assertEquals("n", MachineModel.of(mac, connected, BoxOverrides(), null, null, null).defaultTab())
+        val quiet = MachineSnapshot("Mac", listOf(RemoteWorkspace("a", "A", false, emptyList()), RemoteWorkspace("b", "B", false, emptyList())))
+        assertEquals("a", MachineModel.of(mac, MachinesViewModel.Connection(connected = true, snapshot = quiet), BoxOverrides(), null, null, null).defaultTab())
+        assertEquals(WorkspaceTabs.ALL, MachineModel.of(mac, MachinesViewModel.Connection(), BoxOverrides(), null, null, null).defaultTab())
+    }
+
+    @Test
+    fun aTabShowsOneWorkspaceAndAVanishedOneFallsBackToTheDefault() {
+        val model = MachineModel.of(mac, MachinesViewModel.Connection(connected = true, snapshot = snapshot), BoxOverrides(), null, null, null)
+        assertEquals(listOf("p"), model.visible("p", WindowFilter.ALL).map { it.workspace.id })
+        assertEquals(listOf("p", "n"), model.visible(WorkspaceTabs.ALL, WindowFilter.ALL).map { it.workspace.id })
+        // The filter works inside the tab: PROYECTOS has nobody waiting.
+        assertTrue(model.visible("p", WindowFilter.WAITING).isEmpty())
+        assertEquals("p", model.effectiveTab("p"))
+        assertEquals(WorkspaceTabs.ALL, model.effectiveTab(WorkspaceTabs.ALL))
+        assertEquals("n", model.effectiveTab("gone"))
+        assertEquals("n", model.effectiveTab(null))
+    }
 }

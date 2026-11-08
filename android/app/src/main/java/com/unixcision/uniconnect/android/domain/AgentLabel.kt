@@ -9,7 +9,8 @@ object AgentLabel {
 
     /** The label of [raw], or null when the window has no AI. */
     fun of(raw: String?): String? {
-        val token = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        // "null" is what a JSON null becomes through optString: never a name to show.
+        val token = raw?.trim()?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) } ?: return null
         return known[token.lowercase()] ?: token.replaceFirstChar { it.uppercase() }
     }
 }

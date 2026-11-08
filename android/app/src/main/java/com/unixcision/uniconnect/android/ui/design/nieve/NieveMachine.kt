@@ -19,7 +19,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
@@ -29,6 +32,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,13 +40,16 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +58,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -70,82 +79,106 @@ import com.unixcision.uniconnect.android.ui.design.MachineOfflineCard
 import com.unixcision.uniconnect.android.ui.design.MachineStaleBanner
 import com.unixcision.uniconnect.android.ui.design.WindowItem
 import com.unixcision.uniconnect.android.ui.design.WorkspaceSection
+import com.unixcision.uniconnect.android.ui.design.WorkspaceTabSelection
+import com.unixcision.uniconnect.android.ui.design.WorkspaceTabs
 import com.unixcision.uniconnect.android.ui.design.activityText
+import com.unixcision.uniconnect.android.ui.design.rememberWorkspaceTab
 import com.unixcision.uniconnect.android.ui.design.windowLine
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
+import kotlinx.coroutines.flow.first
 
 /**
  * Nieve's machine, a page of Apple's Settings: «Inicio» back, the machine's name as the large
- * title over its state, one block with its numbers, and every workspace at once as a group of
- * its own under a small header, its windows as rows. «Nuevo espacio de trabajo» waits in a bar at
- * the bottom, where the thumb is.
+ * title over its state, one block with its numbers, then a scope bar with a tab per workspace and
+ * one for all of them. A workspace's tab shows its windows as rows of one group; «Todos» shows
+ * every workspace as a group of its own under a small header. «Nuevo espacio de trabajo» waits in
+ * a bar at the bottom, where the thumb is.
  *
  * Every row is a lazy item of its own, so a machine with seventy windows only composes what is on
- * screen, and the list can be told exactly where a workspace's header sits.
+ * screen; the tabs are the list's sticky header, so they stay at hand however far it scrolls.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NieveMachine(model: MachineModel, actions: MachineActions, menu: @Composable () -> Unit) {
     var chosen by rememberSaveable(model.machine.id) { mutableStateOf(WindowFilter.ALL) }
     // Without a connection no window has a known state, so any filter but «Todas» would empty the list.
     val filter = if (model.connected) chosen else WindowFilter.ALL
-    val lines = remember(model, filter) { machineLines(model, filter) }
+    val selection = rememberWorkspaceTab(model)
+    val lines = remember(model, filter, selection.selected) { machineLines(model, filter, selection.selected) }
     val list = rememberLazyListState()
-    // The workspace to bring into view, kept until its header exists: the list may still be on its way.
-    var pendingFocus by remember { mutableStateOf<String?>(null) }
+    val tabsAt = lines.indexOf(MachineLine.Tabs)
+    // Past the tabs' own place they stick under the bar, and only then a hairline parts them from the rows.
+    val stuck by remember(list, tabsAt) {
+        derivedStateOf {
+            tabsAt >= 0 && (list.firstVisibleItemIndex > tabsAt || (list.firstVisibleItemIndex == tabsAt && list.firstVisibleItemScrollOffset > 0))
+        }
+    }
     LaunchedEffect(model.focusWorkspaceID) {
         val id = model.focusWorkspaceID ?: return@LaunchedEffect
-        // A filter that hides the workspace a notice named would leave nothing to show.
-        if (model.filtered(filter).none { it.workspace.id == id }) chosen = WindowFilter.ALL
-        pendingFocus = id
+        // The tab goes to the workspace a notice named; a filter that hides its windows would show it empty.
+        if (model.sections.any { it.workspace.id == id } && model.visible(id, filter).isEmpty()) chosen = WindowFilter.ALL
     }
-    LaunchedEffect(pendingFocus, lines) {
-        val id = pendingFocus ?: return@LaunchedEffect
-        val index = lines.indexOfFirst { it is MachineLine.Header && it.section.workspace.id == id }
-        if (index >= 0) {
-            list.scrollToItem(index)
-            pendingFocus = null
-        }
+    // A new tab starts at its top: the list goes back to the tabs if it had scrolled past them. The
+    // tab already is the workspace a notice named, so nothing looks for its header any more. The
+    // tab last shown survives a rotation, which must not move the list.
+    var shownTab by rememberSaveable(model.machine.id) { mutableStateOf(selection.selected) }
+    LaunchedEffect(selection.selected) {
+        if (selection.selected == shownTab) return@LaunchedEffect
+        shownTab = selection.selected
+        if (tabsAt >= 0 && list.firstVisibleItemIndex >= tabsAt) list.scrollToItem(tabsAt)
     }
     val page = UniTheme.spacing.page
     Column(Modifier.fillMaxSize()) {
         MachineBar(model, actions, menu)
         LazyColumn(Modifier.fillMaxWidth().weight(1f), state = list, contentPadding = PaddingValues(bottom = 32.dp)) {
-            items(lines, key = { it.key }, contentType = { it::class }) { line ->
-                when (line) {
-                    MachineLine.Title -> MachineTitle(model)
-                    MachineLine.Offline -> MachineOfflineCard(model, actions.onConnect, Modifier.padding(start = page, end = page, top = 20.dp))
-                    MachineLine.Stale -> MachineStaleBanner(model, actions.onConnect, Modifier.padding(start = page, end = page, top = 16.dp))
-                    MachineLine.Summary -> Summary(model)
-                    MachineLine.Filter -> FilterControl(filter) { chosen = it }
-                    MachineLine.LocalOnly -> NieveFooter(stringResource(R.string.box_local_only), Modifier.padding(top = 12.dp), color = UniTheme.colors.warning)
-                    is MachineLine.Message -> MessageRow(line.text)
-                    is MachineLine.Header -> WorkspaceHeader(
-                        line.section,
-                        onHold = { actions.onHoldWorkspace(line.section.workspace.id) },
-                        onCreate = if (line.section.canCreateWindow) ({ actions.onCreateWindow(line.section.workspace.id) }) else null,
-                    )
-                    is MachineLine.Window -> WindowRow(
-                        line.item, line.slot,
-                        onOpen = { actions.onOpenWindow(line.workspaceID, line.item.window.id) },
-                        onHold = { actions.onHoldWindow(line.workspaceID, line.item.window.id) },
-                    )
-                    is MachineLine.NoWindows -> NieveRow(Modifier.nieveGroup(), minHeight = 52.dp) {
-                        Text(stringResource(R.string.no_windows), style = NieveText.body, color = UniTheme.colors.muted)
-                    }
-                    MachineLine.Notices -> Column(Modifier.fillMaxWidth()) {
-                        NieveHeader(stringResource(R.string.drawer_notices))
-                        Box(Modifier.padding(horizontal = page)) {
-                            NotificationConnectionCard(model.noticeLink, model.connected, actions.onEnableNotices, actions.onDisableNotices)
+            lines.forEach { line ->
+                val content: @Composable LazyItemScope.() -> Unit = {
+                    when (line) {
+                        MachineLine.Title -> MachineTitle(model)
+                        MachineLine.Offline -> MachineOfflineCard(model, actions.onConnect, Modifier.padding(start = page, end = page, top = 20.dp))
+                        MachineLine.Stale -> MachineStaleBanner(model, actions.onConnect, Modifier.padding(start = page, end = page, top = 16.dp))
+                        MachineLine.Summary -> Summary(model)
+                        MachineLine.Tabs -> WorkspaceTabRow(model, selection, stuck = { stuck }, onHold = actions.onHoldWorkspace)
+                        MachineLine.Filter -> FilterControl(filter) { chosen = it }
+                        MachineLine.LocalOnly -> NieveFooter(stringResource(R.string.box_local_only), Modifier.padding(top = 12.dp), color = UniTheme.colors.warning)
+                        is MachineLine.Message -> MessageRow(line.text)
+                        is MachineLine.Header -> WorkspaceHeader(
+                            line.section,
+                            onHold = { actions.onHoldWorkspace(line.section.workspace.id) },
+                            onCreate = if (line.section.canCreateWindow) ({ actions.onCreateWindow(line.section.workspace.id) }) else null,
+                        )
+                        is MachineLine.TabHeader -> TabHeader(
+                            line.section,
+                            onHold = { actions.onHoldWorkspace(line.section.workspace.id) },
+                            onTogglePin = { actions.onToggleWorkspacePin(line.section.workspace.id) },
+                            onCreate = if (line.section.canCreateWindow) ({ actions.onCreateWindow(line.section.workspace.id) }) else null,
+                        )
+                        is MachineLine.Window -> WindowRow(
+                            line.item, line.slot,
+                            onOpen = { actions.onOpenWindow(line.workspaceID, line.item.window.id) },
+                            onHold = { actions.onHoldWindow(line.workspaceID, line.item.window.id) },
+                        )
+                        is MachineLine.NoWindows -> NieveRow(Modifier.nieveGroup(), minHeight = 52.dp) {
+                            Text(stringResource(R.string.no_windows), style = NieveText.body, color = UniTheme.colors.muted)
+                        }
+                        MachineLine.Notices -> Column(Modifier.fillMaxWidth()) {
+                            NieveHeader(stringResource(R.string.drawer_notices))
+                            Box(Modifier.padding(horizontal = page)) {
+                                NotificationConnectionCard(model.noticeLink, model.connected, actions.onEnableNotices, actions.onDisableNotices)
+                            }
                         }
                     }
                 }
+                // The tabs are the list's sticky header: what comes before them scrolls away, the rows slide under them.
+                if (line == MachineLine.Tabs) stickyHeader(key = line.key, contentType = line::class) { _ -> content() }
+                else item(key = line.key, contentType = line::class, content = content)
             }
         }
         if (model.canCreateWorkspace) CreateBar(actions.onCreateWorkspace)
     }
 }
 
-/** One item of the machine's list; the key is what the lazy list and the focus look for. */
+/** One item of the machine's list; the key is what the lazy list looks for. */
 private sealed interface MachineLine {
     val key: String
 
@@ -153,19 +186,21 @@ private sealed interface MachineLine {
     data object Offline : MachineLine { override val key: String get() = "offline" }
     data object Stale : MachineLine { override val key: String get() = "stale" }
     data object Summary : MachineLine { override val key: String get() = "summary" }
+    data object Tabs : MachineLine { override val key: String get() = "tabs" }
     data object Filter : MachineLine { override val key: String get() = "filter" }
     data object LocalOnly : MachineLine { override val key: String get() = "local-only" }
     data object Notices : MachineLine { override val key: String get() = "notices" }
     data class Message(val text: Int) : MachineLine { override val key: String get() = "message" }
     data class Header(val section: WorkspaceSection) : MachineLine { override val key: String get() = "h:${section.workspace.id}" }
+    data class TabHeader(val section: WorkspaceSection) : MachineLine { override val key: String get() = "t:${section.workspace.id}" }
     data class Window(val workspaceID: String, val item: WindowItem, val slot: NieveSlot) : MachineLine {
         override val key: String get() = "w:$workspaceID/${item.window.id}"
     }
     data class NoWindows(val workspaceID: String) : MachineLine { override val key: String get() = "e:$workspaceID" }
 }
 
-/** The machine's list, top to bottom, for [filter]. */
-private fun machineLines(model: MachineModel, filter: WindowFilter): List<MachineLine> = buildList {
+/** The machine's list, top to bottom, for [tab] and [filter]. */
+private fun machineLines(model: MachineModel, filter: WindowFilter, tab: String): List<MachineLine> = buildList {
     add(MachineLine.Title)
     if (!model.hasSnapshot) {
         add(MachineLine.Offline)
@@ -174,16 +209,18 @@ private fun machineLines(model: MachineModel, filter: WindowFilter): List<Machin
     }
     if (!model.connected) add(MachineLine.Stale)
     add(MachineLine.Summary)
+    if (model.sections.isNotEmpty()) add(MachineLine.Tabs)
     if (model.connected && model.sections.isNotEmpty()) add(MachineLine.Filter)
     if (model.hostKeepsOrder == false) add(MachineLine.LocalOnly)
-    val sections = model.filtered(filter)
+    val sections = model.visible(tab, filter)
     when {
         model.sections.isEmpty() -> add(MachineLine.Message(R.string.no_workspaces))
         sections.isEmpty() -> add(MachineLine.Message(R.string.design_no_filtered_windows))
     }
     sections.forEach { section ->
         val id = section.workspace.id
-        add(MachineLine.Header(section))
+        // Under a workspace's own tab its name is already on the tab; the header keeps only what stood beside it.
+        add(if (tab == WorkspaceTabs.ALL) MachineLine.Header(section) else MachineLine.TabHeader(section))
         if (section.windows.isEmpty()) add(MachineLine.NoWindows(id))
         else section.windows.forEachIndexed { index, item -> add(MachineLine.Window(id, item, NieveSlot.of(index, section.windows.size))) }
     }
@@ -247,15 +284,110 @@ private fun Summary(model: MachineModel) {
 }
 
 /**
- * Todas, Trabajando, Te esperan: Apple's segmented control. With seventy windows, the two or
- * three that wait are what the reader came for.
+ * The workspace tabs, Apple's scope bar: «Todos» first, then one tab per workspace in the list's
+ * order. It scrolls sideways; the chosen tab is brought into view when it changes or the row
+ * first appears, and stays where it is when it is already on screen. Pinned under the bar, it
+ * draws a hairline under itself, like the bar at the bottom; [stuck] is read only when drawing.
+ */
+@Composable
+private fun WorkspaceTabRow(model: MachineModel, selection: WorkspaceTabSelection, stuck: () -> Boolean, onHold: (String) -> Unit) {
+    val colors = UniTheme.colors
+    val rule = nieveRuleColor()
+    val row = rememberLazyListState()
+    val index = if (selection.showsAll) 0 else model.sections.indexOfFirst { it.workspace.id == selection.selected } + 1
+    // Keyed by position, not id: pinning a workspace moves its tab, which must stay in view too.
+    LaunchedEffect(index) {
+        val info = snapshotFlow { row.layoutInfo }.first { it.visibleItemsInfo.isNotEmpty() }
+        val tab = info.visibleItemsInfo.firstOrNull { it.index == index }
+        if (tab == null || tab.offset < info.viewportStartOffset || tab.offset + tab.size > info.viewportEndOffset) row.animateScrollToItem(index)
+    }
+    LazyRow(
+        Modifier.fillMaxWidth().background(colors.background)
+            .drawBehind {
+                if (stuck()) {
+                    val stroke = maxOf(1f, 0.5.dp.toPx())
+                    drawLine(rule, Offset(0f, size.height - stroke / 2f), Offset(size.width, size.height - stroke / 2f), stroke)
+                }
+            }
+            .padding(top = 12.dp, bottom = 2.dp),
+        state = row,
+        contentPadding = PaddingValues(horizontal = UniTheme.spacing.page),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        item(key = WorkspaceTabs.ALL) {
+            WorkspaceTab(
+                stringResource(R.string.nieve_tab_all), model.sections.sumOf { it.windows.size }, chosen = selection.showsAll,
+                onClick = { selection.select(WorkspaceTabs.ALL) },
+            )
+        }
+        items(model.sections, key = { it.workspace.id }) { section ->
+            val id = section.workspace.id
+            WorkspaceTab(
+                section.workspace.name, section.windows.size, chosen = id == selection.selected,
+                identifier = true, pinned = section.pinned, activity = section.activity,
+                onHold = { onHold(id) }, onClick = { selection.select(id) },
+            )
+        }
+    }
+}
+
+/**
+ * One tab: a soft rounded segment, never a pill. The chosen one takes the accent's tint and its
+ * colour in bold; the rest sit white on the page behind a hairline. The mark of what its AIs are
+ * doing leads, a star follows a favourite's name, and the number of windows closes it. A name is
+ * cut short so one long workspace never pushes the rest out of reach. 36 dp drawn, 48 dp to touch.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun WorkspaceTab(
+    label: String,
+    count: Int,
+    chosen: Boolean,
+    identifier: Boolean = false,
+    pinned: Boolean = false,
+    activity: ActivityState? = null,
+    onHold: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    val colors = UniTheme.colors
+    val shape = UniTheme.shapes.chip
+    Row(
+        Modifier.minimumInteractiveComponentSize()
+            .clip(shape)
+            .then(if (chosen) Modifier.background(colors.accentSoft) else Modifier.background(colors.surface).border(0.5.dp, colors.outline, shape))
+            .semantics { selected = chosen }
+            .combinedClickable(role = Role.Tab, onLongClick = onHold, onClick = onClick)
+            .height(36.dp)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        activity?.takeIf { it == ActivityState.WORKING || it == ActivityState.WAITING }?.let { ActivityMark(it, size = 14.dp) }
+        Text(
+            label, Modifier.widthIn(max = 168.dp),
+            style = NieveText.detail.copy(fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Medium),
+            fontFamily = if (identifier) UniTheme.type.identifierFamily else null,
+            color = if (chosen) colors.accent else colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
+        if (pinned) Icon(Icons.Rounded.Star, stringResource(R.string.box_pinned), Modifier.size(12.dp), tint = colors.warning)
+        Text(
+            count.toString(), style = NieveText.detail.copy(fontFeatureSettings = "tnum"),
+            color = if (chosen) colors.accent else colors.muted, maxLines = 1,
+        )
+    }
+}
+
+/**
+ * Todas, Trabajando, Te esperan: Apple's segmented control, under the tabs and acting within the
+ * chosen one. With seventy windows, the two or three that wait are what the reader came for.
  */
 @Composable
 private fun FilterControl(selected: WindowFilter, onSelect: (WindowFilter) -> Unit) {
     val colors = UniTheme.colors
     val on = if (colors.isDark) colors.text.copy(alpha = .16f) else colors.surface
     Row(
-        Modifier.fillMaxWidth().padding(start = UniTheme.spacing.page, end = UniTheme.spacing.page, top = 20.dp)
+        Modifier.fillMaxWidth().padding(start = UniTheme.spacing.page, end = UniTheme.spacing.page, top = 12.dp)
             .height(44.dp).background(colors.text.copy(alpha = .07f), UniTheme.shapes.button).padding(3.dp),
     ) {
         WindowFilter.entries.forEach { option ->
@@ -291,9 +423,9 @@ private fun MessageRow(text: Int) {
 }
 
 /**
- * A workspace's header, like a section of Settings: its name, a star when it is a favourite and
- * the mark of its most pressing window, then how many windows and the «+» that adds one. A tap
- * or a long press opens its sheet (favourite, order, relaunch).
+ * A workspace's header under «Todos», like a section of Settings: its name, a star when it is a
+ * favourite and the mark of its most pressing window, then how many windows and the «+» that adds
+ * one. A tap or a long press opens its sheet (favourite, order, relaunch).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -326,6 +458,42 @@ private fun WorkspaceHeader(section: WorkspaceSection, onHold: () -> Unit, onCre
         if (onCreate != null) IconButton(onClick = onCreate, Modifier.size(44.dp)) {
             Icon(Icons.Rounded.Add, stringResource(R.string.new_window), Modifier.size(22.dp), tint = colors.accent)
         } else Spacer(Modifier.width(16.dp))
+    }
+}
+
+/**
+ * The header of the one workspace a tab shows. Its name is already on the tab, so it keeps what
+ * stood beside it: SSH and how many windows, then the star that makes it a favourite and the «+»
+ * that adds a window. A tap or a long press opens the same sheet as a header under «Todos».
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TabHeader(section: WorkspaceSection, onHold: () -> Unit, onTogglePin: () -> Unit, onCreate: (() -> Unit)?) {
+    val colors = UniTheme.colors
+    val page = UniTheme.spacing.page
+    val count = pluralStringResource(R.plurals.window_count, section.windows.size, section.windows.size)
+    Row(
+        Modifier.fillMaxWidth().padding(start = page + 4.dp, end = page, top = 12.dp)
+            .clip(UniTheme.shapes.chip)
+            .combinedClickable(onLongClick = onHold, onClick = onHold)
+            .heightIn(min = 44.dp)
+            .padding(start = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            if (section.workspace.isSSH == true) "${stringResource(R.string.ssh_workspace)} · $count" else count,
+            Modifier.weight(1f), style = NieveText.detail, color = colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
+        IconButton(onClick = onTogglePin, Modifier.size(44.dp)) {
+            Icon(
+                if (section.pinned) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                stringResource(if (section.pinned) R.string.box_unpin else R.string.box_pin),
+                Modifier.size(20.dp), tint = if (section.pinned) colors.warning else colors.muted,
+            )
+        }
+        if (onCreate != null) IconButton(onClick = onCreate, Modifier.size(44.dp)) {
+            Icon(Icons.Rounded.Add, stringResource(R.string.new_window), Modifier.size(22.dp), tint = colors.accent)
+        } else Spacer(Modifier.width(4.dp))
     }
 }
 

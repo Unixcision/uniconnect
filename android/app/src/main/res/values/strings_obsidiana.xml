@@ -51,6 +51,8 @@
     <string name="obsidiana_expand">Desplegar</string>
     <string name="obsidiana_workspace_options">Opciones del espacio</string>
     <string name="obsidiana_window_options">Opciones de la ventana</string>
+    <!-- Pestañas de espacios: la que enseña todos a la vez. -->
+    <string name="obsidiana_tab_all">Todos</string>
 
     <!-- Menú lateral. -->
     <string name="obsidiana_drawer_close">Cerrar el menú</string>

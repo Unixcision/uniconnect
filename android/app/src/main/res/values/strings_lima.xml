@@ -5,6 +5,8 @@
     <string name="lima_windows_total">en total</string>
     <string name="lima_waiting_none">Ninguna IA te espera ahora mismo.</string>
     <string name="lima_drawer_close">Cerrar el menú</string>
+    <!-- Primera pestaña de la pantalla de una máquina: enseña todos sus espacios a la vez. -->
+    <string name="lima_tab_all">Todos</string>
     <!-- Va detrás del número de máquinas conectadas: «2 de 2 máquinas». -->
     <plurals name="lima_of_machines">
         <item quantity="one">de %1$d máquina</item>

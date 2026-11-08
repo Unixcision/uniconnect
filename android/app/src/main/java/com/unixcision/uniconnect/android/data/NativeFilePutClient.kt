@@ -44,8 +44,8 @@ class NativeFilePutClient(private val rpc: FramedRpcClient) : FilePutClient {
             return FilePutOutcome(
                 path = result.getString("path"),
                 location = if (result.optString("location") == "remote") FilePutLocation.REMOTE else FilePutLocation.HOST,
-                remotePath = result.optString("remote_path").takeIf { it.isNotEmpty() },
-                remoteError = result.optString("remote_error").takeIf { it.isNotEmpty() },
+                remotePath = result.optString("remote_path").takeIf { it.isNotEmpty() && !result.isNull("remote_path") },
+                remoteError = result.optString("remote_error").takeIf { it.isNotEmpty() && !result.isNull("remote_error") },
             )
         }
 
