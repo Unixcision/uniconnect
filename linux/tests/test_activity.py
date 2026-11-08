@@ -33,6 +33,21 @@ class ResolverRuleTests(unittest.TestCase):
         if output_ago is not None:
             self.resolver.note_output("w", self.now - output_ago)
 
+    def stream(self, seconds, step=0.2):
+        """Salida continua durante `seconds`; el reloj queda en la última salida."""
+        end = self.now + seconds
+        while True:
+            self.resolver.note_output("w", self.now)
+            if self.now >= end - 1e-9:
+                return
+            self.now = min(self.now + step, end)
+
+    def burst(self, count=5):
+        """Lo que deja en el tee un set-option de tmux: unas líneas en pocos milisegundos."""
+        for _ in range(count):
+            self.resolver.note_output("w", self.now)
+            self.now += 0.01
+
     def test_shell_is_unknown_whatever_the_title_or_output_says(self):
         self.running("bash", "⠋ codex trabajando", output_ago=0.5)
         activity = self.resolver.evaluate("w")
@@ -52,23 +67,110 @@ class ResolverRuleTests(unittest.TestCase):
         activity = self.resolver.evaluate("w")
         self.assertEqual((activity.state, activity.agent), ("idle", "claude"))  # node vivo; ✳ solo nombra.
 
-    def test_fresh_hooks_win_and_stale_hooks_are_ignored(self):
+    def test_idle_and_needs_input_hooks_stick_and_running_expires(self):
         self.running("claude", output_ago=0.2)
         self.resolver.note_hook("w", "needsInput", "claude")
         activity = self.resolver.evaluate("w")
         self.assertEqual((activity.state, activity.source), ("waiting", "hooks"))
-        self.now += 119
+        self.now += 500  # needsInput no caduca: vale hasta el siguiente informe.
         self.assertEqual(self.resolver.evaluate("w").state, "waiting")
-        self.now += 2
-        self.resolver.note_output("w")
+        self.burst()  # Un redibujado de tmux no lo contradice.
+        self.assertEqual(self.resolver.evaluate("w").state, "waiting")
+        self.stream(3.2)  # Una racha ≥ 3 s posterior al informe, sí.
         self.assertEqual(self.resolver.evaluate("w"), self.resolver.evaluate("w"))
         self.assertEqual((self.resolver.current("w").state, self.resolver.current("w").source), ("working", "output"))
+        self.now += 4  # Acabada la racha, el informe vuelve a mandar.
+        self.assertEqual((self.resolver.evaluate("w").state, self.resolver.current("w").source), ("waiting", "hooks"))
         self.resolver.note_hook("w", "running")
-        self.assertEqual(self.resolver.evaluate("w").source, "hooks")
+        self.assertEqual((self.resolver.evaluate("w").state, self.resolver.current("w").source), ("working", "hooks"))
+        self.now += 121  # running sí caduca a los 120 s; sin salida reciente queda idle por salida.
+        self.assertEqual((self.resolver.evaluate("w").state, self.resolver.current("w").source), ("idle", "output"))
         self.resolver.note_hook("w", "idle")
-        self.assertEqual(self.resolver.evaluate("w").state, "idle")
+        self.assertEqual((self.resolver.evaluate("w").state, self.resolver.current("w").source), ("idle", "hooks"))
         self.resolver.note_hook("w", "explotó")  # Un estado desconocido no cambia nada.
         self.assertEqual(self.resolver.evaluate("w").state, "idle")
+
+    def test_a_tmux_redraw_burst_neither_wakes_nor_stops_an_agent(self):
+        self.running("claude", output_ago=30)
+        self.assertEqual(self.resolver.evaluate("w").state, "idle")
+        self.burst()
+        self.assertEqual(self.resolver.evaluate("w").state, "idle")  # No despierta a una IA parada.
+        self.stream(1.5)
+        self.assertEqual(self.resolver.evaluate("w").state, "working")  # Control: una racha de 1,5 s sí.
+        self.now += 2.5
+        self.burst()  # Hueco > 1 s: racha nueva y corta.
+        self.assertEqual(self.resolver.evaluate("w").state, "working")  # No corta a una que trabaja.
+        self.now += 6
+        self.assertEqual(self.resolver.evaluate("w").state, "idle")
+
+    def test_a_a_gap_over_one_second_cuts_the_run(self):
+        self.running("claude", output_ago=30)
+        self.resolver.evaluate("w")
+        self.resolver.note_output("w")
+        self.now += 0.9
+        self.resolver.note_output("w")
+        self.assertEqual(self.resolver.evaluate("w").state, "idle")  # 0,9 s no es una racha sostenida.
+        self.now += 1.1
+        self.resolver.note_output("w")  # Hueco de 1,1 s: la racha empieza otra vez aquí.
+        self.assertEqual(self.resolver.evaluate("w").state, "idle")
+        self.now += 0.5
+        self.resolver.note_output("w")
+        self.now += 0.5
+        self.resolver.note_output("w")
+        self.assertEqual(self.resolver.evaluate("w").state, "working")  # 1 s seguido, sí.
+
+    def test_c_only_output_after_the_idle_report_contradicts_it(self):
+        self.running("claude", output_ago=30)
+        self.stream(5)  # El agente trabaja y al acabar informa idle.
+        self.resolver.note_hook("w", "idle", "claude")
+        self.assertEqual((self.resolver.evaluate("w").state, self.resolver.current("w").source), ("idle", "hooks"))
+        self.now += 0.2
+        self.stream(2)  # Misma racha, pero solo 2 s después del informe.
+        self.assertEqual(self.resolver.evaluate("w").state, "idle")
+        self.now += 0.2
+        self.stream(1.2)  # Ya son ≥ 3 s posteriores al informe.
+        self.assertEqual((self.resolver.evaluate("w").state, self.resolver.current("w").source), ("working", "output"))
+
+    def test_b_a_shell_in_front_drops_every_hook(self):
+        self.running("claude", output_ago=30)
+        self.resolver.note_hook("w", "idle", "claude")
+        self.assertEqual(self.resolver.evaluate("w").source, "hooks")
+        self.resolver.note_probe("w", "bash", "")  # La IA murió.
+        self.assertEqual(self.resolver.evaluate("w").state, "unknown")
+        self.resolver.note_probe("w", "claude", "")  # Relanzada: el idle viejo ya no vale.
+        activity = self.resolver.evaluate("w")
+        self.assertEqual((activity.state, activity.source), ("idle", "output"))
+
+    def test_e_unmoved_window_activity_turns_a_tee_run_into_a_redraw(self):
+        self.running("claude", output_ago=30)
+        self.assertEqual(self.resolver.evaluate("w").state, "idle")
+        self.resolver.note_probe("w", "claude", "", window_activity=500.0, started=self.now)
+        self.now += 0.5
+        self.stream(1.5)  # El tee ve 1,5 s de "salida"...
+        self.now += 0.3
+        self.resolver.note_probe("w", "claude", "", window_activity=500.0, started=self.now)
+        self.assertEqual(self.resolver.evaluate("w").state, "idle")  # ...pero tmux dice que el pane no escribió.
+        self.now += 2
+        self.resolver.note_probe("w", "claude", "", window_activity=500.0, started=self.now)
+        self.assertEqual(self.resolver.evaluate("w").state, "idle")  # El veredicto no se olvida.
+        # Control: con salida real la marca se mueve y la racha cuenta.
+        self.now += 3
+        self.resolver.note_probe("w", "claude", "", window_activity=500.0, started=self.now)
+        self.now += 0.5
+        self.stream(1.5)
+        self.now += 0.3
+        self.resolver.note_probe("w", "claude", "", window_activity=502.0, started=self.now)
+        self.assertEqual(self.resolver.evaluate("w").state, "working")
+
+    def test_e_a_probe_sampled_before_the_run_ended_cannot_call_it_a_redraw(self):
+        self.running("claude", output_ago=30)
+        self.resolver.evaluate("w")
+        self.resolver.note_probe("w", "claude", "", window_activity=500.0, started=self.now)
+        self.now += 0.5
+        sampled = self.now + 0.5  # El sondeo SSH empieza a mitad de la racha y responde al final.
+        self.stream(1.5)
+        self.resolver.note_probe("w", "claude", "", window_activity=500.0, started=sampled)
+        self.assertEqual(self.resolver.evaluate("w").state, "working")
 
     def test_permission_question_on_screen_beats_title_and_is_read_only_when_quiet(self):
         prompt = ["\x1b[1mBash command\x1b[0m", "rm -rf build", "Do you want to proceed?", "❯ 1. Yes", "  2. No", "Esc to cancel"]
@@ -111,7 +213,9 @@ class ResolverRuleTests(unittest.TestCase):
         self.assertEqual((activity.state, activity.agent), ("idle", "claude"))
 
     def test_output_thresholds_three_and_five_seconds(self):
-        self.running("claude", output_ago=1)
+        self.running("claude")
+        self.stream(1.2)
+        self.now += 1
         self.assertEqual(self.resolver.evaluate("w").state, "working")
         self.now += 3  # 4 s: se conserva el estado anterior.
         self.assertEqual(self.resolver.evaluate("w").state, "working")
@@ -123,7 +227,7 @@ class ResolverRuleTests(unittest.TestCase):
         self.resolver.note_alive("w", False)  # El proceso murió: ya no es idle.
         self.assertEqual(self.resolver.evaluate("w").state, "unknown")
         self.resolver.note_alive("w", True)
-        self.resolver.note_output("w")
+        self.stream(1.2)
         self.assertEqual(self.resolver.evaluate("w").state, "working")
 
     def test_keyboard_echo_and_resize_redraws_do_not_count_as_output(self):
@@ -133,8 +237,10 @@ class ResolverRuleTests(unittest.TestCase):
         self.now += 0.1
         self.assertFalse(self.resolver.note_output("w"))
         self.assertEqual(self.resolver.evaluate("w").state, "idle")
-        self.now += 0.3  # Pasados 250 ms del teclado, la salida vuelve a contar.
+        self.now += 0.3  # Pasados 250 ms del teclado, la salida vuelve a contar...
         self.assertTrue(self.resolver.note_output("w"))
+        self.assertEqual(self.resolver.evaluate("w").state, "idle")  # ...aunque sola es una ráfaga corta.
+        self.stream(1.2)
         self.assertEqual(self.resolver.evaluate("w").state, "working")
         self.now += 10
         self.assertEqual(self.resolver.evaluate("w").state, "idle")

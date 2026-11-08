@@ -26,10 +26,19 @@ LIVE_HELPERS = frozenset({"node", "python3", "python", "bun", "deno"})
 
 OUTPUT_WORKING_SECONDS = 3.0
 OUTPUT_IDLE_SECONDS = 5.0
+# Una racha de salida es trabajo solo si dura ≥ 1 s; un hueco > 1 s la corta. Cada
+# set-option/set-hook de tmux redibuja todos los clientes del servidor y el tee lo
+# veía como salida: una ráfaga así no despierta a una IA parada ni corta a una activa.
+SUSTAINED_OUTPUT_SECONDS = 1.0
+OUTPUT_GAP_SECONDS = 1.0
 SCREEN_QUIET_SECONDS = 1.0
 ECHO_SECONDS = 0.25
 RESIZE_SECONDS = 0.5
 HOOK_TTL_SECONDS = 120.0
+# idle/needsInput valen hasta el siguiente informe (salvo un shell delante: la IA murió);
+# solo una racha de salida ≥ 3 s posterior al informe los contradice.
+STICKY_HOOK_STATES = frozenset({"idle", "waiting"})
+HOOK_CONTRADICTION_SECONDS = 3.0
 SCREEN_LINES = 12
 
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]|[\x00-\x08\x0b-\x1f\x7f]")
@@ -140,6 +149,11 @@ def select_pane(panes: dict[str, tuple] | None, pane_id: str | None) -> tuple[st
 @dataclass
 class _Facts:
     last_output: float = -math.inf
+    run_start: float = -math.inf  # Inicio de la racha de salida que acaba en last_output.
+    # (inicio, fin, window_activity) de los dos últimos sondeos tmux, con el reloj local.
+    probe_before: tuple[float, float, float] | None = None
+    probe_last: tuple[float, float, float] | None = None
+    redraw_run: tuple[float, float] | None = None  # (inicio, fin) de la racha ya dada por redibujado.
     last_input: float = -math.inf
     last_resize: float = -math.inf
     window_activity: float | None = None
@@ -179,6 +193,8 @@ class ActivityResolver:
         facts.screen_epoch += 1
         if now - facts.last_input < ECHO_SECONDS or now - facts.last_resize < RESIZE_SECONDS:
             return False
+        if now - facts.last_output > OUTPUT_GAP_SECONDS:
+            facts.run_start = now
         facts.last_output = now
         return True
 
@@ -191,13 +207,18 @@ class ActivityResolver:
         facts.screen_epoch += 1
 
     def note_probe(self, window_id: str, command: str | None, title: str | None = None,
-                   window_activity: float | None = None) -> None:
+                   window_activity: float | None = None, *, started: float | None = None,
+                   now: float | None = None) -> None:
+        """Resultado de un sondeo; `started` es cuándo empezó (el sondeo SSH tarda) y `now` cuándo acabó."""
+        now = self.clock() if now is None else now
         facts = self._facts(window_id)
         facts.command, facts.probe_missing = command, False
         if title is not None:
             facts.title = title
         if window_activity is not None:
             facts.window_activity = window_activity
+            facts.probe_before = facts.probe_last
+            facts.probe_last = (now if started is None else min(started, now), now, window_activity)
 
     def note_hook(self, window_id: str, state: str, agent: str | None = None, now: float | None = None) -> None:
         """Informe de un hook del agente: running → working, needsInput → waiting, idle → idle."""
@@ -215,6 +236,7 @@ class ActivityResolver:
         facts = self.facts.get(window_id)
         if facts is not None:
             facts.command, facts.title, facts.window_activity, facts.probe_missing = None, "", None, True
+            facts.probe_before = facts.probe_last = None
 
     def note_alive(self, window_id: str, alive: bool, launched: str | None = None) -> None:
         facts = self._facts(window_id)
@@ -238,7 +260,10 @@ class ActivityResolver:
         facts = self._facts(window_id)
         previous = facts.current
         agent, shell, live = agent_from_command(facts.command)
-        hook_fresh = facts.hook_state is not None and now - facts.hook_at < HOOK_TTL_SECONDS
+        if shell:
+            facts.hook_state = None  # Un shell delante: la IA murió y nada de lo que informó sigue valiendo.
+        hook_fresh = facts.hook_state is not None and (
+            facts.hook_state in STICKY_HOOK_STATES or now - facts.hook_at < HOOK_TTL_SECONDS)
         if not facts.alive or shell or facts.probe_missing:
             # Sin proceso vivo, con un shell delante o sin la sesión tmux sondeada nada
             # puede estar trabajando ni esperando, diga lo que diga el título o la pantalla.
@@ -252,12 +277,21 @@ class ActivityResolver:
                 agent = facts.launched  # Sin sonda todavía (SSH recién abierta): lo que se lanzó.
             live = live or (facts.command is None and not facts.probe_missing and facts.alive and agent is not None)
             live = live and facts.alive
-            last_output = facts.last_output
+            last_output, run_start = facts.last_output, facts.run_start
             if last_output == -math.inf and facts.window_activity is not None:
-                last_output = facts.window_activity  # Sin datos del PTY, vale la marca de tmux.
+                # Sin datos del PTY vale la marca de tmux, que solo mueve la salida real del pane.
+                last_output = run_start = facts.window_activity
+                sustained = True
+            else:
+                sustained = (last_output > -math.inf and last_output - run_start >= SUSTAINED_OUTPUT_SECONDS
+                             and not self._redraw_only(facts))
             quiet = now - last_output
+            recent = quiet <= OUTPUT_WORKING_SECONDS
             if hook_fresh:
                 state, source = facts.hook_state, "hooks"
+                if (state in STICKY_HOOK_STATES and recent and sustained
+                        and last_output - max(run_start, facts.hook_at) >= HOOK_CONTRADICTION_SECONDS):
+                    state, source = "working", "output"  # Solo la salida posterior al informe lo contradice.
             else:
                 state = source = None
                 if screen is not None and quiet >= SCREEN_QUIET_SECONDS:
@@ -269,8 +303,11 @@ class ActivityResolver:
                         state, source = "waiting", "screen"
                 if state is None and title_shows_work(facts.title):
                     state, source = "working", "title"
-                if state is None and quiet <= OUTPUT_WORKING_SECONDS:
-                    state, source = "working", "output"
+                if state is None and recent:
+                    if sustained:
+                        state, source = "working", "output"
+                    else:  # Ráfaga corta: ni despierta a una IA parada ni corta a una que trabaja.
+                        state, source = previous.state, previous.source
                 if state is None and quiet > OUTPUT_IDLE_SECONDS and live:
                     state, source = "idle", "output"
                 if state is None and OUTPUT_WORKING_SECONDS < quiet <= OUTPUT_IDLE_SECONDS and live \
@@ -281,6 +318,25 @@ class ActivityResolver:
         since = previous.since if state == previous.state and previous.since else now
         facts.current = AgentActivity(state=state, source=source, agent=agent, since=since)
         return facts.current
+
+    @staticmethod
+    def _redraw_only(facts: _Facts) -> bool:
+        """¿La racha actual del tee fue solo redibujado? Lo dice tmux, no el reloj.
+
+        `window_activity` solo se mueve con salida real del pane y tiene resolución de
+        segundos, así que una racha real de ≥ 1 s siempre la mueve. Si un sondeo terminado
+        antes de la racha y otro empezado después ven la misma marca, no hubo salida real.
+        Se comparan marcas entre sí y nunca con el reloj local: en SSH vienen del remoto.
+        """
+        run = (facts.run_start, facts.last_output)
+        if facts.redraw_run == run:
+            return True
+        before, last = facts.probe_before, facts.probe_last
+        if (before is not None and last is not None and before[1] <= facts.run_start
+                and last[0] >= facts.last_output and last[2] == before[2]):
+            facts.redraw_run = run  # Los sondeos siguientes ya no la encuadran: se recuerda.
+            return True
+        return False
 
     def snapshot(self, window_id: str) -> dict:
         return self.current(window_id).snapshot()
