@@ -341,5 +341,78 @@ class MobilePTYHostTests(unittest.TestCase):
         self.assertFalse(client.closed)
 
 
+class SurfaceFilterTests(unittest.TestCase):
+    """`surface_ids` en `mobile.events.subscribe`: cada móvil recibe solo la pantalla que mira."""
+
+    TOPICS = ["terminal.updated", "workspace.updated"]
+    # El mismo andamiaje de socketpair, sin volver a ejecutar los tests de esa clase.
+    setUp, tearDown = MobilePTYHostTests.setUp, MobilePTYHostTests.tearDown
+    dispatch, response_enqueued = MobilePTYHostTests.dispatch, MobilePTYHostTests.response_enqueued
+    client = MobilePTYHostTests.client
+    queued = staticmethod(MobilePTYHostTests.queued)
+
+    def subscribed(self, surface_ids=None, stream="espejo"):
+        client, _ = self.client()
+        params = {"stream_id": stream, "topics": self.TOPICS}
+        if surface_ids is not None:
+            params["surface_ids"] = surface_ids
+        client.handle({"id": "subscribe", "method": "mobile.events.subscribe", "params": params})
+        self.assertTrue(self.queued(client)[0]["ok"])
+        return client
+
+    def events(self, client):
+        return [(frame["topic"], frame["payload"]) for frame in self.queued(client)]
+
+    def test_a_phone_naming_its_window_only_gets_that_window_and_old_phones_keep_the_global_event(self):
+        new = self.subscribed(["A-VENTANA"])  # Mayúsculas: se compara sin distinguirlas.
+        old = self.subscribed()
+        self.host.emit_terminals_updated({"a-ventana", "b-ventana"})
+        self.assertEqual(self.events(new), [("terminal.updated", {"surface_id": "a-ventana"})])
+        self.assertEqual(self.events(old), [("terminal.updated", {})])
+        self.host.emit_terminals_updated({"b-ventana"})  # Otra ventana trabajando: al nuevo, nada.
+        self.assertEqual(self.events(new), [])
+        self.assertEqual(self.events(old), [("terminal.updated", {})])
+        self.host.emit("workspace.updated")  # Lo que no es de una ventana no cambia.
+        self.assertEqual(self.events(new), [("workspace.updated", {})])
+        self.assertEqual(self.events(old), [("workspace.updated", {})])
+
+    def test_a_window_event_is_coalesced_per_window_and_an_event_without_surface_reaches_everyone(self):
+        phone = self.subscribed(["a", "c"])
+        self.host.emit_terminals_updated({"a"})
+        self.host.emit_terminals_updated({"a", "c"})
+        self.host.emit_terminals_updated({"a"})
+        self.assertEqual(sorted(payload["surface_id"] for _, payload in self.events(phone)), ["a", "c"])
+        self.host.emit("terminal.updated", {"surface_id": "b"})
+        self.assertEqual(self.events(phone), [])
+        self.host.emit("terminal.updated")
+        self.assertEqual(self.events(phone), [("terminal.updated", {})])
+
+    def test_two_streams_of_one_phone_join_their_windows(self):
+        phone, _ = self.client()
+        for stream, surfaces in (("uno", ["a"]), ("dos", ["b"])):
+            phone.handle({"id": stream, "method": "mobile.events.subscribe",
+                          "params": {"stream_id": stream, "topics": self.TOPICS, "surface_ids": surfaces}})
+        self.queued(phone)
+        self.host.emit_terminals_updated({"a", "b", "z"})
+        self.assertEqual(sorted(payload["surface_id"] for _, payload in self.events(phone)), ["a", "b"])
+        phone.handle({"id": "fuera", "method": "mobile.events.unsubscribe", "params": {"stream_id": "dos"}})
+        self.queued(phone)
+        self.host.emit_terminals_updated({"a", "b"})
+        self.assertEqual(self.events(phone), [("terminal.updated", {"surface_id": "a"})])
+
+    def test_invalid_surface_lists_are_invalid_params_and_an_empty_list_is_valid(self):
+        for bad in ("a", None, [1], [""], ["x" * 129], ["s"] * 17, {"a": 1}):
+            with self.subTest(bad=bad):
+                client, _ = self.client()
+                client.handle({"id": "s", "method": "mobile.events.subscribe",
+                               "params": {"stream_id": "s", "topics": self.TOPICS, "surface_ids": bad}})
+                self.assertEqual(self.queued(client)[0]["error"]["code"], "invalid_params")
+                self.host.emit_terminals_updated({"a"})
+                self.assertEqual(self.events(client), [])  # La suscripción rechazada no recibe nada.
+        quiet = self.subscribed([])
+        self.host.emit_terminals_updated({"a"})
+        self.assertEqual(self.events(quiet), [])
+
+
 if __name__ == "__main__":
     unittest.main()

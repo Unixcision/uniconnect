@@ -147,8 +147,8 @@ class MobileDesktop:
 
     def flush_terminals(self):
         self.terminal_source = None
-        self.dirty_terminals.clear()
-        self.host.emit("terminal.updated")
+        changed, self.dirty_terminals = self.dirty_terminals, set()
+        self.host.emit_terminals_updated(changed)
         return False
 
     def close_dialog(self):
