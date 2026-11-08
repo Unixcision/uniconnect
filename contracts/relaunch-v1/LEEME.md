@@ -164,8 +164,10 @@ reabrir siempre sin preguntas del 24-09. Acordado en `coordNov` entre la IA del 
    ahora. Espera acotada de **60 s** a que muera el proceso.
 2. **Matar el proceso**: SIGTERM al grupo del proceso de la IA (ella y sus hijos, nunca el shell del
    pane), 5 s, y SIGKILL. Si el pane conserva su shell, la orden de reanudar se escribe ahí.
-3. **`respawn-pane -k -t <pane> -c <cwd>`**, sin orden (deja el shell de siempre), y se escribe la
-   orden de reanudar en ese shell, como al crear. Se usa si tras el paso 2 no queda un shell
+3. **`respawn-pane -k -t <pane> -c <cwd> 'exec "${SHELL:-/bin/sh}" -l'`** y se escribe la orden de
+   reanudar en ese shell, como al crear. **Con esa orden explícita**: sin orden, tmux vuelve a
+   ejecutar la orden con la que se creó el pane (medido el 08-11 en tmux 3.4), que en UniConnect es
+   el arranque antiguo de la IA con sus opciones viejas. Se usa si tras el paso 2 no queda un shell
    donde escribir (la IA era la raíz del pane, o la lanzó un supervisor). Conserva la sesión, su
    nombre, la ventana tmux y lo que esté enganchado.
 4. **`kill-session` y recrear** la sesión con el mismo nombre, socket y cwd, con la orden de reanudar
@@ -202,17 +204,21 @@ Siguen **excluyendo** (nunca se adivina):
 **Lista blanca por proveedor.** Solo se conservan estas opciones. Vive en el catálogo
 `agent-resume-v1.json` (`launchOptions`), que la edita el Mac y la leen las dos plataformas.
 - claude: `--model`, `--fallback-model`, `--permission-mode`, `--dangerously-skip-permissions`,
-  `--allow-dangerously-skip-permissions`, `--add-dir` (repetible), `--chrome`, `--verbose`.
-- codex: `-m`/`--model`, `-c model_reasoning_effort=<valor>` (solo esa clave), `-a`/`--ask-for-approval`,
-  `-s`/`--sandbox`, `--full-auto`, `--yolo`, `--dangerously-bypass-approvals-and-sandbox`, `-C`/`--cd`,
-  `-p`/`--profile`, `--search`, `--add-dir`, `--no-alt-screen`.
+  `--allow-dangerously-skip-permissions`, `--add-dir` (repetible), `--chrome`, `--verbose`, `--settings`,
+  `--setting-sources`, `--mcp-config`, `--strict-mcp-config`, `--allowedTools`, `--disallowedTools`,
+  `--tools` (rutas y nombres, no texto libre). Nunca `--system-prompt` ni `--append-system-prompt`.
+- codex: `-m`/`--model`, `-c`/`--config clave=valor` (salvo claves con `key`, `token`, `secret`,
+  `password` o `auth`), `-a`/`--ask-for-approval`, `-s`/`--sandbox`, `--full-auto`, `--yolo`,
+  `--dangerously-bypass-approvals-and-sandbox`, `-C`/`--cd`, `-p`/`--profile`, `--search`, `--add-dir`,
+  `--enable`, `--disable`, `--no-alt-screen`.
 - agy: `--dangerously-skip-permissions` y las que ya conserva hoy el trabajador de Linux.
 - grok: ninguna verificada.
 
 Cualquier otra opción se **quita**, se relanza igual y se informa: `dropped_options` en el
 resultado (solo el nombre de la bandera, nunca su valor) y `relaunch.option_dropped` (`warn`) en el
 log. Nunca se conservan prompts posicionales, `--api-key`, tokens, `-c` con otras claves ni
-ninguna variable de entorno salvo `IS_SANDBOX`.
+ninguna variable de entorno salvo `IS_SANDBOX`. (Las listas incluyen lo que el trabajador de Linux ya
+conservaba antes del 08-11: quitarlo haría volver a una IA sin su MCP o sus herramientas.)
 
 ### Causas nuevas (`causes.json`)
 `no_soportado` queda solo para «el equipo no anuncia relaunch.v1». Lo que tapaba ahora tiene nombre:
