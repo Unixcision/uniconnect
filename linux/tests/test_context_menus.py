@@ -94,7 +94,7 @@ class VisibilityTests(unittest.TestCase):
             ("ssh", "codex", True): {"reconnect", "relaunch_window", "continue_window", "upload", "kill_tmux"},
             ("ssh", "codex", False): {"upload", "kill_tmux"},  # Sin tmux: ni reconectar ni relanzar.
             ("local", "claude", True): {"reconnect", "relaunch_window"},  # Probado en vivo en local (08-11).
-            ("ssh", "claude", True): {"reconnect", "upload", "kill_tmux"},  # Por SSH aún no.
+            ("ssh", "claude", True): {"reconnect", "relaunch_window", "upload", "kill_tmux"},  # Probado en DESA.
         }
         for (kind, agent, tmux), expected in cases.items():
             with self.subTest(kind=kind, agent=agent, tmux=tmux):

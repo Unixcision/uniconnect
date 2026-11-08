@@ -30,6 +30,7 @@ from .native_sessions import NativeSessions
 from .agent_tree import AgentTree
 from .relaunch_agents import RelaunchUnavailable, cause_text
 from .event_log import EventLog
+from .vault import default_root
 from .session_recovery import SessionRecovery
 from .window_details import WindowDetails
 from .window_details_dialog import WindowDetailsDialog
@@ -42,7 +43,11 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         self.get_style_context().add_class("uniconnect")
         self.store, self.vault = store, vault
         # log.v1: historial común con el Mac; el modo depuración vive en settings.log_debug.
-        self.event_log = EventLog(settings=lambda: self.store.data.setdefault("settings", {}), save=self.persist)
+        # Una instancia con otra carpeta de estado (tests, pruebas aisladas) lleva su propio historial:
+        # el de ~/.uniconnect es solo el de la app de verdad.
+        root = getattr(store, "root", None)
+        log_path = None if root is None or Path(root) == default_root() else Path(root) / "logs" / "uniconnect.jsonl"
+        self.event_log = EventLog(log_path, settings=lambda: self.store.data.setdefault("settings", {}), save=self.persist)
         self.event_log.info("log", "log.app_started")
         self._ = Translator(store.data.get("settings", {}).get("locale"))
         self.pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="uniconnect")
