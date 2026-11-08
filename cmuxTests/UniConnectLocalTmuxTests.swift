@@ -96,6 +96,30 @@ struct UniConnectLocalTmuxTests {
         #expect(!FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("fallback").path))
     }
 
+    @Test("Reattaching an existing session changes no tmux option, so the server's other clients are not redrawn")
+    func reattachAppliesNoOptions() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let binding = try #require(UniConnectLocalTmuxBinding(name: "window-one", socketName: "test-local"))
+        let plan = UniConnectLocalTmuxLaunchPlan(
+            binding: binding, workingDirectory: fixture.root.path,
+            initialCommand: #"printf 'agent\n' >> "$UC_TEST_ROOT/agents""#
+        )
+        #expect(try fixture.run(plan) == 0)
+        let creation = try fixture.read("invocations")
+        for option in ["history-limit 50000", "destroy-unattached off", "status off", "mouse on", "exit-unattached off"] {
+            #expect(creation.contains("set-option") && creation.contains(option))
+        }
+        try FileManager.default.removeItem(at: fixture.root.appendingPathComponent("invocations"))
+
+        #expect(try fixture.run(plan) == 0)
+        let reattach = try fixture.read("invocations")
+        #expect(!reattach.contains("set-option"))
+        #expect(!reattach.contains("set-hook"))
+        #expect(try fixture.read("attached") == "=window-one\n")
+        #expect(try fixture.read("agents") == "agent\n")
+    }
+
     @Test("Ghostty's Darwin login wrapper starts the local session and reattaches without rerunning its command")
     func ghosttyDarwinLoginWrapperLaunchesAndReattaches() throws {
         let fixture = try Fixture()
@@ -556,11 +580,16 @@ struct UniConnectLocalTmuxTests {
             """#
             let tmux = #"""
             #!/bin/sh
+            printf '%s\n' "$*" >> "$UC_TEST_ROOT/invocations"
             [ "$1" = -f ] || exit 81
             shift 2
             [ "$1" = -L ] || exit 82
             shift 2
             action=$1; shift
+            if [ "$action" = has-session ]; then
+                [ "$1" = -t ] || exit 89
+                test -d "$UC_TEST_ROOT/session-${2#=}"; exit $?
+            fi
             if [ "$action" = set-option ]; then
                 [ "$1" = -g ] && [ "$2" = history-limit ] && [ "$3" = 50000 ] && [ "$4" = ';' ] || exit 88
                 shift 4
