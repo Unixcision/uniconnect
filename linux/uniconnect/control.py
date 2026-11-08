@@ -141,6 +141,12 @@ class ControlServer:
         if command == "ping":
             return {"app": "UniConnect", "platform": "linux", "locked": self.window.locked,
                     "capabilities": list(RELAUNCH_CAPABILITIES) if hasattr(self.window, "relaunch") else []}
+        if command == "log.debug":
+            # log.v1: el modo depuración en caliente desde fuera, siempre a través de la app.
+            enabled = request.get("enabled")
+            if not isinstance(enabled, bool):
+                raise ValueError("log.debug needs enabled: true or false")
+            return self.window.event_log.set_debug(enabled)
         if self.window.locked:
             raise ValueError("UniConnect is locked")
         workspaces, workspace_id, workspace, surface_id = self.target(request)

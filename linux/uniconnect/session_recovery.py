@@ -68,6 +68,10 @@ class SessionRecovery:
             return agent
 
     def notice(self, window, resumable):
+        log = getattr(self.owner, "event_log", None)
+        if log is not None:  # log.v1: sesión recreada, con o sin su IA.
+            log.info("tree", "tree.resume", window=window.get("id"),
+                     detail={"provider": window.get("agent") if resumable else None, "resumed": bool(resumable)})
         if resumable:
             return "Sesión tmux recreada; reanudando %s %s" % (self.display_name(window["agent"]), window["sessionId"][:8])
         return "Sesión tmux recreada como terminal"
@@ -102,6 +106,9 @@ class SessionRecovery:
     def record_event(self, window_id, code, detail=""):
         self.events.append((window_id, code, detail))
         del self.events[:-64]
+        log = getattr(self.owner, "event_log", None)
+        if log is not None:  # log.v1: una recreación fallida, con su código (nunca el texto del error).
+            log.warn("tree", "tree.resume_failed", window=window_id, detail={"cause": code})
         LOG.warning("recuperación %s: %s %s", window_id, code, detail)
 
     def finish(self, window_id):

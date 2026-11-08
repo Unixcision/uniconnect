@@ -29,6 +29,7 @@ from .window_notifications import WindowNotifications
 from .native_sessions import NativeSessions
 from .agent_tree import AgentTree
 from .relaunch_agents import RelaunchUnavailable, cause_text
+from .event_log import EventLog
 from .session_recovery import SessionRecovery
 from .window_details import WindowDetails
 from .window_details_dialog import WindowDetailsDialog
@@ -40,6 +41,9 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         super().__init__(application=application, title="UniConnect")
         self.get_style_context().add_class("uniconnect")
         self.store, self.vault = store, vault
+        # log.v1: historial común con el Mac; el modo depuración vive en settings.log_debug.
+        self.event_log = EventLog(settings=lambda: self.store.data.setdefault("settings", {}), save=self.persist)
+        self.event_log.info("log", "log.app_started")
         self._ = Translator(store.data.get("settings", {}).get("locale"))
         self.pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="uniconnect")
         self.font_scale = 1.0
@@ -280,6 +284,11 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             if method:
                 method()
         except Exception as error:
+            # log.v1: ningún fallo de menú queda sin línea (con la causa, nunca el texto del error).
+            log = getattr(self, "event_log", None)
+            if log is not None:
+                log.warn("ui", "ui.action_failed",
+                         detail={"action": name, "cause": getattr(error, "cause", None) or type(error).__name__})
             self.error(error)
 
     def refresh_sidebar(self):
@@ -715,6 +724,9 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                 for option in kind:
                     widget.append(option, self._(option))
                 widget.set_active_id(value)
+            elif kind == "check":
+                widget = Gtk.CheckButton()
+                widget.set_active(bool(value))
             else:
                 widget = Gtk.Entry(text="" if value is None else str(value), width_chars=48)
                 widget.set_activates_default(True)
@@ -734,7 +746,9 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         dialog.show_all()
         result = None
         if dialog.run() == Gtk.ResponseType.OK:
-            result = {key: (widget.get_active_id() if isinstance(widget, Gtk.ComboBoxText) else widget.get_text()) for key, widget in widgets.items()}
+            result = {key: (widget.get_active_id() if isinstance(widget, Gtk.ComboBoxText) else
+                            widget.get_active() if isinstance(widget, Gtk.CheckButton) else widget.get_text())
+                      for key, widget in widgets.items()}
         dialog.destroy()
         return result
 
@@ -1316,13 +1330,18 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         settings = self.store.data.setdefault("settings", {})
         fields = [("theme", "Theme", settings.get("theme", "dark"), ["system", "light", "dark"]),
                   ("font", "Font", settings.get("font", "Monospace 11"), "text"),
-                  ("autoLockMinutes", "Auto-lock minutes (0 = off)", settings.get("autoLockMinutes", 0), "text")]
+                  ("autoLockMinutes", "Auto-lock minutes (0 = off)", settings.get("autoLockMinutes", 0), "text"),
+                  # log.v1: se apaga solo a las 24 h; el estado lo escribe siempre la app.
+                  ("log_debug", "Registro detallado (24 h)", self.event_log.debug_until() is not None, "check")]
         shortcuts = settings.get("shortcuts", {})
         for action in ACTIONS:
             fields.append(("shortcut:" + action.name, self.action_label(action.name), shortcuts.get(action.name, action.shortcut), "text"))
         result = self.fields_dialog("Settings", fields)
         if result:
             result["autoLockMinutes"] = max(0, int(result["autoLockMinutes"]))
+            debug = result.pop("log_debug")
+            if debug != (self.event_log.debug_until() is not None):
+                self.event_log.set_debug(debug)
             changed = {}
             for name in list(result):
                 if name.startswith("shortcut:"):

@@ -190,6 +190,10 @@ class ActivityMonitor:
             current = self.resolver.evaluate(window_id, screen=lambda surface=surface: self.screen_lines(surface))
             if (current.state, current.agent) != (previous.state, previous.agent):
                 changed = True
+            if current.state != previous.state and getattr(window, "event_log", None) is not None:
+                # log.v1: solo en depuración (alta frecuencia), con estados y fuente, nunca la pantalla.
+                window.event_log.debug("activity", "activity.changed", window=window_id,
+                                       detail={"from": previous.state, "to": current.state, "source": current.source})
         for window_id in [key for key in self.resolver.facts if key not in live]:
             # Muerta, cerrada o sin superficie: se olvida todo; nada puede seguir trabajando.
             if self.resolver.current(window_id).state != "unknown":

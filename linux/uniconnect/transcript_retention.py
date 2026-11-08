@@ -655,7 +655,11 @@ class RetentionSchedule:
 
         def work():
             try:
-                self.runner(state_paths=(state_path,), state_texts=(snapshot,))
+                summary = self.runner(state_paths=(state_path,), state_texts=(snapshot,))
+                log = getattr(self.window, "event_log", None)
+                if log is not None and summary is not None:
+                    log.info("retention", "retention.pass", detail={
+                        key: getattr(summary, key, None) for key in ("compressed", "deleted", "failures", "deferred")})
             except Exception as error:
                 self.log("Conversaciones de las IAs: la pasada falló (%s)" % type(error).__name__)
             finally:

@@ -20,7 +20,8 @@ class RelaunchDesktop:
         self.machine_id = window.mobile.access.machine_id if hasattr(window, "mobile") else "local"
         self.service = service or RelaunchService(window.store.root / "relaunch-v1",
             RelaunchAgents(reconnect=self.reconnect, validate=lambda candidate: self.main(lambda: self.current(candidate)),
-                           resolve=lambda target: self.main(lambda: self.resolve(target))))
+                           resolve=lambda target: self.main(lambda: self.resolve(target))),
+            log=getattr(window, "event_log", None))
         self.history = RelaunchHistory(window.store.root / "relaunch-receipts-v1")
         self.machines = MachineDirectory(window.store.root)
 
