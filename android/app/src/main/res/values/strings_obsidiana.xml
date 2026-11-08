@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Textos propios del diseño Obsidiana (ui/design/obsidiana). Los comunes viven en strings.xml. -->
+<resources>
+    <!-- Inicio: franja de estado de la red. -->
+    <plurals name="obsidiana_connected_of">
+        <item quantity="one">%1$d de %2$d máquina conectada</item>
+        <item quantity="other">%1$d de %2$d máquinas conectadas</item>
+    </plurals>
+    <string name="obsidiana_network">Tailscale</string>
+    <plurals name="obsidiana_metric_windows">
+        <item quantity="one">Ventana</item>
+        <item quantity="other">Ventanas</item>
+    </plurals>
+    <plurals name="obsidiana_metric_working">
+        <item quantity="one">IA trabajando</item>
+        <item quantity="other">IAs trabajando</item>
+    </plurals>
+    <plurals name="obsidiana_metric_waiting">
+        <item quantity="one">Te espera</item>
+        <item quantity="other">Te esperan</item>
+    </plurals>
+    <string name="obsidiana_waits_for_you">te espera tu respuesta</string>
+    <string name="obsidiana_waiting_line">Te espera tu respuesta</string>
+    <plurals name="obsidiana_more_waiting">
+        <item quantity="one">Y %1$d más te espera</item>
+        <item quantity="other">Y %1$d más te esperan</item>
+    </plurals>
+    <string name="obsidiana_show_less">Ver menos</string>
+
+    <!-- Inicio: búsqueda y tabla de máquinas. -->
+    <string name="obsidiana_search_machines">Buscar máquina por nombre o dirección</string>
+    <string name="obsidiana_search_clear">Borrar la búsqueda</string>
+    <string name="obsidiana_no_machines_in_state">Ninguna máquina en este estado ahora mismo.</string>
+    <string name="obsidiana_no_machines_match">Ninguna máquina coincide con «%1$s».</string>
+    <string name="obsidiana_col_windows">Vent.</string>
+    <string name="obsidiana_col_working">Trab.</string>
+    <string name="obsidiana_col_waiting">Esp.</string>
+    <plurals name="obsidiana_working_count">
+        <item quantity="one">%1$d IA trabajando</item>
+        <item quantity="other">%1$d IAs trabajando</item>
+    </plurals>
+    <plurals name="obsidiana_waiting_count">
+        <item quantity="one">%1$d te espera</item>
+        <item quantity="other">%1$d te esperan</item>
+    </plurals>
+
+    <!-- Máquina. -->
+    <string name="obsidiana_new_workspace">Nuevo espacio</string>
+    <string name="obsidiana_new_window_in">Nueva ventana en %1$s</string>
+    <string name="obsidiana_collapse">Plegar</string>
+    <string name="obsidiana_expand">Desplegar</string>
+    <string name="obsidiana_workspace_options">Opciones del espacio</string>
+    <string name="obsidiana_window_options">Opciones de la ventana</string>
+
+    <!-- Menú lateral. -->
+    <string name="obsidiana_drawer_close">Cerrar el menú</string>
+</resources>

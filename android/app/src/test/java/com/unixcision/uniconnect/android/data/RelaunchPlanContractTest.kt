@@ -62,8 +62,11 @@ class RelaunchPlanContractTest {
         // La contraprueba: si esto no llegara a ejecutarse, las de arriba no demostrarían nada.
         val plan = client.decodePlan(fixture("plan-response.json"), RelaunchVerb.RELAUNCH)
 
-        assertEquals(2, plan.targets.size)
+        assertEquals(3, plan.targets.size)
         assertTrue(plan.actionable)
+        // Un objetivo con aviso sigue dentro, y el aviso llega con su identificador.
+        assertEquals(listOf(null, null, "permisos"), plan.targets.map { it.warning?.wire })
+        assertEquals(RelaunchCause.PERMISSIONS, plan.targets.last().warning?.cause)
         // `!is Show` era demasiado débil: `Nothing` también lo cumple, y entonces la prueba pasaría
         // con un plan que tampoco se ejecuta. Se exige el caso exacto.
         assertTrue(RelaunchPresentation.decide(plan) is RelaunchDecision.Apply)

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Diseño Lima (ui/design/lima): textos propios del panel bento. -->
+    <string name="lima_home_subtitle">Así está tu red ahora mismo</string>
+    <string name="lima_windows_total">en total</string>
+    <string name="lima_waiting_none">Ninguna IA te espera ahora mismo.</string>
+    <string name="lima_drawer_close">Cerrar el menú</string>
+    <!-- Va detrás del número de máquinas conectadas: «2 de 2 máquinas». -->
+    <plurals name="lima_of_machines">
+        <item quantity="one">de %1$d máquina</item>
+        <item quantity="many">de %1$d máquinas</item>
+        <item quantity="other">de %1$d máquinas</item>
+    </plurals>
+    <!-- Va detrás de un número grande que se pinta aparte: «67 ventanas». -->
+    <plurals name="lima_windows_word">
+        <item quantity="one">ventana</item>
+        <item quantity="many">ventanas</item>
+        <item quantity="other">ventanas</item>
+    </plurals>
+</resources>

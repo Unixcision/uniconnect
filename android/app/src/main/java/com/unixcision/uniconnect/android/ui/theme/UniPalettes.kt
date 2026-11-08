@@ -20,7 +20,8 @@ internal object UniPalettes {
     // because that is what separates them where a shadow cannot.
     val nieveLight = UniColors(
         isDark = false,
-        background = Color(0xFFF7F7F9), surface = Color(0xFFFFFFFF), surfaceRaised = Color(0xFFEFEFF3),
+        // Apple's grouped background: white groups read as groups on it, which F7F7F9 did not.
+        background = Color(0xFFF2F2F7), surface = Color(0xFFFFFFFF), surfaceRaised = Color(0xFFEFEFF3),
         outline = black.copy(alpha = .05f), text = Color(0xFF0B0B10), muted = Color(0xFF6B6B73),
         accent = Color(0xFF3A5BD9), onAccent = Color(0xFFFFFFFF), accentSoft = Color(0xFF3A5BD9).copy(alpha = .12f),
         success = Color(0xFF2A8F58), warning = Color(0xFFB7791F), danger = Color(0xFFC0392F),

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Diseño Arena (ui/design/arena). Las frases de la prosa se guardan enteras: los %N$s son
+        las partes que se resaltan (números y nombres), así cada plural concuerda en su sitio.
+    -->
+
+    <!-- Prosa de la portada y de la máquina. -->
+    <plurals name="arena_prose_machines">
+        <item quantity="one">%1$d de %2$d máquina</item>
+        <item quantity="other">%1$d de %2$d máquinas</item>
+    </plurals>
+    <plurals name="arena_prose_connected">
+        <item quantity="one">%1$s conectada.</item>
+        <item quantity="other">%1$s conectadas.</item>
+    </plurals>
+    <plurals name="arena_prose_windows">
+        <item quantity="one">%1$d ventana</item>
+        <item quantity="other">%1$d ventanas</item>
+    </plurals>
+    <plurals name="arena_prose_activity">
+        <item quantity="one">Hay %1$s abierta, %2$s y %3$s.</item>
+        <item quantity="other">Hay %1$s abiertas, %2$s y %3$s.</item>
+    </plurals>
+    <plurals name="arena_prose_quiet">
+        <item quantity="one">Hay %1$s abierta; ninguna IA trabaja ni te espera.</item>
+        <item quantity="other">Hay %1$s abiertas; ninguna IA trabaja ni te espera.</item>
+    </plurals>
+    <plurals name="arena_prose_stale">
+        <item quantity="one">Según la última lectura, hay %1$s abierta.</item>
+        <item quantity="other">Según la última lectura, hay %1$s abiertas.</item>
+    </plurals>
+    <string name="arena_prose_no_windows">No hay ventanas abiertas.</string>
+    <plurals name="arena_prose_working">
+        <item quantity="one">%1$d IA trabajando</item>
+        <item quantity="other">%1$d IAs trabajando</item>
+    </plurals>
+    <string name="arena_prose_working_none">ninguna IA trabajando</string>
+    <plurals name="arena_prose_waiting">
+        <item quantity="one">%1$d te espera</item>
+        <item quantity="other">%1$d te esperan</item>
+    </plurals>
+    <string name="arena_prose_waiting_none">ninguna te espera</string>
+
+    <!-- Línea de tiempo «Actividad reciente». -->
+    <string name="arena_see_notices">Ver avisos</string>
+    <string name="arena_recent_waiting">%1$s te espera</string>
+    <string name="arena_recent_working">%1$s está trabajando</string>
+    <string name="arena_recent_idle">%1$s pasó a reposo</string>
+    <string name="arena_recent_empty">Nada nuevo en las últimas 24 horas.</string>
+    <plurals name="arena_more_waiting">
+        <item quantity="one">Y %1$d más te espera</item>
+        <item quantity="other">Y %1$d más te esperan</item>
+    </plurals>
+
+    <!-- Cifras de cada máquina en la portada: el número va en %1$s, en serifa y más grande. -->
+    <plurals name="arena_stat_windows">
+        <item quantity="one">%1$s ventana</item>
+        <item quantity="other">%1$s ventanas</item>
+    </plurals>
+    <string name="arena_stat_working">%1$s trabajando</string>
+    <plurals name="arena_stat_waiting">
+        <item quantity="one">%1$s te espera</item>
+        <item quantity="other">%1$s te esperan</item>
+    </plurals>
+</resources>

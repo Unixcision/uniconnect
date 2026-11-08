@@ -581,6 +581,18 @@ class MachinesViewModel(
         learnOtherMachines(except = id)
     }
     fun selectWorkspace(id: String) { mutableState.update { it.copy(selectedWorkspace = id, selectedWindow = null) } }
+
+    /** Opens [windowID] of [workspaceID] straight from the machine screen, which lists every workspace at once. */
+    fun openWindow(workspaceID: String, windowID: String) {
+        mutableState.update { it.copy(selectedWorkspace = workspaceID) }
+        selectWindow(windowID)
+    }
+
+    /** Offers a new window in [workspaceID]; the machine screen has no selected workspace to take it from. */
+    fun createWindowIn(workspaceID: String) {
+        mutableState.update { it.copy(selectedWorkspace = workspaceID, selectedWindow = null) }
+        showCreate(true)
+    }
     /** Opens a window. The reading resets to the setting, since it belonged to the previous one. */
     fun selectWindow(id: String) {
         stopRealTerminal()
@@ -609,10 +621,10 @@ class MachinesViewModel(
         }
     }
 
-    /** Pins or unpins a window of the selected workspace. */
-    fun toggleWindowPinned(windowID: String) {
+    /** Pins or unpins a window of [workspaceID], or of the selected workspace when it is not given. */
+    fun toggleWindowPinned(windowID: String, workspaceID: String? = null) {
         val machine = selectedMachineOrNull() ?: return
-        val workspaceID = state.value.selectedWorkspace ?: return
+        val workspaceID = workspaceID ?: state.value.selectedWorkspace ?: return
         val snapshot = state.value.connections[machine.id]?.snapshot ?: return
         val current = overridesFor(machine.id, snapshot)
         val window = snapshot.workspaces.firstOrNull { it.id == workspaceID }?.windows?.firstOrNull { it.id == windowID } ?: return
@@ -634,10 +646,10 @@ class MachinesViewModel(
         boxChange(machine, { client.updateWorkspace(machine, workspaceID, isPinned = null, position = group.indexOf(workspaceID)) }) { it.copy(workspaceOrder = order) }
     }
 
-    /** Moves a window of the selected workspace [delta] places; Int.MIN_VALUE means to the top. */
-    fun moveWindow(windowID: String, delta: Int) {
+    /** Moves a window of [workspaceID] (or the selected workspace) [delta] places; Int.MIN_VALUE means to the top. */
+    fun moveWindow(windowID: String, delta: Int, workspaceID: String? = null) {
         val machine = selectedMachineOrNull() ?: return
-        val workspaceID = state.value.selectedWorkspace ?: return
+        val workspaceID = workspaceID ?: state.value.selectedWorkspace ?: return
         val snapshot = state.value.connections[machine.id]?.snapshot ?: return
         val current = overridesFor(machine.id, snapshot)
         val workspace = snapshot.workspaces.firstOrNull { it.id == workspaceID } ?: return
@@ -735,9 +747,10 @@ class MachinesViewModel(
     }
     fun back() { stopRealTerminal(); mutableState.update {
         when {
+            // The workspace stays selected: the machine screen brings it back into view.
             it.selectedWindow != null -> it.copy(selectedWindow = null, terminal = null, terminalLoading = false, terminalError = null, terminalErrorDetail = null, attachFallbackDetail = null, terminalView = null, terminalZoom = 1f)
-            it.selectedWorkspace != null -> it.copy(selectedWorkspace = null)
-            else -> it.copy(selectedMachine = null)
+            // Every workspace is on the machine screen at once, so a selected one is no step of its own.
+            else -> it.copy(selectedMachine = null, selectedWorkspace = null)
         }
     }; state.value.selectedMachine?.let { id -> state.value.machines.firstOrNull { it.id == id }?.let { startObserving(it, force = true) } } ?: run { stopObserving(); refreshMachineStates() } }
 

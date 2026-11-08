@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
@@ -19,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -46,7 +44,8 @@ import com.unixcision.uniconnect.android.domain.TranscriptionMode
 import com.unixcision.uniconnect.android.domain.UploadService
 import com.unixcision.uniconnect.android.domain.UploadStyle
 import com.unixcision.uniconnect.android.domain.InboxCandidate
-import com.unixcision.uniconnect.android.ui.theme.CardStyle
+import com.unixcision.uniconnect.android.ui.theme.ContinuousRoundedShape
+import com.unixcision.uniconnect.android.ui.theme.UniFonts
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import com.unixcision.uniconnect.android.ui.theme.UniTokens
 
@@ -88,14 +87,21 @@ fun SettingsSheet(
             Modifier.padding(horizontal = 24.dp).verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
+            // Obsidiana places a page like a path: "Ajustes / Apariencia".
+            if (page != null && UniTheme.tokens.theme == DesignTheme.OBSIDIANA) Text(
+                "${stringResource(R.string.settings)} / ${stringResource(page.title)}",
+                style = MaterialTheme.typography.labelMedium, color = UniTheme.colors.muted, fontFamily = UniTheme.type.identifierFamily,
+            )
             SheetHeader(
                 icon = { Icon(page?.icon ?: Icons.Rounded.Settings, null, tint = UniTheme.colors.accent) },
                 title = stringResource(page?.title ?: R.string.settings),
                 note = stringResource(page?.note ?: R.string.settings_note),
                 tone = UniTheme.colors.accent,
             )
+            // Arena numbers its sections like chapters; the count follows what this page shows.
+            var section = 0
 
-            if (shows(SettingsPage.APPEARANCE)) SettingsSection(stringResource(R.string.settings_appearance)) {
+            if (shows(SettingsPage.APPEARANCE)) SettingsSection(++section, stringResource(R.string.settings_appearance)) {
                 Text(stringResource(R.string.settings_design_theme), style = MaterialTheme.typography.bodyMedium)
                 Text(stringResource(R.string.settings_design_theme_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
                 // A fixed width per card and a scroll, not five slivers sharing the sheet: the
@@ -106,7 +112,7 @@ fun SettingsSheet(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     DesignTheme.entries.forEach { theme ->
-                        ThemeCard(theme, selected = settings.designTheme == theme, dark = UniTheme.colors.isDark, Modifier.width(96.dp)) {
+                        ThemeCard(theme, selected = settings.designTheme == theme, dark = UniTheme.colors.isDark, Modifier.width(104.dp)) {
                             onChange(settings.copy(designTheme = theme))
                         }
                     }
@@ -125,7 +131,7 @@ fun SettingsSheet(
                 }
             }
 
-            if (shows(SettingsPage.TERMINAL)) SettingsSection(stringResource(R.string.settings_terminal)) {
+            if (shows(SettingsPage.TERMINAL)) SettingsSection(++section, stringResource(R.string.settings_terminal)) {
                 Text(stringResource(R.string.settings_default_view), style = MaterialTheme.typography.bodyMedium)
                 Text(stringResource(R.string.settings_default_view_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 10.dp)) {
@@ -146,7 +152,7 @@ fun SettingsSheet(
                 )
             }
 
-            if (shows(SettingsPage.VOICE)) SettingsSection(stringResource(R.string.settings_voice)) {
+            if (shows(SettingsPage.VOICE)) SettingsSection(++section, stringResource(R.string.settings_voice)) {
                 Text(stringResource(R.string.settings_transcription), style = MaterialTheme.typography.bodyMedium)
                 Text(stringResource(R.string.settings_transcription_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
                 // A row of segments could not say who transcribes, and that is the only thing worth
@@ -195,7 +201,7 @@ fun SettingsSheet(
                 }
             }
 
-            if (dictation != null && shows(SettingsPage.VOICE)) SettingsSection(stringResource(R.string.settings_speech_models)) {
+            if (dictation != null && shows(SettingsPage.VOICE)) SettingsSection(++section, stringResource(R.string.settings_speech_models)) {
                 Text(stringResource(R.string.settings_speech_models_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
                 if (!dictation.whisperRuns) Text(
                     stringResource(R.string.settings_whisper_unsupported),
@@ -222,18 +228,18 @@ fun SettingsSheet(
                 }
             }
 
-            if (shows(SettingsPage.FILES)) SettingsSection(stringResource(R.string.settings_terminal_upload)) {
+            if (shows(SettingsPage.FILES)) SettingsSection(++section, stringResource(R.string.settings_terminal_upload)) {
                 Text(stringResource(R.string.settings_terminal_upload_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
                 TerminalUploadPicker(settings, onChange)
             }
 
-            if (inbox != null && shows(SettingsPage.CLEANUP)) SettingsSection(stringResource(R.string.settings_inbox)) { InboxSettingsSection(inbox, inboxCandidates) }
+            if (inbox != null && shows(SettingsPage.CLEANUP)) SettingsSection(++section, stringResource(R.string.settings_inbox)) { InboxSettingsSection(inbox, inboxCandidates) }
 
-            if (dictationHistory != null && shows(SettingsPage.CLEANUP)) SettingsSection(stringResource(R.string.settings_dictations)) { DictationSettingsSection(dictationHistory) }
+            if (dictationHistory != null && shows(SettingsPage.CLEANUP)) SettingsSection(++section, stringResource(R.string.settings_dictations)) { DictationSettingsSection(dictationHistory) }
 
-            if (dictationHistory != null && shows(SettingsPage.CLEANUP)) SettingsSection(stringResource(R.string.history_tab_messages)) { SentMessagesSettingsSection(dictationHistory) }
+            if (dictationHistory != null && shows(SettingsPage.CLEANUP)) SettingsSection(++section, stringResource(R.string.history_tab_messages)) { SentMessagesSettingsSection(dictationHistory) }
 
-            if (shows(SettingsPage.CONNECTIONS)) SettingsSection(stringResource(R.string.settings_connections)) {
+            if (shows(SettingsPage.CONNECTIONS)) SettingsSection(++section, stringResource(R.string.settings_connections)) {
                 SettingsSwitch(
                     title = stringResource(R.string.settings_probe_on_open),
                     note = stringResource(R.string.settings_probe_on_open_note),
@@ -252,48 +258,94 @@ fun SettingsSheet(
 }
 
 /**
- * One design theme to pick, drawn in its own palette for the mode in force: its ground, a small
- * surface on it, its accent and two lines of text. The surface is separated the way the theme
- * separates one, so a floating theme shows its shadow (or its lift, in the dark) here and a flat
- * theme shows its rule. The name is set in the theme's own type, so the serif and the monospace
- * announce themselves before they are chosen.
+ * One design theme to pick, drawn in its own palette for the mode in force and with a sketch of
+ * its own structure: Nieve's grouped list, Obsidiana's table, Arena's timeline and Lima's bento.
+ * The designs differ in how they lay a screen out, not only in colour, and the picker says so
+ * before one is chosen. The name is set in the theme's own type.
  */
 @Composable
 private fun ThemeCard(theme: DesignTheme, selected: Boolean, dark: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val preview = remember(theme, dark) { UniTokens.tokensFor(theme, dark) }
     val palette = preview.colors
-    val elevation = preview.elevation
-    val shape = RoundedCornerShape(preview.shapes.cardRadius.coerceIn(6.dp, 18.dp))
-    val inner = RoundedCornerShape(preview.shapes.cardRadius.coerceIn(3.dp, 12.dp))
+    val shape = UniTheme.shapes.card
     Column(
         modifier.clip(shape).background(palette.background)
             .border(if (selected) 2.dp else 1.dp, if (selected) UniTheme.colors.accent else UniTheme.colors.outline, shape)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
-            .padding(10.dp),
+            .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Column(
-            Modifier.fillMaxWidth().height(52.dp)
-                // Halved so a 52 dp thumbnail is not swallowed by a shadow sized for a real card.
-                .then(if (elevation.ambient > 0.dp) Modifier.shadow(elevation.ambient / 2, inner, clip = false, ambientColor = elevation.ambientColor, spotColor = elevation.ambientColor) else Modifier)
-                .then(if (elevation.key > 0.dp) Modifier.shadow(elevation.key, inner, clip = false, ambientColor = elevation.keyColor, spotColor = elevation.keyColor) else Modifier)
-                .clip(inner)
-                .background(palette.surface)
-                .then(if (elevation.surfaceLift > 0f) Modifier.background(Color.White.copy(alpha = elevation.surfaceLift)) else Modifier)
-                .border(elevation.hairline, palette.outline, inner)
-                .padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Box(Modifier.width(20.dp).height(5.dp).background(palette.accent, CircleShape))
-            Box(Modifier.fillMaxWidth(.85f).height(4.dp).background(palette.text.copy(alpha = .85f), CircleShape))
-            Box(Modifier.fillMaxWidth(.55f).height(4.dp).background(palette.muted, CircleShape))
-        }
+        Box(Modifier.fillMaxWidth().height(72.dp)) { ThemeSketch(theme, preview) }
         Text(
             stringResource(theme.label), style = MaterialTheme.typography.labelSmall,
             color = if (selected) UniTheme.colors.accent else UniTheme.colors.text, fontWeight = FontWeight.SemiBold,
-            fontFamily = if (preview.type.identifierFamily == FontFamily.Monospace) preview.type.identifierFamily else preview.type.headlineFamily,
+            fontFamily = if (preview.type.identifierFamily == UniFonts.mono) preview.type.identifierFamily else preview.type.headlineFamily,
             maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+/** The structure of [theme] in miniature, in its own colours; bars stand for lines of text. */
+@Composable
+private fun ThemeSketch(theme: DesignTheme, preview: UniTokens) {
+    val c = preview.colors
+    val small = ContinuousRoundedShape(5.dp)
+    val tiny = ContinuousRoundedShape(2.dp)
+    @Composable fun Bar(width: Float, color: Color, height: Int = 3) =
+        Box(Modifier.fillMaxWidth(width).height(height.dp).background(color, tiny))
+    when (theme) {
+        // A large title over an inset group of rows with chevrons.
+        DesignTheme.NIEVE -> Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Bar(.6f, c.text, height = 6)
+            Column(Modifier.fillMaxWidth().clip(small).background(c.surface).border(.5.dp, c.outline, small).padding(horizontal = 5.dp)) {
+                repeat(3) { row ->
+                    Row(Modifier.fillMaxWidth().height(13.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(6.dp).background(if (row == 0) c.accent else c.muted.copy(alpha = .6f), ContinuousRoundedShape(2.dp)))
+                        Spacer(Modifier.width(4.dp))
+                        Box(Modifier.weight(1f)) { Bar(.7f, c.text.copy(alpha = .8f)) }
+                        Box(Modifier.width(3.dp).height(5.dp).background(c.muted.copy(alpha = .7f), tiny))
+                    }
+                    if (row < 2) Box(Modifier.fillMaxWidth().padding(start = 10.dp).height(.5.dp).background(c.outline))
+                }
+            }
+        }
+        // A strip of three metrics over a table of hairline rows with number columns.
+        DesignTheme.OBSIDIANA -> Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                repeat(3) { i -> Box(Modifier.weight(1f).height(12.dp).border(.5.dp, c.outline, tiny).padding(3.dp)) { Bar(.5f, if (i == 1) c.accent else c.text) } }
+            }
+            repeat(4) { row ->
+                Row(Modifier.fillMaxWidth().height(9.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Box(Modifier.weight(1f)) { Bar(.8f, c.text.copy(alpha = .8f), height = 2) }
+                    repeat(3) { col -> Box(Modifier.width(5.dp).height(2.dp).background(if (col == 1 && row == 0) c.accent else c.muted, tiny)) }
+                }
+                Box(Modifier.fillMaxWidth().height(.5.dp).background(c.outline))
+            }
+        }
+        // A serif headline over a timeline: dots on a line, each with its story.
+        DesignTheme.ARENA -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Aa", color = c.text, fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+            Row {
+                Box(Modifier.width(9.dp).height(30.dp)) {
+                    Box(Modifier.align(Alignment.TopCenter).padding(top = 2.dp).width(1.dp).fillMaxHeight().background(c.outline))
+                    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween, horizontalAlignment = Alignment.CenterHorizontally) {
+                        repeat(3) { i -> Box(Modifier.size(5.dp).background(if (i == 0) c.accent else c.muted, CircleShape)) }
+                    }
+                }
+                Column(Modifier.padding(start = 4.dp).height(30.dp), verticalArrangement = Arrangement.SpaceBetween) {
+                    Bar(.9f, c.text.copy(alpha = .85f)); Bar(.7f, c.muted); Bar(.8f, c.muted)
+                }
+            }
+        }
+        // Bento: one big block with a big number, two small ones, blocks told apart by fill.
+        DesignTheme.LIMA -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Box(Modifier.weight(1.1f).fillMaxHeight().background(c.accent, small).padding(5.dp)) {
+                Text("8", color = c.onAccent, fontFamily = UniFonts.mono, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+            }
+            Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                repeat(2) { Box(Modifier.weight(1f).fillMaxWidth().background(c.surfaceRaised, small).padding(4.dp)) { Bar(.6f, c.text) } }
+            }
+        }
     }
 }
 
@@ -508,29 +560,53 @@ private val UploadStyle.label: Int
         UploadStyle.LITTERBOX -> R.string.upload_style_litterbox
     }
 
-/** A titled group of related preferences: a soft container, or rules above and below in a hairline theme. */
+/**
+ * A titled group of related preferences, set the way the design in force sets a section:
+ * Nieve as an inset group under a quiet title, Obsidiana between hairlines under tracked
+ * capitals, Arena as a numbered chapter with a serif title, Lima as a solid tile.
+ */
 @Composable
-private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    val quiet = UniTheme.type.labelQuiet
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            title,
-            color = if (quiet) UniTheme.colors.muted else UniTheme.colors.accent,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = if (quiet) FontWeight.Medium else FontWeight.SemiBold,
-        )
-        if (UniTheme.layout.cardsAs == CardStyle.HAIRLINE) {
-            val rule = UniTheme.colors.outline
+private fun SettingsSection(number: Int, title: String, content: @Composable ColumnScope.() -> Unit) {
+    val colors = UniTheme.colors
+    val type = UniTheme.type
+    when (UniTheme.tokens.theme) {
+        DesignTheme.NIEVE -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(title, Modifier.padding(start = 4.dp), color = colors.muted, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
+            Surface(color = colors.surfaceRaised.copy(alpha = .45f), shape = UniTheme.shapes.card) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
+            }
+        }
+        DesignTheme.OBSIDIANA -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                title.uppercase(), color = colors.muted, style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold, letterSpacing = type.labelLetterSpacing,
+            )
+            val rule = colors.outline
             Column(
                 Modifier.fillMaxWidth().drawBehind {
                     val stroke = 1.dp.toPx()
                     drawLine(rule, Offset(0f, stroke / 2), Offset(size.width, stroke / 2), stroke)
                     drawLine(rule, Offset(0f, size.height - stroke / 2), Offset(size.width, size.height - stroke / 2), stroke)
-                }.padding(vertical = 14.dp),
+                }.padding(vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp), content = content,
             )
-        } else Surface(color = UniTheme.colors.surfaceRaised.copy(alpha = .45f), shape = UniTheme.shapes.card) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
+        }
+        DesignTheme.ARENA -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("%02d".format(number), color = colors.accent, style = MaterialTheme.typography.titleSmall, fontFamily = type.identifierFamily, fontWeight = FontWeight.SemiBold)
+                Text(title, style = MaterialTheme.typography.titleLarge, fontFamily = type.headlineFamily, fontWeight = FontWeight.SemiBold)
+            }
+            HorizontalDivider(color = colors.outline)
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
+        }
+        DesignTheme.LIMA -> Surface(color = colors.surfaceRaised, shape = UniTheme.shapes.card) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    title.uppercase(), color = colors.accent, style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold, letterSpacing = type.labelLetterSpacing, fontFamily = type.identifierFamily,
+                )
+                content()
+            }
         }
     }
 }

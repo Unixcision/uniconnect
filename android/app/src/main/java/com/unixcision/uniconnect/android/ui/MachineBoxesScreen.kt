@@ -1,313 +1,95 @@
 package com.unixcision.uniconnect.android.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.Star
-import androidx.compose.material.icons.rounded.StarBorder
-import androidx.compose.material.icons.rounded.Sync
-import androidx.compose.material.icons.rounded.Terminal
-import androidx.compose.material3.*
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.unixcision.uniconnect.android.R
-import com.unixcision.uniconnect.android.ui.theme.RowDensity
-import com.unixcision.uniconnect.android.ui.theme.UniTheme
-import com.unixcision.uniconnect.android.ui.theme.WorkspaceLayout
-import com.unixcision.uniconnect.android.domain.RelaunchScope
-import com.unixcision.uniconnect.android.domain.ActivityState
-import com.unixcision.uniconnect.android.domain.BoxArrangement
 import com.unixcision.uniconnect.android.domain.BoxOverrides
 import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.domain.NotificationLinkState
-import com.unixcision.uniconnect.android.domain.RemoteWindow
+import com.unixcision.uniconnect.android.domain.RelaunchScope
 import com.unixcision.uniconnect.android.domain.RemoteWorkspace
-import com.unixcision.uniconnect.android.ui.components.ActivityMark
-import com.unixcision.uniconnect.android.ui.components.BoxMonogram
-import com.unixcision.uniconnect.android.ui.components.monogramShape
-import com.unixcision.uniconnect.android.ui.components.GlassCard
-import com.unixcision.uniconnect.android.ui.components.SectionLabel
-import com.unixcision.uniconnect.android.ui.components.themedTone
+import com.unixcision.uniconnect.android.ui.design.DesignedMachine
+import com.unixcision.uniconnect.android.ui.design.MachineActions
+import com.unixcision.uniconnect.android.ui.design.MachineModel
+import com.unixcision.uniconnect.android.ui.theme.UniTheme
 
 /**
- * One screen for a machine: a rail of workspace monograms (like the desktop's compact sidebar)
- * and, below it, the windows of the selected workspace. Selection is host-owned state only.
+ * One machine: every workspace with its windows, drawn by the design in force.
+ *
+ * This is the part every design shares: the model built from the connection and the phone's own
+ * favourites, and the long-press sheet (favourite, order, relaunch) for a workspace or a window.
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun MachineBoxesScreen(
     machine: Machine,
     connection: MachinesViewModel.Connection,
-    selectedWorkspaceID: String?,
+    /** The workspace to bring into view: the one a notice named or the one of the window just closed. */
+    focusWorkspaceID: String?,
     noticeLink: NotificationLinkState?,
+    overrides: BoxOverrides,
+    hostKeepsOrder: Boolean?,
+    onBack: () -> Unit,
     onEnableNotices: () -> Unit,
     onDisableNotices: () -> Unit,
     onConnect: () -> Unit,
     onCreateWorkspace: () -> Unit,
-    onCreateWindow: () -> Unit,
-    onSelectWorkspace: (String) -> Unit,
-    onSelectWindow: (String) -> Unit,
-    overrides: BoxOverrides = BoxOverrides(),
-    hostKeepsOrder: Boolean? = null,
-    onToggleWorkspacePin: (String) -> Unit = {},
-    onToggleWindowPin: (String) -> Unit = {},
-    onMoveWorkspace: (String, Int) -> Unit = { _, _ -> },
-    onMoveWindow: (String, Int) -> Unit = { _, _ -> },
+    onCreateWindow: (workspaceID: String) -> Unit,
+    onOpenWindow: (workspaceID: String, windowID: String) -> Unit,
+    onToggleWorkspacePin: (String) -> Unit,
+    onToggleWindowPin: (windowID: String, workspaceID: String) -> Unit,
+    onMoveWorkspace: (String, Int) -> Unit,
+    onMoveWindow: (windowID: String, delta: Int, workspaceID: String) -> Unit,
     /**
      * Relanza las IA de un alcance. Nulo cuando el equipo no anuncia `relaunch.v1`: la acción no se
      * enseña en vez de enseñarse y no hacer nada.
      */
-    onRelaunch: ((RelaunchScope) -> Unit)? = null,
+    onRelaunch: ((RelaunchScope) -> Unit)?,
+    menu: @Composable () -> Unit,
 ) {
-    val snapshot = connection.snapshot
-    val selected = snapshot?.workspaces?.firstOrNull { it.id == selectedWorkspaceID }
-    val workspaces = snapshot?.let { BoxArrangement.workspaces(it, overrides) } ?: emptyList()
-    val windows = selected?.let { BoxArrangement.windows(it, overrides) } ?: emptyList()
-    val selectedPinned = selected != null && (selected.isPinned || selected.id in overrides.pinnedWorkspaces)
-    // A long press opens the same sheet for either kind; which one is held here.
-    var heldWorkspace by remember { mutableStateOf<RemoteWorkspace?>(null) }
-    var heldWindow by remember { mutableStateOf<RemoteWindow?>(null) }
-    // A lazy row keeps its scroll anchored to the first visible key, so a tile that jumps to the
-    // front would slide out of view: after a change, the row scrolls to where the tile went.
-    val workspaceRow = rememberLazyListState()
-    // The tile to show and the order the row had when it was asked for: a host answers later
-    // than a local change, so the scroll waits until the order has actually moved.
-    var reveal by remember { mutableStateOf<Pair<String, List<String>>?>(null) }
-    val order = workspaces.map { it.id }
-    fun revealLater(id: String) { reveal = id to order }
-    // A grid shows every tile at once, so only the rail has anything to scroll to.
-    val rail = UniTheme.layout.workspacesAs == WorkspaceLayout.RAIL
-    LaunchedEffect(reveal, order, rail) {
-        val (id, before) = reveal ?: return@LaunchedEffect
-        if (order == before) return@LaunchedEffect
-        val index = order.indexOf(id)
-        // Near the start the whole head of the row fits, so show it from the first tile.
-        if (index >= 0 && rail) workspaceRow.animateScrollToItem(if (index < 3) 0 else index - 1)
-        reveal = null
+    val model = remember(machine, connection, overrides, hostKeepsOrder, noticeLink, focusWorkspaceID) {
+        MachineModel.of(machine, connection, overrides, hostKeepsOrder, noticeLink, focusWorkspaceID)
     }
-    val spacing = UniTheme.spacing
-    heldWorkspace?.let { held ->
+    val snapshot = connection.snapshot
+    // A long press opens the same sheet for either kind; which one is held here, by id, so a
+    // refreshed list never leaves the sheet acting on a stale copy.
+    var heldWorkspace by remember { mutableStateOf<String?>(null) }
+    var heldWindow by remember { mutableStateOf<Pair<String, String>?>(null) }
+    heldWorkspace?.let { id -> snapshot?.workspaces?.firstOrNull { it.id == id } }?.let { held ->
         BoxActionsSheet(held.name, R.string.box_actions_workspace, held.isPinned || held.id in overrides.pinnedWorkspaces,
-            onTogglePin = { revealLater(held.id); onToggleWorkspacePin(held.id) }, onMoveTop = { revealLater(held.id); onMoveWorkspace(held.id, Int.MIN_VALUE) },
-            onMoveUp = { revealLater(held.id); onMoveWorkspace(held.id, -1) }, onMoveDown = { revealLater(held.id); onMoveWorkspace(held.id, 1) }, onDismiss = { heldWorkspace = null },
+            onTogglePin = { onToggleWorkspacePin(held.id) }, onMoveTop = { onMoveWorkspace(held.id, Int.MIN_VALUE) },
+            onMoveUp = { onMoveWorkspace(held.id, -1) }, onMoveDown = { onMoveWorkspace(held.id, 1) }, onDismiss = { heldWorkspace = null },
             onRelaunch = onRelaunch?.let { relaunch -> { relaunch(RelaunchScope.Workspace(machine.id, held.id)) } })
     }
-    heldWindow?.let { held ->
+    heldWindow?.let { (workspaceID, windowID) ->
+        val workspace = snapshot?.workspaces?.firstOrNull { it.id == workspaceID }
+        workspace?.windows?.firstOrNull { it.id == windowID }?.let { held -> workspace to held }
+    }?.let { (workspace, held) ->
         BoxActionsSheet(held.name, R.string.box_actions_window, held.isPinned || held.id in overrides.pinnedWindows,
-            onTogglePin = { onToggleWindowPin(held.id) }, onMoveTop = { onMoveWindow(held.id, Int.MIN_VALUE) },
-            onMoveUp = { onMoveWindow(held.id, -1) }, onMoveDown = { onMoveWindow(held.id, 1) }, onDismiss = { heldWindow = null },
+            onTogglePin = { onToggleWindowPin(held.id, workspace.id) }, onMoveTop = { onMoveWindow(held.id, Int.MIN_VALUE, workspace.id) },
+            onMoveUp = { onMoveWindow(held.id, -1, workspace.id) }, onMoveDown = { onMoveWindow(held.id, 1, workspace.id) }, onDismiss = { heldWindow = null },
             // Una ventana sola: solo si el equipo sabe relanzar su IA en ese tipo de ventana (D7).
-            onRelaunch = onRelaunch?.takeIf { snapshot?.relaunchesWindow(selected?.isSSH, held.activity?.agent) == true }?.let { relaunch ->
-                { relaunch(RelaunchScope.Window(machine.id, selectedWorkspaceID.orEmpty(), held.id)) }
+            onRelaunch = onRelaunch?.takeIf { snapshot?.relaunchesWindow(workspace.isSSH, held.activity?.agent) == true }?.let { relaunch ->
+                { relaunch(RelaunchScope.Window(machine.id, workspace.id, held.id)) }
             })
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = spacing.page, end = spacing.page, top = 8.dp, bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(spacing.gap)) {
-        if (snapshot == null) item { NotConnectedCard(connection, onConnect) }
-        if (snapshot != null && !connection.connected) item {
-            GlassCard(Modifier.fillMaxWidth(), accent = UniTheme.colors.warning) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (connection.checking) LoadingIndicator(Modifier.size(28.dp), color = UniTheme.colors.warning) else Icon(Icons.Rounded.Sync, null, tint = UniTheme.colors.warning)
-                    Text(stringResource(connection.error ?: R.string.checking_machine), Modifier.weight(1f), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
-                    if (!connection.checking) TextButton(onClick = onConnect) { Text(stringResource(R.string.check_connection)) }
-                }
-            }
-        }
-        if (connection.connected || noticeLink != null) item { NotificationConnectionCard(noticeLink, connection.connected, onEnableNotices, onDisableNotices) }
-        if (snapshot != null) {
-            item {
-                SectionLabel(stringResource(R.string.workspaces)) {
-                    Text("${snapshot.workspaces.size}", style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.muted)
-                }
-            }
-            item {
-                // The desktop's scrolling rail of tiles, or a grid of cells with the name beside the mark.
-                if (rail) LazyRow(state = workspaceRow, horizontalArrangement = Arrangement.spacedBy(spacing.gap), contentPadding = PaddingValues(vertical = 4.dp)) {
-                    items(workspaces, key = { it.id }) { workspace ->
-                        WorkspaceTile(workspace, selected = workspace.id == selectedWorkspaceID, dimmed = !connection.connected,
-                            pinned = workspace.isPinned || workspace.id in overrides.pinnedWorkspaces,
-                            onClick = { onSelectWorkspace(workspace.id) }, onLongClick = { heldWorkspace = workspace })
-                    }
-                    if (connection.connected) item { NewWorkspaceTile(onCreateWorkspace) }
-                } else BoxWithConstraints(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    // Cells share the width evenly; one column is an index list, three a dense grid.
-                    val columns = UniTheme.layout.workspaceColumns
-                    val cell = (maxWidth - spacing.gap * (columns - 1)) / columns
-                    val rowGap = UniTheme.layout.rowGap(spacing)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.gap), verticalArrangement = Arrangement.spacedBy(rowGap)) {
-                        workspaces.forEach { workspace ->
-                            key(workspace.id) {
-                                WorkspaceCell(workspace, selected = workspace.id == selectedWorkspaceID, dimmed = !connection.connected,
-                                    pinned = workspace.isPinned || workspace.id in overrides.pinnedWorkspaces, modifier = Modifier.width(cell),
-                                    onClick = { onSelectWorkspace(workspace.id) }, onLongClick = { heldWorkspace = workspace })
-                            }
-                        }
-                        if (connection.connected) NewWorkspaceCell(Modifier.width(cell), onCreateWorkspace)
-                    }
-                }
-            }
-            if (snapshot.workspaces.isEmpty()) item {
-                GlassCard(Modifier.fillMaxWidth(), accent = UniTheme.colors.accent) {
-                    Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(stringResource(R.string.no_workspaces), color = UniTheme.colors.muted)
-                        if (connection.connected) Button(onClick = onCreateWorkspace, shape = UniTheme.shapes.button) {
-                            Icon(Icons.Rounded.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.new_workspace))
-                        }
-                    }
-                }
-            }
-            if (hostKeepsOrder == false) item {
-                Text(stringResource(R.string.box_local_only), color = UniTheme.colors.warning, style = MaterialTheme.typography.labelSmall)
-            }
-            if (selected == null && snapshot.workspaces.isNotEmpty()) item {
-                Text(stringResource(R.string.boxes_hint), Modifier.padding(top = 8.dp), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
-            }
-            if (selected != null) {
-                item {
-                    Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(selected.name, Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, fontFamily = UniTheme.type.identifierFamily, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            KindBadge(selected)
-                            IconButton(onClick = { revealLater(selected.id); onToggleWorkspacePin(selected.id) }, Modifier.size(36.dp)) {
-                                Icon(if (selectedPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder, stringResource(if (selectedPinned) R.string.box_unpin else R.string.box_pin),
-                                    tint = if (selectedPinned) UniTheme.colors.warning else UniTheme.colors.muted)
-                            }
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(pluralStringResource(R.plurals.window_count, selected.windows.size, selected.windows.size), Modifier.weight(1f), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
-                            if (selected.isSSH != null) FilledTonalButton(onClick = onCreateWindow, enabled = connection.connected, shape = UniTheme.shapes.button) {
-                                Icon(Icons.Rounded.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.new_window))
-                            }
-                        }
-                    }
-                }
-                if (selected.windows.isEmpty()) item { Text(stringResource(R.string.no_windows), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall) }
-                if (windows.isNotEmpty()) item {
-                    Column(verticalArrangement = Arrangement.spacedBy(UniTheme.layout.rowGap(spacing))) {
-                        windows.forEach { window ->
-                            key(window.id) {
-                                WindowRow(window, themedTone(selected.name), pinned = window.isPinned || window.id in overrides.pinnedWindows,
-                                    onClick = { onSelectWindow(window.id) }, onLongClick = { heldWindow = window })
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun WorkspaceTile(workspace: RemoteWorkspace, selected: Boolean, dimmed: Boolean, pinned: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
-    Column(Modifier.width(76.dp).combinedClickable(onClick = onClick, onLongClick = onLongClick), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box {
-            BoxMonogram(workspace.name, size = 64.dp, selected = selected, dimmed = dimmed)
-            if (pinned) Box(
-                Modifier.align(Alignment.TopStart).offset(x = (-4).dp, y = (-4).dp).size(20.dp)
-                    .background(UniTheme.colors.background, CircleShape).border(1.dp, UniTheme.colors.outline, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Rounded.Star, stringResource(R.string.box_pinned), Modifier.size(12.dp), tint = UniTheme.colors.warning) }
-            if (workspace.activity == ActivityState.WORKING || workspace.activity == ActivityState.WAITING) Box(
-                Modifier.align(Alignment.BottomStart).offset(x = (-4).dp, y = 4.dp).size(22.dp)
-                    .background(UniTheme.colors.background, CircleShape).border(1.dp, UniTheme.colors.outline, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) { ActivityMark(workspace.activity, size = 13.dp) }
-            if (workspace.windows.isNotEmpty()) Box(
-                Modifier.align(Alignment.BottomEnd).offset(x = 4.dp, y = 4.dp).size(22.dp)
-                    .background(UniTheme.colors.background, CircleShape).border(1.dp, UniTheme.colors.outline, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) { Text("${workspace.windows.size}", style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.text) }
-        }
-        Text(workspace.name, style = MaterialTheme.typography.labelSmall, color = if (selected) UniTheme.colors.text else UniTheme.colors.muted, fontFamily = UniTheme.type.identifierFamily,
-            maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
-    }
-}
-
-@Composable
-private fun NewWorkspaceTile(onClick: () -> Unit) {
-    Column(Modifier.width(76.dp).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.size(64.dp).border(1.5.dp, UniTheme.colors.accent.copy(alpha = .5f), monogramShape(64.dp)), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.Add, stringResource(R.string.new_workspace), tint = UniTheme.colors.accent)
-        }
-        Text(stringResource(R.string.new_workspace_tile), style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.accent)
-    }
-}
-
-/**
- * One box as a grid cell: the mark with the name and window count beside it, so a two or three
- * column grid still reads without a caption under every tile. Selection tints the cell's edge
- * with the box's tone; the pin and the AI mark sit in the text, not over the mark.
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun WorkspaceCell(workspace: RemoteWorkspace, selected: Boolean, dimmed: Boolean, pinned: Boolean, modifier: Modifier, onClick: () -> Unit, onLongClick: () -> Unit) {
-    val compact = UniTheme.layout.density == RowDensity.COMPACT
-    val tone = themedTone(workspace.name)
-    GlassCard(modifier, style = UniTheme.layout.rowsAs, accent = if (selected) tone else null) {
-        Row(
-            Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)
-                .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = if (compact) 8.dp else 12.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp),
-        ) {
-            BoxMonogram(workspace.name, size = if (compact) 36.dp else 44.dp, selected = selected, dimmed = dimmed, tone = tone)
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(workspace.name, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelLarge, fontFamily = UniTheme.type.identifierFamily,
-                        color = if (selected) UniTheme.colors.text else UniTheme.colors.muted, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (pinned) Icon(Icons.Rounded.Star, stringResource(R.string.box_pinned), Modifier.size(12.dp), tint = UniTheme.colors.warning)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(pluralStringResource(R.plurals.window_count, workspace.windows.size, workspace.windows.size), style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    ActivityMark(workspace.activity, size = 12.dp, tone = tone)
-                }
-            }
-        }
-    }
-}
-
-/** The cell that offers a new box, in the same shape as the cells around it. */
-@Composable
-private fun NewWorkspaceCell(modifier: Modifier, onClick: () -> Unit) {
-    val compact = UniTheme.layout.density == RowDensity.COMPACT
-    val size = if (compact) 36.dp else 44.dp
-    GlassCard(modifier, style = UniTheme.layout.rowsAs) {
-        Row(
-            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = if (compact) 8.dp else 12.dp, vertical = if (compact) 8.dp else 12.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp),
-        ) {
-            Box(Modifier.size(size).border(1.5.dp, UniTheme.colors.accent.copy(alpha = .5f), monogramShape(size)), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Add, stringResource(R.string.new_workspace), Modifier.size(20.dp), tint = UniTheme.colors.accent)
-            }
-            Text(stringResource(R.string.new_workspace_tile), style = MaterialTheme.typography.labelLarge, color = UniTheme.colors.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-    }
+    val actions = MachineActions(
+        onBack = onBack, onConnect = onConnect, onEnableNotices = onEnableNotices, onDisableNotices = onDisableNotices,
+        onCreateWorkspace = onCreateWorkspace, onCreateWindow = onCreateWindow, onOpenWindow = onOpenWindow,
+        onToggleWorkspacePin = onToggleWorkspacePin,
+        onHoldWorkspace = { heldWorkspace = it }, onHoldWindow = { workspaceID, windowID -> heldWindow = workspaceID to windowID },
+    )
+    DesignedMachine(model, actions, menu)
 }
 
 @Composable
@@ -319,41 +101,4 @@ fun KindBadge(workspace: RemoteWorkspace) {
     }
     Text(stringResource(label), Modifier.background(color.copy(alpha = .14f), UniTheme.shapes.chip).padding(horizontal = 8.dp, vertical = 3.dp),
         style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.Bold)
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun WindowRow(window: RemoteWindow, tone: Color, pinned: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
-    GlassCard(Modifier.fillMaxWidth(), style = UniTheme.layout.rowsAs) {
-        Row(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(horizontal = 16.dp, vertical = UniTheme.layout.rowPadding), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(38.dp).background(tone.copy(alpha = .14f), UniTheme.shapes.chip), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Terminal, null, Modifier.size(20.dp), tint = tone)
-            }
-            Text(window.name, Modifier.weight(1f).padding(horizontal = 14.dp), style = MaterialTheme.typography.bodyLarge, fontFamily = UniTheme.type.identifierFamily, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            window.activity?.state?.let { ActivityMark(it, Modifier.padding(end = 10.dp), size = 18.dp, tone = tone) }
-            if (pinned) Icon(Icons.Rounded.Star, stringResource(R.string.box_pinned), Modifier.size(16.dp).padding(end = 2.dp), tint = UniTheme.colors.warning)
-            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = UniTheme.colors.muted)
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun NotConnectedCard(connection: MachinesViewModel.Connection, onConnect: () -> Unit) {
-    val pending = connection.error == R.string.approval_required
-    GlassCard(Modifier.fillMaxWidth(), accent = if (pending) UniTheme.colors.warning else UniTheme.colors.accent) {
-        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(Modifier.size(44.dp).background((if (pending) UniTheme.colors.warning else UniTheme.colors.accent).copy(alpha = .14f), UniTheme.shapes.chip), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Lock, null, tint = if (pending) UniTheme.colors.warning else UniTheme.colors.accent)
-            }
-            Text(stringResource(if (pending) R.string.approval_pending_title else R.string.not_connected_title), style = MaterialTheme.typography.titleLarge)
-            Text(stringResource(connection.error ?: R.string.not_connected_detail), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodyMedium)
-            Button(onClick = onConnect, enabled = !connection.checking, modifier = Modifier.fillMaxWidth(), shape = UniTheme.shapes.button, contentPadding = PaddingValues(16.dp)) {
-                if (connection.checking) LoadingIndicator(Modifier.size(20.dp), color = UniTheme.colors.onAccent)
-                else Icon(Icons.Rounded.Sync, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(if (connection.checking) R.string.checking_machine else if (connection.error != null) R.string.retry else R.string.check_connection), fontWeight = FontWeight.SemiBold)
-            }
-        }
-    }
 }

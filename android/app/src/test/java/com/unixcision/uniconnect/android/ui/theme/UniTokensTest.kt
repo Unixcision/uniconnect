@@ -69,11 +69,11 @@ class UniTokensTest {
     }
 
     @Test
-    fun limaSetsIdentifiersInMonospaceAndTheOthersDoNot() {
-        assertEquals(FontFamily.Monospace, UniTokens.tokensFor(DesignTheme.LIMA, dark = false).type.identifierFamily)
-        assertEquals(FontFamily.Monospace, UniTokens.tokensFor(DesignTheme.LIMA, dark = true).type.identifierFamily)
+    fun limaSetsIdentifiersInTheBundledMonoAndTheOthersDoNot() {
+        assertEquals(UniFonts.mono, UniTokens.tokensFor(DesignTheme.LIMA, dark = false).type.identifierFamily)
+        assertEquals(UniFonts.mono, UniTokens.tokensFor(DesignTheme.LIMA, dark = true).type.identifierFamily)
         (themes - DesignTheme.LIMA).forEach { theme ->
-            assertNotEquals("$theme identifiers are not monospace", FontFamily.Monospace, UniTokens.tokensFor(theme, dark = true).type.identifierFamily)
+            assertNotEquals("$theme identifiers are not monospace", UniFonts.mono, UniTokens.tokensFor(theme, dark = true).type.identifierFamily)
         }
     }
 

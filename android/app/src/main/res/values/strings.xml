@@ -106,13 +106,21 @@
     <string name="relaunch_cause_unreachable">El equipo no contestó.</string>
     <string name="relaunch_cause_unknown">Motivo no reconocido por esta versión: %1$s</string>
     <string name="relaunch_cause_folder_trust">La IA pide confirmar que confías en la carpeta. Contéstalo en su ventana, en el equipo.</string>
-    <string name="relaunch_cause_permissions">La IA pide permisos. Contéstalo en su ventana, en el equipo.</string>
+    <string name="relaunch_cause_permissions">La IA esperaba una respuesta de permisos. Relanzar la descarta: la conversación vuelve, la petición pendiente no.</string>
     <string name="relaunch_cause_unknown_dialog">La ventana enseñaba algo que no se reconoce, así que no se contestó a ciegas.</string>
     <string name="relaunch_cause_not_sent">Se canceló antes de enviarlo: no se tocó nada. Pídelo otra vez si todavía hace falta.</string>
     <string name="relaunch_cause_generation_changed">La ventana cambió entre la previsualización y el relanzado. Vuelve a pedirlo.</string>
     <string name="relaunch_cause_duplicate">Otro ya estaba relanzando esa misma ventana; aquí no se repitió.</string>
     <string name="relaunch_cause_no_agent">No hay ninguna IA en marcha en esa ventana: no hay nada que relanzar.</string>
-    <string name="relaunch_cause_background_tasks">La IA tiene tareas o monitores en marcha. No se cierra, porque se perderían: guárdalos o espera a que terminen.</string>
+    <string name="relaunch_cause_background_tasks">La IA tiene tareas o monitores en marcha. Relanzar los detiene.</string>
+    <string name="relaunch_cause_provider_unsupported">Esta IA todavía no se sabe relanzar en este equipo.</string>
+    <string name="relaunch_cause_no_tmux">La ventana no está dentro de una sesión tmux, así que no hay sesión que conservar.</string>
+    <string name="relaunch_cause_no_credential">La caja SSH no tiene su credencial disponible ahora mismo. Desbloquéala en el equipo.</string>
+    <string name="relaunch_cause_target_not_linux">El servidor no deja ver sus procesos, así que no se puede relanzar con seguridad.</string>
+    <string name="relaunch_cause_missing_folder">La carpeta de la ventana ya no existe.</string>
+    <string name="relaunch_cause_missing_binary">El programa de la IA no está instalado o no se puede ejecutar en ese equipo.</string>
+    <string name="relaunch_cause_no_pause">Codex no está pausado por límite de uso: no hay nada que continuar.</string>
+    <string name="relaunch_cause_shared_session">La sesión tmux tiene otros paneles o ventanas. No se cierra para no llevárselos por delante.</string>
     <string name="menu_relaunch_window">Relanzar IA de esta ventana</string>
     <string name="menu_relaunch_window_note">La cierra y la vuelve a abrir en su misma conversación, sin preguntas.</string>
     <string name="relaunch_failed">No se ha podido pedir el relanzado.</string>
@@ -655,4 +663,32 @@
         <item quantity="many">%d archivos</item>
         <item quantity="other">%d archivos</item>
     </plurals>
+
+    <!-- Palabras comunes a los cuatro diseños (ui/design). -->
+    <string name="activity_state_working">Trabajando</string>
+    <string name="activity_state_waiting">Te espera</string>
+    <string name="activity_state_idle">En reposo</string>
+    <string name="elapsed_now">Ahora</string>
+    <plurals name="elapsed_minutes">
+        <item quantity="one">Hace %1$d min</item>
+        <item quantity="other">Hace %1$d min</item>
+    </plurals>
+    <plurals name="elapsed_hours">
+        <item quantity="one">Hace %1$d h</item>
+        <item quantity="other">Hace %1$d h</item>
+    </plurals>
+    <plurals name="elapsed_days">
+        <item quantity="one">Hace %1$d día</item>
+        <item quantity="other">Hace %1$d días</item>
+    </plurals>
+    <string name="window_filter_all">Todas</string>
+    <string name="window_filter_working">Trabajando</string>
+    <string name="window_filter_waiting">Te esperan</string>
+    <string name="design_reply">Responder</string>
+    <string name="design_open">Abrir</string>
+    <string name="design_back_home">Inicio</string>
+    <string name="design_back_machines">Máquinas</string>
+    <string name="design_workspaces">Espacios</string>
+    <string name="design_recent_activity">Actividad reciente</string>
+    <string name="design_no_filtered_windows">Ninguna ventana en este estado ahora mismo.</string>
 </resources>

@@ -233,7 +233,10 @@ class NativeMachineClient(
             verb = verb,
             targets = List(targets.length()) { index ->
                 val item = targets.getJSONObject(index)
-                RelaunchTarget(item.getString("key"), item.optString("label"), item.optString("provider"))
+                RelaunchTarget(
+                    item.getString("key"), item.optString("label"), item.optString("provider"),
+                    warning = item.optString("warning").takeIf { it.isNotEmpty() && !item.isNull("warning") }?.let(::RelaunchReason),
+                )
             },
             // Una exclusión sin motivo se lee como una ventana olvidada, así que el motivo viaja
             // siempre aunque esta versión no sepa nombrarlo.

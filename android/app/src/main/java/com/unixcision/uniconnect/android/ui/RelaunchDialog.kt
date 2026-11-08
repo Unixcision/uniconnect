@@ -2,6 +2,7 @@ package com.unixcision.uniconnect.android.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -54,6 +55,10 @@ fun RelaunchDialog(state: RelaunchUI, onConfirm: () -> Unit, onDismiss: () -> Un
                     // creía, y aquí el coste de equivocarse es reiniciar el agente de otro.
                     state.plan.targets.take(6).forEach {
                         Text("· ${it.label}", style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted)
+                        // Lo que se va a cortar en esa ventana, dicho antes de confirmar.
+                        it.warning?.let { warning ->
+                            Text(textOf(warning), Modifier.padding(start = 10.dp), style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.warning)
+                        }
                     }
                     if (state.plan.targets.size > 6) {
                         Text("· …", style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted)
@@ -191,6 +196,14 @@ private fun textOf(reason: RelaunchReason): String = when (reason.cause) {
     RelaunchCause.DUPLICATE -> stringResource(R.string.relaunch_cause_duplicate)
     RelaunchCause.NO_AGENT -> stringResource(R.string.relaunch_cause_no_agent)
     RelaunchCause.BACKGROUND_TASKS -> stringResource(R.string.relaunch_cause_background_tasks)
+    RelaunchCause.PROVIDER_UNSUPPORTED -> stringResource(R.string.relaunch_cause_provider_unsupported)
+    RelaunchCause.NO_TMUX -> stringResource(R.string.relaunch_cause_no_tmux)
+    RelaunchCause.NO_CREDENTIAL -> stringResource(R.string.relaunch_cause_no_credential)
+    RelaunchCause.TARGET_NOT_LINUX -> stringResource(R.string.relaunch_cause_target_not_linux)
+    RelaunchCause.MISSING_FOLDER -> stringResource(R.string.relaunch_cause_missing_folder)
+    RelaunchCause.MISSING_BINARY -> stringResource(R.string.relaunch_cause_missing_binary)
+    RelaunchCause.NO_PAUSE -> stringResource(R.string.relaunch_cause_no_pause)
+    RelaunchCause.SHARED_SESSION -> stringResource(R.string.relaunch_cause_shared_session)
     // Una causa que esta versión no interpreta llega aquí con su identificador intacto, y se
     // enseña tal cual en vez de desaparecer.
     null -> stringResource(R.string.relaunch_cause_unknown, reason.wire)

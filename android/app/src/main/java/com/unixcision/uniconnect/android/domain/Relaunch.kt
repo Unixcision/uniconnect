@@ -74,16 +74,45 @@ enum class RelaunchCause(val wire: String) {
     /** La ventana no tiene ninguna IA en marcha: no hay nada que relanzar. No es un fallo. */
     NO_AGENT("sin_ia"),
 
-    /** La IA tiene tareas o monitores en marcha: cerrarla los perdería, así que no se toca. */
-    BACKGROUND_TASKS("tareas_de_fondo");
+    /** La IA tiene tareas o monitores en marcha. Desde el 8-nov es un aviso: relanzar los detiene. */
+    BACKGROUND_TASKS("tareas_de_fondo"),
+
+    /** Esta IA todavía no se sabe relanzar en ese equipo. */
+    PROVIDER_UNSUPPORTED("proveedor_no_soportado"),
+
+    /** La ventana no vive en una sesión tmux, así que no hay sesión que conservar. */
+    NO_TMUX("sin_tmux"),
+
+    /** La caja SSH no tiene su credencial disponible (bóveda cerrada). */
+    NO_CREDENTIAL("sin_credencial"),
+
+    /** El servidor no deja inspeccionar sus procesos. */
+    TARGET_NOT_LINUX("destino_no_linux"),
+
+    /** La carpeta de la ventana ya no existe. */
+    MISSING_FOLDER("carpeta_inexistente"),
+
+    /** El programa de la IA no está instalado o no se puede ejecutar. */
+    MISSING_BINARY("binario_no_encontrado"),
+
+    /** Codex no está pausado por cuota: no hay nada que continuar. */
+    NO_PAUSE("sin_pausa"),
+
+    /** La sesión tmux tiene paneles o ventanas ajenos y no se mata para no llevárselos. */
+    SHARED_SESSION("sesion_compartida");
 
     companion object {
         fun named(raw: String?): RelaunchCause? = entries.firstOrNull { it.wire == raw }
     }
 }
 
-/** Un objetivo tal y como lo enseña la previsualización. */
-data class RelaunchTarget(val key: String, val label: String, val provider: String)
+/**
+ * Un objetivo tal y como lo enseña la previsualización.
+ *
+ * [warning] es lo que relanzar va a cortar en esa ventana (una petición de permisos pendiente,
+ * tareas de fondo): no la excluye, pero quien confirma tiene que saberlo antes.
+ */
+data class RelaunchTarget(val key: String, val label: String, val provider: String, val warning: RelaunchReason? = null)
 
 /** Un objetivo que el plan deja fuera, con su motivo. Nunca en silencio. */
 data class RelaunchExclusion(val label: String, val reason: RelaunchReason?)

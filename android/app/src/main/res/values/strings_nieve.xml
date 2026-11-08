@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Diseño Nieve (ui/design/nieve). -->
+    <plurals name="nieve_machines_connected">
+        <item quantity="one">%1$d de %2$d máquina conectada</item>
+        <item quantity="many">%1$d de %2$d máquinas conectadas</item>
+        <item quantity="other">%1$d de %2$d máquinas conectadas</item>
+    </plurals>
+    <string name="nieve_stat_windows">Ventanas</string>
+    <plurals name="nieve_stat_working">
+        <item quantity="one">IA trabajando</item>
+        <item quantity="many">IAs trabajando</item>
+        <item quantity="other">IAs trabajando</item>
+    </plurals>
+    <plurals name="nieve_stat_waiting">
+        <item quantity="one">Te espera</item>
+        <item quantity="many">Te esperan</item>
+        <item quantity="other">Te esperan</item>
+    </plurals>
+    <plurals name="nieve_working_count">
+        <item quantity="one">%1$d trabajando</item>
+        <item quantity="many">%1$d trabajando</item>
+        <item quantity="other">%1$d trabajando</item>
+    </plurals>
+    <plurals name="nieve_waiting_count">
+        <item quantity="one">%1$d te espera</item>
+        <item quantity="many">%1$d te esperan</item>
+        <item quantity="other">%1$d te esperan</item>
+    </plurals>
+    <string name="nieve_waiting_title">%1$s te espera en %2$s</string>
+    <string name="nieve_waiting_window">%1$s te espera</string>
+    <plurals name="nieve_waiting_more">
+        <item quantity="one">Y %1$d ventana más te espera.</item>
+        <item quantity="many">Y %1$d ventanas más te esperan.</item>
+        <item quantity="other">Y %1$d ventanas más te esperan.</item>
+    </plurals>
+    <string name="nieve_history_note">Dictados y mensajes</string>
+</resources>
