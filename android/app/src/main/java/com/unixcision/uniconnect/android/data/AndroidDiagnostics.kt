@@ -103,12 +103,12 @@ class AndroidDiagnostics(private val context: Context) {
     }.getOrNull()
 
     /** Escribe el informe en la caché de la app y devuelve algo que se pueda compartir. */
-    fun writeReport(events: List<ConnectionEvent>, crashes: List<CrashReport> = emptyList()): File {
+    fun writeReport(events: List<ConnectionEvent>, crashes: List<CrashReport> = emptyList(), connectedNow: Set<String>? = null): File {
         val folder = File(context.cacheDir, "diagnostico").apply { mkdirs() }
         // Se limpia lo viejo: el diagnóstico no debe convertirse él mismo en un problema de espacio.
         folder.listFiles()?.sortedBy { it.lastModified() }?.dropLast(4)?.forEach { it.delete() }
         val file = File(folder, DiagnosticReport.fileName())
-        file.writeText(DiagnosticReport.render(runCatching { environment() }.getOrNull(), events, crashes = crashes))
+        file.writeText(DiagnosticReport.render(runCatching { environment() }.getOrNull(), events, crashes = crashes, connectedNow = connectedNow))
         return file
     }
 
@@ -119,12 +119,12 @@ class AndroidDiagnostics(private val context: Context) {
      * para pegarlo en un chat sin abrir nada. Compartir funciona sin conexión, que es justo cuando
      * este informe hace falta.
      */
-    fun share(events: List<ConnectionEvent>, crashes: List<CrashReport> = emptyList()): Boolean {
-        val texto = runCatching { DiagnosticReport.render(runCatching { environment() }.getOrNull(), events, crashes = crashes) }
+    fun share(events: List<ConnectionEvent>, crashes: List<CrashReport> = emptyList(), connectedNow: Set<String>? = null): Boolean {
+        val texto = runCatching { DiagnosticReport.render(runCatching { environment() }.getOrNull(), events, crashes = crashes, connectedNow = connectedNow) }
             .getOrElse { return false }
         val send = Intent(Intent.ACTION_SEND)
             .setType("text/plain")
-            .putExtra(Intent.EXTRA_SUBJECT, "UniConnect · ${DiagnosticReport.headline(events, crashes)}")
+            .putExtra(Intent.EXTRA_SUBJECT, "UniConnect · ${DiagnosticReport.headline(events, crashes, connectedNow)}")
             // El texto va **siempre**, adjunto o no: es lo que sobrevive a cualquier fallo del
             // fichero, y lo que se puede pegar en un chat sin abrir nada.
             .putExtra(Intent.EXTRA_TEXT, texto.take(60_000))
@@ -135,7 +135,7 @@ class AndroidDiagnostics(private val context: Context) {
         // nada y no había forma de saber por qué. Un informe que no se puede sacar del móvil no
         // es un informe.
         runCatching {
-            val file = writeReport(events, crashes)
+            val file = writeReport(events, crashes, connectedNow)
             send.putExtra(Intent.EXTRA_STREAM, FileProvider.getUriForFile(context, "${context.packageName}.files", file))
         }
 
@@ -157,8 +157,8 @@ class AndroidDiagnostics(private val context: Context) {
      *
      * - Returns: `false` si el sistema no dejó copiar; nunca lanza.
      */
-    fun copy(events: List<ConnectionEvent>, crashes: List<CrashReport> = emptyList()): Boolean = runCatching {
-        val texto = DiagnosticReport.render(runCatching { environment() }.getOrNull(), events, crashes = crashes)
+    fun copy(events: List<ConnectionEvent>, crashes: List<CrashReport> = emptyList(), connectedNow: Set<String>? = null): Boolean = runCatching {
+        val texto = DiagnosticReport.render(runCatching { environment() }.getOrNull(), events, crashes = crashes, connectedNow = connectedNow)
         val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
         manager.setPrimaryClip(ClipData.newPlainText("UniConnect · informe de conexión", texto))
         true

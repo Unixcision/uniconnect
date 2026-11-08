@@ -41,6 +41,8 @@ import com.unixcision.uniconnect.android.domain.MachineUpdate
 import com.unixcision.uniconnect.android.domain.ResourceCreation
 import com.unixcision.uniconnect.android.domain.NotificationConnectionControl
 import com.unixcision.uniconnect.android.domain.NotificationLinkState
+import com.unixcision.uniconnect.android.domain.ConnectionHealth
+import com.unixcision.uniconnect.android.domain.TerminalAttachRetry
 import com.unixcision.uniconnect.android.domain.NoticeRoute
 import com.unixcision.uniconnect.android.domain.PtyEvent
 import com.unixcision.uniconnect.android.domain.TerminalAttachment
@@ -180,7 +182,10 @@ class MachinesViewModel(
         }
         diary?.let { registro ->
             viewModelScope.launch {
-                registro.changes.collect { mutableState.update { it.copy(connectionTroubled = registro.worthReporting()) } }
+                // Trouble is a machine that does not answer NOW, not failures that already recovered.
+                registro.changes.collect {
+                    mutableState.update { current -> current.copy(connectionTroubled = !ConnectionHealth.of(registro.all(), current.connectedNames()).healthy) }
+                }
             }
         }
         viewModelScope.launch { settingsRepository.settings.collect { stored -> mutableState.update { it.copy(settings = stored) } } }
@@ -498,7 +503,7 @@ class MachinesViewModel(
      * simplemente no hacía nada. Un botón que no hace nada ni explica por qué es peor que uno roto.
      */
     fun shareDiagnostics() {
-        val ok = diagnostics?.share(connectionEvents(), state.value.crashes) ?: false
+        val ok = diagnostics?.share(connectionEvents(), state.value.crashes, state.value.connectedNames()) ?: false
         mutableState.update { it.copy(diagnosticsNotice = if (ok) null else R.string.diagnostics_share_failed) }
     }
 
@@ -510,9 +515,13 @@ class MachinesViewModel(
      * en cualquier sitio no puede depender de más piezas.
      */
     fun copyDiagnostics() {
-        val ok = diagnostics?.copy(connectionEvents(), state.value.crashes) ?: false
+        val ok = diagnostics?.copy(connectionEvents(), state.value.crashes, state.value.connectedNames()) ?: false
         mutableState.update { it.copy(diagnosticsNotice = if (ok) R.string.diagnostics_copied else R.string.diagnostics_share_failed) }
     }
+
+    /** Names of the machines the app has connected now; the diary uses names, not ids. */
+    private fun State.connectedNames(): Set<String> =
+        machines.filter { connections[it.id]?.connected == true }.map { it.name }.toSet()
 
     /** Da el aviso por leído. */
     fun clearDiagnosticsNotice() {
@@ -1092,7 +1101,7 @@ class MachinesViewModel(
         attachJob = viewModelScope.launch {
             var live: TerminalAttachment? = null
             try {
-                live = client.attach(machine, workspaceID, windowID, columns, rows)
+                live = attachRetrying(machine, workspaceID, windowID, columns, rows, automatic)
                 attachment = live
                 attachedAtNanos = System.nanoTime()
                 if (live.columns != columns || live.rows != rows) terminal.resize(live.columns, live.rows)
@@ -1165,6 +1174,10 @@ class MachinesViewModel(
             catch (failure: Exception) {
                 val rejected = failure as? MachineFailure.Rejected
                 val unsupported = rejected?.code in setOf("method_not_found", "unknown_method", "not_supported", "unsupported")
+                // Only a host that truly lacks the method bans the machine for the session; a
+                // «not supported» answered while the host starts or is locked must not stop every
+                // later window from attaching on its own.
+                val missingMethod = rejected?.code in TerminalAttachRetry.missingMethodCodes
                 val message = when {
                     unsupported -> R.string.real_terminal_unavailable
                     rejected?.code == "not_durable" -> R.string.reconnect_not_durable
@@ -1174,7 +1187,7 @@ class MachinesViewModel(
                 mutableState.update { current ->
                     // Only a missing method means "this machine cannot do it"; a window without a
                     // durable target says nothing about the next one, so it is not remembered.
-                    val remembered = if (unsupported && machine.id.isNotBlank()) current.attachUnsupported + machine.id else current.attachUnsupported
+                    val remembered = if (missingMethod && machine.id.isNotBlank()) current.attachUnsupported + machine.id else current.attachUnsupported
                     // An automatic attempt that fails returns to the mirror rather than leaving an
                     // empty real-terminal screen; only a mode the user asked for reports the reason.
                     // Falling back without a word made a refused attach look like a broken mode.
@@ -1184,6 +1197,26 @@ class MachinesViewModel(
             } finally {
                 live?.close()
                 if (attachment === live) attachment = null
+            }
+        }
+    }
+
+    /**
+     * Attaches to the window's tmux session; an automatic attempt repeats passing failures as
+     * [TerminalAttachRetry] says, keeping «Adjuntando…» on screen meanwhile.
+     */
+    private suspend fun attachRetrying(machine: Machine, workspaceID: String, windowID: String, columns: Int, rows: Int, automatic: Boolean): TerminalAttachment {
+        var attempt = 1
+        while (true) {
+            try {
+                return client.attach(machine, workspaceID, windowID, columns, rows)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                val wait = (if (automatic) TerminalAttachRetry.nextDelayMillis(attempt, failure) else null) ?: throw failure
+                attempt += 1
+                // Bounded, intended pause between attempts; cancelled with the attach job.
+                delay(wait)
             }
         }
     }

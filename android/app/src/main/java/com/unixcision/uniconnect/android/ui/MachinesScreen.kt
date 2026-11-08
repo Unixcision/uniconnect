@@ -310,6 +310,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
             environment = state.diagnosticEnvironment,
             events = model.connectionEvents(),
             crashes = state.crashes,
+            connectedNow = state.machines.filter { state.connections[it.id]?.connected == true }.map { it.name }.toSet(),
             notice = state.diagnosticsNotice,
             onCopy = model::copyDiagnostics,
             // No se cierra al compartir: si el selector no abre, hace falta seguir aquí para

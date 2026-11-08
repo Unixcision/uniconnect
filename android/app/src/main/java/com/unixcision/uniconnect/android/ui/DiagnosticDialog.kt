@@ -39,6 +39,8 @@ fun DiagnosticDialog(
     environment: DiagnosticEnvironment?,
     events: List<ConnectionEvent>,
     crashes: List<CrashReport> = emptyList(),
+    /** Máquinas conectadas ahora: el informe nunca las da por caídas. */
+    connectedNow: Set<String>? = null,
     /** Qué decir tras copiar o compartir: copiado, o por qué no se pudo. */
     notice: Int? = null,
     onCopy: () -> Unit,
@@ -53,9 +55,11 @@ fun DiagnosticDialog(
     // Copiar, que llegue un evento nuevo— rehacía el informe entero con otra hora. Además de
     // quedar absurdo, era formatear 200 líneas por fotograma.
     val generado = remember { System.currentTimeMillis() }
-    val report = remember(environment, events, crashes, generado) {
-        DiagnosticReport.render(environment, events, now = generado, crashes = crashes)
+    val report = remember(environment, events, crashes, generado, connectedNow) {
+        DiagnosticReport.render(environment, events, now = generado, crashes = crashes, connectedNow = connectedNow)
     }
+    // Verde cuando todo responde: el color no puede gritar un problema que ya no existe.
+    val problem = remember(events, crashes, connectedNow) { DiagnosticReport.isProblem(events, crashes, connectedNow) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.diagnostics_title)) },
@@ -65,9 +69,9 @@ fun DiagnosticDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
-                    DiagnosticReport.headline(events, crashes),
+                    DiagnosticReport.headline(events, crashes, connectedNow),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = UniTheme.colors.warning,
+                    color = if (problem) UniTheme.colors.warning else UniTheme.colors.success,
                 )
                 // El resultado se dice aquí, junto a los botones que lo produjeron. Un compartir
                 // que falla en silencio es indistinguible de un botón roto.

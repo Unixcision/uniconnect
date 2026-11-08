@@ -49,6 +49,8 @@ object DiagnosticReport {
         events: List<ConnectionEvent>,
         now: Long = System.currentTimeMillis(),
         crashes: List<CrashReport> = emptyList(),
+        /** Máquinas que la app tiene conectadas ahora: nunca salen como caídas. Nulo si no se sabe. */
+        connectedNow: Set<String>? = null,
     ): String = buildString {
         appendLine("UniConnect · informe de conexión")
         appendLine("generado: ${stamp(now)} (${TimeZone.getDefault().id})")
@@ -76,14 +78,48 @@ object DiagnosticReport {
             appendLine()
         }
 
-        val failures = events.count { it.outcome != ConnectionEvent.Outcome.OK }
-        appendLine("Intentos registrados: ${events.size} · fallidos: $failures")
-        appendLine()
-
         if (events.isEmpty()) {
             appendLine("(todavía no hay intentos registrados)")
             return@buildString
         }
+
+        // Primero lo que pasa AHORA, máquina a máquina: un fallo ya resuelto no es un problema
+        // presente y no puede leerse como tal.
+        val health = ConnectionHealth.of(events, connectedNow)
+        appendLine(if (health.healthy) "ESTADO AHORA: todo bien" else "ESTADO AHORA: ${health.down.size} sin responder")
+        for (machine in health.machines) {
+            if (machine.down) {
+                val last = machine.failing.last()
+                appendLine("  ${machine.machine}: NO RESPONDE desde ${clock(machine.downSince!!)} · ${machine.failing.size} fallos seguidos · ${describe(last)}")
+            } else {
+                appendLine("  ${machine.machine}: responde · último intento ${machine.lastAttempt.stage} ${clock(machine.lastAttempt.at)}")
+            }
+        }
+        appendLine()
+
+        if (health.incidents.isNotEmpty()) {
+            appendLine("INCIDENTES (rachas de fallos, de la más reciente a la más antigua)")
+            for (incident in health.incidents.sortedByDescending { it.from }) {
+                val end = incident.resolvedAt?.let { "resuelto a las ${clock(it)}" } ?: "SIN RESOLVER"
+                appendLine("  ${clock(incident.from)} ${incident.machine} · ${incident.attempts.size} fallo(s) · ${describe(incident.last)} · $end")
+            }
+            appendLine()
+        }
+
+        // Creating or closing something is not connecting: a «no» from the host is listed here,
+        // with its exact answer, and never makes the machine look down.
+        val failedActions = events.filter { it.stage in ConnectionHealth.actionStages && it.outcome != ConnectionEvent.Outcome.OK && it.outcome != ConnectionEvent.Outcome.CANCELADO }
+        if (failedActions.isNotEmpty()) {
+            appendLine("ACCIONES QUE FALLARON (las últimas)")
+            for (action in failedActions.takeLast(10).asReversed()) {
+                appendLine("  ${clock(action.at)} ${action.machine} · ${describe(action)} · ${action.millis} ms")
+            }
+            appendLine()
+        }
+
+        val failures = events.count { it.outcome != ConnectionEvent.Outcome.OK }
+        appendLine("REGISTRO · últimos ${events.size} intentos · fallidos: $failures")
+        appendLine()
 
         appendLine("hora                     fase        desenlace         ms   equipo / detalle")
         appendLine("-".repeat(96))
@@ -99,14 +135,38 @@ object DiagnosticReport {
         }
     }
 
-    /** Un resumen de una línea, para el propio modal y para el asunto del envío. */
-    fun headline(events: List<ConnectionEvent>, crashes: List<CrashReport> = emptyList()): String {
+    /**
+     * Un resumen de una línea, para el propio modal y para el asunto del envío.
+     *
+     * Dice cómo están las cosas **ahora**: una máquina caída, con desde cuándo y por qué; o que
+     * todo responde, contando el último fallo como resuelto. Nunca presenta un fallo pasado como
+     * si estuviera ocurriendo.
+     */
+    fun headline(events: List<ConnectionEvent>, crashes: List<CrashReport> = emptyList(), connectedNow: Set<String>? = null): String {
         // Un cierre manda sobre cualquier fallo de conexión: es lo más grave que hay que contar.
         crashes.firstOrNull()?.let { return "la app se cerró sola · ${it.summary.substringAfterLast('.')}" }
-        val last = events.lastOrNull { it.outcome != ConnectionEvent.Outcome.OK }
-            ?: return "Sin fallos registrados"
-        return "${last.stage}: ${last.outcome.name.lowercase()}" +
-            (last.detail?.let { " · $it" }.orEmpty())
+        if (events.isEmpty()) return "Todavía no hay intentos registrados"
+        val health = ConnectionHealth.of(events, connectedNow)
+        health.down.firstOrNull()?.let { machine ->
+            val more = health.down.size - 1
+            return "${machine.machine} no responde desde las ${clock(machine.downSince!!)}: ${machine.failing.size} fallos seguidos · " +
+                describe(machine.failing.last()) + if (more > 0) " (y $more máquina${if (more == 1) "" else "s"} más)" else ""
+        }
+        val resolved = health.lastResolved ?: return "Todo bien ahora · sin fallos registrados"
+        return "Todo bien ahora · el último fallo (${resolved.machine}, ${describe(resolved.last)}) se resolvió a las ${clock(resolved.resolvedAt!!)}"
+    }
+
+    /** Si hay algo que arreglar ahora: un cierre de la app o una máquina que no responde. */
+    fun isProblem(events: List<ConnectionEvent>, crashes: List<CrashReport> = emptyList(), connectedNow: Set<String>? = null): Boolean =
+        crashes.isNotEmpty() || !ConnectionHealth.of(events, connectedNow).healthy
+
+    private fun describe(event: ConnectionEvent): String =
+        "${event.stage}: ${event.outcome.name.lowercase()}" + (event.detail?.let { " · $it" }.orEmpty())
+
+    private fun clock(at: Long): String {
+        val format = SimpleDateFormat("HH:mm:ss", Locale.US)
+        format.timeZone = TimeZone.getDefault()
+        return format.format(Date(at))
     }
 
     /** Nombre de archivo estable y ordenable, para cuando se comparte como fichero. */

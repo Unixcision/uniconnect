@@ -120,7 +120,9 @@ class NativeMachineClient(
         return decodeMachine(machine, call(machine, "mobile.terminal.update", params))
     }
 
-    override suspend fun create(machine: Machine, request: ResourceCreation): CreationResult {
+    // Recorded like a connection attempt: a creation that fails used to leave no trace but a
+    // generic message on screen, and nobody could tell what the host answered.
+    override suspend fun create(machine: Machine, request: ResourceCreation): CreationResult = recording("crear", machine) {
         val params = creationParameters(request)
         val method = if (request is ResourceCreation.Workspace) "workspace.create" else "mobile.terminal.create"
         val result = call(machine, method, params)
@@ -129,7 +131,7 @@ class NativeMachineClient(
             is ResourceCreation.Terminal -> request.workspaceID
         }
         val windowID = if (request is ResourceCreation.Terminal) result.getString("created_terminal_id") else null
-        return CreationResult(decodeMachine(machine, result), workspaceID, windowID)
+        CreationResult(decodeMachine(machine, result), workspaceID, windowID)
     }
 
     override suspend fun relaunchPlan(machine: Machine, verb: RelaunchVerb, scope: RelaunchScope): RelaunchPlan {

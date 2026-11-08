@@ -99,7 +99,7 @@ class ConnectionDiaryTest {
         val diario = ConnectionDiary()
         diario.record(evento(1, ConnectionEvent.Outcome.OK))
 
-        assertEquals("Sin fallos registrados", DiagnosticReport.headline(diario.all()))
+        assertEquals("Todo bien ahora · sin fallos registrados", DiagnosticReport.headline(diario.all()))
     }
 
     @Test fun `el nombre del fichero ordena solo`() {
