@@ -63,9 +63,9 @@ final class AgentActivityWorkspaceBridge: AgentActivityHostReading {
                     ?? terminal.surface.agentActivityForegroundCommand()
             ),
             knownAgent: knownAgent,
-            output: AgentActivityEvidence.Output(
-                lastOutputAt: terminal.surface.agentOutputActivity.snapshot().lastOutputAt
-            )
+            // Con tmux local el monitor lo sustituye por `#{window_activity}`: esta PTY es un
+            // cliente `tmux attach` que también ve los redibujados de todo el servidor.
+            output: AgentActivityEvidence.Output(terminal.surface.agentOutputActivity.snapshot())
         )
         return AgentActivityTerminalInput(
             workspaceID: workspace.id,
