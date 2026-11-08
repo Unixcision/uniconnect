@@ -34,6 +34,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.unixcision.uniconnect.android.domain.HomeSummary
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
@@ -115,6 +116,14 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
     }
     val troubled = state.connectionTroubled || state.crashes.isNotEmpty()
     BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
+    // While the home is on screen it looks again every few seconds, quietly: one look taken in
+    // the middle of a burst (a host that redrew every window at once) must not stay frozen there.
+    LaunchedEffect(level) {
+        if (level == Level.LIST) while (true) {
+            delay(HOME_REFRESH_MILLIS)
+            model.refreshMachineStates(quiet = true)
+        }
+    }
 
     ModalNavigationDrawer(
         drawerState = drawer,
@@ -387,3 +396,6 @@ fun ErrorNotice(message: Int, onDismiss: () -> Unit) {
         }
     }
 }
+
+/** How often the home looks at the machines again while it is on screen. */
+private const val HOME_REFRESH_MILLIS = 15_000L

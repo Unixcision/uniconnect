@@ -194,8 +194,12 @@ class MachinesViewModel(
      * Refreshes the machine list's real state. Each saved machine is asked once, in parallel,
      * so the list shows connected/pending/offline instead of always "saved". Reading the tree
      * never creates a terminal or changes anything on the desktop.
+     *
+     * - Parameter quiet: the home's own periodic look, which keeps the numbers (machines,
+     *   windows, AIs working or waiting) current without a spinner on screen; it never replaces
+     *   a round already running.
      */
-    fun refreshMachineStates(force: Boolean = false) {
+    fun refreshMachineStates(force: Boolean = false, quiet: Boolean = false) {
         // List screen only: a probe must never race the live connection of an open machine.
         if (!foreground || state.value.selectedMachine != null) return
         // Asking every machine on its own is a preference; asking because the user asked is not.
@@ -203,12 +207,12 @@ class MachinesViewModel(
         if (probeJob?.isActive == true) {
             // Asking again on purpose replaces the round already in flight; without this an
             // automatic probe would swallow the pull the user just made.
-            if (!force) return
+            if (!force || quiet) return
             probeJob?.cancel()
         }
         val machines = state.value.machines.filter { requests[it.id]?.isActive != true }
         if (machines.isEmpty()) return
-        mutableState.update { current ->
+        if (!quiet) mutableState.update { current ->
             current.copy(refreshing = true, connections = current.connections + machines.associate { machine ->
                 machine.id to (current.connections[machine.id] ?: Connection()).copy(checking = true)
             })
@@ -237,7 +241,7 @@ class MachinesViewModel(
             }.awaitAll()
             } finally {
                 // Runs on cancellation too, so a replaced round never leaves the list spinning.
-                mutableState.update { it.copy(refreshing = false) }
+                if (!quiet) mutableState.update { it.copy(refreshing = false) }
             }
         }
     }
