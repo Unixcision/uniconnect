@@ -82,8 +82,9 @@ private fun DictationHistorySheet(model: DictationHistoryViewModel, language: St
     val clipboard = LocalClipboardManager.current
     var playing by remember { mutableStateOf<String?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
-    val shown = remember(records, query) { records.filter { DictationSearch.matches(it, query) } }
-    val shownMessages = remember(messages, query) { messages.filter { DictationSearch.matches(it, query) } }
+    // Closest first while searching; without a query, the history's own order, newest first.
+    val shown = remember(records, query) { DictationSearch.rankDictations(records, query) }
+    val shownMessages = remember(messages, query) { DictationSearch.rankMessages(messages, query) }
     val now = remember(records, messages) { System.currentTimeMillis() }
     val dictations = tab == HistoryTab.DICTATIONS
     ModalBottomSheet(

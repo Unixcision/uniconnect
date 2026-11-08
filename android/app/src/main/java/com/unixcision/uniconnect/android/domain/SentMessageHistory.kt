@@ -25,7 +25,7 @@ interface SentMessageHistory {
     fun clear()
 
     companion object {
-        /** How many messages are kept; older ones go first. A few thousand texts weigh little. */
-        const val MAX_MESSAGES = 2_000
+        /** How many messages are kept, as many as dictations; older ones go first. */
+        const val MAX_MESSAGES = 200
     }
 }

@@ -7,7 +7,8 @@ package com.unixcision.uniconnect.android.domain
  * Whole entries are removed only beyond the record limit.
  */
 object DictationRetention {
-    const val MAX_RECORDS = 300
+    /** Nobody reuses a dictation older than this; older ones go first, with their audio. */
+    const val MAX_RECORDS = 200
     const val MAX_AUDIO_BYTES = 300L * 1024 * 1024
     const val DAY_MILLIS = 24L * 60 * 60 * 1000
 
