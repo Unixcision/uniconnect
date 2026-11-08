@@ -79,6 +79,10 @@ operado una cuenta real.
 
 ### Lo que exige cada dialecto (igual en las dos plataformas)
 
+> **08-11-2026:** el cierre, el escalado y las opciones con que se reabre los fija ahora la sección
+> «Escalado y mismas opciones» del final. Donde abajo dice «sin matarlo», «nunca Ctrl+C» o
+> «con la política `noPrompt`», manda esa sección.
+
 - **Claude** (el Mac ya lo tiene en `ClaudeRelaunchDialect`; Linux lo calca):
   - Identidad probada antes de cerrar. El Mac usa `RelaunchIdentityEvidence` (un único candidato
     entre cerrojos, rollouts y un hook que coincide en proceso y panel) y el id que Claude imprime al
@@ -149,3 +153,70 @@ su fila de `capacidades` en `proveedores.json`.
   (equipo anterior a D7), lo ofrece como hasta ahora y deja que el plan excluya.
 - Los alcances `workspace` y `machine` se ofrecen con `relaunch.v1` a secas: el plan enseña lo que
   entra y lo que no, con su causa.
+
+## Escalado y mismas opciones (decisión de Dani, 08-11-2026)
+
+Sustituye a la regla «nunca matar tmux» (que pasa a «nunca matar el **servidor** tmux») y a la de
+reabrir siempre sin preguntas del 24-09. Acordado en `coordNov` entre la IA del Mac y la de Linux.
+
+### Escalado, por objetivo, tras `apply`
+1. **Salida limpia** del dialecto (`/exit`; Ctrl+D en agy), comprobada en pantalla como hasta
+   ahora. Espera acotada de **60 s** a que muera el proceso.
+2. **Matar el proceso**: SIGTERM al grupo del proceso de la IA (ella y sus hijos, nunca el shell del
+   pane), 5 s, y SIGKILL. Si el pane conserva su shell, la orden de reanudar se escribe ahí.
+3. **`respawn-pane -k -t <pane> -c <cwd>`**, sin orden (deja el shell de siempre), y se escribe la
+   orden de reanudar en ese shell, como al crear. Se usa si tras el paso 2 no queda un shell
+   donde escribir (la IA era la raíz del pane, o la lanzó un supervisor). Conserva la sesión, su
+   nombre, la ventana tmux y lo que esté enganchado.
+4. **`kill-session` y recrear** la sesión con el mismo nombre, socket y cwd, con la orden de reanudar
+   dentro, solo si `respawn-pane` falla. Si la sesión tiene otro pane u otra ventana ajenos, **no**
+   se mata: `sesion_compartida`.
+5. Si al aplicar la sesión tmux ya no existe, se recrea directamente (paso 4 sin matar nada).
+
+**Nunca el servidor tmux entero.** El resultado por objetivo lleva `escalation`: `exit`,
+`kill_process`, `respawn_pane` o `recreate_session` (el último paso que hizo falta). Cada paso deja
+una línea de `log-v1` (`relaunch.exit_sent`, `relaunch.exit_timeout`, `relaunch.kill_process`,
+`relaunch.kill_session`, `relaunch.session_recreated`, `relaunch.resumed`).
+
+### Avisos del plan, no exclusiones
+Un objetivo planificado puede llevar `active: true` y `warning` con la causa: `tareas_de_fondo`
+(tareas, terminales de fondo o monitores) o `permisos` (esperaba una respuesta de permisos). Aplicar
+autoriza pararlo: el escalado lo cierra y la conversación se reanuda; se pierde la llamada
+pendiente, no la conversación. El escritorio y el móvil enseñan el aviso antes de confirmar.
+
+Siguen **excluyendo** (nunca se adivina):
+- `identidad_ambigua`: sin saber qué conversación es, no se mata nada.
+- `confianza_carpeta`: es un diálogo de arranque. Si aparece **después** de reabrir, el resultado es
+  `necesita_usuario` con esa causa y nunca se contesta a ciegas.
+
+### Mismas opciones
+- Se reabre con las opciones **vivas** del proceso (`/proc/<pid>/cmdline`, quitando solo el
+  selector de conversación), y con `IS_SANDBOX=1` solo si estaba en su entorno.
+- Si el proceso ya no existe (recuperación tras un apagado), con las **guardadas** en el árbol
+  (`agent.launch`, ver `contracts/agent-tree-v1`).
+- Solo si no hay ninguna de las dos, la política `noPrompt` del catálogo, como antes.
+- Una IA lanzada sin bypass vuelve sin bypass y puede pararse a pedir permiso: es lo que pidió Dani.
+- Codex conserva `-a`, `-s` y `--full-auto` tal cual; `--yolo` ya no los sustituye cuando se reabre
+  con opciones conocidas.
+
+**Lista blanca por proveedor.** Solo se conservan estas opciones. Vive en el catálogo
+`agent-resume-v1.json` (`launchOptions`), que la edita el Mac y la leen las dos plataformas.
+- claude: `--model`, `--fallback-model`, `--permission-mode`, `--dangerously-skip-permissions`,
+  `--allow-dangerously-skip-permissions`, `--add-dir` (repetible), `--chrome`, `--verbose`.
+- codex: `-m`/`--model`, `-c model_reasoning_effort=<valor>` (solo esa clave), `-a`/`--ask-for-approval`,
+  `-s`/`--sandbox`, `--full-auto`, `--yolo`, `--dangerously-bypass-approvals-and-sandbox`, `-C`/`--cd`,
+  `-p`/`--profile`, `--search`, `--add-dir`, `--no-alt-screen`.
+- agy: `--dangerously-skip-permissions` y las que ya conserva hoy el trabajador de Linux.
+- grok: ninguna verificada.
+
+Cualquier otra opción se **quita**, se relanza igual y se informa: `dropped_options` en el
+resultado (solo el nombre de la bandera, nunca su valor) y `relaunch.option_dropped` (`warn`) en el
+log. Nunca se conservan prompts posicionales, `--api-key`, tokens, `-c` con otras claves ni
+ninguna variable de entorno salvo `IS_SANDBOX`.
+
+### Causas nuevas (`causes.json`)
+`no_soportado` queda solo para «el equipo no anuncia relaunch.v1». Lo que tapaba ahora tiene nombre:
+`proveedor_no_soportado`, `sin_tmux`, `sin_credencial`, `destino_no_linux`, `carpeta_inexistente`,
+`binario_no_encontrado` y `sin_pausa` (continuar Codex sin aviso de cuota). Y una nueva por el
+escalado: `sesion_compartida`. Un cliente que no conozca una causa enseña un texto genérico.
+`plan-response.json` y `apply-response.json` traen ya un aviso, el escalado y `dropped_options`.

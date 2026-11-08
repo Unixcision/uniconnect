@@ -6,12 +6,23 @@
     {
       "key": "local:MacBook-Pro-de-Daniel|tmux:uniconnect-local|pane:%13|gen:7",
       "state": "verificado",
-      "effective_id": "bd3a3ea6-9f11-4c8e-b2a7-5d0e91c4f8aa"
+      "effective_id": "bd3a3ea6-9f11-4c8e-b2a7-5d0e91c4f8aa",
+      "escalation": "exit"
     },
     {
       "key": "ssh:root@185.237.235.117:22|tmux:uniconnect|pane:%2|gen:3",
       "state": "necesita_usuario",
-      "cause": "confianza_carpeta"
+      "cause": "confianza_carpeta",
+      "escalation": "kill_process"
+    },
+    {
+      "key": "local:MINIPC|tmux:uniconnect-local|pane:%4|gen:2",
+      "state": "verificado",
+      "effective_id": "019a5c2e-7b41-7d03-9c8e-2f6a1b4d3e70",
+      "escalation": "respawn_pane",
+      "dropped_options": [
+        "--experimental-foo"
+      ]
     }
   ]
 }

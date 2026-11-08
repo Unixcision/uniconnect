@@ -30,7 +30,8 @@ equipo (machine_id, platform)
         └── ia    {proveedor, session_id, cwd, como_root, fuente, visto_en}
             ├── interrumpida  (la IA estaba activa cuando el tmux se cayó; ver 3.3)
             ├── historial[]   {proveedor, session_id, cwd, primera_vez, ultima_vez}  (≤32, solo se añade)
-            └── reanudar      {argv, entorno, orden}  ← DERIVADO, nunca persistido
+            ├── launch        {arguments, environment?, source, captured_at}  ← persistido desde el 08-11 (lista blanca, sin secretos)
+            └── reanudar      {argv, entorno, orden}  ← DERIVADO de las opciones vivas, de launch o de noPrompt
 ```
 
 En el cable las claves van en inglés, como en el resto de contratos: ver
@@ -51,7 +52,8 @@ En el cable las claves van en inglés, como en el resto de contratos: ver
    `registro` (solo lo guardado, sin confirmar ahora).
 5. **Estado de la IA en el cable**: `activo` (confirmada en esta lectura), `guardado` (último valor
    persistido, sin confirmar) o `interrumpido` (se reanudará al abrir).
-6. **`reanudar` no se persiste nunca.** Linux lo prohíbe (`StateStore.forbidden` incluye `argv` y
+6. **(Sustituida el 08-11-2026: ahora se persisten las opciones de lanzamiento en `agent.launch`,
+   ver «Opciones de lanzamiento…» en `contracts/agent-tree-v1/LEEME.md`.)** Antes: **`reanudar` no se persiste nunca.** Linux lo prohíbe (`StateStore.forbidden` incluye `argv` y
    `resume_command`) y el Mac descarta el argv capturado porque puede llevar secretos. Siempre se
    calcula con proveedor, session_id, cwd y como_root y la política `noPrompt` (sección 6).
 7. **Sockets**. No se unifican: no se pueden mover sesiones vivas de un servidor tmux a otro. El

@@ -334,3 +334,41 @@ windows: [{id, name, state, tmux, agent}]}]}`.
 - `resume` no viaja en el árbol: se deriva de `provider`, `session_id`, `cwd` y `as_root`, y la
   llamada de Detalles (`contracts/window-details-v1`) lo trae ya calculado.
 - Las fechas van en ISO 8601 UTC (`Z`).
+
+## Opciones de lanzamiento, servidor por ventana y árbol en disco (decisión de Dani, 08-11-2026)
+
+Acordado en `coordNov` entre la IA del Mac y la de Linux. Sustituye a la regla «`reanudar` no se
+persiste nunca» de `docs/ARBOL-IA-v1.md` (regla 6 del modelo).
+
+### `agent.launch`: las opciones con que se lanzó
+Por ventana se guarda, junto a la IA, `launch`:
+`{"arguments": [...], "environment": {"IS_SANDBOX": "1"}?, "source": "argv" | "rollout" | "policy", "captured_at"}`.
+- `arguments`: solo las opciones de la lista blanca del proveedor (`contracts/relaunch-v1/LEEME.md`,
+  «Mismas opciones»), con sus valores, en su orden. Nunca el selector de conversación, prompts
+  posicionales, `--api-key`, tokens ni `-c` con otras claves que no sean las permitidas.
+- `environment`: solo `IS_SANDBOX`, y solo si el proceso la tenía.
+- `source`: de dónde salió (`argv` del proceso vivo, configuración del `rollout` de Codex, o
+  `policy` si no se conocía nada y se aplicó `noPrompt`).
+- Linux lo guarda en la clave `launchOptions` de la ventana (`StateStore.forbidden` sigue
+  prohibiendo `argv`, `env`, `command` crudos). El Mac sustituye `safeLaunchCommand` por esto.
+- Al reanudar o relanzar se usa por este orden: opciones vivas, `launch` guardado y, si no hay
+  ninguna, la política `noPrompt` (`reanudar-comandos.json` sigue fijando ese último caso).
+
+### Servidor por ventana
+En el cable cada ventana lleva además `kind` (`local` | `ssh`) y `host_label` (`usuario@host:puerto` o
+`null`), copiados de su espacio, para que una ventana se entienda sola. Opcionales y aditivos.
+
+### El árbol en disco, en cada guardado
+Cada guardado escribe además el árbol completo, con la forma de `arbol-ejemplo.json` y sin
+secretos, de forma atómica (temporal + rename):
+- Linux: `~/.local/state/uniconnect/agent-tree.json`.
+- Mac: `~/Library/Application Support/UniConnect/agent-tree.json`.
+Lo pueden leer Dani, una IA o `recovery.py` sin pasar por ningún RPC.
+
+### Reanudar tras un apagado (sin la regla de memoria de 120 s)
+Si lo último **persistido** de una ventana era `agent` con `session_id` y su sesión tmux ya no
+existe, la ventana pasa a `interrumpido` (de forma durable) y al reconectar se recrea la sesión y
+se reanuda con `launch`. Sin límite de tiempo, pero:
+- solo para ventanas que siguen en el estado guardado (una que Dani cerró ya no está y no resucita);
+- nunca dos reanudaciones de la misma conversación: antes va la guarda de conversación abierta de
+  `deteccion-casos.json`.

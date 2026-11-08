@@ -17,10 +17,25 @@
       "provider": "codex",
       "generation": 3,
       "state": "planificado"
+    },
+    {
+      "key": "local:MINIPC|tmux:uniconnect-local|pane:%4|gen:2",
+      "label": "XUNIS · Codex",
+      "provider": "codex",
+      "generation": 2,
+      "state": "planificado",
+      "active": true,
+      "warning": "permisos"
     }
   ],
   "excluded": [
-    { "label": "IMPUESTOS · Claude Code", "cause": "identidad_ambigua" },
-    { "label": "MINIPC · Codex", "cause": "sin_autoridad" }
+    {
+      "label": "IMPUESTOS · Claude Code",
+      "cause": "identidad_ambigua"
+    },
+    {
+      "label": "MINIPC · Codex",
+      "cause": "sin_autoridad"
+    }
   ]
 }

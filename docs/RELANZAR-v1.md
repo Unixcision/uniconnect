@@ -162,7 +162,9 @@ operación, no `recovered`.
 
 ## 5. Reglas que no se negocian
 
-1. **Nunca matar tmux.**
+1. **Nunca matar el servidor tmux.** Desde el 08-11-2026 se puede matar el proceso de la IA o **esa**
+   sesión tmux como escalado de un relanzado confirmado: ver «Escalado y mismas opciones» en
+   `contracts/relaunch-v1/LEEME.md`.
 2. **Nunca mandar Enter ni Ctrl+C genéricos.**
 3. **Nunca aceptar diálogos de permisos ni de confianza** en nombre de nadie. El «¿confías en esta
    carpeta?» llega con **«No, exit» preseleccionado**: contestar a ciegas mata la sesión recién
@@ -173,7 +175,9 @@ operación, no `recovered`.
 5. **El ID efectivo sale del proceso vivo**, no de los argumentos de arranque. Ni `--last`, ni
    fiarse de lo guardado en la ventana. Medido: de 26 ventanas del Mac, **5 se habían lanzado sin
    `--resume`** y su línea de comandos no decía qué conversación seguir.
-6. **Relanzar reabre siempre sin preguntas, y no cambia nada más**: ni modelo ni carpeta.
+6. **(Sustituida el 08-11-2026: se reabre con las MISMAS opciones con que corría la IA, y `noPrompt`
+   solo si no se conocen; ver «Mismas opciones» en `contracts/relaunch-v1/LEEME.md`.)** Antes:
+   **Relanzar reabre siempre sin preguntas, y no cambia nada más**: ni modelo ni carpeta.
    Decisión de Dani del 24-09-2026, que sustituye a «ni permisos»: una IA recuperada que se para a
    pedir permiso es una ventana muerta. Claude vuelve con `--dangerously-skip-permissions` (e
    `IS_SANDBOX=1` si corre como root), Codex con `--yolo`, agy con `--dangerously-skip-permissions`.
