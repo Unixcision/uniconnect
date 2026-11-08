@@ -270,6 +270,13 @@ class TmuxCommand:
             raise TransportError("invalid_directory")
         if result.get("asRoot") is not None and not isinstance(result["asRoot"], bool):
             raise TransportError("invalid_agent_session")
+        launch = result.get("launchOptions")
+        if launch is not None and not (
+                isinstance(launch, dict) and isinstance(launch.get("options"), list) and len(launch["options"]) <= 64
+                and all(isinstance(part, str) and len(part) <= 4096 and not any(c in part for c in ("\0", "\n", "\r"))
+                        for part in launch["options"])
+                and isinstance(launch.get("isSandbox", False), bool)):
+            result.pop("launchOptions")  # Damaged: resume with the no-prompt policy rather than not at all.
         return result
 
     @staticmethod
@@ -309,9 +316,14 @@ class TmuxCommand:
         script = "cd -- " + shlex.quote(window["cwd"]) + " || exit 72; "
         # Running the agent as a child leaves a usable shell when the agent exits.
         if args:
-            if window["agent"] == "claude":
+            launch_options = window.get("launchOptions") if session else None
+            if window["agent"] == "claude" and isinstance(launch_options, dict):
+                # Same options (relaunch-v1, 08-11): sandboxed again only if it ran sandboxed.
+                if launch_options.get("isSandbox") is True:
+                    script += "export IS_SANDBOX=1; "
+            elif window["agent"] == "claude":
                 # Claude refuses --dangerously-skip-permissions as root unless told it is sandboxed.
-                # Decided on the destination host at launch time, never from a saved value.
+                # Without saved options, decided on the destination host at launch time.
                 script += '[ "$(id -u)" = 0 ] && export IS_SANDBOX=1; '
             if window["agent"] in ("claude", "codex", "agy") and window.get("id"):
                 from .agent_identity_hook import BOOTSTRAP

@@ -167,6 +167,14 @@ class AgentResumeCatalog:
         command = " ".join(parts + [quote(token) for token in argv])
         return ("cd -- " + quote(cwd, always=True) + " && " + command) if cwd else command
 
+    @staticmethod
+    def launch_options(window):
+        """Las opciones guardadas con que se lanzó (`launchOptions.options`), o None si no hay."""
+        value = window.get("launchOptions")
+        if not isinstance(value, dict) or not isinstance(value.get("options"), list):
+            return None
+        return [part for part in value["options"] if isinstance(part, str)]
+
     def window_argv(self, window):
         """Launch argv for a saved window; always in no-prompt mode, with or without sessionId."""
         provider = self.provider(window["agent"])
@@ -180,5 +188,12 @@ class AgentResumeCatalog:
         if self.canonical(window["agent"]) == "codex":
             arguments.append("--no-alt-screen")
         if window.get("sessionId"):
+            stored = self.launch_options(window)
+            if stored is not None:
+                # relaunch-v1 «Mismas opciones» (08-11): se reanuda como corría, sin imponer la
+                # política sin preguntas. Solo una ventana sin opciones conocidas usa noPrompt.
+                if self.canonical(window["agent"]) == "codex" and "--no-alt-screen" not in stored:
+                    stored.append("--no-alt-screen")
+                return self.resume_argv(window["agent"], window["sessionId"], stored)
             return self.apply_no_prompt(window["agent"], self.resume_argv(window["agent"], window["sessionId"], arguments))
         return self.apply_no_prompt(window["agent"], [provider["executable"], *arguments])

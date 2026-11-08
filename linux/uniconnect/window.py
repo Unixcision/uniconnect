@@ -29,6 +29,7 @@ from .window_notifications import WindowNotifications
 from .native_sessions import NativeSessions
 from .agent_tree import AgentTree
 from .relaunch_agents import RelaunchUnavailable, cause_text
+from .event_log import EventLog
 from .session_recovery import SessionRecovery
 from .window_details import WindowDetails
 from .window_details_dialog import WindowDetailsDialog
@@ -40,6 +41,9 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         super().__init__(application=application, title="UniConnect")
         self.get_style_context().add_class("uniconnect")
         self.store, self.vault = store, vault
+        # log.v1: historial común con el Mac; el modo depuración vive en settings.log_debug.
+        self.event_log = EventLog(settings=lambda: self.store.data.setdefault("settings", {}), save=self.persist)
+        self.event_log.info("log", "log.app_started")
         self._ = Translator(store.data.get("settings", {}).get("locale"))
         self.pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="uniconnect")
         self.font_scale = 1.0
@@ -117,6 +121,10 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         self.workspace_list.get_style_context().add_class("uc-workspaces")
         self.workspace_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self.workspace_list.connect("row-selected", self.on_workspace_selected)
+        # A ListBoxRow has no GdkWindow, and GTK3 delivers button-press-event from the widget
+        # that owns one upwards, never down to children: a handler on each row never ran and
+        # the box menu never opened. The list owns the window, so it routes the click.
+        self.workspace_list.connect("button-press-event", self.sidebar_list_context)
         self.sidebar_flyout = WorkspaceSidebar(self, self._, self.select_sidebar_surface, self.sidebar_surface_context)
         scroll = Gtk.ScrolledWindow()
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -276,6 +284,11 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             if method:
                 method()
         except Exception as error:
+            # log.v1: ningún fallo de menú queda sin línea (con la causa, nunca el texto del error).
+            log = getattr(self, "event_log", None)
+            if log is not None:
+                log.warn("ui", "ui.action_failed",
+                         detail={"action": name, "cause": getattr(error, "cause", None) or type(error).__name__})
             self.error(error)
 
     def refresh_sidebar(self):
@@ -311,15 +324,19 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                                                for record in WorkspaceArrangement.ordered(workspace.get("windows", [])))})
         self.sidebar_flyout.update(self.workspace_list, snapshots, self.store.data.get("settings", {}).get("compactSidebar", False))
         for row in self.workspace_list.get_children():
-            if not getattr(row, "context_connected", False):
-                row.connect("button-press-event", self.sidebar_workspace_context)
-                row.context_connected = True
             if row.workspace_id == selected:
                 self.workspace_list.select_row(row)
         self.workspace_list.show_all()
         self.refreshing = False
         self.refresh_actions()
         return False
+
+    def sidebar_list_context(self, listing, event):
+        """Right click on the box list: the row under the pointer opens its own menu."""
+        if event.button != 3:
+            return False
+        row = listing.get_row_at_y(int(event.y))
+        return self.sidebar_workspace_context(row, event) if row is not None else False
 
     def sidebar_workspace_context(self, row, event):
         workspace = next((value for value in self.store.workspaces if value["id"] == row.workspace_id), None)
@@ -707,6 +724,9 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                 for option in kind:
                     widget.append(option, self._(option))
                 widget.set_active_id(value)
+            elif kind == "check":
+                widget = Gtk.CheckButton()
+                widget.set_active(bool(value))
             else:
                 widget = Gtk.Entry(text="" if value is None else str(value), width_chars=48)
                 widget.set_activates_default(True)
@@ -726,7 +746,9 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         dialog.show_all()
         result = None
         if dialog.run() == Gtk.ResponseType.OK:
-            result = {key: (widget.get_active_id() if isinstance(widget, Gtk.ComboBoxText) else widget.get_text()) for key, widget in widgets.items()}
+            result = {key: (widget.get_active_id() if isinstance(widget, Gtk.ComboBoxText) else
+                            widget.get_active() if isinstance(widget, Gtk.CheckButton) else widget.get_text())
+                      for key, widget in widgets.items()}
         dialog.destroy()
         return result
 
@@ -1308,13 +1330,18 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         settings = self.store.data.setdefault("settings", {})
         fields = [("theme", "Theme", settings.get("theme", "dark"), ["system", "light", "dark"]),
                   ("font", "Font", settings.get("font", "Monospace 11"), "text"),
-                  ("autoLockMinutes", "Auto-lock minutes (0 = off)", settings.get("autoLockMinutes", 0), "text")]
+                  ("autoLockMinutes", "Auto-lock minutes (0 = off)", settings.get("autoLockMinutes", 0), "text"),
+                  # log.v1: se apaga solo a las 24 h; el estado lo escribe siempre la app.
+                  ("log_debug", "Registro detallado (24 h)", self.event_log.debug_until() is not None, "check")]
         shortcuts = settings.get("shortcuts", {})
         for action in ACTIONS:
             fields.append(("shortcut:" + action.name, self.action_label(action.name), shortcuts.get(action.name, action.shortcut), "text"))
         result = self.fields_dialog("Settings", fields)
         if result:
             result["autoLockMinutes"] = max(0, int(result["autoLockMinutes"]))
+            debug = result.pop("log_debug")
+            if debug != (self.event_log.debug_until() is not None):
+                self.event_log.set_debug(debug)
             changed = {}
             for name in list(result):
                 if name.startswith("shortcut:"):
@@ -1503,6 +1530,10 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             command = SSHCommand.parse(self.connection(surface.workspace))
             # Cierre deliberado desde UniConnect: ni «interrumpida» ni recuperación automática (D5, D6).
             self.agent_tree.mark_closed_by_user(surface.record)
+            # Y guardado: la marca de memoria no sobrevive a reiniciar la app, y lo guardado
+            # en «agent» bastaría para resucitarla tras un reinicio (agent-tree-v1 B4).
+            surface.record.update(runtimeState="shell", interrupted=False)
+            self.persist()
             remote = shlex.join(["tmux", "-L", surface.record.get("tmuxSocket", "uniconnect"), "kill-session", "-t", "=" + surface.record["tmux"]])
             self.background(lambda: subprocess.run(command.argv(remote, batch=True), env={**os.environ, **command.environment()}, capture_output=True, check=True, timeout=20))
 

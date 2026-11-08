@@ -272,24 +272,32 @@ class AgentTreeTests(TreeFixture):
         self.tree.poll()  # Con truncated, que falte no dice nada.
         self.assertFalse(self.saved("w-local").get("interrupted"))
         FakeTransport.replies[("local", "uniconnect-local")] = {"server": False, "sessions": []}
-        self.now[0] += 8
-        self.tree.poll()  # La IA se vio hace dos ticks: no es una observación reciente.
-        self.assertFalse(self.saved("w-local").get("interrupted"))
         self.seen_running()
         self.tree.mark_closed_by_user(self.local)
+        FakeTransport.replies[("local", "uniconnect-local")] = {"server": False, "sessions": []}
         self.now[0] += 8
-        self.tree.poll()
+        self.tree.poll()  # Cerrada desde UniConnect: nunca interrumpida.
         self.assertFalse(self.saved("w-local").get("interrupted"))
 
-    def test_remote_recovery_needs_a_recent_live_read_and_no_deliberate_mark(self):
-        # D6: ≤ 2 ticks (120 s) desde la última lectura que la vio y sin marca de cierre deliberado.
+    def test_a_dead_server_interrupts_the_saved_agent_however_long_ago_it_was_seen(self):
+        # B4 (08-11): un reinicio largo no necesita haberla visto hace un tick; vale lo guardado.
+        self.seen_running()
+        FakeTransport.replies[("local", "uniconnect-local")] = {"server": False, "sessions": []}
+        self.now[0] += 3600
+        self.tree.poll()
+        self.assertTrue(self.saved("w-local").get("interrupted"))
+
+    def test_remote_recovery_follows_the_saved_agent_and_stops_only_at_a_deliberate_close(self):
+        # D6 + B4 (08-11): una lectura de ≤ 120 s o, sin límite, lo último guardado era la IA en marcha.
         self.connect("w-remote")
-        self.assertFalse(self.tree.remote_resume_allowed(self.remote))  # Nunca vista (p. ej. al arrancar).
+        self.assertTrue(self.tree.remote_resume_allowed(self.remote))  # Al arrancar tras un reinicio: lo guardado.
+        shell = dict(self.remote, runtimeState="shell")
+        self.assertFalse(self.tree.remote_resume_allowed(shell))  # Guardada como shell: no resucita una IA.
         FakeTransport.replies[("root@167.233.192.135", "default")] = {"sessions": [session("claudebets", agent=agent("claude", CLAUDE_ID))]}
         self.tree.poll()
         self.assertTrue(self.tree.remote_resume_allowed(self.remote))
         self.now[0] += 121.5
-        self.assertFalse(self.tree.remote_resume_allowed(self.remote))
+        self.assertTrue(self.tree.remote_resume_allowed(self.remote))  # Ya no caduca a los 120 s.
         self.tree.poll()
         self.assertTrue(self.tree.remote_resume_allowed(self.remote))
         self.tree.mark_closed_by_user(self.remote)

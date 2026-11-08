@@ -17,6 +17,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 from .mobile_protocol import RPCError
+from .event_log import NullLog
 from .vault import atomic_write, private_read
 
 
@@ -31,8 +32,9 @@ PHASES = {
 
 
 class RelaunchService:
-    def __init__(self, root, adapter, *, clock=time.time, submit=None, writer=atomic_write):
+    def __init__(self, root, adapter, *, clock=time.time, submit=None, writer=atomic_write, log=None):
         self.root, self.adapter, self.clock, self.writer = root, adapter, clock, writer
+        self.log = log or NullLog()  # log.v1: cada plan, apply y resultado deja su línea.
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.pool = None if submit else ThreadPoolExecutor(max_workers=4, thread_name_prefix="uc-relaunch")
         self.submit = submit or self.pool.submit
@@ -93,6 +95,8 @@ class RelaunchService:
                 proof = self.adapter.probe(candidate, verb)
             except Exception as error:
                 excluded.append({"label": label, "cause": getattr(error, "cause", "host_inaccesible")})
+                self.log.info("relaunch", "relaunch.excluded", window=(candidate.get("record") or {}).get("id"),
+                              detail={"cause": excluded[-1]["cause"], "provider": candidate.get("provider")})
                 continue
             if proof["key"] in seen:
                 excluded.append({"label": label, "cause": "duplicado"})
@@ -106,8 +110,12 @@ class RelaunchService:
                     "verb": verb, "targets": [
                         {"key": proof["key"], "label": candidate["label"], "provider": candidate["provider"],
                          "generation": proof["generation"], "state": "planificado",
-                         **({"active": True} if proof.get("active") is True else {})}
+                         **({"active": True} if proof.get("active") is True else {}),
+                         **({"warning": proof["warning"]} if proof.get("warning") else {}),
+                         **({"dropped_options": proof["dropped_options"]} if proof.get("dropped_options") else {})}
                         for candidate, proof in selected], "excluded": excluded}
+        self.log.info("relaunch", "relaunch.plan", op=identifier,
+                      detail={"verb": verb, "targets": len(selected), "excluded": len(excluded)})
         self.check(authorized)
         with self.lock:
             self.plans = {key: value for key, value in self.plans.items() if value["expires"] > self.clock()}
@@ -184,6 +192,8 @@ class RelaunchService:
                                  for _, proof in plan["selected"]]}
             self.check(authorized)
             self.save(identifier, value)  # Acceptance MUST survive before any effect.
+            self.log.info("relaunch", "relaunch.apply", op=identifier,
+                          detail={"verb": plan["verb"], "targets": len(plan["selected"])})
             # Reserve all jobs before releasing admission. A concurrent status
             # must not mistake an accepted-but-not-yet-submitted job for a crash.
             self.running.update((identifier, proof["key"]) for _, proof in plan["selected"])
@@ -220,8 +230,33 @@ class RelaunchService:
                 if state not in TERMINAL and (state not in phases or phases.index(state) < phases.index(previous["state"])):
                     raise ValueError("invalid_relaunch_transition")
                 previous.pop("cause", None)
-                previous.update({k: v for k, v in result.items() if k in ("state", "cause", "effective_id")})
+                previous.update({k: v for k, v in result.items()
+                                 if k in ("state", "cause", "effective_id", "escalation", "dropped_options")})
+                if previous["state"] in TERMINAL:
+                    self.log_result(identifier, value, previous)
             self.save(identifier, value)
+
+    # log.v1 por escalón: el trabajador corre en el destino (a veces por SSH) y no escribe aquí,
+    # así que el escritorio deja las líneas cuando llega el resultado, con el último escalón.
+    ESCALATION_EVENTS = {"kill_process": ("relaunch.exit_timeout", "relaunch.kill_process"),
+                         "respawn_pane": ("relaunch.exit_timeout", "relaunch.respawn_pane"),
+                         "recreate_session": ("relaunch.exit_timeout", "relaunch.kill_session",
+                                              "relaunch.session_recreated")}
+
+    def log_result(self, identifier, value, result):
+        target = next((item for item in value.get("targets", []) if item["proof"]["key"] == result["key"]), {})
+        record = target.get("record") or {}
+        fields = {"op": identifier, "window": record.get("id"), "workspace": target.get("workspace_id")}
+        if result["state"] == "verificado":
+            for event in self.ESCALATION_EVENTS.get(result.get("escalation"), ()):
+                self.log.write("info" if event == "relaunch.session_recreated" else "warn", "relaunch", event, **fields)
+            for option in result.get("dropped_options", []):
+                self.log.warn("relaunch", "relaunch.option_dropped", **fields, detail={"option": option})
+            self.log.info("relaunch", "relaunch.resumed", **fields,
+                          detail={"provider": record.get("agent"), "escalation": result.get("escalation")})
+        else:
+            self.log.error("relaunch", "relaunch.failed", **fields,
+                           detail={"state": result["state"], "cause": result.get("cause")})
 
     def execute(self, identifier, verb, candidate, proof, authorized):
         try:

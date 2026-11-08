@@ -93,6 +93,8 @@ class VisibilityTests(unittest.TestCase):
             ("local", "agy", True): {"reconnect", "relaunch_window", "adopt_antigravity_window"},
             ("ssh", "codex", True): {"reconnect", "relaunch_window", "continue_window", "upload", "kill_tmux"},
             ("ssh", "codex", False): {"upload", "kill_tmux"},  # Sin tmux: ni reconectar ni relanzar.
+            ("local", "claude", True): {"reconnect", "relaunch_window"},  # Probado en vivo en local (08-11).
+            ("ssh", "claude", True): {"reconnect", "upload", "kill_tmux"},  # Por SSH aún no.
         }
         for (kind, agent, tmux), expected in cases.items():
             with self.subTest(kind=kind, agent=agent, tmux=tmux):
@@ -124,6 +126,22 @@ class ReconnectBoxTests(unittest.TestCase):
             "1": surface("1", here), "2": surface("2", here, tmux=False), "3": surface("3", other)})
         MainWindow.action_reconnect_workspace(desktop)
         self.assertEqual(launched, ["1"])
+
+
+@unittest.skipUnless(GTK_AVAILABLE, "GTK display required for menu behavior")
+class BoxListRoutingTests(unittest.TestCase):
+    """Una ListBoxRow no tiene GdkWindow: el clic derecho lo recibe la lista y lo pasa a su fila."""
+
+    def test_right_click_on_the_list_opens_the_menu_of_the_row_under_the_pointer(self):
+        rows = {40: SimpleNamespace(workspace_id="caja")}
+        opened = []
+        desktop = SimpleNamespace(sidebar_workspace_context=lambda row, event: opened.append(row.workspace_id) or True)
+        listing = SimpleNamespace(get_row_at_y=lambda y: rows.get(y))
+        self.assertTrue(MainWindow.sidebar_list_context(desktop, listing, SimpleNamespace(button=3, y=40.7)))
+        self.assertEqual(opened, ["caja"])
+        self.assertFalse(MainWindow.sidebar_list_context(desktop, listing, SimpleNamespace(button=3, y=500)))
+        self.assertFalse(MainWindow.sidebar_list_context(desktop, listing, SimpleNamespace(button=1, y=40)))
+        self.assertEqual(opened, ["caja"])  # Ni el clic izquierdo ni el hueco abren nada.
 
 
 class CauseTextTests(unittest.TestCase):

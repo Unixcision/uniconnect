@@ -21,9 +21,19 @@ from .transport import Transport
 
 # Antigravity is announced only after its isolated close/reopen integration
 # proves a fresh pane-bound generation and unchanged conversation/configuration.
-RELAUNCHABLE = ("codex", "agy")
+# Claude (08-11): probado en vivo en local (salida limpia y escalado desde ocupado, misma
+# conversación y mismas opciones). Por SSH es el mismo trabajador, pero no se ha probado contra
+# un destino remoto con Claude, así que esa celda no se anuncia ni se intenta todavía.
+RELAUNCHABLE = ("codex", "agy", "claude")
+LOCAL_ONLY = ("claude",)
 CAPABILITIES = ("relaunch.v1",) + tuple(f"relaunch.v1.{provider}.{kind}"
-                                        for provider in RELAUNCHABLE for kind in ("local", "ssh"))
+                                        for provider in RELAUNCHABLE for kind in ("local", "ssh")
+                                        if not (kind == "ssh" and provider in LOCAL_ONLY))
+
+
+def relaunchable(provider, kind):
+    """¿Relanza este equipo esa IA en ese tipo de ventana (`local` o `ssh`)?"""
+    return provider in RELAUNCHABLE and not (kind == "ssh" and provider in LOCAL_ONLY)
 
 
 class RelaunchUnavailable(Exception):
@@ -148,16 +158,21 @@ class RelaunchAgents:
         return self.request(candidate, "adopt")
 
     def probe(self, candidate, verb):
+        # Credential first: the desktop blanks the tmux of an SSH target without one, so that it can
+        # never be downgraded to local; the user must read why (its box is locked), not «no tmux».
+        if (candidate.get("workspace") or {}).get("kind") == "ssh" and candidate.get("connection") is None:
+            raise RelaunchUnavailable("sin_credencial")
         if not candidate["record"].get("tmux"):
-            raise RelaunchUnavailable("no_soportado")
+            raise RelaunchUnavailable("sin_tmux")
         if verb != "transport.reconnect" and candidate.get("provider") in (None, "", "shell", "terminal"):
             # Ventana sin IA: se excluye con su causa, sin abrir SSH ni tocar el destino.
             raise RelaunchUnavailable("sin_ia")
         if verb in ("agent.continue", "agent.recover") and candidate.get("provider") != "codex":
-            raise RelaunchUnavailable("no_soportado")
-        if verb != "transport.reconnect" and candidate.get("provider") not in RELAUNCHABLE:
+            raise RelaunchUnavailable("proveedor_no_soportado")
+        kind = "ssh" if (candidate.get("workspace") or {}).get("kind") == "ssh" or candidate.get("connection") else "local"
+        if verb != "transport.reconnect" and not relaunchable(candidate.get("provider"), kind):
             # Una IA que este equipo no relanza aún (ver RELAUNCHABLE): fuera, sin tocar el destino.
-            raise RelaunchUnavailable("no_soportado")
+            raise RelaunchUnavailable("proveedor_no_soportado")
         return self.request(candidate, "inspect", verb=verb)
 
     def recover(self, target, operation_id):

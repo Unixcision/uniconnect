@@ -545,7 +545,7 @@ class RecoveryRuntimeTests(unittest.TestCase):
                 worker.request['expected']=proof
                 journal=root/'journal.json';worker.write(journal,{'state':'planificado'})
                 worker.perform(journal)
-                self.assertEqual(worker.read(journal),{'state':'verificado','effective_id':native})
+                self.assertEqual(worker.read(journal),{'state':'verificado','effective_id':native,'escalation':'exit'})
                 after=worker.inspect()
                 self.assertEqual(after['pane'],proof['pane'])
                 self.assertEqual(after.get('launcher'),proof.get('launcher'))

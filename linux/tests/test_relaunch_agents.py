@@ -27,24 +27,31 @@ class ArgumentsTests(unittest.TestCase):
     def setUp(self):
         self.catalog = AgentResumeCatalog().providers
 
-    def test_replaces_effective_id_keeps_model_and_quoted_arguments_and_forces_no_prompt(self):
-        # Decisión de Dani (24-09): se relanza siempre sin preguntas; --yolo sustituye a -s/-a.
+    def test_replaces_effective_id_and_keeps_the_same_options(self):
+        # Dani (08-11, relaunch-v1): las MISMAS opciones; nada de imponer --yolo ni el bypass.
         args = TargetWorker.resume_arguments("codex", ["/bin/codex", "resume", "-C", "/work with spaces",
             "-m", "model", "--sandbox", "workspace-write", "--ask-for-approval", "on-request", "old"], "current", self.catalog)
-        self.assertEqual(args, ["/bin/codex", "--yolo", "resume", "current", "-C", "/work with spaces", "-m", "model",
-                                "--no-alt-screen"])
+        self.assertEqual(args, ["/bin/codex", "resume", "current", "-C", "/work with spaces", "-m", "model",
+                                "--sandbox", "workspace-write", "--ask-for-approval", "on-request", "--no-alt-screen"])
+        dropped = []
         args = TargetWorker.resume_arguments("claude", ["/bin/claude", "--resume", "old", "--model", "model",
-            "--permission-mode", "default", "--append-system-prompt", "x; $(not a shell command)"], "current", self.catalog)
-        self.assertEqual(args, ["/bin/claude", "--resume", "current", "--model", "model", "--permission-mode", "default",
-                                "--append-system-prompt", "x; $(not a shell command)", "--dangerously-skip-permissions"])
+            "--permission-mode", "default", "--append-system-prompt", "x; $(not a shell command)"], "current",
+            self.catalog, dropped=dropped)
+        self.assertEqual(args, ["/bin/claude", "--resume", "current", "--model", "model", "--permission-mode", "default"])
+        self.assertEqual(dropped, ["--append-system-prompt"])  # Texto de prompt: nunca vuelve, se nombra.
 
-    def test_codex_resume_is_codex_yolo_resume_id_in_every_launch_form(self):
-        for argv in (["codex", "resume", "old", "--yolo"], ["codex", "--yolo", "resume", "old"],
-                     ["codex", "resume", "old", "--dangerously-bypass-approvals-and-sandbox"],
-                     ["codex", "--full-auto"], ["codex", "-a", "never", "-s", "danger-full-access"]):
+    def test_codex_resume_keeps_exactly_the_permissions_it_ran_with(self):
+        cases = {("codex", "resume", "old", "--yolo"): ["codex", "resume", "current", "--yolo", "--no-alt-screen"],
+                 ("codex", "--yolo", "resume", "old"): ["codex", "resume", "current", "--yolo", "--no-alt-screen"],
+                 ("codex", "resume", "old", "--dangerously-bypass-approvals-and-sandbox"):
+                     ["codex", "resume", "current", "--dangerously-bypass-approvals-and-sandbox", "--no-alt-screen"],
+                 ("codex", "--full-auto"): ["codex", "resume", "current", "--full-auto", "--no-alt-screen"],
+                 ("codex", "-a", "never", "-s", "danger-full-access"):
+                     ["codex", "resume", "current", "-a", "never", "-s", "danger-full-access", "--no-alt-screen"],
+                 ("codex",): ["codex", "resume", "current", "--no-alt-screen"]}  # Sin bypass vuelve sin bypass.
+        for argv, expected in cases.items():
             with self.subTest(argv=argv):
-                self.assertEqual(TargetWorker.resume_arguments("codex", argv, "current", self.catalog),
-                                 ["codex", "--yolo", "resume", "current", "--no-alt-screen"])
+                self.assertEqual(TargetWorker.resume_arguments("codex", list(argv), "current", self.catalog), expected)
 
     def test_codex_relaunch_keeps_inline_mode_once_across_repeated_relaunches(self):
         for options in ([], ["--no-alt-screen"], ["--no-alt-screen", "--search"]):
@@ -90,18 +97,27 @@ class ArgumentsTests(unittest.TestCase):
         # Sin noPrompt en el catálogo (petición antigua o proveedor sin política) no se añade nada.
         self.assertEqual(TargetWorker.no_prompt("codex", ["codex", "resume", "x"], {"codex": {}}), ["codex", "resume", "x"])
 
-    def test_prompt_subcommand_and_unknown_option_are_not_replayed(self):
-        for argv in (["codex", "exec", "fix"], ["codex", "resume", "old", "do anything"],
-                     ["codex", "--unknown"], ["claude", "--print", "prompt"], ["claude", "--resume"]):
-            with self.subTest(argv=argv), self.assertRaises(Unavailable):
-                TargetWorker.resume_arguments(argv[0], argv, "current", self.catalog)
+    def test_prompt_subcommand_and_unknown_option_are_not_replayed_and_no_longer_block(self):
+        cases = {("codex", "exec", "fix"): ["<posicional>", "<posicional>"],
+                 ("codex", "resume", "old", "do anything"): ["<posicional>"],
+                 ("codex", "--unknown"): ["--unknown"],
+                 ("claude", "--print", "prompt"): ["--print"],  # Su valor se va con ella.
+                 ("claude", "--resume"): []}
+        for argv, expected in cases.items():
+            with self.subTest(argv=argv):
+                dropped = []
+                args = TargetWorker.resume_arguments(argv[0], list(argv), "current", self.catalog, dropped=dropped)
+                self.assertEqual(dropped, expected)
+                for text in ("fix", "do anything", "prompt", "exec"):
+                    self.assertNotIn(text, args)
+                self.assertIn("current", args)
 
     def test_managed_notify_is_not_duplicated_and_user_configuration_is_retained(self):
         from uniconnect.agent_identity_hook import BOOTSTRAP
         hook = json.dumps(["/usr/bin/python3", "-c", BOOTSTRAP, "signal"])
         args = TargetWorker.resume_arguments("codex", ["codex", "resume", "old", "-c", "notify=" + hook,
             "-c", 'model_reasoning_effort="high"'], "current", self.catalog)
-        self.assertEqual(args, ["codex", "--yolo", "resume", "current", "-c", 'model_reasoning_effort="high"',
+        self.assertEqual(args, ["codex", "resume", "current", "-c", 'model_reasoning_effort="high"',
                                 "--no-alt-screen"])
 
     def test_codex_resume_uses_proven_current_model_effort_and_keeps_other_config(self):
@@ -139,25 +155,33 @@ class ArgumentsTests(unittest.TestCase):
         self.assertEqual(TargetWorker.no_prompt("agy", ["agy", "--conversation", identifier], self.catalog),
                          ["agy", "--conversation", identifier])
 
-    def test_antigravity_resume_rejects_ambiguous_identity_prompts_and_unknown_options(self):
+    def test_antigravity_resume_rejects_ambiguous_identity_and_leaves_out_prompts_and_unknown_options(self):
         identifier = "4a1ec7f2-126f-4e63-a347-92ab4576fdda"
         for argv in (["agy", "--model", "m"],
                      ["agy", "--conversation", "other"],
-                     ["agy", "--conversation", identifier, "--conversation", identifier],
-                     ["agy", "--conversation", identifier, "--continue"],
-                     ["agy", "--conversation", identifier, "--unknown", "x"],
-                     ["agy", "--conversation", identifier, "do this task"],
-                     ["agy", "--conversation", identifier, "--dangerously-skip-permissions",
-                      "--dangerously-skip-permissions"]):
-            with self.subTest(argv=argv), self.assertRaises(Unavailable):
+                     ["agy", "--conversation", identifier, "--conversation", identifier]):
+            with self.subTest(argv=argv), self.assertRaises(Unavailable) as error:
                 TargetWorker.resume_arguments("agy", argv, identifier, self.catalog)
+            self.assertEqual(error.exception.cause, "identidad_ambigua")  # La identidad sigue sin adivinarse.
+        for argv, expected in (((["agy", "--conversation", identifier, "--continue"]), ["--continue"]),
+                               ((["agy", "--conversation", identifier, "--unknown", "x"]), ["--unknown"]),
+                               ((["agy", "--conversation", identifier, "do this task"]), ["<posicional>"]),
+                               ((["agy", "--conversation", identifier, "--dangerously-skip-permissions",
+                                  "--dangerously-skip-permissions"]), [])):
+            with self.subTest(argv=argv):
+                dropped = []
+                args = TargetWorker.resume_arguments("agy", argv, identifier, self.catalog, dropped=dropped)
+                self.assertEqual(dropped, expected)
+                self.assertNotIn("do this task", args)
+                self.assertNotIn("x", args)
+                self.assertLessEqual(args.count("--dangerously-skip-permissions"), 1)
 
     def test_unknown_provider_is_visible_but_does_not_issue_any_process_command(self):
         worker = TargetWorker({"session": "fixture", "socket": "fixture", "provider": "grok", "catalog": self.catalog})
         worker.pane = lambda: ({}, {}, "0", "")
         with self.assertRaises(Unavailable) as error:
             worker.inspect()
-        self.assertEqual(error.exception.cause, "no_soportado")
+        self.assertEqual(error.exception.cause, "proveedor_no_soportado")
 
     def test_window_without_agent_is_excluded_as_sin_ia_without_touching_the_host(self):
         calls = []
@@ -175,6 +199,10 @@ class ArgumentsTests(unittest.TestCase):
         self.assertIn("agy", RELAUNCHABLE)
         self.assertIn("relaunch.v1.agy.local", CAPABILITIES)
         self.assertIn("relaunch.v1.agy.ssh", CAPABILITIES)
+        from uniconnect.relaunch_agents import relaunchable
+        self.assertTrue(relaunchable("claude", "local"))
+        self.assertFalse(relaunchable("claude", "ssh"))  # Mismo trabajador, sin prueba en un remoto con Claude.
+        self.assertNotIn("relaunch.v1.claude.ssh", CAPABILITIES)
         adapter = RelaunchAgents()
         calls = []
         adapter.request = lambda candidate, action, **values: calls.append((candidate, action, values)) or {"key": "proof"}
@@ -390,17 +418,26 @@ class ClaudeDialectTests(unittest.TestCase):
         data = {"pid": 4242, "sessionId": self.SESSION, "cwd": "/w", "status": "idle", **values}
         (self.config / "sessions" / "4242.json").write_text(json.dumps(data))
 
-    def test_identity_only_from_its_own_ficha_and_only_when_idle(self):
+    def test_status_becomes_a_warning_and_only_an_unknown_one_excludes(self):
+        self.assertIsNone(TargetWorker.claude_warning("idle", False))
+        self.assertEqual(TargetWorker.claude_warning("idle", True), "tareas_de_fondo")
+        self.assertEqual(TargetWorker.claude_warning("busy", False), "tareas_de_fondo")
+        self.assertEqual(TargetWorker.claude_warning("shell", False), "tareas_de_fondo")
+        self.assertEqual(TargetWorker.claude_warning("waiting", False), "permisos")
+        for unknown in (None, "raro"):
+            with self.subTest(status=unknown), self.assertRaises(Unavailable) as error:
+                TargetWorker.claude_warning(unknown, False)
+            self.assertEqual(error.exception.cause, "dialogo_desconocido")
+
+    def test_identity_only_from_its_own_ficha(self):
         with self.assertRaises(Unavailable) as missing:
             self.worker.native_id("claude", self.process, "", {})
         self.assertEqual(missing.exception.cause, "identidad_ambigua")
         self.ficha()
         self.assertEqual(self.worker.native_id("claude", self.process, "", {}), self.SESSION)
         self.worker.quiescent_configuration("claude", self.process, self.SESSION, "")
-        self.ficha(status="busy")
-        with self.assertRaises(Unavailable) as busy:
-            self.worker.quiescent_configuration("claude", self.process, self.SESSION, "")
-        self.assertEqual(busy.exception.cause, "dialogo_desconocido")
+        self.ficha(status="busy")  # Ocupado ya no excluye: es un aviso que decide inspect (08-11).
+        self.worker.quiescent_configuration("claude", self.process, self.SESSION, "")
         self.ficha(pid=999)  # Ficha copiada de otro proceso: no es la suya.
         with self.assertRaises(Unavailable) as foreign:
             self.worker.native_id("claude", self.process, "", {})
@@ -914,7 +951,7 @@ class TargetIntegrationTests(unittest.TestCase):
                             AgentResumeCatalog().providers), initial_configuration)
                     result = adapter.execute(candidate, "agent.relaunch", proof, str(uuid.uuid4()),
                                              phases.append, lambda: True)
-                    if result != {"state": "verificado", "effective_id": native}:
+                    if result != {"state": "verificado", "effective_id": native, "escalation": "exit"}:
                         try:
                             post_probe = adapter.probe(candidate, "agent.relaunch")
                             post_probe_summary = {key: post_probe.get(key) == proof.get(key) for key in (
@@ -1132,7 +1169,7 @@ class TargetIntegrationTests(unittest.TestCase):
                 screen_until(lambda screen: screen.splitlines()[0].strip() == "›" and "borrador" not in screen)
                 phases.clear()
                 result = adapter.execute(candidate, "agent.relaunch", proof, operation, phases.append, lambda: True)
-                self.assertEqual(result, {"state": "verificado", "effective_id": native})
+                self.assertEqual(result, {"state": "verificado", "effective_id": native, "escalation": "exit"})
                 new = adapter.probe(candidate, "agent.relaunch")
                 self.assertEqual(new["pane"], proof["pane"])
                 self.assertNotEqual((new["pid"], new["start"]), (proof["pid"], proof["start"]))

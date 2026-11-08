@@ -194,8 +194,17 @@ class TerminalSurface(Gtk.Box):
         self.status_label.set_text(f'{self.owner._(status)}  ·  {suffix}')
         self.owner.refresh_sidebar()
 
+    def _log(self, level, event, **detail):
+        """log.v1 (área reconnect): ids de caja y ventana y una causa corta, nunca la pantalla."""
+        log = getattr(self.owner, "event_log", None)
+        if log is not None:
+            log.write(level, "reconnect", event, workspace=self.workspace.get("id"), window=self.record.get("id"),
+                      detail=detail or None)
+
     def launch(self, create=False):
         """An explicit reconnect starts a new bounded recovery budget."""
+        if self.generation > 0 and not create:
+            self._log("info", "reconnect.start", kind=self.workspace.get("kind"))
         self._reset_selection = self.generation > 0 and not create
         self._cancel_reconnect(reset=True)
         self._server_policy = None
@@ -396,9 +405,12 @@ class TerminalSurface(Gtk.Box):
                 return
             detail = self.owner._("Reconnect attempts exhausted")
             endpoint = self._ssh_endpoint()
+            self._log("warn", "reconnect.failed", cause="attempts_exhausted", code=code)
         else:
             detail = self.owner._("Exit {code}").format(code=code)
             self._cancel_reconnect(reset=True)
+            if code:
+                self._log("warn", "reconnect.failed", cause="exit", code=code)
         self._release_ownership()
         self.update_status("Disconnected", detail)
         if endpoint is not None:
@@ -445,6 +457,7 @@ class TerminalSurface(Gtk.Box):
             self._retry_source = None
             if self._clock() - self._outage_started >= 60:
                 endpoint = self._ssh_endpoint()
+                self._log("warn", "reconnect.failed", cause="attempts_exhausted", attempts=self._retry_attempts)
                 self._release_ownership()
                 self.update_status("Disconnected", self.owner._("Reconnect attempts exhausted"))
                 if endpoint is not None:
@@ -466,6 +479,7 @@ class TerminalSurface(Gtk.Box):
 
         def stable():
             if not self.disposed and generation == self.generation and self.pid == pid:
+                self._log("info", "reconnect.ok", attempts=self._retry_attempts)
                 self._stable_source = None
                 self._outage_started = None
                 self._retry_attempts = 0

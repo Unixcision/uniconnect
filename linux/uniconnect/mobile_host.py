@@ -11,6 +11,7 @@ import uuid
 from collections import deque
 
 from .mobile_access import tailnet_address
+from .event_log import NullLog
 from .mobile_protocol import FrameDecoder, RPCError, encode_frame
 
 
@@ -38,8 +39,9 @@ class MobileHost:
     MAX_CLIENTS = 16
 
     def __init__(self, access, rpc, *, port=58465, resolve=verified_tailscale_address, translate=lambda value: value,
-                 clock=time.monotonic):
+                 clock=time.monotonic, log=None):
         self.access, self.rpc, self.port, self.resolve = access, rpc, port, resolve
+        self.log = log or NullLog()  # log.v1, área mobile.
         self.translate = translate
         self.clock = clock
         self.lock = threading.RLock()
@@ -99,6 +101,7 @@ class MobileHost:
                         continue
                     client = _Client(self, connection, peer)
                     self.clients.add(client)
+                self.log.info("mobile", "mobile.connect", detail={"peer": peer})
                 threading.Thread(target=client.run, name="uc-mobile-peer", daemon=True).start()
         except Exception:
             clients = []
@@ -297,6 +300,8 @@ class _Client:
                 retained = deque((old_key, old_data) for old_key, old_data in self.queue if old_key != key)
                 self.queue, self.queue_bytes = retained, sum(len(item[1]) for item in retained)
             if self.queue_bytes + len(data) > 2 * 1024 * 1024 or len(self.queue) >= 128:
+                self.host.log.warn("mobile", "mobile.queue_overflow",
+                                   detail={"peer": self.peer, "queued": len(self.queue)})
                 self._close_locked()  # Claim cleanup before another producer can enqueue.
                 return None
             self.queue.append((key, data))
@@ -383,6 +388,7 @@ class _Client:
         except (OSError, ValueError, TypeError):
             pass
         finally:
+            self.host.log.info("mobile", "mobile.disconnect", detail={"peer": self.peer, "reason": "closed"})
             self.close()
 
     def handle(self, request):
@@ -419,6 +425,8 @@ class _Client:
                     self.streams[stream] = (frozenset(topics) & allowed, surfaces)
                     self.topics = set().union(*(topics for topics, _ in self.streams.values()))
                     result = {"stream_id": stream, "topics": sorted(self.streams[stream][0])}
+                self.host.log.info("mobile", "mobile.subscribe", detail={
+                    "topics": result["topics"], "surfaces": None if surfaces is None else len(surfaces)})
             elif method == "mobile.events.unsubscribe":
                 stream = params.get("stream_id")
                 if not isinstance(stream, str):
@@ -439,6 +447,8 @@ class _Client:
                     except Exception:
                         self.close()  # The ACK already exists; never send a second response.
         except RPCError as error:
+            self.host.log.warn("mobile", "mobile.rpc_error",
+                               detail={"method": method if isinstance(method, str) else None, "code": error.code})
             self.enqueue(error.response(identifier, self.host.translate))
         except Exception:
             self.enqueue(RPCError("internal_error", "No se pudo completar la operación remota").response(identifier, self.host.translate))

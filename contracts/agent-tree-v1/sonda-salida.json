@@ -27,7 +27,13 @@
         "pid": 41251,
         "status": "busy",
         "version": "2.1.280",
-        "proc_start": "Thu Sep 24 14:02:11 2026"
+        "proc_start": "Thu Sep 24 14:02:11 2026",
+        "launch": {
+          "arguments": [
+            "--dangerously-skip-permissions"
+          ],
+          "is_sandbox": null
+        }
       },
       "panes": [
         {
@@ -56,7 +62,13 @@
         "pid": 41402,
         "status": null,
         "version": null,
-        "proc_start": null
+        "proc_start": null,
+        "launch": {
+          "arguments": [
+            "--yolo"
+          ],
+          "is_sandbox": null
+        }
       },
       "panes": [
         {
@@ -85,7 +97,11 @@
         "pid": 41522,
         "status": null,
         "version": null,
-        "proc_start": null
+        "proc_start": null,
+        "launch": {
+          "arguments": [],
+          "is_sandbox": null
+        }
       },
       "panes": [
         {
@@ -171,7 +187,13 @@
         "pid": 41960,
         "status": null,
         "version": null,
-        "proc_start": null
+        "proc_start": null,
+        "launch": {
+          "arguments": [
+            "--yolo"
+          ],
+          "is_sandbox": null
+        }
       },
       "panes": [
         {

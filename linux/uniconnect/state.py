@@ -169,6 +169,7 @@ class StateStore:
                 raise StateError("Workspace state disappeared; reload before saving")
             atomic_write(self.path, encoded)
             self._disk_revision = hashlib.sha256(encoded).hexdigest()
+            self._write_agent_tree(clean)
         # UI action closures retain workspace/window dictionaries between saves.
         # Keep their identity stable; only the on-disk projection is reconstructed.
         self.data["savedAt"] = clean["savedAt"]
@@ -178,6 +179,19 @@ class StateStore:
                 self.last_backup_error = None
             except (VaultError, StateError, OSError):
                 self.last_backup_error = "Recovery checkpoint unavailable; unlock the vault and persist again"
+
+    def _write_agent_tree(self, clean: dict) -> None:
+        """agent-tree-v1 (08-11): el árbol de conexiones completo junto al estado.
+
+        Se construye con el estado ya limpio (sin secretos). Un fallo aquí nunca impide
+        guardar: queda en ``last_tree_error`` y el siguiente guardado lo vuelve a intentar.
+        """
+        try:
+            from .agent_tree_document import build, encode
+            atomic_write(self.root / "agent-tree.json", encode(build(clean, now=clean.get("savedAt"))))
+            self.last_tree_error = None
+        except (OSError, ValueError, TypeError) as error:
+            self.last_tree_error = type(error).__name__
 
     def _model_references(self) -> dict:
         references = {}

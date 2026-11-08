@@ -18,7 +18,7 @@ class MobileDesktop:
         # Un finally no cubre que el proceso muera: el arranque barre los audios que
         # dejó una caída anterior antes de que nadie pueda dictar de nuevo.
         self.rpc.transcription.sweep_orphans()
-        self.host = MobileHost(self.access, self.rpc, translate=window._)
+        self.host = MobileHost(self.access, self.rpc, translate=window._, log=getattr(window, "event_log", None))
         self.rpc.host = self.host
         self.dialog = None
         self.refresh_source = None
