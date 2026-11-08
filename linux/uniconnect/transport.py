@@ -433,8 +433,16 @@ class TmuxCommand:
         name = shlex.quote(window["tmux"])
         target = shlex.quote("=" + window["tmux"])
         option_target = shlex.quote("=" + window["tmux"] + ":")
+        # Every set-option redraws EVERY client of that tmux server, and the PTY tee
+        # read the redraw as output: reattaching 37 windows lit up 37 spinners. The
+        # mouse option is set when a session is created; a reattach only reads it and
+        # repairs it if it is missing (a session born outside UniConnect).
+        mouse = (f'[ "$({binary} show-options -qv -t {option_target} mouse 2>/dev/null)" = on ] || '
+                 f"{binary} set-option -t {option_target} mouse on; ")
+        reattach = selection_style + mouse + f"exec {binary} attach-session -t {target}"
         if create:
             # -A passes the initial command only on creation, never into an existing pane.
+            # It stays for the race with another creator; an existing session reattaches first.
             creation = (f"new-session -A -s {name} -c {shlex.quote(window['cwd'])} "
                         f"{shlex.quote(TmuxCommand.pane_command(window))} "
                         f"\\; set-option -t {option_target} mouse on")
@@ -442,9 +450,10 @@ class TmuxCommand:
                             + (f" \\; run-shell {shlex.quote(selection)}" if selection else ""))
             setup, creator = TmuxCommand._creation_prefix(socket_name)
             directory = f"test -d {shlex.quote(window['cwd'])} || exit 72; "
+            existing = f"if {binary} has-session -t {target} 2>/dev/null; then {reattach}; fi; "
             if not setup and not server_setup:
-                return f"{directory}exec {binary} {creation}"
-            return (directory + TmuxCommand.fresh_server_check(binary)
+                return f"{directory}{existing}exec {binary} {creation}"
+            return (directory + existing + TmuxCommand.fresh_server_check(binary)
                     + f'if [ "$uc_fresh" = 1 ]; then {setup}exec {creator} {creation}{server_setup}; '
                     + f'else {selection_style}fi; '
                     + f"exec {binary} {creation}")
@@ -452,9 +461,7 @@ class TmuxCommand:
         # change server clipboard options, mouse bindings, or user themes.
         return (f"command -v tmux >/dev/null 2>&1 || exit 127; "
                 f"{binary} has-session -t {target} 2>/dev/null || exit 72; "
-                + selection_style
-                + f"{binary} set-option -t {option_target} mouse on; "
-                f"exec {binary} attach-session -t {target}")
+                + reattach)
 
 
 def terminal_launch(workspace: Mapping, window: Mapping, connect_command: str | SSHCommand | None = None,

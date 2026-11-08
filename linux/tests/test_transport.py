@@ -322,6 +322,41 @@ class TmuxHistoryBehaviorTests(unittest.TestCase):
     def identity(self, socket, name="subject"):
         return self.tmux(socket, "display-message", "-p", "-t", "=" + name + ":", "#{pane_pid}:#{history_limit}")
 
+    def set_options_after(self, socket, log, action):
+        """Ejecuta `action` y devuelve los set-option que vio el hook after-set-option."""
+        self.tmux(socket, "set-hook", "-g", "after-set-option",
+                  f"run-shell \"echo '#{{hook_arguments}}' >> {log}\"")
+        action()
+        # El hook escribe con run-shell en segundo plano; una marca propia dice que ya pasó todo.
+        self.tmux(socket, "run-shell", f"echo FIN >> {log}")
+        for _ in range(50):
+            if log.exists() and "FIN" in log.read_text():
+                break
+            select.select([], [], [], 0.1)
+        lines = log.read_text().splitlines()
+        log.unlink()
+        self.tmux(socket, "set-hook", "-gu", "after-set-option")
+        return [line for line in lines if line != "FIN"]
+
+    def test_reattach_never_runs_set_option_unless_mouse_is_missing(self):
+        # Cada set-option redibuja todos los clientes del servidor, y el tee del PTY lo leía
+        # como salida: reenganchar 37 ventanas encendía 37 spinners.
+        for socket in ("user-custom", "uniconnect"):
+            with self.subTest(socket=socket):
+                log = self.root / f"{socket}-set-option.log"
+                self.create(socket, "ensure")
+                seen = self.set_options_after(socket, log, lambda: (
+                    self.create(socket, "attach", create=False),
+                    self.create(socket, "attach", create=True)))
+                self.assertEqual([], [line for line in seen if "mouse" in line])
+                if socket == "user-custom":
+                    self.assertEqual([], seen)  # Sin políticas del socket propio: ni un set-option.
+                # Control: una sesión nacida fuera de UniConnect, sin mouse propio, se repara una vez.
+                self.tmux(socket, "new-session", "-d", "-s", "foreign", "-c", str(self.root), "/bin/sleep", "60")
+                seen = self.set_options_after(socket, log, lambda: self.create(socket, "attach", "foreign", create=False))
+                self.assertEqual(["-t =foreign: mouse on"], [line for line in seen if "mouse" in line])
+                self.assertEqual("on", self.tmux(socket, "show-options", "-qv", "-t", "=foreign:", "mouse"))
+
     def test_dedicated_first_panes_keep_5100_lines_in_both_creation_routes(self):
         for socket in ("uniconnect", "uniconnect-local"):
             for route in ("ensure", "attach"):
