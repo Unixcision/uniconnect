@@ -36,9 +36,33 @@ data class MachineModel(
     val noticeLink: NotificationLinkState?,
     /** False when the host does not keep favourites and order: they then live only on this phone. */
     val hostKeepsOrder: Boolean?,
+    /** Whether the host sends when each window's last prompt was written (`recent-prompts.v1`). */
+    val listsRecentPrompts: Boolean = false,
+    /**
+     * «Now» for every «Hace X» on this screen, read once by whoever builds the model. The designs
+     * never read the clock: a list drawn twice must say the same thing both times.
+     */
+    val nowEpochSeconds: Long = 0L,
 ) {
     /** Whether a new workspace can be asked for now. */
     val canCreateWorkspace: Boolean get() = connected
+
+    /**
+     * Whether the «Recientes» tab is offered: the host announces the times and at least one
+     * window has one. An empty tab would only say that nothing was ever written, which the
+     * workspaces already show.
+     */
+    val canShowRecent: Boolean get() = listsRecentPrompts && sections.any { section -> section.windows.any { it.window.lastPromptAt != null } }
+
+    /**
+     * The windows of every workspace whose AI was last written to, the most recent first, with
+     * the workspace each belongs to; [filter] applies here too. A window without a time (no AI, no
+     * conversation, no prompt yet) is not listed: «Recientes» is about what the reader wrote.
+     */
+    fun recentWindows(filter: WindowFilter = WindowFilter.ALL): List<RecentWindow> =
+        sections.flatMap { section ->
+            section.windows.mapNotNull { item -> item.window.lastPromptAt?.let { RecentWindow(section.workspace, item, it) } }
+        }.filter { filter.accepts(it.item.activity) }.sortedByDescending { it.lastPromptAt }
 
     /**
      * The tab the machine screen opens on: the workspace a notice or a closed window pointed at,
@@ -51,11 +75,19 @@ data class MachineModel(
             ?: sections.firstOrNull()?.workspace?.id
             ?: WorkspaceTabs.ALL
 
-    /** [tab] if it still names a workspace (or is [WorkspaceTabs.ALL]); otherwise [defaultTab]. */
+    /**
+     * [tab] if it still names a workspace (or is [WorkspaceTabs.ALL], or [WorkspaceTabs.RECENT]
+     * while [canShowRecent]); otherwise [defaultTab].
+     */
     fun effectiveTab(tab: String?): String =
-        tab?.takeIf { it == WorkspaceTabs.ALL || sections.any { section -> section.workspace.id == it } } ?: defaultTab()
+        tab?.takeIf {
+            it == WorkspaceTabs.ALL || (it == WorkspaceTabs.RECENT && canShowRecent) || sections.any { section -> section.workspace.id == it }
+        } ?: defaultTab()
 
-    /** What the screen lists under [tab] with [filter]: one workspace, or all of them. */
+    /**
+     * What the screen lists under [tab] with [filter]: one workspace, or all of them. Under
+     * [WorkspaceTabs.RECENT] there are no sections: that tab lists [recentWindows] instead.
+     */
     fun visible(tab: String, filter: WindowFilter): List<WorkspaceSection> {
         val shown = filtered(filter)
         return if (tab == WorkspaceTabs.ALL) shown else shown.filter { it.workspace.id == tab }
@@ -75,6 +107,7 @@ data class MachineModel(
             hostKeepsOrder: Boolean?,
             noticeLink: NotificationLinkState?,
             focusWorkspaceID: String?,
+            nowEpochSeconds: Long = 0L,
         ): MachineModel {
             val snapshot = connection.snapshot
             val live = connection.connected
@@ -99,6 +132,7 @@ data class MachineModel(
                 machine = machine, connected = live, checking = connection.checking, error = connection.error,
                 hasSnapshot = snapshot != null, summary = HomeSummary.of(live, snapshot), sections = sections,
                 focusWorkspaceID = focusWorkspaceID, noticeLink = noticeLink, hostKeepsOrder = hostKeepsOrder,
+                listsRecentPrompts = snapshot?.listsRecentPrompts == true, nowEpochSeconds = nowEpochSeconds,
             )
         }
     }
@@ -125,6 +159,17 @@ data class WindowItem(
     val activity: ActivityState?,
     /** The AI's name ("Claude", "Codex"), or null for a plain terminal. */
     val agent: String?,
+)
+
+/**
+ * One window under «Recientes»: its row, the workspace it belongs to (named in a small box beside
+ * it) and when its last prompt was written, in seconds since the epoch.
+ */
+@Immutable
+data class RecentWindow(
+    val workspace: RemoteWorkspace,
+    val item: WindowItem,
+    val lastPromptAt: Long,
 )
 
 /** What the machine screen can do; every design wires the same actions. */

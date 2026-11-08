@@ -9,6 +9,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -89,11 +90,13 @@ import com.unixcision.uniconnect.android.ui.design.MachineActions
 import com.unixcision.uniconnect.android.ui.design.MachineModel
 import com.unixcision.uniconnect.android.ui.design.MachineOfflineCard
 import com.unixcision.uniconnect.android.ui.design.MachineStaleBanner
+import com.unixcision.uniconnect.android.ui.design.RecentWindow
 import com.unixcision.uniconnect.android.ui.design.WindowItem
 import com.unixcision.uniconnect.android.ui.design.WorkspaceSection
 import com.unixcision.uniconnect.android.ui.design.WorkspaceTabSelection
 import com.unixcision.uniconnect.android.ui.design.WorkspaceTabs
 import com.unixcision.uniconnect.android.ui.design.activityText
+import com.unixcision.uniconnect.android.ui.design.elapsedText
 import com.unixcision.uniconnect.android.ui.design.rememberWorkspaceTab
 import com.unixcision.uniconnect.android.ui.design.windowLine
 import com.unixcision.uniconnect.android.ui.theme.ContinuousRoundedShape
@@ -110,6 +113,8 @@ private val TabInset = 10.dp
  * large in the serif with one paragraph of how it is, then the workspaces as an index of numbered
  * chapters («Todos · 01 PROYECTOS · 02 NOTBETTING…») that stays on top while the reader scrolls.
  * The chosen chapter's windows are listed underneath; «Todos» lists every chapter with its own head.
+ * When the machine says when each window was last written to, «Recientes» opens the index and lists
+ * the windows of every chapter by their last prompt, each with its chapter's name beside it.
  *
  * Every window is its own lazy item, so a machine with a hundred of them composes only what is on
  * screen; the card a workspace's windows share is drawn piece by piece by the rows themselves.
@@ -123,7 +128,9 @@ fun ArenaMachine(model: MachineModel, actions: MachineActions, menu: @Composable
     val shown = if (model.connected) filter else WindowFilter.ALL
     val tab = rememberWorkspaceTab(model)
     val lines = remember(model, shown, tab.selected) { arenaLines(model, shown, tab.selected) }
-    val counts = remember(model, tab.selected) { FilterCounts(model.visible(tab.selected, WindowFilter.ALL)) }
+    val counts = remember(model, tab.selected) {
+        FilterCounts(if (tab.showsRecent) model.recentWindows().map { it.item } else model.visible(tab.selected, WindowFilter.ALL).flatMap { it.windows })
+    }
     val list = rememberLazyListState()
     val index = rememberLazyListState()
     // The tab the list was last set for: a rotation starts the effect below again and must not move the list.
@@ -177,6 +184,11 @@ fun ArenaMachine(model: MachineModel, actions: MachineActions, menu: @Composable
                                 onOpen = { actions.onOpenWindow(line.section.workspace.id, line.item.window.id) },
                                 onHold = { actions.onHoldWindow(line.section.workspace.id, line.item.window.id) },
                             )
+                            is Line.Recent -> RecentRow(
+                                line, model.nowEpochSeconds,
+                                onOpen = { actions.onOpenWindow(line.recent.workspace.id, line.recent.item.window.id) },
+                                onHold = { actions.onHoldWindow(line.recent.workspace.id, line.recent.item.window.id) },
+                            )
                             is Line.Empty -> EmptyChapter()
                             Line.Notices -> Box(Modifier.padding(top = 28.dp)) {
                                 NotificationConnectionCard(model.noticeLink, model.connected, actions.onEnableNotices, actions.onDisableNotices)
@@ -227,11 +239,17 @@ private sealed interface Line {
     data class Empty(val section: WorkspaceSection) : Line {
         override val key: Any get() = "empty:${section.workspace.id}"
     }
+
+    /** One window under «Recientes»; [first] and [last] say which corners it draws of the one card they all share. */
+    data class Recent(val recent: RecentWindow, val first: Boolean, val last: Boolean) : Line {
+        override val key: Any get() = "recent:${recent.workspace.id}:${recent.item.window.id}"
+    }
 }
 
 /**
  * The list the machine screen draws, in order, for [filter] in [tab]: every chapter with its head
  * under «Todos», or the chosen one under its folio, which stays even when the filter empties it.
+ * «Recientes» has no heads at all: one card of windows, the last written to first.
  */
 private fun arenaLines(model: MachineModel, filter: WindowFilter, tab: String): List<Line> = buildList {
     add(Line.Identity)
@@ -247,6 +265,13 @@ private fun arenaLines(model: MachineModel, filter: WindowFilter, tab: String): 
     else {
         add(Line.Tabs)
         if (model.connected) add(Line.Filters)
+    }
+    if (tab == WorkspaceTabs.RECENT) {
+        val recent = model.recentWindows(filter)
+        if (recent.isEmpty()) add(Line.NoneFiltered)
+        recent.forEachIndexed { at, window -> add(Line.Recent(window, first = at == 0, last = at == recent.lastIndex)) }
+        if (model.connected || model.noticeLink != null) add(Line.Notices)
+        return@buildList
     }
     // A tab that names no workspace reads as «Todos», as the index marks it.
     val single = model.sections.firstOrNull { it.workspace.id == tab }
@@ -278,11 +303,11 @@ private fun MutableList<Line>.addWindows(section: WorkspaceSection) {
     }
 }
 
-/** How many windows each filter keeps in the chosen tab, counted the way the filter itself picks them. */
-private class FilterCounts(sections: List<WorkspaceSection>) {
-    val all: Int = sections.sumOf { it.windows.size }
-    val working: Int = sections.sumOf { section -> section.windows.count { WindowFilter.WORKING.accepts(it.activity) } }
-    val waiting: Int = sections.sumOf { section -> section.windows.count { WindowFilter.WAITING.accepts(it.activity) } }
+/** How many of the chosen tab's [windows] each filter keeps, counted the way the filter itself picks them. */
+private class FilterCounts(windows: List<WindowItem>) {
+    val all: Int = windows.size
+    val working: Int = windows.count { WindowFilter.WORKING.accepts(it.activity) }
+    val waiting: Int = windows.count { WindowFilter.WAITING.accepts(it.activity) }
 }
 
 /** «‹ Máquinas» on the left and the machine's menu on the right. */
@@ -339,17 +364,26 @@ private fun MachineIdentity(model: MachineModel) {
 }
 
 /**
- * The workspaces as the magazine's contents: «Todos», then each chapter with its number in the
- * serif, its name, its favourite and AI marks and how many windows it has, parted by small dots.
- * The chosen entry is set in terracotta and underlined; a long press on a chapter opens its sheet.
- * It runs to the screen's edges over a hairline, and brings the chosen entry into view.
+ * The workspaces as the magazine's contents: «Recientes» when the machine dates its prompts,
+ * «Todos», then each chapter with its number in the serif, its name, its favourite and AI marks and
+ * how many windows it has, parted by small dots. The chosen entry is set in terracotta and
+ * underlined; a long press on a chapter opens its sheet. It runs to the screen's edges over a
+ * hairline, and brings the chosen entry into view.
  */
 @Composable
 private fun ChapterIndex(model: MachineModel, tab: WorkspaceTabSelection, row: LazyListState, onHold: (String) -> Unit) {
     val colors = UniTheme.colors
     val page = UniTheme.spacing.page
     val sections = model.sections
-    val chosen = if (tab.showsAll) 0 else sections.indexOfFirst { it.workspace.id == tab.selected } + 1
+    // «Recientes» leads when offered, and every entry after it moves one place along.
+    val recent = model.canShowRecent
+    val lead = if (recent) 1 else 0
+    val recentCount = remember(model) { model.recentWindows().size }
+    val chosen = when {
+        tab.showsRecent -> 0
+        tab.showsAll -> lead
+        else -> sections.indexOfFirst { it.workspace.id == tab.selected } + 1 + lead
+    }
     // An entry already whole on screen stays where the reader left the index; one off screen (the
     // screen opening on it, a notice picking it) is scrolled to, at once before the first layout.
     LaunchedEffect(tab.selected, chosen) {
@@ -373,9 +407,20 @@ private fun ChapterIndex(model: MachineModel, tab: WorkspaceTabSelection, row: L
         contentPadding = PaddingValues(horizontal = page - TabInset),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (recent) item(key = "tab:${WorkspaceTabs.RECENT}", contentType = "recent") {
+            val on = tab.showsRecent
+            IndexTab(on, separated = false, onClick = { tab.select(WorkspaceTabs.RECENT) }, onLongClick = null) {
+                Text(
+                    stringResource(R.string.design_tab_recent), style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp, lineHeight = 20.sp),
+                    fontFamily = UniTheme.type.headlineFamily, fontWeight = FontWeight.SemiBold,
+                    color = if (on) colors.accent else colors.text, maxLines = 1,
+                )
+                TabCount(recentCount, on)
+            }
+        }
         item(key = "tab:${WorkspaceTabs.ALL}", contentType = "all") {
-            val on = chosen == 0
-            IndexTab(on, separated = false, onClick = { tab.select(WorkspaceTabs.ALL) }, onLongClick = null) {
+            val on = tab.showsAll
+            IndexTab(on, separated = recent, onClick = { tab.select(WorkspaceTabs.ALL) }, onLongClick = null) {
                 Text(
                     stringResource(R.string.arena_tab_all), style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp, lineHeight = 20.sp),
                     fontFamily = UniTheme.type.headlineFamily, fontWeight = FontWeight.SemiBold,
@@ -385,7 +430,7 @@ private fun ChapterIndex(model: MachineModel, tab: WorkspaceTabSelection, row: L
             }
         }
         itemsIndexed(sections, key = { _, section -> "tab:ws:${section.workspace.id}" }, contentType = { _, _ -> "chapter" }) { at, section ->
-            val on = chosen == at + 1
+            val on = chosen == at + 1 + lead
             val id = section.workspace.id
             IndexTab(on, separated = true, onClick = { tab.select(id) }, onLongClick = { onHold(id) }) {
                 Text(
@@ -612,25 +657,76 @@ private fun ChapterFolio(section: WorkspaceSection, onHold: () -> Unit, onToggle
  * it waits for the reader. Without a connection the item has no activity and nothing is drawn
  * for it: a list read earlier must not look busy.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun WindowRow(line: Line.Window, onOpen: () -> Unit, onHold: () -> Unit) {
     val colors = UniTheme.colors
     val item = line.item
+    WindowCard(item, line.first, line.last, onOpen, onHold) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            WindowName(item, Modifier.weight(1f, fill = false))
+            if (item.pinned) Icon(Icons.Rounded.Star, stringResource(R.string.box_pinned), Modifier.size(13.dp), tint = colors.warning)
+        }
+        windowLineStyled(item)?.let { text -> WindowDetail(text) }
+    }
+}
+
+/**
+ * One window under «Recientes»: the same row as in a chapter, with the chapter it belongs to in a
+ * small box beside its name, and how long ago the reader last wrote to it ahead of the AI's line.
+ */
+@Composable
+private fun RecentRow(line: Line.Recent, nowEpochSeconds: Long, onOpen: () -> Unit, onHold: () -> Unit) {
+    val colors = UniTheme.colors
+    val item = line.recent.item
+    val ago = elapsedText(line.recent.lastPromptAt, nowEpochSeconds)
+    val state = windowLineStyled(item)
+    WindowCard(item, line.first, line.last, onOpen, onHold, Modifier.padding(top = if (line.first) 12.dp else 0.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            WindowName(item, Modifier.weight(1f, fill = false))
+            if (item.pinned) Icon(Icons.Rounded.Star, stringResource(R.string.box_pinned), Modifier.size(13.dp), tint = colors.warning)
+            WorkspaceTag(line.recent.workspace.name)
+        }
+        val text = buildAnnotatedString {
+            ago?.let { append(it) }
+            if (state != null) {
+                if (ago != null) append(" · ")
+                append(state)
+            }
+        }
+        if (text.isNotEmpty()) WindowDetail(text)
+    }
+}
+
+/**
+ * The frame every window row shares: its piece of the card, the AI's mark in front, a «Responder»
+ * when it waits and a chevron otherwise; [content] is the name and the lines under it.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun WindowCard(
+    item: WindowItem,
+    first: Boolean,
+    last: Boolean,
+    onOpen: () -> Unit,
+    onHold: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val colors = UniTheme.colors
     val waiting = item.activity == ActivityState.WAITING
     val radius = UniTheme.shapes.cardRadius
     val edge = colors.outline
     val shape = ContinuousRoundedShape(
-        topStart = if (line.first) radius else 0.dp, topEnd = if (line.first) radius else 0.dp,
-        bottomEnd = if (line.last) radius else 0.dp, bottomStart = if (line.last) radius else 0.dp,
+        topStart = if (first) radius else 0.dp, topEnd = if (first) radius else 0.dp,
+        bottomEnd = if (last) radius else 0.dp, bottomStart = if (last) radius else 0.dp,
     )
     Row(
-        Modifier.fillMaxWidth()
-            .chapterCard(line.first, line.last, radius, colors.surface, edge)
+        modifier.fillMaxWidth()
+            .chapterCard(first, last, radius, colors.surface, edge)
             .clip(shape)
             .then(if (waiting) Modifier.background(colors.warning.copy(alpha = .07f)) else Modifier)
             .then(
-                if (line.first) Modifier
+                if (first) Modifier
                 else Modifier.drawBehind {
                     val stroke = 1.dp.toPx()
                     drawLine(edge, Offset(RowTextInset.toPx(), stroke / 2), Offset(size.width, stroke / 2), stroke)
@@ -647,26 +743,45 @@ private fun WindowRow(line: Line.Window, onOpen: () -> Unit, onHold: () -> Unit)
             if (activity == ActivityState.IDLE) Box(Modifier.size(10.dp).background(colors.muted.copy(alpha = .5f), CircleShape))
             else if (activity != null) ActivityMark(activity, size = 16.dp, tone = colors.success)
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    item.window.name, Modifier.weight(1f, fill = false),
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = .3.sp),
-                    fontFamily = UniTheme.type.identifierFamily, fontWeight = FontWeight.SemiBold, color = colors.text,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
-                if (item.pinned) Icon(Icons.Rounded.Star, stringResource(R.string.box_pinned), Modifier.size(13.dp), tint = colors.warning)
-            }
-            windowLineStyled(item)?.let { text ->
-                Text(
-                    text, style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 18.sp),
-                    color = colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp), content = content)
         if (waiting) ArenaReplyButton(onOpen)
         else Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, Modifier.size(20.dp), tint = colors.muted)
     }
+}
+
+/** A window's name, set in the identifier face. */
+@Composable
+private fun WindowName(item: WindowItem, modifier: Modifier) {
+    Text(
+        item.window.name, modifier,
+        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = .3.sp),
+        fontFamily = UniTheme.type.identifierFamily, fontWeight = FontWeight.SemiBold, color = UniTheme.colors.text,
+        maxLines = 1, overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/** The small line under a window's name. */
+@Composable
+private fun WindowDetail(text: AnnotatedString) {
+    Text(
+        text, style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 18.sp),
+        color = UniTheme.colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/**
+ * The chapter a recent window belongs to, in a small box set in the identifier face: under
+ * «Recientes» rows from every chapter sit together, and this is what tells them apart.
+ */
+@Composable
+private fun WorkspaceTag(name: String) {
+    Text(
+        name,
+        Modifier.widthIn(max = 132.dp).background(UniTheme.colors.surfaceRaised, UniTheme.shapes.chip).padding(horizontal = 7.dp, vertical = 2.dp),
+        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, lineHeight = 15.sp, letterSpacing = .5.sp),
+        fontFamily = UniTheme.type.identifierFamily, fontWeight = FontWeight.Medium, color = UniTheme.colors.muted,
+        maxLines = 1, overflow = TextOverflow.Ellipsis,
+    )
 }
 
 /** [windowLine] with its state in colour: green while the AI works, the warning tone while it waits. */

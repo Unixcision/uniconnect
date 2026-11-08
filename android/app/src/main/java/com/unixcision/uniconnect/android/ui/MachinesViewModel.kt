@@ -152,6 +152,8 @@ class MachinesViewModel(
         val attachUnsupported: Set<String> = emptySet(),
         /** Why the last automatic attach fell back to the mirror, shown so silence is not the answer. */
         val attachFallbackDetail: String? = null,
+        /** A failure told with the host's words or with what was done about it; see ``ActionNotice``. */
+        val actionNotice: ActionNotice? = null,
     )
     private val mutableState = MutableStateFlow(State())
     val state = mutableState.asStateFlow()
@@ -266,6 +268,7 @@ class MachinesViewModel(
     fun showEdit(machine: Machine) { mutableState.update { it.copy(editing = machine, formError = null) } }
     fun dismissEdit() { if (!state.value.saving) mutableState.update { it.copy(editing = null, formError = null) } }
     fun dismissError() { mutableState.update { it.copy(error = null) } }
+    fun dismissActionNotice() { mutableState.update { it.copy(actionNotice = null) } }
     fun notificationPermissionDenied() { mutableState.update { it.copy(error = R.string.notice_permission_denied) } }
     fun enableNotifications(machineID: String) {
         if (state.value.connections[machineID]?.connected == true) notificationControl.enable(machineID)
@@ -335,7 +338,8 @@ class MachinesViewModel(
         val workspaces = connection.snapshot?.workspaces ?: return
         val workspace = if (inWorkspace) workspaces.firstOrNull { it.id == current.selectedWorkspace && it.isSSH != null } ?: return else null
         val takesNewSSH = connection.snapshot?.takesNewSSH == true
-        mutableState.update { it.copy(creation = CreationContext(machineID, workspace, workspaces.filter { box -> box.isSSH == true }, takesNewSSH = takesNewSSH), creationError = null) }
+        mutableState.update { it.copy(creation = CreationContext(machineID, workspace, workspaces.filter { box -> box.isSSH == true },
+            takesNewSSH = takesNewSSH, runsAs = connection.snapshot?.runsAs == true), creationError = null) }
     }
     /**
      * Pide el plan de un relanzado y, si toca, lo enseña antes de ejecutarlo.
@@ -546,8 +550,12 @@ class MachinesViewModel(
         val current = state.value
         val context = current.creation ?: return
         if (current.creating) return
-        val latestWorkspace = current.connections[context.machineID]?.snapshot?.workspaces?.firstOrNull { it.id == context.workspace?.id }
-        if (!request.isValid() || (request is ResourceCreation.Terminal &&
+        val latestSnapshot = current.connections[context.machineID]?.snapshot
+        val latestWorkspace = latestSnapshot?.workspaces?.firstOrNull { it.id == context.workspace?.id }
+        // A switch of user goes only to a machine that said it understands one: an older host would
+        // ignore it and start the AI as the connected user without a word.
+        val unsupportedSwitch = request.runAs?.switchesUser == true && latestSnapshot?.runsAs != true
+        if (!request.isValid() || unsupportedSwitch || (request is ResourceCreation.Terminal &&
                     (latestWorkspace == null || !request.isAllowedIn(latestWorkspace)))) {
             mutableState.update { it.copy(creationError = R.string.creation_invalid) }; return
         }
@@ -565,7 +573,7 @@ class MachinesViewModel(
                     created != null && created.isSSH != null && created.windows.isEmpty()
                 val nextCreation = if (askFirstWindow) CreationContext(
                     machine.id, created, result.snapshot.workspaces.filter { box -> box.isSSH == true },
-                    firstWindow = true, takesNewSSH = result.snapshot.takesNewSSH,
+                    firstWindow = true, takesNewSSH = result.snapshot.takesNewSSH, runsAs = result.snapshot.runsAs,
                 ) else null
                 noticeNames.remember(machine.id, result.snapshot)
                 handOverBoxes(machine, result.snapshot)
@@ -577,11 +585,114 @@ class MachinesViewModel(
                 startObserving(machine, force = true)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
-                val code = (failure as? MachineFailure.Rejected)?.code
+                val rejected = failure as? MachineFailure.Rejected
+                if (rejected != null && rejected.code == RUN_AS_FAILED) { runAsFailed(machine, request, rejected); return@launch }
+                val code = rejected?.code
                 mutableState.update { it.copy(creating = false, creationError = if (code == "invalid_params" || code == "create_failed") R.string.creation_rejected else R.string.creation_uncertain) }
             }
         }
     }
+
+    /**
+     * The window was created but could not switch user, so it has its shell and no AI
+     * (`run_as_failed`, `run-as.v1`).
+     *
+     * The sheet closes either way: the window exists, and trying again from it would make a second
+     * one. With the host's id it is opened, so the reader lands where the shell is; without it the
+     * list is read again and the notice says where to look.
+     */
+    private fun runAsFailed(machine: Machine, request: ResourceCreation, rejected: MachineFailure.Rejected) {
+        val created = rejected.createdTerminalID
+        val workspaceID = (request as? ResourceCreation.Terminal)?.workspaceID
+        val opens = created != null && workspaceID != null
+        val notice = ActionNotice(
+            message = when (rejected.failureCause) {
+                "password_incorrect" -> R.string.run_as_failed_password_incorrect
+                "not_allowed" -> R.string.run_as_failed_not_allowed
+                "user_not_found" -> R.string.run_as_failed_user_not_found
+                "timeout" -> R.string.run_as_failed_timeout
+                "wrong_user" -> R.string.run_as_failed_wrong_user
+                else -> R.string.run_as_failed_failed
+            },
+            followUp = if (opens) R.string.run_as_window_opened else R.string.run_as_window_unknown,
+        )
+        if (opens) stopRealTerminal()
+        mutableState.update { it.copy(
+            creating = false, creation = null, creationError = null, actionNotice = notice,
+            selectedMachine = machine.id,
+            selectedWorkspace = if (opens) workspaceID else it.selectedWorkspace,
+            selectedWindow = if (opens) created else it.selectedWindow,
+            terminal = if (opens) null else it.terminal, terminalError = if (opens) null else it.terminalError,
+            terminalLoading = if (opens) true else it.terminalLoading,
+        ) }
+        // The new window is not in the list the phone holds yet: the fresh observation brings it.
+        startObserving(machine, force = true)
+    }
+
+    /** Closes a workspace and every window in it, on the machine and its desktop (`box-close.v1`). */
+    fun closeWorkspace(workspaceID: String) = closeBox(workspaceID, windowID = null)
+
+    /** Closes one window, on the machine and its desktop (`box-close.v1`). */
+    fun closeWindow(workspaceID: String, windowID: String) = closeBox(workspaceID, windowID)
+
+    private val closing = mutableSetOf<String>()
+
+    /**
+     * The one path both closes take. The reader confirmed once, on the phone; the host closes at
+     * once and answers with the whole list, which is drawn as it comes, like a creation's.
+     *
+     * Closing the window that is open, or the workspace it is in, goes back to the machine first,
+     * so the screen never stays on a window that is gone nor says «ya no existe» about one the
+     * reader just closed on purpose.
+     */
+    private fun closeBox(workspaceID: String, windowID: String?) {
+        val machine = selectedMachineOrNull() ?: return
+        if (state.value.connections[machine.id]?.snapshot?.closesBoxes != true) return
+        val key = "$workspaceID/${windowID.orEmpty()}"
+        if (!closing.add(key)) return
+        viewModelScope.launch {
+            try {
+                val snapshot = if (windowID == null) client.closeWorkspace(machine, workspaceID) else client.closeTerminal(machine, workspaceID, windowID)
+                noticeNames.remember(machine.id, snapshot)
+                val current = state.value
+                val leaving = current.selectedMachine == machine.id && current.selectedWindow != null &&
+                    current.selectedWorkspace == workspaceID && (windowID == null || current.selectedWindow == windowID)
+                val attached = leaving && current.realTerminal != null
+                mutableState.update {
+                    val keptWorkspace = it.selectedWorkspace?.takeIf { id -> snapshot.workspaces.any { box -> box.id == id } }
+                    if (leaving) it.copy(
+                        connections = it.connections + (machine.id to Connection(connected = true, snapshot = snapshot)),
+                        selectedWorkspace = keptWorkspace, selectedWindow = null, terminal = null, terminalLoading = false,
+                        terminalError = null, terminalErrorDetail = null, attachFallbackDetail = null, terminalView = null, terminalZoom = 1f,
+                    ) else it.copy(
+                        connections = it.connections + (machine.id to Connection(connected = true, snapshot = snapshot)),
+                        selectedWorkspace = if (it.selectedWindow == null) keptWorkspace else it.selectedWorkspace,
+                    )
+                }
+                if (leaving) {
+                    // With the selection already cleared, leaving the real terminal re-observes the
+                    // machine on its own; the mirror needs it asked.
+                    stopRealTerminal()
+                    if (!attached) startObserving(machine, force = true, keepConnected = true)
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                val rejected = failure as? MachineFailure.Rejected
+                val notice = when (rejected?.code) {
+                    // Someone else closed it first: the list is read again so it stops showing it.
+                    "not_found" -> ActionNotice(R.string.box_close_gone)
+                    "close_failed" -> ActionNotice(R.string.box_close_failed, detail = rejected?.detail)
+                    else -> ActionNotice(R.string.box_close_error,
+                        detail = rejected?.let { listOfNotNull(it.code.takeIf(String::isNotBlank), it.detail).joinToString(" · ") }?.takeIf { it.isNotBlank() })
+                }
+                mutableState.update { it.copy(actionNotice = notice) }
+                if (rejected?.code == "not_found") startObserving(machine, force = true, keepConnected = true)
+            } finally {
+                closing.remove(key)
+            }
+        }
+    }
+
     fun selectMachine(id: String) {
         probeJob?.cancel()
         stopObserving()
@@ -1371,6 +1482,9 @@ class MachinesViewModel(
     }
 
     private companion object {
+        /** The creation error of a window that exists but could not switch user (`run-as.v1`). */
+        const val RUN_AS_FAILED = "run_as_failed"
+
         /** Long enough for a TUI to close its paste window, short enough to feel immediate. */
         const val ENTER_GAP_MILLIS = 80L
         /** Gap between wheel steps so tmux reads each one as a separate event. */

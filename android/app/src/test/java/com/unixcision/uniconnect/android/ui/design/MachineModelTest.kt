@@ -99,4 +99,48 @@ class MachineModelTest {
         assertEquals("n", model.effectiveTab("gone"))
         assertEquals("n", model.effectiveTab(null))
     }
+
+    private fun prompted(id: String, state: ActivityState?, at: Long?) =
+        RemoteWindow(id, id.uppercase(), "terminal", activity = state?.let { RemoteActivity(it, agent = "claude") }, lastPromptAt = at)
+
+    private val prompts = MachineSnapshot("Mac", listOf(
+        RemoteWorkspace("p", "PROYECTOS", isSSH = false, windows = listOf(prompted("claude", ActivityState.WORKING, 1_800_000_100), prompted("logs", null, null))),
+        RemoteWorkspace("n", "NOTBETTING", isSSH = false, windows = listOf(prompted("app1", ActivityState.WAITING, 1_800_000_300), prompted("app2", ActivityState.IDLE, 1_800_000_200))),
+    ), capabilities = setOf(MachineSnapshot.RECENT_PROMPTS))
+
+    @Test
+    fun recentListsTheWindowsOfEveryWorkspaceByTheirLastPromptMostRecentFirst() {
+        val model = MachineModel.of(mac, MachinesViewModel.Connection(connected = true, snapshot = prompts), BoxOverrides(), null, null, null, nowEpochSeconds = 1_800_000_400)
+        val recent = model.recentWindows()
+        assertEquals(listOf("app1", "app2", "claude"), recent.map { it.item.window.id })
+        // Each one says where it lives and when it was written to; a window never prompted is not there.
+        assertEquals(listOf("n", "n", "p"), recent.map { it.workspace.id })
+        assertEquals(listOf(1_800_000_300L, 1_800_000_200L, 1_800_000_100L), recent.map { it.lastPromptAt })
+        assertEquals(1_800_000_400L, model.nowEpochSeconds)
+        assertTrue(model.canShowRecent)
+    }
+
+    @Test
+    fun theFilterAppliesUnderRecentToo() {
+        val model = MachineModel.of(mac, MachinesViewModel.Connection(connected = true, snapshot = prompts), BoxOverrides(), null, null, null)
+        assertEquals(listOf("app1"), model.recentWindows(WindowFilter.WAITING).map { it.item.window.id })
+        assertEquals(listOf("claude"), model.recentWindows(WindowFilter.WORKING).map { it.item.window.id })
+    }
+
+    @Test
+    fun recentIsATabOnlyWithTheCapabilityAndSomethingToShowAndNeverTheDefault() {
+        val connected = MachinesViewModel.Connection(connected = true, snapshot = prompts)
+        val model = MachineModel.of(mac, connected, BoxOverrides(), null, null, null)
+        assertEquals(WorkspaceTabs.RECENT, model.effectiveTab(WorkspaceTabs.RECENT))
+        // The screen still opens where an AI waits.
+        assertEquals("n", model.defaultTab())
+        assertTrue(model.visible(WorkspaceTabs.RECENT, WindowFilter.ALL).isEmpty())
+        // Without the capability a missing time means «not sent», so the tab is not offered.
+        val old = MachineModel.of(mac, connected.copy(snapshot = prompts.copy(capabilities = emptySet())), BoxOverrides(), null, null, null)
+        assertFalse(old.canShowRecent)
+        assertEquals("n", old.effectiveTab(WorkspaceTabs.RECENT))
+        // With it but nothing ever written, there is nothing to list either.
+        val silent = prompts.copy(workspaces = prompts.workspaces.map { box -> box.copy(windows = box.windows.map { it.copy(lastPromptAt = null) }) })
+        assertFalse(MachineModel.of(mac, connected.copy(snapshot = silent), BoxOverrides(), null, null, null).canShowRecent)
+    }
 }

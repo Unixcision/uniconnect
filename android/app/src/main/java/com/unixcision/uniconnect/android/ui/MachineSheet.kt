@@ -15,6 +15,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
@@ -72,10 +74,15 @@ fun SheetHeader(icon: @Composable () -> Unit, title: String, note: String, tone:
     }
 }
 
+/**
+ * One field of a sheet. [secret] hides what is typed and keeps the keyboard from learning it: a
+ * password for a user switch, which the caller must not keep in saved state either.
+ */
 @Composable
 fun SheetField(
     value: String, onChange: (String) -> Unit, label: String, hint: String? = null, enabled: Boolean = true,
     keyboard: KeyboardType = KeyboardType.Text, placeholder: String? = null, monospace: Boolean = false,
+    secret: Boolean = false,
 ) {
     OutlinedTextField(
         value, onChange, Modifier.fillMaxWidth(),
@@ -83,7 +90,8 @@ fun SheetField(
         placeholder = placeholder?.let { { Text(it, color = UniTheme.colors.muted.copy(alpha = .6f)) } },
         supportingText = hint?.let { { Text(it) } },
         singleLine = true, enabled = enabled, shape = UniTheme.shapes.field,
-        keyboardOptions = KeyboardOptions(keyboardType = keyboard, autoCorrectEnabled = !monospace),
+        visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
+        keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else keyboard, autoCorrectEnabled = !monospace && !secret),
         textStyle = if (monospace) MaterialTheme.typography.bodyLarge.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace) else MaterialTheme.typography.bodyLarge,
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = UniTheme.colors.accent, unfocusedBorderColor = UniTheme.colors.outline, focusedLabelColor = UniTheme.colors.accent,

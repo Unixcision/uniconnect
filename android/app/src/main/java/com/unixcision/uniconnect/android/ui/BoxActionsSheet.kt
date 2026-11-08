@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
@@ -17,7 +18,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -35,7 +35,7 @@ import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import com.unixcision.uniconnect.android.ui.components.SectionLabel
 
-/** What a long press on a workspace or a window offers: favourite it and move it in its list. */
+/** What a long press on a workspace or a window offers: favourite it, move it in its list, relaunch or close it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BoxActionsSheet(
@@ -54,6 +54,13 @@ fun BoxActionsSheet(
      * nada es peor que una acción que no está.
      */
     onRelaunch: (() -> Unit)? = null,
+    /**
+     * «Cerrar ventana» o «Cerrar espacio» ([closeLabel]): asks for confirmation before anything
+     * happens. Null when the machine does not announce `box_close`, for the same reason as
+     * [onRelaunch].
+     */
+    onClose: (() -> Unit)? = null,
+    closeLabel: Int = R.string.box_close_window,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = UniTheme.colors.surface) {
         Column(Modifier.padding(horizontal = 12.dp).padding(bottom = 28.dp)) {
@@ -68,15 +75,21 @@ fun BoxActionsSheet(
                 HorizontalDivider(Modifier.padding(vertical = 4.dp), color = UniTheme.colors.outline)
                 Action(R.string.relaunch_agents, Icons.Rounded.RestartAlt) { relaunch(); onDismiss() }
             }
+            // Destructive, so last and apart: a thumb reaching for «Bajar» must not land on it.
+            onClose?.let { close ->
+                HorizontalDivider(Modifier.padding(vertical = 4.dp), color = UniTheme.colors.outline)
+                Action(closeLabel, Icons.Rounded.Close, danger = true) { onDismiss(); close() }
+            }
         }
     }
 }
 
 @Composable
-private fun Action(label: Int, icon: ImageVector, onClick: () -> Unit) {
+private fun Action(label: Int, icon: ImageVector, danger: Boolean = false, onClick: () -> Unit) {
+    val tone = if (danger) UniTheme.colors.danger else UniTheme.colors.accent
     ListItem(
-        headlineContent = { Text(stringResource(label)) },
-        leadingContent = { Icon(icon, null, tint = UniTheme.colors.accent) },
+        headlineContent = { Text(stringResource(label), color = if (danger) tone else Color.Unspecified) },
+        leadingContent = { Icon(icon, null, tint = tone) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
     )

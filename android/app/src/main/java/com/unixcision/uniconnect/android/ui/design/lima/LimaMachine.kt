@@ -3,6 +3,7 @@ package com.unixcision.uniconnect.android.ui.design.lima
 import androidx.annotation.StringRes
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -77,11 +78,13 @@ import com.unixcision.uniconnect.android.ui.design.MachineActions
 import com.unixcision.uniconnect.android.ui.design.MachineModel
 import com.unixcision.uniconnect.android.ui.design.MachineOfflineCard
 import com.unixcision.uniconnect.android.ui.design.MachineStaleBanner
+import com.unixcision.uniconnect.android.ui.design.RecentWindow
 import com.unixcision.uniconnect.android.ui.design.WindowItem
 import com.unixcision.uniconnect.android.ui.design.WorkspaceSection
 import com.unixcision.uniconnect.android.ui.design.WorkspaceTabSelection
 import com.unixcision.uniconnect.android.ui.design.WorkspaceTabs
 import com.unixcision.uniconnect.android.ui.design.activityText
+import com.unixcision.uniconnect.android.ui.design.elapsedText
 import com.unixcision.uniconnect.android.ui.design.rememberWorkspaceTab
 import com.unixcision.uniconnect.android.ui.design.windowLine
 import com.unixcision.uniconnect.android.ui.theme.ContinuousRoundedShape
@@ -92,7 +95,9 @@ import com.unixcision.uniconnect.android.ui.theme.continuousTop
  * Lima's machine screen: the machine with its state chip, a strip of workspace tiles that work as
  * tabs, a bento of three numbers (windows, working, waiting) for the picked tab that double as the
  * filter, and the tab's windows in one block, or every workspace as its own block under «Todos».
- * A window that waits for the reader is tinted and offers «Responder».
+ * «Recientes», first when the host says when each window was last written to, lists the windows
+ * of every workspace in one block, the most recent first. A window that waits for the reader is
+ * tinted and offers «Responder».
  *
  * A block is drawn in slices (its head, one slice per window, the last one rounding the foot) so
  * the list stays lazy: a machine with a hundred windows composes only what is on screen.
@@ -105,8 +110,11 @@ fun LimaMachine(model: MachineModel, actions: MachineActions, menu: @Composable 
     val shown = if (model.connected) filter else WindowFilter.ALL
     val tab = rememberWorkspaceTab(model)
     val entries = remember(model, shown, tab.selected) { limaEntries(model, shown, tab.selected) }
-    // What the bento counts: the picked workspace, or all of them.
-    val scope = remember(model, tab.selected) { model.sections.filter { tab.showsAll || it.workspace.id == tab.selected } }
+    // What the bento counts: the recent windows, the picked workspace's, or all of them.
+    val scope = remember(model, tab.selected) {
+        if (tab.showsRecent) model.recentWindows().map { it.item }
+        else model.sections.filter { tab.showsAll || it.workspace.id == tab.selected }.flatMap { it.windows }
+    }
     val list = rememberLazyListState()
     // Held here so the strip keeps its place while the list scrolls it away and back.
     val strip = rememberLazyListState()
@@ -146,6 +154,7 @@ fun LimaMachine(model: MachineModel, actions: MachineActions, menu: @Composable 
                         LimaEntry.NoMatches -> LimaNote(stringResource(R.string.design_no_filtered_windows))
                         is LimaEntry.Head -> if (entry.named) LimaSectionHead(entry.section, actions) else LimaTabHead(entry.section, actions)
                         is LimaEntry.Window -> LimaWindowRow(entry.section, entry.item, entry.last, actions)
+                        is LimaEntry.Recent -> LimaRecentRow(entry.recent, entry.first, entry.last, model.nowEpochSeconds, actions)
                         is LimaEntry.Empty -> LimaEmptySection(stringResource(entry.note))
                         LimaEntry.Notices -> Box(Modifier.padding(top = 22.dp)) {
                             NotificationConnectionCard(model.noticeLink, model.connected, actions.onEnableNotices, actions.onDisableNotices)
@@ -186,6 +195,11 @@ private sealed interface LimaEntry {
     data class Empty(val section: WorkspaceSection, @StringRes val note: Int) : LimaEntry {
         override val key get() = "empty:${section.workspace.id}"
     }
+
+    /** One window under «Recientes»; [first] and [last] round the single block they all share. */
+    data class Recent(val recent: RecentWindow, val first: Boolean, val last: Boolean) : LimaEntry {
+        override val key get() = "r:${recent.workspace.id}/${recent.item.window.id}"
+    }
 }
 
 /**
@@ -203,22 +217,30 @@ private fun limaEntries(model: MachineModel, filter: WindowFilter, tab: String):
             add(LimaEntry.Spaces)
             add(LimaEntry.NoWorkspaces)
         } else {
-            val single = model.sections.firstOrNull { it.workspace.id == tab }
+            val recent = tab == WorkspaceTabs.RECENT
+            val single = if (recent) null else model.sections.firstOrNull { it.workspace.id == tab }
             add(LimaEntry.Spaces)
             add(LimaEntry.Tabs)
             // Without an answer the bento only counts windows, and a workspace's count is already on its tab.
             if (model.connected || single == null) add(LimaEntry.Metrics)
             if (model.connected) add(LimaEntry.Filter)
-            val visible = model.visible(tab, filter)
-            if (single == null && visible.isEmpty()) add(LimaEntry.NoMatches)
-            // A tab keeps its block when the filter empties it, so «+», the star and the sheet stay at hand.
-            val blocks = if (single == null) visible else listOf(visible.firstOrNull() ?: single.copy(windows = emptyList()))
-            blocks.forEach { section ->
-                add(LimaEntry.Head(section, named = single == null))
-                if (section.windows.isEmpty()) {
-                    add(LimaEntry.Empty(section, if (section.workspace.windows.isEmpty()) R.string.no_windows else R.string.design_no_filtered_windows))
+            if (recent) {
+                // One block for every workspace's windows: the box on each row says where it lives.
+                val windows = model.recentWindows(filter)
+                if (windows.isEmpty()) add(LimaEntry.NoMatches)
+                windows.forEachIndexed { index, window -> add(LimaEntry.Recent(window, first = index == 0, last = index == windows.lastIndex)) }
+            } else {
+                val visible = model.visible(tab, filter)
+                if (single == null && visible.isEmpty()) add(LimaEntry.NoMatches)
+                // A tab keeps its block when the filter empties it, so «+», the star and the sheet stay at hand.
+                val blocks = if (single == null) visible else listOf(visible.firstOrNull() ?: single.copy(windows = emptyList()))
+                blocks.forEach { section ->
+                    add(LimaEntry.Head(section, named = single == null))
+                    if (section.windows.isEmpty()) {
+                        add(LimaEntry.Empty(section, if (section.workspace.windows.isEmpty()) R.string.no_windows else R.string.design_no_filtered_windows))
+                    }
+                    section.windows.forEachIndexed { index, item -> add(LimaEntry.Window(section, item, last = index == section.windows.lastIndex)) }
                 }
-                section.windows.forEachIndexed { index, item -> add(LimaEntry.Window(section, item, last = index == section.windows.lastIndex)) }
             }
         }
     }
@@ -265,18 +287,18 @@ private fun LimaIdentity(model: MachineModel) {
 }
 
 /**
- * The bento of numbers for the picked tab, [scope]: one workspace or all of them. While the
- * machine answers: windows, working (lime when any) and waiting (warning when any), and a tap on
- * one filters the tab by it. Without an answer working and waiting mean nothing, so the second
- * tile counts the workspaces instead.
+ * The bento of numbers for the picked tab, [scope]: the windows of one workspace, of all of them,
+ * or the recent ones. While the machine answers: windows, working (lime when any) and waiting
+ * (warning when any), and a tap on one filters the tab by it. Without an answer working and
+ * waiting mean nothing, so the second tile counts the workspaces instead.
  */
 @Composable
-private fun LimaMetrics(model: MachineModel, scope: List<WorkspaceSection>, onFilter: (WindowFilter) -> Unit) {
+private fun LimaMetrics(model: MachineModel, scope: List<WindowItem>, onFilter: (WindowFilter) -> Unit) {
     val colors = UniTheme.colors
     // A window's state is null without an answer, so offline both counts are naturally zero.
-    val windows = scope.sumOf { it.windows.size }
-    val workingCount = scope.sumOf { section -> section.windows.count { it.activity == ActivityState.WORKING } }
-    val waitingCount = scope.sumOf { section -> section.windows.count { it.activity == ActivityState.WAITING } }
+    val windows = scope.size
+    val workingCount = scope.count { it.activity == ActivityState.WORKING }
+    val waitingCount = scope.count { it.activity == ActivityState.WAITING }
     val picks = model.connected && model.sections.isNotEmpty()
     Row(Modifier.fillMaxWidth().padding(top = 18.dp).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(LimaGutter)) {
         LimaMetric(
@@ -347,15 +369,24 @@ private fun LimaSpacesLabel(model: MachineModel) {
 }
 
 /**
- * The workspace tabs: a strip of bento tiles that scrolls sideways, «Todos» first and then one
- * per workspace in the reader's order, each with its name, its window count large, its star and
- * what its AIs do. The picked tile is lime. A long press on a workspace opens its sheet (favourite,
- * order, relaunch), as its head does.
+ * The workspace tabs: a strip of bento tiles that scrolls sideways, «Recientes» first when the
+ * host can say when each window was written to, then «Todos» and one per workspace in the
+ * reader's order, each with its name, its window count large, its star and what its AIs do. The
+ * picked tile is lime. A long press on a workspace opens its sheet (favourite, order, relaunch),
+ * as its head does.
  */
 @Composable
 private fun LimaTabs(model: MachineModel, tab: WorkspaceTabSelection, state: LazyListState, onHold: (String) -> Unit) {
     val page = UniTheme.spacing.page
-    val index = if (tab.showsAll) 0 else 1 + model.sections.indexOfFirst { it.workspace.id == tab.selected }
+    val recent = model.canShowRecent
+    val recentCount = remember(model) { model.recentWindows().size }
+    // «Recientes», when shown, takes the first place and moves every other tile one along.
+    val lead = if (recent) 1 else 0
+    val index = when {
+        tab.showsRecent -> 0
+        tab.showsAll -> lead
+        else -> lead + 1 + model.sections.indexOfFirst { it.workspace.id == tab.selected }
+    }
     LaunchedEffect(tab.selected, index) {
         val info = state.layoutInfo
         val seen = info.visibleItemsInfo.firstOrNull { it.index == index }
@@ -372,6 +403,12 @@ private fun LimaTabs(model: MachineModel, tab: WorkspaceTabSelection, state: Laz
         contentPadding = PaddingValues(horizontal = page),
         horizontalArrangement = Arrangement.spacedBy(LimaGutter),
     ) {
+        if (recent) item(key = WorkspaceTabs.RECENT) {
+            LimaTab(
+                stringResource(R.string.design_tab_recent), recentCount, on = tab.showsRecent,
+                onClick = { tab.select(WorkspaceTabs.RECENT) },
+            )
+        }
         item(key = WorkspaceTabs.ALL) {
             LimaTab(
                 stringResource(R.string.lima_tab_all), model.sections.sumOf { it.windows.size }, on = tab.showsAll,
@@ -573,55 +610,107 @@ private fun LimaTabHead(section: WorkspaceSection, actions: MachineActions) {
  * state in its colour, and a chevron, or «Responder» when the AI waits for the reader. Without a
  * connection [WindowItem.activity] is null and the row shows no state at all, on purpose.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LimaWindowRow(section: WorkspaceSection, item: WindowItem, last: Boolean, actions: MachineActions) {
     val colors = UniTheme.colors
     val workspaceID = section.workspace.id
     val windowID = item.window.id
-    val waiting = item.activity == ActivityState.WAITING
-    val open = { actions.onOpenWindow(workspaceID, windowID) }
     Box(
         Modifier.fillMaxWidth()
             .background(colors.surface, if (last) limaFootShape(UniTheme.shapes.cardRadius) else RectangleShape)
             .padding(start = 6.dp, end = 6.dp, top = 2.dp, bottom = if (last) 6.dp else 2.dp),
     ) {
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(UniTheme.shapes.button).background(colors.surfaceRaised)
-                .then(if (waiting) Modifier.background(colors.warning.copy(alpha = .10f)) else Modifier)
-                .combinedClickable(onClick = open, onLongClick = { actions.onHoldWindow(workspaceID, windowID) })
-                .padding(start = 14.dp, end = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
-                when (item.activity) {
-                    ActivityState.WORKING -> ActivityMark(ActivityState.WORKING, size = 18.dp)
-                    ActivityState.WAITING -> ActivityMark(ActivityState.WAITING, size = 18.dp)
-                    ActivityState.IDLE -> Box(Modifier.size(8.dp).background(colors.muted.copy(alpha = .6f), CircleShape))
-                    ActivityState.UNKNOWN, null -> {}
+        LimaWindowPill(item, onOpen = { actions.onOpenWindow(workspaceID, windowID) }, onHold = { actions.onHoldWindow(workspaceID, windowID) }) {
+            limaWindowLine(item)?.let { line ->
+                Text(line, style = MaterialTheme.typography.bodySmall, color = colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+/**
+ * One window under «Recientes», a slice of the single block every recent window shares: the same
+ * pill as inside a workspace, with a box naming its workspace and when the reader last wrote to it
+ * under the name. No head says where these windows live, so the box does.
+ */
+@Composable
+private fun LimaRecentRow(recent: RecentWindow, first: Boolean, last: Boolean, now: Long, actions: MachineActions) {
+    val colors = UniTheme.colors
+    val shapes = UniTheme.shapes
+    val workspaceID = recent.workspace.id
+    val windowID = recent.item.window.id
+    val block = when {
+        first && last -> shapes.card
+        first -> continuousTop(shapes.cardRadius)
+        last -> limaFootShape(shapes.cardRadius)
+        else -> RectangleShape
+    }
+    Box(
+        Modifier.fillMaxWidth().padding(top = if (first) LimaGutter else 0.dp)
+            .background(colors.surface, block)
+            .padding(start = 6.dp, end = 6.dp, top = if (first) 6.dp else 2.dp, bottom = if (last) 6.dp else 2.dp),
+    ) {
+        LimaWindowPill(recent.item, onOpen = { actions.onOpenWindow(workspaceID, windowID) }, onHold = { actions.onHoldWindow(workspaceID, windowID) }) {
+            Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // The pill is already surfaceRaised, so the box keeps a hairline to stand apart from it.
+                Text(
+                    recent.workspace.name,
+                    Modifier.widthIn(max = 168.dp).background(colors.surfaceRaised, shapes.chip).border(1.dp, colors.outline, shapes.chip)
+                        .padding(horizontal = 6.dp, vertical = 1.dp),
+                    style = MaterialTheme.typography.labelSmall, fontFamily = UniTheme.type.identifierFamily, fontWeight = FontWeight.SemiBold,
+                    color = colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                elapsedText(recent.lastPromptAt, now)?.let { ago ->
+                    Text(ago, style = MaterialTheme.typography.bodySmall, color = colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                Text(
-                    item.window.name, style = MaterialTheme.typography.bodyMedium, fontFamily = UniTheme.type.identifierFamily,
-                    fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
-                limaWindowLine(item)?.let { line ->
-                    Text(line, style = MaterialTheme.typography.bodySmall, color = colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
+        }
+    }
+}
+
+/**
+ * A window as a raised pill: the AI's mark, the name with [under] beneath it, and a chevron, or
+ * «Responder» when the AI waits for the reader. Without a connection [WindowItem.activity] is null
+ * and the pill shows no state at all, on purpose.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun LimaWindowPill(item: WindowItem, onOpen: () -> Unit, onHold: () -> Unit, under: @Composable () -> Unit) {
+    val colors = UniTheme.colors
+    val waiting = item.activity == ActivityState.WAITING
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(UniTheme.shapes.button).background(colors.surfaceRaised)
+            .then(if (waiting) Modifier.background(colors.warning.copy(alpha = .10f)) else Modifier)
+            .combinedClickable(onClick = onOpen, onLongClick = onHold)
+            .padding(start = 14.dp, end = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+            when (item.activity) {
+                ActivityState.WORKING -> ActivityMark(ActivityState.WORKING, size = 18.dp)
+                ActivityState.WAITING -> ActivityMark(ActivityState.WAITING, size = 18.dp)
+                ActivityState.IDLE -> Box(Modifier.size(8.dp).background(colors.muted.copy(alpha = .6f), CircleShape))
+                ActivityState.UNKNOWN, null -> {}
             }
-            if (item.pinned) Icon(Icons.Rounded.Star, stringResource(R.string.box_pinned), Modifier.size(14.dp), tint = colors.warning)
-            if (waiting) {
-                Text(
-                    stringResource(R.string.design_reply),
-                    Modifier.minimumInteractiveComponentSize().clip(UniTheme.shapes.chip).background(colors.warning)
-                        .clickable(role = Role.Button, onClick = open).padding(horizontal = 10.dp, vertical = 6.dp),
-                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = colors.onAccent, maxLines = 1,
-                )
-            } else {
-                Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, Modifier.size(18.dp), tint = colors.muted)
-            }
+        }
+        Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+            Text(
+                item.window.name, style = MaterialTheme.typography.bodyMedium, fontFamily = UniTheme.type.identifierFamily,
+                fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            under()
+        }
+        if (item.pinned) Icon(Icons.Rounded.Star, stringResource(R.string.box_pinned), Modifier.size(14.dp), tint = colors.warning)
+        if (waiting) {
+            Text(
+                stringResource(R.string.design_reply),
+                Modifier.minimumInteractiveComponentSize().clip(UniTheme.shapes.chip).background(colors.warning)
+                    .clickable(role = Role.Button, onClick = onOpen).padding(horizontal = 10.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = colors.onAccent, maxLines = 1,
+            )
+        } else {
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, Modifier.size(18.dp), tint = colors.muted)
         }
     }
 }

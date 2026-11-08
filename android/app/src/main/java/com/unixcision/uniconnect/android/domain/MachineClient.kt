@@ -12,6 +12,18 @@ interface MachineClient {
     suspend fun create(machine: Machine, request: ResourceCreation): CreationResult
 
     /**
+     * Closes a workspace and every window in it, exactly as closing it on the desktop would
+     * (`workspace.close`, `box-close.v1`), and returns the machine's whole list as it is now.
+     *
+     * The phone has already asked for confirmation; the host does not ask again. Only called when
+     * the machine announces ``MachineSnapshot.BOX_CLOSE``.
+     */
+    suspend fun closeWorkspace(machine: Machine, workspaceID: String): MachineSnapshot
+
+    /** Closes one window of [workspaceID] (`terminal.close`, `box-close.v1`); see [closeWorkspace]. */
+    suspend fun closeTerminal(machine: Machine, workspaceID: String, terminalID: String): MachineSnapshot
+
+    /**
      * Previsualiza un relanzado sin ejecutarlo (`relaunch.plan`).
      *
      * Devuelve lo que tocaría y lo que deja fuera con su motivo, más un vale con caducidad. Existe

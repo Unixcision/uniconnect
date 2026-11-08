@@ -77,11 +77,13 @@ import com.unixcision.uniconnect.android.ui.design.MachineActions
 import com.unixcision.uniconnect.android.ui.design.MachineModel
 import com.unixcision.uniconnect.android.ui.design.MachineOfflineCard
 import com.unixcision.uniconnect.android.ui.design.MachineStaleBanner
+import com.unixcision.uniconnect.android.ui.design.RecentWindow
 import com.unixcision.uniconnect.android.ui.design.WindowItem
 import com.unixcision.uniconnect.android.ui.design.WorkspaceSection
 import com.unixcision.uniconnect.android.ui.design.WorkspaceTabSelection
 import com.unixcision.uniconnect.android.ui.design.WorkspaceTabs
 import com.unixcision.uniconnect.android.ui.design.activityText
+import com.unixcision.uniconnect.android.ui.design.elapsedText
 import com.unixcision.uniconnect.android.ui.design.rememberWorkspaceTab
 import com.unixcision.uniconnect.android.ui.design.windowLine
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
@@ -91,8 +93,9 @@ import kotlinx.coroutines.flow.first
  * Nieve's machine, a page of Apple's Settings: «Inicio» back, the machine's name as the large
  * title over its state, one block with its numbers, then a scope bar with a tab per workspace and
  * one for all of them. A workspace's tab shows its windows as rows of one group; «Todos» shows
- * every workspace as a group of its own under a small header. «Nuevo espacio de trabajo» waits in
- * a bar at the bottom, where the thumb is.
+ * every workspace as a group of its own under a small header; «Recientes», first when the host
+ * says when each window was last written to, shows the windows of every workspace as one group,
+ * the most recent first. «Nuevo espacio de trabajo» waits in a bar at the bottom, where the thumb is.
  *
  * Every row is a lazy item of its own, so a machine with seventy windows only composes what is on
  * screen; the tabs are the list's sticky header, so they stay at hand however far it scrolls.
@@ -158,6 +161,11 @@ fun NieveMachine(model: MachineModel, actions: MachineActions, menu: @Composable
                             onOpen = { actions.onOpenWindow(line.workspaceID, line.item.window.id) },
                             onHold = { actions.onHoldWindow(line.workspaceID, line.item.window.id) },
                         )
+                        is MachineLine.Recent -> RecentRow(
+                            line.recent, line.slot, model.nowEpochSeconds,
+                            onOpen = { actions.onOpenWindow(line.recent.workspace.id, line.recent.item.window.id) },
+                            onHold = { actions.onHoldWindow(line.recent.workspace.id, line.recent.item.window.id) },
+                        )
                         is MachineLine.NoWindows -> NieveRow(Modifier.nieveGroup(), minHeight = 52.dp) {
                             Text(stringResource(R.string.no_windows), style = NieveText.body, color = UniTheme.colors.muted)
                         }
@@ -197,6 +205,9 @@ private sealed interface MachineLine {
         override val key: String get() = "w:$workspaceID/${item.window.id}"
     }
     data class NoWindows(val workspaceID: String) : MachineLine { override val key: String get() = "e:$workspaceID" }
+    data class Recent(val recent: RecentWindow, val slot: NieveSlot) : MachineLine {
+        override val key: String get() = "r:${recent.workspace.id}/${recent.item.window.id}"
+    }
 }
 
 /** The machine's list, top to bottom, for [tab] and [filter]. */
@@ -212,6 +223,14 @@ private fun machineLines(model: MachineModel, filter: WindowFilter, tab: String)
     if (model.sections.isNotEmpty()) add(MachineLine.Tabs)
     if (model.connected && model.sections.isNotEmpty()) add(MachineLine.Filter)
     if (model.hostKeepsOrder == false) add(MachineLine.LocalOnly)
+    if (tab == WorkspaceTabs.RECENT) {
+        // One flat group across workspaces: no headers and no «+», each row names its own workspace.
+        val recent = model.recentWindows(filter)
+        if (recent.isEmpty()) add(MachineLine.Message(R.string.design_no_filtered_windows))
+        recent.forEachIndexed { index, window -> add(MachineLine.Recent(window, NieveSlot.of(index, recent.size))) }
+        if (model.connected || model.noticeLink != null) add(MachineLine.Notices)
+        return@buildList
+    }
     val sections = model.visible(tab, filter)
     when {
         model.sections.isEmpty() -> add(MachineLine.Message(R.string.no_workspaces))
@@ -284,17 +303,24 @@ private fun Summary(model: MachineModel) {
 }
 
 /**
- * The workspace tabs, Apple's scope bar: «Todos» first, then one tab per workspace in the list's
- * order. It scrolls sideways; the chosen tab is brought into view when it changes or the row
- * first appears, and stays where it is when it is already on screen. Pinned under the bar, it
- * draws a hairline under itself, like the bar at the bottom; [stuck] is read only when drawing.
+ * The workspace tabs, Apple's scope bar: «Recientes» first when there is something recent, then
+ * «Todos», then one tab per workspace in the list's order. It scrolls sideways; the chosen tab is
+ * brought into view when it changes or the row first appears, and stays where it is when it is
+ * already on screen. Pinned under the bar, it draws a hairline under itself, like the bar at the
+ * bottom; [stuck] is read only when drawing.
  */
 @Composable
 private fun WorkspaceTabRow(model: MachineModel, selection: WorkspaceTabSelection, stuck: () -> Boolean, onHold: (String) -> Unit) {
     val colors = UniTheme.colors
     val rule = nieveRuleColor()
     val row = rememberLazyListState()
-    val index = if (selection.showsAll) 0 else model.sections.indexOfFirst { it.workspace.id == selection.selected } + 1
+    val recentFirst = model.canShowRecent
+    val leading = if (recentFirst) 1 else 0
+    val index = when {
+        selection.showsRecent -> 0
+        selection.showsAll -> leading
+        else -> model.sections.indexOfFirst { it.workspace.id == selection.selected } + 1 + leading
+    }
     // Keyed by position, not id: pinning a workspace moves its tab, which must stay in view too.
     LaunchedEffect(index) {
         val info = snapshotFlow { row.layoutInfo }.first { it.visibleItemsInfo.isNotEmpty() }
@@ -315,6 +341,12 @@ private fun WorkspaceTabRow(model: MachineModel, selection: WorkspaceTabSelectio
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (recentFirst) item(key = WorkspaceTabs.RECENT) {
+            WorkspaceTab(
+                stringResource(R.string.design_tab_recent), model.recentWindows().size, chosen = selection.showsRecent,
+                onClick = { selection.select(WorkspaceTabs.RECENT) },
+            )
+        }
         item(key = WorkspaceTabs.ALL) {
             WorkspaceTab(
                 stringResource(R.string.nieve_tab_all), model.sections.sumOf { it.windows.size }, chosen = selection.showsAll,
@@ -521,6 +553,47 @@ private fun WindowRow(item: WindowItem, slot: NieveSlot, onOpen: () -> Unit, onH
             }
             windowLine(item)?.let { line ->
                 Text(toned(line, item.activity), Modifier.padding(top = 2.dp), style = NieveText.detail, color = colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (waiting) NieveReply(reply) else NieveChevron()
+    }
+}
+
+/**
+ * One window under «Recientes»: the same square and name as any window row, and under the name a
+ * small box with its workspace's name and how long ago its last prompt was written. The box is
+ * what tells two «claude» windows apart once the list mixes every workspace.
+ */
+@Composable
+private fun RecentRow(recent: RecentWindow, slot: NieveSlot, nowEpochSeconds: Long, onOpen: () -> Unit, onHold: () -> Unit) {
+    val colors = UniTheme.colors
+    val item = recent.item
+    val waiting = item.activity == ActivityState.WAITING
+    val reply = stringResource(R.string.design_reply)
+    NieveRow(
+        // The first row keeps the gap a tab's header leaves above its group.
+        Modifier.padding(top = if (slot.roundsTop) 12.dp else 0.dp).nieveGroup(slot), rule = if (slot.roundsTop) null else 64.dp,
+        onClickLabel = if (waiting) reply else null, onLongClick = onHold, onClick = onOpen,
+    ) {
+        WindowSquare(item.activity)
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(
+                    item.window.name, Modifier.weight(1f, fill = false), style = NieveText.title,
+                    fontFamily = UniTheme.type.identifierFamily, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                if (item.pinned) Icon(Icons.Rounded.Star, stringResource(R.string.box_pinned), Modifier.size(14.dp), tint = colors.warning)
+            }
+            Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    recent.workspace.name,
+                    Modifier.weight(1f, fill = false).background(colors.surfaceRaised, UniTheme.shapes.chip).padding(horizontal = 6.dp, vertical = 1.dp),
+                    style = NieveText.detail, fontFamily = UniTheme.type.identifierFamily, color = colors.muted,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                elapsedText(recent.lastPromptAt, nowEpochSeconds)?.let { ago ->
+                    Text(ago, style = NieveText.detail, color = colors.muted, maxLines = 1)
+                }
             }
         }
         if (waiting) NieveReply(reply) else NieveChevron()

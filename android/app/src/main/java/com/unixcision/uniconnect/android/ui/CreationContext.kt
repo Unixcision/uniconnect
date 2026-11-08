@@ -13,6 +13,8 @@ data class CreationContext(
     val firstWindow: Boolean = false,
     /** Whether this machine accepts a connection command typed here (`ssh_create.v1`). */
     val takesNewSSH: Boolean = false,
+    /** Whether a new window may run as root or another user, and with `IS_SANDBOX=1` (`run-as.v1`). */
+    val runsAs: Boolean = false,
 ) {
     /** Whether an SSH box can be made at all: by writing a new connection or by reusing one. */
     val allowsSSH: Boolean get() = takesNewSSH || sshSources.isNotEmpty()

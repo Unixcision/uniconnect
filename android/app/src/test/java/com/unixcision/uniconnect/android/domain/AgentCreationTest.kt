@@ -24,12 +24,18 @@ class AgentCreationTest {
         assertFalse(request.isAllowedIn(local.copy(id = "another-workspace")))
     }
 
-    @Test fun sshCreationKeepsTheTmuxContractAndDoesNotLaunchALocalAgent() {
-        val ssh = RemoteWorkspace("ssh", "Servidor", true, emptyList(), listOf(terminal))
+    @Test fun sshCreationTakesAnAdvertisedAIAndAnOptionalTmuxName() {
+        val claude = RemoteAgentTarget("claude", "Claude")
+        val ssh = RemoteWorkspace("ssh", "Servidor", true, emptyList(), listOf(terminal, claude))
         val request = ResourceCreation.Terminal(ssh.id, "Consola", null, "app4")
         assertTrue(request.isAllowedIn(ssh))
+        // An AI on a server, which the phone could not ask for before.
+        assertTrue(request.copy(agentID = claude.id).isAllowedIn(ssh))
+        // Without a name the machine picks one.
+        assertTrue(request.copy(tmuxSession = null, agentID = claude.id).isAllowedIn(ssh))
+        // Still only what the box advertises, and never a tmux name in a local box.
         assertFalse(request.copy(agentID = custom.id).isAllowedIn(ssh))
-        assertFalse(request.copy(tmuxSession = null).isAllowedIn(ssh))
         assertFalse(ResourceCreation.Terminal(local.id, "Consola", null, "app4").isAllowedIn(local))
+        assertFalse(request.copy(tmuxSession = "Not Valid").isAllowedIn(ssh))
     }
 }

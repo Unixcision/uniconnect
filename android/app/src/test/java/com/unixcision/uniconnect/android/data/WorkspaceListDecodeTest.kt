@@ -39,4 +39,32 @@ class WorkspaceListDecodeTest {
         assertEquals("codex", windows[1].activity?.agent)
         assertEquals(1_800_000_000L, windows[1].activity?.sinceEpochSeconds)
     }
+
+    @Test
+    fun theLastPromptTimeIsReadInSecondsAndAJsonNullIsNoTimeAtAll() {
+        val result = JSONObject(
+            """
+            {"capabilities":["recent_prompts"],"workspaces":[{"id":"w","title":"NOTBETTING","kind":"local","terminals":[
+              {"id":"a","title":"APP 2","last_prompt_at":1794150000},
+              {"id":"b","title":"APP 3","last_prompt_at":null},
+              {"id":"c","title":"LOGS"},
+              {"id":"d","title":"RARA","last_prompt_at":0}
+            ]}]}
+            """.trimIndent(),
+        )
+        val snapshot = decode(result)
+        assertEquals(true, snapshot.listsRecentPrompts)
+        val windows = snapshot.workspaces.single().windows
+        assertEquals(1_794_150_000L, windows[0].lastPromptAt)
+        // `null` from the host and a missing key both mean «no prompt», never the epoch.
+        assertNull(windows[1].lastPromptAt)
+        assertNull(windows[2].lastPromptAt)
+        assertNull(windows[3].lastPromptAt)
+    }
+
+    @Test
+    fun aHostWithoutTheCapabilityDoesNotOfferRecentPrompts() {
+        val snapshot = decode(JSONObject("""{"workspaces":[{"id":"w","title":"W","kind":"local","terminals":[{"id":"a","title":"A","last_prompt_at":1794150000}]}]}"""))
+        assertEquals(false, snapshot.listsRecentPrompts)
+    }
 }

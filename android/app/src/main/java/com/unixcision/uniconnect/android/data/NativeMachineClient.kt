@@ -125,13 +125,45 @@ class NativeMachineClient(
     override suspend fun create(machine: Machine, request: ResourceCreation): CreationResult = recording("crear", machine) {
         val params = creationParameters(request)
         val method = if (request is ResourceCreation.Workspace) "workspace.create" else "mobile.terminal.create"
-        val result = call(machine, method, params)
+        // The machine answers once the new tmux session is alive (Linux waits up to 25 s, a
+        // window that switches user up to 30 s): 12 s gave up on creations that were working.
+        val result = call(machine, method, params, deadlineMillis = CREATE_DEADLINE_MILLIS)
         val workspaceID = when (request) {
             is ResourceCreation.Workspace -> result.getString("created_workspace_id")
             is ResourceCreation.Terminal -> request.workspaceID
         }
         val windowID = if (request is ResourceCreation.Terminal) result.getString("created_terminal_id") else null
         CreationResult(decodeMachine(machine, result), workspaceID, windowID)
+    }
+
+    override suspend fun closeWorkspace(machine: Machine, workspaceID: String): MachineSnapshot = recording("cerrar", machine) {
+        val (method, params) = closeRequest(workspaceID, terminalID = null)
+        decodeClosed(machine, call(machine, method, params), "closed_workspace_id", workspaceID)
+    }
+
+    override suspend fun closeTerminal(machine: Machine, workspaceID: String, terminalID: String): MachineSnapshot = recording("cerrar", machine) {
+        val (method, params) = closeRequest(workspaceID, terminalID)
+        decodeClosed(machine, call(machine, method, params), "closed_terminal_id", terminalID)
+    }
+
+    /**
+     * The method and parameters that close a workspace, or one of its windows when [terminalID] is
+     * given (`box-close.v1`). Only the ids travel: the host closes them exactly as its desktop would.
+     */
+    internal fun closeRequest(workspaceID: String, terminalID: String?): Pair<String, JSONObject> {
+        require(workspaceID.isNotBlank() && terminalID?.isNotBlank() != false)
+        val params = JSONObject().put("workspace_id", workspaceID)
+        if (terminalID == null) return "workspace.close" to params
+        return "terminal.close" to params.put("terminal_id", terminalID)
+    }
+
+    /**
+     * Reads a close answer: the whole list, drawn as it comes. When the host names what it closed,
+     * it has to be what was asked; the Mac sends its UUIDs in capitals.
+     */
+    internal fun decodeClosed(machine: Machine, result: JSONObject, closedKey: String, expectedID: String): MachineSnapshot {
+        result.text(closedKey)?.let { closed -> require(closed.equals(expectedID, ignoreCase = true)) }
+        return decodeMachine(machine, result)
     }
 
     override suspend fun relaunchPlan(machine: Machine, verb: RelaunchVerb, scope: RelaunchScope): RelaunchPlan {
@@ -217,6 +249,13 @@ class NativeMachineClient(
     private fun JSONObject.text(key: String): String? =
         if (!has(key) || isNull(key)) null else optString(key).takeIf { it.isNotEmpty() }
 
+    /**
+     * Segundos desde época en [key], o nulo si falta, es `null` o no es un instante. Se mira con
+     * `isNull`: un `null` de JSON no es un cero, y un cero pintaría «Hace 56 años».
+     */
+    private fun JSONObject.epochSeconds(key: String): Long? =
+        if (!has(key) || isNull(key)) null else optLong(key, 0L).takeIf { it > 0L }
+
     internal fun scopeParameters(scope: RelaunchScope): JSONObject = when (scope) {
         // Solo `kind` e `id` viajan. El espacio al que pertenece una ventana se queda en el modelo
         // y en la pantalla: mandarlo invitaría a que el equipo decidiera con él, y quien resuelve
@@ -286,14 +325,33 @@ class NativeMachineClient(
                 request.connectCommand?.let { params.put("connect_command", it) }
                 // Older hosts ignore the flag and still open one terminal; the reconciled tree tells us.
                 if (!request.initialTerminal) params.put("initial_terminal", false)
+                // Who runs it only matters when the host opens that first window here.
+                if (request.initialTerminal) putRunAs(params, request.runAs, RunAs.sandboxFor(request.runAs, null, request.isSandbox))
             }
             is ResourceCreation.Terminal -> {
                 params.put("workspace_id", request.workspaceID)
                 params.put("agent", request.agentID)
                 request.tmuxSession?.let { params.put("tmux_session", it) }
+                putRunAs(params, request.runAs, RunAs.sandboxFor(request.runAs, request.agentID, request.isSandbox))
             }
         }
         return params
+    }
+
+    /**
+     * Adds `run_as` and `is_sandbox` (`run-as.v1`). The connected user travels as nothing, as before
+     * the contract, so an older host sees the request it always saw. The password goes only when
+     * typed; it is never logged or stored on the phone, and the host keeps it in its vault.
+     */
+    private fun putRunAs(params: JSONObject, runAs: RunAs?, sandbox: Boolean) {
+        if (runAs != null && runAs.switchesUser) {
+            val switch = JSONObject().put("mode", runAs.mode.wire).put("method", runAs.method.wire)
+            if (runAs.mode == RunAs.Mode.USER) switch.put("user", runAs.user)
+            runAs.password?.takeIf { it.isNotEmpty() }?.let { switch.put("password", it) }
+            params.put("run_as", switch).put("is_sandbox", sandbox)
+        } else if (sandbox) {
+            params.put("is_sandbox", true)
+        }
     }
 
     override suspend fun replay(machine: Machine, workspaceID: String, windowID: String): TerminalSnapshot =
@@ -415,7 +473,8 @@ class NativeMachineClient(
     private fun decodeMachine(machine: Machine, result: JSONObject): MachineSnapshot {
         val workspaces = result.getJSONArray("workspaces").objects().map { workspace ->
             val terminals = workspace.getJSONArray("terminals").objects().map { terminal ->
-                RemoteWindow(terminal.getString("id"), terminal.getString("title"), "terminal", terminal.optBoolean("is_pinned", false), decodeActivity(terminal.optJSONObject("activity")))
+                RemoteWindow(terminal.getString("id"), terminal.getString("title"), "terminal", terminal.optBoolean("is_pinned", false), decodeActivity(terminal.optJSONObject("activity")),
+                    lastPromptAt = terminal.epochSeconds("last_prompt_at"))
             }
             require(terminals.map { it.id }.distinct().size == terminals.size)
             val kind = when (workspace.optString("kind")) { "ssh" -> true; "local" -> false; else -> null }
@@ -501,9 +560,13 @@ class NativeMachineClient(
     private fun TerminalSnapshot.coversRevision(minimum: ULong?): Boolean =
         minimum == null || (revision != null && revision >= minimum)
 
-    private suspend fun call(machine: Machine, method: String, params: JSONObject): JSONObject =
-        rpc.call(machine.endpoint, method, params).getJSONObject("result")
+    private suspend fun call(machine: Machine, method: String, params: JSONObject, deadlineMillis: Long = 12_000): JSONObject =
+        rpc.call(machine.endpoint, method, params, deadlineMillis).getJSONObject("result")
     private fun target(workspaceID: String, windowID: String) = JSONObject().put("workspace_id", workspaceID).put("surface_id", windowID)
     private fun JSONArray.objects() = List(length()) { getJSONObject(it) }
-    companion object { const val MAX_INPUT_BYTES = 256 * 1024 }
+    companion object {
+        const val MAX_INPUT_BYTES = 256 * 1024
+        /** How long a creation may take before the phone stops waiting for the answer. */
+        const val CREATE_DEADLINE_MILLIS = 45_000L
+    }
 }

@@ -176,6 +176,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                 },
             ) {}
             state.error?.let { ErrorNotice(it, model::dismissError) }
+            state.actionNotice?.let { ErrorNotice(it, model::dismissActionNotice) }
             AnimatedContent(
                 targetState = level,
                 transitionSpec = {
@@ -243,6 +244,9 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                         onRelaunch = if (connection?.snapshot?.relaunches == true) {
                             { scope -> model.relaunch(machine.id, scope) }
                         } else null,
+                        // Igual: sin `box_close` no se ofrece cerrar, en vez de ofrecerlo y fallar.
+                        onCloseWorkspace = if (connection?.snapshot?.closesBoxes == true) model::closeWorkspace else null,
+                        onCloseWindow = if (connection?.snapshot?.closesBoxes == true) model::closeWindow else null,
                         menu = {
                             MachineMenu(
                                 canRelaunchAll = connection?.snapshot?.relaunches == true,
@@ -397,10 +401,20 @@ private fun AppHeader(
 }
 
 @Composable
-fun ErrorNotice(message: Int, onDismiss: () -> Unit) {
+fun ErrorNotice(message: Int, onDismiss: () -> Unit) = ErrorNotice(stringResource(message), onDismiss)
+
+/** The same notice for a failure told in more than one sentence; see ``ActionNotice``. */
+@Composable
+fun ErrorNotice(notice: ActionNotice, onDismiss: () -> Unit) = ErrorNotice(
+    listOfNotNull(stringResource(notice.message), notice.detail, notice.followUp?.let { stringResource(it) }).joinToString(" "),
+    onDismiss,
+)
+
+@Composable
+private fun ErrorNotice(text: String, onDismiss: () -> Unit) {
     Surface(Modifier.fillMaxWidth().padding(horizontal = UniTheme.spacing.page, vertical = 4.dp), color = MaterialTheme.colorScheme.errorContainer, shape = UniTheme.shapes.card) {
         Row(Modifier.padding(start = 16.dp, top = 6.dp, bottom = 6.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(message), Modifier.weight(1f), color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodySmall)
+            Text(text, Modifier.weight(1f), color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodySmall)
             IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, stringResource(R.string.dismiss), tint = MaterialTheme.colorScheme.onErrorContainer) }
         }
     }

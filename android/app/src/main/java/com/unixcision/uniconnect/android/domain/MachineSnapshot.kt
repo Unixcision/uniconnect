@@ -81,6 +81,33 @@ data class MachineSnapshot(val serverName: String, val workspaces: List<RemoteWo
      */
     val describesWindows: Boolean get() = WINDOW_DETAILS in capabilities
 
+    /**
+     * Whether a workspace or a window can be closed from here (`workspace.close`, `terminal.close`,
+     * `box-close.v1`).
+     *
+     * Without it the long-press sheet offers no «Cerrar»: an older host would answer
+     * `method_not_found`, and a destructive entry that never works is worse than none.
+     */
+    val closesBoxes: Boolean get() = BOX_CLOSE in capabilities
+
+    /**
+     * Whether a new window can be asked to run as root or as another user, and with `IS_SANDBOX=1`
+     * (`run-as.v1`).
+     *
+     * An older host would ignore the parameters and start the AI as the connected user, which is
+     * worse than not offering the choice at all.
+     */
+    val runsAs: Boolean get() = RUN_AS in capabilities
+
+    /**
+     * Whether each window says when its last prompt was written (`last_prompt_at`,
+     * `recent-prompts.v1`).
+     *
+     * Without it a missing time means «not sent», not «never prompted», so the «Recientes» tab
+     * would be empty for the wrong reason and is not offered.
+     */
+    val listsRecentPrompts: Boolean get() = RECENT_PROMPTS in capabilities
+
     companion object {
         /** The host implements mobile.workspace.update and mobile.terminal.update. */
         const val BOX_UPDATE = "box_update"
@@ -102,5 +129,14 @@ data class MachineSnapshot(val serverName: String, val workspaces: List<RemoteWo
 
         /** The host implements mobile.terminal.details (window_details.v1). */
         const val WINDOW_DETAILS = "window_details.v1"
+
+        /** The host implements workspace.close and terminal.close (box-close.v1). */
+        const val BOX_CLOSE = "box_close"
+
+        /** The host accepts `run_as` and `is_sandbox` when creating a window (run-as.v1). */
+        const val RUN_AS = "run_as"
+
+        /** Every window in the list carries `last_prompt_at` (recent-prompts.v1). */
+        const val RECENT_PROMPTS = "recent_prompts"
     }
 }

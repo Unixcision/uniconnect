@@ -53,6 +53,8 @@ val syncContractFixtures by tasks.registering(Copy::class) {
     into(layout.buildDirectory.dir("generated/contracts"))
     from(rootProject.file("../contracts/relaunch-v1")) { into("relaunch-v1") }
     from(rootProject.file("../contracts/window-details-v1")) { into("window-details-v1") }
+    from(rootProject.file("../contracts/box-close-v1")) { into("box-close-v1") }
+    from(rootProject.file("../contracts/run-as-v1")) { into("run-as-v1") }
     include("*.json")
 }
 android.sourceSets["test"].resources.srcDir(layout.buildDirectory.dir("generated/contracts"))

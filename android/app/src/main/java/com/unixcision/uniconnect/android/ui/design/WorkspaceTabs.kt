@@ -15,15 +15,24 @@ import androidx.compose.runtime.setValue
 object WorkspaceTabs {
     /** The tab that shows every workspace. */
     const val ALL = "*"
+
+    /**
+     * The tab that lists the windows of every workspace by their last prompt, first of all when
+     * [MachineModel.canShowRecent]. No workspace id can take this form.
+     */
+    const val RECENT = "@recent"
 }
 
 /** The selected tab of a machine screen and how to change it. */
 class WorkspaceTabSelection(
-    /** A workspace id, or [WorkspaceTabs.ALL]. */
+    /** A workspace id, [WorkspaceTabs.ALL] or [WorkspaceTabs.RECENT]. */
     val selected: String,
     val select: (String) -> Unit,
 ) {
     val showsAll: Boolean get() = selected == WorkspaceTabs.ALL
+
+    /** Whether «Recientes» is chosen: a flat list of windows instead of workspaces. */
+    val showsRecent: Boolean get() = selected == WorkspaceTabs.RECENT
 }
 
 /**

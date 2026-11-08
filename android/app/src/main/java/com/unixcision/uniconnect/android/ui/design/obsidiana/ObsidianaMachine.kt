@@ -80,19 +80,22 @@ import com.unixcision.uniconnect.android.ui.design.MachineActions
 import com.unixcision.uniconnect.android.ui.design.MachineModel
 import com.unixcision.uniconnect.android.ui.design.MachineOfflineCard
 import com.unixcision.uniconnect.android.ui.design.MachineStaleBanner
+import com.unixcision.uniconnect.android.ui.design.RecentWindow
 import com.unixcision.uniconnect.android.ui.design.WindowItem
 import com.unixcision.uniconnect.android.ui.design.WorkspaceSection
 import com.unixcision.uniconnect.android.ui.design.WorkspaceTabSelection
 import com.unixcision.uniconnect.android.ui.design.WorkspaceTabs
 import com.unixcision.uniconnect.android.ui.design.activityText
+import com.unixcision.uniconnect.android.ui.design.elapsedText
 import com.unixcision.uniconnect.android.ui.design.rememberWorkspaceTab
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 
 /**
  * Obsidiana's machine screen: a breadcrumb, the machine as a title, the workspaces as an editor's
  * tabs with the filter under them, and then the chosen workspace's windows (or every workspace
- * as a compact group of rows under «Todos»). Both strips stay pinned on top once scrolled past,
- * because with seventy windows they are what gets used most.
+ * as a compact group of rows under «Todos», or every window by its last prompt under
+ * «Recientes»). Both strips stay pinned on top once scrolled past, because with seventy windows
+ * they are what gets used most.
  *
  * Activity is only drawn while the machine answers; without a connection the rows show names
  * and their AI, never a spinner left over from the last list.
@@ -106,7 +109,11 @@ fun ObsidianaMachine(model: MachineModel, actions: MachineActions, menu: @Compos
     // Activity is only known while connected; filtering by it then would empty a list that is there.
     val active = if (model.connected) filter else WindowFilter.ALL
     var collapsed by rememberSaveable { mutableStateOf(emptySet<String>()) }
-    val counts = remember(model, selection.selected) { TabCounts.of(model.visible(selection.selected, WindowFilter.ALL)) }
+    val counts = remember(model, selection.selected) {
+        // «Recientes» lists windows, not workspaces: its counts come from the same flat list.
+        if (selection.showsRecent) TabCounts.of(model.recentWindows().map { it.item })
+        else TabCounts.of(model.visible(selection.selected, WindowFilter.ALL).flatMap { it.windows })
+    }
     val lines = remember(model, selection.selected, active, collapsed) { Line.build(model, selection.selected, active, collapsed) }
     val list = rememberLazyListState()
 
@@ -184,10 +191,8 @@ private data class TabCounts(val all: Int, val working: Int, val waiting: Int) {
     }
 
     companion object {
-        fun of(sections: List<WorkspaceSection>): TabCounts {
-            val windows = sections.flatMap { it.windows }
-            return TabCounts(windows.size, windows.count { it.activity == ActivityState.WORKING }, windows.count { it.activity == ActivityState.WAITING })
-        }
+        fun of(windows: List<WindowItem>): TabCounts =
+            TabCounts(windows.size, windows.count { it.activity == ActivityState.WORKING }, windows.count { it.activity == ActivityState.WAITING })
     }
 }
 
@@ -224,6 +229,11 @@ private sealed interface Line {
         override val key get() = "empty:$workspaceID"
     }
 
+    /** A window under «Recientes», with the workspace it belongs to. */
+    data class Recent(val recent: RecentWindow, val segment: Segment) : Line {
+        override val key get() = "recent:${recent.workspace.id}/${recent.item.window.id}"
+    }
+
     companion object {
         fun build(model: MachineModel, tab: String, filter: WindowFilter, collapsed: Set<String>): List<Line> = buildList {
             add(Hero)
@@ -236,7 +246,12 @@ private sealed interface Line {
                 val sections = model.visible(tab, filter)
                 // One workspace: its bar stays even when the filter empties it, so «+» and the star do too.
                 val single = model.sections.takeIf { tab != WorkspaceTabs.ALL }?.firstOrNull { it.workspace.id == tab }
-                if (single != null) {
+                if (tab == WorkspaceTabs.RECENT) {
+                    // One panel of windows from every workspace, newest prompt first; no headers, no «+».
+                    val recent = model.recentWindows(filter)
+                    if (recent.isEmpty()) add(NoMatches)
+                    recent.forEachIndexed { at, window -> add(Recent(window, Segment.of(at, recent.size))) }
+                } else if (single != null) {
                     val id = single.workspace.id
                     val windows = sections.firstOrNull()?.windows.orEmpty()
                     add(Bar(single))
@@ -297,6 +312,11 @@ private fun LineContent(line: Line, model: MachineModel, actions: MachineActions
             onHold = { actions.onHoldWindow(line.workspaceID, line.item.window.id) },
         )
         is Line.EmptyWorkspace -> Note(stringResource(R.string.no_windows))
+        is Line.Recent -> RecentRow(
+            line.recent, line.segment, model.nowEpochSeconds,
+            onOpen = { actions.onOpenWindow(line.recent.workspace.id, line.recent.item.window.id) },
+            onHold = { actions.onHoldWindow(line.recent.workspace.id, line.recent.item.window.id) },
+        )
         Line.Tabs -> {}
     }
 }
@@ -360,20 +380,28 @@ private fun Hero(model: MachineModel) {
 }
 
 /**
- * The workspaces as an editor's tabs over a hairline: «Todos» and then one per workspace in the
- * reader's order, the chosen one underlined in the accent, counts in mono. A long press on a
- * workspace opens its sheet, as on its header. The chosen tab is brought into view whenever it
- * changes, the first time included.
+ * The workspaces as an editor's tabs over a hairline: «Recientes» when the machine says when each
+ * window was last written to, «Todos» and then one per workspace in the reader's order, the chosen
+ * one underlined in the accent, counts in mono. A long press on a workspace opens its sheet, as on
+ * its header. The chosen tab is brought into view whenever it changes, the first time included.
  */
 @Composable
 private fun WorkspaceTabRow(model: MachineModel, selection: WorkspaceTabSelection, onHold: (String) -> Unit) {
     val row = rememberLazyListState()
     val selected = selection.selected
-    val index = remember(model.sections, selected) {
-        if (selected == WorkspaceTabs.ALL) 0 else 1 + model.sections.indexOfFirst { it.workspace.id == selected }
+    val recent = model.canShowRecent
+    val index = remember(model.sections, selected, recent) {
+        // «Recientes» leads when it is there, so every other tab moves one place along.
+        val lead = if (recent) 1 else 0
+        when (selected) {
+            WorkspaceTabs.RECENT -> 0
+            WorkspaceTabs.ALL -> lead
+            else -> lead + 1 + model.sections.indexOfFirst { it.workspace.id == selected }
+        }
     }
     LaunchedEffect(selected, index) { row.reveal(index) }
     val total = remember(model.sections) { model.sections.sumOf { it.windows.size } }
+    val recentTotal = remember(model) { if (model.canShowRecent) model.recentWindows().size else 0 }
     Box(Modifier.fillMaxWidth()) {
         // Under the strip, so the chosen tab's underline covers it.
         Hairline(Modifier.align(Alignment.BottomStart))
@@ -383,6 +411,12 @@ private fun WorkspaceTabRow(model: MachineModel, selection: WorkspaceTabSelectio
             // A tab pads its own label, so the first name lines up with the page's edge.
             contentPadding = PaddingValues(horizontal = (UniTheme.spacing.page - TabInset).coerceAtLeast(0.dp)),
         ) {
+            if (recent) item(key = "recent", contentType = "all") {
+                WorkspaceTab(
+                    name = stringResource(R.string.design_tab_recent), count = recentTotal, pinned = false, activity = null,
+                    chosen = selection.showsRecent, onClick = { selection.select(WorkspaceTabs.RECENT) }, onHold = null,
+                )
+            }
             item(key = "all", contentType = "all") {
                 WorkspaceTab(
                     name = stringResource(R.string.obsidiana_tab_all), count = total, pinned = false, activity = null,
@@ -629,6 +663,71 @@ private fun WindowRow(item: WindowItem, segment: Segment, onOpen: () -> Unit, on
             item.agent != null -> Tag(item.agent)
         }
     }
+}
+
+/**
+ * One window under «Recientes»: the same panel row as a workspace's window, with the box of the
+ * workspace it belongs to and how long ago its last prompt was written in place of its state, since
+ * the list mixes every workspace and is ordered by that time.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun RecentRow(recent: RecentWindow, segment: Segment, nowEpochSeconds: Long, onOpen: () -> Unit, onHold: () -> Unit) {
+    val colors = UniTheme.colors
+    val item = recent.item
+    val waiting = item.activity == ActivityState.WAITING
+    Row(
+        Modifier.fillMaxWidth().panelSegment(segment, rememberSegmentShape(segment), colors.surface, colors.outline)
+            .combinedClickable(onLongClickLabel = stringResource(R.string.obsidiana_window_options), onLongClick = onHold, onClick = onOpen)
+            .heightIn(min = 56.dp).padding(start = 14.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(Modifier.width(16.dp), contentAlignment = Alignment.Center) {
+            item.activity?.let { state ->
+                when (state) {
+                    ActivityState.WORKING, ActivityState.WAITING -> ActivityMark(state, size = 14.dp)
+                    ActivityState.IDLE -> IdleRing()
+                    ActivityState.UNKNOWN -> {}
+                }
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    item.window.name, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = UniTheme.type.identifierFamily, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                if (item.pinned) Icon(Icons.Rounded.Star, stringResource(R.string.box_pinned), Modifier.size(12.dp), tint = colors.warning)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                WorkspaceBox(recent.workspace.name, Modifier.weight(1f, fill = false))
+                elapsedText(recent.lastPromptAt, nowEpochSeconds)?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = colors.muted, maxLines = 1, softWrap = false)
+                }
+            }
+        }
+        when {
+            // As on a workspace's window: the row already opens it, the word only says why to.
+            waiting -> Text(
+                stringResource(R.string.design_reply),
+                Modifier.background(colors.warning.copy(alpha = .14f), UniTheme.shapes.chip).padding(horizontal = 10.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = colors.warning, maxLines = 1,
+            )
+            item.agent != null -> Tag(item.agent)
+        }
+    }
+}
+
+/** The small box that names a window's workspace under «Recientes», where windows of every workspace mix. */
+@Composable
+private fun WorkspaceBox(name: String, modifier: Modifier = Modifier) {
+    val colors = UniTheme.colors
+    Text(
+        name,
+        modifier.widthIn(max = 180.dp).clip(UniTheme.shapes.chip).background(colors.surfaceRaised).padding(horizontal = 6.dp, vertical = 2.dp),
+        style = MaterialTheme.typography.labelSmall, fontFamily = UniTheme.type.identifierFamily, fontSize = 11.sp, lineHeight = 14.sp,
+        color = colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+    )
 }
 
 /** A quiet line in its own panel: an empty workspace, no workspaces, nothing under the filter. */

@@ -79,7 +79,7 @@
     <string name="create_window_note">Se abrirá una nueva terminal en este mismo espacio de trabajo. Las ventanas que ya tienes no cambian.</string>
     <string name="select_ssh_source">Heredar conexión de…</string>
     <string name="tmux_session">Nombre de la sesión tmux</string>
-    <string name="tmux_session_hint">Hasta 40 letras minúsculas, números, guiones o guiones bajos. No uses un guion al principio o al final.</string>
+    <string name="tmux_session_hint">Opcional: si lo dejas vacío, el equipo pone uno. Hasta 40 letras minúsculas, números, guiones o guiones bajos, sin guion al principio ni al final.</string>
     <string name="working_directory">Carpeta absoluta</string>
     <string name="optional_directory">Carpeta absoluta · opcional</string>
     <string name="directory_hint">Ruta en la máquina de destino. Déjala vacía para heredar la carpeta cuando sea opcional.</string>
@@ -379,6 +379,43 @@
     <string name="box_actions_workspace">Espacio de trabajo</string>
     <string name="box_actions_window">Ventana</string>
     <string name="box_change_failed">No se ha podido guardar el cambio en el equipo</string>
+    <!-- box-close.v1: cerrar desde el móvil una ventana o un espacio, también en el escritorio. -->
+    <string name="box_close_window">Cerrar ventana</string>
+    <string name="box_close_workspace">Cerrar espacio</string>
+    <string name="box_close_confirm_title">¿Cerrar «%1$s» en %2$s?</string>
+    <string name="box_close_confirm_note">Se cerrará también en el escritorio.</string>
+    <plurals name="box_close_confirm_windows">
+        <item quantity="one">Se cerrará su ventana.</item>
+        <item quantity="other">Se cerrarán sus %1$d ventanas.</item>
+    </plurals>
+    <string name="box_close_gone">Ya no existía en el equipo.</string>
+    <string name="box_close_failed">El equipo no ha podido cerrarlo.</string>
+    <string name="box_close_error">No se ha podido cerrar. Mira la lista antes de volver a intentarlo: puede que el equipo sí lo cerrara.</string>
+    <!-- run-as.v1: con qué usuario arranca la IA de una ventana nueva, y si lleva IS_SANDBOX=1. -->
+    <string name="run_as_label">Ejecutar como</string>
+    <string name="run_as_current">Mi usuario</string>
+    <string name="run_as_root">root</string>
+    <string name="run_as_user">Otro usuario</string>
+    <string name="run_as_current_note">El usuario con el que se conecta este espacio, como hasta ahora.</string>
+    <string name="run_as_method">Método</string>
+    <string name="run_as_sudo">sudo</string>
+    <string name="run_as_su">su</string>
+    <string name="run_as_method_note_root">sudo: tu contraseña de conexión; su: la de root.</string>
+    <string name="run_as_method_note_user">sudo: tu contraseña de conexión; su: la de ese usuario.</string>
+    <string name="run_as_user_name">Usuario</string>
+    <string name="run_as_password">Contraseña</string>
+    <string name="run_as_password_hint">Déjala vacía si el equipo no la pide. No se guarda en el móvil.</string>
+    <string name="run_as_sandbox">IS_SANDBOX=1</string>
+    <string name="run_as_sandbox_note">La IA arranca con IS_SANDBOX=1 en su entorno.</string>
+    <string name="run_as_sandbox_locked">Claude como root lo necesita para arrancar sin preguntas.</string>
+    <string name="run_as_failed_password_incorrect">Contraseña incorrecta.</string>
+    <string name="run_as_failed_not_allowed">El equipo no deja cambiar a ese usuario: sudo no está permitido.</string>
+    <string name="run_as_failed_user_not_found">Ese usuario no existe en el equipo.</string>
+    <string name="run_as_failed_timeout">El cambio de usuario no terminó a tiempo.</string>
+    <string name="run_as_failed_wrong_user">La ventana no quedó con el usuario pedido.</string>
+    <string name="run_as_failed_failed">No se ha podido cambiar de usuario.</string>
+    <string name="run_as_window_opened">La ventana se ha creado sin IA y la tienes abierta.</string>
+    <string name="run_as_window_unknown">Mira la lista: la ventana se habrá creado sin IA.</string>
     <string name="activity_working">La IA está trabajando</string>
     <string name="activity_waiting">La IA espera tu respuesta</string>
     <string name="box_local_only">Este equipo aún no sincroniza favoritos ni orden: se guardan solo en este móvil</string>
@@ -691,4 +728,6 @@
     <string name="design_workspaces">Espacios</string>
     <string name="design_recent_activity">Actividad reciente</string>
     <string name="design_no_filtered_windows">Ninguna ventana en este estado ahora mismo.</string>
+    <!-- recent-prompts.v1: la pestaña de ventanas por su último prompt, común a los cuatro diseños. -->
+    <string name="design_tab_recent">Recientes</string>
 </resources>

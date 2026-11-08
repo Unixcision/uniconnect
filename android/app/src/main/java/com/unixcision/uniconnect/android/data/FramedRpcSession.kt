@@ -85,10 +85,7 @@ class FramedRpcSession(private val socket: Socket, private val scope: CoroutineS
                 require(bytes.size in 1..FramedRpcClient.MAX_FRAME_BYTES)
                 write(bytes)
                 val response = completion.await()
-                if (!response.value.optBoolean("ok", false)) {
-                    throw MachineFailure.Rejected(response.value.optJSONObject("error")?.optString("code").orEmpty(),
-                        response.value.optJSONObject("error")?.optString("message")?.takeIf { it.isNotBlank() })
-                }
+                if (!response.value.optBoolean("ok", false)) throw rejection(response.value.optJSONObject("error"))
                 response
             }
         } catch (failure: Exception) {
@@ -152,6 +149,26 @@ class FramedRpcSession(private val socket: Socket, private val scope: CoroutineS
     class EventBufferOverflow : Exception()
 
     companion object {
+        /**
+         * The host's refusal as the phone reads it.
+         *
+         * `cause` and `created_terminal_id` (`run_as_failed`, `run-as.v1`) are read at the error's
+         * top level, as the contract writes them, and inside `data`, where the Mac's error helper
+         * puts extra fields. A JSON `null` is no value: Android's `optString` would read it as the
+         * text "null".
+         */
+        internal fun rejection(error: JSONObject?): MachineFailure.Rejected {
+            fun JSONObject.text(key: String): String? =
+                if (!has(key) || isNull(key)) null else optString(key).takeIf { it.isNotBlank() }
+            val data = error?.optJSONObject("data")
+            return MachineFailure.Rejected(
+                code = error?.text("code").orEmpty(),
+                detail = error?.text("message"),
+                failureCause = error?.text("cause") ?: data?.text("cause"),
+                createdTerminalID = error?.text("created_terminal_id") ?: data?.text("created_terminal_id"),
+            )
+        }
+
         /** Socket buffer for both directions: one syscall per frame instead of one per field. */
         const val FRAME_BUFFER_BYTES = 32 * 1024
 

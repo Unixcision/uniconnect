@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -23,9 +24,11 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -33,6 +36,7 @@ import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import com.unixcision.uniconnect.android.domain.RemoteAgentTarget
 import com.unixcision.uniconnect.android.domain.ResourceCreation
+import com.unixcision.uniconnect.android.domain.RunAs
 
 /**
  * Creation sheet for a workspace or a window. In [CreationContext.firstWindow] mode it is the
@@ -58,6 +62,21 @@ fun CreateResourceSheet(context: CreationContext, saving: Boolean, error: Int?, 
         mutableStateOf(existing?.availableAgentTargets?.firstOrNull { it.id == "terminal" }?.id ?: existing?.availableAgentTargets?.firstOrNull()?.id ?: "terminal")
     }
     val selectedAgent = existing?.availableAgentTargets?.firstOrNull { it.id == agentID }
+    // «Ejecutar como» (run-as.v1), only for a window of a machine that announces it.
+    val offersRunAs = existing != null && context.runsAs
+    var runMode by rememberSaveable(context.machineID, context.workspace?.id) { mutableStateOf(RunAs.Mode.CURRENT) }
+    var runMethod by rememberSaveable(context.machineID, context.workspace?.id) { mutableStateOf(RunAs.Method.SUDO) }
+    var runUser by rememberSaveable(context.machineID, context.workspace?.id) { mutableStateOf("") }
+    // Never saveable: saved state outlives the sheet and may reach disk, and the password must not.
+    var runPassword by remember(context.machineID, context.workspace?.id) { mutableStateOf("") }
+    var sandboxChosen by rememberSaveable(context.machineID, context.workspace?.id) { mutableStateOf(false) }
+    val runAs = if (offersRunAs && runMode != RunAs.Mode.CURRENT) {
+        RunAs(runMode, runMethod, runUser.trim().takeIf { runMode == RunAs.Mode.USER }, runPassword.takeIf { it.isNotEmpty() })
+    } else null
+    // IS_SANDBOX only reaches an AI's environment; a plain terminal has nothing to give it to.
+    val offersSandbox = offersRunAs && selectedAgent != null && selectedAgent.id != "terminal"
+    val sandboxLocked = offersSandbox && RunAs.sandboxLocked(runAs, selectedAgent?.id)
+    val isSandbox = offersSandbox && RunAs.sandboxFor(runAs, selectedAgent?.id, sandboxChosen)
     val tone = UniTheme.colors.accent
     ModalBottomSheet(
         onDismissRequest = { if (!saving) onDismiss() },
@@ -127,6 +146,16 @@ fun CreateResourceSheet(context: CreationContext, saving: Boolean, error: Int?, 
             if (existing != null || !useSSH) SheetField(directory, { directory = it },
                 stringResource(if (existing == null) R.string.working_directory else R.string.optional_directory),
                 hint = stringResource(R.string.directory_hint), enabled = !saving, monospace = true, placeholder = "/")
+            if (offersRunAs) RunAsSection(
+                mode = runMode,
+                // Root starts with IS_SANDBOX checked: it is what an AI as root usually needs.
+                onMode = { runMode = it; sandboxChosen = it == RunAs.Mode.ROOT },
+                method = runMethod, onMethod = { runMethod = it },
+                user = runUser, onUser = { runUser = it },
+                password = runPassword, onPassword = { runPassword = it },
+                offersSandbox = offersSandbox, sandbox = isSandbox, sandboxLocked = sandboxLocked,
+                onSandbox = { sandboxChosen = it }, enabled = !saving,
+            )
             if (useSSH) Text(
                 stringResource(
                     if (existing == null && writeSSH && context.takesNewSSH) R.string.ssh_write_note
@@ -150,10 +179,14 @@ fun CreateResourceSheet(context: CreationContext, saving: Boolean, error: Int?, 
                                 connectCommand = typed,
                             )
                         }
-                        else ResourceCreation.Terminal(existing.id, visibleName, folder, if (useSSH) tmux.trim() else null, requireNotNull(selectedAgent).id),
+                        // An empty tmux name over SSH lets the machine pick one.
+                        else ResourceCreation.Terminal(
+                            existing.id, visibleName, folder, if (useSSH) tmux.trim().ifEmpty { null } else null, requireNotNull(selectedAgent).id,
+                            runAs = runAs, isSandbox = isSandbox,
+                        ),
                     )
                 },
-                enabled = !saving && (existing == null || selectedAgent != null),
+                enabled = !saving && (existing == null || selectedAgent != null) && runAs?.isValid() != false,
                 modifier = Modifier.fillMaxWidth(), shape = UniTheme.shapes.button, contentPadding = PaddingValues(16.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = if (context.firstWindow) UniTheme.colors.success else tone, contentColor = UniTheme.colors.onAccent),
             ) {
@@ -163,6 +196,79 @@ fun CreateResourceSheet(context: CreationContext, saving: Boolean, error: Int?, 
             TextButton(onClick = onDismiss, enabled = !saving, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(if (context.firstWindow) R.string.not_now else R.string.cancel), color = UniTheme.colors.muted)
             }
+        }
+    }
+}
+
+/**
+ * «Ejecutar como»: the connected user, root or another one; for a switch, how (sudo or su) and
+ * its password; and whether the AI starts with `IS_SANDBOX=1`. Claude as root cannot start
+ * without questions unless it is set, so then the box stays checked and cannot be cleared.
+ */
+@Composable
+private fun RunAsSection(
+    mode: RunAs.Mode, onMode: (RunAs.Mode) -> Unit,
+    method: RunAs.Method, onMethod: (RunAs.Method) -> Unit,
+    user: String, onUser: (String) -> Unit,
+    password: String, onPassword: (String) -> Unit,
+    offersSandbox: Boolean, sandbox: Boolean, sandboxLocked: Boolean, onSandbox: (Boolean) -> Unit,
+    enabled: Boolean,
+) {
+    Text(stringResource(R.string.run_as_label), style = MaterialTheme.typography.labelLarge)
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        RunAs.Mode.entries.forEachIndexed { index, option ->
+            SegmentedButton(
+                selected = mode == option, onClick = { onMode(option) }, shape = SegmentedButtonDefaults.itemShape(index, RunAs.Mode.entries.size),
+                enabled = enabled, icon = {}, colors = segmentColors(),
+                label = {
+                    Text(
+                        stringResource(when (option) {
+                            RunAs.Mode.CURRENT -> R.string.run_as_current
+                            RunAs.Mode.ROOT -> R.string.run_as_root
+                            RunAs.Mode.USER -> R.string.run_as_user
+                        }),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                },
+            )
+        }
+    }
+    if (mode == RunAs.Mode.CURRENT) {
+        Text(stringResource(R.string.run_as_current_note), style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted)
+    } else {
+        if (mode == RunAs.Mode.USER) SheetField(user, onUser, stringResource(R.string.run_as_user_name), enabled = enabled, monospace = true, placeholder = "deploy")
+        Text(stringResource(R.string.run_as_method), style = MaterialTheme.typography.labelLarge)
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            RunAs.Method.entries.forEachIndexed { index, option ->
+                SegmentedButton(
+                    selected = method == option, onClick = { onMethod(option) }, shape = SegmentedButtonDefaults.itemShape(index, RunAs.Method.entries.size),
+                    enabled = enabled, colors = segmentColors(),
+                    label = { Text(stringResource(if (option == RunAs.Method.SUDO) R.string.run_as_sudo else R.string.run_as_su)) },
+                )
+            }
+        }
+        Text(
+            stringResource(if (mode == RunAs.Mode.ROOT) R.string.run_as_method_note_root else R.string.run_as_method_note_user),
+            style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted,
+        )
+        SheetField(password, onPassword, stringResource(R.string.run_as_password), hint = stringResource(R.string.run_as_password_hint), enabled = enabled, secret = true)
+    }
+    if (offersSandbox) Row(
+        Modifier.fillMaxWidth().clip(UniTheme.shapes.chip)
+            .toggleable(value = sandbox, enabled = enabled && !sandboxLocked, role = Role.Checkbox, onValueChange = onSandbox)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Checkbox(
+            checked = sandbox, onCheckedChange = null, enabled = enabled && !sandboxLocked,
+            colors = CheckboxDefaults.colors(checkedColor = UniTheme.colors.accent, uncheckedColor = UniTheme.colors.muted, checkmarkColor = UniTheme.colors.onAccent),
+        )
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.run_as_sandbox), style = MaterialTheme.typography.labelLarge, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+            Text(
+                stringResource(if (sandboxLocked) R.string.run_as_sandbox_locked else R.string.run_as_sandbox_note),
+                style = MaterialTheme.typography.bodySmall, color = if (sandboxLocked) UniTheme.colors.warning else UniTheme.colors.muted,
+            )
         }
     }
 }

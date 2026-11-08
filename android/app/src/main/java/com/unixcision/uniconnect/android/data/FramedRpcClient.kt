@@ -40,8 +40,8 @@ class FramedRpcClient(private val ioScope: CoroutineScope) {
             }
         } }
 
-    suspend fun call(endpoint: MachineEndpoint, method: String, params: JSONObject): JSONObject =
-        open(endpoint).use { it.call(method, params).value }
+    suspend fun call(endpoint: MachineEndpoint, method: String, params: JSONObject, deadlineMillis: Long = 12_000): JSONObject =
+        open(endpoint).use { it.call(method, params, deadlineMillis).value }
 
     companion object {
         const val MAX_FRAME_BYTES = 8 * 1024 * 1024
