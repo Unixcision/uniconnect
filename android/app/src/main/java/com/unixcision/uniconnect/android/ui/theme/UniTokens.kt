@@ -30,7 +30,7 @@ data class UniTokens(
             DesignTheme.NIEVE -> UniTokens(
                 theme = theme,
                 colors = if (dark) UniPalettes.nieveDark else UniPalettes.nieveLight,
-                shapes = UniShapes(cardRadius = 28.dp, sheetRadius = 32.dp, chipRadius = 999.dp, buttonRadius = 999.dp, fieldRadius = 16.dp),
+                shapes = UniShapes.apple,
                 spacing = UniSpacing(page = 22.dp, gap = 16.dp, gapSmall = 10.dp),
                 type = UniType(headlineFamily = FontFamily.SansSerif, identifierFamily = FontFamily.SansSerif, labelUppercase = false, labelLetterSpacing = 0.1.sp, labelQuiet = true),
                 layout = UniLayout(density = RowDensity.COMFORTABLE, workspacesAs = WorkspaceLayout.RAIL, workspaceColumns = 1, cardsAs = CardStyle.CARD, rowsAs = CardStyle.CARD),
@@ -49,7 +49,7 @@ data class UniTokens(
             DesignTheme.OBSIDIANA -> UniTokens(
                 theme = theme,
                 colors = if (dark) UniPalettes.obsidianaDark else UniPalettes.obsidianaLight,
-                shapes = UniShapes(cardRadius = 14.dp, sheetRadius = 20.dp, chipRadius = 8.dp, buttonRadius = 10.dp),
+                shapes = UniShapes.apple,
                 spacing = UniSpacing(page = 16.dp, gap = 10.dp, gapSmall = 6.dp),
                 type = UniType(headlineFamily = FontFamily.SansSerif, identifierFamily = FontFamily.SansSerif, labelUppercase = true, labelLetterSpacing = 1.2.sp),
                 layout = UniLayout(density = RowDensity.COMPACT, workspacesAs = WorkspaceLayout.GRID, workspaceColumns = 2, cardsAs = CardStyle.CARD, rowsAs = CardStyle.HAIRLINE),
@@ -61,7 +61,7 @@ data class UniTokens(
             DesignTheme.ARENA -> UniTokens(
                 theme = theme,
                 colors = if (dark) UniPalettes.arenaDark else UniPalettes.arenaLight,
-                shapes = UniShapes(cardRadius = 22.dp, sheetRadius = 30.dp, chipRadius = 999.dp, buttonRadius = 14.dp),
+                shapes = UniShapes.apple,
                 spacing = UniSpacing(page = 22.dp, gap = 14.dp, gapSmall = 8.dp),
                 type = UniType(headlineFamily = FontFamily.Serif, identifierFamily = FontFamily.SansSerif, labelUppercase = false, labelLetterSpacing = 0.2.sp),
                 layout = UniLayout(density = RowDensity.COMFORTABLE, workspacesAs = WorkspaceLayout.RAIL, workspaceColumns = 1, cardsAs = CardStyle.CARD, rowsAs = CardStyle.CARD),
@@ -80,7 +80,7 @@ data class UniTokens(
             DesignTheme.LIMA -> UniTokens(
                 theme = theme,
                 colors = if (dark) UniPalettes.limaDark else UniPalettes.limaLight,
-                shapes = UniShapes(cardRadius = 24.dp, sheetRadius = 28.dp, chipRadius = 12.dp, buttonRadius = 16.dp),
+                shapes = UniShapes.apple,
                 spacing = UniSpacing(page = 16.dp, gap = 12.dp, gapSmall = 8.dp),
                 type = UniType(headlineFamily = FontFamily.SansSerif, identifierFamily = FontFamily.Monospace, labelUppercase = true, labelLetterSpacing = 1.sp),
                 layout = UniLayout(density = RowDensity.COMFORTABLE, workspacesAs = WorkspaceLayout.GRID, workspaceColumns = 2, cardsAs = CardStyle.CARD, rowsAs = CardStyle.CARD),

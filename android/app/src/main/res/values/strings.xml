@@ -285,7 +285,7 @@
     <string name="drawer_connected">%1$d de %2$d conectadas</string>
     <string name="drawer_general">General</string>
     <string name="drawer_machines">Máquinas</string>
-    <string name="drawer_notices">Avisos</string>
+    <string name="drawer_notices">Notificaciones</string>
     <string name="drawer_maintenance">Mantenimiento</string>
     <string name="drawer_diagnostics">Diagnóstico de conexión</string>
     <string name="notices_title">Avisos</string>

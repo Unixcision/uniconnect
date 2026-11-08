@@ -137,13 +137,13 @@ fun HomeDashboard(
         item { SectionLabel(stringResource(R.string.home_shortcuts), Modifier.padding(top = 10.dp)) }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.gapSmall)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(spacing.gapSmall)) {
-                    ShortcutTile(Icons.Rounded.CloudUpload, stringResource(R.string.upload_title), stringResource(R.string.home_shortcut_files), Modifier.weight(1f), onFiles)
-                    ShortcutTile(Icons.Rounded.History, stringResource(R.string.history_title), stringResource(R.string.home_shortcut_history), Modifier.weight(1f), onHistory)
+                Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(spacing.gapSmall)) {
+                    ShortcutTile(Icons.Rounded.CloudUpload, stringResource(R.string.upload_title), stringResource(R.string.home_shortcut_files), Modifier.weight(1f).fillMaxHeight(), onFiles)
+                    ShortcutTile(Icons.Rounded.History, stringResource(R.string.history_title), stringResource(R.string.home_shortcut_history), Modifier.weight(1f).fillMaxHeight(), onHistory)
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(spacing.gapSmall)) {
-                    ShortcutTile(Icons.Rounded.NotificationsActive, stringResource(R.string.notices_title), stringResource(R.string.home_shortcut_notices), Modifier.weight(1f), onNotices)
-                    ShortcutTile(Icons.Rounded.Tune, stringResource(R.string.settings), stringResource(R.string.home_shortcut_settings), Modifier.weight(1f), onSettings)
+                Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(spacing.gapSmall)) {
+                    ShortcutTile(Icons.Rounded.NotificationsActive, stringResource(R.string.notices_title), stringResource(R.string.home_shortcut_notices), Modifier.weight(1f).fillMaxHeight(), onNotices)
+                    ShortcutTile(Icons.Rounded.Tune, stringResource(R.string.settings), stringResource(R.string.home_shortcut_settings), Modifier.weight(1f).fillMaxHeight(), onSettings)
                 }
             }
         }
@@ -229,7 +229,7 @@ private fun ShortcutTile(icon: ImageVector, title: String, note: String, modifie
                 Icon(icon, null, Modifier.size(20.dp), tint = colors.accent)
             }
             Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(note, style = MaterialTheme.typography.bodySmall, color = colors.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(note, style = MaterialTheme.typography.bodySmall, color = colors.muted, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }

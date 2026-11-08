@@ -99,14 +99,13 @@ private fun UniTokens.materialColorScheme(): ColorScheme {
     )
 }
 
-// Material dresses menus and snackbars with `extraSmall`. A theme whose chips are pills means
-// that literally, so the radius is held to the theme's own cards before it gets there.
+// Material's own components take plain rounded corners; they get the theme's radii.
 private fun UniTokens.materialShapes() = Shapes(
-    extraSmall = RoundedCornerShape(shapes.chipRadius.coerceAtMost(shapes.cardRadius)),
-    small = shapes.button,
-    medium = shapes.card,
-    large = shapes.card,
-    extraLarge = shapes.sheet,
+    extraSmall = shapes.materialChip,
+    small = shapes.materialButton,
+    medium = shapes.materialCard,
+    large = shapes.materialCard,
+    extraLarge = shapes.materialSheet,
 )
 
 private fun UniTokens.materialTypography(): Typography {

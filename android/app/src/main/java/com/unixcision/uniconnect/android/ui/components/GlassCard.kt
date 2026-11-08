@@ -29,9 +29,8 @@ import com.unixcision.uniconnect.android.ui.theme.UniTheme
  * one and the short defined one, keeps the edge down to a barely visible hairline, and in the
  * dark, where no shadow reads, lifts the fill with a little white instead.
  *
- * [accent] echoes a box's tone or a live state: it tints the edge of a card and draws a thin bar
- * down the start edge of a hairline block. Where the edge is a hairline it is tinted harder, so a
- * half pixel still says what a whole one used to.
+ * [accent] is kept for callers that still pass a tone, but edges are always neutral now: a
+ * coloured outline around a card read as noise, not as state, and states are told inside.
  */
 @Composable
 fun GlassCard(
@@ -50,10 +49,10 @@ fun GlassCard(
         modifier.drawBehind {
             val stroke = 1.dp.toPx()
             drawLine(rule, Offset(0f, size.height - stroke / 2), Offset(size.width, size.height - stroke / 2), stroke)
-            if (accent != null) drawRect(accent, topLeft = Offset.Zero, size = Size(3.dp.toPx(), size.height))
         }
     } else {
-        val edge = accent?.copy(alpha = if (elevation.hairline < 1.dp) .5f else .35f) ?: colors.outline
+        // Edges stay neutral: a coloured outline around a card reads as noise, not as state.
+        val edge = colors.outline
         modifier
             .then(if (elevation.ambient > 0.dp) Modifier.shadow(elevation.ambient, shape, clip = false, ambientColor = elevation.ambientColor, spotColor = elevation.ambientColor) else Modifier)
             .then(if (elevation.key > 0.dp) Modifier.shadow(elevation.key, shape, clip = false, ambientColor = elevation.keyColor, spotColor = elevation.keyColor) else Modifier)

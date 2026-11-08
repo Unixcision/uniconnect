@@ -137,30 +137,22 @@ class UniTokensTest {
     }
 
     @Test
-    fun radiiFollowTheBrief() {
-        assertEquals(28f, UniTokens.tokensFor(DesignTheme.NIEVE, dark = false).shapes.cardRadius.value)
-        assertEquals(14f, UniTokens.tokensFor(DesignTheme.OBSIDIANA, dark = false).shapes.cardRadius.value)
-        assertEquals(22f, UniTokens.tokensFor(DesignTheme.ARENA, dark = false).shapes.cardRadius.value)
-        assertEquals(24f, UniTokens.tokensFor(DesignTheme.LIMA, dark = false).shapes.cardRadius.value)
-    }
-
-    @Test
-    fun nieveRoundsHarderThanEveryOtherThemeAndItsChipsAndButtonsArePills() {
-        val nieve = UniTokens.tokensFor(DesignTheme.NIEVE, dark = false).shapes
-        (themes - DesignTheme.NIEVE).forEach { theme ->
-            val other = UniTokens.tokensFor(theme, dark = false).shapes
-            assertTrue("$theme cards round less than nieve", other.cardRadius.value < nieve.cardRadius.value)
+    fun everyThemeSharesOneAppleScaleAndNothingIsAPill() {
+        themes.forEach { theme ->
+            listOf(false, true).forEach { dark ->
+                val shapes = UniTokens.tokensFor(theme, dark).shapes
+                assertEquals("$theme dark=$dark uses the app's one scale", UniShapes.apple, shapes)
+            }
         }
-        // A pill is any radius past half the height of what it wraps; 999 dp is how a shape says so.
-        assertTrue("nieve chips are pills", nieve.chipRadius.value >= 999f)
-        assertTrue("nieve buttons are pills", nieve.buttonRadius.value >= 999f)
-        assertTrue("nieve sheets round at least as hard as its cards", nieve.sheetRadius >= nieve.cardRadius)
-        // A floating label has nowhere to sit in the notch of a pill, so the field steps back.
-        assertTrue("nieve fields are not pills", nieve.fieldRadius < nieve.buttonRadius)
-        (themes - DesignTheme.NIEVE).forEach { theme ->
-            val other = UniTokens.tokensFor(theme, dark = false).shapes
-            assertEquals("$theme fields follow its buttons", other.buttonRadius, other.fieldRadius)
+        val apple = UniShapes.apple
+        assertEquals(16f, apple.cardRadius.value)
+        // A pill is any radius past half the height of what it wraps; nothing here should be one.
+        listOf(apple.cardRadius, apple.chipRadius, apple.buttonRadius, apple.fieldRadius).forEach { radius ->
+            assertTrue("$radius is a corner, not a pill", radius.value <= 24f)
         }
+        assertTrue("sheets round at least as hard as cards", apple.sheetRadius >= apple.cardRadius)
+        assertTrue("small things round less than cards", apple.chipRadius < apple.cardRadius)
+        assertEquals("fields follow buttons", apple.buttonRadius, apple.fieldRadius)
     }
 
     @Test
