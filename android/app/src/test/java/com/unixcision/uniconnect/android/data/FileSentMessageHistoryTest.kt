@@ -71,6 +71,14 @@ class FileSentMessageHistoryTest {
     }
 
     @Test
+    fun aHistoryOverALowerLimitIsTrimmedAsSoonAsItIsOpened() {
+        val generous = history(max = 10)
+        listOf("uno", "dos", "tres").forEach { text -> now += 1; generous.record(text, withEnter = true, machineName = null, windowName = null) }
+        assertEquals(listOf("tres", "dos"), history(max = 2).messages.value.map { it.text })
+        assertEquals(listOf("tres", "dos"), history(max = 10).messages.value.map { it.text })
+    }
+
+    @Test
     fun theSearchFindsTheWindowTheMachineAndTheTextWithoutAccents() {
         val message = SentMessage("m", 0, "¿Ya le has dado al VPS los archivos?", true, SentMessage.State.DELIVERED, "MacBook de Daniel", "APP 2")
         assertTrue(DictationSearch.matches(message, "app 2"))

@@ -115,6 +115,23 @@ class FileDictationHistoryTest {
     }
 
     @Test
+    fun aHistoryOverALowerLimitIsTrimmedAsSoonAsItIsOpened() {
+        val generous = FileDictationHistory(directory, clock = { now }, maxRecords = 10)
+        val clips = (1..3).map { FakeClip(byteArrayOf(it.toByte())) }
+        clips.forEachIndexed { index, clip ->
+            now = 1_000L + index
+            generous.keep(clip, target)
+            generous.transcribed(clip, "dictado $index")
+        }
+        val oldestAudio = generous.records.value.last().audioPath!!
+
+        val reopened = FileDictationHistory(directory, clock = { now }, maxRecords = 2).records.value
+        assertEquals(listOf("dictado 2", "dictado 1"), reopened.map { it.text })
+        assertFalse("the oldest goes with its audio", File(oldestAudio).exists())
+        assertEquals(2, history().records.value.size)
+    }
+
+    @Test
     fun aNewTranscriptionReplacesTheTextAndBothSurviveARestart() {
         val history = history()
         val clip = FakeClip(byteArrayOf(5))

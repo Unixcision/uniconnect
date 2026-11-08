@@ -27,6 +27,11 @@ class FileSentMessageHistory(
     private val mutable = MutableStateFlow(load())
     override val messages: StateFlow<List<SentMessage>> = mutable.asStateFlow()
 
+    init {
+        // Kept under an older, larger limit: trimmed as soon as it is opened.
+        synchronized(lock) { if (mutable.value.size > maxMessages) change { it.take(maxMessages) } }
+    }
+
     override fun record(text: String, withEnter: Boolean, machineName: String?, windowName: String?): String {
         val message = SentMessage(
             id = UUID.randomUUID().toString(), createdAt = clock(), text = text, withEnter = withEnter,

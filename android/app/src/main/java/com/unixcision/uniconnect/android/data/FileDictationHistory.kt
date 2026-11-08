@@ -35,6 +35,12 @@ class FileDictationHistory(
     private val mutable = MutableStateFlow(load())
     override val records: StateFlow<List<DictationRecord>> = mutable.asStateFlow()
 
+    init {
+        // A history kept under an older, larger limit comes down to this one as soon as it is
+        // opened, not at the next dictation.
+        synchronized(lock) { if (!DictationRetention.trim(mutable.value, maxRecords, maxAudioBytes).isEmpty) change { it } }
+    }
+
     override fun keep(clip: AudioClip, target: DictationTarget?) {
         synchronized(lock) { if (entries.containsKey(clip)) return }
         val id = UUID.randomUUID().toString()
