@@ -275,10 +275,12 @@ class AgentTree:
         # D5, igual que el Mac: solo es cierre anómalo si el servidor tmux ha caído. Con el servidor
         # vivo, que falte una sesión no se distingue de un /exit seguido de exit o Ctrl+D, y ante la
         # duda no se marca: reanudar sola una IA que el usuario cerró es peor que no reanudarla.
+        # agent-tree-v1 B4 (08-11): con el servidor caído (un reinicio) vale lo último GUARDADO,
+        # sin exigir haberla visto hace un tick en esta memoria, que no sobrevive a reiniciar la app.
         if (not server_alive and not self.busy() and not record.get("interrupted")
-                and record.get("runtimeState") in ("agent", "stopped")
-                and self.agent_recent(workspace, record, at=started)):
-            # Cierre anómalo con la IA vista en marcha hace ≤ 1 tick: se reanudará al abrir.
+                and record.get("runtimeState") in ("agent", "stopped") and record.get("sessionId")
+                and identifier not in self.closed_by_user):
+            # Cierre anómalo con la IA guardada en marcha: se reanudará al abrir.
             before = copy.deepcopy(record)
             record["interrupted"] = True
             if workspace.get("kind") == "local":
@@ -295,12 +297,20 @@ class AgentTree:
                 and moment - seen <= self.tick(workspace) + self.TICK_SLACK)
 
     def remote_resume_allowed(self, record):
-        """D6: una sesión SSH que falta solo se recrea con su IA si una lectura viva la vio hace
-        ≤ 2 ticks (≤ 120 s) y no hay marca de cierre deliberado. Sin eso, se recrea como shell."""
+        """D6 + B4: una sesión SSH que falta se recrea con su IA salvo cierre deliberado.
+
+        Vale una lectura viva de hace ≤ 2 ticks (≤ 120 s) o, sin límite de tiempo (agent-tree-v1,
+        08-11), que lo último guardado de la ventana fuera la IA en marcha o interrumpida: tras
+        un reinicio largo del VPS o de la app, la memoria ya no está y lo guardado sí. Un cierre
+        deliberado (desde UniConnect, o el servidor vivo sin esta sesión) sigue siendo un shell.
+        """
         identifier = record["id"]
+        if identifier in self.closed_by_user or identifier in self.missing_deliberate:
+            return False
         seen = self.seen.get(identifier)
-        return (seen is not None and self.clock() - seen <= 2 * self.SSH_INTERVAL + self.TICK_SLACK
-                and identifier not in self.closed_by_user and identifier not in self.missing_deliberate)
+        if seen is not None and self.clock() - seen <= 2 * self.SSH_INTERVAL + self.TICK_SLACK:
+            return True
+        return bool(record.get("sessionId") and (record.get("runtimeState") == "agent" or record.get("interrupted")))
 
     def mark_closed_by_user(self, record):
         """«Terminar tmux remoto» y demás cierres desde UniConnect: ni interrumpida ni recuperación sola."""
@@ -353,6 +363,16 @@ class AgentTree:
                    "asRoot": bool(agent.get("as_root")), "agentSource": source}
         if cwd:
             updates["resumeCwd"] = cwd
+        launch = agent.get("launch")
+        if isinstance(launch, dict) and isinstance(launch.get("arguments"), list):
+            # agent-tree-v1 (08-11): las opciones permitidas con que se lanzó, para reanudarla igual
+            # tras un apagado. `options`/`isSandbox` porque StateStore borra «arguments»/«environment».
+            options = [item for item in launch["arguments"] if isinstance(item, str)]
+            sandbox = launch.get("is_sandbox") is True
+            previous_launch = record.get("launchOptions") or {}
+            if (previous_launch.get("options"), previous_launch.get("isSandbox")) != (options, sandbox):
+                updates["launchOptions"] = {"options": options, "isSandbox": sandbox, "source": "argv",
+                                            "capturedAt": self.wall()}
         history = copy.deepcopy(record.get("history", []))
         now = self.wall()
         grown = False

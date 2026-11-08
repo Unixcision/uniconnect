@@ -1511,6 +1511,10 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             command = SSHCommand.parse(self.connection(surface.workspace))
             # Cierre deliberado desde UniConnect: ni «interrumpida» ni recuperación automática (D5, D6).
             self.agent_tree.mark_closed_by_user(surface.record)
+            # Y guardado: la marca de memoria no sobrevive a reiniciar la app, y lo guardado
+            # en «agent» bastaría para resucitarla tras un reinicio (agent-tree-v1 B4).
+            surface.record.update(runtimeState="shell", interrupted=False)
+            self.persist()
             remote = shlex.join(["tmux", "-L", surface.record.get("tmuxSocket", "uniconnect"), "kill-session", "-t", "=" + surface.record["tmux"]])
             self.background(lambda: subprocess.run(command.argv(remote, batch=True), env={**os.environ, **command.environment()}, capture_output=True, check=True, timeout=20))
 

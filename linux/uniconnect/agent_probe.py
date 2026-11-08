@@ -112,6 +112,76 @@ def provider_of(argv):
     return None
 
 
+# relaunch-v1 «Mismas opciones» (08-11): lo único que se guarda de cómo se lanzó una IA
+# (opciones con valor, interruptores). Sin prompts, sin --system-prompt, sin -c con secretos.
+LAUNCH_OPTIONS = {
+    "claude": (frozenset(("--model", "--fallback-model", "--permission-mode", "--settings", "--setting-sources",
+                          "--add-dir", "--allowedTools", "--disallowedTools", "--mcp-config", "--tools")),
+               frozenset(("--dangerously-skip-permissions", "--allow-dangerously-skip-permissions", "--verbose",
+                          "--strict-mcp-config", "--chrome"))),
+    "codex": (frozenset(("-c", "--config", "-m", "--model", "-C", "--cd", "-s", "--sandbox", "-a",
+                         "--ask-for-approval", "-p", "--profile", "--add-dir", "--enable", "--disable")),
+              frozenset(("--no-alt-screen", "--search", "--full-auto", "--dangerously-bypass-approvals-and-sandbox",
+                         "--yolo"))),
+    "agy": (frozenset(("--model", "--effort", "--mode", "--project", "--agent", "--add-dir")),
+            frozenset(("--sandbox", "--remote-control", "--dangerously-skip-permissions"))),
+}
+LAUNCH_SELECTORS = {"claude": ("--resume", "-r", "--session-id"), "agy": ("--conversation",), "codex": ()}
+SECRET_CONFIG = re.compile(r"key|token|secret|password|auth", re.IGNORECASE)
+
+
+def launch_options(provider, argv):
+    """Las opciones permitidas con que se lanzó la IA, en su orden, o None si el proveedor no tiene.
+
+    Fuera: el selector de conversación (se reanuda por id), --continue/--last, prompts y
+    cualquier opción desconocida con su valor, ``-c`` con claves de secretos y los ganchos que
+    UniConnect monta en cada arranque (``notify`` de Codex o ``--settings`` con su puente).
+    """
+    if provider not in LAUNCH_OPTIONS or not argv:
+        return None
+    values, switches = LAUNCH_OPTIONS[provider]
+    arguments = list(argv[1:])
+    if NODE.match(basename(argv[0])) and arguments:
+        arguments = arguments[1:]  # ``node /usr/bin/codex …``: el primero es el script.
+    kept, index, resumed = [], 0, False
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument == "--":
+            break
+        option = argument.split("=", 1)[0]
+        following = arguments[index + 1] if index + 1 < len(arguments) else None
+        if provider == "codex" and not resumed and argument == "resume":
+            resumed = True
+            index += 2 if following is not None and not following.startswith("-") else 1
+            continue
+        if option in LAUNCH_SELECTORS[provider]:
+            index += 1 if "=" in argument else 2
+            continue
+        if argument in ("--continue", "--last", "--all") or (provider == "claude" and argument == "-c"):
+            index += 1
+            continue
+        if option in values:
+            inline = "=" in argument
+            value = argument.split("=", 1)[1] if inline else following
+            if value is None:
+                break
+            managed = "uniconnect" in value.lower() or "UNICONNECT_NATIVE_HELPER" in value
+            secret = option in ("-c", "--config") and SECRET_CONFIG.search(value.split("=", 1)[0])
+            if not managed and not secret:
+                kept.extend([argument] if inline else [argument, value])
+            index += 1 if inline else 2
+            continue
+        if argument in switches:
+            if argument not in kept:
+                kept.append(argument)
+            index += 1
+            continue
+        # Desconocida o un prompt: fuera, y si es una opción, su valor con ella.
+        index += 2 if argument.startswith("-") and "=" not in argument and following is not None \
+            and not following.startswith("-") else 1
+    return kept
+
+
 def option_value(argv, names, valid):
     """El único valor de las opciones ``names`` en argv, o None.
 
@@ -186,7 +256,7 @@ def subtree(pane_pid, processes):
 
 
 def discover(pane_pid, procesos, ficha_de, abiertos_de, primera_linea_de, cwd_de_reserva, *,
-             pane_path=None, realpath=None):
+             pane_path=None, realpath=None, sandbox_de=None):
     """Núcleo puro: la IA de un panel a partir de sus tablas.
 
     - ``procesos``: {pid: {"pid", "ppid", "uid", "argv"}} o una lista de esos dicts.
@@ -195,8 +265,10 @@ def discover(pane_pid, procesos, ficha_de, abiertos_de, primera_linea_de, cwd_de
     - ``primera_linea_de(ruta)``: primera línea (texto) de un rollout de Codex, o None.
     - ``cwd_de_reserva(pid)``: carpeta actual del proceso, o None.
 
+    - ``sandbox_de(pid)``: True si el proceso tiene ``IS_SANDBOX=1`` en su entorno, o None.
+
     Devuelve {"reason": None|"sin_ia"|"identidad_ambigua"|"sin_id", "agent": dict|None,
-    "roots": [pid, ...]}.
+    "roots": [pid, ...]}. ``agent.launch`` lleva las opciones permitidas con que se lanzó.
     """
     if not isinstance(procesos, dict):
         procesos = {int(item["pid"]): item for item in procesos}
@@ -272,6 +344,10 @@ def discover(pane_pid, procesos, ficha_de, abiertos_de, primera_linea_de, cwd_de
         value = option_value(argv, ("-r", "--resume"), is_session_id)
         if value:
             agent.update(session_id=value, source="argv")
+    options = launch_options(provider, argv)
+    if options is not None:
+        agent["launch"] = {"arguments": options,
+                           "is_sandbox": bool(sandbox_de(root)) if sandbox_de is not None else None}
     if not agent["cwd"]:
         agent["cwd"] = cwd_de_reserva(root) or pane_path
     if isinstance(agent["cwd"], str) and agent["cwd"].startswith("/"):
@@ -404,6 +480,20 @@ class HostReader:
         result = self.run(["lsof", "-n", "-P", "-p", str(pid), "-Fn"])
         return [line[1:] for line in (result.stdout if result else "").splitlines() if line.startswith("n")]
 
+    def sandbox(self, pid):
+        """True/False según ``IS_SANDBOX=1`` en el entorno del proceso; None si no se puede leer.
+
+        Solo se mira esa variable: el resto del entorno ni se guarda ni sale de aquí.
+        """
+        if not self.proc:
+            return None
+        try:
+            with open("/proc/%d/environ" % pid, "rb") as handle:
+                raw = handle.read(1048576)
+        except OSError:
+            return None
+        return b"IS_SANDBOX=1" in raw.split(b"\0")
+
     def cwd(self, pid):
         if self.proc:
             try:
@@ -489,7 +579,8 @@ def probe(socket_name="default", sessions=(), reader=None, now=None):
         results = []
         for pane in members:
             result = discover(pane["pane_pid"], table, reader.ficha, reader.open_files, reader.first_line,
-                              reader.cwd, pane_path=pane["current_path"], realpath=reader.realpath)
+                              reader.cwd, pane_path=pane["current_path"], realpath=reader.realpath,
+                              sandbox_de=getattr(reader, "sandbox", None))
             results.append((pane, result))
         chosen, result = combine(results)
         output["sessions"].append({

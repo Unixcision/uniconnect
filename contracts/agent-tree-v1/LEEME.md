@@ -353,6 +353,12 @@ Por ventana se guarda, junto a la IA, `launch`:
   prohibiendo `argv`, `env`, `command` crudos). El Mac sustituye `safeLaunchCommand` por esto.
 - Al reanudar o relanzar se usa por este orden: opciones vivas, `launch` guardado y, si no hay
   ninguna, la política `noPrompt` (`reanudar-comandos.json` sigue fijando ese último caso).
+- **La sonda las da** (`agent_probe.py`, el mismo script que empaqueta el Mac): cada `agent` de
+  `sonda-salida.json` lleva `launch = {"arguments": [...], "is_sandbox": true | false | null}`.
+  `arguments` ya viene filtrado en el destino con la misma lista blanca (ni el selector de
+  conversación, ni prompts, ni `-c` con secretos, ni los ganchos que UniConnect monta en cada
+  arranque). `is_sandbox` sale de `/proc/<pid>/environ` (solo esa variable); `null` si no se puede
+  leer (macOS, `ps`). Solo se reescribe lo guardado cuando las opciones cambian.
 
 ### Servidor por ventana
 En el cable cada ventana lleva además `kind` (`local` | `ssh`) y `host_label` (`usuario@host:puerto` o
