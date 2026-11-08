@@ -1636,6 +1636,57 @@ struct UniConnectNativePasswordFallbackTests {
             pendingCompletion = nil
             completion?(success, errorCode.map { LAError($0) })
         }
+
+        private(set) var cancellations = 0
+        func cancelPending() { cancellations += 1 }
+
+        /// Hands over the pending completion, as a withdrawn panel that answers late would.
+        func takePending() -> ((Bool, Error?) -> Void)? {
+            defer { pendingCompletion = nil }
+            return pendingCompletion
+        }
+    }
+
+    @Test
+    func aPanelThatNeverAnswersIsWithdrawnAtTheDeadlineAndUnlockWorksAgain() async {
+        let (lock, authenticator) = makeLock()
+        defer { lock.resetForTesting() }
+        lock.authenticationDeadline = .milliseconds(30)
+        lock.lock()
+        lock.authenticate()
+        #expect(lock.isAuthenticating)
+        await waitForEvaluationCompletion(lock)
+        #expect(!lock.isAuthenticating)
+        #expect(lock.lastError != nil)
+        #expect(authenticator.cancellations == 1)
+
+        lock.authenticationDeadline = .seconds(90)
+        lock.authenticate()
+        authenticator.complete(success: true)
+        await waitForEvaluationCompletion(lock)
+        #expect(!lock.isLocked)
+    }
+
+    @Test
+    func tappingUnlockWhileAPanelIsPendingStartsANewOneAndIgnoresTheLateAnswer() async {
+        let (lock, authenticator) = makeLock()
+        defer { lock.resetForTesting() }
+        lock.lock()
+        lock.authenticate()
+        let stale = authenticator.takePending()
+        lock.authenticate()
+        #expect(authenticator.cancellations == 1)
+        #expect(authenticator.evaluatedPolicies.count == 2)
+
+        // The withdrawn panel answers late: it must not end the new attempt.
+        stale?(false, LAError(.systemCancel))
+        for _ in 0..<5 { await Task.yield() }
+        #expect(lock.isAuthenticating)
+        #expect(lock.isLocked)
+
+        authenticator.complete(success: true)
+        await waitForEvaluationCompletion(lock)
+        #expect(!lock.isLocked)
     }
 
     @Test

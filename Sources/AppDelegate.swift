@@ -12859,6 +12859,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return StoredShortcut(key: key, command: command, shift: shift, option: option, control: control)
     }
 
+    /// Quits without the «Quit UniConnect?» alert, for places that already are the confirmation
+    /// (the lock screen's Quit button).
+    func terminateWithoutQuitWarning() {
+        isQuitWarningConfirmed = true
+        NSApp.terminate(nil)
+    }
+
     private func handleQuitShortcutWarning() -> Bool {
         if !QuitWarningSettings.shouldShowConfirmation(
             isQuitWarningConfirmed: false,

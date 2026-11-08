@@ -12,10 +12,21 @@ import LocalAuthentication
 protocol UniConnectAuthenticating {
     func canEvaluate(_ policy: LAPolicy) -> (Bool, LAError.Code?)
     func evaluate(_ policy: LAPolicy, reason: String, completion: @escaping (Bool, Error?) -> Void)
+    /// Withdraws the evaluation in flight, if any: its system panel goes away and its
+    /// completion reports a cancellation.
+    func cancelPending()
 }
 
-/// Production authenticator: a fresh `LAContext` per evaluation.
-struct UniConnectLocalAuthenticator: UniConnectAuthenticating {
+extension UniConnectAuthenticating {
+    func cancelPending() {}
+}
+
+/// Production authenticator: a fresh `LAContext` per evaluation, kept until it answers so a
+/// panel that never comes back can be withdrawn. Only `UniConnectAppLock` uses it, always from
+/// the main actor, so `pending` is never touched concurrently.
+final class UniConnectLocalAuthenticator: UniConnectAuthenticating {
+    private var pending: LAContext?
+
     func canEvaluate(_ policy: LAPolicy) -> (Bool, LAError.Code?) {
         let context = LAContext()
         var error: NSError?
@@ -25,9 +36,14 @@ struct UniConnectLocalAuthenticator: UniConnectAuthenticating {
     func evaluate(_ policy: LAPolicy, reason: String, completion: @escaping (Bool, Error?) -> Void) {
         let context = LAContext()
         context.localizedCancelTitle = String(localized: "common.cancel", defaultValue: "Cancel")
+        pending = context
         // Keep the system-localized password alternative available. macOS owns
         // credential entry and validation; the app never receives the password.
         context.evaluatePolicy(policy, localizedReason: reason, reply: completion)
+    }
+    func cancelPending() {
+        pending?.invalidate()
+        pending = nil
     }
 }
 
@@ -62,6 +78,14 @@ final class UniConnectAppLock: ObservableObject {
 
     private var lockWindows: [NSWindow] = []
     private var isLaunchGate = false
+    /// How long the system panel may stay unanswered before the attempt is withdrawn. A panel
+    /// that timed out, or opened on another screen, never reports back; without this deadline
+    /// the unlock button stayed disabled for good and the only way out was a Force Quit, which
+    /// also killed every AI in the app's tmux (8-nov-2026).
+    var authenticationDeadline: Duration = .seconds(90)
+    /// Identifies the evaluation in flight, so a late answer from a withdrawn one is ignored.
+    private var authenticationAttempt = 0
+    private var authenticationDeadlineTask: Task<Void, Never>?
     private var idleTimer: Timer?
     /// The executable composition root disconnects private remote clients on lock.
     var onLock: (@MainActor () -> Void)?
@@ -171,7 +195,7 @@ final class UniConnectAppLock: ObservableObject {
             authenticate()
             return true
         case .terminate:
-            NSApp.terminate(nil)
+            quitFromLockScreen()
             return true
         case .consume:
             return true
@@ -275,7 +299,15 @@ final class UniConnectAppLock: ObservableObject {
     }
 
     func authenticate() {
-        guard isLocked, !isAuthenticating else { return }
+        guard isLocked else { return }
+        if isAuthenticating {
+            // A tap while a panel is pending means it went missing: start over with a new one.
+            authenticator.cancelPending()
+            authenticationDeadlineTask?.cancel()
+            isAuthenticating = false
+        }
+        authenticationAttempt += 1
+        let attempt = authenticationAttempt
         isAuthenticating = true
         lastError = nil
         let (policy, fallbackNotice) = self.policy()
@@ -289,12 +321,25 @@ final class UniConnectAppLock: ObservableObject {
             )
             return
         }
+        authenticationDeadlineTask?.cancel()
+        authenticationDeadlineTask = Task { [weak self, deadline = authenticationDeadline] in
+            // Bounded, cancellable deadline: a system panel that disappears gives no signal.
+            try? await Task.sleep(for: deadline)
+            guard !Task.isCancelled, let self, self.authenticationAttempt == attempt, self.isAuthenticating else { return }
+            self.authenticator.cancelPending()
+            self.isAuthenticating = false
+            self.lastError = String(
+                localized: "uniconnect.lock.error.authenticationTimedOut",
+                defaultValue: "The authentication timed out. Press Unlock to try again."
+            )
+        }
         authenticator.evaluate(
             policy,
             reason: String(localized: "uniconnect.lock.reason.unlock", defaultValue: "Unlock UniConnect")
         ) { [weak self] success, evalError in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.authenticationAttempt == attempt else { return }
+                self.authenticationDeadlineTask?.cancel()
                 self.isAuthenticating = false
                 if success {
                     self.unlock()
@@ -305,6 +350,17 @@ final class UniConnectAppLock: ObservableObject {
                     )
                 }
             }
+        }
+    }
+
+    /// Quits from the lock screen without the «Quit UniConnect?» alert. That alert opens under
+    /// the lock window, which covers every screen, so it could not be seen and its app-modal
+    /// session swallowed every click on the lock screen.
+    func quitFromLockScreen() {
+        if let appDelegate = AppDelegate.shared {
+            appDelegate.terminateWithoutQuitWarning()
+        } else {
+            NSApp.terminate(nil)
         }
     }
 
@@ -381,6 +437,9 @@ final class UniConnectAppLock: ObservableObject {
         isLaunchGate = false
         isAuthenticating = false
         lastError = nil
+        authenticationDeadlineTask?.cancel()
+        authenticationDeadlineTask = nil
+        authenticationDeadline = .seconds(90)
         authenticator = UniConnectLocalAuthenticator()
         presentsWindows = true
         enabledOverride = nil
@@ -438,10 +497,9 @@ struct UniConnectLockView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(Color(red: 0.95, green: 0.3, blue: 0.4))
                 .keyboardShortcut(.defaultAction)
-                .disabled(lock.isAuthenticating)
 
                 Button {
-                    NSApp.terminate(nil)
+                    lock.quitFromLockScreen()
                 } label: {
                     Text(String(localized: "uniconnect.lock.action.quit", defaultValue: "Quit"))
                         .font(.system(size: 17, weight: .medium, design: .rounded))

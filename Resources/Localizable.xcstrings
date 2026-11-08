@@ -37167,13 +37167,24 @@
         }
       }
     },
+    "uniconnect.lock.error.authenticationTimedOut": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La autenticación ha caducado. Pulsa Desbloquear para volver a intentarlo."
+          }
+        }
+      }
+    },
     "uniconnect.lock.action.quit": {
       "extractionState": "manual",
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Abandonar"
+            "value": "Salir"
           }
         }
       }
@@ -37184,7 +37195,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Descubrir"
+            "value": "Desbloquear"
           }
         }
       }
