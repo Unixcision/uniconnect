@@ -201,8 +201,8 @@ class ArgumentsTests(unittest.TestCase):
         self.assertIn("relaunch.v1.agy.ssh", CAPABILITIES)
         from uniconnect.relaunch_agents import relaunchable
         self.assertTrue(relaunchable("claude", "local"))
-        self.assertFalse(relaunchable("claude", "ssh"))  # Mismo trabajador, sin prueba en un remoto con Claude.
-        self.assertNotIn("relaunch.v1.claude.ssh", CAPABILITIES)
+        self.assertTrue(relaunchable("claude", "ssh"))  # Probado en vivo en DESA (08-11).
+        self.assertIn("relaunch.v1.claude.ssh", CAPABILITIES)
         adapter = RelaunchAgents()
         calls = []
         adapter.request = lambda candidate, action, **values: calls.append((candidate, action, values)) or {"key": "proof"}

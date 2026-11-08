@@ -21,11 +21,10 @@ from .transport import Transport
 
 # Antigravity is announced only after its isolated close/reopen integration
 # proves a fresh pane-bound generation and unchanged conversation/configuration.
-# Claude (08-11): probado en vivo en local (salida limpia y escalado desde ocupado, misma
-# conversación y mismas opciones). Por SSH es el mismo trabajador, pero no se ha probado contra
-# un destino remoto con Claude, así que esa celda no se anuncia ni se intenta todavía.
+# Claude (08-11): probado en vivo en local (salida limpia y escalado desde ocupado) y por SSH en
+# DESA por el camino real del adaptador (salida limpia en 7 s); misma conversación y mismas opciones.
 RELAUNCHABLE = ("codex", "agy", "claude")
-LOCAL_ONLY = ("claude",)
+LOCAL_ONLY = ()
 CAPABILITIES = ("relaunch.v1",) + tuple(f"relaunch.v1.{provider}.{kind}"
                                         for provider in RELAUNCHABLE for kind in ("local", "ssh")
                                         if not (kind == "ssh" and provider in LOCAL_ONLY))

@@ -1374,10 +1374,23 @@ class TargetWorker:
                 if any(arg not in ("-l", "-i", "--login", "--noprofile", "--norc") for arg in after["argv"][1:]):
                     return None  # Not a plain interactive shell: respawn instead of typing into it.
                 return after
-            try:
-                events.wait(deadline, self.clock)
-            except Unavailable:
+            if self.clock() >= deadline:
                 return None
+            self.bounded_wait(events, min(deadline, self.clock() + 0.5))
+
+    def bounded_wait(self, events, until):
+        """Wait for pane output until ``until`` at most, then let the caller re-check its state.
+
+        The shell's prompt may already have been drawn before the wait began, so a caller never
+        relies on output alone. If the control client is gone (EOF) the wait fails at once:
+        pause briefly instead of spinning.
+        """
+        started = self.clock()
+        try:
+            events.wait(until, self.clock)
+        except Unavailable:
+            if self.clock() - started < 0.05:
+                time.sleep(0.1)
 
     def respawn_pane(self, proof, process, journal, events):
         """Steps 3-4: a fresh login shell in the same pane or, if that fails, the session recreated.
@@ -1412,13 +1425,11 @@ class TargetWorker:
                     return escalation, root, replaced
             except (Unavailable, OSError):
                 pass
-            try:
-                events.wait(min(deadline, self.clock() + 1), self.clock)
-            except Unavailable:
-                if self.clock() >= deadline:
-                    if replaced is not None:
-                        replaced.close()
-                    raise
+            if self.clock() >= deadline:
+                if replaced is not None:
+                    replaced.close()
+                raise Unavailable("dialogo_desconocido")
+            self.bounded_wait(events, min(deadline, self.clock() + 1))
 
     def reopen(self, proof, root, capsule_path, journal, events, escalation):
         self.write(journal, {"state": "reabriendo"})

@@ -368,7 +368,19 @@ class TmuxCommand:
         # same tmux invocation as new-session; do not lower a larger user limit.
         setup = (f"uc_history_limit=$({binary} show-options -gv history-limit 2>/dev/null) || uc_history_limit=50000; "
                  '[ "$uc_history_limit" -ge 50000 ] 2>/dev/null || uc_history_limit=50000; ')
-        return setup, f'{binary} set-option -g history-limit "$uc_history_limit" \\;'
+        scope = ""
+        if socket_name == "uniconnect-local":
+            # 08-11: the local server is born in its own systemd scope (system.slice), not in the
+            # login session of whoever opened the window: ending that session (loginctl, or
+            # KillUserProcesses=yes) must never take every local agent with it. Its panes inherit
+            # the scope. Without root or a working systemd-run it is created as before.
+            setup += ('uc_scope=; if [ "$(id -u)" = 0 ] && [ "${UNICONNECT_TMUX_SCOPE:-1}" != 0 ] '
+                      "&& command -v systemd-run >/dev/null 2>&1 "
+                      "&& systemd-run --scope --quiet --collect true >/dev/null 2>&1; then "
+                      'uc_scope="systemd-run --scope --quiet --collect --slice=system.slice '
+                      '--description=UniConnect-tmux-local --"; fi; ')
+            scope = "$uc_scope "
+        return setup, f'{scope}{binary} set-option -g history-limit "$uc_history_limit" \\;'
 
     @staticmethod
     def fresh_server_check(binary: str) -> str:

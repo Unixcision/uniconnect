@@ -21,7 +21,8 @@
       ],
       "ssh": [
         "codex",
-        "agy"
+        "agy",
+        "claude"
       ]
     }
   },
@@ -36,7 +37,8 @@
       "relaunch.v1.codex.ssh",
       "relaunch.v1.agy.local",
       "relaunch.v1.agy.ssh",
-      "relaunch.v1.claude.local"
+      "relaunch.v1.claude.local",
+      "relaunch.v1.claude.ssh"
     ]
   },
   "no_soportado": {
@@ -61,7 +63,6 @@
         "otros"
       ],
       "ssh": [
-        "claude",
         "grok",
         "otros"
       ]
@@ -73,10 +74,6 @@
         "codex"
       ]
     },
-    "linux": {
-      "ssh": [
-        "claude"
-      ]
-    }
+    "linux": {}
   }
 }
