@@ -357,6 +357,31 @@ class TmuxHistoryBehaviorTests(unittest.TestCase):
                 self.assertEqual(["-t =foreign: mouse on"], [line for line in seen if "mouse" in line])
                 self.assertEqual("on", self.tmux(socket, "show-options", "-qv", "-t", "=foreign:", "mouse"))
 
+    def server_cgroup(self, socket):
+        pid = self.tmux(socket, "display-message", "-p", "#{pid}")
+        return Path("/proc", pid, "cgroup").read_text()
+
+    @unittest.skipUnless(os.geteuid() == 0 and shutil.which("systemd-run") and subprocess.run(
+        ["systemd-run", "--scope", "--quiet", "--collect", "true"], capture_output=True).returncode == 0,
+        "root with a working systemd-run required")
+    def test_the_local_server_is_born_outside_the_login_session(self):
+        # Ending the login session of whoever opened the window must not take the local agents.
+        mine = Path("/proc/self/cgroup").read_text()
+        for route in ("attach", "ensure"):
+            with self.subTest(route=route):
+                self.create("uniconnect-local", route, name="subject-" + route)
+                self.assertIn("/system.slice/", self.server_cgroup("uniconnect-local"))
+                self.assertNotEqual(self.server_cgroup("uniconnect-local"), mine)
+                self.tmux("uniconnect-local", "kill-server")
+        # Control: switched off, or any other socket, the server stays where it was born.
+        self.environment["UNICONNECT_TMUX_SCOPE"] = "0"
+        self.create("uniconnect-local", "attach", name="apagado")
+        self.assertEqual(self.server_cgroup("uniconnect-local"), mine)
+        self.tmux("uniconnect-local", "kill-server")
+        self.environment.pop("UNICONNECT_TMUX_SCOPE")
+        self.create("user-custom", "attach", name="otro")
+        self.assertEqual(self.server_cgroup("user-custom"), mine)
+
     def test_dedicated_first_panes_keep_5100_lines_in_both_creation_routes(self):
         for socket in ("uniconnect", "uniconnect-local"):
             for route in ("ensure", "attach"):
