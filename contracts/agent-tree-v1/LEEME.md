@@ -329,8 +329,14 @@ windows: [{id, name, state, tmux, agent}]}]}`.
 - `window.state`: `agent`, `shell` o `stopped`.
 - `tmux`: `{socket, session, session_id, pane_id, live}`. `session_id` y `pane_id` solo existen en
   vivo; los renumera tmux al reiniciar su servidor, así que nunca se persisten.
-- `agent.state`: `activo`, `guardado` o `interrumpido`. `agent.history` va de la más antigua a la
-  actual, ≤ 32 entradas.
+- `agent.state`: `activo`, `guardado`, `interrumpido` o `pendiente`. `agent.history` va de la más
+  antigua a la actual, ≤ 32 entradas.
+- `pendiente` (acordado en `coordNov` el 08-11): ventana recién creada con esa IA y todavía sin
+  conversación. Va con `session_id: null` y `source: null`, más `provider`, `cwd`, `as_root` y
+  `launch`, y la ventana con `state: "agent"`. Se guarda al crearla, antes de que arranque nada.
+  Una sonda dirigida a esa ventana pone el id en cuanto lo hay, y entonces pasa a `guardado`.
+  Si la sonda ve un shell sin IA, o la ventana ya tuvo una conversación, no hay `pendiente`.
+  No se reanuda nada: sin id no hay qué reanudar.
 - `resume` no viaja en el árbol: se deriva de `provider`, `session_id`, `cwd` y `as_root`, y la
   llamada de Detalles (`contracts/window-details-v1`) lo trae ya calculado.
 - Las fechas van en ISO 8601 UTC (`Z`).
