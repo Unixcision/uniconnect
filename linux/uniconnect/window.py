@@ -28,6 +28,7 @@ from .window_commands import WindowCommands
 from .window_notifications import WindowNotifications
 from .native_sessions import NativeSessions
 from .agent_tree import AgentTree
+from .relaunch_agents import RelaunchUnavailable, cause_text
 from .session_recovery import SessionRecovery
 from .window_details import WindowDetails
 from .window_details_dialog import WindowDetailsDialog
@@ -224,14 +225,41 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         item.set_sensitive(self.action_enabled(name))
         return item
 
-    def context_menu(self, names, event):
-        menu = Gtk.Menu()
-        for name in names:
-            item = self.command_menu_item(name)
-            item.connect("activate", lambda _, n=name: self.run_action(n))
-            menu.append(item)
+    def context_menu(self, entries, event):
+        menu = self.build_context_menu(entries)
         menu.show_all()
         menu.popup_at_pointer(event)
+
+    def build_context_menu(self, entries):
+        """Solo lo que aplica a esta ventana o caja, con separadores y submenús, como en el Mac.
+
+        `entries`: nombres de acción, `None` (separador) o `(etiqueta, [nombres])` (submenú).
+        Lo que no tiene sentido aquí (`action_visible`) no sale; lo que ahora no se puede
+        hacer sale en gris. Nunca hay separadores al principio, al final ni dos seguidos.
+        """
+        menu = Gtk.Menu()
+        separator = False
+        for entry in entries:
+            if entry is None:
+                separator = bool(menu.get_children())
+                continue
+            if isinstance(entry, tuple):
+                label, names = entry
+                submenu = self.build_context_menu(names)
+                if not submenu.get_children():
+                    continue
+                item = Gtk.MenuItem.new_with_label(self._(label))
+                item.set_submenu(submenu)
+            elif self.action_visible(entry):
+                item = self.command_menu_item(entry)
+                item.connect("activate", lambda _, n=entry: self.run_action(n))
+            else:
+                continue
+            if separator:
+                menu.append(Gtk.SeparatorMenuItem())
+                separator = False
+            menu.append(item)
+        return menu
 
     def activate_action(self, _, parameter, name):
         self.run_action(name)
@@ -331,7 +359,10 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         if action:
             self.run_action(action)
         else:
-            self.context_menu(["window_details", "rename_window", "pin_window", "window_up", "window_down", "window_first", "notifications_toggle_window", "reconnect", "relaunch_window", "adopt_antigravity_window", "continue_window", "close_window"], event)
+            self.context_menu(["window_details", "rename_window", "pin_window", "notifications_toggle_window", None,
+                               ("Mover", ["window_up", "window_down", "window_first"]), None,
+                               "reconnect", "relaunch_window", "continue_window", "adopt_antigravity_window", None,
+                               "close_window"], event)
 
     def workspace_context(self, _, event, workspace):
         if event.button == 3:
@@ -342,7 +373,10 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                     self._notification_preserve_focus_id = self.focused_surface.record["id"]
             finally:
                 self._notification_context_selection = False
-            self.context_menu(["new_window", "rename_workspace", "pin_workspace", "edit_ssh", "workspace_up", "workspace_down", "workspace_first", "reconnect_all", "relaunch_workspace", "continue_workspace", "notifications_toggle_workspace", "close_workspace"], event)
+            self.context_menu(["new_window", "rename_workspace", "pin_workspace", "edit_ssh", "notifications_toggle_workspace", None,
+                               ("Mover", ["workspace_up", "workspace_down", "workspace_first"]), None,
+                               "reconnect_workspace", "relaunch_workspace", "continue_workspace", None,
+                               "close_workspace"], event)
             return True
         return False
 
@@ -506,9 +540,13 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                 self._notification_preserve_focus_id = surface.record["id"]
             finally:
                 self._notification_context_selection = False
-            self.context_menu(["window_details", "new_conversation_window", "rename_window", "reset_window_name", "pin_window", "window_up", "window_down", "window_first", "move_window_left", "move_window_right",
-                               "maximize_pane", "notifications_toggle_window", "close_window", "close_left_windows", "close_right_windows",
-                               "close_other_windows", "relaunch_window", "adopt_antigravity_window", "continue_window", "kill_tmux"], event)
+            self.context_menu(["window_details", "new_conversation_window", "rename_window", "reset_window_name", "pin_window",
+                               "notifications_toggle_window", None,
+                               ("Mover", ["window_up", "window_down", "window_first", "move_window_left", "move_window_right"]),
+                               "maximize_pane", None,
+                               "reconnect", "relaunch_window", "continue_window", "adopt_antigravity_window", None,
+                               ("Cerrar varias", ["close_left_windows", "close_right_windows", "close_other_windows"]),
+                               "close_window", "kill_tmux"], event)
             return True
         return False
 
@@ -647,7 +685,11 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         dialog = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.ERROR,
                                    buttons=Gtk.ButtonsType.NONE, text=self._("Error"))
         dialog.add_button(self._("Close"), Gtk.ResponseType.CLOSE)
-        dialog.format_secondary_text(self._(str(error)))
+        if isinstance(error, RelaunchUnavailable):
+            text = cause_text(self._, error.cause)  # Nunca un código crudo como «no_soportado».
+        else:
+            text = self._(str(error))
+        dialog.format_secondary_text(text)
         dialog.run()
         dialog.destroy()
 
@@ -1102,6 +1144,13 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
     def action_reconnect_all(self):
         for surface in self.surfaces.values():
             if surface.workspace["kind"] == "ssh":
+                surface.launch()
+
+    def action_reconnect_workspace(self):
+        """Solo las ventanas de esta caja; «Reconectar todas las SSH» sigue en la barra."""
+        workspace = self.current_workspace()
+        for surface in tuple(self.surfaces.values()):
+            if workspace and surface.workspace is workspace and surface.record.get("tmux"):
                 surface.launch()
 
     def action_split_right(self):

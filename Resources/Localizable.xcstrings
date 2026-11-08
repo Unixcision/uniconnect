@@ -41116,6 +41116,17 @@
         }
       }
     },
+    "uniconnect.shared.reconectar.esta.caja": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconectar esta caja"
+          }
+        }
+      }
+    },
     "uniconnect.shared.reconnect.attempts.exhausted": {
       "extractionState": "manual",
       "localizations": {
@@ -41171,6 +41182,17 @@
         }
       }
     },
+    "uniconnect.shared.reabrir.y.continuar.codex.pausado.de.esta.caja": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reabrir y continuar Codex pausado de esta caja…"
+          }
+        }
+      }
+    },
     "uniconnect.shared.reabrir.y.continuar.codex.pausado.de.este.equipo": {
       "extractionState": "manual",
       "localizations": {
@@ -41222,6 +41244,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Relanzar IA de este espacio…"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.relanzar.ia.de.esta.caja": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relanzar IA de esta caja…"
           }
         }
       }

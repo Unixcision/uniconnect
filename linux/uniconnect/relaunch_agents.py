@@ -5,6 +5,7 @@ treated as evidence that their effective conversation can be recovered safely.
 """
 
 import base64
+import functools
 import hashlib
 import json
 from pathlib import Path
@@ -29,6 +30,28 @@ class RelaunchUnavailable(Exception):
     def __init__(self, cause):
         self.cause = cause
         super().__init__(cause)
+
+
+@functools.lru_cache(maxsize=1)
+def contract_causes():
+    """Textos de `contracts/relaunch-v1/causes.json`, el contrato que comparten Mac, Linux y Android."""
+    try:
+        return json.loads((Path(__file__).resolve().parents[2] / "contracts/relaunch-v1/causes.json").read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def cause_text(translate, cause):
+    """Texto legible de una causa: el del catálogo y, si no lo tiene, el del contrato.
+
+    Una causa nueva no puede llegar al usuario como `uniconnect.relaunch.cause.sin_tmux` ni
+    como `no_soportado` a pelo, que es lo que enseñaban los diálogos de error.
+    """
+    key = "uniconnect.relaunch.cause." + str(cause)
+    text = translate(key)
+    if text != key:
+        return text
+    return contract_causes().get(str(cause)) or translate("No se pudo completar: {cause}").format(cause=cause)
 
 
 class RelaunchAgents:
