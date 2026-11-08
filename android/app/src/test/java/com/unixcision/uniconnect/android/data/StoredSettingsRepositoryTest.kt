@@ -29,10 +29,10 @@ class StoredSettingsRepositoryTest {
     @Test
     fun themeAndModeSurviveARoundTrip() = runBlocking {
         val repository = StoredSettingsRepository(MemoryPreferences())
-        val chosen = AppSettings(terminalView = TerminalView.WRAP, showExtraKeys = true, probeOnOpen = false, designTheme = DesignTheme.TINTA, colorMode = ColorMode.DARK)
+        val chosen = AppSettings(terminalView = TerminalView.WRAP, showExtraKeys = true, probeOnOpen = false, designTheme = DesignTheme.ARENA, colorMode = ColorMode.DARK)
         repository.update(chosen)
         assertEquals(chosen, repository.settings.first())
-        val again = chosen.copy(designTheme = DesignTheme.TERMINAL, colorMode = ColorMode.LIGHT)
+        val again = chosen.copy(designTheme = DesignTheme.LIMA, colorMode = ColorMode.LIGHT)
         repository.update(again)
         assertEquals(again, repository.settings.first())
     }
@@ -41,7 +41,7 @@ class StoredSettingsRepositoryTest {
     fun anEmptyStoreReadsAsTheShippedDefaults() = runBlocking {
         val repository = StoredSettingsRepository(MemoryPreferences())
         assertEquals(AppSettings(), repository.settings.first())
-        assertEquals(DesignTheme.SERENO, repository.settings.first().designTheme)
+        assertEquals(DesignTheme.NIEVE, repository.settings.first().designTheme)
         assertEquals(ColorMode.SYSTEM, repository.settings.first().colorMode)
     }
 
@@ -54,7 +54,7 @@ class StoredSettingsRepositoryTest {
         )
         val repository = StoredSettingsRepository(MemoryPreferences(older))
         assertEquals(
-            AppSettings(terminalView = TerminalView.FIT, showExtraKeys = true, probeOnOpen = false, designTheme = DesignTheme.SERENO, colorMode = ColorMode.SYSTEM),
+            AppSettings(terminalView = TerminalView.FIT, showExtraKeys = true, probeOnOpen = false, designTheme = DesignTheme.NIEVE, colorMode = ColorMode.SYSTEM),
             repository.settings.first(),
         )
     }
@@ -143,13 +143,21 @@ class StoredSettingsRepositoryTest {
     }
 
     @Test
+    fun aThemeThatNoLongerExistsComesBackAsNieve() = runBlocking {
+        listOf("SERENO", "SENAL", "TINTA", "TERMINAL", "AURORA").forEach { removed ->
+            val stored = preferencesOf(stringPreferencesKey("settings.designTheme") to removed)
+            assertEquals(removed, DesignTheme.NIEVE, StoredSettingsRepository(MemoryPreferences(stored)).settings.first().designTheme)
+        }
+    }
+
+    @Test
     fun unknownStoredNamesFallBackInsteadOfFailing() = runBlocking {
         val stored = preferencesOf(
             stringPreferencesKey("settings.designTheme") to "NEON",
             stringPreferencesKey("settings.colorMode") to "AUTO",
         )
         val repository = StoredSettingsRepository(MemoryPreferences(stored))
-        assertEquals(DesignTheme.SERENO, repository.settings.first().designTheme)
+        assertEquals(DesignTheme.NIEVE, repository.settings.first().designTheme)
         assertEquals(ColorMode.SYSTEM, repository.settings.first().colorMode)
     }
 

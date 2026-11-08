@@ -21,7 +21,7 @@ data class UniTokens(
     companion object {
         /**
          * The tokens of [theme] shown [dark] or light. Pure: the same pair always gives the same
-         * tokens, which is what lets a test walk all twelve combinations.
+         * tokens, which is what lets a test walk all eight combinations.
          */
         fun tokensFor(theme: DesignTheme, dark: Boolean): UniTokens = when (theme) {
             // Snow: white surfaces floating over an off-white page, pill chips and buttons, wide
@@ -44,65 +44,47 @@ data class UniTokens(
                     surfaceLift = 0f, hairline = 0.5.dp,
                 ),
             )
-            // Calm: soft cards, a rail of rounded tiles, roomy rows, labels in sentence case.
-            DesignTheme.SERENO -> UniTokens(
+            // Obsidiana: the precision of a developer tool. Compact rows between hairlines, small
+            // radii, tracked capitals for labels, boxes in two columns and nothing that floats.
+            DesignTheme.OBSIDIANA -> UniTokens(
                 theme = theme,
-                colors = if (dark) UniPalettes.serenoDark else UniPalettes.serenoLight,
-                shapes = UniShapes(cardRadius = 24.dp, sheetRadius = 32.dp, chipRadius = 14.dp, buttonRadius = 18.dp),
-                spacing = UniSpacing(page = 20.dp, gap = 14.dp, gapSmall = 8.dp),
-                type = UniType(headlineFamily = FontFamily.SansSerif, identifierFamily = FontFamily.SansSerif, labelUppercase = false, labelLetterSpacing = 0.3.sp),
-                layout = UniLayout(density = RowDensity.COMFORTABLE, workspacesAs = WorkspaceLayout.RAIL, workspaceColumns = 1, cardsAs = CardStyle.CARD, rowsAs = CardStyle.CARD),
-                elevation = UniElevation.flat,
-            )
-            // Signal: compact rows between hairlines, boxes in two columns, tracked capitals.
-            DesignTheme.SENAL -> UniTokens(
-                theme = theme,
-                colors = if (dark) UniPalettes.senalDark else UniPalettes.senalLight,
-                shapes = UniShapes(cardRadius = 12.dp, sheetRadius = 20.dp, chipRadius = 8.dp, buttonRadius = 10.dp),
-                spacing = UniSpacing(page = 16.dp, gap = 8.dp, gapSmall = 4.dp),
-                type = UniType(headlineFamily = FontFamily.SansSerif, identifierFamily = FontFamily.SansSerif, labelUppercase = true, labelLetterSpacing = 1.sp),
+                colors = if (dark) UniPalettes.obsidianaDark else UniPalettes.obsidianaLight,
+                shapes = UniShapes(cardRadius = 14.dp, sheetRadius = 20.dp, chipRadius = 8.dp, buttonRadius = 10.dp),
+                spacing = UniSpacing(page = 16.dp, gap = 10.dp, gapSmall = 6.dp),
+                type = UniType(headlineFamily = FontFamily.SansSerif, identifierFamily = FontFamily.SansSerif, labelUppercase = true, labelLetterSpacing = 1.2.sp),
                 layout = UniLayout(density = RowDensity.COMPACT, workspacesAs = WorkspaceLayout.GRID, workspaceColumns = 2, cardsAs = CardStyle.CARD, rowsAs = CardStyle.HAIRLINE),
                 elevation = UniElevation.flat,
             )
-            // Ink: serif headlines, wide margins, everything between rules, boxes as an index list.
-            DesignTheme.TINTA -> UniTokens(
+            // Arena: editorial warmth. Serif headlines, roomy cards on a warm shadow, pill chips,
+            // labels in sentence case and the boxes as a rail of tiles. In the dark the shadow
+            // gives way to a lift, as in Nieve.
+            DesignTheme.ARENA -> UniTokens(
                 theme = theme,
-                colors = if (dark) UniPalettes.tintaDark else UniPalettes.tintaLight,
-                shapes = UniShapes(cardRadius = 4.dp, sheetRadius = 8.dp, chipRadius = 2.dp, buttonRadius = 4.dp),
-                spacing = UniSpacing(page = 24.dp, gap = 12.dp, gapSmall = 6.dp),
-                type = UniType(headlineFamily = FontFamily.Serif, identifierFamily = FontFamily.SansSerif, labelUppercase = true, labelLetterSpacing = 1.4.sp),
-                layout = UniLayout(density = RowDensity.COMFORTABLE, workspacesAs = WorkspaceLayout.GRID, workspaceColumns = 1, cardsAs = CardStyle.HAIRLINE, rowsAs = CardStyle.HAIRLINE),
-                elevation = UniElevation.flat,
-            )
-            // Terminal: monospaced identifiers, outlined cells in a dense three-column grid.
-            DesignTheme.TERMINAL -> UniTokens(
-                theme = theme,
-                colors = if (dark) UniPalettes.terminalDark else UniPalettes.terminalLight,
-                shapes = UniShapes(cardRadius = 8.dp, sheetRadius = 12.dp, chipRadius = 6.dp, buttonRadius = 8.dp),
-                spacing = UniSpacing(page = 14.dp, gap = 8.dp, gapSmall = 4.dp),
-                type = UniType(headlineFamily = FontFamily.SansSerif, identifierFamily = FontFamily.Monospace, labelUppercase = true, labelLetterSpacing = 0.8.sp),
-                layout = UniLayout(density = RowDensity.COMPACT, workspacesAs = WorkspaceLayout.GRID, workspaceColumns = 3, cardsAs = CardStyle.CARD, rowsAs = CardStyle.CARD),
-                elevation = UniElevation.flat,
-            )
-            // Aurora: en oscuro las tarjetas brillan con un halo de su acento en vez de sombra —
-            // una sombra no se ve sobre la noche, la luz sí—; en claro, sombra suave teñida de
-            // violeta. Píldoras, versalitas espaciadas y dos columnas de cajas.
-            DesignTheme.AURORA -> UniTokens(
-                theme = theme,
-                colors = if (dark) UniPalettes.auroraDark else UniPalettes.auroraLight,
-                shapes = UniShapes(cardRadius = 20.dp, sheetRadius = 28.dp, chipRadius = 999.dp, buttonRadius = 16.dp),
-                spacing = UniSpacing(page = 18.dp, gap = 12.dp, gapSmall = 8.dp),
-                type = UniType(headlineFamily = FontFamily.SansSerif, identifierFamily = FontFamily.SansSerif, labelUppercase = true, labelLetterSpacing = 1.6.sp),
-                layout = UniLayout(density = RowDensity.COMFORTABLE, workspacesAs = WorkspaceLayout.GRID, workspaceColumns = 2, cardsAs = CardStyle.CARD, rowsAs = CardStyle.CARD),
+                colors = if (dark) UniPalettes.arenaDark else UniPalettes.arenaLight,
+                shapes = UniShapes(cardRadius = 22.dp, sheetRadius = 30.dp, chipRadius = 999.dp, buttonRadius = 14.dp),
+                spacing = UniSpacing(page = 22.dp, gap = 14.dp, gapSmall = 8.dp),
+                type = UniType(headlineFamily = FontFamily.Serif, identifierFamily = FontFamily.SansSerif, labelUppercase = false, labelLetterSpacing = 0.2.sp),
+                layout = UniLayout(density = RowDensity.COMFORTABLE, workspacesAs = WorkspaceLayout.RAIL, workspaceColumns = 1, cardsAs = CardStyle.CARD, rowsAs = CardStyle.CARD),
                 elevation = if (dark) UniElevation(
-                    ambient = 22.dp, ambientColor = Color(0xFF6EF2CF).copy(alpha = .38f),
+                    ambient = 0.dp, ambientColor = Color.Transparent,
                     key = 0.dp, keyColor = Color.Transparent,
-                    surfaceLift = .03f, hairline = 0.5.dp,
+                    surfaceLift = .04f, hairline = 0.5.dp,
                 ) else UniElevation(
-                    ambient = 16.dp, ambientColor = Color(0xFF4B2FD6).copy(alpha = .28f),
-                    key = 2.dp, keyColor = Color(0xFF0C1030).copy(alpha = .45f),
+                    ambient = 14.dp, ambientColor = Color(0xFF5A3A1F).copy(alpha = .30f),
+                    key = 2.dp, keyColor = Color(0xFF3D2B1F).copy(alpha = .40f),
                     surfaceLift = 0f, hairline = 0.5.dp,
                 ),
+            )
+            // Lima: bento. Chunky rounded tiles in two columns, monospaced names and numbers,
+            // tracked capitals and flat fills: the tiles are told apart by their fill, not a shadow.
+            DesignTheme.LIMA -> UniTokens(
+                theme = theme,
+                colors = if (dark) UniPalettes.limaDark else UniPalettes.limaLight,
+                shapes = UniShapes(cardRadius = 24.dp, sheetRadius = 28.dp, chipRadius = 12.dp, buttonRadius = 16.dp),
+                spacing = UniSpacing(page = 16.dp, gap = 12.dp, gapSmall = 8.dp),
+                type = UniType(headlineFamily = FontFamily.SansSerif, identifierFamily = FontFamily.Monospace, labelUppercase = true, labelLetterSpacing = 1.sp),
+                layout = UniLayout(density = RowDensity.COMFORTABLE, workspacesAs = WorkspaceLayout.GRID, workspaceColumns = 2, cardsAs = CardStyle.CARD, rowsAs = CardStyle.CARD),
+                elevation = UniElevation.flat,
             )
         }
     }

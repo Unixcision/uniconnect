@@ -31,7 +31,7 @@ import kotlin.math.abs
  * palette is passed. Without a theme in reach (a notification icon) the shipped dark palette is
  * used, which is what the notice tray shows on any phone.
  */
-fun boxTone(seed: String, tones: List<Color> = UniTokens.tokensFor(DesignTheme.SERENO, dark = true).colors.tones): Color =
+fun boxTone(seed: String, tones: List<Color> = UniTokens.tokensFor(DesignTheme.NIEVE, dark = true).colors.tones): Color =
     tones[abs(seed.lowercase().hashCode()) % tones.size]
 
 /** [boxTone] in the palette of the theme in force. */

@@ -33,6 +33,10 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.unixcision.uniconnect.android.domain.HomeSummary
+import kotlinx.coroutines.launch
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -93,11 +97,54 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
         else -> Level.LIST
     }
 
+    // The side menu and what it opens: pages of Ajustes, the history and the notices.
+    val drawer = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    var settingsPage by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
+    var historyOpen by rememberSaveable { mutableStateOf(false) }
+    var noticesOpen by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
+    val version = remember(context) {
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty()
+    }
+    val summaries = remember(state.machines, state.connections) {
+        state.machines.associate { saved ->
+            val link = state.connections[saved.id]
+            saved.id to HomeSummary.of(link?.connected == true, link?.snapshot)
+        }
+    }
+    val troubled = state.connectionTroubled || state.crashes.isNotEmpty()
+    BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
+
+    ModalNavigationDrawer(
+        drawerState = drawer,
+        gesturesEnabled = level == Level.LIST,
+        scrimColor = Color.Black.copy(alpha = .32f),
+        drawerContent = {
+            HomeDrawer(HomeSummary.total(summaries.values.toList()), version, troubled) { destination ->
+                scope.launch { drawer.close() }
+                when (destination) {
+                    HomeDestination.Machines -> {}
+                    HomeDestination.Files -> sendingFiles = true
+                    HomeDestination.History -> historyOpen = true
+                    HomeDestination.Notices -> noticesOpen = true
+                    is HomeDestination.Settings -> settingsPage = destination.page
+                    HomeDestination.Diagnostics -> model.showDiagnostics(true)
+                }
+            }
+        },
+    ) {
     // A flat ground in every theme: no gradient, no glow.
     Box(Modifier.fillMaxSize().background(UniTheme.colors.background)) {
         // System bars and cutout only: the IME is padded once, by the screen that hosts the composer.
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)).widthIn(max = 840.dp).align(Alignment.TopCenter)) {
-            AppHeader(
+            if (level == Level.LIST) HomeTopBar(
+                refreshing = state.refreshing, troubled = troubled,
+                onMenu = { scope.launch { drawer.open() } },
+                onRefresh = { model.refreshMachineStates(force = true) },
+                onDiagnostics = { model.showDiagnostics(true) },
+                onAdd = model::showAdd,
+            ) else AppHeader(
                 compact = level == Level.TERMINAL,
                 title = window?.name ?: machine?.name ?: stringResource(if (level == Level.UPLOADS) R.string.upload_title else R.string.app_name),
                 subtitle = when {
@@ -117,33 +164,6 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                 },
             ) {
                 when (level) {
-                    Level.LIST -> Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { sendingFiles = true }) {
-                            Icon(Icons.Rounded.CloudUpload, stringResource(R.string.upload_title), tint = UniTheme.colors.muted)
-                        }
-                        // El bicho solo aparece cuando hay algo que contar: varios fallos
-                        // seguidos, no el parpadeo normal de una reconexión. Un icono de alarma
-                        // permanente enseña a ignorarlo.
-                        if (state.connectionTroubled || state.crashes.isNotEmpty()) {
-                            IconButton(onClick = { model.showDiagnostics(true) }) {
-                                Icon(
-                                    Icons.Rounded.BugReport,
-                                    stringResource(R.string.diagnostics_open),
-                                    tint = UniTheme.colors.warning,
-                                )
-                            }
-                        }
-                        IconButton(onClick = model::showSettings) {
-                            Icon(Icons.Rounded.Settings, stringResource(R.string.settings), tint = UniTheme.colors.muted)
-                        }
-                        IconButton(onClick = { model.refreshMachineStates(force = true) }, enabled = !state.refreshing) {
-                            if (state.refreshing) LoadingIndicator(Modifier.size(22.dp), color = UniTheme.colors.accent)
-                            else Icon(Icons.Rounded.Refresh, stringResource(R.string.refresh_connections), tint = UniTheme.colors.muted)
-                        }
-                        FilledIconButton(onClick = model::showAdd, colors = IconButtonDefaults.filledIconButtonColors(containerColor = UniTheme.colors.accent, contentColor = UniTheme.colors.onAccent)) {
-                            Icon(Icons.Rounded.Add, stringResource(R.string.add_machine))
-                        }
-                    }
                     Level.MACHINE -> Box {
                         IconButton(onClick = { menuOpen = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.machine_menu), tint = UniTheme.colors.muted) }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = UniTheme.colors.surfaceRaised) {
@@ -243,10 +263,26 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                     Level.LIST -> PullToRefreshBox(
                         isRefreshing = state.refreshing,
                         onRefresh = { model.refreshMachineStates(force = true) },
-                    ) { MachineList(state.machines, state.connections, model::showAdd, model::selectMachine, onUploads = { sendingFiles = true }) }
+                    ) {
+                        HomeDashboard(
+                            machines = state.machines, summaries = summaries,
+                            states = state.machines.associate { saved ->
+                                val link = state.connections[saved.id]
+                                saved.id to when {
+                                    link?.connected == true -> MachineState.CONNECTED
+                                    link?.checking == true -> MachineState.CHECKING
+                                    else -> MachineState.SAVED
+                                }
+                            },
+                            onSelect = model::selectMachine, onAdd = model::showAdd,
+                            onFiles = { sendingFiles = true }, onHistory = { historyOpen = true },
+                            onNotices = { noticesOpen = true }, onSettings = { scope.launch { drawer.open() } },
+                        )
+                    }
                 }
             }
         }
+    }
     }
     // Sin `?.let`: el informe se abre siempre. Antes dependía de poder leer el entorno, así que
     // un dato ilegible dejaba el botón sin hacer nada —o peor, tiraba la app al leerlo aquí en
@@ -274,12 +310,29 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
     state.windowDetails?.let { details ->
         WindowDetailsDialog(details, onCopy = model::copyResumeCommand, onDismiss = model::dismissWindowDetails)
     }
-    if (state.showingSettings) {
+    if (state.showingSettings || settingsPage != null) {
         val inboxCandidates = state.machines.map { saved ->
             val link = state.connections[saved.id]
             InboxCandidate(saved, connected = link?.connected == true, keepsInbox = link?.snapshot?.keepsInbox == true)
         }
-        SettingsSheet(state.settings, transcribers, dictation, model::updateSettings, model::dismissSettings, inbox = inbox, inboxCandidates = inboxCandidates, dictationHistory = dictationHistory)
+        SettingsSheet(
+            state.settings, transcribers, dictation, model::updateSettings,
+            onDismiss = { settingsPage = null; model.dismissSettings() },
+            inbox = inbox, inboxCandidates = inboxCandidates, dictationHistory = dictationHistory, page = settingsPage,
+        )
+    }
+    if (historyOpen && dictationHistory != null) {
+        StandaloneHistorySheet(dictationHistory, state.settings.dictationLanguage.code, state.settings.pickedTranscriber) { historyOpen = false }
+    }
+    if (noticesOpen) {
+        NotificationsSheet(
+            machines = state.machines,
+            connected = { state.connections[it.id]?.connected == true },
+            links = state.notificationLinks,
+            onEnable = { onEnableNotifications(it.id) },
+            onDisable = { model.disableNotifications(it.id) },
+            onDismiss = { noticesOpen = false },
+        )
     }
     if (state.adding) MachineSheet(state.saving, state.formError, onDismiss = model::dismissAdd, onSave = model::saveMachine)
     state.editing?.let { target ->
@@ -322,86 +375,6 @@ private fun AppHeader(
             }
         }
         actions()
-    }
-}
-
-@Composable
-private fun MachineList(machines: List<Machine>, connections: Map<String, MachinesViewModel.Connection>, onAdd: () -> Unit, onSelect: (String) -> Unit, onUploads: () -> Unit) {
-    val spacing = UniTheme.spacing
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = spacing.page, end = spacing.page, top = 12.dp, bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(spacing.gap)) {
-        item {
-            Text(stringResource(R.string.home_title), style = MaterialTheme.typography.displaySmall)
-            Text(stringResource(R.string.home_subtitle), Modifier.padding(top = 6.dp, bottom = 8.dp), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodyLarge)
-        }
-        if (machines.isEmpty()) item {
-            GlassCard(Modifier.fillMaxWidth().padding(top = 12.dp), accent = UniTheme.colors.accent) {
-                Column(Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Image(painterResource(R.drawable.uniconnect_mark), null, Modifier.size(120.dp))
-                    Text(stringResource(R.string.empty_title), Modifier.padding(top = 18.dp), style = MaterialTheme.typography.titleLarge)
-                    Text(stringResource(R.string.empty_detail), Modifier.padding(top = 10.dp), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodyMedium)
-                    Button(onClick = onAdd, modifier = Modifier.fillMaxWidth().padding(top = 26.dp), shape = UniTheme.shapes.button, contentPadding = PaddingValues(18.dp)) {
-                        Icon(Icons.Rounded.Add, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.add_machine), fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-        }
-        if (machines.isNotEmpty()) item {
-            Column(verticalArrangement = Arrangement.spacedBy(UniTheme.layout.rowGap(spacing))) { machines.forEach { machine -> key(machine.id) { MachineRow(machine, connections[machine.id]) { onSelect(machine.id) } } } }
-        }
-        item {
-            // The one section that is not a machine: files to a link, from the home as well as the bar.
-            GlassCard(Modifier.fillMaxWidth().padding(top = 4.dp), onClick = onUploads, style = UniTheme.layout.rowsAs, accent = UniTheme.colors.accent) {
-                Row(Modifier.fillMaxWidth().padding(UniTheme.layout.cardPadding), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(44.dp).background(UniTheme.colors.accentSoft, UniTheme.shapes.chip), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.CloudUpload, null, Modifier.size(22.dp), tint = UniTheme.colors.accent)
-                    }
-                    Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
-                        Text(stringResource(R.string.upload_title), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(stringResource(R.string.upload_home_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    }
-                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = UniTheme.colors.muted)
-                }
-            }
-        }
-        item {
-            Row(Modifier.padding(top = 12.dp, start = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(28.dp).background(UniTheme.colors.success.copy(alpha = .12f), CircleShape), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Shield, null, Modifier.size(15.dp), tint = UniTheme.colors.success)
-                }
-                Column {
-                    Text(stringResource(R.string.security_note), style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted)
-                    Text(stringResource(R.string.hierarchy_hint), style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.accent)
-                }
-            }
-        }
-    }
-}
-
-/** One saved machine: a card or a row between rules, as the theme draws its lists. */
-@Composable
-private fun MachineRow(machine: Machine, connection: MachinesViewModel.Connection?, onSelect: () -> Unit) {
-    val identifier = UniTheme.type.identifierFamily
-    val tone = themedTone(machine.name)
-    GlassCard(Modifier.fillMaxWidth(), accent = if (connection?.connected == true) UniTheme.colors.success else tone, onClick = onSelect, style = UniTheme.layout.rowsAs) {
-        Row(Modifier.fillMaxWidth().padding(UniTheme.layout.cardPadding), verticalAlignment = Alignment.CenterVertically) {
-            BoxMonogram(machine.name, size = 54.dp, selected = connection?.connected == true, tone = tone)
-            Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
-                Text(machine.name, style = MaterialTheme.typography.titleMedium, fontFamily = identifier, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(machine.endpoint.displayAddress, color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall, fontFamily = identifier, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    when {
-                        connection?.connected == true -> StatusPill(stringResource(R.string.connected_machine), PillTone.Live)
-                        connection?.checking == true -> StatusPill(stringResource(R.string.checking_machine), PillTone.Busy)
-                        else -> StatusPill(stringResource(R.string.saved_machine), PillTone.Idle)
-                    }
-                    connection?.snapshot?.let { snapshot ->
-                        Text(pluralStringResource(R.plurals.window_count, snapshot.workspaces.sumOf { it.windows.size }, snapshot.workspaces.sumOf { it.windows.size }),
-                            style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.muted)
-                    }
-                }
-            }
-            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = UniTheme.colors.muted)
-        }
     }
 }
 

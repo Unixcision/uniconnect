@@ -70,7 +70,10 @@ fun SettingsSheet(
     inboxCandidates: List<InboxCandidate> = emptyList(),
     /** El historial de dictados; sin él no se ofrece la sección Dictados. */
     dictationHistory: DictationHistoryViewModel? = null,
+    /** La página del menú lateral que se abre; nula para todos los ajustes a la vez. */
+    page: SettingsPage? = null,
 ) {
+    val shows: (SettingsPage) -> Boolean = { page == null || page == it }
     val context = LocalContext.current
     val version = remember(context) {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty()
@@ -86,13 +89,13 @@ fun SettingsSheet(
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             SheetHeader(
-                icon = { Icon(Icons.Rounded.Settings, null, tint = UniTheme.colors.accent) },
-                title = stringResource(R.string.settings),
-                note = stringResource(R.string.settings_note),
+                icon = { Icon(page?.icon ?: Icons.Rounded.Settings, null, tint = UniTheme.colors.accent) },
+                title = stringResource(page?.title ?: R.string.settings),
+                note = stringResource(page?.note ?: R.string.settings_note),
                 tone = UniTheme.colors.accent,
             )
 
-            SettingsSection(stringResource(R.string.settings_appearance)) {
+            if (shows(SettingsPage.APPEARANCE)) SettingsSection(stringResource(R.string.settings_appearance)) {
                 Text(stringResource(R.string.settings_design_theme), style = MaterialTheme.typography.bodyMedium)
                 Text(stringResource(R.string.settings_design_theme_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
                 // A fixed width per card and a scroll, not five slivers sharing the sheet: the
@@ -122,7 +125,7 @@ fun SettingsSheet(
                 }
             }
 
-            SettingsSection(stringResource(R.string.settings_terminal)) {
+            if (shows(SettingsPage.TERMINAL)) SettingsSection(stringResource(R.string.settings_terminal)) {
                 Text(stringResource(R.string.settings_default_view), style = MaterialTheme.typography.bodyMedium)
                 Text(stringResource(R.string.settings_default_view_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 10.dp)) {
@@ -143,7 +146,7 @@ fun SettingsSheet(
                 )
             }
 
-            SettingsSection(stringResource(R.string.settings_voice)) {
+            if (shows(SettingsPage.VOICE)) SettingsSection(stringResource(R.string.settings_voice)) {
                 Text(stringResource(R.string.settings_transcription), style = MaterialTheme.typography.bodyMedium)
                 Text(stringResource(R.string.settings_transcription_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
                 // A row of segments could not say who transcribes, and that is the only thing worth
@@ -192,7 +195,7 @@ fun SettingsSheet(
                 }
             }
 
-            if (dictation != null) SettingsSection(stringResource(R.string.settings_speech_models)) {
+            if (dictation != null && shows(SettingsPage.VOICE)) SettingsSection(stringResource(R.string.settings_speech_models)) {
                 Text(stringResource(R.string.settings_speech_models_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
                 if (!dictation.whisperRuns) Text(
                     stringResource(R.string.settings_whisper_unsupported),
@@ -219,18 +222,18 @@ fun SettingsSheet(
                 }
             }
 
-            SettingsSection(stringResource(R.string.settings_terminal_upload)) {
+            if (shows(SettingsPage.FILES)) SettingsSection(stringResource(R.string.settings_terminal_upload)) {
                 Text(stringResource(R.string.settings_terminal_upload_note), color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
                 TerminalUploadPicker(settings, onChange)
             }
 
-            if (inbox != null) SettingsSection(stringResource(R.string.settings_inbox)) { InboxSettingsSection(inbox, inboxCandidates) }
+            if (inbox != null && shows(SettingsPage.CLEANUP)) SettingsSection(stringResource(R.string.settings_inbox)) { InboxSettingsSection(inbox, inboxCandidates) }
 
-            if (dictationHistory != null) SettingsSection(stringResource(R.string.settings_dictations)) { DictationSettingsSection(dictationHistory) }
+            if (dictationHistory != null && shows(SettingsPage.CLEANUP)) SettingsSection(stringResource(R.string.settings_dictations)) { DictationSettingsSection(dictationHistory) }
 
-            if (dictationHistory != null) SettingsSection(stringResource(R.string.history_tab_messages)) { SentMessagesSettingsSection(dictationHistory) }
+            if (dictationHistory != null && shows(SettingsPage.CLEANUP)) SettingsSection(stringResource(R.string.history_tab_messages)) { SentMessagesSettingsSection(dictationHistory) }
 
-            SettingsSection(stringResource(R.string.settings_connections)) {
+            if (shows(SettingsPage.CONNECTIONS)) SettingsSection(stringResource(R.string.settings_connections)) {
                 SettingsSwitch(
                     title = stringResource(R.string.settings_probe_on_open),
                     note = stringResource(R.string.settings_probe_on_open_note),
@@ -566,11 +569,9 @@ private val TerminalView.label: Int
 private val DesignTheme.label: Int
     get() = when (this) {
         DesignTheme.NIEVE -> R.string.theme_nieve
-        DesignTheme.SERENO -> R.string.theme_sereno
-        DesignTheme.SENAL -> R.string.theme_senal
-        DesignTheme.TINTA -> R.string.theme_tinta
-        DesignTheme.TERMINAL -> R.string.theme_terminal
-        DesignTheme.AURORA -> R.string.theme_aurora
+        DesignTheme.OBSIDIANA -> R.string.theme_obsidiana
+        DesignTheme.ARENA -> R.string.theme_arena
+        DesignTheme.LIMA -> R.string.theme_lima
     }
 
 /** The visible name of a colour mode. */

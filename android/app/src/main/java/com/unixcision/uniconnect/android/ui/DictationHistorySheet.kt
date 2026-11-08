@@ -68,6 +68,24 @@ fun DictationHistoryButton(model: DictationHistoryViewModel, draft: String, onDr
     )
 }
 
+/**
+ * The history opened from the side menu, away from any window: there is no box to paste into, so
+ * «Pegar» copies the text instead, ready for wherever it goes.
+ */
+@Composable
+fun StandaloneHistorySheet(model: DictationHistoryViewModel, language: String?, preferredMachineID: String?, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    DictationHistorySheet(
+        model, language, preferredMachineID,
+        onPaste = { text, _ ->
+            clipboard.setText(AnnotatedString(text))
+            Toast.makeText(context, R.string.dictation_history_copied, Toast.LENGTH_SHORT).show()
+        },
+        onDismiss = onDismiss,
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DictationHistorySheet(model: DictationHistoryViewModel, language: String?, preferredMachineID: String?, onPaste: (String, Int) -> Unit, onDismiss: () -> Unit) {

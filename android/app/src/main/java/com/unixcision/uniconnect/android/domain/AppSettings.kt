@@ -24,7 +24,7 @@ data class AppSettings(
     val terminalView: TerminalView = TerminalView.PAN,
     val showExtraKeys: Boolean = false,
     val probeOnOpen: Boolean = true,
-    val designTheme: DesignTheme = DesignTheme.SERENO,
+    val designTheme: DesignTheme = DesignTheme.NIEVE,
     val colorMode: ColorMode = ColorMode.SYSTEM,
     val uploadService: UploadService = UploadService.default,
     val terminalUploadService: UploadService? = null,

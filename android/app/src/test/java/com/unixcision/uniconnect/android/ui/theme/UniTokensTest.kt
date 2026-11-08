@@ -11,7 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * What every one of the twelve theme readings must hold, checked through the same pure function
+ * What every one of the eight theme readings must hold, checked through the same pure function
  * the screens use. Contrast is the WCAG ratio, so a palette that stops reading fails here.
  */
 class UniTokensTest {
@@ -60,59 +60,55 @@ class UniTokensTest {
     }
 
     @Test
-    fun tintaSetsHeadlinesInSerifAndTheOthersDoNot() {
-        assertEquals(FontFamily.Serif, UniTokens.tokensFor(DesignTheme.TINTA, dark = false).type.headlineFamily)
-        assertEquals(FontFamily.Serif, UniTokens.tokensFor(DesignTheme.TINTA, dark = true).type.headlineFamily)
-        (themes - DesignTheme.TINTA).forEach { theme ->
+    fun arenaSetsHeadlinesInSerifAndTheOthersDoNot() {
+        assertEquals(FontFamily.Serif, UniTokens.tokensFor(DesignTheme.ARENA, dark = false).type.headlineFamily)
+        assertEquals(FontFamily.Serif, UniTokens.tokensFor(DesignTheme.ARENA, dark = true).type.headlineFamily)
+        (themes - DesignTheme.ARENA).forEach { theme ->
             assertNotEquals("$theme headlines are not serif", FontFamily.Serif, UniTokens.tokensFor(theme, dark = false).type.headlineFamily)
         }
     }
 
     @Test
-    fun terminalSetsIdentifiersInMonospaceAndTheOthersDoNot() {
-        assertEquals(FontFamily.Monospace, UniTokens.tokensFor(DesignTheme.TERMINAL, dark = false).type.identifierFamily)
-        assertEquals(FontFamily.Monospace, UniTokens.tokensFor(DesignTheme.TERMINAL, dark = true).type.identifierFamily)
-        (themes - DesignTheme.TERMINAL).forEach { theme ->
+    fun limaSetsIdentifiersInMonospaceAndTheOthersDoNot() {
+        assertEquals(FontFamily.Monospace, UniTokens.tokensFor(DesignTheme.LIMA, dark = false).type.identifierFamily)
+        assertEquals(FontFamily.Monospace, UniTokens.tokensFor(DesignTheme.LIMA, dark = true).type.identifierFamily)
+        (themes - DesignTheme.LIMA).forEach { theme ->
             assertNotEquals("$theme identifiers are not monospace", FontFamily.Monospace, UniTokens.tokensFor(theme, dark = true).type.identifierFamily)
         }
     }
 
     @Test
-    fun senalIsCompactAndNieveAndSerenoAreNot() {
-        assertEquals(RowDensity.COMPACT, UniTokens.tokensFor(DesignTheme.SENAL, dark = false).layout.density)
-        assertEquals(RowDensity.COMPACT, UniTokens.tokensFor(DesignTheme.SENAL, dark = true).layout.density)
-        assertEquals(RowDensity.COMFORTABLE, UniTokens.tokensFor(DesignTheme.SERENO, dark = false).layout.density)
+    fun obsidianaIsCompactAndTheOthersLeaveAir() {
         listOf(false, true).forEach { dark ->
-            assertEquals("nieve dark=$dark leaves air around a row", RowDensity.COMFORTABLE, UniTokens.tokensFor(DesignTheme.NIEVE, dark).layout.density)
+            assertEquals(RowDensity.COMPACT, UniTokens.tokensFor(DesignTheme.OBSIDIANA, dark).layout.density)
+            (themes - DesignTheme.OBSIDIANA).forEach { theme ->
+                assertEquals("$theme dark=$dark leaves air around a row", RowDensity.COMFORTABLE, UniTokens.tokensFor(theme, dark).layout.density)
+            }
         }
     }
 
     @Test
-    fun tintaDrawsHairlinesAndTheOthersDrawCards() {
-        assertEquals(CardStyle.HAIRLINE, UniTokens.tokensFor(DesignTheme.TINTA, dark = false).layout.cardsAs)
-        (themes - DesignTheme.TINTA).forEach { theme ->
-            assertEquals("$theme draws cards", CardStyle.CARD, UniTokens.tokensFor(theme, dark = false).layout.cardsAs)
+    fun everyThemeDrawsItsMessageBlocksAsCards() {
+        themes.forEach { theme -> assertEquals("$theme draws cards", CardStyle.CARD, UniTokens.tokensFor(theme, dark = false).layout.cardsAs) }
+    }
+
+    @Test
+    fun onlyObsidianaSeparatesRowsWithHairlines() {
+        assertEquals(CardStyle.HAIRLINE, UniTokens.tokensFor(DesignTheme.OBSIDIANA, dark = true).layout.rowsAs)
+        (themes - DesignTheme.OBSIDIANA).forEach { theme ->
+            assertEquals("$theme rows are cards", CardStyle.CARD, UniTokens.tokensFor(theme, dark = true).layout.rowsAs)
         }
     }
 
     @Test
-    fun senalAndTintaSeparateRowsWithHairlines() {
-        assertEquals(CardStyle.HAIRLINE, UniTokens.tokensFor(DesignTheme.SENAL, dark = true).layout.rowsAs)
-        assertEquals(CardStyle.HAIRLINE, UniTokens.tokensFor(DesignTheme.TINTA, dark = true).layout.rowsAs)
-        assertEquals(CardStyle.CARD, UniTokens.tokensFor(DesignTheme.NIEVE, dark = true).layout.rowsAs)
-        assertEquals(CardStyle.CARD, UniTokens.tokensFor(DesignTheme.SERENO, dark = true).layout.rowsAs)
-        assertEquals(CardStyle.CARD, UniTokens.tokensFor(DesignTheme.TERMINAL, dark = true).layout.rowsAs)
-    }
-
-    @Test
-    fun boxesAreARailInNieveAndSerenoAndAGridOfTheAgreedColumnsElsewhere() {
-        listOf(DesignTheme.NIEVE, DesignTheme.SERENO).forEach { theme ->
+    fun boxesAreARailInNieveAndArenaAndATwoColumnGridInObsidianaAndLima() {
+        listOf(DesignTheme.NIEVE, DesignTheme.ARENA).forEach { theme ->
             assertEquals("$theme is a rail", WorkspaceLayout.RAIL, UniTokens.tokensFor(theme, dark = false).layout.workspacesAs)
         }
-        listOf(DesignTheme.SENAL to 2, DesignTheme.TINTA to 1, DesignTheme.TERMINAL to 3, DesignTheme.AURORA to 2).forEach { (theme, columns) ->
+        listOf(DesignTheme.OBSIDIANA, DesignTheme.LIMA).forEach { theme ->
             val layout = UniTokens.tokensFor(theme, dark = false).layout
             assertEquals("$theme is a grid", WorkspaceLayout.GRID, layout.workspacesAs)
-            assertEquals("$theme columns", columns, layout.workspaceColumns)
+            assertEquals("$theme columns", 2, layout.workspaceColumns)
         }
     }
 
@@ -143,11 +139,9 @@ class UniTokensTest {
     @Test
     fun radiiFollowTheBrief() {
         assertEquals(28f, UniTokens.tokensFor(DesignTheme.NIEVE, dark = false).shapes.cardRadius.value)
-        assertEquals(24f, UniTokens.tokensFor(DesignTheme.SERENO, dark = false).shapes.cardRadius.value)
-        assertEquals(12f, UniTokens.tokensFor(DesignTheme.SENAL, dark = false).shapes.cardRadius.value)
-        assertEquals(4f, UniTokens.tokensFor(DesignTheme.TINTA, dark = false).shapes.cardRadius.value)
-        assertEquals(8f, UniTokens.tokensFor(DesignTheme.TERMINAL, dark = false).shapes.cardRadius.value)
-        assertEquals(20f, UniTokens.tokensFor(DesignTheme.AURORA, dark = false).shapes.cardRadius.value)
+        assertEquals(14f, UniTokens.tokensFor(DesignTheme.OBSIDIANA, dark = false).shapes.cardRadius.value)
+        assertEquals(22f, UniTokens.tokensFor(DesignTheme.ARENA, dark = false).shapes.cardRadius.value)
+        assertEquals(24f, UniTokens.tokensFor(DesignTheme.LIMA, dark = false).shapes.cardRadius.value)
     }
 
     @Test
@@ -172,15 +166,15 @@ class UniTokensTest {
     @Test
     fun nieveLeavesMoreAirBetweenBlocksThanTheThemeItIsClosestTo() {
         val nieve = UniTokens.tokensFor(DesignTheme.NIEVE, dark = false).spacing
-        val sereno = UniTokens.tokensFor(DesignTheme.SERENO, dark = false).spacing
+        val arena = UniTokens.tokensFor(DesignTheme.ARENA, dark = false).spacing
         assertTrue("nieve keeps a wide page margin", nieve.page.value >= 20f)
-        assertTrue("nieve separates blocks more than sereno", nieve.gap > sereno.gap)
-        assertTrue("nieve separates things inside a row more than sereno", nieve.gapSmall > sereno.gapSmall)
+        assertTrue("nieve separates blocks more than arena", nieve.gap > arena.gap)
+        assertTrue("nieve separates things inside a row more than arena", nieve.gapSmall > arena.gapSmall)
     }
 
     @Test
-    fun onlyNieveAndAuroraSeparateASurfaceWithLight() {
-        val floating = setOf(DesignTheme.NIEVE, DesignTheme.AURORA)
+    fun onlyNieveAndArenaSeparateASurfaceWithLight() {
+        val floating = setOf(DesignTheme.NIEVE, DesignTheme.ARENA)
         floating.forEach { theme ->
             listOf(false, true).forEach { dark ->
                 assertTrue("$theme dark=$dark floats", UniTokens.tokensFor(theme, dark).elevation.floats)
@@ -238,24 +232,19 @@ class UniTokensTest {
     }
 
     @Test
-    fun auroraGlowsWithItsOwnAccentInTheDarkInsteadOfCastingAShadow() {
-        val dark = UniTokens.tokensFor(DesignTheme.AURORA, dark = true)
-        assertTrue("the glow spreads", dark.elevation.ambient.value > 0f)
-        assertEquals(
-            "the glow is the accent, not black",
-            dark.colors.accent.copy(alpha = dark.elevation.ambientColor.alpha), dark.elevation.ambientColor,
-        )
-        assertTrue("a glow is faint, not a second fill", dark.elevation.ambientColor.alpha < .5f)
-        assertEquals("no dark key shadow on a dark ground", 0f, dark.elevation.key.value)
+    fun arenaCastsAWarmShadowInTheLightAndLiftsInTheDark() {
+        val light = UniTokens.tokensFor(DesignTheme.ARENA, dark = false)
+        assertTrue("the warm shadow spreads", light.elevation.ambient.value > 0f)
+        assertTrue("the shadow is brown, not black", light.elevation.ambientColor.red > light.elevation.ambientColor.blue)
+        val dark = UniTokens.tokensFor(DesignTheme.ARENA, dark = true).elevation
+        assertEquals("no shadow on a dark ground", 0f, dark.ambient.value)
+        assertTrue("a dark ground lifts instead", dark.surfaceLift > 0f)
     }
 
     @Test
-    fun auroraSpacesItsCapitalsWiderThanAnyOtherThemeAndItsChipsArePills() {
-        val aurora = UniTokens.tokensFor(DesignTheme.AURORA, dark = false)
-        assertTrue(aurora.type.labelUppercase)
-        (themes - DesignTheme.AURORA).forEach { theme ->
-            assertTrue("$theme tracks narrower than aurora", UniTokens.tokensFor(theme, dark = false).type.labelLetterSpacing.value < aurora.type.labelLetterSpacing.value)
-        }
-        assertTrue("aurora chips are pills", aurora.shapes.chipRadius.value >= 999f)
+    fun limaOwnsTheScreenWithAnAcidLimeInTheDark() {
+        val lime = UniTokens.tokensFor(DesignTheme.LIMA, dark = true).colors.accent
+        assertTrue("lime is mostly green", lime.green > lime.blue && lime.green > .8f)
+        assertTrue("and bright", lime.luminance() > .7f)
     }
 }
