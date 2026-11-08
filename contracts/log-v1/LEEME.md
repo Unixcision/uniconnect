@@ -38,9 +38,13 @@ específico va en `detail`.
 
 ## Niveles y depuración en caliente
 - `info`, `warn` y `error` se escriben siempre.
-- `debug` solo si el modo depuración está encendido. Se enciende y se apaga **sin reiniciar**:
-  - Mac: el ajuste «Registro detallado» (UserDefaults `uniconnect.log.debug`), observado en vivo.
-  - Linux: el ajuste equivalente en `state.json` (`log_debug`), observado en vivo.
+- `debug` solo si el modo depuración está encendido. Se enciende y se apaga **sin reiniciar**,
+  siempre a través de la app, que es la única que escribe su estado:
+  - Desde la interfaz: la casilla «Registro detallado» de Ajustes. El Mac la guarda en
+    UserDefaults `uniconnect.log.debug`; Linux, en `settings.log_debug` de `state.json`.
+  - Desde fuera, por el socket de control: `log.debug` con `{"enabled": true|false}`, que
+    responde `{"enabled": …, "until": "<ts ISO o null>"}`.
+  - Nunca editando a mano el fichero de estado: la app lo reescribe y pisaría el cambio.
 - Al cambiar el modo se escribe `log.debug_on` / `log.debug_off` (nivel `info`).
 - El modo se apaga solo a las **24 h** de encenderlo, para que nadie lo olvide encendido. Al
   apagarse se escribe `log.debug_off` con `detail.reason = "timeout"`.
