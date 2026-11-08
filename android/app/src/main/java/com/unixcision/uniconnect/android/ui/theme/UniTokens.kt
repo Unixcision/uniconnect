@@ -75,14 +75,14 @@ data class UniTokens(
                     surfaceLift = 0f, hairline = 0.5.dp,
                 ),
             )
-            // Lima: bento. Chunky rounded tiles in two columns, monospaced names and numbers,
+            // Lima: bento. Chunky rounded tiles in two columns, names and numbers in JetBrains Mono,
             // tracked capitals and flat fills: the tiles are told apart by their fill, not a shadow.
             DesignTheme.LIMA -> UniTokens(
                 theme = theme,
                 colors = if (dark) UniPalettes.limaDark else UniPalettes.limaLight,
                 shapes = UniShapes.apple,
                 spacing = UniSpacing(page = 16.dp, gap = 12.dp, gapSmall = 8.dp),
-                type = UniType(headlineFamily = FontFamily.SansSerif, identifierFamily = FontFamily.Monospace, labelUppercase = true, labelLetterSpacing = 1.sp),
+                type = UniType(headlineFamily = FontFamily.SansSerif, identifierFamily = UniFonts.mono, labelUppercase = true, labelLetterSpacing = 1.sp),
                 layout = UniLayout(density = RowDensity.COMFORTABLE, workspacesAs = WorkspaceLayout.GRID, workspaceColumns = 2, cardsAs = CardStyle.CARD, rowsAs = CardStyle.CARD),
                 elevation = UniElevation.flat,
             )

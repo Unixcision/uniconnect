@@ -1,5 +1,14 @@
 package com.unixcision.uniconnect.android.ui
 
+import com.unixcision.uniconnect.android.domain.ActivityDigest
+import com.unixcision.uniconnect.android.domain.Greeting
+import com.unixcision.uniconnect.android.ui.design.DesignedDrawer
+import com.unixcision.uniconnect.android.ui.design.DesignedHome
+import com.unixcision.uniconnect.android.ui.design.DrawerModel
+import com.unixcision.uniconnect.android.ui.design.HomeActions
+import com.unixcision.uniconnect.android.ui.design.HomeMachine
+import com.unixcision.uniconnect.android.ui.design.HomeModel
+import java.util.Calendar
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -85,7 +94,6 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
     // Against a host that keeps favourites itself, the phone's own copy is not shown.
     val overrides = machine?.takeIf { connection?.snapshot?.keepsBoxes != true }?.let { state.overrides[it.id] } ?: BoxOverrides()
     var removing by remember { mutableStateOf<Machine?>(null) }
-    var menuOpen by remember { mutableStateOf(false) }
     // "Enviar archivos" is a section of the home, not of a machine: opening a machine leaves it.
     var sendingFiles by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(machine?.id) { if (machine != null) sendingFiles = false }
@@ -130,7 +138,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
         gesturesEnabled = level == Level.LIST,
         scrimColor = Color.Black.copy(alpha = .32f),
         drawerContent = {
-            HomeDrawer(HomeSummary.total(summaries.values.toList()), version, troubled) { destination ->
+            DesignedDrawer(DrawerModel(HomeSummary.total(summaries.values.toList()), version, troubled, state.settings.designTheme)) { destination ->
                 scope.launch { drawer.close() }
                 when (destination) {
                     HomeDestination.Machines -> {}
@@ -147,13 +155,8 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
     Box(Modifier.fillMaxSize().background(UniTheme.colors.background)) {
         // System bars and cutout only: the IME is padded once, by the screen that hosts the composer.
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)).widthIn(max = 840.dp).align(Alignment.TopCenter)) {
-            if (level == Level.LIST) HomeTopBar(
-                refreshing = state.refreshing, troubled = troubled,
-                onMenu = { scope.launch { drawer.open() } },
-                onRefresh = { model.refreshMachineStates(force = true) },
-                onDiagnostics = { model.showDiagnostics(true) },
-                onAdd = model::showAdd,
-            ) else AppHeader(
+            // The home and the machine screen are drawn by the design in force, header included.
+            if (level == Level.UPLOADS || level == Level.TERMINAL) AppHeader(
                 compact = level == Level.TERMINAL,
                 title = window?.name ?: machine?.name ?: stringResource(if (level == Level.UPLOADS) R.string.upload_title else R.string.app_name),
                 subtitle = when {
@@ -171,38 +174,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                     connection?.checking == true -> stringResource(R.string.checking_machine) to PillTone.Busy
                     else -> stringResource(R.string.saved_machine) to PillTone.Idle
                 },
-            ) {
-                when (level) {
-                    Level.MACHINE -> Box {
-                        IconButton(onClick = { menuOpen = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.machine_menu), tint = UniTheme.colors.muted) }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = UniTheme.colors.surfaceRaised) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.edit_machine)) },
-                                leadingIcon = { Icon(Icons.Rounded.Edit, null, tint = UniTheme.colors.accent) },
-                                onClick = { menuOpen = false; machine?.let(model::showEdit) },
-                            )
-                            // El alcance de equipo entero vive aquí y no en la pulsación larga de un
-                            // espacio: pedir «todas» debe costar un gesto distinto que pedir «estas».
-                            if (connection?.snapshot?.relaunches == true && machine != null) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.relaunch_all_agents)) },
-                                    leadingIcon = { Icon(Icons.Rounded.RestartAlt, null, tint = UniTheme.colors.accent) },
-                                    onClick = {
-                                        menuOpen = false
-                                        model.relaunch(machine.id, RelaunchScope.Machine(machine.id))
-                                    },
-                                )
-                            }
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.remove), color = UniTheme.colors.danger) },
-                                leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = UniTheme.colors.danger) },
-                                onClick = { menuOpen = false; removing = machine },
-                            )
-                        }
-                    }
-                    else -> {}
-                }
-            }
+            ) {}
             state.error?.let { ErrorNotice(it, model::dismissError) }
             AnimatedContent(
                 targetState = level,
@@ -256,36 +228,72 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                     }
                     Level.MACHINE -> if (machine != null) MachineBoxesScreen(
                         machine = machine, connection = connection ?: MachinesViewModel.Connection(),
-                        selectedWorkspaceID = state.selectedWorkspace, noticeLink = state.notificationLinks[machine.id],
+                        focusWorkspaceID = state.selectedWorkspace, noticeLink = state.notificationLinks[machine.id],
+                        overrides = overrides, hostKeepsOrder = state.hostKeepsOrder[machine.id],
+                        onBack = model::back,
                         onEnableNotices = { onEnableNotifications(machine.id) }, onDisableNotices = { model.disableNotifications(machine.id) },
                         onConnect = { model.connect(machine) }, onCreateWorkspace = { model.showCreate(false) },
-                        onCreateWindow = { model.showCreate(true) }, onSelectWorkspace = model::selectWorkspace, onSelectWindow = model::selectWindow,
-                        overrides = overrides, hostKeepsOrder = state.hostKeepsOrder[machine.id],
-                        onToggleWorkspacePin = model::toggleWorkspacePinned, onToggleWindowPin = model::toggleWindowPinned,
-                        onMoveWorkspace = model::moveWorkspace, onMoveWindow = model::moveWindow,
+                        onCreateWindow = model::createWindowIn, onOpenWindow = model::openWindow,
+                        onToggleWorkspacePin = model::toggleWorkspacePinned,
+                        onToggleWindowPin = { windowID, workspaceID -> model.toggleWindowPinned(windowID, workspaceID) },
+                        onMoveWorkspace = model::moveWorkspace,
+                        onMoveWindow = { windowID, delta, workspaceID -> model.moveWindow(windowID, delta, workspaceID) },
                         // Solo se ofrece si el equipo dice que sabe hacerlo. Un equipo antiguo no
                         // enseña la acción, en vez de enseñarla y tragársela.
                         onRelaunch = if (connection?.snapshot?.relaunches == true) {
                             { scope -> model.relaunch(machine.id, scope) }
                         } else null,
+                        menu = {
+                            MachineMenu(
+                                canRelaunchAll = connection?.snapshot?.relaunches == true,
+                                onEdit = { model.showEdit(machine) },
+                                onRelaunchAll = { model.relaunch(machine.id, RelaunchScope.Machine(machine.id)) },
+                                onRemove = { removing = machine },
+                            )
+                        },
                     )
                     Level.LIST -> PullToRefreshBox(
                         isRefreshing = state.refreshing,
                         onRefresh = { model.refreshMachineStates(force = true) },
                     ) {
-                        HomeDashboard(
-                            machines = state.machines, summaries = summaries,
-                            states = state.machines.associate { saved ->
-                                val link = state.connections[saved.id]
-                                saved.id to when {
-                                    link?.connected == true -> MachineState.CONNECTED
-                                    link?.checking == true -> MachineState.CHECKING
-                                    else -> MachineState.SAVED
-                                }
-                            },
-                            onSelect = model::selectMachine, onAdd = model::showAdd,
-                            onFiles = { sendingFiles = true }, onHistory = { historyOpen = true },
-                            onNotices = { noticesOpen = true }, onSettings = { scope.launch { drawer.open() } },
+                        val now = remember(state.connections) { System.currentTimeMillis() / 1000 }
+                        val digest = remember(state.machines, state.connections, now) {
+                            ActivityDigest.of(
+                                state.machines, state.connections.mapValues { it.value.snapshot },
+                                connected = state.connections.filterValues { it.connected }.keys, nowEpochSeconds = now,
+                            )
+                        }
+                        DesignedHome(
+                            model = HomeModel(
+                                machines = state.machines.map { saved ->
+                                    val link = state.connections[saved.id]
+                                    HomeMachine(
+                                        machine = saved,
+                                        state = when {
+                                            link?.connected == true -> MachineState.CONNECTED
+                                            link?.checking == true -> MachineState.CHECKING
+                                            else -> MachineState.SAVED
+                                        },
+                                        summary = summaries[saved.id] ?: HomeSummary(1, 0, 0, 0, 0),
+                                    )
+                                },
+                                total = HomeSummary.total(state.machines.map { summaries[it.id] ?: HomeSummary(1, 0, 0, 0, 0) }),
+                                activity = digest,
+                                greeting = remember { Greeting.at(Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) },
+                                nowEpochSeconds = now,
+                                refreshing = state.refreshing,
+                                troubled = troubled,
+                            ),
+                            actions = HomeActions(
+                                onMenu = { scope.launch { drawer.open() } },
+                                onRefresh = { model.refreshMachineStates(force = true) },
+                                onDiagnostics = { model.showDiagnostics(true) },
+                                onAdd = model::showAdd,
+                                onSelectMachine = model::selectMachine,
+                                onOpenWindow = model::openNotice,
+                                onFiles = { sendingFiles = true }, onHistory = { historyOpen = true },
+                                onNotices = { noticesOpen = true }, onSettings = { scope.launch { drawer.open() } },
+                            ),
                         )
                     }
                 }
@@ -393,6 +401,34 @@ fun ErrorNotice(message: Int, onDismiss: () -> Unit) {
         Row(Modifier.padding(start = 16.dp, top = 6.dp, bottom = 6.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(message), Modifier.weight(1f), color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodySmall)
             IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, stringResource(R.string.dismiss), tint = MaterialTheme.colorScheme.onErrorContainer) }
+        }
+    }
+}
+
+/** The machine's overflow menu: edit, relaunch every AI of the machine, remove. */
+@Composable
+private fun MachineMenu(canRelaunchAll: Boolean, onEdit: () -> Unit, onRelaunchAll: () -> Unit, onRemove: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.machine_menu), tint = UniTheme.colors.muted) }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = UniTheme.colors.surfaceRaised) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.edit_machine)) },
+                leadingIcon = { Icon(Icons.Rounded.Edit, null, tint = UniTheme.colors.accent) },
+                onClick = { open = false; onEdit() },
+            )
+            // El alcance de equipo entero vive aquí y no en la pulsación larga de un espacio:
+            // pedir «todas» debe costar un gesto distinto que pedir «estas».
+            if (canRelaunchAll) DropdownMenuItem(
+                text = { Text(stringResource(R.string.relaunch_all_agents)) },
+                leadingIcon = { Icon(Icons.Rounded.RestartAlt, null, tint = UniTheme.colors.accent) },
+                onClick = { open = false; onRelaunchAll() },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.remove), color = UniTheme.colors.danger) },
+                leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = UniTheme.colors.danger) },
+                onClick = { open = false; onRemove() },
+            )
         }
     }
 }

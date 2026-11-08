@@ -17,6 +17,8 @@ class HomeSummaryTest {
         )
         assertEquals(HomeSummary(machines = 1, connected = 1, windows = 5, working = 2, waiting = 1), HomeSummary.of(connected = true, snapshot))
         assertEquals(HomeSummary(machines = 1, connected = 0, windows = 0, working = 0, waiting = 0), HomeSummary.of(connected = false, null))
+        // A machine that stopped answering keeps its windows but none of its stale AI states.
+        assertEquals(HomeSummary(machines = 1, connected = 0, windows = 5, working = 0, waiting = 0), HomeSummary.of(connected = false, snapshot))
     }
 
     @Test
