@@ -146,12 +146,39 @@ class MobileHost:
     def emit(self, topic, payload=None):
         if topic == "terminal.pty":
             return  # Raw terminal output is never a broadcast topic.
-        event = {"kind": "event", "topic": topic, "payload": payload or {}}
+        payload = payload or {}
+        surface = payload.get("surface_id") if isinstance(payload.get("surface_id"), str) else None
+        event = {"kind": "event", "topic": topic, "payload": payload}
         with self.lock:
             clients = list(self.clients)
         for client in clients:
-            if topic in client.topics and self.access.authorize(client.peer):
-                client.enqueue(event, coalesce=topic in ("terminal.updated", "workspace.updated"))
+            if client.wants(topic, surface) and self.access.authorize(client.peer):
+                client.enqueue(event, coalesce=_Client.coalesce_key(topic, surface))
+
+    def emit_terminals_updated(self, surface_ids):
+        """`terminal.updated` for the windows that changed, filtered per stream before queuing.
+
+        A stream that names its windows (`surface_ids`) gets one event per changed window it
+        watches, with that `surface_id`. Phones that name none keep the single global event
+        they always had: re-reading the window they show on every change anywhere was the
+        flood that broke the mirror with many busy AIs.
+        """
+        topic = "terminal.updated"
+        changed = {surface.upper(): surface for surface in surface_ids if isinstance(surface, str) and surface}
+        with self.lock:
+            clients = list(self.clients)
+        for client in clients:
+            every_window, watched = client.watched_surfaces(topic)
+            if not every_window and not (watched & changed.keys()):
+                continue
+            if not self.access.authorize(client.peer):
+                continue
+            if every_window:
+                client.enqueue({"kind": "event", "topic": topic, "payload": {}}, coalesce=topic)
+                continue
+            for key in sorted(watched & changed.keys()):
+                client.enqueue({"kind": "event", "topic": topic, "payload": {"surface_id": changed[key]}},
+                               coalesce=_Client.coalesce_key(topic, changed[key]))
 
     def _client(self, connection_id):
         with self.lock:
@@ -199,15 +226,50 @@ class MobileHost:
 
 
 class _Client:
+    # Topics about one terminal, named by the `surface_id` of their payload (same set as the Mac).
+    TERMINAL_TOPICS = frozenset({"terminal.updated", "terminal.render_grid"})
+    COALESCED_TOPICS = frozenset({"terminal.updated", "workspace.updated"})
+
     def __init__(self, host, connection, peer):
         self.host, self.socket, self.peer = host, connection, peer
         self.socket.settimeout(0.2)
         self.decoder = FrameDecoder()
+        # stream_id -> (topics, upper-cased surface ids or None = every window).
         self.streams, self.topics = {}, set()
         self.queue, self.queue_bytes = deque(), 0
         self.lock = threading.RLock()
         self.closed = False
         self.identifier = str(uuid.uuid4())
+
+    @classmethod
+    def coalesce_key(cls, topic, surface=None):
+        """Queue key that replaces an older pending copy; one per window for terminal events."""
+        if topic not in cls.COALESCED_TOPICS:
+            return None
+        return topic + "\x00" + surface.upper() if surface and topic in cls.TERMINAL_TOPICS else topic
+
+    def wants(self, topic, surface=None):
+        """Whether any stream of this connection takes an event of `topic` about `surface`."""
+        with self.lock:
+            for topics, surfaces in self.streams.values():
+                if topic not in topics:
+                    continue
+                if topic not in self.TERMINAL_TOPICS or surfaces is None or surface is None:
+                    return True
+                if surface.upper() in surfaces:
+                    return True
+            return False
+
+    def watched_surfaces(self, topic):
+        """`(every_window, upper-cased ids)` this connection watches for a terminal topic."""
+        watched = set()
+        with self.lock:
+            for topics, surfaces in self.streams.values():
+                if topic in topics:
+                    if surfaces is None:
+                        return True, frozenset()
+                    watched |= surfaces
+        return False, frozenset(watched)
 
     def enqueue(self, message, *, coalesce=False, required_topic=None):
         try:
@@ -215,7 +277,7 @@ class _Client:
         except (TypeError, ValueError, OverflowError):
             self.close()
             return False
-        key = message.get("topic") if coalesce else None
+        key = (message.get("topic") if coalesce is True else coalesce) or None
         if required_topic is None:
             accepted = self._enqueue_frame(data, key)
         else:
@@ -340,21 +402,30 @@ class _Client:
                     raise RPCError("invalid_params", "Suscripción no válida")
                 if not all(isinstance(topic, str) for topic in topics):
                     raise RPCError("invalid_params", "Suscripción no válida")
+                # Optional: the windows whose screen this stream wants (Android since 3e7e0922e).
+                # Absent means every window, as older phones expect.
+                surfaces = None
+                if "surface_ids" in params:
+                    raw = params["surface_ids"]
+                    if not isinstance(raw, list) or len(raw) > 16 or not all(
+                            isinstance(item, str) and item and len(item.encode("utf-8")) <= 128 for item in raw):
+                        raise RPCError("invalid_params", "Suscripción no válida")
+                    surfaces = frozenset(item.upper() for item in raw)
                 with self.lock:
                     if self.closed:
                         return
                     if len(self.streams) >= 8 and stream not in self.streams:
                         raise RPCError("invalid_params", "Suscripción no válida")
-                    self.streams[stream] = set(topics) & allowed
-                    self.topics = set().union(*self.streams.values())
-                    result = {"stream_id": stream, "topics": sorted(self.streams[stream])}
+                    self.streams[stream] = (frozenset(topics) & allowed, surfaces)
+                    self.topics = set().union(*(topics for topics, _ in self.streams.values()))
+                    result = {"stream_id": stream, "topics": sorted(self.streams[stream][0])}
             elif method == "mobile.events.unsubscribe":
                 stream = params.get("stream_id")
                 if not isinstance(stream, str):
                     raise RPCError("invalid_params", "Suscripción no válida")
                 with self.lock:
                     removed = self.streams.pop(stream, None) is not None
-                    self.topics = set().union(*self.streams.values()) if self.streams else set()
+                    self.topics = set().union(*(topics for topics, _ in self.streams.values()))
                 result = {"stream_id": stream, "removed": removed}
             else:
                 result = self.host.rpc.dispatch(

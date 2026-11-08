@@ -153,12 +153,14 @@ class ActivityMonitor:
                 continue
             self.pending.add(key)
             def work(transport=transport):
+                started = self.clock()  # El resolutor necesita saber cuándo se tomó la marca de tmux.
                 try:
                     output = transport.run(probe_script(transport.socket_name), timeout=8, check=False).stdout
-                    return parse_list_panes(output)
+                    return started, parse_list_panes(output)
                 except Exception:
-                    return None
-            def done(result, key=key, targets=targets):
+                    return started, None
+            def done(outcome, key=key, targets=targets):
+                started, result = outcome if isinstance(outcome, tuple) else (None, outcome)
                 self.pending.discard(key)
                 if window._closed:
                     return
@@ -169,7 +171,7 @@ class ActivityMonitor:
                     if entry is None:
                         self.resolver.clear_probe(record["id"])  # Sonda fallida, sesión ausente o pane ambiguo.
                     else:
-                        self.resolver.note_probe(record["id"], *entry)
+                        self.resolver.note_probe(record["id"], *entry, started=started)
                 self.evaluate()
             window.background(work, done)
         self.evaluate()
