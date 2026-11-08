@@ -106,7 +106,9 @@ class RelaunchService:
                     "verb": verb, "targets": [
                         {"key": proof["key"], "label": candidate["label"], "provider": candidate["provider"],
                          "generation": proof["generation"], "state": "planificado",
-                         **({"active": True} if proof.get("active") is True else {})}
+                         **({"active": True} if proof.get("active") is True else {}),
+                         **({"warning": proof["warning"]} if proof.get("warning") else {}),
+                         **({"dropped_options": proof["dropped_options"]} if proof.get("dropped_options") else {})}
                         for candidate, proof in selected], "excluded": excluded}
         self.check(authorized)
         with self.lock:
@@ -220,7 +222,8 @@ class RelaunchService:
                 if state not in TERMINAL and (state not in phases or phases.index(state) < phases.index(previous["state"])):
                     raise ValueError("invalid_relaunch_transition")
                 previous.pop("cause", None)
-                previous.update({k: v for k, v in result.items() if k in ("state", "cause", "effective_id")})
+                previous.update({k: v for k, v in result.items()
+                                 if k in ("state", "cause", "effective_id", "escalation", "dropped_options")})
             self.save(identifier, value)
 
     def execute(self, identifier, verb, candidate, proof, authorized):

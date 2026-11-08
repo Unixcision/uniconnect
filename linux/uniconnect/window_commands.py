@@ -32,16 +32,17 @@ class WindowCommands:
         primera ventana, cerrar a la izquierda sin nada a la izquierda…). Relanzar en una ventana
         sin IA relanzable o continuar Codex en una que no es Codex no es «ahora no»: es nunca.
         """
-        from .relaunch_agents import RELAUNCHABLE
+        from .relaunch_agents import relaunchable
         workspace, surface = self.current_workspace(), self.focused_surface
         record = surface.record if surface else {}
         kind = (surface.workspace if surface else (workspace or {})).get("kind")
         agent = record.get("agent")
         windows = workspace.get("windows", []) if workspace else []
         if name == "relaunch_window":
-            return bool(record.get("tmux")) and agent in RELAUNCHABLE
+            return bool(record.get("tmux")) and relaunchable(agent, kind)
         if name == "relaunch_workspace":
-            return any(window.get("tmux") and window.get("agent") in RELAUNCHABLE for window in windows)
+            box = (workspace or {}).get("kind")
+            return any(window.get("tmux") and relaunchable(window.get("agent"), box) for window in windows)
         if name == "continue_window":
             return bool(record.get("tmux")) and agent == "codex"
         if name == "continue_workspace":

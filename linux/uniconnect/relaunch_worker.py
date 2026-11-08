@@ -1,10 +1,12 @@
 """Self-contained Linux target adapter, executed over an existing SSH transport.
 
 Private per-pane journals and a target-side flock arbitrate *all* viewing hosts.
-No login/permission edits, tmux destruction, generic control keys or --last.
-Only freshly proved native Claude/Codex processes can be stopped (D7: Codex by its
-open rollout, Claude by its ~/.claude/sessions/<pid>.json in ``idle``). Everything
-else is explicitly excluded until a provider-specific evidence adapter exists.
+No login/permission edits, generic control keys or --last, and never the tmux SERVER.
+Only freshly proved native Claude/Codex/AGY processes are closed (D7: Codex by its
+open rollout, Claude by its ~/.claude/sessions/<pid>.json in ``idle``). Since 08-11
+(relaunch-v1 «Escalado y mismas opciones») a close that does not finish escalates:
+kill that agent's process tree, then respawn its pane, then recreate its session, and
+it reopens with the SAME options it ran with (allowlisted), not a reconstructed policy.
 
 It travels as source text: RelaunchAgents puts resume_catalog.py in front of it, so
 the no-prompt rule is the very same ``AgentResumeCatalog.apply_policy`` as on the desktop.
@@ -21,6 +23,8 @@ from pathlib import Path
 import re
 import select
 import shlex
+import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -39,6 +43,8 @@ UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-
 # runtimes cannot prove quiescence from the statusline and remain non-relaunchable.
 AGY_MIN_SAFE_VERSION = (1, 4, 4)
 AGY_STATUS_MAX_AGE_SECONDS = 15
+# relaunch-v1 (08-11): bounded wait for a clean exit before escalating to kill the agent.
+EXIT_SECONDS = 60
 AGY_ADOPT_REQUEST = "@uniconnect_adopt_request"
 AGY_ADOPT_NONCE = "@uniconnect_adopt_nonce"
 # Claude's prompt line, with or without the box border of older versions.
@@ -184,7 +190,7 @@ class TargetWorker:
         lines = self.tmux("list-panes", "-s", "-t", "=" + self.request["session"], "-F",
             "#{pane_id}\t#{pane_pid}\t#{session_id}\t#{socket_path}\t#{pid}\t#{pane_dead}\t#{pane_in_mode}\t#{@uniconnect_native_identity}").splitlines()
         if len(lines) != 1:
-            raise Unavailable("identidad_ambigua")
+            raise Unavailable("sesion_compartida")  # Other panes or windows: never kill what is not ours.
         fields = lines[0].split("\t", 7)
         if len(fields) != 8 or fields[5] != "0":
             raise Unavailable("host_inaccesible")
@@ -299,9 +305,7 @@ class TargetWorker:
             ficha = self.claude_ficha(process)
             if not ficha or ficha.get("sessionId") != identifier:
                 raise Unavailable("identidad_ambigua")
-            if ficha.get("status") != "idle":
-                raise Unavailable("dialogo_desconocido")
-            return
+            return  # Its status (idle/busy/waiting/shell) decides warning or exclusion in inspect.
         if provider in ("agy", "antigravity"):
             return self.antigravity_configuration(process, identifier, hook)
         if provider != "codex":
@@ -675,24 +679,39 @@ class TargetWorker:
                      or native_configuration.get("approval_policy") != "never")):
             raise Unavailable("no_soportado")
 
-    @staticmethod
-    def resume_arguments(provider, argv, identifier, catalog, native_configuration=None):
-        """Retain explicit options, remove ONLY the previous conversation selector.
+    SECRET_CONFIG = re.compile(r"key|token|secret|password|auth", re.IGNORECASE)
 
-        Unknown positional inputs or noninteractive subcommands are excluded;
-        never replay the original prompt, fork, exec, login, or --last.
+    @staticmethod
+    def resume_arguments(provider, argv, identifier, catalog, native_configuration=None, *, dropped=None):
+        """The SAME options the live process ran with (relaunch-v1, 08-11), minus its conversation selector.
+
+        Only allowlisted options survive. Anything else (an unknown option, a prompt, a
+        system prompt, a secret ``-c``) is left out and its NAME goes to ``dropped``; it no
+        longer blocks the relaunch. Never replays a prompt, fork, exec, login or --last, and
+        never adds the no-prompt policy: an agent launched without bypass comes back without.
         """
+        dropped = [] if dropped is None else dropped
         if provider in ("agy", "antigravity"):
-            return TargetWorker.antigravity_resume_arguments(argv, identifier, catalog)
+            return TargetWorker.antigravity_resume_arguments(argv, identifier, catalog, dropped=dropped)
 
         arguments = list(argv[1:])
         resumed = removed_id = False
         values = ({"-c", "--config", "-m", "--model", "-C", "--cd", "-s", "--sandbox", "-a", "--ask-for-approval",
                    "-p", "--profile", "--add-dir", "--enable", "--disable"} if provider == "codex" else
-                  {"--model", "--permission-mode", "--settings", "--setting-sources", "--add-dir", "--allowedTools",
-                   "--disallowedTools", "--mcp-config", "--tools", "--system-prompt", "--append-system-prompt"})
+                  {"--model", "--fallback-model", "--permission-mode", "--settings", "--setting-sources", "--add-dir",
+                   "--allowedTools", "--disallowedTools", "--mcp-config", "--tools"})
         switches = ({"--no-alt-screen", "--search", "--full-auto", "--dangerously-bypass-approvals-and-sandbox", "--yolo"}
-                    if provider == "codex" else {"--dangerously-skip-permissions", "--verbose", "--strict-mcp-config"})
+                    if provider == "codex" else {"--dangerously-skip-permissions", "--allow-dangerously-skip-permissions",
+                                                 "--verbose", "--strict-mcp-config", "--chrome"})
+
+        def leave_out(position):
+            """Report an option by name (never its value) and return where the next token starts."""
+            arg = arguments[position]
+            dropped.append(arg.split("=", 1)[0] if arg.startswith("-") else "<posicional>")
+            if (arg.startswith("-") and "=" not in arg and position + 1 < len(arguments)
+                    and not arguments[position + 1].startswith("-")):
+                return position + 2  # Its value goes with it: a value never becomes a prompt.
+            return position + 1
         kept, index = [], 0
         while index < len(arguments):
             arg = arguments[index]
@@ -706,31 +725,32 @@ class TargetWorker:
                 index += 1
                 continue
             if provider == "claude" and arg in ("--resume", "-r", "--session-id"):
-                if index + 1 >= len(arguments) or arguments[index + 1].startswith("-"):
-                    raise Unavailable("no_soportado")
-                index += 2
+                index += 2 if index + 1 < len(arguments) and not arguments[index + 1].startswith("-") else 1
                 continue
             if arg in ("--last", "--all", "--continue", "-c") and (provider == "claude" or arg != "-c"):
-                if arg == "--all" and provider != "codex":
-                    raise Unavailable("no_soportado")
                 index += 1
                 continue
             option = arg.split("=", 1)[0]
             if option in values:
-                value = arg.split("=", 1)[1] if "=" in arg else (arguments[index + 1] if index + 1 < len(arguments) else "")
+                if "=" not in arg and index + 1 >= len(arguments):
+                    index = leave_out(index)
+                    continue
+                value = arg.split("=", 1)[1] if "=" in arg else arguments[index + 1]
                 if TargetWorker.managed_hook(provider, option, value):
                     index += 1 if "=" in arg else 2
                     continue
+                if option in ("-c", "--config") and TargetWorker.SECRET_CONFIG.search(value.split("=", 1)[0]):
+                    index = leave_out(index)
+                    continue
                 kept.append(arg)
                 if "=" not in arg:
-                    if index + 1 >= len(arguments):
-                        raise Unavailable("no_soportado")
                     kept.append(arguments[index + 1])
                     index += 1
             elif arg in switches:
                 kept.append(arg)
             else:
-                raise Unavailable("no_soportado")
+                index = leave_out(index)
+                continue
             index += 1
         if (provider == "codex" and isinstance(native_configuration, dict)
                 and native_configuration.get("settings_applied") is True):
@@ -768,12 +788,13 @@ class TargetWorker:
         # old Codex instance used its own alternate-screen transcript.
         if provider == "codex" and "--no-alt-screen" not in kept:
             kept.append("--no-alt-screen")
+        # Kept in the order they ran with. Codex 0.166 takes --yolo and the bypass switch after
+        # ``resume <id>`` as well as before it (checked on the installed binary, 08-11).
         substitutions = {"{executable}": [argv[0]], "{sessionId}": [identifier], "{arguments}": kept}
-        return TargetWorker.no_prompt(provider, [part for token in catalog[provider]["resume"]
-                                                 for part in substitutions.get(token, [token])], catalog)
+        return [part for token in catalog[provider]["resume"] for part in substitutions.get(token, [token])]
 
     @staticmethod
-    def antigravity_resume_arguments(argv, identifier, catalog):
+    def antigravity_resume_arguments(argv, identifier, catalog, *, dropped=None):
         """Build an AGY resume without replaying a prompt or widening permissions.
 
         Antigravity's no-prompt catalog flag is a launch default, not proof that
@@ -802,10 +823,11 @@ class TargetWorker:
                 continue
             if option in value_options:
                 value = inline_value if separator else (arguments[index + 1] if index + 1 < len(arguments) else "")
-                if not value or value.startswith("-"):
-                    raise Unavailable("no_soportado")
-                if option != "--add-dir" and option in seen_single:
-                    raise Unavailable("no_soportado")
+                if not value or value.startswith("-") or (option != "--add-dir" and option in seen_single):
+                    if dropped is not None:
+                        dropped.append(option)  # Malformed or repeated: left out, not a blocker.
+                    index += 1 if separator or not value or value.startswith("-") else 2
+                    continue
                 if option != "--add-dir":
                     seen_single.add(option)
                 kept.append(arg)
@@ -815,14 +837,17 @@ class TargetWorker:
                 index += 1
                 continue
             if arg in boolean_options:
-                if arg in seen_boolean:
-                    raise Unavailable("no_soportado")
-                seen_boolean.add(arg)
-                kept.append(arg)
+                if arg not in seen_boolean:
+                    seen_boolean.add(arg)
+                    kept.append(arg)
             else:
-                # Includes --continue, prompts, subcommands, and options whose
-                # semantics this adapter has not explicitly verified.
-                raise Unavailable("no_soportado")
+                # --continue, prompts, subcommands and options this adapter has not
+                # verified: left out and reported (relaunch-v1, 08-11), never replayed.
+                if dropped is not None:
+                    dropped.append(option if arg.startswith("-") else "<posicional>")
+                if (arg.startswith("-") and not separator and index + 1 < len(arguments)
+                        and not arguments[index + 1].startswith("-")):
+                    index += 1
             index += 1
         if not seen_conversation:
             raise Unavailable("identidad_ambigua")
@@ -876,9 +901,9 @@ class TargetWorker:
             isinstance(entry, dict) and isinstance(entry.get("aliases"), list)
             and provider in entry["aliases"] for entry in catalog.values())))
         if provider not in ("codex", "claude", "agy") or not catalogued:
-            raise Unavailable("no_soportado")
+            raise Unavailable("proveedor_no_soportado")
         if self.request.get("verb") in ("agent.continue", "agent.recover") and provider != "codex":
-            raise Unavailable("no_soportado")
+            raise Unavailable("proveedor_no_soportado")
         if mode != "0":
             raise Unavailable("dialogo_desconocido")
         children = self.descendants(root["pid"])
@@ -889,6 +914,11 @@ class TargetWorker:
         effective = self.native_id(provider, process, hook, pane)
         activity = {}
         native_configuration = None
+        relaunch = self.request.get("verb") == "agent.relaunch"
+        # relaunch-v1 (08-11): work in progress or a pending permission answer is a warning
+        # the plan shows; applying it escalates (the turn or the pending call is lost, never
+        # the conversation). Only an unknown state still excludes.
+        warning = None
         if provider == "codex":
             activity = self.codex_activity(self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines())
             # Only a relaunch plan or its confirmed active target may admit work.
@@ -897,31 +927,49 @@ class TargetWorker:
                             or self.request.get("expected", {}).get("active") is True)
             if any(activity.values()) and not allow_active:
                 raise Unavailable("tareas_de_fondo")
+            if any(activity.values()):
+                warning = "tareas_de_fondo"
             native_configuration = self.quiescent_configuration(provider, process, effective, hook,
                                                                 allow_active=allow_active and activity["working"])
             lines = self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines()
             needs_quota = self.request.get("verb") in ("agent.continue", "agent.recover") and not self.request.get("resumed")
             if needs_quota and not self.codex_quota_pause(lines):
-                raise Unavailable("no_soportado")
+                raise Unavailable("sin_pausa")
         else:
             native_configuration = self.quiescent_configuration(provider, process, effective, hook)
-        if self.request.get("action") == "inspect":
-            self.require_empty_composer({"pane": pane}, allow_active=provider == "codex"
-                                         and self.request.get("verb") == "agent.relaunch")
+        if provider == "claude":
+            status = (self.claude_ficha(process) or {}).get("status")
+            warning = self.claude_warning(status, status == "idle" and bool(self.claude_background_work(process["pid"])))
+            if warning and not relaunch:
+                raise Unavailable(warning)
+        if self.request.get("action") == "inspect" and not (warning and provider == "claude"):
+            try:
+                self.require_empty_composer({"pane": pane}, allow_active=provider == "codex" and relaunch)
+            except Unavailable as error:
+                if not (relaunch and error.cause == "permisos" and provider in ("claude", "codex")):
+                    raise
+                warning = "permisos"
         launcher = None
         # Only the exact bundled recovery launcher has a known wait/restart
         # protocol. All other supervisors remain excluded.
+        respawn = False
         if Path(root["argv"][0]).name.lstrip("-") not in ("bash", "zsh", "sh"):
-            launcher = self.recovery_launcher(root, process, effective)
+            try:
+                launcher = self.recovery_launcher(root, process, effective)
+            except Unavailable as error:
+                if error.cause != "no_soportado":
+                    raise
+                respawn = True  # Unknown supervisor: close the agent, then respawn the pane.
         elif any(arg not in ("-l", "-i", "--login", "--noprofile", "--norc") for arg in root["argv"][1:]):
             # Only our known bootstrap ends deterministically in an interactive
-            # shell. Do not stop an agent owned by a recovery/custom supervisor.
+            # shell. Anything else gets a fresh login shell by respawn-pane.
             if not (len(root["argv"]) == 3 and root["argv"][1] == "-lc"
                     and "UNICONNECT_NATIVE_HELPER=" in root["argv"][2]
                     and root["argv"][2].endswith('exec "${SHELL:-/bin/sh}" -l')):
-                raise Unavailable("no_soportado")
-        resume = self.resume_arguments(provider, [process["executable"], *process["argv"][1:]], effective,
-                                       self.request["catalog"], native_configuration)
+                respawn = True
+        dropped = []
+        resume = self.resume_arguments(provider, [self.launch_executable(provider, process), *process["argv"][1:]], effective,
+                                       self.request["catalog"], native_configuration, dropped=dropped)
         if provider == "agy":
             resume = self.preserve_antigravity_configuration(resume, native_configuration)
         self.preserve_resume_permissions(provider, native_configuration, resume)
@@ -938,13 +986,50 @@ class TargetWorker:
             # UI model/effort changes can leave argv untouched. Revalidate the
             # native effective settings before closing, separately from resume argv.
             proof["native_configuration"] = self.digest(native_configuration)
-        if any(activity.values()):
-            proof["active"] = True
+        if respawn:
+            proof["respawn"] = True
+        if dropped:
+            proof["dropped_options"] = dropped
+        if warning:
+            proof["active"], proof["warning"] = True, warning
         if provider == "codex" and self.request.get("verb") in ("agent.continue", "agent.recover"):
             proof["quota_paused"] = True
         if runtime:
             return proof, root, process, resume
         return proof
+
+    @staticmethod
+    def launch_executable(provider, process):
+        """What to exec on reopen: the command it was launched by, so updates are picked up.
+
+        Relaunching after an update is the point (Dani, 08-11). Claude's native installer runs
+        each version from its own file (~/.local/share/claude/versions/<v>), so /proc/<pid>/exe
+        of a process started before the update is the OLD version. A bare name (``claude``) is
+        resolved again in the process's own PATH at exec time; a Claude versions path becomes
+        ``claude``. Any other path launch keeps its exact executable, as before.
+        """
+        first = process["argv"][0] if process.get("argv") else ""
+        if provider == "claude" and ("/claude/versions/" in first or "/claude/versions/" in process["executable"]):
+            return "claude" if "/" in first or not first else first
+        if first and "/" not in first:
+            return first
+        return process["executable"]
+
+    @staticmethod
+    def claude_warning(status, background_work):
+        """What a Claude's ficha status means for a relaunch plan (relaunch-v1, 08-11).
+
+        ``waiting`` is a pending answer (permisos); ``busy`` or ``shell`` is work in progress,
+        and so are tasks or monitors of an idle Claude (tareas_de_fondo). Both are warnings
+        the plan shows, not exclusions. Any other status is unknown and still excludes.
+        """
+        if status == "waiting":
+            return "permisos"
+        if status in ("busy", "shell"):
+            return "tareas_de_fondo"
+        if status != "idle":
+            raise Unavailable("dialogo_desconocido")
+        return "tareas_de_fondo" if background_work else None
 
     def recovery_launcher(self, root, process, effective):
         """Recognize code and manifest; never execute a supervisor to probe it."""
@@ -1100,7 +1185,10 @@ class TargetWorker:
             raise Unavailable("no_soportado")
         # Keep the consent from the confirmed plan if the turn has just finished.
         proof = self.request["expected"]
-        self.require_empty_composer(proof, allow_active=proof.get("active") is True)
+        if not proof.get("warning"):
+            # A warned target (work in progress, pending permission) is closed by escalation,
+            # never by typing into its screen: nothing to prove about its composer.
+            self.require_empty_composer(proof, allow_active=proof.get("active") is True)
         if self.request.get("verb") == "agent.continue":
             if not self.codex_quota_pause(self.tmux("capture-pane", "-p", "-t", proof["pane"]["pane"]).splitlines()):
                 raise Unavailable("generacion_cambiada")
@@ -1117,15 +1205,18 @@ class TargetWorker:
             return
         # pidfd binds the signal to this exact process, not a potentially reused PID.
         if not hasattr(os, "pidfd_open"):
-            raise Unavailable("no_soportado")
+            raise Unavailable("destino_no_linux")
         # Capture before closing; the capsule is an anonymous sealed memory fd,
         # never a disk file, shell argument, journal or RPC result.
         raw = (self.proc / str(process["pid"]) / "environ").read_bytes()
         if len(raw) > 1048576:
             raise Unavailable("no_soportado")
         env = dict(item.split("=", 1) for item in raw.decode().split("\0") if "=" in item)
-        if not Path(process["cwd"]).is_dir() or not os.access(resume[0], os.X_OK):
-            raise Unavailable("no_soportado")
+        if not Path(process["cwd"]).is_dir():
+            raise Unavailable("carpeta_inexistente")
+        program = resume[0] if "/" in resume[0] else shutil.which(resume[0], path=env.get("PATH", os.defpath))
+        if not program or not os.access(program, os.X_OK):
+            raise Unavailable("binario_no_encontrado")
         # Decide whether this is a managed Antigravity launch while its native
         # binding is still present. The capsule must scrub that old binding so
         # launch() creates a fresh generation for the reopened process.
@@ -1133,11 +1224,9 @@ class TargetWorker:
                    self.managed_antigravity(env, process, proof["pane"], hook=self.pane()[3]))
         for key in ("CODEX_THREAD_ID", "CODEX_SESSION_ID", "UNICONNECT_NATIVE_BINDING"):
             env.pop(key, None)
-        # Claude refuses its no-prompt flag as root unless told it is sandboxed (IS_SANDBOX=1):
-        # rootEnvironment of the shared policy, only when this pane's agent runs as root.
-        if os.geteuid() == 0:
-            policy = (self.request["catalog"].get(self.request["provider"]) or {}).get("noPrompt") or {}
-            env.update(policy.get("rootEnvironment", {}))
+        # Same options (relaunch-v1, 08-11): the environment is the live process's own, so
+        # IS_SANDBOX=1 comes back only if it was there. A root Claude running with
+        # --dangerously-skip-permissions necessarily had it (Claude refuses otherwise).
         # Reuse the checked-in hook rather than executing source from a pane.
         helper = self.request.get("identity_helper")
         if not isinstance(helper, str) or len(helper) > 32768:
@@ -1150,7 +1239,7 @@ class TargetWorker:
         capsule = {"argv": resume, "env": env, "cwd": process["cwd"],
                    "agent": self.request["provider"], "window_id": self.request["window_id"], "managed_identity": managed}
         if not hasattr(os, "memfd_create"):
-            raise Unavailable("no_soportado")
+            raise Unavailable("destino_no_linux")
         descriptor = os.memfd_create("uniconnect-relaunch", os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
         os.fchmod(descriptor, 0o600)
         raw = json.dumps(capsule).encode()
@@ -1178,25 +1267,160 @@ class TargetWorker:
             raise Unavailable("generacion_cambiada")
         self.continue_codex(current, process, journal)
 
+    # A failed clean exit escalates only for these; identity, authority or a folder-trust
+    # question stop everything as before (relaunch-v1, 08-11).
+    ESCALATES = frozenset({"dialogo_desconocido", "tareas_de_fondo", "permisos"})
+    SHELLS = ("bash", "zsh", "sh", "fish", "dash", "ksh")
+
     def restart(self, proof, root, process, capsule_path, journal, events):
         owned = self.descendants(process["pid"])
-        if self.request.get("provider") == "claude":
-            self.exit_claude(proof, process, journal, events)
-        elif self.request.get("provider") == "agy":
-            self.exit_antigravity(proof, process, journal)
-        else:
-            self.exit_codex(proof, process, journal, events)
-        deadline = self.clock() + 5
-        while self.clock() < deadline:
-            after = self.process(root["pid"])
+        escalation = self.close_agent(proof, process, journal, events)
+        replaced = None
+        try:
+            after = None if proof.get("respawn") else self.clean_shell(root, owned, events)
+            if after is None:
+                escalation, root, replaced = self.respawn_pane(proof, process, journal, events)
+                events = replaced or events
+            return self.reopen(proof, root, capsule_path, journal, events, escalation)
+        finally:
+            if replaced is not None:
+                replaced.close()
+
+    def close_agent(self, proof, process, journal, events):
+        """Steps 1-2: the dialect's clean exit and, if it does not end, kill the agent's tree.
+
+        Returns the step that was needed (``exit`` or ``kill_process``). A warned target with
+        a pending permission answer, or a Claude that is not idle, is never typed into: /exit
+        would land in its dialog or queue as a message. It goes straight to step 2.
+        """
+        provider = self.request.get("provider")
+        skip = proof.get("warning") == "permisos" or (
+            provider == "claude" and (self.claude_ficha(process) or {}).get("status") != "idle")
+        if not skip:
+            try:
+                if provider == "claude":
+                    self.exit_claude(proof, process, journal, events)
+                elif provider == "agy":
+                    self.exit_antigravity(proof, process, journal)
+                else:
+                    self.exit_codex(proof, process, journal, events)
+                return "exit"
+            except Unavailable as error:
+                if error.cause not in self.ESCALATES:
+                    raise
+        try:
+            alive = self.same_process(process)
+        except (OSError, Unavailable):
+            alive = False
+        if not alive:
+            return "exit"  # It left on its own while the exit was being judged.
+        if not self.same_target(self.inspect(), proof):
+            raise Unavailable("generacion_cambiada")  # Never kill something other than what was planned.
+        self.write(journal, {"state": "cerrando"})
+        self.terminate_tree(process)
+        return "kill_process"
+
+    def terminate_tree(self, process, grace=5.0):
+        """SIGTERM to the agent and each descendant through its own pidfd; SIGKILL after ``grace``.
+
+        Never the pane's shell, nothing outside this agent's tree, never a reused PID: each
+        pidfd is opened and checked against the start time the plan proved.
+        """
+        if not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
+            raise Unavailable("destino_no_linux")
+        handles = []
+        try:
+            for target in [process, *self.descendants(process["pid"]).values()]:
+                try:
+                    descriptor = os.pidfd_open(target["pid"])
+                except OSError:
+                    continue
+                try:
+                    same = self.process(target["pid"])["start"] == target["start"]
+                except (OSError, Unavailable):
+                    same = False
+                if same:
+                    handles.append(descriptor)
+                else:
+                    os.close(descriptor)
+            alive = list(handles)
+            for number, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 2.0)):
+                for descriptor in list(alive):
+                    try:
+                        signal.pidfd_send_signal(descriptor, number)
+                    except ProcessLookupError:
+                        alive.remove(descriptor)
+                deadline = self.clock() + wait
+                while alive and self.clock() < deadline:
+                    ready, _, _ = select.select(alive, [], [], max(0.0, deadline - self.clock()))
+                    alive = [descriptor for descriptor in alive if descriptor not in ready]
+                if not alive:
+                    return
+            raise Unavailable("dialogo_desconocido")  # Survived SIGKILL (uninterruptible): a person looks.
+        finally:
+            for descriptor in handles:
+                os.close(descriptor)
+
+    def clean_shell(self, root, owned, events, timeout=5.0):
+        """The pane's own shell back in the foreground with nothing of the agent left, or None."""
+        deadline = self.clock() + timeout
+        while True:
+            try:
+                after = self.process(root["pid"])
+            except (OSError, Unavailable):
+                return None  # The agent was the pane's root: no shell to type into.
             if (after["start"] == root["start"] and after["foreground"] == after["group"]
                     and not self.descendants(root["pid"]) and not any(self.same_process(p) for p in owned.values())):
-                break
-            events.wait(deadline, self.clock)
-        else:
-            raise Unavailable("dialogo_desconocido")
-        if any(arg not in ("-l", "-i", "--login", "--noprofile", "--norc") for arg in after["argv"][1:]):
-            raise Unavailable("dialogo_desconocido")
+                if any(arg not in ("-l", "-i", "--login", "--noprofile", "--norc") for arg in after["argv"][1:]):
+                    return None  # Not a plain interactive shell: respawn instead of typing into it.
+                return after
+            try:
+                events.wait(deadline, self.clock)
+            except Unavailable:
+                return None
+
+    def respawn_pane(self, proof, process, journal, events):
+        """Steps 3-4: a fresh login shell in the same pane or, if that fails, the session recreated.
+
+        The shell must be explicit: without a command, respawn-pane re-runs the pane's ORIGINAL
+        command, which in UniConnect is the old agent launch with its old options (measured on
+        tmux 3.4). pane() proved this session has a single pane: nobody else's work goes with it.
+        Returns (escalation, new root, replacement events or None).
+        """
+        shell, cwd, session = 'exec "${SHELL:-/bin/sh}" -l', process["cwd"], self.request["session"]
+        escalation, replaced = "respawn_pane", None
+        self.write(journal, {"state": "cerrando"})
+        try:
+            self.tmux("respawn-pane", "-k", "-t", proof["pane"]["pane"], "-c", cwd, shell)
+        except Unavailable:
+            escalation = "recreate_session"
+            self.run(self.binary + ["kill-session", "-t", "=" + session], stdin=subprocess.DEVNULL,
+                     capture_output=True, text=True, timeout=3)  # It may already be gone.
+            self.tmux("new-session", "-d", "-s", session, "-c", cwd, shell)
+            # Creation is the one moment UniConnect sets session options (activity.v1, 08-11).
+            self.tmux("set-option", "-t", "=" + session + ":", "mouse", "on")
+            owner = self.request.get("provider", "") + ":" + str(proof.get("effective_id", "")).lower()
+            self.tmux("set-option", "-t", "=" + session + ":", "@uniconnect_agent_owner", owner)
+            replaced = events = TmuxOutputEvents(self.binary, session)
+        deadline = self.clock() + 10
+        while True:
+            try:
+                identity, root = self.pane()[:2]
+                if (Path(root["argv"][0]).name.lstrip("-") in self.SHELLS and root["foreground"] == root["group"]
+                        and not self.descendants(root["pid"])):
+                    proof["pane"] = identity
+                    return escalation, root, replaced
+            except (Unavailable, OSError):
+                pass
+            try:
+                events.wait(min(deadline, self.clock() + 1), self.clock)
+            except Unavailable:
+                if self.clock() >= deadline:
+                    if replaced is not None:
+                        replaced.close()
+                    raise
+
+    def reopen(self, proof, root, capsule_path, journal, events, escalation):
         self.write(journal, {"state": "reabriendo"})
         # Only the fixed launcher and an anonymous memory descriptor enter the
         # proved shell. No credential or provider argument appears in scrollback.
@@ -1220,7 +1444,10 @@ class TargetWorker:
                         and current.get("native_configuration") == proof.get("native_configuration")):
                     self.require_empty_composer(current)
                     if self.request.get("verb") != "agent.recover":
-                        self.write(journal, {"state": "verificado", "effective_id": proof["effective_id"]})
+                        self.write(journal, {"state": "verificado", "effective_id": proof["effective_id"],
+                                             "escalation": escalation,
+                                             **({"dropped_options": proof["dropped_options"]}
+                                                if proof.get("dropped_options") else {})})
                     return current
             except (Unavailable, OSError):
                 pass
@@ -1350,7 +1577,7 @@ class TargetWorker:
             if not self.codex_exit_composer(self.tmux("capture-pane", "-p", "-t", pane).splitlines(), row, composer):
                 raise Unavailable("dialogo_desconocido")
             self.tmux("send-keys", "-t", pane, "Enter")
-            ready, _, _ = select.select([descriptor], [], [], 75)
+            ready, _, _ = select.select([descriptor], [], [], EXIT_SECONDS)
             if not ready:
                 raise Unavailable("dialogo_desconocido")
         finally:
@@ -1361,8 +1588,8 @@ class TargetWorker:
         """A confirmed active turn may finish; identity, generation and configuration may not change."""
         if expected.get("active") is not True:
             return current == expected
-        return ({key: value for key, value in current.items() if key != "active"}
-                == {key: value for key, value in expected.items() if key != "active"})
+        return ({key: value for key, value in current.items() if key not in ("active", "warning")}
+                == {key: value for key, value in expected.items() if key not in ("active", "warning")})
 
     @staticmethod
     def codex_exit_composer(lines, row, original):
@@ -1461,7 +1688,7 @@ class TargetWorker:
             self.require_empty_composer(proof)
             self.write(journal, {"state": "cerrando"})
             self.tmux("send-keys", "-t", proof["pane"]["pane"], "C-d")
-            ready, _, _ = select.select([descriptor], [], [], 75)
+            ready, _, _ = select.select([descriptor], [], [], EXIT_SECONDS)
             if not ready:
                 raise Unavailable("dialogo_desconocido")
         finally:
@@ -1470,18 +1697,16 @@ class TargetWorker:
     def exit_claude(self, proof, process, journal, events):
         """D7: type /exit literally, check the line, Enter, and wait for Claude to leave by itself.
 
-        Never Ctrl+C and never force-killing: the process must die by itself (≤ 75 s). Never with
-        work running either: a Claude with tasks or monitors is not closed (tareas_de_fondo), because
-        both answers of its «Background work is running» dialog lose them (stopped, or stranded
-        outside the conversation). Dani's rule: monitors are saved before a close, never killed.
+        Never Ctrl+C. Since 08-11 (relaunch-v1) work in progress no longer blocks: Dani asked
+        that open tasks be stopped, so its «Background work is running» dialog is answered with
+        «Exit and stop tasks», chosen by its text. Anything that does not end within
+        EXIT_SECONDS raises, and close_agent escalates to killing the agent's tree.
         """
         if self.request.get("provider") != "claude" or not hasattr(os, "pidfd_open"):
-            raise Unavailable("no_soportado")
-        if self.claude_background_work(process["pid"]):
-            raise Unavailable("tareas_de_fondo")
+            raise Unavailable("destino_no_linux")
         descriptor = os.pidfd_open(process["pid"])
         try:
-            if self.inspect() != proof:
+            if not self.same_target(self.inspect(), proof):
                 raise Unavailable("generacion_cambiada")
             self.require_empty_composer(proof)
             self.write(journal, {"state": "cerrando"})
@@ -1494,19 +1719,22 @@ class TargetWorker:
                 if row < len(lines) and CLAUDE_EXIT_LINE.fullmatch(lines[row]):
                     break
                 events.wait(deadline, self.clock)
-            if self.inspect() != proof:
+            if not self.same_target(self.inspect(), proof):
                 raise Unavailable("generacion_cambiada")
             self.tmux("send-keys", "-t", pane, "Enter")
-            deadline = self.clock() + 75
+            deadline, answered = self.clock() + EXIT_SECONDS, False
             while not events.wait(deadline, self.clock, also=descriptor):
                 screen = self.tmux("capture-pane", "-p", "-t", pane)
                 if "Yes, I trust this folder" in screen:
                     raise Unavailable("confianza_carpeta")
-                if "Background work is running" in screen:
-                    # Work started between the check and the /exit. Neither answer is safe: Escape
-                    # cancels the close, Claude stays as it was, and a person decides.
-                    self.tmux("send-keys", "-t", pane, "Escape")
-                    raise Unavailable("tareas_de_fondo")
+                if "Background work is running" in screen and not answered:
+                    option = self.claude_exit_option(screen)
+                    if option is None:
+                        # The stop-tasks option is not where its text says: never pick by position.
+                        self.tmux("send-keys", "-t", pane, "Escape")
+                        raise Unavailable("tareas_de_fondo")
+                    self.tmux("send-keys", "-t", pane, "-l", "--", str(option))
+                    answered = True
             printed = self.claude_printed_id(self.tmux("capture-pane", "-p", "-t", pane))
             if printed is not None and printed != proof["effective_id"].lower():
                 # It left on another conversation than its ficha said: never resume a guess.
@@ -1552,7 +1780,7 @@ class TargetWorker:
                         and current.get("launcher") == proof["launcher"]):
                     self.require_empty_composer(current)
                     if self.request.get("verb") != "agent.recover":
-                        self.write(journal, {"state": "verificado", "effective_id": proof["effective_id"]})
+                        self.write(journal, {"state": "verificado", "effective_id": proof["effective_id"], "escalation": "exit"})
                     return current
             except (Unavailable, OSError):
                 pass

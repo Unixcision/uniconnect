@@ -7,7 +7,7 @@ import uuid
 
 from .mobile_protocol import RPCError
 from .relaunch import RelaunchService
-from .relaunch_agents import RelaunchAgents, RelaunchUnavailable, cause_text
+from .relaunch_agents import RelaunchAgents, RelaunchUnavailable, cause_text, contract_causes
 from .relaunch_history import RelaunchHistory
 from .machine_directory import MachineDirectory
 from .transport import SSHCommand, Transport
@@ -212,10 +212,18 @@ class RelaunchDesktop:
         window = self.window
         if window._closed:
             return
-        names = ["• " + target["label"] + (
-            ": " + window._("uniconnect.relaunch.warning.active_codex")
-            if target.get("active") is True and target.get("provider") == "codex" else "")
-            for target in plan["targets"]]
+        def note(target):
+            # relaunch-v1 (08-11): a warning is the contract's own wording (it is not an exclusion),
+            # and dropped options are named so nobody is surprised by what comes back without them.
+            text = ""
+            if target.get("warning"):
+                text = ": " + (contract_causes().get(target["warning"]) or cause_text(window._, target["warning"]))
+            elif target.get("active") is True and target.get("provider") == "codex":
+                text = ": " + window._("uniconnect.relaunch.warning.active_codex")
+            if target.get("dropped_options"):
+                text += " " + window._("(vuelve sin: {options})").format(options=", ".join(target["dropped_options"]))
+            return text
+        names = ["• " + target["label"] + note(target) for target in plan["targets"]]
         names += ["— " + target["label"] + ": " + cause_text(window._, target["cause"]) for target in plan["excluded"]]
         continuing = plan.get("verb") in ("agent.continue", "agent.recover")
         detail = window._("Se reabrirá la misma conversación y solo se enviará «continua» si aparece un límite de uso explícito y el cuadro está vacío. Se comprobará que Codex lo acepta.") if continuing else window._("Se cerrará y reabrirá la IA conservando su conversación. tmux y tus archivos no se borran.")

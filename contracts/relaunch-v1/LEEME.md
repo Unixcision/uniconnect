@@ -59,7 +59,7 @@ igual. D7 porta el dialecto que falta a cada lado. La matriz resultante, que fij
 
 | Proveedor | Mac, ventana local | Mac, ventana SSH | Linux, ventana local | Linux, caja SSH |
 |---|---|---|---|---|
-| Claude | sí | `no_soportado` | escrito, **pendiente de prueba en vivo** | escrito, **pendiente de prueba en vivo** |
+| Claude | sí | `no_soportado` | sí (probado en vivo el 08-11: salida limpia y, ocupado, escalado a matar el proceso; misma conversación y mismas opciones) | escrito, **pendiente de prueba en vivo** en un destino remoto con Claude |
 | Codex | escrito, **pendiente de prueba en vivo** | `no_soportado` | sí, `agent.continue` y `agent.recover` requieren evidencia exacta de pausa/acuse | sí |
 | Antigravity | `no_soportado` | `no_soportado` | sí, solo con binding gestionado y statusLine nativo fresco que pruebe estado idle | sí, bajo las mismas puertas en el destino Linux |
 

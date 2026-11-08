@@ -134,9 +134,14 @@ Selecciona exactamente uno de estos tres alcances: **ventana**, **espacio de
 trabajo** o **equipo** (todo UniConnect en este equipo). «Global» y «equipo» no
 son dos alcances distintos. Revisa la vista previa, que separa las ventanas que
 puede recuperar de las excluidas y explica el motivo; **Aplicar** solo afecta a
-las admitidas. Linux admite Codex y Antigravity cuando la ventana aporta identidad,
-actividad y configuración nativas verificables; no fuerza Claude ni otros estados
-no reconocidos. **Reabrir y continuar Codex pausado** usa los mismos tres alcances;
+las admitidas. Linux admite Codex y Antigravity (local y SSH) y Claude (local; por
+SSH aún no) cuando la ventana aporta identidad verificable. Desde el 08-11
+(`contracts/relaunch-v1`, «Escalado y mismas opciones»): si la IA no sale con
+`/exit` en 60 s se mata solo su proceso; si el pane no queda con un shell, se le da
+uno nuevo (`respawn-pane`), y si eso falla se recrea esa sesión (nunca el servidor
+tmux). Vuelve con **las mismas opciones** con que corría; lo que no está en la lista
+blanca se quita y la vista previa lo nombra. Trabajo en curso o una pregunta de
+permisos salen como aviso, no como exclusión. **Reabrir y continuar Codex pausado** usa los mismos tres alcances;
 solo incluye una sesión con aviso de límite de uso reciente,
 sin actividad ni borrador. Conserva la conversación al reabrirla y envía
 «continua» una sola vez únicamente si la pantalla limpia conserva el aviso de
