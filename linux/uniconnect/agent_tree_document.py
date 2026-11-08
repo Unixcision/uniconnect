@@ -55,16 +55,21 @@ def agent(record):
     provider, session = record.get("agent"), record.get("sessionId")
     if provider == "antigravity":
         provider = "agy"
-    if provider not in AGENTS or not isinstance(session, str) or not session:
+    if provider not in AGENTS:
         return None
+    if not isinstance(session, str) or not session:
+        if record.get("history") or record.get("runtimeState") not in (None, "agent"):
+            return None  # Ya hubo una IA y se cerró: no se finge una pendiente.
+        session = None
     return {
         "provider": provider,
         "session_id": session,
         "cwd": record.get("resumeCwd") or record.get("cwd"),
         "as_root": bool(record.get("asRoot")),
-        "source": record.get("agentSource") if record.get("agentSource") in SOURCES else "registro",
+        "source": (record.get("agentSource") if record.get("agentSource") in SOURCES else "registro") if session else None,
         # Lo guardado no está confirmado ahora mismo: «interrumpido» o «guardado», nunca «activo».
-        "state": "interrumpido" if record.get("interrupted") else "guardado",
+        # «pendiente»: recién creada con esa IA, aún sin id (la sonda dirigida lo pone en segundos).
+        "state": "pendiente" if session is None else "interrumpido" if record.get("interrupted") else "guardado",
         "observed_at": iso(record.get("agentObservedAt")),
         "history": [{"provider": "agy" if item.get("agent") == "antigravity" else item.get("agent"),
                      "session_id": item.get("sessionId"), "cwd": item.get("cwd"),
@@ -87,7 +92,7 @@ def build(data, *, machine_id=None, now=None):
                 "name": record.get("name"),
                 "kind": kind,
                 "host_label": label,
-                "state": record.get("runtimeState") or ("agent" if record.get("sessionId") else "shell"),
+                "state": record.get("runtimeState") or ("agent" if agent(record) else "shell"),
                 "tmux": ({"socket": record.get("tmuxSocket") or ("uniconnect" if kind == "ssh" else "uniconnect-local"),
                           "session": record["tmux"], "session_id": None, "pane_id": None, "live": None}
                          if record.get("tmux") else None),

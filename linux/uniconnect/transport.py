@@ -624,7 +624,8 @@ class Transport:
         # flock's kernel lifetime avoids stale lock directories after a crash/reboot.
         script = f"command -v tmux >/dev/null 2>&1 || exit 127; test -d {shlex.quote(window['cwd'])} || exit 72; "
         if args:
-            script += f"command -v {shlex.quote(args[0])} >/dev/null 2>&1 || exit 127; "
+            # Propio (75): distinguir «falta la IA» de «falta tmux/flock» (127).
+            script += f"command -v {shlex.quote(args[0])} >/dev/null 2>&1 || exit 75; "
         selection = TmuxCommand.selection_policy(socket_name)
         body = (f"if {binary} has-session -t {target} 2>/dev/null; then "
                 "printf 'UC_EXISTS\\n'; exit 0; fi; ")
@@ -661,6 +662,8 @@ class Transport:
         result = self.run(script, check=False)
         if result.returncode == 73:
             raise TransportError("duplicate_agent_owner", session_id or "")
+        if result.returncode == 75:
+            raise TransportError("agent_not_installed", args[0])
         if result.returncode != 0:
             raise TransportError("tmux_create_failed", result.stderr.strip() or str(result.returncode))
         return {"tmux": window["tmux"], "created": "UC_CREATED" in result.stdout.splitlines()}

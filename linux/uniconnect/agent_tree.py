@@ -144,6 +144,13 @@ class AgentTree:
                 started.append(key)
         return started
 
+    def probe_window(self, window_id):
+        """Una lectura YA del grupo de esa ventana (p. ej. recién creada), sin forzar las demás cajas."""
+        for key, targets in self.groups().items():
+            if key not in self.pending and any(record.get("id") == window_id for _, record in targets):
+                return self.start(key, targets)
+        return False
+
     def start(self, key, targets):
         transport = self.transport_for(key, targets[0][0])
         if transport is None:

@@ -837,8 +837,16 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                 for key in ("credentialId", "hostLabel", "cwd", "color"):
                     if key in source:
                         workspace[key] = source[key]
-        elif kind == "local":
+            # The remote folder the phone asked for (or that mobile_rpc resolved as the remote $HOME).
+            # It is a path on the server, so it can only be checked for shape here, never locally.
             directory = params.get("directory")
+            if directory is not None:
+                if (not isinstance(directory, str) or not directory.startswith("/") or not directory.isprintable()
+                        or len(directory) > 4096):
+                    raise RPCError("invalid_params", self._("Carpeta no válida"))
+                workspace["cwd"] = directory
+        elif kind == "local":
+            directory = params.get("directory") or str(Path.home())  # Sin carpeta, la de inicio, como el escritorio.
             if not isinstance(directory, str) or not directory.startswith("/") or not Path(directory).is_dir():
                 raise RPCError("invalid_params", self._("The folder does not exist"))
             workspace["cwd"] = directory
@@ -854,15 +862,22 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         name, agent = params.get("name"), params.get("agent", "terminal")
         if not isinstance(name, str) or not name.strip() or len(name.encode()) > 512 or not name.isprintable():
             raise RPCError("invalid_params", self._("Nombre de ventana no válido"))
-        if agent not in ("terminal", "claude", "codex", "agy", "grok") or workspace["kind"] == "ssh" and agent != "terminal":
+        # Las IAs también en cajas SSH, como en el escritorio (Dani, 08-11: lanzarlas desde el móvil).
+        if agent not in ("terminal", "claude", "codex", "agy", "grok"):
             raise RPCError("invalid_params", self._("Agente no válido para este espacio de trabajo"))
         identifier = str(uuid.uuid4())
-        directory = params.get("directory") or workspace.get("cwd") or str(Path.home())
+        # En SSH nunca el $HOME local: o la que manda el móvil, o la de la caja (mobile_rpc pone la
+        # $HOME remota si la caja no tiene). Con la local, la sesión remota fallaba con un 72.
+        directory = params.get("directory") or workspace.get("cwd") or (str(Path.home()) if workspace["kind"] == "local" else None)
+        if directory is None:
+            raise RPCError("invalid_params", self._("Indica la carpeta en el servidor"))
         if not isinstance(directory, str) or not directory.startswith("/") or not directory.isprintable() or len(directory) > 4096:
             raise RPCError("invalid_params", self._("Carpeta no válida"))
         if workspace["kind"] == "local" and (params.get("tmux_session") is not None or not Path(directory).is_dir()):
             raise RPCError("invalid_params", self._("The folder does not exist"))
-        session = params.get("tmux_session") if workspace["kind"] == "ssh" else "uc-" + identifier.replace("-", "")
+        # Sin una sesión tmux elegida (lo normal), una nueva como propone el escritorio: «uc-» + 12 hex.
+        session = ((params.get("tmux_session") or "uc-" + uuid.uuid4().hex[:12]) if workspace["kind"] == "ssh"
+                   else "uc-" + identifier.replace("-", ""))
         try:
             TmuxCommand.validate_name(session)
         except Exception as error:
@@ -877,8 +892,32 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         self.commit_new_window(workspace, record, select=False)
         return record
 
+    @staticmethod
+    def creation_launch_options(workspace, record):
+        """Una IA nueva en local se guarda ya con lo que se va a lanzar (agent-tree-v1, Dani 08-11).
+
+        Las opciones de la política para una conversación nueva e IS_SANDBOX como lo pone el
+        arranque si corre como root. En SSH lo decide el destino: lo da la sonda en cuanto arranca.
+        """
+        if (workspace["kind"] != "local" or record.get("agent") not in ("claude", "codex", "agy", "grok")
+                or record.get("sessionId") or record.get("launchOptions")):
+            return
+        try:
+            from .agent_probe import launch_options
+            options = launch_options(record["agent"], TmuxCommand.agent_argv(record))
+        except Exception:
+            return  # Sin opciones guardadas, la recuperación usa la política de siempre.
+        if options is not None:
+            record["launchOptions"] = {"options": options, "source": "policy", "capturedAt": time.time(),
+                                       "isSandbox": record["agent"] == "claude" and os.geteuid() == 0}
+
     def commit_new_window(self, workspace, record, *, select=True):
-        """Persist one named window before asynchronously preparing its durable client."""
+        """Persist one named window before asynchronously preparing its durable client.
+
+        El mismo guardado para el escritorio y el móvil: `state.json` y `agent-tree.json` la tienen
+        ya, con su IA pedida y sus opciones, antes de que arranque nada.
+        """
+        MainWindow.creation_launch_options(workspace, record)
         previous_selected = workspace.get("selectedWindowId")
         workspace["windows"].append(record)
         if select:
@@ -952,12 +991,37 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             created()
 
     def close_surface(self, surface):
+        workspace, current = surface.workspace, self.current_workspace()
         # Persist the recoverable entry before detaching a live terminal.
-        self.store.close_window(surface.workspace["id"], surface.record["id"])
+        self.store.close_window(workspace["id"], surface.record["id"])
         surface.dispose()
         self.surfaces.pop(surface.record["id"], None)
-        self.build_workspace(surface.workspace)
-        self.select_workspace(surface.workspace["id"])
+        self.build_workspace(workspace)
+        # A close from the phone in another box keeps the box the desktop is showing.
+        self.select_workspace(workspace["id"] if current is None or current is workspace else current["id"])
+
+    def close_window_by_id(self, workspace_id, window_id):
+        """«Cerrar ventana» del escritorio, sin volver a preguntar (box-close.v1: confirmó el móvil).
+
+        La sesión tmux queda viva y la ventana recuperable en «Reabrir», como al cerrarla aquí.
+        """
+        surface = self.surfaces.get(window_id)
+        if surface is not None:
+            return self.close_surface(surface)
+        workspace, current = self.store.workspace(workspace_id), self.current_workspace()
+        self.store.close_window(workspace_id, window_id)  # Guardada sin abrir: no hay terminal que soltar.
+        self.build_workspace(workspace)
+        self.select_workspace(workspace_id if current is None or current is workspace else current["id"])
+
+    def close_workspace_by_id(self, workspace_id):
+        """«Cerrar caja» del escritorio, sin volver a preguntar; cierra todas sus ventanas."""
+        workspace, current = self.store.workspace(workspace_id), self.current_workspace()
+        self.store.close_workspace(workspace_id)
+        for record in workspace["windows"]:
+            surface = self.surfaces.pop(record["id"], None)
+            if surface:
+                surface.dispose()
+        self.select_workspace(None if current is None or current is workspace else current["id"])
 
     def action_close_window(self):
         if self.focused_surface and self.confirm("Close this window?", self.focused_surface.record["name"]):
@@ -969,12 +1033,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             return
         if not self.confirm("Close this workspace?", workspace["name"]):
             return
-        self.store.close_workspace(workspace["id"])
-        for record in workspace["windows"]:
-            surface = self.surfaces.pop(record["id"], None)
-            if surface:
-                surface.dispose()
-        self.select_workspace()
+        self.close_workspace_by_id(workspace["id"])
 
     def action_reopen(self):
         closed = self.store.data.get("closed", [])

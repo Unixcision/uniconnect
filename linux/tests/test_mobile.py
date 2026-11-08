@@ -14,6 +14,7 @@ import threading
 import time
 import types
 import unittest
+from unittest import mock
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -729,7 +730,9 @@ class WindowDetailsRPCTests(unittest.TestCase):
             with self.subTest(method=method):
                 announced = self.rpc.dispatch(method, {}, "peer")["capabilities"]
                 self.assertEqual([item for item in announced if item.startswith("relaunch.v1")], cells)
-        box = self.rpc.dispatch("mobile.workspace.list", {}, "peer")["workspaces"][0]
+        # Todas instaladas (en local solo se ofrecen las que están: test_mobile_create).
+        with mock.patch("shutil.which", side_effect=lambda name, *args, **kwargs: "/usr/bin/" + name):
+            box = self.rpc.dispatch("mobile.workspace.list", {}, "peer")["workspaces"][0]
         self.assertEqual([target["title"] for target in box["available_agent_targets"]],
                          ["Terminal", "Claude Code", "Codex", "Antigravity", "Grok"])
 
