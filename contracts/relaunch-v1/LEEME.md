@@ -206,7 +206,7 @@ Siguen **excluyendo** (nunca se adivina):
 
 **Lista blanca por proveedor.** Solo se conservan estas opciones. Vive en el catálogo
 `agent-resume-v1.json` (`launchOptions`), que la edita el Mac y la leen las dos plataformas.
-- claude: `--model`, `--fallback-model`, `--permission-mode`, `--dangerously-skip-permissions`,
+- claude: `--model`, `--effort` (desde el 09-11), `--fallback-model`, `--permission-mode`, `--dangerously-skip-permissions`,
   `--allow-dangerously-skip-permissions`, `--add-dir` (repetible), `--chrome`, `--verbose`, `--settings`,
   `--setting-sources`, `--mcp-config`, `--strict-mcp-config`, `--allowedTools`, `--disallowedTools`,
   `--tools` (rutas y nombres, no texto libre). Nunca `--system-prompt` ni `--append-system-prompt`.
