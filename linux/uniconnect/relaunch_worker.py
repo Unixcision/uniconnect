@@ -947,6 +947,40 @@ class TargetWorker:
                 return False
             time.sleep(0.2)
 
+    TRUST_OPTION = re.compile(r"(\d+)\.\s*Yes, I trust this folder")
+
+    def answer_trust(self, proof, root):
+        """relaunch-v1 (Dani, 09-11): «Yes, I trust this folder», por su texto, solo para esta conversación.
+
+        Claude 2.1.321 vuelve a preguntar en carpetas ya confiadas, con «No, exit» marcado. Se
+        contesta únicamente si quien pregunta es la Claude que reanuda ESTA conversación y está en
+        la misma carpeta donde corría. En cualquier otro caso, una persona: ``confianza_carpeta``.
+        """
+        pane = proof["pane"]["pane"]
+        screen = self.tmux("capture-pane", "-p", "-t", pane)
+        if "Yes, I trust this folder" not in screen:
+            return False
+        asking = [child for child in self.descendants(root["pid"]).values() if self.is_provider("claude", child["argv"])]
+        expected_cwd = getattr(self, "reopen_cwd", None)
+        if (len(asking) != 1 or not expected_cwd or asking[0]["cwd"] != expected_cwd
+                or proof["effective_id"] not in asking[0]["argv"]):
+            raise Unavailable("confianza_carpeta")
+        options = self.TRUST_OPTION.findall(screen)
+        if len(options) != 1:
+            raise Unavailable("confianza_carpeta")  # Never by position: only the option its text names.
+        self.tmux("send-keys", "-t", pane, "-l", "--", options[0])
+        deadline = self.clock() + 5
+        while self.clock() < deadline:
+            if "Yes, I trust this folder" not in self.tmux("capture-pane", "-p", "-t", pane):
+                return True
+            time.sleep(0.2)
+        lines = self.tmux("capture-pane", "-p", "-t", pane).splitlines()
+        chosen = [line for line in lines if re.match(r"\s*[❯›>]\s*\d+\.\s*Yes, I trust this folder", line)]
+        if len(chosen) == 1:
+            self.tmux("send-keys", "-t", pane, "Enter")  # The digit only moved the cursor onto it.
+            return True
+        raise Unavailable("confianza_carpeta")
+
     def after_reopen(self, current):
         """Once the same conversation is back: the message if needed, then the draft WITHOUT Enter."""
         pane = current["pane"]["pane"]
@@ -1464,6 +1498,7 @@ class TargetWorker:
         managed = managed or any(self.managed_hook(self.request["provider"], option.split("=", 1)[0],
                       option.split("=", 1)[1] if "=" in option else (original[index + 1] if index + 1 < len(original) else ""))
                       for index, option in enumerate(original) if option.split("=", 1)[0] in ("-c", "--config", "--settings"))
+        self.reopen_cwd = process["cwd"]  # The only folder whose trust question may be answered.
         capsule = {"argv": resume, "env": env, "cwd": process["cwd"],
                    "agent": self.request["provider"], "window_id": self.request["window_id"], "managed_identity": managed}
         if not hasattr(os, "memfd_create"):
@@ -1678,7 +1713,10 @@ class TargetWorker:
         self.tmux("send-keys", "-t", proof["pane"]["pane"], "-l", "--", command + "\n")
         self.request["resumed"] = True
         deadline = self.clock() + 45
+        trusted = False
         while self.clock() < deadline:
+            if self.request.get("provider") == "claude" and not trusted:
+                trusted = self.answer_trust(proof, root)
             try:
                 current = self.inspect()
                 if (current["effective_id"] == proof["effective_id"] and current["generation"] != proof["generation"]

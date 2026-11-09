@@ -40,6 +40,7 @@
       "relaunch.v1.claude.local",
       "relaunch.v1.claude.ssh",
       "relaunch.v1.update",
+      "relaunch.v1.update.claude.local",
       "relaunch.v1.update.claude.ssh",
       "relaunch.v1.restaura"
     ]

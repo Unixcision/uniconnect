@@ -328,5 +328,50 @@ class ServiceUpdateTests(unittest.TestCase):
         self.assertEqual(status["operation_state"], "terminada")
 
 
+class TrustTests(Fixture):
+    """Dani (09-11): «Yes, I trust this folder» por su texto, solo para la conversación que ya corría allí."""
+
+    DIALOG = ("Do you trust the files in this folder?\n\n/root/uc-prueba\n\n"
+              "❯ 1. No, exit\n  2. Yes, I trust this folder\n\nEnter to confirm · Esc to cancel")
+
+    def setUp(self):
+        super().setUp()
+        self.sent, self.screens = [], [self.DIALOG, "❯ "]
+        self.proof = {"pane": {"pane": "%1"}, "effective_id": SESSION}
+        self.worker.reopen_cwd = "/root/uc-prueba"
+        self.asking = {"pid": 7, "cwd": "/root/uc-prueba", "argv": ["/root/.local/bin/claude", "--resume", SESSION]}
+        self.worker.descendants = lambda pid: {7: self.asking}
+
+        def tmux(*args):
+            if args[0] == "send-keys":
+                self.sent.append(args[-1])
+                self.screens.pop(0)
+                return ""
+            if args[0] == "display-message":
+                return "3"
+            return self.screens[0]
+        self.worker.tmux = tmux
+
+    def test_answers_by_its_text_only_for_the_same_conversation_and_folder(self):
+        self.assertTrue(self.worker.answer_trust(self.proof, {"pid": 1}))
+        self.assertEqual(self.sent, ["2"])  # La opción que dice «Yes, I trust this folder», no la marcada.
+        self.screens = ["❯ "]
+        self.assertFalse(self.worker.answer_trust(self.proof, {"pid": 1}))  # Sin diálogo no se teclea nada.
+
+    def test_any_other_case_is_left_to_a_person(self):
+        for change in ({"cwd": "/root/otra"}, {"argv": ["/root/.local/bin/claude", "--resume", "otra-conversacion"]}):
+            self.asking = {"pid": 7, "cwd": "/root/uc-prueba",
+                           "argv": ["/root/.local/bin/claude", "--resume", SESSION], **change}
+            self.screens = [self.DIALOG]
+            with self.subTest(change=change), self.assertRaises(Unavailable) as error:
+                self.worker.answer_trust(self.proof, {"pid": 1})
+            self.assertEqual(error.exception.cause, "confianza_carpeta")
+        self.asking = {"pid": 7, "cwd": "/root/uc-prueba", "argv": ["/root/.local/bin/claude", "--resume", SESSION]}
+        self.screens = ["Do you trust the files in this folder?\n❯ Yes, I trust this folder\n  No, exit"]
+        with self.assertRaises(Unavailable):
+            self.worker.answer_trust(self.proof, {"pid": 1})  # Sin número que lo nombre, nunca por posición.
+        self.assertEqual(self.sent, [])
+
+
 if __name__ == "__main__":
     unittest.main()

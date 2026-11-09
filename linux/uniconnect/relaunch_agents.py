@@ -27,8 +27,9 @@ RELAUNCHABLE = ("codex", "agy", "claude")
 LOCAL_ONLY = ()
 # «Actualizar Claude» (09-11): probado en vivo por SSH en NOTBETTING (uc-prueba-relanzar: claude update,
 # 2.1.281 → 2.1.321, misma conversación, monitor guardado y relanzado una vez, borrador devuelto sin Intro,
-# --model/--effort). En local falta su prueba en vivo (ejecutaría claude update en el MINIPC): no se anuncia.
-UPDATE_KINDS = ("ssh",)
+# --model/--effort) y en local en el MINIPC con el OK de Dani (tmux privado: claude update sobre la
+# instalación de root, salida limpia con /exit, 2.1.318 → 2.1.321, misma conversación).
+UPDATE_KINDS = ("local", "ssh")
 CAPABILITIES = ("relaunch.v1",) + tuple(f"relaunch.v1.{provider}.{kind}"
                                         for provider in RELAUNCHABLE for kind in ("local", "ssh")
                                         if not (kind == "ssh" and provider in LOCAL_ONLY)) + (
