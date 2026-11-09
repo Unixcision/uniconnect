@@ -1446,7 +1446,7 @@ class TargetWorker:
             if self.claude_draft:
                 self.save_draft(self.claude_draft)
             self.claude_work = self.claude_background_work(process["pid"])
-            self.claude_work_file = self.save_monitors(self.claude_work)
+            self.claude_work_file = self.save_monitors(self.claude_work, proof["effective_id"], self.claude_status)
         if not proof.get("warning") and not self.claude_draft:
             # A warned target (work in progress, pending permission) is closed by escalation,
             # never by typing into its screen: nothing to prove about its composer.
@@ -1985,19 +1985,23 @@ class TargetWorker:
         window = re.sub(r"[^A-Za-z0-9-]", "", str(self.request.get("window_id", "")))[:64] or "ventana"
         return window + "-" + datetime.now().strftime("%Y%m%d-%H%M%S")
 
-    def save_monitors(self, work):
-        """Before closing: every order, as it was, in ``monitores/<id>-<fecha>.txt`` (0600).
+    def save_monitors(self, work, conversation=None, status=None):
+        """Before closing: every order, as it was, in ``monitores/<conversación>-<fecha>.txt`` (0600).
 
-        The files of ``/tmp/claude-<uid>/…`` they mention are copied next to it: the scratchpad
-        may not survive. Returns the saved file's path, or None when there was nothing to save.
+        Named by the CONVERSATION id, which is what the AI recognizes as its own, with the header
+        ``# sesion=<tmux> conversacion=<id> estado=<status> fecha=<ISO-8601>`` (same on the Mac,
+        coordNov 10-11). The files of ``/tmp/claude-<uid>/…`` they mention are copied next to it:
+        the scratchpad may not survive. Returns the saved file's path, or None with nothing to save.
         """
         if not work:
             return None
         directory = self.STATE / "monitores"
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        stamp = self.window_stamp()
+        name = re.sub(r"[^A-Za-z0-9-]", "", str(conversation or ""))[:160]
+        stamp = (name + "-" + datetime.now().strftime("%Y%m%d-%H%M%S")) if name else self.window_stamp()
         path, copies = directory / (stamp + ".txt"), directory / stamp
-        lines = []
+        lines = ["# sesion=%s conversacion=%s estado=%s fecha=%s" % (
+            self.request.get("session"), conversation, status, datetime.now().astimezone().isoformat(timespec="seconds"))]
         for number, (_, order) in enumerate(work, 1):
             lines += ["# Monitor o shell de fondo %d" % number, order]
             for mentioned in sorted(set(self.CLAUDE_TMP.findall(order))):
@@ -2010,7 +2014,7 @@ class TargetWorker:
                     target = copies / source.relative_to("/tmp")
                     target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
                     shutil.copy2(source, target)
-                    lines.append("# Copia de %s: %s" % (source, target))
+                    lines.append("# (copia de %s en %s/)" % (source, copies))
                 except (OSError, ValueError):
                     continue
             lines.append("")

@@ -97,11 +97,14 @@ class MonitorTests(Fixture):
         self.addCleanup(lambda: (scratch / "vigia.sh").unlink(missing_ok=True) or scratch.rmdir())
         (scratch / "vigia.sh").write_text("echo vigía\n")
         order = "bash %s/vigia.sh >> /tmp/fuera.log" % scratch
-        path = Path(self.worker.save_monitors([({"pid": 1}, order), ({"pid": 2}, "sleep 9")]))
+        path = Path(self.worker.save_monitors([({"pid": 1}, order), ({"pid": 2}, "sleep 9")], SESSION, "shell"))
         self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
-        text = path.read_text()
-        self.assertIn(order, text)
-        self.assertIn("sleep 9", text)
+        self.assertTrue(path.name.startswith(SESSION + "-"))  # Por la conversación, que es lo que la IA reconoce.
+        lines = path.read_text().splitlines()
+        self.assertRegex(lines[0], r"^# sesion=fixture conversacion=" + SESSION + r" estado=shell fecha=\d{4}-\d\d-\d\dT")
+        self.assertEqual(lines[1:3], ["# Monitor o shell de fondo 1", order])
+        self.assertEqual(lines[3], "# (copia de %s/vigia.sh en %s/)" % (scratch, path.with_suffix("")))
+        self.assertIn("sleep 9", lines)
         copied = next(path.with_suffix("").rglob("vigia.sh"))
         self.assertEqual(copied.read_text(), "echo vigía\n")
         self.assertIsNone(self.worker.save_monitors([]))
@@ -200,6 +203,11 @@ class MessageTests(Fixture):
         self.assertTrue(text.endswith(self.TEXTS["anadido_cortado"]))
         self.assertEqual(self.message("agent.relaunch", [], "busy"),
                          self.TEXTS["solo_cortado"].replace("{motivo}", self.TEXTS["motivo_relanzar"]))
+        # coordNov 10-11: «shell» (ociosa con un shell de fondo) no es «estaba trabajando».
+        quiet = self.message("agent.relaunch", [({}, "tail -F x")], "shell")
+        self.assertTrue(quiet.startswith("UniConnect te ha reiniciado para relanzarte."))
+        self.assertNotIn(self.TEXTS["anadido_cortado"].strip(), quiet)
+        self.assertIsNone(self.message("agent.relaunch", [], "shell"))
 
 
 class UpdateTests(Fixture):
