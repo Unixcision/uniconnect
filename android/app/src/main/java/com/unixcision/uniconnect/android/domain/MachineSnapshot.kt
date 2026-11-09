@@ -60,10 +60,43 @@ data class MachineSnapshot(val serverName: String, val workspaces: List<RemoteWo
             false -> RelaunchCell.LOCAL
             null -> null
         }
-        // The Mac names Antigravity by its catalogue id; on the wire it is `agy`.
-        val agent = provider?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }?.let { if (it == "antigravity") "agy" else it }
+        val agent = canonicalAgent(provider)
         return cells.any { cell -> (kind == null || cell.kind == kind) && (agent == null || cell.provider == agent) }
     }
+
+    /**
+     * Whether this machine can update Claude on request (`agent.update`, `relaunch.v1.update`).
+     *
+     * Workspace and machine scopes ask for this alone: the plan says which windows are Claude and
+     * excludes the rest with `proveedor_no_soportado`.
+     */
+    val updatesClaude: Boolean get() = relaunches && UPDATE in capabilities
+
+    /**
+     * Whether «Actualizar Claude» is worth offering for one window.
+     *
+     * The host announces `relaunch.v1.update.claude.<local|ssh>` for each kind of window where it
+     * does it. The entry shows when the pair of this window is announced (or some pair, when the
+     * phone does not know its kind) and the window's agent is Claude, or unknown.
+     *
+     * @param isSSH the kind of the window's workspace, or null when the host did not say.
+     * @param provider the agent the host sees in that window (`activity.agent`), or null.
+     */
+    fun updatesClaudeWindow(isSSH: Boolean?, provider: String?): Boolean {
+        if (!updatesClaude) return false
+        val agent = canonicalAgent(provider)
+        if (agent != null && agent != CLAUDE) return false
+        val kinds = when (isSSH) {
+            true -> listOf(RelaunchCell.SSH)
+            false -> listOf(RelaunchCell.LOCAL)
+            null -> listOf(RelaunchCell.LOCAL, RelaunchCell.SSH)
+        }
+        return kinds.any { kind -> "$UPDATE.$CLAUDE.$kind" in capabilities }
+    }
+
+    /** The wire id of an agent as the host names it; the Mac names Antigravity by its catalogue id. */
+    private fun canonicalAgent(provider: String?): String? =
+        provider?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }?.let { if (it == "antigravity") "agy" else it }
 
     /**
      * Whether this machine lists, reads and deletes what the phone has sent it (`inbox.v1`).
@@ -123,6 +156,14 @@ data class MachineSnapshot(val serverName: String, val workspaces: List<RemoteWo
 
         /** The host implements relaunch.plan/apply/status (relaunch.v1). */
         const val RELAUNCH = "relaunch.v1"
+
+        /** The host implements `agent.update` («Actualizar Claude»); per kind, `relaunch.v1.update.claude.<tipo>`. */
+        const val UPDATE = "relaunch.v1.update"
+
+        /** The host saves and restores background monitors and drafts when it relaunches. */
+        const val RESTORES = "relaunch.v1.restaura"
+
+        private const val CLAUDE = "claude"
 
         /** The host implements mobile.inbox.list/read/delete (inbox.v1). */
         const val INBOX = "inbox.v1"

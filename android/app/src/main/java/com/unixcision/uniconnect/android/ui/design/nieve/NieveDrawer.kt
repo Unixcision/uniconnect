@@ -18,6 +18,9 @@ import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.Upgrade
+import com.unixcision.uniconnect.android.domain.RelaunchVerb
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalDrawerSheet
@@ -118,7 +121,11 @@ fun NieveDrawer(model: DrawerModel, onGo: (HomeDestination) -> Unit) {
 
             NieveHeader(stringResource(R.string.drawer_maintenance), margin = DRAWER_MARGIN, top = 18.dp)
             EntryGroup(
-                listOf(
+                listOfNotNull(
+                    MenuEntry(Icons.Rounded.RestartAlt, stringResource(R.string.relaunch_everywhere), HomeDestination.Everywhere(RelaunchVerb.RELAUNCH))
+                        .takeIf { model.relaunchesEverywhere },
+                    MenuEntry(Icons.Rounded.Upgrade, stringResource(R.string.update_everywhere), HomeDestination.Everywhere(RelaunchVerb.UPDATE))
+                        .takeIf { model.updatesEverywhere },
                     MenuEntry(SettingsPage.CLEANUP.icon, stringResource(SettingsPage.CLEANUP.title), HomeDestination.Settings(SettingsPage.CLEANUP)),
                     MenuEntry(Icons.Rounded.BugReport, stringResource(R.string.drawer_diagnostics), HomeDestination.Diagnostics, flagged = model.troubled),
                 ),

@@ -37,11 +37,19 @@ object RelaunchPresentation {
      *   las esconde.
      * - **«No había nada» se reserva para cuando de verdad no hay nada**: sin objetivos, sin
      *   exclusiones y sin motivo.
+     *
+     * Y dos del 09-11-2026, cuando reabrir 47 Claude se comió el 37 % del cupo de Fable:
+     * - **«Actualizar Claude» se pregunta siempre**: instala otra versión en el equipo y puede
+     *   cambiar el modelo.
+     * - **Si va a escribir a alguna IA, se pregunta**, aunque sea una ventana: el mensaje es lo
+     *   que gasta, y el coste se enseña antes de gastarlo.
      */
     fun decide(plan: RelaunchPlan): RelaunchDecision = when {
         plan.targets.isEmpty() && plan.exclusions.isEmpty() && plan.unavailableReason == null ->
             RelaunchDecision.Nothing
         plan.targets.isEmpty() || plan.unavailableReason != null -> RelaunchDecision.Show(plan)
+        plan.verb == RelaunchVerb.UPDATE -> RelaunchDecision.Confirm(plan)
+        RelaunchCost.of(listOf(plan)) is RelaunchCost.Rereads -> RelaunchDecision.Confirm(plan)
         RelaunchConfirmation.needsConfirmation(plan.targets.size) -> RelaunchDecision.Confirm(plan)
         else -> RelaunchDecision.Apply(plan)
     }

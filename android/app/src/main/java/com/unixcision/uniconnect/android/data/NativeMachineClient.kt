@@ -166,9 +166,23 @@ class NativeMachineClient(
         return decodeMachine(machine, result)
     }
 
-    override suspend fun relaunchPlan(machine: Machine, verb: RelaunchVerb, scope: RelaunchScope): RelaunchPlan {
+    override suspend fun relaunchPlan(machine: Machine, verb: RelaunchVerb, scope: RelaunchScope, options: RelaunchOptions?): RelaunchPlan =
+        decodePlan(call(machine, "relaunch.plan", planParameters(verb, scope, options)), verb)
+
+    /**
+     * Los parámetros de `relaunch.plan`: verbo, alcance y, solo con `agent.update` y si se pide algún
+     * cambio, `options`. Una clave que falta es «igual que estaba».
+     */
+    internal fun planParameters(verb: RelaunchVerb, scope: RelaunchScope, options: RelaunchOptions?): JSONObject {
         val params = JSONObject().put("verb", verb.wire).put("scope", scopeParameters(scope))
-        return decodePlan(call(machine, "relaunch.plan", params), verb)
+        if (options == null || options.isEmpty) return params
+        // Relanzar no cambia nada: el equipo contestaría opciones_no_validas.
+        require(verb == RelaunchVerb.UPDATE) { "agent.relaunch no lleva opciones" }
+        require(options.isValid) { "opciones fuera del contrato" }
+        val wire = JSONObject()
+        options.model?.let { wire.put("model", it) }
+        options.effort?.let { wire.put("effort", it) }
+        return params.put("options", wire)
     }
 
     override suspend fun relaunchApply(machine: Machine, plan: RelaunchPlan): RelaunchOperation {
@@ -249,6 +263,20 @@ class NativeMachineClient(
     private fun JSONObject.text(key: String): String? =
         if (!has(key) || isNull(key)) null else optString(key).takeIf { it.isNotEmpty() }
 
+    /** El número entero de [key], o nulo si falta, es `null` o no es un número. Nunca un cero inventado. */
+    private fun JSONObject.whole(key: String): Long? =
+        if (!has(key) || isNull(key)) null else (opt(key) as? Number)?.toLong()
+
+    /** El booleano de [key], o nulo si falta, es `null` o no es un booleano: «no lo dice» no es «no». */
+    private fun JSONObject.flag(key: String): Boolean? =
+        if (!has(key) || isNull(key)) null else opt(key) as? Boolean
+
+    /** Los textos de la lista [key], vacía si falta. */
+    private fun JSONObject.texts(key: String): List<String> {
+        val items = optJSONArray(key) ?: return emptyList()
+        return List(items.length()) { index -> items.optString(index) }.filter { it.isNotEmpty() }
+    }
+
     /**
      * Segundos desde época en [key], o nulo si falta, es `null` o no es un instante. Se mira con
      * `isNull`: un `null` de JSON no es un cero, y un cero pintaría «Hace 56 años».
@@ -277,6 +305,13 @@ class NativeMachineClient(
                 RelaunchTarget(
                     item.getString("key"), item.optString("label"), item.optString("provider"),
                     warning = item.text("warning")?.let(::RelaunchReason),
+                    // Desde el 09-11-2026. Un equipo anterior no los manda y se quedan en nulo.
+                    background = item.whole("background")?.toInt(),
+                    draft = item.flag("draft"),
+                    contextTokens = item.whole("context_tokens"),
+                    message = item.flag("message"),
+                    version = item.text("version"),
+                    installed = item.text("installed"),
                 )
             },
             // Una exclusión sin motivo se lee como una ventana olvidada, así que el motivo viaja
@@ -288,11 +323,14 @@ class NativeMachineClient(
             // El equipo puede decir que todavía no puede relanzar; si lo dice, se enseña antes de
             // que nadie pulse nada.
             unavailableReason = result.text("unavailable_reason"),
+            options = result.optJSONObject("options")?.let { RelaunchOptions(it.text("model"), it.text("effort")) } ?: RelaunchOptions(),
+            estimatedTokens = result.whole("estimated_tokens"),
         )
     }
 
     internal fun decodeOperation(result: JSONObject): RelaunchOperation {
         val results = result.optJSONArray("results") ?: JSONArray()
+        val updates = result.optJSONArray("updates") ?: JSONArray()
         return RelaunchOperation(
             operationID = result.getString("operation_id"),
             recovered = result.optBoolean("recovered", false),
@@ -303,11 +341,23 @@ class NativeMachineClient(
                     state = RelaunchTargetState.named(item.optString("state")),
                     reason = RelaunchReason.of(item.optString("cause")),
                     effectiveID = item.text("effective_id"),
+                    escalation = item.text("escalation"),
+                    droppedOptions = item.texts("dropped_options"),
+                    version = item.text("version"),
+                    model = item.text("model"),
+                    effort = item.text("effort"),
+                    backgroundSaved = item.whole("background_saved")?.toInt(),
+                    messageSent = item.flag("message_sent"),
+                    draftRestored = item.flag("draft_restored"),
                 )
             },
             // Lo que dice si terminó. Un equipo que no lo manda (el `apply` bloqueante del Mac
             // antiguo) deja que decidan los objetivos.
             operationState = result.text("operation_state"),
+            updates = List(updates.length()) { index ->
+                val item = updates.getJSONObject(index)
+                RelaunchUpdate(item.text("host").orEmpty(), item.optString("state"), item.text("from"), item.text("to"))
+            },
         )
     }
 

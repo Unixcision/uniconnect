@@ -16,6 +16,13 @@ enum class RelaunchVerb(val wire: String) {
 
     /** Le dice a un agente vivo que retome el encargo anterior. No es un visto bueno en blanco. */
     CONTINUE("agent.continue"),
+
+    /**
+     * «Actualizar Claude»: el mismo relanzado más `claude update`, una vez por instalación y antes de
+     * cerrar nada, y si se piden, modelo y effort nuevos ([RelaunchOptions]). Solo Claude: el plan
+     * excluye cualquier otra IA con `proveedor_no_soportado`.
+     */
+    UPDATE("agent.update"),
 }
 
 /**
@@ -26,9 +33,12 @@ enum class RelaunchVerb(val wire: String) {
  * del total de otro.
  */
 sealed interface RelaunchScope {
-    data class Window(val machineID: String, val workspaceID: String, val windowID: String) : RelaunchScope
-    data class Workspace(val machineID: String, val workspaceID: String) : RelaunchScope
-    data class Machine(val machineID: String) : RelaunchScope
+    /** El equipo al que se le pide: cada alcance vive en uno solo. */
+    val machineID: String
+
+    data class Window(override val machineID: String, val workspaceID: String, val windowID: String) : RelaunchScope
+    data class Workspace(override val machineID: String, val workspaceID: String) : RelaunchScope
+    data class Machine(override val machineID: String) : RelaunchScope
 }
 
 /** En qué anda cada objetivo. Se informa por objetivo, nunca en un total. */
@@ -99,7 +109,16 @@ enum class RelaunchCause(val wire: String) {
     NO_PAUSE("sin_pausa"),
 
     /** La sesión tmux tiene paneles o ventanas ajenos y no se mata para no llevárselos. */
-    SHARED_SESSION("sesion_compartida");
+    SHARED_SESSION("sesion_compartida"),
+
+    /** Claude no tiene la sesión iniciada en ese equipo: reabrirla la dejaría inservible. */
+    NO_LOGIN("sin_login"),
+
+    /** Otra ventana viva tiene la misma conversación: al reanudar, una de las dos perdería su hilo. */
+    SHARED_CONVERSATION("conversacion_compartida"),
+
+    /** `claude update` falló en esa instalación: sus ventanas no se han cerrado. */
+    UPDATE_FAILED("actualizacion_fallida");
 
     companion object {
         fun named(raw: String?): RelaunchCause? = entries.firstOrNull { it.wire == raw }
@@ -111,8 +130,27 @@ enum class RelaunchCause(val wire: String) {
  *
  * [warning] es lo que relanzar va a cortar en esa ventana (una petición de permisos pendiente,
  * tareas de fondo): no la excluye, pero quien confirma tiene que saberlo antes.
+ *
+ * El resto llega desde el 09-11-2026 y falta en equipos anteriores; nulo es «no lo dice», nunca
+ * «cero» ni «no»:
+ * - [background]: monitores o shells de fondo que se guardan antes de cerrar y se le pide relanzar.
+ * - [draft]: hay texto del usuario en el compositor; se guarda y se reescribe sin Intro.
+ * - [contextTokens]: lo que releería si se le escribe, del último `usage` de su conversación.
+ * - [message]: si el equipo le escribirá tras reabrir (lo que gasta cupo).
+ * - [version] e [installed]: el Claude que corre y el que hay instalado, con `agent.update`.
  */
-data class RelaunchTarget(val key: String, val label: String, val provider: String, val warning: RelaunchReason? = null)
+data class RelaunchTarget(
+    val key: String,
+    val label: String,
+    val provider: String,
+    val warning: RelaunchReason? = null,
+    val background: Int? = null,
+    val draft: Boolean? = null,
+    val contextTokens: Long? = null,
+    val message: Boolean? = null,
+    val version: String? = null,
+    val installed: String? = null,
+)
 
 /** Un objetivo que el plan deja fuera, con su motivo. Nunca en silencio. */
 data class RelaunchExclusion(val label: String, val reason: RelaunchReason?)
@@ -153,17 +191,42 @@ data class RelaunchPlan(
      * y quien mira la pantalla no tendría forma de saberlo hasta después de pulsar.
      */
     val unavailableReason: String? = null,
+    /** Las opciones que el equipo aceptó para este plan (`agent.update`); vacías si no hay. */
+    val options: RelaunchOptions = RelaunchOptions(),
+    /**
+     * Lo que releerán las IA a las que se escribirá (`estimated_tokens`), o nulo si el equipo no lo
+     * dice. Ver [RelaunchCost].
+     */
+    val estimatedTokens: Long? = null,
 ) {
     /** Si hay algo que hacer. Un plan sin objetivos no se ejecuta aunque el equipo conteste. */
     val actionable: Boolean get() = unavailableReason == null && targets.isNotEmpty()
 }
 
-/** Cómo quedó un objetivo. */
+/**
+ * Cómo quedó un objetivo.
+ *
+ * Todo lo que va después de [effectiveID] es opcional en el contrato y falta en equipos anteriores:
+ * - [escalation]: el último paso de cierre que hizo falta (`exit`, `kill_process`, …).
+ * - [droppedOptions]: opciones de arranque que no se conservan y se quitaron (solo el nombre).
+ * - [version], [model] y [effort]: lo que dice la barra de estado tras reabrir, si se pudo leer.
+ * - [backgroundSaved]: monitores guardados antes de cerrar.
+ * - [messageSent]: si se le escribió tras reabrir.
+ * - [draftRestored]: si su borrador volvió al compositor.
+ */
 data class RelaunchResult(
     val key: String,
     val state: RelaunchTargetState,
     val reason: RelaunchReason? = null,
     val effectiveID: String? = null,
+    val escalation: String? = null,
+    val droppedOptions: List<String> = emptyList(),
+    val version: String? = null,
+    val model: String? = null,
+    val effort: String? = null,
+    val backgroundSaved: Int? = null,
+    val messageSent: Boolean? = null,
+    val draftRestored: Boolean? = null,
 ) {
     /** La interpretación del motivo, cuando esta versión la tiene. */
     val cause: RelaunchCause? get() = reason?.cause
@@ -187,6 +250,8 @@ data class RelaunchOperation(
      * valor nuevo del contrato no se pierda por el camino.
      */
     val operationState: String? = null,
+    /** Cómo fue `claude update` en cada instalación (`agent.update`); vacío con `agent.relaunch`. */
+    val updates: List<RelaunchUpdate> = emptyList(),
 ) {
     /**
      * Si la operación ya no va a cambiar sola.

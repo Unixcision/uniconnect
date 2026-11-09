@@ -57,6 +57,12 @@ fun MachineBoxesScreen(
      */
     onRelaunch: ((RelaunchScope) -> Unit)?,
     /**
+     * «Actualizar Claude» de un alcance (`agent.update`). Nulo cuando el equipo no anuncia
+     * `relaunch.v1.update`; en una ventana suelta, además, solo si su tipo está anunciado y su IA
+     * es Claude (o no se sabe).
+     */
+    onUpdate: ((RelaunchScope) -> Unit)? = null,
+    /**
      * Close a workspace, or one window, on the machine and its desktop; called once confirmed here.
      * Null when the machine does not announce `box_close`, so the action is not shown at all.
      */
@@ -80,6 +86,7 @@ fun MachineBoxesScreen(
             onTogglePin = { onToggleWorkspacePin(held.id) }, onMoveTop = { onMoveWorkspace(held.id, Int.MIN_VALUE) },
             onMoveUp = { onMoveWorkspace(held.id, -1) }, onMoveDown = { onMoveWorkspace(held.id, 1) }, onDismiss = { heldWorkspace = null },
             onRelaunch = onRelaunch?.let { relaunch -> { relaunch(RelaunchScope.Workspace(machine.id, held.id)) } },
+            onUpdate = onUpdate?.let { update -> { update(RelaunchScope.Workspace(machine.id, held.id)) } },
             onClose = onCloseWorkspace?.let { { confirmingClose = held.id to null } }, closeLabel = R.string.box_close_workspace)
     }
     heldWindow?.let { (workspaceID, windowID) ->
@@ -92,6 +99,9 @@ fun MachineBoxesScreen(
             // Una ventana sola: solo si el equipo sabe relanzar su IA en ese tipo de ventana (D7).
             onRelaunch = onRelaunch?.takeIf { snapshot?.relaunchesWindow(workspace.isSSH, held.activity?.agent) == true }?.let { relaunch ->
                 { relaunch(RelaunchScope.Window(machine.id, workspace.id, held.id)) }
+            },
+            onUpdate = onUpdate?.takeIf { snapshot?.updatesClaudeWindow(workspace.isSSH, held.activity?.agent) == true }?.let { update ->
+                { update(RelaunchScope.Window(machine.id, workspace.id, held.id)) }
             },
             onClose = onCloseWindow?.let { { confirmingClose = workspace.id to held.id } }, closeLabel = R.string.box_close_window)
     }
