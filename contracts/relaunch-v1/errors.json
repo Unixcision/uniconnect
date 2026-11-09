@@ -2,5 +2,6 @@
   "token_caducado": "El token del plan ya no vale. Pide un plan nuevo. No se aplica a recuperar una operación ya aceptada.",
   "token_no_valido": "El token no corresponde a este dispositivo, a este verbo o a estos objetivos.",
   "operacion_desconocida": "No existe ninguna operación con ese identificador.",
-  "alcance_no_valido": "El alcance pedido no existe o no se puede resolver."
+  "alcance_no_valido": "El alcance pedido no existe o no se puede resolver.",
+  "opciones_no_validas": "Las opciones del plan no son válidas para ese verbo (modelo o effort mal escritos, u opciones en agent.relaunch)."
 }

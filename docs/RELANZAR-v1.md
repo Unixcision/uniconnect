@@ -355,3 +355,11 @@ Las mismas en los tres lados, porque los fallos son los mismos:
 Si `apply` sobre un alcance grande pide **confirmación explícita** o va directo. Afecta al cliente,
 no a la forma del contrato: `plan`/`apply` ya da el mecanismo para enseñar lo que va a pasar. Está
 preguntado y no se presupone.
+
+## 11. Actualizar Claude, monitores, borradores y coste (09-11-2026)
+
+«Actualizar Claude» es el verbo `agent.update`: el mismo relanzado más `claude update` y, si se
+piden, modelo y effort. Los dos botones guardan y devuelven los monitores, respetan el borrador,
+solo escriben en la IA cuando hace falta y enseñan el coste antes de confirmar. Las ventanas SSH del
+Mac usan el trabajador de Linux por SSH. Reglas, ejemplos y textos: sección «Actualizar Claude,
+monitores y borradores» de `contracts/relaunch-v1/LEEME.md`.

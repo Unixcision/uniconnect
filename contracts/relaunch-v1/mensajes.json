@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "descripcion": "Textos exactos que el equipo escribe en la IA tras reabrirla. Iguales en Mac y Linux. Solo se manda mensaje si tenía monitores/shells de fondo o estaba trabajando: el mensaje obliga a releer la conversación entera y es lo que gasta cupo (09-11-2026). {motivo} es motivo_actualizar o motivo_relanzar; {n} el número de monitores; {fichero} la ruta del fichero guardado en el destino; {version} la versión nueva de Claude.",
+  "motivo_actualizar": "para actualizar Claude Code a {version}",
+  "motivo_relanzar": "para relanzarte",
+  "con_monitores": "UniConnect te ha reiniciado {motivo}. Al cerrar se pararon tus {n} monitores o shells de fondo; están guardados tal cual en {fichero}. Relanza una sola vez, igual que estaban, los que sean vigías o monitores de espera (si alguno ya no tiene sentido, dilo en vez de relanzarlo). Los que eran acciones puntuales (envíos, publicaciones, despliegues, migraciones) NO los repitas: comprueba en qué estado quedaron y dilo. Luego sigue con lo que estabas haciendo.",
+  "solo_cortado": "UniConnect te ha reiniciado {motivo} mientras trabajabas, así que lo que tenías en marcha se cortó a medias. Retómalo justo donde se quedó.",
+  "anadido_cortado": " Estabas trabajando cuando se te reinició, así que lo que tenías en marcha se cortó a medias: retómalo justo donde se quedó."
+}

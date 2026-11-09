@@ -15,6 +15,8 @@ El documento que los explica es `docs/RELANZAR-v1.md`.
 | `apply-in-progress-response.json` | `apply` no bloquea hasta terminar: devuelve con `operation_state: "en_curso"` y el cliente sigue con `relaunch.status`. |
 | `status-request.json` | Forma de `relaunch.status`. |
 | `errors.json` | Errores de la llamada, distintos de las causas por objetivo. |
+| `plan-update-request.json`, `plan-update-response.json`, `apply-update-response.json` | Actualizar Claude (`agent.update`), monitores, borradores y coste (09-11-2026). |
+| `mensajes.json` | Textos exactos que se escriben en la IA tras reabrirla, y cuándo. |
 | `causes.json` | Causas estables por objetivo. El texto en español lo pone el cliente. |
 | `proveedores.json` | Qué IA sabe relanzar cada equipo por tipo de ventana (tras D7), y los tokens con los que lo anuncia. |
 
@@ -226,3 +228,100 @@ conservaba antes del 08-11: quitarlo haría volver a una IA sin su MCP o sus her
 `binario_no_encontrado` y `sin_pausa` (continuar Codex sin aviso de cuota). Y una nueva por el
 escalado: `sesion_compartida`. Un cliente que no conozca una causa enseña un texto genérico.
 `plan-response.json` y `apply-response.json` traen ya un aviso, el escalado y `dropped_options`.
+
+## Actualizar Claude, monitores y borradores (decisión de Dani, 09-11-2026)
+
+Nace del reciclado a mano de 47 Claude del 09-11 (Mac, MINIPC, NOTBETTING, NOLEAKOS, XUNIS,
+IBERIAVO). Lo que se aprendió ahí es ahora regla para los dos botones:
+
+- **Relanzar IA** (`agent.relaunch`): cualquier proveedor, mismas opciones.
+- **Actualizar Claude** (`agent.update`): solo Claude. Es el mismo proceso más `claude update` y,
+  si se piden, modelo y effort.
+
+Nada de lo que sigue cambia las fases, el token ni el escalado de arriba.
+
+### `agent.update`
+- **Petición.** `plan-update-request.json`. `options` es opcional:
+  - `model`: alias o id de Claude, `^[a-z0-9.\-\[\]]{2,40}$`.
+  - `effort`: `low`, `medium`, `high`, `xhigh` o `max`.
+  - La clave que falta significa «igual que estaba».
+  - Con `agent.relaunch`, `options` no vale: error `opciones_no_validas`. Relanzar no cambia nada.
+- **Proveedores.** Un objetivo que no sea Claude se excluye con `proveedor_no_soportado`.
+- **Actualización.**
+  - `claude update` corre **una sola vez por instalación**, es decir, por equipo destino, usuario
+    y binario. Va **antes de cerrar nada** de esa instalación y fuera del panel (SSH aparte en
+    remoto, `Process` en local).
+  - Los procesos vivos no se ven afectados: siguen con su binario hasta que se reabren.
+  - Resultado en `updates[]` con `host`, `state` (`actualizado`, `ya_al_dia` o `fallida`), `from`
+    y `to`.
+  - Si falla, los objetivos de esa instalación terminan en `omitido` con `actualizacion_fallida` y
+    **no se cierran**.
+- **Reapertura.** Se reabre con el lanzador estable (`~/.local/bin/claude`, o el `claude` que
+  resolvía el panel), nunca con la ruta de `versions/<x>`. Si no, volvería el binario viejo.
+- **Modelo y effort.** Se añaden a la orden como `--model '<m>'` y `--effort <e>`, sustituyendo las
+  que tuviera. **Al reanudar, Claude recupera el modelo de la conversación e ignora el de
+  `settings.json`** (medido en PREPRO el 09-11): sin `--model` explícito el modelo no cambia. Si la
+  IA la lanza un supervisor (`recovery.py launch`), que no admite opciones, el modelo y el effort se
+  fijan después escribiendo `/model <m>` y `/effort <e>`, cada uno con el compositor vacío y la IA
+  ociosa.
+
+### Para los dos verbos: lo que se guarda y se devuelve
+- **Identidad de la ficha.** `~/.claude/sessions/<pid>.json` solo vale si su `procStart` coincide
+  con el arranque del proceso: campo 22 de `/proc/<pid>/stat` en Linux; en el Mac, `startedAt` frente
+  al arranque del proceso, con ±2 s. Si no coincide, `identidad_ambigua`. En el MINIPC había fichas
+  de otro arranque con el PID reutilizado, y una decía ser la conversación de otra ventana.
+- **Conversación compartida.** Si dos procesos Claude vivos del mismo usuario tienen el mismo
+  `sessionId`, se excluyen los dos con `conversacion_compartida`. Al reanudar se abre la rama más
+  reciente, y una de las dos perdería su hilo (XUNIS, claudebets/xunis_stats).
+- **Login.** Antes de cerrar nada de una instalación, `claude auth status` (JSON) tiene que decir
+  `loggedIn: true`. Si no, sus objetivos salen con `sin_login`: reabrir sin login deja una ventana
+  inservible (IBERIAVO-DESA).
+- **Monitores y shells de fondo.**
+  - Son los hijos directos del proceso Claude que sean su envoltorio de Bash: un shell con
+    `eval '<orden>'` cuyo prólogo lleva `unsetenv` o `shell-snapshots`, con o sin `-l`. Los MCP no
+    cuentan.
+  - Antes de cerrar se guarda cada `<orden>`, extraída con un analizador de comillas de shell, en
+    `~/.local/state/uniconnect/relaunch-v1/monitores/<id>-<AAAAMMDD-HHMMSS>.txt` del destino. También
+    se copian los ficheros de `/tmp/claude-<uid>/…` que mencionen: el scratchpad puede no sobrevivir.
+  - El plan lo cuenta en `background`, y es **aviso** (`tareas_de_fondo`), no exclusión.
+  - Tras el cierre se termina el árbol entero de cada uno, para que no queden huérfanos que dupliquen
+    el monitor cuando la IA lo relance.
+- **Borrador.**
+  - El texto del usuario en el compositor (no el gris atenuado, que es una sugerencia) se guarda
+    antes de cerrar.
+  - Tras `verificado` se reescribe en el compositor **sin Intro**: `draft: true` en el plan y
+    `draft_restored` en el resultado.
+  - Nunca se teclea `/exit` sobre un borrador: si hay borrador, el cierre va directamente por el
+    paso 2 del escalado.
+- **Mensaje tras reabrir: solo si hace falta.** Reabrir no gasta cupo; lo que gasta es el mensaje,
+  porque obliga a releer la conversación entera, y sin caché si cambió el modelo. El 09-11 eso se
+  comió el 37 % del cupo de Fable. Por eso:
+  - Con monitores, o si estaba trabajando, se escribe el texto de `mensajes.json`
+    (`con_monitores`, `solo_cortado`, `anadido_cortado`), con el compositor vacío, y después Intro.
+  - Si no, no se escribe nada (`message: false`).
+  - El borrador se reescribe **después** del mensaje.
+- **Coste.**
+  - Cada objetivo lleva `context_tokens`: `input_tokens + cache_creation_input_tokens +
+    cache_read_input_tokens` del último `usage` de su `.jsonl`, leído desde el final; `null` si no
+    se sabe.
+  - El plan suma en `estimated_tokens` los de los objetivos con `message: true`.
+  - Los clientes lo enseñan antes de confirmar.
+- **Diálogo de confianza.** Rige lo de arriba: se resuelve **por su texto**, nunca por posición
+  (viene con «No, exit» marcado). Si el equipo lo responde, solo puede ser para la carpeta donde
+  esa misma conversación ya corría. En cualquier otro caso, `necesita_usuario`.
+
+### Resultado por objetivo (añadidos)
+`version`, `model`, `effort` (lo que dice la barra de estado tras reabrir, si se puede leer),
+`background_saved`, `message_sent` y `draft_restored`. Ejemplo en `apply-update-response.json`.
+
+### Anuncio
+Cuando lo implementa, un equipo añade a `capabilities` `relaunch.v1.update` y
+`relaunch.v1.update.claude.<tipo>` por cada tipo de ventana donde lo hace. También
+`relaunch.v1.restaura` si guarda monitores y borradores. La fila de `capacidades` de
+`proveedores.json` la cambia cada equipo en el mismo commit que su prueba en vivo.
+
+### Mac y SSH
+Para un objetivo SSH, el Mac **ejecuta por SSH el mismo trabajador de Linux**
+(`linux/uniconnect/relaunch_worker.py`, empaquetado en la app), como ya decía la sección 2 del
+documento. No mantiene una segunda implementación. El «Actualizar Claude» antiguo del Mac
+(`Packages/UniConnectClaudeUpdate`) pasa a ser este verbo.

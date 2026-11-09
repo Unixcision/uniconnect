@@ -18,5 +18,8 @@
   "carpeta_inexistente": "La carpeta de la ventana ya no existe.",
   "binario_no_encontrado": "El programa de la IA no está instalado o no se puede ejecutar.",
   "sin_pausa": "Codex no está pausado por límite de uso: no hay nada que continuar.",
-  "sesion_compartida": "La sesión tmux tiene paneles o ventanas ajenos. No se mata para no llevárselos por delante."
+  "sesion_compartida": "La sesión tmux tiene paneles o ventanas ajenos. No se mata para no llevárselos por delante.",
+  "sin_login": "Claude no tiene la sesión iniciada en ese equipo. Reabrirla la dejaría inservible; antes hay que hacer /login.",
+  "conversacion_compartida": "Otra ventana tiene abierta la misma conversación. Reabrir volvería a la rama de la otra y esta perdería su hilo.",
+  "actualizacion_fallida": "No se pudo actualizar Claude en ese equipo. No se ha cerrado nada."
 }

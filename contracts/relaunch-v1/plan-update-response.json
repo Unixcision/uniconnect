@@ -1,0 +1,43 @@
+{
+  "operation_id": "5d2e9a41-7c03-4b8e-a1f6-3e9b0c7d2a18",
+  "token": "rlq1.MjAyNi0xMS0wOVQyMjozMDowMFo",
+  "expires_at": "2026-11-09T22:30:00Z",
+  "verb": "agent.update",
+  "options": { "model": "fable[1m]", "effort": "medium" },
+  "estimated_tokens": 412000,
+  "targets": [
+    {
+      "key": "ssh:root@15.217.153.205:22|tmux:default|pane:%4|gen:12",
+      "label": "NOTBETTING · claudesupport",
+      "provider": "claude",
+      "generation": 12,
+      "state": "planificado",
+      "active": true,
+      "warning": "tareas_de_fondo",
+      "background": 3,
+      "draft": false,
+      "context_tokens": 412000,
+      "message": true,
+      "version": "2.1.280",
+      "installed": "2.1.281"
+    },
+    {
+      "key": "ssh:root@15.217.153.205:22|tmux:default|pane:%8|gen:9",
+      "label": "NOTBETTING · claudefixerrors_2",
+      "provider": "claude",
+      "generation": 9,
+      "state": "planificado",
+      "background": 0,
+      "draft": true,
+      "context_tokens": 380000,
+      "message": false,
+      "version": "2.1.280",
+      "installed": "2.1.281"
+    }
+  ],
+  "excluded": [
+    { "label": "NOTBETTING · emergencia-codex", "cause": "proveedor_no_soportado" },
+    { "label": "XUNIS · claudebets", "cause": "conversacion_compartida" },
+    { "label": "IBERIAVO-DESA · claudesa_2", "cause": "sin_login" }
+  ]
+}

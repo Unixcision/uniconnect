@@ -1,0 +1,34 @@
+{
+  "operation_id": "5d2e9a41-7c03-4b8e-a1f6-3e9b0c7d2a18",
+  "recovered": false,
+  "operation_state": "terminada",
+  "updates": [
+    { "host": "ssh:root@15.217.153.205:22", "state": "actualizado", "from": "2.1.281", "to": "2.1.321" }
+  ],
+  "results": [
+    {
+      "key": "ssh:root@15.217.153.205:22|tmux:default|pane:%4|gen:12",
+      "state": "verificado",
+      "effective_id": "57c82fdd-78cb-4a6d-8ef9-f80553c0493a",
+      "escalation": "exit",
+      "version": "2.1.321",
+      "model": "fable[1m]",
+      "effort": "medium",
+      "background_saved": 3,
+      "message_sent": true,
+      "draft_restored": false
+    },
+    {
+      "key": "ssh:root@15.217.153.205:22|tmux:default|pane:%8|gen:9",
+      "state": "verificado",
+      "effective_id": "8647e316-cb4d-4485-84d0-7d44cabebff7",
+      "escalation": "exit",
+      "version": "2.1.321",
+      "model": "fable[1m]",
+      "effort": "medium",
+      "background_saved": 0,
+      "message_sent": false,
+      "draft_restored": true
+    }
+  ]
+}
