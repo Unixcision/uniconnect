@@ -34,6 +34,7 @@ da por vigilado un fichero que nadie mira.
 | `plan-request.json` | Linux: `test_relaunch.py` resuelve su alcance. |
 | `proveedores.json` | Nadie (nuevo el 24-09-2026). Lo tienen que leer los tests de capacidades del Mac y de Linux (lo que anuncia cada equipo es exactamente su fila de `capacidades`) y Android (cuándo ofrece «Relanzar IA de esta ventana»). |
 | `apply-request.json`, `status-request.json`, `errors.json` | Nadie todavía. |
+| `plan-update-request.json`, `plan-update-response.json`, `apply-update-response.json` | Android: `RelaunchUpdateContractTest` (09-11-2026). Mac y Linux: pendiente. |
 
 Las pruebas de Android se han escrito o cambiado el 24-09-2026 sin ejecutarlas: no se compila
 hasta nuevo aviso.
