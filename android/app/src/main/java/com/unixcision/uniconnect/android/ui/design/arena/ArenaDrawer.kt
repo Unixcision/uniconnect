@@ -26,6 +26,9 @@ import androidx.compose.material.icons.rounded.DesktopMac
 import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.NotificationsNone
+import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.Upgrade
+import com.unixcision.uniconnect.android.domain.RelaunchVerb
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -86,6 +89,12 @@ fun ArenaDrawer(model: DrawerModel, onGo: (HomeDestination) -> Unit) {
                 }
 
                 Group(stringResource(R.string.drawer_maintenance))
+                if (model.relaunchesEverywhere) Entry(Icons.Rounded.RestartAlt, stringResource(R.string.relaunch_everywhere)) {
+                    onGo(HomeDestination.Everywhere(RelaunchVerb.RELAUNCH))
+                }
+                if (model.updatesEverywhere) Entry(Icons.Rounded.Upgrade, stringResource(R.string.update_everywhere)) {
+                    onGo(HomeDestination.Everywhere(RelaunchVerb.UPDATE))
+                }
                 Entry(SettingsPage.CLEANUP.icon, stringResource(SettingsPage.CLEANUP.title)) { onGo(HomeDestination.Settings(SettingsPage.CLEANUP)) }
                 Entry(Icons.Rounded.BugReport, stringResource(R.string.drawer_diagnostics), marked = model.troubled) { onGo(HomeDestination.Diagnostics) }
             }

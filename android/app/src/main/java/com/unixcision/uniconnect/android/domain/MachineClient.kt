@@ -28,8 +28,11 @@ interface MachineClient {
      *
      * Devuelve lo que tocaría y lo que deja fuera con su motivo, más un vale con caducidad. Existe
      * para poder enseñar «esto toca 26 agentes» mientras todavía es una frase.
+     *
+     * @param options modelo y effort para `agent.update`; nulo o vacío es «igual que estaba». Con
+     *   `agent.relaunch` tiene que ser nulo o vacío.
      */
-    suspend fun relaunchPlan(machine: Machine, verb: RelaunchVerb, scope: RelaunchScope): RelaunchPlan
+    suspend fun relaunchPlan(machine: Machine, verb: RelaunchVerb, scope: RelaunchScope, options: RelaunchOptions? = null): RelaunchPlan
 
     /**
      * Ejecuta un plan (`relaunch.apply`). No espera a que termine: vuelve en cuanto el equipo lo

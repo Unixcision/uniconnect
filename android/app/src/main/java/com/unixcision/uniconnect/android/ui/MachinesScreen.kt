@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Upgrade
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -59,6 +60,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import com.unixcision.uniconnect.android.domain.RelaunchScope
+import com.unixcision.uniconnect.android.domain.RelaunchVerb
 import com.unixcision.uniconnect.android.domain.ActivityState
 import com.unixcision.uniconnect.android.domain.BoxOverrides
 import com.unixcision.uniconnect.android.domain.Machine
@@ -138,7 +140,13 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
         gesturesEnabled = level == Level.LIST,
         scrimColor = Color.Black.copy(alpha = .32f),
         drawerContent = {
-            DesignedDrawer(DrawerModel(HomeSummary.total(summaries.values.toList()), version, troubled, state.settings.designTheme)) { destination ->
+            // «Todo» solo se ofrece si algún equipo conectado sabe hacerlo: sin nadie a quien
+            // pedírselo, la entrada solo podría acabar en «no hay nada».
+            val reachable = state.machines.mapNotNull { saved -> state.connections[saved.id]?.takeIf { it.connected }?.snapshot }
+            DesignedDrawer(DrawerModel(
+                HomeSummary.total(summaries.values.toList()), version, troubled, state.settings.designTheme,
+                relaunchesEverywhere = reachable.any { it.relaunches }, updatesEverywhere = reachable.any { it.updatesClaude },
+            )) { destination ->
                 scope.launch { drawer.close() }
                 when (destination) {
                     HomeDestination.Machines -> {}
@@ -147,6 +155,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                     HomeDestination.Notices -> noticesOpen = true
                     is HomeDestination.Settings -> settingsPage = destination.page
                     HomeDestination.Diagnostics -> model.showDiagnostics(true)
+                    is HomeDestination.Everywhere -> model.relaunchEverywhere(destination.verb)
                 }
             }
         },
@@ -223,8 +232,18 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                             // tipo de ventana (contracts/relaunch-v1/proveedores.json).
                             onRelaunchWindow = if (machine != null && workspace != null && window != null &&
                                 connection?.snapshot?.relaunchesWindow(workspace.isSSH, window.activity?.agent) == true) {
-                                { model.relaunch(machine.id, RelaunchScope.Window(machine.id, workspace.id, window.id)) }
+                                { model.relaunch(RelaunchScope.Window(machine.id, workspace.id, window.id)) }
                             } else null,
+                            // «Actualizar Claude»: solo si el equipo lo anuncia para ese tipo de
+                            // ventana y su IA es Claude (o no se sabe).
+                            onUpdateWindow = if (machine != null && workspace != null && window != null &&
+                                connection?.snapshot?.updatesClaudeWindow(workspace.isSSH, window.activity?.agent) == true) {
+                                { model.relaunch(RelaunchScope.Window(machine.id, workspace.id, window.id), RelaunchVerb.UPDATE) }
+                            } else null,
+                            onCloseWindow = if (connection?.snapshot?.closesBoxes == true && workspace != null && window != null) {
+                                { model.closeWindow(workspace.id, window.id) }
+                            } else null,
+                            machineName = machine?.name,
                         )
                     }
                     Level.MACHINE -> if (machine != null) MachineBoxesScreen(
@@ -242,7 +261,10 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                         // Solo se ofrece si el equipo dice que sabe hacerlo. Un equipo antiguo no
                         // enseña la acción, en vez de enseñarla y tragársela.
                         onRelaunch = if (connection?.snapshot?.relaunches == true) {
-                            { scope -> model.relaunch(machine.id, scope) }
+                            { scope -> model.relaunch(scope) }
+                        } else null,
+                        onUpdate = if (connection?.snapshot?.updatesClaude == true) {
+                            { scope -> model.relaunch(scope, RelaunchVerb.UPDATE) }
                         } else null,
                         // Igual: sin `box_close` no se ofrece cerrar, en vez de ofrecerlo y fallar.
                         onCloseWorkspace = if (connection?.snapshot?.closesBoxes == true) model::closeWorkspace else null,
@@ -250,8 +272,10 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
                         menu = {
                             MachineMenu(
                                 canRelaunchAll = connection?.snapshot?.relaunches == true,
+                                canUpdateAll = connection?.snapshot?.updatesClaude == true,
                                 onEdit = { model.showEdit(machine) },
-                                onRelaunchAll = { model.relaunch(machine.id, RelaunchScope.Machine(machine.id)) },
+                                onRelaunchAll = { model.relaunch(RelaunchScope.Machine(machine.id)) },
+                                onUpdateAll = { model.relaunch(RelaunchScope.Machine(machine.id), RelaunchVerb.UPDATE) },
                                 onRemove = { removing = machine },
                             )
                         },
@@ -327,7 +351,7 @@ fun MachinesScreen(model: MachinesViewModel, uploads: UploadViewModel, attachmen
         )
     }
     state.relaunch?.let { relaunch ->
-        RelaunchDialog(relaunch, onConfirm = model::confirmRelaunch, onDismiss = model::dismissRelaunch)
+        RelaunchDialog(relaunch, onConfirm = model::confirmRelaunch, onOptions = model::changeRelaunchOptions, onDismiss = model::dismissRelaunch)
     }
     state.windowDetails?.let { details ->
         WindowDetailsDialog(details, onCopy = model::copyResumeCommand, onDismiss = model::dismissWindowDetails)
@@ -420,9 +444,11 @@ private fun ErrorNotice(text: String, onDismiss: () -> Unit) {
     }
 }
 
-/** The machine's overflow menu: edit, relaunch every AI of the machine, remove. */
+/** The machine's overflow menu: edit, relaunch every AI of the machine, update its Claude, remove. */
 @Composable
-private fun MachineMenu(canRelaunchAll: Boolean, onEdit: () -> Unit, onRelaunchAll: () -> Unit, onRemove: () -> Unit) {
+private fun MachineMenu(
+    canRelaunchAll: Boolean, canUpdateAll: Boolean, onEdit: () -> Unit, onRelaunchAll: () -> Unit, onUpdateAll: () -> Unit, onRemove: () -> Unit,
+) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.machine_menu), tint = UniTheme.colors.muted) }
@@ -438,6 +464,11 @@ private fun MachineMenu(canRelaunchAll: Boolean, onEdit: () -> Unit, onRelaunchA
                 text = { Text(stringResource(R.string.relaunch_all_agents)) },
                 leadingIcon = { Icon(Icons.Rounded.RestartAlt, null, tint = UniTheme.colors.accent) },
                 onClick = { open = false; onRelaunchAll() },
+            )
+            if (canUpdateAll) DropdownMenuItem(
+                text = { Text(stringResource(R.string.update_claude_all)) },
+                leadingIcon = { Icon(Icons.Rounded.Upgrade, null, tint = UniTheme.colors.accent) },
+                onClick = { open = false; onUpdateAll() },
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.remove), color = UniTheme.colors.danger) },

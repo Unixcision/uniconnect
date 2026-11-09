@@ -13,4 +13,8 @@ data class DrawerModel(
     val troubled: Boolean,
     /** The design in force, for an entry that names it ("Apariencia · Obsidiana"). */
     val theme: DesignTheme,
+    /** Some connected machine relaunches its AIs: «Relanzar las IA de todos los equipos» is offered. */
+    val relaunchesEverywhere: Boolean = false,
+    /** Some connected machine updates Claude: «Actualizar Claude en todos los equipos» is offered. */
+    val updatesEverywhere: Boolean = false,
 )

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.rounded.Upgrade
 import androidx.compose.material.icons.rounded.VerticalAlignTop
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -55,6 +56,11 @@ fun BoxActionsSheet(
      */
     onRelaunch: (() -> Unit)? = null,
     /**
+     * «Actualizar Claude» (`agent.update`) de aquí: el mismo relanzado más `claude update`. Nulo
+     * cuando el equipo no anuncia `relaunch.v1.update` o, en una ventana, cuando no es de Claude.
+     */
+    onUpdate: (() -> Unit)? = null,
+    /**
      * «Cerrar ventana» o «Cerrar espacio» ([closeLabel]): asks for confirmation before anything
      * happens. Null when the machine does not announce `box_close`, for the same reason as
      * [onRelaunch].
@@ -71,10 +77,11 @@ fun BoxActionsSheet(
             Action(R.string.box_move_top, Icons.Rounded.VerticalAlignTop) { onMoveTop(); onDismiss() }
             Action(R.string.box_move_up, Icons.Rounded.ArrowUpward) { onMoveUp(); onDismiss() }
             Action(R.string.box_move_down, Icons.Rounded.ArrowDownward) { onMoveDown(); onDismiss() }
-            onRelaunch?.let { relaunch ->
+            if (onRelaunch != null || onUpdate != null) {
                 HorizontalDivider(Modifier.padding(vertical = 4.dp), color = UniTheme.colors.outline)
-                Action(R.string.relaunch_agents, Icons.Rounded.RestartAlt) { relaunch(); onDismiss() }
             }
+            onRelaunch?.let { relaunch -> Action(R.string.relaunch_agents, Icons.Rounded.RestartAlt) { relaunch(); onDismiss() } }
+            onUpdate?.let { update -> Action(R.string.update_claude, Icons.Rounded.Upgrade) { update(); onDismiss() } }
             // Destructive, so last and apart: a thumb reaching for «Bajar» must not land on it.
             onClose?.let { close ->
                 HorizontalDivider(Modifier.padding(vertical = 4.dp), color = UniTheme.colors.outline)

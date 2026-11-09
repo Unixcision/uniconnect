@@ -15,10 +15,14 @@ public enum RelaunchVerb: String, Sendable, Codable, CaseIterable {
     /// Tells a live agent to carry on the previous assignment. Not a blanket approval.
     case agentContinue = "agent.continue"
 
+    /// Runs `claude update` once per installation, then relaunches like ``agentRelaunch``,
+    /// optionally with another model or effort (`contracts/relaunch-v1`, 09-11-2026). Claude only.
+    case agentUpdate = "agent.update"
+
     /// The phases a target of this verb walks through, in order, before ``RelaunchTargetState/verified``.
     public var phases: [RelaunchTargetState] {
         switch self {
-        case .agentRelaunch: [.planned, .closing, .reopening]
+        case .agentRelaunch, .agentUpdate: [.planned, .closing, .reopening]
         case .transportReconnect: [.planned, .reattaching]
         case .agentContinue: [.planned, .delivering]
         }
@@ -26,7 +30,10 @@ public enum RelaunchVerb: String, Sendable, Codable, CaseIterable {
 
     /// Whether reaching ``RelaunchTargetState/verified`` requires the same conversation to be live.
     ///
-    /// Only ``agentRelaunch`` has a conversation to compare: reconnecting has none, and continuing
-    /// compares an acknowledgement instead.
-    public var verifiesConversationIdentity: Bool { self == .agentRelaunch }
+    /// Only ``agentRelaunch`` and ``agentUpdate`` have a conversation to compare: reconnecting has
+    /// none, and continuing compares an acknowledgement instead.
+    public var verifiesConversationIdentity: Bool { self == .agentRelaunch || self == .agentUpdate }
+
+    /// Whether this verb closes the agent and reopens it on the same conversation.
+    public var reopensConversation: Bool { verifiesConversationIdentity }
 }

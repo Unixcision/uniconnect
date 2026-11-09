@@ -30,7 +30,9 @@ import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.LinkOff
 import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.Upgrade
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material.icons.rounded.ZoomOutMap
@@ -129,7 +131,23 @@ fun TerminalScreen(
     onDetails: (() -> Unit)? = null,
     /** Relanza la IA de esta ventana (alcance `window`). Nulo si el equipo no anuncia `relaunch.v1`. */
     onRelaunchWindow: (() -> Unit)? = null,
+    /** «Actualizar Claude» de esta ventana (`agent.update`). Nulo si el equipo no lo anuncia o no es Claude. */
+    onUpdateWindow: (() -> Unit)? = null,
+    /** Cierra esta ventana en el equipo (`box-close.v1`), tras confirmarlo. Nulo si el equipo no sabe. */
+    onCloseWindow: (() -> Unit)? = null,
+    /** El nombre de la máquina, para la confirmación de cerrar. */
+    machineName: String? = null,
 ) {
+    // Closing from the window itself asks once, the same dialog as the long press in the list.
+    var confirmingClose by remember { mutableStateOf(false) }
+    if (confirmingClose && onCloseWindow != null) {
+        CloseBoxDialog(
+            name = windowName.orEmpty(), machineName = machineName.orEmpty(), windowCount = null,
+            onConfirm = { confirmingClose = false; onCloseWindow() },
+            onDismiss = { confirmingClose = false },
+        )
+    }
+    val askClose: (() -> Unit)? = onCloseWindow?.let { { confirmingClose = true } }
     var realRequested by rememberSaveable { mutableStateOf(false) }
     // Every text sent from the composer is kept, with whether it arrived, before it leaves.
     val onSentRecord: ((String, Boolean) -> (Boolean) -> Unit)? = dictationHistory?.let { history ->
@@ -148,7 +166,7 @@ fun TerminalScreen(
             draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity,
             attachments = attachments, inbox = inbox, attachTarget = attachTarget, dictation = dictation, dictationHistory = dictationHistory, settings = settings,
             transcribers = transcribers, onDiagnostics = onDiagnostics, onDetails = onDetails, onRelaunchWindow = onRelaunchWindow,
-            onSentRecord = onSentRecord,
+            onSentRecord = onSentRecord, onCloseWindow = askClose, onUpdateWindow = onUpdateWindow,
         )
         return
     }
@@ -164,7 +182,7 @@ fun TerminalScreen(
         draft = draft, onDraftChange = onDraftChange, windowPinned = windowPinned, onTogglePin = onTogglePin, activity = activity,
         attachments = attachments, inbox = inbox, attachTarget = attachTarget, dictation = dictation, dictationHistory = dictationHistory, settings = settings,
         transcribers = transcribers, onDiagnostics = onDiagnostics, onDetails = onDetails, onRelaunchWindow = onRelaunchWindow,
-        onSentRecord = onSentRecord)
+        onSentRecord = onSentRecord, onCloseWindow = askClose, onUpdateWindow = onUpdateWindow)
 }
 
 /** The attached tmux client: the phone owns a real PTY of its own size; tmux keeps the desktop's. */
@@ -179,7 +197,8 @@ private fun RealTerminalScreen(
     attachments: AttachViewModel?, inbox: InboxViewModel?, attachTarget: AttachTarget?, dictation: DictationViewModel?,
     dictationHistory: DictationHistoryViewModel?, settings: AppSettings,
     transcribers: List<TranscriptionCandidate>, onDiagnostics: (() -> Unit)?, onDetails: (() -> Unit)?, onRelaunchWindow: (() -> Unit)?,
-    onSentRecord: ((String, Boolean) -> (Boolean) -> Unit)?,
+    onSentRecord: ((String, Boolean) -> (Boolean) -> Unit)?, onCloseWindow: (() -> Unit)? = null,
+    onUpdateWindow: (() -> Unit)? = null,
 ) {
     var keysVisible by rememberSaveable { mutableStateOf(startWithKeys) }
     var selecting by remember { mutableStateOf(false) }
@@ -241,6 +260,9 @@ private fun RealTerminalScreen(
                 add(TerminalMenuEntry(Icons.Rounded.LinkOff, stringResource(R.string.real_terminal_stop), stringResource(R.string.menu_stop_real_note), onClick = onStopReal))
                 if (onDetails != null) add(TerminalMenuEntry(Icons.Rounded.Info, stringResource(R.string.menu_details), stringResource(R.string.menu_details_note), enabled = connected, onClick = onDetails))
                 if (onRelaunchWindow != null) add(TerminalMenuEntry(Icons.Rounded.RestartAlt, stringResource(R.string.menu_relaunch_window), stringResource(R.string.menu_relaunch_window_note), enabled = connected, onClick = onRelaunchWindow))
+                if (onUpdateWindow != null) add(TerminalMenuEntry(Icons.Rounded.Upgrade, stringResource(R.string.menu_update_window), stringResource(R.string.menu_update_window_note), enabled = connected, onClick = onUpdateWindow))
+                // Last, as in the long-press sheet: the one entry that removes something.
+                if (onCloseWindow != null) add(TerminalMenuEntry(Icons.Rounded.DeleteOutline, stringResource(R.string.box_close_window), stringResource(R.string.box_close_confirm_note), enabled = connected, onClick = onCloseWindow))
                 if (onDiagnostics != null) add(TerminalMenuEntry(Icons.Rounded.BugReport, stringResource(R.string.diagnostics_open), onClick = onDiagnostics))
             })
         }
@@ -440,7 +462,8 @@ private fun MirrorTerminalScreen(
     attachments: AttachViewModel?, inbox: InboxViewModel?, attachTarget: AttachTarget?, dictation: DictationViewModel?,
     dictationHistory: DictationHistoryViewModel?, settings: AppSettings,
     transcribers: List<TranscriptionCandidate>, onDiagnostics: (() -> Unit)?, onDetails: (() -> Unit)?, onRelaunchWindow: (() -> Unit)?,
-    onSentRecord: ((String, Boolean) -> (Boolean) -> Unit)?,
+    onSentRecord: ((String, Boolean) -> (Boolean) -> Unit)?, onCloseWindow: (() -> Unit)? = null,
+    onUpdateWindow: (() -> Unit)? = null,
 ) {
     var viewMode by rememberSaveable { mutableStateOf(TerminalView.FIT) }
     var keysVisible by rememberSaveable { mutableStateOf(false) }
@@ -503,6 +526,9 @@ private fun MirrorTerminalScreen(
                 add(TerminalMenuEntry(Icons.Rounded.Sync, stringResource(R.string.terminal_reconnect), stringResource(R.string.menu_reattach_note), enabled = (connected || error != null) && !reconnecting, onClick = onReconnect))
                 if (onDetails != null) add(TerminalMenuEntry(Icons.Rounded.Info, stringResource(R.string.menu_details), stringResource(R.string.menu_details_note), enabled = connected, onClick = onDetails))
                 if (onRelaunchWindow != null) add(TerminalMenuEntry(Icons.Rounded.RestartAlt, stringResource(R.string.menu_relaunch_window), stringResource(R.string.menu_relaunch_window_note), enabled = connected, onClick = onRelaunchWindow))
+                if (onUpdateWindow != null) add(TerminalMenuEntry(Icons.Rounded.Upgrade, stringResource(R.string.menu_update_window), stringResource(R.string.menu_update_window_note), enabled = connected, onClick = onUpdateWindow))
+                // Last, as in the long-press sheet: the one entry that removes something.
+                if (onCloseWindow != null) add(TerminalMenuEntry(Icons.Rounded.DeleteOutline, stringResource(R.string.box_close_window), stringResource(R.string.box_close_confirm_note), enabled = connected, onClick = onCloseWindow))
                 if (onDiagnostics != null) add(TerminalMenuEntry(Icons.Rounded.BugReport, stringResource(R.string.diagnostics_open), onClick = onDiagnostics))
             })
         }

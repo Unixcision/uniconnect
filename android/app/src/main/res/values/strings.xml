@@ -122,10 +122,95 @@
     <string name="relaunch_cause_no_pause">Codex no está pausado por límite de uso: no hay nada que continuar.</string>
     <string name="relaunch_cause_shared_session">La sesión tmux tiene otros paneles o ventanas. No se cierra para no llevárselos por delante.</string>
     <string name="menu_relaunch_window">Relanzar IA de esta ventana</string>
-    <string name="menu_relaunch_window_note">La cierra y la vuelve a abrir en su misma conversación, sin preguntas.</string>
+    <string name="menu_relaunch_window_note">La cierra y la vuelve a abrir en su misma conversación. Si hay que escribirle, antes te dice lo que gasta.</string>
     <string name="relaunch_failed">No se ha podido pedir el relanzado.</string>
     <string name="relaunch_nothing">Aquí no hay ninguna IA que relanzar, o su tipo todavía no se sabe cerrar sin riesgo.</string>
     <string name="relaunch_unknown">Se perdió la respuesta y no se ha podido saber cómo quedó. No se ha repetido nada: míralo en el equipo.</string>
+    <string name="relaunch_cause_no_login">Claude no tiene la sesión iniciada en ese equipo. Reabrirla la dejaría inservible; antes hay que hacer /login.</string>
+    <string name="relaunch_cause_shared_conversation">Otra ventana tiene abierta la misma conversación. Reabrir volvería a la rama de la otra y esta perdería su hilo.</string>
+    <string name="relaunch_cause_update_failed">No se pudo actualizar Claude en ese equipo. No se ha cerrado nada.</string>
+    <!-- relaunch-v1, 09-11-2026: «Actualizar Claude» (agent.update), monitores, borradores, coste y «todo». -->
+    <string name="update_claude">Actualizar Claude</string>
+    <string name="update_claude_all">Actualizar Claude en todo el equipo</string>
+    <string name="menu_update_window">Actualizar Claude de esta ventana</string>
+    <string name="menu_update_window_note">Actualiza Claude en el equipo y la reabre en su misma conversación. Antes te enseña lo que va a hacer.</string>
+    <string name="relaunch_everywhere">Relanzar las IA de todos los equipos</string>
+    <string name="update_everywhere">Actualizar Claude en todos los equipos</string>
+    <string name="relaunch_planning">Preparando el relanzado…</string>
+    <string name="update_planning">Mirando qué hay que actualizar…</string>
+    <plurals name="update_confirm_title">
+        <item quantity="one">¿Actualizar Claude en %1$d ventana?</item>
+        <item quantity="other">¿Actualizar Claude en %1$d ventanas?</item>
+    </plurals>
+    <string name="update_unavailable_title">Actualizar Claude no está disponible</string>
+    <string name="update_confirm_note">Primero se actualiza Claude, una vez por equipo y antes de cerrar nada. Luego cada ventana se cierra y se reabre en su misma conversación. Si la actualización falla en un equipo, allí no se cierra ninguna.</string>
+    <string name="update_go">Actualizar</string>
+    <plurals name="update_running">
+        <item quantity="one">Actualizando Claude en %1$d ventana…</item>
+        <item quantity="other">Actualizando Claude en %1$d ventanas…</item>
+    </plurals>
+    <string name="update_done_title">Actualizadas %1$d de %2$d</string>
+    <string name="update_model_label">Modelo</string>
+    <string name="update_effort_label">Effort</string>
+    <string name="update_same">Igual que estaba</string>
+    <string name="update_same_short">Igual</string>
+    <string name="update_model_fable">Fable 5.2</string>
+    <string name="update_model_opus">Opus 5.5</string>
+    <string name="update_model_sonnet">Sonnet 5.5</string>
+    <string name="update_model_haiku">Haiku</string>
+    <string name="update_replanning">Recalculando con las opciones nuevas…</string>
+    <plurals name="relaunch_target_monitors">
+        <item quantity="one">%1$d monitor: se guarda y se le pedirá relanzarlo</item>
+        <item quantity="other">%1$d monitores: se guardan y se le pedirá relanzarlos</item>
+    </plurals>
+    <string name="relaunch_target_draft">Tu borrador se guarda y se reescribe</string>
+    <string name="relaunch_target_version">Claude %1$s (instalado %2$s)</string>
+    <string name="relaunch_target_version_only">Claude %1$s</string>
+    <string name="relaunch_cost_free">No hace falta escribir a ninguna: no gasta.</string>
+    <plurals name="relaunch_cost_rereads">
+        <item quantity="one">Reabrir no gasta. Avisar a %1$d IA releerá unos %2$s tokens.</item>
+        <item quantity="other">Reabrir no gasta. Avisar a %1$d IAs releerá unos %2$s tokens.</item>
+    </plurals>
+    <plurals name="relaunch_cost_rereads_min">
+        <item quantity="one">Reabrir no gasta. Avisar a %1$d IA releerá al menos %2$s tokens.</item>
+        <item quantity="other">Reabrir no gasta. Avisar a %1$d IAs releerá al menos %2$s tokens.</item>
+    </plurals>
+    <plurals name="relaunch_cost_rereads_unknown">
+        <item quantity="one">Reabrir no gasta. Avisar a %1$d IA la obliga a releer su conversación; no se sabe cuánto.</item>
+        <item quantity="other">Reabrir no gasta. Avisar a %1$d IAs las obliga a releer sus conversaciones; no se sabe cuánto.</item>
+    </plurals>
+    <string name="relaunch_tokens_units">%1$s</string>
+    <string name="relaunch_tokens_thousands">%1$s mil</string>
+    <string name="relaunch_tokens_millions">%1$s M</string>
+    <string name="relaunch_host_plan_failed">%1$s: no se ha podido pedir el plan.</string>
+    <string name="relaunch_host_rejected">%1$s: %2$s</string>
+    <string name="relaunch_host_result_unknown">%1$s: se perdió la respuesta y no se sabe cómo quedó. No se ha repetido nada.</string>
+    <string name="relaunch_error_token_expired">El plan ha caducado. Vuelve a pedirlo.</string>
+    <string name="relaunch_error_token_invalid">El plan no corresponde a este móvil, a esta acción o a estas ventanas.</string>
+    <string name="relaunch_error_unknown_operation">El equipo no conoce esa operación.</string>
+    <string name="relaunch_error_bad_scope">Lo que se pidió ya no existe en el equipo o no se puede resolver.</string>
+    <string name="relaunch_error_bad_options">El equipo no acepta ese modelo o ese effort.</string>
+    <string name="relaunch_error_other">El equipo lo rechazó (%1$s).</string>
+    <string name="update_line_updated">%1$s: de %2$s a %3$s</string>
+    <string name="update_line_updated_bare">%1$s: actualizado</string>
+    <string name="update_line_current">%1$s: ya al día (%2$s)</string>
+    <string name="update_line_current_bare">%1$s: ya al día</string>
+    <string name="update_line_failed">%1$s: no se pudo actualizar; sus ventanas no se han cerrado</string>
+    <string name="update_line_other">%1$s: %2$s</string>
+    <plurals name="relaunch_done_monitors">
+        <item quantity="one">%1$d monitor guardado en el equipo</item>
+        <item quantity="other">%1$d monitores guardados en el equipo</item>
+    </plurals>
+    <plurals name="relaunch_done_messages">
+        <item quantity="one">Se avisó a %1$d IA para que retome lo suyo</item>
+        <item quantity="other">Se avisó a %1$d IAs para que retomen lo suyo</item>
+    </plurals>
+    <plurals name="relaunch_done_drafts">
+        <item quantity="one">%1$d borrador ha vuelto a su compositor</item>
+        <item quantity="other">%1$d borradores han vuelto a su compositor</item>
+    </plurals>
+    <string name="relaunch_done_dropped">Opciones quitadas al reabrir: %1$s</string>
+    <string name="relaunch_done_models">Tras reabrir: %1$s</string>
     <string name="menu_details">Detalles</string>
     <string name="menu_details_note">Espacio, tmux e IA de esta ventana, y la orden para reanudarla.</string>
     <string name="details_title">Detalles de la ventana</string>

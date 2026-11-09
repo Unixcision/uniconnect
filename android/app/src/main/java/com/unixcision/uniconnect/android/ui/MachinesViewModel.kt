@@ -3,10 +3,13 @@ package com.unixcision.uniconnect.android.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unixcision.uniconnect.android.R
-import com.unixcision.uniconnect.android.domain.RelaunchDecision
-import com.unixcision.uniconnect.android.domain.RelaunchPresentation
-import com.unixcision.uniconnect.android.domain.RelaunchConfirmation
-import com.unixcision.uniconnect.android.domain.RelaunchPlan
+import com.unixcision.uniconnect.android.domain.RelaunchHostPlan
+import com.unixcision.uniconnect.android.domain.RelaunchHostProblem
+import com.unixcision.uniconnect.android.domain.RelaunchHostResult
+import com.unixcision.uniconnect.android.domain.RelaunchOptions
+import com.unixcision.uniconnect.android.domain.RelaunchOutcome
+import com.unixcision.uniconnect.android.domain.RelaunchPreview
+import com.unixcision.uniconnect.android.domain.RelaunchRequest
 import com.unixcision.uniconnect.android.domain.RelaunchVerb
 import com.unixcision.uniconnect.android.domain.RelaunchScope
 import com.unixcision.uniconnect.android.domain.MachineFailure
@@ -54,6 +57,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -342,47 +346,115 @@ class MachinesViewModel(
             takesNewSSH = takesNewSSH, runsAs = connection.snapshot?.runsAs == true), creationError = null) }
     }
     /**
-     * Pide el plan de un relanzado y, si toca, lo enseña antes de ejecutarlo.
+     * Pide el plan de un relanzado o de «Actualizar Claude» y, si toca, lo enseña antes.
      *
      * Siempre se pide el plan, incluso para una ventana suelta: es lo que devuelve los objetivos
      * reales y las exclusiones con su motivo. Ejecutar sin plan sería adivinar cuántas ventanas hay
-     * detrás de lo que alguien pulsó.
+     * detrás de lo que alguien pulsó. Los dos verbos y los tres alcances comparten este camino.
      */
-    fun relaunch(machineID: String, scope: RelaunchScope) {
+    fun relaunch(scope: RelaunchScope, verb: RelaunchVerb = RelaunchVerb.RELAUNCH) =
+        startRelaunch(RelaunchRequest(verb, listOf(scope)))
+
+    /**
+     * Lo mismo para todos los equipos conectados que lo anuncian: un alcance `machine` por cada uno
+     * y un solo diálogo. «Todo» no existe en el protocolo; lo compone este cliente, y un equipo sin
+     * conexión no entra porque no hay a quién pedírselo.
+     */
+    fun relaunchEverywhere(verb: RelaunchVerb) {
         val current = state.value
-        if (current.relaunch is RelaunchUI.Running) return
-        val machine = current.machines.firstOrNull { it.id == machineID } ?: return
-        viewModelScope.launch {
-            val plan = try {
-                client.relaunchPlan(machine, RelaunchVerb.RELAUNCH, scope)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                mutableState.update { it.copy(relaunch = RelaunchUI.Failed(machineID, R.string.relaunch_failed)) }
-                return@launch
-            }
-            when (val decision = RelaunchPresentation.decide(plan)) {
+        val scopes = current.machines.filter { machine ->
+            val link = current.connections[machine.id]
+            val snapshot = link?.snapshot
+            link?.connected == true && snapshot != null && (if (verb == RelaunchVerb.UPDATE) snapshot.updatesClaude else snapshot.relaunches)
+        }.map { RelaunchScope.Machine(it.id) }
+        startRelaunch(RelaunchRequest(verb, scopes, everywhere = true))
+    }
+
+    /** La petición de planes o el seguimiento en curso, para poder cancelarlos al cerrar el diálogo. */
+    private var relaunchJob: Job? = null
+
+    private fun startRelaunch(request: RelaunchRequest) {
+        val current = state.value.relaunch
+        if (current is RelaunchUI.Running || current is RelaunchUI.Planning) return
+        if (request.scopes.isEmpty()) {
+            mutableState.update { it.copy(relaunch = RelaunchUI.Failed(request, R.string.relaunch_nothing)) }
+            return
+        }
+        val planning = RelaunchUI.Planning(request)
+        mutableState.update { it.copy(relaunch = planning) }
+        relaunchJob?.cancel()
+        relaunchJob = viewModelScope.launch {
+            val preview = planRelaunch(request)
+            // Cerrado mientras se pedía: no se enseña ni se ejecuta nada.
+            if (state.value.relaunch != planning) return@launch
+            when (preview.step) {
+                // Con el código del equipo hay algo que contar («no acepta ese modelo»); sin él, no.
+                RelaunchPreview.Step.FAILED -> mutableState.update {
+                    it.copy(relaunch = if (preview.failed.any { host -> host.errorCode != null }) RelaunchUI.Confirm(request, preview)
+                        else RelaunchUI.Failed(request, R.string.relaunch_failed))
+                }
                 // «No ha pasado nada» y «no había nada que hacer» se parecen demasiado desde fuera.
-                is RelaunchDecision.Nothing ->
-                    mutableState.update { it.copy(relaunch = RelaunchUI.Failed(machineID, R.string.relaunch_nothing)) }
-                // Hay algo que contar y nada que ejecutar. El diálogo no ofrece «Adelante».
-                is RelaunchDecision.Show ->
-                    mutableState.update { it.copy(relaunch = RelaunchUI.Confirm(machineID, decision.plan)) }
-                is RelaunchDecision.Confirm ->
-                    mutableState.update { it.copy(relaunch = RelaunchUI.Confirm(machineID, decision.plan)) }
-                is RelaunchDecision.Apply -> apply(machineID, decision.plan)
+                RelaunchPreview.Step.NOTHING ->
+                    mutableState.update { it.copy(relaunch = RelaunchUI.Failed(request, R.string.relaunch_nothing)) }
+                // Hay algo que contar y nada que ejecutar: el diálogo no ofrece «Adelante».
+                RelaunchPreview.Step.SHOW, RelaunchPreview.Step.CONFIRM ->
+                    mutableState.update { it.copy(relaunch = RelaunchUI.Confirm(request, preview)) }
+                RelaunchPreview.Step.APPLY -> applyRelaunch(request, preview)
             }
         }
     }
 
-    /** Ejecuta un plan ya enseñado. */
+    /** Los planes de [request], uno por equipo y a la vez: uno lento no hace esperar a los demás. */
+    private suspend fun planRelaunch(request: RelaunchRequest): RelaunchPreview = coroutineScope {
+        RelaunchPreview(request, request.scopes.map { scope -> async { planOn(scope, request) } }.awaitAll())
+    }
+
+    private suspend fun planOn(scope: RelaunchScope, request: RelaunchRequest): RelaunchHostPlan {
+        val machine = state.value.machines.firstOrNull { it.id == scope.machineID }
+            ?: return RelaunchHostPlan(scope.machineID, "", null, RelaunchHostProblem.PLAN_FAILED)
+        return try {
+            RelaunchHostPlan(machine.id, machine.name, client.relaunchPlan(machine, request.verb, scope, request.wireOptions))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            val code = (failure as? MachineFailure.Rejected)?.code?.takeIf { it.isNotBlank() }
+            RelaunchHostPlan(machine.id, machine.name, null, RelaunchHostProblem.PLAN_FAILED, code)
+        }
+    }
+
+    /**
+     * Cambia el modelo o el effort de «Actualizar Claude» y vuelve a pedir los planes.
+     *
+     * Lo que se enseña tiene que ser lo que se va a ejecutar: el vale del plan anterior lleva las
+     * opciones viejas, y el coste puede cambiar (otro modelo relee sin caché).
+     */
+    fun changeRelaunchOptions(options: RelaunchOptions) {
+        val pending = state.value.relaunch as? RelaunchUI.Confirm ?: return
+        if (pending.request.verb != RelaunchVerb.UPDATE || pending.request.options == options || !options.isValid) return
+        val request = pending.request.copy(options = options)
+        mutableState.update { it.copy(relaunch = pending.copy(request = request, replanning = true)) }
+        relaunchJob?.cancel()
+        relaunchJob = viewModelScope.launch {
+            val preview = planRelaunch(request)
+            mutableState.update { current ->
+                val still = current.relaunch as? RelaunchUI.Confirm
+                if (still == null || still.request != request) current else current.copy(relaunch = RelaunchUI.Confirm(request, preview))
+            }
+        }
+    }
+
+    /** Ejecuta lo ya enseñado. Mientras se recalcula con otras opciones, no: sería ejecutar lo viejo. */
     fun confirmRelaunch() {
         val pending = state.value.relaunch as? RelaunchUI.Confirm ?: return
-        viewModelScope.launch { apply(pending.machineID, pending.plan) }
+        if (pending.replanning) return
+        relaunchJob = viewModelScope.launch { applyRelaunch(pending.request, pending.preview) }
     }
 
     fun dismissRelaunch() {
-        if (state.value.relaunch is RelaunchUI.Running) return
+        val current = state.value.relaunch
+        if (current is RelaunchUI.Running) return
+        // Pedir un plan no toca nada, así que se puede dejar a medias.
+        if (current is RelaunchUI.Planning || current is RelaunchUI.Confirm) relaunchJob?.cancel()
         mutableState.update { it.copy(relaunch = null) }
     }
 
@@ -430,19 +502,35 @@ class MachinesViewModel(
         }
     }
 
-    private suspend fun apply(machineID: String, plan: RelaunchPlan) {
+    private suspend fun applyRelaunch(request: RelaunchRequest, preview: RelaunchPreview) {
         // Que el diálogo no ofrezca el botón no es una defensa: `Show` y `Confirm` viven en el mismo
         // estado, así que una confirmación obsoleta —o una llamada directa— alcanzaría el equipo con
-        // un plan que ya se sabe que no se puede ejecutar. La comprobación va en el camino común,
-        // que es por donde pasan todas.
-        if (!plan.actionable) {
-            mutableState.update { it.copy(relaunch = RelaunchUI.Confirm(machineID, plan)) }
+        // un plan que ya se sabe que no se puede ejecutar. Solo se aplica lo ejecutable, y esta
+        // comprobación va en el camino común, que es por donde pasan todas.
+        val runnable = preview.runnable
+        if (runnable.isEmpty()) {
+            mutableState.update { it.copy(relaunch = RelaunchUI.Confirm(request, preview)) }
             return
         }
-        val machine = state.value.machines.firstOrNull { it.id == machineID } ?: return
+        mutableState.update { it.copy(relaunch = RelaunchUI.Running(request, preview.targetCount)) }
+        val applied = coroutineScope { runnable.map { host -> async { applyOn(host) } }.awaitAll() }
+        // Un equipo sin plan se cuenta también: en «todo», callarse un equipo es esconderlo.
+        val unplanned = preview.failed.map { RelaunchHostResult(it.machineID, it.machineName, null, it.problem, it.errorCode) }
+        val outcome = RelaunchOutcome(request.verb, applied + unplanned)
+        val single = outcome.hosts.singleOrNull()
         mutableState.update {
-            it.copy(relaunch = RelaunchUI.Running(machineID, plan.operationID, plan.targets.size))
+            it.copy(relaunch = if (single != null && single.operation == null && single.errorCode == null) {
+                RelaunchUI.Failed(request, R.string.relaunch_unknown)
+            } else RelaunchUI.Done(request, outcome))
         }
+        refreshAfterRelaunch(runnable.map { it.machineID })
+    }
+
+    /** Aplica el plan de un equipo y lo sigue hasta que termina. */
+    private suspend fun applyOn(host: RelaunchHostPlan): RelaunchHostResult {
+        val lost = RelaunchHostResult(host.machineID, host.machineName, null, RelaunchHostProblem.RESULT_UNKNOWN)
+        val plan = host.plan ?: return lost
+        val machine = state.value.machines.firstOrNull { it.id == host.machineID } ?: return lost
         var operation = try {
             client.relaunchApply(machine, plan)
         } catch (cancelled: CancellationException) {
@@ -450,21 +538,20 @@ class MachinesViewModel(
         } catch (failure: Exception) {
             // La operación puede haber sido aceptada aunque la respuesta se perdiera. Se pregunta
             // por ella en vez de darla por fallida: repetir el apply cerraría todo por segunda vez.
-            runCatching { client.relaunchStatus(machine, plan.operationID) }.getOrNull()
-                ?: run {
-                    mutableState.update { it.copy(relaunch = RelaunchUI.Failed(machineID, R.string.relaunch_unknown)) }
-                    return
-                }
+            try {
+                client.relaunchStatus(machine, plan.operationID)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (statusFailure: Exception) {
+                return lost.copy(errorCode = (failure as? MachineFailure.Rejected)?.code?.takeIf { it.isNotBlank() })
+            }
         }
         // `apply` puede volver con la operación todavía `en_curso`: se sigue con `relaunch.status`
         // hasta que termine. Enseñar «Relanzadas 1 de 26» mientras las otras 25 se están cerrando
         // sería contar como hecho lo que todavía no ha pasado.
         var consultas = 0
         while (!operation.finished) {
-            if (consultas >= RELAUNCH_STATUS_MAX_POLLS) {
-                mutableState.update { it.copy(relaunch = RelaunchUI.Failed(machineID, R.string.relaunch_unknown)) }
-                return
-            }
+            if (consultas >= RELAUNCH_STATUS_MAX_POLLS) return lost
             // Una espera acotada entre consultas, cancelable con el viewModelScope: es el ritmo del
             // seguimiento, no un sustituto de una señal (el equipo no empuja el estado).
             delay(RELAUNCH_STATUS_INTERVAL_MS)
@@ -479,8 +566,18 @@ class MachinesViewModel(
                 operation
             }
         }
-        mutableState.update { it.copy(relaunch = RelaunchUI.Done(machineID, operation)) }
-        startObserving(machine, force = true)
+        return RelaunchHostResult(host.machineID, host.machineName, operation)
+    }
+
+    /**
+     * Vuelve a mirar lo que se acaba de relanzar: la máquina abierta, si es una de ellas, o la
+     * lista entera, si se hizo desde el inicio.
+     */
+    private fun refreshAfterRelaunch(machineIDs: List<String>) {
+        val current = state.value
+        val selected = current.selectedMachine
+        if (selected == null) refreshMachineStates(force = true, quiet = true)
+        else if (selected in machineIDs) current.machines.firstOrNull { it.id == selected }?.let { startObserving(it, force = true) }
     }
 
     /**

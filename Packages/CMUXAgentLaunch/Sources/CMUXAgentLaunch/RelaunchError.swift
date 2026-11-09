@@ -14,4 +14,7 @@ public enum RelaunchError: String, Sendable, Codable, Error {
     case unknownOperation = "operacion_desconocida"
     /// The requested scope does not exist or cannot be resolved.
     case invalidScope = "alcance_no_valido"
+    /// The plan's options are not valid for its verb: a malformed model or effort, or any option
+    /// at all with ``RelaunchVerb/agentRelaunch``, which changes nothing.
+    case invalidOptions = "opciones_no_validas"
 }

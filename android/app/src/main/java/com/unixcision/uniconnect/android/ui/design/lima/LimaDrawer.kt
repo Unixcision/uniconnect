@@ -25,6 +25,9 @@ import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.Upgrade
+import com.unixcision.uniconnect.android.domain.RelaunchVerb
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
@@ -115,6 +118,12 @@ fun LimaDrawer(model: DrawerModel, onGo: (HomeDestination) -> Unit) {
                 }
             }
             LimaDrawerGroup(stringResource(R.string.drawer_maintenance)) {
+                if (model.relaunchesEverywhere) LimaDrawerEntry(Icons.Rounded.RestartAlt, stringResource(R.string.relaunch_everywhere)) {
+                    onGo(HomeDestination.Everywhere(RelaunchVerb.RELAUNCH))
+                }
+                if (model.updatesEverywhere) LimaDrawerEntry(Icons.Rounded.Upgrade, stringResource(R.string.update_everywhere)) {
+                    onGo(HomeDestination.Everywhere(RelaunchVerb.UPDATE))
+                }
                 LimaDrawerEntry(SettingsPage.CLEANUP.icon, stringResource(SettingsPage.CLEANUP.title)) { onGo(HomeDestination.Settings(SettingsPage.CLEANUP)) }
                 LimaDrawerEntry(Icons.Rounded.BugReport, stringResource(R.string.drawer_diagnostics), flagged = model.troubled) { onGo(HomeDestination.Diagnostics) }
             }

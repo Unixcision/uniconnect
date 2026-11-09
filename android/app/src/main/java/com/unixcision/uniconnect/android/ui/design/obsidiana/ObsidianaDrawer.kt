@@ -23,6 +23,9 @@ import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.MonitorHeart
 import androidx.compose.material.icons.rounded.NotificationsNone
+import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.Upgrade
+import com.unixcision.uniconnect.android.domain.RelaunchVerb
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -124,6 +127,14 @@ fun ObsidianaDrawer(model: DrawerModel, onGo: (HomeDestination) -> Unit) {
                 }
 
                 Group(stringResource(R.string.drawer_maintenance))
+                if (model.relaunchesEverywhere) Entry(
+                    Icons.Rounded.RestartAlt, stringResource(R.string.relaunch_everywhere),
+                    onClick = { onGo(HomeDestination.Everywhere(RelaunchVerb.RELAUNCH)) },
+                )
+                if (model.updatesEverywhere) Entry(
+                    Icons.Rounded.Upgrade, stringResource(R.string.update_everywhere),
+                    onClick = { onGo(HomeDestination.Everywhere(RelaunchVerb.UPDATE)) },
+                )
                 Entry(SettingsPage.CLEANUP.icon, stringResource(SettingsPage.CLEANUP.title), onClick = { onGo(HomeDestination.Settings(SettingsPage.CLEANUP)) })
                 Entry(
                     Icons.Rounded.MonitorHeart, stringResource(R.string.drawer_diagnostics),
