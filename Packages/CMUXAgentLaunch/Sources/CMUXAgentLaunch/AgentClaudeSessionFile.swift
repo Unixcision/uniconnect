@@ -19,6 +19,11 @@ public struct AgentClaudeSessionFile: Sendable, Equatable, Decodable {
     public let version: String?
     /// The process start time as Claude printed it, used to tell a recycled pid apart.
     public let procStart: String?
+    /// When the process started, in milliseconds since 1970, as Claude wrote it (`startedAt`).
+    ///
+    /// On the Mac this is what proves the file belongs to **this** process and not to an earlier
+    /// one whose pid was reused: see ``matchesProcessStart(_:tolerance:)``.
+    public let startedAt: Double?
     /// The pid Claude wrote inside the file, `nil` in older files that do not carry it.
     ///
     /// The file is named `<pid>.json`; a different pid inside means it belongs to another process
@@ -34,13 +39,15 @@ public struct AgentClaudeSessionFile: Sendable, Equatable, Decodable {
     ///   - version: The Claude Code version.
     ///   - procStart: The process start time.
     ///   - pid: The pid written inside the file, when it has one.
+    ///   - startedAt: The process start in milliseconds since 1970.
     public init(
         sessionId: String,
         cwd: String? = nil,
         status: String? = nil,
         version: String? = nil,
         procStart: String? = nil,
-        pid: Int? = nil
+        pid: Int? = nil,
+        startedAt: Double? = nil
     ) {
         self.sessionId = sessionId
         self.cwd = cwd
@@ -48,6 +55,7 @@ public struct AgentClaudeSessionFile: Sendable, Equatable, Decodable {
         self.version = version
         self.procStart = procStart
         self.pid = pid
+        self.startedAt = startedAt
     }
 
     /// Whether this file may describe the process `processID`: its inner pid matches, or it has none.
@@ -58,8 +66,22 @@ public struct AgentClaudeSessionFile: Sendable, Equatable, Decodable {
         pid.map { $0 == processID } ?? true
     }
 
+    /// Whether the file was written by a process that started at `processStart`, within `tolerance`.
+    ///
+    /// A file without `startedAt` proves nothing and does not match: in the MINIPC some files came
+    /// from an earlier boot with the pid reused, and one claimed another window's conversation.
+    ///
+    /// - Parameters:
+    ///   - processStart: When the live process started, from the kernel.
+    ///   - tolerance: The largest accepted difference, 2 s by contract.
+    /// - Returns: `true` when the two start times agree.
+    public func matchesProcessStart(_ processStart: Date, tolerance: TimeInterval = 2) -> Bool {
+        guard let startedAt else { return false }
+        return abs(startedAt / 1000 - processStart.timeIntervalSince1970) <= tolerance
+    }
+
     private enum CodingKeys: String, CodingKey {
-        case sessionId, cwd, status, version, procStart, pid
+        case sessionId, cwd, status, version, procStart, pid, startedAt
     }
 
     public init(from decoder: any Decoder) throws {
@@ -71,6 +93,7 @@ public struct AgentClaudeSessionFile: Sendable, Equatable, Decodable {
         version = try? container.decodeIfPresent(String.self, forKey: .version)
         procStart = try? container.decodeIfPresent(String.self, forKey: .procStart)
         pid = (try? container.decodeIfPresent(Int.self, forKey: .pid)) ?? nil
+        startedAt = (try? container.decodeIfPresent(Double.self, forKey: .startedAt)) ?? nil
     }
 
     /// Reads and decodes one session file, refusing anything larger than ``maximumSize``.

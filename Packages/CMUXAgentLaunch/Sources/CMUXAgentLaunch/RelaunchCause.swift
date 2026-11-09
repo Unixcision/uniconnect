@@ -35,4 +35,26 @@ public enum RelaunchCause: String, Sendable, Codable, CaseIterable, Error {
     /// The agent has tasks or monitors running. Closing it would stop them or strand them outside
     /// the conversation, so it is not closed: they are saved first or allowed to finish.
     case backgroundTasks = "tareas_de_fondo"
+    /// This machine does not know how to relaunch that agent in that kind of window.
+    case providerUnsupported = "proveedor_no_soportado"
+    /// The window is not inside a tmux session, so there is no session to keep.
+    case noTmux = "sin_tmux"
+    /// The SSH box's credential is not available right now (locked vault, deleted record).
+    case noCredential = "sin_credencial"
+    /// The server does not let its processes be inspected (no `/proc` or `pidfd`).
+    case destinationNotLinux = "destino_no_linux"
+    /// The window's folder no longer exists.
+    case missingFolder = "carpeta_inexistente"
+    /// The agent's program is not installed or cannot be executed.
+    case missingBinary = "binario_no_encontrado"
+    /// Codex is not paused by a usage limit: there is nothing to continue.
+    case notPaused = "sin_pausa"
+    /// The tmux session holds other panes or windows, so it is never killed.
+    case sharedSession = "sesion_compartida"
+    /// Claude is not logged in on that machine; reopening would leave a useless window.
+    case notLoggedIn = "sin_login"
+    /// Another live window has the same conversation open; resuming would follow its branch.
+    case sharedConversation = "conversacion_compartida"
+    /// `claude update` failed on that installation, so none of its windows were closed.
+    case updateFailed = "actualizacion_fallida"
 }
