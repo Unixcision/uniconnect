@@ -115,7 +115,7 @@ def provider_of(argv):
 # relaunch-v1 «Mismas opciones» (08-11): lo único que se guarda de cómo se lanzó una IA
 # (opciones con valor, interruptores). Sin prompts, sin --system-prompt, sin -c con secretos.
 LAUNCH_OPTIONS = {
-    "claude": (frozenset(("--model", "--fallback-model", "--permission-mode", "--settings", "--setting-sources",
+    "claude": (frozenset(("--model", "--effort", "--fallback-model", "--permission-mode", "--settings", "--setting-sources",
                           "--add-dir", "--allowedTools", "--disallowedTools", "--mcp-config", "--tools")),
                frozenset(("--dangerously-skip-permissions", "--allow-dangerously-skip-permissions", "--verbose",
                           "--strict-mcp-config", "--chrome"))),

@@ -105,6 +105,8 @@ class RelaunchDesktop:
             for candidate in candidates:
                 if candidate["workspace"]["kind"] == "ssh" and candidate["connection"] is None:
                     candidate["record"]["tmux"] = None
+            if "options" in params:
+                return self.service.plan(params.get("verb"), candidates, owner, check, options=params.get("options"))
             return self.service.plan(params.get("verb"), candidates, owner, check)
         if method == "relaunch.apply":
             return self.service.apply(params.get("operation_id"), params.get("token"), owner, check)
@@ -147,13 +149,58 @@ class RelaunchDesktop:
                     surface._launch_preparer = original
             self.main(restore)
 
-    def show(self, kind, verb="agent.relaunch"):
+    EFFORTS = (("", "Igual que estaba"), ("low", "low"), ("medium", "medium"), ("high", "high"),
+               ("xhigh", "xhigh"), ("max", "max"))
+
+    def ask_update(self, kind):
+        """«Actualizar Claude…»: modelo y effort opcionales; vacío = igual que estaba (relaunch-v1, 09-11)."""
+        from gi.repository import Gtk
+        from .relaunch import EFFORTS, MODEL
+        window = self.window
+        dialog = Gtk.Dialog(title=window._("Actualizar Claude"), transient_for=window, modal=True)
+        dialog.add_buttons(window._("Cancel"), Gtk.ResponseType.CANCEL, window._("Preparar"), Gtk.ResponseType.OK)
+        grid = Gtk.Grid(column_spacing=10, row_spacing=8, margin=12)
+        note = Gtk.Label(label=window._("Se ejecuta «claude update» una vez por equipo y se reabre cada Claude con "
+                                        "la misma conversación. Deja el modelo vacío para mantener el que tenía."))
+        note.set_line_wrap(True)
+        note.set_xalign(0)
+        grid.attach(note, 0, 0, 2, 1)
+        model = Gtk.Entry(placeholder_text=window._("igual que estaba (p. ej. fable[1m], opus, haiku)"))
+        effort = Gtk.ComboBoxText()
+        for value, label in self.EFFORTS:
+            effort.append(value, window._(label))
+        effort.set_active(0)
+        for row, (label, widget) in enumerate(((window._("Modelo"), model), (window._("Effort"), effort)), 1):
+            grid.attach(Gtk.Label(label=label, xalign=0), 0, row, 1, 1)
+            grid.attach(widget, 1, row, 1, 1)
+        dialog.get_content_area().add(grid)
+        dialog.show_all()
+        while True:
+            response = dialog.run()
+            if response != Gtk.ResponseType.OK:
+                dialog.destroy()
+                return
+            options = {}
+            if model.get_text().strip():
+                options["model"] = model.get_text().strip()
+            if effort.get_active_id():
+                options["effort"] = effort.get_active_id()
+            if "model" in options and not MODEL.fullmatch(options["model"]):
+                window.error(window._("Modelo no válido: minúsculas, números, punto, guion y corchetes (2-40)"))
+                continue
+            if options.get("effort", "low") in EFFORTS:
+                break
+        dialog.destroy()
+        self.show(kind, verb="agent.update", options=options)
+
+    def show(self, kind, verb="agent.relaunch", options=None):
         window = self.window
         if kind == "global":
             from .relaunch_fleet import RelaunchFleet
             preparing = "Buscando Codex pausados…" if verb == "agent.recover" else "Preparando el plan de relanzado…"
             window.status_label.set_text(window._(preparing))
-            window.background(lambda: RelaunchFleet(self, self.machines.snapshot()).plan(verb=verb), self.preview)
+            window.background(lambda: RelaunchFleet(self, self.machines.snapshot()).plan(verb=verb, options=options),
+                              self.preview)
             return
         if kind == "window":
             identifier = window.focused_surface.record["id"]
@@ -162,9 +209,11 @@ class RelaunchDesktop:
         else:
             identifier = self.machine_id
         scope = {"kind": kind, "id": identifier}
-        preparing = "Buscando Codex pausados…" if verb == "agent.recover" else "Preparando el plan de relanzado…"
+        preparing = ("Buscando Codex pausados…" if verb == "agent.recover" else "Preparando la actualización de Claude…"
+                     if verb == "agent.update" else "Preparando el plan de relanzado…")
         window.status_label.set_text(window._(preparing))
-        window.background(lambda: self.dispatch("relaunch.plan", {"verb": verb, "scope": scope}), self.preview)
+        params = {"verb": verb, "scope": scope, **({"options": options or {}} if verb == "agent.update" else {})}
+        window.background(lambda: self.dispatch("relaunch.plan", params), self.preview)
 
     def adopt_antigravity_window(self):
         """Offer an explicit, single-pane Antigravity statusLine binding."""
@@ -223,14 +272,42 @@ class RelaunchDesktop:
                 text = ": " + window._("uniconnect.relaunch.warning.active_codex")
             if target.get("dropped_options"):
                 text += " " + window._("(vuelve sin: {options})").format(options=", ".join(target["dropped_options"]))
+            # relaunch-v1 (09-11): lo que se guarda y lo que cuesta, antes de confirmar.
+            extras = []
+            if target.get("background"):
+                extras.append(window._("{n} monitores o shells de fondo: se guardan y se paran").format(n=target["background"]))
+            if target.get("draft"):
+                extras.append(window._("borrador: se guarda y se reescribe sin enviarlo"))
+            if target.get("message"):
+                tokens = target.get("context_tokens")
+                extras.append(window._("recibirá un mensaje para retomar") +
+                              (" (~{k}k tokens)".format(k=round(tokens / 1000)) if isinstance(tokens, int) else ""))
+            if target.get("version") and target.get("installed") and target["version"] != target["installed"]:
+                extras.append("{0} → {1}".format(target["version"], target["installed"]))
+            if extras:
+                text += " — " + "; ".join(extras)
             return text
         names = ["• " + target["label"] + note(target) for target in plan["targets"]]
         names += ["— " + target["label"] + ": " + cause_text(window._, target["cause"]) for target in plan["excluded"]]
         continuing = plan.get("verb") in ("agent.continue", "agent.recover")
         detail = window._("Se reabrirá la misma conversación y solo se enviará «continua» si aparece un límite de uso explícito y el cuadro está vacío. Se comprobará que Codex lo acepta.") if continuing else window._("Se cerrará y reabrirá la IA conservando su conversación. tmux y tus archivos no se borran.")
+        if plan.get("verb") == "agent.update":
+            chosen = plan.get("options") or {}
+            detail = window._("Se ejecutará «claude update» una vez por equipo, antes de cerrar nada, y cada Claude "
+                              "se reabrirá con la misma conversación en la versión nueva.")
+            if chosen:
+                detail += " " + window._("Modelo: {model} · effort: {effort}.").format(
+                    model=chosen.get("model", window._("igual")), effort=chosen.get("effort", window._("igual")))
+        if isinstance(plan.get("estimated_tokens"), int) and plan["estimated_tokens"]:
+            detail += " " + window._("Coste estimado de los mensajes para retomar: ~{k}k tokens (reabrir no gasta).").format(
+                k=round(plan["estimated_tokens"] / 1000))
         window.status_label.set_text(window._("Plan de continuación preparado" if continuing else "Plan de relanzado preparado"))
-        if not self.confirm_plan(detail, names, bool(plan["targets"]), continuing=continuing):
-            return
+        self._confirm_update = plan.get("verb") == "agent.update"
+        try:
+            if not self.confirm_plan(detail, names, bool(plan["targets"]), continuing=continuing):
+                return
+        finally:
+            self._confirm_update = False
         def apply():
             self.history.remember(plan)
             if "fleet" in plan:
@@ -242,6 +319,8 @@ class RelaunchDesktop:
         from gi.repository import Gtk
         window = self.window
         title = "Continuar Codex pausado" if continuing else "Relanzar las IA seleccionadas"
+        if getattr(self, "_confirm_update", False):
+            title = "Actualizar las Claude seleccionadas"
         dialog = Gtk.Dialog(title=window._(title), transient_for=window, modal=True)
         dialog.set_default_size(680, 430)
         dialog.add_buttons(window._("Cancel"), Gtk.ResponseType.CANCEL, window._("Apply"), Gtk.ResponseType.OK)
@@ -340,8 +419,17 @@ class RelaunchDesktop:
         def update(value):
             if not live[0] or window._closed:
                 return
-            lines = [labels.get(item["key"], item["key"]) + " — " + window._("uniconnect.relaunch.state." + item["state"]) +
-                     (": " + cause_text(window._, item["cause"]) if item.get("cause") else "") for item in value["results"]]
+            lines = [window._("claude update en {host}: {state} ({old} → {new})").format(
+                         host=item.get("host"), state=item.get("state"), old=item.get("from") or "?", new=item.get("to") or "?")
+                     for item in value.get("updates", [])]
+            lines += [labels.get(item["key"], item["key"]) + " — " + window._("uniconnect.relaunch.state." + item["state"]) +
+                      (": " + cause_text(window._, item["cause"]) if item.get("cause") else "") +
+                      (" · " + " · ".join(part for part in (item.get("version"), item.get("model"),
+                                                            item.get("effort") and "effort " + item["effort"]) if part)
+                       if item.get("version") else "") +
+                      ("; " + window._("borrador restaurado") if item.get("draft_restored") else "") +
+                      ("; " + window._("mensaje para retomar enviado") if item.get("message_sent") else "")
+                      for item in value["results"]]
             lines += [item["label"] + " — " + cause_text(window._, item["cause"]) for item in plan["excluded"]]
             text.get_buffer().set_text("\n".join(lines))
             if value["operation_state"] == "en_curso":

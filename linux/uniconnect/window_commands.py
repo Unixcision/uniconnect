@@ -32,7 +32,7 @@ class WindowCommands:
         primera ventana, cerrar a la izquierda sin nada a la izquierda…). Relanzar en una ventana
         sin IA relanzable o continuar Codex en una que no es Codex no es «ahora no»: es nunca.
         """
-        from .relaunch_agents import relaunchable
+        from .relaunch_agents import relaunchable, updatable
         workspace, surface = self.current_workspace(), self.focused_surface
         record = surface.record if surface else {}
         kind = (surface.workspace if surface else (workspace or {})).get("kind")
@@ -43,6 +43,12 @@ class WindowCommands:
         if name == "relaunch_workspace":
             box = (workspace or {}).get("kind")
             return any(window.get("tmux") and relaunchable(window.get("agent"), box) for window in windows)
+        # «Actualizar Claude» (relaunch-v1, 09-11): solo donde hay una Claude.
+        if name == "update_claude_window":
+            return bool(record.get("tmux")) and agent == "claude" and relaunchable("claude", kind) and updatable(kind)
+        if name == "update_claude_workspace":
+            return updatable((workspace or {}).get("kind")) and any(
+                window.get("tmux") and window.get("agent") == "claude" for window in windows)
         if name == "continue_window":
             return bool(record.get("tmux")) and agent == "codex"
         if name == "continue_workspace":
@@ -70,12 +76,12 @@ class WindowCommands:
             return name in ("lock", "quit")
         workspace, surface = self.current_workspace(), self.focused_surface
         windows = WorkspaceArrangement.ordered(workspace.get("windows", [])) if workspace else []
-        if name.startswith("relaunch_"):
+        if name.startswith(("relaunch_", "update_claude_")):
             relaunch = getattr(self, "relaunch", None)
             if not relaunch or not relaunch.allowed():
                 return False
-            return (surface is not None if name == "relaunch_window" else
-                    bool(workspace and windows) if name == "relaunch_workspace" else True)
+            return (surface is not None if name in ("relaunch_window", "update_claude_window") else
+                    bool(workspace and windows) if name in ("relaunch_workspace", "update_claude_workspace") else True)
         if name == "adopt_antigravity_window":
             relaunch = getattr(self, "relaunch", None)
             return bool(surface and surface.record.get("agent") == "agy" and relaunch and relaunch.allowed())
@@ -220,6 +226,15 @@ class WindowCommands:
 
     def action_relaunch_machine(self):
         self.relaunch.show("machine")
+
+    def action_update_claude_window(self):
+        self.relaunch.ask_update("window")
+
+    def action_update_claude_workspace(self):
+        self.relaunch.ask_update("workspace")
+
+    def action_update_claude_machine(self):
+        self.relaunch.ask_update("machine")
 
     def action_continue_window(self):
         self.relaunch.show("window", verb="agent.recover")

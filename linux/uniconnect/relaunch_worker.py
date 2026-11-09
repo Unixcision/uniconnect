@@ -217,18 +217,42 @@ class TargetWorker:
             return Path(first).name == "claude" or "/claude/versions/" in first
         return Path(first).name == provider
 
+    def claude_environ(self, process):
+        """The live process's own environment (its HOME, PATH, CLAUDE_CONFIG_DIR), or {}."""
+        try:
+            raw = (self.proc / str(process["pid"]) / "environ").read_bytes()[:1048576]
+            return dict(item.split("=", 1) for item in raw.decode(errors="replace").split("\0") if "=" in item)
+        except OSError:
+            return {}
+
+    def claude_config_dir(self, process):
+        environ = self.claude_environ(process)
+        return Path(environ.get("CLAUDE_CONFIG_DIR") or Path(environ.get("HOME") or Path.home()) / ".claude")
+
+    def ficha_matches_start(self, data, process):
+        """relaunch-v1 (09-11): a ficha from another start with the PID reused is not its own.
+
+        ``procStart`` is field 22 of /proc/<pid>/stat; older fichas only carry ``startedAt`` (ms),
+        checked against the process birth with ±2 s. A ficha with neither cannot contradict it.
+        """
+        start = process.get("start")
+        if data.get("procStart") is not None:
+            return start is not None and str(data["procStart"]) == str(start)
+        started = data.get("startedAt")
+        if isinstance(started, (int, float)) and not isinstance(started, bool) and start is not None:
+            bounds = self.process_birth_bounds(process)
+            if bounds is not None:
+                return bounds[0] - 2 <= started / 1000 <= bounds[1] + 2
+        return True
+
     def claude_ficha(self, process):
         """``<CLAUDE_CONFIG_DIR or ~/.claude>/sessions/<pid>.json`` of this very process, or None.
 
-        A ficha whose inner ``pid`` is another process (copied or restored) is not its own.
+        A ficha whose inner ``pid`` is another process (copied or restored), or that was written
+        by an earlier process with the same PID (relaunch-v1, 09-11), is not its own.
         """
         pid = process["pid"]
-        try:
-            raw = (self.proc / str(pid) / "environ").read_bytes()[:1048576]
-            environ = dict(item.split("=", 1) for item in raw.decode(errors="replace").split("\0") if "=" in item)
-        except OSError:
-            environ = {}
-        base = Path(environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+        base = self.claude_config_dir(process)
         try:
             descriptor = os.open(base / "sessions" / ("%d.json" % pid), os.O_RDONLY | os.O_NOFOLLOW)
         except OSError:
@@ -243,7 +267,29 @@ class TargetWorker:
                 return None
         if not isinstance(data, dict) or data.get("pid") not in (None, pid, str(pid)):
             return None
+        if not self.ficha_matches_start(data, process):
+            return None
         return data
+
+    def claude_shared(self, process, session_id):
+        """Another live Claude of this user on the SAME conversation (relaunch-v1, 09-11).
+
+        Resuming opens the most recent branch, so one of the two windows would lose its thread.
+        """
+        try:
+            entries = sorted((self.claude_config_dir(process) / "sessions").glob("*.json"))[:4096]
+        except OSError:
+            return False
+        for entry in entries:
+            if not entry.stem.isdigit() or int(entry.stem) == process["pid"]:
+                continue
+            try:
+                other = self.process(int(entry.stem))
+            except (OSError, Unavailable, ProcessLookupError, ValueError):
+                continue
+            if self.is_provider("claude", other["argv"]) and (self.claude_ficha(other) or {}).get("sessionId") == session_id:
+                return True
+        return False
 
     def native_id(self, agent, process, hook, pane):
         if agent == "claude":
@@ -698,8 +744,8 @@ class TargetWorker:
         resumed = removed_id = False
         values = ({"-c", "--config", "-m", "--model", "-C", "--cd", "-s", "--sandbox", "-a", "--ask-for-approval",
                    "-p", "--profile", "--add-dir", "--enable", "--disable"} if provider == "codex" else
-                  {"--model", "--fallback-model", "--permission-mode", "--settings", "--setting-sources", "--add-dir",
-                   "--allowedTools", "--disallowedTools", "--mcp-config", "--tools"})
+                  {"--model", "--effort", "--fallback-model", "--permission-mode", "--settings", "--setting-sources",
+                   "--add-dir", "--allowedTools", "--disallowedTools", "--mcp-config", "--tools"})
         switches = ({"--no-alt-screen", "--search", "--full-auto", "--dangerously-bypass-approvals-and-sandbox", "--yolo"}
                     if provider == "codex" else {"--dangerously-skip-permissions", "--allow-dangerously-skip-permissions",
                                                  "--verbose", "--strict-mcp-config", "--chrome"})
@@ -792,6 +838,152 @@ class TargetWorker:
         # ``resume <id>`` as well as before it (checked on the installed binary, 08-11).
         substitutions = {"{executable}": [argv[0]], "{sessionId}": [identifier], "{arguments}": kept}
         return [part for token in catalog[provider]["resume"] for part in substitutions.get(token, [token])]
+
+    MODEL = re.compile(r"[a-z0-9.\-\[\]]{2,40}")
+    EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+    @classmethod
+    def with_options(cls, argv, options):
+        """agent.update: ``--model``/``--effort`` replaced by the requested ones, the rest as it ran.
+
+        At resume Claude takes the conversation's model and ignores settings.json (measured
+        09-11), so a new model needs an explicit ``--model``. A missing key means «as it was».
+        """
+        if not isinstance(options, dict) or set(options) - {"model", "effort"}:
+            raise Unavailable("opciones_no_validas")
+        model, effort = options.get("model"), options.get("effort")
+        if model is not None and (not isinstance(model, str) or not cls.MODEL.fullmatch(model)):
+            raise Unavailable("opciones_no_validas")
+        if effort is not None and effort not in cls.EFFORTS:
+            raise Unavailable("opciones_no_validas")
+        result, index = [argv[0]], 1
+        while index < len(argv):
+            option = argv[index].split("=", 1)[0]
+            if (option == "--model" and model is not None) or (option == "--effort" and effort is not None):
+                index += 1 if "=" in argv[index] else 2
+                continue
+            result.append(argv[index])
+            index += 1
+        if model is not None:
+            result += ["--model", model]
+        if effort is not None:
+            result += ["--effort", effort]
+        return result
+
+    def version_of(self, launcher):
+        version = self.claude_version(launcher)
+        if version:
+            return version
+        try:
+            result = self.run([launcher, "--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=20)
+            match = re.match(r"\s*([0-9][0-9A-Za-z.+-]{0,40})", result.stdout)
+            return match.group(1) if result.returncode == 0 and match else None
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+
+    def update_installation(self):
+        """``claude update`` ONCE for this installation, outside any pane, before anything closes.
+
+        Live processes keep their binary until they are reopened. Serialized on the destination
+        across viewers; the host asks once per (destination, user, launcher).
+        """
+        launcher = self.request.get("launcher")
+        if (not isinstance(launcher, str) or not launcher.startswith("/") or Path(launcher).name != "claude"
+                or not os.access(launcher, os.X_OK)):
+            raise Unavailable("binario_no_encontrado")
+        self.STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
+        descriptor = os.open(self.STATE / "update.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            before = self.version_of(launcher)
+            try:
+                result = self.run([launcher, "update"], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=240)
+                failed = result.returncode != 0
+            except (OSError, subprocess.TimeoutExpired):
+                failed = True
+            after = self.version_of(launcher)
+        finally:
+            os.close(descriptor)
+        if failed or not after:
+            return {"state": "fallida", "from": before, "to": after}
+        return {"state": "actualizado" if after != before else "ya_al_dia", "from": before, "to": after}
+
+    def relaunch_message(self):
+        """The exact text of mensajes.json, only if it is needed: monitors, or it was working.
+
+        The message is what costs quota (it makes the model reread the whole conversation), so a
+        quiet Claude gets nothing (relaunch-v1, 09-11).
+        """
+        texts = self.request.get("messages")
+        work, busy = getattr(self, "claude_work", []), getattr(self, "claude_status", None) == "busy"
+        if not isinstance(texts, dict) or not (work or busy):
+            return None
+        def fill(text, **values):
+            for key, value in values.items():
+                text = text.replace("{" + key + "}", str(value))
+            return text
+        installed = (self.request.get("expected") or {}).get("installation", {}).get("installed")
+        updated = self.request.get("updated_to")
+        motive = (fill(texts.get("motivo_actualizar", ""), version=updated if isinstance(updated, str) else installed or "")
+                  if self.request.get("verb") == "agent.update" else texts.get("motivo_relanzar", ""))
+        if work:
+            text = fill(texts.get("con_monitores", ""), motivo=motive, n=len(work), fichero=getattr(self, "claude_work_file", ""))
+            return text + (texts.get("anadido_cortado", "") if busy else "")
+        return fill(texts.get("solo_cortado", ""), motivo=motive)
+
+    @staticmethod
+    def same_text(left, right):
+        return " ".join((left or "").split()) == " ".join((right or "").split())
+
+    def wait_composer(self, pane, expected, seconds=6.0):
+        deadline = self.clock() + seconds
+        while True:
+            try:
+                if self.same_text(self.claude_composer(pane), expected):
+                    return True
+            except (Unavailable, ValueError):
+                pass
+            if self.clock() >= deadline:
+                return False
+            time.sleep(0.2)
+
+    def after_reopen(self, current):
+        """Once the same conversation is back: the message if needed, then the draft WITHOUT Enter."""
+        pane = current["pane"]["pane"]
+        result = {"background_saved": len(getattr(self, "claude_work", [])), "message_sent": False, "draft_restored": False}
+        try:
+            ficha = self.claude_ficha(self.process(current["pid"])) or {}
+            if isinstance(ficha.get("version"), str):
+                result["version"] = ficha["version"]
+        except (Unavailable, OSError, ProcessLookupError):
+            pass
+        text = self.relaunch_message()
+        if text and self.wait_composer(pane, ""):
+            self.tmux("send-keys", "-t", pane, "-l", "--", text)
+            if self.wait_composer(pane, text):
+                self.tmux("send-keys", "-t", pane, "Enter")
+                result["message_sent"] = True
+        draft = getattr(self, "claude_draft", None)
+        if draft and self.wait_composer(pane, "", 10.0):
+            self.paste(pane, draft)
+            result["draft_restored"] = self.wait_composer(pane, draft)
+        result.update(self.claude_status_bar(pane))
+        return result
+
+    def claude_status_bar(self, pane, seconds=5.0):
+        """Model and effort as the status bar shows them once it is drawn, if it can be read at all."""
+        deadline, found = self.clock() + seconds, {}
+        while True:
+            screen = self.tmux("capture-pane", "-p", "-t", pane)
+            effort = re.search(r"effort:\s*([a-z]+)", screen)
+            model = re.search(r"\|\s*((?:Opus|Sonnet|Haiku|Fable)\b[^|\n]{0,24}?)\s*\|", screen)
+            if effort:
+                found["effort"] = effort.group(1)
+            if model:
+                found["model"] = model.group(1).strip()
+            if (effort and model) or self.clock() >= deadline:
+                return found
+            time.sleep(0.3)
 
     @staticmethod
     def antigravity_resume_arguments(argv, identifier, catalog, *, dropped=None):
@@ -902,6 +1094,8 @@ class TargetWorker:
             and provider in entry["aliases"] for entry in catalog.values())))
         if provider not in ("codex", "claude", "agy") or not catalogued:
             raise Unavailable("proveedor_no_soportado")
+        if self.request.get("verb") == "agent.update" and provider != "claude":
+            raise Unavailable("proveedor_no_soportado")
         if self.request.get("verb") in ("agent.continue", "agent.recover") and provider != "codex":
             raise Unavailable("proveedor_no_soportado")
         if mode != "0":
@@ -914,7 +1108,7 @@ class TargetWorker:
         effective = self.native_id(provider, process, hook, pane)
         activity = {}
         native_configuration = None
-        relaunch = self.request.get("verb") == "agent.relaunch"
+        relaunch = self.request.get("verb") in ("agent.relaunch", "agent.update")
         # relaunch-v1 (08-11): work in progress or a pending permission answer is a warning
         # the plan shows; applying it escalates (the turn or the pending call is lost, never
         # the conversation). Only an unknown state still excludes.
@@ -923,8 +1117,7 @@ class TargetWorker:
             activity = self.codex_activity(self.tmux("capture-pane", "-p", "-t", pane["pane"]).splitlines())
             # Only a relaunch plan or its confirmed active target may admit work.
             # Identity and effective configuration are still proved natively.
-            allow_active = (self.request.get("verb") == "agent.relaunch"
-                            or self.request.get("expected", {}).get("active") is True)
+            allow_active = (relaunch or self.request.get("expected", {}).get("active") is True)
             if any(activity.values()) and not allow_active:
                 raise Unavailable("tareas_de_fondo")
             if any(activity.values()):
@@ -937,12 +1130,29 @@ class TargetWorker:
                 raise Unavailable("sin_pausa")
         else:
             native_configuration = self.quiescent_configuration(provider, process, effective, hook)
+        claude = {}
         if provider == "claude":
-            status = (self.claude_ficha(process) or {}).get("status")
-            warning = self.claude_warning(status, status == "idle" and bool(self.claude_background_work(process["pid"])))
+            ficha = self.claude_ficha(process) or {}
+            status = ficha.get("status")
+            if self.claude_shared(process, effective):
+                raise Unavailable("conversacion_compartida")
+            work = self.claude_background_work(process["pid"])
+            warning = self.claude_warning(status, status == "idle" and bool(work))
             if warning and not relaunch:
                 raise Unavailable(warning)
-        if self.request.get("action") == "inspect" and not (warning and provider == "claude"):
+            launcher = self.claude_launcher(process)
+            if self.request.get("action") == "inspect" and relaunch and not self.claude_logged_in(process, launcher):
+                raise Unavailable("sin_login")  # Reopening without a login leaves a useless window.
+            draft = None
+            if warning != "permisos":
+                draft = self.claude_composer(pane["pane"])
+            claude = {"background": len(work), "draft": bool(draft), "status": status,
+                      "message": bool(work) or status == "busy",
+                      "context_tokens": self.claude_context_tokens(process, effective),
+                      "version": ficha.get("version") if isinstance(ficha.get("version"), str) else None,
+                      "installed": self.claude_version(launcher) if launcher else None, "launcher": launcher}
+        if (self.request.get("action") == "inspect" and not (warning and provider == "claude")
+                and not claude.get("draft")):
             try:
                 self.require_empty_composer({"pane": pane}, allow_active=provider == "codex" and relaunch)
             except Unavailable as error:
@@ -970,6 +1180,8 @@ class TargetWorker:
         dropped = []
         resume = self.resume_arguments(provider, [self.launch_executable(provider, process), *process["argv"][1:]], effective,
                                        self.request["catalog"], native_configuration, dropped=dropped)
+        if self.request.get("verb") == "agent.update":
+            resume = self.with_options(resume, self.request.get("options") or {})
         if provider == "agy":
             resume = self.preserve_antigravity_configuration(resume, native_configuration)
         self.preserve_resume_permissions(provider, native_configuration, resume)
@@ -994,23 +1206,27 @@ class TargetWorker:
             proof["active"], proof["warning"] = True, warning
         if provider == "codex" and self.request.get("verb") in ("agent.continue", "agent.recover"):
             proof["quota_paused"] = True
+        if provider == "claude":
+            # relaunch-v1 (09-11): what the plan shows before confirming (cost, monitors, draft).
+            proof.update({key: claude[key] for key in ("background", "draft", "message", "context_tokens")})
+            proof["installation"] = {key: claude[key] for key in ("launcher", "version", "installed")}
         if runtime:
             return proof, root, process, resume
         return proof
 
-    @staticmethod
-    def launch_executable(provider, process):
+    def launch_executable(self, provider, process):
         """What to exec on reopen: the command it was launched by, so updates are picked up.
 
         Relaunching after an update is the point (Dani, 08-11). Claude's native installer runs
         each version from its own file (~/.local/share/claude/versions/<v>), so /proc/<pid>/exe
-        of a process started before the update is the OLD version. A bare name (``claude``) is
-        resolved again in the process's own PATH at exec time; a Claude versions path becomes
-        ``claude``. Any other path launch keeps its exact executable, as before.
+        of a process started before the update is the OLD version. A Claude versions path becomes
+        its stable launcher by ABSOLUTE path (relaunch-v1, 09-11: root in NOTBETTING has no
+        ~/.local/bin in its PATH, so a bare ``claude`` was not found). A bare name is resolved
+        again in the process's own PATH; any other path keeps its exact executable, as before.
         """
         first = process["argv"][0] if process.get("argv") else ""
         if provider == "claude" and ("/claude/versions/" in first or "/claude/versions/" in process["executable"]):
-            return "claude" if "/" in first or not first else first
+            return self.claude_launcher(process) or (first if "/" in first else process["executable"])
         if first and "/" not in first:
             return first
         return process["executable"]
@@ -1185,7 +1401,19 @@ class TargetWorker:
             raise Unavailable("no_soportado")
         # Keep the consent from the confirmed plan if the turn has just finished.
         proof = self.request["expected"]
-        if not proof.get("warning"):
+        self.claude_work, self.claude_draft = [], None
+        if self.request.get("provider") == "claude":
+            # relaunch-v1 (09-11), before closing anything: the login, then what must survive.
+            if not self.claude_logged_in(process, self.claude_launcher(process)):
+                raise Unavailable("sin_login")
+            self.claude_status = (self.claude_ficha(process) or {}).get("status")
+            if proof.get("warning") != "permisos":
+                self.claude_draft = self.claude_composer(proof["pane"]["pane"]) or None
+            if self.claude_draft:
+                self.save_draft(self.claude_draft)
+            self.claude_work = self.claude_background_work(process["pid"])
+            self.claude_work_file = self.save_monitors(self.claude_work)
+        if not proof.get("warning") and not self.claude_draft:
             # A warned target (work in progress, pending permission) is closed by escalation,
             # never by typing into its screen: nothing to prove about its composer.
             self.require_empty_composer(proof, allow_active=proof.get("active") is True)
@@ -1267,6 +1495,7 @@ class TargetWorker:
             raise Unavailable("generacion_cambiada")
         self.continue_codex(current, process, journal)
 
+    INFORMATIVE = ("background", "draft", "message", "context_tokens", "installation")
     # A failed clean exit escalates only for these; identity, authority or a folder-trust
     # question stop everything as before (relaunch-v1, 08-11).
     ESCALATES = frozenset({"dialogo_desconocido", "tareas_de_fondo", "permisos"})
@@ -1275,6 +1504,7 @@ class TargetWorker:
     def restart(self, proof, root, process, capsule_path, journal, events):
         owned = self.descendants(process["pid"])
         escalation = self.close_agent(proof, process, journal, events)
+        self.stop_monitors(getattr(self, "claude_work", []))
         replaced = None
         try:
             after = None if proof.get("respawn") else self.clean_shell(root, owned, events)
@@ -1295,7 +1525,8 @@ class TargetWorker:
         """
         provider = self.request.get("provider")
         skip = proof.get("warning") == "permisos" or (
-            provider == "claude" and (self.claude_ficha(process) or {}).get("status") != "idle")
+            provider == "claude" and ((self.claude_ficha(process) or {}).get("status") != "idle"
+                                      or getattr(self, "claude_draft", None)))
         if not skip:
             try:
                 if provider == "claude":
@@ -1454,9 +1685,10 @@ class TargetWorker:
                         and current["pane"] == proof["pane"] and current["configuration"] == proof["configuration"]
                         and current.get("native_configuration") == proof.get("native_configuration")):
                     self.require_empty_composer(current)
+                    extra = self.after_reopen(current) if self.request.get("provider") == "claude" else {}
                     if self.request.get("verb") != "agent.recover":
                         self.write(journal, {"state": "verificado", "effective_id": proof["effective_id"],
-                                             "escalation": escalation,
+                                             "escalation": escalation, **extra,
                                              **({"dropped_options": proof["dropped_options"]}
                                                 if proof.get("dropped_options") else {})})
                     return current
@@ -1596,11 +1828,14 @@ class TargetWorker:
 
     @staticmethod
     def same_target(current, expected):
-        """A confirmed active turn may finish; identity, generation and configuration may not change."""
-        if expected.get("active") is not True:
-            return current == expected
-        return ({key: value for key, value in current.items() if key not in ("active", "warning")}
-                == {key: value for key, value in expected.items() if key not in ("active", "warning")})
+        """A confirmed active turn may finish; identity, generation and configuration may not change.
+
+        What the plan only shows (relaunch-v1, 09-11: cost, monitors, draft, versions) is read
+        again when it is used, so it never makes a target look like another one.
+        """
+        ignored = TargetWorker.INFORMATIVE + (("active", "warning") if expected.get("active") is True else ())
+        return ({key: value for key, value in current.items() if key not in ignored}
+                == {key: value for key, value in expected.items() if key not in ignored})
 
     @staticmethod
     def codex_exit_composer(lines, row, original):
@@ -1662,19 +1897,239 @@ class TargetWorker:
                 return int(digits.group(1)) if digits else None
         return None
 
-    # Un hijo directo de Claude que no es un servidor MCP es trabajo suyo en marcha: una orden en
-    # segundo plano o un monitor (la sonda del árbol IA los cuenta igual).
-    MCP_SERVER = re.compile(r"mcp|_server|server\.(py|js)")
+    # relaunch-v1 (09-11): only Claude's own Bash wrapper is background work (a monitor or a
+    # shell in the background): ``bash [-l] -c '<prologue> … eval '<order>' …'`` whose prologue
+    # carries ``unsetenv`` or ``shell-snapshots``. MCP servers, npx included, are not.
+    @classmethod
+    def bash_wrapper_order(cls, argv):
+        """The order inside one of Claude's Bash wrappers (``eval '<order>'``), or None."""
+        if not argv or Path(argv[0]).name not in cls.SHELLS:
+            return None
+        script, index = None, 1
+        while index < len(argv):
+            if argv[index] in ("-c", "-lc", "-cl") and index + 1 < len(argv):
+                script = argv[index + 1]
+                break
+            if argv[index] not in ("-l", "--login"):
+                return None
+            index += 1
+        if not isinstance(script, str):
+            return None
+        position = script.find("eval '")
+        if position < 0 or not ("unsetenv" in script[:position] or "shell-snapshots" in script[:position]):
+            return None
+        lexer = shlex.shlex(script[position + len("eval "):], posix=True)
+        lexer.whitespace_split = True
+        try:
+            order = lexer.get_token()
+        except ValueError:
+            return None
+        return order or None
 
     @classmethod
     def is_background_task(cls, argv):
-        """True si este hijo directo de Claude es una tarea o un monitor, no un servidor MCP."""
-        return not cls.MCP_SERVER.search(" ".join(argv))
+        """True if this direct child of Claude is one of its monitors or background shells."""
+        return cls.bash_wrapper_order(argv) is not None
 
     def claude_background_work(self, pid):
-        """Tareas y monitores vivos de este Claude: sus hijos directos que no son servidores MCP."""
-        return [child for child in self.descendants(pid).values()
-                if child["parent"] == pid and self.is_background_task(child["argv"])]
+        """Live monitors and background shells of this Claude: ``[(process, order)]``."""
+        found = []
+        for child in self.descendants(pid).values():
+            order = self.bash_wrapper_order(child["argv"]) if child["parent"] == pid else None
+            if order:
+                found.append((child, order))
+        return found
+
+    STATE = Path.home() / ".local/state/uniconnect/relaunch-v1"
+    CLAUDE_TMP = re.compile(r"/tmp/claude-[0-9]+/[^\s'\"|;&<>()`$]+")
+
+    def window_stamp(self):
+        window = re.sub(r"[^A-Za-z0-9-]", "", str(self.request.get("window_id", "")))[:64] or "ventana"
+        return window + "-" + datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    def save_monitors(self, work):
+        """Before closing: every order, as it was, in ``monitores/<id>-<fecha>.txt`` (0600).
+
+        The files of ``/tmp/claude-<uid>/…`` they mention are copied next to it: the scratchpad
+        may not survive. Returns the saved file's path, or None when there was nothing to save.
+        """
+        if not work:
+            return None
+        directory = self.STATE / "monitores"
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        stamp = self.window_stamp()
+        path, copies = directory / (stamp + ".txt"), directory / stamp
+        lines = []
+        for number, (_, order) in enumerate(work, 1):
+            lines += ["# Monitor o shell de fondo %d" % number, order]
+            for mentioned in sorted(set(self.CLAUDE_TMP.findall(order))):
+                source = Path(mentioned)
+                try:
+                    info = source.stat()
+                    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_size > 16 * 1048576:
+                        continue
+                    copies.mkdir(exist_ok=True, mode=0o700)
+                    target = copies / source.relative_to("/tmp")
+                    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    shutil.copy2(source, target)
+                    lines.append("# Copia de %s: %s" % (source, target))
+                except (OSError, ValueError):
+                    continue
+            lines.append("")
+        self.write_text(path, "\n".join(lines))
+        return str(path)
+
+    @staticmethod
+    def write_text(path, text):
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(text)
+
+    def stop_monitors(self, work):
+        """After the close: end each monitor's whole tree, so a relaunched agent does not duplicate it."""
+        for process, _ in work:
+            try:
+                if self.same_process(process):
+                    self.terminate_tree(process, grace=3.0)
+            except (OSError, Unavailable):
+                continue
+
+    CLAUDE_RULE = re.compile(r"\s*─{8,}\s*")
+    SGR = re.compile(r"\x1b\[([0-9;:]*)m")
+
+    @classmethod
+    def undimmed(cls, styled):
+        """A captured line without its dimmed (SGR 2) parts: Claude's grey suggestion is dimmed."""
+        text, dim, position = [], False, 0
+        for match in cls.SGR.finditer(styled):
+            if not dim:
+                text.append(styled[position:match.start()])
+            codes = [code for code in re.split(r"[;:]", match.group(1)) if code != ""] or ["0"]
+            for code in codes:
+                if code == "2":
+                    dim = True
+                elif code in ("0", "22"):
+                    dim = False
+            position = match.end()
+        if not dim:
+            text.append(styled[position:])
+        return re.sub(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-9;?]*[A-Za-z]", "", "".join(text))
+
+    def claude_composer(self, pane):
+        """What the person has typed in Claude's composer (not the dimmed suggestion), or None.
+
+        The composer is the block between the two rules around the cursor: ``❯ `` on its first
+        line and two spaces of indent on the next ones. None if that block is not there.
+        """
+        row = int(self.tmux("display-message", "-p", "-t", pane, "#{cursor_y}"))
+        styled = self.tmux("capture-pane", "-e", "-p", "-t", pane).splitlines()
+        plain = [self.SGR.sub("", line) for line in styled]
+        if not 0 <= row < len(plain):
+            return None
+        top = next((index for index in range(row, -1, -1) if self.CLAUDE_RULE.fullmatch(plain[index])), None)
+        bottom = next((index for index in range(row, len(plain)) if self.CLAUDE_RULE.fullmatch(plain[index])), None)
+        if top is None or bottom is None or not top < row < bottom or bottom - top > 200:
+            return None
+        lines = []
+        for offset, line in enumerate(styled[top + 1:bottom]):
+            text = self.undimmed(line).replace("\xa0", " ").rstrip()
+            text = re.sub(r"^\s*│\s?|\s?│\s*$", "", text) if text.lstrip().startswith("│") else text
+            if offset == 0:
+                match = re.match(r"\s*[›❯>] ?(.*)", text)
+                if not match:
+                    return None
+                text = match.group(1)
+            elif text.startswith("  "):
+                text = text[2:]
+            lines.append(text)
+        return "\n".join(lines).strip("\n").rstrip()
+
+    def save_draft(self, draft):
+        """The person's draft, before closing, in ``borradores/<id>-<fecha>.txt`` (0600)."""
+        directory = self.STATE / "borradores"
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        path = directory / (self.window_stamp() + ".txt")
+        self.write_text(path, draft)
+        return path
+
+    def paste(self, pane, text):
+        """Write text into the composer WITHOUT Enter: a bracketed paste through a private buffer."""
+        name = "uc-relanzar-" + uuid.uuid4().hex[:8]
+        result = self.run(self.binary + ["load-buffer", "-b", name, "-"], input=text, capture_output=True,
+                          text=True, timeout=3)
+        if result.returncode:
+            raise Unavailable("host_inaccesible")
+        self.tmux("paste-buffer", "-p", "-d", "-b", name, "-t", pane)
+
+    def claude_context_tokens(self, process, session_id):
+        """input + cache_creation + cache_read of the last ``usage`` in its .jsonl, read from the end."""
+        try:
+            paths = list((self.claude_config_dir(process) / "projects").glob("*/" + session_id + ".jsonl"))
+        except OSError:
+            return None
+        if len(paths) != 1:
+            return None
+        try:
+            with open(paths[0], "rb") as handle:
+                size = handle.seek(0, os.SEEK_END)
+                position, carry = size, b""
+                while position > 0 and size - position < 16 * 1048576:
+                    step = min(262144, position)
+                    position -= step
+                    handle.seek(position)
+                    chunk = handle.read(step) + carry
+                    lines = chunk.split(b"\n")
+                    carry = lines.pop(0) if position > 0 else b""
+                    for line in reversed(lines):
+                        if b'"usage"' not in line:
+                            continue
+                        try:
+                            usage = json.loads(line).get("message", {}).get("usage")
+                        except (ValueError, AttributeError):
+                            continue
+                        if isinstance(usage, dict):
+                            values = [usage.get(key) or 0 for key in
+                                      ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")]
+                            if all(isinstance(value, int) for value in values):
+                                return sum(values)
+        except OSError:
+            return None
+        return None
+
+    def claude_launcher(self, process):
+        """The stable launcher to reopen with: ``~/.local/bin/claude``, else ``claude`` in its PATH.
+
+        Never ``versions/<x>`` (the old binary would come back). None if neither exists: the
+        caller then keeps what it ran with.
+        """
+        environ = self.claude_environ(process)
+        home = environ.get("HOME") or str(Path.home())
+        stable = Path(home) / ".local/bin/claude"
+        if os.access(stable, os.X_OK):
+            return str(stable)
+        found = shutil.which("claude", path=environ.get("PATH", os.defpath))
+        return found if found and "/claude/versions/" not in found else None
+
+    @staticmethod
+    def claude_version(path):
+        """Version a Claude binary or launcher resolves to (``…/versions/<v>``), or None."""
+        try:
+            real = os.path.realpath(path)
+        except (OSError, TypeError):
+            return None
+        match = re.search(r"/claude/versions/([0-9][0-9A-Za-z.+-]{0,40})$", real)
+        return match.group(1) if match else None
+
+    def claude_logged_in(self, process, launcher):
+        """``claude auth status`` (JSON) with its own environment says ``loggedIn: true``."""
+        environ = {key: value for key, value in self.claude_environ(process).items()
+                   if not key.startswith(("UNICONNECT_", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"))}
+        try:
+            result = self.run([launcher or "claude", "auth", "status"], stdin=subprocess.DEVNULL, capture_output=True,
+                              text=True, timeout=20, env=environ or None, cwd=process.get("cwd") or None)
+            return json.loads(result.stdout).get("loggedIn") is True
+        except (OSError, ValueError, AttributeError, subprocess.TimeoutExpired):
+            return False
 
     @staticmethod
     def claude_printed_id(screen):
@@ -1903,6 +2358,8 @@ class TargetWorker:
         action = self.request["action"]
         if action == "inspect":
             return self.inspect()
+        if action == "update":
+            return self.update_installation()
         if action == "adopt":
             return self.adopt_antigravity()
         if action == "start":

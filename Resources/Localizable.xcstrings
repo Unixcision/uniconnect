@@ -39125,6 +39125,39 @@
         }
       }
     },
+    "uniconnect.shared.actualizar.claude.de.esta.caja": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualizar Claude de esta caja…"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.actualizar.claude.de.esta.ventana": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualizar Claude de esta ventana…"
+          }
+        }
+      }
+    },
+    "uniconnect.shared.actualizar.claude.de.este.equipo": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualizar Claude de este equipo…"
+          }
+        }
+      }
+    },
     "uniconnect.shared.actualizar.estado": {
       "extractionState": "manual",
       "localizations": {

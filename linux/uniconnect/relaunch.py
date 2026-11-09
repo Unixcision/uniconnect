@@ -7,6 +7,7 @@ agent twice. No command lines, credentials or terminal contents enter the log.
 
 import copy
 import datetime
+import re
 import hashlib
 import hmac
 import json
@@ -21,10 +22,18 @@ from .event_log import NullLog
 from .vault import atomic_write, private_read
 
 
-VERBS = {"agent.relaunch", "transport.reconnect", "agent.continue", "agent.recover"}
+VERBS = {"agent.relaunch", "agent.update", "transport.reconnect", "agent.continue", "agent.recover"}
 TERMINAL = {"verificado", "necesita_usuario", "fallido", "omitido"}
+MODEL = re.compile(r"[a-z0-9.\-\[\]]{2,40}")
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
+# Lo que el plan enseña de cada Claude antes de confirmar, y lo que vuelve en su resultado.
+PLAN_FIELDS = ("background", "draft", "context_tokens", "message")
+RESULT_FIELDS = ("state", "cause", "effective_id", "escalation", "dropped_options", "version", "model", "effort",
+                 "background_saved", "message_sent", "draft_restored")
 PHASES = {
     "agent.relaunch": ("planificado", "cerrando", "reabriendo", "verificado"),
+    # relaunch-v1 (09-11): «Actualizar Claude» es el mismo proceso, con las mismas fases.
+    "agent.update": ("planificado", "cerrando", "reabriendo", "verificado"),
     "transport.reconnect": ("planificado", "reenganchando", "verificado"),
     "agent.continue": ("planificado", "entregando", "verificado"),
     "agent.recover": ("planificado", "cerrando", "reabriendo", "entregando", "verificado"),
@@ -83,16 +92,29 @@ class RelaunchService:
             raise RPCError("operacion_desconocida", "No se reconoce la operación") from None
         return value
 
-    def plan(self, verb, candidates, owner, authorized):
+    @staticmethod
+    def options(verb, value):
+        """agent.update admite modelo y effort (la clave que falta = «igual que estaba»); el resto, nada."""
+        if value is None:
+            return {} if verb == "agent.update" else None
+        if (verb != "agent.update" or not isinstance(value, dict) or set(value) - {"model", "effort"}
+                or ("model" in value and not (isinstance(value["model"], str) and MODEL.fullmatch(value["model"])))
+                or ("effort" in value and value["effort"] not in EFFORTS)):
+            raise RPCError("opciones_no_validas", "Opciones no válidas para esta operación")
+        return dict(value)
+
+    def plan(self, verb, candidates, owner, authorized, options=None):
         self.check(authorized)
         if verb not in VERBS:
             raise RPCError("alcance_no_valido", "Operación de IA no válida")
+        options = self.options(verb, options)
         selected, excluded, seen = [], [], set()
         for candidate in candidates:
             self.check(authorized)
             label = candidate["label"]
             try:
-                proof = self.adapter.probe(candidate, verb)
+                proof = (self.adapter.probe(candidate, verb, options=options) if verb == "agent.update"
+                         else self.adapter.probe(candidate, verb))
             except Exception as error:
                 excluded.append({"label": label, "cause": getattr(error, "cause", "host_inaccesible")})
                 self.log.info("relaunch", "relaunch.excluded", window=(candidate.get("record") or {}).get("id"),
@@ -112,8 +134,17 @@ class RelaunchService:
                          "generation": proof["generation"], "state": "planificado",
                          **({"active": True} if proof.get("active") is True else {}),
                          **({"warning": proof["warning"]} if proof.get("warning") else {}),
-                         **({"dropped_options": proof["dropped_options"]} if proof.get("dropped_options") else {})}
+                         **({"dropped_options": proof["dropped_options"]} if proof.get("dropped_options") else {}),
+                         **{key: proof[key] for key in PLAN_FIELDS if key in proof},
+                         **{key: (proof.get("installation") or {}).get(key) for key in ("version", "installed")
+                            if (proof.get("installation") or {}).get(key)}}
                         for candidate, proof in selected], "excluded": excluded}
+        if verb == "agent.update":
+            response["options"] = options
+        if any("context_tokens" in proof for _, proof in selected):
+            # El mensaje tras reabrir es lo que gasta cupo: se suma solo el de quien lo recibirá.
+            response["estimated_tokens"] = sum(proof.get("context_tokens") or 0 for _, proof in selected
+                                               if proof.get("message"))
         self.log.info("relaunch", "relaunch.plan", op=identifier,
                       detail={"verb": verb, "targets": len(selected), "excluded": len(excluded)})
         self.check(authorized)
@@ -122,7 +153,7 @@ class RelaunchService:
             if len(self.plans) >= 64:
                 raise RPCError("busy", "Hay demasiados planes pendientes")
             self.plans[identifier] = {"owner": owner, "hash": self.token_hash(token), "expires": expires,
-                                      "verb": verb, "selected": selected, "response": response}
+                                      "verb": verb, "options": options, "selected": selected, "response": response}
         return copy.deepcopy(response)
 
     @staticmethod
@@ -143,9 +174,12 @@ class RelaunchService:
     @staticmethod
     def response(value, recovered):
         results = copy.deepcopy(value["results"])
-        return {"operation_id": value["operation_id"], "recovered": recovered,
-                "operation_state": "terminada" if all(r["state"] in TERMINAL for r in results) else "en_curso",
-                "results": results}
+        response = {"operation_id": value["operation_id"], "recovered": recovered,
+                    "operation_state": "terminada" if all(r["state"] in TERMINAL for r in results) else "en_curso",
+                    "results": results}
+        if value.get("verb") == "agent.update":
+            response["updates"] = copy.deepcopy(value.get("updates", []))
+        return response
 
     def status(self, identifier, owner, authorized):
         self.check(authorized)
@@ -181,7 +215,7 @@ class RelaunchService:
             if self.clock() >= plan["expires"]:
                 raise RPCError("token_caducado", "El plan ha caducado; vuelve a previsualizar")
             value = {"operation_id": identifier, "owner": owner, "hash": digest,
-                     "verb": plan["verb"], "created_at": self.clock(),
+                     "verb": plan["verb"], "options": plan.get("options"), "created_at": self.clock(),
                      "dispatch": {proof["key"]: "not_sent" for _, proof in plan["selected"]},
                      "targets": [{"proof": proof, "record": {key: candidate.get("record", {}).get(key)
                                    for key in ("id", "tmux", "tmuxSocket", "agent", "cwd", "sessionId")},
@@ -199,15 +233,62 @@ class RelaunchService:
             self.running.update((identifier, proof["key"]) for _, proof in plan["selected"])
             response = self.response(value, False)
             self.plans.pop(identifier)
+        if plan["verb"] == "agent.update":
+            for installation, selected in self.installations(plan["selected"]).items():
+                try:
+                    self.submit(self.update_then_execute, identifier, installation, selected, plan.get("options"), authorized)
+                except Exception:
+                    for _, proof in selected:
+                        self.not_sent(identifier, proof["key"])
+            return response
         for candidate, proof in plan["selected"]:
-            try:
-                future = self.submit(self.execute, identifier, plan["verb"], candidate, proof, authorized)
-                if hasattr(future, "add_done_callback"):
-                    future.add_done_callback(lambda value, key=proof["key"]:
-                        self.not_sent(identifier, key) if value.cancelled() else None)
-            except Exception:
-                self.not_sent(identifier, proof["key"])
+            self.dispatch_one(identifier, plan["verb"], candidate, proof, authorized)
         return response
+
+    def dispatch_one(self, identifier, verb, candidate, proof, authorized, **extra):
+        try:
+            future = self.submit(self.execute, identifier, verb, candidate, proof, authorized, **extra)
+            if hasattr(future, "add_done_callback"):
+                future.add_done_callback(lambda value, key=proof["key"]:
+                    self.not_sent(identifier, key) if value.cancelled() else None)
+        except Exception:
+            self.not_sent(identifier, proof["key"])
+
+    @staticmethod
+    def installations(selected):
+        """Una instalación = equipo destino + su lanzador de Claude (relaunch-v1, 09-11)."""
+        groups = {}
+        for candidate, proof in selected:
+            host = candidate.get("connection") or "local"
+            launcher = (proof.get("installation") or {}).get("launcher")
+            groups.setdefault(json.dumps([host, launcher]), []).append((candidate, proof))
+        return groups
+
+    def update_then_execute(self, identifier, installation, selected, options, authorized):
+        """`claude update` UNA vez por instalación, antes de cerrar nada de ella; si falla, no se cierra nada."""
+        host, launcher = json.loads(installation)
+        label = "local" if host == "local" else (selected[0][0].get("workspace") or {}).get("hostLabel") or "ssh"
+        try:
+            self.check(authorized)
+            update = (self.adapter.update(selected[0][0], selected[0][1]) if launcher
+                      else {"state": "fallida", "from": None, "to": None})
+        except Exception:
+            update = {"state": "fallida", "from": None, "to": None}
+        entry = {"host": label, "state": update.get("state", "fallida"), "from": update.get("from"), "to": update.get("to")}
+        with self.lock:
+            value = self.read(identifier)
+            value.setdefault("updates", []).append(entry)
+            self.save(identifier, value)
+        self.log.write("info" if entry["state"] != "fallida" else "error", "relaunch", "relaunch.claude_update",
+                       op=identifier, detail=entry)
+        for candidate, proof in selected:
+            if entry["state"] == "fallida":
+                with self.lock:
+                    self.update(identifier, proof["key"], {"state": "omitido", "cause": "actualizacion_fallida"})
+                    self.running.discard((identifier, proof["key"]))
+                continue
+            self.dispatch_one(identifier, "agent.update", candidate, proof, authorized,
+                              options=options, updated_to=entry["to"])
 
     def not_sent(self, identifier, key):
         """Only durable pre-dispatch evidence permits saying no effect was sent."""
@@ -230,8 +311,7 @@ class RelaunchService:
                 if state not in TERMINAL and (state not in phases or phases.index(state) < phases.index(previous["state"])):
                     raise ValueError("invalid_relaunch_transition")
                 previous.pop("cause", None)
-                previous.update({k: v for k, v in result.items()
-                                 if k in ("state", "cause", "effective_id", "escalation", "dropped_options")})
+                previous.update({k: v for k, v in result.items() if k in RESULT_FIELDS})
                 if previous["state"] in TERMINAL:
                     self.log_result(identifier, value, previous)
             self.save(identifier, value)
@@ -258,7 +338,7 @@ class RelaunchService:
             self.log.error("relaunch", "relaunch.failed", **fields,
                            detail={"state": result["state"], "cause": result.get("cause")})
 
-    def execute(self, identifier, verb, candidate, proof, authorized):
+    def execute(self, identifier, verb, candidate, proof, authorized, **extra):
         try:
             with self.lock:
                 self.check(authorized)
@@ -271,7 +351,7 @@ class RelaunchService:
                 self.save(identifier, value)
             result = self.adapter.execute(candidate, verb, proof, identifier,
                 lambda result: self.update(identifier, proof["key"], result),
-                lambda: not self.closed and authorized())
+                lambda: not self.closed and authorized(), **extra)
             self.update(identifier, proof["key"], result)
         except Exception as error:
             if self.read(identifier).get("dispatch", {}).get(proof["key"]) == "not_sent":

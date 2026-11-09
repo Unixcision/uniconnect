@@ -50,7 +50,7 @@ class RelaunchFleet:
                         raise RPCError(error.get("code", "host_inaccesible"), "El equipo no pudo completar la petición")
                     return response["result"]
 
-    def plan(self, verb="agent.relaunch"):
+    def plan(self, verb="agent.relaunch", options=None):
         self.hosts = [{"id": "local", "label": "Este equipo", "call": self.local.dispatch}]
         seen = set()
         for peer in self.peers:
@@ -70,11 +70,15 @@ class RelaunchFleet:
                     status = host["call"]("host.status", {})
                     if "relaunch.v1" not in status.get("capabilities", []):
                         raise RPCError("no_soportado", "El equipo no anuncia relaunch.v1")
+                    if verb == "agent.update" and "relaunch.v1.update" not in status.get("capabilities", []):
+                        raise RPCError("no_soportado", "El equipo no anuncia relaunch.v1.update")
                     machine_id = status["machine_id"]
                     if machine_id == self.local.machine_id:
                         raise RPCError("duplicado", "Este equipo ya está incluido como local")
-                host["plan"] = host["call"]("relaunch.plan", {
-                    "verb": verb, "scope": {"kind": "machine", "id": machine_id}})
+                params = {"verb": verb, "scope": {"kind": "machine", "id": machine_id}}
+                if verb == "agent.update":
+                    params["options"] = options or {}
+                host["plan"] = host["call"]("relaunch.plan", params)
             except Exception as error:
                 host["error"] = getattr(error, "code", "host_inaccesible")
         with ThreadPoolExecutor(max_workers=4) as pool:
@@ -89,11 +93,16 @@ class RelaunchFleet:
                                 "label": host["label"] + " · " + target["label"]})
             excluded.extend({**item, "label": host["label"] + " · " + item["label"]}
                             for item in host["plan"]["excluded"])
-        return {"operation_id": str(uuid.uuid4()), "verb": verb, "targets": targets,
+        plan = {"operation_id": str(uuid.uuid4()), "verb": verb, "targets": targets,
                 "excluded": excluded, "fleet": self}
+        if any("estimated_tokens" in host.get("plan", {}) for host in self.hosts):
+            plan["estimated_tokens"] = sum(host.get("plan", {}).get("estimated_tokens") or 0 for host in self.hosts)
+        if verb == "agent.update":
+            plan["options"] = options or {}
+        return plan
 
     def operation(self, method):
-        results, in_progress = [], False
+        results, in_progress, updates = [], False, []
         for host in self.hosts:
             if "plan" not in host:
                 continue
@@ -116,6 +125,8 @@ class RelaunchFleet:
                         raise RPCError("generacion_cambiada", "El equipo configurado cambió después del plan")
                 value = host["call"](method, params)
                 results.extend({**item, "key": host["id"] + "|" + item["key"]} for item in value["results"])
+                updates.extend({**item, "host": host["label"] + " · " + str(item.get("host"))}
+                               for item in value.get("updates", []))
                 in_progress |= value["operation_state"] == "en_curso"
             except Exception as error:
                 cause = getattr(error, "code", "host_inaccesible")
@@ -124,5 +135,8 @@ class RelaunchFleet:
                 results.extend({"key": host["id"] + "|" + item["key"],
                                 "state": "planificado" if unknown else "necesita_usuario",
                                 "cause": cause} for item in plan["targets"])
-        return {"recovered": method == "relaunch.status", "operation_state": "en_curso" if in_progress else "terminada",
-                "results": results}
+        response = {"recovered": method == "relaunch.status", "operation_state": "en_curso" if in_progress else "terminada",
+                    "results": results}
+        if updates:
+            response["updates"] = updates
+        return response

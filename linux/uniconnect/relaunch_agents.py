@@ -25,9 +25,19 @@ from .transport import Transport
 # DESA por el camino real del adaptador (salida limpia en 7 s); misma conversación y mismas opciones.
 RELAUNCHABLE = ("codex", "agy", "claude")
 LOCAL_ONLY = ()
+# «Actualizar Claude» (09-11): probado en vivo por SSH en NOTBETTING (uc-prueba-relanzar: claude update,
+# 2.1.281 → 2.1.321, misma conversación, monitor guardado y relanzado una vez, borrador devuelto sin Intro,
+# --model/--effort). En local falta su prueba en vivo (ejecutaría claude update en el MINIPC): no se anuncia.
+UPDATE_KINDS = ("ssh",)
 CAPABILITIES = ("relaunch.v1",) + tuple(f"relaunch.v1.{provider}.{kind}"
                                         for provider in RELAUNCHABLE for kind in ("local", "ssh")
-                                        if not (kind == "ssh" and provider in LOCAL_ONLY))
+                                        if not (kind == "ssh" and provider in LOCAL_ONLY)) + (
+    "relaunch.v1.update",) + tuple(f"relaunch.v1.update.claude.{kind}" for kind in UPDATE_KINDS) + ("relaunch.v1.restaura",)
+
+
+def updatable(kind):
+    """¿Actualiza este equipo Claude en ese tipo de ventana (`local` o `ssh`)?"""
+    return kind in UPDATE_KINDS
 
 
 def relaunchable(provider, kind):
@@ -48,6 +58,15 @@ def contract_causes():
         return json.loads((Path(__file__).resolve().parents[2] / "contracts/relaunch-v1/causes.json").read_text())
     except (OSError, ValueError):
         return {}
+
+
+@functools.lru_cache(maxsize=1)
+def contract_messages():
+    """`contracts/relaunch-v1/mensajes.json`: los textos exactos tras reabrir, iguales en Mac y Linux."""
+    try:
+        return json.loads((Path(__file__).resolve().parents[2] / "contracts/relaunch-v1/mensajes.json").read_text())
+    except (OSError, ValueError):
+        return None
 
 
 def cause_text(translate, cause):
@@ -97,7 +116,7 @@ class RelaunchAgents:
         # A later desktop recovers its journal. Never issue another start here.
         self.stopped.set()
 
-    def request(self, candidate, action, **values):
+    def request(self, candidate, action, *, timeout=None, **values):
         record = candidate["record"]
         request = {"action": action, "session": record.get("tmux"),
                    "socket": record.get("tmuxSocket") or ("uniconnect" if candidate.get("connection") else "uniconnect-local"),
@@ -108,11 +127,13 @@ class RelaunchAgents:
         request["recovery_sha256"] = self.recovery_sha256
         if action == "start":
             request["identity_helper"] = self.identity_helper
+            if candidate["provider"] == "claude" and contract_messages():
+                request["messages"] = contract_messages()
         payload = base64.b64encode(json.dumps(request).encode()).decode()
         transport = self.transport_factory(candidate.get("connection"), socket_name=request["socket"])
         try:
             result = transport.run(shlex.join(["python3", "-c", self.bootstrap, payload]),
-                                   timeout=25 if action == "adopt" else 18)
+                                   timeout=timeout or (25 if action == "adopt" else 18))
         except Exception:
             raise RelaunchUnavailable("host_inaccesible") from None
         # Login-shell banners are allowed; only the bounded, versioned reply is parsed.
@@ -156,7 +177,16 @@ class RelaunchAgents:
             raise RelaunchUnavailable("generacion_cambiada")
         return self.request(candidate, "adopt")
 
-    def probe(self, candidate, verb):
+    def update(self, candidate, proof):
+        """`claude update` de la instalación de este objetivo, fuera del panel (relaunch-v1, 09-11)."""
+        launcher = (proof.get("installation") or {}).get("launcher")
+        try:
+            result = self.request(candidate, "update", launcher=launcher, timeout=300)
+        except RelaunchUnavailable:
+            return {"state": "fallida", "from": None, "to": None}
+        return {key: result.get(key) for key in ("state", "from", "to")}
+
+    def probe(self, candidate, verb, options=None):
         # Credential first: the desktop blanks the tmux of an SSH target without one, so that it can
         # never be downgraded to local; the user must read why (its box is locked), not «no tmux».
         if (candidate.get("workspace") or {}).get("kind") == "ssh" and candidate.get("connection") is None:
@@ -168,11 +198,17 @@ class RelaunchAgents:
             raise RelaunchUnavailable("sin_ia")
         if verb in ("agent.continue", "agent.recover") and candidate.get("provider") != "codex":
             raise RelaunchUnavailable("proveedor_no_soportado")
+        if verb == "agent.update" and candidate.get("provider") != "claude":
+            raise RelaunchUnavailable("proveedor_no_soportado")  # «Actualizar Claude» es solo para Claude.
         kind = "ssh" if (candidate.get("workspace") or {}).get("kind") == "ssh" or candidate.get("connection") else "local"
         if verb != "transport.reconnect" and not relaunchable(candidate.get("provider"), kind):
             # Una IA que este equipo no relanza aún (ver RELAUNCHABLE): fuera, sin tocar el destino.
             raise RelaunchUnavailable("proveedor_no_soportado")
-        return self.request(candidate, "inspect", verb=verb)
+        if verb == "agent.update" and not updatable(kind):
+            raise RelaunchUnavailable("no_soportado")  # Ver UPDATE_KINDS: sin prueba en vivo no se ofrece.
+        if verb == "agent.update":
+            return self.request(candidate, "inspect", verb=verb, options=options or {}, timeout=40)
+        return self.request(candidate, "inspect", verb=verb, timeout=40 if candidate.get("provider") == "claude" else None)
 
     def recover(self, target, operation_id):
         if self.resolve is None:
@@ -180,18 +216,19 @@ class RelaunchAgents:
         candidate = self.resolve(target)
         return self.request(candidate, "status", expected=target["proof"], operation_id=operation_id)
 
-    def execute(self, candidate, verb, proof, operation_id, changed, authorized):
+    def execute(self, candidate, verb, proof, operation_id, changed, authorized, *, options=None, updated_to=None):
         if not authorized():
             raise RelaunchUnavailable("permisos")
         if not self.validate(candidate):
             return {"state": "omitido", "cause": "generacion_cambiada"}
         try:
-            current = self.probe(candidate, verb)
+            current = self.probe(candidate, verb, options=options) if verb == "agent.update" else self.probe(candidate, verb)
         except RelaunchUnavailable as error:
             # A busy/unknown composer or provider dialog is a human gate, not
             # an execution failure. Keep the target untouched and surface the
             # exact reason to the UI so the user can resolve it first.
-            if error.cause in ("dialogo_desconocido", "permisos", "confianza_carpeta", "tareas_de_fondo"):
+            if error.cause in ("dialogo_desconocido", "permisos", "confianza_carpeta", "tareas_de_fondo",
+                               "sin_login", "conversacion_compartida"):
                 return {"state": "necesita_usuario", "cause": error.cause}
             raise
         if not TargetWorker.same_target(current, proof):
@@ -211,7 +248,9 @@ class RelaunchAgents:
         if not self.validate(candidate):
             return {"state": "omitido", "cause": "generacion_cambiada"}
         try:
-            result = self.request(candidate, "start", verb=verb, expected=proof, operation_id=operation_id)
+            extra = {"options": options or {}, "updated_to": updated_to} if verb == "agent.update" else {}
+            result = self.request(candidate, "start", verb=verb, expected=proof, operation_id=operation_id,
+                                  timeout=40 if candidate.get("provider") == "claude" else None, **extra)
         except RelaunchUnavailable as error:
             if error.cause != "host_inaccesible":
                 raise

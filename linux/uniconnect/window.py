@@ -203,7 +203,8 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
             "Edit": ["copy", "show_history", "cancel_selection", "paste", "find", "find_next", "find_previous", "hide_find", "find_selection", "send_ctrl_f"],
             "View": ["sidebar", "palette", "notifications", "notifications_latest_unread", "notifications_mark_all_read", "notifications_dismiss_all", "font_larger", "font_smaller", "font_reset", "split_right", "split_down", "equalize_panes", "maximize_pane", "focus_left", "focus_right", "focus_up", "focus_down", "fullscreen"],
             "Workspace": ["rename_workspace", "pin_workspace", "edit_ssh", "workspace_previous", "workspace_next", "workspace_up", "workspace_down", "workspace_first", "window_previous", "window_next", "rename_window", "pin_window", "window_up", "window_down", "window_first", "reconnect", "reconnect_all", "notifications_toggle_workspace", "notifications_toggle_window", "upload", "kill_tmux"],
-            "IA": ["relaunch_window", "adopt_antigravity_window", "relaunch_workspace", "relaunch_machine", "continue_window",
+            "IA": ["relaunch_window", "update_claude_window", "adopt_antigravity_window", "relaunch_workspace",
+                   "update_claude_workspace", "relaunch_machine", "update_claude_machine", "continue_window",
                    "continue_workspace", "continue_machine", "relaunch_history"],
             "Help": ["help", "help_shortcuts", "help_settings", "report_issue"],
         }
@@ -383,7 +384,8 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         else:
             self.context_menu(["window_details", "rename_window", "pin_window", "notifications_toggle_window", None,
                                ("Mover", ["window_up", "window_down", "window_first"]), None,
-                               "reconnect", "relaunch_window", "continue_window", "adopt_antigravity_window", None,
+                               "reconnect", "relaunch_window", "update_claude_window", "continue_window",
+                               "adopt_antigravity_window", None,
                                "close_window"], event)
 
     def workspace_context(self, _, event, workspace):
@@ -397,7 +399,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                 self._notification_context_selection = False
             self.context_menu(["new_window", "rename_workspace", "pin_workspace", "edit_ssh", "notifications_toggle_workspace", None,
                                ("Mover", ["workspace_up", "workspace_down", "workspace_first"]), None,
-                               "reconnect_workspace", "relaunch_workspace", "continue_workspace", None,
+                               "reconnect_workspace", "relaunch_workspace", "update_claude_workspace", "continue_workspace", None,
                                "close_workspace"], event)
             return True
         return False
@@ -566,7 +568,8 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
                                "notifications_toggle_window", None,
                                ("Mover", ["window_up", "window_down", "window_first", "move_window_left", "move_window_right"]),
                                "maximize_pane", None,
-                               "reconnect", "relaunch_window", "continue_window", "adopt_antigravity_window", None,
+                               "reconnect", "relaunch_window", "update_claude_window", "continue_window",
+                               "adopt_antigravity_window", None,
                                ("Cerrar varias", ["close_left_windows", "close_right_windows", "close_other_windows"]),
                                "close_window", "kill_tmux"], event)
             return True

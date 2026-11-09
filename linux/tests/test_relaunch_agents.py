@@ -372,8 +372,10 @@ class SharedPolicyTests(unittest.TestCase):
         source = RelaunchAgents.worker_source()
         payload = base64.b64encode(json.dumps({"action": "inspect", "session": "no valida", "socket": "x"}).encode()).decode()
         with tempfile.TemporaryDirectory(prefix="uc-worker-") as directory:
-            result = subprocess.run([sys.executable, "-c", source, payload], cwd=directory, capture_output=True,
-                                    text=True, timeout=30)
+            # Desde un fichero: en crudo ya pasa de los 128 KiB que admite un argumento (viaja comprimido).
+            (Path(directory) / "worker.py").write_text(source)
+            result = subprocess.run([sys.executable, str(Path(directory) / "worker.py"), payload], cwd=directory,
+                                    capture_output=True, text=True, timeout=30)
         self.assertEqual(result.stdout.strip(), 'UC_RELAUNCH_V1 {"error": "no_soportado"}', result.stderr)
         adapter = RelaunchAgents()
         self.assertLess(len(adapter.bootstrap), len(adapter.source))
@@ -384,7 +386,9 @@ class SharedPolicyTests(unittest.TestCase):
         probe = source.replace('if __name__ == "__main__":', "if False:") + (
             "\nprint(json.dumps(TargetWorker.no_prompt('codex', ['codex', 'resume', 'x', '-s=read-only'], "
             "{'codex': {'noPrompt': {'prefix': ['--yolo'], 'supersedes': [{'flag': '-s', 'takesValue': True}]}}})))")
-        result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=30)
+        with tempfile.TemporaryDirectory(prefix="uc-worker-probe-") as directory:
+            (Path(directory) / "probe.py").write_text(probe)
+            result = subprocess.run([sys.executable, str(Path(directory) / "probe.py")], capture_output=True, text=True, timeout=30)
         self.assertEqual(json.loads(result.stdout), ["codex", "--yolo", "resume", "x"], result.stderr)
 
     def test_announced_cells_are_exactly_the_linux_row_of_the_contract(self):
@@ -455,13 +459,18 @@ class ClaudeDialectTests(unittest.TestCase):
                                                         "--dangerously-skip-permissions"], self.SESSION, self.worker.request["catalog"])
         self.assertEqual(args, [executable, "--resume", self.SESSION, "--model", "opus", "--dangerously-skip-permissions"])
 
-    def test_background_work_is_any_direct_child_but_an_mcp_server(self):
-        # Dani: los monitores se guardan antes de cerrar, nunca se matan. Un Claude con una orden de
-        # fondo o un monitor no se cierra; sus servidores MCP no cuentan como trabajo.
-        self.assertTrue(TargetWorker.is_background_task(["/bin/bash", "-c", "tail -f /var/log/app.log"]))
-        self.assertTrue(TargetWorker.is_background_task(["python3", "vigila.py"]))
+    def test_background_work_is_only_claudes_own_bash_wrapper(self):
+        # relaunch-v1 (09-11): solo el envoltorio de Bash de Claude (eval '<orden>' con su prólogo) es un
+        # monitor o un shell de fondo. Un MCP, también por npx, y cualquier otro hijo no lo son.
+        wrapper = ("source /root/.claude/shell-snapshots/snapshot-bash-1.sh 2>/dev/null || true && "
+                   "{ \\builtin unalias -- 'unsetenv'; } >/dev/null 2>&1 || true && "
+                   "eval 'tail -n0 -F /tmp/x.log | grep --line-buffered HOLA' < /dev/null && pwd -P >| /tmp/claude-1-cwd")
+        self.assertTrue(TargetWorker.is_background_task(["/bin/bash", "-c", wrapper]))
+        self.assertTrue(TargetWorker.is_background_task(["/bin/bash", "-l", "-c", wrapper]))
+        self.assertFalse(TargetWorker.is_background_task(["/bin/bash", "-c", "tail -f /var/log/app.log"]))
+        self.assertFalse(TargetWorker.is_background_task(["npm", "exec", "resend-mcp"]))
+        self.assertFalse(TargetWorker.is_background_task(["python3", "vigila.py"]))
         self.assertFalse(TargetWorker.is_background_task(["node", "/usr/lib/node_modules/@x/mcp-server-git/dist/index.js"]))
-        self.assertFalse(TargetWorker.is_background_task(["python3", "-m", "chrome_mcp_server"]))
 
     def test_screen_reading_for_the_exit(self):
         screen = "Background work is running\n  1. Keep it running\n❯ 2. Exit and stop tasks\n"

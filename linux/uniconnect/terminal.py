@@ -617,7 +617,8 @@ class TerminalSurface(Gtk.Box):
             # «Historial para copiar» y «Salir de selección» viven en la barra de la ventana.
             self.owner.context_menu(["copy", "paste", "find", None,
                                      "new_window", "rename_window", "split_right", "split_down", None,
-                                     "reconnect", "relaunch_window", "continue_window", "adopt_antigravity_window",
+                                     "reconnect", "relaunch_window", "update_claude_window", "continue_window",
+                                     "adopt_antigravity_window",
                                      "window_details", "upload", None,
                                      "close_window"], event)
             return True
