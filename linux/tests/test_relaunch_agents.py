@@ -868,6 +868,16 @@ int main(void) {
 @unittest.skipUnless(os.name == "posix" and Path("/proc").exists() and shutil.which("cc") and shutil.which("tmux"),
                      "Needs isolated Linux runner, C compiler and tmux")
 class TargetIntegrationTests(unittest.TestCase):
+    def setUp(self):
+        # El trabajador real escribe sus diarios en ~/.local/state/uniconnect/relaunch-v1 del destino:
+        # en las pruebas, el de un HOME temporal, nunca el de root (09-11: tres operaciones de esta
+        # prueba aparecieron en el MINIPC como un relanzado fantasma).
+        home = tempfile.TemporaryDirectory(prefix="uc-relaunch-home-")
+        self.addCleanup(home.cleanup)
+        patcher = patch.dict(os.environ, {"HOME": home.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     @unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("tmux") and shutil.which("cc"),
                          "Linux tmux and C compiler required")
     def test_antigravity_closes_only_empty_idle_pane_and_reopens_same_conversation(self):
