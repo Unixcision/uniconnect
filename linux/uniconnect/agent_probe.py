@@ -426,7 +426,7 @@ def jwt_claims(token):
     return value if isinstance(value, dict) else {}
 
 
-def account_of(provider, uid, environment, read_file, user_of, read_at):
+def account_of(provider, uid, environment, read_file, user_of, read_at, usage_of=None):
     """La cuenta de una IA en este momento (contracts/accounts-v1), sin caché.
 
     - ``environment``: rutas y banderas del entorno del proceso (``account_environment``) o None si
@@ -434,6 +434,8 @@ def account_of(provider, uid, environment, read_file, user_of, read_at):
     - ``read_file(ruta)``: ``("ok", dict)``, ``("absent", None)``, ``("denied", None)`` o
       ``("invalid", None)``.
     - ``user_of(uid)``: ``(nombre, home)`` del usuario, o ``(None, None)``.
+    - ``usage_of(proveedor, carpeta, email)``: el último uso observado de ESA cuenta (``usage``), o
+      None. ``carpeta`` es la de Claude (``CLAUDE_CONFIG_DIR`` o ``~/.claude``) o ``CODEX_HOME``.
 
     ``state``: ``ok`` (sabemos con qué entra), ``sin_sesion`` (no hay cuenta ni clave),
     ``no_legible`` (sus ficheros no se pueden leer con este usuario) o ``desconocida`` (UniConnect
@@ -443,7 +445,7 @@ def account_of(provider, uid, environment, read_file, user_of, read_at):
     environment = environment or {}
     home = environment.get("HOME") or home_of_user
     account = {"state": "desconocida", "email": None, "method": None, "plan": None, "organization": None,
-               "os_user": name, "config": None, "read_at": read_at}
+               "os_user": name, "config": None, "read_at": read_at, "usage": None}
     if provider == "claude":
         for flag, method in (("CLAUDE_CODE_USE_BEDROCK", "bedrock"), ("CLAUDE_CODE_USE_VERTEX", "vertex"),
                              ("CLAUDE_CODE_USE_FOUNDRY", "foundry")):
@@ -475,6 +477,9 @@ def account_of(provider, uid, environment, read_file, user_of, read_at):
                 plan = CLAUDE_PLANS.get(oauth.get("organizationType"))
             account.update(state="ok", method="oauth", email=email.lower(), plan=plan,
                            organization=_text(oauth.get("organizationName")))
+            if usage_of is not None:
+                claude_dir = config_dir or (os.path.join(home, ".claude") if home else None)
+                account["usage"] = usage_of("claude", claude_dir, account["email"]) if claude_dir else None
         elif _flag(environment, "ANTHROPIC_API_KEY") or _flag(environment, "ANTHROPIC_AUTH_TOKEN"):
             account.update(state="ok", method="api_key")
         else:
@@ -499,12 +504,98 @@ def account_of(provider, uid, environment, read_file, user_of, read_at):
         if email:
             plan = _text(auth.get("chatgpt_plan_type"), 40)
             account.update(state="ok", method="chatgpt", email=email.lower(), plan=plan.capitalize() if plan else None)
+            if usage_of is not None:
+                account["usage"] = usage_of("codex", codex_home, account["email"])
         elif data.get("OPENAI_API_KEY") or _flag(environment, "OPENAI_API_KEY"):
             account.update(state="ok", method="api_key")
         else:
             account["state"] = "sin_sesion"
         return account
     return account
+
+
+CLAUDE_LIMIT_WINDOWS = {"five_hour": 300, "seven_day": 10080}
+
+
+def _iso_epoch(value):
+    """Un instante en segundos (o ya en ISO) como ISO 8601 UTC, o None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)) and value > 0:
+        try:
+            return iso_now(float(value))
+        except (OverflowError, OSError, ValueError):
+            return None
+    if isinstance(value, str) and re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", value):
+        return value[:19] + "Z"
+    return None
+
+
+def _percent(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return round(max(0.0, min(float(value), 1000.0)), 1)
+
+
+def claude_usage(document, email):
+    """``usage`` a partir de ``uniconnect-uso.json`` (lo que la barra de estado oyó a Claude).
+
+    Solo vale si es de ESA cuenta: tras un ``/login`` con otra, el fichero viejo no se atribuye.
+    """
+    if not isinstance(document, dict) or document.get("version") != 1 or not email:
+        return None
+    if not isinstance(document.get("email"), str) or document["email"].strip().lower() != email:
+        return None
+    limits = []
+    rate_limits = document.get("rate_limits")
+    for name, value in (rate_limits.items() if isinstance(rate_limits, dict) else ()):
+        if not isinstance(value, dict) or not re.match(r"[a-z0-9_]{1,40}\Z", str(name)):
+            continue
+        used = _percent(value.get("used_percentage"))
+        if used is None:
+            continue
+        window = CLAUDE_LIMIT_WINDOWS.get(name, 10080 if name.startswith("seven_day") else None)
+        limits.append({"id": name, "used_percent": used, "resets_at": _iso_epoch(value.get("resets_at")),
+                       "window_minutes": window})
+    order = {"five_hour": 0, "seven_day": 1}
+    limits.sort(key=lambda item: (order.get(item["id"], 2), item["id"]))
+    observed = _iso_epoch(document.get("observed_at"))
+    if not limits or not observed:
+        return None
+    return {"source": "statusline", "observed_at": observed, "limits": limits}
+
+
+def codex_usage(event):
+    """``usage`` a partir del último evento ``token_count`` con ``rate_limits`` de un rollout."""
+    if not isinstance(event, dict):
+        return None
+    payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+    rate_limits = payload.get("rate_limits")
+    observed = _iso_epoch(event.get("timestamp"))
+    if not isinstance(rate_limits, dict) or not observed:
+        return None
+    limits = []
+    for name in ("primary", "secondary"):
+        value = rate_limits.get(name)
+        if not isinstance(value, dict):
+            continue
+        used = _percent(value.get("used_percent"))
+        if used is None:
+            continue
+        window = value.get("window_minutes")
+        window = int(window) if isinstance(window, (int, float)) and not isinstance(window, bool) and window > 0 else None
+        resets = _iso_epoch(value.get("resets_at"))
+        if resets is None and isinstance(value.get("resets_in_seconds"), (int, float)):
+            try:
+                base = datetime.datetime.strptime(observed, "%Y-%m-%dT%H:%M:%SZ")
+                moment = base + datetime.timedelta(seconds=float(value["resets_in_seconds"]))
+                resets = moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+            except (ValueError, OverflowError):
+                resets = None
+        limits.append({"id": name, "used_percent": used, "resets_at": resets, "window_minutes": window})
+    if not limits:
+        return None
+    return {"source": "rollout", "observed_at": observed, "limits": limits}
 
 
 class HostReader:
@@ -669,6 +760,68 @@ class HostReader:
         self._account_files[path] = result
         return result
 
+    def usage_of(self, provider, folder, email):
+        """El último uso observado de esa cuenta en ese host, o None (contracts/accounts-v1 §2)."""
+        if provider == "claude":
+            status, document = self.read_account_file(os.path.join(folder, "uniconnect-uso.json"))
+            return claude_usage(document, email) if status == "ok" else None
+        if provider != "codex":
+            return None
+        event, observed = self._codex_latest_rate_limits(os.path.join(folder, "sessions"))
+        if event is None:
+            return None
+        try:
+            # Si auth.json cambió después (otro login), ese uso puede ser de la cuenta anterior.
+            if os.stat(os.path.join(folder, "auth.json")).st_mtime > observed + 60:
+                return None
+        except OSError:
+            return None
+        return codex_usage(event)
+
+    @staticmethod
+    def _codex_latest_rate_limits(sessions):
+        """(evento, instante) del último ``token_count`` con ``rate_limits`` en los rollouts recientes."""
+        candidates = []
+        try:
+            for year in sorted(os.listdir(sessions), reverse=True)[:2]:
+                for month in sorted(os.listdir(os.path.join(sessions, year)), reverse=True)[:2]:
+                    for day in sorted(os.listdir(os.path.join(sessions, year, month)), reverse=True)[:3]:
+                        folder = os.path.join(sessions, year, month, day)
+                        for name in os.listdir(folder):
+                            if name.endswith(".jsonl"):
+                                path = os.path.join(folder, name)
+                                try:
+                                    candidates.append((os.stat(path).st_mtime, path))
+                                except OSError:
+                                    continue
+        except OSError:
+            pass
+        for _, path in sorted(candidates, reverse=True)[:6]:
+            try:
+                with open(path, "rb") as handle:
+                    handle.seek(0, os.SEEK_END)
+                    size = handle.tell()
+                    handle.seek(max(0, size - 1048576))
+                    lines = handle.read().split(b"\n")
+            except OSError:
+                continue
+            for raw in reversed(lines):
+                if b'"rate_limits"' not in raw or b'"token_count"' not in raw:
+                    continue
+                try:
+                    event = json.loads(raw.decode("utf-8"))
+                except (ValueError, UnicodeError):
+                    continue
+                payload = event.get("payload") if isinstance(event, dict) else None
+                if not isinstance(payload, dict) or not isinstance(payload.get("rate_limits"), dict):
+                    continue
+                try:
+                    moment = datetime.datetime.strptime(str(event.get("timestamp"))[:19], "%Y-%m-%dT%H:%M:%S")
+                except ValueError:
+                    continue
+                return event, (moment - datetime.datetime(1970, 1, 1)).total_seconds()
+        return None, 0
+
     @staticmethod
     def user_of(uid):
         try:
@@ -807,7 +960,7 @@ def probe(socket_name="default", sessions=(), reader=None, now=None, accounts=Fa
             process = table.get(agent["pid"], {})
             agent["account"] = account_of(
                 agent["provider"], int(process.get("uid", -1)), reader.account_environment(agent["pid"]),
-                reader.read_account_file, reader.user_of, output["checked_at"])
+                reader.read_account_file, reader.user_of, output["checked_at"], getattr(reader, "usage_of", None))
             result = dict(result, agent=agent)
         output["sessions"].append({
             "name": name, "session_id": members[0]["session_id"],

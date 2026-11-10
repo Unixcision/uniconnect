@@ -9,7 +9,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from uniconnect import agent_probe
-from uniconnect.agent_probe import account_of
+from uniconnect.agent_probe import account_of, claude_usage, codex_usage
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from contracts_dir import contract
@@ -41,6 +41,40 @@ class AccountContractCaseTests(unittest.TestCase):
                 self.assertEqual(result, case["espera"])
                 self.assertNotIn("NO-SALE", json.dumps(result))
                 self.assertNotIn("no-sale", json.dumps(result))
+
+
+class UsageContractCaseTests(unittest.TestCase):
+    """Cada caso de ``usos`` en sonda-cuentas.json da exactamente su ``espera``."""
+
+    def test_every_usage_case(self):
+        data = json.loads(contract("accounts-v1", "sonda-cuentas.json").read_text(encoding="utf-8"))
+        self.assertTrue(data["usos"], "sonda-cuentas.json no trae ningún caso de uso")
+        for case in data["usos"]:
+            with self.subTest(caso=case["nombre"]):
+                if case["funcion"] == "claude_usage":
+                    result = claude_usage(case["documento"], case["email"])
+                else:
+                    result = codex_usage(case["documento"])
+                self.assertEqual(result, case["espera"])
+
+    def test_usage_is_only_read_for_an_account_with_email(self):
+        calls = []
+
+        def usage_of(provider, folder, email):
+            calls.append((provider, folder, email))
+            return {"source": "statusline", "observed_at": "2026-11-10T12:00:00Z", "limits": []}
+
+        def read(path):
+            if path == "/root/.claude.json":
+                return ("ok", {"oauthAccount": {"emailAddress": "dev@notbetting.com"}})
+            return ("absent", None)
+
+        ok = account_of("claude", 0, {"HOME": "/root"}, read, lambda uid: ("root", "/root"), "t", usage_of)
+        self.assertEqual(calls, [("claude", "/root/.claude", "dev@notbetting.com")])
+        self.assertEqual(ok["usage"]["source"], "statusline")
+        calls.clear()
+        none = account_of("claude", 0, {"HOME": "/x"}, lambda path: ("absent", None), lambda uid: ("x", "/x"), "t", usage_of)
+        self.assertEqual((none["state"], none["usage"], calls), ("sin_sesion", None, []))
 
 
 class ProbeAccountsFlagTests(unittest.TestCase):
@@ -110,7 +144,7 @@ class ProbeAccountsFlagTests(unittest.TestCase):
         account = data["sessions"][0]["agent"]["account"]
         self.assertEqual(account, {"state": "ok", "email": "dev@notbetting.com", "method": "oauth", "plan": "Ultra",
                                    "organization": None, "os_user": "root", "config": "/root/.claude.json",
-                                   "read_at": "2026-11-10T12:30:04Z"})
+                                   "read_at": "2026-11-10T12:30:04Z", "usage": None})
         self.assertEqual(reader.environments, [11])
 
     def test_unknown_option_is_still_misuse(self):

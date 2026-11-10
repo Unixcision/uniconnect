@@ -66,7 +66,25 @@
         "organization": "dev@notbetting.com's Organization",
         "os_user": "danielgomezmartin",
         "config": "/Users/danielgomezmartin/.claude.json",
-        "read_at": "2026-11-10T12:30:04Z"
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": {
+          "source": "statusline",
+          "observed_at": "2026-11-10T12:29:58Z",
+          "limits": [
+            {
+              "id": "five_hour",
+              "used_percent": 3.5,
+              "resets_at": "2026-11-10T14:30:00Z",
+              "window_minutes": 300
+            },
+            {
+              "id": "seven_day",
+              "used_percent": 51.0,
+              "resets_at": "2026-11-15T14:00:00Z",
+              "window_minutes": 10080
+            }
+          ]
+        }
       }
     },
     {
@@ -89,7 +107,19 @@
         "organization": null,
         "os_user": "danielgomezmartin",
         "config": "/Users/danielgomezmartin/.codex/auth.json",
-        "read_at": "2026-11-10T12:30:04Z"
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": {
+          "source": "rollout",
+          "observed_at": "2026-11-09T17:53:22Z",
+          "limits": [
+            {
+              "id": "primary",
+              "used_percent": 53.0,
+              "resets_at": "2026-11-11T10:50:07Z",
+              "window_minutes": 10080
+            }
+          ]
+        }
       }
     },
     {
@@ -123,7 +153,19 @@
         "organization": "dev@notbetting.com's Organization",
         "os_user": "root",
         "config": "/root/.claude.json",
-        "read_at": "2026-11-10T12:30:05Z"
+        "read_at": "2026-11-10T12:30:05Z",
+        "usage": {
+          "source": "statusline",
+          "observed_at": "2026-11-10T12:12:40Z",
+          "limits": [
+            {
+              "id": "seven_day",
+              "used_percent": 50.0,
+              "resets_at": "2026-11-15T14:00:00Z",
+              "window_minutes": 10080
+            }
+          ]
+        }
       }
     },
     {
@@ -157,7 +199,8 @@
         "organization": null,
         "os_user": "root",
         "config": "/root/.codex/auth.json",
-        "read_at": "2026-11-10T12:30:05Z"
+        "read_at": "2026-11-10T12:30:05Z",
+        "usage": null
       }
     },
     {
@@ -180,7 +223,8 @@
         "organization": null,
         "os_user": "noleakos",
         "config": "/home/noleakos/.claude.json",
-        "read_at": "2026-11-10T12:30:05Z"
+        "read_at": "2026-11-10T12:30:05Z",
+        "usage": null
       }
     },
     {
@@ -214,7 +258,8 @@
         "organization": null,
         "os_user": "root",
         "config": "/root/.claude.json",
-        "read_at": "2026-11-10T12:30:05Z"
+        "read_at": "2026-11-10T12:30:05Z",
+        "usage": null
       }
     },
     {
@@ -237,7 +282,8 @@
         "organization": null,
         "os_user": "dgomezm",
         "config": null,
-        "read_at": "2026-11-10T12:30:05Z"
+        "read_at": "2026-11-10T12:30:05Z",
+        "usage": null
       }
     },
     {
@@ -261,6 +307,115 @@
       "state": "host_inaccesible",
       "agent": null,
       "account": null
+    }
+  ],
+  "accounts": [
+    {
+      "key": "claude:dev@notbetting.com",
+      "provider": "claude",
+      "display_name": "Claude Code",
+      "email": "dev@notbetting.com",
+      "plan": "Ultra",
+      "organization": "dev@notbetting.com's Organization",
+      "windows": 2,
+      "host_keys": [
+        "local",
+        "ssh:root@203.0.113.10:22"
+      ],
+      "usage": {
+        "source": "statusline",
+        "observed_at": "2026-11-10T12:29:58Z",
+        "limits": [
+          {
+            "id": "five_hour",
+            "used_percent": 3.5,
+            "resets_at": "2026-11-10T14:30:00Z",
+            "window_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 51.0,
+            "resets_at": "2026-11-15T14:00:00Z",
+            "window_minutes": 10080
+          }
+        ],
+        "host_key": "local"
+      },
+      "history": [
+        {
+          "at": "2026-11-09T09:00:00Z",
+          "limits": {
+            "seven_day": 31.0
+          }
+        },
+        {
+          "at": "2026-11-09T21:00:00Z",
+          "limits": {
+            "seven_day": 42.0
+          }
+        },
+        {
+          "at": "2026-11-10T08:00:00Z",
+          "limits": {
+            "seven_day": 47.0,
+            "five_hour": 0.0
+          }
+        },
+        {
+          "at": "2026-11-10T12:29:58Z",
+          "limits": {
+            "seven_day": 51.0,
+            "five_hour": 3.5
+          }
+        }
+      ]
+    },
+    {
+      "key": "codex:it@iberiavo.com",
+      "provider": "codex",
+      "display_name": "Codex",
+      "email": "it@iberiavo.com",
+      "plan": "Pro",
+      "organization": null,
+      "windows": 1,
+      "host_keys": [
+        "ssh:root@178.105.40.42:22"
+      ],
+      "usage": null,
+      "history": []
+    },
+    {
+      "key": "codex:subs@iberiavo.com",
+      "provider": "codex",
+      "display_name": "Codex",
+      "email": "subs@iberiavo.com",
+      "plan": "Pro",
+      "organization": null,
+      "windows": 1,
+      "host_keys": [
+        "local"
+      ],
+      "usage": {
+        "source": "rollout",
+        "observed_at": "2026-11-09T17:53:22Z",
+        "limits": [
+          {
+            "id": "primary",
+            "used_percent": 53.0,
+            "resets_at": "2026-11-11T10:50:07Z",
+            "window_minutes": 10080
+          }
+        ],
+        "host_key": "local"
+      },
+      "history": [
+        {
+          "at": "2026-11-09T17:53:22Z",
+          "limits": {
+            "primary": 53.0
+          }
+        }
+      ]
     }
   ]
 }
