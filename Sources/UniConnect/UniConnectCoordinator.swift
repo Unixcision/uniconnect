@@ -47,6 +47,10 @@ final class UniConnectCoordinator: ObservableObject {
     private var localTmuxReconciliationTask: Task<Void, Never>?
     /// SSH windows' verified agents (UniConnectCoordinator+RemoteAgents); set by the composition root.
     var remoteAgentMonitor: UniConnectRemoteAgentMonitor?
+    /// «Cuentas de IA» (UniConnectCoordinator+Accounts); set by the composition root.
+    var accountsReader: UniConnectAccountsReader?
+    /// The «Cuentas de IA» window, created on first open.
+    var accountsWindowController: UniConnectAccountsWindowController?
     private var sshWorkspaceCreationTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private var sshWorkspaceCreationTokens: [ObjectIdentifier: UUID] = [:]
     private var sshCredentialEditTasks: [UUID: Task<Void, Never>] = [:]

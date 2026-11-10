@@ -337,6 +337,18 @@ struct cmuxApp: App {
                 credentialResolver: credentialResolver
             )
         )
+        // «Cuentas de IA»: the same shared probe with --accounts, and the usage history on disk.
+        UniConnectCoordinator.shared.configureAccounts(
+            reader: UniConnectAccountsReader(
+                processRunner: probeRunner,
+                credentialResolver: credentialResolver,
+                history: UniConnectAccountsHistoryStore(
+                    fileURL: FileManager.default.homeDirectoryForCurrentUser
+                        .appendingPathComponent("Library/Application Support/UniConnect", isDirectory: true)
+                        .appendingPathComponent("accounts-usage-history.json")
+                )
+            )
+        )
 
         let applicationStateReader = UniConnectClaudeUpdateApplicationStateReader(
             tabManagersProvider: tabManagersProvider
@@ -708,6 +720,14 @@ struct cmuxApp: App {
                     Label(
                         String(localized: "uniconnect.mobile.access.title", defaultValue: "Acceso remoto"),
                         systemImage: "iphone"
+                    )
+                }
+                Button {
+                    UniConnectCoordinator.shared.showAccountsWindow()
+                } label: {
+                    Label(
+                        String(localized: "menu.app.aiAccounts", defaultValue: "Cuentas de IA…"),
+                        systemImage: "person.crop.circle.badge.checkmark"
                     )
                 }
                 Button {

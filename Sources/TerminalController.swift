@@ -976,6 +976,21 @@ class TerminalController {
             }
             semaphore.wait()
             return v2Ok(id: request.id, result: v2AuthStatusPayload(timedOut: false))
+        case "accounts.list", "mobile.accounts.list":
+            // Read-only and up to ~12 s (one probe per host, in parallel): on the socket worker,
+            // never the main actor.
+            let semaphore = DispatchSemaphore(value: 0)
+            nonisolated(unsafe) var outcome: V2CallResult?
+            let params = request.params
+            Task { @MainActor [weak self] in
+                outcome = await self?.v2MobileAccountsList(params: params)
+                semaphore.signal()
+            }
+            semaphore.wait()
+            return v2Result(id: request.id, outcome ?? .err(code: "unavailable", message: String(
+                localized: "uniconnect.accounts.error.unavailable",
+                defaultValue: "No se pudieron leer las cuentas de las IA."
+            ), data: nil))
         case "terminal.details", "mobile.terminal.details":
             // Read-only and up to 10 s (the SSH probe): on the socket worker, never the main actor.
             let semaphore = DispatchSemaphore(value: 0)
@@ -21527,7 +21542,7 @@ class TerminalController {
         var capabilities = [
             "activity.v1", "box_update", "box_close", "file_put.v1", "inbox.v1", "recent_prompts", "run_as",
             "ssh_create.v1", "relaunch.v1",
-            "window_details.v1",
+            "window_details.v1", "accounts.v1",
         ]
         // What this Mac relaunches and updates, per provider and window kind: exactly its row of
         // contracts/relaunch-v1/proveedores.json (Claude local, and SSH through the Linux worker).
@@ -22794,6 +22809,41 @@ class TerminalController {
             localized: "uniconnect.mobile.importBusy",
             defaultValue: "Hay una importación en curso. Espera a que termine antes de modificar las ventanas."
         ), data: nil)
+    }
+
+    /// `mobile.accounts.list` (accounts.v1): every window's agent account and each account's usage,
+    /// read live (`contracts/accounts-v1`). Same JSON on the local socket (`accounts.list`).
+    private func v2MobileAccountsList(params: [String: Any]) async -> V2CallResult {
+        if UniConnectAppLock.shared.isLocked {
+            return .err(code: "locked", message: String(
+                localized: "uniconnect.windowDetails.error.locked",
+                defaultValue: "UniConnect está bloqueado."
+            ), data: nil)
+        }
+        var workspaceID: UUID?
+        if let raw = params["workspace_id"], !(raw is NSNull) {
+            guard let text = raw as? String, let id = UUID(uuidString: text) else {
+                return .err(code: "invalid_params", message: String(
+                    localized: "uniconnect.accounts.error.invalidParams",
+                    defaultValue: "El espacio de trabajo pedido no es válido."
+                ), data: nil)
+            }
+            guard UniConnectCoordinator.shared.allTabManagers().flatMap(\.tabs).contains(where: { $0.id == id }) else {
+                return .err(code: "not_found", message: String(
+                    localized: "uniconnect.accounts.error.notFound",
+                    defaultValue: "No se encontró ese espacio de trabajo."
+                ), data: nil)
+            }
+            workspaceID = id
+        }
+        guard let snapshot = await UniConnectCoordinator.shared.accountsSnapshot() else {
+            return .err(code: "unavailable", message: String(
+                localized: "uniconnect.accounts.error.unavailable",
+                defaultValue: "No se pudieron leer las cuentas de las IA."
+            ), data: nil)
+        }
+        let result = workspaceID.map { snapshot.restricted(toWorkspace: $0) } ?? snapshot
+        return .ok(result.mobilePayload)
     }
 
     /// `mobile.terminal.details` (window_details.v1): the «Detalles» of one window, read-only.
