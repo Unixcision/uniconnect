@@ -20,7 +20,10 @@ data class AccountsBoard(val machines: List<MachineAccounts>) {
         machine.failure?.takeIf { machine.report == null }?.let { AccountNotice.MachineFailed(machine.machineName, it) }
     } + machines.flatMap { machine ->
         machine.report?.hosts.orEmpty().filter { !it.readable }.map { host ->
-            AccountNotice.HostUnreadable(listOf(machine.machineName, host.label.ifBlank { host.hostKey }).filter { it.isNotBlank() }.joinToString(" · "), host.state)
+            AccountNotice.HostUnreadable(
+                listOf(machine.machineName, host.label.ifBlank { host.hostKey }).filter { it.isNotBlank() }.joinToString(" · "),
+                host.state, host.error,
+            )
         }
     }
 
@@ -96,6 +99,7 @@ data class AccountsBoard(val machines: List<MachineAccounts>) {
                     windows = entries.sumOf { it.second.windows },
                     hosts = entries.flatMap { (machine, item) -> item.hostKeys.map { hostLabel(machine, it) } }.distinct(),
                     usage = newest?.second?.usage,
+                    usageMachineID = newest?.first?.machineID,
                     seenOn = newest?.let { (machine, item) -> item.usage?.hostKey?.let { hostLabel(machine, it) } ?: machine.machineName },
                     history = entries.flatMap { it.second.history }.sortedBy { it.at }.distinctBy { it.at },
                     rows = rows.filter { it.email != null && it.email == email && it.window.agent?.provider == summary.provider },

@@ -150,6 +150,12 @@ data class MachineSnapshot(val serverName: String, val workspaces: List<RemoteWo
      */
     val listsAccounts: Boolean get() = ACCOUNTS in capabilities
 
+    /**
+     * Whether this machine can spend a free Codex reset of an account (`mobile.accounts.codex_reset`,
+     * `accounts.codex_reset.v1`). The only write of accounts-v1; without it the button is not shown.
+     */
+    val resetsCodex: Boolean get() = CODEX_RESET in capabilities
+
     companion object {
         /** The host implements mobile.workspace.update and mobile.terminal.update. */
         const val BOX_UPDATE = "box_update"
@@ -191,5 +197,8 @@ data class MachineSnapshot(val serverName: String, val workspaces: List<RemoteWo
 
         /** The host implements mobile.accounts.list (accounts.v1). */
         const val ACCOUNTS = "accounts.v1"
+
+        /** The host implements mobile.accounts.codex_reset (accounts-v1 §5). */
+        const val CODEX_RESET = "accounts.codex_reset.v1"
     }
 }

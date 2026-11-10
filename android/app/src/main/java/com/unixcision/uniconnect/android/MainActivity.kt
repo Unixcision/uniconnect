@@ -60,7 +60,10 @@ class MainActivity : ComponentActivity() {
                     InboxViewModel::class.java -> InboxViewModel(container.inboxClient, container.inboxPreviews)
                     DictationViewModel::class.java -> DictationViewModel(container.dictation, container.hostDictation, container.localDictation, container.speechModels)
                     DictationHistoryViewModel::class.java -> DictationHistoryViewModel(container.dictationHistory, container.hostTranscription, container.machines, container.sentMessages, container.phoneTranscriber)
-                    AccountsViewModel::class.java -> AccountsViewModel({ machine -> container.machineClient.accounts(machine) })
+                    AccountsViewModel::class.java -> AccountsViewModel(
+                        read = { machine -> container.machineClient.accounts(machine) },
+                        spendReset = { machine, target, key -> container.machineClient.codexReset(machine, target.accountKey, target.hostKey, key) },
+                    )
                     else -> throw IllegalArgumentException("unknown model ${modelClass.name}")
                 } as T
             }

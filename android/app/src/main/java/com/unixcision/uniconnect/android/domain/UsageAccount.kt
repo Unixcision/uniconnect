@@ -22,6 +22,8 @@ data class UsageAccount(
     val seenOn: String?,
     val history: List<UsageSample>,
     val rows: List<AccountRow>,
+    /** El equipo que dio [usage]: a él se le pide un reseteo gratis. */
+    val usageMachineID: String? = null,
 ) {
     /** Su color en [AccountPalette.COLORS], o nulo sin email. */
     val colorIndex: Int? get() = email?.takeIf { it.isNotBlank() }?.let(AccountPalette::indexOf)

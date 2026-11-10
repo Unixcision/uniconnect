@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
@@ -74,6 +75,9 @@ import com.unixcision.uniconnect.android.domain.AccountPalette
 import com.unixcision.uniconnect.android.domain.AccountRow
 import com.unixcision.uniconnect.android.domain.AccountStatus
 import com.unixcision.uniconnect.android.domain.AccountUsageMath
+import com.unixcision.uniconnect.android.domain.CodexResetMessage
+import com.unixcision.uniconnect.android.domain.CodexResetStep
+import com.unixcision.uniconnect.android.domain.CodexResetTarget
 import com.unixcision.uniconnect.android.domain.AccountsFailure
 import com.unixcision.uniconnect.android.domain.AccountsQuery
 import com.unixcision.uniconnect.android.domain.Machine
@@ -102,6 +106,8 @@ fun AccountsScreen(
     machines: List<Machine>,
     onBack: () -> Unit,
     onOpenWindow: (machineID: String, workspaceID: String, windowID: String) -> Unit,
+    /** Los equipos que anuncian `accounts.codex_reset.v1`: solo en ellos se ofrece gastar un reseteo. */
+    codexResetMachines: Set<String> = emptySet(),
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -173,6 +179,7 @@ fun AccountsScreen(
                         usageItems(
                             board, state.usageKey, math, instant, zone,
                             onSelect = model::showUsage, onOpenWindow = onOpenWindow, onShowWindows = model::showWindowsOf,
+                            resetTarget = { CodexResetTarget.of(it, codexResetMachines) }, reset = state.reset, onAskReset = model::askReset,
                         )
                     }
                     else -> {
@@ -189,6 +196,7 @@ fun AccountsScreen(
             }
         }
     }
+    ResetDialogs(state.reset, onConfirm = model::confirmReset, onCancel = model::cancelReset, onRetry = model::retryReset, onDismiss = model::dismissReset)
 }
 
 /** Título, «Leído en vivo hace N s» y «Actualizar», con un indicador mientras lee. */
@@ -321,11 +329,13 @@ private fun NoticeCard(notice: AccountNotice) {
                 listOfNotNull(notice.failure.code, notice.failure.detail).joinToString(" · ").ifEmpty { "?" },
             )
         }
-        is AccountNotice.HostUnreadable -> when (notice.state) {
-            AccountHost.UNREACHABLE -> stringResource(R.string.accounts_host_unreachable, notice.hostLabel)
-            AccountHost.VAULT_LOCKED -> stringResource(R.string.accounts_host_vault, notice.hostLabel)
-            else -> stringResource(R.string.accounts_host_other, notice.hostLabel, notice.state)
-        }
+        // La causa que da el equipo manda; sin ella, la del estado.
+        is AccountNotice.HostUnreadable -> notice.error?.let { error -> stringResource(R.string.accounts_host_other, notice.hostLabel, hostErrorText(error)) }
+            ?: when (notice.state) {
+                AccountHost.UNREACHABLE -> stringResource(R.string.accounts_host_unreachable, notice.hostLabel)
+                AccountHost.VAULT_LOCKED -> stringResource(R.string.accounts_host_vault, notice.hostLabel)
+                else -> stringResource(R.string.accounts_host_other, notice.hostLabel, notice.state)
+            }
     }
     Surface(Modifier.fillMaxWidth(), color = UniTheme.colors.warning.copy(alpha = .12f), shape = UniTheme.shapes.card) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -334,6 +344,68 @@ private fun NoticeCard(notice: AccountNotice) {
             Text(text, style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.text)
         }
     }
+}
+
+/** La causa de un host que no se pudo leer (`hosts[].error`); una que no se conoce, tal cual. */
+@Composable
+private fun hostErrorText(error: String): String = when (error) {
+    "sin_respuesta" -> stringResource(R.string.host_error_no_answer)
+    "sin_python3" -> stringResource(R.string.host_error_no_python)
+    "ssh_fallo" -> stringResource(R.string.host_error_ssh)
+    "salida_no_valida" -> stringResource(R.string.host_error_bad_output)
+    "tmux_no_disponible" -> stringResource(R.string.host_error_no_tmux)
+    "tmux_fallo" -> stringResource(R.string.host_error_tmux)
+    else -> error
+}
+
+/**
+ * La confirmación de gastar un reseteo gratis de Codex (§5) y lo que pasó después. Un fallo ofrece
+ * «Reintentar», que repite con la misma clave y nunca gasta dos.
+ */
+@Composable
+private fun ResetDialogs(step: CodexResetStep, onConfirm: () -> Unit, onCancel: () -> Unit, onRetry: () -> Unit, onDismiss: () -> Unit) {
+    when (step) {
+        is CodexResetStep.Confirming -> AlertDialog(
+            onDismissRequest = onCancel,
+            title = { Text(pluralStringResource(R.plurals.reset_confirm_title, step.target.available, step.target.available, step.target.email)) },
+            text = { Text(stringResource(R.string.reset_confirm_body), style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.reset_go), color = UniTheme.colors.danger) } },
+            dismissButton = { TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) } },
+            containerColor = UniTheme.colors.surface,
+        )
+        is CodexResetStep.Done, is CodexResetStep.Failed -> {
+            val message = CodexResetMessage.of(step) ?: return
+            val retries = step is CodexResetStep.Failed && message != CodexResetMessage.UNSUPPORTED && message != CodexResetMessage.INVALID
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { Text(stringResource(if (step is CodexResetStep.Done) R.string.reset_title else R.string.reset_failed_title)) },
+                text = { Text(resetMessageText(message, step), style = MaterialTheme.typography.bodyMedium) },
+                confirmButton = {
+                    if (retries) TextButton(onClick = onRetry) { Text(stringResource(R.string.reset_retry)) }
+                    else TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
+                },
+                dismissButton = { if (retries) TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } },
+                containerColor = UniTheme.colors.surface,
+            )
+        }
+        CodexResetStep.Idle, is CodexResetStep.Running -> Unit
+    }
+}
+
+@Composable
+private fun resetMessageText(message: CodexResetMessage, step: CodexResetStep): String = when (message) {
+    CodexResetMessage.DONE -> stringResource(R.string.reset_done, (step as? CodexResetStep.Done)?.target?.email.orEmpty())
+    CodexResetMessage.NOTHING_TO_RESET -> stringResource(R.string.reset_nothing)
+    CodexResetMessage.NO_CREDIT -> stringResource(R.string.reset_no_credit)
+    CodexResetMessage.ALREADY_REDEEMED -> stringResource(R.string.reset_already)
+    CodexResetMessage.UNKNOWN_OUTCOME -> stringResource(R.string.reset_unknown, (step as? CodexResetStep.Done)?.result?.outcomeWire.orEmpty())
+    CodexResetMessage.NOT_FOUND -> stringResource(R.string.reset_not_found)
+    CodexResetMessage.UNAVAILABLE -> stringResource(R.string.reset_unavailable)
+    CodexResetMessage.LOCKED -> stringResource(R.string.reset_locked)
+    CodexResetMessage.INVALID -> stringResource(R.string.reset_invalid)
+    CodexResetMessage.UNSUPPORTED -> stringResource(R.string.reset_unsupported)
+    CodexResetMessage.UNREACHABLE -> stringResource(R.string.reset_unreachable)
+    CodexResetMessage.OTHER -> stringResource(R.string.reset_other, (step as? CodexResetStep.Failed)?.failure?.code ?: "?")
 }
 
 /** Un grupo: su cabecera y sus ventanas en una tarjeta. */

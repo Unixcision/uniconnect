@@ -7,6 +7,9 @@ import com.unixcision.uniconnect.android.domain.AccountsBoard
 import com.unixcision.uniconnect.android.domain.AccountsFailure
 import com.unixcision.uniconnect.android.domain.AccountsQuery
 import com.unixcision.uniconnect.android.domain.AccountsReport
+import com.unixcision.uniconnect.android.domain.CodexResetResult
+import com.unixcision.uniconnect.android.domain.CodexResetStep
+import com.unixcision.uniconnect.android.domain.CodexResetTarget
 import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.domain.MachineAccounts
 import kotlinx.coroutines.CancellationException
@@ -20,6 +23,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -31,11 +36,16 @@ import java.util.concurrent.atomic.AtomicInteger
  * pinta nada viejo mientras llega lo nuevo. Quien llama decide el ritmo: la pantalla relee cada 15 s
  * solo mientras está a la vista.
  *
- * [read] es la llamada a un equipo; [scope] solo se pasa en las pruebas.
+ * [read] es la llamada a un equipo; [spendReset], la de gastar un reseteo gratis de Codex (§5);
+ * [newKey] crea la clave de idempotencia de cada confirmación. [scope] solo se pasa en las pruebas.
  */
 class AccountsViewModel(
     private val read: suspend (Machine) -> AccountsReport,
     scope: CoroutineScope? = null,
+    private val spendReset: suspend (Machine, CodexResetTarget, String) -> CodexResetResult = { _, _, _ ->
+        throw UnsupportedOperationException("mobile.accounts.codex_reset")
+    },
+    private val newKey: () -> String = { UUID.randomUUID().toString() },
 ) : ViewModel() {
     /** «Ventanas» o «Uso por cuenta» (§4.1). */
     enum class Tab { WINDOWS, USAGE }
@@ -51,6 +61,8 @@ class AccountsViewModel(
         val query: AccountsQuery = AccountsQuery(),
         val tab: Tab = Tab.WINDOWS,
         val usageKey: String? = null,
+        /** El reseteo gratis de Codex en curso, si hay uno. Sobrevive a salir de la pantalla. */
+        val reset: CodexResetStep = CodexResetStep.Idle,
     )
 
     private val work: CoroutineScope by lazy { scope ?: viewModelScope }
@@ -66,12 +78,20 @@ class AccountsViewModel(
      */
     private val generation = AtomicInteger()
 
+    /** Los equipos de la última petición, para releer tras un reseteo. */
+    @Volatile private var machines: List<Machine> = emptyList()
+
+    /** Si la pantalla está a la vista: tras un reseteo solo se relee si lo está. */
+    @Volatile private var visible = false
+
     /**
      * Lee ahora las cuentas de [machines] y vuelve cuando la pasada termina.
      *
      * Si ya hay una en marcha no se encola otra: se espera a esa, como pide el contrato.
      */
     suspend fun refresh(machines: List<Machine>) {
+        this.machines = machines
+        visible = true
         current?.takeIf { it.isActive }?.let { return it.await() }
         // Perezosa: queda apuntada como la pasada en curso antes de empezar a leer.
         val pass = work.async(Dispatchers.IO, start = CoroutineStart.LAZY) { readAll(machines) }
@@ -81,6 +101,7 @@ class AccountsViewModel(
 
     /** Deja de leer y olvida la lectura: la pantalla ya no está a la vista. */
     fun stop() {
+        visible = false
         generation.incrementAndGet()
         current?.cancel()
         current = null
@@ -103,6 +124,48 @@ class AccountsViewModel(
     /** «Ver sus ventanas»: la pestaña «Ventanas» con solo las de [email]. */
     fun showWindowsOf(email: String) = mutableState.update {
         it.copy(tab = Tab.WINDOWS, query = it.query.copy(chip = AccountChip.Email(email), search = ""))
+    }
+
+    /** Abre la confirmación de gastar un reseteo de [target], con una clave nueva. */
+    fun askReset(target: CodexResetTarget) = mutableState.update {
+        if (it.reset is CodexResetStep.Running) it else it.copy(reset = CodexResetStep.ask(target, newKey))
+    }
+
+    fun cancelReset() = mutableState.update { if (it.reset is CodexResetStep.Confirming) it.copy(reset = CodexResetStep.Idle) else it }
+
+    /** El «Gastar reseteo» de la confirmación. */
+    fun confirmReset() {
+        val step = state.value.reset as? CodexResetStep.Confirming ?: return
+        spend(CodexResetStep.confirm(step))
+    }
+
+    /** Repite un reseteo fallido con la misma clave: si ya se aplicó, Codex dice `alreadyRedeemed`. */
+    fun retryReset() {
+        val step = state.value.reset as? CodexResetStep.Failed ?: return
+        spend(CodexResetStep.retry(step))
+    }
+
+    fun dismissReset() = mutableState.update {
+        if (it.reset is CodexResetStep.Done || it.reset is CodexResetStep.Failed) it.copy(reset = CodexResetStep.Idle) else it
+    }
+
+    private fun spend(running: CodexResetStep.Running) {
+        mutableState.update { it.copy(reset = running) }
+        work.launch(Dispatchers.IO) {
+            val machine = machines.firstOrNull { it.id == running.target.machineID }
+            val next = if (machine == null) {
+                CodexResetStep.Failed(running.target, running.idempotencyKey, AccountsFailure(AccountsFailure.Kind.UNREACHABLE))
+            } else try {
+                CodexResetStep.Done(running.target, spendReset(machine, running.target, running.idempotencyKey))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                CodexResetStep.Failed(running.target, running.idempotencyKey, AccountsFailure.of(failure))
+            }
+            mutableState.update { if (it.reset == running) it.copy(reset = next) else it }
+            // El uso de después lo da una lectura nueva, no esta respuesta.
+            if (next is CodexResetStep.Done && visible) refresh(machines)
+        }
     }
 
     private suspend fun readAll(machines: List<Machine>) {

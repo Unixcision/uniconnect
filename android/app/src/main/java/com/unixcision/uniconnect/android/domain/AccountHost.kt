@@ -12,6 +12,11 @@ data class AccountHost(
     val kind: String,
     val state: String,
     val checkedAt: String?,
+    /**
+     * Por qué no se pudo leer, crudo (`sin_respuesta`, `sin_python3`, `ssh_fallo`,
+     * `salida_no_valida`, `tmux_no_disponible`, `tmux_fallo`…), o nulo si se leyó.
+     */
+    val error: String? = null,
 ) {
     /** Si sus ventanas se leyeron en esta llamada. */
     val readable: Boolean get() = state == OK

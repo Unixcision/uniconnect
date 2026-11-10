@@ -212,6 +212,29 @@ class NativeMachineClient(
         }
     }
 
+    override suspend fun codexReset(machine: Machine, accountKey: String, hostKey: String, idempotencyKey: String): CodexResetResult {
+        val result = call(machine, "mobile.accounts.codex_reset", codexResetParameters(accountKey, hostKey, idempotencyKey), CODEX_RESET_DEADLINE_MILLIS)
+        return try {
+            decodeCodexReset(result)
+        } catch (malformed: org.json.JSONException) {
+            throw MachineFailure.ProtocolMismatch()
+        }
+    }
+
+    /** Los parámetros de §5: la cuenta, el host donde se vio su uso y la clave de esa confirmación. */
+    internal fun codexResetParameters(accountKey: String, hostKey: String, idempotencyKey: String): JSONObject {
+        require(accountKey.isNotBlank() && hostKey.isNotBlank() && idempotencyKey.isNotBlank())
+        return JSONObject().put("account_key", accountKey).put("host_key", hostKey).put("idempotency_key", idempotencyKey)
+    }
+
+    /** La respuesta de `mobile.accounts.codex_reset`: `{account_key, host_key, outcome, usage}`. */
+    internal fun decodeCodexReset(result: JSONObject): CodexResetResult = CodexResetResult(
+        accountKey = result.text("account_key").orEmpty(),
+        hostKey = result.text("host_key").orEmpty(),
+        outcomeWire = result.text("outcome").orEmpty(),
+        usage = result.optJSONObject("usage")?.let(::decodeUsage),
+    )
+
     /**
      * Lee una respuesta de `accounts.v1`.
      *
@@ -232,6 +255,7 @@ class NativeMachineClient(
                     kind = host.text("kind") ?: "local",
                     state = host.text("state") ?: AccountHost.UNREACHABLE,
                     checkedAt = host.text("checked_at"),
+                    error = host.text("error"),
                 )
             },
             windows = List(windows.length()) { index ->
@@ -297,6 +321,9 @@ class NativeMachineClient(
             UsageLimit(id, percent, limit.instant("resets_at"), limit.whole("window_minutes")?.toInt())
         },
         hostKey = usage.text("host_key"),
+        resetCredits = usage.optJSONObject("reset_credits")?.let { credits ->
+            ResetCredits(credits.whole("available")?.toInt() ?: 0, credits.instant("next_expires_at"))
+        },
     )
 
     /** Un instante ISO 8601 de [key], o nulo si falta, es `null` o no se entiende. */
@@ -726,5 +753,7 @@ class NativeMachineClient(
         const val CREATE_DEADLINE_MILLIS = 45_000L
         /** How long «Cuentas de IA» waits for one machine: its probes take up to 12 s (accounts.v1). */
         const val ACCOUNTS_DEADLINE_MILLIS = 15_000L
+        /** How long a free Codex reset may take: the host's probe waits up to 8 s for Codex (§5). */
+        const val CODEX_RESET_DEADLINE_MILLIS = 20_000L
     }
 }

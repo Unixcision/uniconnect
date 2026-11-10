@@ -8,6 +8,10 @@ import com.unixcision.uniconnect.android.domain.AccountWindow
 import com.unixcision.uniconnect.android.domain.AccountsFailure
 import com.unixcision.uniconnect.android.domain.AccountsQuery
 import com.unixcision.uniconnect.android.domain.AccountsReport
+import com.unixcision.uniconnect.android.domain.CodexResetOutcome
+import com.unixcision.uniconnect.android.domain.CodexResetResult
+import com.unixcision.uniconnect.android.domain.CodexResetStep
+import com.unixcision.uniconnect.android.domain.CodexResetTarget
 import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.domain.MachineEndpoint
 import com.unixcision.uniconnect.android.domain.MachineFailure
@@ -27,6 +31,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -138,6 +143,49 @@ class AccountsViewModelTest {
         // Volver a «Uso por cuenta» deja abierta la misma cuenta.
         model.showTab(AccountsViewModel.Tab.USAGE)
         assertEquals("claude:ana@ejemplo.com", model.state.value.usageKey)
+    }
+
+    @Test fun `gastar un reseteo usa la clave de la confirmacion, tambien al reintentar`() = runBlocking {
+        val keys = Collections.synchronizedList(mutableListOf<String>())
+        var answers = false
+        var issued = 0
+        val model = AccountsViewModel(
+            { report("ana@ejemplo.com") }, scope,
+            spendReset = { _, target, key ->
+                keys += key
+                if (!answers) throw MachineFailure.DeadlineExceeded()
+                CodexResetResult(target.accountKey, target.hostKey, "alreadyRedeemed", null)
+            },
+            newKey = { "clave-${++issued}" },
+        )
+        model.refresh(listOf(mac))
+        val target = CodexResetTarget("mac", "codex:ana@ejemplo.com", "local", "ana@ejemplo.com", 2)
+
+        model.askReset(target)
+        model.confirmReset()
+        withTimeout(5_000) { model.state.first { it.reset is CodexResetStep.Failed } }
+        answers = true
+        model.retryReset()
+        val done = withTimeout(5_000) { model.state.first { it.reset is CodexResetStep.Done } }.reset as CodexResetStep.Done
+
+        assertEquals(listOf("clave-1", "clave-1"), keys.toList())
+        assertEquals(CodexResetOutcome.ALREADY_REDEEMED, done.result.outcome)
+        // Otra confirmación, otra clave.
+        model.dismissReset()
+        model.askReset(target)
+        assertEquals("clave-2", (model.state.value.reset as CodexResetStep.Confirming).idempotencyKey)
+    }
+
+    @Test fun `cancelar la confirmacion no gasta nada`() {
+        val calls = AtomicInteger()
+        val model = AccountsViewModel({ report("ana@ejemplo.com") }, scope, spendReset = { _, target, _ ->
+            calls.incrementAndGet(); CodexResetResult(target.accountKey, target.hostKey, "reset", null)
+        })
+        model.askReset(CodexResetTarget("mac", "codex:ana@ejemplo.com", "local", "ana@ejemplo.com", 1))
+        model.cancelReset()
+        model.confirmReset()
+        assertEquals(CodexResetStep.Idle, model.state.value.reset)
+        assertEquals(0, calls.get())
     }
 
     @Test fun `filtros y agrupacion sobreviven a cada pasada`() = runBlocking {

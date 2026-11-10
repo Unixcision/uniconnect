@@ -17,6 +17,7 @@ import com.unixcision.uniconnect.android.domain.AccountsFailure
 import com.unixcision.uniconnect.android.domain.AccountsQuery
 import com.unixcision.uniconnect.android.domain.AccountsReport
 import com.unixcision.uniconnect.android.domain.MachineAccounts
+import com.unixcision.uniconnect.android.domain.ResetCredits
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.json.JSONObject
@@ -69,6 +70,10 @@ class AccountsContractTest {
         assertEquals("Ultra", uniconnect.account?.plan)
         assertEquals("/Users/danielgomezmartin/.claude.json", uniconnect.account?.config)
         assertEquals("2026-11-10T12:30:04Z", uniconnect.account?.readAt)
+    }
+
+    @Test fun `cada host dice por que no se leyo`() {
+        assertEquals(listOf(null, null, null, "sin_respuesta", null, null), report.hosts.map { it.error })
     }
 
     @Test fun `un null del contrato es nulo, nunca el texto null`() {
@@ -204,8 +209,9 @@ class AccountsContractTest {
     @Test fun `avisos por cada host que no se pudo leer y por cada equipo que no contesto`() {
         assertEquals(
             listOf(
-                AccountNotice.HostUnreadable("Mac · ec2-user@54.167.34.64:22", AccountHost.UNREACHABLE),
-                AccountNotice.HostUnreadable("Mac · root@198.51.100.7:22", AccountHost.VAULT_LOCKED),
+                // La causa viaja con el aviso: «no contestó a tiempo».
+                AccountNotice.HostUnreadable("Mac · ec2-user@54.167.34.64:22", AccountHost.UNREACHABLE, "sin_respuesta"),
+                AccountNotice.HostUnreadable("Mac · root@198.51.100.7:22", AccountHost.VAULT_LOCKED, null),
             ),
             board.notices,
         )
@@ -289,8 +295,12 @@ class AccountsContractTest {
         val codex = accounts[2]
         val codexUsage = requireNotNull(codex.usage)
         assertEquals(LimitName.Week, LimitName.of(codexUsage.limits[0].id, codexUsage.limits[0].windowMinutes))
-        // Visto el 09-11 a las 17:53: a la hora de la respuesta es un dato viejo, en ámbar.
-        assertTrue(math.isOld(requireNotNull(codexUsage.observedAt)))
+        // Codex preguntado en vivo: el dato es de esta misma lectura, no viejo.
+        assertEquals("app_server", codexUsage.source)
+        assertFalse(math.isOld(requireNotNull(codexUsage.observedAt)))
+        assertEquals(ResetCredits(2, Instant.parse("2026-11-30T20:02:00Z")), codexUsage.resetCredits)
+        // La cuenta de Claude no trae reseteos gratis.
+        assertNull(usage.resetCredits)
         assertEquals(listOf("impuestos"), codex.rows.map { it.window.window })
         assertNull(accounts[1].usage)
     }

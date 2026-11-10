@@ -117,6 +117,10 @@ fun MachinesScreen(
         state.machines.filter { state.connections[it.id]?.snapshot?.listsAccounts == true }
     }
     val showsAccounts = accounts != null && accountMachines.isNotEmpty()
+    // Gastar un reseteo gratis de Codex solo se ofrece en los que anuncian accounts.codex_reset.v1.
+    val codexResetMachines = remember(accountMachines, state.connections) {
+        accountMachines.filter { state.connections[it.id]?.snapshot?.resetsCodex == true }.map { it.id }.toSet()
+    }
     val level = when {
         state.loading -> Level.LOADING
         window != null -> Level.TERMINAL
@@ -224,6 +228,7 @@ fun MachinesScreen(
                             accountsOpen = false
                             model.openNotice(NoticeRoute(machineID, workspaceID, windowID))
                         },
+                        codexResetMachines = codexResetMachines,
                     )
                     Level.TERMINAL -> key(machine?.id, workspace?.id, window?.id) {
                         TerminalScreen(

@@ -18,7 +18,12 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.CardGiftcard
+import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +57,9 @@ import com.unixcision.uniconnect.android.domain.AccountPalette
 import com.unixcision.uniconnect.android.domain.AccountUsage
 import com.unixcision.uniconnect.android.domain.AccountUsageMath
 import com.unixcision.uniconnect.android.domain.AccountsBoard
+import com.unixcision.uniconnect.android.domain.CodexResetStep
+import com.unixcision.uniconnect.android.domain.CodexResetTarget
+import com.unixcision.uniconnect.android.domain.ResetCredits
 import com.unixcision.uniconnect.android.domain.LimitName
 import com.unixcision.uniconnect.android.domain.UsageAccount
 import com.unixcision.uniconnect.android.domain.UsageChart
@@ -80,6 +88,9 @@ internal fun LazyListScope.usageItems(
     onSelect: (String?) -> Unit,
     onOpenWindow: (machineID: String, workspaceID: String, windowID: String) -> Unit,
     onShowWindows: (String) -> Unit,
+    resetTarget: (UsageAccount) -> CodexResetTarget? = { null },
+    reset: CodexResetStep = CodexResetStep.Idle,
+    onAskReset: (CodexResetTarget) -> Unit = {},
 ) {
     val accounts = board.usageAccounts
     if (accounts.isEmpty()) {
@@ -101,6 +112,16 @@ internal fun LazyListScope.usageItems(
         return
     }
     item { DetailHeader(selected) }
+    selected.usage?.resetCredits?.takeIf { it.available > 0 }?.let { credits ->
+        item {
+            CreditsCard(
+                credits, math, resetTarget(selected),
+                busy = reset is CodexResetStep.Running,
+                running = reset is CodexResetStep.Running && reset.target.accountKey == selected.key,
+                onAskReset = onAskReset,
+            )
+        }
+    }
     val usage = selected.usage
     if (usage == null || usage.limits.isEmpty()) {
         item { NoUsageCard(selected) }
@@ -148,6 +169,9 @@ private fun SummaryCard(account: UsageAccount, math: AccountUsageMath, modifier:
                 listOfNotNull(account.displayName, account.plan).joinToString(" · "),
                 style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.muted, maxLines = 1,
             )
+            account.usage?.resetCredits?.takeIf { it.available > 0 }?.let { credits ->
+                GiftBadge(pluralStringResource(R.plurals.usage_credits_badge, credits.available, credits.available))
+            }
             val usage = account.usage
             if (usage == null || usage.limits.isEmpty()) {
                 Text(noUsageText(account), style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.muted, maxLines = 4, overflow = TextOverflow.Ellipsis)
@@ -240,6 +264,63 @@ private fun LimitCard(account: UsageAccount, usage: AccountUsage, limit: UsageLi
             }
         }
     }
+}
+
+/**
+ * Los reseteos gratis de Codex de la cuenta y, si el equipo sabe gastarlos, «Usar un reseteo gratis».
+ * Mientras uno va, el botón queda deshabilitado; el de esta cuenta, con su indicador.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun CreditsCard(
+    credits: ResetCredits,
+    math: AccountUsageMath,
+    target: CodexResetTarget?,
+    busy: Boolean,
+    running: Boolean,
+    onAskReset: (CodexResetTarget) -> Unit,
+) {
+    GlassCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.CardGiftcard, null, Modifier.size(22.dp), tint = UniTheme.colors.success)
+                Spacer(Modifier.width(12.dp))
+                val expires = credits.nextExpiresAt
+                Text(
+                    if (expires != null) pluralStringResource(R.plurals.usage_credits, credits.available, credits.available, dayMonth(math, expires))
+                    else pluralStringResource(R.plurals.usage_credits_no_date, credits.available, credits.available),
+                    Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            if (target != null) {
+                FilledTonalButton(onClick = { onAskReset(target) }, enabled = !busy) {
+                    if (running) LoadingIndicator(Modifier.size(18.dp), color = UniTheme.colors.accent)
+                    else Icon(Icons.Rounded.RestartAlt, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.reset_button))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GiftBadge(text: String) {
+    Row(
+        Modifier.background(UniTheme.colors.success.copy(alpha = .14f), UniTheme.shapes.chip).padding(horizontal = 8.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(Icons.Rounded.CardGiftcard, null, Modifier.size(12.dp), tint = UniTheme.colors.success)
+        Text(text, style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.success, fontWeight = FontWeight.Bold, maxLines = 1)
+    }
+}
+
+/** «30 nov», en la hora local. */
+@Composable
+private fun dayMonth(math: AccountUsageMath, instant: Instant): String {
+    val local = math.local(instant)
+    val months = stringArrayResource(R.array.usage_months_short)
+    return stringResource(R.string.usage_day_month, local.dayOfMonth, months[local.monthValue - 1])
 }
 
 @Composable

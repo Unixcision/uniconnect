@@ -923,4 +923,60 @@
     <string name="usage_none_claude">Sin datos de uso todavía: aparecen en cuanto esta cuenta trabaje en una ventana con la barra de estado de UniConnect.</string>
     <string name="usage_none_codex">Sin datos de uso todavía: aparecen en cuanto Codex haga una petición.</string>
     <string name="usage_none_other">Sin datos de uso todavía.</string>
+    <!-- accounts.v1 §3 y §5: causa de cada host que falla y reseteos gratis de Codex. -->
+    <string name="host_error_no_answer">no contestó a tiempo</string>
+    <string name="host_error_no_python">no tiene python3</string>
+    <string name="host_error_ssh">falló la conexión SSH</string>
+    <string name="host_error_bad_output">respondió algo que no es la sonda</string>
+    <string name="host_error_no_tmux">no tiene tmux</string>
+    <string name="host_error_tmux">tmux dio un error</string>
+    <plurals name="usage_credits">
+        <item quantity="one">%1$d reseteo gratis disponible · caduca el %2$s</item>
+        <item quantity="other">%1$d reseteos gratis disponibles · el primero caduca el %2$s</item>
+    </plurals>
+    <plurals name="usage_credits_no_date">
+        <item quantity="one">%1$d reseteo gratis disponible</item>
+        <item quantity="other">%1$d reseteos gratis disponibles</item>
+    </plurals>
+    <plurals name="usage_credits_badge">
+        <item quantity="one">%1$d reseteo gratis</item>
+        <item quantity="other">%1$d reseteos gratis</item>
+    </plurals>
+    <string name="usage_day_month">%1$d %2$s</string>
+    <string-array name="usage_months_short">
+        <item>ene</item>
+        <item>feb</item>
+        <item>mar</item>
+        <item>abr</item>
+        <item>may</item>
+        <item>jun</item>
+        <item>jul</item>
+        <item>ago</item>
+        <item>sep</item>
+        <item>oct</item>
+        <item>nov</item>
+        <item>dic</item>
+    </string-array>
+    <string name="reset_button">Usar un reseteo gratis</string>
+    <plurals name="reset_confirm_title">
+        <item quantity="one">¿Gastar 1 de %1$d reseteo gratis de %2$s?</item>
+        <item quantity="other">¿Gastar 1 de %1$d reseteos gratis de %2$s?</item>
+    </plurals>
+    <string name="reset_confirm_body" formatted="false">Los límites de Codex de esta cuenta vuelven a 0 %. No se puede deshacer.</string>
+    <string name="reset_go">Gastar reseteo</string>
+    <string name="reset_title">Reseteo gratis de Codex</string>
+    <string name="reset_failed_title">No se pudo gastar el reseteo</string>
+    <string name="reset_done">Hecho: %1$s vuelve a empezar.</string>
+    <string name="reset_nothing">No había nada que resetear: no se ha gastado ninguno.</string>
+    <string name="reset_no_credit">Esta cuenta ya no tiene reseteos gratis.</string>
+    <string name="reset_already">Ese reseteo ya se había aplicado.</string>
+    <string name="reset_unknown">El equipo contestó «%1$s».</string>
+    <string name="reset_not_found">No hay ninguna ventana de esa cuenta abierta en ese equipo.</string>
+    <string name="reset_unavailable">No se pudo hablar con ese Codex. No se ha gastado ningún reseteo.</string>
+    <string name="reset_locked">UniConnect está bloqueado en ese equipo.</string>
+    <string name="reset_invalid">El equipo no entendió la petición.</string>
+    <string name="reset_unsupported">Este equipo todavía no sabe gastar reseteos de Codex.</string>
+    <string name="reset_unreachable">El equipo no contestó a tiempo y no se sabe si se gastó. Reintentar usa la misma clave: nunca gasta dos.</string>
+    <string name="reset_other">El equipo lo rechazó (%1$s).</string>
+    <string name="reset_retry">Reintentar</string>
 </resources>
