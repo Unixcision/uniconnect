@@ -86,6 +86,13 @@ final class UniConnectAppLock: ObservableObject {
     /// Identifies the evaluation in flight, so a late answer from a withdrawn one is ignored.
     private var authenticationAttempt = 0
     private var authenticationDeadlineTask: Task<Void, Never>?
+    /// An unlock that was asked for while UniConnect was not the active app. macOS cancels a
+    /// Touch ID panel requested from a background app at once («Se ha cancelado la
+    /// autenticación»), so every tap failed the same way and the lock looked dead forever
+    /// (10-nov-2026). The evaluation waits until the app is active instead.
+    private var authenticationAwaitsActivation = false
+    /// Follows app activation while locked: the cover floats only while UniConnect is active.
+    private var activationWatchTasks: [Task<Void, Never>] = []
     private var idleTimer: Timer?
     /// The executable composition root disconnects private remote clients on lock.
     var onLock: (@MainActor () -> Void)?
@@ -300,6 +307,12 @@ final class UniConnectAppLock: ObservableObject {
 
     func authenticate() {
         guard isLocked else { return }
+        if presentsWindows, !NSApp.isActive {
+            authenticationAwaitsActivation = true
+            NSApp.activate()
+            return
+        }
+        authenticationAwaitsActivation = false
         if isAuthenticating {
             // A tap while a panel is pending means it went missing: start over with a new one.
             authenticator.cancelPending()
@@ -332,6 +345,7 @@ final class UniConnectAppLock: ObservableObject {
                 localized: "uniconnect.lock.error.authenticationTimedOut",
                 defaultValue: "The authentication timed out. Press Unlock to try again."
             )
+            self.matchCoverToActivation()
         }
         authenticator.evaluate(
             policy,
@@ -348,6 +362,7 @@ final class UniConnectAppLock: ObservableObject {
                         localized: "uniconnect.lock.error.fingerprintNotRecognized",
                         defaultValue: "Fingerprint not recognized"
                     )
+                    self.matchCoverToActivation()
                 }
             }
         }
@@ -377,8 +392,54 @@ final class UniConnectAppLock: ObservableObject {
         }
     }
 
+    /// Starts following app activation (once): raises the cover and runs a deferred unlock when
+    /// UniConnect becomes active, and lowers the cover when another app is in front, so a lock
+    /// never takes the rest of the Mac hostage.
+    private func watchActivation() {
+        guard activationWatchTasks.isEmpty, presentsWindows else { return }
+        activationWatchTasks = [
+            Task { [weak self] in
+                for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification) {
+                    self?.applicationBecameActive()
+                }
+            },
+            Task { [weak self] in
+                for await _ in NotificationCenter.default.notifications(named: NSApplication.didResignActiveNotification) {
+                    self?.applicationResignedActive()
+                }
+            },
+        ]
+    }
+
+    private func applicationBecameActive() {
+        guard isLocked else { return }
+        for window in lockWindows {
+            window.level = .floating
+            window.orderFrontRegardless()
+        }
+        lockWindows.first?.makeKey()
+        if authenticationAwaitsActivation {
+            authenticate()
+        }
+    }
+
+    private func applicationResignedActive() {
+        guard isLocked, !isAuthenticating else { return }
+        matchCoverToActivation()
+    }
+
+    /// Floating while UniConnect is active; otherwise only over UniConnect's own windows.
+    private func matchCoverToActivation() {
+        guard isLocked, presentsWindows else { return }
+        let level: NSWindow.Level = NSApp.isActive ? .floating : .normal
+        for window in lockWindows where window.level != level {
+            window.level = level
+        }
+    }
+
     private func unlock() {
         let wasLaunchGate = isLaunchGate
+        authenticationAwaitsActivation = false
         isLocked = false
         isLaunchGate = false
         if wasLaunchGate { scheduleStartupSeed() }
@@ -396,6 +457,7 @@ final class UniConnectAppLock: ObservableObject {
     }
 
     private func showLockWindows() {
+        watchActivation()
         for window in lockWindows { window.orderOut(nil) }
         lockWindows.removeAll()
         for screen in NSScreen.screens {
@@ -406,14 +468,15 @@ final class UniConnectAppLock: ObservableObject {
                 defer: false
             )
             // Above the app's own windows, but below the system Touch ID dialog (a screen-saver
-            // level window would hide the sensor prompt in full screen).
-            window.level = .floating
+            // level window would hide the sensor prompt in full screen). Only while UniConnect is
+            // the active app: otherwise it would cover every other app too (10-nov-2026).
+            window.level = NSApp.isActive ? .floating : .normal
             window.isOpaque = true
             window.backgroundColor = NSColor(calibratedRed: 0.06, green: 0.06, blue: 0.08, alpha: 1)
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
             window.isReleasedWhenClosed = false
             window.hasShadow = false
-            window.contentView = NSHostingView(rootView: UniConnectLockView(lock: self))
+            window.contentView = UniConnectLockHostingView(rootView: UniConnectLockView(lock: self))
             window.setFrame(screen.frame, display: true)
             window.makeKeyAndOrderFront(nil)
             lockWindows.append(window)
@@ -450,6 +513,12 @@ final class UniConnectAppLock: ObservableObject {
 private final class UniConnectLockWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+}
+
+/// The lock screen's content: the first click works even while another app is active, so
+/// «Desbloquear» and «Salir» never need a second click to respond.
+private final class UniConnectLockHostingView: NSHostingView<UniConnectLockView> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 struct UniConnectLockView: View {
