@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.ManageAccounts
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Upgrade
@@ -92,10 +93,11 @@ fun NieveDrawer(model: DrawerModel, onGo: (HomeDestination) -> Unit) {
 
             NieveHeader(stringResource(R.string.drawer_general), margin = DRAWER_MARGIN, top = 14.dp)
             EntryGroup(
-                listOf(
+                listOfNotNull(
                     MenuEntry(Icons.Rounded.Computer, stringResource(R.string.drawer_machines), HomeDestination.Machines, current = true),
                     MenuEntry(Icons.Rounded.Upload, stringResource(R.string.upload_title), HomeDestination.Files),
                     MenuEntry(Icons.Rounded.History, stringResource(R.string.history_title), HomeDestination.History, value = stringResource(R.string.nieve_history_note)),
+                    MenuEntry(Icons.Rounded.ManageAccounts, stringResource(R.string.accounts_title), HomeDestination.Accounts).takeIf { model.showsAccounts },
                 ),
                 onGo,
             )

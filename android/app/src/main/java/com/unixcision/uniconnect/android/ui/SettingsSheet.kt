@@ -2,6 +2,7 @@ package com.unixcision.uniconnect.android.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -9,6 +10,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
@@ -71,6 +73,8 @@ fun SettingsSheet(
     dictationHistory: DictationHistoryViewModel? = null,
     /** La página del menú lateral que se abre; nula para todos los ajustes a la vez. */
     page: SettingsPage? = null,
+    /** Abre «Cuentas de IA»; nulo si ningún equipo anuncia `accounts.v1`, y entonces no se ofrece. */
+    onOpenAccounts: (() -> Unit)? = null,
 ) {
     val shows: (SettingsPage) -> Boolean = { page == null || page == it }
     val context = LocalContext.current
@@ -246,6 +250,9 @@ fun SettingsSheet(
                     checked = settings.probeOnOpen,
                     onChange = { onChange(settings.copy(probeOnOpen = it)) },
                 )
+                onOpenAccounts?.let { open ->
+                    SettingsLink(stringResource(R.string.accounts_title), stringResource(R.string.accounts_note), onClick = open)
+                }
             }
 
             Text(
@@ -623,6 +630,18 @@ private fun SettingsSwitch(title: String, note: String, checked: Boolean, onChan
             checked = checked, onCheckedChange = onChange,
             colors = SwitchDefaults.colors(checkedTrackColor = UniTheme.colors.accent, checkedThumbColor = UniTheme.colors.onAccent),
         )
+    }
+}
+
+/** A row that opens another screen, with the same shape as [SettingsSwitch]. */
+@Composable
+private fun SettingsLink(title: String, note: String, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            Text(note, color = UniTheme.colors.muted, style = MaterialTheme.typography.bodySmall)
+        }
+        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = UniTheme.colors.muted)
     }
 }
 

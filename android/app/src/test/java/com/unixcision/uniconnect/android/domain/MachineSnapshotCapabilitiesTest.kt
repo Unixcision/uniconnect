@@ -25,4 +25,10 @@ class MachineSnapshotCapabilitiesTest {
         val announced = snapshot("box_close", "run_as", "recent_prompts")
         assertTrue(announced.closesBoxes && announced.runsAs && announced.listsRecentPrompts)
     }
+
+    @Test fun accountsAreListedOnlyWhenTheMachineAnnouncesAccountsV1() {
+        assertTrue(snapshot("accounts.v1").listsAccounts)
+        assertFalse(snapshot("box_update", "relaunch.v1", "window_details.v1").listsAccounts)
+        assertFalse(snapshot("accounts").listsAccounts)
+    }
 }

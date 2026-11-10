@@ -45548,6 +45548,1007 @@
           }
         }
       }
+    },
+    "uniconnect.accounts.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuentas de IA"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.tab.windows": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ventanas"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.tab.usage": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uso por cuenta"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.alwaysOnTop": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Siempre delante"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.refresh": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualizar"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reading": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leyendo las cuentas…"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.readLive": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leído en vivo %@ · se actualiza cada 15 s"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay ventanas que coincidan."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.search": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar espacio, ventana, cuenta, host…"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.group.workspace": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Por espacio"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.group.account": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Por cuenta"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.showNoAgent": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ventanas sin IA"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.host.vaultClosed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer %@: la bóveda está cerrada"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.host.unreachable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer %@: no contestó a tiempo"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.method.apiKey": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clave de API"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.state.unknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuenta no expuesta"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.state.noSession": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin sesión"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.state.unreadableAs": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No legible como %@"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.state.unreadable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No legible"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.state.noAgent": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin IA"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.state.ambiguous": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Varias IA en la ventana"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.state.deadPane": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Panel cerrado"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.state.hostUnreachable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Host sin respuesta"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.state.noTmux": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin tmux"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.state.sessionNotLive": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La sesión tmux no está viva"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.filter.all": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todas"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.filter.noSession": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin sesión"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.filter.unread": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin leer"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.section.accountSubtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld ventanas · %2$lld hosts"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.section.noAgent": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin IA"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.summary": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resumen"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.accountsCount": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld cuentas"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.summaryTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todas las cuentas"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.noAccounts": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todavía no hay ninguna cuenta leída."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.wasReset": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reseteado el %@ · sin uso nuevo visto"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.resetsIn": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resetea en %1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.rate": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ritmo: %@ puntos al día"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.exhaustion": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se agotaría el %@"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.projection": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A este ritmo, llegarás al %lld %% antes del reset"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.chartTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Últimos 7 días"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.chartEmpty": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La gráfica se irá llenando con cada lectura de uso."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.chartTime": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hora"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.chartPercent": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uso"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.chartLimit": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Límite"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.chartReset": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.where": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dónde está"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.showWindows": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ver sus ventanas"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.seen": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visto %1$@ en %2$@"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.noneCodex": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin datos de uso todavía: aparecen en cuanto Codex haga una petición."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.noneClaude": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin datos de uso todavía: aparecen en cuanto esta cuenta trabaje en una ventana con la barra de estado de UniConnect."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.limit.fiveHour": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5 horas"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.limit.week": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Semana"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.limit.weekOpus": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Semana · Opus"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.limit.weekSonnet": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Semana · Sonnet"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.limit.weekFable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Semana · Fable"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.limit.hours": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld h"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.remaining.daysHours": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld d %2$lld h"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.remaining.hoursMinutes": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld h %2$lld min"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.remaining.minutes": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld min"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.age.seconds": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hace %lld s"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.age.minutes": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hace %lld min"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.age.hours": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hace %lld h"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.age.days": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hace %lld d"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.host.thisMac": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este Mac"
+          }
+        }
+      }
+    },
+    "menu.app.aiAccounts": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuentas de IA…"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.error.unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudieron leer las cuentas de las IA."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.error.invalidParams": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El espacio de trabajo pedido no es válido."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.error.notFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se encontró ese espacio de trabajo."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.host.noPython": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer %@: no tiene python3"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.host.sshFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer %@: falló la conexión SSH"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.host.badOutput": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer %@: respondió algo que no es la sonda"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.host.noTmux": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer %@: no tiene tmux"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.host.tmuxFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer %@: tmux dio un error"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.resetCredits": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld reseteos gratis disponibles"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.resetCreditsExpire": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "el primero caduca el %@"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.button": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar un reseteo gratis"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.confirmTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Gastar 1 de %1$lld reseteos gratis de %2$@?"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.confirmBody": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los límites de Codex de esta cuenta vuelven a 0 %. No se puede deshacer."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.confirmButton": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gastar reseteo"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.notFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay ninguna ventana de esa cuenta abierta en ese equipo."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo hablar con ese Codex. No se ha gastado ningún reseteo."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.done": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hecho: %@ vuelve a empezar."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.nothing": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No había nada que resetear: no se ha gastado ninguno."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.noCredit": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta cuenta ya no tiene reseteos gratis."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.already": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ese reseteo ya se había aplicado."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.invalidParams": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falta la cuenta de Codex, el equipo o la clave del reseteo."
+          }
+        }
+      }
+    },
+    "uniconnect.windowDetails.source.threads": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tabla de conversaciones de Codex"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.filter.agentLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IA"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.filter.allAgents": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todas las IA"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.section.agentSubtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld ventanas · %2$lld cuentas"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.group.agent": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Por IA"
+          }
+        }
+      }
     }
   }
 }

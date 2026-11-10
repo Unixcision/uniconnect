@@ -815,4 +815,168 @@
     <string name="design_no_filtered_windows">Ninguna ventana en este estado ahora mismo.</string>
     <!-- recent-prompts.v1: la pestaña de ventanas por su último prompt, común a los cuatro diseños. -->
     <string name="design_tab_recent">Recientes</string>
+    <!-- accounts.v1: «Cuentas de IA», la cuenta de cada IA leída en vivo en cada equipo. -->
+    <string name="accounts_title">Cuentas de IA</string>
+    <string name="accounts_note">Con qué cuenta está cada IA de tus equipos, leído en vivo.</string>
+    <string name="accounts_open">Ver las cuentas de IA</string>
+    <string name="accounts_read_seconds">Leído en vivo hace %1$d s</string>
+    <string name="accounts_read_minutes">Leído en vivo hace %1$d min</string>
+    <string name="accounts_reading">Leyendo en vivo…</string>
+    <string name="accounts_refresh">Actualizar</string>
+    <string name="accounts_chip_all">Todas · %1$d</string>
+    <string name="accounts_chip_email">%1$s · %2$d</string>
+    <string name="accounts_chip_no_session">Sin sesión · %1$d</string>
+    <string name="accounts_chip_unread">Sin leer · %1$d</string>
+    <string name="accounts_search">Buscar espacio, ventana, cuenta, host o usuario</string>
+    <string name="accounts_search_clear">Borrar la búsqueda</string>
+    <string name="accounts_by_workspace">Por espacio</string>
+    <string name="accounts_by_account">Por cuenta</string>
+    <string name="accounts_without_agent">Ventanas sin IA</string>
+    <string name="accounts_host_unreachable">No se pudo leer %1$s: no contestó</string>
+    <string name="accounts_host_vault">No se pudo leer %1$s: la bóveda está cerrada</string>
+    <string name="accounts_host_other">No se pudo leer %1$s: %2$s</string>
+    <string name="accounts_machine_unreachable">No se pudo leer el equipo %1$s: no contestó</string>
+    <string name="accounts_machine_locked">No se pudo leer el equipo %1$s: UniConnect está bloqueado</string>
+    <string name="accounts_machine_unsupported">%1$s todavía no enseña las cuentas de sus IA</string>
+    <string name="accounts_machine_rejected">No se pudo leer el equipo %1$s: lo rechazó (%2$s)</string>
+    <string name="accounts_machine_malformed">No se pudo leer el equipo %1$s: su respuesta no se entiende</string>
+    <string name="accounts_status_no_session">Sin sesión</string>
+    <string name="accounts_status_not_readable_as">No legible como %1$s</string>
+    <string name="accounts_status_not_readable">No legible</string>
+    <string name="accounts_status_not_exposed">Cuenta no expuesta</string>
+    <string name="accounts_status_host_unreachable">Host sin respuesta</string>
+    <string name="accounts_status_no_agent">Sin IA</string>
+    <string name="accounts_status_session_not_alive">La sesión tmux no está viva</string>
+    <string name="accounts_status_no_tmux">Sin sesión tmux</string>
+    <string name="accounts_status_dead_pane">El panel está muerto</string>
+    <string name="accounts_status_ambiguous">No se sabe con certeza qué IA es</string>
+    <string name="accounts_status_no_email">Sesión sin email</string>
+    <string name="accounts_status_unknown">Estado no reconocido: %1$s</string>
+    <string name="accounts_method_api_key">Clave de API</string>
+    <string name="accounts_method_bedrock">Bedrock</string>
+    <string name="accounts_method_vertex">Vertex</string>
+    <string name="accounts_method_foundry">Foundry</string>
+    <string name="accounts_group_no_session">Sin sesión</string>
+    <string name="accounts_group_unread">Sin leer</string>
+    <string name="accounts_group_without_agent">Ventanas sin IA</string>
+    <string name="accounts_group_no_email">Sesión sin email</string>
+    <plurals name="accounts_group_windows">
+        <item quantity="one">%1$d ventana</item>
+        <item quantity="other">%1$d ventanas</item>
+    </plurals>
+    <plurals name="accounts_group_hosts">
+        <item quantity="one">en %1$d host</item>
+        <item quantity="other">en %1$d hosts</item>
+    </plurals>
+    <string name="accounts_empty_machines">Ningún equipo conectado enseña todavía las cuentas de sus IA.</string>
+    <string name="accounts_empty_filter">Ninguna ventana con este filtro.</string>
+    <string name="accounts_empty">No hay ventanas en los equipos leídos.</string>
+    <!-- accounts.v1 §4.1: pestaña «Uso por cuenta». -->
+    <string name="accounts_tab_windows">Ventanas</string>
+    <string name="accounts_tab_usage">Uso por cuenta</string>
+    <string name="usage_summary">Resumen</string>
+    <string name="usage_summary_title">Todas las cuentas</string>
+    <string name="usage_no_accounts">Ningún equipo da todavía el uso de sus cuentas.</string>
+    <plurals name="usage_in_windows">
+        <item quantity="one">En %1$d ventana</item>
+        <item quantity="other">En %1$d ventanas</item>
+    </plurals>
+    <plurals name="usage_hosts">
+        <item quantity="one">%1$d host</item>
+        <item quantity="other">%1$d hosts</item>
+    </plurals>
+    <string name="usage_limit_five_hours">5 horas</string>
+    <string name="usage_limit_week">Semana</string>
+    <string name="usage_limit_week_opus">Semana · Opus</string>
+    <string name="usage_limit_week_sonnet">Semana · Sonnet</string>
+    <string name="usage_limit_week_fable">Semana · Fable</string>
+    <string name="usage_limit_hours">%1$d h</string>
+    <string name="usage_resets_in">Resetea en %1$s · %2$s</string>
+    <string name="usage_was_reset">Reseteado el %1$s · sin uso nuevo visto</string>
+    <string name="usage_span_days_hours">%1$d d %2$d h</string>
+    <string name="usage_span_hours_minutes">%1$d h %2$d min</string>
+    <string name="usage_span_minutes">%1$d min</string>
+    <string name="usage_weekday_time">%1$s %2$02d:%3$02d</string>
+    <string-array name="usage_weekdays_short">
+        <item>lun</item>
+        <item>mar</item>
+        <item>mié</item>
+        <item>jue</item>
+        <item>vie</item>
+        <item>sáb</item>
+        <item>dom</item>
+    </string-array>
+    <string name="usage_seen">Visto %1$s en %2$s</string>
+    <string name="usage_seen_nowhere">Visto %1$s</string>
+    <string name="usage_age_seconds">hace %1$d s</string>
+    <string name="usage_age_minutes">hace %1$d min</string>
+    <string name="usage_age_hours">hace %1$d h</string>
+    <string name="usage_age_days">hace %1$d d</string>
+    <string name="usage_rate">Ritmo: %1$s puntos al día</string>
+    <string name="usage_projection">A este ritmo, llegarás al %1$d %% antes del reset</string>
+    <string name="usage_exhaustion">Se agotaría el %1$s</string>
+    <string name="usage_chart_title">Últimos 7 días</string>
+    <string name="usage_chart_empty">La gráfica se irá llenando con cada lectura de uso.</string>
+    <string name="usage_chart_reset">Reset</string>
+    <string name="usage_where">Dónde está</string>
+    <string name="usage_show_windows">Ver sus ventanas</string>
+    <string name="usage_none_claude">Sin datos de uso todavía: aparecen en cuanto esta cuenta trabaje en una ventana con la barra de estado de UniConnect.</string>
+    <string name="usage_none_codex">Sin datos de uso todavía: aparecen en cuanto Codex haga una petición.</string>
+    <string name="usage_none_other">Sin datos de uso todavía.</string>
+    <!-- accounts.v1 §3 y §5: causa de cada host que falla y reseteos gratis de Codex. -->
+    <string name="host_error_no_answer">no contestó a tiempo</string>
+    <string name="host_error_no_python">no tiene python3</string>
+    <string name="host_error_ssh">falló la conexión SSH</string>
+    <string name="host_error_bad_output">respondió algo que no es la sonda</string>
+    <string name="host_error_no_tmux">no tiene tmux</string>
+    <string name="host_error_tmux">tmux dio un error</string>
+    <plurals name="usage_credits">
+        <item quantity="one">%1$d reseteo gratis disponible · caduca el %2$s</item>
+        <item quantity="other">%1$d reseteos gratis disponibles · el primero caduca el %2$s</item>
+    </plurals>
+    <plurals name="usage_credits_no_date">
+        <item quantity="one">%1$d reseteo gratis disponible</item>
+        <item quantity="other">%1$d reseteos gratis disponibles</item>
+    </plurals>
+    <plurals name="usage_credits_badge">
+        <item quantity="one">%1$d reseteo gratis</item>
+        <item quantity="other">%1$d reseteos gratis</item>
+    </plurals>
+    <string name="usage_day_month">%1$d %2$s</string>
+    <string-array name="usage_months_short">
+        <item>ene</item>
+        <item>feb</item>
+        <item>mar</item>
+        <item>abr</item>
+        <item>may</item>
+        <item>jun</item>
+        <item>jul</item>
+        <item>ago</item>
+        <item>sep</item>
+        <item>oct</item>
+        <item>nov</item>
+        <item>dic</item>
+    </string-array>
+    <string name="reset_button">Usar un reseteo gratis</string>
+    <plurals name="reset_confirm_title">
+        <item quantity="one">¿Gastar 1 de %1$d reseteo gratis de %2$s?</item>
+        <item quantity="other">¿Gastar 1 de %1$d reseteos gratis de %2$s?</item>
+    </plurals>
+    <string name="reset_confirm_body" formatted="false">Los límites de Codex de esta cuenta vuelven a 0 %. No se puede deshacer.</string>
+    <string name="reset_go">Gastar reseteo</string>
+    <string name="reset_title">Reseteo gratis de Codex</string>
+    <string name="reset_failed_title">No se pudo gastar el reseteo</string>
+    <string name="reset_done">Hecho: %1$s vuelve a empezar.</string>
+    <string name="reset_nothing">No había nada que resetear: no se ha gastado ninguno.</string>
+    <string name="reset_no_credit">Esta cuenta ya no tiene reseteos gratis.</string>
+    <string name="reset_already">Ese reseteo ya se había aplicado.</string>
+    <string name="reset_unknown">El equipo contestó «%1$s».</string>
+    <string name="reset_not_found">No hay ninguna ventana de esa cuenta abierta en ese equipo.</string>
+    <string name="reset_unavailable">No se pudo hablar con ese Codex. No se ha gastado ningún reseteo.</string>
+    <string name="reset_locked">UniConnect está bloqueado en ese equipo.</string>
+    <string name="reset_invalid">El equipo no entendió la petición.</string>
+    <string name="reset_unsupported">Este equipo todavía no sabe gastar reseteos de Codex.</string>
+    <string name="reset_unreachable">El equipo no contestó a tiempo y no se sabe si se gastó. Reintentar usa la misma clave: nunca gasta dos.</string>
+    <string name="reset_other">El equipo lo rechazó (%1$s).</string>
+    <string name="reset_retry">Reintentar</string>
 </resources>

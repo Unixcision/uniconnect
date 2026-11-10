@@ -60,6 +60,11 @@ public enum ControlCommandExecutionPolicy: Sendable, Equatable {
         // 10 s, so it must not hold the main actor.
         "terminal.details",
         "mobile.terminal.details",
+        // «Cuentas de IA» (accounts.v1): read-only, one probe per host in parallel, up to ~12 s.
+        "accounts.list",
+        "mobile.accounts.list",
+        "accounts.codex_reset",
+        "mobile.accounts.codex_reset",
         "system.top",
         "system.memory",
         "workspace.remote.pty_sessions",

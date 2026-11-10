@@ -191,6 +191,8 @@ struct UniConnectWindowDetailsRows: Equatable {
             return String(localized: "uniconnect.windowDetails.source.ficha", defaultValue: "Ficha de sesión de Claude")
         case "rollout"?:
             return String(localized: "uniconnect.windowDetails.source.rollout", defaultValue: "Registro abierto de Codex")
+        case "threads"?:
+            return String(localized: "uniconnect.windowDetails.source.threads", defaultValue: "Tabla de conversaciones de Codex")
         case "argv"?:
             return String(
                 localized: "uniconnect.windowDetails.source.argv",

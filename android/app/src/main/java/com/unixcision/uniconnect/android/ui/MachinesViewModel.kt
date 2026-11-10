@@ -1096,8 +1096,9 @@ class MachinesViewModel(
                                 val route = noticeRoute?.takeIf { it.machineID == machine.id }
                                 if (route != null) {
                                     noticeRoute = null
-                                    val workspace = update.snapshot.workspaces.firstOrNull { it.id == route.workspaceID }
-                                    val window = workspace?.windows?.firstOrNull { it.id == route.windowID }
+                                    // The Mac sends its UUIDs in capitals in some lists: the same id either way.
+                                    val workspace = update.snapshot.workspaces.firstOrNull { it.id.equals(route.workspaceID, ignoreCase = true) }
+                                    val window = workspace?.windows?.firstOrNull { it.id.equals(route.windowID, ignoreCase = true) }
                                     mutableState.update { it.copy(selectedWorkspace = workspace?.id, selectedWindow = window?.id,
                                         error = if (workspace == null || (route.windowID != null && window == null)) R.string.notice_target_missing else null) }
                                     if (window != null) refreshTerminal()

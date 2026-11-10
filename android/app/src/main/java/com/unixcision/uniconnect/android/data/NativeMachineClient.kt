@@ -201,6 +201,139 @@ class NativeMachineClient(
         return details
     }
 
+    override suspend fun accounts(machine: Machine): AccountsReport {
+        // `{}`: todas las ventanas de todos los espacios. El equipo tarda como mucho 12 s con todas
+        // sus sondas en paralelo; 15 s deja margen a la red sin esperar para siempre.
+        val result = call(machine, "mobile.accounts.list", JSONObject(), ACCOUNTS_DEADLINE_MILLIS)
+        return try {
+            decodeAccounts(result)
+        } catch (malformed: org.json.JSONException) {
+            throw MachineFailure.ProtocolMismatch()
+        }
+    }
+
+    override suspend fun codexReset(machine: Machine, accountKey: String, hostKey: String, idempotencyKey: String): CodexResetResult {
+        val result = call(machine, "mobile.accounts.codex_reset", codexResetParameters(accountKey, hostKey, idempotencyKey), CODEX_RESET_DEADLINE_MILLIS)
+        return try {
+            decodeCodexReset(result)
+        } catch (malformed: org.json.JSONException) {
+            throw MachineFailure.ProtocolMismatch()
+        }
+    }
+
+    /** Los parámetros de §5: la cuenta, el host donde se vio su uso y la clave de esa confirmación. */
+    internal fun codexResetParameters(accountKey: String, hostKey: String, idempotencyKey: String): JSONObject {
+        require(accountKey.isNotBlank() && hostKey.isNotBlank() && idempotencyKey.isNotBlank())
+        return JSONObject().put("account_key", accountKey).put("host_key", hostKey).put("idempotency_key", idempotencyKey)
+    }
+
+    /** La respuesta de `mobile.accounts.codex_reset`: `{account_key, host_key, outcome, usage}`. */
+    internal fun decodeCodexReset(result: JSONObject): CodexResetResult = CodexResetResult(
+        accountKey = result.text("account_key").orEmpty(),
+        hostKey = result.text("host_key").orEmpty(),
+        outcomeWire = result.text("outcome").orEmpty(),
+        usage = result.optJSONObject("usage")?.let(::decodeUsage),
+    )
+
+    /**
+     * Lee una respuesta de `accounts.v1`.
+     *
+     * Los `null` del contrato se miran con `isNull`, como en los Detalles: un `null` de JSON leído
+     * con `optString` es el texto «null», y una cuenta llamada así es peor que ninguna.
+     */
+    internal fun decodeAccounts(result: JSONObject): AccountsReport {
+        val hosts = result.optJSONArray("hosts") ?: JSONArray()
+        val windows = result.optJSONArray("windows") ?: JSONArray()
+        return AccountsReport(
+            version = result.optInt("version", 1),
+            checkedAt = result.text("checked_at"),
+            hosts = List(hosts.length()) { index ->
+                val host = hosts.getJSONObject(index)
+                AccountHost(
+                    hostKey = host.getString("host_key"),
+                    label = host.text("label").orEmpty(),
+                    kind = host.text("kind") ?: "local",
+                    state = host.text("state") ?: AccountHost.UNREACHABLE,
+                    checkedAt = host.text("checked_at"),
+                    error = host.text("error"),
+                )
+            },
+            windows = List(windows.length()) { index ->
+                val window = windows.getJSONObject(index)
+                AccountWindow(
+                    workspaceID = window.getString("workspace_id"),
+                    workspace = window.text("workspace").orEmpty(),
+                    terminalID = window.getString("terminal_id"),
+                    window = window.text("window").orEmpty(),
+                    hostKey = window.text("host_key") ?: "local",
+                    tmuxSession = window.text("tmux_session"),
+                    // Sin estado no se da por leída: se cuenta como «sin leer».
+                    stateWire = window.text("state") ?: "",
+                    agent = window.optJSONObject("agent")?.let { agent ->
+                        val provider = agent.text("provider").orEmpty()
+                        AccountAgent(provider, agent.text("display_name") ?: provider, agent.flag("as_root"))
+                    },
+                    account = window.optJSONObject("account")?.let { account ->
+                        AccountInfo(
+                            email = account.text("email"),
+                            method = account.text("method"),
+                            plan = account.text("plan"),
+                            organization = account.text("organization"),
+                            osUser = account.text("os_user"),
+                            config = account.text("config"),
+                            readAt = account.text("read_at"),
+                            usage = account.optJSONObject("usage")?.let(::decodeUsage),
+                        )
+                    },
+                )
+            },
+            accounts = result.optJSONArray("accounts")?.objects().orEmpty().map { account ->
+                val hostKeys = account.optJSONArray("host_keys") ?: JSONArray()
+                val history = account.optJSONArray("history") ?: JSONArray()
+                AccountSummary(
+                    key = account.getString("key"),
+                    provider = account.text("provider").orEmpty(),
+                    displayName = account.text("display_name") ?: account.text("provider").orEmpty(),
+                    email = account.text("email"),
+                    plan = account.text("plan"),
+                    organization = account.text("organization"),
+                    windows = account.optInt("windows", 0),
+                    hostKeys = List(hostKeys.length()) { hostKeys.optString(it) }.filter { it.isNotEmpty() },
+                    usage = account.optJSONObject("usage")?.let(::decodeUsage),
+                    // Una muestra sin fecha no se puede poner en la gráfica: se deja fuera.
+                    history = history.objects().mapNotNull { sample ->
+                        val at = sample.instant("at") ?: return@mapNotNull null
+                        val limits = sample.optJSONObject("limits") ?: JSONObject()
+                        UsageSample(at, limits.keys().asSequence().mapNotNull { id -> limits.number(id)?.let { id to it } }.toMap())
+                    }.sortedBy { it.at },
+                )
+            },
+        )
+    }
+
+    /** Un `usage` de §2.4. Un límite sin porcentaje no se inventa: se deja fuera. */
+    private fun decodeUsage(usage: JSONObject): AccountUsage = AccountUsage(
+        source = usage.text("source"),
+        observedAt = usage.instant("observed_at"),
+        limits = usage.optJSONArray("limits")?.objects().orEmpty().mapNotNull { limit ->
+            val id = limit.text("id") ?: return@mapNotNull null
+            val percent = limit.number("used_percent") ?: return@mapNotNull null
+            UsageLimit(id, percent, limit.instant("resets_at"), limit.whole("window_minutes")?.toInt())
+        },
+        hostKey = usage.text("host_key"),
+        resetCredits = usage.optJSONObject("reset_credits")?.let { credits ->
+            ResetCredits(credits.whole("available")?.toInt() ?: 0, credits.instant("next_expires_at"))
+        },
+    )
+
+    /** Un instante ISO 8601 de [key], o nulo si falta, es `null` o no se entiende. */
+    private fun JSONObject.instant(key: String): java.time.Instant? =
+        text(key)?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }
+
+    /** Un número (entero o decimal) de [key], o nulo si falta o no es un número. */
+    private fun JSONObject.number(key: String): Double? =
+        if (!has(key) || isNull(key)) null else (opt(key) as? Number)?.toDouble()
+
     /**
      * Lee una respuesta de `window_details.v1`.
      *
@@ -618,5 +751,9 @@ class NativeMachineClient(
         const val MAX_INPUT_BYTES = 256 * 1024
         /** How long a creation may take before the phone stops waiting for the answer. */
         const val CREATE_DEADLINE_MILLIS = 45_000L
+        /** How long «Cuentas de IA» waits for one machine: its probes take up to 12 s (accounts.v1). */
+        const val ACCOUNTS_DEADLINE_MILLIS = 15_000L
+        /** How long a free Codex reset may take: the host's probe waits up to 8 s for Codex (§5). */
+        const val CODEX_RESET_DEADLINE_MILLIS = 20_000L
     }
 }

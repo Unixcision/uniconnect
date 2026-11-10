@@ -976,6 +976,34 @@ class TerminalController {
             }
             semaphore.wait()
             return v2Ok(id: request.id, result: v2AuthStatusPayload(timedOut: false))
+        case "accounts.codex_reset", "mobile.accounts.codex_reset":
+            let semaphore = DispatchSemaphore(value: 0)
+            nonisolated(unsafe) var outcome: V2CallResult?
+            let params = request.params
+            Task { @MainActor [weak self] in
+                outcome = await self?.v2MobileAccountsCodexReset(params: params)
+                semaphore.signal()
+            }
+            semaphore.wait()
+            return v2Result(id: request.id, outcome ?? .err(code: "unavailable", message: String(
+                localized: "uniconnect.accounts.reset.unavailable",
+                defaultValue: "No se pudo hablar con ese Codex. No se ha gastado ningún reseteo."
+            ), data: nil))
+        case "accounts.list", "mobile.accounts.list":
+            // Read-only and up to ~12 s (one probe per host, in parallel): on the socket worker,
+            // never the main actor.
+            let semaphore = DispatchSemaphore(value: 0)
+            nonisolated(unsafe) var outcome: V2CallResult?
+            let params = request.params
+            Task { @MainActor [weak self] in
+                outcome = await self?.v2MobileAccountsList(params: params)
+                semaphore.signal()
+            }
+            semaphore.wait()
+            return v2Result(id: request.id, outcome ?? .err(code: "unavailable", message: String(
+                localized: "uniconnect.accounts.error.unavailable",
+                defaultValue: "No se pudieron leer las cuentas de las IA."
+            ), data: nil))
         case "terminal.details", "mobile.terminal.details":
             // Read-only and up to 10 s (the SSH probe): on the socket worker, never the main actor.
             let semaphore = DispatchSemaphore(value: 0)
@@ -2392,6 +2420,8 @@ class TerminalController {
             "mobile.terminal.reconnect",
             "mobile.terminal.reset",
             "mobile.terminal.details",
+            "mobile.accounts.list",
+            "mobile.accounts.codex_reset",
             "mobile.terminal.input",
             "mobile.terminal.replay",
             "mobile.terminal.viewport",
@@ -2399,6 +2429,8 @@ class TerminalController {
             "terminal.reconnect",
             "terminal.reset",
             "terminal.details",
+            "accounts.list",
+            "accounts.codex_reset",
             "terminal.input",
             "terminal.replay",
             "terminal.viewport",
@@ -20974,6 +21006,10 @@ class TerminalController {
             result = v2MobileTerminalReconnect(params: request.params)
         case "mobile.terminal.details", "terminal.details":
             result = await v2MobileTerminalDetails(params: request.params)
+        case "mobile.accounts.list", "accounts.list":
+            result = await v2MobileAccountsList(params: request.params)
+        case "mobile.accounts.codex_reset", "accounts.codex_reset":
+            result = await v2MobileAccountsCodexReset(params: request.params)
         case "mobile.terminal.input", "terminal.input":
             result = v2MobileTerminalInput(params: request.params)
         case "mobile.terminal.paste_image", "terminal.paste_image":
@@ -21527,7 +21563,7 @@ class TerminalController {
         var capabilities = [
             "activity.v1", "box_update", "box_close", "file_put.v1", "inbox.v1", "recent_prompts", "run_as",
             "ssh_create.v1", "relaunch.v1",
-            "window_details.v1",
+            "window_details.v1", "accounts.v1", "accounts.codex_reset.v1",
         ]
         // What this Mac relaunches and updates, per provider and window kind: exactly its row of
         // contracts/relaunch-v1/proveedores.json (Claude local, and SSH through the Linux worker).
@@ -22794,6 +22830,86 @@ class TerminalController {
             localized: "uniconnect.mobile.importBusy",
             defaultValue: "Hay una importación en curso. Espera a que termine antes de modificar las ventanas."
         ), data: nil)
+    }
+
+    /// `mobile.accounts.list` (accounts.v1): every window's agent account and each account's usage,
+    /// read live (`contracts/accounts-v1`). Same JSON on the local socket (`accounts.list`).
+    private func v2MobileAccountsList(params: [String: Any]) async -> V2CallResult {
+        if UniConnectAppLock.shared.isLocked {
+            return .err(code: "locked", message: String(
+                localized: "uniconnect.windowDetails.error.locked",
+                defaultValue: "UniConnect está bloqueado."
+            ), data: nil)
+        }
+        var workspaceID: UUID?
+        if let raw = params["workspace_id"], !(raw is NSNull) {
+            guard let text = raw as? String, let id = UUID(uuidString: text) else {
+                return .err(code: "invalid_params", message: String(
+                    localized: "uniconnect.accounts.error.invalidParams",
+                    defaultValue: "El espacio de trabajo pedido no es válido."
+                ), data: nil)
+            }
+            guard UniConnectCoordinator.shared.allTabManagers().flatMap(\.tabs).contains(where: { $0.id == id }) else {
+                return .err(code: "not_found", message: String(
+                    localized: "uniconnect.accounts.error.notFound",
+                    defaultValue: "No se encontró ese espacio de trabajo."
+                ), data: nil)
+            }
+            workspaceID = id
+        }
+        guard let snapshot = await UniConnectCoordinator.shared.accountsSnapshot() else {
+            return .err(code: "unavailable", message: String(
+                localized: "uniconnect.accounts.error.unavailable",
+                defaultValue: "No se pudieron leer las cuentas de las IA."
+            ), data: nil)
+        }
+        let result = workspaceID.map { snapshot.restricted(toWorkspace: $0) } ?? snapshot
+        return .ok(result.mobilePayload)
+    }
+
+    /// `mobile.accounts.codex_reset` (accounts.codex_reset.v1): spends one free Codex reset of an
+    /// account on a host (`contracts/accounts-v1` §5). The phone confirms before calling.
+    private func v2MobileAccountsCodexReset(params: [String: Any]) async -> V2CallResult {
+        if UniConnectAppLock.shared.isLocked {
+            return .err(code: "locked", message: String(
+                localized: "uniconnect.windowDetails.error.locked",
+                defaultValue: "UniConnect está bloqueado."
+            ), data: nil)
+        }
+        guard let accountKey = params["account_key"] as? String, accountKey.hasPrefix("codex:"),
+              let hostKey = params["host_key"] as? String, !hostKey.isEmpty,
+              let key = params["idempotency_key"] as? String,
+              key.range(of: #"^[A-Za-z0-9-]{8,80}$"#, options: .regularExpression) != nil else {
+            return .err(code: "invalid_params", message: String(
+                localized: "uniconnect.accounts.reset.invalidParams",
+                defaultValue: "Falta la cuenta de Codex, el equipo o la clave del reseteo."
+            ), data: nil)
+        }
+        switch await UniConnectCoordinator.shared.spendCodexReset(accountKey: accountKey, hostKey: hostKey, idempotencyKey: key) {
+        case .success(let reset):
+            let usage: Any
+            if let value = reset.usage {
+                usage = UniConnectAccountsSnapshot(
+                    checkedAt: Date(), hosts: [], windows: [], accounts: [
+                        .init(key: accountKey, provider: "codex", displayName: "Codex", email: String(accountKey.dropFirst(6)),
+                              plan: nil, organization: nil, windows: 0, hostKeys: [hostKey], usage: value, history: []),
+                    ]
+                ).mobilePayload["accounts"].flatMap { ($0 as? [[String: Any]])?.first?["usage"] } ?? NSNull()
+            } else {
+                usage = NSNull()
+            }
+            return .ok(["account_key": accountKey, "host_key": hostKey, "outcome": reset.outcome, "usage": usage])
+        case .failure(.notFound):
+            return .err(code: "not_found", message: String(
+                localized: "uniconnect.accounts.reset.notFound",
+                defaultValue: "No hay ninguna ventana de esa cuenta abierta en ese equipo."
+            ), data: nil)
+        case .failure(.unavailable):
+            return .err(code: "unavailable", message: String(
+                localized: "uniconnect.accounts.reset.unavailable",
+                defaultValue: "No se pudo hablar con ese Codex. No se ha gastado ningún reseteo."
+            ), data: nil)
+        }
     }
 
     /// `mobile.terminal.details` (window_details.v1): the «Detalles» of one window, read-only.

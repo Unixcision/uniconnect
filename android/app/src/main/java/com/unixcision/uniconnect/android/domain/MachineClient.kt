@@ -52,6 +52,24 @@ interface MachineClient {
      */
     suspend fun windowDetails(machine: Machine, workspaceID: String, windowID: String): WindowDetails =
         throw UnsupportedOperationException("mobile.terminal.details")
+
+    /**
+     * Pide al equipo, leída en vivo, la cuenta de cada IA de sus ventanas (`mobile.accounts.list`,
+     * `accounts.v1`).
+     *
+     * Es solo lectura y no se guarda nada. Solo se llama si el equipo anuncia la capacidad; el cuerpo
+     * por defecto existe para que los clientes falsos de las pruebas no tengan que implementarlo.
+     */
+    suspend fun accounts(machine: Machine): AccountsReport =
+        throw UnsupportedOperationException("mobile.accounts.list")
+
+    /**
+     * Gasta un reseteo gratis de una cuenta de Codex (`mobile.accounts.codex_reset`, §5). La única
+     * escritura de accounts-v1: la pantalla ya ha pedido confirmación, y [idempotencyKey] es la de
+     * esa confirmación, la misma en cada reintento.
+     */
+    suspend fun codexReset(machine: Machine, accountKey: String, hostKey: String, idempotencyKey: String): CodexResetResult =
+        throw UnsupportedOperationException("mobile.accounts.codex_reset")
     suspend fun inspect(machine: Machine): MachineSnapshot
     /** One-shot authorized check for the machine list; never creates or attaches anything. */
     suspend fun probe(machine: Machine): MachineSnapshot

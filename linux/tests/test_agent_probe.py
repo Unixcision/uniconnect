@@ -25,11 +25,14 @@ def proc(pid, ppid, argv, uid=1000):
     return {"pid": pid, "ppid": ppid, "uid": uid, "argv": argv}
 
 
-def run(processes, pane_pid=100, fichas=None, opened=None, lines=None, cwds=None, pane_path="/pane", links=None):
+def run(processes, pane_pid=100, fichas=None, opened=None, lines=None, cwds=None, pane_path="/pane", links=None,
+        threads=None):
     fichas, opened, lines, cwds, links = fichas or {}, opened or {}, lines or {}, cwds or {}, links or {}
+    rows = threads or []
     return discover(pane_pid, processes, lambda pid, uid: fichas.get(pid), lambda pid: opened.get(pid, []),
                     lambda path: lines.get(path), lambda pid: cwds.get(pid), pane_path=pane_path,
-                    realpath=lambda path: links.get(path, path))
+                    realpath=lambda path: links.get(path, path),
+                    hilos_de=lambda folders, uid: [row for row in rows if row.get("cwd") in folders])
 
 
 class ContractCaseTests(unittest.TestCase):
@@ -40,14 +43,15 @@ class ContractCaseTests(unittest.TestCase):
         self.assertTrue(data["casos"], "deteccion-casos.json no trae ningún caso")
         for case in data["casos"]:
             with self.subTest(caso=case["nombre"]):
-                table = {int(item["pid"]): proc(int(item["pid"]), int(item["ppid"]), item["argv"], int(item.get("uid", 1000)))
+                table = {int(item["pid"]): dict(proc(int(item["pid"]), int(item["ppid"]), item["argv"], int(item.get("uid", 1000))),
+                                                start_ms=item.get("inicio_ms"))
                          for item in case["procesos"]}
                 result = run(table, int(case["pane_pid"]),
                              {int(key): value for key, value in case.get("fichas", {}).items()},
                              {int(key): value for key, value in case.get("abiertos", {}).items()},
                              case.get("rollouts", {}),
                              {int(key): value for key, value in case.get("cwds", {}).items()},
-                             case.get("pane_current_path"), case.get("enlaces", {}))
+                             case.get("pane_current_path"), case.get("enlaces", {}), case.get("hilos", []))
                 agent = result["agent"] or {}
                 actual = {"provider": agent.get("provider"), "session_id": agent.get("session_id"),
                           "cwd": agent.get("cwd"), "as_root": agent.get("as_root"), "source": agent.get("source"),

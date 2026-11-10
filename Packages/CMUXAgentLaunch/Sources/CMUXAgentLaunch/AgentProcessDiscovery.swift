@@ -17,9 +17,11 @@ import Foundation
 /// 4. The identity of the single root comes from the first available source: Claude's session file
 ///    (only when the pid written inside it is the root's, or absent), the rollout a Codex branch holds
 ///    open (with several, only the one its `resume <uuid>` names), then the command line (before
-///    `--`, a token starting with `-` is never a value, and two different ids give none). When in
-///    doubt there is no id: a `sin_id` keeps what was saved, a wrong id resumes somebody else's
-///    conversation.
+///    `--`, a token starting with `-` is never a value, and two different ids give none), and for a
+///    Codex without either, its `threads` table (``AgentCodexThread``): the conversation of the
+///    terminal UI in its folder created after the process started, the most recently changed, and
+///    only if no other live Codex in that folder started in time to own it. When in doubt there is
+///    no id: a `sin_id` keeps what was saved, a wrong id resumes somebody else's conversation.
 ///
 /// It is pure: the process table, session files, open files and rollout heads are passed in, so the
 /// same fixture drives the tests on every platform.
@@ -148,6 +150,10 @@ public struct AgentProcessDiscovery: Sendable {
     ///     when the session file or rollout has none. Defaults to unknown.
     ///   - resolvingPath: Resolves symlinks in the chosen folder (`realpath`). Defaults to identity,
     ///     so pure callers and fixtures decide how paths resolve.
+    ///   - codexThreads: The rows of Codex's `threads` table for these folders (as given and
+    ///     resolved); only asked for a Codex root with no rollout open and no `resume <uuid>`.
+    ///     The other live Codex processes it is compared with are the ones in `processes` outside
+    ///     the root's branch, so a caller that wants that check passes them in the table too.
     /// - Returns: The outcome; only ``AgentDiscoveryOutcome/found(_:)`` identifies a conversation.
     public func discover(
         rootPID: Int,
@@ -157,7 +163,8 @@ public struct AgentProcessDiscovery: Sendable {
         rolloutFirstLine: (String) -> String?,
         fallbackDirectory: String?,
         processDirectory: (Int) -> String? = { _ in nil },
-        resolvingPath: (String) -> String = { $0 }
+        resolvingPath: (String) -> String = { $0 },
+        codexThreads: ([String]) -> [AgentCodexThread] = { _ in [] }
     ) -> AgentDiscoveryOutcome {
         let roots = providerRoots(rootPID: rootPID, processes: processes)
         guard !roots.isEmpty else { return .noAgent }
@@ -206,6 +213,11 @@ public struct AgentProcessDiscovery: Sendable {
                 )
             } else if rollouts.isEmpty, let resumed {
                 identity = Identity(id: resumed, source: .argv)
+            } else if rollouts.isEmpty, let thread = codexThread(
+                root: root, members: members, processes: processes, threads: codexThreads,
+                processDirectory: processDirectory, resolvingPath: resolvingPath
+            ) {
+                identity = Identity(id: thread.id, reportedDirectory: thread.workingDirectory, source: .threads)
             }
         case .agy:
             if let id = Self.uniqueOptionValue(["--conversation"], in: process.arguments, requireUUID: false) {
@@ -237,6 +249,66 @@ public struct AgentProcessDiscovery: Sendable {
             version: identity.version,
             processID: process.pid
         ))
+    }
+
+    /// How far before a process's start a thread may have been created and still be its own.
+    static let codexThreadSlack: Int64 = 5_000
+
+    /// Codex subcommands that are not the terminal UI, so never another owner of its threads.
+    private static let codexBackgroundCommands: Set<String> = [
+        "app-server", "exec-server", "mcp-server", "exec", "mcp", "review", "login", "logout", "apply",
+        "completion", "sandbox", "cloud", "proto", "debug",
+    ]
+
+    /// The `threads` row of a Codex root without a rollout or a `resume <uuid>`, or `nil`.
+    private func codexThread(
+        root: ProviderRoot,
+        members: [AgentProcessSample],
+        processes: [AgentProcessSample],
+        threads: ([String]) -> [AgentCodexThread],
+        processDirectory: (Int) -> String?,
+        resolvingPath: (String) -> String
+    ) -> AgentCodexThread? {
+        guard let start = ([root.process] + members).compactMap(\.startMilliseconds).min(),
+              let folder = Self.codexFolder(of: [root.process] + members, processDirectory: processDirectory) else { return nil }
+        let resolved = resolvingPath(folder)
+        let candidates = threads(Array(Set([folder, resolved]))).filter { thread in
+            thread.isTerminalConversation && resolvingPath(thread.workingDirectory) == resolved
+                && thread.createdAtMilliseconds >= start - Self.codexThreadSlack
+        }
+        guard let newest = candidates.max(by: { $0.updatedAtMilliseconds < $1.updatedAtMilliseconds }),
+              candidates.filter({ $0.updatedAtMilliseconds == newest.updatedAtMilliseconds }).count == 1 else { return nil }
+        // Another live terminal Codex in the same folder that started before the thread was created
+        // could own it as well: then nobody gets it.
+        let branch = Set(([root.process] + members).map(\.pid))
+        for other in processes where !branch.contains(other.pid) && AgentObservedProvider.classify(other) == .codex {
+            let words = other.arguments.dropFirst().prefix { $0 != "--" }
+            guard !words.contains(where: { Self.codexBackgroundCommands.contains($0) }),
+                  let otherFolder = Self.codexFolder(of: [other], processDirectory: processDirectory),
+                  resolvingPath(otherFolder) == resolved else { continue }
+            guard let otherStart = other.startMilliseconds else { return nil }
+            if newest.createdAtMilliseconds >= otherStart - Self.codexThreadSlack { return nil }
+        }
+        return newest
+    }
+
+    /// The folder a Codex works in: its `-C`/`--cd`, else the current folder of its processes.
+    private static func codexFolder(of processes: [AgentProcessSample], processDirectory: (Int) -> String?) -> String? {
+        for process in processes {
+            let options = Array(process.arguments.dropFirst().prefix { $0 != "--" })
+            for (index, argument) in options.enumerated() {
+                if (argument == "-C" || argument == "--cd"), index + 1 < options.count, options[index + 1].hasPrefix("/") {
+                    return options[index + 1]
+                }
+                if argument.hasPrefix("--cd="), argument.dropFirst("--cd=".count).hasPrefix("/") {
+                    return String(argument.dropFirst("--cd=".count))
+                }
+            }
+        }
+        for process in processes {
+            if let folder = processDirectory(process.pid), folder.hasPrefix("/") { return folder }
+        }
+        return nil
     }
 
     /// The conversation a root was identified by, before its folder is resolved.

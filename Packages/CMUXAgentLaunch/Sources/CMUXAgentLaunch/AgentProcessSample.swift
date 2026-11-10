@@ -14,6 +14,8 @@ public struct AgentProcessSample: Sendable, Equatable, Codable {
     public let userID: Int
     /// The argument vector, executable first. Empty when it could not be read.
     public let arguments: [String]
+    /// When the process started, in milliseconds since 1970; `nil` when unknown.
+    public let startMilliseconds: Int64?
 
     /// Creates a process row.
     ///
@@ -22,11 +24,13 @@ public struct AgentProcessSample: Sendable, Equatable, Codable {
     ///   - parentPID: The parent process id.
     ///   - userID: The real user id.
     ///   - arguments: The argument vector, executable first.
-    public init(pid: Int, parentPID: Int, userID: Int, arguments: [String]) {
+    ///   - startMilliseconds: When it started, in ms since 1970, if known.
+    public init(pid: Int, parentPID: Int, userID: Int, arguments: [String], startMilliseconds: Int64? = nil) {
         self.pid = pid
         self.parentPID = parentPID
         self.userID = userID
         self.arguments = arguments
+        self.startMilliseconds = startMilliseconds
     }
 
     /// The last path component of `argv[0]`, without a login shell's leading `-`.

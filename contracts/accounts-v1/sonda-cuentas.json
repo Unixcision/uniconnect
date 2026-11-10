@@ -1,5 +1,5 @@
 {
-  "descripcion": "Casos de account_of (contracts/accounts-v1, §2). Cada caso: proveedor, uid del proceso, su entorno ya filtrado (rutas con su valor, secretos como true; null = no se pudo leer), el usuario (nombre, home) y los ficheros que existen ({estado: ok|denied|invalid, json}); los demás no existen. 'NO-SALE' marca valores que jamás pueden aparecer en la salida.",
+  "descripcion": "Casos de account_of (contracts/accounts-v1, §2). Cada caso: proveedor, uid del proceso, su entorno ya filtrado (rutas con su valor, secretos como true; null = no se pudo leer), el usuario (nombre, home) y los ficheros que existen ({estado: ok|denied|invalid, json}); los demás no existen. 'NO-SALE' marca valores que jamás pueden aparecer en la salida. 'usos' son los casos de claude_usage (uniconnect-uso.json que deja la barra de estado) y codex_usage (último token_count de un rollout).",
   "read_at": "2026-11-10T12:30:04Z",
   "casos": [
     {
@@ -36,7 +36,8 @@
         "organization": "dev@notbetting.com's Organization",
         "os_user": "root",
         "config": "/root/.claude.json",
-        "read_at": "2026-11-10T12:30:04Z"
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": null
       }
     },
     {
@@ -78,7 +79,8 @@
         "organization": null,
         "os_user": "ana",
         "config": "/srv/claude-b/.claude.json",
-        "read_at": "2026-11-10T12:30:04Z"
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": null
       }
     },
     {
@@ -120,7 +122,8 @@
         "organization": null,
         "os_user": "ana",
         "config": "/home/ana/.claude.json",
-        "read_at": "2026-11-10T12:30:04Z"
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": null
       }
     },
     {
@@ -150,7 +153,8 @@
         "organization": null,
         "os_user": "noleakos",
         "config": "/home/noleakos/.claude.json",
-        "read_at": "2026-11-10T12:30:04Z"
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": null
       }
     },
     {
@@ -180,7 +184,8 @@
         "organization": null,
         "os_user": "root",
         "config": "/root/.claude.json",
-        "read_at": "2026-11-10T12:30:04Z"
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": null
       }
     },
     {
@@ -203,7 +208,8 @@
         "organization": null,
         "os_user": "root",
         "config": "/root/.claude.json",
-        "read_at": "2026-11-10T12:30:04Z"
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": null
       }
     },
     {
@@ -232,7 +238,8 @@
         "organization": null,
         "os_user": "root",
         "config": "/root/.claude.json",
-        "read_at": "2026-11-10T12:30:04Z"
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": null
       }
     },
     {
@@ -265,7 +272,8 @@
         "organization": null,
         "os_user": "root",
         "config": null,
-        "read_at": "2026-11-10T12:30:04Z"
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": null
       }
     },
     {
@@ -290,7 +298,8 @@
         "organization": null,
         "os_user": "root",
         "config": "/root/.claude.json",
-        "read_at": "2026-11-10T12:30:04Z"
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": null
       }
     },
     {
@@ -326,7 +335,8 @@
         "organization": null,
         "os_user": "root",
         "config": "/root/.codex/auth.json",
-        "read_at": "2026-11-10T12:30:04Z"
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": null
       }
     },
     {
@@ -358,7 +368,8 @@
         "organization": null,
         "os_user": "ana",
         "config": "/srv/codex/auth.json",
-        "read_at": "2026-11-10T12:30:04Z"
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": null
       }
     },
     {
@@ -381,7 +392,8 @@
         "organization": null,
         "os_user": "root",
         "config": "/root/.codex/auth.json",
-        "read_at": "2026-11-10T12:30:04Z"
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": null
       }
     },
     {
@@ -404,8 +416,232 @@
         "organization": null,
         "os_user": "root",
         "config": null,
-        "read_at": "2026-11-10T12:30:04Z"
+        "read_at": "2026-11-10T12:30:04Z",
+        "usage": null
       }
+    }
+  ],
+  "usos": [
+    {
+      "nombre": "claude_barra_de_estado",
+      "funcion": "claude_usage",
+      "email": "dev@notbetting.com",
+      "documento": {
+        "version": 1,
+        "email": "Dev@NotBetting.com",
+        "observed_at": "2026-11-10T12:46:52Z",
+        "rate_limits": {
+          "seven_day": {
+            "used_percentage": 51,
+            "resets_at": 1794751200
+          },
+          "five_hour": {
+            "used_percentage": 3.46,
+            "resets_at": 1794321000
+          }
+        }
+      },
+      "espera": {
+        "source": "statusline",
+        "observed_at": "2026-11-10T12:46:52Z",
+        "limits": [
+          {
+            "id": "five_hour",
+            "used_percent": 3.5,
+            "resets_at": "2026-11-10T14:30:00Z",
+            "window_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 51.0,
+            "resets_at": "2026-11-15T14:00:00Z",
+            "window_minutes": 10080
+          }
+        ]
+      }
+    },
+    {
+      "nombre": "claude_uso_de_otra_cuenta_no_se_atribuye",
+      "funcion": "claude_usage",
+      "email": "it@iberiavo.com",
+      "documento": {
+        "version": 1,
+        "email": "dev@notbetting.com",
+        "observed_at": "2026-11-10T12:46:52Z",
+        "rate_limits": {
+          "seven_day": {
+            "used_percentage": 51,
+            "resets_at": 1794751200
+          }
+        }
+      },
+      "espera": null
+    },
+    {
+      "nombre": "claude_sin_limites",
+      "funcion": "claude_usage",
+      "email": "dev@notbetting.com",
+      "documento": {
+        "version": 1,
+        "email": "dev@notbetting.com",
+        "observed_at": "2026-11-10T12:46:52Z",
+        "rate_limits": {}
+      },
+      "espera": null
+    },
+    {
+      "nombre": "codex_rollout",
+      "funcion": "codex_usage",
+      "documento": {
+        "timestamp": "2026-11-09T17:53:22.647Z",
+        "type": "event_msg",
+        "payload": {
+          "type": "token_count",
+          "rate_limits": {
+            "limit_id": "codex",
+            "primary": {
+              "used_percent": 53.0,
+              "window_minutes": 10080,
+              "resets_at": 1794394207
+            },
+            "secondary": {
+              "used_percent": 12.0,
+              "window_minutes": 300,
+              "resets_in_seconds": 3600
+            },
+            "plan_type": "pro"
+          }
+        }
+      },
+      "espera": {
+        "source": "rollout",
+        "observed_at": "2026-11-09T17:53:22Z",
+        "limits": [
+          {
+            "id": "primary",
+            "used_percent": 53.0,
+            "resets_at": "2026-11-11T10:50:07Z",
+            "window_minutes": 10080
+          },
+          {
+            "id": "secondary",
+            "used_percent": 12.0,
+            "resets_at": "2026-11-09T18:53:22Z",
+            "window_minutes": 300
+          }
+        ]
+      }
+    },
+    {
+      "nombre": "codex_sin_rate_limits",
+      "funcion": "codex_usage",
+      "documento": {
+        "timestamp": "2026-11-09T17:53:22.647Z",
+        "payload": {
+          "type": "token_count",
+          "rate_limits": null
+        }
+      },
+      "espera": null
+    },
+    {
+      "nombre": "codex_en_vivo_app_server",
+      "funcion": "codex_live_usage",
+      "observed_at": "2026-11-10T13:55:00Z",
+      "documento": {
+        "ordinaryUsageAllowed": true,
+        "rateLimits": {
+          "limitId": "codex",
+          "primary": {
+            "usedPercent": 82,
+            "windowDurationMins": 10080,
+            "resetsAt": 1794394207
+          },
+          "secondary": null,
+          "planType": "pro"
+        },
+        "rateLimitResetCredits": {
+          "availableCount": 2,
+          "credits": [
+            {
+              "id": "a",
+              "status": "available",
+              "expiresAt": 1796068920
+            },
+            {
+              "id": "b",
+              "status": "available",
+              "expiresAt": 1796164492
+            }
+          ]
+        }
+      },
+      "espera": {
+        "source": "app_server",
+        "observed_at": "2026-11-10T13:55:00Z",
+        "limits": [
+          {
+            "id": "primary",
+            "used_percent": 82.0,
+            "resets_at": "2026-11-11T10:50:07Z",
+            "window_minutes": 10080
+          }
+        ],
+        "reset_credits": {
+          "available": 2,
+          "next_expires_at": "2026-11-30T20:02:00Z"
+        }
+      }
+    },
+    {
+      "nombre": "codex_en_vivo_sin_reseteos",
+      "funcion": "codex_live_usage",
+      "observed_at": "2026-11-10T13:55:00Z",
+      "documento": {
+        "rateLimits": {
+          "primary": {
+            "usedPercent": 12.5,
+            "windowDurationMins": 300,
+            "resetsAt": 1794320000
+          },
+          "secondary": {
+            "usedPercent": 40,
+            "windowDurationMins": 10080,
+            "resetsAt": 1794700000
+          }
+        },
+        "rateLimitResetCredits": {
+          "availableCount": 0,
+          "credits": []
+        }
+      },
+      "espera": {
+        "source": "app_server",
+        "observed_at": "2026-11-10T13:55:00Z",
+        "limits": [
+          {
+            "id": "primary",
+            "used_percent": 12.5,
+            "resets_at": "2026-11-10T14:13:20Z",
+            "window_minutes": 300
+          },
+          {
+            "id": "secondary",
+            "used_percent": 40.0,
+            "resets_at": "2026-11-14T23:46:40Z",
+            "window_minutes": 10080
+          }
+        ]
+      }
+    },
+    {
+      "nombre": "codex_en_vivo_sin_limites",
+      "funcion": "codex_live_usage",
+      "observed_at": "2026-11-10T13:55:00Z",
+      "documento": {
+        "rateLimits": null
+      },
+      "espera": null
     }
   ]
 }
