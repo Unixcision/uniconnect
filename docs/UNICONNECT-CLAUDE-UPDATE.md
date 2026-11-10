@@ -3,9 +3,10 @@
 > **Sustituido el 09-11-2026.** «Actualizar Claude» es ahora el verbo `agent.update` de
 > `relaunch.v1` (`contracts/relaunch-v1/LEEME.md`, «Actualizar Claude, monitores y borradores»):
 > el mismo camino que Relanzar IA, para ventana, caja, equipo, paleta y carril, y en SSH por el
-> trabajador de Linux. Del flujo de abajo se conserva `UniConnectClaudeBinaryUpdater` (versión y
-> `claude update` en local, fuera del panel). El orquestador antiguo ya no recibe peticiones;
-> solo sigue montado para reconciliar un diario pendiente de una versión anterior.
+> trabajador de Linux. Del flujo de abajo solo queda `UniConnectClaudeBinaryUpdater` (versión y
+> `claude update` en local, fuera del panel) y los tipos de `Packages/UniConnectClaudeUpdate`
+> que usa. El orquestador, su ventana, su diario y sus adaptadores se retiraron el 10-11-2026
+> (no había ningún diario pendiente que reconciliar). Lo que sigue es historia.
 
 ## Objetivo
 

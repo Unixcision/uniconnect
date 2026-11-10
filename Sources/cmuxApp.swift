@@ -9,7 +9,6 @@ import CmuxSettingsUI
 import CmuxUpdater
 import CmuxUpdaterUI
 import UniConnectClaudeBridge
-import UniConnectClaudeUpdate
 import SwiftUI
 import Observation
 import Darwin
@@ -350,13 +349,6 @@ struct cmuxApp: App {
             )
         )
 
-        let applicationStateReader = UniConnectClaudeUpdateApplicationStateReader(
-            tabManagersProvider: tabManagersProvider
-        )
-        let binaryUpdater = UniConnectClaudeBinaryUpdater(
-            processRunner: processRunner,
-            credentialResolver: credentialResolver
-        )
         // Relanzar IA y Actualizar Claude: el trabajador de Linux por el SSH de cada caja, y las
         // instalaciones de Claude de este Mac (login, versión y `claude update`).
         UniConnectCoordinator.shared.configureRelaunch(
@@ -366,82 +358,11 @@ struct cmuxApp: App {
             ),
             localInstallation: UniConnectRelaunchLocalInstallation(processRunner: processRunner)
         )
-        let sessionRegistry = UniConnectClaudeSessionRegistry()
-        let bridgeKeyData = bridgeKey.withUnsafeBytes { Data($0) }
-        let remoteResolver = UniConnectClaudeRemoteTargetResolver(
-            processRunner: processRunner,
-            binaryUpdater: binaryUpdater,
-            credentialResolver: credentialResolver,
-            installationID: ClaudeBridgeInstallationIdentity.derive(from: bridgeKeyData),
-            signalProvider: { routeID in
-                await sessionRegistry.latestRemoteSignal(routeID: routeID)
-            },
-            eventProvider: { workspaceID, panelID in
-                await sessionRegistry.events(workspaceID: workspaceID, panelID: panelID)
-            }
-        )
-        let targetProvider = UniConnectClaudeUpdateTargetProvider(
-            stateReader: applicationStateReader,
-            remoteResolver: remoteResolver,
-            credentialSnapshotResolver: { credentialID in
-                guard let revisionID = try? UniConnectVault.shared.immutableRevision(for: credentialID),
-                      let record = UniConnectVault.shared.credentialRecord(for: revisionID),
-                      let effectiveTarget = record.effectiveTarget,
-                      UniConnectSSH.detectedSession(fromCredentialRecord: record) != nil else {
-                    return nil
-                }
-                return (
-                    revisionID: revisionID,
-                    endpointFingerprint: UniConnectClaudeUpdateHostID.endpointFingerprint(
-                        for: effectiveTarget
-                    )
-                )
-            }
-        )
-        let terminalWriter = UniConnectClaudeTerminalWriter(
-            tabManagersProvider: tabManagersProvider
-        )
-        let localInspector = UniConnectClaudeLocalProcessInspector(
-            stateReader: applicationStateReader,
-            binaryUpdater: binaryUpdater
-        )
-        let sessionController = UniConnectClaudeSessionController(
-            stateReader: applicationStateReader,
-            terminalWriter: terminalWriter,
-            localInspector: localInspector,
-            remoteController: remoteResolver,
-            processExitWaiter: UniConnectLocalProcessExitWaiter(),
-            sessionRegistry: sessionRegistry
-        )
-        let updateOrchestrator = ClaudeUpdateOrchestrator(
-            targetProvider: targetProvider,
-            sessionController: sessionController,
-            binaryUpdater: binaryUpdater,
-            journal: UniConnectClaudeUpdateJournal(),
-            clock: SystemClaudeUpdateClock(),
-            logger: UniConnectClaudeUpdateLogger()
-        )
-        let updateCoordinator = UniConnectClaudeUpdateCoordinator(
-            targetProvider: targetProvider,
-            orchestrator: updateOrchestrator,
-            terminateOwnedProcesses: {
-                processRunner.shutdown()
-            }
-        )
-        Task {
-            await sessionRegistry.start(
-                localSignals: UniConnectClaudeSessionSignalSource(center: .default),
-                remoteSignals: bridgeRuntime?.sessionSignals
-            )
+        // Al salir, ningún proceso hijo de los runners queda vivo (SSH, claude update, sondas).
+        UniConnectCoordinator.shared.configureProcessRunnersShutdown {
+            processRunner.shutdown()
+            probeRunner.shutdown()
         }
-        UniConnectCoordinator.shared.configureClaudeUpdater(
-            updateCoordinator,
-            shutdown: {
-                processRunner.shutdown()
-                probeRunner.shutdown()
-                Task { await sessionRegistry.stop() }
-            }
-        )
         StartupBreadcrumbLog.append("app.init.tabManager.complete")
         // Migrate legacy and old-format socket mode values to the new enum.
         if let stored = defaults.string(forKey: SocketControlSettings.appStorageKey) {

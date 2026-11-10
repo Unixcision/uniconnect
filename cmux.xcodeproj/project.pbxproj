@@ -777,42 +777,11 @@
 		C1A0DE200000000000000003 /* UniConnectClaudeBridgeNotificationSink.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0DE100000000000000003 /* UniConnectClaudeBridgeNotificationSink.swift */; };
 		C1A0DE200000000000000004 /* UniConnectClaudeBridgeRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0DE100000000000000004 /* UniConnectClaudeBridgeRuntime.swift */; };
 		C1A0DE200000000000000005 /* UniConnectClaudeBridgeTokenVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0DE100000000000000005 /* UniConnectClaudeBridgeTokenVault.swift */; };
-		D26B20000000000000000003 /* UniConnectClaudeInstallationIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000003 /* UniConnectClaudeInstallationIdentity.swift */; };
-		D26B20000000000000000004 /* UniConnectClaudeLocalProcessInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000004 /* UniConnectClaudeLocalProcessInspector.swift */; };
 		7D566B440EFEB801D3091B24 /* UniConnectClaudeOpenConversationGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 625E066D06499D00B985AE68 /* UniConnectClaudeOpenConversationGuard.swift */; };
-		D26B20000000000000000005 /* UniConnectClaudeRemoteSessionControlling.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000005 /* UniConnectClaudeRemoteSessionControlling.swift */; };
-		D26B20000000000000000006 /* UniConnectClaudeRemoteTargetResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000006 /* UniConnectClaudeRemoteTargetResolution.swift */; };
-		D26B20000000000000000007 /* UniConnectClaudeRemoteTargetResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000007 /* UniConnectClaudeRemoteTargetResolver.swift */; };
-		D26B40000000000000000008 /* UniConnectClaudeRemoteTargetResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B30000000000000000008 /* UniConnectClaudeRemoteTargetResolverTests.swift */; };
-		D26B20000000000000000008 /* UniConnectClaudeRemoteTargetResolving.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000008 /* UniConnectClaudeRemoteTargetResolving.swift */; };
-		D26B20000000000000000009 /* UniConnectClaudeSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000009 /* UniConnectClaudeSessionController.swift */; };
-		D26B20000000000000000010 /* UniConnectClaudeSessionControllerError.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000010 /* UniConnectClaudeSessionControllerError.swift */; };
-		D26B20000000000000000011 /* UniConnectClaudeSessionEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000011 /* UniConnectClaudeSessionEvent.swift */; };
-		D26B20000000000000000012 /* UniConnectClaudeSessionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000012 /* UniConnectClaudeSessionRegistry.swift */; };
-		D26B40000000000000000002 /* UniConnectClaudeSessionRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B30000000000000000002 /* UniConnectClaudeSessionRegistryTests.swift */; };
 		D26B20000000000000000013 /* UniConnectClaudeSessionSignal.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000013 /* UniConnectClaudeSessionSignal.swift */; };
-		D26B20000000000000000014 /* UniConnectClaudeSessionSignalSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000014 /* UniConnectClaudeSessionSignalSource.swift */; };
-		D26B20000000000000000015 /* UniConnectClaudeSessionSignalStreaming.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000015 /* UniConnectClaudeSessionSignalStreaming.swift */; };
-		D26B20000000000000000016 /* UniConnectClaudeTerminalWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000016 /* UniConnectClaudeTerminalWriter.swift */; };
-		D26B20000000000000000017 /* UniConnectClaudeTerminalWriting.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000017 /* UniConnectClaudeTerminalWriting.swift */; };
 		D26C00000000000000000003 /* UniConnectClaudeUpdate in Frameworks */ = {isa = PBXBuildFile; productRef = D26C00000000000000000002 /* UniConnectClaudeUpdate */; };
 		D26C00000000000000000004 /* UniConnectClaudeUpdate in Frameworks */ = {isa = PBXBuildFile; productRef = D26C00000000000000000002 /* UniConnectClaudeUpdate */; };
-		D26B20000000000000000018 /* UniConnectClaudeUpdateApplicationStateReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000018 /* UniConnectClaudeUpdateApplicationStateReader.swift */; };
-		D26B20000000000000000019 /* UniConnectClaudeUpdateApplicationStateReading.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000019 /* UniConnectClaudeUpdateApplicationStateReading.swift */; };
-		D26B20000000000000000020 /* UniConnectClaudeUpdateCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000020 /* UniConnectClaudeUpdateCoordinator.swift */; };
 		D26B20000000000000000021 /* UniConnectClaudeUpdateHostID.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000021 /* UniConnectClaudeUpdateHostID.swift */; };
-		D26B20000000000000000022 /* UniConnectClaudeUpdateJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000022 /* UniConnectClaudeUpdateJournal.swift */; };
-		D26B40000000000000000003 /* UniConnectClaudeUpdateJournalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B30000000000000000003 /* UniConnectClaudeUpdateJournalTests.swift */; };
-		D26B20000000000000000023 /* UniConnectClaudeUpdateLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000023 /* UniConnectClaudeUpdateLogger.swift */; };
-		D26B40000000000000000004 /* UniConnectClaudeUpdateLoggerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B30000000000000000004 /* UniConnectClaudeUpdateLoggerTests.swift */; };
-		D26B20000000000000000024 /* UniConnectClaudeUpdateModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000024 /* UniConnectClaudeUpdateModel.swift */; };
-		D26B20000000000000000025 /* UniConnectClaudeUpdatePanelSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000025 /* UniConnectClaudeUpdatePanelSnapshot.swift */; };
-		D26B20000000000000000026 /* UniConnectClaudeUpdatePaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000026 /* UniConnectClaudeUpdatePaths.swift */; };
-		D26B20000000000000000027 /* UniConnectClaudeUpdateTargetIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000027 /* UniConnectClaudeUpdateTargetIdentity.swift */; };
-		D26B20000000000000000028 /* UniConnectClaudeUpdateTargetProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000028 /* UniConnectClaudeUpdateTargetProvider.swift */; };
-		D26B20000000000000000029 /* UniConnectClaudeUpdateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000029 /* UniConnectClaudeUpdateView.swift */; };
-		D26B20000000000000000030 /* UniConnectClaudeUpdateWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000030 /* UniConnectClaudeUpdateWindowController.swift */; };
-		D26B20000000000000000031 /* UniConnectClaudeUpdateWorkspaceSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000031 /* UniConnectClaudeUpdateWorkspaceSnapshot.swift */; };
 		D26B20000000000000000032 /* UniConnectControlledProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B10000000000000000032 /* UniConnectControlledProcessRunner.swift */; };
 		D26B40000000000000000005 /* UniConnectControlledProcessRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26B30000000000000000005 /* UniConnectControlledProcessRunnerTests.swift */; };
 		C37968F3598625929F94C75A /* UniConnectCoordinator+Accounts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3371F7D4E7CF447F7CCB7E5A /* UniConnectCoordinator+Accounts.swift */; };
@@ -1878,40 +1847,9 @@
 		C1A0DE100000000000000003 /* UniConnectClaudeBridgeNotificationSink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeBridgeNotificationSink.swift; sourceTree = "<group>"; };
 		C1A0DE100000000000000004 /* UniConnectClaudeBridgeRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeBridgeRuntime.swift; sourceTree = "<group>"; };
 		C1A0DE100000000000000005 /* UniConnectClaudeBridgeTokenVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeBridgeTokenVault.swift; sourceTree = "<group>"; };
-		D26B10000000000000000003 /* UniConnectClaudeInstallationIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeInstallationIdentity.swift; sourceTree = "<group>"; };
-		D26B10000000000000000004 /* UniConnectClaudeLocalProcessInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeLocalProcessInspector.swift; sourceTree = "<group>"; };
 		625E066D06499D00B985AE68 /* UniConnectClaudeOpenConversationGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeOpenConversationGuard.swift; sourceTree = "<group>"; };
-		D26B10000000000000000005 /* UniConnectClaudeRemoteSessionControlling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeRemoteSessionControlling.swift; sourceTree = "<group>"; };
-		D26B10000000000000000006 /* UniConnectClaudeRemoteTargetResolution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeRemoteTargetResolution.swift; sourceTree = "<group>"; };
-		D26B10000000000000000007 /* UniConnectClaudeRemoteTargetResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeRemoteTargetResolver.swift; sourceTree = "<group>"; };
-		D26B30000000000000000008 /* UniConnectClaudeRemoteTargetResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeRemoteTargetResolverTests.swift; sourceTree = "<group>"; };
-		D26B10000000000000000008 /* UniConnectClaudeRemoteTargetResolving.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeRemoteTargetResolving.swift; sourceTree = "<group>"; };
-		D26B10000000000000000009 /* UniConnectClaudeSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeSessionController.swift; sourceTree = "<group>"; };
-		D26B10000000000000000010 /* UniConnectClaudeSessionControllerError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeSessionControllerError.swift; sourceTree = "<group>"; };
-		D26B10000000000000000011 /* UniConnectClaudeSessionEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeSessionEvent.swift; sourceTree = "<group>"; };
-		D26B10000000000000000012 /* UniConnectClaudeSessionRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeSessionRegistry.swift; sourceTree = "<group>"; };
-		D26B30000000000000000002 /* UniConnectClaudeSessionRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeSessionRegistryTests.swift; sourceTree = "<group>"; };
 		D26B10000000000000000013 /* UniConnectClaudeSessionSignal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeSessionSignal.swift; sourceTree = "<group>"; };
-		D26B10000000000000000014 /* UniConnectClaudeSessionSignalSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeSessionSignalSource.swift; sourceTree = "<group>"; };
-		D26B10000000000000000015 /* UniConnectClaudeSessionSignalStreaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeSessionSignalStreaming.swift; sourceTree = "<group>"; };
-		D26B10000000000000000016 /* UniConnectClaudeTerminalWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeTerminalWriter.swift; sourceTree = "<group>"; };
-		D26B10000000000000000017 /* UniConnectClaudeTerminalWriting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeTerminalWriting.swift; sourceTree = "<group>"; };
-		D26B10000000000000000018 /* UniConnectClaudeUpdateApplicationStateReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeUpdateApplicationStateReader.swift; sourceTree = "<group>"; };
-		D26B10000000000000000019 /* UniConnectClaudeUpdateApplicationStateReading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeUpdateApplicationStateReading.swift; sourceTree = "<group>"; };
-		D26B10000000000000000020 /* UniConnectClaudeUpdateCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeUpdateCoordinator.swift; sourceTree = "<group>"; };
 		D26B10000000000000000021 /* UniConnectClaudeUpdateHostID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeUpdateHostID.swift; sourceTree = "<group>"; };
-		D26B10000000000000000022 /* UniConnectClaudeUpdateJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeUpdateJournal.swift; sourceTree = "<group>"; };
-		D26B30000000000000000003 /* UniConnectClaudeUpdateJournalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeUpdateJournalTests.swift; sourceTree = "<group>"; };
-		D26B10000000000000000023 /* UniConnectClaudeUpdateLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeUpdateLogger.swift; sourceTree = "<group>"; };
-		D26B30000000000000000004 /* UniConnectClaudeUpdateLoggerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeUpdateLoggerTests.swift; sourceTree = "<group>"; };
-		D26B10000000000000000024 /* UniConnectClaudeUpdateModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeUpdateModel.swift; sourceTree = "<group>"; };
-		D26B10000000000000000025 /* UniConnectClaudeUpdatePanelSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeUpdatePanelSnapshot.swift; sourceTree = "<group>"; };
-		D26B10000000000000000026 /* UniConnectClaudeUpdatePaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeUpdatePaths.swift; sourceTree = "<group>"; };
-		D26B10000000000000000027 /* UniConnectClaudeUpdateTargetIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeUpdateTargetIdentity.swift; sourceTree = "<group>"; };
-		D26B10000000000000000028 /* UniConnectClaudeUpdateTargetProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeUpdateTargetProvider.swift; sourceTree = "<group>"; };
-		D26B10000000000000000029 /* UniConnectClaudeUpdateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeUpdateView.swift; sourceTree = "<group>"; };
-		D26B10000000000000000030 /* UniConnectClaudeUpdateWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeUpdateWindowController.swift; sourceTree = "<group>"; };
-		D26B10000000000000000031 /* UniConnectClaudeUpdateWorkspaceSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectClaudeUpdateWorkspaceSnapshot.swift; sourceTree = "<group>"; };
 		D26B10000000000000000032 /* UniConnectControlledProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectControlledProcessRunner.swift; sourceTree = "<group>"; };
 		D26B30000000000000000005 /* UniConnectControlledProcessRunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniConnectControlledProcessRunnerTests.swift; sourceTree = "<group>"; };
 		3371F7D4E7CF447F7CCB7E5A /* UniConnectCoordinator+Accounts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UniConnectCoordinator+Accounts.swift"; sourceTree = "<group>"; };
@@ -2412,35 +2350,8 @@
 				C1A0DE100000000000000005 /* UniConnectClaudeBridgeTokenVault.swift */,
 				D26B10000000000000000001 /* UniConnectAtomicFileWriter.swift */,
 				D26B10000000000000000002 /* UniConnectClaudeBinaryUpdater.swift */,
-				D26B10000000000000000003 /* UniConnectClaudeInstallationIdentity.swift */,
-				D26B10000000000000000004 /* UniConnectClaudeLocalProcessInspector.swift */,
-				D26B10000000000000000005 /* UniConnectClaudeRemoteSessionControlling.swift */,
-				D26B10000000000000000006 /* UniConnectClaudeRemoteTargetResolution.swift */,
-				D26B10000000000000000007 /* UniConnectClaudeRemoteTargetResolver.swift */,
-				D26B10000000000000000008 /* UniConnectClaudeRemoteTargetResolving.swift */,
-				D26B10000000000000000009 /* UniConnectClaudeSessionController.swift */,
-				D26B10000000000000000010 /* UniConnectClaudeSessionControllerError.swift */,
-				D26B10000000000000000011 /* UniConnectClaudeSessionEvent.swift */,
-				D26B10000000000000000012 /* UniConnectClaudeSessionRegistry.swift */,
 				D26B10000000000000000013 /* UniConnectClaudeSessionSignal.swift */,
-				D26B10000000000000000014 /* UniConnectClaudeSessionSignalSource.swift */,
-				D26B10000000000000000015 /* UniConnectClaudeSessionSignalStreaming.swift */,
-				D26B10000000000000000016 /* UniConnectClaudeTerminalWriter.swift */,
-				D26B10000000000000000017 /* UniConnectClaudeTerminalWriting.swift */,
-				D26B10000000000000000018 /* UniConnectClaudeUpdateApplicationStateReader.swift */,
-				D26B10000000000000000019 /* UniConnectClaudeUpdateApplicationStateReading.swift */,
-				D26B10000000000000000020 /* UniConnectClaudeUpdateCoordinator.swift */,
 				D26B10000000000000000021 /* UniConnectClaudeUpdateHostID.swift */,
-				D26B10000000000000000022 /* UniConnectClaudeUpdateJournal.swift */,
-				D26B10000000000000000023 /* UniConnectClaudeUpdateLogger.swift */,
-				D26B10000000000000000024 /* UniConnectClaudeUpdateModel.swift */,
-				D26B10000000000000000025 /* UniConnectClaudeUpdatePanelSnapshot.swift */,
-				D26B10000000000000000026 /* UniConnectClaudeUpdatePaths.swift */,
-				D26B10000000000000000027 /* UniConnectClaudeUpdateTargetIdentity.swift */,
-				D26B10000000000000000028 /* UniConnectClaudeUpdateTargetProvider.swift */,
-				D26B10000000000000000029 /* UniConnectClaudeUpdateView.swift */,
-				D26B10000000000000000030 /* UniConnectClaudeUpdateWindowController.swift */,
-				D26B10000000000000000031 /* UniConnectClaudeUpdateWorkspaceSnapshot.swift */,
 				D26B10000000000000000032 /* UniConnectControlledProcessRunner.swift */,
 				D26B10000000000000000033 /* UniConnectLocalProcessExitWaiter.swift */,
 				D26B10000000000000000034 /* UniConnectMasterKeyMigrationPolicy.swift */,
@@ -3182,13 +3093,9 @@
 				A90612000000000000000001 /* UniConnectLocalTmuxTests.swift */,
 				C1A0DE300000000000000001 /* UniConnectClaudeBridgeMaintenanceTests.swift */,
 				D26B30000000000000000001 /* UniConnectClaudeBinaryUpdaterTests.swift */,
-				D26B30000000000000000002 /* UniConnectClaudeSessionRegistryTests.swift */,
-				D26B30000000000000000003 /* UniConnectClaudeUpdateJournalTests.swift */,
-				D26B30000000000000000004 /* UniConnectClaudeUpdateLoggerTests.swift */,
 				D26B30000000000000000005 /* UniConnectControlledProcessRunnerTests.swift */,
 				D26B30000000000000000006 /* UniConnectRecoveryPersistenceTests.swift */,
 				D26B30000000000000000007 /* UniConnectSSHProcessInvocationTests.swift */,
-				D26B30000000000000000008 /* UniConnectClaudeRemoteTargetResolverTests.swift */,
 				F2000001A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift */,
 				F3000001A1B2C3D4E5F60718 /* CJKIMEInputTests.swift */,
 				D3571003A1B2C3D4E5F60718 /* CJKIMEMarkedSelectionTests.swift */,
@@ -4269,36 +4176,9 @@
 				C1A0DE200000000000000003 /* UniConnectClaudeBridgeNotificationSink.swift in Sources */,
 				C1A0DE200000000000000004 /* UniConnectClaudeBridgeRuntime.swift in Sources */,
 				C1A0DE200000000000000005 /* UniConnectClaudeBridgeTokenVault.swift in Sources */,
-				D26B20000000000000000003 /* UniConnectClaudeInstallationIdentity.swift in Sources */,
-				D26B20000000000000000004 /* UniConnectClaudeLocalProcessInspector.swift in Sources */,
 				7D566B440EFEB801D3091B24 /* UniConnectClaudeOpenConversationGuard.swift in Sources */,
-				D26B20000000000000000005 /* UniConnectClaudeRemoteSessionControlling.swift in Sources */,
-				D26B20000000000000000006 /* UniConnectClaudeRemoteTargetResolution.swift in Sources */,
-				D26B20000000000000000007 /* UniConnectClaudeRemoteTargetResolver.swift in Sources */,
-				D26B20000000000000000008 /* UniConnectClaudeRemoteTargetResolving.swift in Sources */,
-				D26B20000000000000000009 /* UniConnectClaudeSessionController.swift in Sources */,
-				D26B20000000000000000010 /* UniConnectClaudeSessionControllerError.swift in Sources */,
-				D26B20000000000000000011 /* UniConnectClaudeSessionEvent.swift in Sources */,
-				D26B20000000000000000012 /* UniConnectClaudeSessionRegistry.swift in Sources */,
 				D26B20000000000000000013 /* UniConnectClaudeSessionSignal.swift in Sources */,
-				D26B20000000000000000014 /* UniConnectClaudeSessionSignalSource.swift in Sources */,
-				D26B20000000000000000015 /* UniConnectClaudeSessionSignalStreaming.swift in Sources */,
-				D26B20000000000000000016 /* UniConnectClaudeTerminalWriter.swift in Sources */,
-				D26B20000000000000000017 /* UniConnectClaudeTerminalWriting.swift in Sources */,
-				D26B20000000000000000018 /* UniConnectClaudeUpdateApplicationStateReader.swift in Sources */,
-				D26B20000000000000000019 /* UniConnectClaudeUpdateApplicationStateReading.swift in Sources */,
-				D26B20000000000000000020 /* UniConnectClaudeUpdateCoordinator.swift in Sources */,
 				D26B20000000000000000021 /* UniConnectClaudeUpdateHostID.swift in Sources */,
-				D26B20000000000000000022 /* UniConnectClaudeUpdateJournal.swift in Sources */,
-				D26B20000000000000000023 /* UniConnectClaudeUpdateLogger.swift in Sources */,
-				D26B20000000000000000024 /* UniConnectClaudeUpdateModel.swift in Sources */,
-				D26B20000000000000000025 /* UniConnectClaudeUpdatePanelSnapshot.swift in Sources */,
-				D26B20000000000000000026 /* UniConnectClaudeUpdatePaths.swift in Sources */,
-				D26B20000000000000000027 /* UniConnectClaudeUpdateTargetIdentity.swift in Sources */,
-				D26B20000000000000000028 /* UniConnectClaudeUpdateTargetProvider.swift in Sources */,
-				D26B20000000000000000029 /* UniConnectClaudeUpdateView.swift in Sources */,
-				D26B20000000000000000030 /* UniConnectClaudeUpdateWindowController.swift in Sources */,
-				D26B20000000000000000031 /* UniConnectClaudeUpdateWorkspaceSnapshot.swift in Sources */,
 				D26B20000000000000000032 /* UniConnectControlledProcessRunner.swift in Sources */,
 				C37968F3598625929F94C75A /* UniConnectCoordinator+Accounts.swift in Sources */,
 				B25547160DB5CC546C7261A7 /* UniConnectCoordinator+RemoteAgents.swift in Sources */,
@@ -4772,10 +4652,6 @@
 				D3284001A1B2C3D4E5F60718 /* TraditionalChineseIMENumpadRegressionTests.swift in Sources */,
 				D26B40000000000000000001 /* UniConnectClaudeBinaryUpdaterTests.swift in Sources */,
 				C1A0DE310000000000000001 /* UniConnectClaudeBridgeMaintenanceTests.swift in Sources */,
-				D26B40000000000000000008 /* UniConnectClaudeRemoteTargetResolverTests.swift in Sources */,
-				D26B40000000000000000002 /* UniConnectClaudeSessionRegistryTests.swift in Sources */,
-				D26B40000000000000000003 /* UniConnectClaudeUpdateJournalTests.swift in Sources */,
-				D26B40000000000000000004 /* UniConnectClaudeUpdateLoggerTests.swift in Sources */,
 				D26B40000000000000000005 /* UniConnectControlledProcessRunnerTests.swift in Sources */,
 				B0C10E000000000000000E00 /* UniConnectCreatedWindowPersistenceTests.swift in Sources */,
 				A7D15C0000000000000000B2 /* UniConnectDisconnectedTitleTests.swift in Sources */,
