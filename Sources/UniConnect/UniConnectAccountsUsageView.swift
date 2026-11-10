@@ -6,7 +6,10 @@ import SwiftUI
 struct UniConnectAccountsUsageView: View {
     let snapshot: UniConnectAccountsSnapshot?
     @Binding var selectedKey: String?
+    /// The Codex account whose reset is being spent, to disable its button.
+    let resettingKey: String?
     let onShowWindows: (String) -> Void
+    let onCodexReset: (UniConnectAccountsSnapshot.AccountSummary) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -168,6 +171,12 @@ struct UniConnectAccountsUsageView: View {
                 Text(verbatim: seenText(usage, math: math))
                     .font(.system(size: 10))
                     .foregroundStyle(math.isOld(usage.observedAt) ? Color.orange : Color.secondary)
+                if let credits = usage.resetCredits {
+                    let format = String(localized: "uniconnect.accounts.usage.resetCredits", defaultValue: "%lld reseteos gratis disponibles")
+                    Label(String.localizedStringWithFormat(format, Int64(credits.available)), systemImage: "gift.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(UniConnectAccountsPalette.color(2))
+                }
             } else {
                 Text(verbatim: noUsageText(account))
                     .font(.system(size: 11))
@@ -213,6 +222,26 @@ struct UniConnectAccountsUsageView: View {
                 Text(verbatim: seenText(usage, math: math))
                     .font(.system(size: 11))
                     .foregroundStyle(math.isOld(usage.observedAt) ? Color.orange : Color.secondary)
+                if let credits = usage.resetCredits {
+                    HStack(spacing: 12) {
+                        resetCreditsBadge(credits)
+                        if account.provider == "codex", credits.available > 0 {
+                            Button {
+                                onCodexReset(account)
+                            } label: {
+                                HStack(spacing: 6) {
+                                    if resettingKey == account.key {
+                                        ProgressView().controlSize(.small)
+                                    } else {
+                                        Image(systemName: "arrow.counterclockwise.circle.fill")
+                                    }
+                                    Text(String(localized: "uniconnect.accounts.reset.button", defaultValue: "Usar un reseteo gratis"))
+                                }
+                            }
+                            .disabled(resettingKey != nil)
+                        }
+                    }
+                }
             } else {
                 Text(verbatim: noUsageText(account))
                     .foregroundStyle(.secondary)
@@ -383,6 +412,22 @@ struct UniConnectAccountsUsageView: View {
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 14).fill(Color.secondary.opacity(0.07)))
+    }
+
+    private func resetCreditsBadge(_ credits: UniConnectAccountsSnapshot.ResetCredits) -> some View {
+        let format = String(localized: "uniconnect.accounts.usage.resetCredits", defaultValue: "%lld reseteos gratis disponibles")
+        var text = String.localizedStringWithFormat(format, Int64(credits.available))
+        if let expires = credits.nextExpiresAt {
+            let expiresFormat = String(localized: "uniconnect.accounts.usage.resetCreditsExpire", defaultValue: "el primero caduca el %@")
+            text += " · " + String(format: expiresFormat, expires.formatted(.dateTime.day().month(.abbreviated).locale(Locale(identifier: "es_ES"))))
+        }
+        return HStack(spacing: 8) {
+            Image(systemName: "gift.fill").foregroundStyle(UniConnectAccountsPalette.color(2))
+            Text(verbatim: text).font(.system(size: 12, weight: .semibold))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 10).fill(UniConnectAccountsPalette.color(2).opacity(0.12)))
     }
 
     // MARK: Texts

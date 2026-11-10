@@ -55,13 +55,36 @@ final class UniConnectAccountsModel {
     var selectedAccountKey: String?
     var alwaysOnTop = false
 
+    /// The Codex account whose free reset is being spent, if any.
+    private(set) var resettingKey: String?
+
     private let load: @MainActor () async -> UniConnectAccountsSnapshot?
+    private let codexReset: @MainActor (UniConnectAccountsSnapshot.AccountSummary) async -> Bool
     private var refreshTask: Task<Void, Never>?
     private var autoRefreshTask: Task<Void, Never>?
 
-    /// - Parameter load: One live reading of every open window; the coordinator passes it.
-    init(load: @escaping @MainActor () async -> UniConnectAccountsSnapshot?) {
+    /// - Parameters:
+    ///   - load: One live reading of every open window; the coordinator passes it.
+    ///   - codexReset: Confirms and spends one free Codex reset (`accounts-v1` §5); returns
+    ///     whether one was attempted.
+    init(
+        load: @escaping @MainActor () async -> UniConnectAccountsSnapshot?,
+        codexReset: @escaping @MainActor (UniConnectAccountsSnapshot.AccountSummary) async -> Bool = { _ in false }
+    ) {
         self.load = load
+        self.codexReset = codexReset
+    }
+
+    /// «Usar un reseteo gratis»: asks, spends it, and reads the accounts again.
+    func spendCodexReset(_ account: UniConnectAccountsSnapshot.AccountSummary) {
+        guard resettingKey == nil else { return }
+        resettingKey = account.key
+        Task { [weak self] in
+            guard let self else { return }
+            let attempted = await self.codexReset(account)
+            self.resettingKey = nil
+            if attempted { self.refresh() }
+        }
     }
 
     /// Starts a live reading unless one is already running.

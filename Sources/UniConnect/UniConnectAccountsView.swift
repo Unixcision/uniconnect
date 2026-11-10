@@ -17,7 +17,9 @@ struct UniConnectAccountsView: View {
                 UniConnectAccountsUsageView(
                     snapshot: model.snapshot,
                     selectedKey: $model.selectedAccountKey,
-                    onShowWindows: { email in model.showWindows(ofEmail: email) }
+                    resettingKey: model.resettingKey,
+                    onShowWindows: { email in model.showWindows(ofEmail: email) },
+                    onCodexReset: { account in model.spendCodexReset(account) }
                 )
             }
         }
@@ -178,9 +180,7 @@ struct UniConnectAccountsView: View {
     }
 
     private func hostWarning(_ host: UniConnectAccountsSnapshot.Host) -> some View {
-        let format = host.state == .vaultClosed
-            ? String(localized: "uniconnect.accounts.host.vaultClosed", defaultValue: "No se pudo leer %@: la bóveda está cerrada")
-            : String(localized: "uniconnect.accounts.host.unreachable", defaultValue: "No se pudo leer %@: no contestó")
+        let format = Self.hostWarningFormat(host)
         return HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             Text(verbatim: String(format: format, host.label))
@@ -192,6 +192,27 @@ struct UniConnectAccountsView: View {
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.1)))
         .padding(.horizontal, 20)
         .padding(.bottom, 6)
+    }
+
+    /// «No se pudo leer %@: …» with the cause from `hosts[].error`.
+    static func hostWarningFormat(_ host: UniConnectAccountsSnapshot.Host) -> String {
+        if host.state == .vaultClosed {
+            return String(localized: "uniconnect.accounts.host.vaultClosed", defaultValue: "No se pudo leer %@: la bóveda está cerrada")
+        }
+        switch host.error {
+        case "sin_python3":
+            return String(localized: "uniconnect.accounts.host.noPython", defaultValue: "No se pudo leer %@: no tiene python3")
+        case "ssh_fallo":
+            return String(localized: "uniconnect.accounts.host.sshFailed", defaultValue: "No se pudo leer %@: falló la conexión SSH")
+        case "salida_no_valida":
+            return String(localized: "uniconnect.accounts.host.badOutput", defaultValue: "No se pudo leer %@: respondió algo que no es la sonda")
+        case "tmux_no_disponible":
+            return String(localized: "uniconnect.accounts.host.noTmux", defaultValue: "No se pudo leer %@: no tiene tmux")
+        case "tmux_fallo":
+            return String(localized: "uniconnect.accounts.host.tmuxFailed", defaultValue: "No se pudo leer %@: tmux dio un error")
+        default:
+            return String(localized: "uniconnect.accounts.host.unreachable", defaultValue: "No se pudo leer %@: no contestó a tiempo")
+        }
     }
 
     private var windowList: some View {

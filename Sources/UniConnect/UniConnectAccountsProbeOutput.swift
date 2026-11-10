@@ -11,10 +11,16 @@ struct UniConnectAccountsProbeOutput: Decodable, Sendable {
         let windowMinutes: Int?
     }
 
+    struct ResetCredits: Decodable, Sendable {
+        let available: Int
+        let nextExpiresAt: String?
+    }
+
     struct Usage: Decodable, Sendable {
         let source: String
         let observedAt: String
         let limits: [Limit]
+        let resetCredits: ResetCredits?
     }
 
     struct Account: Decodable, Sendable {
@@ -41,16 +47,32 @@ struct UniConnectAccountsProbeOutput: Decodable, Sendable {
         let agent: Agent?
     }
 
+    /// What `--codex-reset` did (`accounts-v1` §5).
+    struct CodexReset: Decodable, Sendable {
+        let outcome: String?
+        let usage: Usage?
+        let error: String?
+    }
+
     let version: Int
     let error: String?
     let sessions: [Session]
+    let codexReset: CodexReset?
 
-    /// Decodes one probe line; `nil` for anything malformed or of another version.
+    /// Decodes the probe's JSON line; `nil` for anything malformed or of another version.
+    ///
+    /// Takes the last line that is a JSON object, so a remote shell that prints a banner or a
+    /// greeting before the probe runs does not hide the answer.
     static func decode(_ data: Data) -> UniConnectAccountsProbeOutput? {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        guard let output = try? decoder.decode(UniConnectAccountsProbeOutput.self, from: data),
-              output.version == 1 else { return nil }
-        return output
+        let lines = data.split(separator: UInt8(ascii: "\n")).reversed()
+        for line in lines where line.first == UInt8(ascii: "{") {
+            if let output = try? decoder.decode(UniConnectAccountsProbeOutput.self, from: Data(line)),
+               output.version == 1 {
+                return output
+            }
+        }
+        return nil
     }
 }

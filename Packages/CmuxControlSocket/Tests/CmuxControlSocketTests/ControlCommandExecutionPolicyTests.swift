@@ -15,6 +15,7 @@ struct ControlCommandExecutionPolicyTests {
             "workspace.remote.pty_bridge", "sidebar.custom.reload",
             "debug.sidebar.simulate_drag", "mobile.attach_ticket.create",
             "terminal.details", "mobile.terminal.details",
+            "accounts.list", "mobile.accounts.list", "accounts.codex_reset", "mobile.accounts.codex_reset",
         ] {
             #expect(ControlCommandExecutionPolicy(forMethod: method).runsOnSocketWorker, "\(method)")
         }

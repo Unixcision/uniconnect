@@ -19,6 +19,49 @@ actor UniConnectAccountsReader {
         let hostKey: String
         let target: Target
         let sessions: [String]
+        /// The probe's mode: `--accounts`, or `--codex-reset <key>` for §5.
+        var mode: [String] = ["--accounts"]
+    }
+
+    /// What spending a Codex reset did (`accounts-v1` §5).
+    struct CodexResetResult: Sendable {
+        /// `reset`, `nothingToReset`, `noCredit` or `alreadyRedeemed`.
+        let outcome: String
+        let usage: UniConnectAccountsSnapshot.Usage?
+    }
+
+    /// Spends one free Codex reset of the account running in `window` (`accounts-v1` §5).
+    ///
+    /// Runs the shared probe with `--session <tmux> --codex-reset <key>` on that window's host; the
+    /// probe asks that very Codex to consume the credit and reads its limits again.
+    func codexReset(
+        workspace: UniConnectAccountsInput.Workspace,
+        window: UniConnectAccountsInput.Window,
+        idempotencyKey: String
+    ) async -> Result<CodexResetResult, ProbeFailure> {
+        guard let session = window.tmuxSession else { return .failure(ProbeFailure(code: "sin_tmux")) }
+        let target: Job.Target
+        switch workspace.kind {
+        case .local:
+            guard let socket = window.tmuxSocket else { return .failure(ProbeFailure(code: "sin_tmux")) }
+            target = .local(socket: socket)
+        case .ssh:
+            guard let credentialID = workspace.credentialID else { return .failure(ProbeFailure(code: "ssh_fallo")) }
+            target = .ssh(credentialID: credentialID)
+        }
+        let job = Job(
+            id: "reset", hostKey: workspace.hostKey, target: target, sessions: [session],
+            mode: ["--codex-reset", idempotencyKey]
+        )
+        switch await run(job, script: probeScript(), timeout: .seconds(20)) {
+        case .failure(let failure):
+            return .failure(failure)
+        case .success(let output):
+            guard let reset = output.codexReset else { return .failure(ProbeFailure(code: "salida_no_valida")) }
+            if let error = reset.error { return .failure(ProbeFailure(code: String(error.prefix(40)))) }
+            guard let outcome = reset.outcome else { return .failure(ProbeFailure(code: "salida_no_valida")) }
+            return .success(CodexResetResult(outcome: outcome, usage: reset.usage.flatMap(Self.usage(_:))))
+        }
     }
 
     private let processRunner: any UniConnectProcessRunning
@@ -104,8 +147,9 @@ actor UniConnectAccountsReader {
 
         let script = probeScript()
         var outputs: [String: UniConnectAccountsProbeOutput] = [:]
+        var failures: [String: String] = [:]
         var finishedAt: [String: Date] = [:]
-        await withTaskGroup(of: (String, UniConnectAccountsProbeOutput?, Date).self) { group in
+        await withTaskGroup(of: (String, Result<UniConnectAccountsProbeOutput, ProbeFailure>, Date).self) { group in
             for job in jobs.values {
                 group.addTask { [self] in
                     let output = await self.run(job, script: script)
@@ -113,17 +157,22 @@ actor UniConnectAccountsReader {
                 }
             }
             for await (id, output, at) in group {
-                if let output { outputs[id] = output }
+                switch output {
+                case .success(let value): outputs[id] = value
+                case .failure(let failure): failures[id] = failure.code
+                }
                 finishedAt[id] = at
             }
         }
 
         let checkedAt = now()
         var hostStates: [String: UniConnectAccountsSnapshot.HostState] = [:]
+        var hostErrors: [String: String] = [:]
         var hostCheckedAt: [String: Date] = [:]
         for job in jobs.values {
             let ok = outputs[job.id] != nil
             if !ok || hostStates[job.hostKey] == nil { hostStates[job.hostKey] = ok ? .ok : .hostUnreachable }
+            if let failure = failures[job.id] { hostErrors[job.hostKey] = failure }
             hostCheckedAt[job.hostKey] = max(hostCheckedAt[job.hostKey] ?? .distantPast, finishedAt[job.id] ?? checkedAt)
         }
         for key in vaultClosedHosts where hostStates[key] == nil {
@@ -134,7 +183,8 @@ actor UniConnectAccountsReader {
             return UniConnectAccountsSnapshot.Host(
                 key: key, label: label.label, kind: label.kind,
                 state: hostStates[key] ?? .ok,
-                checkedAt: hostCheckedAt[key] ?? checkedAt
+                checkedAt: hostCheckedAt[key] ?? checkedAt,
+                error: hostErrors[key]
             )
         }
 
@@ -259,44 +309,73 @@ actor UniConnectAccountsReader {
         }
     }
 
-    /// Runs the probe for one host; `nil` on any failure (no python3, timeout, malformed output).
-    private func run(_ job: Job, script: String?) async -> UniConnectAccountsProbeOutput? {
-        guard let script, !script.isEmpty else { return nil }
+    /// Why one host's probe failed, as `hosts[].error` of `accounts-v1`.
+    struct ProbeFailure: Error {
+        let code: String
+    }
+
+    /// Runs the probe for one host and says why it failed (no python3, timeout, SSH, output).
+    private func run(
+        _ job: Job,
+        script: String?,
+        timeout runTimeout: Duration? = nil
+    ) async -> Result<UniConnectAccountsProbeOutput, ProbeFailure> {
+        guard let script, !script.isEmpty else { return .failure(ProbeFailure(code: "sin_sonda")) }
         let sessionArguments = job.sessions.flatMap { ["--session", $0] }
         let executable: String
         let arguments: [String]
         let environment: [String: String]
         switch job.target {
         case .local(let socket):
-            guard FileManager.default.isExecutableFile(atPath: localPython) else { return nil }
+            guard FileManager.default.isExecutableFile(atPath: localPython) else {
+                return .failure(ProbeFailure(code: "sin_python3"))
+            }
             executable = localPython
-            arguments = ["-", "--socket", socket, "--accounts"] + sessionArguments
+            arguments = ["-", "--socket", socket] + job.mode + sessionArguments
             environment = localEnvironment()
         case .ssh(let credentialID):
             guard let record = await credentialResolver(credentialID),
-                  let session = UniConnectSSH.detectedSession(fromCredentialRecord: record) else { return nil }
-            let remoteCommand = (["python3", "-", "--socket", "default", "--accounts"] + sessionArguments)
+                  let session = UniConnectSSH.detectedSession(fromCredentialRecord: record) else {
+                return .failure(ProbeFailure(code: "ssh_fallo"))
+            }
+            let remoteCommand = (["python3", "-", "--socket", "default"] + job.mode + sessionArguments)
                 .map(UniConnectSSH.shellQuote)
                 .joined(separator: " ")
             guard let invocation = UniConnectSSHProcessInvocation(
                 session: session,
                 remoteCommand: remoteCommand,
                 ambientEnvironment: ambientEnvironment()
-            ) else { return nil }
+            ) else { return .failure(ProbeFailure(code: "ssh_fallo")) }
             executable = invocation.executable
             arguments = invocation.arguments
             environment = invocation.environment
         }
-        guard let result = try? await processRunner.run(
-            executable: executable,
-            arguments: arguments,
-            environment: environment,
-            standardInput: Data(script.utf8),
-            timeout: timeout
-        ), result.terminationStatus == 0, !result.outputWasTruncated,
-              let output = UniConnectAccountsProbeOutput.decode(result.standardOutput),
-              output.error == nil else { return nil }
-        return output
+        let result: UniConnectProcessResult
+        do {
+            result = try await processRunner.run(
+                executable: executable,
+                arguments: arguments,
+                environment: environment,
+                standardInput: Data(script.utf8),
+                timeout: runTimeout ?? timeout
+            )
+        } catch UniConnectProcessRunnerError.timedOut {
+            return .failure(ProbeFailure(code: "sin_respuesta"))
+        } catch {
+            return .failure(ProbeFailure(code: "ssh_fallo"))
+        }
+        let stderr = String(decoding: result.standardError.prefix(4_096), as: UTF8.self).lowercased()
+        if result.terminationStatus == 127
+            || (stderr.contains("python3") && (stderr.contains("not found") || stderr.contains("no such file"))) {
+            return .failure(ProbeFailure(code: "sin_python3"))
+        }
+        if result.terminationStatus == 255 { return .failure(ProbeFailure(code: "ssh_fallo")) }
+        guard !result.outputWasTruncated,
+              let output = UniConnectAccountsProbeOutput.decode(result.standardOutput) else {
+            return .failure(ProbeFailure(code: "salida_no_valida"))
+        }
+        if let error = output.error { return .failure(ProbeFailure(code: String(error.prefix(40)))) }
+        return .success(output)
     }
 
     /// The probe's environment on this Mac: enough to find tmux, its sockets and the user's files.
@@ -324,7 +403,12 @@ actor UniConnectAccountsReader {
                     resetsAt: $0.resetsAt.flatMap(date(_:)), windowMinutes: $0.windowMinutes
                 )
             },
-            hostKey: nil
+            hostKey: nil,
+            resetCredits: probed.resetCredits.map {
+                UniConnectAccountsSnapshot.ResetCredits(
+                    available: $0.available, nextExpiresAt: $0.nextExpiresAt.flatMap(date(_:))
+                )
+            }
         )
     }
 

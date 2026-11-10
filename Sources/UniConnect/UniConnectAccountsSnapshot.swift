@@ -15,12 +15,19 @@ struct UniConnectAccountsSnapshot: Equatable, Sendable {
         let windowMinutes: Int?
     }
 
+    /// Free full resets an account still has (Codex), and when the first one expires.
+    struct ResetCredits: Equatable, Sendable {
+        let available: Int
+        let nextExpiresAt: Date?
+    }
+
     /// The last usage an agent reported for its account, and where it was seen.
     struct Usage: Equatable, Sendable {
-        /// `statusline` (Claude's status line) or `rollout` (Codex's session log).
+        /// `statusline` (Claude's status line), `app_server` (Codex, live) or `rollout` (Codex's log).
         let source: String
         let observedAt: Date
         let limits: [Limit]
+        var resetCredits: ResetCredits? = nil
         /// The host it was seen on; set when it is chosen for ``AccountSummary``.
         var hostKey: String?
     }
@@ -59,6 +66,9 @@ struct UniConnectAccountsSnapshot: Equatable, Sendable {
         let kind: String
         let state: HostState
         let checkedAt: Date
+        /// Why it could not be read: `sin_respuesta`, `sin_python3`, `ssh_fallo`, `salida_no_valida`,
+        /// `tmux_no_disponible`, `tmux_fallo`; `nil` when it was read.
+        var error: String? = nil
         var id: String { key }
     }
 

@@ -45687,7 +45687,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "No se pudo leer %@: no contestó"
+            "value": "No se pudo leer %@: no contestó a tiempo"
           }
         }
       }
@@ -46282,6 +46282,204 @@
           "stringUnit": {
             "state": "translated",
             "value": "No se encontró ese espacio de trabajo."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.host.noPython": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer %@: no tiene python3"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.host.sshFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer %@: falló la conexión SSH"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.host.badOutput": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer %@: respondió algo que no es la sonda"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.host.noTmux": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer %@: no tiene tmux"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.host.tmuxFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer %@: tmux dio un error"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.resetCredits": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld reseteos gratis disponibles"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.usage.resetCreditsExpire": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "el primero caduca el %@"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.button": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar un reseteo gratis"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.confirmTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Gastar 1 de %1$lld reseteos gratis de %2$@?"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.confirmBody": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los límites de Codex de esta cuenta vuelven a 0 %. No se puede deshacer."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.confirmButton": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gastar reseteo"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.notFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay ninguna ventana de esa cuenta abierta en ese equipo."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo hablar con ese Codex. No se ha gastado ningún reseteo."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.done": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hecho: %@ vuelve a empezar."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.nothing": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No había nada que resetear: no se ha gastado ninguno."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.noCredit": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta cuenta ya no tiene reseteos gratis."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.already": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ese reseteo ya se había aplicado."
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.reset.invalidParams": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falta la cuenta de Codex, el equipo o la clave del reseteo."
           }
         }
       }
