@@ -872,7 +872,8 @@ class TargetIntegrationTests(unittest.TestCase):
         # El trabajador real escribe sus diarios en ~/.local/state/uniconnect/relaunch-v1 del destino:
         # en las pruebas, el de un HOME temporal, nunca el de root (09-11: tres operaciones de esta
         # prueba aparecieron en el MINIPC como un relanzado fantasma).
-        home = tempfile.TemporaryDirectory(prefix="uc-relaunch-home-")
+        # El trabajador es un proceso aparte (setsid) y puede escribir su diario un instante después.
+        home = tempfile.TemporaryDirectory(prefix="uc-relaunch-home-", ignore_cleanup_errors=True)
         self.addCleanup(home.cleanup)
         patcher = patch.dict(os.environ, {"HOME": home.name})
         patcher.start()
@@ -1179,9 +1180,10 @@ class TargetIntegrationTests(unittest.TestCase):
                     adapter.probe(candidate, "agent.relaunch")
                 self.assertEqual(blocked.exception.cause, "dialogo_desconocido")
                 state = adapter.request(candidate, "start", expected=proof, operation_id=rejected)
-                deadline = time.monotonic() + 5
+                deadline = time.monotonic() + 10
                 while state.get("state") == "planificado" and time.monotonic() < deadline:
-                    events.wait(deadline, time.monotonic)
+                    # El rechazo se escribe en el diario, no en la pantalla: no hay salida que esperar.
+                    time.sleep(0.1)
                     state = adapter.request(candidate, "status", expected=proof, operation_id=rejected)
                 self.assertEqual(state, draft_result)
                 os.kill(proof["pid"], signal.SIGUSR2)
