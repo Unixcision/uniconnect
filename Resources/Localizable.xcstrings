@@ -46505,6 +46505,28 @@
           }
         }
       }
+    },
+    "uniconnect.accounts.section.agentSubtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld ventanas · %2$lld cuentas"
+          }
+        }
+      }
+    },
+    "uniconnect.accounts.group.agent": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Por IA"
+          }
+        }
+      }
     }
   }
 }

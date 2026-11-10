@@ -262,7 +262,7 @@ Contenido, de arriba abajo:
    `identidad_ambigua`.
    - Una ficha de email se queda **solo** con las ventanas de esa cuenta.
    - Al lado, un buscador que mira espacio, ventana, email, host y usuario del sistema.
-4. **Agrupar.** «Por espacio» (por defecto) o «Por cuenta», y el interruptor «Ventanas sin IA»,
+4. **Agrupar.** «Por espacio» (por defecto), «Por cuenta» o «Por IA» (una sección por `agent.provider`, con «N ventanas · M cuentas», de más a menos ventanas, y «Sin IA» al final), y el interruptor «Ventanas sin IA»,
    apagado por defecto. Apagado, oculta `sin_ia`, `sin_tmux` y `panel_muerto`.
 5. **Avisos de host.** Uno por host que no sea `ok`: «No se pudo leer root@…: no contestó» o
    «…: la bóveda está cerrada».

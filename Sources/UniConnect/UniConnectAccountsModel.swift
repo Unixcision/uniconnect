@@ -16,6 +16,8 @@ final class UniConnectAccountsModel {
     enum Grouping: Hashable {
         case workspace
         case account
+        /// By agent (Claude Code, Codex, Grok…), most windows first.
+        case agent
     }
 
     enum Filter: Hashable {
@@ -242,6 +244,36 @@ final class UniConnectAccountsModel {
                 return Section(
                     id: id.uuidString, title: first.workspace,
                     subtitle: snapshot?.host(first.hostKey)?.label, colorIndex: nil, rows: members
+                )
+            }
+        case .agent:
+            var order: [String] = []
+            var grouped: [String: [UniConnectAccountsSnapshot.Window]] = [:]
+            var names: [String: String] = [:]
+            for row in rows {
+                let key = row.agent?.provider ?? "#sin_ia"
+                if grouped[key] == nil { order.append(key) }
+                grouped[key, default: []].append(row)
+                if let agent = row.agent { names[key] = agent.displayName }
+            }
+            order.sort { left, right in
+                if (left == "#sin_ia") != (right == "#sin_ia") { return right == "#sin_ia" }
+                let leftCount = grouped[left]?.count ?? 0, rightCount = grouped[right]?.count ?? 0
+                return leftCount != rightCount ? leftCount > rightCount : left < right
+            }
+            return order.compactMap { key in
+                guard let members = grouped[key] else { return nil }
+                let accounts = Set(members.compactMap { $0.state == .ok ? $0.account?.email : nil }).count
+                let format = String(
+                    localized: "uniconnect.accounts.section.agentSubtitle",
+                    defaultValue: "%1$lld ventanas · %2$lld cuentas"
+                )
+                return Section(
+                    id: "agent:" + key,
+                    title: names[key] ?? String(localized: "uniconnect.accounts.section.noAgent", defaultValue: "Sin IA"),
+                    subtitle: String.localizedStringWithFormat(format, Int64(members.count), Int64(accounts)),
+                    colorIndex: nil,
+                    rows: members
                 )
             }
         case .account:

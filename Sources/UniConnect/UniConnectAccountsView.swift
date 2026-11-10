@@ -202,10 +202,12 @@ struct UniConnectAccountsView: View {
                     .tag(UniConnectAccountsModel.Grouping.workspace)
                 Text(String(localized: "uniconnect.accounts.group.account", defaultValue: "Por cuenta"))
                     .tag(UniConnectAccountsModel.Grouping.account)
+                Text(String(localized: "uniconnect.accounts.group.agent", defaultValue: "Por IA"))
+                    .tag(UniConnectAccountsModel.Grouping.agent)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 220)
+            .frame(width: 300)
             Toggle(isOn: $model.showWindowsWithoutAgent) {
                 Text(String(localized: "uniconnect.accounts.showNoAgent", defaultValue: "Ventanas sin IA"))
             }
@@ -254,7 +256,7 @@ struct UniConnectAccountsView: View {
 
     private var windowList: some View {
         let sections = model.sections
-        let byAccount = model.grouping == .account
+        let byAccount = model.grouping != .workspace
         let hostLabels = Dictionary(
             (model.snapshot?.hosts ?? []).map { ($0.key, $0.label) },
             uniquingKeysWith: { first, _ in first }
