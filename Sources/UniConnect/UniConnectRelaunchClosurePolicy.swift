@@ -14,8 +14,9 @@ import Foundation
 /// process is there. A local window is exactly that case and is allowed. What is still refused is
 /// the case where those steps are **not** enough:
 ///
-/// - **A window on a server.** The session record of a remote pane carries no conversation at all,
-///   so there is nothing to give back after closing it.
+/// - **A window on a server that the worker did not prove.** A remote pane is closed only by the
+///   Linux worker on its own box, and only after its `inspect` proved the agent, the conversation
+///   and the options. A remote key without that proof has nothing to give back after closing it.
 /// What it does **not** check yet, said here so nobody reads a promise into it: whether something
 /// else owns the pane. A supervisor that relaunches on its own terms would race this one and
 /// neither would know about the other. On this desktop there is no such supervisor — the local
@@ -25,9 +26,8 @@ struct UniConnectRelaunchClosurePolicy: Sendable {
     /// What is still missing, and for which case. Emptying it is how the refusal is lifted — with
     /// the test that proves the condition, never by deleting the check.
     static let outstandingConditions = [
-        "identidad de la IA en paneles de caja SSH",
-        "exclusion compartida con otros supervisores",
-        "recuperacion durable de la operacion tras un corte",
+        "exclusion compartida con otros supervisores en ventanas locales",
+        "recuperacion durable de la operacion local tras un corte",
     ]
 
     /// Whether a destination this build understands well enough may be closed.
@@ -43,12 +43,15 @@ struct UniConnectRelaunchClosurePolicy: Sendable {
         self.allowsLocal = allowsLocal
     }
 
-    /// Why `key` may not be closed, or nil when it may.
-    func refusal(for key: RelaunchTargetKey) -> RelaunchCause? {
-        switch key.destination {
-        case .local:
+    /// Why `target` may not be closed, or nil when it may.
+    func refusal(for target: UniConnectRelaunchExecutor.Target) -> RelaunchCause? {
+        switch (target.key.destination, target.route) {
+        case (.local, .local), (.local, .localClaude):
             return allowsLocal ? nil : .unsupported
-        case .ssh:
+        case (.ssh, .ssh):
+            // Lo cierra el trabajador en su destino, y solo sobre lo que su inspect acreditó.
+            return allowsLocal ? nil : .unsupported
+        default:
             // Sin conversación acreditada no hay nada que devolver después de cerrar.
             return .unsupported
         }
@@ -60,7 +63,7 @@ struct UniConnectRelaunchClosurePolicy: Sendable {
         case .unsupported:
             String(
                 localized: "uniconnect.relaunch.blocked.remote",
-                defaultValue: "Las ventanas que viven en un servidor todavía no se pueden relanzar desde aquí: falta acreditar qué IA hay en cada una. No se ha tocado ninguna."
+                defaultValue: "Relanzar no está disponible para estas ventanas en este equipo. No se ha tocado ninguna."
             )
         default:
             String(

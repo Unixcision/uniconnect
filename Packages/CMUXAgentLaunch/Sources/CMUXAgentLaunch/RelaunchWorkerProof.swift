@@ -12,6 +12,8 @@ public struct RelaunchWorkerProof: Sendable, Equatable {
     public let pane: String?
     /// The conversation proven live.
     public let effectiveID: String?
+    /// Claude's stable launcher on the destination (`installation.launcher`), for `update`.
+    public let launcher: String?
     /// What the plan shows about it.
     public let notes: RelaunchTargetNotes
 
@@ -28,6 +30,8 @@ public struct RelaunchWorkerProof: Sendable, Equatable {
         self.generation = generation
         pane = (fields["pane"] as? [String: Any])?["pane"] as? String
         effectiveID = fields["effective_id"] as? String
+        let installation = fields["installation"] as? [String: Any]
+        launcher = installation?["launcher"] as? String
         notes = RelaunchTargetNotes(
             warning: (fields["warning"] as? String).flatMap(RelaunchCause.init(rawValue:))
                 ?? ((fields["active"] as? Bool) == true ? .backgroundTasks : nil),
@@ -35,8 +39,8 @@ public struct RelaunchWorkerProof: Sendable, Equatable {
             draft: fields["draft"] as? Bool,
             contextTokens: (fields["context_tokens"] as? NSNumber)?.intValue,
             message: fields["message"] as? Bool,
-            version: fields["version"] as? String,
-            installed: fields["installed"] as? String,
+            version: fields["version"] as? String ?? installation?["version"] as? String,
+            installed: fields["installed"] as? String ?? installation?["installed"] as? String,
             droppedOptions: fields["dropped_options"] as? [String] ?? []
         )
     }

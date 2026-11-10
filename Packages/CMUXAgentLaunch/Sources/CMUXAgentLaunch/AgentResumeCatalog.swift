@@ -15,6 +15,15 @@ struct AgentResumeCatalog: Decodable, Sendable, Equatable {
         /// The flags and environment that make a resumed agent run without asking; absent when
         /// no such mode is verified for this provider.
         let noPrompt: NoPrompt?
+        /// The launch options a relaunch keeps (`contracts/relaunch-v1`, «Mismas opciones»).
+        let launchOptions: LaunchOptions?
+    }
+
+    /// The allowlist of options that come back on a relaunch: those that carry one value and the
+    /// switches that stand alone. Anything else is dropped and reported by name.
+    struct LaunchOptions: Decodable, Sendable, Equatable {
+        let values: [String]
+        let switches: [String]
     }
 
     /// A flag the no-prompt mode replaces and the CLI refuses next to it (Codex's `-a`, `--sandbox`…).

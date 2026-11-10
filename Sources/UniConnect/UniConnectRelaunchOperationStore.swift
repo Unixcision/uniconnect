@@ -14,6 +14,8 @@ final class UniConnectRelaunchOperationStore {
         let deviceID: String
         var operation: RelaunchOperation?
         var targets: [UniConnectRelaunchExecutor.Target]
+        /// What `agent.update` was planned with.
+        var options: RelaunchUpdateOptions
     }
 
     private var entries: [UUID: Entry] = [:]
@@ -28,6 +30,7 @@ final class UniConnectRelaunchOperationStore {
         deviceID: String,
         verb: RelaunchVerb,
         targets: [UniConnectRelaunchExecutor.Target],
+        options: RelaunchUpdateOptions = .unchanged,
         lifetime: TimeInterval = RelaunchPlan.defaultLifetime
     ) -> RelaunchToken {
         let token = RelaunchToken(
@@ -37,7 +40,9 @@ final class UniConnectRelaunchOperationStore {
             targets: Set(targets.map(\.key)),
             expiresAt: clock().addingTimeInterval(lifetime)
         )
-        entries[token.operationID] = Entry(token: token, deviceID: deviceID, operation: nil, targets: targets)
+        entries[token.operationID] = Entry(
+            token: token, deviceID: deviceID, operation: nil, targets: targets, options: options
+        )
         return token
     }
 
@@ -47,6 +52,11 @@ final class UniConnectRelaunchOperationStore {
     /// The targets a plan chose.
     func targets(for operationID: UUID) -> [UniConnectRelaunchExecutor.Target] {
         entries[operationID]?.targets ?? []
+    }
+
+    /// The options a plan was made with.
+    func options(for operationID: UUID) -> RelaunchUpdateOptions {
+        entries[operationID]?.options ?? .unchanged
     }
 
     /// Operations already accepted, for the admission gate to recognise a repeat.
@@ -73,13 +83,18 @@ final class UniConnectRelaunchOperationStore {
     }
 
     /// Replaces what is known about an operation as it progresses.
-    func update(operationID: UUID, results: [RelaunchOperation.Result]) {
+    func update(
+        operationID: UUID,
+        results: [RelaunchOperation.Result],
+        updates: [RelaunchInstallationUpdate]? = nil
+    ) {
         guard var entry = entries[operationID], let previous = entry.operation else { return }
         entry.operation = RelaunchOperation(
             operationID: operationID,
             verb: previous.verb,
             recovered: previous.recovered,
-            results: results
+            results: results,
+            updates: updates ?? previous.updates
         )
         entries[operationID] = entry
     }
@@ -92,7 +107,8 @@ final class UniConnectRelaunchOperationStore {
             operationID: operation.operationID,
             verb: operation.verb,
             recovered: true,
-            results: operation.results
+            results: operation.results,
+            updates: operation.updates
         )
     }
 }

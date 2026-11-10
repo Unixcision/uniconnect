@@ -25,7 +25,8 @@ public struct RelaunchTargetKey: Sendable, Hashable, Codable {
         /// A box on a server, named by the endpoint that would be dialled to reach it.
         case ssh(user: String, host: String, port: Int)
 
-        var text: String {
+        /// The destination as it appears in keys: `local:<machine>` or `ssh:user@host:port`.
+        public var text: String {
             switch self {
             case let .local(machineID): "local:\(machineID)"
             case let .ssh(user, host, port): "ssh:\(user)@\(host):\(port)"

@@ -13269,6 +13269,9 @@ struct VerticalTabsSidebar: View {
         case .updateClaude:
             guard let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else { return }
             UniConnectCoordinator.shared.requestClaudeUpdateInBox(workspace)
+        case .relaunchAgents:
+            guard let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else { return }
+            UniConnectCoordinator.shared.relaunchAgents(in: [workspace])
         case .reconnectSSH:
             let workspaces = targetWorkspaceIds.compactMap { targetId in
                 tabManager.tabs.first(where: { $0.id == targetId })
@@ -16798,6 +16801,12 @@ struct TabItemView: View, Equatable {
                 actions.perform(.updateClaude)
             } label: {
                 Label(String(localized: "contextMenu.updateClaudeInBox", defaultValue: "Update Claude in This Box…"), systemImage: "arrow.down.app")
+            }
+
+            Button {
+                actions.perform(.relaunchAgents)
+            } label: {
+                Label(String(localized: "contextMenu.relaunchAgentsInBox", defaultValue: "Relanzar las IA de esta caja…"), systemImage: "arrow.clockwise")
             }
         }
 

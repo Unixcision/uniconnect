@@ -27,14 +27,16 @@ da por vigilado un fichero que nadie mira.
 
 | Archivo | Lo lee hoy |
 |---|---|
-| `causes.json` | Android: `RelaunchTest` exige que `RelaunchCause` sea exactamente este conjunto. Mac: `RelaunchCauseCatalogueTests` lo pretende, pero sube cuatro carpetas desde su fichero y lo busca en `Packages/contracts/…`, que no existe; al no encontrarlo sale sin comparar nada. Hasta que se corrija esa ruta (D8: subir hasta encontrar `contracts/` y `#require`), el Mac **no** está vigilado por este fichero. |
+| `causes.json` | Android: `RelaunchTest` exige que `RelaunchCause` sea exactamente este conjunto. Mac: `RelaunchCauseCatalogueTests` (sube hasta encontrar `contracts/` y hace `#require`; desde el 09-11-2026 compara de verdad y `RelaunchCause` es exactamente este conjunto). |
 | `plan-response.json`, `plan-all-excluded-response.json`, `plan-blocked-response.json` | Android: `RelaunchPlanContractTest`. |
 | `plan-window-request.json` | Android: `AgentCatalogCodecTest`. Linux: `linux/tests/test_relaunch.py`. |
 | `apply-response.json`, `apply-recovered-response.json`, `apply-in-progress-response.json` | Android: `RelaunchOperationContractTest` (si terminó lo dice `operation_state`, no `recovered`). Linux: `test_relaunch.py` compara las claves de su `apply` con las de `apply-in-progress-response.json`. |
 | `plan-request.json` | Linux: `test_relaunch.py` resuelve su alcance. |
-| `proveedores.json` | Nadie (nuevo el 24-09-2026). Lo tienen que leer los tests de capacidades del Mac y de Linux (lo que anuncia cada equipo es exactamente su fila de `capacidades`) y Android (cuándo ofrece «Relanzar IA de esta ventana»). |
-| `apply-request.json`, `status-request.json`, `errors.json` | Nadie todavía. |
-| `plan-update-request.json`, `plan-update-response.json`, `apply-update-response.json` | Android: `RelaunchUpdateContractTest` (09-11-2026). Mac y Linux: pendiente. |
+| `proveedores.json` | Mac: `RelaunchDialectTests` (lo que anuncia es exactamente su fila de `capacidades`, y sus celdas de `equipos`). Lo tienen que leer también Linux y Android (cuándo ofrece «Relanzar IA de esta ventana»). |
+| `errors.json` | Mac: `RelaunchUpdateOptionsTests` (cada error que usa el Mac está aquí). |
+| `apply-request.json`, `status-request.json` | Nadie todavía. |
+| `plan-update-request.json`, `plan-update-response.json`, `apply-update-response.json` | Android: `RelaunchUpdateContractTest` (09-11-2026). Mac: `RelaunchUpdateContractTests` (mismas claves por objetivo y por resultado, `estimated_tokens`, `updates[]`) y `RelaunchUpdateOptionsTests`. Linux: pendiente. |
+| `mensajes.json` | Mac: `RelaunchReopenMessageTests` (los textos letra a letra, y cuándo se manda). |
 
 Las pruebas de Android se han escrito o cambiado el 24-09-2026 sin ejecutarlas: no se compila
 hasta nuevo aviso.
@@ -62,7 +64,7 @@ igual. D7 porta el dialecto que falta a cada lado. La matriz resultante, que fij
 
 | Proveedor | Mac, ventana local | Mac, ventana SSH | Linux, ventana local | Linux, caja SSH |
 |---|---|---|---|---|
-| Claude | sí | `no_soportado` | sí (probado en vivo el 08-11: salida limpia y, ocupado, escalado a matar el proceso; misma conversación y mismas opciones) | sí (probado en vivo el 08-11 en DESA por el camino real del adaptador: salida limpia en 7 s, misma conversación y mismas opciones) |
+| Claude | sí (10-11, en vivo: salida limpia, escalado con monitores y con borrador, actualizar) | sí, por el trabajador de Linux (10-11, en vivo en `uc-prueba-relanzar`) | sí (probado en vivo el 08-11: salida limpia y, ocupado, escalado a matar el proceso; misma conversación y mismas opciones) | sí (probado en vivo el 08-11 en DESA por el camino real del adaptador: salida limpia en 7 s, misma conversación y mismas opciones) |
 | Codex | escrito, **pendiente de prueba en vivo** | `no_soportado` | sí, `agent.continue` y `agent.recover` requieren evidencia exacta de pausa/acuse | sí |
 | Antigravity | `no_soportado` | `no_soportado` | sí, solo con binding gestionado y statusLine nativo fresco que pruebe estado idle | sí, bajo las mismas puertas en el destino Linux |
 
@@ -75,8 +77,10 @@ que cierra y reabre un proceso sintético con la misma conversación y configura
 operado una cuenta real.
 | grok y el resto del catálogo | `no_soportado` | `no_soportado` | `no_soportado` | `no_soportado` |
 
-- **Mac SSH** sigue en `no_soportado`: la `ClosurePolicy` rechaza `.ssh`. Una ventana SSH pedida por
-  id desde el móvil devuelve esa exclusión, no `alcance_no_valido`.
+- **Mac SSH** (10-11): Claude se relanza y se actualiza ejecutando por SSH el trabajador de Linux
+  (ver «Mac y SSH»). Codex y Antigravity siguen fuera desde el Mac (`proveedor_no_soportado`) hasta
+  una prueba en vivo suya. Una ventana SSH pedida por id desde el móvil devuelve su plan o su
+  exclusión, nunca `alcance_no_valido`.
 - **Linux SSH** usa el mismo trabajador que en local, ejecutado en el destino por el canal de la
   caja. Necesita un destino Linux (`/proc` y `pidfd_open`); si no los hay, `no_soportado`.
 
@@ -282,8 +286,17 @@ Nada de lo que sigue cambia las fases, el token ni el escalado de arriba.
     `eval '<orden>'` cuyo prólogo lleva `unsetenv` o `shell-snapshots`, con o sin `-l`. Los MCP no
     cuentan.
   - Antes de cerrar se guarda cada `<orden>`, extraída con un analizador de comillas de shell, en
-    `~/.local/state/uniconnect/relaunch-v1/monitores/<id>-<AAAAMMDD-HHMMSS>.txt` del destino. También
-    se copian los ficheros de `/tmp/claude-<uid>/…` que mencionen: el scratchpad puede no sobrevivir.
+    `~/.local/state/uniconnect/relaunch-v1/monitores/<id de conversación>-<AAAAMMDD-HHMMSS>.txt` del
+    destino (10-11: el id de la conversación, que es lo que la IA reconoce como suyo, no el de la
+    ventana). También se copian los ficheros de `/tmp/claude-<uid>/…` que mencionen: el scratchpad
+    puede no sobrevivir.
+  - Formato común (10-11), igual en Mac y Linux:
+    ```text
+    # sesion=<tmux> conversacion=<id> estado=<status> fecha=<ISO-8601>
+    # Monitor o shell de fondo 1
+    <orden tal cual>
+    # (copia de <ruta> en <carpeta>/)
+    ```
   - El plan lo cuenta en `background`, y es **aviso** (`tareas_de_fondo`), no exclusión.
   - Tras el cierre se termina el árbol entero de cada uno, para que no queden huérfanos que dupliquen
     el monitor cuando la IA lo relance.
@@ -299,6 +312,10 @@ Nada de lo que sigue cambia las fases, el token ni el escalado de arriba.
   comió el 37 % del cupo de Fable. Por eso:
   - Con monitores, o si estaba trabajando, se escribe el texto de `mensajes.json`
     (`con_monitores`, `solo_cortado`, `anadido_cortado`), con el compositor vacío, y después Intro.
+  - «Estaba trabajando» es **solo** `status: busy` (10-11). Claude escribe `shell` mientras corre un
+    shell de fondo con la IA ociosa (medido en 2.1.321): se cierra por `kill_process`, como todo lo
+    que no es `idle`, pero recibe `con_monitores` sin `anadido_cortado`. `solo_cortado` solo con
+    `busy`.
   - Si no, no se escribe nada (`message: false`).
   - El borrador se reescribe **después** del mensaje.
 - **Coste.**
@@ -326,3 +343,17 @@ Para un objetivo SSH, el Mac **ejecuta por SSH el mismo trabajador de Linux**
 (`linux/uniconnect/relaunch_worker.py`, empaquetado en la app), como ya decía la sección 2 del
 documento. No mantiene una segunda implementación. El «Actualizar Claude» antiguo del Mac
 (`Packages/UniConnectClaudeUpdate`) pasa a ser este verbo.
+
+Lo que hace el Mac (10-11):
+- Empaqueta en la app `relaunch_worker.py`, `resume_catalog.py`, `agent_identity_hook.py`,
+  `linux/scripts/recovery.py` y `mensajes.json`, y arma la petición exactamente como
+  `RelaunchAgents.request` (test de paridad en `RelaunchWorkerParityTests`, que ejecuta el cliente de
+  Python): el trabajador comprimido con zlib en `python3 -c`, `messages` en el `start` de Claude,
+  `options` siempre en `agent.update`, `updated_to`, la acción `update` con el `launcher` de
+  `proof.installation`, y plazos de 40 s (`inspect`/`start` de Claude) y 300 s (`update`).
+- La prueba del `inspect` se devuelve tal cual en `expected`; la clave del objetivo es la del
+  contrato (`ssh:user@host:port|tmux:<socket>|pane:%N|gen:<generación del trabajador>`).
+- **Divergencia razonada, solo en ventanas locales del Mac: no hay `recreate_session`.** Matar la
+  sesión tmux local cerraría la ventana del escritorio que está enganchada a ella. Si
+  `respawn-pane` falla, el objetivo queda `fallido` (`escalation: respawn_pane`) y no se toca nada
+  más. En SSH rige el escalado completo del trabajador.

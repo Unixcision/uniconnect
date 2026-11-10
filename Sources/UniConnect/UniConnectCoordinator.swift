@@ -364,24 +364,22 @@ final class UniConnectCoordinator: ObservableObject {
         claudeUpdateShutdown = shutdown
     }
 
-    /// Presents the updater for the exact selected terminal window.
+    /// Actualizar Claude en la ventana elegida: el mismo camino que Relanzar, con `agent.update`.
     func requestClaudeUpdateInWindow(panelID: UUID, workspace: Workspace) {
         guard Self.isEnabled, workspace.panels[panelID] is TerminalPanel else { return }
-        claudeUpdateCoordinator?.request(
-            .selected(UniConnectClaudeUpdateTargetIdentity.targetID(panelID: panelID))
-        )
+        relaunchAgents(in: [workspace], onlyPanels: [panelID], verb: .agentUpdate)
     }
 
-    /// Presents the updater for every Claude window in one UniConnect box.
+    /// Actualizar Claude en todas las ventanas de una caja.
     func requestClaudeUpdateInBox(_ workspace: Workspace) {
         guard Self.isEnabled else { return }
-        claudeUpdateCoordinator?.request(.box(id: workspace.id.uuidString.lowercased()))
+        relaunchAgents(in: [workspace], verb: .agentUpdate)
     }
 
-    /// Presents the updater for every open Claude window across all boxes.
+    /// Actualizar Claude en todas las ventanas abiertas de este equipo.
     func requestClaudeUpdateEverywhere() {
         guard Self.isEnabled else { return }
-        claudeUpdateCoordinator?.request(.allOpen)
+        relaunchAgents(in: allTabManagers().flatMap(\.tabs), verb: .agentUpdate)
     }
 
     /// Reconciles durable updater obligations left by a previous termination.
@@ -421,12 +419,35 @@ final class UniConnectCoordinator: ObservableObject {
 
     private var relaunchCoordinator: UniConnectRelaunchCoordinator?
     private var relaunchInFlight = false
+    private var relaunchRemoteWorker: UniConnectRelaunchRemoteWorker?
+    private var relaunchLocalInstallation: UniConnectRelaunchLocalInstallation?
+
+    /// Receives, from the composition root, the SSH channel for windows on servers and this Mac's
+    /// Claude installations (login, version, `claude update`).
+    func configureRelaunch(
+        remoteWorker: UniConnectRelaunchRemoteWorker,
+        localInstallation: UniConnectRelaunchLocalInstallation
+    ) {
+        relaunchRemoteWorker = remoteWorker
+        relaunchLocalInstallation = localInstallation
+        relaunchCoordinator = nil
+    }
 
     /// The single relaunch service shared by the desktop menus and the phone (`relaunch.v1`), so
     /// both see the same panes in flight.
     var relaunchService: UniConnectRelaunchCoordinator {
         if let relaunchCoordinator { return relaunchCoordinator }
-        let service = UniConnectRelaunchCoordinator(machineID: Host.current().localizedName ?? "mac")
+        let service = UniConnectRelaunchCoordinator(
+            machineID: Host.current().localizedName ?? "mac",
+            remoteSighting: { [weak self] panelID in
+                guard let live = self?.remoteAgentLiveWindow(panelID: panelID) else { return nil }
+                if let provider = live.agent?.provider { return .agent(provider: provider) }
+                return live.reason == "sin_ia" ? .shell : nil
+            },
+            remoteWorker: relaunchRemoteWorker,
+            localClaude: UniConnectRelaunchLocalClaude(),
+            localInstallation: relaunchLocalInstallation
+        )
         relaunchCoordinator = service
         return service
     }
@@ -467,20 +488,20 @@ final class UniConnectCoordinator: ObservableObject {
         }
     }
 
-    /// Cierra y reabre las IA de `workspaces`, dejándolas como estaban.
-    ///
-    /// Un solo camino para el menú, el contextual y el móvil. Antes de tocar nada enseña lo que va a
-    /// hacer cuando son muchas ventanas: desde el móvil, «todo» está a un toque sin querer de
-    /// veintiséis agentes reiniciados, y en el Mac el menú de al lado dice lo mismo.
     /// Relanza solo la IA de una ventana concreta.
     ///
-    /// Es el alcance que más se usa y el único que no necesita preguntar: quien lo pide está
-    /// mirando esa ventana.
+    /// Es el alcance que más se usa: quien lo pide está mirando esa ventana.
     func relaunchAgent(panelID: UUID, in workspace: Workspace) {
         relaunchAgents(in: [workspace], onlyPanels: [panelID])
     }
 
-    func relaunchAgents(in workspaces: [Workspace], onlyPanels: Set<UUID>? = nil) {
+    /// Cierra y reabre las IA de `workspaces` sobre su misma conversación (`agent.relaunch`), o
+    /// además actualiza Claude antes (`agent.update`).
+    ///
+    /// Un solo camino para el menú, el contextual, la paleta, el carril y el móvil. Antes de tocar
+    /// nada enseña lo que va a pasar cuando hay algo que contar: muchas ventanas, avisos, monitores,
+    /// borradores, mensajes que gastan cupo, o una actualización con su modelo y su effort.
+    func relaunchAgents(in workspaces: [Workspace], onlyPanels: Set<UUID>? = nil, verb: RelaunchVerb = .agentRelaunch) {
         guard !relaunchInFlight else {
             presentError(String(
                 localized: "uniconnect.relaunch.error.alreadyRunning",
@@ -489,109 +510,27 @@ final class UniConnectCoordinator: ObservableObject {
             return
         }
         let coordinator = relaunchService
-        var preview = coordinator.preview(workspaces: workspaces)
-        if let onlyPanels {
-            // Filtrar por panel y no por caja: una ventana suelta es su propio alcance, y el resto
-            // de su caja no tiene por qué enterarse. Las exclusiones también, por identidad del panel.
-            let wanted = Set(workspaces.flatMap { workspace in
-                workspace.uniConnectLocalWindowsByPanelId
-                    .filter { onlyPanels.contains($0.key) }
-                    .compactMap { $0.value.tmuxBinding?.name }
-            })
-            preview = preview.restricted(toPanels: onlyPanels, sessions: wanted)
-        }
-
-        guard !preview.targets.isEmpty else {
-            // Una lista vacía se explica, porque «no ha pasado nada» y «no había nada que hacer» se
-            // parecen demasiado desde fuera.
-            presentError(preview.exclusions.isEmpty
-                ? String(
-                    localized: "uniconnect.relaunch.error.nothingToDo",
-                    defaultValue: "No hay ninguna IA que relanzar aquí."
-                )
-                : String(
-                    localized: "uniconnect.relaunch.error.allExcluded",
-                    defaultValue: "Ninguna de estas ventanas se puede relanzar todavía: o no se sabe qué conversación llevan, o su IA aún no tiene adaptador. Se quedan como están."
-                ))
-            return
-        }
-
-        if preview.needsConfirmation, !confirmRelaunch(preview) { return }
-
         relaunchInFlight = true
         Task { @MainActor [weak self] in
+            defer { self?.relaunchInFlight = false }
+            var preview = await coordinator.preview(workspaces: workspaces, verb: verb, onlyPanels: onlyPanels)
+            guard let self else { return }
+            guard !preview.targets.isEmpty else {
+                // Una lista vacía se explica, porque «no ha pasado nada» y «no había nada que hacer» se
+                // parecen demasiado desde fuera.
+                self.presentError(UniConnectRelaunchDialogs().emptyPlanMessage(preview))
+                return
+            }
+            if preview.needsConfirmation {
+                guard let options = UniConnectRelaunchDialogs().confirm(preview) else { return }
+                preview.options = options
+            }
             let operation = await coordinator.run(preview)
-            self?.relaunchInFlight = false
-            self?.recordRelaunchedConversations(operation)
-            self?.reportRelaunch(operation)
-        }
-    }
-
-    /// Enseña lo que va a pasar y espera un sí.
-    private func confirmRelaunch(_ preview: UniConnectRelaunchCoordinator.Preview) -> Bool {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = String(
-            localized: "uniconnect.relaunch.confirm.title",
-            defaultValue: "¿Relanzar \(preview.targets.count) ventanas?"
-        )
-        var detail = preview.targets.prefix(8).map(\.label).joined(separator: "\n")
-        if preview.targets.count > 8 {
-            detail += "\n…"
-        }
-        if !preview.exclusions.isEmpty {
-            detail += "\n\n" + String(
-                localized: "uniconnect.relaunch.confirm.excluded",
-                defaultValue: "Se quedan fuera \(preview.exclusions.count), intactas."
-            )
-        }
-        alert.informativeText = detail
-        alert.addButton(withTitle: String(localized: "uniconnect.relaunch.confirm.go", defaultValue: "Relanzar"))
-        alert.addButton(withTitle: String(localized: "common.cancel", defaultValue: "Cancel"))
-        return alert.runModal() == .alertFirstButtonReturn
-    }
-
-    /// Cuenta cómo quedó cada ventana, sin esconder las que necesitan a alguien.
-    private func reportRelaunch(_ operation: RelaunchOperation) {
-        let verified = operation.results.filter { $0.state == .verified }.count
-        let waiting = operation.needingUser
-        let failed = operation.retryable
-        let untouched = operation.results.filter { $0.state == .skipped }
-        guard !waiting.isEmpty || !failed.isEmpty || !untouched.isEmpty else { return }
-
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = String(
-            localized: "uniconnect.relaunch.done.title",
-            defaultValue: "Relanzadas \(verified) de \(operation.results.count)"
-        )
-        var detail: [String] = []
-        if !waiting.isEmpty {
-            detail.append(String(
-                localized: "uniconnect.relaunch.done.needsUser",
-                defaultValue: "\(waiting.count) esperan a que contestes algo en su ventana: un permiso o la confianza de una carpeta. No se contestan solas a propósito."
+            self.recordRelaunchedConversations(operation)
+            UniConnectRelaunchDialogs().report(operation, labels: Dictionary(
+                preview.targets.map { ($0.key, $0.label) }, uniquingKeysWith: { first, _ in first }
             ))
         }
-        if !failed.isEmpty {
-            // Ni «se han quedado como estaban» ni «se cerraron»: las dos afirman un efecto que
-            // aquí no está probado. Un fallo puede darse antes de tocar nada (el equipo no
-            // contestó) o después de cerrar la IA, y este recuento no distingue cuál. Lo único
-            // cierto es que no se pudo confirmar, y que mirar la ventana es lo que hace falta.
-            // El 15-09-2026 la frase anterior dijo «intacta» sobre una ventana que estaba muerta.
-            detail.append(String(
-                localized: "uniconnect.relaunch.done.failed",
-                defaultValue: "\(failed.count) sin confirmar. Revisa esas ventanas: puede haber cambios."
-            ))
-        }
-        if !untouched.isEmpty {
-            detail.append(String(
-                localized: "uniconnect.relaunch.done.skipped",
-                defaultValue: "\(untouched.count) se quedaron como estaban, sin tocarlas."
-            ))
-        }
-        alert.informativeText = detail.joined(separator: "\n\n")
-        alert.addButton(withTitle: String(localized: "common.ok", defaultValue: "OK"))
-        alert.runModal()
     }
 
     // MARK: Window helpers

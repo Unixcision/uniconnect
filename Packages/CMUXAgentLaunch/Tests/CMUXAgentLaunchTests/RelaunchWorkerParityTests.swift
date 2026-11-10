@@ -63,21 +63,29 @@ struct RelaunchWorkerParityTests {
         #expect(codec.decompress(broken) == nil)
     }
 
-    @Test("La misma petición que RelaunchAgents.request, clave a clave, para inspect, start y status")
+    @Test("La misma petición que RelaunchAgents.request, clave a clave, para inspect, start, status y update")
     func requestMatchesTheLinuxClient() throws {
         let source = try source()
         let proof = #"{"key":"linux:abc|gen:12","generation":12,"pane":{"pane":"%4","uid":0},"pid":7,"start":"99","effective_id":"57c82fdd-78cb-4a6d-8ef9-f80553c0493a","configuration":"d6","active":true,"warning":"tareas_de_fondo"}"#
         let operation = UUID(uuidString: "5d2e9a41-7c03-4b8e-a1f6-3e9b0c7d2a18")!
+        let messages = try linux("contracts/relaunch-v1/mensajes.json")
+        let options = try RelaunchUpdateOptions(model: "fable[1m]", effort: "medium")
+        func make(_ action: RelaunchWorkerRequest.Action, verb: RelaunchVerb? = nil, expected: Bool = false,
+                  options: RelaunchUpdateOptions? = nil, updatedTo: String? = nil, launcher: String? = nil) throws -> RelaunchWorkerRequest {
+            RelaunchWorkerRequest(
+                action: action, session: "uc-prueba-relanzar", socket: "default", provider: "claude",
+                windowID: "d39a534f-70f4-43af-a906-4fe4be5f0da9", catalogProviders: try catalogProviders(),
+                verb: verb, expected: expected ? Data(proof.utf8) : nil, operationID: expected ? operation : nil,
+                options: options, messages: messages, updatedTo: updatedTo, launcher: launcher
+            )
+        }
         let requests: [(String, RelaunchWorkerRequest)] = [
-            ("inspect", .init(action: .inspect, session: "uc-prueba-relanzar", socket: "default", provider: "claude",
-                              windowID: "d39a534f-70f4-43af-a906-4fe4be5f0da9", catalogProviders: try catalogProviders(),
-                              verb: .agentRelaunch)),
-            ("start", .init(action: .start, session: "uc-prueba-relanzar", socket: "default", provider: "claude",
-                            windowID: "d39a534f-70f4-43af-a906-4fe4be5f0da9", catalogProviders: try catalogProviders(),
-                            verb: .agentRelaunch, expected: Data(proof.utf8), operationID: operation)),
-            ("status", .init(action: .status, session: "uc-prueba-relanzar", socket: "default", provider: "claude",
-                             windowID: "d39a534f-70f4-43af-a906-4fe4be5f0da9", catalogProviders: try catalogProviders(),
-                             expected: Data(proof.utf8), operationID: operation)),
+            ("inspect", try make(.inspect, verb: .agentRelaunch)),
+            ("start", try make(.start, verb: .agentRelaunch, expected: true)),
+            ("status", try make(.status, expected: true)),
+            ("inspect-update", try make(.inspect, verb: .agentUpdate, options: .unchanged)),
+            ("start-update", try make(.start, verb: .agentUpdate, expected: true, options: options, updatedTo: "2.1.330")),
+            ("update", try make(.update, launcher: "/root/.local/bin/claude")),
         ]
         var commands: [String: String] = [:]
         for (name, request) in requests { commands[name] = try request.remoteCommand(source: source) }
@@ -99,7 +107,11 @@ struct RelaunchWorkerParityTests {
         agents.request(candidate, "inspect", verb="agent.relaunch")
         agents.request(candidate, "start", verb="agent.relaunch", expected=proof, operation_id=mac["operation"])
         agents.request(candidate, "status", expected=proof, operation_id=mac["operation"])
-        for name, script in zip(("inspect", "start", "status"), sent):
+        agents.request(candidate, "inspect", verb="agent.update", options={})
+        agents.request(candidate, "start", verb="agent.update", expected=proof, operation_id=mac["operation"],
+                       options={"model": "fable[1m]", "effort": "medium"}, updated_to="2.1.330")
+        agents.request(candidate, "update", launcher="/root/.local/bin/claude", timeout=300)
+        for name, script in zip(("inspect", "start", "status", "inspect-update", "start-update", "update"), sent):
             outer = shlex.split(mac["commands"][name])
             assert outer[:2] == ["/bin/bash", "-lc"] and len(outer) == 3, outer[:2]
             words = shlex.split(outer[2])
@@ -124,18 +136,25 @@ struct RelaunchWorkerParityTests {
         #expect(output.trimmingCharacters(in: .whitespacesAndNewlines) == "ok")
     }
 
-    @Test("Las opciones de Actualizar viajan; las de relanzar, nunca")
+    @Test("Las opciones de Actualizar viajan; las de relanzar, nunca; y los plazos son los de Linux")
     func updateOptionsTravel() throws {
         let source = try source()
-        let request = RelaunchWorkerRequest(
-            action: .inspect, session: "s", socket: "default", provider: "claude", windowID: "w",
-            catalogProviders: try catalogProviders(), verb: .agentUpdate,
-            options: try RelaunchUpdateOptions(model: "fable[1m]", effort: "medium")
-        )
-        let object = try request.object(source: source)
+        func request(_ action: RelaunchWorkerRequest.Action, _ verb: RelaunchVerb?, provider: String = "claude") throws -> RelaunchWorkerRequest {
+            RelaunchWorkerRequest(
+                action: action, session: "s", socket: "default", provider: provider, windowID: "w",
+                catalogProviders: try catalogProviders(), verb: verb,
+                options: try RelaunchUpdateOptions(model: "fable[1m]", effort: "medium")
+            )
+        }
+        let object = try request(.inspect, .agentUpdate).object(source: source)
         #expect(object["verb"] as? String == "agent.update")
         #expect(object["options"] as? [String: String] == ["model": "fable[1m]", "effort": "medium"])
         #expect(object["identity_helper"] == nil)
+        #expect(try request(.inspect, .agentRelaunch).object(source: source)["options"] == nil)
+        #expect(try request(.inspect, .agentRelaunch).timeout == .seconds(40))
+        #expect(try request(.inspect, .agentRelaunch, provider: "codex").timeout == .seconds(18))
+        #expect(try request(.update, nil).timeout == .seconds(300))
+        #expect(try request(.status, nil).timeout == .seconds(18))
         #expect(RelaunchWorkerRequest.isValidTmuxName("uc-prueba-relanzar"))
         #expect(!RelaunchWorkerRequest.isValidTmuxName("uc prueba"))
     }

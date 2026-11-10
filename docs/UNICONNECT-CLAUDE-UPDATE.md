@@ -1,5 +1,12 @@
 # Actualización segura de Claude Code
 
+> **Sustituido el 09-11-2026.** «Actualizar Claude» es ahora el verbo `agent.update` de
+> `relaunch.v1` (`contracts/relaunch-v1/LEEME.md`, «Actualizar Claude, monitores y borradores»):
+> el mismo camino que Relanzar IA, para ventana, caja, equipo, paleta y carril, y en SSH por el
+> trabajador de Linux. Del flujo de abajo se conserva `UniConnectClaudeBinaryUpdater` (versión y
+> `claude update` en local, fuera del panel). El orquestador antiguo ya no recibe peticiones;
+> solo sigue montado para reconciliar un diario pendiente de una versión anterior.
+
 ## Objetivo
 
 UniConnect actualiza la instalación de Claude Code sin perder la relación entre una ventana y

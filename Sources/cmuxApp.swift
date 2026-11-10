@@ -337,12 +337,22 @@ struct cmuxApp: App {
                 credentialResolver: credentialResolver
             )
         )
+
         let applicationStateReader = UniConnectClaudeUpdateApplicationStateReader(
             tabManagersProvider: tabManagersProvider
         )
         let binaryUpdater = UniConnectClaudeBinaryUpdater(
             processRunner: processRunner,
             credentialResolver: credentialResolver
+        )
+        // Relanzar IA y Actualizar Claude: el trabajador de Linux por el SSH de cada caja, y las
+        // instalaciones de Claude de este Mac (login, versión y `claude update`).
+        UniConnectCoordinator.shared.configureRelaunch(
+            remoteWorker: UniConnectRelaunchRemoteWorker(
+                processRunner: processRunner,
+                credentialResolver: credentialResolver
+            ),
+            localInstallation: UniConnectRelaunchLocalInstallation(processRunner: processRunner)
         )
         let sessionRegistry = UniConnectClaudeSessionRegistry()
         let bridgeKeyData = bridgeKey.withUnsafeBytes { Data($0) }

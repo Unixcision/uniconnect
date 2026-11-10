@@ -18,12 +18,14 @@ struct UniConnectRelaunchInventoryTests {
     private func sshWorkspace(
         title: String,
         host: String,
-        sessions: [String]
+        sessions: [String],
+        credentialID: UUID? = UUID()
     ) throws -> Workspace {
         let workspace = Workspace()
         workspace.customTitle = title
         workspace.uniConnectProfile = UniConnectWorkspaceProfile(
             kind: .ssh,
+            credentialId: credentialID,
             hostLabel: host,
             tmuxReady: true
         )
@@ -42,20 +44,22 @@ struct UniConnectRelaunchInventoryTests {
         return workspace
     }
 
-    @Test("Una caja SSH sale con una exclusión por ventana, no desaparece")
+    @Test("Una caja SSH sin credencial sale con una exclusión por ventana, no desaparece")
     func remoteBoxIsExcludedPerWindow() throws {
         let workspace = try sshWorkspace(
             title: "VALENCIARUSA",
             host: "root@185.237.234.231",
-            sessions: ["valenciarusa"]
+            sessions: ["valenciarusa"],
+            credentialID: nil
         )
 
         let reading = UniConnectRelaunchInventory(machineID: "mac").read(workspaces: [workspace])
 
         #expect(reading.items.isEmpty)
+        #expect(reading.remote.isEmpty)
         #expect(reading.exclusions.count == 1)
         let exclusion = try #require(reading.exclusions.first)
-        #expect(exclusion.cause == .unsupported)
+        #expect(exclusion.cause == .noCredential)
         #expect(exclusion.label.contains("VALENCIARUSA"))
         #expect(exclusion.label.contains("root@185.237.234.231"))
     }
@@ -68,12 +72,41 @@ struct UniConnectRelaunchInventoryTests {
             sessions: ["claudefixerrors", "claudesupport", "miamigoclaude"]
         )
 
+        // Sin ninguna lectura de la sonda no se sabe qué IA hay: no se le pregunta a ciegas.
         let reading = UniConnectRelaunchInventory(machineID: "mac").read(workspaces: [workspace])
 
         #expect(reading.items.isEmpty)
         #expect(reading.exclusions.count == 3)
-        #expect(reading.exclusions.allSatisfy { $0.cause == .unsupported })
+        #expect(reading.exclusions.allSatisfy { $0.cause == .ambiguousIdentity })
         #expect(Set(reading.exclusions.map(\.label)).count == 3)
+    }
+
+    @Test("Una ventana SSH con Claude visto por la sonda va al trabajador de su caja")
+    func remoteClaudeWindowBecomesACandidate() throws {
+        let workspace = try sshWorkspace(title: "NOTBETTING", host: "root@15.217.153.205", sessions: ["uc-prueba-relanzar"])
+        let panelID = try #require(workspace.focusedPanelId)
+        let reading = UniConnectRelaunchInventory(machineID: "mac", remoteSighting: { _ in .agent(provider: "claude") })
+            .read(workspaces: [workspace], verb: .agentUpdate)
+
+        #expect(reading.exclusions.isEmpty)
+        let candidate = try #require(reading.remote.first)
+        #expect(candidate.panelID == panelID)
+        #expect(candidate.session == "uc-prueba-relanzar")
+        #expect(candidate.socket == "default")
+        #expect(candidate.provider == "claude")
+        #expect(candidate.credentialID == workspace.uniConnectProfile?.credentialId)
+    }
+
+    @Test("En SSH, una ventana en su shell es sin_ia y Codex aún no se relanza desde el Mac")
+    func remoteShellAndCodexAreExcluded() throws {
+        let workspace = try sshWorkspace(title: "NOTBETTING", host: "root@15.217.153.205", sessions: ["a", "b"])
+        let ids = workspace.panels.keys.sorted { $0.uuidString < $1.uuidString }
+        let reading = UniConnectRelaunchInventory(machineID: "mac", remoteSighting: { id in
+            id == ids[0] ? .shell : .agent(provider: "codex")
+        }).read(workspaces: [workspace])
+
+        #expect(reading.remote.isEmpty)
+        #expect(Set(reading.exclusions.map(\.cause)) == [.noAgent, .providerUnsupported])
     }
 
     @Test("Una ventana remota sin sesión tmux registrada tampoco desaparece")
@@ -92,7 +125,7 @@ struct UniConnectRelaunchInventoryTests {
 
         #expect(reading.items.isEmpty)
         #expect(reading.exclusions.count == 1)
-        #expect(reading.exclusions.first?.cause == .unsupported)
+        #expect(reading.exclusions.first?.cause == .noCredential)
     }
 
     @Test("Dos ventanas remotas con el mismo título se distinguen en la lista")
@@ -144,7 +177,7 @@ struct UniConnectRelaunchInventoryTests {
 
         #expect(reading.items.isEmpty)
         #expect(reading.exclusions.count == 1)
-        #expect(reading.exclusions.first?.cause == .unsupported)
+        #expect(reading.exclusions.first?.cause == .noTmux)
         #expect(reading.exclusions.first?.label.contains("sin tmux") == true)
     }
 
@@ -191,11 +224,11 @@ struct UniConnectRelaunchInventoryTests {
 
         #expect(reading.items.isEmpty)
         let exclusion = try #require(reading.exclusions.first)
-        #expect(exclusion.cause == .unsupported)
+        #expect(exclusion.cause == .providerUnsupported)
         #expect(exclusion.label.contains("Codex"))
     }
 
-    @Test("Una ventana local con Grok sale como no_soportado y la lista dice qué IA es")
+    @Test("Una ventana local con Grok sale como proveedor_no_soportado y la lista dice qué IA es")
     func localGrokWindowIsUnsupportedAndNamed() throws {
         let (workspace, _) = try localWorkspace(
             name: "bot", agent: .grok, sessionID: "3f6a9c12-8d4e-4b7a-b5c1-0e2f7d9a6b84", backToShell: false
@@ -205,7 +238,7 @@ struct UniConnectRelaunchInventoryTests {
 
         #expect(reading.items.isEmpty)
         let exclusion = try #require(reading.exclusions.first)
-        #expect(exclusion.cause == .unsupported)
+        #expect(exclusion.cause == .providerUnsupported)
         #expect(exclusion.label.contains("Grok"))
     }
 
@@ -218,13 +251,12 @@ struct UniConnectRelaunchInventoryTests {
         )
         let wanted = try #require(workspace.focusedPanelId)
 
-        let preview = UniConnectRelaunchCoordinator(machineID: "mac")
-            .preview(workspaces: [workspace])
-            .restricted(toPanels: [wanted], sessions: [])
+        let reading = UniConnectRelaunchInventory(machineID: "mac")
+            .read(workspaces: [workspace], onlyPanels: [wanted])
 
-        #expect(preview.targets.isEmpty)
-        #expect(preview.excluded.count == 1)
-        #expect(preview.excluded.first?.panelID == wanted)
-        #expect(preview.exclusions.first?.cause == .unsupported)
+        #expect(reading.items.isEmpty)
+        #expect(reading.excluded.count == 1)
+        #expect(reading.excluded.first?.panelID == wanted)
+        #expect(reading.exclusions.first?.cause == .ambiguousIdentity)
     }
 }

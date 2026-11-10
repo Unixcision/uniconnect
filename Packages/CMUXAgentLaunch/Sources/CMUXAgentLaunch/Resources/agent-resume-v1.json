@@ -6,7 +6,11 @@
       "executable": "claude",
       "resume": ["{executable}", "--resume", "{sessionId}", "{arguments}"],
       "windowOptions": [{"field": "model", "option": "--model"}],
-      "noPrompt": {"suffix": ["--dangerously-skip-permissions"], "rootEnvironment": {"IS_SANDBOX": "1"}}
+      "noPrompt": {"suffix": ["--dangerously-skip-permissions"], "rootEnvironment": {"IS_SANDBOX": "1"}},
+      "launchOptions": {
+        "values": ["--model", "--effort", "--fallback-model", "--permission-mode", "--settings", "--setting-sources", "--add-dir", "--allowedTools", "--disallowedTools", "--mcp-config", "--tools"],
+        "switches": ["--dangerously-skip-permissions", "--allow-dangerously-skip-permissions", "--verbose", "--strict-mcp-config", "--chrome"]
+      }
     },
     "codex": {
       "displayName": "Codex",

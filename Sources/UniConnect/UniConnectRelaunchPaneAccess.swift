@@ -29,6 +29,18 @@ protocol UniConnectRelaunchPaneAccess: Sendable {
     func pressEscape(socket: String, pane: String) async
     /// Whether the pane's foreground process is its shell again.
     func isAtShell(socket: String, pane: String) async -> Bool
+
+    /// Presses one named key (`Down`, `Up`, `Enter`, `Escape`) on its own.
+    func pressKey(socket: String, pane: String, key: String) async
+    /// The panes of `session` across all its windows (`list-panes -s`), to tell a session that is
+    /// only this window from one shared with others.
+    func panes(socket: String, session: String) async -> [String]?
+    /// Replaces the pane's process with a fresh login shell in `directory`
+    /// (`respawn-pane -k -c <dir> 'exec "${SHELL:-/bin/sh}" -l'`); `false` when tmux refused.
+    ///
+    /// The command is explicit on purpose: without one, tmux reruns the pane's original command,
+    /// which in UniConnect is the old agent launch with its old options.
+    func respawnShell(socket: String, pane: String, directory: String) async -> Bool
 }
 
 extension UniConnectRelaunchPaneAccess {
@@ -42,6 +54,12 @@ extension UniConnectRelaunchPaneAccess {
     func pressEscape(socket: String, pane: String) async {}
     /// Unknown counts as "not at the shell", so nothing is typed.
     func isAtShell(socket: String, pane: String) async -> Bool { false }
+    /// Nothing is pressed by a pane access that does not implement it.
+    func pressKey(socket: String, pane: String, key: String) async {}
+    /// Unknown panes: nothing that depends on them is done.
+    func panes(socket: String, session: String) async -> [String]? { nil }
+    /// A pane access that cannot respawn never does.
+    func respawnShell(socket: String, pane: String, directory: String) async -> Bool { false }
 }
 
 extension UniConnectRelaunchTmuxDriver: UniConnectRelaunchPaneAccess {}

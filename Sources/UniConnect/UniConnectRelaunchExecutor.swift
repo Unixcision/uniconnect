@@ -12,6 +12,16 @@ import Foundation
 struct UniConnectRelaunchExecutor: Sendable {
     /// One window to act on.
     struct Target: Sendable {
+        /// Where the target is acted on.
+        enum Route: Sendable, Equatable {
+            /// A pane of this Mac's tmux, handled here.
+            case local
+            /// A Claude in a pane of this Mac, proven at plan time and handled here.
+            case localClaude(UniConnectRelaunchLocalClaudeProof)
+            /// A pane on an SSH box, handled by the Linux worker on that box.
+            case ssh(UniConnectRelaunchRemoteTarget)
+        }
+
         let key: RelaunchTargetKey
         let label: String
         let provider: String
@@ -21,6 +31,12 @@ struct UniConnectRelaunchExecutor: Sendable {
         let previousArgv: [String]
         /// Evidence gathered off the screen about which conversation lives here.
         let evidence: RelaunchIdentityEvidence?
+        /// The window's panel, when it has one.
+        let panelID: UUID?
+        /// Where it is acted on.
+        var route: Route
+        /// What the plan shows about it.
+        var notes: RelaunchTargetNotes
 
         init(
             key: RelaunchTargetKey,
@@ -29,7 +45,10 @@ struct UniConnectRelaunchExecutor: Sendable {
             socket: String,
             session: String,
             previousArgv: [String],
-            evidence: RelaunchIdentityEvidence? = nil
+            evidence: RelaunchIdentityEvidence? = nil,
+            panelID: UUID? = nil,
+            route: Route = .local,
+            notes: RelaunchTargetNotes = RelaunchTargetNotes()
         ) {
             self.key = key
             self.label = label
@@ -38,6 +57,19 @@ struct UniConnectRelaunchExecutor: Sendable {
             self.session = session
             self.previousArgv = previousArgv
             self.evidence = evidence
+            self.panelID = panelID
+            self.route = route
+            self.notes = notes
+        }
+
+        /// The target as it travels in a plan response.
+        var json: [String: Any] {
+            var fields: [String: Any] = [
+                "key": key.text, "label": label, "provider": provider,
+                "generation": key.generation, "state": RelaunchTargetState.planned.rawValue,
+            ]
+            fields.merge(notes.json) { current, _ in current }
+            return fields
         }
     }
 
@@ -65,7 +97,7 @@ struct UniConnectRelaunchExecutor: Sendable {
         // Antes de leer nada, y mucho antes de cerrar nada. Ver ``UniConnectRelaunchClosurePolicy``:
         // una ventana local sí se relanza; una de caja SSH no, porque no hay conversación que
         // devolverle después.
-        if let refusal = closurePolicy.refusal(for: target.key) {
+        if let refusal = closurePolicy.refusal(for: target) {
             return .init(key: target.key, state: .skipped, cause: refusal)
         }
         // An agent this build does not know how to close and verify is left exactly as it is.

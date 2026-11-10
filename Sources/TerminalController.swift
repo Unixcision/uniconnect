@@ -20989,7 +20989,7 @@ class TerminalController {
         case "workspace.action":
             result = v2MobileWorkspaceAction(params: request.params)
         case "relaunch.plan":
-            result = v2MobileRelaunchPlan(params: request.params, peer: peer)
+            result = await v2MobileRelaunchPlan(params: request.params, peer: peer)
         case "relaunch.apply":
             result = await v2MobileRelaunchApply(params: request.params, peer: peer)
         case "relaunch.status":
@@ -21529,8 +21529,8 @@ class TerminalController {
             "ssh_create.v1", "relaunch.v1",
             "window_details.v1",
         ]
-        // What this Mac can relaunch, per provider and window kind (contracts/relaunch-v1/
-        // proveedores.json): Claude and Codex in local windows; SSH windows are no_soportado.
+        // What this Mac relaunches and updates, per provider and window kind: exactly its row of
+        // contracts/relaunch-v1/proveedores.json (Claude local, and SSH through the Linux worker).
         capabilities += Self.relaunchCapabilityTokens
         if mobileTranscriptionAvailability.isAvailable() {
             capabilities.append("transcribe.v1")
@@ -21544,9 +21544,9 @@ class TerminalController {
 
     // MARK: - relaunch.v1
 
-    /// `relaunch.v1.<proveedor>.<tipo>` for every cell this Mac relaunches, from the dialects it has.
+    /// `relaunch.v1.<proveedor>.<tipo>`, `relaunch.v1.update…` and `relaunch.v1.restaura` for this Mac.
     private static var relaunchCapabilityTokens: [String] {
-        RelaunchDialects.known.capabilityTokens(windowKind: "local")
+        RelaunchCapabilities.mac.tokens.filter { $0 != "relaunch.v1" }
     }
 
     /// Planes entregados y operaciones aceptadas, para que un segundo `apply` recupere en vez de
@@ -21600,7 +21600,7 @@ class TerminalController {
         UniConnectCoordinator.shared.relaunchService
     }
 
-    private func v2MobileRelaunchPlan(params: [String: Any], peer: MobileHostPeerIdentity?) -> V2CallResult {
+    private func v2MobileRelaunchPlan(params: [String: Any], peer: MobileHostPeerIdentity?) async -> V2CallResult {
         if let error = mobileFilePutLockedError() { return error }
         guard let peer else {
             return .err(code: "not_found", message: "No se reconoce la sesión móvil", data: nil)
@@ -21608,61 +21608,46 @@ class TerminalController {
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
         }
+        // Dos verbos, y ninguno más: tratar cualquier otro como relanzar cerraría IA que nadie pidió.
+        let verbText = v2RawString(params, "verb") ?? RelaunchVerb.agentRelaunch.rawValue
+        guard let verb = RelaunchVerb(rawValue: verbText), verb == .agentRelaunch || verb == .agentUpdate else {
+            return .err(code: RelaunchError.invalidScope.rawValue, message: "Este equipo no hace ese verbo", data: nil)
+        }
+        let options: RelaunchUpdateOptions
+        do {
+            options = try RelaunchUpdateOptions.parse(params["options"], verb: verb)
+        } catch {
+            return .err(code: RelaunchError.invalidOptions.rawValue, message: "Las opciones no valen para ese verbo", data: nil)
+        }
         guard let scope = params["scope"] as? [String: Any],
               let resolved = mobileRelaunchWorkspaces(params: scope, tabManager: tabManager) else {
-            return .err(code: "alcance_no_valido", message: "El alcance pedido no se puede resolver", data: nil)
+            return .err(code: RelaunchError.invalidScope.rawValue, message: "El alcance pedido no se puede resolver", data: nil)
         }
-        var preview = mobileRelaunchCoordinator().preview(workspaces: resolved.workspaces)
-        if let panel = resolved.onlyPanel {
-            // Filtrar por panel y no por caja: una ventana suelta es su propio alcance.
-            let wanted = Set(resolved.workspaces.compactMap {
-                $0.uniConnectLocalWindowsByPanelId[panel]?.tmuxBinding?.name
-            })
-            // También las exclusiones, y por identidad del panel, no por texto de etiqueta: quien
-            // pide una ventana no tiene por qué enterarse de lo que le pasa a sus vecinas.
-            preview = preview.restricted(toPanels: [panel], sessions: wanted)
-        }
-        // La indisponibilidad va en el PLAN, no solo en el resultado. Ofrecer veintiséis ventanas
-        // como «planificado» para devolverlas omitidas después es prometer un trabajo que no se va
-        // a hacer, y quien mira el móvil no tiene forma de saberlo hasta que ya ha pulsado.
-        let closurePolicy = UniConnectRelaunchClosurePolicy.current
-        var unavailable: [String: Any] = [:]
-        var refused: [RelaunchPlan.Exclusion] = []
-        let admitted = preview.targets.filter { target in
-            guard let cause = closurePolicy.refusal(for: target.key) else { return true }
-            refused.append(.init(label: target.label, cause: cause))
-            return false
-        }
-        if !refused.isEmpty {
-            preview = UniConnectRelaunchCoordinator.Preview(
-                targets: admitted,
-                exclusions: preview.exclusions + refused
-            )
-            // Solo cuando NO queda nada que hacer: si hay objetivos admitidos, el plan es
-            // ejecutable y decir «no disponible» seria mentir en la otra direccion.
-            if admitted.isEmpty {
-                unavailable = [
-                    "unavailable": true,
-                    "unavailable_reason": closurePolicy.explanation(for: .unsupported),
-                    "missing_conditions": UniConnectRelaunchClosurePolicy.outstandingConditions,
-                ]
-            }
-        }
+        // Una ventana se pide por su panel y no se inspecciona nada más de su caja.
+        let preview = await mobileRelaunchCoordinator().preview(
+            workspaces: resolved.workspaces, verb: verb, options: options,
+            onlyPanels: resolved.onlyPanel.map { [$0] }
+        )
         let token = mobileRelaunchStore.issue(
-            deviceID: peer.address, verb: .agentRelaunch, targets: preview.targets
+            deviceID: peer.address, verb: verb, targets: preview.targets, options: options
         )
         var payload: [String: Any] = [
             "operation_id": token.operationID.uuidString,
             "token": token.operationID.uuidString,
             "expires_at": ISO8601DateFormatter().string(from: token.expiresAt),
-            "verb": RelaunchVerb.agentRelaunch.rawValue,
-            "targets": preview.targets.map {
-                ["key": $0.key.text, "label": $0.label, "provider": $0.provider,
-                 "generation": $0.key.generation, "state": RelaunchTargetState.planned.rawValue]
-            },
+            "verb": verb.rawValue,
+            "targets": preview.targets.map(\.json),
             "excluded": preview.exclusions.map { ["label": $0.label, "cause": $0.cause.rawValue] },
         ]
-        payload.merge(unavailable) { current, _ in current }
+        if verb == .agentUpdate { payload["options"] = options.json }
+        if preview.reportsCost { payload["estimated_tokens"] = preview.estimatedTokens }
+        // Solo cuando NO queda nada que hacer y algo se excluyó por la política de cierre: si hay
+        // objetivos, el plan es ejecutable y decir «no disponible» sería mentir en la otra dirección.
+        if preview.targets.isEmpty, preview.exclusions.contains(where: { $0.cause == .unsupported }) {
+            payload["unavailable"] = true
+            payload["unavailable_reason"] = UniConnectRelaunchClosurePolicy.current.explanation(for: .unsupported)
+            payload["missing_conditions"] = UniConnectRelaunchClosurePolicy.outstandingConditions
+        }
         return .ok(payload)
     }
 
@@ -21680,7 +21665,8 @@ class TerminalController {
         // guardados comparaba la generación del plan **consigo misma**, así que un cambio de
         // ocupante entre planificar y aplicar no excluía nada: la comprobación existía y no
         // comprobaba. Una ventana que ya no está, o que ahora la habita otro, deja de ser un
-        // objetivo vivo y la puerta la rechaza.
+        // objetivo vivo y la puerta la rechaza. Una ventana SSH la revalida su trabajador en el
+        // destino (misma prueba que en el plan, o generacion_cambiada), que es quien la conoce.
         var live: [String: RelaunchTargetKey] = [:]
         if let tabManager = v2ResolveTabManager(params: params) {
             let managers = UniConnectCoordinator.shared.allTabManagers()
@@ -21697,6 +21683,9 @@ class TerminalController {
                 }
             }
         }
+        for target in targets {
+            if case .ssh = target.route { live[target.key.paneIdentity] = target.key }
+        }
 
         switch RelaunchAdmissionGate().admit(
             token: token, requestedBy: peer.address,
@@ -21708,27 +21697,41 @@ class TerminalController {
             guard let operation = mobileRelaunchStore.operation(operationID, recovered: true) else {
                 return .err(code: RelaunchError.unknownOperation.rawValue, message: "Operación desconocida", data: nil)
             }
-            return .ok(mobileRelaunchPayload(operation))
+            return .ok(operation.json)
         case let .execute(running, excluded):
             // Se apunta ANTES de cerrar nada: una operación que solo existe cuando termina es una
             // operación que un corte de red borra, y borrarla es lo que hace que el reintento cierre
             // todo dos veces.
             mobileRelaunchStore.accept(operationID: operationID, verb: token.verb, targets: running)
             let chosen = targets.filter { target in running.contains(target.key) }
-            let preview = UniConnectRelaunchCoordinator.Preview(targets: chosen, exclusions: [])
-            let coordinator = mobileRelaunchCoordinator()
-            let operation = await coordinator.run(preview)
-            // El id con el que volvió de verdad cada IA pasa a su ventana, como en el escritorio.
-            UniConnectCoordinator.shared.recordRelaunchedConversations(operation)
-            var results = operation.results
-            results.append(contentsOf: excluded.map {
+            let skipped = excluded.map {
                 RelaunchOperation.Result(key: $0.key, state: .skipped, cause: $0.cause)
-            })
-            mobileRelaunchStore.update(operationID: operationID, results: results)
-            return .ok(mobileRelaunchPayload(
-                mobileRelaunchStore.operation(operationID, recovered: false)
-                    ?? RelaunchOperation(operationID: operationID, verb: token.verb, recovered: false, results: results)
-            ))
+            }
+            let preview = UniConnectRelaunchCoordinator.Preview(
+                verb: token.verb, options: mobileRelaunchStore.options(for: operationID),
+                targets: chosen, exclusions: []
+            )
+            mobileRelaunchStore.update(
+                operationID: operationID,
+                results: preview.targets.map { .init(key: $0.key, state: .planned, provider: $0.provider) } + skipped
+            )
+            // `apply` no espera a que termine: devuelve la operación aceptada y el móvil sigue con
+            // relaunch.status, que lee lo que el coordinador va apuntando aquí.
+            let store = mobileRelaunchStore
+            Task { @MainActor in
+                let operation = await self.mobileRelaunchCoordinator().run(
+                    preview, operationID: operationID,
+                    progress: { results, updates in
+                        store.update(operationID: operationID, results: results + skipped, updates: updates)
+                    }
+                )
+                // El id con el que volvió de verdad cada IA pasa a su ventana, como en el escritorio.
+                UniConnectCoordinator.shared.recordRelaunchedConversations(operation)
+                store.update(operationID: operationID, results: operation.results + skipped, updates: operation.updates)
+            }
+            let operation = mobileRelaunchStore.operation(operationID, recovered: false)
+                ?? RelaunchOperation(operationID: operationID, verb: token.verb, recovered: false, results: skipped)
+            return .ok(operation.json)
         }
     }
 
@@ -21740,21 +21743,7 @@ class TerminalController {
               let operation = mobileRelaunchStore.operation(operationID, recovered: true) else {
             return .err(code: RelaunchError.unknownOperation.rawValue, message: "Operación desconocida", data: nil)
         }
-        return .ok(mobileRelaunchPayload(operation))
-    }
-
-    private func mobileRelaunchPayload(_ operation: RelaunchOperation) -> [String: Any] {
-        [
-            "operation_id": operation.operationID.uuidString,
-            "recovered": operation.recovered,
-            "operation_state": operation.state.rawValue,
-            "results": operation.results.map { result -> [String: Any] in
-                var item: [String: Any] = ["key": result.key.text, "state": result.state.rawValue]
-                if let cause = result.cause { item["cause"] = cause.rawValue }
-                if let effectiveID = result.effectiveID { item["effective_id"] = effectiveID }
-                return item
-            },
-        ]
+        return .ok(operation.json)
     }
 
     // MARK: - file_put.v1

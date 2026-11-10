@@ -10,8 +10,10 @@ import Foundation
 /// What it will not do is fill in a gap. A window whose agent this build cannot close and verify, or
 /// whose conversation is not known, comes back as an **exclusion with a reason** and is never quietly
 /// dropped: a window missing from a list of 26 reads as a window that was forgotten. The same applies
-/// one level up — a box left out reads as a box with nothing in it — so a box on a server, which this
-/// build cannot reach, is enumerated window by window rather than skipped.
+/// one level up — a box left out reads as a box with nothing in it.
+///
+/// SSH windows are not decided here: each one becomes a ``RemoteCandidate`` that the Linux worker
+/// inspects on its destination, because only the destination can prove what runs in the pane.
 @MainActor
 struct UniConnectRelaunchInventory {
     /// A window that can be acted on, and everything needed to do it.
@@ -19,9 +21,21 @@ struct UniConnectRelaunchInventory {
         let target: UniConnectRelaunchExecutor.Target
     }
 
+    /// An SSH window to be inspected by the worker on its box.
+    struct RemoteCandidate: Sendable, Equatable {
+        let panelID: UUID
+        let label: String
+        let credentialID: UUID
+        let session: String
+        let socket: String
+        let provider: String
+    }
+
     /// The result of looking at a scope.
     struct Reading {
         var items: [Item] = []
+        /// SSH windows still to be inspected on their destination.
+        var remote: [RemoteCandidate] = []
         /// Every window set aside, with the panel it belongs to, so a single-window request can
         /// keep only its own exclusion by identity rather than by matching label text.
         var excluded: [UniConnectRelaunchCoordinator.ExcludedWindow] = []
@@ -38,40 +52,66 @@ struct UniConnectRelaunchInventory {
         var agentName: String? = nil
     }
 
+    /// The agents this Mac relaunches in SSH windows, through the Linux worker.
+    ///
+    /// Claude only until the others pass a live test from the Mac (`contracts/relaunch-v1/
+    /// proveedores.json`): the worker knows Codex and Antigravity, but relaunching closes the agent.
+    static let remoteProviders: Set<String> = ["claude"]
+
     private let machineID: String
     private let dialects: RelaunchDialects
+    /// What the last probe saw in an SSH window: its provider, or `nil` when it saw no agent.
+    private let remoteSighting: (UUID) -> RemoteSighting?
 
-    init(machineID: String, dialects: RelaunchDialects = .known) {
+    /// What is known about the agent of an SSH window before asking its box.
+    enum RemoteSighting: Equatable {
+        /// An agent of this provider was seen running.
+        case agent(provider: String)
+        /// The window was seen at its shell.
+        case shell
+    }
+
+    init(
+        machineID: String,
+        dialects: RelaunchDialects = .known,
+        remoteSighting: @escaping (UUID) -> RemoteSighting? = { _ in nil }
+    ) {
         self.machineID = machineID
         self.dialects = dialects
+        self.remoteSighting = remoteSighting
     }
 
     /// Reads every window of `workspaces`, keeping the ones this build can relaunch.
-    func read(workspaces: [Workspace]) -> Reading {
+    ///
+    /// - Parameters:
+    ///   - workspaces: The boxes in scope.
+    ///   - verb: What will be done; ``RelaunchVerb/agentUpdate`` only takes Claude.
+    ///   - onlyPanels: When set, only these windows are read (a window scope); nothing else is
+    ///     inspected, so a single-window request never opens SSH to the rest of its box.
+    func read(
+        workspaces: [Workspace],
+        verb: RelaunchVerb = .agentRelaunch,
+        onlyPanels: Set<UUID>? = nil
+    ) -> Reading {
         var reading = Reading()
         for workspace in workspaces {
             let boxName = workspace.customTitle ?? workspace.title
-
-            // A box on a server: this build reaches tmux only as a local command, so nothing here
-            // can be closed or verified. Named window by window all the same.
             if workspace.uniConnectProfile?.isSSH == true {
-                let host = workspace.uniConnectProfile?.hostLabel
-                reading.excluded.append(contentsOf: labelled(
-                    remoteWindows(of: workspace),
-                    boxName: boxName,
-                    host: host
-                ))
+                let (candidates, pending) = remoteWindows(of: workspace, boxName: boxName, verb: verb, onlyPanels: onlyPanels)
+                reading.remote.append(contentsOf: candidates)
+                reading.excluded.append(contentsOf: labelled(pending, boxName: boxName, host: workspace.uniConnectProfile?.hostLabel))
                 continue
             }
 
             var pending: [PendingExclusion] = []
-            for (panelID, record) in workspace.uniConnectLocalWindowsByPanelId {
+            for (panelID, record) in workspace.uniConnectLocalWindowsByPanelId.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
+                if let onlyPanels, !onlyPanels.contains(panelID) { continue }
                 let name = record.visibleName ?? "ventana"
 
                 // A window without tmux is a plain PTY: there is no session to reopen into, and
                 // killing its process would take the work with it.
                 guard let binding = record.tmuxBinding else {
-                    pending.append(.init(panelID: panelID, name: name, cause: .unsupported))
+                    pending.append(.init(panelID: panelID, name: name, cause: .noTmux))
                     continue
                 }
 
@@ -83,12 +123,12 @@ struct UniConnectRelaunchInventory {
                     continue
                 }
                 let provider = conversation.kind.rawValue
-                guard dialects.dialect(for: provider) != nil else {
+                guard dialects.dialect(for: provider) != nil, verb != .agentUpdate || provider == "claude" else {
                     // Knowing how an agent is spelled is not knowing how it lives. Codex, agy and
                     // grok still come back when their window is reopened; they are only left out
                     // of a live close-and-reopen, and the list says which agent it was.
                     pending.append(.init(
-                        panelID: panelID, name: name, cause: .unsupported,
+                        panelID: panelID, name: name, cause: .providerUnsupported,
                         agentName: conversation.displayName
                     ))
                     continue
@@ -111,29 +151,76 @@ struct UniConnectRelaunchInventory {
                         processID: 0,
                         pane: binding.name,
                         hook: .init(conversationID: conversation.sessionID, processID: 0, pane: binding.name)
-                    )
+                    ),
+                    panelID: panelID
                 )))
             }
 
-            pending.append(contentsOf: unrecordedLocalWindows(of: workspace))
+            pending.append(contentsOf: unrecordedLocalWindows(of: workspace, onlyPanels: onlyPanels))
             reading.excluded.append(contentsOf: labelled(pending, boxName: boxName, host: nil))
         }
         return reading
     }
 
-    /// Every terminal window of an SSH box, whether or not its tmux session has been recorded.
+    /// Every terminal window of an SSH box: a candidate for the worker, or an exclusion with cause.
     ///
     /// Iterating the session map alone would drop a window whose binding has not been observed yet,
     /// which is the same silence one level down.
-    private func remoteWindows(of workspace: Workspace) -> [PendingExclusion] {
-        terminalPanels(of: workspace).map { panelID, panel in
-            let session = workspace.uniConnectTmuxSessionsByPanelId[panelID]
-            return .init(
-                panelID: panelID,
-                name: Self.windowName(of: panel, fallingBackTo: session),
-                cause: .unsupported
-            )
+    private func remoteWindows(
+        of workspace: Workspace,
+        boxName: String,
+        verb: RelaunchVerb,
+        onlyPanels: Set<UUID>?
+    ) -> ([RemoteCandidate], [PendingExclusion]) {
+        var candidates: [RemoteCandidate] = []
+        var pending: [PendingExclusion] = []
+        let names = terminalPanels(of: workspace).map { panelID, panel in
+            (panelID, Self.windowName(of: panel, fallingBackTo: workspace.uniConnectTmuxSessionsByPanelId[panelID]))
         }
+        let occurrences = Dictionary(names.map { ($0.1, 1) }, uniquingKeysWith: +)
+        for (panelID, name) in names {
+            if let onlyPanels, !onlyPanels.contains(panelID) { continue }
+            guard let credentialID = workspace.uniConnectProfile?.credentialId else {
+                pending.append(.init(panelID: panelID, name: name, cause: .noCredential))
+                continue
+            }
+            guard let session = workspace.uniConnectTmuxSessionsByPanelId[panelID],
+                  RelaunchWorkerRequest.isValidTmuxName(session) else {
+                pending.append(.init(panelID: panelID, name: name, cause: .noTmux))
+                continue
+            }
+            let sighting = remoteSighting(panelID) ?? workspace.uniConnectRemoteAgentsByPanelId[panelID].map { record in
+                record.runtimeState == .agent ? .agent(provider: record.provider) : .shell
+            }
+            switch sighting {
+            case .none:
+                pending.append(.init(panelID: panelID, name: name, cause: .ambiguousIdentity))
+            case .shell:
+                pending.append(.init(panelID: panelID, name: name, cause: .noAgent))
+            case let .agent(provider):
+                let canonical = provider == "antigravity" ? "agy" : provider
+                guard Self.remoteProviders.contains(canonical), verb != .agentUpdate || canonical == "claude" else {
+                    pending.append(.init(panelID: panelID, name: name, cause: .providerUnsupported, agentName: canonical))
+                    continue
+                }
+                let place = workspace.uniConnectProfile?.hostLabel.map { " (\($0))" } ?? ""
+                let base = "\(boxName) · \(name)\(place)"
+                let label = (occurrences[name] ?? 0) > 1
+                    ? "\(base) [\(panelID.uuidString.prefix(8).lowercased())]"
+                    : base
+                let socket = workspace.uniConnectRemoteAgentsByPanelId[panelID]?.tmuxSocket
+                    ?? UniConnectRemoteAgentMonitor.tmuxSocket
+                guard RelaunchWorkerRequest.isValidTmuxName(socket) else {
+                    pending.append(.init(panelID: panelID, name: name, cause: .noTmux))
+                    continue
+                }
+                candidates.append(.init(
+                    panelID: panelID, label: label, credentialID: credentialID,
+                    session: session, socket: socket, provider: canonical
+                ))
+            }
+        }
+        return (candidates, pending)
     }
 
     /// Terminal windows of a local box that no record describes.
@@ -142,9 +229,10 @@ struct UniConnectRelaunchInventory {
     /// the window runs is genuinely unknown and ``RelaunchCause/ambiguousIdentity`` is the literal
     /// truth rather than a stand-in. An unrecorded window is the one most likely to be holding
     /// something nobody remembers starting, which is a reason to list it, not to hide it.
-    private func unrecordedLocalWindows(of workspace: Workspace) -> [PendingExclusion] {
+    private func unrecordedLocalWindows(of workspace: Workspace, onlyPanels: Set<UUID>?) -> [PendingExclusion] {
         terminalPanels(of: workspace)
             .filter { workspace.uniConnectLocalWindowsByPanelId[$0.0] == nil }
+            .filter { onlyPanels?.contains($0.0) ?? true }
             .map { panelID, panel in
                 .init(
                     panelID: panelID,

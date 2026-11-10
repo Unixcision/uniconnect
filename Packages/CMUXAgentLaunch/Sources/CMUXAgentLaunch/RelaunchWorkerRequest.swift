@@ -5,8 +5,10 @@ import Foundation
 /// The worker reads exactly these keys (`linux/uniconnect/relaunch_worker.py`): `action`,
 /// `session` and `socket` (both `[A-Za-z0-9_-]{1,40}`), `provider`, `window_id`, `catalog` (the
 /// providers of `agent-resume-v1.json`), `recovery_sha256`, and per action `verb`, `expected` (the
-/// proof the plan saw, sent back verbatim), `operation_id` and, on `start`, `identity_helper`.
-/// `options` travels with ``RelaunchVerb/agentUpdate`` (09-11-2026).
+/// proof the plan saw, sent back verbatim), `operation_id`; on `start`, `identity_helper` and, for
+/// Claude, `messages` (`contracts/relaunch-v1/mensajes.json` whole). With
+/// ``RelaunchVerb/agentUpdate`` `inspect` and `start` carry `options` (`{}` = igual que estaba) and
+/// `start` carries `updated_to`; `update` carries the installation's `launcher` (09-11-2026).
 public struct RelaunchWorkerRequest: Sendable, Equatable {
     /// What the worker is asked to do.
     public enum Action: String, Sendable {
@@ -16,12 +18,19 @@ public struct RelaunchWorkerRequest: Sendable, Equatable {
         case start
         /// Read that operation's journal.
         case status
+        /// Run `claude update` once for one installation (`launcher`), outside any pane.
+        case update
     }
 
     /// The largest decoded payload the worker accepts.
     public static let maximumPayloadBytes = 65_536
-    /// How long one call may take, as on Linux.
-    public static let timeout: Duration = .seconds(18)
+    /// How long this call may take, as on Linux: `update` 300 s; Claude's `inspect` and `start`
+    /// 40 s (`claude auth status` runs inside); everything else 18 s.
+    public var timeout: Duration {
+        if action == .update { return .seconds(300) }
+        if provider == "claude", action == .inspect || action == .start { return .seconds(40) }
+        return .seconds(18)
+    }
 
     /// What to do.
     public let action: Action
@@ -43,6 +52,12 @@ public struct RelaunchWorkerRequest: Sendable, Equatable {
     public let operationID: UUID?
     /// `agent.update`'s model and effort.
     public let options: RelaunchUpdateOptions?
+    /// `mensajes.json` as a JSON object, sent with Claude's `start`.
+    public let messages: Data?
+    /// The version `claude update` left installed, sent with `agent.update`'s `start`.
+    public let updatedTo: String?
+    /// The installation's absolute launcher, for `update`.
+    public let launcher: String?
 
     /// Creates a request.
     ///
@@ -57,6 +72,9 @@ public struct RelaunchWorkerRequest: Sendable, Equatable {
     ///   - expected: The plan's proof (`start`, `status`).
     ///   - operationID: The operation (`start`, `status`).
     ///   - options: `agent.update`'s options.
+    ///   - messages: `mensajes.json` (Claude's `start`).
+    ///   - updatedTo: The version after `claude update` (`agent.update`'s `start`).
+    ///   - launcher: The installation's launcher (`update`).
     public init(
         action: Action,
         session: String,
@@ -67,7 +85,10 @@ public struct RelaunchWorkerRequest: Sendable, Equatable {
         verb: RelaunchVerb? = nil,
         expected: Data? = nil,
         operationID: UUID? = nil,
-        options: RelaunchUpdateOptions? = nil
+        options: RelaunchUpdateOptions? = nil,
+        messages: Data? = nil,
+        updatedTo: String? = nil,
+        launcher: String? = nil
     ) {
         self.action = action
         self.session = session
@@ -79,6 +100,20 @@ public struct RelaunchWorkerRequest: Sendable, Equatable {
         self.expected = expected
         self.operationID = operationID
         self.options = options
+        self.messages = messages
+        self.updatedTo = updatedTo
+        self.launcher = launcher
+    }
+
+    /// The `providers` object of the catalogue bundled with this package, as JSON.
+    ///
+    /// - Returns: `nil` when the resource cannot be found or read.
+    public static func bundledCatalogProviders() -> Data? {
+        guard let url = AgentResumeResourceLocator().resourceURL(),
+              let data = try? Data(contentsOf: url),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let providers = object["providers"] as? [String: Any] else { return nil }
+        return try? JSONSerialization.data(withJSONObject: providers)
     }
 
     /// Whether `name` is a session or socket name the worker accepts.
@@ -110,9 +145,19 @@ public struct RelaunchWorkerRequest: Sendable, Equatable {
             request["expected"] = proof
         }
         if let operationID { request["operation_id"] = operationID.uuidString.lowercased() }
-        if let options, !options.isUnchanged { request["options"] = options.json }
+        if verb == .agentUpdate, action == .inspect || action == .start {
+            request["options"] = (options ?? .unchanged).json
+        }
+        if verb == .agentUpdate, action == .start { request["updated_to"] = updatedTo ?? NSNull() }
+        if action == .update { request["launcher"] = launcher ?? NSNull() }
         request["recovery_sha256"] = source.recoverySHA256 ?? NSNull()
-        if action == .start { request["identity_helper"] = source.identityHelper }
+        if action == .start {
+            request["identity_helper"] = source.identityHelper
+            if provider == "claude", let messages,
+               let texts = try JSONSerialization.jsonObject(with: messages) as? [String: Any] {
+                request["messages"] = texts
+            }
+        }
         return request
     }
 

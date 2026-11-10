@@ -23,8 +23,13 @@ struct RelaunchDialectTests {
         let contract = try ContractFixtures().object("relaunch-v1/proveedores.json")
         let capabilities = try #require(contract["capacidades"] as? [String: [String]], "proveedores.json sin «capacidades»")
         let mac = try #require(capabilities["macos"], "proveedores.json sin fila macos")
-        let announced = ["relaunch.v1"] + RelaunchDialects.known.capabilityTokens(windowKind: "local")
-        #expect(announced.sorted() == mac.sorted())
+        #expect(RelaunchCapabilities.mac.tokens == mac.sorted())
+        // Las celdas locales salen de los dialectos que tiene: no se anuncia lo que no sabe cerrar.
+        #expect(Set(RelaunchDialects.known.capabilityTokens(windowKind: "local"))
+            == Set(RelaunchCapabilities.mac.local.map { "relaunch.v1.\($0).local" }))
+        let cells = try #require(contract["equipos"] as? [String: [String: [String]]])
+        #expect(Set(cells["macos"]?["local"] ?? []) == RelaunchCapabilities.mac.local)
+        #expect(Set(cells["macos"]?["ssh"] ?? []) == RelaunchCapabilities.mac.ssh)
     }
 
     @Test("Claude vuelve con su conversación y sus banderas, como argumentos y no como frase")

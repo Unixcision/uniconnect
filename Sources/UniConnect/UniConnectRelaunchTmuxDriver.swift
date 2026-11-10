@@ -220,6 +220,24 @@ struct UniConnectRelaunchTmuxDriver: Sendable {
         return ["zsh", "bash", "sh", "fish", "dash", "ksh", "tcsh"].contains(name)
     }
 
+    /// Presses one named key.
+    func pressKey(socket: String, pane: String, key: String) async {
+        _ = await run(socket: socket, ["send-keys", "-t", pane, key])
+    }
+
+    /// Every pane of `session`, across its windows.
+    func panes(socket: String, session: String) async -> [String]? {
+        await run(socket: socket, ["list-panes", "-s", "-t", "=" + session, "-F", "#{pane_id}"])?
+            .split(separator: "\n").map(String.init)
+    }
+
+    /// A fresh login shell in the pane, with an explicit command.
+    func respawnShell(socket: String, pane: String, directory: String) async -> Bool {
+        await run(socket: socket, [
+            "respawn-pane", "-k", "-t", pane, "-c", directory, #"exec "${SHELL:-/bin/sh}" -l"#,
+        ]) != nil
+    }
+
     private func run(socket: String, _ arguments: [String]) async -> String? {
         let result = await commands.run(
             directory: NSHomeDirectory(),

@@ -39,6 +39,16 @@ struct ClaudeLaunchOptionsTests {
         #expect(options.applying(.unchanged) == options)
     }
 
+    @Test("La lista blanca es la del catálogo, con --effort, y sale de ahí")
+    func allowlistComesFromTheCatalogue() {
+        #expect(ClaudeLaunchOptions.Allowlist.catalogue == ClaudeLaunchOptions.Allowlist.builtIn)
+        #expect(ClaudeLaunchOptions.valueOptions.contains("--effort"))
+        let narrow = ClaudeLaunchOptions.Allowlist(values: ["--model"], switches: [])
+        let options = ClaudeLaunchOptions(argv: ["claude", "--model", "opus", "--effort", "high", "--chrome"], allowlist: narrow)
+        #expect(options.kept == ["--model", "opus"])
+        #expect(options.dropped == ["--effort", "--chrome"])
+    }
+
     @Test("Se reabre con el lanzador estable, nunca con la ruta de versions/")
     func stableLauncher() {
         #expect(ClaudeLaunchOptions.stableLauncher(argv0: "/root/.local/share/claude/versions/2.1.281", executable: nil) == "claude")

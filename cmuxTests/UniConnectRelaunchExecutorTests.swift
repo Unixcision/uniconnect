@@ -466,7 +466,6 @@ struct UniConnectRelaunchExecutorTests {
     @Test("Lo que queda bloqueado sigue nombrado, para que vaciarlo sea deliberado")
     func whatIsStillRefusedStaysNamed() {
         #expect(!UniConnectRelaunchClosurePolicy.outstandingConditions.isEmpty)
-        #expect(UniConnectRelaunchClosurePolicy.outstandingConditions.contains { $0.contains("SSH") })
     }
 
     @Test("Una pregunta de confianza de carpeta la contesta una persona")

@@ -7,9 +7,10 @@ import Foundation
 /// anything else is left out and reported by name only, never with its value. The conversation
 /// selector (`--resume`, `-r`, `--session-id`, `--continue`, `-c`) is replaced by the proven one.
 ///
-/// The list mirrors the Linux worker's (`TargetWorker.resume_arguments`) plus `--effort`, which
-/// every Claude on the Mac carries (`--model fable[1m] --effort medium`): dropping it would bring
-/// the agent back with another effort, the opposite of «igual que estaba».
+/// The list is `launchOptions` of Claude in `agent-resume-v1.json`, the catalogue both platforms
+/// read; `--effort` is on it since 09-11 (every Claude on the Mac carries `--effort medium`, and
+/// dropping it would bring the agent back with another effort). If the catalogue cannot be read,
+/// the same list built in here applies.
 ///
 /// ```swift
 /// let options = ClaudeLaunchOptions(argv: ["claude", "--resume", "old", "--model", "opus[1m]", "-p", "hola"])
@@ -19,16 +20,46 @@ import Foundation
 /// // ["claude", "--resume", "57c8…", "--model", "opus[1m]"]
 /// ```
 public struct ClaudeLaunchOptions: Sendable, Equatable {
-    /// Options that carry one value, as the next argument or as `--option=value`.
-    public static let valueOptions: Set<String> = [
-        "--model", "--fallback-model", "--permission-mode", "--settings", "--setting-sources",
-        "--add-dir", "--allowedTools", "--disallowedTools", "--mcp-config", "--tools", "--effort",
-    ]
-    /// Options that stand alone.
-    public static let switches: Set<String> = [
-        "--dangerously-skip-permissions", "--allow-dangerously-skip-permissions", "--verbose",
-        "--strict-mcp-config", "--chrome",
-    ]
+    /// Which options come back: those carrying one value, and the switches that stand alone.
+    public struct Allowlist: Sendable, Equatable {
+        /// Options that carry one value, as the next argument or as `--option=value`.
+        public let values: Set<String>
+        /// Options that stand alone.
+        public let switches: Set<String>
+
+        /// Creates an allowlist.
+        ///
+        /// - Parameters:
+        ///   - values: Options that carry one value.
+        ///   - switches: Options that stand alone.
+        public init(values: Set<String>, switches: Set<String>) {
+            self.values = values
+            self.switches = switches
+        }
+
+        /// The list built in here, the same the catalogue carries, for when it cannot be read.
+        public static let builtIn = Allowlist(
+            values: [
+                "--model", "--effort", "--fallback-model", "--permission-mode", "--settings", "--setting-sources",
+                "--add-dir", "--allowedTools", "--disallowedTools", "--mcp-config", "--tools",
+            ],
+            switches: [
+                "--dangerously-skip-permissions", "--allow-dangerously-skip-permissions", "--verbose",
+                "--strict-mcp-config", "--chrome",
+            ]
+        )
+
+        /// Claude's `launchOptions` from the bundled `agent-resume-v1.json`, or ``builtIn``.
+        public static let catalogue: Allowlist = {
+            guard let options = (try? AgentResumeCatalog())?.providers["claude"]?.launchOptions else { return .builtIn }
+            return Allowlist(values: Set(options.values), switches: Set(options.switches))
+        }()
+    }
+
+    /// Options that carry one value, from the catalogue.
+    public static var valueOptions: Set<String> { Allowlist.catalogue.values }
+    /// Options that stand alone, from the catalogue.
+    public static var switches: Set<String> { Allowlist.catalogue.switches }
 
     /// The kept arguments, in the order the process had them.
     public let kept: [String]
@@ -37,8 +68,10 @@ public struct ClaudeLaunchOptions: Sendable, Equatable {
 
     /// Filters a live Claude's argv.
     ///
-    /// - Parameter argv: The process's real arguments, executable first.
-    public init(argv: [String]) {
+    /// - Parameters:
+    ///   - argv: The process's real arguments, executable first.
+    ///   - allowlist: What comes back; the catalogue's by default.
+    public init(argv: [String], allowlist: Allowlist = .catalogue) {
         let arguments = Array(argv.dropFirst())
         var kept: [String] = []
         var dropped: [String] = []
@@ -58,7 +91,7 @@ public struct ClaudeLaunchOptions: Sendable, Equatable {
                 continue
             }
             let option = argument.split(separator: "=", maxSplits: 1).first.map(String.init) ?? argument
-            if Self.valueOptions.contains(option) {
+            if allowlist.values.contains(option) {
                 if argument.contains("=") {
                     kept.append(argument)
                     index += 1
@@ -71,7 +104,7 @@ public struct ClaudeLaunchOptions: Sendable, Equatable {
                 }
                 continue
             }
-            if Self.switches.contains(argument) {
+            if allowlist.switches.contains(argument) {
                 kept.append(argument)
                 index += 1
                 continue

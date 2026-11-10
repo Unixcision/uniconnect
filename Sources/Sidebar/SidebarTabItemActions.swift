@@ -17,6 +17,8 @@ struct SidebarTabItemActions {
         case removeFromWorkspaceGroup
         case newSurface
         case updateClaude
+        /// Relanzar las IA de esta caja (`agent.relaunch`), por el mismo camino que el menú Caja.
+        case relaunchAgents
         case reconnectSSH
         case moveToTop
         case markRead
