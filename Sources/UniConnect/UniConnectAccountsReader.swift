@@ -403,12 +403,12 @@ actor UniConnectAccountsReader {
                     resetsAt: $0.resetsAt.flatMap(date(_:)), windowMinutes: $0.windowMinutes
                 )
             },
-            hostKey: nil,
             resetCredits: probed.resetCredits.map {
                 UniConnectAccountsSnapshot.ResetCredits(
                     available: $0.available, nextExpiresAt: $0.nextExpiresAt.flatMap(date(_:))
                 )
-            }
+            },
+            hostKey: nil
         )
     }
 
