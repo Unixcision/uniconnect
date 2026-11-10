@@ -66,8 +66,8 @@ final class AgentActivityCoordinator {
         let host = self.host
         let result = inputs.isEmpty
             ? [:]
-            : await monitor.evaluate(inputs: inputs, now: now) { panelID in
-                host.screenShowsPermissionPrompt(panelID: panelID)
+            : await monitor.evaluate(inputs: inputs, now: now) { panelIDs in
+                host.screenTexts(panelIDs: panelIDs)
             }
         host.apply(activitiesByWorkspace: result)
         lastEvaluatedAt = Date()
