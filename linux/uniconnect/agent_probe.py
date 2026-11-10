@@ -19,7 +19,9 @@ Criterio (contracts/agent-tree-v1/deteccion-casos.json):
   distintos en argv dan ``sin_id``, con varios rollouts abiertos solo vale el que coincide
   con ``resume <uuid>`` y la ficha nunca clasifica a un proceso como Claude.
 
-Nunca escribe, nunca envía teclas ni cambia opciones de tmux y nunca usa sudo.
+Nunca escribe, nunca envía teclas ni cambia opciones de tmux y nunca usa sudo. La única excepción
+es ``--codex-reset CLAVE`` (accounts-v1 §5): gasta un reseteo gratis de la cuenta del Codex de la
+única sesión pedida, a través de su propio app-server, y solo cuando alguien lo ha confirmado.
 
 CLI: ``[--socket NOMBRE|default] [--session NOMBRE]... [--accounts]`` (``default`` no pasa ``-L``).
 
@@ -46,10 +48,13 @@ Sale siempre con 0 e imprime una línea JSON (<= 256 KB); el mal uso sale con 2:
 import base64
 import binascii
 import datetime
+import heapq
 import json
 import os
 import pwd
 import re
+import select
+import signal
 import socket as socket_module
 import subprocess
 import sys
@@ -426,7 +431,7 @@ def jwt_claims(token):
     return value if isinstance(value, dict) else {}
 
 
-def account_of(provider, uid, environment, read_file, user_of, read_at, usage_of=None):
+def account_of(provider, uid, environment, read_file, user_of, read_at, usage_of=None, pid=None):
     """La cuenta de una IA en este momento (contracts/accounts-v1), sin caché.
 
     - ``environment``: rutas y banderas del entorno del proceso (``account_environment``) o None si
@@ -434,8 +439,9 @@ def account_of(provider, uid, environment, read_file, user_of, read_at, usage_of
     - ``read_file(ruta)``: ``("ok", dict)``, ``("absent", None)``, ``("denied", None)`` o
       ``("invalid", None)``.
     - ``user_of(uid)``: ``(nombre, home)`` del usuario, o ``(None, None)``.
-    - ``usage_of(proveedor, carpeta, email)``: el último uso observado de ESA cuenta (``usage``), o
-      None. ``carpeta`` es la de Claude (``CLAUDE_CONFIG_DIR`` o ``~/.claude``) o ``CODEX_HOME``.
+    - ``usage_of(proveedor, carpeta, email, pid, uid, entorno)``: el último uso de ESA cuenta
+      (``usage``), o None. ``carpeta`` es la de Claude (``CLAUDE_CONFIG_DIR`` o ``~/.claude``) o
+      ``CODEX_HOME``; ``pid`` es la IA, para preguntar en vivo a su propio Codex.
 
     ``state``: ``ok`` (sabemos con qué entra), ``sin_sesion`` (no hay cuenta ni clave),
     ``no_legible`` (sus ficheros no se pueden leer con este usuario) o ``desconocida`` (UniConnect
@@ -479,7 +485,8 @@ def account_of(provider, uid, environment, read_file, user_of, read_at, usage_of
                            organization=_text(oauth.get("organizationName")))
             if usage_of is not None:
                 claude_dir = config_dir or (os.path.join(home, ".claude") if home else None)
-                account["usage"] = usage_of("claude", claude_dir, account["email"]) if claude_dir else None
+                account["usage"] = usage_of("claude", claude_dir, account["email"], pid, uid,
+                                            environment) if claude_dir else None
         elif _flag(environment, "ANTHROPIC_API_KEY") or _flag(environment, "ANTHROPIC_AUTH_TOKEN"):
             account.update(state="ok", method="api_key")
         else:
@@ -505,7 +512,7 @@ def account_of(provider, uid, environment, read_file, user_of, read_at, usage_of
             plan = _text(auth.get("chatgpt_plan_type"), 40)
             account.update(state="ok", method="chatgpt", email=email.lower(), plan=plan.capitalize() if plan else None)
             if usage_of is not None:
-                account["usage"] = usage_of("codex", codex_home, account["email"])
+                account["usage"] = usage_of("codex", codex_home, account["email"], pid, uid, environment)
         elif data.get("OPENAI_API_KEY") or _flag(environment, "OPENAI_API_KEY"):
             account.update(state="ok", method="api_key")
         else:
@@ -563,6 +570,45 @@ def claude_usage(document, email):
     if not limits or not observed:
         return None
     return {"source": "statusline", "observed_at": observed, "limits": limits}
+
+
+def codex_live_usage(result, observed_at):
+    """``usage`` a partir de ``account/rateLimits/read`` del app-server oficial de Codex (en vivo).
+
+    Añade ``reset_credits`` (``{available, next_expires_at}``) cuando Codex ofrece reseteos gratis.
+    """
+    if not isinstance(result, dict):
+        return None
+    rate_limits = result.get("rateLimits")
+    if not isinstance(rate_limits, dict):
+        return None
+    limits = []
+    for name in ("primary", "secondary"):
+        value = rate_limits.get(name)
+        if not isinstance(value, dict):
+            continue
+        used = _percent(value.get("usedPercent"))
+        if used is None:
+            continue
+        window = value.get("windowDurationMins")
+        window = int(window) if isinstance(window, (int, float)) and not isinstance(window, bool) and window > 0 else None
+        limits.append({"id": name, "used_percent": used, "resets_at": _iso_epoch(value.get("resetsAt")),
+                       "window_minutes": window})
+    if not limits:
+        return None
+    usage = {"source": "app_server", "observed_at": observed_at, "limits": limits}
+    credits = result.get("rateLimitResetCredits")
+    if isinstance(credits, dict):
+        available = [item for item in (credits.get("credits") or []) if isinstance(item, dict)
+                     and item.get("status") == "available"]
+        count = credits.get("availableCount")
+        count = count if isinstance(count, int) and not isinstance(count, bool) else len(available)
+        if count > 0:
+            expiries = [item.get("expiresAt") for item in available
+                        if isinstance(item.get("expiresAt"), (int, float)) and not isinstance(item.get("expiresAt"), bool)]
+            usage["reset_credits"] = {"available": count,
+                                      "next_expires_at": _iso_epoch(min(expiries)) if expiries else None}
+    return usage
 
 
 def codex_usage(event):
@@ -760,13 +806,23 @@ class HostReader:
         self._account_files[path] = result
         return result
 
-    def usage_of(self, provider, folder, email):
-        """El último uso observado de esa cuenta en ese host, o None (contracts/accounts-v1 §2)."""
+    def usage_of(self, provider, folder, email, pid=None, uid=None, environment=None):
+        """El uso de esa cuenta en ese host, o None (contracts/accounts-v1 §2.4).
+
+        Codex: primero en vivo a su propio app-server (mismo binario, mismo usuario y su
+        ``CODEX_HOME``); si no se puede, el último ``token_count`` de sus rollouts.
+        """
         if provider == "claude":
             status, document = self.read_account_file(os.path.join(folder, "uniconnect-uso.json"))
             return claude_usage(document, email) if status == "ok" else None
         if provider != "codex":
             return None
+        if not hasattr(self, "_codex_live"):
+            self._codex_live = {}
+        if folder not in self._codex_live:
+            self._codex_live[folder] = self._codex_app_server(pid, uid, folder, environment or {})
+        if self._codex_live[folder] is not None:
+            return self._codex_live[folder]
         event, observed = self._codex_latest_rate_limits(os.path.join(folder, "sessions"))
         if event is None:
             return None
@@ -778,25 +834,158 @@ class HostReader:
             return None
         return codex_usage(event)
 
+    def _codex_command(self, pid):
+        """La orden de ESE Codex para lanzar ``app-server``, o None."""
+        argv = []
+        executable = None
+        if self.proc:
+            try:
+                executable = os.readlink("/proc/%d/exe" % pid)
+                with open("/proc/%d/cmdline" % pid, "rb") as handle:
+                    argv = [part.decode("utf-8", "replace") for part in handle.read(65536).split(b"\0") if part]
+            except OSError:
+                return None
+        else:
+            result = self.run(["ps", "-ww", "-o", "args=", "-p", str(pid)])
+            argv = (result.stdout if result and result.returncode == 0 else "").split()
+            executable = argv[0] if argv else None
+        if not executable:
+            return None
+        base = basename(executable)
+        if NODE.match(base) and len(argv) > 1:
+            return [executable, argv[1], "app-server"]
+        if not base.startswith("codex"):
+            return None
+        if not executable.startswith("/"):
+            for folder in SEARCH_PATH.split(":"):
+                candidate = os.path.join(folder, executable)
+                if os.access(candidate, os.X_OK):
+                    executable = candidate
+                    break
+            else:
+                return None
+        return [executable, "app-server"]
+
+    def _codex_app_server(self, pid, uid, folder, environment, timeout=6.0):
+        """``account/rateLimits/read`` del app-server oficial de ESE Codex, o None."""
+        answers = self._codex_rpc(pid, uid, folder, environment, [("account/rateLimits/read", None)], timeout)
+        result = answers.get(0) if answers else None
+        return codex_live_usage(result, iso_now()) if result is not None else None
+
+    def _codex_rpc(self, pid, uid, folder, environment, calls, timeout=6.0):
+        """Llama en orden a ``calls`` (``[(método, params)]``) en el app-server de ESE Codex.
+
+        Devuelve ``{índice: result}`` de las que contestaron, o None si no se pudo arrancar.
+        Solo con el mismo usuario que la IA (nunca escribe en la carpeta de otro). Sin tokens: es
+        el propio Codex quien pregunta, igual que hace su interfaz cada pocos segundos.
+        """
+        if pid is None or uid is None or uid != os.geteuid():
+            return None
+        command = self._codex_command(pid)
+        if not command:
+            return None
+        env = dict(os.environ)
+        env["PATH"] = SEARCH_PATH + ":" + env.get("PATH", "")
+        if environment.get("HOME"):
+            env["HOME"] = environment["HOME"]
+        env["CODEX_HOME"] = folder
+        try:
+            process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                       stderr=subprocess.DEVNULL, env=env, start_new_session=True)
+        except OSError:
+            return None
+        deadline = time.time() + timeout
+        buffer = b""
+        answers = {}
+        pending = 0
+
+        def send(message):
+            process.stdin.write((json.dumps(message) + "\n").encode("utf-8"))
+            process.stdin.flush()
+
+        def send_call(index):
+            method, params = calls[index]
+            message = {"jsonrpc": "2.0", "id": 100 + index, "method": method}
+            if params is not None:
+                message["params"] = params
+            send(message)
+
+        try:
+            send({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                  "params": {"clientInfo": {"name": "uniconnect-accounts", "title": "UniConnect", "version": "1"}}})
+            while len(answers) < len(calls) and time.time() < deadline:
+                ready, _, _ = select.select([process.stdout], [], [], 0.25)
+                if not ready:
+                    continue
+                chunk = os.read(process.stdout.fileno(), 65536)
+                if not chunk:
+                    break
+                buffer += chunk
+                while b"\n" in buffer:
+                    line, buffer = buffer.split(b"\n", 1)
+                    try:
+                        message = json.loads(line.decode("utf-8"))
+                    except (ValueError, UnicodeError):
+                        continue
+                    if not isinstance(message, dict):
+                        continue
+                    if message.get("id") == 1:
+                        send({"jsonrpc": "2.0", "method": "initialized"})
+                        send_call(0)
+                    elif isinstance(message.get("id"), int) and 100 <= message["id"] < 100 + len(calls):
+                        index = message["id"] - 100
+                        answers[index] = message.get("result") if "result" in message else {"error": message.get("error")}
+                        # En orden: la siguiente solo cuando contestó la anterior.
+                        if index + 1 < len(calls):
+                            send_call(index + 1)
+        except (OSError, ValueError):
+            pass
+        finally:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except (OSError, AttributeError):
+                process.kill()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+        return answers
+
+    def codex_reset(self, pid, uid, folder, environment, idempotency_key):
+        """Gasta un reseteo gratis de ESA cuenta de Codex (accounts-v1 §5) y relee su uso.
+
+        Devuelve ``{"outcome", "usage"}`` o ``{"error"}``. Lo único que escribe esta sonda, y solo
+        con ``--codex-reset``.
+        """
+        answers = self._codex_rpc(pid, uid, folder, environment, [
+            ("account/rateLimitResetCredit/consume", {"idempotencyKey": idempotency_key}),
+            ("account/rateLimits/read", None),
+        ], timeout=8.0)
+        if answers is None:
+            return {"error": "codex_no_disponible"}
+        consumed = answers.get(0)
+        if not isinstance(consumed, dict) or consumed.get("outcome") not in ("reset", "nothingToReset", "noCredit",
+                                                                          "alreadyRedeemed"):
+            return {"error": "codex_no_contesto"}
+        return {"outcome": consumed["outcome"], "usage": codex_live_usage(answers.get(1), iso_now())}
+
     @staticmethod
     def _codex_latest_rate_limits(sessions):
-        """(evento, instante) del último ``token_count`` con ``rate_limits`` en los rollouts recientes."""
+        """(evento, instante) del último ``token_count`` con ``rate_limits`` de los rollouts.
+
+        Un ``codex resume`` sigue escribiendo en el rollout del día en que nació la sesión, así que
+        se recorre todo el árbol y se miran los 6 ficheros modificados más recientemente.
+        """
         candidates = []
-        try:
-            for year in sorted(os.listdir(sessions), reverse=True)[:2]:
-                for month in sorted(os.listdir(os.path.join(sessions, year)), reverse=True)[:2]:
-                    for day in sorted(os.listdir(os.path.join(sessions, year, month)), reverse=True)[:3]:
-                        folder = os.path.join(sessions, year, month, day)
-                        for name in os.listdir(folder):
-                            if name.endswith(".jsonl"):
-                                path = os.path.join(folder, name)
-                                try:
-                                    candidates.append((os.stat(path).st_mtime, path))
-                                except OSError:
-                                    continue
-        except OSError:
-            pass
-        for _, path in sorted(candidates, reverse=True)[:6]:
+        for root, _, files in os.walk(sessions):
+            for name in files:
+                if name.endswith(".jsonl"):
+                    path = os.path.join(root, name)
+                    try:
+                        candidates.append((os.stat(path).st_mtime, path))
+                    except OSError:
+                        continue
+        for _, path in heapq.nlargest(6, candidates):
             try:
                 with open(path, "rb") as handle:
                     handle.seek(0, os.SEEK_END)
@@ -924,10 +1113,12 @@ def iso_now(now=None):
     return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def probe(socket_name="default", sessions=(), reader=None, now=None, accounts=False):
+def probe(socket_name="default", sessions=(), reader=None, now=None, accounts=False, codex_reset=None):
     """Lee el host y devuelve el JSON v1 (dict) de contracts/agent-tree-v1/sonda-salida.json.
 
     Con ``accounts`` cada ``agent`` lleva también ``account`` (contracts/accounts-v1).
+    Con ``codex_reset`` (una clave de idempotencia) se gasta un reseteo gratis del Codex de la
+    única sesión pedida y la salida lleva ``codex_reset`` (accounts-v1 §5).
     """
     reader = reader or HostReader()
     host = reader.host() if hasattr(reader, "host") else HostReader.host()
@@ -960,7 +1151,8 @@ def probe(socket_name="default", sessions=(), reader=None, now=None, accounts=Fa
             process = table.get(agent["pid"], {})
             agent["account"] = account_of(
                 agent["provider"], int(process.get("uid", -1)), reader.account_environment(agent["pid"]),
-                reader.read_account_file, reader.user_of, output["checked_at"], getattr(reader, "usage_of", None))
+                reader.read_account_file, reader.user_of, output["checked_at"], getattr(reader, "usage_of", None),
+                agent["pid"])
             result = dict(result, agent=agent)
         output["sessions"].append({
             "name": name, "session_id": members[0]["session_id"],
@@ -970,7 +1162,25 @@ def probe(socket_name="default", sessions=(), reader=None, now=None, accounts=Fa
             "panes": [{key: pane[key] for key in ("pane_id", "window_index", "pane_pid", "dead",
                                                    "current_path", "current_command")} for pane in members]})
     output["truncated"] = bool(reader.truncated)
+    if codex_reset is not None:
+        output["codex_reset"] = _codex_reset_for(output, table, reader, codex_reset)
     return output
+
+
+def _codex_reset_for(output, table, reader, idempotency_key):
+    """El reseteo de Codex de la única sesión pedida, o ``{"error"}`` si no es un Codex con cuenta."""
+    sessions = output["sessions"]
+    if len(sessions) != 1:
+        return {"error": "sesion_no_encontrada"}
+    agent = sessions[0].get("agent") or {}
+    if agent.get("provider") != "codex":
+        return {"error": "no_es_codex"}
+    process = table.get(agent["pid"], {})
+    uid = int(process.get("uid", -1))
+    environment = reader.account_environment(agent["pid"]) or {}
+    _, home = reader.user_of(uid)
+    folder = environment.get("CODEX_HOME") or os.path.join(environment.get("HOME") or home or "/", ".codex")
+    return reader.codex_reset(agent["pid"], uid, folder, environment, idempotency_key)
 
 
 def encode(output):
@@ -992,12 +1202,18 @@ def parse_arguments(arguments):
 
     Devuelve (socket, sesiones, cuentas) o None.
     """
-    socket_name, sessions, index, accounts = "default", [], 0, False
+    socket_name, sessions, index, accounts, codex_reset = "default", [], 0, False, None
     while index < len(arguments):
         option = arguments[index]
         if option == "--accounts":
             accounts = True
             index += 1
+            continue
+        if option == "--codex-reset" and index + 1 < len(arguments):
+            if not re.match(r"[A-Za-z0-9-]{8,80}\Z", arguments[index + 1]):
+                return None
+            codex_reset = arguments[index + 1]
+            index += 2
             continue
         if option in ("--socket", "--session") and index + 1 < len(arguments):
             value = arguments[index + 1]
@@ -1012,18 +1228,20 @@ def parse_arguments(arguments):
             index += 2
             continue
         return None
-    return socket_name, sessions, accounts
+    if codex_reset is not None and len(sessions) != 1:
+        return None
+    return socket_name, sessions, accounts, codex_reset
 
 
 def main(arguments=None, reader=None, stdout=None, now=None):
     stdout = stdout or sys.stdout
     parsed = parse_arguments(sys.argv[1:] if arguments is None else list(arguments))
     if parsed is None:
-        sys.stderr.write("uso: agent_probe.py [--socket NOMBRE|default] [--session NOMBRE]... [--accounts]\n")
+        sys.stderr.write("uso: agent_probe.py [--socket NOMBRE|default] [--session NOMBRE]... [--accounts] [--codex-reset CLAVE]\n")
         return 2
-    socket_name, sessions, accounts = parsed
+    socket_name, sessions, accounts, codex_reset = parsed
     try:
-        output = probe(socket_name, sessions, reader=reader, now=now, accounts=accounts)
+        output = probe(socket_name, sessions, reader=reader, now=now, accounts=accounts, codex_reset=codex_reset)
     except Exception as error:  # La sonda nunca falla con traza: el error viaja en el JSON.
         output = {"version": VERSION, "checked_at": iso_now(now), "socket": socket_name, "host": None,
                   "server": False, "error": "sonda_fallo: " + type(error).__name__, "truncated": False,

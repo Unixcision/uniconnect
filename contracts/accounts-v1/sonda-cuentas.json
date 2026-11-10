@@ -543,6 +543,105 @@
         }
       },
       "espera": null
+    },
+    {
+      "nombre": "codex_en_vivo_app_server",
+      "funcion": "codex_live_usage",
+      "observed_at": "2026-11-10T13:55:00Z",
+      "documento": {
+        "ordinaryUsageAllowed": true,
+        "rateLimits": {
+          "limitId": "codex",
+          "primary": {
+            "usedPercent": 82,
+            "windowDurationMins": 10080,
+            "resetsAt": 1794394207
+          },
+          "secondary": null,
+          "planType": "pro"
+        },
+        "rateLimitResetCredits": {
+          "availableCount": 2,
+          "credits": [
+            {
+              "id": "a",
+              "status": "available",
+              "expiresAt": 1796068920
+            },
+            {
+              "id": "b",
+              "status": "available",
+              "expiresAt": 1796164492
+            }
+          ]
+        }
+      },
+      "espera": {
+        "source": "app_server",
+        "observed_at": "2026-11-10T13:55:00Z",
+        "limits": [
+          {
+            "id": "primary",
+            "used_percent": 82.0,
+            "resets_at": "2026-11-11T10:50:07Z",
+            "window_minutes": 10080
+          }
+        ],
+        "reset_credits": {
+          "available": 2,
+          "next_expires_at": "2026-11-30T20:02:00Z"
+        }
+      }
+    },
+    {
+      "nombre": "codex_en_vivo_sin_reseteos",
+      "funcion": "codex_live_usage",
+      "observed_at": "2026-11-10T13:55:00Z",
+      "documento": {
+        "rateLimits": {
+          "primary": {
+            "usedPercent": 12.5,
+            "windowDurationMins": 300,
+            "resetsAt": 1794320000
+          },
+          "secondary": {
+            "usedPercent": 40,
+            "windowDurationMins": 10080,
+            "resetsAt": 1794700000
+          }
+        },
+        "rateLimitResetCredits": {
+          "availableCount": 0,
+          "credits": []
+        }
+      },
+      "espera": {
+        "source": "app_server",
+        "observed_at": "2026-11-10T13:55:00Z",
+        "limits": [
+          {
+            "id": "primary",
+            "used_percent": 12.5,
+            "resets_at": "2026-11-10T14:13:20Z",
+            "window_minutes": 300
+          },
+          {
+            "id": "secondary",
+            "used_percent": 40.0,
+            "resets_at": "2026-11-14T23:46:40Z",
+            "window_minutes": 10080
+          }
+        ]
+      }
+    },
+    {
+      "nombre": "codex_en_vivo_sin_limites",
+      "funcion": "codex_live_usage",
+      "observed_at": "2026-11-10T13:55:00Z",
+      "documento": {
+        "rateLimits": null
+      },
+      "espera": null
     }
   ]
 }

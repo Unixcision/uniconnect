@@ -124,9 +124,24 @@ Sin tokens, sin llamadas a APIs por fuera y sin refrescar credenciales: solo se 
     décima y `resets_at` en ISO.
   - `window_minutes`: `five_hour` → 300, `seven_day*` → 10080; las demás, `null`.
   - Orden: `five_hour`, `seven_day` y luego el resto alfabético.
-- **Codex:** el último evento `token_count` con `rate_limits` de los rollouts recientes de
-  `$CODEX_HOME/sessions/AAAA/MM/DD/*.jsonl`.
-  - Se miran los 6 más nuevos por fecha de modificación, y de cada uno el último MiB.
+- **Codex, en vivo (`source: "app_server"`), lo primero.** Se le pregunta a **su propio Codex**:
+  el mismo binario que corre en la ventana (`/proc/<pid>/exe`, o `argv[0]` en macOS) arrancado
+  como `codex app-server`, con el mismo usuario y su `CODEX_HOME`.
+  - Por stdio, JSON-RPC: `initialize`, luego `initialized` y luego `account/rateLimits/read`.
+    Plazo de 6 s, y después se mata el grupo del proceso.
+  - Es lo que hace la propia interfaz de Codex cada pocos segundos: UniConnect no toca tokens.
+  - Solo si la IA corre con el mismo usuario que la sonda; nunca escribe en la carpeta de otro.
+  - Una vez por `CODEX_HOME` y sonda.
+  - `rateLimits.primary` y `secondary` dan `used_percent` (`usedPercent`), `window_minutes`
+    (`windowDurationMins`) y `resets_at` (`resetsAt`, en segundos). `observed_at` es ahora.
+  - Si Codex ofrece reseteos gratis (`rateLimitResetCredits` con `status: "available"`),
+    `usage.reset_credits` = `{available, next_expires_at}`. Si no los hay, la clave no está.
+  - Motivo, medido el 10-11: Codex 0.166/0.167 ya no escribe `token_count` en los rollouts, sino
+    en SQLite. El rollout de una ventana activa de NOTBETTING decía 1 % del 5-11; en vivo, 62 %.
+- **Codex, respaldo (`source: "rollout"`):** si no se puede preguntar en vivo, el último evento
+  `token_count` con `rate_limits` de `$CODEX_HOME/sessions/**/*.jsonl`. Se recorre **todo el
+  árbol**, porque un `codex resume` sigue escribiendo en el rollout del día en que nació la sesión.
+  - Se miran los 6 ficheros modificados más recientemente, y de cada uno el último MiB.
   - `primary` y `secondary` con su `used_percent`, `window_minutes` y `resets_at`. Si viene
     `resets_in_seconds`, se suma a la hora del evento.
   - Si `auth.json` cambió más de 60 s **después** del evento, se descarta: puede ser de la cuenta
@@ -165,6 +180,17 @@ Todas las claves están siempre; las que no aplican van `null`. Las fechas van e
   - `state`: `ok`, `host_inaccesible` (no contestó, venció el plazo o falta python3) o
     `boveda_cerrada` (sin credencial con la que conectar).
   - `checked_at`: la lectura de ese host.
+  - `error`: por qué no se pudo leer, o `null` si se leyó. Valores:
+    - `sin_respuesta`: venció el plazo;
+    - `sin_python3`: código 127 o «python3: not found»;
+    - `ssh_fallo`: código 255 o sin credencial válida;
+    - `salida_no_valida`: ninguna línea de la salida es la de la sonda;
+    - `tmux_no_disponible` o `tmux_fallo`: el `error` de la propia sonda.
+
+    El aviso lo dice con esas palabras: «no contestó a tiempo», «no tiene python3», «falló la
+    conexión SSH», «respondió algo que no es la sonda», «no tiene tmux», «tmux dio un error».
+  - **La salida se lee por su última línea que sea un objeto JSON.** Un shell remoto que imprime
+    un saludo antes de la sonda no puede tapar la respuesta.
 - `windows`: un elemento por ventana, en el orden de la barra lateral (espacio y luego ventana).
   - `workspace_id`, `workspace` (nombre visible), `terminal_id`, `window` (nombre visible) y
     `host_key`.
@@ -265,6 +291,7 @@ Arriba hay un selector «Ventanas | Uso por cuenta». La primera es todo lo ante
   - **Dónde está:** hosts y ventanas que usan esa cuenta, con un toque que lleva a esa ventana
     en la pestaña «Ventanas».
 - **Frescura en el uso:**
+  - con `reset_credits`: «2 reseteos gratis disponibles · el primero caduca el 30 nov»;
   - si `resets_at` ya pasó, el límite sale a **0 %** con «Reseteado el … · sin uso nuevo visto»;
   - si `observed_at` tiene más de 1 h, la edad sale en ámbar: «Dato de hace 3 h»;
   - sin `usage`: «Sin datos de uso todavía». Claude: «aparecen en cuanto esta cuenta trabaje en
@@ -276,6 +303,43 @@ Arriba hay un selector «Ventanas | Uso por cuenta». La primera es todo lo ante
   3. `ritmo` = (último − primero) / horas entre ellos.
   4. `proyección` = actual + ritmo × horas hasta `resets_at`.
   5. Si es ≥ 100, el agotamiento se da en el instante actual + (100 − actual) / ritmo.
+
+## 5. Gastar un reseteo gratis de Codex
+
+Codex da reseteos gratis por cuenta (`usage.reset_credits`). Dani pidió el 10-11 poder gastarlos
+desde las apps. Es la **única acción que escribe** en todo `accounts-v1`, y siempre va con
+confirmación.
+
+- **Llamada:** `mobile.accounts.codex_reset`; en el socket de escritorio, `accounts.codex_reset`.
+  - Capacidad: `accounts.codex_reset.v1`.
+  - Parámetros: `{account_key, host_key, idempotency_key}`. `account_key` es
+    `codex:<email>`; `idempotency_key` es un UUID generado **una vez por confirmación** y reutilizado
+    si se reintenta.
+- **Qué hace el equipo:**
+  1. Lee las cuentas en ese momento y elige la primera ventana `ok` de esa cuenta en ese host.
+  2. Lanza allí la sonda con `--session <su tmux> --codex-reset <idempotency_key>`.
+  3. La sonda llama al app-server de ESE Codex, con el mismo binario, usuario y `CODEX_HOME`:
+     `account/rateLimitResetCredit/consume {idempotencyKey}` y después `account/rateLimits/read`.
+     Plazo de 8 s.
+- **Respuesta:** `{account_key, host_key, outcome, usage}`.
+  - `outcome` es lo que dice Codex: `reset`, `nothingToReset` (no había nada que resetear y no se
+    gasta nada), `noCredit` o `alreadyRedeemed` (esa misma clave ya lo aplicó).
+  - `usage` es el uso de después, o `null`.
+- **Errores:** `invalid_params`, `locked`, `not_found` (no hay ninguna ventana de esa cuenta en ese
+  host) y `unavailable` (el host no contestó, o no hay Codex al que preguntar).
+  - La salida de la sonda trae `codex_reset: {error}`, con `sesion_no_encontrada`, `no_es_codex`,
+    `codex_no_disponible` o `codex_no_contesto`.
+- **En las apps:** en «Uso por cuenta» de una cuenta de Codex con `reset_credits.available > 0`, el
+  botón «Usar un reseteo gratis».
+  - Antes, una confirmación: «¿Gastar 1 de N reseteos gratis de <email>? Los límites de Codex de
+    esta cuenta vuelven a 0 %. No se puede deshacer.», con «Gastar reseteo» y «Cancelar».
+  - Después, según `outcome`:
+    - `reset`: «Hecho: <email> vuelve a empezar.»;
+    - `nothingToReset`: «No había nada que resetear: no se ha gastado ninguno.»;
+    - `noCredit`: «Esta cuenta ya no tiene reseteos gratis.»;
+    - `alreadyRedeemed`: «Ese reseteo ya se había aplicado.»
+
+  Y se vuelven a leer las cuentas.
 
 ## Quién lee qué (a 10-11-2026)
 

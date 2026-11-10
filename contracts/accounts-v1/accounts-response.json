@@ -7,42 +7,48 @@
       "label": "Este Mac",
       "kind": "local",
       "state": "ok",
-      "checked_at": "2026-11-10T12:30:04Z"
+      "checked_at": "2026-11-10T12:30:04Z",
+      "error": null
     },
     {
       "host_key": "ssh:root@203.0.113.10:22",
       "label": "root@203.0.113.10:22",
       "kind": "ssh",
       "state": "ok",
-      "checked_at": "2026-11-10T12:30:05Z"
+      "checked_at": "2026-11-10T12:30:05Z",
+      "error": null
     },
     {
       "host_key": "ssh:root@178.105.40.42:22",
       "label": "root@178.105.40.42:22",
       "kind": "ssh",
       "state": "ok",
-      "checked_at": "2026-11-10T12:30:05Z"
+      "checked_at": "2026-11-10T12:30:05Z",
+      "error": null
     },
     {
       "host_key": "ssh:ec2-user@54.167.34.64:22",
       "label": "ec2-user@54.167.34.64:22",
       "kind": "ssh",
       "state": "host_inaccesible",
-      "checked_at": "2026-11-10T12:30:06Z"
+      "checked_at": "2026-11-10T12:30:06Z",
+      "error": "sin_respuesta"
     },
     {
       "host_key": "ssh:dgomezm@100.123.234.20:22",
       "label": "dgomezm@100.123.234.20:22",
       "kind": "ssh",
       "state": "ok",
-      "checked_at": "2026-11-10T12:30:05Z"
+      "checked_at": "2026-11-10T12:30:05Z",
+      "error": null
     },
     {
       "host_key": "ssh:root@198.51.100.7:22",
       "label": "root@198.51.100.7:22",
       "kind": "ssh",
       "state": "boveda_cerrada",
-      "checked_at": "2026-11-10T12:30:06Z"
+      "checked_at": "2026-11-10T12:30:06Z",
+      "error": null
     }
   ],
   "windows": [
@@ -109,16 +115,20 @@
         "config": "/Users/danielgomezmartin/.codex/auth.json",
         "read_at": "2026-11-10T12:30:04Z",
         "usage": {
-          "source": "rollout",
-          "observed_at": "2026-11-09T17:53:22Z",
+          "source": "app_server",
+          "observed_at": "2026-11-10T12:30:04Z",
           "limits": [
             {
               "id": "primary",
-              "used_percent": 53.0,
+              "used_percent": 83.0,
               "resets_at": "2026-11-11T10:50:07Z",
               "window_minutes": 10080
             }
-          ]
+          ],
+          "reset_credits": {
+            "available": 2,
+            "next_expires_at": "2026-11-30T20:02:00Z"
+          }
         }
       }
     },
@@ -396,16 +406,20 @@
         "local"
       ],
       "usage": {
-        "source": "rollout",
-        "observed_at": "2026-11-09T17:53:22Z",
+        "source": "app_server",
+        "observed_at": "2026-11-10T12:30:04Z",
         "limits": [
           {
             "id": "primary",
-            "used_percent": 53.0,
+            "used_percent": 83.0,
             "resets_at": "2026-11-11T10:50:07Z",
             "window_minutes": 10080
           }
         ],
+        "reset_credits": {
+          "available": 2,
+          "next_expires_at": "2026-11-30T20:02:00Z"
+        },
         "host_key": "local"
       },
       "history": [
@@ -413,6 +427,12 @@
           "at": "2026-11-09T17:53:22Z",
           "limits": {
             "primary": 53.0
+          }
+        },
+        {
+          "at": "2026-11-10T12:30:04Z",
+          "limits": {
+            "primary": 83.0
           }
         }
       ]
