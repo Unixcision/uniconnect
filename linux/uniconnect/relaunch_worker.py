@@ -330,12 +330,117 @@ class TargetWorker:
                         identifiers.add(value)
             except (OSError, ValueError, TypeError):
                 continue
+        if not identifiers and agent == "codex":
+            # Codex 0.166+ (10-11): ni rollout abierto ni cerrojo; su hilo está en la tabla ``threads``.
+            thread = self.codex_thread(process)
+            if thread:
+                identifiers.add(thread["id"])
+                self.codex_rollout = thread.get("rollout_path")
         if len(identifiers) != 1:
             raise Unavailable("identidad_ambigua")
         identifier = identifiers.pop()
         if not isinstance(identifier, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", identifier):
             raise Unavailable("identidad_ambigua")
         return identifier
+
+    CODEX_THREAD_SLACK_MS = 5000
+    CODEX_BACKGROUND = frozenset(("app-server", "exec", "mcp-server", "mcp", "login", "logout", "proto", "completion",
+                                  "apply", "debug", "sandbox", "cloud", "features"))
+
+    def start_ms(self, process):
+        """Arranque del proceso en ms desde 1970: campo 22 de /proc/<pid>/stat más el btime del arranque."""
+        try:
+            if not hasattr(self, "_btime"):
+                self._btime = next(int(line.split()[1]) for line in (self.proc / "stat").read_text().splitlines()
+                                   if line.startswith("btime "))
+            return int((self._btime + int(process["start"]) / os.sysconf("SC_CLK_TCK")) * 1000)
+        except (OSError, ValueError, KeyError, StopIteration, TypeError):
+            return None
+
+    @staticmethod
+    def codex_folder(process):
+        argv = process.get("argv") or []
+        for index, value in enumerate(argv):
+            option, _, inline = value.partition("=")
+            if option in ("-C", "--cd"):
+                return inline if inline else (argv[index + 1] if index + 1 < len(argv) else None)
+        return process.get("cwd")
+
+    @classmethod
+    def codex_background(cls, argv):
+        """``codex app-server``, ``exec``…: un subcomando de fondo, no el TUI de la ventana.
+
+        Codex 0.166+ arranca sus propios ``codex app-server`` como hijos del TUI (10-11, NOTBETTING).
+        """
+        words = []
+        for value in (argv or [])[1:]:
+            if value == "--":
+                break
+            words.append(value)
+        return any(value in cls.CODEX_BACKGROUND for value in words)
+
+    def codex_thread(self, process):
+        """El hilo de ``threads`` de un Codex 0.166+, con la regla de ``agent_probe.codex_thread`` (agent-tree-v1).
+
+        De las filas de su carpeta: ``originator`` codex-tui, sin archivar, que no sean de un subagente y
+        creadas tras su arranque (−5 s); la más reciente, y un empate no vale. Si otro Codex vivo de esa
+        carpeta ya corría cuando nació el hilo, pudo ser suyo: nada. Solo lectura del SQLite.
+        """
+        start, folder = self.start_ms(process), self.codex_folder(process)
+        if start is None or not isinstance(folder, str) or not folder.startswith("/"):
+            return None
+        resolved = os.path.realpath(folder)
+        environ = self.claude_environ(process)
+        home = Path(environ.get("CODEX_HOME") or Path(environ.get("HOME") or Path.home()) / ".codex")
+        try:
+            versions = sorted((int(item.name[6:-7]), item) for item in home.iterdir()
+                              if item.name.startswith("state_") and item.name.endswith(".sqlite") and item.name[6:-7].isdigit())
+        except OSError:
+            return None
+        if not versions:
+            return None
+        try:
+            import sqlite3
+            connection = sqlite3.connect("file:%s?mode=ro" % versions[-1][1], uri=True, timeout=0.5)
+            try:
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(threads)")}
+                if not {"id", "cwd", "created_at_ms", "updated_at_ms", "archived", "originator", "rollout_path"} <= columns:
+                    return None
+                source = "thread_source" if "thread_source" in columns else "NULL"
+                rows = connection.execute(
+                    "SELECT id, cwd, created_at_ms, updated_at_ms, originator, archived, %s, rollout_path FROM threads "
+                    "WHERE cwd IN (?, ?) ORDER BY updated_at_ms DESC LIMIT 256" % source, (folder, resolved)).fetchall()
+            finally:
+                connection.close()
+        except Exception:
+            return None
+        candidates = [{"id": row[0], "created_at_ms": row[2], "updated_at_ms": row[3], "rollout_path": row[7]}
+                      for row in rows if row[4] == "codex-tui" and not row[5] and row[6] != "subagent"
+                      and isinstance(row[1], str) and os.path.realpath(row[1]) == resolved
+                      and isinstance(row[2], int) and isinstance(row[3], int)
+                      and row[2] >= start - self.CODEX_THREAD_SLACK_MS]
+        if not candidates:
+            return None
+        newest = max(candidates, key=lambda row: row["updated_at_ms"])
+        if sum(1 for row in candidates if row["updated_at_ms"] == newest["updated_at_ms"]) > 1:
+            return None
+        own = {process["pid"]} | set(self.descendants(process["pid"]))
+        for entry in self.proc.iterdir():
+            if not entry.name.isdigit() or int(entry.name) in own:
+                continue
+            try:
+                other = self.process(int(entry.name))
+            except (OSError, Unavailable, ProcessLookupError, ValueError, IndexError):
+                continue
+            if not self.is_provider("codex", other["argv"]) or self.codex_background(other["argv"]):
+                continue  # El app-server del Codex de escritorio, un exec…: no es otro TUI.
+            other_folder = self.codex_folder(other)
+            if not other_folder or os.path.realpath(other_folder) != resolved:
+                continue
+            other_start = self.start_ms(other)
+            if other_start is None or newest["created_at_ms"] >= other_start - self.CODEX_THREAD_SLACK_MS:
+                return None  # Otro Codex vivo de esa carpeta pudo crear ese hilo: nadie lo recibe.
+        return newest
 
     def quiescent_configuration(self, provider, process, identifier, hook, *, allow_active=False):
         """Require native effective configuration and, by default, a completed turn.
@@ -368,6 +473,11 @@ class TargetWorker:
                     paths.update((target.parent.parent / "sessions").glob("*/*/*/*" + identifier + ".jsonl"))
             except OSError:
                 continue
+        rollout = getattr(self, "codex_rollout", None)
+        if not paths and isinstance(rollout, str) and identifier in Path(rollout).name and Path(rollout).is_file():
+            # Codex 0.166+ sigue escribiendo su rollout, pero ya no lo deja abierto: la fila de ``threads``
+            # da su ruta, y la cabecera tiene que ser de esa misma conversación (se comprueba abajo).
+            paths.add(Path(rollout))
         if len(paths) != 1:
             raise Unavailable("no_soportado")
         path = paths.pop()
@@ -1135,7 +1245,8 @@ class TargetWorker:
         if mode != "0":
             raise Unavailable("dialogo_desconocido")
         children = self.descendants(root["pid"])
-        matches = [p for p in children.values() if self.is_provider(provider, p["argv"])]
+        matches = [p for p in children.values() if self.is_provider(provider, p["argv"])
+                   and not (provider == "codex" and self.codex_background(p["argv"]))]
         if len(matches) != 1:
             raise Unavailable("identidad_ambigua")
         process = matches[0]
@@ -2371,7 +2482,7 @@ class TargetWorker:
             if prompts:
                 row = prompts[-1]
                 trailing = lines[row + 1:]
-                footer = all(not line.strip() or re.fullmatch(r"  (?:GPT|gpt)-[A-Za-z0-9._-]+(?: [a-z]+)? · \S.* · \S.*|  \? for shortcuts.*", line)
+                footer = all(not line.strip() or re.fullmatch(r"  (?:GPT|gpt)-[A-Za-z0-9._-]+(?: [a-z]+)? · \S.* · \S.*|  (?:← for agents · )?\? for shortcuts.*", line)
                              for line in trailing)
                 if all(not line.strip() for line in trailing) and lines[row].strip() == "›":
                     empty = True
@@ -2379,7 +2490,8 @@ class TargetWorker:
                     styled = self.tmux("capture-pane", "-e", "-p", "-t", pane).splitlines()
                     # Separate reads can race a new draft: require the full same
                     # screen before trusting the style of that particular row.
-                    if [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in styled] == lines:
+                    # También los enlaces OSC 8 (la pancarta de «actualización disponible» de Codex 0.166 los usa).
+                    if [re.sub(r"\x1b\[[0-9;]*m|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)", "", line) for line in styled] == lines:
                         empty = self.codex_placeholder(styled[row])
         else:
             if self.request.get("provider") == "agy" and self.antigravity_activity(lines):
