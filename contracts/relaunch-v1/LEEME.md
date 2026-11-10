@@ -65,7 +65,7 @@ igual. D7 porta el dialecto que falta a cada lado. La matriz resultante, que fij
 | Proveedor | Mac, ventana local | Mac, ventana SSH | Linux, ventana local | Linux, caja SSH |
 |---|---|---|---|---|
 | Claude | sí (10-11, en vivo: salida limpia, escalado con monitores y con borrador, actualizar) | sí, por el trabajador de Linux (10-11, en vivo en `uc-prueba-relanzar`) | sí (probado en vivo el 08-11: salida limpia y, ocupado, escalado a matar el proceso; misma conversación y mismas opciones) | sí (probado en vivo el 08-11 en DESA por el camino real del adaptador: salida limpia en 7 s, misma conversación y mismas opciones) |
-| Codex | escrito, **pendiente de prueba en vivo** | `no_soportado` | sí, `agent.continue` y `agent.recover` requieren evidencia exacta de pausa/acuse | sí |
+| Codex | escrito, **pendiente de prueba en vivo** | sí, por el trabajador de Linux (10-11, en vivo en NOTBETTING con Codex 0.166 `--yolo`: mismo hilo, mismo binario, «Skip» del aviso de actualización anotado en el diario) | sí, `agent.continue` y `agent.recover` requieren evidencia exacta de pausa/acuse | sí |
 | Antigravity | `no_soportado` | `no_soportado` | sí, solo con binding gestionado y statusLine nativo fresco que pruebe estado idle | sí, bajo las mismas puertas en el destino Linux |
 
 «Pendiente de prueba en vivo» (decisión del 24-09-2026): el dialecto está escrito y probado con
@@ -78,9 +78,9 @@ operado una cuenta real.
 | grok y el resto del catálogo | `no_soportado` | `no_soportado` | `no_soportado` | `no_soportado` |
 
 - **Mac SSH** (10-11): Claude se relanza y se actualiza ejecutando por SSH el trabajador de Linux
-  (ver «Mac y SSH»). Codex y Antigravity siguen fuera desde el Mac (`proveedor_no_soportado`) hasta
-  una prueba en vivo suya. Una ventana SSH pedida por id desde el móvil devuelve su plan o su
-  exclusión, nunca `alcance_no_valido`.
+  (ver «Mac y SSH»). Codex también (10-11, probado en vivo); Antigravity sigue fuera desde el Mac
+  (`proveedor_no_soportado`) hasta que haya un binario con el que probarlo. Una ventana SSH pedida
+  por id desde el móvil devuelve su plan o su exclusión, nunca `alcance_no_valido`.
 - **Linux SSH** usa el mismo trabajador que en local, ejecutado en el destino por el canal de la
   caja. Necesita un destino Linux (`/proc` y `pidfd_open`); si no los hay, `no_soportado`.
 

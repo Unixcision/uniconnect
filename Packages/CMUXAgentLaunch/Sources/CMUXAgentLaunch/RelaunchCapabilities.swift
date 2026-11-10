@@ -22,9 +22,9 @@ public struct RelaunchCapabilities: Sendable, Equatable {
     /// Whether monitors and drafts are saved and given back.
     public let restores: Bool
 
-    /// What this Mac announces: Claude, local and SSH (through the Linux worker), both verbs,
-    /// with monitors and drafts kept.
-    public static let mac = RelaunchCapabilities(local: ["claude"], ssh: ["claude"], update: ["local", "ssh"], restores: true)
+    /// What this Mac announces: Claude local and SSH, and Codex SSH (both through the Linux worker
+    /// on the destination), with `agent.update` for Claude and monitors and drafts kept.
+    public static let mac = RelaunchCapabilities(local: ["claude"], ssh: ["claude", "codex"], update: ["local", "ssh"], restores: true)
 
     /// Creates a capability set.
     ///

@@ -54,9 +54,9 @@ struct UniConnectRelaunchInventory {
 
     /// The agents this Mac relaunches in SSH windows, through the Linux worker.
     ///
-    /// Claude only until the others pass a live test from the Mac (`contracts/relaunch-v1/
-    /// proveedores.json`): the worker knows Codex and Antigravity, but relaunching closes the agent.
-    static let remoteProviders: Set<String> = ["claude"]
+    /// Claude, and Codex since its live test from the Mac (`contracts/relaunch-v1/proveedores.json`).
+    /// Antigravity stays out until there is a binary to test it against: relaunching closes the agent.
+    static let remoteProviders: Set<String> = ["claude", "codex"]
 
     private let machineID: String
     private let dialects: RelaunchDialects

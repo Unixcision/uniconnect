@@ -12,7 +12,8 @@
         "claude"
       ],
       "ssh": [
-        "claude"
+        "claude",
+        "codex"
       ]
     },
     "linux": {
@@ -33,6 +34,7 @@
       "relaunch.v1",
       "relaunch.v1.claude.local",
       "relaunch.v1.claude.ssh",
+      "relaunch.v1.codex.ssh",
       "relaunch.v1.restaura",
       "relaunch.v1.update",
       "relaunch.v1.update.claude.local",
@@ -61,7 +63,6 @@
         "otros"
       ],
       "ssh": [
-        "codex",
         "agy",
         "grok",
         "otros"

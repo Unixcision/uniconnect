@@ -100,7 +100,8 @@ struct UniConnectRelaunchLiveTests {
             scripts: { scripts }
         )
         let coordinator = UniConnectRelaunchCoordinator(
-            machineID: "mac", remoteSighting: { _ in .agent(provider: "claude") }, remoteWorker: worker
+            machineID: "mac", remoteSighting: { [environment] _ in .agent(provider: environment["UC_LIVE_PROVIDER"] ?? "claude") },
+            remoteWorker: worker
         )
         let workspace = Workspace()
         workspace.customTitle = "PRUEBA"

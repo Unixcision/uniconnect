@@ -97,12 +97,12 @@ struct UniConnectRelaunchInventoryTests {
         #expect(candidate.credentialID == workspace.uniConnectProfile?.credentialId)
     }
 
-    @Test("En SSH, una ventana en su shell es sin_ia y Codex aún no se relanza desde el Mac")
+    @Test("En SSH, una ventana en su shell es sin_ia y Antigravity aún no se relanza desde el Mac")
     func remoteShellAndCodexAreExcluded() throws {
         let workspace = try sshWorkspace(title: "NOTBETTING", host: "root@15.217.153.205", sessions: ["a", "b"])
         let ids = workspace.panels.keys.sorted { $0.uuidString < $1.uuidString }
         let reading = UniConnectRelaunchInventory(machineID: "mac", remoteSighting: { id in
-            id == ids[0] ? .shell : .agent(provider: "codex")
+            id == ids[0] ? .shell : .agent(provider: "agy")
         }).read(workspaces: [workspace])
 
         #expect(reading.remote.isEmpty)
