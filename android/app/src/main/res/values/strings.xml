@@ -831,6 +831,16 @@
     <string name="accounts_search_clear">Borrar la búsqueda</string>
     <string name="accounts_by_workspace">Por espacio</string>
     <string name="accounts_by_account">Por cuenta</string>
+    <string name="accounts_by_agent">Por IA</string>
+    <string name="accounts_provider_label">IA</string>
+    <string name="accounts_provider_all">Todas las IA · %1$d</string>
+    <string name="accounts_provider_chip">%1$s · %2$d</string>
+    <string name="accounts_group_no_agent">Sin IA</string>
+    <plurals name="accounts_group_accounts">
+        <item quantity="one">%1$d cuenta</item>
+        <item quantity="other">%1$d cuentas</item>
+    </plurals>
+    <string name="accounts_notice_detail">%1$s · %2$s</string>
     <string name="accounts_without_agent">Ventanas sin IA</string>
     <string name="accounts_host_unreachable">No se pudo leer %1$s: no contestó</string>
     <string name="accounts_host_vault">No se pudo leer %1$s: la bóveda está cerrada</string>
@@ -877,6 +887,7 @@
     <string name="usage_summary">Resumen</string>
     <string name="usage_summary_title">Todas las cuentas</string>
     <string name="usage_no_accounts">Ningún equipo da todavía el uso de sus cuentas.</string>
+    <string name="usage_no_accounts_provider">No hay cuentas de esa IA en esta lectura.</string>
     <plurals name="usage_in_windows">
         <item quantity="one">En %1$d ventana</item>
         <item quantity="other">En %1$d ventanas</item>

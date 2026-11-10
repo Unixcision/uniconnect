@@ -22,7 +22,7 @@ data class AccountsBoard(val machines: List<MachineAccounts>) {
         machine.report?.hosts.orEmpty().filter { !it.readable }.map { host ->
             AccountNotice.HostUnreadable(
                 listOf(machine.machineName, host.label.ifBlank { host.hostKey }).filter { it.isNotBlank() }.joinToString(" · "),
-                host.state, host.error,
+                host.state, host.error, host.errorDetail,
             )
         }
     }
@@ -39,6 +39,30 @@ data class AccountsBoard(val machines: List<MachineAccounts>) {
     /** Las filas que se ven con el interruptor «Ventanas sin IA» en [showWithoutAgent]. */
     fun visible(showWithoutAgent: Boolean): List<AccountRow> = if (showWithoutAgent) rows else rows.filter { !it.withoutAgent }
 
+    /** Lo visible con el interruptor y la IA elegida; sin IA elegida, todo. */
+    private fun ofProvider(query: AccountsQuery): List<AccountRow> {
+        val visible = visible(query.showWithoutAgent)
+        val provider = query.provider ?: return visible
+        return visible.filter { it.window.agent?.provider == provider }
+    }
+
+    /**
+     * El filtro por IA: «Todas las IA» y una ficha por cada `agent.provider` que hay en esta
+     * lectura, de más a menos ventanas (y por id a igualdad). Se cuenta sobre lo visible con el
+     * interruptor, sin la ficha de cuenta ni el buscador; las ventanas sin IA no cuentan. Un equipo
+     * que no contestó no aporta filas, así que tampoco IAs. Si la IA elegida ya no está, sigue con
+     * un cero, para poder quitarla.
+     */
+    fun providerChips(query: AccountsQuery): List<ProviderChipCount> {
+        val agents = visible(query.showWithoutAgent).mapNotNull { it.window.agent }
+        val byProvider = agents.groupBy { it.provider }
+            .map { (provider, items) -> ProviderChipCount(provider, items.first().displayName, items.size) }
+            .sortedWith(compareByDescending<ProviderChipCount> { it.count }.thenBy { it.provider })
+        val chosen = query.provider
+        val kept = if (chosen != null && byProvider.none { it.provider == chosen }) listOf(ProviderChipCount(chosen, chosen, 0)) else emptyList()
+        return listOf(ProviderChipCount(null, null, agents.size)) + byProvider + kept
+    }
+
     /**
      * Las fichas: «Todas», una por email de más a menos ventanas, «Sin sesión» y «Sin leer».
      *
@@ -46,7 +70,8 @@ data class AccountsBoard(val machines: List<MachineAccounts>) {
      * escribir. Si la ficha elegida ya no tiene ventanas, sigue con un cero, para poder quitarla.
      */
     fun chips(query: AccountsQuery): List<AccountChipCount> {
-        val visible = visible(query.showWithoutAgent)
+        // Con una IA elegida, solo sus cuentas.
+        val visible = ofProvider(query)
         val emails = visible.mapNotNull { it.email }.groupingBy { it }.eachCount().entries
             .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
             .map { AccountChipCount(AccountChip.Email(it.key), it.value, AccountPalette.indexOf(it.key)) }
@@ -60,9 +85,9 @@ data class AccountsBoard(val machines: List<MachineAccounts>) {
         )
     }
 
-    /** Las filas que quedan con [query]: interruptor, ficha y buscador. */
+    /** Las filas que quedan con [query]: interruptor, IA, ficha de cuenta y buscador. */
     fun filtered(query: AccountsQuery): List<AccountRow> =
-        visible(query.showWithoutAgent).filter { it.matches(query.chip) && it.matches(query.search) }
+        ofProvider(query).filter { it.matches(query.chip) && it.matches(query.search) }
 
     /** Los grupos que se pintan con [query]. Ningún grupo vacío. */
     fun groups(query: AccountsQuery): List<AccountGroup> {
@@ -73,6 +98,17 @@ data class AccountsBoard(val machines: List<MachineAccounts>) {
                 .map { (key, rows) -> AccountGroup(key, rows) }
             AccountsQuery.Grouping.BY_ACCOUNT -> rows.groupBy(::accountKey).map { (key, rows) -> AccountGroup(key, rows) }
                 .sortedWith(compareBy<AccountGroup> { rank(it.key) }.thenByDescending { it.rows.size }.thenBy { (it.key as? AccountGroup.Key.Email)?.email.orEmpty() })
+            // Una sección por IA, de más a menos ventanas, y «Sin IA» al final.
+            AccountsQuery.Grouping.BY_AGENT -> rows.groupBy { it.window.agent?.provider }
+                .map { (provider, rows) ->
+                    val key = if (provider == null) AccountGroup.Key.NoAgent
+                    else AccountGroup.Key.Agent(provider, rows.firstNotNullOfOrNull { it.window.agent?.displayName } ?: provider)
+                    AccountGroup(key, rows)
+                }
+                .sortedWith(
+                    compareBy<AccountGroup> { it.key == AccountGroup.Key.NoAgent }.thenByDescending { it.rows.size }
+                        .thenBy { (it.key as? AccountGroup.Key.Agent)?.provider.orEmpty() },
+                )
         }
     }
 
@@ -108,6 +144,12 @@ data class AccountsBoard(val machines: List<MachineAccounts>) {
             .sortedWith(compareByDescending<UsageAccount> { it.windows }.thenBy { it.email.orEmpty() }.thenBy { it.key })
     }
 
+    /** Las cuentas de «Uso por cuenta» con la IA elegida en [query]; sin IA elegida, todas. */
+    fun usageAccounts(query: AccountsQuery): List<UsageAccount> {
+        val provider = query.provider ?: return usageAccounts
+        return usageAccounts.filter { it.provider == provider }
+    }
+
     /** «MINIPC · dgomezm@100.123.234.20:22»: el host como lo nombra su equipo, con el equipo delante. */
     private fun hostLabel(machine: MachineAccounts, hostKey: String): String {
         val label = machine.report?.hosts?.firstOrNull { it.hostKey == hostKey }?.label?.takeIf { it.isNotBlank() } ?: hostKey
@@ -134,7 +176,7 @@ data class AccountsBoard(val machines: List<MachineAccounts>) {
         AccountGroup.Key.NoSession -> 11
         AccountGroup.Key.Unread -> 12
         AccountGroup.Key.WithoutAgent -> 13
-        is AccountGroup.Key.Workspace -> 14
+        is AccountGroup.Key.Workspace, is AccountGroup.Key.Agent, AccountGroup.Key.NoAgent -> 14
     }
 
     private fun epochMillis(iso: String): Long? = runCatching { Instant.parse(iso).toEpochMilli() }.getOrNull()

@@ -17,6 +17,7 @@ import com.unixcision.uniconnect.android.domain.AccountsFailure
 import com.unixcision.uniconnect.android.domain.AccountsQuery
 import com.unixcision.uniconnect.android.domain.AccountsReport
 import com.unixcision.uniconnect.android.domain.MachineAccounts
+import com.unixcision.uniconnect.android.domain.ProviderChipCount
 import com.unixcision.uniconnect.android.domain.ResetCredits
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -73,7 +74,50 @@ class AccountsContractTest {
     }
 
     @Test fun `cada host dice por que no se leyo`() {
-        assertEquals(listOf(null, null, null, "sin_respuesta", null, null), report.hosts.map { it.error })
+        assertEquals(listOf(null, null, null, "ssh_fallo", null, null), report.hosts.map { it.error })
+        assertEquals("ec2-user@54.167.34.64: Permission denied (publickey).", report.hosts[3].errorDetail)
+        assertTrue(report.hosts.filterIndexed { index, _ -> index != 3 }.all { it.errorDetail == null })
+    }
+
+    @Test fun `el filtro por IA sale de lo que hay, de mas a menos ventanas`() {
+        // Visibles sin «Ventanas sin IA»: Claude en 4, Codex en 2, Antigravity en 1, y 3 sin IA que no cuentan.
+        assertEquals(
+            listOf(
+                ProviderChipCount(null, null, 7), ProviderChipCount("claude", "Claude Code", 4),
+                ProviderChipCount("codex", "Codex", 2), ProviderChipCount("agy", "Antigravity", 1),
+            ),
+            board.providerChips(AccountsQuery()),
+        )
+        // Las ventanas sin IA tampoco cuentan cuando se enseñan.
+        assertEquals(7, board.providerChips(AccountsQuery(showWithoutAgent = true)).first().count)
+    }
+
+    @Test fun `elegir una IA deja solo sus ventanas y sus cuentas`() {
+        val codex = AccountsQuery(provider = "codex")
+        assertEquals(listOf("impuestos", "codex-antiresell"), board.filtered(codex).map { it.window.window })
+        val codexEmails = report.windows.filter { it.agent?.provider == "codex" }.mapNotNull { it.account?.email }.toSet()
+        val chips = board.chips(codex)
+        assertEquals(2, chips.first().count)
+        assertEquals(codexEmails, chips.mapNotNull { (it.chip as? AccountChip.Email)?.email }.toSet())
+        assertEquals(listOf(0, 0), chips.takeLast(2).map { it.count })
+        // Y en «Uso por cuenta», solo las cuentas de Codex.
+        assertEquals(report.accounts.filter { it.provider == "codex" }.map { it.key }, board.usageAccounts(codex).map { it.key })
+        assertEquals(board.usageAccounts, board.usageAccounts(AccountsQuery()))
+    }
+
+    @Test fun `por IA, una seccion por IA y Sin IA al final`() {
+        val groups = board.groups(AccountsQuery(grouping = AccountsQuery.Grouping.BY_AGENT))
+        assertEquals(
+            listOf(
+                AccountGroup.Key.Agent("claude", "Claude Code"), AccountGroup.Key.Agent("codex", "Codex"),
+                AccountGroup.Key.Agent("agy", "Antigravity"), AccountGroup.Key.NoAgent,
+            ),
+            groups.map { it.key },
+        )
+        assertEquals(listOf(4, 2, 1, 3), groups.map { it.rows.size })
+        // Claude: dos ventanas con la misma cuenta leída, una sin sesión y otra no legible → 1 cuenta.
+        assertEquals(listOf(1, 2, 0, 0), groups.map { it.accountCount })
+        assertEquals(listOf("vieja", "iberiavochatbot", "api"), groups.last().rows.map { it.window.window })
     }
 
     @Test fun `un null del contrato es nulo, nunca el texto null`() {
@@ -209,9 +253,11 @@ class AccountsContractTest {
     @Test fun `avisos por cada host que no se pudo leer y por cada equipo que no contesto`() {
         assertEquals(
             listOf(
-                // La causa viaja con el aviso: «no contestó a tiempo».
-                AccountNotice.HostUnreadable("Mac · ec2-user@54.167.34.64:22", AccountHost.UNREACHABLE, "sin_respuesta"),
-                AccountNotice.HostUnreadable("Mac · root@198.51.100.7:22", AccountHost.VAULT_LOCKED, null),
+                // La causa y la línea de SSH viajan con el aviso.
+                AccountNotice.HostUnreadable(
+                    "Mac · ec2-user@54.167.34.64:22", AccountHost.UNREACHABLE, "ssh_fallo", "ec2-user@54.167.34.64: Permission denied (publickey).",
+                ),
+                AccountNotice.HostUnreadable("Mac · root@198.51.100.7:22", AccountHost.VAULT_LOCKED, null, null),
             ),
             board.notices,
         )

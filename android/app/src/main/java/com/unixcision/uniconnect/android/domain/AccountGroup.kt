@@ -9,6 +9,9 @@ package com.unixcision.uniconnect.android.domain
 data class AccountGroup(val key: Key, val rows: List<AccountRow>) {
     val hostCount: Int get() = rows.map { it.machineID to it.window.hostKey }.distinct().size
 
+    /** Cuántas cuentas distintas leídas en esta llamada hay en sus ventanas («Por IA»). */
+    val accountCount: Int get() = rows.mapNotNull { it.email }.distinct().size
+
     /** Qué junta un grupo. */
     sealed interface Key {
         /** Un espacio de trabajo de un equipo. */
@@ -31,5 +34,11 @@ data class AccountGroup(val key: Key, val rows: List<AccountRow>) {
 
         /** Sesiones `ok` sin email ni método conocido. */
         data object NoEmail : Key
+
+        /** Las ventanas de una IA («Por IA»), con el nombre que le da el equipo. */
+        data class Agent(val provider: String, val displayName: String) : Key
+
+        /** «Por IA»: las ventanas en las que no se vio ninguna IA, al final. */
+        data object NoAgent : Key
     }
 }

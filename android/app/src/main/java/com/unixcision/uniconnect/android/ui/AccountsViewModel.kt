@@ -110,6 +110,11 @@ class AccountsViewModel(
 
     fun choose(chip: AccountChip) = mutableState.update { it.copy(query = it.query.copy(chip = chip)) }
 
+    /** Elige una IA (`agent.provider`), o todas con nulo. La ficha de cuenta vuelve a «Todas». */
+    fun chooseProvider(provider: String?) = mutableState.update {
+        if (it.query.provider == provider) it else it.copy(query = it.query.copy(provider = provider, chip = AccountChip.All))
+    }
+
     fun search(text: String) = mutableState.update { it.copy(query = it.query.copy(search = text)) }
 
     fun group(grouping: AccountsQuery.Grouping) = mutableState.update { it.copy(query = it.query.copy(grouping = grouping)) }
