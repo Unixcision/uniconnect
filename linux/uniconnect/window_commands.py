@@ -227,6 +227,16 @@ class WindowCommands:
     def action_relaunch_machine(self):
         self.relaunch.show("machine")
 
+    def action_accounts(self):
+        """«Cuentas de IA…» (accounts-v1): una sola ventana aparte; si ya está abierta, delante."""
+        from .accounts_window import AccountsWindow
+        window = getattr(self, "accounts_window", None)
+        if window is not None and not window.closed:
+            window.present()
+            window.refresh()
+            return
+        self.accounts_window = AccountsWindow(self)
+
     def action_update_claude_window(self):
         self.relaunch.ask_update("window")
 

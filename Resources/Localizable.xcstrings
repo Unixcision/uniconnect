@@ -39620,6 +39620,17 @@
         }
       }
     },
+    "uniconnect.shared.cuentas.de.ia": {
+      "extractionState": "manual",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuentas de IA…"
+          }
+        }
+      }
+    },
     "uniconnect.shared.cursor.de.notificaciones.no.v.lido": {
       "extractionState": "manual",
       "localizations": {

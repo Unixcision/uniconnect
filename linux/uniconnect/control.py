@@ -70,6 +70,24 @@ class ControlServer:
                 self.window.background(work, lambda result: self.respond(client, result))
                 self.clients[client][1] = None  # This read watch is removed on return.
                 return False
+            if request.get("command") == "accounts.list":
+                # accounts.v1: el mismo JSON que el móvil; las sondas (≤ 12 s) fuera de GTK.
+                from .accounts import AccountsReader
+                workspace_id = request.get("params", {}).get("workspace_id")
+                if self.window.locked:
+                    self.respond(client, {"ok": False, "error": {"code": "locked", "message": "UniConnect está bloqueado."}})
+                    self.clients[client][1] = None
+                    return False
+                boxes = AccountsReader.snapshot(self.window)
+                def accounts():
+                    try:
+                        return {"ok": True, "result": AccountsReader.only(self.window.accounts_reader.read(boxes), workspace_id)}
+                    except Exception as error:
+                        return {"ok": False, "error": {"code": getattr(error, "code", "internal_error"),
+                                                        "message": str(error)}}
+                self.window.background(accounts, lambda result: self.respond(client, result))
+                self.clients[client][1] = None  # This read watch is removed on return.
+                return False
             if request.get("command") in ("save", "persist", "surface.details", "details"):
                 # Guardar espera a la sonda (≤ 10 s) y Detalles la lee: la respuesta llega
                 # cuando está hecho, sin bloquear GTK. Nunca «saved» antes de persistir.

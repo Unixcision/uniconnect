@@ -159,6 +159,8 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         self.overlay.set_visible_child_name("content")
         from .relaunch_desktop import RelaunchDesktop
         self.relaunch = RelaunchDesktop(self, GLib.idle_add)
+        from .accounts import AccountsReader
+        self.accounts_reader = AccountsReader()  # Uno solo: escritorio y móvil comparten la lectura en curso.
         self.refresh_sidebar()
         self.show_all()
         self.apply_sidebar_mode()
@@ -198,7 +200,7 @@ class MainWindow(WindowCommands, WindowNotifications, Gtk.ApplicationWindow):
         bar = Gtk.MenuBar()
         self.menu_items = []
         groups = {
-            "UniConnect": ["about", "settings", "lock", "quit"],
+            "UniConnect": ["about", "settings", "accounts", "lock", "quit"],
             "File": ["new_workspace", "new_window", "new_conversation_window", "reopen_last", "reopen", "close_window", "close_other_windows", "close_workspace", "save", "import_config", "export_config", "restore_backup"],
             "Edit": ["copy", "show_history", "cancel_selection", "paste", "find", "find_next", "find_previous", "hide_find", "find_selection", "send_ctrl_f"],
             "View": ["sidebar", "palette", "notifications", "notifications_latest_unread", "notifications_mark_all_read", "notifications_dismiss_all", "font_larger", "font_smaller", "font_reset", "split_right", "split_down", "equalize_panes", "maximize_pane", "focus_left", "focus_right", "focus_up", "focus_down", "fullscreen"],

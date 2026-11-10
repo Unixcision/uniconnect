@@ -88,7 +88,8 @@ class MobileRPC:
             return action()
         if method == "mobile.host.status":
             ready = capture_dependencies_ready()
-            capabilities = ["events.v1", "terminal.viewport.v1", "notifications.v1", "terminal.pty.v1", "window_details.v1"]
+            capabilities = ["accounts.v1", "events.v1", "terminal.viewport.v1", "notifications.v1", "terminal.pty.v1",
+                            "window_details.v1"]
             if getattr(self.window, "relaunch", None) is not None:
                 capabilities += RELAUNCH_CAPABILITIES
             if ready:
@@ -113,6 +114,9 @@ class MobileRPC:
             return self.attachments.dispatch(operation, params, connection_id, authorized)
         if operation == "terminal.replay":
             return self.replay(params, authorized=authorized)
+        if operation == "accounts.list":
+            # accounts.v1: sondas fuera de GTK (≤ 12 s); el modelo se copia en el hilo de GTK.
+            return self.accounts_dispatch(params, authorized)
         if operation == "terminal.details":
             # Resolución en el hilo GTK; la sonda (hasta 8 s) nunca bloquea GTK ni el plazo de 5 s.
             return self.details_dispatch(params, authorized)
@@ -270,6 +274,26 @@ class MobileRPC:
         return catalog.display_name(kind)
 
     # ----- window_details.v1 -----
+
+    def accounts_dispatch(self, params, authorized):
+        """`mobile.accounts.list`: con qué cuenta está cada IA, leído en vivo (contracts/accounts-v1)."""
+        from .accounts import AccountsReader
+        workspace_id = params.get("workspace_id") if isinstance(params, dict) else None
+        if isinstance(params, dict) and "workspace_id" in params and (not isinstance(workspace_id, str) or not workspace_id):
+            raise RPCError("invalid_params", "El espacio de trabajo pedido no es válido.")
+
+        def resolve():
+            if not authorized():
+                raise RPCError("approval_required", "El permiso de este dispositivo ha sido revocado")
+            if self.window.locked:
+                raise RPCError("locked", "UniConnect está bloqueado.")
+            if workspace_id is not None and not any(item["id"] == workspace_id for item in self.window.store.workspaces):
+                raise RPCError("not_found", "No se encontró ese espacio de trabajo.")
+            return AccountsReader.snapshot(self.window)
+
+        boxes = self.on_main(resolve)
+        reader = getattr(self.window, "accounts_reader", None) or AccountsReader(transport=self.transport_factory)
+        return AccountsReader.only(reader.read(boxes), workspace_id)
 
     def details_dispatch(self, params, authorized):
         """`mobile.terminal.details`: solo lectura; con la sonda caída responde con lo guardado."""
@@ -652,7 +676,8 @@ class MobileRPC:
         if terminals_filter and not any(box["terminals"] for box in boxes):
             raise RPCError("not_found", "No se encontró la terminal")
         return {"workspaces": boxes, "display_name": socket.gethostname(),
-                "capabilities": ["activity.v1", "box_close", "box_update", "file_put.v1", "inbox.v1", "transcribe.v1",
+                "capabilities": ["accounts.v1", "activity.v1", "box_close", "box_update", "file_put.v1", "inbox.v1",
+                                 "transcribe.v1",
                                  "ssh_create.v1", "window_details.v1"]
                 + (list(RELAUNCH_CAPABILITIES) if getattr(self.window, "relaunch", None) is not None else [])}
 

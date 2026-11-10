@@ -52,6 +52,7 @@ ACTIONS = (
     Action("continue_workspace", "Reabrir y continuar Codex pausado de esta caja…"),
     Action("continue_machine", "Reabrir y continuar Codex pausado de este equipo…"),
     Action("relaunch_history", "Resultados de relanzados…"),
+    Action("accounts", "Cuentas de IA…"),
     Action("rename_workspace", "Rename workspace"),
     Action("rename_window", "Rename window"),
     Action("window_details", "Detalles…"),
