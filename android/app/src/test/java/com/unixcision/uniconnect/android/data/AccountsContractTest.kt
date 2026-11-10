@@ -9,6 +9,8 @@ import com.unixcision.uniconnect.android.domain.AccountMethod
 import com.unixcision.uniconnect.android.domain.AccountNotice
 import com.unixcision.uniconnect.android.domain.AccountPalette
 import com.unixcision.uniconnect.android.domain.AccountStatus
+import com.unixcision.uniconnect.android.domain.AccountUsageMath
+import com.unixcision.uniconnect.android.domain.LimitName
 import com.unixcision.uniconnect.android.domain.AccountWindowState
 import com.unixcision.uniconnect.android.domain.AccountsBoard
 import com.unixcision.uniconnect.android.domain.AccountsFailure
@@ -24,6 +26,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
+import java.time.ZoneId
 
 /**
  * «Cuentas de IA» por el decodificador real contra `contracts/accounts-v1/accounts-response.json`, y
@@ -236,6 +239,60 @@ class AccountsContractTest {
         }
         assertEquals(AccountPalette.NEUTRAL, AccountPalette.colorOf(null))
         assertEquals(AccountPalette.COLORS[3], AccountPalette.colorOf("Dev@NotBetting.com"))
+    }
+
+    @Test fun `el uso de cada ventana y de cada cuenta se lee del contrato`() {
+        val usage = requireNotNull(report.windows.first().account?.usage)
+        assertEquals("statusline", usage.source)
+        assertEquals(Instant.parse("2026-11-10T12:29:58Z"), usage.observedAt)
+        assertEquals(listOf("five_hour", "seven_day"), usage.limits.map { it.id })
+        assertEquals(3.5, usage.limits[0].usedPercent, 0.0)
+        assertEquals(300, usage.limits[0].windowMinutes)
+        assertEquals(Instant.parse("2026-11-10T14:30:00Z"), usage.limits[0].resetsAt)
+        assertNull(report.windows.single { it.window == "codex-antiresell" }.account?.usage)
+
+        val raw = fixture("accounts-response.json").getJSONArray("accounts")
+        assertEquals(List(raw.length()) { raw.getJSONObject(it).getString("key") }, report.accounts.map { it.key })
+        val claude = report.accounts.first()
+        assertEquals("claude", claude.provider)
+        assertEquals(2, claude.windows)
+        assertEquals(listOf("local", "ssh:root@203.0.113.10:22"), claude.hostKeys)
+        assertEquals("local", claude.usage?.hostKey)
+        assertEquals(4, claude.history.size)
+        assertEquals(mapOf("seven_day" to 47.0, "five_hour" to 0.0), claude.history[2].limits)
+        // Una cuenta sin dato de uso llega con `usage: null` y el histórico vacío.
+        assertNull(report.accounts[1].usage)
+        assertTrue(report.accounts[1].history.isEmpty())
+    }
+
+    @Test fun `uso por cuenta junta accounts y ventanas, con la formula comun`() {
+        val accounts = board.usageAccounts
+        // De más a menos ventanas: la de Claude, en dos, y luego las dos de Codex por email.
+        assertEquals(report.accounts.map { it.key }, accounts.map { it.key })
+        val claude = accounts.first()
+        assertEquals("Mac · Este Mac", claude.seenOn)
+        assertEquals(listOf("Mac · Este Mac", "Mac · root@203.0.113.10:22"), claude.hosts)
+        assertEquals(listOf("uniconnect", "APP 2"), claude.rows.map { it.window.window })
+
+        val zone = ZoneId.of("Europe/Madrid")
+        val math = AccountUsageMath(Instant.parse("2026-11-10T12:30:06Z"), zone)
+        val usage = requireNotNull(claude.usage)
+        val week = usage.limits.single { it.id == "seven_day" }
+        val fiveHours = usage.limits.single { it.id == "five_hour" }
+        assertEquals(17.4549, requireNotNull(math.projection(week, usage.observedAt, claude.history)).perDay, 1e-3)
+        // De las 5 horas solo hay una muestra dentro de su ventana: ni ritmo ni proyección.
+        assertNull(math.projection(fiveHours, usage.observedAt, claude.history))
+        assertFalse(math.isOld(requireNotNull(usage.observedAt)))
+        // Pasado su reset, sale a 0 % y reseteado, aunque el dato dijera 3,5 %.
+        assertEquals(AccountUsageMath.Reading(0.0, wasReset = true), AccountUsageMath(Instant.parse("2026-11-10T15:00:00Z"), zone).reading(fiveHours))
+
+        val codex = accounts[2]
+        val codexUsage = requireNotNull(codex.usage)
+        assertEquals(LimitName.Week, LimitName.of(codexUsage.limits[0].id, codexUsage.limits[0].windowMinutes))
+        // Visto el 09-11 a las 17:53: a la hora de la respuesta es un dato viejo, en ámbar.
+        assertTrue(math.isOld(requireNotNull(codexUsage.observedAt)))
+        assertEquals(listOf("impuestos"), codex.rows.map { it.window.window })
+        assertNull(accounts[1].usage)
     }
 
     private fun hex(argb: Long): String = "#%06X".format(argb and 0xFFFFFF)

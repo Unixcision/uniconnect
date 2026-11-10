@@ -37,14 +37,20 @@ class AccountsViewModel(
     private val read: suspend (Machine) -> AccountsReport,
     scope: CoroutineScope? = null,
 ) : ViewModel() {
+    /** «Ventanas» o «Uso por cuenta» (§4.1). */
+    enum class Tab { WINDOWS, USAGE }
+
     /**
      * @property board la última pasada completa, o nula si todavía no ha terminado ninguna.
      * @property reading hay una pasada en marcha.
+     * @property usageKey la cuenta abierta en «Uso por cuenta», o nula para «Resumen».
      */
     data class State(
         val board: AccountsBoard? = null,
         val reading: Boolean = false,
         val query: AccountsQuery = AccountsQuery(),
+        val tab: Tab = Tab.WINDOWS,
+        val usageKey: String? = null,
     )
 
     private val work: CoroutineScope by lazy { scope ?: viewModelScope }
@@ -88,6 +94,16 @@ class AccountsViewModel(
     fun group(grouping: AccountsQuery.Grouping) = mutableState.update { it.copy(query = it.query.copy(grouping = grouping)) }
 
     fun showWithoutAgent(show: Boolean) = mutableState.update { it.copy(query = it.query.copy(showWithoutAgent = show)) }
+
+    fun showTab(tab: Tab) = mutableState.update { it.copy(tab = tab) }
+
+    /** Abre la pestaña de una cuenta en «Uso por cuenta»; nula vuelve a «Resumen». */
+    fun showUsage(key: String?) = mutableState.update { it.copy(tab = Tab.USAGE, usageKey = key) }
+
+    /** «Ver sus ventanas»: la pestaña «Ventanas» con solo las de [email]. */
+    fun showWindowsOf(email: String) = mutableState.update {
+        it.copy(tab = Tab.WINDOWS, query = it.query.copy(chip = AccountChip.Email(email), search = ""))
+    }
 
     private suspend fun readAll(machines: List<Machine>) {
         val mine = generation.get()

@@ -15,4 +15,6 @@ data class AccountInfo(
     val osUser: String? = null,
     val config: String? = null,
     val readAt: String? = null,
+    /** Lo último que esta IA dijo de sus límites (§2.4), o nulo si no hay dato de esta cuenta. */
+    val usage: AccountUsage? = null,
 )

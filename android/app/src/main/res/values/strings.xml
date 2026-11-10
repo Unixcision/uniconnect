@@ -871,4 +871,56 @@
     <string name="accounts_empty_machines">Ningún equipo conectado enseña todavía las cuentas de sus IA.</string>
     <string name="accounts_empty_filter">Ninguna ventana con este filtro.</string>
     <string name="accounts_empty">No hay ventanas en los equipos leídos.</string>
+    <!-- accounts.v1 §4.1: pestaña «Uso por cuenta». -->
+    <string name="accounts_tab_windows">Ventanas</string>
+    <string name="accounts_tab_usage">Uso por cuenta</string>
+    <string name="usage_summary">Resumen</string>
+    <string name="usage_summary_title">Todas las cuentas</string>
+    <string name="usage_no_accounts">Ningún equipo da todavía el uso de sus cuentas.</string>
+    <plurals name="usage_in_windows">
+        <item quantity="one">En %1$d ventana</item>
+        <item quantity="other">En %1$d ventanas</item>
+    </plurals>
+    <plurals name="usage_hosts">
+        <item quantity="one">%1$d host</item>
+        <item quantity="other">%1$d hosts</item>
+    </plurals>
+    <string name="usage_limit_five_hours">5 horas</string>
+    <string name="usage_limit_week">Semana</string>
+    <string name="usage_limit_week_opus">Semana · Opus</string>
+    <string name="usage_limit_week_sonnet">Semana · Sonnet</string>
+    <string name="usage_limit_week_fable">Semana · Fable</string>
+    <string name="usage_limit_hours">%1$d h</string>
+    <string name="usage_resets_in">Resetea en %1$s · %2$s</string>
+    <string name="usage_was_reset">Reseteado el %1$s · sin uso nuevo visto</string>
+    <string name="usage_span_days_hours">%1$d d %2$d h</string>
+    <string name="usage_span_hours_minutes">%1$d h %2$d min</string>
+    <string name="usage_span_minutes">%1$d min</string>
+    <string name="usage_weekday_time">%1$s %2$02d:%3$02d</string>
+    <string-array name="usage_weekdays_short">
+        <item>lun</item>
+        <item>mar</item>
+        <item>mié</item>
+        <item>jue</item>
+        <item>vie</item>
+        <item>sáb</item>
+        <item>dom</item>
+    </string-array>
+    <string name="usage_seen">Visto %1$s en %2$s</string>
+    <string name="usage_seen_nowhere">Visto %1$s</string>
+    <string name="usage_age_seconds">hace %1$d s</string>
+    <string name="usage_age_minutes">hace %1$d min</string>
+    <string name="usage_age_hours">hace %1$d h</string>
+    <string name="usage_age_days">hace %1$d d</string>
+    <string name="usage_rate">Ritmo: %1$s puntos al día</string>
+    <string name="usage_projection">A este ritmo, llegarás al %1$d %% antes del reset</string>
+    <string name="usage_exhaustion">Se agotaría el %1$s</string>
+    <string name="usage_chart_title">Últimos 7 días</string>
+    <string name="usage_chart_empty">La gráfica se irá llenando con cada lectura de uso.</string>
+    <string name="usage_chart_reset">Reset</string>
+    <string name="usage_where">Dónde está</string>
+    <string name="usage_show_windows">Ver sus ventanas</string>
+    <string name="usage_none_claude">Sin datos de uso todavía: aparecen en cuanto esta cuenta trabaje en una ventana con la barra de estado de UniConnect.</string>
+    <string name="usage_none_codex">Sin datos de uso todavía: aparecen en cuanto Codex haga una petición.</string>
+    <string name="usage_none_other">Sin datos de uso todavía.</string>
 </resources>

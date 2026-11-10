@@ -123,6 +123,23 @@ class AccountsViewModelTest {
         assertFalse(model.state.value.reading)
     }
 
+    @Test fun `ver sus ventanas lleva a Ventanas con la ficha de esa cuenta`() {
+        val model = AccountsViewModel({ throw MachineFailure.Transport() }, scope)
+        model.showUsage("claude:ana@ejemplo.com")
+        assertEquals(AccountsViewModel.Tab.USAGE, model.state.value.tab)
+        assertEquals("claude:ana@ejemplo.com", model.state.value.usageKey)
+        model.search("algo")
+
+        model.showWindowsOf("ana@ejemplo.com")
+
+        assertEquals(AccountsViewModel.Tab.WINDOWS, model.state.value.tab)
+        assertEquals(AccountChip.Email("ana@ejemplo.com"), model.state.value.query.chip)
+        assertEquals("", model.state.value.query.search)
+        // Volver a «Uso por cuenta» deja abierta la misma cuenta.
+        model.showTab(AccountsViewModel.Tab.USAGE)
+        assertEquals("claude:ana@ejemplo.com", model.state.value.usageKey)
+    }
+
     @Test fun `filtros y agrupacion sobreviven a cada pasada`() = runBlocking {
         val model = AccountsViewModel({ report("dev@notbetting.com") }, scope)
         model.choose(AccountChip.Email("dev@notbetting.com"))

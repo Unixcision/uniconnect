@@ -73,11 +73,14 @@ import com.unixcision.uniconnect.android.domain.AccountNotice
 import com.unixcision.uniconnect.android.domain.AccountPalette
 import com.unixcision.uniconnect.android.domain.AccountRow
 import com.unixcision.uniconnect.android.domain.AccountStatus
+import com.unixcision.uniconnect.android.domain.AccountUsageMath
 import com.unixcision.uniconnect.android.domain.AccountsFailure
 import com.unixcision.uniconnect.android.domain.AccountsQuery
 import com.unixcision.uniconnect.android.domain.Machine
 import com.unixcision.uniconnect.android.ui.components.GlassCard
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
+import java.time.Instant
+import java.time.ZoneId
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -131,9 +134,14 @@ fun AccountsScreen(
     val chips = remember(board, query) { board?.chips(query).orEmpty() }
     val groups = remember(board, query) { board?.groups(query).orEmpty() }
     val spacing = UniTheme.spacing
+    // La hora de la pantalla para todo lo que depende de ella: ningún cálculo mira el reloj.
+    val zone = remember { ZoneId.systemDefault() }
+    val instant = Instant.ofEpochMilli(now)
+    val math = remember(now, zone) { AccountUsageMath(instant, zone) }
 
     Column(Modifier.fillMaxSize()) {
         Header(reading = state.reading, ageSeconds = board?.ageSeconds(now), onBack = onBack, onRefresh = refresh)
+        TabSelector(state.tab, model::showTab, Modifier.padding(horizontal = spacing.page).padding(bottom = 6.dp))
         PullToRefreshBox(
             isRefreshing = pulling,
             onRefresh = {
@@ -158,6 +166,14 @@ fun AccountsScreen(
                             Spacer(Modifier.width(12.dp))
                             Text(stringResource(R.string.accounts_reading), color = UniTheme.colors.muted)
                         }
+                    }
+                    state.tab == AccountsViewModel.Tab.USAGE -> {
+                        // Lo que no se pudo leer también falta aquí: se dice antes que nada.
+                        items(board.notices) { NoticeCard(it) }
+                        usageItems(
+                            board, state.usageKey, math, instant, zone,
+                            onSelect = model::showUsage, onOpenWindow = onOpenWindow, onShowWindows = model::showWindowsOf,
+                        )
                     }
                     else -> {
                         item { Chips(chips, query.chip, model::choose) }
@@ -198,6 +214,27 @@ private fun Header(reading: Boolean, ageSeconds: Long?, onBack: () -> Unit, onRe
         }
     }
 }
+
+/** «Ventanas | Uso por cuenta» (§4.1). */
+@Composable
+private fun TabSelector(tab: AccountsViewModel.Tab, onTab: (AccountsViewModel.Tab) -> Unit, modifier: Modifier) {
+    val options = listOf(AccountsViewModel.Tab.WINDOWS to R.string.accounts_tab_windows, AccountsViewModel.Tab.USAGE to R.string.accounts_tab_usage)
+    SingleChoiceSegmentedButtonRow(modifier.fillMaxWidth()) {
+        options.forEachIndexed { index, (option, label) ->
+            SegmentedButton(
+                selected = tab == option, onClick = { onTab(option) },
+                shape = SegmentedButtonDefaults.itemShape(index, options.size), colors = segmentColors(),
+            ) { Text(stringResource(label), maxLines = 1) }
+        }
+    }
+}
+
+@Composable
+private fun segmentColors() = SegmentedButtonDefaults.colors(
+    activeContainerColor = UniTheme.colors.accent.copy(alpha = .18f), activeContentColor = UniTheme.colors.accent,
+    activeBorderColor = UniTheme.colors.accent.copy(alpha = .5f), inactiveContentColor = UniTheme.colors.muted,
+    inactiveBorderColor = UniTheme.colors.outline,
+)
 
 /** «Todas», una ficha por cuenta con su color, «Sin sesión» y «Sin leer». Pulsar la elegida la quita. */
 @Composable
@@ -253,11 +290,7 @@ private fun GroupingControls(query: AccountsQuery, onGroup: (AccountsQuery.Group
                     selected = query.grouping == grouping,
                     onClick = { onGroup(grouping) },
                     shape = SegmentedButtonDefaults.itemShape(index, options.size),
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = UniTheme.colors.accent.copy(alpha = .18f), activeContentColor = UniTheme.colors.accent,
-                        activeBorderColor = UniTheme.colors.accent.copy(alpha = .5f), inactiveContentColor = UniTheme.colors.muted,
-                        inactiveBorderColor = UniTheme.colors.outline,
-                    ),
+                    colors = segmentColors(),
                 ) { Text(stringResource(label), maxLines = 1) }
             }
         }

@@ -73,6 +73,43 @@ data class AccountsBoard(val machines: List<MachineAccounts>) {
         }
     }
 
+    /**
+     * Las cuentas de «Uso por cuenta», de más a menos ventanas, juntando todos los equipos.
+     *
+     * Para cada una: el uso con el `observed_at` más reciente de cualquier equipo, dónde se vio,
+     * los históricos mezclados por fecha y las ventanas de esta pasada que la usan.
+     */
+    val usageAccounts: List<UsageAccount> by lazy {
+        machines.flatMap { machine -> machine.report?.accounts.orEmpty().map { machine to it } }
+            .groupBy { (_, summary) -> summary.key }
+            .map { (key, entries) ->
+                val summary = entries.first().second
+                val newest = entries.filter { it.second.usage != null }
+                    .maxByOrNull { it.second.usage?.observedAt ?: Instant.MIN }
+                val email = summary.email?.trim()?.lowercase(java.util.Locale.ROOT)?.takeIf { it.isNotEmpty() }
+                UsageAccount(
+                    key = key,
+                    provider = summary.provider,
+                    displayName = summary.displayName,
+                    email = email,
+                    plan = entries.firstNotNullOfOrNull { it.second.plan },
+                    windows = entries.sumOf { it.second.windows },
+                    hosts = entries.flatMap { (machine, item) -> item.hostKeys.map { hostLabel(machine, it) } }.distinct(),
+                    usage = newest?.second?.usage,
+                    seenOn = newest?.let { (machine, item) -> item.usage?.hostKey?.let { hostLabel(machine, it) } ?: machine.machineName },
+                    history = entries.flatMap { it.second.history }.sortedBy { it.at }.distinctBy { it.at },
+                    rows = rows.filter { it.email != null && it.email == email && it.window.agent?.provider == summary.provider },
+                )
+            }
+            .sortedWith(compareByDescending<UsageAccount> { it.windows }.thenBy { it.email.orEmpty() }.thenBy { it.key })
+    }
+
+    /** «MINIPC · dgomezm@100.123.234.20:22»: el host como lo nombra su equipo, con el equipo delante. */
+    private fun hostLabel(machine: MachineAccounts, hostKey: String): String {
+        val label = machine.report?.hosts?.firstOrNull { it.hostKey == hostKey }?.label?.takeIf { it.isNotBlank() } ?: hostKey
+        return listOf(machine.machineName, label).filter { it.isNotBlank() }.joinToString(" · ")
+    }
+
     private fun accountKey(row: AccountRow): AccountGroup.Key = when (val label = row.label) {
         is AccountLabel.Email -> AccountGroup.Key.Email(label.email, label.colorIndex)
         is AccountLabel.Method -> AccountGroup.Key.Method(label.method)

@@ -11,4 +11,6 @@ data class AccountsReport(
     val checkedAt: String?,
     val hosts: List<AccountHost>,
     val windows: List<AccountWindow>,
+    /** Una entrada por proveedor y email, con su uso e histórico (§3.1); vacía en equipos anteriores. */
+    val accounts: List<AccountSummary> = emptyList(),
 )

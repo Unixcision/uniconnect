@@ -258,12 +258,54 @@ class NativeMachineClient(
                             osUser = account.text("os_user"),
                             config = account.text("config"),
                             readAt = account.text("read_at"),
+                            usage = account.optJSONObject("usage")?.let(::decodeUsage),
                         )
                     },
                 )
             },
+            accounts = result.optJSONArray("accounts")?.objects().orEmpty().map { account ->
+                val hostKeys = account.optJSONArray("host_keys") ?: JSONArray()
+                val history = account.optJSONArray("history") ?: JSONArray()
+                AccountSummary(
+                    key = account.getString("key"),
+                    provider = account.text("provider").orEmpty(),
+                    displayName = account.text("display_name") ?: account.text("provider").orEmpty(),
+                    email = account.text("email"),
+                    plan = account.text("plan"),
+                    organization = account.text("organization"),
+                    windows = account.optInt("windows", 0),
+                    hostKeys = List(hostKeys.length()) { hostKeys.optString(it) }.filter { it.isNotEmpty() },
+                    usage = account.optJSONObject("usage")?.let(::decodeUsage),
+                    // Una muestra sin fecha no se puede poner en la gráfica: se deja fuera.
+                    history = history.objects().mapNotNull { sample ->
+                        val at = sample.instant("at") ?: return@mapNotNull null
+                        val limits = sample.optJSONObject("limits") ?: JSONObject()
+                        UsageSample(at, limits.keys().asSequence().mapNotNull { id -> limits.number(id)?.let { id to it } }.toMap())
+                    }.sortedBy { it.at },
+                )
+            },
         )
     }
+
+    /** Un `usage` de §2.4. Un límite sin porcentaje no se inventa: se deja fuera. */
+    private fun decodeUsage(usage: JSONObject): AccountUsage = AccountUsage(
+        source = usage.text("source"),
+        observedAt = usage.instant("observed_at"),
+        limits = usage.optJSONArray("limits")?.objects().orEmpty().mapNotNull { limit ->
+            val id = limit.text("id") ?: return@mapNotNull null
+            val percent = limit.number("used_percent") ?: return@mapNotNull null
+            UsageLimit(id, percent, limit.instant("resets_at"), limit.whole("window_minutes")?.toInt())
+        },
+        hostKey = usage.text("host_key"),
+    )
+
+    /** Un instante ISO 8601 de [key], o nulo si falta, es `null` o no se entiende. */
+    private fun JSONObject.instant(key: String): java.time.Instant? =
+        text(key)?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }
+
+    /** Un número (entero o decimal) de [key], o nulo si falta o no es un número. */
+    private fun JSONObject.number(key: String): Double? =
+        if (!has(key) || isNull(key)) null else (opt(key) as? Number)?.toDouble()
 
     /**
      * Lee una respuesta de `window_details.v1`.
