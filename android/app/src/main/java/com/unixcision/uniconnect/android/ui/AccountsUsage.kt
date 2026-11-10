@@ -56,7 +56,6 @@ import com.unixcision.uniconnect.android.R
 import com.unixcision.uniconnect.android.domain.AccountPalette
 import com.unixcision.uniconnect.android.domain.AccountUsage
 import com.unixcision.uniconnect.android.domain.AccountUsageMath
-import com.unixcision.uniconnect.android.domain.AccountsBoard
 import com.unixcision.uniconnect.android.domain.CodexResetStep
 import com.unixcision.uniconnect.android.domain.CodexResetTarget
 import com.unixcision.uniconnect.android.domain.ResetCredits
@@ -64,13 +63,12 @@ import com.unixcision.uniconnect.android.domain.LimitName
 import com.unixcision.uniconnect.android.domain.UsageAccount
 import com.unixcision.uniconnect.android.domain.UsageChart
 import com.unixcision.uniconnect.android.domain.UsageLimit
+import com.unixcision.uniconnect.android.domain.UsageNumbers
 import com.unixcision.uniconnect.android.ui.components.GlassCard
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import java.time.Instant
 import java.time.ZoneId
-import java.util.Locale
 import kotlin.math.roundToInt
-import kotlin.math.roundToLong
 
 /**
  * «Uso por cuenta» (`accounts.v1` §4.1): pestañas desplazables con «Resumen» y una por cuenta, y
@@ -80,7 +78,11 @@ import kotlin.math.roundToLong
  * el reloj.
  */
 internal fun LazyListScope.usageItems(
-    board: AccountsBoard,
+    accounts: List<UsageAccount>,
+    /** Hay una IA elegida: sin cuentas, se dice que no hay de esa IA, no que no hay datos. */
+    filtered: Boolean,
+    /** Columnas del «Resumen»: una en un móvil, dos en una pantalla ancha. */
+    columns: Int,
     selectedKey: String?,
     math: AccountUsageMath,
     now: Instant,
@@ -92,20 +94,20 @@ internal fun LazyListScope.usageItems(
     reset: CodexResetStep = CodexResetStep.Idle,
     onAskReset: (CodexResetTarget) -> Unit = {},
 ) {
-    val accounts = board.usageAccounts
     if (accounts.isEmpty()) {
-        item { UsageEmpty(stringResource(R.string.usage_no_accounts)) }
+        item { UsageEmpty(stringResource(if (filtered) R.string.usage_no_accounts_provider else R.string.usage_no_accounts)) }
         return
     }
     val selected = accounts.firstOrNull { it.key == selectedKey }
     item { AccountTabs(accounts, selected, math, onSelect) }
     if (selected == null) {
         item { Text(stringResource(R.string.usage_summary_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold) }
-        accounts.chunked(2).forEach { pair ->
+        val perRow = columns.coerceAtLeast(1)
+        accounts.chunked(perRow).forEach { group ->
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(UniTheme.spacing.gap)) {
-                    pair.forEach { account -> SummaryCard(account, math, Modifier.weight(1f)) { onSelect(account.key) } }
-                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                    group.forEach { account -> SummaryCard(account, math, Modifier.weight(1f), wide = perRow == 1) { onSelect(account.key) } }
+                    repeat(perRow - group.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
         }
@@ -155,46 +157,70 @@ private fun AccountTabs(accounts: List<UsageAccount>, selected: UsageAccount?, m
     }
 }
 
-/** Una cuenta en la rejilla de «Resumen»: su anillo más alto, cada límite y lo fresco que es el dato. */
+/**
+ * Una cuenta en la rejilla de «Resumen»: su anillo más alto, cada límite y lo fresco que es el dato.
+ *
+ * [wide] es la tarjeta a todo lo ancho de un móvil: el anillo a la izquierda y el texto a su lado,
+ * entero; en dos columnas, el anillo arriba.
+ */
 @Composable
-private fun SummaryCard(account: UsageAccount, math: AccountUsageMath, modifier: Modifier, onClick: () -> Unit) {
+private fun SummaryCard(account: UsageAccount, math: AccountUsageMath, modifier: Modifier, wide: Boolean, onClick: () -> Unit) {
     val tone = toneOf(account)
+    val usage = account.usage
+    val top = highest(account, math)
     GlassCard(modifier, onClick = onClick) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                account.email ?: account.displayName, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
-                color = tone, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                listOfNotNull(account.displayName, account.plan).joinToString(" · "),
-                style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.muted, maxLines = 1,
-            )
-            account.usage?.resetCredits?.takeIf { it.available > 0 }?.let { credits ->
-                GiftBadge(pluralStringResource(R.plurals.usage_credits_badge, credits.available, credits.available))
+        if (wide && usage != null && usage.limits.isNotEmpty() && top != null) {
+            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                UsageRing(top, ringTone(tone, top), 68.dp, 7.dp) {
+                    Text(percentText(top), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) { SummaryText(account, math, tone, ring = false) }
             }
-            val usage = account.usage
-            if (usage == null || usage.limits.isEmpty()) {
-                Text(noUsageText(account), style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.muted, maxLines = 4, overflow = TextOverflow.Ellipsis)
-            } else {
-                val top = highest(account, math) ?: 0.0
-                Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
-                    UsageRing(top, ringTone(tone, top), 76.dp, 8.dp) {
-                        Text(percentText(top), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-                usage.limits.forEach { limit ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(limitText(LimitName.of(limit.id, limit.windowMinutes)), Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, maxLines = 1)
-                        Text(percentText(math.reading(limit).percent), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-                usage.observedAt?.let { seen ->
-                    Text(
-                        stringResource(R.string.usage_seen_nowhere, ageText(math.age(seen))), style = MaterialTheme.typography.labelSmall,
-                        color = if (math.isOld(seen)) UniTheme.colors.warning else UniTheme.colors.muted, maxLines = 1,
-                    )
+        } else {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { SummaryText(account, math, tone, ring = true) }
+        }
+    }
+}
+
+/** Lo que dice una tarjeta de «Resumen»; con [ring], el anillo va dentro, encima de los límites. */
+@Composable
+private fun SummaryText(account: UsageAccount, math: AccountUsageMath, tone: Color, ring: Boolean) {
+    Text(
+        account.email ?: account.displayName, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
+        color = tone, maxLines = 2, overflow = TextOverflow.Ellipsis,
+    )
+    Text(
+        listOfNotNull(account.displayName, account.plan).joinToString(" · "),
+        style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.muted, maxLines = 1,
+    )
+    account.usage?.resetCredits?.takeIf { it.available > 0 }?.let { credits ->
+        GiftBadge(pluralStringResource(R.plurals.usage_credits_badge, credits.available, credits.available))
+    }
+    val usage = account.usage
+    if (usage == null || usage.limits.isEmpty()) {
+        Text(noUsageText(account), style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.muted)
+    } else {
+        if (ring) {
+            val top = highest(account, math) ?: 0.0
+            Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
+                UsageRing(top, ringTone(tone, top), 76.dp, 8.dp) {
+                    Text(percentText(top), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 }
             }
+        }
+        usage.limits.forEach { limit ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(limitText(LimitName.of(limit.id, limit.windowMinutes)), Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
+                Spacer(Modifier.width(8.dp))
+                Text(percentText(math.reading(limit).percent), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        usage.observedAt?.let { seen ->
+            Text(
+                stringResource(R.string.usage_seen_nowhere, ageText(math.age(seen))), style = MaterialTheme.typography.labelSmall,
+                color = if (math.isOld(seen)) UniTheme.colors.warning else UniTheme.colors.muted,
+            )
         }
     }
 }
@@ -203,19 +229,17 @@ private fun SummaryCard(account: UsageAccount, math: AccountUsageMath, modifier:
 @Composable
 private fun DetailHeader(account: UsageAccount) {
     Column(Modifier.fillMaxWidth().padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            account.email ?: account.displayName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold,
-            color = toneOf(account), maxLines = 1, overflow = TextOverflow.Ellipsis,
-        )
+        // El email entero aunque sea largo: partido en dos líneas antes que cortado.
+        Text(account.email ?: account.displayName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, color = toneOf(account))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Pill(account.displayName, UniTheme.colors.muted)
             account.plan?.let { Pill(it, UniTheme.colors.accent) }
-            Text(
-                "${pluralStringResource(R.plurals.usage_in_windows, account.windows, account.windows)} · " +
-                    pluralStringResource(R.plurals.usage_hosts, account.hosts.size, account.hosts.size),
-                style = MaterialTheme.typography.labelMedium, color = UniTheme.colors.muted, maxLines = 1,
-            )
         }
+        Text(
+            "${pluralStringResource(R.plurals.usage_in_windows, account.windows, account.windows)} · " +
+                pluralStringResource(R.plurals.usage_hosts, account.hosts.size, account.hosts.size),
+            style = MaterialTheme.typography.labelMedium, color = UniTheme.colors.muted,
+        )
     }
 }
 
@@ -224,21 +248,28 @@ private fun DetailHeader(account: UsageAccount) {
 private fun LimitCard(account: UsageAccount, usage: AccountUsage, limit: UsageLimit, math: AccountUsageMath) {
     val reading = math.reading(limit)
     val tone = toneOf(account)
+    // La tarjeta ocupa la fila entera y solo el nombre y el reset van junto al anillo: lo largo
+    // («Visto … en MINIPC · root@…», el ritmo y la proyección) va debajo, a todo lo ancho, para que
+    // en un móvil no se parta ni se corte.
     GlassCard(Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            UsageRing(reading.percent, ringTone(tone, reading.percent), 88.dp, 9.dp) {
-                Text(percentText(reading.percent), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(limitText(LimitName.of(limit.id, limit.windowMinutes)), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                limit.resetsAt?.let { resetsAt ->
-                    Text(
-                        if (reading.wasReset) stringResource(R.string.usage_was_reset, weekdayTime(math, resetsAt))
-                        else stringResource(R.string.usage_resets_in, spanText(math.remaining(resetsAt)), weekdayTime(math, resetsAt)),
-                        style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted,
-                    )
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                UsageRing(reading.percent, ringTone(tone, reading.percent), 80.dp, 9.dp) {
+                    Text(percentText(reading.percent), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 }
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(limitText(LimitName.of(limit.id, limit.windowMinutes)), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    limit.resetsAt?.let { resetsAt ->
+                        Text(
+                            if (reading.wasReset) stringResource(R.string.usage_was_reset, weekdayTime(math, resetsAt))
+                            else stringResource(R.string.usage_resets_in, spanText(math.remaining(resetsAt)), weekdayTime(math, resetsAt)),
+                            style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.muted,
+                        )
+                    }
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 usage.observedAt?.let { seen ->
                     // Un dato de hace más de una hora se dice en ámbar: puede que ya no sea así.
                     Text(
@@ -250,7 +281,7 @@ private fun LimitCard(account: UsageAccount, usage: AccountUsage, limit: UsageLi
                 }
                 math.projection(limit, usage.observedAt, account.history)?.let { projection ->
                     Text(
-                        stringResource(R.string.usage_rate, String.format(SPANISH, "%.1f", projection.perDay)),
+                        stringResource(R.string.usage_rate, UsageNumbers.oneDecimal(projection.perDay)),
                         style = MaterialTheme.typography.bodySmall, color = UniTheme.colors.text,
                     )
                     val exhaustion = projection.exhaustion
@@ -546,12 +577,7 @@ private fun ageText(age: AccountUsageMath.Age): String = when (age.unit) {
 }
 
 /** «51 %» o «3,5 %»: un decimal solo cuando lo hay. */
-private fun percentText(percent: Double): String {
-    val rounded = (percent * 10).roundToLong() / 10.0
-    return if (rounded % 1.0 == 0.0) "${rounded.toLong()} %" else String.format(SPANISH, "%.1f %%", rounded)
-}
-
-private val SPANISH: Locale = Locale.forLanguageTag("es-ES")
+private fun percentText(percent: Double): String = UsageNumbers.percent(percent)
 
 /** A partir de aquí el anillo avisa en rojo. */
 private const val DANGER_PERCENT = 90.0

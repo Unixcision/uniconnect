@@ -3,7 +3,6 @@ import AppKit
 import SwiftUI
 import CryptoKit
 import UniConnectClaudeBridge
-import UniConnectClaudeUpdate
 
 // MARK: - Coordinator
 //
@@ -21,8 +20,7 @@ final class UniConnectCoordinator: ObservableObject {
     private var claudeBridgeMaintenance: (any UniConnectClaudeBridgeMaintaining)?
     private var claudeBridgeListenerUnavailable = false
     private var bridgeCleanupRecordIDs: Set<UUID> = []
-    private var claudeUpdateCoordinator: UniConnectClaudeUpdateCoordinator?
-    private var claudeUpdateShutdown: (@MainActor () -> Void)?
+    private var processRunnersShutdown: (@MainActor () -> Void)?
     private typealias LocalAgentOwner = UniConnectLocalAgentRestoreClaimPolicy.Owner
     private typealias LocalAgentLease = UniConnectLocalAgentClaimRegistry.Lease
 
@@ -359,13 +357,9 @@ final class UniConnectCoordinator: ObservableObject {
         claudeBridgeListenerUnavailable = false
     }
 
-    /// Receives the Claude updater graph from the executable composition root.
-    func configureClaudeUpdater(
-        _ coordinator: UniConnectClaudeUpdateCoordinator,
-        shutdown: @escaping @MainActor () -> Void
-    ) {
-        claudeUpdateCoordinator = coordinator
-        claudeUpdateShutdown = shutdown
+    /// Receives, from the composition root, how to stop every child process of the shared runners.
+    func configureProcessRunnersShutdown(_ shutdown: @escaping @MainActor () -> Void) {
+        processRunnersShutdown = shutdown
     }
 
     /// Actualizar Claude en la ventana elegida: el mismo camino que Relanzar, con `agent.update`.
@@ -386,17 +380,10 @@ final class UniConnectCoordinator: ObservableObject {
         relaunchAgents(in: allTabManagers().flatMap(\.tabs), verb: .agentUpdate)
     }
 
-    /// Reconciles durable updater obligations left by a previous termination.
-    func recoverPendingClaudeUpdateSessions() {
-        claudeUpdateCoordinator?.recoverPendingSessions()
-    }
-
-    /// Cancels discovery and updater-owned processes while preserving durable recovery records.
-    func shutdownClaudeUpdater() {
-        claudeUpdateCoordinator?.shutdown()
-        claudeUpdateShutdown?()
-        claudeUpdateCoordinator = nil
-        claudeUpdateShutdown = nil
+    /// Stops the shared runners' child processes at app exit.
+    func shutdownProcessRunners() {
+        processRunnersShutdown?()
+        processRunnersShutdown = nil
     }
 
     /// Drops local runtime state for a closed panel while retaining its encrypted token

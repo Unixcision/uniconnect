@@ -256,6 +256,7 @@ class NativeMachineClient(
                     state = host.text("state") ?: AccountHost.UNREACHABLE,
                     checkedAt = host.text("checked_at"),
                     error = host.text("error"),
+                    errorDetail = host.text("error_detail"),
                 )
             },
             windows = List(windows.length()) { index ->

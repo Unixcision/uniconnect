@@ -3,9 +3,11 @@ import Foundation
 /// Servicio que decide la ``AgentActivity`` de cada ventana a partir de sus pruebas.
 ///
 /// Corre fuera del hilo principal: lanza la sonda de tmux (una por socket), completa
-/// las pruebas con el título, el comando y la salida del panel, pide el veredicto de
-/// pantalla solo a las ventanas en calma y aplica el ``AgentActivityResolver``. Conserva
-/// la decisión anterior de cada ventana para calcular `since` y la histéresis.
+/// las pruebas con el título, el comando y la salida del panel, pide de una sola vez el
+/// texto de pantalla de las ventanas en calma que lo necesitan (un único salto al hilo
+/// principal por ciclo, que solo copia el texto), lo analiza aquí y aplica el
+/// ``AgentActivityResolver``. Conserva la decisión anterior de cada ventana para calcular
+/// `since` y la histéresis.
 ///
 /// En las ventanas con tmux local la salida sale de `#{window_activity}`, no de la PTY:
 /// esa PTY es un cliente `tmux attach` y ve los redibujados que cualquier `set-option` o
@@ -38,16 +40,19 @@ actor AgentActivityMonitor {
     /// - Parameters:
     ///   - inputs: Pruebas recogidas en el hilo principal.
     ///   - now: Epoch en segundos de la evaluación.
-    ///   - screenShowsPermissionPrompt: Veredicto de pantalla para las ventanas que lo necesiten.
+    ///   - screenTexts: Texto visible de las ventanas pedidas; se llama una vez por ciclo,
+    ///     solo con las que necesitan mirar la pantalla, y nunca si ninguna lo necesita.
     func evaluate(
         inputs: [AgentActivityTerminalInput],
         now: TimeInterval,
-        screenShowsPermissionPrompt: @MainActor @Sendable (UUID) -> Bool
+        screenTexts: @MainActor @Sendable (Set<UUID>) -> [UUID: String]
     ) async -> [UUID: [UUID: AgentActivity]] {
         let rowsBySocket = await probeRows(socketNames: Set(inputs.compactMap { $0.tmux?.socketName }))
         var next: [UUID: AgentActivity] = [:]
         var nextWindowActivityOutputs: [UUID: AgentActivityEvidence.Output] = [:]
         var result: [UUID: [UUID: AgentActivity]] = [:]
+        var evidences: [AgentActivityEvidence] = []
+        var needsScreen: Set<UUID> = []
         for input in inputs {
             var evidence = input.evidence
             if let tmux = input.tmux, let row = rowsBySocket[tmux.socketName]?[tmux.sessionName] {
@@ -59,7 +64,15 @@ actor AgentActivityMonitor {
                 }
             }
             if resolver.needsScreenCheck(evidence: evidence, now: now) {
-                evidence.screenShowsPermissionPrompt = await screenShowsPermissionPrompt(input.panelID)
+                needsScreen.insert(input.panelID)
+            }
+            evidences.append(evidence)
+        }
+        // Un solo salto al hilo principal, que solo copia; el análisis del texto, aquí.
+        let texts = needsScreen.isEmpty ? [:] : await screenTexts(needsScreen)
+        for (input, var evidence) in zip(inputs, evidences) {
+            if needsScreen.contains(input.panelID) {
+                evidence.screenShowsPermissionPrompt = AgentActivityScreenSignal(visibleText: texts[input.panelID]).isWaitingForUser
             }
             let activity = resolver.resolve(
                 evidence: evidence,

@@ -9,5 +9,11 @@ sealed interface AccountNotice {
      * Un host de un equipo no se pudo leer; [state] crudo (`host_inaccesible`, `boveda_cerrada`, …)
      * y [error], la causa que da el equipo, si la da.
      */
-    data class HostUnreadable(val hostLabel: String, val state: String, val error: String? = null) : AccountNotice
+    data class HostUnreadable(
+        val hostLabel: String,
+        val state: String,
+        val error: String? = null,
+        /** La línea de SSH o del shell, si el equipo la da: «Permission denied (publickey).». */
+        val errorDetail: String? = null,
+    ) : AccountNotice
 }

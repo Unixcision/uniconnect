@@ -421,10 +421,51 @@ struct AgentActivityResolverTests {
             tmux: .init(socketName: "test-local", sessionName: "uc-aaaa"),
             evidence: AgentActivityEvidence(output: tee)
         )
-        let result = await monitor.evaluate(inputs: [input], now: now) { _ in false }
+        let result = await monitor.evaluate(inputs: [input], now: now) { _ in [:] }
         let activity = result[workspaceID]?[panelID]
         #expect(activity?.state == .idle)
         #expect(activity?.agent == .claude)
+    }
+
+    /// Apunta en el hilo principal qué ventanas pide el monitor en cada ciclo.
+    @MainActor
+    private final class ScreenRequests {
+        var calls: [Set<UUID>] = []
+    }
+
+    @Test("La pantalla se pide una vez por ciclo y solo de las ventanas que la necesitan; el veredicto no cambia")
+    func screenTextsAreRequestedOncePerCycle() async {
+        let monitor = AgentActivityMonitor(probe: TmuxPaneActivityProbe(commands: ProbeCommands(outputs: [])))
+        let workspaceID = UUID(), waiting = UUID(), quiet = UUID(), shell = UUID()
+        let inputs = [
+            AgentActivityTerminalInput(workspaceID: workspaceID, panelID: waiting, tmux: nil,
+                                       evidence: evidence(title: "⠋ codex", command: "codex", outputAge: 30)),
+            AgentActivityTerminalInput(workspaceID: workspaceID, panelID: quiet, tmux: nil,
+                                       evidence: evidence(title: "✳ tema", command: "claude", outputAge: 30)),
+            AgentActivityTerminalInput(workspaceID: workspaceID, panelID: shell, tmux: nil,
+                                       evidence: evidence(title: "~", command: "zsh", outputAge: 30)),
+        ]
+        let requests = await ScreenRequests()
+        let result = await monitor.evaluate(inputs: inputs, now: now) { panelIDs in
+            requests.calls.append(panelIDs)
+            return [waiting: "salida\n\nAllow command? [y/n]\n", quiet: "✻ Prestidigitating… still thinking"]
+        }
+        #expect(await requests.calls == [[waiting, quiet]])
+        #expect(result[workspaceID]?[waiting]?.source == .screen)
+        #expect(result[workspaceID]?[waiting]?.state == resolve(evidence(title: "⠋ codex", command: "codex", outputAge: 30, screen: true)).state)
+        #expect(result[workspaceID]?[quiet]?.source != .screen)
+    }
+
+    @Test("Las últimas líneas no vacías salen igual que antes, recorriendo desde el final")
+    func tailLinesKeepTheirMeaning() {
+        let samples = ["", "\n\n", "una", "una\n", "  a  \n\n b\n\n\n c \n", "x\r\ny\nz", String(repeating: "l\n", count: 40) + "fin"]
+        for text in samples {
+            for count in [0, 1, 3, 12, 50] {
+                let old = Array(text.split(separator: "\n", omittingEmptySubsequences: false)
+                    .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.suffix(count))
+                #expect(AgentActivityScreenSignal.tailLines(text, count: count) == old, "\(text.debugDescription) \(count)")
+            }
+        }
     }
 
     @Test("Con tmux la racha se reconstruye entre muestras y un hueco la corta")
@@ -444,7 +485,7 @@ struct AgentActivityResolverTests {
         )
         var states: [AgentActivity.State?] = []
         for at in [now, now + 2, now + 10, now + 12, now + 14] {
-            let result = await monitor.evaluate(inputs: [input], now: at) { _ in false }
+            let result = await monitor.evaluate(inputs: [input], now: at) { _ in [:] }
             states.append(result[workspaceID]?[panelID]?.state)
         }
         // 1.ª muestra: una sola marca es una ráfaga. 2.ª: actividad seguida, working.

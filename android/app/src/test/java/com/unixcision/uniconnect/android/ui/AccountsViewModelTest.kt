@@ -176,6 +176,21 @@ class AccountsViewModelTest {
         assertEquals("clave-2", (model.state.value.reset as CodexResetStep.Confirming).idempotencyKey)
     }
 
+    @Test fun `cambiar de IA devuelve la ficha de cuenta a Todas`() {
+        val model = AccountsViewModel({ throw MachineFailure.Transport() }, scope)
+        model.choose(AccountChip.Email("ana@ejemplo.com"))
+        model.chooseProvider("codex")
+        assertEquals("codex", model.state.value.query.provider)
+        assertEquals(AccountChip.All, model.state.value.query.chip)
+        model.choose(AccountChip.Unread)
+        // Elegir la misma IA otra vez no toca la ficha de cuenta.
+        model.chooseProvider("codex")
+        assertEquals(AccountChip.Unread, model.state.value.query.chip)
+        model.chooseProvider(null)
+        assertEquals(null, model.state.value.query.provider)
+        assertEquals(AccountChip.All, model.state.value.query.chip)
+    }
+
     @Test fun `cancelar la confirmacion no gasta nada`() {
         val calls = AtomicInteger()
         val model = AccountsViewModel({ report("ana@ejemplo.com") }, scope, spendReset = { _, target, _ ->

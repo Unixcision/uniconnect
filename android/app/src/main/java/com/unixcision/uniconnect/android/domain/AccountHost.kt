@@ -17,6 +17,11 @@ data class AccountHost(
      * `salida_no_valida`, `tmux_no_disponible`, `tmux_fallo`…), o nulo si se leyó.
      */
     val error: String? = null,
+    /**
+     * La última línea útil de SSH o del shell, o lo que falló en el equipo antes de conectar; va
+     * detrás de la causa en el aviso.
+     */
+    val errorDetail: String? = null,
 ) {
     /** Si sus ventanas se leyeron en esta llamada. */
     val readable: Boolean get() = state == OK

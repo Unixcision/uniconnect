@@ -54,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -81,6 +82,7 @@ import com.unixcision.uniconnect.android.domain.CodexResetTarget
 import com.unixcision.uniconnect.android.domain.AccountsFailure
 import com.unixcision.uniconnect.android.domain.AccountsQuery
 import com.unixcision.uniconnect.android.domain.Machine
+import com.unixcision.uniconnect.android.domain.ProviderChipCount
 import com.unixcision.uniconnect.android.ui.components.GlassCard
 import com.unixcision.uniconnect.android.ui.theme.UniTheme
 import java.time.Instant
@@ -138,6 +140,10 @@ fun AccountsScreen(
     val board = state.board
     val query = state.query
     val chips = remember(board, query) { board?.chips(query).orEmpty() }
+    val providerChips = remember(board, query) { board?.providerChips(query).orEmpty() }
+    val usageAccounts = remember(board, query) { board?.usageAccounts(query).orEmpty() }
+    // En un móvil, el «Resumen» va en una columna: dos partirían los emails y los límites.
+    val usageColumns = if (LocalConfiguration.current.screenWidthDp >= WIDE_SCREEN_DP) 2 else 1
     val groups = remember(board, query) { board?.groups(query).orEmpty() }
     val spacing = UniTheme.spacing
     // La hora de la pantalla para todo lo que depende de ella: ningún cálculo mira el reloj.
@@ -174,15 +180,19 @@ fun AccountsScreen(
                         }
                     }
                     state.tab == AccountsViewModel.Tab.USAGE -> {
+                        // La IA elegida filtra también las cuentas de esta pestaña.
+                        item { ProviderChips(providerChips, query.provider, model::chooseProvider) }
                         // Lo que no se pudo leer también falta aquí: se dice antes que nada.
                         items(board.notices) { NoticeCard(it) }
                         usageItems(
-                            board, state.usageKey, math, instant, zone,
+                            usageAccounts, filtered = query.provider != null, columns = usageColumns,
+                            selectedKey = state.usageKey, math = math, now = instant, zone = zone,
                             onSelect = model::showUsage, onOpenWindow = onOpenWindow, onShowWindows = model::showWindowsOf,
                             resetTarget = { CodexResetTarget.of(it, codexResetMachines) }, reset = state.reset, onAskReset = model::askReset,
                         )
                     }
                     else -> {
+                        item { ProviderChips(providerChips, query.provider, model::chooseProvider) }
                         item { Chips(chips, query.chip, model::choose) }
                         item { SearchField(query.search, model::search) }
                         item { GroupingControls(query, model::group, model::showWithoutAgent) }
@@ -244,6 +254,34 @@ private fun segmentColors() = SegmentedButtonDefaults.colors(
     inactiveBorderColor = UniTheme.colors.outline,
 )
 
+/**
+ * «IA · Todas las IA · Claude Code 44 · Codex 8…»: una ficha por cada IA de esta lectura, de más a
+ * menos ventanas. Pulsar la elegida vuelve a todas.
+ */
+@Composable
+private fun ProviderChips(chips: List<ProviderChipCount>, selected: String?, onChoose: (String?) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(stringResource(R.string.accounts_provider_label), style = MaterialTheme.typography.labelMedium, color = UniTheme.colors.muted)
+        chips.forEach { item ->
+            val chosen = item.provider == selected
+            FilterChip(
+                selected = chosen,
+                onClick = { onChoose(if (chosen) null else item.provider) },
+                label = {
+                    Text(
+                        if (item.provider == null) stringResource(R.string.accounts_provider_all, item.count)
+                        else stringResource(R.string.accounts_provider_chip, item.displayName ?: item.provider, item.count),
+                        maxLines = 1,
+                    )
+                },
+            )
+        }
+    }
+}
+
 /** «Todas», una ficha por cuenta con su color, «Sin sesión» y «Sin leer». Pulsar la elegida la quita. */
 @Composable
 private fun Chips(chips: List<AccountChipCount>, selected: AccountChip, onChoose: (AccountChip) -> Unit) {
@@ -291,6 +329,7 @@ private fun GroupingControls(query: AccountsQuery, onGroup: (AccountsQuery.Group
         val options = listOf(
             AccountsQuery.Grouping.BY_WORKSPACE to R.string.accounts_by_workspace,
             AccountsQuery.Grouping.BY_ACCOUNT to R.string.accounts_by_account,
+            AccountsQuery.Grouping.BY_AGENT to R.string.accounts_by_agent,
         )
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             options.forEachIndexed { index, (grouping, label) ->
@@ -330,12 +369,16 @@ private fun NoticeCard(notice: AccountNotice) {
             )
         }
         // La causa que da el equipo manda; sin ella, la del estado.
-        is AccountNotice.HostUnreadable -> notice.error?.let { error -> stringResource(R.string.accounts_host_other, notice.hostLabel, hostErrorText(error)) }
-            ?: when (notice.state) {
-                AccountHost.UNREACHABLE -> stringResource(R.string.accounts_host_unreachable, notice.hostLabel)
-                AccountHost.VAULT_LOCKED -> stringResource(R.string.accounts_host_vault, notice.hostLabel)
-                else -> stringResource(R.string.accounts_host_other, notice.hostLabel, notice.state)
-            }
+        is AccountNotice.HostUnreadable -> {
+            val cause = notice.error?.let { error -> stringResource(R.string.accounts_host_other, notice.hostLabel, hostErrorText(error)) }
+                ?: when (notice.state) {
+                    AccountHost.UNREACHABLE -> stringResource(R.string.accounts_host_unreachable, notice.hostLabel)
+                    AccountHost.VAULT_LOCKED -> stringResource(R.string.accounts_host_vault, notice.hostLabel)
+                    else -> stringResource(R.string.accounts_host_other, notice.hostLabel, notice.state)
+                }
+            // La línea de SSH o del shell, detrás: «… falló la conexión SSH · Permission denied…».
+            notice.errorDetail?.takeIf { it.isNotBlank() }?.let { stringResource(R.string.accounts_notice_detail, cause, it) } ?: cause
+        }
     }
     Surface(Modifier.fillMaxWidth(), color = UniTheme.colors.warning.copy(alpha = .12f), shape = UniTheme.shapes.card) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -416,7 +459,7 @@ private fun GroupCard(group: AccountGroup, grouping: AccountsQuery.Grouping, onO
         GlassCard(Modifier.fillMaxWidth()) {
             group.rows.forEachIndexed { index, row ->
                 if (index > 0) HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = UniTheme.colors.outline)
-                WindowRow(row, showHost = grouping == AccountsQuery.Grouping.BY_ACCOUNT) {
+                WindowRow(row, showHost = grouping != AccountsQuery.Grouping.BY_WORKSPACE) {
                     onOpenWindow(row.machineID, row.window.workspaceID, row.window.terminalID)
                 }
             }
@@ -445,8 +488,12 @@ private fun GroupHeader(group: AccountGroup) {
         }
         Spacer(Modifier.width(8.dp))
         Text(
-            if (group.key is AccountGroup.Key.Workspace) windows
-            else "$windows · ${pluralStringResource(R.plurals.accounts_group_hosts, group.hostCount, group.hostCount)}",
+            when (group.key) {
+                is AccountGroup.Key.Workspace, AccountGroup.Key.NoAgent -> windows
+                // «Por IA»: «N ventanas · M cuentas».
+                is AccountGroup.Key.Agent -> "$windows · ${pluralStringResource(R.plurals.accounts_group_accounts, group.accountCount, group.accountCount)}"
+                else -> "$windows · ${pluralStringResource(R.plurals.accounts_group_hosts, group.hostCount, group.hostCount)}"
+            },
             style = MaterialTheme.typography.labelSmall, color = UniTheme.colors.muted, maxLines = 1,
         )
     }
@@ -461,6 +508,8 @@ private fun groupTitle(key: AccountGroup.Key): String = when (key) {
     AccountGroup.Key.NoEmail -> stringResource(R.string.accounts_group_no_email)
     is AccountGroup.Key.Email -> key.email
     is AccountGroup.Key.Workspace -> key.name
+    is AccountGroup.Key.Agent -> key.displayName
+    AccountGroup.Key.NoAgent -> stringResource(R.string.accounts_group_no_agent)
 }
 
 /**
@@ -546,6 +595,9 @@ private fun Empty(text: String) {
 private fun Spinner(size: Int) {
     LoadingIndicator(Modifier.size(size.dp), color = UniTheme.colors.accent)
 }
+
+/** A partir de este ancho, en dp, el «Resumen» va en dos columnas. */
+private const val WIDE_SCREEN_DP = 600
 
 /** Cada cuánto se relee mientras la pantalla está a la vista (`accounts.v1`, §1). */
 private const val REFRESH_MILLIS = 15_000L

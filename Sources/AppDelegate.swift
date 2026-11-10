@@ -1142,7 +1142,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     )
     private var uniConnectCriticalSaveScheduled = false
-    private var didScheduleClaudeUpdateRecovery = false
     private nonisolated static let launchServicesRegistrationQueue = DispatchQueue(
         label: "com.unixcision.uniconnect.launchServicesRegistration",
         qos: .utility
@@ -1913,7 +1912,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         StartupBreadcrumbLog.append("appDelegate.willTerminate.begin")
         isTerminatingApp = true
         transcriptRetentionTask?.cancel()
-        UniConnectCoordinator.shared.shutdownClaudeUpdater()
+        UniConnectCoordinator.shared.shutdownProcessRunners()
         UniConnectCoordinator.shared.shutdownClaudeBridge()
         closeAllWebInspectorsBeforeAppTeardown()
         _ = saveSessionSnapshotIncludingProcessDetectedIndexes(includeScrollback: true, removeWhenEmpty: false)
@@ -3265,22 +3264,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // Auto-resume input can be queued before tmux has spawned; preserve
             // restored process-detected bindings until a later live scan.
             _ = saveSessionSnapshot(includeScrollback: false)
-        }
-        scheduleClaudeUpdateRecoveryIfReady()
-    }
-
-    /// Defers updater-journal recovery until every startup window has restored its panel graph.
-    private func scheduleClaudeUpdateRecoveryIfReady() {
-        guard !didScheduleClaudeUpdateRecovery,
-              didAttemptStartupSessionRestore,
-              !isApplyingSessionRestore,
-              !isTerminatingApp else {
-            return
-        }
-        didScheduleClaudeUpdateRecovery = true
-        DispatchQueue.main.async {
-            guard !self.isTerminatingApp else { return }
-            UniConnectCoordinator.shared.recoverPendingClaudeUpdateSessions()
         }
     }
 
@@ -4827,7 +4810,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         ) {
             saveSessionSnapshotAfterLoadingProcessDetectedIndexes(includeScrollback: false)
         }
-        scheduleClaudeUpdateRecoveryIfReady()
     }
 
 #if DEBUG

@@ -42,16 +42,18 @@ struct AgentActivityScreenSignal: Equatable, Sendable {
         isWaitingForUser = Self.matchesWaitingPattern(tail)
     }
 
+    /// Las dos expresiones de ``stripANSI(_:)``, compiladas una vez: compilarlas en cada
+    /// lectura de pantalla era parte del coste del ciclo de actividad.
+    private static let ansiExpressions: [NSRegularExpression] = [
+        "\u{1B}\\[[0-?]*[ -/]*[@-~]",
+        "\u{1B}\\][^\u{07}\u{1B}]*(\u{07}|\u{1B}\\\\)",
+    ].compactMap { try? NSRegularExpression(pattern: $0) }
+
     /// Elimina secuencias CSI y OSC por si el texto llega con códigos de control.
     static func stripANSI(_ text: String) -> String {
         guard text.contains("\u{1B}") else { return text }
-        let patterns = [
-            "\u{1B}\\[[0-?]*[ -/]*[@-~]",
-            "\u{1B}\\][^\u{07}\u{1B}]*(\u{07}|\u{1B}\\\\)",
-        ]
         var result = text
-        for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+        for regex in ansiExpressions {
             result = regex.stringByReplacingMatches(
                 in: result,
                 range: NSRange(result.startIndex..., in: result),
@@ -61,13 +63,20 @@ struct AgentActivityScreenSignal: Equatable, Sendable {
         return result
     }
 
-    /// Últimas `count` líneas no vacías.
+    /// Últimas `count` líneas no vacías, recorriendo el texto desde el final: solo se tocan
+    /// las líneas del pie, no la pantalla entera.
     static func tailLines(_ text: String, count: Int) -> [String] {
-        let lines = text
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        return Array(lines.suffix(max(count, 0)))
+        guard count > 0 else { return [] }
+        var lines: [String] = []
+        var end = text.endIndex
+        while lines.count < count {
+            let start = text[..<end].lastIndex(of: "\n").map { text.index(after: $0) } ?? text.startIndex
+            let line = text[start..<end].trimmingCharacters(in: .whitespaces)
+            if !line.isEmpty { lines.append(line) }
+            guard start > text.startIndex else { break }
+            end = text.index(before: start)
+        }
+        return lines.reversed()
     }
 
     private static func matchesWaitingPattern(_ loweredTail: String) -> Bool {
